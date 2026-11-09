@@ -56,13 +56,12 @@ export const RUN_STATE = Object.freeze({
 });
 
 // Explicit AF fail-closed codes (MASTER-PLAN section 4 "New AF codes prefixed
-// AF-BW-MA-*"). AF-BW-MA-ANTHROPIC is reserved — never an Anthropic id.
+// AF-BW-MA-*").
 export const AF = Object.freeze({
   JOB_PENDING: "AF-BW-MA-JOB-PENDING", // assembled/tripped while a required job not done
   EXTRACT_NO_TEXT: "AF-BW-MA-EXTRACT-NO-TEXT", // media answer with no extracted text
   CAPABILITY: "AF-BW-MA-CAPABILITY", // required step failed / capability absent
   REJECT_FIELD: "AF-BW-MA-REJECT-FIELD", // missing / malformed / forged field evidence
-  ANTHROPIC: "AF-BW-MA-ANTHROPIC", // reserved — an Anthropic id must never appear
 });
 
 // ---------------------------------------------------------------------------

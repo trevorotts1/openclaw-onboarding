@@ -99,17 +99,32 @@ echo "[apply-fleet-standards] backed up to: $OC_BACKUP"
 #   • root tools.exec.security=full + tools.exec.ask=off  (fleet-wide exec ungate)
 #   • agents.defaults.subagents.allowAgents=["*"] + requireAgentId=false (spawn ungate)
 # That functional ungate is the satisfied Goal-4 baseline on 2026.6.8. On schemas
-# that ACCEPT agents.defaults.tools.* (< 2026.6.8, or unknown) we ALSO write the
-# wildcard allow as before (legacy-permissive default keeps older boxes unchanged).
+# that ACCEPT agents.defaults.tools.* (< 2026.6.8, measured pre-6.8 is unverified —
+# repo claim) we ALSO write the wildcard allow as before.
 #
 # OC_VERSION = parsed YYYY.M.P from `openclaw --version`, or "" when unknown.
 # FLEET_OC_VERSION_OVERRIDE pins the version for deterministic tests (bypasses the
 # live binary). Mirrors smoke-test-provider-capabilities.sh's detector.
+#
+# DETECTOR DEFECT (2026-11-06, measured on oc-janet-pinkney, OpenClaw 2026.10.8):
+#   the CLI shim writes an admission banner to STDERR before the version line:
+#     line 1 (stderr): openclaw: Retrying with ".../node" (cached OpenClaw runtime; ...)
+#     line 2 (stdout): OpenClaw 2026.10.8 (dc2523e)
+#   The old detector took `head -n1` of the MERGED stream, so it parsed the
+#   banner, OC_VERSION stayed "", and the version-unknown branch wrote the poison
+#   key onto a schema that rejects it -> validate failed -> the whole apply was
+#   rolled back. Scan the FULL output (stdout first, merged stream as fallback);
+#   NEVER look only at line 1.
 TOOLS_DEFAULTS_REJECTED_VERSION="2026.6.8"
 OC_VERSION=""
 if command -v openclaw >/dev/null 2>&1; then
-  _oc_raw="$(openclaw --version 2>&1 | tr -d '\r' | head -n1 || true)"
-  OC_VERSION="$(printf '%s' "$_oc_raw" | grep -oE '20[0-9]{2}\.[0-9]+\.[0-9]+' | head -n1 || true)"
+  _oc_stdout="$(openclaw --version 2>/dev/null | tr -d '\r' || true)"
+  OC_VERSION="$(printf '%s\n' "$_oc_stdout" | grep -oE '20[0-9]{2}\.[0-9]+\.[0-9]+' | head -n1 || true)"
+  if [ -z "$OC_VERSION" ]; then
+    # Some CLIs print the version only on stderr; scan the merged stream too.
+    _oc_merged="$(openclaw --version 2>&1 | tr -d '\r' || true)"
+    OC_VERSION="$(printf '%s\n' "$_oc_merged" | grep -oE '20[0-9]{2}\.[0-9]+\.[0-9]+' | head -n1 || true)"
+  fi
 fi
 OC_VERSION="${FLEET_OC_VERSION_OVERRIDE:-$OC_VERSION}"
 
@@ -118,18 +133,26 @@ _ver_ge() {
   printf '%s\n%s\n' "$2" "$1" | sort -t. -k1,1n -k2,2n -k3,3n -C
 }
 
-# WRITE_DEFAULTS_TOOLS=1 → this schema ACCEPTS agents.defaults.tools.* (write the
-# wildcard allow). =0 → this schema REJECTS it (>= 2026.6.8); rely on the
-# functional ungate instead. Unknown version → default to 1 (legacy-permissive):
-# older boxes keep their existing baseline, and the validate gate is the backstop.
-WRITE_DEFAULTS_TOOLS=1
-if [ -n "$OC_VERSION" ] && _ver_ge "$OC_VERSION" "$TOOLS_DEFAULTS_REJECTED_VERSION"; then
-  WRITE_DEFAULTS_TOOLS=0
+# WRITE_DEFAULTS_TOOLS selects what the merge does with agents.defaults.tools:
+#   "1"        → this schema ACCEPTS it (< 2026.6.8): write allow=["*"]
+#   "0"        → this schema REJECTS it (>= 2026.6.8): strip it, rely on the
+#                functional ungate (root tools.exec full+off + subagents ungate)
+#   "preserve" → version UNKNOWN: write nothing AND delete nothing. The safe
+#                branch is the one that cannot turn a wrapper banner into a
+#                fleet-wide self-rollback. A pre-existing key is left exactly as
+#                the box has it; if it is poison the narrow repair removes it
+#                after validation (see Section 4) and every other standard lands.
+# The old default was "1" (write) — the DANGEROUS direction on an unknown schema,
+# and the direct cause of the 2026.10.8 self-rollback.
+WRITE_DEFAULTS_TOOLS="preserve"
+if [ -z "$OC_VERSION" ]; then
+  echo "[apply-fleet-standards] gateway version UNKNOWN — NOT writing agents.defaults.tools (safe branch: functional ungate is the baseline; a pre-existing key is preserved for the validate gate to judge)"
+elif _ver_ge "$OC_VERSION" "$TOOLS_DEFAULTS_REJECTED_VERSION"; then
+  WRITE_DEFAULTS_TOOLS="0"
   echo "[apply-fleet-standards] gateway $OC_VERSION >= $TOOLS_DEFAULTS_REJECTED_VERSION — agents.defaults.tools.* is REJECTED; using functional-ungate baseline (root tools.exec full+off + subagents ungate), NOT agents.defaults.tools.allow"
-elif [ -n "$OC_VERSION" ]; then
-  echo "[apply-fleet-standards] gateway $OC_VERSION < $TOOLS_DEFAULTS_REJECTED_VERSION — writing agents.defaults.tools.allow=['*'] no-refusal baseline"
 else
-  echo "[apply-fleet-standards] gateway version unknown — defaulting to writing agents.defaults.tools.allow=['*'] (validate gate is the backstop if a newer schema rejects it)"
+  WRITE_DEFAULTS_TOOLS="1"
+  echo "[apply-fleet-standards] gateway $OC_VERSION < $TOOLS_DEFAULTS_REJECTED_VERSION — writing agents.defaults.tools.allow=['*'] no-refusal baseline"
 fi
 export FLEET_WRITE_DEFAULTS_TOOLS="$WRITE_DEFAULTS_TOOLS"
 
@@ -210,12 +233,15 @@ cfg = json.loads(cfg_path.read_text())
 before_json = json.dumps(cfg, sort_keys=True, indent=2)
 
 # DEFECT 1 (v13.1.3): schema-version-aware no-refusal baseline.
-# FLEET_WRITE_DEFAULTS_TOOLS=1 → this schema accepts agents.defaults.tools.* so we
-#   write the wildcard allow (legacy / < 2026.6.8 / unknown-version default).
+# FLEET_WRITE_DEFAULTS_TOOLS=1 → schema accepts agents.defaults.tools.* (< 2026.6.8)
+#   so we write the wildcard allow.
 # FLEET_WRITE_DEFAULTS_TOOLS=0 → schema REJECTS agents.defaults.tools.* (>= 2026.6.8)
-#   so we DO NOT write it; the functional ungate (root tools.exec full+off +
+#   so we strip it; the functional ungate (root tools.exec full+off +
 #   agents.defaults.subagents ungate) IS the satisfied Goal-4 no-refusal baseline.
-WRITE_DEFAULTS_TOOLS = os.environ.get("FLEET_WRITE_DEFAULTS_TOOLS", "1") == "1"
+# FLEET_WRITE_DEFAULTS_TOOLS=preserve → version UNKNOWN: write nothing, delete
+#   nothing. Never guess a dangerous write onto an unmeasured schema.
+DEFAULTS_TOOLS_MODE = os.environ.get("FLEET_WRITE_DEFAULTS_TOOLS", "preserve")
+WRITE_DEFAULTS_TOOLS = DEFAULTS_TOOLS_MODE == "1"
 
 # CANONICAL FLEET STANDARD BLOCK
 # Verified against:
@@ -586,7 +612,7 @@ if WRITE_DEFAULTS_TOOLS:
         _agents_defaults["tools"] = _adt
     _adt["allow"] = ["*"]
     print("[apply-fleet-standards] GOAL-4 baseline: agents.defaults.tools.allow=['*'] written")
-else:
+elif DEFAULTS_TOOLS_MODE == "0":
     # Schema (>= 2026.6.8) REJECTS agents.defaults.tools.* — never write it, AND
     # strip any pre-existing agents.defaults.tools so a box previously rolled with
     # the poison key validates clean again (idempotent self-heal). The functional
@@ -597,6 +623,15 @@ else:
         print("[apply-fleet-standards] GOAL-4 baseline: stripped rejected agents.defaults.tools (2026.6.8 schema) — functional ungate is the baseline")
     else:
         print("[apply-fleet-standards] GOAL-4 baseline: agents.defaults.tools NOT written (2026.6.8 schema) — functional ungate is the baseline")
+else:
+    # Schema UNKNOWN. Write nothing (a wrong write is what rolled the fleet back)
+    # and delete nothing (this key may be VALID on this box). What is here stays
+    # here; the validate gate judges it, and the narrow repair removes it only if
+    # the validator actually rejects it.
+    if "tools" in _agents_defaults:
+        print("[apply-fleet-standards] GOAL-4 baseline: agents.defaults.tools PRESERVED (schema version unknown — no write, no delete; validate gate judges it)")
+    else:
+        print("[apply-fleet-standards] GOAL-4 baseline: agents.defaults.tools NOT written (schema version unknown) — functional ungate is the baseline")
 
 # Fix per-agent subagents overrides: any agent with an explicit allowAgents
 # that is NOT ["*"] should be set to ["*"]. This is the critical piece that
@@ -938,8 +973,11 @@ echo "[apply-fleet-standards] prompt-caching (ollama path): RESERVED slot — aw
 # ─── 4. Validate + report ────────────────────────────────────────────────────
 echo ""
 echo "[apply-fleet-standards] running: openclaw config validate"
-if ! openclaw config validate; then
-  # NARROW REPAIR BEFORE ANY ROLLBACK (2026-09-17).
+_VALIDATE_RC=0
+_VALIDATE_OUT="$(openclaw config validate 2>&1)" || _VALIDATE_RC=$?
+printf '%s\n' "$_VALIDATE_OUT"
+if [ "$_VALIDATE_RC" -ne 0 ]; then
+  # NARROW REPAIR BEFORE ANY ROLLBACK (2026-09-17; repaired keys added 2026-11-06).
   #
   # This gate used to do exactly one thing on failure: restore the backup and
   # exit 1, discarding EVERY standard this script had just applied. On boxes
@@ -948,20 +986,33 @@ if ! openclaw config validate; then
   # ban, the subagent ungate, plugins.allow and the rest. A whole-file rollback
   # is the right LAST resort and the wrong FIRST one.
   #
-  # tools.exec is the only sub-block this script writes that has a documented
-  # schema conflict rule (mode vs security/ask). So: revert ONLY tools.exec to
-  # its pre-merge value, re-validate, and if that clears, keep every other
-  # standard. Only if the config is STILL invalid do we do what we always did.
-  echo "[apply-fleet-standards] validate FAILED after the merge; trying the NARROW repair (revert tools.exec only) before any rollback" >&2
+  # 2026-11-06: the repair only reverted ROOT tools.exec. When the validator
+  # rejected `agents.defaults: Unrecognized key: "tools"` (OpenClaw >= 2026.6.8),
+  # the parent key lived in a DIFFERENT subtree, so the repair changed nothing
+  # it could not reach, the identical error came back one validator pass later,
+  # and the whole apply was rolled back anyway — while printing a misleading
+  # "every other fleet standard is still in the file". The repair now removes
+  # whichever of the two known poison axes the validator actually names:
+  #   A. agents.defaults.tools  (parent key rejected on >= 2026.6.8)
+  #   B. root tools.exec         (legacy mode vs security/ask conflict)
+  # Only the axis named by the error is touched, so a fix for A does not cost
+  # the box its exec ungate. If the error names neither axis, both are tried.
+  # If the config is STILL invalid after that, the full rollback still happens:
+  # a genuine failure must still fail.
+  _VALIDATE_FIRST="$(printf '%s\n' "$_VALIDATE_OUT" | grep -iE 'unrecognized|invalid|error|failed' | head -n1 || true)"
+  [ -n "$_VALIDATE_FIRST" ] || _VALIDATE_FIRST="$(printf '%s\n' "$_VALIDATE_OUT" | grep -v '^[[:space:]]*$' | head -n1 || true)"
+  echo "[apply-fleet-standards] validate FAILED after the merge; failing key/line: ${_VALIDATE_FIRST:-<validator produced no diagnostic>}" >&2
+  echo "[apply-fleet-standards] trying the NARROW repair (agents.defaults.tools parent key and/or root tools.exec) before any rollback" >&2
 
-  _EXEC_REVERTED=0
-  if python3 - "$OC_CONFIG" "$OC_BACKUP" <<'EXECREVERTEOF'
+  _REPAIR_RC=0
+  _REPAIR_ACTIONS="$(python3 - "$OC_CONFIG" "$OC_BACKUP" "$_VALIDATE_OUT" <<'REPAIROF'
 import json
 import sys
 from pathlib import Path
 
 cur_p = Path(sys.argv[1])
 bak_p = Path(sys.argv[2])
+err = (sys.argv[3] if len(sys.argv) > 3 else "")
 try:
     cur = json.loads(cur_p.read_text())
     bak = json.loads(bak_p.read_text())
@@ -970,37 +1021,65 @@ except Exception as exc:
           "(%s) -- falling through to the full rollback" % exc, file=sys.stderr)
     sys.exit(1)
 
-cur_tools = cur.get("tools")
-if not isinstance(cur_tools, dict):
-    print("[apply-fleet-standards] narrow repair: no tools block to revert -- "
-          "tools.exec is not the culprit", file=sys.stderr)
+low = err.lower()
+# Which poison axes does the validator actually name? If it names neither, the
+# only safe fallback is AXIS A (a key this script may itself have written).
+# Root tools.exec is reverted ONLY when the error names exec: an unrelated
+# failure must not cost the box its exec ungate on its way to the rollback.
+mentions_ad_tools = ("agents.defaults" in low and "tools" in low)
+mentions_exec = ("exec" in low)
+fallback = not (mentions_ad_tools or mentions_exec)
+
+actions = []
+
+# AXIS A — agents.defaults.tools is the PARENT key the >= 2026.6.8 schema rejects
+# ("agents.defaults: Unrecognized key: \"tools\""). Removing a child of ROOT tools
+# can never clear it; the parent itself has to go.
+if mentions_ad_tools or fallback:
+    ad = cur.get("agents", {}).get("defaults") if isinstance(cur.get("agents"), dict) else None
+    if isinstance(ad, dict) and "tools" in ad:
+        del ad["tools"]
+        actions.append("removed agents.defaults.tools (the validator rejects that PARENT key on the >= 2026.6.8 schema)")
+
+# AXIS B — root tools.exec legacy mode vs security/ask conflict.
+if mentions_exec:
+    cur_tools = cur.get("tools")
+    if isinstance(cur_tools, dict):
+        bak_tools = bak.get("tools")
+        bak_exec = bak_tools.get("exec") if isinstance(bak_tools, dict) else None
+        if bak_exec is None:
+            if "exec" in cur_tools:
+                cur_tools.pop("exec", None)
+                actions.append("tools.exec removed (the backup had no tools.exec)")
+        elif cur_tools.get("exec") != bak_exec:
+            cur_tools["exec"] = bak_exec
+            actions.append("tools.exec restored from the backup verbatim")
+
+if not actions:
+    print("[apply-fleet-standards] narrow repair: validator named no axis this "
+          "repair can move, and neither poison key is present -- falling through "
+          "to the full rollback", file=sys.stderr)
     sys.exit(1)
 
-bak_tools = bak.get("tools")
-bak_exec = bak_tools.get("exec") if isinstance(bak_tools, dict) else None
-
-if bak_exec is None:
-    cur_tools.pop("exec", None)
-    detail = "removed (the backup had no tools.exec)"
-else:
-    cur_tools["exec"] = bak_exec
-    detail = "restored from the backup verbatim"
-
 cur_p.write_text(json.dumps(cur, indent=2) + "\n")
-print("[apply-fleet-standards] narrow repair: tools.exec %s; every other fleet "
-      "standard is still in the file" % detail)
+print("; ".join(actions))
 sys.exit(0)
-EXECREVERTEOF
-  then
-    _EXEC_REVERTED=1
+REPAIROF
+)" || _REPAIR_RC=$?
+
+  if [ "$_REPAIR_RC" -eq 0 ]; then
+    echo "[apply-fleet-standards] narrow repair: ${_REPAIR_ACTIONS:-<no action>}; every other fleet standard is still in the file" >&2
   fi
 
-  if [ "$_EXEC_REVERTED" = "1" ] && openclaw config validate; then
-    echo "[apply-fleet-standards] WARNING: the merged tools.exec block did NOT validate on this box, so tools.exec was left at its pre-merge value." >&2
-    echo "[apply-fleet-standards] WARNING: the fleet exec ungate (security=full, ask=off) is NOT applied here. Inspect tools.exec by hand, then re-run." >&2
+  if [ "$_REPAIR_RC" -eq 0 ] && openclaw config validate; then
+    echo "[apply-fleet-standards] WARNING: the merged config did NOT validate as written, so the poison key(s) named above were removed/reverted (${_REPAIR_ACTIONS:-none})." >&2
+    echo "[apply-fleet-standards] WARNING: the fleet standard that key carried is NOT applied here. Inspect it by hand, then re-run." >&2
     echo "[apply-fleet-standards] every other standard in this script IS applied and validated. NOT rolling back." >&2
   else
     echo "ERROR: openclaw config validate failed -- see output above" >&2
+    echo "[apply-fleet-standards] failing key/line: ${_VALIDATE_FIRST:-<validator produced no diagnostic>}" >&2
+    echo "[apply-fleet-standards] narrow repair attempted: ${_REPAIR_ACTIONS:-<none: no repairable axis named>}" >&2
+    echo "[apply-fleet-standards] detected gateway version: ${OC_VERSION:-unknown} (agents.defaults.tools mode: ${WRITE_DEFAULTS_TOOLS})" >&2
     echo "[apply-fleet-standards] rolling back to: $OC_BACKUP"
     cp "$OC_BACKUP" "$OC_CONFIG"
     # DIAGNOSTIC, not a second repair attempt. The config is now byte-for-byte
@@ -1021,13 +1100,11 @@ echo ""
 echo "[apply-fleet-standards] config standards applied"
 
 # ─── 4a-SOVEREIGNTY. Model-sovereignty strip/repair (FAIL-OPEN) ───────────────
-# v16.2.17: the onboarding GENERATOR is Anthropic-free/preview-free/Ollama-first,
-# but LEGACY boxes remediated earlier can still carry a lingering Anthropic
-# provider/plugin block, `-preview`/free slugs in fallback[] chains, or runaway
-# cascades. scripts/repair-model-sovereignty.sh is an idempotent, backup-before-
-# edit, box-user, no-restart remediation that strips exactly those (keying ONLY
-# off FORBIDDEN_PREFIXES + `-preview` + free-sentinels — it never touches a
-# client's own OpenAI/OpenRouter/Gemini providers/chains). It was never invoked
+# LEGACY boxes remediated earlier can still carry `-preview`/free slugs in
+# fallback[] chains, or runaway cascades. scripts/repair-model-sovereignty.sh is
+# an idempotent, backup-before-edit, box-user, no-restart remediation that strips
+# exactly those (keying ONLY off `-preview` + free-sentinels — it never touches a
+# client's own Anthropic/OpenAI/OpenRouter/Gemini providers/chains). It was never invoked
 # by install/update; wire it here so BOTH install.sh and update-skills.sh run it
 # on every pass. FAIL-OPEN: any non-zero (offenders remain / needs owner input /
 # missing tool) logs a warning and CONTINUES — it must NEVER abort the run. NO
@@ -2916,7 +2993,15 @@ TRIGGER (case-insensitive) — the incoming owner message contains ANY of:
   "pitch our new offer" or "present the Q3 numbers" is NOT a presentation build. Route only on
   presentation/deck/slide-specific forms above, including "pitch deck" and "presentation deck".)
 
-WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these three steps, in order — nothing before them:
+COUNCIL ASK EXCEPTION (narrow): if the message is an explicit request to convene or consult
+the Council of Wise Elders — for example "ask my Council of Wise Elders", "ask the council",
+"take this decision to the council", "review this plan with the council", or "ask the
+<named elder> seat" — this reflex does NOT fire. Run Skill 77's Council front door first,
+open a NEW session, and send the owner the exact `Chamber link:` line. If the same message
+also asks for a presentation build, route that separate build through STEP 1 AFTER the Council
+ask is handled. A message that only mentions a deck/slide is still a presentation request.
+
+WHEN TRIGGERED (and not a Council ask) your FIRST and ONLY action is EXACTLY these three steps, in order — nothing before them:
 
   ‼ Your VERY FIRST tool call is the STEP 1 mc-route.sh helper below — literally the first thing you do.
   Do NOT read any file, do NOT run sessions_list, do NOT "check" or "verify the department
@@ -3136,6 +3221,13 @@ pick the department — do NOT pass a department slug — then send ONE short
 acknowledgement. Do NOT self-intake, do NOT ask "which skill do you want?", and do NOT start the work
 yourself — the owning department's specialist reaches for the skill (dept-scoped) after routing.
 
+**COUNCIL ASK EXCEPTION (narrow).** An explicit request to convene or consult the Council of Wise
+Elders (for example "ask my Council of Wise Elders", "ask the council", "take this decision to the
+council", "review this plan with the council", or "ask the <named elder> seat") is NOT an
+intent-cluster route and is NOT routed through mc-route.sh. Use Skill 77's Council front door
+directly, open a NEW session, and send the owner the exact `Chamber link:` line. If the same
+message also matches an intent below, handle the Council ask first, then route the other work.
+
     MC_ROUTE_REQUESTER_CHAT_ID="<originating client chat id>" MC_ROUTE_REQUESTER_CHANNEL="telegram" \
       bash @@MC_ROUTE_PATH@@ task "<owner request, <=120 chars>" "<owner message, verbatim>"
 
@@ -3175,6 +3267,7 @@ reuse another client's chat id — pass ONLY the real originating chat id of the
 
 Notes:
 - Presentation/deck/slide requests are owned by REFLEX 0 (the strict presentation reflex) ABOVE — it fires first; do not double-route.
+- An explicit Council ask is owned by Skill 77's front door, never by this intent table. Convene the Council first; route any separate build in the same message afterwards.
 - Dept-scoped: the dispatched specialist is handed ONLY its department's skills (the Command Center ContextPack `matched_skills`). Rule-Zero paid-call approval (USD announce + budget cap) still applies.
 - Single-page vs multi-step: a focused BlackCEO single page (landing, opt-in, squeeze, webinar/event registration, 5-day challenge, booking, lead-generation) is Skill 71 `blackceo-signature-page`; a multi-step 3/5/7 Signature Funnel with checkout/upsell/downsell/OTO is Skill 49 `signature-funnel`; a direct-response/VSL/high-ticket/order-bump stack is Skill 56 `sales-page-assets`; a cinematic/scroll/animated page is Skill 62 `cinematic-web-funnel-engine`. A 'webinar page' / 'event registration page' / '5-day challenge page' / 'squeeze page' is a PAGE (Skill 71), never a deck and never REFLEX 0.
 - If the owner explicitly names a skill or types its slash command, that still works — this reflex is for plain-language intent the owner did NOT name.

@@ -1,0 +1,14 @@
+{
+  "onboarding": {
+    "repository": "trevorotts1/openclaw-onboarding",
+    "revision": null,
+    "digest": null,
+    "note": "Identity comes from the enclosing git worktree: origin remote, HEAD revision and the git ls-tree digest of the skill root at that revision. No external pin is possible or needed, because git itself is the record."
+  },
+  "999": {
+    "repository": "trevorotts1/999-setup",
+    "revision": "33ef8ec5b17e171b646926ccb4ec77ee5e865d49",
+    "digest": null,
+    "note": "Pinned revision. The tree digest is null until the pinned checkout is provisioned and its bytes are measured; while it is null, a tree placed at the pin path is REFUSED rather than accepted on its name alone. Fill this from the provisioned tree before any 999 release claim."
+  }
+}

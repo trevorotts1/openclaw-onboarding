@@ -1,0 +1,22 @@
+{
+  "plugins": {
+    "entries": {
+      "council-before-dispatch": {
+        "enabled": true,
+        "config": {
+          "channel": "telegram",
+          "accountId": "<from provision.mjs: this box's telegram account id>",
+          "conversationId": "<from provision.mjs: this box's DM chat id>",
+          "senderIds": ["<from provision.mjs: the account's own allowFrom>"],
+          "agentId": "<from provision.mjs: the calling agent id>",
+          "agentWorkspace": "<from provision.mjs: that agent's workspace>",
+          "councilAskPath": "<OPENCLAW_ROOT>/council-runtime/bin/council-ask",
+          "stateDir": "<OPENCLAW_ROOT>/council-before-dispatch",
+          "mode": "medium",
+          "displayTimezone": "<IANA-timezone>",
+          "timeoutMs": 300000
+        }
+      }
+    }
+  }
+}

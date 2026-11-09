@@ -33,7 +33,7 @@ The adapter consumes five artifacts, all produced and approved upstream:
 | Input | Owner | What it proves |
 |---|---|---|
 | Intake session (`signature-launch-intake/v1`) | S49 | The answer ledger (each answer carries value, state, source_ref, question_id), the approved plan hash, the client identity reference, session status |
-| Launch record (`schema/launch.schema.json` v1.0) | S49 | The plan itself: offers with per-offer source_kind and source_ref, brand binding, revision, journey mode, plan_approval_ref |
+| Launch record (`schema/launch.schema.json`; schema_version 1.0, 1.1 or 1.2 accepted, with a drift test against S49's `validate_launch_plan.py`) | S49 | The plan itself: offers with per-offer source_kind and source_ref, brand binding, revision, journey mode, plan_approval_ref |
 | Approval record (`approval.schema.json`) | S49 | Type launch_plan_build, subject hash bound to the plan, approver identity, scope, revocation state, the platform reference of the client's own response |
 | Brand facts document | The launch | brand_ref, founder_name (the founder's actual name), brand_voice, optional declared brand_hash, provenance block |
 | Landing facts document | The launch | Section 5 why, section 6 who with exactly three pains carrying refs, sections 8, 9, 10, round_timing with ref and fact, testimonial_evidence (entries or an explicit null), provenance block |
@@ -60,29 +60,25 @@ with a `provenance` block and an optional `launch_id` binding added.
 
 ## Approval discipline
 
-The adapter replicates the S49 plan gate (`validate_launch_plan.py`
-`_check_approval_record`) rather than inventing a second standard:
+The adapter calls the shared `approval_record.verify` (the same gate
+Skill 49 uses, in `shared-utils/signature_launch_contract/`) and no longer
+replicates `_check_approval_record`:
 
 - The plan document hash is recomputed with the S49 canonicalization
   (the launch record minus `status` and `plan_approval_ref`, keys sorted,
   compact separators, sha256). It must equal the session plan_hash and the
-  approval subject_hash. Any commercial change after approval invalidates
+  approval `plan_hash`. Any commercial change after approval invalidates
   the brief.
-- The approval must be of type launch_plan_build, its scope list must
+- The approval must be of kind launch_plan_build, its scope list must
   contain launch_plan_build, it must not be revoked, its verification class
   must be recognized, and it must carry the platform reference of the
   client's own response.
-- The approver must be the client identity recorded in the intake session,
-  and must differ from the worker identity operating the adapter when one is
-  supplied. A bare `"approved": true` flag anywhere is never read as
-  evidence.
-
-One deliberate difference from the S49 gate: the adapter does not apply the
-gate's 72 hour default expiry. The gate checks freshness when the approval
-is acted on for the build; the adapter is a downstream consumer verifying
-the binding (hash, identity, scope, revocation), which does not decay, and
-it refuses future-dated records. Operators who need a freshness window can
-impose one at the run level.
+- The approver (`client_identity`) must be the client identity recorded in
+  the intake session, and must differ from the worker identity operating the
+  adapter when one is supplied. A bare `"approved": true` flag anywhere is
+  never read as evidence.
+- Expiry is the record's own `expires_at`; the old "no 72 hour expiry"
+  difference between the adapter and the gate is gone.
 
 ## Field states
 

@@ -81,10 +81,17 @@ class TestProfileRecorded(unittest.TestCase):
         self.assertTrue(block["profile_source_urls"])
 
     def test_all_supported_platforms_resolve(self):
+        # Freeze the clock to the newest recorded profile check date: this test
+        # asserts every recorded profile resolves and is fresh AS OF ITS OWN
+        # checked_at, never that the wall clock happens to be near it (PBB-856).
+        caps = spp.load_profiles()
+        newest = max(datetime.date.fromisoformat(p["checked_at"][:10])
+                     for p in (caps.get("profiles") or {}).values())
+        frozen = datetime.datetime.combine(newest, datetime.time())
         for pid in SUPPORTED:
-            prof = spp.select_profile(pid)
+            prof = spp.select_profile(pid, now=frozen)
             self.assertTrue(prof["found"], pid)
-            self.assertFalse(prof["stale"], pid)  # checked today
+            self.assertFalse(prof["stale"], pid)  # fresh as of its checked_at
             self.assertFalse(prof["actions"], pid)
 
 

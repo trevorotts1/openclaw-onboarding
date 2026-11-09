@@ -7,6 +7,14 @@ import unittest
 from pathlib import Path
 
 COMPONENTS = Path(__file__).resolve().parents[1] / "references" / "components"
+REPO = Path(__file__).resolve().parents[2]
+SKILL = COMPONENTS.parents[1]
+# Every html/css draft is review-only (CHK-18/CHK-24); globbed so new drafts are covered.
+REVIEW_ONLY_DRAFTS = tuple(sorted(p.name for p in COMPONENTS.glob("*.html"))) + ("components.css",)
+# Docs scanned for stale strings and unresolvable paths. checkout.schema.json is
+# excluded: its title belongs to U-checkout-commerce-06 (carried).
+DOC_FILES = ([SKILL / "SKILL.md"] + sorted((SKILL / "references").glob("*.md"))
+             + sorted(p for p in COMPONENTS.iterdir() if p.is_file()))
 
 
 def read(name):
@@ -89,6 +97,38 @@ class ComponentStaticTests(unittest.TestCase):
     def test_no_em_dashes_in_component_copy(self):
         for path in list(COMPONENTS.glob("*.html")) + [COMPONENTS / "README.md"]:
             self.assertNotIn("—", path.read_text(), path.name)
+
+    def test_every_draft_carries_review_only_marker(self):
+        for name in REVIEW_ONLY_DRAFTS + ("README.md",):
+            self.assertIn("REVIEW-ONLY", read(name), name)
+
+    def test_no_stale_work_paths_or_draft_title(self):
+        for path in DOC_FILES:
+            text = path.read_text()
+            for needle in ("work/", "DRAFT v0.1", "0.1.5"):
+                self.assertNotIn(needle, text, f"{path.name}: {needle}")
+        for name in ("combined-checkout.html", "post-selection-checkout.html"):
+            title = re.search(r"<title>(.*?)</title>", read(name)).group(1)
+            self.assertNotIn("TEST", title, name)
+
+    def test_paths_named_in_docs_resolve(self):
+        # Backticked tokens shaped like dir/file.ext must exist under the 79
+        # root or the repo root. The schema id skill6-environment-capabilities/1
+        # has no extension and is not a path.
+        for path in DOC_FILES:
+            for rel in re.findall(r"`([^`\s]+/[^`\s]+\.(?:py|md|json|html|css))`", path.read_text()):
+                self.assertTrue((SKILL / rel).exists() or (REPO / rel).exists(),
+                                f"{path.name}: {rel}")
+
+    def test_skill_md_marks_components_review_only(self):
+        self.assertIn("REVIEW-ONLY", (SKILL / "SKILL.md").read_text())
+
+    def test_shared_utils_bump_copy_is_deprecated_and_points_to_79(self):
+        copy = REPO / "shared-utils" / "signature_launch" / "components" / "order-bump" / "order-bump.html"
+        head = copy.read_text()[:600]
+        self.assertIn("DEPRECATED", head)
+        self.assertIn("79-signature-order-form/references/components/order-bump.html", head)
+        self.assertTrue((REPO / "79-signature-order-form/references/components/order-bump.html").exists())
 
 
 if __name__ == "__main__":

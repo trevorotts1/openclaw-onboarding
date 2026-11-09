@@ -39,9 +39,9 @@
 If you are reading this file, the user has triggered onboarding by saying something like:
 - "Begin onboarding installation"
 - "Start onboarding"
-- "Install the 66 active skills"
+- "Install the 79 active skills"
 
-**Your task:** Install all 66 active skills using the 5-Wave Parallel Orchestration below.
+**Your task:** Install all 79 active skills using the 5-Wave Parallel Orchestration below.
 
 ### First onboarding: collect the owner and company names before setup
 
@@ -91,10 +91,10 @@ Before starting Wave 2, verify you can spawn sub-agents:
 # Try to spawn a test sub-agent (this is a capability check, not actual install)
 ```
 If `sessions_spawn` works: Use 5-Wave Parallel Orchestration (Waves 2 and 4 use parallel sub-agents).  
-If `sessions_spawn` fails: Use Sequential Mode (install 01→31 one at a time, skipping 13 which is archived).
+If `sessions_spawn` fails: Use Sequential Mode (install 01→84 one at a time, skipping the archived numbers 11, 13, 21, 33 and 34).
 
 **0.4: Announce your strategy**
-Tell user: "Onboarding triggered. I will install 66 active skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
+Tell user: "Onboarding triggered. I will install 79 active skills using [5-Wave Parallel / Sequential] strategy. Checking for existing installations..."
 
 ---
 
@@ -228,7 +228,7 @@ It powers the persona search in Skill 22 and the persona detection in Skill 23.
 - Install time: Gemini Engine installed, collections (clawd, master-files) created, initial indexing run
 - After Skill 22: coaching-personas collection added and indexed
 - After Skill 23: workforce files indexed
-- After all 66 active skills: final complete index
+- After all 79 active skills: final complete index
 
 **Gemini Engine INDEXING happens at strategic points - see Gemini Engine INDEXING PROTOCOL below.**
 
@@ -306,7 +306,7 @@ Every skill has a specific install sequence. Follow it exactly:
 - Install skills 01-30 in order, confirm each one individually
 - Only after skill 31 (Upgraded Memory System) is verified complete → remove ONBOARDING PENDING flag
 - Only after skill 31 (Upgraded Memory System) is verified complete → write ONBOARDING COMPLETE to MEMORY.md
-- NOTE: Former Skills 33 (Department Heads) and 34 (Intelligent Staffing) have been merged INTO Skill 23 (AI Workforce Blueprint). They no longer exist as separate skills. Their folders are archived as 33-department-heads-ARCHIVED and 34-intelligent-staffing-ARCHIVED.
+- NOTE: Former Skills 33 (Department Heads) and 34 (Intelligent Staffing) have been merged INTO Skill 23 (AI Workforce Blueprint). They no longer exist as separate skills, and their folders are no longer shipped.
 
 ---
 
@@ -480,14 +480,14 @@ Check onboarding status:
 2. Count how many skills are INSTALLED vs remaining
 3. If skills remain and you are not currently installing one, resume from the next unfinished skill
 4. If you are stuck on a skill for more than 10 minutes, skip it, mark it FAILED, and move to the next
-5. Report progress: "[X] of 66 active skills installed. Currently on: [skill name]."
+5. Report progress: "[X] of 79 active skills installed. Currently on: [skill name]."
 
-DO NOT REMOVE this block until all 66 active skills are installed or attempted.
+DO NOT REMOVE this block until all 79 active skills are installed or attempted.
 ```
 
 **Step 3: After onboarding completes, clean up**
 
-When all 66 active skills are installed (or attempted), the agent MUST:
+When all 79 active skills are installed (or attempted), the agent MUST:
 1. Remove the "ONBOARDING IN PROGRESS" block from HEARTBEAT.md
 2. Reset the heartbeat interval back to the sane default (6h, main-only):
 ```json
@@ -535,17 +535,17 @@ After onboarding finishes, the heartbeat goes back to hourly and the watchdog ta
 ### Progress Reporting
 
 After every 5 skills completed, send the user a brief progress update:
-"Onboarding progress: [X] of 66 active skills installed. Currently on: [skill name]. [Y] skills remaining."
+"Onboarding progress: [X] of 79 active skills installed. Currently on: [skill name]. [Y] skills remaining."
 
 ### Completion
 
-When all 66 active skills are installed:
+When all 79 active skills are installed:
 1. Count and verify: all 65 active skill folders should exist in ~/.openclaw/skills/ (11, 13, 21, 33, and 34 are archived)
 2. Check the status file for any FAILED skills
 3. If any failed, attempt to re-install them one more time
 4. Send the user the final report with pass/fail for each skill
 5. If a gateway restart is needed for any changes to take effect, tell the user:
-   "All 66 active skills are installed. To activate the changes, please type /restart in Telegram."
+   "All 79 active skills are installed. To activate the changes, please type /restart in Telegram."
 
 ### 🔴 MANDATORY FILE READING BEFORE INSTALLATION
 
@@ -579,7 +579,7 @@ If you cannot list the files you read, you did not read them. Go back and read t
 - Agent forgetting where it was after compaction
 - Agent triggering restarts on its own (NEVER do this)
 
-**ZERO TOLERANCE: The onboarding does not end until all 66 active skills have been attempted. If you stop early, you failed.**
+**ZERO TOLERANCE: The onboarding does not end until all 79 active skills have been attempted. If you stop early, you failed.**
 
 ---
 
@@ -801,7 +801,7 @@ After every skill install, verify:
 | **Initial** | After Gemini Engine install (step 3) | Base index of workspace |
 | **Personas** | After Skill 22 (Book-to-Persona) complete | 32+ persona blueprints now searchable |
 | **AI Workforce** | After Skill 23 (AI Workforce Blueprint) complete | Workforce definitions, department workspaces, persona-matrix.md, persona-categories.json, ORG-CHART.md indexed |
-| **Final** | After ALL 66 active skills complete | Complete system index |
+| **Final** | After ALL 79 active skills complete | Complete system index |
 | **Ongoing** | After any NEW skill installed post-onboarding | Keep index current |
 
 ### What to Index at Each Milestone
@@ -1235,14 +1235,6 @@ Replace `[MASTER_FILES_FOLDER]` with the actual path from step 3.
         EXAMPLES.md
         CORE_UPDATES.md
         github-setup.skill
-    11-superdesign-ARCHIVED/          # ARCHIVED - replaced by 45-design-intelligence-library
-        ARCHIVED.md
-        SKILL.md
-        INSTALL.md
-        INSTRUCTIONS.md
-        EXAMPLES.md
-        CORE_UPDATES.md
-        superdesign.skill
     12-openrouter-setup/
         SKILL.md
         INSTALL.md
@@ -1250,13 +1242,6 @@ Replace `[MASTER_FILES_FOLDER]` with the actual path from step 3.
         EXAMPLES.md
         CORE_UPDATES.md
         openrouter-setup.skill
-    13-google-workspace-setup/
-        SKILL.md
-        INSTALL.md
-        INSTRUCTIONS.md
-        EXAMPLES.md
-        CORE_UPDATES.md
-        google-workspace-setup.skill
     14-google-workspace-integration/
         SKILL.md
         INSTALL.md
@@ -1311,16 +1296,6 @@ Replace `[MASTER_FILES_FOLDER]` with the actual path from step 3.
         CORE_UPDATES.md
         youtube-watcher-full.md
         youtube-watcher.skill
-        upstream-original/
-    21-tavily-search-ARCHIVED/        # ARCHIVED - replaced by 03-agent-browser + 09-context7
-        ARCHIVED.md
-        SKILL.md
-        INSTALL.md
-        INSTRUCTIONS.md
-        EXAMPLES.md
-        CORE_UPDATES.md
-        tavily-search-full.md
-        tavily-search.skill
         upstream-original/
     22-book-to-persona-coaching-leadership-system/
         SKILL.md
@@ -1778,8 +1753,6 @@ All skill folders are located inside:
 | 8 | Vercel Setup (API/browser) | 08-vercel-setup |
 | 9 | Context7 Setup (API/browser) | 09-context7 |
 | 10 | GitHub / Git Setup (API + git config) | 10-github-setup |
-| 11 | SuperDesign Instructions Setup (ARCHIVED — replaced by 45-design-intelligence-library) | 11-superdesign-ARCHIVED |
-| 12 | Google Workspace Setup (ARCHIVED — branch: Workspace vs Gmail) | 13-google-workspace-setup-ARCHIVED |
 | 13 | Google Workspace Integration | 14-google-workspace-integration |
 | 14 | BlackCEO Team Management Setup | 15-blackceo-team-management |
 | 15 | Summarize YouTube Setup | 16-summarize-youtube |
@@ -1787,7 +1760,6 @@ All skill folders are located inside:
 | 17 | Proactive Agent | 18-proactive-agent |
 | 18 | Humanizer | 19-humanizer |
 | 19 | YouTube Watcher | 20-youtube-watcher |
-| 20 | Tavily Search (ARCHIVED — replaced by 03-agent-browser + 09-context7) | 21-tavily-search-ARCHIVED |
 | 21 | Book To Persona & Coaching & Leadership System | 22-book-to-persona-coaching-leadership-system |
 | 22 | AI Workforce Blueprint | 23-ai-workforce-blueprint |
 | 23 | Storyboard Writer | 24-storyboard-writer |
@@ -1964,7 +1936,7 @@ For each skill: Read ALL .md files first, then execute installation steps exactl
 Skills: 12-openrouter-setup, 14-google-workspace-integration, 15-blackceo-team-management, 
 16-summarize-youtube, 17-self-improving-agent, 18-proactive-agent, 19-humanizer, 
 20-youtube-watcher.
-NOTE: Skip skill 13 (Google Workspace Setup) and skill 21 (Tavily Search) - both are ARCHIVED.
+NOTE: Skip the archived numbers 11 (SuperDesign), 13 (Google Workspace Setup) and 21 (Tavily Search); 33 and 34 are also archived (merged into Skill 23).
 Report after each skill: 'Skill XX complete - QC passed' or 'Skill XX failed - [reason]'.
 Write status to ~/.openclaw/onboarding/.onboarding-status after each skill."
 label: "wave2-agent-c"
@@ -2084,7 +2056,7 @@ label: "wave4-agent-f"
    - Delete the ONBOARDING PENDING block
 
 4. **Write ONBOARDING COMPLETE to MEMORY.md**
-   - Add entry: "OpenClaw onboarding completed on [date]. All 66 active skills installed."
+   - Add entry: "OpenClaw onboarding completed on [date]. All 79 active skills installed."
 
 5. **Install Skill 31** (Upgraded Memory System): Read SKILL.md, check prerequisites, follow INSTALL.md
 
@@ -2102,17 +2074,17 @@ label: "wave4-agent-f"
 
 ### SEQUENTIAL MODE (Fallback)
 
-If `sessions_spawn` doesn't work, install 66 active skills one at a time:
+If `sessions_spawn` doesn't work, install 79 active skills one at a time:
 
 ```
-For skill in 01 02 03 04 05 06 07 08 09 10 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 35:
+For skill in every numbered skill folder 01–84 except 11, 13, 21, 33 and 34 (archived):
   Read ALL .md files in ~/.openclaw/onboarding/[skill-folder]/
   Execute installation steps
   Mark: SKILL-XX: INSTALLED
   Report: "Skill XX complete"
 ```
 
-Skip skill 13 (archived). Skills 33 and 34 are archived (merged into Skill 23).
+Skip 11, 13 and 21 (archived) and 33 and 34 (archived, merged into Skill 23).
 
 ---
 
@@ -2134,7 +2106,7 @@ Valid statuses: INSTALLED, ALREADY_INSTALLED, FAILED, SKIPPED
 
 ## PARALLEL INSTALLATION ORCHESTRATION
 
-The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 66 active skills efficiently.
+The OpenClaw onboarding uses a **5-WAVE PARALLEL STRATEGY** to install 79 active skills efficiently.
 
 ### Conflict Prevention (IMPORTANT)
 
@@ -2495,13 +2467,13 @@ SKILL-02: INSTALLED
 ## PROGRESS UPDATES
 
 Every 5 skills completed, send a brief status update via the user's configured messaging channel:
-"Onboarding in progress: [X] of 66 active skills complete. Currently on: [skill name]."
+"Onboarding in progress: [X] of 79 active skills complete. Currently on: [skill name]."
 
 ---
 
 ## FINAL STEP - SET UP WEEKLY AUTO-UPDATE (Agent Runs This)
 
-After all 66 active skills are installed, run this as the final step.
+After all 79 active skills are installed, run this as the final step.
 The agent executes these commands - the human does nothing.
 
 ```bash
@@ -2546,7 +2518,7 @@ If the block is not present, continue without error.
 
 ### Final Gemini Engine Indexing (MANDATORY)
 
-After all 66 active skills are installed, run the final Gemini Engine indexing:
+After all 79 active skills are installed, run the final Gemini Engine indexing:
 
 ```bash
 # Final index update
@@ -2571,7 +2543,7 @@ python3 ~/.openclaw/scripts/gemini-indexer.py --status
   messaging channel (detected in prerequisites).
 - Format the 65-skill status report as a table: Skill | Name | Status | Notes
 
-Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 66 active skills processed"
+Then write to MEMORY.md: "ONBOARDING COMPLETE - [date] - All 79 active skills processed"
 
 When every skill on the list above is installed and verified, tell the user:
 1. Everything that was install 65 skills with status: INSTALLED / ALREADY_INSTALLED / SKIPPED / FAILED)

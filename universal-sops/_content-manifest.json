@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-10-20T08:30:44Z",
+  "generated_at": "2026-11-08T18:11:17Z",
   "file_count": 116,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -205,8 +205,8 @@
       "bytes": 7851
     },
     "funnel-craft/SOP-FUNNEL-01-INTAKE.md": {
-      "sha256": "84855b3253ccd545dc12c5b106e460936152c532ff79dbc99e29aeace7c4ef71",
-      "bytes": 3225
+      "sha256": "cdb549b858cf2b831b2c69675d404dacce45baebd148b8831c87f18805256221",
+      "bytes": 4452
     },
     "funnel-craft/SOP-FUNNEL-02-COPY.md": {
       "sha256": "3f19c738821a6d10c607bc6b2a248c4ea2c11cc924af2b2f896959a1346ddf51",
@@ -381,8 +381,8 @@
       "bytes": 9411
     },
     "social-media-craft/README.md": {
-      "sha256": "99b162e15e67c709f0e9a624bc6c064ad021b16f40f132d6e41c88b399c78aad",
-      "bytes": 5939
+      "sha256": "040c56d82fd8550970035751f9648c56ff76266985551a79e88310f8e893d69e",
+      "bytes": 6130
     },
     "social-media-craft/SOCIAL-PIPELINE-MANIFEST.json": {
       "sha256": "6d8dbd74aa5e082780e9d8be90911e386c903566a222097f7b30cfe8d8edce6c",

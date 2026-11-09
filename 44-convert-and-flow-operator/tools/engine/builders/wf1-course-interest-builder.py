@@ -30,11 +30,11 @@ from _email_sequences_parser import parse_sequence_file, to_ghl_html, goal_step
 
 from cli_anything.gohighlevel.utils.workflow_builder import (
     CampaignBuilder,
-    link_steps,
     tag_step,
     validate_campaign,
     wait_step,
 )
+from cli_anything.gohighlevel.utils.workflow_link_guard import link_steps_or_refuse
 from cli_anything.gohighlevel.utils.ghl_internal_client import (
     InternalGHLClient,
     TokenManager,
@@ -106,7 +106,7 @@ def build_workflow() -> dict:
     raw_steps.append(tag_step(f"Remove {START_TAG}", [START_TAG], remove=True))
     raw_steps.append(goal_step("Course Purchase", GOAL_TAGS))
 
-    steps = link_steps(raw_steps)
+    steps = link_steps_or_refuse(raw_steps)
     return {
         "wf1_course_interest": {
             "name": WORKFLOW_NAME,

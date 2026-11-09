@@ -1,0 +1,100 @@
+{
+  "schema": "s75/evidence-contract-backfill/attempt.v1",
+  "unit": "S75-T37",
+  "attempt": 1,
+  "written_at": "2026-10-28",
+  "written_by": "s75-artefact-T37",
+
+  "dependencies": {
+    "base_sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "unit_merge_sha": "6138d6eb6420c2587a1fd3588dce8b86007c3659",
+    "unit_merge_subject": "Merge pull request #2639 from trevorotts1/batch/onboarding-20261027-1822",
+    "branch_base": "origin/main",
+    "runtime": "python3 standard library only",
+    "new_third_party": "none",
+    "note": "The unit's merged code head is 6138d6eb6420c2587a1fd3588dce8b86007c3659; branch s75x/receipt-S75-T37 adds evidence files only (no code change on top of the merge)."
+  },
+
+  "independent_checker": {
+    "checker_id": "fresh-qc-opus-chain-lane-T37",
+    "checker_model": "route=opus-chain; served=not observed by the lane",
+    "receipt_path": "loop-control/s75/qc/S75-T37.fc5f889fb88ec9890d42636ed9423a56c8cef5dd.json",
+    "receipt_unit": "S75-T37",
+    "receipt_verdict": "PASS",
+    "receipt_head": "fc5f889fb88ec9890d42636ed9423a56c8cef5dd",
+    "receipt_base": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "receipt_measured_at": "2026-10-28T09:11:48Z",
+    "receipt_defects": [],
+    "receipt_caveat": "Checked head fc5f889fb88ec9890d42636ed9423a56c8cef5dd already contains the earlier receipt artifact, and a commit cannot contain its own sha, so checked_head therefore names the revision whose claim was tested.",
+    "checks": {
+      "invocation1": {
+        "classes": ["RemoteUrlIdentity", "CorrectTarget", "WrongTarget", "LocalOnlyMerge", "N999NeedsNoOnbFacet"],
+        "command": "python3 -I test_correct_target_s75_t37.py RemoteUrlIdentity CorrectTarget WrongTarget LocalOnlyMerge N999NeedsNoOnbFacet",
+        "rc": 0,
+        "tests": 21,
+        "last_line": "OK"
+      },
+      "invocation2": {
+        "classes": ["ReconcileOnce"],
+        "command": "python3 -I test_correct_target_s75_t37.py ReconcileOnce",
+        "rc": 0,
+        "tests": 7,
+        "last_line": "OK"
+      },
+      "invocation3": {
+        "classes": ["ChecksAreNotMoods"],
+        "command": "python3 -I test_correct_target_s75_t37.py ChecksAreNotMoods",
+        "rc": 0,
+        "tests": 3,
+        "last_line": "OK"
+      },
+      "mutation": {
+        "change": "replaced failed-check filter with failed = [] so FAIL outcomes are ignored",
+        "command": "python3 -I test_correct_target_s75_t37.py ChecksAreNotMoods",
+        "failing_test": "test_one_failed_check_refuses_the_landing",
+        "rc": 1,
+        "last_line": "FAILED (failures=1)"
+      }
+    }
+  },
+
+  "repository_gate": {
+    "workflow": ".github/workflows/qc-static.yml",
+    "workflow_name": "QC static checks",
+    "read_at": "origin/main",
+    "read_at_sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "total_steps": 168,
+    "applies_to_unit_paths": true,
+    "reason": "No step names a CONTROL/ pathspec literally, but CRITICAL-1 — No real client names in tracked files runs scripts/qc-assert-no-client-names.sh, which scans ALL tracked files via git ls-files; that read set includes CONTROL/tests/test_correct_target_s75_t37.py, so the gate does read this unit's paths.",
+    "steps_that_read_this_unit": [
+      {
+        "step": "CRITICAL-1 — No real client names in tracked files",
+        "evidence": "run: bash scripts/qc-assert-no-client-names.sh; comment states the guard uses git ls-files (tracked-only) across the repo",
+        "pathspec": "git ls-files (whole tracked tree, no path filter on CONTROL/)"
+      }
+    ],
+    "steps_named_control": [],
+    "note": "Step-level scan checked each of the 168 step bodies for the literals CONTROL/, test_correct_target, S75-T37, evidence/units. Zero literal hits. The applies_to_unit_paths true verdict rests on whole-tree tracked-file scanning, not on a named CONTROL/ pathspec."
+  },
+
+  "candidate": {
+    "branch": "s75x/receipt-S75-T37",
+    "head": "fc5f889fb88ec9890d42636ed9423a56c8cef5dd",
+    "changed_files": [
+      "evidence/units/S75-T37/checker.json",
+      "evidence/units/S75-T37/receipt.json",
+      "evidence/units/S75-T37/verify-T37.json"
+    ],
+    "changed_files_source": "git diff --name-only origin/main...fc5f889fb88ec9890d42636ed9423a56c8cef5dd"
+  },
+
+  "base": {
+    "sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "ref": "origin/main",
+    "merge_tree_rc": 0,
+    "merge_tree_command": "git merge-tree --write-tree b37010c6a001bb5a51913d6e567911258f9ac2e0 6138d6eb6420c2587a1fd3588dce8b86007c3659",
+    "merge_tree_note": "rc 0 = clean merge of base with the unit merge sha; 6138d6eb is already an ancestor of origin/main."
+  },
+
+  "head_sha": "fc5f889fb88ec9890d42636ed9423a56c8cef5dd"
+}

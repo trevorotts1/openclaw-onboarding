@@ -145,11 +145,11 @@ class CompletionApprovalProjection(unittest.TestCase):
         write_json(self.run / "final-qc" / "record.json", {"gate": "FAIL", "producer": "same-build-worker"})
         evidence = factory._collect_completion_evidence(self.run, states)
         self.assertFalse(evidence["final_qc_independent_pass"])
-        artifact = self.run / "assembly" / "timeline.json"
+        artifact = self.run / "edit" / "timeline.json"
         artifact.rename(artifact.with_name("retained-timeline.json"))
         evidence = factory._collect_completion_evidence(self.run, states)
         self.assertFalse(evidence["artifacts_present"])
-        self.assertIn("assembly/timeline.json", evidence["missing_artifacts"])
+        self.assertIn("edit/timeline.json", evidence["missing_artifacts"])
         self.assertFalse(factory._decide_completion(evidence)[0])
 
 

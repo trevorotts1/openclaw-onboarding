@@ -17,6 +17,11 @@ PASS=0; FAIL=0
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"; [ -n "${SRV_PID:-}" ] && kill "$SRV_PID" 2>/dev/null' EXIT
 
+# The pre-flight first-week grace (FLEET_PREFLIGHT_ENFORCE_FROM, 2026-11-05) makes a blocked
+# verdict warn-only before that date. These cases pin the post-grace behaviour, so the clock
+# is fixed after it; the grace cases at the end pin the clock on both sides of the date.
+export FLEET_PREFLIGHT_NOW=2026-11-06
+export FLEET_PREFLIGHT_NO_SEND=1
 ok()   { PASS=$((PASS+1)); echo "  PASS: $1"; }
 bad()  { FAIL=$((FAIL+1)); echo "  FAIL: $1"; }
 
@@ -119,6 +124,19 @@ set_reply '{"ok":false,"good_standing":false,"verdict":"blocked","reason":"good_
 out="$(FLEET_STANDING_GATE_URL="$URL" FLEET_STANDING_GATE_SECRET=s FLEET_STANDING_BOX_SLUG=b1 run_gate)"
 [[ "$out" != *"__REACHED_END__"* ]] && ok "verdict=blocked STOPS the update" || bad "blocked must stop the update: $out"
 [[ "$out" == *"not current on payments"* ]] && ok "blocked prints the polite message" || bad "blocked should print polite message"
+
+echo "== first-week grace (FLEET-PREFLIGHT) =="
+
+# 9b. blocked during the grace week: warn, do NOT hold, AGENTS.md untouched
+set_reply '{"ok":false,"good_standing":false,"verdict":"blocked","reason":"good_standing_is_false"}' 200
+out="$(FLEET_PREFLIGHT_NOW=2026-11-04 FLEET_STANDING_GATE_URL="$URL" FLEET_STANDING_GATE_SECRET=s FLEET_STANDING_BOX_SLUG=b1 run_gate)"
+[[ "$out" == *"__REACHED_END__"* && "$out" == *"first-week grace"* ]] && ok "blocked in the grace week warns and proceeds" || bad "grace week must not hold: $out"
+[[ "$out" != *"not current on payments"* ]] && ok "grace week prints no hold banner" || bad "grace week printed the hold banner"
+! grep -q OPENCLAW_UPDATE_HELD_BILLING "$TMP/oc/AGENTS.md" && ok "grace week writes no held notice to AGENTS.md" || bad "grace week wrote the held notice"
+
+# 9c. the enforce date itself holds again
+out="$(FLEET_PREFLIGHT_NOW=2026-11-05 FLEET_STANDING_GATE_URL="$URL" FLEET_STANDING_GATE_SECRET=s FLEET_STANDING_BOX_SLUG=b1 run_gate)"
+[[ "$out" != *"__REACHED_END__"* && "$out" == *"not current on payments"* ]] && ok "from 2026-11-05 a blocked verdict holds" || bad "enforce date must hold: $out"
 
 echo "== escape hatches =="
 

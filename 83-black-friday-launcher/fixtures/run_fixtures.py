@@ -9,9 +9,15 @@ Two shapes, exactly as the owner records state them and never merged:
                       form. No product selection page, and never relabelled a
                       single offer.
 
-Both shapes now build. 7FigurePreneur uses the settled `folded_levels` journey
-mode: N >= 2 distinct main offers, landing straight to the native order form,
-no product_selection node.
+Elevation and 7FigurePreneur route, assemble and check clean: each main price choice
+gets its own native combined_single_offer order form (checkout_instances), with the
+facts the live read-back supplies replaced by TEST-ONLY markers. 7FigurePreneur uses
+the settled `folded_levels` journey mode: N >= 2 distinct main offers, landing
+straight to the native order form, no product_selection node.
+
+The pieces below are composed from the build plan, not produced by the page
+skills, so this file proves routing and package completeness only. The real
+adapter chain is proven by tests/test_e2e_real_adapters.py.
 
 No price, level content or product default is invented here. Every amount used
 comes from the repository's own TEST-ONLY fixtures; see fixtures/README.md.
@@ -34,6 +40,9 @@ SKILL_ROOT = HERE.parent
 REPO_ROOT = SKILL_ROOT.parent
 sys.path.insert(0, str(SKILL_ROOT))
 
+sys.path.insert(0, str(HERE))
+import test_only_readback  # noqa: E402
+from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
 from launcher_core import checks, council, intake, package, route  # noqa: E402
 from launcher_core.constants import DECIDED_IDS, SEAM_IDS  # noqa: E402
 
@@ -45,6 +54,7 @@ import substrate  # noqa: E402
 
 PASSED: List[str] = []
 FAILED: List[str] = []
+
 
 
 def check(label: str, condition: bool, detail: str = "") -> None:
@@ -125,8 +135,15 @@ def write_piece_artifacts(out_dir: Path, plan: Dict[str, Any],
 
 def build_and_check(name: str, payload: Dict[str, Any],
                     expected_roles: List[str],
-                    council_runner=stub_council) -> Dict[str, Any]:
-    """Validate, compile, plan, assemble and check one worked example."""
+                    council_runner=stub_council,
+                    expected_blockers: List[str] = (),
+                    checkout_readback=None) -> Dict[str, Any]:
+    """Validate, compile, plan, assemble and check one worked example.
+
+    ``expected_blockers`` names the gate prefixes this shape must be blocked
+    on (L25-BF-41: folded_levels has no Skill 79 mode, so its delivery is
+    withheld). A shape that must pass names none.
+    """
     normalized = intake.validate(payload)
     advice = council.planning_step(normalized, runner=council_runner)
     check(f"{name} Council step is recorded and never blocks",
@@ -165,9 +182,18 @@ def build_and_check(name: str, payload: Dict[str, Any],
     run_dir = out / "package"
     pieces = write_piece_artifacts(out, plan, normalized)
     out_record = package.assemble(run_dir, normalized, graph, pieces,
-                                  council=advice)
+                                  council=advice, checkout_readback=checkout_readback)
     fails = checks.check_package(Path(out_record["manifest_path"]), run_dir)
-    check(f"{name} package completeness checks pass", fails == [], repr(fails))
+    if expected_blockers:
+        check(f"{name} package is blocked exactly on the unresolved checkout mode",
+              [f.split(":")[0] for f in fails] == list(expected_blockers),
+              repr(fails))
+        check(f"{name} manifest records the withheld delivery",
+              out_record["manifest"]["checkout"]["delivery_blocked"] is True
+              and out_record["manifest"]["checkout"]["delivery_blockers"],
+              repr(out_record["manifest"]["checkout"]["delivery_blocked"]))
+    else:
+        check(f"{name} package completeness checks pass", fails == [], repr(fails))
     check(f"{name} package is self-contained",
           all((run_dir / art["path"]).is_file()
               for p in out_record["manifest"]["pieces"] for art in p["artifacts"]))
@@ -177,8 +203,7 @@ def build_and_check(name: str, payload: Dict[str, Any],
     check(f"{name} checkout mapping is bound to the S79 contract",
           out_record["manifest"]["checkout"]["contract"].endswith(
               "checkout.schema.json")
-          and out_record["manifest"]["checkout"]["validator"]["state"]
-          in ("bound", "unavailable"))
+          and out_record["manifest"]["checkout"]["validator"]["state"] == "bound")
     print(f"      {name} run dir: {run_dir}")
     return out_record
 
@@ -196,10 +221,20 @@ def run_elevation() -> None:
     check("elevation entitlement is attested, never defaulted",
           normalized["entitlement"]["basis"] == "purchase"
           and normalized["entitlement"]["requires_purchase"] is True)
-    build_and_check(
+    record = build_and_check(
         "elevation", payload,
         ["landing", "product_selection", "checkout", "upsell_1",
-         "downsell_1", "upsell_2", "thank_you"])
+         "downsell_1", "upsell_2", "thank_you"],
+        checkout_readback=TEST_ONLY_CHECKOUT_READBACK)
+    mapping = record["manifest"]["checkout"]
+    instances = mapping.get("instances") or []
+    check("elevation checkout is one accepted combined_single_offer per main",
+          mapping.get("realisation") == "per_offer_instances"
+          and [i["main_offer_id"] for i in instances] == [o["offer_id"] for o in mains]
+          and all(i["validation"]["result"] == "accepted" for i in instances), repr(mapping.get("realisation")))
+    check("elevation 78 binding plan references every checkout instance",
+          sorted(m["checkout_target_ref"] for m in mapping["binding_plan"]["mappings"])
+          == sorted(i["checkout_target_ref"] for i in instances))
 
 
 def run_seven_figure_preneur() -> None:
@@ -225,7 +260,13 @@ def run_seven_figure_preneur() -> None:
 
     record = build_and_check(
         "seven-figure-preneur", payload,
-        ["landing", "checkout", "upsell_1", "downsell_1", "upsell_2", "thank_you"])
+        ["landing", "checkout", "upsell_1", "downsell_1", "upsell_2", "thank_you"],
+        checkout_readback=TEST_ONLY_CHECKOUT_READBACK)
+    folded = record["manifest"]["checkout"]
+    check("7FigurePreneur packages three accepted checkout requests",
+          len(folded["instances"]) == 3
+          and all(i["validation"]["result"] == "accepted" for i in folded["instances"])
+          and folded["delivery_blocked"] is False, repr(folded.get("delivery_blockers")))
     graph = route.compile_route(normalized, route.launch_record(normalized))
     roles = [n["role"] for n in graph["nodes"]]
     check("folded_levels inserts NO product_selection page",
@@ -256,6 +297,7 @@ def main() -> int:
     print(f"skill root: {SKILL_ROOT}")
     print(f"open seams: {list(SEAM_IDS)}")
     print(f"decided: {list(DECIDED_IDS)}")
+    test_only_readback.install()
     try:
         run_elevation()
         run_seven_figure_preneur()

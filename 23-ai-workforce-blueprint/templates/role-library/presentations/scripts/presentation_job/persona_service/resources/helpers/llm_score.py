@@ -5,8 +5,9 @@ Used by Skill 23's persona-selector to evaluate Layers 1-4 (mission /
 owner_values / company_kpis / dept_kpis) against persona blueprints.
 Returns a single float in [0.0, 1.0] with a short reasoning string.
 
-Per company policy (memory: feedback-no-anthropic-for-subagents) no
-Anthropic models are used in this pipeline. THE CHAIN IS DATA —
+There is no vendor rule against Anthropic / Claude models in this pipeline
+(Trevor order 2026-10-29): every model id is ranked on its own merits and
+none is refused for its vendor. THE CHAIN IS DATA —
 default_scoring_chain() is the one ordered table and scoring_chain() is what
 score_layer walks. Every step speaks the same OpenAI-compatible
 /chat/completions shape, a step whose key does not resolve is SKIPPED

@@ -44,7 +44,7 @@
       "R7": {
         "stage": "39-hero-page",
         "always_on": true,
-        "rule": "source hardcoded an Anthropic model chain via OpenRouter; re-pointed to the client TIER-A model. The Anthropic chain is removed on every client box and NEVER reverted (client-path rule). G-NOANTHROPIC hard-fails any /anthropic|claude/i id."
+        "rule": "source hardcoded an Anthropic model chain via OpenRouter; re-pointed to the client TIER-A model. There is no rule against Anthropic models any more, so a client's own choice is left alone."
       }
     },
     "client_default": "on",

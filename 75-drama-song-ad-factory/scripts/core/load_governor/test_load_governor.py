@@ -273,7 +273,20 @@ with open(request_path, "w") as stream:
     json.dump(request, stream)
 context = {"arguments": {"fixture": "governor-retry-only"},
            "request_digest": KD.L.digest_request(request)}
-with patch.object(KD, "production_process_admission", return_value={"ok": True, "fixture_only": True}) as admission:
+# The line above cannot reach kie_request's own backoff: its `sleep=time.sleep`
+# default was bound at import, so the 429 retries below really slept 2 s + 4 s.
+# Inject the no-op sleep through kie_request's own parameter instead; the
+# retry count and token assertions below are unchanged.
+_real_kie_request = LG.kie_request
+
+
+def _no_backoff_kie_request(*args, **kwargs):
+    kwargs.setdefault("sleep", lambda s: None)
+    return _real_kie_request(*args, **kwargs)
+
+
+with patch.object(KD, "production_process_admission", return_value={"ok": True, "fixture_only": True}) as admission, \
+        patch.object(LG, "kie_request", _no_backoff_kie_request):
     run = KD.make_runner(30, process_context=context)
     for cmd in ("health", "wait", "save"):
         run([fake, cmd, "--json"])

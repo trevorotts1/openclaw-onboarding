@@ -26,7 +26,9 @@ sys.path.insert(0, str(TESTS_DIR))
 sys.path.insert(0, str(SKILL_DIR / "scripts"))
 
 from test_thank_you import IDENTITY, make_fulfillment, make_snapshot  # noqa: E402
-from thank_you_resolver import resolve_order_view  # noqa: E402
+import os.path as _osp  # noqa: E402
+sys.path.insert(0, _osp.dirname(_osp.abspath(__file__)))
+from stamped_resolver import resolve_order_view  # noqa: E402
 from validate_thank_you import validate_thank_you  # noqa: E402
 from validate_entitlements import validate_entitlements  # noqa: E402
 from render_thank_you import format_amount, render_thank_you  # noqa: E402

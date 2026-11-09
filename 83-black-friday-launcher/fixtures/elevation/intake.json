@@ -2,8 +2,9 @@
   "schema_version": "1.0",
   "tenant_id": "TEST-TENANT",
   "location_id": "TEST-LOCATION",
-  "launch_id": "TEST-FIXTURE-ELEVATION",
+  "launch_id": "test-fixture-elevation",
   "revision": 1,
+  "answers_file": "fixtures/elevation/answers.json",
   "journey_mode": "multiple_options",
   "brand": {
     "ref": "TEST-ONLY-BRAND",
@@ -22,48 +23,94 @@
     "amount_minor": 49700,
     "currency": "USD"
   },
+  "checkout_terms": {
+    "guarantee_ref": "TEST-ONLY-GUARANTEE-REF",
+    "guarantee_text": "TEST ONLY guarantee text. Not a real policy.",
+    "terms_ref": "TEST-ONLY-TERMS-REF",
+    "terms_text": "TEST ONLY terms text. Not a real policy.",
+    "consent_ref": "TEST-ONLY-CONSENT-REF",
+    "consent_text": "TEST ONLY consent text. Not a real policy."
+  },
   "offers": [
     {
       "offer_id": "MAIN-ESS",
       "name": "TEST ONLY Essential",
       "role": "main",
-      "price": {"amount_minor": 9700, "currency": "USD"}
+      "price": {"amount_minor": 9700, "currency": "USD", "source_ref": "answers-file:packages[0]"},
+      "level": {
+        "state": "supplied",
+        "name": "Essential",
+        "deliverables": ["TEST ONLY Essential deliverable 1", "TEST ONLY Essential deliverable 2"]
+      },
+      "delivery": {"destination": "https://delivery.test-only.invalid/elevation/main-ess", "owner_confirmed": true}
     },
     {
       "offer_id": "MAIN-PRO",
       "name": "TEST ONLY Professional",
       "role": "main",
-      "price": {"amount_minor": 19700, "currency": "USD"}
+      "price": {"amount_minor": 19700, "currency": "USD", "source_ref": "answers-file:packages[1]"},
+      "level": {
+        "state": "supplied",
+        "name": "Professional",
+        "deliverables": ["TEST ONLY Professional deliverable 1", "TEST ONLY Professional deliverable 2", "TEST ONLY Professional deliverable 3"]
+      },
+      "delivery": {"destination": "https://delivery.test-only.invalid/elevation/main-pro", "owner_confirmed": true}
     },
     {
       "offer_id": "MAIN-ELITE",
       "name": "TEST ONLY Elite",
       "role": "main",
-      "price": {"amount_minor": 49700, "currency": "USD"}
+      "price": {"amount_minor": 49700, "currency": "USD", "source_ref": "answers-file:packages[2]"},
+      "level": {
+        "state": "supplied",
+        "name": "Elite",
+        "deliverables": ["TEST ONLY Elite deliverable 1", "TEST ONLY Elite deliverable 2", "TEST ONLY Elite deliverable 3", "TEST ONLY Elite deliverable 4"]
+      },
+      "delivery": {"destination": "https://delivery.test-only.invalid/elevation/main-elite", "owner_confirmed": true}
     },
     {
       "offer_id": "BUMP",
       "name": "TEST ONLY Bump",
       "role": "bump",
-      "price": {"amount_minor": 2700, "currency": "USD"}
+      "price": {"amount_minor": 2700, "currency": "USD", "source_ref": "answers-file:bump"},
+      "checkout": {"headline": "TEST ONLY bump headline", "benefit_explanation": "TEST ONLY bump benefit"},
+      "delivery": {"destination": "https://delivery.test-only.invalid/elevation/bump", "owner_confirmed": true}
     },
     {
       "offer_id": "U1",
       "name": "TEST ONLY U1",
       "role": "upsell_1",
-      "price": {"amount_minor": 6700, "currency": "USD"}
+      "price": {"amount_minor": 6700, "currency": "USD", "source_ref": "answers-file:upsell_1"},
+      "level": {
+        "state": "supplied",
+        "name": "U1",
+        "deliverables": ["TEST ONLY U1 deliverable 1"]
+      },
+      "delivery": {"destination": "https://delivery.test-only.invalid/elevation/u1", "owner_confirmed": true}
     },
     {
       "offer_id": "D1",
       "name": "TEST ONLY D1",
       "role": "downsell_1",
-      "price": {"amount_minor": 3700, "currency": "USD"}
+      "price": {"amount_minor": 3700, "currency": "USD", "source_ref": "answers-file:downsell_1"},
+      "level": {
+        "state": "supplied",
+        "name": "D1",
+        "deliverables": ["TEST ONLY D1 deliverable 1"]
+      },
+      "delivery": {"destination": "https://delivery.test-only.invalid/elevation/d1", "owner_confirmed": true}
     },
     {
       "offer_id": "U2",
       "name": "TEST ONLY U2",
       "role": "upsell_2",
-      "price": {"amount_minor": 4700, "currency": "USD"}
+      "price": {"amount_minor": 4700, "currency": "USD", "source_ref": "answers-file:upsell_2"},
+      "level": {
+        "state": "supplied",
+        "name": "U2",
+        "deliverables": ["TEST ONLY U2 deliverable 1"]
+      },
+      "delivery": {"destination": "https://delivery.test-only.invalid/elevation/u2", "owner_confirmed": true}
     }
   ]
 }

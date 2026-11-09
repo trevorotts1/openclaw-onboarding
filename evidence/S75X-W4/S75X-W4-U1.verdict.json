@@ -1,0 +1,94 @@
+{
+  "schema": "blackceo.skill75.verdict/v1",
+  "verdict": "PASS",
+  "unit_id": "S75X-W4-U1",
+  "workflow_id": "S75X-W4",
+  "program": "s75",
+  "role": "builder",
+  "attempt_id": "s75x-w4-u1-build-20261026-96559ab1b",
+  "builder_model": "ds/deepseek-flash",
+  "plan_of_record": "<PATH>/skill75-repair/SWARM-PLAN-V2.json",
+  "canonical_repo": "<PATH>/openclaw-onboarding",
+  "lane": "<PATH>/git trees and automations/s75/worktrees/S75X-W4-U1-build",
+  "owned_output": "75-drama-song-ad-factory/scripts/core/shot_planner/",
+  "base_sha": "96559ab1b531570534316d856006867606afd4e2",
+  "head_sha": "96559ab1b531570534316d856006867606afd4e2",
+  "verdict_commit_parent": "96559ab1b531570534316d856006867606afd4e2",
+  "unit_commit": "ca0a5b3de91ea5d440b8de1377ae8a3f369dfacf",
+  "unit_commit_ancestor_of_origin_main": true,
+  "origin_main_at_verification": "96559ab1b531570534316d856006867606afd4e2",
+  "merge_pr": 2604,
+  "acceptance": [
+    {
+      "element": "The approved opening line and action appear in the generated scene plan and shot order.",
+      "result": "PASS",
+      "scope": "Verified against the shot-planner artifacts that the rest of the pipeline consumes: the generated opening scene record (scene_id=scene-opening, scene_index=0), the first shot in SONG order (shot['opening']), and that shot's 14.3 contract (lyric_text / character_action). Shot list order is untouched; shot order is derived from song_start, not invented.",
+      "evidence": [
+        "opening_scene.py:102-139 opening_from_script reads the approved record (elements first, then top-level, then first SPOKEN sheet line; never invents an action).",
+        "opening_scene.py:142-190 build_opening_scene builds the scene; refuses OPENING_LINE_MISSING / OPENING_ACTION_MISSING instead of inventing.",
+        "opening_scene.py:193-195, 207-258 apply_opening writes shot['opening'] and the contract fields on the head shot in song order and returns shot_order.",
+        "probe A1-A6, A8: line and action land on scene + head shot + contract; a drifted line raises OPENING_LOST.",
+        "test_opening_scene_w4.py:98-106 asserts receipt['shot_order'] == ['s1','s2','s3'] while the shot list stays ['s2','s1','s3']."
+      ]
+    },
+    {
+      "element": "Ambiguity handling is explicit.",
+      "result": "PASS",
+      "scope": "An ambiguous opening image cannot silently communicate the opposite emotion: declared ambiguity and detected cue pairs both require a reading context, and the context plus a matching negative constraint ride into the shot's continuity_constraints / negative_constraints, which prompt_spec_for copies to spec['continuity'] and spec['negatives_extra'].",
+      "evidence": [
+        "opening_scene.py:38-50 OPPOSITE_READINGS cue pairs (tears+wins/awards -> joy; smile+funeral/loss -> relief or denial); a hit demands context, it never guesses.",
+        "opening_scene.py:175-186 refusal OPENING_AMBIGUOUS when context is missing; negative_constraint string built from the opposite reading.",
+        "opening_scene.py:231-238 context -> continuity_constraints, negative -> negative_constraints.",
+        "shot_planner.py:698-699 prompt_spec_for copies continuity_constraints and negative_constraints into the image-model spec.",
+        "probe B1-B8: refusal without context (detected and declared), explicit ambiguity record, context and 'no joy' negative reaching the prompt spec."
+      ]
+    },
+    {
+      "element": "Existing shot_planner tests pass.",
+      "result": "PASS",
+      "scope": "Every test_*.py in the unit's owned output, run from origin/main in the lane with python3 -I.",
+      "evidence": [
+        "8 test files, rc=0 each, 232 'ok:' checks, 0 FAIL lines.",
+        "test_face_speaks_h4.py 30, test_motion_d3_spatial.py 80, test_motion_d3_wraparound.py 9, test_motion_f12.py 40, test_no_reuse_e4.py 20, test_opening_scene_w4.py 25, test_shot_beats_e2.py 14, test_timestamp_plan_h5.py 14.",
+        "Adjacent consumers also green: final_assembler/test_shot_floor_e3.py, final_assembler/test_lipsync_atomic_e5.py, prompt_templates/test_prompt_templates_u15b.py, intake_preflight/test_storyboard_planning_artifacts.py, master_length/test_master_length_i4.py (rc=0 each).",
+        "No test file deleted in the unit commit (git diff --diff-filter=D over ca0a5b3de^..ca0a5b3de is empty)."
+      ]
+    }
+  ],
+  "checks": {
+    "shot_planner_test_files": 8,
+    "shot_planner_test_files_passing": 8,
+    "shot_planner_test_check_count": 232,
+    "shot_planner_test_failures": 0,
+    "unit_test_file_check_count": 25,
+    "adjacent_test_files_passing": 5,
+    "acceptance_probe_checks": 17,
+    "acceptance_probe_passed": 17,
+    "acceptance_probe_failed": 0,
+    "py_compile": "ok for shot_planner/opening_scene.py, shot_planner/__init__.py, shot_planner/shot_planner.py",
+    "unit_commit_numstat_shot_planner": {
+      "__init__.py": "+13/-0",
+      "face_speaks.py": "+28/-18",
+      "opening_scene.py": "+320/-0",
+      "test_face_speaks_h4.py": "+42/-37",
+      "test_opening_scene_w4.py": "+203/-0"
+    }
+  },
+  "controls": {
+    "copy_baseline_green": "Full core tree copied to scratch/w4u1-build/mutant/core; test_opening_scene_w4.py green there (0 checks failed).",
+    "mutant_refusal_removed": "Deleting the OPENING_AMBIGUOUS raise in build_opening_scene (copy only) turns 3 checks red, rc=1: 'award-night tears with no context refuse OPENING_AMBIGUOUS', 'the refusal names the opposite reading', 'declared ambiguity without context refuses OPENING_AMBIGUOUS'.",
+    "mutant_line_carry_removed": "Deleting the contract lyric_text carry in apply_opening (copy only) turns the run red, rc=1: PlanError \"OPENING_LOST: contract lyric_text is '', approved 'I won everything and felt nothing.'\".",
+    "no_runtime_gate_control": "A valid shot plan and contracts with no shot['opening'] and no plan_opening call pass validate_shot and validate_contract (probe C1). The binding only happens when opening_scene is invoked."
+  },
+  "not_verified": [
+    "No production caller: grep over 75-drama-song-ad-factory/scripts finds opening_scene referenced only by shot_planner/__init__.py (re-export) and its own test, plus SKILL.md item 5 and CHANGELOG. Nothing in story_planner.build_scene_plan, the assembler, or a launcher invokes plan_opening. The carry is agent-invoked per SKILL.md item 5, not enforced by a code gate at generation or assembly time.",
+    "The code-generated scene plan (story_planner.build_scene_plan, validate_scene_plan) is a different artifact and does not carry the approved opening visible action; only the shot-planner scene record and shot sequence do.",
+    "No end-to-end run was executed (no live launcher run, no paid calls, no media). Verification is code+test only at origin/main 96559ab1b.",
+    "Acceptance was judged at current origin/main; the plan-of-record binding pinned_canonical_main 4b48ce34775b78afd55abfcd52fa85c8efc3c271 is stale and was not used."
+  ],
+  "findings": [],
+  "notes": [
+    "Cohort commit ca0a5b3de mixes W4-U1, W4-U2 and W4-U3 production. The face_speaks.py / test_face_speaks_h4.py changes in it are the U3 lip-sync policy (25-30% target, 35% hard max, first 12 s articulated), not U1. U1's own additions are opening_scene.py (+320), test_opening_scene_w4.py (+203) and the re-exports in __init__.py (+13).",
+    "The unit was not fixed, retested against a weakened suite, or modified in any way by this builder. Only the verdict file is added."
+  ]
+}

@@ -8,9 +8,13 @@ guard was inert. What is proved here, behaviourally:
 
   * a NEW run through `factory.py card --step --run-dir` (Claude Code chat) is
     asked the purpose card and ends with control/method.json on disk;
-  * the same run through `--format telegram-json` (the Telegram launcher);
-  * unreceipted bulk orders through `studio_bridge._replay` fail closed;
-    a Studio marker does not authorize invented or unseen question answers;
+  * the same run through `--format telegram-json` (the Telegram launcher),
+    `--format openclaw-json` (the OpenClaw send launcher INSTRUCTIONS.md names)
+    and `--format session-json` (the durable session launcher factory.py's own
+    resume line runs) -- every supported launch path, not one per family;
+  * a NEW Studio order replayed through `studio_bridge._replay` ends with
+    control/method.json (one card turn per answer), and a reply the card
+    refuses still fails closed with no record claimed;
   * a RESUMED run (stage work recorded, answers saved) keeps the card it
     started on: the legacy list, byte-identical answers, no method.json;
   * `--no-purpose-flow` still asks the pre-method card on a new run;
@@ -66,11 +70,11 @@ def make_run(tmp, advanced=0):
     run = Path(tmp) / "run"
     (run / "control").mkdir(parents=True, exist_ok=True)
     with Store(run / "control" / "state.sqlite3") as store:
-        store.init_run("R", STAGES)
+        store.init_run(run.name, STAGES)
         for stage in STAGES[:advanced]:
-            store.transition("R", stage, "READY", "fixture")
-            store.claim("R", stage, "fixture")
-            store.transition("R", stage, "COMPLETE", "fixture")
+            store.transition(run.name, stage, "READY", "fixture")
+            store.claim(run.name, stage, "fixture")
+            store.transition(run.name, stage, "COMPLETE", "fixture")
     return run
 
 
@@ -162,6 +166,32 @@ def main():
         check_true("control/method.json written",
                    (run / "control" / "method.json").exists())
 
+        # -- 2b: the OpenClaw send launcher (INSTRUCTIONS.md's own Telegram
+        # argv names openclaw-json, not telegram-json): the same new run.
+        print("[2b] a NEW run through the OpenClaw send launcher")
+        run = make_run(Path(tmp) / "oc")
+        code, payload = drive(run, replies, fmt="openclaw-json")
+        check("exit 0", code, 0)
+        sent = json.loads(payload)
+        check_true("the one message was built", isinstance(sent, dict) and "send" in sent)
+        check_true("control/method.json written",
+                   (run / "control" / "method.json").exists())
+
+        # -- 2c: the durable session launcher -- the resume line factory.py
+        # itself hands the operator (`card --step --run-dir ... --format
+        # session-json`): a NEW run there must enter the strategy too.
+        print("[2c] a NEW run through the durable session launcher")
+        run = make_run(Path(tmp) / "sess")
+        code, payload = drive(run, replies, fmt="session-json")
+        check("exit 0", code, 0)
+        state = json.loads(payload)
+        check_true("the session recorded the lock-in", state.get("done") is True)
+        method_path = run / "control" / "method.json"
+        check_true("control/method.json written", method_path.exists())
+        check("purpose recorded",
+              json.loads(method_path.read_text(encoding="utf-8")).get("purpose"),
+              "campaign")
+
         # -- 3: the Studio launcher (what `studio_bridge.py poll` runs) -------
         print("[3] a NEW Studio order through studio_bridge._replay")
         bridge_dir = SKILL / "shared-bridge"
@@ -176,15 +206,35 @@ def main():
         capture = io.StringIO()
         with redirect_stdout(capture):
             code, factory_path = SB._replay(str(SKILL), run, replies)
-        check("unreceipted bulk Studio order refused", code, SB.EXIT["error"])
-        check("bridge exposes a named replay refusal",
-              json.loads(capture.getvalue()).get("code"), "REPLAY_FAILED")
+        check("a new Studio order replays without refusal", code, SB.EXIT["ok"])
         check("the launcher it shelled out to is factory.py",
               Path(factory_path).resolve(), Path(F.__file__).resolve())
-        check("no method record claimed without accepted replies",
-              (run / "control" / "method.json").exists(), False)
+        check_true("control/method.json written",
+                   (run / "control" / "method.json").exists())
         stored = json.loads((run / "control" / "intake-session.json").read_text())
-        check("no bulk answer was silently consumed", stored["answered_count"], 0)
+        check("every answer was consumed by its own turn",
+              stored["answered_count"], len(replies) - 1)
+        check("no turn was silently skipped",
+              len(stored.get("events") or []), len(replies))
+        # ...and a reply the card refuses still fails closed: a studio marker
+        # does not authorize an answer the card would not take one turn at a
+        # time, and no method record is claimed without accepted replies.
+        bad = make_run(Path(tmp) / "studio-bad")
+        (bad / "control" / "studio-order.json").write_text(
+            json.dumps({"order_id": "ord-w3u2-bad", "client_id": "c1",
+                        "title": "t"}),
+            encoding="utf-8")
+        capture = io.StringIO()
+        with redirect_stdout(capture):
+            code, factory_path = SB._replay(str(SKILL), bad, ["purple banana"])
+        check("a refused Studio reply fails the replay closed",
+              code, SB.EXIT["error"])
+        check("bridge exposes a named replay refusal",
+              json.loads(capture.getvalue()).get("code"), "REPLAY_FAILED")
+        check("no method record claimed without accepted replies",
+              (bad / "control" / "method.json").exists(), False)
+        stored = json.loads((bad / "control" / "intake-session.json").read_text())
+        check("no answer was silently consumed", stored["answered_count"], 0)
 
         # -- 4: a RESUMED run is untouched -----------------------------------
         print("[4] a RESUMED run keeps the card it started on")

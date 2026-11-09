@@ -1,0 +1,194 @@
+{
+  "schema": "s75/acceptance-evidence-attempt-receipt.v1",
+  "schema_note": "This file records one REPAIR attempt and its measurements. It approves nothing and it is NOT a verdict: the repairer wrote the code under test and cannot clear it. Only an independent verifier may write a verdict.",
+  "unit_id": "S75-T41",
+  "acceptance_id": "S75-A41",
+  "attempt": 4,
+  "round": 4,
+  "lane": "builder-rung-deepseek-chain",
+  "written_at": "2026-10-28",
+  "written_at_mode": "head_sha and tree_digest were written as PENDING_AT_WRITE_TIME, then resolved by a follow-up commit after the push proved the sha with git ls-remote; no force push is used anywhere in this attempt",
+  "role": "BUILDER RUNG -- evidence record for the ONE bounded defect the room named: a self-referential clause-0 check",
+  "role_statement": "This attempt does not redo the unit. It closes exactly one defect: FixtureCases.test_fixture_covers_the_whole_class asserted a list of case ids the test itself declared, so it measured the receipt's own claim instead of coverage of the class. The guard, the compiler, the catalog and the fixture are byte-identical to the judged head.",
+  "status": "COMPLETE",
+
+  "affected_requirement": {
+    "acceptance_row": "S75-A41",
+    "acceptance_row_source": "<HOME>/Downloads/Skill 75 - Story, Character Bible and Music Upgrade/ACCEPTANCE-MATRIX.md",
+    "acceptance_row_text": "All18 styles, aliases/case/punctuation and negative references are checked across every outbound Suno field. Display metadata never leaks. Ambiguous collisions in approved creative content hold only the affected submission and show the exact issue; approved content remains byte-identical.",
+    "clause_under_repair": "All 18 styles, aliases/case/punctuation and negative references are checked across every outbound Suno field",
+    "why_this_clause": "the room's rejection names this clause and only this clause: the artefact carries verdict FAIL and records clause 0 as a hard defect, 'self-referential: the check asserts the receipt's own claim rather than the property'"
+  },
+
+  "fresh_base": {
+    "base_sha": "97ba85615f12af53ff31fc9aca99f02fdf33430d",
+    "base_source": "evidence/units/S75-T41/receipt.json -> base (the base the judged head was cut from)",
+    "branch_parent": "11b7e928294835519deb0528ea363e875e4c39bc",
+    "branch_parent_command": "git -C <repo> rev-parse f7bcc4ed74f19b4850ef980d94565a23f73a7ab3^ -> 11b7e928294835519deb0528ea363e875e4c39bc (rc=0)",
+    "freshness_command": "git -C <repo> fetch origin s75x/receipt-S75-T41 s75x/receipt-S75-T41-lane2 -> rc=0",
+    "freshness_result": "origin/s75x/receipt-S75-T41 resolved to f7bcc4ed74f19b4850ef980d94565a23f73a7ab3 and origin/s75x/receipt-S75-T41-lane2 to 264122aebda551e6519f6e401099b186ca36679c, matching git ls-remote origin at the time of the fetch"
+  },
+
+  "dependency_revisions": [
+    {
+      "name": "openclaw-onboarding",
+      "revision": "7f9eb460adc6fa0778a304bf3959923217c5096f",
+      "source": "evidence/units/S75-T41/receipt.json -> dependency_revisions[0], and receipt.head records the same sha"
+    },
+    {
+      "name": "origin/main",
+      "revision": "97ba85615f12af53ff31fc9aca99f02fdf33430d",
+      "source": "evidence/units/S75-T41/receipt.json -> dependency_revisions[1]"
+    },
+    {
+      "name": "python3 standard library",
+      "revision": "UNPINNED - no interpreter revision is recorded in the repository; test_suno_prompt_guard.py imports only copy, hashlib, json, os, re, sys, unittest",
+      "source": "import block read at the head under repair"
+    }
+  ],
+
+  "author_checker_lineage": {
+    "builder": "BUILDER RUNG, lane builder-rung-deepseek-chain, model deepseek-chain (self-declared by this lane; a lane's own model label is not cryptographic proof of the serving model)",
+    "predecessor_builder": "mint: d6-mint-S75-T41-b3 (opus), recorded verbatim in evidence/units/S75-T41/receipt.json -> author_checker_lineage",
+    "checker": "none claimed by this file; the builder wrote the code under test and cannot clear it",
+    "independent_checker": {
+      "key_absent_in_source": "the newest QC receipt for this unit carries no 'independent_checker' key; the identity fields it does carry are copied here verbatim rather than invented",
+      "source_receipt": "qc/REBUILD.s75-S75-T41-shared-rule.opus.json",
+      "source_unit": "S75-T41",
+      "source_verdict": "PASS",
+      "qc_lane": "opus-qc-T41-shared-rule",
+      "qc_model": "opus-chain",
+      "checker_expected": "sonnet-chain",
+      "service_model_truth": "per room measurement, opus-chain calls were served by muse-spark and sonnet-chain by deepseek-flash",
+      "not_selected_and_why": "qc/REBUILD.s75-S75-T41-shared-rule.restamped.independent.json is newer by mtime but declares unit 'S75-T41-shared-rule', a different unit string, and likewise carries no 'independent_checker' key"
+    }
+  },
+
+  "literal_binding": [
+    {
+      "clause": "All 18 styles, aliases/case/punctuation and negative references are checked across every outbound Suno field",
+      "command": "cd <worktree> && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py CompilerContract FixtureCases.test_fixture_covers_the_whole_class FixtureCases.test_every_case_holds_on_every_style FixtureCases.test_inspected_fields_cover_every_text_and_key_position GuardContract.test_every_reference_is_removed_from_every_instruction_field GuardContract.test_every_reference_in_every_negative_tag_position_is_removed GuardContract.test_case_unicode_and_punctuation_spellings_all_hit",
+      "last_line": "OK (Ran 11 tests)",
+      "rc": 0
+    },
+    {
+      "clause": "Display metadata never leaks",
+      "command": "cd <worktree> && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py CompilerContract.test_display_metadata_never_reaches_the_compiled_field DisplayMetadataBoundary JoinBoundaryRegression DispatchSeam",
+      "last_line": "OK (Ran 23 tests)",
+      "rc": 0
+    },
+    {
+      "clause": "Ambiguous collisions in approved creative content hold only the affected submission and show the exact issue; approved content remains byte-identical",
+      "command": "cd <worktree> && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py FixtureCases.test_collision_hold_is_hash_proven_and_holds_only_that_submission GuardContract.test_common_word_alias_in_approved_creative_content_blocks_untouched GuardContract.test_sanitized_payload_keeps_approved_content_digest GuardContract.test_clean_payload_passes_byte_identical",
+      "last_line": "OK (Ran 4 tests)",
+      "rc": 0
+    },
+    {
+      "clause": "the whole guard contract, no selector",
+      "command": "cd <worktree> && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py",
+      "last_line": "OK (Ran 54 tests)",
+      "rc": 0
+    },
+    {
+      "clause": "S75-T41 runnable self-check",
+      "command": "cd <worktree> && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard_s75t41.py",
+      "last_line": "OK (Ran 21 tests)",
+      "rc": 0
+    }
+  ],
+
+  "clause0_repair": {
+    "was": "FixtureCases.test_fixture_covers_the_whole_class asserted that the fixture's case ids contained a tuple of ids the TEST FILE ITSELF declared: `REQUIRED_CASES = (\"key-position-map-key\", \"nested-map-key\", ... \"collision-hold-approved-lyrics\")` then `ids = [case[\"id\"] for case in self.cases]; for wanted in self.REQUIRED_CASES: self.assertIn(wanted, ids)`. Nothing derived coverage from the payload, the catalogue or the compiler, so the test's own declaration was the oracle. Measured: with all nine cases keeping their ids and every `inject` emptied to {}, the check still passed.",
+    "now": "It asserts the property on the injected BYTES. For each case it deep-merges `case[\"inject\"]` onto a real envelope, then re-derives from that payload which clause-0 dimensions are actually present: case variants and punctuation variants are read from the raw spellings against the catalogue's own display names; key-position, list-value, instruction-value and nested-position are read from the walker's paths; negative-key, negative-list-value and negative-instruction are read from the field name plus a negation cue in the text; approved-content is read from the protected-path predicate. Every one of the ten REQUIRED_DIMENSIONS must be witnessed, and each id that names a dimension the bytes do not show is a failure. The id is now a claim the bytes must confirm, never the oracle.",
+    "evidence": {
+      "instrument": "scratch control harness running ONLY FixtureCases.test_fixture_covers_the_whole_class against a substituted fixture, three modes",
+      "before_command": "python3 -I control_clause0.py <worktree> blank   # 9 ids kept, every inject emptied",
+      "before_result": "check_passed=True -- CONTROL FIRED: the check passed on a fixture with zero injected references, so it was not measuring coverage of the bytes",
+      "after_command_blank": "python3 -I control_clause0.py <worktree> blank",
+      "after_result_blank": "FAILED (failures=1); missing=['approved-content','case-variant','instruction-value','key-position','list-value','negative-instruction','negative-key','negative-list-value','nested-position','punctuation-variant']",
+      "after_command_honest": "python3 -I control_clause0.py <worktree> honest",
+      "after_result_honest": "OK -- passes on the real fixture",
+      "after_command_lie": "python3 -I control_clause0.py <worktree> lie   # id still says case-variant, inject changed to the canonical spelling 'Celine Dion'",
+      "after_result_lie": "FAILED (failures=1); missing=['case-variant'] -- an id that lies about the bytes is now caught",
+      "two_way_statement": "the same instrument answers both ways on its own target: honest passes, blank fails, lie fails. A checksum-checked pass alone would not have shown this."
+    }
+  },
+
+  "candidate": {
+    "branch": "s75x/receipt-S75-T41",
+    "head_sha": "70e9a8d11b9f0098f5ee69f88a85d9d1fc5259e7",
+    "tree_digest": "bacadc94da0904a4eb3835c3c7fbf6ddf17bc9e3",
+    "edited_blob_after": "06563abd1225acb485882d5d581bd2958a038d21",
+    "edited_blob_before": "21cf25f26ab4eeac6a1f7c1f88c21842648ff736",
+    "cut_from": "f7bcc4ed74f19b4850ef980d94565a23f73a7ab3",
+    "cut_from_tree": "b379ca5f47b732ee5a15ecdeaa6550e381057b8f",
+    "sha_source": "git rev-parse HEAD after the commit, confirmed by git ls-remote below"
+  },
+
+  "push_proof": {
+    "command": "git push origin HEAD:refs/heads/s75x/receipt-S75-T41",
+    "output": "To https://github.com/trevorotts1/openclaw-onboarding.git f7bcc4ed7..70e9a8d11  HEAD -> s75x/receipt-S75-T41",
+    "fast_forward": true,
+    "force_used": false,
+    "verified": "git ls-remote origin refs/heads/s75x/receipt-S75-T41 -> 70e9a8d11b9f0098f5ee69f88a85d9d1fc5259e7 refs/heads/s75x/receipt-S75-T41, the same 40 hex characters (rc=0)",
+    "evidence_resolution": "one follow-up commit on the same branch changes this file and nothing else; the code fix lives in 70e9a8d11b9f0098f5ee69f88a85d9d1fc5259e7 and its blob is 06563abd1225acb485882d5d581bd2958a038d21",
+    "no_merge_to_main": true,
+    "no_pull_request": true
+  },
+
+  "diff": {
+    "files_edited": ["75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py"],
+    "files_added": ["evidence/units/S75-T41/attempt-4.json"],
+    "files_removed": [],
+    "untouched_owned_paths": "suno_prompt_guard.py (blob 4bf828b99b9649e86b07ca0e97a89359a94c7b7a) and suno_recipe/suno_recipe.py are byte-identical to f7bcc4ed74f19b4850ef980d94565a23f73a7ab3",
+    "also_untouched": "the fixture tests/fixtures/suno_artist_reference_guard.json and test_suno_prompt_guard_s75t41.py are byte-identical to the judged head (blob dbea24c08892b0bbbf38d594720b6e4423b4ac5f)",
+    "scope_statement": "test_suno_prompt_guard.py only; no guard, compiler, catalog, fixture or recipe behaviour changed",
+    "diff_stat_note": "not used as evidence: this clone is SHALLOW (25 boundary commits in .git/shallow), so --diff-filter, --stat, merge-tree, merge-base and diffs against origin/main are unreliable here. Blob identity and per-commit file lists are the trusted instruments."
+  },
+
+  "measurements": {
+    "tests_before": {
+      "command": "cd <worktree at f7bcc4e> && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py <clause-0 selector>",
+      "result": "Ran 11 tests, OK, rc 0",
+      "control_at_that_head": "the blank-fixture control PASSED, which is the defect"
+    },
+    "tests_after": {
+      "command": "cd <worktree> && python3 -I 75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py <clause-0 selector>",
+      "result": "Ran 11 tests, OK, rc 0",
+      "full_file": "Ran 54 tests, OK, rc 0",
+      "self_check": "Ran 21 tests, OK, rc 0",
+      "control_at_that_head": "blank fixture FAILS, id-lie fixture FAILS, honest fixture PASSES"
+    },
+    "no_test_removed_renamed_or_skipped": {
+      "removed": [],
+      "renamed": [],
+      "added": [],
+      "changed": ["FixtureCases.test_fixture_covers_the_whole_class -- body replaced; the name and the id are unchanged so the recorded selector still binds"],
+      "test_count": "54 before, 54 after (whole file)"
+    }
+  },
+
+  "path_gate": {
+    "command": "python3 -I pathscan_t41.py <the edited file>",
+    "target_counts": {"home": 0, "volume": 0, "tilde": 0},
+    "control_counts": {"home": 2, "volume": 2, "tilde": 1},
+    "control_total": 5,
+    "result": "GATE PASS: 0 operator path prefixes in 1164 lines; positive control fired with 5",
+    "why_control_required": "a zero is a claim; the same scan was shown to fire on a string that carries three prefixes, so the zero is a measurement and not a broken instrument"
+  },
+
+  "residuals": [
+    "The independence of the checker named in author_checker_lineage is carried from a receipt for a different branch (s75/S75-T41-shared-rule) because the newest QC receipt for this unit declares no independent_checker key. A verifier should name its own identity rather than accept this carried one.",
+    "The clause-3 unproven_clauses entry in the judged receipt ('approved content remains byte-identical.') is NOT addressed by this attempt; only clause 0 was named by the room.",
+    "The shared clone's config carries core.worktree pointing at <HOME>/loop-control/s75/wt-s75x-receipt-S75-T32, a path that does not exist. It was restored to that exact prior value after this worktree needed its own core.worktree; every linked worktree without a per-worktree override resolves toplevel to that dead path. Reported, not repaired - it is not this unit's file."
+  ],
+
+  "could_not_determine": [
+    "Whether the room will accept a byte-derived coverage check as sufficient proof of clause 0, or will also require the fixture itself to grow cases. This attempt changed no fixture content.",
+    "What the guard does for a reference spelled with a homoglyph or an unrecorded nickname; both are measured as KNOWN UNCAUGHT by test_suno_prompt_guard_s75t41.py and neither is claimed by clause 0 here."
+  ],
+
+  "written_by": "BUILDER RUNG for S75-T41 attempt 4 (wrote the code under test; cannot clear it)",
+  "verdict": null,
+  "verdict_note": "this file records a repair attempt and carries no verdict; only an independent verifier may write one"
+}

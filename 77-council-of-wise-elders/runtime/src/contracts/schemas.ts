@@ -49,9 +49,10 @@ import {
   STANCES,
   VALIDATION_STATUSES,
   VERDICT_LABELS,
-} from './enums';
-import { isSha256Hex, isUtcTimestamp, isValidId } from './primitives';
-import type { ValidationIssue, ValidationResult } from './errors';
+} from './enums.js';
+import { isSha256Hex, isUtcTimestamp, isValidId, isValidModelId } from './primitives.js';
+import { MAX_ADVISOR_ROUND } from './modes.js';
+import type { ValidationIssue, ValidationResult } from './errors.js';
 
 /** Current canonical contract version for this package surface. */
 export const CONTRACT_PACKAGE_VERSION = 'wise-elders.core/1.0.0';
@@ -76,6 +77,11 @@ export const SCHEMA_VERSIONS = {
 export const idSchema = z
   .string()
   .refine(isValidId, { message: 'must be an opaque ID (no names, text, or secrets)' });
+
+/** A provider's own model id, which may be namespaced as `vendor/model`. */
+export const modelIdSchema = z
+  .string()
+  .refine(isValidModelId, { message: 'must be a provider model id (no names, text, or secrets)' });
 
 export const sha256Schema = z
   .string()
@@ -245,7 +251,7 @@ export type DecisionBrief = z.infer<typeof decisionBriefSchema>;
 export const modelPolicySchema = z.strictObject({
   selection: z.enum(MODEL_SELECTION_SOURCES),
   route_id: idSchema,
-  requested_model_id: idSchema.nullable(),
+  requested_model_id: modelIdSchema.nullable(),
   reasoning_preference: z.string().min(1).nullable(),
   fallback_policy: z.enum(FALLBACK_POLICIES),
 });
@@ -302,6 +308,23 @@ export const sessionSpecSchema = z
         code: 'custom',
         path: ['seat_ids'],
         message: 'selected mode requires 2 to 8 seats',
+      });
+    }
+    if (spec.mode === 'light' && spec.seat_ids.length !== SEAT_IDS.length) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['seat_ids'],
+        message: 'light mode requires all nine seats',
+      });
+    }
+    if (
+      (spec.mode === 'medium' || spec.mode === 'heavy') &&
+      spec.seat_ids.length !== SEAT_IDS.length
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['seat_ids'],
+        message: `${spec.mode} mode requires all nine seats`,
       });
     }
   });
@@ -391,7 +414,7 @@ const cardBaseShape = {
 export const advisorCardAuthorSchema = z.strictObject({
   ...cardBaseShape,
   card_kind: z.literal('advisor'),
-  round: z.union([z.literal(1), z.literal(2)]),
+  round: z.number().int().min(1).max(MAX_ADVISOR_ROUND),
   stance: z.enum(STANCES),
   preferred_option_id: idSchema.nullable(),
   option_scores: z.array(optionScoreSchema),
@@ -742,7 +765,7 @@ export type CouncilEvent = z.infer<typeof councilEventSchema>;
 /** Session budget and behavior settings (defaults from Section 15.6). */
 export const councilSettingsSchema = z.strictObject({
   schema_version: z.literal('wise-elders.settings/v1'),
-  max_session_provider_requests: z.number().int().min(1).max(50),
+  max_session_provider_requests: z.number().int().min(1).max(100),
   max_output_repair_requests: z.number().int().min(0),
   max_semantic_verification_requests: z.number().int().min(0).max(2),
   max_transport_retries_total: z.number().int().min(0),

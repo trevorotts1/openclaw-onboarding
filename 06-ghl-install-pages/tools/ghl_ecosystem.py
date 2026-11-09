@@ -533,6 +533,26 @@ def prove_form_to_crm(ops: EcosystemOps, email: str,
     }
 
 
+def order_binding_from_receipt(pp_receipt: dict) -> dict:
+    """S44-13 -> Skill 06: turn a ``product-price`` step receipt into an order
+    binding (``source`` ``s44_phase_a``) for ``ghl_order_elements``. Fails
+    closed: the receipt must be ok, carry BOTH read-back ids, and have been
+    re-read (``reread_http_status`` 200). No id or amount is invented, and the
+    amount is deliberately not carried (cents vs dollars is unverified until
+    the one live capture)."""
+    if not isinstance(pp_receipt, dict) or not pp_receipt.get("ok"):
+        raise ValueError("product-price receipt is not ok - no binding")
+    product_id = str(pp_receipt.get("product_id") or "").strip()
+    price_id = str(pp_receipt.get("price_id") or "").strip()
+    if not product_id or not price_id:
+        raise ValueError("product-price receipt lacks product_id/price_id")
+    if pp_receipt.get("reread_http_status") != 200:
+        raise ValueError("product-price receipt was never re-read (no "
+                         "read-back) - refusing to bind")
+    return {"product_ref": product_id, "price_ref": price_id,
+            "source": "s44_phase_a"}
+
+
 # ── Spec for a build ──────────────────────────────────────────────────────────
 
 @dataclass
@@ -1013,6 +1033,7 @@ __all__ = [
     "calendar_body",
     "product_body",
     "price_body",
+    "order_binding_from_receipt",
     "form_body",
     "advanced_form_body",
     "optin_form_html",

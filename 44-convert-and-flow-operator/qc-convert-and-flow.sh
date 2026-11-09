@@ -218,7 +218,7 @@ assert "INSTALL.md wires GOHIGHLEVEL_ALLOWED_LOCATION_IDS at install (Action 5)"
 assert "convertandflow + ghl wrappers also auto-seed CAF_ALLOWED_LOCATION_IDS" \
   "grep -q '_caf_allowed_raw' \"$SKILL44_DIR/tools/engine/convertandflow\" && grep -q '_caf_allowed_raw' \"$SKILL44_DIR/tools/engine/ghl\""
 assert "workflow build path applies action ordering via link_steps (Bug 1a)" \
-  "grep -q 'templates = link_steps' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py\""
+  "grep -qE 'templates, *unlinked *= *link_steps' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py\""
 assert "workflow build fails loud on rejected save (step_err captured, Bug 1b)" \
   "grep -q 'step_err' \"$SKILL44_DIR/tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py\""
 assert "CLI exits non-zero on build errors (stats['errors'] + sys.exit)" \

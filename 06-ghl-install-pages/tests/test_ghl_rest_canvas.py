@@ -33,7 +33,9 @@ if _TOOLS_DIR not in sys.path:
 import pytest
 
 import browser_manager  # SINGLETON POOLED BROWSER gateway (session bracket)
+import ghl_publish_approval
 import ghl_rest_canvas as rc
+import ghl_verify
 
 
 # ── Generic fakes (NO real client/operator data) ─────────────────────────────
@@ -44,6 +46,49 @@ FAKE_FUNNEL_ID = "FUNNELID000000000fake"
 FAKE_LOC = "LOCATION0000000fake"
 FAKE_WF = "WORKFLOW0000000fake"
 FAKE_TRIGGER = "TRIGGER00000000fake"
+
+
+# ── TEST-ONLY publish authorization (S06-06 / CARRIED 78) ─────────────────────
+# autosave_body / page_autosave(publish=True) now refuse without a launcher
+# approval record AND a passed ghl_gate for the page. These fixtures mint a
+# TEST-ONLY record in a tmp store and a sealed evidence tree (the shape
+# ghl_verify.verify_all leaves); nothing here is a real approval.
+
+@pytest.fixture()
+def publish_auth(tmp_path, monkeypatch):
+    import uuid
+    monkeypatch.setenv(ghl_verify.NONCE_DIR_ENV, str(tmp_path / "nonces"))
+    store = tmp_path / "launch-store"
+    store.mkdir()
+    (store / "APPR-LIVE.json").write_text(json.dumps({
+        "approval_ref": "APPR-LIVE", "allowed_write_target": "approved_live_publication",
+        "test_only": False, "location_id": FAKE_LOC, "page_ids": [FAKE_PAGE_ID]}))
+    monkeypatch.setenv(ghl_publish_approval.STORE_ENV, str(store))
+    root = tmp_path / "evidence"
+    (root / "scorecard").mkdir(parents=True)
+    (root / "logs").mkdir()
+    (root / "render").mkdir()
+    raw = [{"step": "home", "page_id": FAKE_PAGE_ID, "PASS": True, "http_code": 200,
+            "marker": "SEAL-MARKER-home"}]
+    raw_path = root / ghl_verify.RAW_REL
+    raw_path.write_text(json.dumps(raw))
+    entry = {}
+    for key, ext, data in (("dom", "dom.html", b"<html><body><p>SEAL-MARKER-home</p></body></html>"),
+                           ("png", "png", b"\x89PNG\r\n\x1a\n" + b"x" * 64),
+                           ("console", "console.json", b"[]")):
+        f = root / "render" / f"home.{ext}"
+        f.write_bytes(data)
+        entry[f"{key}_path"] = str(f)
+        entry[f"{key}_sha256"] = ghl_verify._sha256_file(str(f))
+    manifest_path = root / ghl_verify.RENDER_MANIFEST_REL
+    manifest_path.write_text(json.dumps({"home": entry}))
+    nonce = str(uuid.uuid4())
+    (root / ghl_verify.SUMMARY_REL).write_text(json.dumps({
+        "overall_pass": True, "passed": 1, "total": 1, "failed": 0,
+        "writer": "ghl_verify.verify_all", "run_nonce": nonce}))
+    ghl_verify.write_run_nonce(str(root), nonce, str(raw_path), str(manifest_path))
+    return dict(approval="APPR-LIVE", page_id=FAKE_PAGE_ID, location_id=FAKE_LOC,
+                evidence_root=str(root))
 
 
 def _customcode_blob(raw: str = "<img src='old.png'>") -> dict:
@@ -121,11 +166,29 @@ class TestAutosaveBody:
         assert body["funnelId"] == FAKE_FUNNEL_ID
         assert body["integrations"] == {}
 
-    def test_publish_flag_sets_published(self):
+    def test_publish_flag_sets_published(self, publish_auth):
         body = rc.autosave_body(FAKE_FUNNEL_ID, _customcode_blob(), page_version=4,
-                                publish=True)
+                                publish=True, **publish_auth)
         assert body["pageType"] == "published"
         assert body["pageVersion"] == 5
+
+    def test_publish_without_record_is_refused(self, publish_auth):
+        for approval in (None, "yes", True):
+            with pytest.raises(ghl_publish_approval.PublishApprovalError):
+                rc.autosave_body(FAKE_FUNNEL_ID, _customcode_blob(), page_version=4,
+                                 publish=True, **{**publish_auth, "approval": approval})
+
+    def test_publish_with_test_only_record_is_refused(self, publish_auth, tmp_path):
+        (tmp_path / "launch-store" / "APPR-TEST.json").write_text(json.dumps({
+            "approval_ref": "APPR-TEST", "allowed_write_target": "approved_test_location",
+            "test_only": True, "location_id": FAKE_LOC, "page_ids": [FAKE_PAGE_ID]}))
+        with pytest.raises(ghl_publish_approval.PublishApprovalError):
+            rc.autosave_body(FAKE_FUNNEL_ID, _customcode_blob(), page_version=4,
+                             publish=True, **{**publish_auth, "approval": "APPR-TEST"})
+
+    def test_draft_needs_no_approval(self):
+        assert rc.autosave_body(FAKE_FUNNEL_ID, _customcode_blob(), page_version=4,
+                                publish=False)["pageType"] == "draft"
 
     def test_integrations_passthrough(self):
         integ = {"ga": {"id": "X"}}
@@ -399,11 +462,17 @@ class TestPageAutosaveStep:
         assert exp["saved_page_type"] == "draft"
         assert exp["live_pointer_unchanged"] is True   # draft never moves the pointer
 
-    def test_publish_marks_pointer_will_move(self):
+    def test_publish_marks_pointer_will_move(self, publish_auth):
         step = rc.page_autosave(FAKE_PAGE_ID, _customcode_blob(),
-                                funnel_id=FAKE_FUNNEL_ID, page_version=1, publish=True)
+                                funnel_id=FAKE_FUNNEL_ID, page_version=1, publish=True,
+                                **{k: v for k, v in publish_auth.items() if k != "page_id"})
         assert step["body"]["pageType"] == "published"
         assert step["expect"]["live_pointer_unchanged"] is False
+
+    def test_publish_without_record_raises(self):
+        with pytest.raises(ghl_publish_approval.PublishApprovalError):
+            rc.page_autosave(FAKE_PAGE_ID, _customcode_blob(),
+                             funnel_id=FAKE_FUNNEL_ID, page_version=1, publish=True)
 
 
 class TestWorkflowReadTriggersStep:
@@ -968,13 +1037,28 @@ class TestChildLinkChainInvariant:
 
 
 class TestAllowRowMaxWidth:
-    def test_default_is_false_centered_1170(self):
-        """Default (LIVE-probe safe state) keeps allowRowMaxWidth False and the
-        1170px inner cap that drives the centered column."""
+    def test_default_is_full_width_no_1170_cap(self):
+        """ADOPTED POLICY: full width is the DEFAULT for a created section. The
+        native allowRowMaxWidth flag is True AND the 1170px inner cap is lifted
+        to 100% — both must move together or the flag is cosmetic (LIVE probe)."""
         blob = rc.new_page_blob("<p>x</p>", surface="funnel")
         meta = blob["sections"][0]["metaData"]
+        assert meta["extra"]["allowRowMaxWidth"]["value"] is True
+        styles = blob["sections"][0]["general"]["sectionStyles"]
+        assert "max-width:1170px" not in styles
+        assert "max-width:100%" in styles
+
+    def test_opt_out_false_keeps_centered_1170_cap(self):
+        """The deliberate opt-out still produces the OLD constrained section:
+        allowRowMaxWidth False and the 1170px inner cap intact. This case proves
+        the switch works both ways."""
+        blob = rc.new_page_blob("<p>x</p>", surface="funnel",
+                                allow_row_max_width=False)
+        meta = blob["sections"][0]["metaData"]
         assert meta["extra"]["allowRowMaxWidth"]["value"] is False
-        assert "max-width:1170px" in blob["sections"][0]["general"]["sectionStyles"]
+        styles = blob["sections"][0]["general"]["sectionStyles"]
+        assert "max-width:1170px" in styles
+        assert "max-width:100%" not in styles
 
     def test_true_sets_flag_and_lifts_inner_cap(self):
         """Opt-in full width flips the metadata flag AND lifts the 1170px cap that

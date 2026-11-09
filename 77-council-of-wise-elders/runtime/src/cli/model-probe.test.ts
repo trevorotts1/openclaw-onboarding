@@ -21,13 +21,14 @@
  *   the spawn shim);
  * - a single token is answered but never qualified, and the result says a
  *   complete Council is not qualified;
- * - the only modified files in the worktree are the two owned files.
+ * - the sequencer imports only its own architectural layers, so it can never
+ *   grow a second authority or reach into another subsystem.
  */
 
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -495,30 +496,49 @@ test('probe: a single token is answered but never qualifies a complete Council',
   assert.match(result.reason ?? '', /does not qualify a complete Council/);
 });
 
-test('probe: the only modified files are the two owned files', () => {
+// ------------------------------------------------------------------- scope
+//
+// This replaces the former working-tree scope proof ("the only modified files
+// are the two owned files"). That proof read `git status` of whatever checkout
+// the suite happened to run in, so it could not tell THIS unit's edits from any
+// other unit's: it failed for every unit that edited the runtime and for no
+// real defect, and it forced a changed-file allowlist to be widened each time.
+//
+// The containment this unit actually owns is architectural: the probe is a
+// sequencer over reviewed substrate and may depend only on the layers it is
+// built from. That is checked from the module's own imports, so it is
+// deterministic, checkout-independent, and still fails on a real reach — a
+// second authority, a transport, or another subsystem's internals.
+const MODEL_PROBE_LAYERS = [
+  'node:',
+  './',
+  '../authorization/',
+  '../budgets/',
+  '../contracts/',
+  '../persistence/',
+  '../providers/',
+  '../queue/',
+];
+
+function importedSpecifiers(source: string): string[] {
+  return source
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('import ') || line.startsWith('} from '))
+    .map((line) => /from\s+'([^']+)'/.exec(line)?.[1])
+    .filter((s): s is string => typeof s === 'string');
+}
+
+test('probe: the sequencer imports only its own layers, never a second authority', () => {
   const here = dirname(fileURLToPath(import.meta.url));
-  const runtimeRoot = resolve(here, '../..');
-  let top: string;
-  try {
-    top = execFileSync('git', ['-C', runtimeRoot, 'rev-parse', '--show-toplevel'], {
-      encoding: 'utf8',
-    }).trim();
-  } catch {
-    // A source snapshot without git cannot prove this; do not pretend.
-    return;
-  }
-  const status = execFileSync('git', ['-C', top, 'status', '--porcelain'], {
-    encoding: 'utf8',
-  });
-  const owned = new Set([
-    '77-council-of-wise-elders/runtime/src/cli/model-probe.ts',
-    '77-council-of-wise-elders/runtime/src/cli/model-probe.test.ts',
-  ]);
-  for (const line of status.split('\n').filter((l) => l.trim().length > 0)) {
-    const path = line.slice(3).trim();
-    assert.ok(
-      owned.has(path),
-      `a file outside the two owned files was modified: ${JSON.stringify(path)}`,
-    );
-  }
+  const source = readFileSync(join(here, 'model-probe.ts'), 'utf8');
+  const specifiers = importedSpecifiers(source);
+  // A source that yields no imports would make the check vacuous.
+  assert.ok(specifiers.length >= 5, `model-probe.ts imports were read, got ${specifiers.length}`);
+  const outside = specifiers.filter((s) => !MODEL_PROBE_LAYERS.some((layer) => s.startsWith(layer)));
+  assert.deepEqual(outside, [], `model-probe.ts reached outside its own layers: ${outside.join(', ')}`);
+  // The one foreign-layer shape that would be a real regression: the probe
+  // composing a transport or authority of its own.
+  const forbidden = specifiers.filter((s) => s.includes('service/') || s.includes('dispatcher'));
+  assert.deepEqual(forbidden, [], `the probe must not compose service or CLI surfaces: ${forbidden.join(', ')}`);
 });

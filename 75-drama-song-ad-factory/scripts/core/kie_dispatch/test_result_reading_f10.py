@@ -16,6 +16,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))          # core/
@@ -25,6 +26,15 @@ import spend_ledger as L            # noqa: E402  (sibling, same core/ tree)
 
 MODULE = importlib.import_module("kie_dispatch.kie_dispatch")
 
+
+def _real_file(suffix=".bin", data=b"offline-output"):
+    """F11 refuses a missing or empty path as saved, so an 'ok' fixture must
+    materialize the bytes it claims."""
+    path = os.path.join(tempfile.mkdtemp(prefix="kie-out-"), "out" + suffix)
+    with open(path, "wb") as f:
+        f.write(data)
+    return path
+
 FAILS = []
 
 
@@ -33,7 +43,16 @@ def _forbid_make_runner(*_a, **_k):
     raise AssertionError("real Skill 74 runner disabled in tests")
 
 
-MODULE.make_runner = _forbid_make_runner
+_NO_REAL_RUNNER = mock.patch.object(MODULE, "make_runner", _forbid_make_runner)
+
+
+def setup_module(_module=None):
+    """Scoped, not global: pytest runs this per file, teardown restores it."""
+    _NO_REAL_RUNNER.start()
+
+
+def teardown_module(_module=None):
+    _NO_REAL_RUNNER.stop()
 
 
 def check(name, cond, detail=""):
@@ -218,7 +237,7 @@ def test_prose_request_reaches_submit():
         "wait": (0, {"state": "success", "task_id": "task-clean",
                      "credits_consumed": 7}),
         "save": (0, {"state": "success", "task_id": "task-clean",
-                     "saved_paths": ["/tmp/f10-clean.png"]}),
+                     "saved_paths": [_real_file(".png")]}),
     })
     env, db, fake, _ = run_case(script, "cleanflow", request=CLEAN_REQ)
     check("clean: outcome ok", env["outcome"] == "ok", str(env["outcome"]))
@@ -333,4 +352,5 @@ def main():
 
 
 if __name__ == "__main__":
+    setup_module()
     sys.exit(main())

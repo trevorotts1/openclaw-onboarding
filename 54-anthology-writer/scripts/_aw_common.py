@@ -345,10 +345,9 @@ AF_CODE_GUIDANCE = {
     },
     "AF-AW-ANTHROPIC": {
         "file": "{run_dir}/working/RUN-LEDGER.json",
-        "field": "Resolved model ids (must NOT contain 'anthropic' or 'claude') + operator credential env vars",
-        "expected_shape": "All resolved model ids must be NON-Anthropic; no OPERATOR_ANTHROPIC_API_KEY/OPERATOR_API_KEY/ANTHROPIC_ADMIN_KEY in env",
-        "fix_hint": "Replace any Anthropic model id (containing 'anthropic' or 'claude') in RUN-LEDGER.json "
-                    "with the client's strongest NON-Anthropic model. Remove any operator credential "
+        "field": "Operator credential env vars (legacy code name; no vendor model rule exists)",
+        "expected_shape": "No OPERATOR_ANTHROPIC_API_KEY/OPERATOR_API_KEY/ANTHROPIC_ADMIN_KEY in env",
+        "fix_hint": "Remove any operator credential "
                     "environment variables (OPERATOR_ANTHROPIC_API_KEY, etc.) from the run environment. "
                     "Client runs use the client's OWN keys only.",
     },
@@ -366,8 +365,8 @@ AF_CODE_GUIDANCE = {
         "expected_shape": "RUN-LEDGER.json must have a non-empty 'stages' array with 'model'/'model_id'/'resolved_model' fields in each stage",
         "fix_hint": "RUN-LEDGER.json must record the model provenance the chapter was authored on. "
                     "Ensure each stage entry carries a model id (field name: 'model', 'model_id', or "
-                    "'resolved_model'). An empty/absent stages array means the no-Anthropic gate cannot "
-                    "be proven -- populate it with the NON-Anthropic model ids used during authoring.",
+                    "'resolved_model'). An empty/absent stages array means the model provenance cannot "
+                    "be proven -- populate it with the model ids used during authoring.",
     },
     "AF-AW-PROMPT-DRIFT": {
         "file": "{skill_dir}/assets/prompts/*.md and ANTHOLOGY-MANIFEST.json",
@@ -467,11 +466,10 @@ AF_CODE_GUIDANCE = {
     },
     "AF-AW-UNRESOLVED-MODELMAP": {
         "file": "{run_dir}/model-map.json",
-        "field": "Resolved provider model ids (no <CLIENT_*> placeholders, no Anthropic ids)",
+        "field": "Resolved provider model ids (no <CLIENT_*> placeholders)",
         "expected_shape": '{"<tier>":"<provider>/<model-id>"} with all placeholders resolved to actual provider model ids',
-        "fix_hint": "The run-dir model-map.json still carries <CLIENT_*> placeholders or a banned "
-                    "Anthropic id. Run the fleet installer (preflight.sh --run-dir) on a configured "
-                    "box to resolve the tier map to the client's own NON-Anthropic providers. "
+        "fix_hint": "The run-dir model-map.json still carries <CLIENT_*> placeholders. Run the fleet installer (preflight.sh --run-dir) on a configured "
+                    "box to resolve the tier map to the client's own providers. "
                     "Each <CLIENT_XX> placeholder must be replaced with a real provider model id.",
     },
     "AF-AW-TONE-CORE-SYNC": {

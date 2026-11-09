@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """check-funnel-automation-library-drift.py — drift gate for the funnel + automation libraries.
 
-The 38 funnel templates (06-ghl-install-pages/funnel-templates/) and the 28 automation
+The 38 funnel templates (06-ghl-install-pages/funnel-templates/) and the 49 automation
 templates (44-convert-and-flow-operator/automation-templates/) are now LOAD-BEARING: the
 matchers reference them by path/id and the funnel->automation link map pairs them. Nothing
 previously protected them from silent rename/delete/desync (library-lockstep.yml only walks
@@ -29,6 +29,16 @@ import sys
 
 LEAK_TOKENS = ("/Users/", "/private/tmp", "scratchpad", "blackceomacmini")
 
+# Files named .json that live in a template group but are not templates. The schema
+# tool and the template graph tests already exclude these by name; the guard must use
+# the same set or it reports them as orphans whenever the index omits them.
+NON_TEMPLATE_FILES = frozenset({"automation-build.schema.json", "text-sets.json"})
+
+# Pinned template count, taken from main at the time this guard was written. The set
+# comparisons catch one-sided drift; this catches the symmetric case, where a template
+# file AND its index row disappear together and both sides agree with each other.
+EXPECTED_TEMPLATE_COUNT = 49
+
 
 def _load(path):
     with open(path, encoding="utf-8") as f:
@@ -43,7 +53,7 @@ def _disk_templates(root: str) -> set[str]:
         if not os.path.isdir(gdir) or group.startswith("_"):
             continue
         for fn in sorted(os.listdir(gdir)):
-            if not fn.endswith(".json") or fn.startswith("_"):
+            if not fn.endswith(".json") or fn.startswith("_") or fn in NON_TEMPLATE_FILES:
                 continue
             try:
                 doc = _load(os.path.join(gdir, fn))
@@ -96,8 +106,19 @@ def main(argv: list[str]) -> int:
             errors.append(f"automation templates on disk but NOT in index (orphans): {sorted(disk - idx)}")
         if idx - disk:
             errors.append(f"automation ids in index but NO file (phantoms): {sorted(idx - disk)}")
-        if len(disk) != 51:
-            errors.append(f"expected 51 automation templates on disk, found {len(disk)}")
+        # The expected count is the number of real templates, which is exactly the
+        # index size once both sides exclude the same non-template files. Hardcoding a
+        # number here is what let the guard disagree with the index after the two
+        # non-template data files stopped being indexed.
+        if len(idx) != EXPECTED_TEMPLATE_COUNT:
+            errors.append(
+                f"automation template count drift: {len(idx)} in index, "
+                f"pinned floor is {EXPECTED_TEMPLATE_COUNT} "
+                "(a template missing from BOTH disk and index is still drift)")
+        if len(disk) != EXPECTED_TEMPLATE_COUNT:
+            errors.append(
+                f"automation template count drift: {len(disk)} on disk, "
+                f"pinned floor is {EXPECTED_TEMPLATE_COUNT}")
 
     # (3) link-map integrity (v2 canonical): funnel ids + automation refs resolve
     funnel_ids = {k.split("/", 1)[1] for k in _disk_templates(funnel_root)}
@@ -156,7 +177,7 @@ def main(argv: list[str]) -> int:
         for e in errors:
             print(f"  ✗ {e}")
         return 1
-    print(f"OK — funnel(38) + automation(28) libraries, indexes, link map, and persona crosswalk "
+    print(f"OK — funnel(38) + automation(%d)" % EXPECTED_TEMPLATE_COUNT + " libraries, indexes, link map, and persona crosswalk "
           f"are in sync ({len(lm_funnels)} funnels mapped, 0 broken refs, 0 phantoms, "
           f"0 unresolved persona refs, portable indexes).")
     return 0

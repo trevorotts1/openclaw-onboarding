@@ -338,8 +338,31 @@ class ProcessGateTest(unittest.TestCase):
         self.assertEqual(transport.call_count, 0)
         governor.assert_not_called()
 
+    def test_real_runner_submits_the_admitted_snapshot_not_the_caller_path(self):
+        save_dir = self.run / "images"
+        req_path = self.run / "request.json"
+        req_path.write_text(json.dumps(self.request))
+        live = D.make_runner(process_context={"request_digest": D.L.digest_request(self.request),
+                                              "arguments": {"save_dir": str(save_dir)}})
+        seen = {}
+        def fake_run(argv, **kw):
+            path = argv[argv.index("--request") + 1]
+            seen["path"] = path
+            seen["body"] = json.loads(Path(path).read_text())
+            req_path.write_text(json.dumps(dict(self.request, changed=True)))  # post-admission writer
+            return type("R", (), {"returncode": 0, "stdout": "{}"})()
+        with patch.object(D, "production_process_admission", return_value={"ok": True}), \
+                patch.object(D.subprocess, "run", side_effect=fake_run), \
+                patch.object(D._LG, "kie_request", side_effect=lambda once, **k: once()):
+            live([str(Path(__file__)), "submit", "--request", str(req_path)])
+        self.assertNotEqual(seen["path"], str(req_path))
+        self.assertEqual(Path(seen["path"]).parent, save_dir)
+        self.assertEqual(D.L.digest_request(seen["body"]), D.L.digest_request(self.request))
+        self.assertEqual(list(save_dir.glob("*.partial")), [])
+
     def test_injected_simulation_never_becomes_production_evidence(self):
         ledger.init_run(self.kwargs["ledger_db"], "run", 1000)
+        (self.run / "fake.png").write_bytes(b"offline-bytes")  # F11: real bytes
         commands = []
         def fake(argv):
             command = argv[1]

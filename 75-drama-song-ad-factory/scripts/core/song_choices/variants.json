@@ -192,5 +192,966 @@
         "arrangement": "cinematic strings over a driving soul groove"
       }
     }
+  ],
+  "acoustic-pop": [
+    {
+      "id": "kitchen-table",
+      "label": "KITCHEN TABLE",
+      "description": "close fingerpicked guitar and one voice",
+      "genre": "acoustic-pop",
+      "role": "intimate",
+      "upbeat": false,
+      "brief": {
+        "groove": "acoustic pop, unhurried fingerpicked 84 bpm in 4/4",
+        "palette": "steel-string guitar, soft kick, brushed snare, warm upright bass",
+        "energy": "hushed verse opening to a bright honest chorus",
+        "vocals": "{gender} lead close and clear, no stacks",
+        "hook": "sung hook, a short repeated phrase easy to sing back",
+        "scene_words": "first line names the kitchen and the cooling cup",
+        "problem_shift": "shift one: guitar alone under the admission",
+        "solution_shift": "shift two: upright bass and soft kit re-enter",
+        "ending": "short ending: one strummed chord held and released",
+        "arrangement": "bare fingerpicked guitar, one voice, soft room"
+      }
+    },
+    {
+      "id": "front-porch",
+      "label": "FRONT PORCH",
+      "description": "warm acoustic quartet with light harmony",
+      "genre": "acoustic-pop",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "acoustic pop, relaxed live 96 bpm with a light swing",
+        "palette": "two acoustic guitars, upright bass, hand shaker, brushed kit",
+        "energy": "warm conversational ease that widens at the hook",
+        "vocals": "{gender} lead with a soft second-voice harmony",
+        "hook": "sung hook answered by a low harmony line",
+        "scene_words": "opens on the porch step and the screen door",
+        "problem_shift": "shift one: instruments thin to guitar and voice",
+        "solution_shift": "shift two: upright bass and shaker return together",
+        "ending": "short ending: final chorus tag then a clean stop",
+        "arrangement": "live porch quartet, guitars and upright bass in one room"
+      }
+    },
+    {
+      "id": "wide-open",
+      "label": "WIDE OPEN",
+      "description": "wide strummed guitars and a group hook",
+      "genre": "acoustic-pop",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "acoustic pop, upbeat 112 bpm with a driving strum",
+        "palette": "strummed guitars, full kit, claps, bright piano, round bass",
+        "energy": "the most upbeat take, open and lifting from bar one",
+        "vocals": "{gender} lead with a wide group harmony on the hook",
+        "hook": "sung hook, big and repeated, built for a room to join",
+        "scene_words": "scene words land on the first downbeat",
+        "problem_shift": "shift one: drums drop and guitars hold one chord",
+        "solution_shift": "shift two: full kit, bass and claps return",
+        "ending": "short ending: last hook line on one held chord",
+        "arrangement": "wide strummed guitars, live kit, claps and bright piano"
+      }
+    }
+  ],
+  "folk-storytelling": [
+    {
+      "id": "single-voice",
+      "label": "SINGLE VOICE",
+      "description": "one nylon guitar and a close telling",
+      "genre": "folk-storytelling",
+      "role": "intimate",
+      "upbeat": false,
+      "brief": {
+        "groove": "folk storytelling, slow 72 bpm in 3/4, free and breathing",
+        "palette": "one nylon-string guitar, faint room, a single low hum",
+        "energy": "quiet and attentive, held at a conversational hush",
+        "vocals": "{gender} lead, plain and close, telling it straight",
+        "hook": "sung refrain, one line repeated like a remembered saying",
+        "scene_words": "first line names the bus stop and the folded letter",
+        "problem_shift": "shift one: guitar drops to single notes",
+        "solution_shift": "shift two: a low hum joins the refrain",
+        "ending": "short ending: the refrain stops mid-phrase",
+        "arrangement": "one nylon-string guitar and a close voice, almost no room"
+      }
+    },
+    {
+      "id": "travelling-trio",
+      "label": "TRAVELLING TRIO",
+      "description": "guitar, fiddle and upright bass on the road",
+      "genre": "folk-storytelling",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "folk storytelling, walking 88 bpm in 4/4",
+        "palette": "acoustic guitar, fiddle, upright bass, light tambourine",
+        "energy": "steady travel pulse, warmer with each verse",
+        "vocals": "{gender} lead with fiddle and a low harmony answering",
+        "hook": "sung refrain traded between lead and harmony",
+        "scene_words": "opens on a mile marker and a packed bag",
+        "problem_shift": "shift one: fiddle holds a long note alone",
+        "solution_shift": "shift two: bass walk and tambourine resume",
+        "ending": "short ending: trio lands on one shared note",
+        "arrangement": "guitar, fiddle and upright bass played live together"
+      }
+    },
+    {
+      "id": "village-refrain",
+      "label": "VILLAGE REFRAIN",
+      "description": "a stomping communal refrain",
+      "genre": "folk-storytelling",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "folk storytelling, upbeat 104 bpm with a stomping 4/4",
+        "palette": "strummed guitar, stomp box, fiddle, group voices, upright bass",
+        "energy": "the most upbeat take, communal and rising",
+        "vocals": "{gender} lead with a full group refrain",
+        "hook": "sung refrain, everybody joins the last line",
+        "scene_words": "scene words arrive with the first stomp",
+        "problem_shift": "shift one: stomp stops, fiddle alone",
+        "solution_shift": "shift two: stomp and group return",
+        "ending": "short ending: refrain cuts on the stomp",
+        "arrangement": "stomp box, fiddle, upright bass and a room of voices"
+      }
+    }
+  ],
+  "country-pop": [
+    {
+      "id": "porch-light",
+      "label": "PORCH LIGHT",
+      "description": "gentle two-step with pedal steel",
+      "genre": "country-pop",
+      "role": "intimate",
+      "upbeat": false,
+      "brief": {
+        "groove": "country pop, gentle 92 bpm with a two-step lilt",
+        "palette": "acoustic guitar, pedal steel, soft brush kit, warm bass",
+        "energy": "low and tender, opening up only at the chorus",
+        "vocals": "{gender} lead, honest and unadorned",
+        "hook": "sung chorus, plain words with a lifted last line",
+        "scene_words": "first line names the porch light and the gravel drive",
+        "problem_shift": "shift one: steel and voice only",
+        "solution_shift": "shift two: bass and brushes return",
+        "ending": "short ending: steel slides up and fades",
+        "arrangement": "acoustic guitar, pedal steel and brushes, close and warm"
+      }
+    },
+    {
+      "id": "barroom-band",
+      "label": "BARROOM BAND",
+      "description": "loose live shuffle with piano and steel",
+      "genre": "country-pop",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "country pop, live 108 bpm shuffle",
+        "palette": "electric guitar, pedal steel, piano, live kit, electric bass",
+        "energy": "loose barroom swing that tightens on the chorus",
+        "vocals": "{gender} lead with a barroom harmony below",
+        "hook": "sung chorus, harmony on the second half",
+        "scene_words": "opens on a neon sign and a crowded room",
+        "problem_shift": "shift one: band drops to piano and voice",
+        "solution_shift": "shift two: full band kicks back in",
+        "ending": "short ending: band lands on a held chord",
+        "arrangement": "live barroom band, electric guitar, steel and piano"
+      }
+    },
+    {
+      "id": "sunlit-anthem",
+      "label": "SUNLIT ANTHEM",
+      "description": "windows-down country pop with a clap break",
+      "genre": "country-pop",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "country pop, upbeat 124 bpm with a driving backbeat",
+        "palette": "bright electric guitars, full kit, claps, pedal steel, bass",
+        "energy": "the most upbeat take, windows-down and forward",
+        "vocals": "{gender} lead with a wide chorus harmony",
+        "hook": "sung chorus, big and repeatable with a clap break",
+        "scene_words": "scene words hit on the first snare",
+        "problem_shift": "shift one: guitars ring out and drums pause",
+        "solution_shift": "shift two: drums and full band drive back",
+        "ending": "short ending: final chorus tag on one chord",
+        "arrangement": "bright electric guitars, live kit, claps and pedal steel"
+      }
+    }
+  ],
+  "melodic-rap": [
+    {
+      "id": "midnight-croon",
+      "label": "MIDNIGHT CROON",
+      "description": "soft melodic rap in a half-time night mix",
+      "genre": "melodic-rap",
+      "role": "intimate",
+      "upbeat": false,
+      "brief": {
+        "groove": "melodic rap, half-time 76 bpm with a soft bounce",
+        "palette": "muted keys, sub bass, sparse hats, distant pad",
+        "energy": "low and confessional, blooming at the sung hook",
+        "vocals": "{gender} lead, melodic rap verses into a close sung hook",
+        "hook": "sung hook; verses rap soft and melodic",
+        "scene_words": "first line names the car and the empty street",
+        "problem_shift": "shift one: drums fall away to keys",
+        "solution_shift": "shift two: bass and hats return",
+        "ending": "short ending: one sung line over a held key",
+        "arrangement": "muted keys, sub bass and sparse hats, night mix"
+      }
+    },
+    {
+      "id": "live-band-flow",
+      "label": "LIVE BAND FLOW",
+      "description": "melodic rap over a rolling live band",
+      "genre": "melodic-rap",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "melodic rap, live 88 bpm with a rolling pocket",
+        "palette": "electric piano, live drums, round bass, clean guitar",
+        "energy": "warm live push, verse tight and hook open",
+        "vocals": "{gender} lead with a live harmony on the hook",
+        "hook": "sung hook; verses rap with a live band behind",
+        "scene_words": "opens on a stage door and a packed room",
+        "problem_shift": "shift one: band pulls back to electric piano",
+        "solution_shift": "shift two: drums and bass roll back",
+        "ending": "short ending: band stops under the last sung word",
+        "arrangement": "live drums, electric piano and round bass in one take"
+      }
+    },
+    {
+      "id": "stadium-bounce",
+      "label": "STADIUM BOUNCE",
+      "description": "hands-up melodic rap with bright stabs",
+      "genre": "melodic-rap",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "melodic rap, upbeat 100 bpm with a wide bounce",
+        "palette": "bright synth stabs, sub bass, hard claps, full kit",
+        "energy": "the most upbeat take, hands-up and driving",
+        "vocals": "{gender} lead with layered sung hook stacks",
+        "hook": "sung hook; verses rap fast and clear",
+        "scene_words": "scene words land on the first clap",
+        "problem_shift": "shift one: synths cut to a low sub",
+        "solution_shift": "shift two: claps and full kit return",
+        "ending": "short ending: hook cuts on a single clap",
+        "arrangement": "bright synth stabs, sub bass and hard claps, stadium mix"
+      }
+    }
+  ],
+  "trap-rap": [
+    {
+      "id": "late-night-drift",
+      "label": "LATE NIGHT DRIFT",
+      "description": "sparse night trap with deep 808",
+      "genre": "trap-rap",
+      "role": "intimate",
+      "upbeat": false,
+      "brief": {
+        "groove": "trap rap, half-time 132 bpm with lazy rolling hats",
+        "palette": "deep 808, dark bells, sparse snares, airy pad",
+        "energy": "cold and contained until the hook snaps",
+        "vocals": "{gender} lead, low rap, close and deliberate",
+        "hook": "rap hook, short chant, half-time behind it",
+        "scene_words": "first line names the hotel lot and the phone light",
+        "problem_shift": "shift one: 808 holds a single note",
+        "solution_shift": "shift two: hats and snare roll back",
+        "ending": "short ending: 808 cuts mid-tail",
+        "arrangement": "deep 808, dark bells and rolling hats, sparse night mix"
+      }
+    },
+    {
+      "id": "block-party-808",
+      "label": "BLOCK PARTY 808",
+      "description": "808 under a live kit with group answers",
+      "genre": "trap-rap",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "trap rap, 140 bpm with live drums under the 808",
+        "palette": "808, live kit, brass stab, shouted group answers",
+        "energy": "block-party heat, loose but hard-hitting",
+        "vocals": "{gender} lead with a shouted group answer",
+        "hook": "rap hook, answered by a group chant",
+        "scene_words": "opens on a corner crowd and a car door",
+        "problem_shift": "shift one: 808 drops, live kit alone",
+        "solution_shift": "shift two: brass and group return",
+        "ending": "short ending: chant cuts on the last 808",
+        "arrangement": "808 under a live kit with brass stabs and group answers"
+      }
+    },
+    {
+      "id": "festival-hype",
+      "label": "FESTIVAL HYPE",
+      "description": "peak-time trap with a stacked chant hook",
+      "genre": "trap-rap",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "trap rap, upbeat 150 bpm with double-time hats",
+        "palette": "hard 808, bright leads, festival drums, crowd claps",
+        "energy": "the most upbeat take, peak-time and relentless",
+        "vocals": "{gender} lead with a stacked chant hook",
+        "hook": "rap hook, a big chant with no sung release",
+        "scene_words": "scene words hit with the first drop",
+        "problem_shift": "shift one: leads mute, 808 sustains",
+        "solution_shift": "shift two: hats and claps slam back",
+        "ending": "short ending: drop cuts to one clap",
+        "arrangement": "hard 808, bright lead and festival drums, peak mix"
+      }
+    }
+  ],
+  "pop-rap": [
+    {
+      "id": "playground-chant",
+      "label": "PLAYGROUND CHANT",
+      "description": "small-scale toy-piano pop rap",
+      "genre": "pop-rap",
+      "role": "intimate",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "pop rap, easy 96 bpm with a clap-driven walk",
+        "palette": "toy piano, round bass, hand claps, simple kick",
+        "energy": "bright and cheeky, small-scale and playful",
+        "vocals": "{gender} lead with a playground group answer",
+        "hook": "sung pop hook; verses rap light and clear",
+        "scene_words": "first line names the school gate and the sneakers",
+        "problem_shift": "shift one: claps stop, toy piano alone",
+        "solution_shift": "shift two: bass and claps bounce back",
+        "ending": "short ending: chant stops on a single clap",
+        "arrangement": "toy piano, round bass and hand claps, small room"
+      }
+    },
+    {
+      "id": "live-party-band",
+      "label": "LIVE PARTY BAND",
+      "description": "pop rap over a live funk band",
+      "genre": "pop-rap",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "pop rap, live 108 bpm with a band bounce",
+        "palette": "live drums, funk guitar, synth brass, electric bass",
+        "energy": "party-band lift, tight verse and wide hook",
+        "vocals": "{gender} lead with a band harmony on the hook",
+        "hook": "sung pop hook; verses rap over live drums",
+        "scene_words": "opens on a kitchen party and a spilled drink",
+        "problem_shift": "shift one: band drops to funk guitar",
+        "solution_shift": "shift two: drums and brass pile back",
+        "ending": "short ending: band hits one chord and stops",
+        "arrangement": "live drums, funk guitar and synth brass, party mix"
+      }
+    },
+    {
+      "id": "chart-anthem",
+      "label": "CHART ANTHEM",
+      "description": "radio-sized pop rap with a four-on-floor push",
+      "genre": "pop-rap",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "pop rap, upbeat 118 bpm with a four-on-floor push",
+        "palette": "bright synths, full kit, claps, sub bass, vocal stacks",
+        "energy": "the most upbeat take, chart-sized and forward",
+        "vocals": "{gender} lead with stacked hook harmonies",
+        "hook": "sung pop hook; verses rap quick and clear",
+        "scene_words": "scene words land on the first kick",
+        "problem_shift": "shift one: synths thin to sub bass",
+        "solution_shift": "shift two: kit and claps drive back",
+        "ending": "short ending: hook lands on one held note",
+        "arrangement": "bright synths, four-on-floor kit and claps, radio mix"
+      }
+    }
+  ],
+  "pop-rock": [
+    {
+      "id": "acoustic-stripped",
+      "label": "ACOUSTIC STRIPPED",
+      "description": "a raw acoustic reading of the song",
+      "genre": "pop-rock",
+      "role": "intimate",
+      "upbeat": false,
+      "brief": {
+        "groove": "pop rock, steady 108 bpm, acoustic and open",
+        "palette": "acoustic guitar, soft kick, tambourine, warm bass",
+        "energy": "restrained verse, chorus opens like a door",
+        "vocals": "{gender} lead, raw and close",
+        "hook": "sung chorus, big vowel on the title phrase",
+        "scene_words": "first line names the empty flat and the keys",
+        "problem_shift": "shift one: guitar alone under the line",
+        "solution_shift": "shift two: bass and tambourine return",
+        "ending": "short ending: one chord rings and stops",
+        "arrangement": "acoustic guitar, soft kit and tambourine, stripped mix"
+      }
+    },
+    {
+      "id": "garage-band",
+      "label": "GARAGE BAND",
+      "description": "crunch guitars in a live garage room",
+      "genre": "pop-rock",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "pop rock, live 128 bpm with a straight drive",
+        "palette": "crunch guitars, live kit, electric bass, organ",
+        "energy": "garage energy, loose and loud",
+        "vocals": "{gender} lead with a shouted harmony",
+        "hook": "sung chorus, gang harmony on the repeat",
+        "scene_words": "opens on a garage door and a blown amp",
+        "problem_shift": "shift one: guitars drop to clean arpeggio",
+        "solution_shift": "shift two: distortion and kit crash back",
+        "ending": "short ending: feedback cut to silence",
+        "arrangement": "crunch guitars, live kit and organ, garage room"
+      }
+    },
+    {
+      "id": "stadium-chorus",
+      "label": "STADIUM CHORUS",
+      "description": "wide guitars and a crowd-sized chorus",
+      "genre": "pop-rock",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "pop rock, upbeat 140 bpm with a driving backbeat",
+        "palette": "wide guitars, big kit, piano, crowd-sized harmonies",
+        "energy": "the most upbeat take, arms-up and enormous",
+        "vocals": "{gender} lead with a stadium harmony stack",
+        "hook": "sung chorus, built for a crowd to shout back",
+        "scene_words": "scene words hit on the first crash",
+        "problem_shift": "shift one: drums stop, guitars hold",
+        "solution_shift": "shift two: kit and crowd harmonies return",
+        "ending": "short ending: final chorus on one crash",
+        "arrangement": "wide guitars, big live kit and piano, stadium mix"
+      }
+    }
+  ],
+  "reggaeton": [
+    {
+      "id": "perreo-club",
+      "label": "PERREO CLUB",
+      "description": "tight dembow for a late club",
+      "genre": "reggaeton",
+      "role": "intimate",
+      "upbeat": false,
+      "brief": {
+        "groove": "reggaeton, 92 bpm dembow with a tight tresillo",
+        "palette": "dembow kick, rim clicks, deep sub, marimba pluck",
+        "energy": "cool and low, hips-first, the hook turns up the heat",
+        "vocals": "{gender} lead, rhythmic and close",
+        "hook": "sung chorus with a rhythmic call-and-answer",
+        "scene_words": "first line names the club door and the bass",
+        "problem_shift": "shift one: dembow drops to sub and voice",
+        "solution_shift": "shift two: rim clicks and marimba return",
+        "ending": "short ending: dembow cuts on the last kick",
+        "arrangement": "dembow kick, rim clicks and deep sub, club mix"
+      }
+    },
+    {
+      "id": "live-percussion",
+      "label": "LIVE PERCUSSION",
+      "description": "congas and timbales under a live dembow",
+      "genre": "reggaeton",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "reggaeton, live 96 bpm with congas under the dembow",
+        "palette": "congas, timbales, electric bass, guitar, live kit",
+        "energy": "street-party pulse, live hands and warm bass",
+        "vocals": "{gender} lead with a live call-and-answer",
+        "hook": "sung chorus answered by live percussion shouts",
+        "scene_words": "opens on a corner sound system and a warm night",
+        "problem_shift": "shift one: drums thin to congas",
+        "solution_shift": "shift two: timbales and bass return",
+        "ending": "short ending: conga roll lands and stops",
+        "arrangement": "congas, timbales and electric bass played live"
+      }
+    },
+    {
+      "id": "summer-anthem",
+      "label": "SUMMER ANTHEM",
+      "description": "bright dembow with a crowd hook",
+      "genre": "reggaeton",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "reggaeton, upbeat 104 bpm with a bright dembow",
+        "palette": "bright dembow, synth hook, claps, brass, deep sub",
+        "energy": "the most upbeat take, sunlit and bouncy",
+        "vocals": "{gender} lead with a wide sung hook gang",
+        "hook": "sung chorus, big call-and-answer with a crowd",
+        "scene_words": "scene words arrive on the first dembow hit",
+        "problem_shift": "shift one: brass cuts, sub holds",
+        "solution_shift": "shift two: dembow and claps jump back",
+        "ending": "short ending: hook cuts on a single clap",
+        "arrangement": "bright dembow, synth hook, claps and brass, summer mix"
+      }
+    }
+  ],
+  "cinematic-orchestral-song": [
+    {
+      "id": "solo-to-orchestra",
+      "label": "SOLO TO ORCHESTRA",
+      "description": "one cello opening into low strings",
+      "genre": "cinematic-orchestral-song",
+      "role": "intimate",
+      "upbeat": false,
+      "brief": {
+        "groove": "cinematic orchestral song, 66 bpm in 4/4, rubato leaning",
+        "palette": "solo cello, felt piano, low strings, soft timpani",
+        "energy": "small and fragile until the strings open",
+        "vocals": "{gender} lead, close and plain over the cello",
+        "hook": "sung hook, a long held line over rising strings",
+        "scene_words": "first line names the empty hall and the cold window",
+        "problem_shift": "shift one: orchestra falls to piano and voice",
+        "solution_shift": "shift two: low strings and timpani return",
+        "ending": "short ending: cello holds one low note",
+        "arrangement": "solo cello and felt piano growing into low strings"
+      }
+    },
+    {
+      "id": "full-orchestra-stage",
+      "label": "FULL ORCHESTRA STAGE",
+      "description": "stage-scale orchestra with a wordless pad",
+      "genre": "cinematic-orchestral-song",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "cinematic orchestral song, 76 bpm with a broad 4/4 pulse",
+        "palette": "full strings, horns, harp, timpani, wordless vocal pad",
+        "energy": "stage-scale, sweeping from hush to full ensemble",
+        "vocals": "{gender} lead with a wordless ensemble pad below",
+        "hook": "sung hook over the full orchestra",
+        "scene_words": "opens on a curtain and a lit stage",
+        "problem_shift": "shift one: orchestra drops to harp",
+        "solution_shift": "shift two: strings and horns swell back",
+        "ending": "short ending: full orchestra resolves and stops",
+        "arrangement": "full strings, horns, harp and timpani, concert hall"
+      }
+    },
+    {
+      "id": "epic-finale",
+      "label": "EPIC FINALE",
+      "description": "triumphant orchestral surge",
+      "genre": "cinematic-orchestral-song",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "cinematic orchestral song, upbeat 96 bpm with a driving pulse",
+        "palette": "strings, brass, timpani, snare, wordless vocal pad",
+        "energy": "the most upbeat take, triumphant and surging",
+        "vocals": "{gender} lead with a soaring wordless ensemble",
+        "hook": "sung hook, huge and open above brass",
+        "scene_words": "scene words hit with the first timpani",
+        "problem_shift": "shift one: brass cuts to a string hush",
+        "solution_shift": "shift two: brass and timpani surge",
+        "ending": "short ending: final chord rings and cuts",
+        "arrangement": "full strings, brass, timpani and snare, triumphant mix"
+      }
+    }
+  ],
+  "musical-theater": [
+    {
+      "id": "piano-reveal",
+      "label": "PIANO REVEAL",
+      "description": "a dressing-room confession at the piano",
+      "genre": "musical-theater",
+      "role": "intimate",
+      "upbeat": false,
+      "brief": {
+        "groove": "musical theater, 90 bpm with a rubato piano lead",
+        "palette": "grand piano, soft strings, upright bass, light cymbal",
+        "energy": "intimate confession building to a theatre belt",
+        "vocals": "{gender} lead, clear diction, character-driven",
+        "hook": "sung hook, a repeated title phrase with a key change",
+        "scene_words": "first line names the dressing room and the mirror",
+        "problem_shift": "shift one: piano alone under the turn",
+        "solution_shift": "shift two: strings and upright bass return",
+        "ending": "short ending: piano plays one final phrase",
+        "arrangement": "grand piano, soft strings and upright bass, stage intimacy"
+      }
+    },
+    {
+      "id": "ensemble-stage",
+      "label": "ENSEMBLE STAGE",
+      "description": "a company number building scene by scene",
+      "genre": "musical-theater",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "musical theater, 110 bpm with a staged march",
+        "palette": "piano, stage orchestra, brass, snare, company voices",
+        "energy": "company number, building scene by scene",
+        "vocals": "{gender} lead with a company response",
+        "hook": "sung hook, company joins the second pass",
+        "scene_words": "opens on a stage door and a full house",
+        "problem_shift": "shift one: orchestra drops to piano",
+        "solution_shift": "shift two: brass and company return",
+        "ending": "short ending: company lands on one chord",
+        "arrangement": "stage orchestra, brass and company voices, theatre mix"
+      }
+    },
+    {
+      "id": "showstopper",
+      "label": "SHOWSTOPPER",
+      "description": "curtain-call belt with the full pit",
+      "genre": "musical-theater",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "musical theater, upbeat 132 bpm with a driving pit pulse",
+        "palette": "full pit orchestra, brass, timpani, piano, company voices",
+        "energy": "the most upbeat take, curtain-call and triumphant",
+        "vocals": "{gender} lead with a full company belt",
+        "hook": "sung hook, big belt with a company repeat",
+        "scene_words": "scene words land on the first downbeat",
+        "problem_shift": "shift one: pit cuts to piano and voice",
+        "solution_shift": "shift two: full pit and company return",
+        "ending": "short ending: company holds the final chord",
+        "arrangement": "full pit orchestra, brass and company voices, showstopper mix"
+      }
+    }
+  ],
+  "contemporary-gospel": [
+    {
+      "id": "sanctuary-piano",
+      "label": "SANCTUARY PIANO",
+      "description": "quiet testimony at piano and organ",
+      "genre": "contemporary-gospel",
+      "role": "intimate",
+      "upbeat": false,
+      "brief": {
+        "groove": "contemporary gospel, 72 bpm with a slow 4/4 sway",
+        "palette": "grand piano, Hammond organ, soft kick, warm bass",
+        "energy": "quiet testimony opening into a lifted chorus",
+        "vocals": "{gender} lead, warm and close, gentle runs",
+        "hook": "sung hook, a repeated phrase with a rising tag",
+        "scene_words": "first line names the back pew and the morning light",
+        "problem_shift": "shift one: organ and piano alone",
+        "solution_shift": "shift two: bass and soft kick return",
+        "ending": "short ending: piano holds one chord",
+        "arrangement": "grand piano, Hammond organ and warm bass, sanctuary"
+      }
+    },
+    {
+      "id": "live-ensemble",
+      "label": "LIVE ENSEMBLE",
+      "description": "church-live build with ensemble answers",
+      "genre": "contemporary-gospel",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "contemporary gospel, live 84 bpm with a shuffle feel",
+        "palette": "live drums, organ, piano, electric bass, ensemble answers",
+        "energy": "church-live build, verse steady and chorus full",
+        "vocals": "{gender} lead with a live ensemble answer",
+        "hook": "sung hook answered by the ensemble",
+        "scene_words": "opens on a full room and a raised hand",
+        "problem_shift": "shift one: drums drop to organ",
+        "solution_shift": "shift two: kit and bass return",
+        "ending": "short ending: ensemble lands on one note",
+        "arrangement": "live drums, organ, piano and electric bass, church room"
+      }
+    },
+    {
+      "id": "celebration-lift",
+      "label": "CELEBRATION LIFT",
+      "description": "driving celebration with brass and ensemble",
+      "genre": "contemporary-gospel",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "contemporary gospel, upbeat 104 bpm with a driving 4/4",
+        "palette": "bright organ, piano, full kit, brass, ensemble voices",
+        "energy": "the most upbeat take, celebratory and rising",
+        "vocals": "{gender} lead with a full ensemble lift",
+        "hook": "sung hook, big ensemble repeat with a tag",
+        "scene_words": "scene words hit on the first kick",
+        "problem_shift": "shift one: brass cuts, organ sustains",
+        "solution_shift": "shift two: kit and ensemble surge",
+        "ending": "short ending: ensemble cuts on one chord",
+        "arrangement": "bright organ, piano, brass and full kit, celebration mix"
+      }
+    }
+  ],
+  "urban-gospel": [
+    {
+      "id": "devotional-flow",
+      "label": "DEVOTIONAL FLOW",
+      "description": "hushed devotional with melodic rap verses",
+      "genre": "urban-gospel",
+      "role": "intimate",
+      "upbeat": false,
+      "brief": {
+        "groove": "urban gospel, 80 bpm with a laid-back swing",
+        "palette": "soft keys, sub bass, brushed kit, warm organ",
+        "energy": "hushed devotional, verse low and hook open",
+        "vocals": "{gender} lead, melodic rap verses into a sung hook",
+        "hook": "sung gospel hook; verses rap honest and clear",
+        "scene_words": "first line names the kitchen table and the open book",
+        "problem_shift": "shift one: drums drop to keys",
+        "solution_shift": "shift two: bass and brushes return",
+        "ending": "short ending: one sung line over a held key",
+        "arrangement": "soft keys, sub bass and brushed kit, devotional mix"
+      }
+    },
+    {
+      "id": "live-band-lift",
+      "label": "LIVE BAND LIFT",
+      "description": "faith rap over a live church band",
+      "genre": "urban-gospel",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "urban gospel, live 92 bpm with a hip-hop pocket",
+        "palette": "live drums, organ, electric piano, bass, ensemble answers",
+        "energy": "warm live lift, tight verse and full hook",
+        "vocals": "{gender} lead with a live ensemble answer",
+        "hook": "sung gospel hook; verses rap over live drums",
+        "scene_words": "opens on a church lot and a packed room",
+        "problem_shift": "shift one: band pulls back to keys",
+        "solution_shift": "shift two: kit and organ return",
+        "ending": "short ending: ensemble lands on one chord",
+        "arrangement": "live drums, organ, electric piano and bass, church room"
+      }
+    },
+    {
+      "id": "joyful-bounce",
+      "label": "JOYFUL BOUNCE",
+      "description": "joyful bounce with a stacked ensemble hook",
+      "genre": "urban-gospel",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "urban gospel, upbeat 100 bpm with a bounce",
+        "palette": "bright keys, organ, full kit, claps, ensemble voices",
+        "energy": "the most upbeat take, joyful and driving",
+        "vocals": "{gender} lead with a stacked ensemble hook",
+        "hook": "sung gospel hook; verses rap quick and clear",
+        "scene_words": "scene words land on the first clap",
+        "problem_shift": "shift one: keys thin to organ",
+        "solution_shift": "shift two: kit and ensemble bounce back",
+        "ending": "short ending: hook cuts on one clap",
+        "arrangement": "bright keys, organ, full kit and claps, joy mix"
+      }
+    }
+  ],
+  "alternative-rnb": [
+    {
+      "id": "hushed-club",
+      "label": "HUSHED CLUB",
+      "description": "elastic after-hours R&B with muted synth",
+      "genre": "alternative-rnb",
+      "role": "intimate",
+      "upbeat": false,
+      "brief": {
+        "groove": "alternative rnb, 70 bpm with an elastic half-time",
+        "palette": "muted synth, sub bass, finger snaps, dusty piano",
+        "energy": "hushed and strange, widening at the hook",
+        "vocals": "{gender} lead, airy and close, light runs",
+        "hook": "sung hook, a fragmented phrase over sparse bass",
+        "scene_words": "first line names the after-hours room and the blue light",
+        "problem_shift": "shift one: synth and voice only",
+        "solution_shift": "shift two: snaps and sub bass return",
+        "ending": "short ending: synth tail cuts short",
+        "arrangement": "muted synth, sub bass and snaps, after-hours mix"
+      }
+    },
+    {
+      "id": "live-night-band",
+      "label": "LIVE NIGHT BAND",
+      "description": "a late-night band with a broken pocket",
+      "genre": "alternative-rnb",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "alternative rnb, live 84 bpm with a broken pocket",
+        "palette": "electric piano, fretless bass, live kit, clean guitar",
+        "energy": "late-night band, loose and hypnotic",
+        "vocals": "{gender} lead with a floating live harmony",
+        "hook": "sung hook, harmony drifting under the lead",
+        "scene_words": "opens on a small stage and a closing bar",
+        "problem_shift": "shift one: kit drops to fretless bass",
+        "solution_shift": "shift two: keys and kit return",
+        "ending": "short ending: bass holds one note",
+        "arrangement": "electric piano, fretless bass and live kit, small room"
+      }
+    },
+    {
+      "id": "neon-anthem",
+      "label": "NEON ANTHEM",
+      "description": "propulsive neon R&B with vocal pads",
+      "genre": "alternative-rnb",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "alternative rnb, upbeat 96 bpm with a pulsing 4/4",
+        "palette": "neon synth, sub bass, tight kit, layered vocal pads",
+        "energy": "the most upbeat take, neon and propulsive",
+        "vocals": "{gender} lead with layered vocal pads",
+        "hook": "sung hook, big and cutting through the mix",
+        "scene_words": "scene words hit on the first pulse",
+        "problem_shift": "shift one: synth drops to sub bass",
+        "solution_shift": "shift two: kit and pads return",
+        "ending": "short ending: pulse stops on one hit",
+        "arrangement": "neon synth, sub bass and tight kit, neon mix"
+      }
+    }
+  ],
+  "afro-soul": [
+    {
+      "id": "sunrise-acoustic",
+      "label": "SUNRISE ACOUSTIC",
+      "description": "nylon guitar and kalimba at first light",
+      "genre": "afro-soul",
+      "role": "intimate",
+      "upbeat": false,
+      "brief": {
+        "groove": "afro soul, gentle 98 bpm with a rolling 12/8 feel",
+        "palette": "nylon guitar, kalimba, shaker, soft bass",
+        "energy": "warm and unhurried, opening at the chorus",
+        "vocals": "{gender} lead, rich and close, light runs",
+        "hook": "sung hook, a short phrase over kalimba",
+        "scene_words": "first line names the open window and the morning market",
+        "problem_shift": "shift one: guitar and kalimba alone",
+        "solution_shift": "shift two: shaker and soft bass return",
+        "ending": "short ending: kalimba figures twice then stops",
+        "arrangement": "nylon guitar, kalimba and shaker, sunrise mix"
+      }
+    },
+    {
+      "id": "live-afro-band",
+      "label": "LIVE AFRO BAND",
+      "description": "interlocking percussion and horn stabs",
+      "genre": "afro-soul",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "afro soul, live 108 bpm with interlocking percussion",
+        "palette": "djembe, congas, electric bass, guitar, horn stabs",
+        "energy": "village-party pulse, live and communal",
+        "vocals": "{gender} lead with a live group answer",
+        "hook": "sung hook answered by a group phrase",
+        "scene_words": "opens on a street corner and a talking drum",
+        "problem_shift": "shift one: horns drop, drums hold",
+        "solution_shift": "shift two: bass and horns return",
+        "ending": "short ending: percussion lands on one hit",
+        "arrangement": "djembe, congas, electric bass and horn stabs, live"
+      }
+    },
+    {
+      "id": "festival-lift",
+      "label": "FESTIVAL LIFT",
+      "description": "sunlit afrobeat drive with a group hook",
+      "genre": "afro-soul",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "afro soul, upbeat 116 bpm with a driving afrobeat pulse",
+        "palette": "bright guitar, horns, full percussion, bass, group voices",
+        "energy": "the most upbeat take, sunlit and dancing",
+        "vocals": "{gender} lead with a wide group hook",
+        "hook": "sung hook, group repeat with a horn tag",
+        "scene_words": "scene words arrive on the first drum hit",
+        "problem_shift": "shift one: horns cut, percussion holds",
+        "solution_shift": "shift two: full band surges back",
+        "ending": "short ending: group cuts on one chord",
+        "arrangement": "bright guitar, horns and full percussion, festival mix"
+      }
+    }
+  ],
+  "country-rap": [
+    {
+      "id": "dust-road-flow",
+      "label": "DUST ROAD FLOW",
+      "description": "dry half-time country rap with slide guitar",
+      "genre": "country-rap",
+      "role": "intimate",
+      "upbeat": false,
+      "brief": {
+        "groove": "country rap, 90 bpm with a slow half-time swagger",
+        "palette": "acoustic guitar, 808, sparse snare, slide guitar",
+        "energy": "dry and heavy, verse dark and hook open",
+        "vocals": "{gender} lead, low rap verses into a raw sung hook",
+        "hook": "sung country hook; verses rap slow and clear",
+        "scene_words": "first line names the dirt road and the truck bed",
+        "problem_shift": "shift one: 808 and guitar alone",
+        "solution_shift": "shift two: snare and slide return",
+        "ending": "short ending: slide holds one note",
+        "arrangement": "acoustic guitar, 808 and slide, dust-road mix"
+      }
+    },
+    {
+      "id": "live-truck-bed",
+      "label": "LIVE TRUCK BED",
+      "description": "tailgate band with live drums and fiddle",
+      "genre": "country-rap",
+      "role": "live",
+      "upbeat": false,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "country rap, live 104 bpm with a stomping backbeat",
+        "palette": "live kit, electric guitar, 808, fiddle, bass",
+        "energy": "tailgate party push, live and rowdy",
+        "vocals": "{gender} lead with a live group answer",
+        "hook": "sung country hook; verses rap over live drums",
+        "scene_words": "opens on a tailgate and a fire",
+        "problem_shift": "shift one: band drops to fiddle",
+        "solution_shift": "shift two: kit and 808 return",
+        "ending": "short ending: band lands on one chord",
+        "arrangement": "live kit, electric guitar, 808 and fiddle, tailgate mix"
+      }
+    },
+    {
+      "id": "stadium-stomp",
+      "label": "STADIUM STOMP",
+      "description": "stadium-sized country rap with a crowd hook",
+      "genre": "country-rap",
+      "role": "upbeat",
+      "upbeat": true,
+      "revoices_lead": true,
+      "brief": {
+        "groove": "country rap, upbeat 128 bpm with a stadium stomp",
+        "palette": "heavy drums, 808, electric guitar, crowd claps, fiddle",
+        "energy": "the most upbeat take, stadium-sized and defiant",
+        "vocals": "{gender} lead with a stacked crowd hook",
+        "hook": "sung country hook; verses rap hard and clear",
+        "scene_words": "scene words hit on the first stomp",
+        "problem_shift": "shift one: guitar rings, drums pause",
+        "solution_shift": "shift two: drums and 808 slam back",
+        "ending": "short ending: stomp cuts on one clap",
+        "arrangement": "heavy drums, 808, electric guitar and fiddle, stadium mix"
+      }
+    }
   ]
 }

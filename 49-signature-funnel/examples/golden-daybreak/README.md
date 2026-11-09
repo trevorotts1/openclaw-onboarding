@@ -40,7 +40,7 @@ provers and drives the canonical no-skip orchestrator to a signed
 | `media_ledger.json` | Image records (Kie taskId + GHL host) + thank-you page (no-pitch gate input) |
 | `build_golden.py` | Deterministic reproducer — regenerates every ledger, proves each gate, mints the cert, and writes the broken variants + rejection results |
 | `working/prover_results.json` | Captured PASS output of the four Signature-Funnel provers |
-| `delivery/golden-daybreak-FINAL/PROCESS-CERTIFICATE.{json,md}` | Issued, signed process certificate (specimen; nonce `golden-daybreak-nonce-v1`) |
+| `delivery/golden-daybreak-FINAL/PROCESS-CERTIFICATE.{json,md}` | Issued, signed process certificate (specimen; signed under an ephemeral operator key, so it checks structurally only) |
 | `broken-variants/` | Five one-mutation broken variants + `REJECTION-RESULTS.json` proving each fails closed on a DISTINCT AF-FUN-* |
 
 ## Reproduce
@@ -60,8 +60,8 @@ bash $SF/verify.sh                                                              
 ```
 
 `run_method`: **canonical-orchestrator.** `verify.sh` copies the four golden ledgers
-into a throwaway run-dir, writes a fresh run-scoped `.sf_run_nonce`, and runs
-`run_signature_funnel.py --run-dir … --nonce …` — the no-skip state machine — which
+into a throwaway run-dir, makes a throwaway operator key outside it (`SF_OPERATOR_KEY_FILE`), mints the model receipt and
+stub provider receipts under that key, and runs `run_signature_funnel.py --run-dir …` (no nonce) — the no-skip state machine — which
 emits a signed certificate only on all-phases-pass. The delegated P3/P4/P5/P6/P7/P8
 phases (Kie image generation + all GHL media/build via Skills 47 and 6) are attested
 seams in this repo-only reproduce; their live adapters run on a provisioned box.

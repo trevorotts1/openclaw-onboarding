@@ -63,14 +63,19 @@ S44 / vendor order events                 S82
    tenant/location/launch identity. A mixed-tenant or mixed-launch
    stream is rejected outright (`mixed_identity_stream`) — events are
    never sorted into the "probably right" tenant.
-2. **Grouping is by native order only.** Events are grouped by
+2. **Grouping is by native order, plus the parent_order_ref chain.** Events are grouped by
    `native_order_ref` under that single identity, producing one
    snapshot per order. A later extra (U1/D1/U2) attaches to an order's
    snapshot **only** when its event carries that same native order
    reference — the native order/transaction relationship is the proof
    of same journey (spec 12 section 5). One initial order can contain
    main plus bump in a single event; later extras arrive as further
-   events under the same order and are appended.
+   events under the same order and are appended. A v1.2 event whose
+   parent_order_ref names another order present in the same stream
+   groups under that order's root (DTY-21: a one-click extra the
+   provider gives its own order ref). A link to an order not in the
+   stream groups nothing; a cycle or an order naming two different
+   parents fails closed (parent_order_cycle / parent_order_conflict).
 3. **Email never groups anything.** The adapter has no email (or any
    contact-identity) input at all. Two orders bought by the same person
    stay two snapshots; returning-buyer historical entitlements are
@@ -105,6 +110,15 @@ S44 / vendor order events                 S82
    fallback — the offer ID itself with an empty one-time billing
    block. Amounts, currencies, slots, and entitlement IDs are never
    defaulted or invented.
+8. **Transaction identity is reported, never fabricated.** The
+   snapshot's `native_transaction_ref` is the one transaction the
+   order's events agree on; a multi-transaction order (successive
+   purchases) reports null rather than naming one event's transaction
+   as if it covered the whole order. Dedupe never uses that value:
+   events dedupe by `event_id` and purchased lines by
+   `native_line_ref`, matching S44's per-line delivery identity
+   (tenant + transaction + purchased line + action + version) — never
+   an order id alone.
 
 ## What stays blocked (live half — L3/L4 pending, NOT faked)
 

@@ -123,6 +123,105 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# >>> RELEASE-PIN BEGIN (approved immutable release identity) >>>
+# One approved, immutable release identity governs the whole update path.
+# Resolution order: OPENCLAW_APPROVED_RELEASE env, then the pin file's
+# approved_ref. Mode: OPENCLAW_RELEASE_PIN_MODE env, then the pin file's mode,
+# then "enforce" if a pin is configured, else "off" (follow latest main).
+#   enforce  -> no valid pin => REFUSE with a named reason code (exit 78)
+#   advisory -> no valid pin => follow main with a loud warning
+#   off      -> legacy behaviour (follow main)
+# A pin is a 40-hex commit id or a tag name. Branch names that move
+# (main/master/HEAD/origin/*) are refused as pins.
+RELEASE_REF=""
+OC_RELEASE_PIN_REASON=""
+_release_pin_root() {
+  if [ -n "${OPENCLAW_ROOT:-}" ]; then printf '%s' "$OPENCLAW_ROOT"
+  elif [ -d /data/.openclaw ]; then printf '%s' /data/.openclaw
+  else printf '%s/.openclaw' "$HOME"; fi
+}
+_release_pin_file() {
+  printf '%s' "${OPENCLAW_RELEASE_PIN_FILE:-$(_release_pin_root)/fleet-refresh/release-pin.json}"
+}
+_release_pin_read() {
+  local f; f="$(_release_pin_file)"
+  [ -f "$f" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -I -c 'import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+v=d.get(sys.argv[2])
+if v is None:
+    sys.exit(1)
+print(v)' "$f" "$1" 2>/dev/null
+}
+_release_pin_mode() {
+  local m="${OPENCLAW_RELEASE_PIN_MODE:-}"
+  [ -n "$m" ] || m="$(_release_pin_read mode 2>/dev/null || true)"
+  # No mode set anywhere: enforce only when a pin was actually configured;
+  # otherwise follow the latest release (main) exactly as before the gate.
+  # Same rule as oc-atomic-upgrade.sh _npm_pin_mode. Defaulting to enforce
+  # with no pin on any box froze every Sunday update (RELEASE_PIN_UNCONFIGURED).
+  [ -n "$m" ] || { if [ -n "$(_release_pin_ref)" ]; then m="enforce"; else m="off"; fi; }
+  printf '%s' "$m"
+}
+_release_pin_ref() {
+  local r="${OPENCLAW_APPROVED_RELEASE:-}"
+  [ -n "$r" ] || r="$(_release_pin_read approved_ref 2>/dev/null || true)"
+  printf '%s' "$r"
+}
+_release_is_sha() { case "${1:-}" in ""|*[!0-9a-f]*) return 1 ;; esac; [ "${#1}" -eq 40 ]; }
+_release_pin_validate() {
+  local r="$1" m
+  m="$(_release_pin_mode)"
+  case "$m" in enforce|advisory|off) ;; *) OC_RELEASE_PIN_REASON="RELEASE_PIN_MODE_INVALID"; return 1 ;; esac
+  [ -n "$r" ] || { OC_RELEASE_PIN_REASON="RELEASE_PIN_UNCONFIGURED"; return 1; }
+  case "$r" in main|master|HEAD|origin/*|refs/*) OC_RELEASE_PIN_REASON="RELEASE_PIN_INVALID"; return 1 ;; esac
+  case "$r" in *[!A-Za-z0-9._/-]*) OC_RELEASE_PIN_REASON="RELEASE_PIN_INVALID"; return 1 ;; esac
+  return 0
+}
+# 0 = proceed. 78 = refuse (enforce + no usable pin). Sets RELEASE_REF.
+_release_pin_require() {
+  local m r
+  m="$(_release_pin_mode)"; r="$(_release_pin_ref)"
+  RELEASE_REF=""
+  if _release_pin_validate "$r"; then RELEASE_REF="$r"; return 0; fi
+  if [ "$m" = "enforce" ] || [ "$OC_RELEASE_PIN_REASON" = "RELEASE_PIN_MODE_INVALID" ]; then
+    printf '%s\n' "$OC_RELEASE_PIN_REASON"
+    return 78
+  fi
+  RELEASE_REF="main"
+  if [ "$m" = "advisory" ]; then
+    printf '[release-pin] %s (advisory: following moving main)\n' "$OC_RELEASE_PIN_REASON" >&2
+  fi
+  return 0
+}
+_release_clone_source() {
+  local dest="$1" url="${2:-https://github.com/trevorotts1/openclaw-onboarding.git}"
+  if _release_is_sha "$RELEASE_REF"; then
+    git clone --depth 1 "$url" "$dest" || return 1
+    git -C "$dest" fetch --depth 1 origin "$RELEASE_REF" || return 1
+    git -C "$dest" checkout --detach "$RELEASE_REF" || return 1
+  else
+    git clone --depth 1 --branch "$RELEASE_REF" "$url" "$dest" || return 1
+  fi
+}
+# <<< RELEASE-PIN END <<<
+
+# A local dry run performs no side effects, so no release identity is required.
+if [ "$LOCAL" -eq 1 ] && [ "$APPLY" -eq 0 ]; then
+  RELEASE_REF="main"
+else
+  _release_pin_require
+  _RELEASE_PIN_RC=$?
+  if [ "$_RELEASE_PIN_RC" -ne 0 ]; then
+    echo "fleet-refresh.sh: REFUSED — ${OC_RELEASE_PIN_REASON}: no approved immutable release identity is configured; refusing to roll the moving default branch. Nothing was changed." >&2
+    exit 78
+  fi
+fi
+
 case "$WAVE" in
   ""|first|rest) ;;
   *) echo "FATAL: --wave must be first or rest (got: $WAVE)" >&2; exit 1 ;;
@@ -251,7 +350,13 @@ wave5_deploy_preflight
 # development checkout: require a clean clone on main.
 if [ $LOCAL -eq 1 ] && [ $APPLY -eq 1 ] && [ -d "$REPO_ROOT/.git" ]; then
   _branch="$(git -C "$REPO_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || echo detached)"
-  if [ "$_branch" != "main" ] || [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+  _on_ok=0
+  [ "$_branch" = "main" ] && _on_ok=1
+  if [ "$_on_ok" -ne 1 ] && [ "${RELEASE_REF:-main}" != "main" ]; then
+    _pin_head="$(git -C "$REPO_ROOT" rev-parse "refs/tags/$RELEASE_REF" 2>/dev/null || git -C "$REPO_ROOT" rev-parse "$RELEASE_REF" 2>/dev/null || true)"
+    [ -n "$_pin_head" ] && [ "$_pin_head" = "$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null)" ] && _on_ok=1
+  fi
+  if [ "$_on_ok" -ne 1 ] || [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
     echo "FATAL: --local --apply must run from a clean onboarding clone on main" >&2
     echo "       ($REPO_ROOT is on '$_branch'$( [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no 2>/dev/null)" ] && printf ' with uncommitted changes')). This run would reset it." >&2
     echo "       Use a dedicated clone, e.g.: git clone https://github.com/trevorotts1/openclaw-onboarding.git ~/clawd/openclaw-onboarding" >&2
@@ -280,7 +385,13 @@ RUNNER_FLAGS=""
 
 # One commit for the whole roll: a PR merged while the roll runs must not reach
 # the boxes that happen to start (or self-sync) after it.
-ROLL_SHA=$(git ls-remote "${FLEET_ROLL_REPO_URL:-https://github.com/trevorotts1/openclaw-onboarding.git}" refs/heads/main 2>/dev/null | cut -f1)
+if _release_is_sha "$RELEASE_REF"; then
+  ROLL_SHA="$RELEASE_REF"
+elif [ "$RELEASE_REF" = "main" ]; then
+  ROLL_SHA=$(git ls-remote "${FLEET_ROLL_REPO_URL:-https://github.com/trevorotts1/openclaw-onboarding.git}" refs/heads/main 2>/dev/null | cut -f1)
+else
+  ROLL_SHA=$(git ls-remote "${FLEET_ROLL_REPO_URL:-https://github.com/trevorotts1/openclaw-onboarding.git}" "refs/tags/$RELEASE_REF" 2>/dev/null | cut -f1)
+fi
 [ -n "$ROLL_SHA" ] && echo "[fleet-refresh] Rolling onboarding main at ${ROLL_SHA:0:12}"
 # The Command Center is NOT rolled from main: each box deploys the release
 # cc-compat.json pins at ROLL_SHA (the runner reads it from the roll copy and

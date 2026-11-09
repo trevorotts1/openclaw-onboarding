@@ -123,6 +123,15 @@ chat. To enable, set `env.vars.OPERATOR_ESCALATION_CHAT_ID` to the operator chat
 (unchanged). Operator maintenance, Rescue-Rangers escalations, and resume-cron
 self-pings use the **operator** account / session key. Never the reverse.
 
+**Under a fleet roll the update-result note is held, never sent.** The escalation
+chat can be the Rescue Rangers group, and a note there wakes a paid agent; during a
+roll the roll's watcher fixes a broken box and Rescue Rangers is not involved.
+`scripts/self-update.sh` exports `SELF_UPDATE_ROLL_ID`, `SELF_UPDATE_RUN_ID` (`ap-*`)
+and `SELF_UPDATE_ESCALATION_FILE` to everything it runs; `update-skills.sh`
+(`send_telegram_progress`) then sends nothing and writes the note to that file. The
+job puts the note's headline in `agent-pull-status.json` `error_tail`, and in
+`stuck_reason` when the job failed, so the watcher reads it from the status file.
+
 ---
 
 ## Lean bootstrap: the compact-core cadence

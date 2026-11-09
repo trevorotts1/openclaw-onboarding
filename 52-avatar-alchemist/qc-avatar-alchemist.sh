@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # qc-avatar-alchemist.sh — CI gate for Skill 52. Manifest↔prompts lockstep (40/40),
-# every prover self-test, the negative suite, gate-integrity, tone-core sync, no-Anthropic sweep.
+# every prover self-test, the negative suite, gate-integrity, tone-core sync.
 # Tested under bash -c and zsh -c. Exit 0 only when everything is green.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -34,11 +34,6 @@ DIRS=$(find "$HERE/prompts" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
 if [ "$DIRS" != "40" ]; then echo "  FAIL: $DIRS prompt dirs != 40"; fail=1; else echo "  ok: 40 prompt dirs"; fi
 run "artifact-token lockstep (every {{artifact.X}} is a declared dep; every dep consumed; no generic tokens)" \
     python3 "$HERE/scripts/aa_token_lockstep.py"
-
-echo "== no usable Anthropic model id baked =="
-if grep -REn 'anthropic/[a-z]|claude-sonnet-[0-9]|claude-opus|claude-haiku|claude-[0-9]' "$HERE/prompts" "$HERE"/*.json >/dev/null 2>&1; then
-  echo "  FAIL: a usable Anthropic model id is baked"; fail=1
-else echo "  ok: zero usable Anthropic ids"; fi
 
 echo "== golden BRAND intake passes; BOOK parks without skill 53 =="
 python3 "$HERE/scripts/aa_intake_gate.py" --intake "$HERE/test-fixtures/intake-brand.json" >/dev/null 2>&1 || { echo "  FAIL: brand fixture"; fail=1; }

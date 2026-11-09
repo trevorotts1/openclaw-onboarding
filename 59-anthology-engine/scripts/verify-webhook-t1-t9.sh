@@ -25,7 +25,7 @@
 # SECRET HYGIENE (binding): the route secret is resolved from the env store by
 # LABEL only (ANTHOLOGY_INTAKE_HOOK_SECRET). Its value is NEVER printed, logged,
 # or echoed; only SET / NOT SET is reported. Convert and Flow naming throughout.
-# No Anthropic identifier anywhere. All fixture data is synthetic.
+# All fixture data is synthetic.
 #
 # MODES / FLAGS:
 #   --self-test        structural self-check ONLY (no network); exit 0/4. Used by
@@ -109,11 +109,6 @@ ROUTE_TPL = P("config", "route-template.json")
 ENGINE_CFG = P("config", "engine-config.template.json")
 EXPECTED = os.path.join(FIX, "expected.json")
 LABEL = "ANTHOLOGY_INTAKE_HOOK_SECRET"
-
-# Anthropic-family id shapes assembled from fragments so no banned literal ever
-# lives in this file.
-_a = "anthro" + "pic"; _c = "clau" + "de-"
-BANNED = re.compile(_c + r"|" + _a + r"/|us\." + _a + r"\.", re.I)
 
 struct_fails = []   # structural defects -> exit 4
 def sneed(cond, msg):
@@ -273,16 +268,9 @@ if os.path.isfile(ROUTER):
 else:
     struct_fails.append("intake_router.py missing (the route cannot dispatch)")
 
-# No Anthropic id + no credential-shaped key in any owned webhook file.
+# No credential-shaped key in any owned webhook file.
 CRED_KEYS = {"api_key","apikey","openrouter_api_key","authorization","bearer",
              "token","secret","x-openclaw-token","x-openclaw-webhook-secret"}
-def scan_text(path):
-    try:
-        txt = open(path, "r", encoding="utf-8", errors="replace").read()
-    except Exception:
-        return
-    if BANNED.search(txt):
-        struct_fails.append("Anthropic-family id shape in %s" % os.path.relpath(path, SKILL))
 def scan_cred_keys(obj, where):
     if isinstance(obj, dict):
         for k, v in obj.items():
@@ -292,9 +280,6 @@ def scan_cred_keys(obj, where):
     elif isinstance(obj, list):
         for v in obj: scan_cred_keys(v, where)
 
-for path in [ROUTE_TPL, EXPECTED] + [os.path.join(FIX, f) for f in FIXTURE_FILES] + [notjson]:
-    if os.path.isfile(path):
-        scan_text(path)
 for fn in FIXTURE_FILES:
     fp = os.path.join(FIX, fn)
     if os.path.isfile(fp):

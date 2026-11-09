@@ -1,0 +1,15 @@
+[
+  {
+    "artifact_id": "twitter-thread",
+    "revision": 1,
+    "sha256": "c3a7b374f7a03530a91e576e0596ce2753a0ce793a69347dbf58b5d528d80f52",
+    "producer_id": "producer-content-1",
+    "qc_reviewer_id": "reviewer-qc-1",
+    "qc_result": "pass",
+    "rubric_scores": {
+      "accuracy": 5,
+      "brand": 5
+    },
+    "reviewed_at": "2026-07-07T12:00:00Z"
+  }
+]

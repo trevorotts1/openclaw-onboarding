@@ -6,9 +6,12 @@
  * the host store's event journal (operation_completed with payload
  * kind 'report_export', the frozen-vocabulary convention CWE-038
  * established), and registered as deliverables bound to the exact
- * verdict revision and content hash. PDF stays registered not ready:
- * the service refuses it with EXPORT_FORMAT_NOT_READY naming the
- * missing Playwright/Chromium renderer (CWE-044); no PDF is faked.
+ * verdict revision and content hash. PDF is rendered from the same
+ * print HTML by the host renderer capability (`createHostPdfRenderer`):
+ * on a host with no renderer the service refuses with
+ * EXPORT_FORMAT_NOT_READY naming the missing piece; a renderer that
+ * fails is EXPORT_RENDER_FAILED. No PDF is faked and HTML is never
+ * written with a .pdf name.
  *
  * The deliverable registry here is process-scoped (the standalone CLI
  * is one export per process); the journal record in the store is the
@@ -21,7 +24,10 @@
 import { SCHEMA_VERSIONS } from '../contracts/index.js';
 import type { TrustedPrincipal } from '../authorization/index.js';
 import {
+  createHostPdfRenderer,
+  discoverInstallationCapabilities,
   InMemoryDeliverableRegistry,
+  loadSeatDescriptors,
   ReportExportError,
   ReportExportService,
   type ExportJournalPort,
@@ -29,6 +35,7 @@ import {
   type ReportFormat,
 } from '../reports/index.js';
 import { CouncilError } from './errors.js';
+import { openclawRoot } from './paths.js';
 import type { CouncilStore, StoredSession } from './host-ports.js';
 import type { Verdict } from '../contracts/index.js';
 
@@ -106,6 +113,9 @@ export function composeLocalReportExportService(
   return new ReportExportService({
     journal: createStoreExportJournal(store, scope),
     registry: new InMemoryDeliverableRegistry(),
+    // Host renderer capability: ready where the host has one, an honest
+    // EXPORT_FORMAT_NOT_READY naming the missing piece where it does not.
+    pdf: createHostPdfRenderer(),
   });
 }
 
@@ -138,6 +148,8 @@ export async function exportVerdictReport(args: {
   filename: string;
   sha256: string;
   bytes: string;
+  /** utf8 for text formats, base64 for the binary PDF artifact. */
+  encoding: 'utf8' | 'base64';
   verdict_content_sha256: string;
 }> {
   const service = composeLocalReportExportService(args.store, args.session.scope);
@@ -166,6 +178,16 @@ export async function exportVerdictReport(args: {
         // F-047-1 (CWE-048): the stored session's sample flag rides into
         // the export so sample exports carry the SAMPLE badge.
         sample: args.session.sample,
+        // CTR-146: the reader-facing sections. The capability snapshot is
+        // read from this box's own OpenClaw folders (names/descriptions
+        // only); it is bound to this session's installation by the model.
+        installation_id: args.session.scope.installation_id,
+        seat_descriptors: loadSeatDescriptors(),
+        capability_snapshot: discoverInstallationCapabilities({
+          openclaw_root: openclawRoot(),
+          installation_id: args.session.scope.installation_id,
+          captured_at: args.exportedAt.slice(0, 10),
+        }),
       },
       exported_at: args.exportedAt,
     });
@@ -176,6 +198,7 @@ export async function exportVerdictReport(args: {
       filename: artifact.filename,
       sha256: artifact.sha256,
       bytes: artifact.bytes,
+      encoding: artifact.encoding,
       verdict_content_sha256: result.verdict_content_sha256,
     };
   } catch (error) {

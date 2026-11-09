@@ -2,8 +2,17 @@
 
 Frozen by the GHL modernization contract ledger, 2026-10-18 (GU-004 sections
 1.1, 2.4, 3.2 rule 4 and 5.7, plus the workflows family record WF-04 .. WF-09).
-V4 scope and Version come from the official workflows operation page
+Version comes from the official workflows operation page
 https://marketplace.gohighlevel.com/docs/ghl/workflows/<operation-slug>/.
+
+F11 reconciliation (2026-11-07): the five operation pages are now published on
+the PRODUCTION marketplace and each documents Version ``v3``, while the frozen
+rows still carry staging-only ``v4`` (level ``S``, blocker ``B-V4-S``). The
+rows are deliberately NOT re-frozen here -- that is a ledger decision, and six
+pinned contract tests plus ``evidence/W18`` assert the frozen literals. What
+matters for a caller is unchanged: every V4 operation is default-deny through
+the capability gate, so the version gap can never silently reach transport.
+``B-V4-S`` is the named blocker for the re-freeze.
 
 Every V4 operation is capability-gated and default-deny.  No write can reach
 transport while its capability row is disabled, and a disabled call still
@@ -117,6 +126,19 @@ class WorkflowGap(ContractViolation):
     rule = "workflow_operation_gap"
 
 
+def _row_wire_version() -> str:
+    """The wire Version the five workflow-definition rows carry today.
+
+    Read from the READ row so there is still exactly ONE declaration of the
+    literal -- the registry. When the ledger re-freezes the family (F11; the
+    production pages now document ``v3`` while the frozen rows still say
+    ``v4``), the adapter follows the registry with no second constant to
+    forget. A row change that skips this adapter's contract still fails at
+    import.
+    """
+    return OPERATIONS[READ_OPERATION].version
+
+
 def _validate_operation_map() -> None:
     for key, operation_id in OPERATION_MAP.items():
         is_write = key in _WRITE_KEYS
@@ -139,11 +161,12 @@ def _validate_operation_map() -> None:
                 operation_id=operation_id,
                 detail={"mapping": key},
             )
-        if row.version != "v4":
+        if row.version != _row_wire_version():
             raise ContractViolation(
                 "v4_row_version_mismatch",
                 operation_id=operation_id,
-                detail={"version": row.version},
+                detail={"version": row.version,
+                        "expected": _row_wire_version()},
             )
 
 
@@ -835,6 +858,43 @@ class WorkflowV4Adapter:
                 detail={"allowed": sorted(_DOCUMENTED_STATUSES)},
             )
 
+        # W3-4: a publication needs the RECORDED authorization for its own
+        # ACTION scope, not merely an approval-shaped value. The adapter's seam
+        # validates shape only (ref/kind), so the action scope is decided here —
+        # exactly as the deletion path decides its own scope below. The caller
+        # passes the approval_ref that was already recorded for this location
+        # and action; this never asks for a second approval.
+        if status == "published" and not _publication_scope(approval):
+            return self._refusal(
+                key,
+                tenant=tenant,
+                status=Status.denied,
+                rule="publish_approval_not_publication_scoped",
+                attempt=attempt,
+                path_params=path_params,
+                body={"status": status},
+                detail={
+                    "reason": (
+                        "the recorded authorization does not name a publication "
+                        "scope; a publication is never authorized by an approval "
+                        "recorded for some other action"
+                    ),
+                    "required_scope": "publication",
+                    "accepted_scope_forms": (
+                        "an approval mapping whose scope is publication/publish/"
+                        "live, or a ref carrying an explicit marker such as "
+                        "scope:publication, publication-scoped, allow-publish or "
+                        "approved_live_publication — a ref that merely contains "
+                        "the word 'live' does not qualify, and a bare gate_token "
+                        "names no action scope"
+                    ),
+                    "hint": (
+                        "pass the approval_ref already recorded for this "
+                        "location/action; do not request a new approval"
+                    ),
+                },
+            )
+
         # The status change is the one write whose result is carried at the
         # root of the definition read (GU-003 WF-07: ``workflowId``,
         # ``status``), so the read-back asserts the write is reflected too.
@@ -889,6 +949,13 @@ class WorkflowV4Adapter:
                 "status_after": observed,
                 "revision_after": revision_after,
                 "fresh_read_after_status_change": True,
+                # The proof of publication is the FRESH READ above — never this
+                # method's own request body and never a locally assumed value.
+                "observed_status": observed,
+                "status_source": "fresh_read_after_status_change",
+                "authorization_scope": (
+                    "publication" if status == "published" else None
+                ),
                 "publish_authorized": status == "published",
             },
         )
@@ -1635,6 +1702,65 @@ def _identity_readback(
         expect=expect,
         description="the read-back must return this workflow id",
     )
+
+
+_PUBLICATION_SCOPE_VALUES = frozenset({"publication", "publish", "live"})
+_PUBLICATION_MARKERS: tuple[str, ...] = (
+    "publication-scoped",
+    "publication_scoped",
+    "scope:publication",
+    "scope=publication",
+    "scope:publish",
+    "scope=publish",
+    "scope:live",
+    "scope=live",
+    "allow-publication",
+    "allow_publication",
+    "allow-publish",
+    "allow_publish",
+    # the Skill 06 page path's recorded live-publication target, carried as a
+    # ref by a caller that already holds it
+    "approved_live_publication",
+)
+
+
+def _publication_scope(approval: ApprovalRef | Mapping[str, Any] | str) -> bool:
+    """True only for an approval that explicitly names a PUBLICATION scope.
+
+    The frozen ``ApprovalRef`` vocabulary carries one ``ref`` and one ``kind``, so
+    an action scope travels as text. This uses the SAME marker discipline as
+    ``_deletion_scope``: either an explicit ``scope`` key whose value IS a
+    publication scope (``publication`` / ``publish`` / ``live``, plural
+    tolerated), or an explicit scope marker inside ``ref``
+    (``scope:publication``, ``publication-scoped``, ``allow-publish``,
+    ``approved_live_publication``, ...).
+
+    Two weaker rules were REMOVED because they authorized by accident:
+
+    * a bare keyword anywhere in the ref — a copy- or delete-scoped ref that
+      merely contained the word "live" or "publish" satisfied the old gate;
+    * the ``gate_token`` kind auto-passing with no scope at all. A gate token is
+      an approval SEAM, not a statement about which action it approves, so a
+      publication still needs its own scope named. A ``gate_token`` carrying a
+      publication scope (key or marker) still passes.
+
+    An ABSENT marker never authorises a publication, and text is matched as whole
+    markers, so a word that merely contains "live" does not count.
+    """
+
+    ref = ""
+    scope = ""
+    if isinstance(approval, ApprovalRef):
+        ref = str(approval.ref)
+    elif isinstance(approval, Mapping):
+        ref = str(approval.get("ref") or "")
+        scope = str(approval.get("scope") or "")
+    elif isinstance(approval, str):
+        ref = approval
+    if scope.strip().lower().rstrip("s") in _PUBLICATION_SCOPE_VALUES:
+        return True
+    lowered = ref.lower()
+    return any(marker in lowered for marker in _PUBLICATION_MARKERS)
 
 
 def _deletion_scope(approval: ApprovalRef | Mapping[str, Any] | str) -> bool:

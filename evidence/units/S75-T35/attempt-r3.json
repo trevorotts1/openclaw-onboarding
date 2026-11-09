@@ -1,0 +1,312 @@
+{
+  "schema": "s75/acceptance-evidence-attempt-receipt.v1",
+  "schema_note": "This file records one BUILD attempt and its measurements. It approves nothing and it is NOT a verdict: the builder wrote the code under test and cannot clear it. Only an independent verifier may write a verdict.",
+  "unit": "S75-T35",
+  "unit_id": "S75-T35",
+  "acceptance_row": "S75-A35",
+  "acceptance_id": "S75-A35",
+  "unified_record": {
+    "schema": "s75/acceptance-evidence-attempt-receipt.v1",
+    "branch": "s75/S75-T35-unified",
+    "base_ref": "origin/main",
+    "base_sha": "8cb74925ad94c05ce9eb639e7554d02fcd780e20",
+    "evidence_path": "evidence/units/S75-T35/attempt-r3.json",
+    "path_note": "Named attempt-r3, not attempt-1, so it can never collide with either existing branch.",
+    "source_a": {
+      "commit": "d3bf0bf3f3408daa1f73f106d9e6eb63bbbbf92d",
+      "branch": "s75/S75-T35",
+      "path": "evidence/units/S75-T35/attempt-1.json",
+      "lines": 126
+    },
+    "source_b": {
+      "commit": "f8fec026cee89df466f235cc3e8fb954ea4e085d",
+      "branch": "s75/S75-T35-r3",
+      "path": "evidence/units/S75-T35/attempt-1.json",
+      "lines": 95
+    },
+    "why_this_file_exists": "Both source branches add exactly one file at the same path and merge with main alone, but together they are an add/add conflict on that path. Evidence for one unit belongs in one file, so this record carries both heads at a path neither branch touches.",
+    "merge_method": "Union of top-level blocks, emitted verbatim. Conflicting keys keep source A under the original key name and carry source B verbatim under a _from_r3_rebuild suffix; nothing was concatenated and no value was overwritten. See reconciliation above.",
+    "line_carriage_measured": {
+      "source_a_lines": 126,
+      "source_b_lines": 95,
+      "identical_in_both": 34,
+      "only_in_a": 92,
+      "only_in_b": 61,
+      "carried_from_a": 126,
+      "carried_from_b": 86,
+      "removed_deliberately": 9,
+      "removed_unjustified": 0,
+      "note": "All 9 deliberate removals are source B top-level key lines whose VALUE is carried byte-identical on a _from_r3_rebuild line; 8 were re-keyed and 1 (written_by_source) gained the comma its new position requires."
+    },
+    "written_at": "2026-10-27T17:52:40Z",
+    "written_by": "s75/S75-T35-unified merge lane (deepseek-chain)",
+    "verdict": "NONE. This is an evidence record, not a verdict. An independent verifier still grades S75-A35.",
+    "files_touched_by_this_branch": [
+      "evidence/units/S75-T35/attempt-r3.json"
+    ]
+  },
+  "reconciliation": [
+    {
+      "key": "title",
+      "source_a_line": "git show d3bf0bf3f3408daa1f73f106d9e6eb63bbbbf92d:evidence/units/S75-T35/attempt-1.json",
+      "source_b_line": "git show f8fec026cee89df466f235cc3e8fb954ea4e085d:evidence/units/S75-T35/attempt-1.json",
+      "resolution": "Kept source A's title as the record title because A describes the LANDED narrowed build and B describes the pre-landing receipt; B's title is carried verbatim under title_from_r3_rebuild."
+    },
+    {
+      "key": "role",
+      "source_a_line": "git show d3bf0bf3f3408daa1f73f106d9e6eb63bbbbf92d:evidence/units/S75-T35/attempt-1.json",
+      "source_b_line": "git show f8fec026cee89df466f235cc3e8fb954ea4e085d:evidence/units/S75-T35/attempt-1.json",
+      "resolution": "Both roles are true of different lanes and were not averaged. A's BUILDER role stands as role; B's EVIDENCE REBUILD AUTHOR role is carried verbatim under role_from_r3_rebuild. This merge lane wrote no product code and is neither."
+    },
+    {
+      "key": "role_statement",
+      "source_a_line": "git show d3bf0bf3f3408daa1f73f106d9e6eb63bbbbf92d:evidence/units/S75-T35/attempt-1.json",
+      "source_b_line": "git show f8fec026cee89df466f235cc3e8fb954ea4e085d:evidence/units/S75-T35/attempt-1.json",
+      "resolution": "Not reconciled into one sentence: the two statements make different claims about different lanes. A's stands as role_statement; B's is carried verbatim under role_statement_from_r3_rebuild."
+    },
+    {
+      "key": "status",
+      "source_a_line": "git show d3bf0bf3f3408daa1f73f106d9e6eb63bbbbf92d:evidence/units/S75-T35/attempt-1.json",
+      "source_b_line": "git show f8fec026cee89df466f235cc3e8fb954ea4e085d:evidence/units/S75-T35/attempt-1.json",
+      "resolution": "Took the MORE CONSERVATIVE value (A's COMPLETE_PENDING_INDEPENDENT_VERIFICATION) as status, because B's COMPLETE is a lane's own claim and this unit still requires an independent verifier. B's value is carried verbatim under status_from_r3_rebuild; no reader should treat the record as verdict-bearing."
+    },
+    {
+      "key": "mode",
+      "source_a_line": "git show d3bf0bf3f3408daa1f73f106d9e6eb63bbbbf92d:evidence/units/S75-T35/attempt-1.json",
+      "source_b_line": "git show f8fec026cee89df466f235cc3e8fb954ea4e085d:evidence/units/S75-T35/attempt-1.json",
+      "resolution": "A's mode describes the landed narrowed build, which is what main carries; B's mode (build) describes the pre-landing receipt lane. A's stands, B's carried under mode_from_r3_rebuild."
+    },
+    {
+      "key": "base",
+      "source_a_line": "git show d3bf0bf3f3408daa1f73f106d9e6eb63bbbbf92d:evidence/units/S75-T35/attempt-1.json",
+      "source_b_line": "git show f8fec026cee89df466f235cc3e8fb954ea4e085d:evidence/units/S75-T35/attempt-1.json",
+      "resolution": "Different types, both kept. A's base is an OBJECT (ref/sha/resolved_from_origin/ancestry) and is the one reconciled onto current main's history. B's base is a SCALAR sha string and is carried verbatim under base_from_r3_rebuild with its own base_source."
+    },
+    {
+      "key": "head",
+      "source_a_line": "git show d3bf0bf3f3408daa1f73f106d9e6eb63bbbbf92d:evidence/units/S75-T35/attempt-1.json",
+      "source_b_line": "git show f8fec026cee89df466f235cc3e8fb954ea4e085d:evidence/units/S75-T35/attempt-1.json",
+      "resolution": "Different types, both kept. A's head is an OBJECT naming the LANDED candidate de4a9a1d5; B's head is the SCALAR 41062a02 round-1 build sha. Neither was overwritten. A's stands as head; B's is carried verbatim under head_from_r3_rebuild with head_source."
+    },
+    {
+      "key": "files_changed",
+      "source_a_line": "git show d3bf0bf3f3408daa1f73f106d9e6eb63bbbbf92d:evidence/units/S75-T35/attempt-1.json",
+      "source_b_line": "git show f8fec026cee89df466f235cc3e8fb954ea4e085d:evidence/units/S75-T35/attempt-1.json",
+      "resolution": "Union was NOT silently taken. A lists 5 paths (the landed narrowed build, which added shared-utils/workflow_slots.py and tests/unit/test_workflow_slots.py). B lists 3 paths (the pre-landing receipt lane). Both lists are carried verbatim; the 5-path list is A's, the 3-path list is B's under files_changed_from_r3_rebuild. Neither is presented as the other."
+    },
+    {
+      "key": "change_summary",
+      "source_a_line": "git show d3bf0bf3f3408daa1f73f106d9e6eb63bbbbf92d:evidence/units/S75-T35/attempt-1.json",
+      "source_b_line": "git show f8fec026cee89df466f235cc3e8fb954ea4e085d:evidence/units/S75-T35/attempt-1.json",
+      "resolution": "Two different summaries of two different builds; they were NOT concatenated into one paragraph. A's summary (narrowed build with the binding instrument) stands; B's summary (pre-landing receipt adapter) is carried verbatim under change_summary_from_r3_rebuild."
+    },
+    {
+      "key": "tests_run",
+      "source_a_line": "git show d3bf0bf3f3408daa1f73f106d9e6eb63bbbbf92d:evidence/units/S75-T35/attempt-1.json",
+      "source_b_line": "git show f8fec026cee89df466f235cc3e8fb954ea4e085d:evidence/units/S75-T35/attempt-1.json",
+      "resolution": "Both measurement sets are kept verbatim and separately, because they were taken on different trees. A's 104-check + 20-test pair ran in the landed-build worktree; B's pair ran on current origin/main and carries provenance measured_here. No count was averaged or dropped."
+    }
+  ],
+  "attempt": 1,
+  "round": 1,
+  "written_at": "2026-10-27",
+  "written_at_mode": "This receipt is written against the LANDED narrowed build (git generation 1 of that build). The unit's original branch receipt described the round-1 head, which the D7 arbiter rejected; that head is recorded under superseded_round_1 and is not the candidate here.",
+  "title": "Immediate unit QC and durable exact-head receipts; the role-to-chain binding proves fail-closed resolution, not which chain a role rides",
+  "title_from_r3_rebuild": "A QC receipt is refused, retried and adjudicated without a lane's verdict being overwritten",
+  "role": "BUILDER (evidence record for the landed narrowed build)",
+  "role_from_r3_rebuild": "EVIDENCE REBUILD AUTHOR",
+  "role_statement": "The build under this receipt was written by the unit's builder lane. This evidence file records the landed candidate and its measurements; it clears nothing. The restoration lane that wrote THIS file wrote no product code.",
+  "role_statement_from_r3_rebuild": "This lane did not write the adapter, the contract or the tests. It reconstructed the unit's missing attempt receipt from the builder lane's own record and re-measured the product as it stands on current origin/main. Every value this lane measured itself is labelled as measured here; every value carried over from the builder is labelled as the builder's.",
+  "status": "COMPLETE_PENDING_INDEPENDENT_VERIFICATION",
+  "status_from_r3_rebuild": "COMPLETE",
+  "mode": "narrowed build landed on main without its evidence file; the missing evidence path is restored here",
+  "mode_from_r3_rebuild": "build",
+  "repository": "openclaw-onboarding",
+  "base": {
+    "ref": "parent of the landed candidate",
+    "sha": "5e8074cae0ad7d0d257ff8b5621e00670987d7b7",
+    "resolved_from_origin": true,
+    "ancestry": "git merge-base --is-ancestor 5e8074cae0ad7d0d257ff8b5621e00670987d7b7 origin/main -> rc=0"
+  },
+  "base_from_r3_rebuild": "9023e6b0e04cddb2c01a779c4bc0baef166d0a07",
+  "base_source": "origin/main of https://github.com/trevorotts1/openclaw-onboarding.git at lane creation, as recorded by the builder from git rev-parse origin/main after git fetch origin --prune",
+  "head": {
+    "sha": "de4a9a1d5d36989eedd8e4e7fd4ceb428f367c40",
+    "subject": "feat(75): S75-T35 narrowed build - QC receipt adapter + binding instrument",
+    "branch": "s75/S75-T35",
+    "landed_via": {
+      "merge_commit": "a424e53e050a6a2471ffc65bbc3504c61f38ea38",
+      "merge_subject": "Merge pull request #2626 from trevorotts1/batch/openclaw-onboarding/20261027-0211",
+      "ancestry": "git merge-base --is-ancestor de4a9a1d5d36989eedd8e4e7fd4ceb428f367c40 origin/main -> rc=0; the same check on a424e53e050a6a2471ffc65bbc3504c61f38ea38 -> rc=0"
+    }
+  },
+  "head_from_r3_rebuild": "41062a02c1cbd591331c7ea8c96baf38d2d1fe2c",
+  "head_source": "the builder's own build commit. A receipt cannot be carried by the commit whose SHA it states, so this file rides a later commit on the rebuilt branch s75/S75-T35-r3.",
+  "branch": "s75/S75-T35-r3",
+  "files_changed": [
+    "CONTROL/qc_receipt_adapter.py",
+    "evidence/qc-receipt-contract.json",
+    "shared-utils/workflow_slots.py",
+    "tests/unit/s75-t35-qc-receipt-adapter.test.py",
+    "tests/unit/test_workflow_slots.py"
+  ],
+  "files_changed_from_r3_rebuild": [
+    "CONTROL/qc_receipt_adapter.py",
+    "evidence/qc-receipt-contract.json",
+    "tests/unit/s75-t35-qc-receipt-adapter.test.py"
+  ],
+  "file_digests_sha256": {
+    "CONTROL/qc_receipt_adapter.py": "2712d55de55d2a9d2a8827ec383a1a647a711001f8647948b53499cb2db848e3",
+    "evidence/qc-receipt-contract.json": "989aa67b6cf48bd24910c9d6db45af91b0b99fceedde86d31f7d9043e038df33",
+    "shared-utils/workflow_slots.py": "2ee8d4a94e789690d7a462234b06deb851a74ca335dcecfbf16978e8fbcdfb69",
+    "tests/unit/s75-t35-qc-receipt-adapter.test.py": "2f42b2ecb90014290d7e0d2ba362b99dcc7de7371ad386c83b8e8539a021540d",
+    "tests/unit/test_workflow_slots.py": "49585420dab411b2e416e948f2176079154b434c3417173115e632abf054b683"
+  },
+  "digest_basis": "sha256 of each file as it stands on origin/main and as it stands at the landed candidate; for all five paths the two blobs are identical (git rev-parse <ref>:<path> compared), so the measured tree is the landed tree.",
+  "change_summary": "Adds the fail-closed QC receipt adapter: a receipt confirms a unit only when it is a structured claim, names a full 40-hex head_tested equal to the candidate head, and its approver differs from the author on identity AND lineage (and, for kind=repair, its verifier differs from repair_author on both). Every refusal is a durable, acknowledged ledger row (wrong_head, head_not_full_sha, unstructured_stdout, missing_structured_claim, self_approved, repair_author_not_independent, no_checks_recorded, identity_or_lineage_missing, wrong_unit, verdict_not_confirmable) rather than an exception. Duplicate verdicts are byte-identical no-ops; a different verdict at the same unit+head is a conflict that the first verdict survives, resolvable only by a distinct third authority through one adjudication event. The narrowing also instruments the role-to-chain binding: workflow_of -> _meta_index -> served_route -> route_binding, persisted at start(), returning match / substitution / unverified_no_binding_record, fail-closed at head and fail-open at base.",
+  "change_summary_from_r3_rebuild": "A fail-closed QC receipt adapter: a structured verdict is confirmed only when head_tested equals the candidate head exactly and the approver differs from the author on identity AND lineage; an identical repeat is a no-op, a disagreeing record becomes QC_CONFLICT with the first verdict retained, and one separately authorised adjudication event is the only way out. Writes are atomic and fsynced before the acknowledgement is returned, and an unsupported event is raised rather than ignored.",
+  "narrowing": {
+    "arbiter_outcome": "REJECT_AND_NARROW",
+    "arbiter_record": "<OPERATOR_HOME>/loop-control/s75/qc/S75-T35-ARBITER.md",
+    "kept": "Clauses 1, 2 and 4: the wrong-head / abbreviated-head / stdout-only / self-approved / repair-author-not-independent refusals, the idempotent duplicate handling, and the evidence-channel cell this file satisfies.",
+    "left_the_row": "Clause 3's binding-VALUE assertion (which chain builders, QC and repair ride). The arbiter ruled it contradicted by measured runs and by the repository's own role-to-chain default map, and its only source was the unit's own self-declaration.",
+    "replacement_claim": "The role-to-chain binding is instrumented and resolvable fail-closed from harness-written agent-*.meta.json records. The narrowed build asserts instrumentation and fail-closed resolution only, and does not assert which chain any role rides. evidence/qc-receipt-contract.json carries this as binding_instrument.narrowing and binding_instrument.explicitly_not_asserted."
+  },
+  "landing": {
+    "state": "SUPERSEDED by a narrowed landing; the lane is not patch-equivalent to main",
+    "landed_sha": "de4a9a1d5d36989eedd8e4e7fd4ceb428f367c40",
+    "landed_merge_sha": "a424e53e050a6a2471ffc65bbc3504c61f38ea38",
+    "landed_batch_pr": 2626,
+    "ancestry_measured_here": "git merge-base --is-ancestor de4a9a1d5 origin/main -> rc 0; git merge-base --is-ancestor a424e53e origin/main -> rc 0 (measured by this lane against origin/main 8cb74925ad94c05ce9eb639e7554d02fcd780e20).",
+    "what_the_landing_changed": "The landing was a narrowed build, not a fast-forward, so it kept the adapter, the contract and the tests but withdrew the lane's role-to-chain VALUE assertion by arbiter outcome REJECT_AND_NARROW. Main is therefore strictly ahead of the lane: it carries main's T22 fix (a party recorded in a LATER ledger entry may not adjudicate) and neutral chain names in the MetaWitnessTests proof.",
+    "current_main_at_write": "8cb74925ad94c05ce9eb639e7554d02fcd780e20",
+    "product_blobs_on_current_main": {
+      "CONTROL/qc_receipt_adapter.py": "a842b40463b93d636f442439ccdc4a7cc3798986",
+      "evidence/qc-receipt-contract.json": "9891f75c4663b8b63e595f1630701953291bf2e6",
+      "tests/unit/s75-t35-qc-receipt-adapter.test.py": "76fa2c5ae832e9d70e0e7a83611ac07657b74b83",
+      "shared-utils/workflow_slots.py": "f3705f6c0aced6661d33c5f54e9879907a5b94e0",
+      "tests/unit/test_workflow_slots.py": "2f262e763a7d24085625bac2c5f05aa6023e844e"
+    }
+  },
+  "tests_run": [
+    {
+      "command": "python3 -I tests/unit/s75-t35-qc-receipt-adapter.test.py",
+      "cwd": "<PATH>/s75/worktrees/s75-S75-T35",
+      "exit_code": 0,
+      "result": "PASS",
+      "summary": "checks run: 104; PASS: S75-T35 qc receipt adapter"
+    },
+    {
+      "command": "python3 -I tests/unit/test_workflow_slots.py",
+      "cwd": "<PATH>/s75/worktrees/s75-S75-T35",
+      "exit_code": 0,
+      "result": "PASS",
+      "summary": "Ran 20 tests in 2.705s; OK. Includes the binding-instrument witnesses that grade the instrument on neutral chain names."
+    }
+  ],
+  "tests_run_from_r3_rebuild": [
+    {
+      "command": "python3 -I tests/unit/s75-t35-qc-receipt-adapter.test.py",
+      "cwd": "repository root of the rebuilt branch worktree",
+      "exit_code": 0,
+      "result": "PASS",
+      "summary": "measured by this lane on main's content: 104 checks run, PASS",
+      "provenance": "measured_here"
+    },
+    {
+      "command": "python3 -I tests/unit/test_workflow_slots.py",
+      "cwd": "repository root of the rebuilt branch worktree",
+      "exit_code": 0,
+      "result": "PASS",
+      "summary": "measured by this lane: Ran 20 tests, OK, including the green MetaWitnessTests neutral-chain witness",
+      "provenance": "measured_here"
+    }
+  ],
+  "known_good_control": {
+    "statement": "The adapter suite is a positive/negative pair, not a one-sided refusal: the same structured receipt that is refused for a wrong head, an abbreviated head, an unstructured payload, a self-approved approver or a repair-author verifier is CONFIRMED when head_tested is changed to the candidate head and the parties are genuinely distinct.",
+    "instrument_control": "tests/unit/test_workflow_slots.py runs the binding instrument against neutral chain labels on purpose, so a green result grades fail-closed resolution and never restates a doctrine about who rides what; the negative direction (a fabricated workflow id) resolves to unverified_no_binding_record at head and to somebody else's route at base."
+  },
+  "controls": {
+    "known_good_control": "The refusal cases and the confirming case differ in head_tested alone, so the rejections are head- and identity-specific rather than a blanket refusal from a broken instrument. Proven in the adapter suite itself, not asserted here.",
+    "instrument_control": "The same instrument that refuses a wrong head confirms the exact-head receipt, so the negative and the positive are produced by one instrument.",
+    "builder_reported_controls": "The builder reported 40 checks PASS at 41062a02c and a live-router measurement of the two chains. Those are the builder's values, carried as reported, not re-measured by this lane.",
+    "scope_control": "git diff --name-only origin/main..HEAD on the rebuilt branch lists exactly this file; no product file is changed by this rebuild."
+  },
+  "claims": [
+    "The adapter, the contract and the adapter suite named above are present on current origin/main and pass there: 104 checks, exit 0, measured by this lane.",
+    "The narrowed landing is real lineage, not a claim: de4a9a1d5 and a424e53e are both ancestors of current origin/main, ancestry measured rc 0 by this lane.",
+    "Main is strictly ahead of the lane's round-3 tip: it carries the T22 adjudication-party fix and neutral chain names that the lane does not, so no lane product commit is replayed over newer data by this rebuild.",
+    "The binding clause is an instrument, not a doctrine. Main's own contract states the narrowing: the role-to-chain binding is resolvable fail-closed from harness-written agent metadata and persisted at start(), with verdicts match / substitution / unverified_no_binding_record, and it explicitly does not assert which chain any role rides.",
+    "A wrong-head, stdout-only, self-approved, repair-author-dependent or abbreviated-head receipt never reaches QC_CONFIRMED, and a second identical verdict leaves the ledger byte-identical instead of double-counting; the adapter suite is the proof and it is green at current head."
+  ],
+  "not_claimed": [
+    "This is not a verdict and not an independent check; the author of the product cannot clear the unit. An independent verifier still grades S75-A35.",
+    "This file is not the builder's original receipt. The original attempt receipt never reached origin/main with the narrowed landing; this is a rebuild of it, and the builder's superseded role-to-chain VALUE assertion is not restated.",
+    "No product code, test or contract was changed by this rebuild lane. The only difference from current origin/main on branch s75/S75-T35-r3 is this evidence file.",
+    "The builder's live-router billing figures and its 40-check count are carried as reported; they were not re-run in this rebuild, and the router database is operator state outside this repository.",
+    "No per-request chain label is asserted, and no claim is made about which chain any role rides.",
+    "No repository CI workflow was run; only the local commands listed in tests_run were executed.",
+    "No merge to main was performed by this rebuild, and no CHANGELOG or skill-version file was edited."
+  ],
+  "evidence": {
+    "contract": "evidence/qc-receipt-contract.json",
+    "adapter": "CONTROL/qc_receipt_adapter.py",
+    "adapter_suite": "tests/unit/s75-t35-qc-receipt-adapter.test.py",
+    "neutral_chain_witness": "tests/unit/test_workflow_slots.py"
+  },
+  "open_residuals_carried_not_closed": [
+    {
+      "id": "REJECTION-ROW-DEDUPE",
+      "status": "OPEN, measured once by round 2 (probe X5), not re-measured here",
+      "detail": "Rejection rows carry no author/approver, so two different parties submitting the same rejection collapse to one row and the second returns outcome=duplicate. Site: CONTROL/qc_receipt_adapter.py _entry_key plus the rejections append at lines 404-420. This receipt does not claim it closed."
+    },
+    {
+      "id": "NO-LIVE-CALLER",
+      "status": "UNDETERMINED, structural",
+      "detail": "Nothing in the repository calls commit_verdict or the start() binding path in a production supervisor. Every clause-1 and clause-2 measurement, here and in the three rounds, is made at the adapter API."
+    },
+    {
+      "id": "PRE-FIX-HISTORY",
+      "status": "UNDETERMINED, permanent",
+      "detail": "The unit lands as one squashed commit per round, so no pre-fix version of either test file exists in the repository and earlier disclosed failures cannot be shown fixed rather than routed around."
+    }
+  ],
+  "closed_since_round_3": {
+    "id": "ADJUDICATION-THIRD-AUTHORITY-HOLE",
+    "arbiter_status": "OPEN and standing at round-3 head 3d9969fcdb5ebabece0c323847698bbc2ba5e8aa; round 2 measured that an adjudicator recorded in an entry beyond the first was admitted against a conflict involving its own entry",
+    "at_landed_candidate": "CLOSED by this build: _apply_adjudication now merges parties from the recorded verdict, the conflict AND every recorded entry before the distinctness check, so a party present in any entry is refused. Diff 3d9969fcd..de4a9a1d5 on CONTROL/qc_receipt_adapter.py is +3/-1 at exactly that merge.",
+    "not_reverified_independently": "The lane reports the diff it read; an independent verifier should re-measure the probe."
+  },
+  "scope_proof": {
+    "command": "git diff --name-only origin/main..HEAD",
+    "result": [
+      "evidence/units/S75-T35/attempt-1.json"
+    ],
+    "note": "The rebuilt branch carries origin/main plus this evidence path only. It adds no product code and deletes nothing; no CHANGELOG and no skill-version file is touched."
+  },
+  "superseded_round_1": {
+    "head": "41062a02c1cbd591331c7ea8c96baf38d2d1fe2c",
+    "verdict": "FAIL (round 1), then REJECT_AND_NARROW from the D7 arbiter",
+    "why_not_carried": "Its clause-3 binding-value claim and its pre-fix adapter defects were rejected; the landed narrowed build supersedes it. The branch that carries the item is rebased onto origin/main with the landed blobs taken for the three shared paths, so none of the rejected content is carried forward."
+  },
+  "residuals": [
+    "Whether acceptance wants the builder's original 40-check measurement or the current-head 104-check measurement is a verifier judgement. Both are recorded with their provenance rather than one being passed off as the other.",
+    "The builder's PATH RESOLUTION of the proposed lowercase control/ path to the existing uppercase CONTROL/ directory is carried from the builder's record; the rebuild did not re-litigate it."
+  ],
+  "could_not_determine": [
+    "whether a live supervisor will call commit_verdict or the start() binding path in production: no caller exists in the repository",
+    "the full tests/unit suite state (two conventions, no single runner); only the two unit files this build owns were run",
+    "which chain any role actually rides: the narrowed row makes no such assertion, and per-request chain tagging is not persisted",
+    "whether two different parties submitting the same rejection can still collapse to one row: carried open, not re-measured"
+  ],
+  "not_searched": [
+    "other units' branches, worktrees or evidence files",
+    "any credential store or router database; nothing was read or written",
+    "client boxes, fleet hosts or network deployment",
+    "git history for deleted variants of the files this build added"
+  ],
+  "negative_result_note": "The claim that the repository has no live caller of commit_verdict was checked by reading every reference to the module name across tracked Python and Markdown sources; the same scan finds the test file and the contract that do reference it, so the instrument is not silently empty. Not searched: history, other branches, and non-Python callers.",
+  "written_by": "s75/S75-T35-r3 rebuild lane (deepseek-chain)",
+  "written_by_source": "session role; no verdict written",
+  "most_important_sentence": "A wrong-head, abbreviated-head, stdout-only or self-approved receipt never reaches QC_CONFIRMED, a duplicate verdict leaves the ledger byte-identical, and the binding instrument refuses to answer for a record that belongs to another workflow."
+}

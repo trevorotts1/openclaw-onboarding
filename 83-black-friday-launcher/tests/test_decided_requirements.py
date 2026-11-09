@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib
+import importlib.util
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -18,21 +22,24 @@ from unittest import mock
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT))
 
+sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
+from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
+from hermetic_child_env import hermetic_env  # noqa: E402
 from launcher_core import (  # noqa: E402
     checks, checkout, council, dependencies, entitlement, intake, package, route,
 )
 from launcher_core.constants import JOURNEY_MODES, SEAM_IDS  # noqa: E402
 
 
-def base_intake(mode: str = "single_simple", basis: str = "purchase") -> dict:
+def _base_intake_raw(mode: str = "single_simple", basis: str = "purchase") -> dict:
     offers = [{"offer_id": "main-1", "name": "Launch", "role": "main",
                "price": {"amount_minor": 49700, "currency": "USD"}}]
     if mode in ("multiple_options", "folded_levels"):
         offers.append({"offer_id": "main-2", "name": "Launch Plus", "role": "main",
                        "price": {"amount_minor": 99700, "currency": "USD"}})
-    attestation = {"basis": basis, "evidence_ref": "ev-1", "attested_by": "operator"}
+    attestation = {"basis": basis, "evidence_ref": "TEST-ONLY-EVIDENCE", "attested_by": "operator"}
     if basis == "purchase":
-        attestation["purchase_reference"] = "order-1"
+        attestation.update(purchase_reference="TEST-ONLY-PURCHASE-REFERENCE", amount_minor=49700, currency="USD")
     return {
         "schema_version": "1.0",
         "tenant_id": "tenant-a",
@@ -46,6 +53,23 @@ def base_intake(mode: str = "single_simple", basis: str = "purchase") -> dict:
         "entitlement_attestation": attestation,
         "offers": offers,
     }
+
+
+_SPOOL = {}
+
+
+def setUpModule():
+    # Building a package appends launch events to ~/.openclaw/data/signature-launch/events-spool when no ingest
+    # URL is set. Send them to a temp folder, so nothing in this module (or in a child launcher it starts,
+    # which inherits the variable) writes into the real home folder.
+    _SPOOL["dir"] = tempfile.TemporaryDirectory()
+    _SPOOL["env"] = mock.patch.dict(os.environ, {"LAUNCH_EVENTS_SPOOL": _SPOOL["dir"].name})
+    _SPOOL["env"].start()
+
+
+def tearDownModule():
+    _SPOOL["env"].stop()
+    _SPOOL["dir"].cleanup()
 
 
 def stub_council(_launch):
@@ -180,6 +204,46 @@ class EntitlementGateTests(unittest.TestCase):
         for forbidden in ("stripe", "requests", "urllib", "subprocess", "charge("):
             self.assertNotIn(forbidden, source)
 
+    def test_the_gate_labels_its_evidence_a_caller_attestation_not_purchase_proof(self):
+        """The gate reads no payment system; the operator must be told so.
+
+        Every qualifying basis, not just purchase: the label rides every result.
+        """
+        # U-launcher-core-06: the gate now reads the client's GHL contact record back, so the evidence is a
+        # read-back, and only a purchase basis (a paid order resolved at the declared price) proves a purchase.
+        for basis in ("purchase", "brand_management_membership",
+                      "zhc_with_brand_management"):
+            result = intake.validate(base_intake(basis=basis))["entitlement"]
+            self.assertEqual(result["evidence_kind"], "ghl_contact_readback", basis)
+            self.assertIs(result["proves_purchase"], basis == "purchase", basis)
+            boundary = result["attestation_boundary"].lower()
+            self.assertIn("read-only ghl lookup", boundary, basis)
+            self.assertIn("never trusted", boundary, basis)  # attested_by is recorded, not believed
+
+
+class DocumentationTests(unittest.TestCase):
+    """DISPATCH.md and DECISIONS-PENDING.md must match the code they describe."""
+
+    def test_dispatch_no_longer_claims_skill_md_lacks_implemented_commands(self):
+        cli = (SKILL_ROOT / "launcher_core" / "cli.py").read_text(encoding="utf-8")
+        for command in ("dispatch", "questions"):
+            self.assertIn(f'sub.add_parser("{command}"', cli)
+        dispatch = " ".join(
+            (SKILL_ROOT / "DISPATCH.md").read_text(encoding="utf-8").split())
+        self.assertNotIn("no `dispatch` or `questions` command", dispatch)
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        for invocation in ("cli dispatch", "cli questions"):
+            self.assertIn(invocation, skill)
+
+    def test_each_open_seam_is_an_owner_decision_with_its_blocking_effect(self):
+        decisions = (SKILL_ROOT / "DECISIONS-PENDING.md").read_text(encoding="utf-8")
+        open_seams = decisions.split("## Still open", 1)[1]
+        for seam in SEAM_IDS:
+            self.assertIn(seam, open_seams)
+        self.assertEqual(open_seams.count("**Owner decision (open).**"), len(SEAM_IDS))
+        self.assertEqual(open_seams.count("**Blocks:**"), len(SEAM_IDS))
+        self.assertEqual(open_seams.count("**Does not block:**"), len(SEAM_IDS))
+
 
 class CouncilPlanningTests(unittest.TestCase):
     def setUp(self):
@@ -252,41 +316,70 @@ class CheckoutMappingTests(unittest.TestCase):
         self.assertEqual(mapping["checkout_mode_state"], "resolved")
         self.assertEqual(mapping["supplied"]["main_offer_id"], "main-1")
 
-    def test_multiple_options_uses_post_selection_mode(self):
-        mapping = self.mapping("multiple_options")
-        self.assertEqual(mapping["checkout_mode"], "post_selection")
+    def assert_per_offer_instances(self, mapping):
+        """CARRIED 49: several main offers are realised as one native order form per price choice, each in
+        combined_single_offer mode. With no read-back, every instance is refused by name for what it lacks."""
+        self.assertEqual(mapping["realisation"], "per_offer_instances")
+        self.assertEqual(mapping["checkout_mode"], "combined_single_offer")
         self.assertEqual(mapping["checkout_mode_state"], "resolved")
+        self.assertEqual(len(mapping["instances"]), len(mapping["main_offers"]))
+        self.assertTrue(mapping["delivery_blocked"])
+        self.assertEqual(len(mapping["delivery_blockers"]), len(mapping["main_offers"]))
+        for blocker in mapping["delivery_blockers"]:
+            self.assertTrue(blocker.startswith("AF-LAUNCH-CHECKOUT-REJECTED"), blocker)
+            self.assertIn("native_capability_evidence_ref", blocker)  # named by the fact nobody supplied
+
+    def test_multiple_options_uses_post_selection_mode(self):
+        # the name is kept so the proof is found where it always was: post_selection is no longer how several
+        # mains are realised (CARRIED 49); each main price choice gets its own combined_single_offer instance.
+        mapping = self.mapping("multiple_options")
+        self.assert_per_offer_instances(mapping)
+        self.assertNotEqual(mapping["checkout_mode"], "post_selection")
 
     def test_folded_levels_records_a_contract_gap_not_a_guess(self):
+        # CARRIED 49 closed the gap: folded levels are realised per offer, so no mode is guessed and none is missing
         mapping = self.mapping("folded_levels")
-        self.assertIsNone(mapping["checkout_mode"])
-        self.assertEqual(mapping["checkout_mode_state"], "contract_gap")
-        self.assertNotIn("main_offer_id", mapping["supplied"])
+        self.assert_per_offer_instances(mapping)
+        self.assertNotIn("main_offer_id", mapping["supplied"])  # no single main is picked for the buyer
         self.assertEqual(len(mapping["main_offers"]), 2)
-        self.assertTrue(any("express neither" in n for n in mapping["notes"]))
+        self.assertFalse(any("express neither" in n for n in mapping["notes"]), mapping["notes"])
 
     def test_unknown_fields_are_named_and_never_defaulted(self):
         mapping = self.mapping("single_simple")
         self.assertIn("fulfillment_mapping_ref", mapping["unknown"])
-        self.assertIn("terms_ref", mapping["unknown"])
+        self.assertIn("native_capability_evidence_ref", mapping["unknown"])
+        # terms_ref is the client's own checkout_terms (intake requires them), so it is supplied, never unknown
+        self.assertNotIn("terms_ref", mapping["unknown"])
+        self.assertEqual(mapping["supplied"]["terms_ref"], "TEST-ONLY-TERMS-REF")
         self.assertNotIn("main_price", mapping["unknown"])
 
     def test_native_ids_are_explicit_null_not_invented(self):
         price = self.mapping("single_simple")["supplied"]["main_price"]
         self.assertIsNone(price["native_product_id"])
         self.assertIsNone(price["native_price_id"])
-        self.assertIn("currency_exponent", price["unknown"])
+        # the exponent is a fact of the currency (USD is 2), derived, never left unknown (rehearsal F2)
+        self.assertEqual(price["currency_exponent"], 2)
+        self.assertNotIn("currency_exponent", price.get("unknown", []))
 
-    def test_the_real_s79_validator_is_bound_when_its_dependency_is_present(self):
+    def test_the_real_s79_validator_is_bound(self):
+        # jsonschema is the Launcher's own runtime requirement (requirements.txt),
+        # so under the verification interpreter the validator must bind: an
+        # "unavailable" state is a failure, never a recorded exception (L25-BF-40).
         mapping = self.mapping("single_simple")
         validator = mapping["validator"]
-        self.assertIn(validator["state"], ("bound", "unavailable"))
-        if validator["state"] == "bound":
-            self.assertIn(validator["probe"]["result"], ("accepted", "rejected"))
-        else:
-            # An isolated interpreter hides the user site-packages; the reason
-            # is recorded, never guessed, and the dependency package names it.
-            self.assertIn("jsonschema", validator.get("error", ""))
+        self.assertEqual(validator["state"], "bound", validator)
+        self.assertIn(validator["probe"]["result"], ("accepted", "rejected"))
+        # Row 23: the probe names the interpreter it ran under, so a missing
+        # dependency is attributable instead of "whatever python3 resolved to".
+        self.assertEqual(validator["interpreter"], sys.executable)
+
+    def test_an_unavailable_probe_names_its_interpreter(self):
+        with mock.patch.object(checkout, "_load_validator",
+                               side_effect=ModuleNotFoundError("No module named 'attrs'")):
+            validator = self.mapping("single_simple")["validator"]
+        self.assertEqual(validator["state"], "unavailable")
+        self.assertIn("attrs", validator["error"])
+        self.assertEqual(validator["interpreter"], sys.executable)
 
     def test_the_mapping_is_derived_from_the_contract_file(self):
         mapping = self.mapping("single_simple")
@@ -370,6 +463,8 @@ class FoldedLevelsTests(unittest.TestCase):
     def test_folded_levels_refuses_identical_levels(self):
         payload = base_intake("folded_levels")
         payload["offers"][1]["price"]["amount_minor"] = 49700
+        del payload["answers_file"]  # the client's answers say the same (identical) price
+        with_checkout_facts(payload)
         with self.assertRaises(intake.IntakeError) as ctx:
             intake.validate(payload)
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-INTAKE-OFFER")
@@ -392,7 +487,8 @@ class CrossSaleTests(unittest.TestCase):
         p["offers"].append({"offer_id": "bump-1", "name": "Bump", "role": "bump",
                             "price": {"amount_minor": 2700, "currency": "USD"},
                             "relationships": {"included_in": ["main-2"]}})
-        return p
+        del p["answers_file"]  # the client's answers must say the bump too
+        return with_checkout_facts(p)
 
     def test_relationships_are_kept_and_surfaced_on_the_thank_you_page(self):
         normalized = intake.validate(self.payload())
@@ -442,7 +538,8 @@ class PackageRecordTests(unittest.TestCase):
         self.graph = route.compile_route(self.normalized, self.advice)
         self.pieces = pieces_for(self.run_dir, self.graph, self.normalized)
         self.out = package.assemble(self.run_dir, self.normalized, self.graph,
-                                    self.pieces, council=self.advice)
+                                    self.pieces, council=self.advice,
+                                    checkout_readback=TEST_ONLY_CHECKOUT_READBACK)
         self.manifest_path = self.run_dir / "package-manifest.json"
 
     def tearDown(self):
@@ -459,8 +556,110 @@ class PackageRecordTests(unittest.TestCase):
         self.assertEqual(manifest["cross_sales"]["teaching"]["state"], "pending")
         self.assertIn("council-advice.json", self.out["receipt"]["council"]["advice_path"])
 
+    def clean_package(self):
+        """A clean package on a shape whose Skill 79 mode resolves."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        run_dir = Path(tmp.name) / "run"
+        normalized = intake.validate(base_intake("single_simple"))
+        advice = council.planning_step(normalized, runner=stub_council)
+        graph = route.compile_route(normalized, advice)
+        pieces = pieces_for(run_dir, graph, normalized)
+        out = package.assemble(run_dir, normalized, graph, pieces, council=advice)
+        return run_dir, Path(out["manifest_path"])
+
+    def test_a_resolved_mode_package_passes_every_check(self):
+        # The clean-package guarantee, on a shape whose Skill 79 mode resolves.
+        run_dir, manifest_path = self.clean_package()
+        self.assertEqual(checks.check_package(manifest_path, run_dir), [])
+
+    def test_an_unavailable_validator_at_replay_fails_the_build_check(self):
+        # L25-BF-40: the probe's "bound" verdict is earned by replaying its
+        # request through the real Skill 79 validator at check time. When the
+        # validator cannot load then, the binding is unproved: an interpreter
+        # without jsonschema must fail the package, never print PASS.
+        run_dir, manifest_path = self.clean_package()
+        self.assertEqual(checks.check_package(manifest_path, run_dir), [])
+        with mock.patch.object(
+                checks, "_replay_checkout",
+                return_value=("unavailable", "jsonschema is not importable")):
+            fails = checks.check_package(manifest_path, run_dir)
+        self.assertEqual(len(fails), 1, fails)
+        self.assertTrue(fails[0].startswith("AF-LAUNCH-CHECKOUT-VALIDATOR"), fails)
+        self.assertIn("unavailable", fails[0])
+        # the message points at the recorded probe interpreter (row 23)
+        self.assertIn(sys.executable, fails[0])
+
+    def test_the_cli_fails_closed_when_the_validator_cannot_load(self):
+        # L25-BF-40 in the form the verifier reproduced it: the command, not
+        # the helper. A bound manifest checked by an interpreter that cannot
+        # import jsonschema must exit non-zero and name the violation; before
+        # this fix it exited 0 and printed "PASS package complete". jsonschema
+        # is shadowed by an importable stub that raises, so the fault is the
+        # same on every machine, and the unshadowed run is the control that
+        # proves the shadow — not a broken CLI — is why the check fails.
+        run_dir, manifest_path = self.clean_package()
+        shadow = tempfile.TemporaryDirectory()
+        self.addCleanup(shadow.cleanup)
+        stub = Path(shadow.name) / "jsonschema"
+        stub.mkdir()
+        (stub / "__init__.py").write_text(
+            'raise ImportError("jsonschema is absent (simulated, L25-BF-40)")\n',
+            encoding="utf-8")
+        command = [sys.executable, "-m", "launcher_core.cli", "check",
+                   "--manifest", str(manifest_path), "--root", str(run_dir)]
+
+        sandbox = tempfile.TemporaryDirectory()
+        self.addCleanup(sandbox.cleanup)
+
+        def run(extra_path):
+            # Hermetic: an empty pydeps folder (so the box's real one cannot out-rank the stub) and no package
+            # index (so the CLI's own repair cannot install into the real $HOME/.openclaw/pydeps).
+            env, pydeps = hermetic_env(Path(sandbox.name), *([extra_path] if extra_path else []))
+            done = subprocess.run(command, cwd=str(SKILL_ROOT), env=env,
+                                  capture_output=True, text=True)
+            self.assertEqual(list(pydeps.iterdir()), [], "the run installed something")
+            return done
+
+        control = run(None)
+        self.assertEqual(control.returncode, 0, control.stdout + control.stderr)
+        self.assertIn("PASS package complete", control.stdout)
+        shadowed = run(shadow.name)
+        output = shadowed.stdout + shadowed.stderr
+        self.assertNotEqual(shadowed.returncode, 0, output)
+        self.assertIn("AF-LAUNCH-CHECKOUT-VALIDATOR", output)
+        self.assertNotIn("PASS package complete", shadowed.stdout)
+
+    def test_the_folded_level_package_is_blocked_only_on_the_unresolved_mode(self):
+        # CARRIED 49 closed the L25-BF-41 contract gap: folded_levels is realised per offer, each instance in
+        # combined_single_offer mode, so with the Skill 06 read-back the package carries no mode block and no
+        # other defect. The check still proves it, never a silent pass: an unresolved mode would be named.
+        fails = checks.check_package(self.manifest_path, self.run_dir)
+        self.assertEqual(fails, [])
+        manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual((manifest["checkout"]["realisation"], manifest["checkout"]["checkout_mode"],
+                          manifest["checkout"]["checkout_mode_state"]),
+                         ("per_offer_instances", "combined_single_offer", "resolved"))
+        self.assertIs(manifest["checkout"]["delivery_blocked"], False)
+
+    def test_the_manifest_carries_the_attestation_boundary_the_buyer_reads(self):
+        """The label must survive assembly, the surface a buyer actually reads."""
+        entitlement = self.out["manifest"]["entitlement"]
+        self.assertEqual(entitlement["evidence_kind"], "ghl_contact_readback")
+        self.assertIs(entitlement["proves_purchase"], True)  # a purchase basis, resolved to a paid order on read-back
+        self.assertIn("Verified by read-only GHL lookup", entitlement["attestation_boundary"])
+        on_disk = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(on_disk["entitlement"]["attestation_boundary"],
+                         entitlement["attestation_boundary"])
+
     def test_clean_package_passes_every_check(self):
-        self.assertEqual(checks.check_package(self.manifest_path, self.run_dir), [])
+        # The folded_levels fixture built in setUp is deliberately not clean:
+        # its Skill 79 mode is unresolved (L25-BF-41) and is asserted blocked in
+        # test_the_folded_level_package_is_blocked_only_on_the_unresolved_mode.
+        # This guarantee is about a package with no defect at all, so it uses
+        # the resolved-mode fixture instead.
+        run_dir, manifest_path = self.clean_package()
+        self.assertEqual(checks.check_package(manifest_path, run_dir), [])
 
     def test_a_defaulted_price_fails_the_build_check(self):
         manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
@@ -546,10 +745,45 @@ class DependencyPackageTests(unittest.TestCase):
         manifest = dependencies.load_manifest()
         self.assertNotIn("enabled_in_999", manifest)
         report = dependencies.check()
-        # jsonschema is the one blocker that depends on the interpreter's
-        # site-packages (absent under `python3 -I` with a user-site install).
+        # jsonschema is the one blocker that depends on the running interpreter's
+        # site-packages; verify.sh refuses to run without it (L25-BF-40).
         self.assertLessEqual(set(report["blockers"]), {"runtime-jsonschema"})
         self.assertIs(report["enabled_in_999"], report["would_enable"])
+
+    def test_a_half_installed_jsonschema_is_missing_and_names_the_interpreter(self):
+        # Row 23: find_spec('jsonschema') is True when jsonschema's own dependency
+        # (attrs) is missing, so the old check read "present" and the Skill 79
+        # validator then failed with "No module named attrs". attrs is shadowed by
+        # a stub that raises the same error, so the fault is identical on every
+        # machine; the unshadowed run is the control for the shadow.
+        shadow = tempfile.TemporaryDirectory()
+        self.addCleanup(shadow.cleanup)
+        stub = Path(shadow.name) / "attrs"
+        stub.mkdir()
+        (stub / "__init__.py").write_text(
+            'raise ModuleNotFoundError("No module named \'attrs\'")\n', encoding="utf-8")
+        code = ("import json; from launcher_core import dependencies; "
+                "print(json.dumps(next(e for e in dependencies.check()['entries'] "
+                "if e['id'] == 'runtime-jsonschema')))")
+
+        sandbox = tempfile.TemporaryDirectory()
+        self.addCleanup(sandbox.cleanup)
+
+        def entry(extra_path):
+            env, pydeps = hermetic_env(Path(sandbox.name), *([extra_path] if extra_path else []))
+            run = subprocess.run([sys.executable, "-c", code], cwd=str(SKILL_ROOT),
+                                 env=env, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertEqual(list(pydeps.iterdir()), [], "the run installed something")
+            return json.loads(run.stdout)
+
+        control = entry(None)
+        self.assertEqual(control["status"], "present", control)
+        self.assertIn(sys.executable, control["evidence"])
+        shadowed = entry(shadow.name)
+        self.assertEqual(shadowed["status"], "missing", shadowed)
+        self.assertIn("attrs", shadowed["evidence"])
+        self.assertIn(sys.executable, shadowed["evidence"])
 
     def test_preflight_is_not_enabled_without_a_registered_skill(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -567,7 +801,18 @@ class DependencyPackageTests(unittest.TestCase):
     def test_an_empty_root_reports_everything_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             report = dependencies.check(Path(tmp))
-        self.assertEqual(report["present"], [])
+        # Root-scoped entries resolve against the checked-out tree and must all
+        # be missing. Runtime packages are interpreter-level, so they report
+        # what the running interpreter imports (verify.sh refuses to run without
+        # jsonschema) and are the only entries an empty root may show present.
+        try:
+            importlib.import_module("jsonschema")
+            runtime_present = ["runtime-jsonschema"]
+        except Exception:  # find_spec would say present for a half-installed package
+            runtime_present = []
+        self.assertEqual(report["present"], runtime_present)
+        self.assertTrue(all(e["status"] == "missing" for e in report["entries"]
+                            if e["id"] != "runtime-jsonschema"))
         self.assertTrue(report["missing"])
         self.assertFalse(report["would_enable"])
 
@@ -577,6 +822,62 @@ class DependencyPackageTests(unittest.TestCase):
                      if e["id"] == "skill-number-assigned")
         self.assertEqual(entry["status"], "present")
         self.assertIn("number_final=True", entry["evidence"])
+
+
+
+CHECKOUT_TERMS = {
+    "guarantee_ref": "TEST-ONLY-GUARANTEE-REF", "guarantee_text": "Test-only guarantee text.",
+    "terms_ref": "TEST-ONLY-TERMS-REF", "terms_text": "Test-only terms text.",
+    "consent_ref": "TEST-ONLY-CONSENT-REF", "consent_text": "Test-only consent text.",
+}
+
+
+_ANSWERS_DIR = tempfile.TemporaryDirectory()  # the client's answers files for the inline intakes below
+
+
+def _answers_doc(offers: list) -> dict:
+    """A client-intake-answers/v1 doc that says exactly what the inline offers say (every entry provided)."""
+    answers = {"billing": {"value": "one_time", "status": "provided"}}
+    mains = []
+    for o in offers:
+        item = {"offer_id": o["offer_id"], "display_name": o["name"],
+                "price": {"amount_minor": o["price"]["amount_minor"], "currency": o["price"]["currency"]},
+                "deliverables": list((o.get("level") or {}).get("deliverables") or [])}
+        if o["role"] == "main":
+            mains.append(item)
+        else:
+            answers[o["role"]] = {"value": item, "status": "provided"}
+    answers["packages"] = {"value": mains, "status": "provided"}
+    return {"schema": "client-intake-answers/v1", "answers": answers}
+
+
+def with_checkout_facts(payload: dict) -> dict:
+    """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer,
+    and the price provenance (source_ref per offer plus the answers file they resolve in)."""
+    payload.setdefault("checkout_terms", dict(CHECKOUT_TERMS))
+    mains = 0
+    for o in payload["offers"]:
+        o.setdefault("delivery", {"destination": f"https://members.example.com/{o['offer_id']}",
+                                  "owner_confirmed": True})
+        if o["role"] in ("upsell_1", "downsell_1", "upsell_2") or (
+                o["role"] == "main" and payload["journey_mode"] != "single_simple"):
+            o.setdefault("level", {"state": "supplied", "name": o["name"],
+                                   "deliverables": [f"{o['name']} access"]})
+        if o["role"] == "main":
+            o["price"].setdefault("source_ref", f"answers-file:packages[{mains}]")
+            mains += 1
+        else:
+            o["price"].setdefault("source_ref", f"answers-file:{o['role']}")
+    if "answers_file" not in payload:
+        text = json.dumps(_answers_doc(payload["offers"]), indent=1, sort_keys=True)
+        path = Path(_ANSWERS_DIR.name) / f"answers-{hashlib.sha256(text.encode()).hexdigest()[:16]}.json"
+        path.write_text(text, encoding="utf-8")
+        payload["answers_file"] = str(path)
+    return payload
+
+
+def base_intake(*args, **kwargs) -> dict:
+    return with_checkout_facts(_base_intake_raw(*args, **kwargs))
 
 
 if __name__ == "__main__":

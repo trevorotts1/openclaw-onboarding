@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# oc-atomic-upgrade.sh — v1.0.0
+# oc-atomic-upgrade.sh — v1.4.0
 #
 # THE ONLY SAFE WAY TO MOVE A BOX ONTO A NEW OPENCLAW BUILD.
 #
@@ -14,6 +14,51 @@
 # EFFECT: on one box it silently rewrote `agents.defaults.models` pins. So the
 # old gate degraded to a permanent refusal that froze 35 of 38 boxes while
 # risking model pins for a migration that never happened.
+#
+# WHAT DOCTOR *IS* USED FOR HERE (v1.1.0, fleet-roll errors #16 and #18)
+# `doctor --fix` still cannot migrate `agents.list` -> `agents.entries` (above), and
+# this script never uses it for that. It IS the only migrator of the AGENT/SESSION
+# DATABASE: a gateway on OpenClaw >= 2026.10.5 refuses to boot on an agent database
+# at schema 24 ("run openclaw doctor --fix to migrate session identities"), so a
+# roll that installs the new build and starts it without doctor rolls back every time.
+# On a launchd box this script therefore runs the NEW binary's
+# `doctor --fix --non-interactive` (stdin /dev/null, bounded) AFTER the install and
+# the config rewrite and BEFORE the start, while the gateway is booted out. Doctor
+# takes exclusive maintenance and refuses while any other process holds the state
+# database, so stale `openclaw` CLI processes holding <root>/state/openclaw.sqlite
+# are reaped first (never the launchd job's gateway, a node service, the app, an ancestor,
+# or anything started during this run; a gateway left holding the database while the job
+# is booted out is an orphan and is stopped separately, see #33 below). Doctor must
+# not change the model/provider selection (a doctor that does has the model keys put back
+# and fails the run); the OpenClaw app's read-only `openclaw-node-worker` child is the one
+# holder tolerated (_benign_app_reader). The known doctor refusals this script repairs are
+# the legacy-audit-raw checkpoint (see _repair_audit_checkpoint) and, just before doctor,
+# the FTS5 indexes the new Node's SQLite flags (see _repair_fts5).
+#
+# FOUR MORE ROLL FAILURES THIS SCRIPT NOW PREVENTS (v1.2.0, fleet-roll errors #21 #24 #25 #33)
+# #21  launchd KeepAlive respawns a LOADED gateway job while npm is still rewriting the
+#      package, so the gateway imports a half-written tree and the stability window never
+#      holds. EVERY npm install here (forward and rollback) now runs with the gateway job
+#      proven booted out for the whole window, and the job is bootstrapped again only after
+#      the package measures complete (_npm_install_held / _package_complete).
+# #24  `doctor` loads every enabled plugin's module at startup, BEFORE it fixes anything; one
+#      whose import is missing (ERR_MODULE_NOT_FOUND from a plugin-sdk export) makes it spin
+#      forever. Doctor now runs under a bound AND a loop detector (the same module-load error
+#      printed OC_ATOMIC_DOCTOR_LOOP_LINES times kills it at once, long before the bound). Its
+#      own output then names the EXACT plugin; only that plugin's `enabled` is set to false
+#      (never the allow list, never its config, never an install/enable call, never a guess),
+#      the change is recorded, and doctor runs again, bounded the same way
+#      (_quarantine_from_output). The rollback restores the config byte for byte.
+# #25  `openclaw config validate` takes the sqlite maintenance lock even when read-only, and
+#      against a SERVING gateway that kills it (healthz 000 while the pid lives). With the
+#      gateway job loaded the check runs on a private copy of the config in a private state
+#      directory, under a known-good and a known-bad control, and an instrument that cannot
+#      tell them apart is UNDETERMINED, never "valid" (_config_valid_isolated).
+# #33  an orphan gateway (ppid 1, left by an earlier run) that still holds the state
+#      database makes the new LaunchAgent exit 78 "Another gateway already owns this state
+#      directory", which was read as a bad binary. Before the quiesce proof, before the
+#      start and before a rollback restart, a gateway process that holds the state database
+#      and is not the launchd job's pid is stopped BY IDENTITY and logged (_reap_orphan_gateways).
 #
 # ═══════════════════════════════════════════════════════════════════════════
 # THE FOUR FACTS THAT DICTATE THE ORDER OF OPERATIONS
@@ -71,6 +116,17 @@
 # exactly what is left broken and the literal commands to repair it — that case
 # is the only one where a human is strictly required.
 #
+# ONCE `doctor --fix` HAS EXITED 0 THERE IS NO GOING BACK (v1.4.0). From that point the config is
+# stamped by the new build and the agent/session SQLite databases are migrated forward; the previous
+# build cannot read that pair ("binary older than config"), so reinstalling it and restarting the
+# gateway on the migrated state is how a box ends in a crash loop. Every failure after that moment
+# therefore goes to _keep_new_binary instead of the rollback above: the NEW binary and the migrated
+# config stay; the config backup is kept for takeover; if the gateway already answers /healthz 200 the
+# failing proof is logged and the script exits 71 (STUCK: serving the target, needs takeover); if it
+# does not, the new gateway gets ONE clean restart, and if it is still dark the script exits 70 with
+# "new binary unhealthy after migration; rollback unsafe". The previous build is never reinstalled.
+# A failure BEFORE doctor (including doctor itself exiting non-zero) is rolled back exactly as above.
+#
 # ═══════════════════════════════════════════════════════════════════════════
 # WHAT THIS DELIBERATELY REFUSES TO DO
 # ═══════════════════════════════════════════════════════════════════════════
@@ -98,6 +154,9 @@
 #       The atomic procedure. --dry-run prints the plan and touches nothing.
 #       exit 0 = upgraded (or already correct), 78 = REFUSED / rolled back
 #       (box left exactly as found), 70 = ROLLBACK FAILED (needs a human now),
+#       or the new binary is unhealthy after the migration and rollback is unsafe,
+#       71 = STUCK: doctor --fix migrated the box, a later proof failed, and the NEW
+#       build is serving (NOT rolled back; needs takeover),
 #       3 = undetermined, 2 = usage,
 #       79 = REFUSED (this box is a container).
 #
@@ -110,6 +169,19 @@
 #                                    (default 25; the crash-loop period is ~11s,
 #                                    so this spans at least two respawns)
 #   OC_ATOMIC_NPM                    npm binary (default: npm)
+#   OPENCLAW_APPROVED_NPM_VERSION    approved openclaw package version (X.Y.Z).
+#                                    Falls back to the `approved_npm_version` key
+#                                    in the release-pin.json the git pin reads
+#                                    (<root>/fleet-refresh/release-pin.json, or
+#                                    OPENCLAW_RELEASE_PIN_FILE).
+#   OPENCLAW_RELEASE_PIN_MODE        enforce | advisory | off. Unset means the
+#                                    fallback rule: approved_npm_version IS set
+#                                    => enforce; nothing set => off (today's
+#                                    pre-pin behaviour, no refusal). `off`
+#                                    reproduces the pre-pin behaviour exactly.
+#                                    In enforce, no valid version => exit 78
+#                                    (NPM_PIN_UNCONFIGURED / NPM_PIN_INVALID /
+#                                    NPM_PIN_MODE_INVALID / NPM_PIN_TARGET_CONFLICT).
 #   OC_ATOMIC_BOOTOUT_TIMEOUT        seconds to wait for a booted-out job to
 #                                    actually leave launchd (default 60). bootout
 #                                    is ASYNCHRONOUS: it returns before the
@@ -125,7 +197,15 @@
 #                                    OC_ATOMIC_BOOTOUT_TIMEOUT can still remove the
 #                                    job later; the default (25) outlasts launchd's
 #                                    20s ExitTimeOut. 0 disables (and says so).
-#   Non-numeric values of the three timeouts above fall back to their defaults.
+#   OC_ATOMIC_DOCTOR_TIMEOUT         seconds `doctor --fix --non-interactive` may run
+#                                    before it is killed and the upgrade rolls back
+#                                    (default 900; it backs up and migrates databases)
+#   OC_ATOMIC_FTS_TIMEOUT            seconds the FTS5 index repair that runs just before doctor may
+#                                    take before it is killed and the upgrade rolls back (default 1500)
+#   OC_ATOMIC_DOCTOR_LOOP_LINES      how many times doctor may print the SAME module-load error
+#                                    (digits ignored) before it is judged to be spinning on it and
+#                                    killed early (default 5; 0 = rely on the bound alone)
+#   Non-numeric values of the numbers above fall back to their defaults.
 #
 # ═══════════════════════════════════════════════════════════════════════════
 # WHICH OPENCLAW? THE ONE THE SUPERVISOR LAUNCHES (CAN015), NEVER THE ONE ON PATH
@@ -142,6 +222,15 @@
 # it and answers /healthz. A disagreeing PATH copy is logged and ignored. A
 # supervisor definition that names no openclaw package REFUSES (never guesses).
 #
+# THE BACKUP DOES NOT OUTLIVE THE INSTALL (v1.3.0; Trevor's order of 2026-10-29: a backup made of
+# somebody's OpenClaw is deleted as soon as the install is completed).
+# Step 4 writes <root>/openclaw.json.bak-pre-atomic-upgrade-<ts> so a rollback can restore the config.
+# Once the upgrade is PROVEN complete (the doctor model/provider check and `config validate` passed,
+# the gateway held its stability window, answered /healthz 200 and runs the target build) this run
+# deletes that file and logs its path (_drop_config_backup). Every failure before that point returns
+# through _rollback, which leaves the file where it is: a rollback that cannot finish needs it.
+# Only the copy THIS run wrote is ever removed; copies from earlier runs are not touched here.
+#
 # ⚠️ INTERPRETER: written for stock /bin/bash 3.2.57, which is what the fleet's
 # Macs run. No associative arrays, no `mapfile`, no `${x^^}`, and never a
 # heredoc nested inside `$( )` — that last one aborts at PARSE time on 3.2 and
@@ -149,7 +238,7 @@
 
 set -uo pipefail
 
-VERSION="1.0.0"
+VERSION="1.4.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIGRATOR="$SCRIPT_DIR/oc-schema-migrate.py"
 SUP_HELPER="$SCRIPT_DIR/oc-supervisor-install.py"
@@ -168,6 +257,10 @@ NPM_BIN="${OC_ATOMIC_NPM:-npm}"
 BOOTOUT_TIMEOUT="$(_uint "${OC_ATOMIC_BOOTOUT_TIMEOUT:-}" 60)"
 HEALTH_TIMEOUT="$(_uint "${OC_ATOMIC_HEALTH_TIMEOUT:-}" 60)"
 SETTLE_SECONDS="$(_uint "${OC_ATOMIC_SETTLE_SECONDS:-}" 25)"
+DOCTOR_TIMEOUT="$(_uint "${OC_ATOMIC_DOCTOR_TIMEOUT:-}" 900)"
+DOCTOR_LOOP_LINES="$(_uint "${OC_ATOMIC_DOCTOR_LOOP_LINES:-}" 5)"
+FTS_TIMEOUT="$(_uint "${OC_ATOMIC_FTS_TIMEOUT:-}" 1500)"
+RUN_START_EPOCH="$(date +%s)"   # a state-database holder started before this is stale (_reap_state_holders)
 
 GATEWAY_LABEL="ai.openclaw.gateway"
 SELFHEAL_LABEL="com.openclaw.service-remediate"
@@ -180,6 +273,7 @@ STATE_SELFHEAL_BOOTED_OUT=0
 GATEWAY_LOADED_AT_START=0   # the job/container the rollback must put back
 OLD_VERSION=""
 CONFIG_BACKUP=""
+CONFIG_BACKUP_GONE=""   # the path _drop_config_backup deleted (for the closing summary)
 OC_CONFIG=""
 OC_ROOT_DIR=""
 LOCK_FILE=""
@@ -190,11 +284,122 @@ SUP_PREFIX=""
 SUP_ENTRY=""
 SUP_SOURCE=""     # launchd | systemd ("" = no supervisor definition)
 SUP_UNIT=""       # definition handle: the plist/unit path, or container:<name> for docker
+DOCTOR_WHY=""     # why _migrate_state_with_doctor failed (the rollback reason)
+DOCTOR_RAN=0      # 1 once `doctor --fix` exited 0: config and databases are migrated, the old build never goes back (_keep_new_binary)
+PLUGIN_QUARANTINED=""   # plugin ids whose entry this run set enabled=false (#24); the rollback undoes them with the config
+PLUGIN_RECORD=""        # <root>/oc-atomic-plugin-quarantine.jsonl, the durable record of that
 
 _say()  { printf '[oc-atomic-upgrade] %s\n' "$*"; }
 _ok()   { printf '[oc-atomic-upgrade] OK    %s\n' "$*"; }
 _warn() { printf '[oc-atomic-upgrade] WARN  %s\n' "$*" >&2; }
 _err()  { printf '[oc-atomic-upgrade] ERROR %s\n' "$*" >&2; }
+
+# ── APPROVED NPM VERSION PIN ─────────────────────────────────────────────────
+# The git-ref pin (update-skills.sh) governs repo CONTENT; it cannot govern the
+# `openclaw` npm package this procedure installs at :392/:394. Without a pin the
+# target is `npm view openclaw version` — whatever npm publishes that minute.
+# ONE pin surface: the SAME release-pin.json the git pin reads. This block adds
+# the key `approved_npm_version`; it does not create a competing file.
+#   version : OPENCLAW_APPROVED_NPM_VERSION, then approved_npm_version
+#   mode    : OPENCLAW_RELEASE_PIN_MODE, then the file's mode, then a fallback
+#             rule: an approved_npm_version that IS configured => enforce;
+#             nothing configured => off (today's behaviour, no refusal).
+#   file    : OPENCLAW_RELEASE_PIN_FILE, then <root>/fleet-refresh/release-pin.json
+# Modes, same discipline as the git pin:
+#   enforce  -> no valid version => REFUSE (exit 78) with a named reason code
+#   advisory -> no valid version => follow npm-latest with a loud warning
+#   off      -> today's behaviour exactly: the pin is ignored entirely
+# A pin must be a released semver (X.Y.Z, optional -prerelease/+build). Ranges,
+# tags (latest), URLs and branch-like values are refused: a range is still a
+# moving target and is not an approved release.
+NPM_PIN_VERSION=""
+OC_NPM_PIN_REASON=""
+_npm_pin_root() {
+  if [ -n "${OPENCLAW_ROOT:-}" ]; then printf '%s' "$OPENCLAW_ROOT"
+  elif [ -d /data/.openclaw ]; then printf '%s' /data/.openclaw
+  else printf '%s/.openclaw' "$HOME"; fi
+}
+_npm_pin_file() {
+  printf '%s' "${OPENCLAW_RELEASE_PIN_FILE:-$(_npm_pin_root)/fleet-refresh/release-pin.json}"
+}
+_npm_pin_read() {
+  local f; f="$(_npm_pin_file)"
+  [ -f "$f" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -I -c 'import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+v=d.get(sys.argv[2])
+if v is None:
+    sys.exit(1)
+print(v)' "$f" "$1" 2>/dev/null
+}
+_npm_pin_mode() {
+  local m="${OPENCLAW_RELEASE_PIN_MODE:-}"
+  [ -n "$m" ] || m="$(_npm_pin_read mode 2>/dev/null || true)"
+  if [ -z "$m" ]; then
+    # No mode configured anywhere. Preserve today's behaviour unless an
+    # approved npm version IS configured: unconfigured => off (no pin, no
+    # refusal, npm-latest exactly as before); configured => enforce the pin
+    # that was deliberately set. An explicit mode still wins verbatim.
+    if [ -n "$(_npm_pin_configured)" ]; then m="enforce"; else m="off"; fi
+  fi
+  printf '%s' "$m"
+}
+_npm_pin_configured() {
+  local v="${OPENCLAW_APPROVED_NPM_VERSION:-}"
+  [ -n "$v" ] || v="$(_npm_pin_read approved_npm_version 2>/dev/null || true)"
+  printf '%s' "$v"
+}
+_npm_pin_valid() {
+  [ -n "${1:-}" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -I -c 'import re,sys
+sys.exit(0 if re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.]+)?", sys.argv[1]) else 1)' "$1" 2>/dev/null
+}
+# Sets NPM_PIN_VERSION ("" = no pin applies). rc 78 = refuse.
+_npm_pin_require() {
+  local m r
+  m="$(_npm_pin_mode)"; r="$(_npm_pin_configured)"
+  NPM_PIN_VERSION=""; OC_NPM_PIN_REASON=""
+  case "$m" in
+    enforce|advisory|off) ;;
+    *) OC_NPM_PIN_REASON="NPM_PIN_MODE_INVALID"; return 78 ;;
+  esac
+  [ "$m" = "off" ] && return 0
+  if [ -z "$r" ]; then
+    OC_NPM_PIN_REASON="NPM_PIN_UNCONFIGURED"
+    [ "$m" = "enforce" ] && return 78
+    printf '[npm-pin] %s (advisory: target will be whatever npm says right now)\n' "$OC_NPM_PIN_REASON" >&2
+    return 0
+  fi
+  if ! _npm_pin_valid "$r"; then
+    OC_NPM_PIN_REASON="NPM_PIN_INVALID"
+    [ "$m" = "enforce" ] && return 78
+    printf '[npm-pin] %s: %s (advisory: target will be whatever npm says right now)\n' "$OC_NPM_PIN_REASON" "$r" >&2
+    return 0
+  fi
+  NPM_PIN_VERSION="$r"
+  return 0
+}
+# Applies the pin to TARGET_VERSION. rc 78 = refuse (missing pin or conflict).
+_npm_pin_apply() {
+  local m
+  _npm_pin_require || return 78
+  [ -n "$NPM_PIN_VERSION" ] || return 0
+  m="$(_npm_pin_mode)"
+  if [ -n "${TARGET_VERSION:-}" ] && [ "$TARGET_VERSION" != "$NPM_PIN_VERSION" ]; then
+    if [ "$m" = "enforce" ]; then
+      OC_NPM_PIN_REASON="NPM_PIN_TARGET_CONFLICT"
+      return 78
+    fi
+    _warn "[npm-pin] --target-version $TARGET_VERSION disagrees with the approved pin $NPM_PIN_VERSION; the approved pin wins"
+  fi
+  TARGET_VERSION="$NPM_PIN_VERSION"
+  return 0
+}
 
 # ── Resolve the box's OpenClaw root the same way every other script here does ─
 #
@@ -277,8 +482,15 @@ _resolve_supervisor_install() {
   node_dir="$(printf '%s\n' "$out" | sed -n 's/^node=//p' | head -1)"
   [ -n "$node_dir" ] && node_dir="$(dirname "$node_dir")"
   [ -n "$SUP_PKG_ROOT" ] && [ -n "$SUP_PREFIX" ] || return 1
-  [ -n "$node_dir" ] && [ -d "$node_dir" ] && PATH="$node_dir:$PATH"
+  # ORDER MATTERS (v1.2.3): the supervisor's node dir must END UP FIRST. npm is a
+  # `#!/usr/bin/env node` script, so it runs under the first `node` on PATH, and so do
+  # the package's own lifecycle scripts (openclaw's preinstall refuses a node below its
+  # engines floor). On a Homebrew Mac $SUP_PREFIX/bin is /opt/homebrew/bin, whose `node`
+  # is the stale one the node-floor step just replaced; prepended AFTER the private node
+  # it won, npm ran on Node 26.8.1, the preinstall guard exited 1 and every box rolled
+  # back with exit 78 (Big Fleet Roll 20261029).
   [ -d "$SUP_PREFIX/bin" ] && PATH="$SUP_PREFIX/bin:$PATH"
+  [ -n "$node_dir" ] && [ -d "$node_dir" ] && PATH="$node_dir:$PATH"
   export PATH
   # THAT node's npm, unless the operator pinned one.
   [ -z "${OC_ATOMIC_NPM:-}" ] && [ -n "$node_dir" ] && [ -x "$node_dir/npm" ] && NPM_BIN="$node_dir/npm"
@@ -402,11 +614,27 @@ except Exception:
     print(18789)' 2>/dev/null || echo 18789
 }
 
+# 1 when gateway.tls.enabled is true in the config, else 0 (also on an unreadable
+# config). A TLS gateway answers https ONLY: an http:// probe gets an empty reply,
+# so a healthy gateway would read as down and the upgrade would roll back.
+_gateway_tls() {
+  OC_CFG="$OC_CONFIG" python3 -c 'import json,os
+try:
+    t=((json.load(open(os.environ["OC_CFG"])).get("gateway") or {}).get("tls") or {}).get("enabled")
+    print(1 if str(t).lower()=="true" else 0)
+except Exception:
+    print(0)' 2>/dev/null || echo 0
+}
+
 # rc 0 ONLY when GET /healthz answers 200. No curl = cannot prove = rc 1.
+# TLS gateway: https with -k (loopback only, self-signed cert).
 _healthz_ok() {
   command -v curl >/dev/null 2>&1 || return 1
-  [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 \
-        "http://127.0.0.1:$(_gateway_port)/healthz" 2>/dev/null)" = "200" ]
+  local s=http k=""
+  if [ "$(_gateway_tls)" = "1" ]; then s=https; k="-k"; fi
+  # shellcheck disable=SC2086  # k is empty or the single word -k
+  [ "$(curl -s $k -o /dev/null -w '%{http_code}' --max-time 3 \
+        "$s://127.0.0.1:$(_gateway_port)/healthz" 2>/dev/null)" = "200" ]
 }
 
 _config_sha() {
@@ -426,15 +654,243 @@ _config_sha() {
 # ── 2026.10.4 -> 2026.10.5 shipped a box whose config held skills.workshop.autonomous
 # ── .mode "propose": every CLI command died, and this script had still printed
 # ── "ATOMIC UPGRADE COMPLETE" because nothing here ever asked the new binary.
-_config_valid_for_installed_binary() {
-  local out
-  out="$(openclaw config validate --json 2>/dev/null)" && return 0
-  printf '%s' "$out" | python3 -c 'import json,sys
+#
+# ── #25: on 2026.10.5 `config validate` takes the sqlite maintenance lock EVEN WHEN
+# ── READ-ONLY, so run against the live state directory while a gateway is SERVING it
+# ── stops that gateway answering (healthz 000 while its pid lives). Whenever the gateway
+# ── job is loaded the verdict therefore comes from _config_valid_isolated, which never
+# ── touches the live state directory. With the job booted out (the upgrade window) no
+# ── gateway exists to contend with, and the plain call is correct.
+_print_validate_issues() {
+  printf '%s' "$1" | python3 -c 'import json,sys
 try:
     for i in json.load(sys.stdin).get("issues") or []:
         print("%s: %s" % (i.get("path"), i.get("message")))
 except Exception:
     print("(no parseable issue list - the build rejected the config)")' 2>/dev/null | sed 's/^/    | /' >&2
+}
+_config_valid_for_installed_binary() {
+  local out
+  if _gateway_loaded; then _config_valid_isolated; return $?; fi
+  out="$(openclaw config validate --json 2>/dev/null)" && return 0
+  _print_validate_issues "$out"
+  return 1
+}
+
+# One validate run that cannot see the live state directory: its own state dir ($1), its
+# own config file ($2), config writes refused. rc and stdout are the build's own verdict.
+_validate_in_isolation() {
+  OPENCLAW_STATE_DIR="$1" OPENCLAW_CONFIG_PATH="$2" OPENCLAW_CONFIG_READONLY=1 \
+    openclaw config validate --json 2>/dev/null
+}
+
+# rc 0 = the build accepts the config; rc 1 = it rejects it (issues printed) OR the check
+# could not be trusted. The private state dir holds a COPY of the config and symlinks to the
+# live plugin directories (so third-party plugin entries still resolve) but none of the live
+# state. The instrument is proven on this very transport first: a known-bad config must be
+# rejected and a known-good one accepted, else the answer is UNDETERMINED and treated as "not
+# proven valid" (the caller then runs the full procedure inside the quiesce, where a live
+# validate is safe) - never as "valid".
+_config_valid_isolated() {
+  local iso out rc d
+  iso="$(mktemp -d "${TMPDIR:-/tmp}/oc-validate.XXXXXX")" || {
+    _warn "isolated config validation UNDETERMINED: could not create a private state directory"; return 1; }
+  for d in extensions npm plugins; do
+    [ -d "$OC_ROOT_DIR/$d" ] && ln -s "$OC_ROOT_DIR/$d" "$iso/$d"
+  done
+  printf '{}\n' > "$iso/control-good.json"
+  printf '{"agents":{"__oc_atomic_probe__":true}}\n' > "$iso/control-bad.json"
+  if ! cp "$OC_CONFIG" "$iso/openclaw.json" 2>/dev/null; then
+    _rm_isolated "$iso"; _warn "isolated config validation UNDETERMINED: could not copy the config"; return 1
+  fi
+  if ! _validate_in_isolation "$iso" "$iso/control-good.json" >/dev/null; then
+    _rm_isolated "$iso"; _warn "isolated config validation UNDETERMINED: the known-good control was rejected, so this check cannot be trusted"; return 1
+  fi
+  if _validate_in_isolation "$iso" "$iso/control-bad.json" >/dev/null; then
+    _rm_isolated "$iso"; _warn "isolated config validation UNDETERMINED: the known-bad control was ACCEPTED, so this check cannot tell valid from invalid"; return 1
+  fi
+  out="$(_validate_in_isolation "$iso" "$iso/openclaw.json")"; rc=$?
+  _rm_isolated "$iso"
+  [ "$rc" -eq 0 ] && return 0
+  _print_validate_issues "$out"
+  return 1
+}
+_rm_isolated() { rm -f "$1/extensions" "$1/npm" "$1/plugins" 2>/dev/null; rm -rf "$1" 2>/dev/null; }
+
+# ── SHARED INSTALLATION LEASE (mac.MAC-1 / consistency.C1) ───────────────────
+# oc-atomic is the writer that actually moves a box onto a new OpenClaw build,
+# so it MUST hold the same lease as update-skills.sh, self-update.sh and the
+# weekly cron — otherwise two writers migrate the same config concurrently.
+# Liveness is decided by the RECORD (pid + process start identity + run id),
+# never by the file's existence and never by its age (mac.MAC-13).
+#
+# NESTED writers inherit: self-update → (this script) and weekly-full-update →
+# fleet-refresh → (this script) are DESCENDANTS of the lease holder, so they
+# proceed without rewriting or releasing it. Refusing them is the defect that
+# closed PR #2612 — the box's own update chain refused its own children.
+OC_LEASE_PATH="${OPENCLAW_UPDATE_LEASE:-/tmp/openclaw-update.lock}"
+OC_LEASE_STATE=""      # "" | owned | inherited
+OC_LEASE_IMPL=""
+
+_lease_start() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//' || true; }
+_lease_ppid()  { ps -o ppid= -p "$1" 2>/dev/null | tr -d ' ' || true; }
+_lease_rpid() {
+  if [ -d "$OC_LEASE_PATH" ]; then head -1 "$OC_LEASE_PATH/pid" 2>/dev/null || true
+  else sed -n 's/^pid=\([0-9][0-9]*\).*/\1/p' "$OC_LEASE_PATH" 2>/dev/null | head -1 || true
+  fi
+  return 0
+}
+_lease_rstart() { sed -n 's/^start=//p' "$OC_LEASE_PATH" 2>/dev/null | head -1 || true; return 0; }
+
+_lease_owner_live() {
+  local _p _s
+  if [ -d "$OC_LEASE_PATH" ]; then
+    _p="$(_lease_rpid)"; [ -n "$_p" ] || return 1
+    kill -0 "$_p" 2>/dev/null || return 1
+    return 0                      # legacy mkdir lease: pid only, never age
+  fi
+  [ -f "$OC_LEASE_PATH" ] || return 1
+  _p="$(_lease_rpid)"; [ -n "$_p" ] || return 1
+  kill -0 "$_p" 2>/dev/null || return 1
+  _s="$(_lease_rstart)"
+  if [ -n "$_s" ]; then [ "$(_lease_start "$_p")" = "$_s" ] || return 1; fi
+  return 0
+}
+
+# 0 = this process is the holder or one of its descendants. A legacy mkdir lease
+# carries no start identity, so it can never prove a process tree.
+_lease_in_owner_tree() {
+  [ -d "$OC_LEASE_PATH" ] && return 1
+  _lease_owner_live || return 1
+  local _p _cur _n
+  _p="$(_lease_rpid)"; _cur="$$"; _n=0
+  while [ -n "$_cur" ] && [ "$_cur" -gt 1 ] 2>/dev/null && [ "$_n" -lt 64 ]; do
+    [ "$_cur" = "$_p" ] && return 0
+    _cur="$(_lease_ppid "$_cur")"
+    _n=$((_n + 1))
+  done
+  return 1
+}
+
+_lease_write_own() {
+  printf 'pid=%s\nstart=%s\nrun_id=%s\nrole=%s\ninstall_path=%s\nutc=%s\n' \
+    "$$" "$(_lease_start "$$")" "${1:-}" "oc-atomic-upgrade" "${OC_ROOT_DIR:-}" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$OC_LEASE_PATH" 2>/dev/null
+}
+
+_lease_load_helper() {
+  local _h _d
+  _d="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
+  for _h in "$_d/box-update-lock.sh" \
+            "${OC_ROOT_DIR:-$HOME/.openclaw}/scripts/box-update-lock.sh" \
+            "${OC_ROOT_DIR:-$HOME/.openclaw}/fleet-refresh/onboarding/scripts/box-update-lock.sh"; do
+    if [ -f "$_h" ]; then
+      # shellcheck source=/dev/null
+      . "$_h" || continue
+      declare -F box_update_lock_acquire >/dev/null 2>&1 && return 0
+    fi
+  done
+  return 1
+}
+
+# 0 held · 3 a live foreign writer owns it · 1 unrecoverable.
+_lease_acquire() {
+  OC_LEASE_IMPL="inline"
+  if _lease_load_helper; then OC_LEASE_IMPL="helper"; fi
+
+  if _lease_in_owner_tree; then
+    OC_LEASE_STATE="inherited"
+    # Also export the helper's identity keys so a DESCENDANT that takes the
+    # helper path can prove inheritance from the same run.
+    BFX_LOCK_RUN_ID="$(sed -n 's/^run_id=//p' "$OC_LEASE_PATH" 2>/dev/null | head -1 || true)"
+    BFX_LOCK_OWNER_PID="$(_lease_rpid)"
+    export BFX_LOCK_RUN_ID BFX_LOCK_OWNER_PID
+    _say "lease     : inherited $OC_LEASE_PATH from pid $(_lease_rpid) (nested writer)"
+    return 0
+  fi
+
+  if [ -e "$OC_LEASE_PATH" ] && [ ! -f "$OC_LEASE_PATH" ]; then
+    _lease_owner_live && return 3
+    rm -rf "$OC_LEASE_PATH" 2>/dev/null || return 1
+  fi
+
+  if [ "$OC_LEASE_IMPL" = "helper" ]; then
+    box_update_lock_acquire "$OC_LEASE_PATH" "${RUN_ID:-oc-atomic-$$}" \
+      "oc-atomic-upgrade" "${OC_ROOT_DIR:-}"
+    case "$?" in
+      0) OC_LEASE_STATE="owned"
+         _say "lease     : acquired $OC_LEASE_PATH (shared lease)"
+         return 0 ;;
+      3) return 3 ;;
+      *) return 1 ;;
+    esac
+  fi
+
+  if command -v flock >/dev/null 2>&1; then
+    # `exec` with ONLY redirections applies every one of them to the whole script, so a bare `exec 9<>f 2>/dev/null`
+    # sends stderr to /dev/null for the rest of the run and every later _err line (each rollback reason) vanishes.
+    # Group the exec so the 2>/dev/null covers only its own failure message; fd 9 still stays open.
+    { exec 9<>"$OC_LEASE_PATH"; } 2>/dev/null || return 1
+    if ! flock -n 9 2>/dev/null; then
+      { exec 9>&-; } 2>/dev/null || true
+      return 3
+    fi
+    if _lease_owner_live; then
+      flock -u 9 2>/dev/null || true
+      { exec 9>&-; } 2>/dev/null || true
+      return 3
+    fi
+    _lease_write_own "${RUN_ID:-oc-atomic-$$}" || return 1
+    OC_LEASE_STATE="owned"
+    _say "lease     : acquired $OC_LEASE_PATH (flock + record, pid $$)"
+    return 0
+  fi
+
+  if _lease_owner_live; then return 3; fi
+  if [ -e "$OC_LEASE_PATH" ]; then rm -f "$OC_LEASE_PATH" 2>/dev/null || return 1; fi
+  ( set -o noclobber; : > "$OC_LEASE_PATH" ) 2>/dev/null || return 3
+  _lease_write_own "${RUN_ID:-oc-atomic-$$}" || return 1
+  OC_LEASE_STATE="owned"
+  _say "lease     : acquired $OC_LEASE_PATH (exclusive create, pid $$)"
+  return 0
+}
+
+_lease_release() {
+  if [ "$OC_LEASE_STATE" = "owned" ]; then
+    if [ "$OC_LEASE_IMPL" = "helper" ]; then
+      command -v box_update_lock_release >/dev/null 2>&1 && box_update_lock_release
+    elif _lease_owner_live && [ "$(_lease_rpid)" = "$$" ]; then
+      rm -rf "$OC_LEASE_PATH" 2>/dev/null || true
+    fi
+  fi
+  OC_LEASE_STATE=""
+  return 0
+}
+
+# mac.MAC-2 — an UNPINNED upgrade (the Saturday 23:59 cron: no
+# --target-version, so the target is whatever npm says at that minute) must
+# never run while another writer owns this box. It reports WHY through
+# _UPW_WHY. A PINNED upgrade does not need this probe: the lease acquire below
+# already refuses a live foreign writer, and a holder in our own process tree
+# is the roll that spawned us.
+_UPW_WHY=""
+_unpinned_foreign_writer() {
+  _UPW_WHY=""
+  local _root _ap
+  _root="${OC_ROOT_DIR:-$HOME/.openclaw}"
+  _ap="$_root/fleet-refresh/agent-pull.lock/pid"
+  if [ -f "$_ap" ]; then
+    local _pp
+    _pp="$(head -1 "$_ap" 2>/dev/null || true)"
+    if [ -n "$_pp" ] && kill -0 "$_pp" 2>/dev/null; then
+      _UPW_WHY="a self-update / agent-pull run holds agent-pull.lock (pid $_pp)"
+      return 0
+    fi
+  fi
+  if _lease_owner_live && ! _lease_in_owner_tree; then
+    _UPW_WHY="the installation lease $OC_LEASE_PATH is held by pid $(_lease_rpid) ($(sed -n 's/^role=//p' "$OC_LEASE_PATH" 2>/dev/null | head -1))"
+    return 0
+  fi
   return 1
 }
 
@@ -445,8 +901,12 @@ except Exception:
 # ── silently revert the migration (fact 3).
 _lock_acquire() {
   mkdir -p "$OC_ROOT_DIR" 2>/dev/null
-  printf 'pid=%s\nstarted=%s\nreason=oc-atomic-upgrade v%s\n' \
-    "$$" "$(date '+%Y-%m-%dT%H:%M:%S')" "$VERSION" > "$LOCK_FILE" 2>/dev/null
+  # `start=` is the process START IDENTITY (mac.MAC-13): remediate.sh decides a
+  # maintenance lock is stale from pid + this identity, NEVER from its age, so a
+  # slow upgrade is never healed out from under itself and a recycled pid is not
+  # mistaken for a live one. `started=` is the human timestamp.
+  printf 'pid=%s\nstart=%s\nstarted=%s\nreason=oc-atomic-upgrade v%s\n' \
+    "$$" "$(_lease_start "$$")" "$(date '+%Y-%m-%dT%H:%M:%S')" "$VERSION" > "$LOCK_FILE" 2>/dev/null
   if [ ! -f "$LOCK_FILE" ]; then
     _err "could not write the maintenance lock at $LOCK_FILE"
     return 1
@@ -459,25 +919,14 @@ _lock_release() { rm -f "$LOCK_FILE" 2>/dev/null; }
 # ─────────────────────────────────────────────────────────────────────────────
 # QUIESCE
 # ─────────────────────────────────────────────────────────────────────────────
-_quiesce() {
-  # Rollback state is set BEFORE the stop it undoes (see the state block at the
-  # top). It used to be set after, so a quiesce that failed returned early with
-  # STATE_QUIESCED=0 and the rollback never restarted the gateway it had just
-  # booted out -- then printed "exactly as it was found".
-  STATE_QUIESCED=1
+# Stop the gateway job/container and PROVE it is gone. bootout, NOT kickstart -k: kickstart
+# restarts the process and leaves the job loaded, so KeepAlive respawns it every ~11s; only
+# bootout is a stop, and it is ASYNCHRONOUS (it returns before the job has left launchd), so
+# the proof is a bounded poll, never a one-shot check. Shared by the quiesce and by the npm
+# window (_gateway_stop_for_npm). rc 1 = it is still there; the caller refuses to go on.
+_stop_gateway_job() {
   case "$SUPERVISOR" in
     launchd)
-      # The self-heal agent first: booting the gateway out while its watchdog is
-      # still armed just races it back up within 5 minutes.
-      if _job_loaded "$SELFHEAL_LABEL"; then
-        STATE_SELFHEAL_BOOTED_OUT=1
-        launchctl bootout "gui/$UIDN/$SELFHEAL_LABEL" >/dev/null 2>&1
-        _ok "self-heal agent $SELFHEAL_LABEL booted out"
-      fi
-      # bootout, NOT kickstart -k. kickstart restarts the process and leaves the
-      # job loaded; KeepAlive then respawns it every ~11s. Only bootout is a stop.
-      # bootout is ASYNCHRONOUS: it returns before the job has left launchd, so
-      # a one-shot check straight after it races the teardown. Poll, bounded.
       launchctl bootout "gui/$UIDN/$GATEWAY_LABEL" >/dev/null 2>&1
       if ! _poll "$BOOTOUT_TIMEOUT" _gateway_unloaded; then
         _err "gateway job $GATEWAY_LABEL is STILL LOADED ${BOOTOUT_TIMEOUT}s after bootout — refusing to continue"
@@ -498,11 +947,80 @@ _quiesce() {
         _ok "container openclaw stopped (restart:unless-stopped does not revive an explicit stop)"
       fi
       ;;
+  esac
+  return 0
+}
+
+_quiesce() {
+  # Rollback state is set BEFORE the stop it undoes (see the state block at the
+  # top). It used to be set after, so a quiesce that failed returned early with
+  # STATE_QUIESCED=0 and the rollback never restarted the gateway it had just
+  # booted out -- then printed "exactly as it was found".
+  STATE_QUIESCED=1
+  case "$SUPERVISOR" in
+    launchd)
+      # The self-heal agent first: booting the gateway out while its watchdog is
+      # still armed just races it back up within 5 minutes.
+      if _job_loaded "$SELFHEAL_LABEL"; then
+        STATE_SELFHEAL_BOOTED_OUT=1
+        launchctl bootout "gui/$UIDN/$SELFHEAL_LABEL" >/dev/null 2>&1
+        _ok "self-heal agent $SELFHEAL_LABEL booted out"
+      fi
+      _stop_gateway_job || return 1
+      ;;
+    docker) _stop_gateway_job || return 1 ;;
     none)
       _ok "no supervisor found — nothing to quiesce"
       ;;
   esac
   return 0
+}
+
+# ── #21: THE NPM WINDOW. A gateway job that is LOADED while npm rewrites the package gets
+# ── respawned by KeepAlive every ~11s against a half-written tree ("Cannot find module
+# ── .../dist/index.js"), so the stability window never holds and a rollback that reinstalls
+# ── the old build the same way leaves the box dark. Every npm install here therefore runs
+# ── with the job proven booted out for the WHOLE window, and nothing may bootstrap it again
+# ── until the package measures complete.
+# A package is complete when it measures a version AND the file the supervisor launches
+# exists (the very file the half-written tree was missing).
+_package_complete() {
+  [ -n "$(_measured_version)" ] || return 1
+  [ -z "$SUP_ENTRY" ] || [ -f "$SUP_ENTRY" ] || return 1
+  [ -z "$SUP_PKG_ROOT" ] || [ -f "$SUP_PKG_ROOT/package.json" ]
+}
+# Make sure the gateway is not loaded right now. No-op when it already is not (the normal
+# case: the quiesce booted it out); after a failed START it IS loaded and must be booted out
+# again before the rollback reinstalls anything.
+_gateway_stop_for_npm() {
+  _gateway_loaded || return 0
+  _warn "the gateway is LOADED at the start of an npm window (KeepAlive would respawn it against a half-written package) - stopping it first"
+  _stop_gateway_job
+}
+# npm install of $1 with the gateway held stopped on BOTH sides of it. rc 2 = the gateway
+# could not be held stopped, so npm never ran; otherwise npm's own rc.
+_npm_install_held() {
+  local rc out
+  _gateway_stop_for_npm || return 2
+  out="$(mktemp "${TMPDIR:-/tmp}/oc-atomic-npm.XXXXXX" 2>/dev/null)" || out=/dev/null
+  _npm_install "$1" >"$out" 2>&1; rc=$?
+  [ "$rc" -eq 2 ] && rc=1      # 2 is this function's own "never ran" code
+  # v1.2.3: a failed install used to say only "FAILED" (its output went to /dev/null), so four
+  # boxes rolled back with no reason in the job log. Show npm's last 40 lines (secret-looking
+  # lines dropped: a registry auth error can echo a token) and the node npm ran under.
+  if [ "$rc" -ne 0 ]; then
+    _err "npm exited $rc (ran under $(command -v node 2>/dev/null || echo 'no node on PATH') $(node -v 2>/dev/null)); its last 40 lines follow"
+    tail -n 40 "$out" 2>/dev/null | grep -viE 'token|secret|apikey|password|bearer|_auth' | sed 's/^/[oc-atomic-upgrade]   npm| /' >&2
+  fi
+  [ "$out" = /dev/null ] || rm -f "$out"
+  # Something (a remediator that ignored the lock, a stray bootstrap) loaded the job DURING
+  # the window: it may have imported a half-written tree. Stop it again so the start that
+  # follows the install is a fresh process on the complete package.
+  if _gateway_loaded; then
+    _warn "the gateway job was loaded again DURING the npm window - booting it out so it restarts on the finished package"
+    _gateway_stop_for_npm || return 2
+  fi
+  return "$rc"
 }
 
 # ── PROVE the quiesce. An absent process is a claim; a config that stops
@@ -739,10 +1257,761 @@ _prove_gateway_on_target() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# STATE-DATABASE HOLDERS (fleet-roll error #18) AND DOCTOR (error #16)
+# ─────────────────────────────────────────────────────────────────────────────
+# #18: a stale `openclaw` CLI from an earlier run (a hung status / config validate /
+# memory command) still holds <root>/state/openclaw.sqlite open. The new gateway
+# then refuses to start ("undergoing offline maintenance") and doctor refuses to
+# take maintenance ("An agent database is in use"). Only a bare CLI that started
+# BEFORE this run is ever stopped; see _reap_state_holders for what is never touched.
+# #16: the new gateway refuses an agent database at schema 24, and only
+# `doctor --fix` migrates it (see the header). Doctor needs the gateway stopped and
+# no other holder, which is exactly the window this script already owns.
+# Both apply to the launchd supervisor only; a docker install keeps its state inside
+# the container, where nothing here can see it, and is left exactly as before.
+
+_pid_gone() { ! kill -0 "$1" 2>/dev/null; }
+
+# Prints the subcommand word (e.g. "doctor") and returns 0 ONLY when $1 is a bare
+# openclaw CLI invocation: `openclaw <word> ...`, or `node <...>/openclaw[.mjs|/dist/*.js]
+# <word> ...`. Anything else returns 1 and prints nothing: a gateway or node-host service
+# or other long-running / interactive subcommand, the OpenClaw app (*.app), an unparseable
+# command line, or any process that is not openclaw. Only ps's argument vector is read
+# (never the environment), and only the subcommand word is ever printed.
+_cli_holder_subcommand() (
+  local args tok seen=0 sub=""
+  args="$(ps -o args= -p "$1" 2>/dev/null)"
+  [ -n "$args" ] || exit 1
+  case "$args" in *.app/*|*.app\ *) exit 1 ;; esac
+  set -f
+  for tok in $args; do
+    if [ "$seen" = "0" ]; then
+      case "$tok" in
+        -*) ;;                                        # a runtime flag, e.g. node --max-old-space-size=4096
+        node|*/node|nodejs|*/nodejs) ;;               # the runtime hosting the CLI
+        openclaw|*/openclaw|*/openclaw.mjs|*/openclaw/dist/*.js|*/openclaw/dist/*.mjs) seen=1 ;;
+        *) exit 1 ;;
+      esac
+      continue
+    fi
+    case "$tok" in -*) continue ;; esac
+    sub="$tok"
+    break
+  done
+  case "$sub" in
+    ''|*[!a-z0-9-]*) exit 1 ;;
+    gateway|node|daemon|acp|mcp|tui|chat|terminal|attach|connect|dashboard|proxy|worker|onboard|configure|browser|voicecall|webhooks|resume) exit 1 ;;
+  esac
+  printf '%s' "$sub"
+)
+
+# Pids holding the shared state database (or its -wal/-shm) open, one per line.
+# rc 0 = measured (the list may be empty); rc 2 = could not measure (no lsof). An
+# unmeasurable state is NOT "nobody holds it".
+_state_holders() {
+  local f
+  command -v lsof >/dev/null 2>&1 || return 2
+  for f in "$OC_ROOT_DIR/state/openclaw.sqlite" "$OC_ROOT_DIR/state/openclaw.sqlite-wal" "$OC_ROOT_DIR/state/openclaw.sqlite-shm"; do
+    [ -e "$f" ] && lsof -t "$f" 2>/dev/null
+  done | sort -u | grep -E '^[0-9]+$'
+  return 0
+}
+
+# v1.4.0: a Mac that runs the OpenClaw desktop app has one more holder that can never be cleared: the
+# app's own child `openclaw-node-worker` opens state/openclaw.sqlite READ-ONLY and the app respawns it
+# about 10 s after it is stopped, so the "before doctor" gate refused and rolled the whole upgrade back
+# on every such Mac. rc 0 ONLY for exactly that process: it is named openclaw-node-worker, an
+# OpenClaw.app main process is among its ancestors, and lsof shows access mode r on the main database
+# file (the -wal/-shm files are opened read-write even by a reader, so they are not the test). It is
+# tolerated and logged by the callers, never signalled; anything else keeps the existing rules.
+_benign_app_reader() {
+  local pid="$1" p="$1" n=0 mode
+  case "$(ps -o comm= -p "$pid" 2>/dev/null | sed 's/^ *//;s/ *$//')" in
+    openclaw-node-worker|*/openclaw-node-worker) ;;
+    *) return 1 ;;
+  esac
+  mode="$(lsof -F fan -p "$pid" 2>/dev/null \
+    | awk -v want="$OC_ROOT_DIR/state/openclaw.sqlite" '/^a/{a=substr($0,2)} /^n/{ if (substr($0,2)==want) print a }' \
+    | sort -u | tr -d '\n')"
+  [ "$mode" = "r" ] || return 1
+  while [ "$n" -lt 16 ]; do
+    p="$(_lease_ppid "$p")"
+    case "$p" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$p" -gt 1 ] || return 1
+    case "$(ps -o args= -p "$p" 2>/dev/null)" in */OpenClaw.app/Contents/MacOS/OpenClaw*) return 0 ;; esac
+    n=$((n+1))
+  done
+  return 1
+}
+
+# Stop the STALE bare `openclaw` CLI processes that hold the state database, and log
+# each one. A holder is left alone unless ALL of these hold: it is a bare openclaw CLI
+# (_cli_holder_subcommand), it is not this process or one of its parents, it is not the
+# gateway pid, and it started clearly BEFORE this run (2s slack: etime is whole seconds).
+# SIGTERM first, SIGKILL only if it survives. rc 0 = nobody we can see holds the database
+# afterwards (or lsof is missing: said so, not assumed clear), except the app's read-only worker
+# (_benign_app_reader); rc 1 = someone else still does.
+_reap_state_holders() {
+  local where="$1" pids pid sub started gw anc p n rc left
+  [ "$SUPERVISOR" = "launchd" ] || return 0
+  pids="$(_state_holders)"; rc=$?
+  if [ "$rc" -eq 2 ]; then
+    _warn "lsof is not available - who holds $OC_ROOT_DIR/state/openclaw.sqlite ($where) is UNDETERMINED, not 'nobody'"
+    return 0
+  fi
+  [ -n "$pids" ] || { _ok "no process holds the state database ($where)"; return 0; }
+  anc=" $$ "; p="$$"; n=0
+  while [ "$n" -lt 64 ]; do
+    p="$(_lease_ppid "$p")"
+    case "$p" in ''|*[!0-9]*) break ;; esac
+    [ "$p" -gt 1 ] || break
+    anc="$anc$p "; n=$((n+1))
+  done
+  gw="$(_gateway_pid)"
+  for pid in $pids; do
+    case "$anc" in *" $pid "*) _say "state-database holder pid $pid is this run or one of its parents - left alone"; continue ;; esac
+    if [ -n "$gw" ] && [ "$pid" = "$gw" ]; then _say "state-database holder pid $pid is the gateway - left alone"; continue; fi
+    if _benign_app_reader "$pid"; then
+      _say "state-database holder pid $pid is the OpenClaw app's own openclaw-node-worker, holding the database READ-ONLY - tolerated, NOT stopped (the app respawns it) ($where)"
+      continue
+    fi
+    sub="$(_cli_holder_subcommand "$pid")" || sub=""
+    if [ -z "$sub" ]; then
+      _say "state-database holder pid $pid is not a bare openclaw CLI (a service, the app, or another program) - left alone"
+      continue
+    fi
+    started="$(_proc_start_epoch "$pid")"
+    if [ -z "$started" ]; then
+      _say "state-database holder pid $pid (openclaw $sub): start time unreadable - left alone"
+      continue
+    fi
+    if [ $((started + 2)) -ge "$RUN_START_EPOCH" ]; then
+      _say "state-database holder pid $pid (openclaw $sub) started during this run - left alone"
+      continue
+    fi
+    kill -TERM "$pid" 2>/dev/null
+    _poll 5 _pid_gone "$pid" || { kill -KILL "$pid" 2>/dev/null; _poll 3 _pid_gone "$pid"; }
+    if _pid_gone "$pid"; then
+      _ok "reaped stale openclaw CLI holder pid $pid (openclaw $sub, started $((RUN_START_EPOCH - started))s before this run; $where)"
+    else
+      _warn "stale openclaw CLI holder pid $pid (openclaw $sub) did not stop"
+    fi
+  done
+  left=""
+  for pid in $(_state_holders); do _benign_app_reader "$pid" || left="$left $pid"; done
+  left="${left# }"
+  if [ -n "$left" ]; then
+    _warn "the state database is still held by pid(s): $left ($where)"
+    return 1
+  fi
+  _ok "no process holds the state database ($where)"
+  return 0
+}
+
+# Run a command with stdin from /dev/null, stdout+stderr into $2, and the whole process
+# group killed after $1 seconds. rc 124 = timed out; 127 = could not start; otherwise the
+# command's own exit code (a signal death is 128+signal).
+# #24: with OC_BOUNDED_LOOP_RE and OC_BOUNDED_LOOP_N set, the command is also killed EARLY (rc 125)
+# once one output line matching that regex has been printed N times (digits ignored, so a timestamp
+# or a pid does not hide the repeat). That is a command spinning on the same error, and waiting out
+# the whole bound for it would leave the box dark for nothing; a command that merely mentions an
+# error once or twice is left to finish.
+_run_bounded() {
+  local t="$1" out="$2"
+  shift 2
+  python3 -I - "$t" "$out" "$@" <<'PY'
+import os, re, signal, subprocess, sys, time
+t, out, cmd = int(sys.argv[1]), sys.argv[2], sys.argv[3:]
+lre, ln = os.environ.get("OC_BOUNDED_LOOP_RE", ""), int(os.environ.get("OC_BOUNDED_LOOP_N") or 0)
+rx = re.compile(lre) if lre and ln > 0 else None
+
+def looping():
+    seen = {}
+    with open(out, "r", errors="replace") as fh:
+        for line in fh:
+            if rx.search(line):
+                k = re.sub(r"[0-9]+", "#", line.strip())[:300]
+                seen[k] = seen.get(k, 0) + 1
+                if seen[k] >= ln:
+                    return True
+    return False
+
+with open(out, "wb") as fh:
+    try:
+        p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
+    except OSError as e:
+        fh.write(("cannot start %s: %s\n" % (cmd[0], e.strerror)).encode())
+        sys.exit(127)
+    end = time.monotonic() + t
+    while True:
+        left = end - time.monotonic()
+        try:
+            rc = p.wait(timeout=max(0.0, min(1.0, left)))
+            break
+        except subprocess.TimeoutExpired:
+            pass
+        if rx is not None and looping():
+            os.killpg(p.pid, signal.SIGKILL)
+            p.wait()
+            sys.exit(125)
+        if left <= 0:
+            os.killpg(p.pid, signal.SIGKILL)
+            p.wait()
+            sys.exit(124)
+sys.exit(rc if rc >= 0 else 128 - rc)
+PY
+}
+
+# Doctor output is advisory text, but mask anything shaped like a credential before it is logged.
+_mask_secrets() {
+  sed -E \
+    -e 's/(sk|rk|pk|ghp|gho|ghs|xox[abprs]|AIza|ya29)[-_.A-Za-z0-9]{16,}/<masked>/g' \
+    -e 's/([Tt]oken|[Kk]ey|[Ss]ecret|[Pp]assw(or)?d|[Aa]uthorization|[Bb]earer)([^[:space:]]{0,30})([=:][[:space:]]*|[[:space:]]+)[^[:space:]]+/\1\3\4<masked>/g'
+}
+
+# One line of JSON naming ONLY the model selection: agents.defaults.model (primary, fallbacks),
+# the NAMES pinned in agents.defaults.models, and each agent's own model. NOCONFIG when there is
+# no config, UNREADABLE when it cannot be parsed. Values are model names, never credentials.
+_model_snapshot() {
+  [ -f "$OC_CONFIG" ] || { printf 'NOCONFIG'; return 0; }
+  OC_CFG="$OC_CONFIG" python3 -I -c 'import json,os
+def nm(m):
+    if isinstance(m, str):
+        return {"primary": m, "fallbacks": []}
+    if isinstance(m, dict):
+        return {"primary": m.get("primary"), "fallbacks": m.get("fallbacks") or []}
+    return None
+try:
+    c = json.load(open(os.environ["OC_CFG"]))
+    a = c.get("agents") or {}
+    d = a.get("defaults") or {}
+    pins = d.get("models")
+    ents = a.get("entries")
+    if not isinstance(ents, dict):
+        ents = dict((str(e.get("id", i)), e) for i, e in enumerate(a.get("list") or []) if isinstance(e, dict))
+    print(json.dumps({"defaults": nm(d.get("model")),
+                      "pins": sorted(pins) if isinstance(pins, dict) else None,
+                      "agents": dict((k, nm(v.get("model"))) for k, v in ents.items() if isinstance(v, dict) and "model" in v)},
+                     sort_keys=True))
+except Exception:
+    print("UNREADABLE")' 2>/dev/null || printf 'UNREADABLE'
+}
+
+# The full VALUES behind _model_snapshot (agents.defaults.model, agents.defaults.models, each agent's
+# own model), saved before doctor so a doctor that changes them can be undone KEY BY KEY. The whole
+# config cannot go back once doctor has run (_keep_new_binary): it carries doctor's own migration.
+_model_values() {
+  OC_CFG="$OC_CONFIG" python3 -I -c 'import json,os
+try:
+    a = json.load(open(os.environ["OC_CFG"])).get("agents") or {}
+    d = a.get("defaults") or {}
+    ents = a.get("entries")
+    if not isinstance(ents, dict):
+        ents = dict((str(e.get("id", i)), e) for i, e in enumerate(a.get("list") or []) if isinstance(e, dict))
+    print(json.dumps({"model": d.get("model"), "models": d.get("models"),
+                      "agents": dict((k, v["model"]) for k, v in ents.items() if isinstance(v, dict) and "model" in v)}))
+except Exception:
+    print("UNREADABLE")' 2>/dev/null || printf 'UNREADABLE'
+}
+# Write those values ($1 = _model_values output) back into the config, nothing else changed. rc 0 = written.
+_model_put_back() {
+  local staged="${OC_CONFIG}.atomic-staged.$$"
+  [ "$1" != "UNREADABLE" ] || return 1
+  OC_CFG="$OC_CONFIG" OC_SAVED="$1" python3 -I -c 'import json,os
+s = json.loads(os.environ["OC_SAVED"])
+c = json.load(open(os.environ["OC_CFG"]))
+a = c.setdefault("agents", {})
+d = a.setdefault("defaults", {})
+def put(o, k, v):
+    if v is None: o.pop(k, None)
+    else: o[k] = v
+put(d, "model", s["model"]); put(d, "models", s["models"])
+ents = a.get("entries")
+ents = list(ents.items()) if isinstance(ents, dict) else [(str(e.get("id", i)), e) for i, e in enumerate(a.get("list") or []) if isinstance(e, dict)]
+for k, e in ents:
+    if isinstance(e, dict): put(e, "model", s["agents"].get(k))
+print(json.dumps(c, indent=2, ensure_ascii=False))' > "$staged" 2>/dev/null && [ -s "$staged" ] || { rm -f "$staged"; return 1; }
+  # QC-ALLOW-NO-CHOWN: redirect through the existing inode — owner/group/mode preserved by construction.
+  cat "$staged" > "$OC_CONFIG" 2>/dev/null; local rc=$?
+  rm -f "$staged"
+  return "$rc"
+}
+
+# Doctor refuses the audit-logs migration when the sanitized archive no longer matches its
+# checkpoint, and there is no supported flag for it (vendor docs: "do not delete or rewrite
+# archives"). The unsupported narrow repair is to drop ONLY the raw-archive checkpoint rows
+# (exactly scope 'migration.legacy-audit-raw' in diagnostic_events of the shared state
+# database) so doctor re-parses the raw archive and de-duplicates it by key. NEVER a LIKE:
+# 'migration.legacy-audit' is the live coordination lease. The rows are saved first, the
+# before/after counts are logged, and nothing is deleted while any process holds the database.
+_repair_audit_checkpoint() {
+  local db="$OC_ROOT_DIR/state/openclaw.sqlite" rows rc
+  if [ ! -f "$db" ]; then
+    _err "no state database at $db - there is no audit checkpoint to repair"
+    return 1
+  fi
+  if ! _reap_state_holders "before the audit-checkpoint repair"; then
+    _err "a process still holds the state database - refusing to edit it"
+    return 1
+  fi
+  rows="$OC_ROOT_DIR/audit-checkpoint-rows-$(date +%Y%m%d-%H%M%S).json"
+  OC_STATE_DB="$db" OC_ROWS_OUT="$rows" python3 -I - <<'PY'
+import json, os, sqlite3, sys
+SCOPE = "migration.legacy-audit-raw"
+db, out = os.environ["OC_STATE_DB"], os.environ["OC_ROWS_OUT"]
+try:
+    con = sqlite3.connect(db, timeout=15)
+    cur = con.execute("SELECT * FROM diagnostic_events WHERE scope = ?", (SCOPE,))
+    cols = [d[0] for d in cur.description]
+    rows = [dict(zip(cols, [v if v is None or isinstance(v, (int, float, str)) else repr(v) for v in r])) for r in cur.fetchall()]
+    if not rows:
+        print("    | no rows with scope %s - nothing to delete" % SCOPE)
+        sys.exit(3)
+    with os.fdopen(os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as fh:
+        json.dump(rows, fh)
+    deleted = con.execute("DELETE FROM diagnostic_events WHERE scope = ?", (SCOPE,)).rowcount
+    con.commit()
+    left = con.execute("SELECT COUNT(*) FROM diagnostic_events WHERE scope = ?", (SCOPE,)).fetchone()[0]
+    print("    | scope %s: rows before=%d deleted=%d after=%d (saved to %s)" % (SCOPE, len(rows), deleted, left, out))
+    sys.exit(0 if left == 0 else 1)
+except Exception as e:
+    print("    | audit checkpoint repair failed: %s: %s" % (type(e).__name__, e))
+    sys.exit(1)
+PY
+  rc=$?
+  [ "$rc" -eq 0 ]
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FTS5 REPAIR BEFORE DOCTOR (v1.4.0; measured 2026-10-29 on several Macs)
+# ─────────────────────────────────────────────────────────────────────────────
+# Node 26.13 ships SQLite 3.54, whose PRAGMA integrity_check flags FTS5 inverted indexes
+# (memory_index_chunks_fts, session_transcript_fts) in agents/<id>/agent/openclaw-agent.sqlite.
+# `doctor --fix` then refuses at media-persistence and the whole upgrade rolled back. FTS5's own
+# 'rebuild' command regenerates ONLY the index, from the table's own content. Runs under the SAME
+# node `openclaw doctor` will use (the supervisor's node is first on PATH, see _resolve_supervisor_install).
+# Every openclaw-agent.sqlite under <root>/agents and openclaw.sqlite under <root>/state gets
+# PRAGMA integrity_check:
+#   - clean: untouched;
+#   - every finding is an FTS5 finding: those tables (and only those) are rebuilt inside one
+#     transaction, integrity_check runs again INSIDE it (not ok -> rollback), and once more after the
+#     commit;
+#   - ANY other finding: nothing is touched, it is reported, and doctor decides;
+#   - a database that cannot be opened/checked: reported UNCHECKED (doctor decides), never "clean".
+# No database is copied or deleted. Output is paths, table names and counts only.
+IFS= read -r -d '' JS_FTS_REPAIR <<'JS_FTS5'
+const {DatabaseSync} = require('node:sqlite');
+const fs = require('fs'), path = require('path');
+const root = process.argv[process.argv.length - 1];
+const names = new Set(['openclaw-agent.sqlite', 'openclaw.sqlite']);
+const FTS = [/^malformed inverted index for FTS5 table (?:main\.)?([A-Za-z0-9_]+)$/,
+             /^fts5: corruption .* table "([A-Za-z0-9_]+)"$/];
+const files = [];
+function walk(d) {
+  let es; try { es = fs.readdirSync(d, {withFileTypes: true}); } catch (e) { return; }
+  for (const e of es) {
+    const p = path.join(d, e.name);
+    if (e.isSymbolicLink()) continue;
+    if (e.isDirectory()) { if (e.name !== 'node_modules' && !e.name.includes('update-captures')) walk(p); }
+    else if (names.has(e.name)) files.push(p);
+  }
+}
+for (const sub of ['agents', 'state']) walk(path.join(root, sub));
+const rows = (d) => d.prepare('PRAGMA integrity_check').all().map((r) => String(Object.values(r)[0]));
+const isOk = (v) => v.length === 1 && v[0] === 'ok';
+const why = (e) => String(e && (e.errstr || e.message) || e).slice(0, 120);
+const n = {clean: 0, fixed: 0, skipped: 0, unchecked: 0, fail: 0};
+const mem = new DatabaseSync(':memory:');
+console.log('FTS_REPAIR_RUNTIME node=' + process.version + ' sqlite=' + mem.prepare('select sqlite_version() v').get().v);
+mem.close();
+for (const f of files) {
+  let d, stage = 'check';
+  try {
+    d = new DatabaseSync(f);
+    d.exec('PRAGMA busy_timeout=5000');
+    const found = rows(d);
+    if (isOk(found)) { n.clean++; console.log('CLEAN ' + f); continue; }
+    const tabs = new Set(); let other = 0;
+    for (const msg of found) { const x = FTS.map((re) => re.exec(msg)).find(Boolean); if (x) tabs.add(x[1]); else other++; }
+    if (other || !tabs.size) {
+      n.skipped++;
+      console.log('SKIPPED ' + f + ' non-fts-findings=' + other + ' fts-tables=' + [...tabs].join(',') + ' (nothing changed, doctor decides)');
+      continue;
+    }
+    stage = 'rebuild';
+    d.exec('BEGIN IMMEDIATE');
+    for (const t of tabs) d.exec('INSERT INTO "' + t + '"("' + t + '") VALUES(\'rebuild\')');
+    if (!isOk(rows(d))) {
+      d.exec('ROLLBACK'); n.fail++;
+      console.log('FAIL ' + f + ' tables=' + [...tabs].join(',') + ' integrity_check not ok after rebuild (rolled back)');
+      continue;
+    }
+    d.exec('COMMIT');
+    stage = 'recheck';
+    if (!isOk(rows(d))) { n.fail++; console.log('FAIL ' + f + ' tables=' + [...tabs].join(',') + ' integrity_check not ok after commit'); continue; }
+    n.fixed++; console.log('FIXED ' + f + ' tables=' + [...tabs].join(','));
+  } catch (e) {
+    if (stage === 'check') { n.unchecked++; console.log('UNCHECKED ' + f + ' ' + why(e) + ' (doctor decides)'); }
+    else { n.fail++; try { d.exec('ROLLBACK'); } catch (_) {} console.log('FAIL ' + f + ' ' + stage + ' error: ' + why(e)); }
+  } finally { try { d && d.close(); } catch (_) {} }
+}
+console.log('FTS_REPAIR_SUMMARY total=' + files.length + ' clean=' + n.clean + ' fixed=' + n.fixed +
+            ' skipped=' + n.skipped + ' unchecked=' + n.unchecked + ' fail=' + n.fail);
+process.exitCode = n.fail ? 1 : 0;
+JS_FTS5
+
+# rc 0 = the repair ran to its summary with fail=0 (a clean, fixed, skipped or unchecked database is
+# doctor's to judge); rc 1 = the reason is in DOCTOR_WHY and the caller rolls back. A summary line is
+# required: `node -e ""` exits 0 and prints nothing, and a hit bound is UNDETERMINED, never clean.
+_repair_fts5() {
+  local out rc
+  out="$(mktemp "${TMPDIR:-/tmp}/oc-fts5.XXXXXX")" || {
+    DOCTOR_WHY="could not create a temp file for the FTS5 repair output"; return 1; }
+  _say "FTS5 repair before doctor, under $(command -v node 2>/dev/null || echo 'no node on PATH') $(node -v 2>/dev/null): integrity_check on every agent and state database; only the FTS5 indexes it names are rebuilt, only when every finding is an FTS5 finding; nothing is copied or deleted (bound ${FTS_TIMEOUT}s) ..."
+  _run_bounded "$FTS_TIMEOUT" "$out" node -e "$JS_FTS_REPAIR" "$OC_ROOT_DIR"; rc=$?
+  cut -c1-240 "$out" | _mask_secrets | sed 's/^/    | /'
+  if [ "$rc" -eq 124 ]; then
+    DOCTOR_WHY="the FTS5 repair did not finish within ${FTS_TIMEOUT}s and was killed - UNDETERMINED, never reported clean"
+  elif [ "$rc" -ne 0 ] || ! grep -Eq '^FTS_REPAIR_SUMMARY .* fail=0$' "$out"; then
+    DOCTOR_WHY="the FTS5 repair FAILED (exit $rc, output above) - doctor was not run on a database whose index could not be proven rebuilt"
+  fi
+  rm -f "$out"
+  [ -z "$DOCTOR_WHY" ]
+}
+
+# Run the NEW binary's `doctor --fix --non-interactive` so the agent/session database is
+# migrated before the gateway starts. rc 0 = doctor exited 0 with no refused step and the
+# model/provider names are unchanged; rc 1 = failed, the reason is in DOCTOR_WHY and the
+# caller rolls back. Called only after the quiesce is PROVEN and the new binary is on disk.
+_migrate_state_with_doctor() {
+  local out rc attempt=0 refused before after qrc values
+  DOCTOR_WHY=""
+  if ! _reap_state_holders "before doctor"; then
+    DOCTOR_WHY="another process still holds $OC_ROOT_DIR/state/openclaw.sqlite and is not a stale bare openclaw CLI this script may stop, so \`openclaw doctor --fix\` would refuse (it needs exclusive maintenance)"
+    return 1
+  fi
+  before="$(_model_snapshot)"
+  if [ "$before" = "UNREADABLE" ]; then
+    DOCTOR_WHY="the model/provider selection in $OC_CONFIG could not be read, so \"doctor did not change it\" cannot be proven - refusing to run doctor"
+    return 1
+  fi
+  values="$(_model_values)"
+  _repair_fts5 || return 1
+  out="$(mktemp "${TMPDIR:-/tmp}/oc-doctor.XXXXXX")" || {
+    DOCTOR_WHY="could not create a temp file for the doctor output"; return 1; }
+  # Doctor rewrites retired config keys: record that BEFORE it runs so the rollback restores the config.
+  [ -f "$OC_CONFIG" ] && STATE_CONFIG_CHANGED=1
+  while :; do
+    attempt=$((attempt+1))
+    _say "running the NEW binary: openclaw doctor --fix --non-interactive (attempt $attempt of 2, bound ${DOCTOR_TIMEOUT}s, stdin /dev/null) ..."
+    OC_BOUNDED_LOOP_RE='ERR_MODULE_NOT_FOUND|ERR_PACKAGE_PATH_NOT_EXPORTED|Cannot find (module|package) ' OC_BOUNDED_LOOP_N="$DOCTOR_LOOP_LINES" \
+      _run_bounded "$DOCTOR_TIMEOUT" "$out" openclaw doctor --fix --non-interactive; rc=$?
+    tail -n 40 "$out" | _mask_secrets | sed 's/^/    | /'
+    refused=0
+    if grep -qF 'sanitized archive is missing or truncated' "$out" 2>/dev/null \
+       || grep -qF 'sanitized archive changed after checkpoint' "$out" 2>/dev/null; then
+      refused=1
+    fi
+    # From here the config is stamped by the new build and the databases are migrated: no failure below
+    # may put the previous build back (_rollback -> _keep_new_binary).
+    if [ "$rc" -eq 0 ] && [ "$refused" -eq 0 ]; then DOCTOR_RAN=1; break; fi
+    if [ "$refused" -eq 1 ] && [ "$attempt" -eq 1 ]; then
+      _warn "doctor refused on the legacy-audit-raw checkpoint - dropping only that scope's rows, then re-running doctor once"
+      if ! _repair_audit_checkpoint; then
+        rm -f "$out"
+        DOCTOR_WHY="doctor --fix refused on the legacy-audit-raw checkpoint and the narrow checkpoint repair did not complete"
+        return 1
+      fi
+      continue
+    fi
+    # #24: doctor loads every enabled plugin's module at startup, BEFORE it fixes anything, and spins on one
+    # whose import is gone. It was killed at the first sign of the loop (rc 125) or at its bound (rc 124), or
+    # it died; if its own output names ONE plugin entry, disable that entry (only its `enabled` flag, recorded)
+    # and run it again, bounded the same way. Not counted as one of the two doctor attempts.
+    if [ "$rc" -ne 0 ] && [ "$PLUGIN_QUARANTINE_COUNT" -lt "$PLUGIN_QUARANTINE_MAX" ]; then
+      _quarantine_from_output "$out"; qrc=$?
+      if [ "$qrc" -eq 0 ]; then attempt=$((attempt-1)); continue; fi
+      if [ "$qrc" -eq 2 ]; then rm -f "$out"; DOCTOR_WHY="$PLUGIN_WHY"; return 1; fi
+    fi
+    rm -f "$out"
+    if [ "$rc" -eq 125 ]; then
+      DOCTOR_WHY="doctor --fix was spinning on the same module-load error (ERR_MODULE_NOT_FOUND) that names no single enabled plugin entry, and was killed"
+    elif [ "$rc" -eq 124 ]; then
+      DOCTOR_WHY="doctor --fix did not finish within ${DOCTOR_TIMEOUT}s and was killed"
+    elif [ "$refused" -eq 1 ]; then
+      DOCTOR_WHY="doctor --fix STILL refuses on the audit checkpoint after the checkpoint repair and one re-run"
+    else
+      DOCTOR_WHY="doctor --fix FAILED (exit $rc, output above) - the agent/session database was not proven migrated"
+    fi
+    return 1
+  done
+  rm -f "$out"
+  after="$(_model_snapshot)"
+  if [ "$before" != "NOCONFIG" ] && [ "$after" != "$before" ]; then
+    _err "doctor changed the model/provider selection:"
+    _err "  before: $before"
+    _err "  after : $after"
+    # The old build cannot go back over what doctor migrated, so the config cannot be restored whole:
+    # put the model keys back from the values saved before doctor, and prove it by the same snapshot.
+    if _model_put_back "$values" && [ "$(_model_snapshot)" = "$before" ]; then
+      DOCTOR_WHY="doctor --fix changed the model/provider selection (names above) - model config must never be touched; the model keys were put back from the pre-doctor values"
+    else
+      DOCTOR_WHY="doctor --fix changed the model/provider selection (names above) and the model keys could NOT be proven back - model config must never be touched; fix agents.defaults.model/models by hand"
+    fi
+    return 1
+  fi
+  _ok "doctor --fix exited 0 with no refused step; model/provider names identical before and after"
+  return 0
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ORPHAN GATEWAY (fleet-roll error #33)
+# ─────────────────────────────────────────────────────────────────────────────
+# A gateway left by an earlier run (ppid 1: launchd re-parented it) still owns the state
+# database while this run boots out the JOB. The job's pid is empty, so the quiesce proof
+# reads "nothing running", and the new LaunchAgent then exits 78 "Another gateway (pid N)
+# already owns this state directory" - which used to be read as a bad binary and cost the
+# box its whole first cycle. _reap_state_holders deliberately never touches a gateway; this
+# is the one place that does, and only a process that passes EVERY test below:
+#   * it holds the state database open (lsof, the same evidence _reap_state_holders uses),
+#   * its command line is `[node ...] <openclaw entry> gateway` (or the `openclaw-gateway`
+#     process title) - only the argument vector is read, never the environment, and only
+#     the entry path is ever logged (a gateway can be started with a token on its line),
+#   * it is not the launchd job's own pid, nor a child of it, nor this process,
+#   * its start time is unchanged between the first look and each signal (identity, so a
+#     recycled pid is never signalled).
+# SIGTERM first, SIGKILL only if it survives. Launchd boxes only.
+
+# rc 0 and prints the entry token iff pid $1 runs `[node flags] <openclaw entry> [flags] gateway`
+# or is titled `openclaw-gateway`; anything else (the app, a CLI, another program) is rc 1.
+_gateway_cmdline_entry() (
+  local args tok seen=0 first=""
+  args="$(ps -o args= -p "$1" 2>/dev/null)"
+  [ -n "$args" ] || exit 1
+  case "$args" in *.app/*|*.app\ *) exit 1 ;; esac
+  set -f
+  for tok in $args; do
+    if [ -z "$first" ]; then
+      first="$tok"
+      case "$tok" in openclaw-gateway|*/openclaw-gateway) printf '%s' "$tok"; exit 0 ;; esac
+    fi
+    if [ "$seen" = "0" ]; then
+      case "$tok" in
+        -*) ;;
+        node|*/node|nodejs|*/nodejs) ;;
+        openclaw|*/openclaw|*/openclaw.mjs|*/openclaw/dist/*.js|*/openclaw/dist/*.mjs) seen=1; first="$tok" ;;
+        *) exit 1 ;;
+      esac
+      continue
+    fi
+    case "$tok" in -*) continue ;; esac
+    if [ "$tok" = "gateway" ]; then printf '%s' "$first"; exit 0; fi
+    exit 1
+  done
+  exit 1
+)
+
+# rc 0 = no orphan gateway holds the state database afterwards (or lsof is missing: said so,
+# not assumed clear); rc 1 = one still does. $1 = where in the run this is, for the log.
+_reap_orphan_gateways() {
+  local where="$1" pids pid gw rc ent started ppid left=""
+  [ "$SUPERVISOR" = "launchd" ] || return 0
+  pids="$(_state_holders)"; rc=$?
+  if [ "$rc" -eq 2 ]; then
+    _warn "lsof is not available - whether an orphan gateway owns $OC_ROOT_DIR/state ($where) is UNDETERMINED, not 'no'"
+    return 0
+  fi
+  gw="$(_gateway_pid)"
+  for pid in $pids; do
+    [ "$pid" = "$$" ] && continue
+    if [ -n "$gw" ] && [ "$pid" = "$gw" ]; then
+      _say "state-database holder pid $pid is the launchd job's gateway - left alone ($where)"; continue
+    fi
+    ent="$(_gateway_cmdline_entry "$pid")" || continue      # a CLI or another program: _reap_state_holders' business
+    ppid="$(_lease_ppid "$pid")"
+    if [ -n "$gw" ] && [ "$ppid" = "$gw" ]; then
+      _say "state-database holder pid $pid is a child of the launchd job's gateway (pid $gw) - left alone ($where)"; continue
+    fi
+    started="$(_lease_start "$pid")"
+    if [ -z "$started" ]; then
+      _warn "orphan gateway candidate pid $pid: start time unreadable, identity cannot be pinned - left alone ($where)"
+      left="$left $pid"; continue
+    fi
+    _say "ORPHAN GATEWAY pid $pid (ppid ${ppid:-?}, started $started, $(basename "$ent")) holds the state database and is not the launchd job's pid (${gw:-job not running}) - stopping it ($where)"
+    kill -TERM "$pid" 2>/dev/null
+    _poll 10 _pid_gone "$pid" || {
+      if [ "$(_lease_start "$pid")" = "$started" ] && _gateway_cmdline_entry "$pid" >/dev/null; then kill -KILL "$pid" 2>/dev/null; fi
+      _poll 3 _pid_gone "$pid"
+    }
+    if _pid_gone "$pid"; then
+      _ok "orphan gateway pid $pid stopped ($where)"
+    else
+      _err "orphan gateway pid $pid did NOT stop ($where)"
+      left="$left $pid"
+    fi
+  done
+  if [ -n "$left" ]; then
+    _err "an orphan gateway still owns the state directory (pid(s):$left) - a start now would exit 78 and be misread as a bad binary"
+    return 1
+  fi
+  return 0
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# UNLOADABLE PLUGIN (fleet-roll error #24)
+# ─────────────────────────────────────────────────────────────────────────────
+# `doctor` imports every enabled plugin's module at startup. When one plugin's import is
+# gone (ERR_MODULE_NOT_FOUND from an `openclaw/plugin-sdk/...` export) it SPINS instead of
+# failing: Star Bobatoon's `doctor --fix` hung until it was killed by hand. The load happens at
+# startup, before doctor changes anything, so killing it there costs nothing. When the bounded
+# doctor (_migrate_state_with_doctor) is killed - early by the loop detector in _run_bounded, or at
+# its bound - or dies, and its own output names one enabled plugin entry, that entry - and only its
+# `enabled` flag - is set to false, recorded, and doctor is run again. It never guesses (no single
+# named plugin = nothing is touched), never edits the allow list or the entry's `config`, never
+# creates an entry, and never calls
+# `openclaw plugins install|enable|update` (codex is never installed or enabled here). The
+# change lives in the config this run already backed up, so any rollback restores it byte
+# for byte; the record below is how a human finds and reverses it after a SUCCESSFUL run.
+PLUGIN_QUARANTINE_MAX=3
+
+# <event> <plugin> <import> <was-enabled> -> one JSON line in <root>/oc-atomic-plugin-quarantine.jsonl
+_plugin_record() {
+  PLUGIN_RECORD="$OC_ROOT_DIR/oc-atomic-plugin-quarantine.jsonl"
+  OC_REC="$PLUGIN_RECORD" OC_CFG="$OC_CONFIG" OC_BAK="${CONFIG_BACKUP:-}" OC_VER="$VERSION" python3 -I - "$@" <<'PY' 2>/dev/null
+import json, os, sys, time
+ev, plugin, imp, was = (sys.argv[1:5] + ["", "", "", ""])[:4]
+rec = {"utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "event": ev, "plugin": plugin,
+       "failing_import": imp, "was_enabled": was, "config": os.environ["OC_CFG"],
+       "config_backup": os.environ["OC_BAK"], "oc_atomic_upgrade": os.environ["OC_VER"],
+       "restore": "set plugins.entries.%s.enabled back to %s in %s; then re-run openclaw doctor (config_backup names the pre-upgrade copy, which a successful upgrade deletes)" % (plugin, was, os.environ["OC_CFG"])}
+fd = os.open(os.environ["OC_REC"], os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+with os.fdopen(fd, "a") as fh:
+    fh.write(json.dumps(rec, sort_keys=True) + "\n")
+PY
+}
+
+# Disable exactly plugins.entries.<$1>.enabled. rc 0 = done and recorded.
+_plugin_disable_entry() {
+  local id="$1" imp="$2" staged was
+  staged="${OC_CONFIG}.atomic-staged.$$"
+  was="$(python3 "$MIGRATOR" plugin-disable "$OC_CONFIG" "$id" "$staged" 2>/dev/null)" || { rm -f "$staged"; return 1; }
+  was="${was#was=}"
+  [ -s "$staged" ] || { rm -f "$staged"; return 1; }
+  # Rollback state BEFORE the write it undoes.
+  STATE_CONFIG_CHANGED=1
+  # QC-ALLOW-NO-CHOWN: redirect through the existing inode — owner/group/mode preserved by construction.
+  if ! cat "$staged" > "$OC_CONFIG" 2>/dev/null; then rm -f "$staged"; return 1; fi
+  rm -f "$staged"
+  PLUGIN_QUARANTINED="$PLUGIN_QUARANTINED $id"
+  _plugin_record quarantined "$id" "$imp" "$was"
+  return 0
+}
+
+# Name the plugin a doctor output file ($1) blames and disable that entry. Counts against
+# PLUGIN_QUARANTINE_MAX; the caller checks PLUGIN_QUARANTINE_COUNT first. rc 0 = one entry disabled
+# (run doctor again); rc 1 = nothing attributable, nothing touched; rc 2 = a plugin was named
+# but its entry could not be disabled (PLUGIN_WHY).
+PLUGIN_QUARANTINE_COUNT=0
+PLUGIN_WHY=""
+_quarantine_from_output() {
+  local hit id imp
+  hit="$(python3 "$MIGRATOR" plugin-attribute "$1" "$OC_CONFIG" 2>/dev/null)" || return 1
+  id="${hit%%	*}"; imp="${hit#*	}"
+  case "$id" in codex) _say "the failing plugin is codex: disabling its entry only - codex is never installed, enabled or accepted here" ;; esac
+  if ! _plugin_disable_entry "$id" "$imp"; then
+    PLUGIN_WHY="plugin '$id' fails to load ($imp) and doctor spins on it, but its entry in $OC_CONFIG could not be disabled"
+    return 2
+  fi
+  PLUGIN_QUARANTINE_COUNT=$((PLUGIN_QUARANTINE_COUNT+1))
+  _ok "QUARANTINED plugin '$id' (module fails to load: $imp): plugins.entries.$id.enabled set to false, nothing else changed; recorded in $PLUGIN_RECORD"
+  return 0
+}
+
+# Delete the config copy THIS run wrote (step 4). Called only after the upgrade is proven complete.
+# A failed delete is a warning, never a failed upgrade: the box is already on the target.
+_drop_config_backup() {
+  [ -n "$CONFIG_BACKUP" ] && [ -f "$CONFIG_BACKUP" ] || return 0
+  if rm -f "$CONFIG_BACKUP" 2>/dev/null && [ ! -e "$CONFIG_BACKUP" ]; then
+    _ok "config backup deleted: $CONFIG_BACKUP"
+    CONFIG_BACKUP_GONE="$CONFIG_BACKUP"; CONFIG_BACKUP=""
+  else
+    _warn "config backup could NOT be deleted: $CONFIG_BACKUP"
+  fi
+  return 0
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KEEP THE NEW BINARY — what _rollback does once doctor --fix has exited 0 (DOCTOR_RAN=1)
+# ─────────────────────────────────────────────────────────────────────────────
+# Doctor stamped the config with the new build and migrated the agent/session SQLite databases forward.
+# The previous build refuses that pair ("binary older than config") and this script takes no copy of
+# the databases to restore, so reinstalling it and starting it on the migrated state only trades one
+# failed proof for a crash loop. So from here the box stays on the target:
+#   - nothing is reinstalled and the config is NOT restored (the pre-migration backup is KEPT, named below);
+#   - the gateway already answers (job loaded, a pid, GET /healthz 200): nothing is touched, the failing
+#     proof is logged, exit 71 (STUCK: serving the target, needs takeover);
+#   - it does not: ONE clean restart of the new build (stale holders and orphans cleared first, then
+#     _restore_gateway proves loaded + pid + /healthz 200 and holds it); if it answers, the same 71;
+#     if it is still dark, exit 70: "new binary unhealthy after migration; rollback unsafe".
+# A gateway that was not loaded when this began and is not now is left as it was found.
+_keep_new_binary() {
+  local why="$1" dark=0 failed=0 served=""
+  echo "" >&2
+  _err "NOT ROLLING BACK: doctor --fix already migrated the config and the agent/session databases with openclaw@${TARGET_VERSION:-the target}, so the previous build is NOT reinstalled (it cannot read migrated state). Failed after: $why"
+  [ -z "$CONFIG_BACKUP" ] || _say "the pre-migration config backup is KEPT for takeover: $CONFIG_BACKUP"
+  [ -z "$PLUGIN_QUARANTINED" ] || _say "plugins: entry DISABLED because its module fails to load:$PLUGIN_QUARANTINED  (restore steps in $PLUGIN_RECORD)"
+  if _gateway_loaded || [ "$GATEWAY_LOADED_AT_START" = "1" ]; then
+    if _gateway_loaded && [ -n "$(_gateway_pid)" ] && _healthz_ok; then
+      served=1
+      _ok "the gateway answers /healthz 200 (pid $(_gateway_pid)) on the new build - nothing is restarted"
+    else
+      _say "the new gateway is not answering - ONE clean restart of the NEW build, nothing else"
+      _reap_orphan_gateways "before the clean restart" || true
+      _reap_state_holders "before the clean restart" || true
+      if ! _package_complete; then
+        _err "the package is incomplete (${SUP_ENTRY:-package.json} missing) - the gateway cannot be restarted on it"
+      else
+        _gateway_loaded && launchctl kickstart -k "gui/$UIDN/$GATEWAY_LABEL" >/dev/null 2>&1
+        _restore_gateway && served=1
+      fi
+      [ -n "$served" ] || dark=1
+    fi
+  else
+    _say "no loaded gateway when this began and none now - left as it was found"
+  fi
+  STATE_QUIESCED=0
+  _restore_selfheal || failed=1
+  _lock_release
+  if [ "$dark" = "1" ]; then
+    echo "" >&2
+    echo "  ################################################################" >&2
+    echo "  ##  new binary unhealthy after migration; rollback unsafe      ##" >&2
+    echo "  ################################################################" >&2
+    echo "  ##  openclaw@${TARGET_VERSION:-the target} is installed and doctor --fix migrated the config and" >&2
+    echo "  ##  the databases. The previous build (${OLD_VERSION:-<unknown>}) is NOT reinstalled: it cannot" >&2
+    echo "  ##  read migrated state. The gateway did not come back after ONE clean restart." >&2
+    echo "  ##  Pre-migration config backup (kept): ${CONFIG_BACKUP:-<none written>}" >&2
+    echo "  ##  Look at:" >&2
+    echo "  ##    launchctl print gui/\$(id -u)/$GATEWAY_LABEL" >&2
+    echo "  ##    the gateway log under \$HOME/Library/Logs/openclaw/" >&2
+    echo "  ##    openclaw config validate     # under the new build's node" >&2
+    echo "  ##  Then re-arm the self-heal agent:" >&2
+    echo "  ##    bash platform/mac/service-selfheal/install-service-remediate.sh" >&2
+    echo "  ################################################################" >&2
+    return 70
+  fi
+  [ "$failed" = "0" ] || _warn "the self-heal agent was not re-armed: bash platform/mac/service-selfheal/install-service-remediate.sh"
+  _err "STUCK: openclaw@${TARGET_VERSION:-the target} is installed on migrated state${served:+ and the gateway is serving}, but this proof failed: $why - needs takeover; NOT rolled back"
+  return 71
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ROLLBACK — undoes, in reverse, exactly what was recorded as done.
 # ─────────────────────────────────────────────────────────────────────────────
 _rollback() {
-  local why="$1" failed=0 proved=""
+  local why="$1" failed=0 proved="" rc p
+  # doctor --fix exited 0 in this window: the previous build never goes back (see _keep_new_binary).
+  if [ "$DOCTOR_RAN" = "1" ]; then _keep_new_binary "$why"; return $?; fi
   echo "" >&2
   _err "ROLLING BACK: $why"
 
@@ -758,6 +2027,8 @@ _rollback() {
       _ok "config restored from $CONFIG_BACKUP (inode/owner/mode preserved)"
       proved="$proved config"
       STATE_CONFIG_CHANGED=0
+      for p in $PLUGIN_QUARANTINED; do _plugin_record reverted-by-rollback "$p" "" "restored"; done
+      PLUGIN_QUARANTINED=""
     else
       _err "CONFIG RESTORE FAILED — the backup is intact at $CONFIG_BACKUP"
       failed=1
@@ -765,24 +2036,42 @@ _rollback() {
   fi
 
   if [ "$STATE_BINARY_CHANGED" = "1" ] && [ -n "$OLD_VERSION" ]; then
-    _say "reinstalling the previous binary: openclaw@$OLD_VERSION"
-    # The install's exit code is a claim; the MEASURED version is the result.
-    _npm_install "$OLD_VERSION" >/dev/null 2>&1
-    if [ "$(_measured_version)" = "$OLD_VERSION" ]; then
-      _ok "binary restored to openclaw@$OLD_VERSION (measured)"
+    if [ "$(_measured_version)" = "$OLD_VERSION" ] && _package_complete; then
+      _ok "binary is already openclaw@$OLD_VERSION and the package is complete (measured) - nothing to reinstall"
       proved="$proved binary=$OLD_VERSION"
       STATE_BINARY_CHANGED=0
     else
-      _err "BINARY RESTORE FAILED — this box may be left on a build its config does not match"
-      failed=1
+      _say "reinstalling the previous binary: openclaw@$OLD_VERSION"
+      # #21: the gateway job is booted out for the WHOLE npm window (it is loaded here when the
+      # failure came after the start, and KeepAlive would respawn it against a half-written tree).
+      # The install's exit code is a claim; the MEASURED version and a complete package are the result.
+      _npm_install_held "$OLD_VERSION"; rc=$?
+      if [ "$rc" -eq 2 ]; then
+        _err "BINARY RESTORE NOT ATTEMPTED — the gateway could not be held stopped, and npm into a package a respawning gateway is importing is how a box goes dark"
+        failed=1
+      elif [ "$(_measured_version)" = "$OLD_VERSION" ] && _package_complete; then
+        _ok "binary restored to openclaw@$OLD_VERSION (measured, package complete)"
+        proved="$proved binary=$OLD_VERSION"
+        STATE_BINARY_CHANGED=0
+      else
+        _err "BINARY RESTORE FAILED — this box may be left on a build its config does not match"
+        failed=1
+      fi
     fi
   fi
 
   if [ "$STATE_QUIESCED" = "1" ]; then
     if [ "$GATEWAY_LOADED_AT_START" = "1" ]; then
+      # An orphan gateway or a stale CLI holding the state database would keep the restored gateway
+      # from starting (#33).
+      _reap_orphan_gateways "before the rollback restart" || true
+      _reap_state_holders "before the rollback restart" || true
       # Re-load what we booted out, then PROVE it (loaded + pid + /healthz 200).
-      # Never claim a restart from an exit code.
-      if _restore_gateway; then
+      # Never claim a restart from an exit code. #21: never onto a package that is not complete.
+      if ! _package_complete; then
+        _err "GATEWAY NOT RE-LOADED — the package is incomplete (${SUP_ENTRY:-package.json} missing); bootstrapping onto it would only crash-loop. Repair the package first (steps below)"
+        failed=1
+      elif _restore_gateway; then
         proved="$proved gateway(loaded+pid+healthz200)"
         STATE_QUIESCED=0
       else
@@ -811,7 +2100,7 @@ _rollback() {
     echo "  ##    launchctl bootstrap gui/\$(id -u) \\" >&2
     echo "  ##      \$HOME/Library/LaunchAgents/$GATEWAY_LABEL.plist" >&2
     echo "  ##    launchctl kickstart gui/\$(id -u)/$GATEWAY_LABEL" >&2
-    echo "  ##    curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/healthz   # must print 200" >&2
+    echo "  ##    curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/healthz   # must print 200 (https and curl -k when gateway.tls.enabled)" >&2
     echo "  ##  Then re-arm the self-heal agent:" >&2
     echo "  ##    bash platform/mac/service-selfheal/install-service-remediate.sh" >&2
     echo "  ################################################################" >&2
@@ -896,6 +2185,26 @@ do_upgrade() {
   local staged new_version ts
 
   _resolve_root
+  # ── APPROVED NPM VERSION PIN. Checked BEFORE the container probe, the lease,
+  # ── any measurement and any npm/curl call, so a refusal costs the box and the
+  # ── network nothing. In enforce mode an unset/invalid pin returns 78 here and
+  # ── the `npm view openclaw version` fallback is never reached.
+  if ! _npm_pin_apply; then
+    case "$OC_NPM_PIN_REASON" in
+      NPM_PIN_TARGET_CONFLICT)
+        _refuse_banner \
+          "REFUSED — NPM_PIN_TARGET_CONFLICT: --target-version $TARGET_VERSION disagrees with the approved npm pin $NPM_PIN_VERSION. An approved release is not negotiable at the call site." \
+          "Nothing was changed. Pass --target-version $NPM_PIN_VERSION, or change approved_npm_version deliberately." ;;
+      *)
+        _refuse_banner \
+          "REFUSED — ${OC_NPM_PIN_REASON}: no approved OpenClaw npm version is configured, so the target would be whatever npm publishes right now." \
+          "Nothing was changed. Set approved_npm_version in $(_npm_pin_file) (or OPENCLAW_APPROVED_NPM_VERSION), or set the pin mode to advisory/off deliberately." ;;
+    esac
+    return 78
+  fi
+  if [ -n "$NPM_PIN_VERSION" ]; then
+    _say "npm-pin   : approved openclaw@$NPM_PIN_VERSION (pin file: $(_npm_pin_file))"
+  fi
   # agent-pull-fix: R9
   if _running_in_container; then
     _refuse_banner \
@@ -906,6 +2215,29 @@ do_upgrade() {
   SUPERVISOR="$(_detect_supervisor)"
   # What the rollback must put back, recorded BEFORE anything is stopped.
   _gateway_loaded && GATEWAY_LOADED_AT_START=1
+
+  # ── INSTALLATION LEASE + UNPINNED-CRON GUARD ──────────────────────────────
+  # Order matters: BOTH probes look at the lease BEFORE we take it, so an
+  # unpinned Saturday cron can see the roll that owns the box and stand down
+  # instead of racing it (mac.MAC-2). A pinned upgrade (self-update passes
+  # --target-version) skips the unpinned probe: the acquire below is enough.
+  if [ -z "${TARGET_VERSION:-}" ] && _unpinned_foreign_writer; then
+    _refuse_banner \
+      "This upgrade is UNPINNED (no --target-version, so the target would be whatever npm says right now) and ANOTHER UPDATER ALREADY OWNS THIS BOX: $_UPW_WHY. Two writers must never migrate the same installation." \
+      "Nothing was changed. Stand down and let the running update finish."
+    return 78
+  fi
+  _lease_acquire
+  case "$?" in
+    0) trap '_lease_release' EXIT ;;
+    3) _refuse_banner \
+         "The SHARED INSTALLATION LEASE is held by another live updater (pid $(_lease_rpid)). One box has exactly one update owner; a second writer here would migrate this config underneath the first." \
+         "Nothing was changed. Wait for the holder to finish, then re-run."
+       return 78 ;;
+    *) _refuse_banner "The shared installation lease at $OC_LEASE_PATH could not be taken or written." \
+         "Nothing was changed. Check permissions on $OC_LEASE_PATH."
+       return 78 ;;
+  esac
 
   # ── PREFLIGHT. Everything that could refuse is checked BEFORE anything stops,
   # ── so a refusal costs the box nothing at all.
@@ -1033,15 +2365,21 @@ do_upgrade() {
     _say "DRY RUN — the plan, in order, touching nothing:"
     echo "    1. write the maintenance lock  ($LOCK_FILE)"
     echo "    2. bootout $SELFHEAL_LABEL, then bootout $GATEWAY_LABEL (NOT kickstart)"
+    echo "    2b. (launchd) stop any ORPHAN gateway (not the job's pid) that holds the state database, by identity, and log it"
     echo "    3. prove quiescence: no pid, and config sha stable for ${QUIESCE_PROOF_SECONDS}s"
     echo "    4. back up the config"
-    echo "    5. $NPM_BIN install -g ${SUP_PREFIX:+--prefix $SUP_PREFIX }openclaw@$TARGET_VERSION   (the supervisor's install: ${SUP_PKG_ROOT:-none found, PATH})"
+    echo "    5. $NPM_BIN install -g ${SUP_PREFIX:+--prefix $SUP_PREFIX }openclaw@$TARGET_VERSION   (the supervisor's install: ${SUP_PKG_ROOT:-none found, PATH}) with the gateway job proven booted out for the whole window; the package must measure complete before anything is started"
     echo "    6. ask the NEW binary: openclaw config schema  -> which keys does \`agents\` accept?"
     echo "    7. if it accepts \`entries\` and not \`list\`: migrate + verify losslessness; else leave the config alone"
-    echo "    7b. map retired values (skills.workshop.autonomous.mode propose -> off) then \`openclaw config validate\` with the NEW binary; rejected = roll back"
-    echo "    8. bootstrap $GATEWAY_LABEL; require a STABLE pid for ${STABILITY_SECONDS}s, /healthz 200, and the launched package at $TARGET_VERSION"
+    echo "    7a. (launchd) reap STALE bare openclaw CLI processes holding $OC_ROOT_DIR/state/openclaw.sqlite (never the launchd job's gateway, a node service, the app, or anything started in this run; an orphan gateway is stopped at 2b; the OpenClaw app's own read-only openclaw-node-worker is tolerated, never stopped), rebuild ONLY the FTS5 indexes the new Node's SQLite flags (7a0), then run the NEW binary: doctor --fix --non-interactive (stdin /dev/null, bounded ${DOCTOR_TIMEOUT}s) so the agent/session database migration finishes BEFORE the gateway starts; a legacy-audit-raw checkpoint refusal drops only that scope's rows and re-runs doctor once; model/provider names must be identical afterwards, else roll back"
+    echo "    7a0. (launchd) FTS5 repair under the same node, bounded ${FTS_TIMEOUT}s: PRAGMA integrity_check on every agent and state database; ONLY the FTS5 indexes it names are rebuilt, ONLY when every finding is an FTS5 finding (any other finding: nothing touched, doctor decides); re-checked after; nothing copied or deleted; a failed or unfinished repair rolls back before doctor runs"
+    echo "    7a1. (launchd) doctor spinning on a plugin whose module cannot load (the same ERR_MODULE_NOT_FOUND ${DOCTOR_LOOP_LINES} times, or the bound) is killed; the plugin is named from its output, ONLY plugins.entries.<id>.enabled is set to false (recorded; never the allow list, never install/enable/update), and doctor runs again"
+    echo "    7b. map retired values (skills.workshop.autonomous.mode propose -> off) then \`openclaw config validate\` with the NEW binary (job is out, so no gateway to contend with; against a SERVING gateway the check runs on a private copy in a private state dir under known-good/known-bad controls); rejected = roll back"
+    echo "    8. stop any orphan gateway again, reap stale state-database holders again; bootstrap $GATEWAY_LABEL; require a STABLE pid for ${STABILITY_SECONDS}s, /healthz 200, and the launched package at $TARGET_VERSION"
+    echo "    8b. upgrade proven complete: delete the config backup this run wrote (any rollback keeps it)"
     echo "    9. release the lock, re-arm $SELFHEAL_LABEL"
-    echo "    Any failure from step 3 onward: restore config AND binary, start the gateway."
+    echo "    Any failure from step 3 up to and including a failed doctor: restore config AND binary, start the gateway."
+    echo "    Any failure AFTER doctor --fix exited 0: the NEW binary and the migrated config stay (the previous build cannot read migrated state); a gateway that answers is left alone (exit 71, STUCK), one that does not gets ONE clean restart, then exit 70."
     return 0
   fi
 
@@ -1051,6 +2389,12 @@ do_upgrade() {
   # ── 2-3. QUIESCE AND PROVE IT ──────────────────────────────────────────────
   if ! _quiesce; then
     _rollback "the gateway could not be stopped"; return $?
+  fi
+  # #33: the job is out, so its pid is empty and the proof below would read "nothing running"
+  # while an orphan from an earlier run still owns the state directory and rewrites the config.
+  if ! _reap_orphan_gateways "after the quiesce"; then
+    _rollback "an orphan gateway process still owns the state directory and could not be stopped"
+    return $?
   fi
   if ! _prove_quiesced; then
     _rollback "quiescence could not be PROVEN — a live writer would silently revert the migration within about a minute"
@@ -1072,14 +2416,25 @@ do_upgrade() {
   # ── 5. INSTALL THE NEW BINARY (while nothing is running) ───────────────────
   if [ "$OLD_VERSION" != "$TARGET_VERSION" ]; then
     _say "installing openclaw@$TARGET_VERSION ..."
-    if ! _npm_install "$TARGET_VERSION" >/dev/null 2>&1; then
+    # Rollback state BEFORE the install it undoes: an npm that dies half-way leaves a half-written
+    # tree, and the rollback must repair that, not trust an exit code (#21).
+    STATE_BINARY_CHANGED=1
+    _npm_install_held "$TARGET_VERSION"; rc=$?
+    if [ "$rc" -eq 2 ]; then
+      _rollback "the gateway could not be held stopped for the npm window - npm was NOT run, so no respawning gateway can import a half-written package"
+      return $?
+    fi
+    if [ "$rc" -ne 0 ]; then
       _rollback "\`$NPM_BIN install -g ${SUP_PREFIX:+--prefix $SUP_PREFIX }openclaw@$TARGET_VERSION\` FAILED"
       return $?
     fi
-    STATE_BINARY_CHANGED=1
     new_version="$(_measured_version)"
     if [ "$new_version" != "$TARGET_VERSION" ]; then
       _rollback "the install reported success but the binary MEASURES $new_version, not $TARGET_VERSION — an exit code is a claim, not a result"
+      return $?
+    fi
+    if ! _package_complete; then
+      _rollback "the install measures $new_version but the package is INCOMPLETE (${SUP_ENTRY:-package.json} is missing) - the gateway must not be started on it"
       return $?
     fi
     _ok "binary is now openclaw@$new_version (measured)"
@@ -1166,6 +2521,19 @@ do_upgrade() {
     fi
   fi
 
+  # ── 7a. MIGRATE THE AGENT/SESSION DATABASE WITH THE NEW BINARY'S DOCTOR ────
+  # The gateway is booted out (proven above), the new binary is on disk, and the config is
+  # in the shape that binary reads. Doctor only repairs state here; it leaves the (already
+  # stopped) service as it found it. Launchd boxes only: see the STATE-DATABASE block.
+  if [ "$SUPERVISOR" = "launchd" ]; then
+    if ! _migrate_state_with_doctor; then
+      _rollback "$DOCTOR_WHY"
+      return $?
+    fi
+  else
+    _say "doctor --fix: not run for the $SUPERVISOR supervisor (its state lives where this script cannot see it) - unchanged"
+  fi
+
   # ── 7b. THE NEW BINARY MUST ACCEPT THE CONFIG BEFORE ANYTHING IS CALLED DONE ─
   # Apply the known value map for keys the new build retired (propose -> off, per
   # the vendor's doctor migration), then ask the build itself. An unmapped or
@@ -1206,6 +2574,14 @@ do_upgrade() {
   fi
 
   # ── 8. START, AND PROVE IT STAYED UP ───────────────────────────────────────
+  # #33: an orphan gateway that owns the state directory makes the LaunchAgent exit 78, which reads
+  # as a bad binary. Stop it by identity first; a stale CLI that grabbed the database since doctor
+  # would stop the start too.
+  if ! _reap_orphan_gateways "before the gateway start"; then
+    _rollback "an orphan gateway process still owns the state directory - the start would exit 78 and look like a bad binary"
+    return $?
+  fi
+  _reap_state_holders "before the gateway start" || _warn "starting the gateway anyway; the start proof below decides"
   if ! _start_gateway; then
     _rollback "the gateway could not be started after the upgrade"
     return $?
@@ -1219,6 +2595,11 @@ do_upgrade() {
     return $?
   fi
 
+  # ── 8b. THE UPGRADE IS PROVEN COMPLETE: DELETE THE BACKUP THIS RUN MADE ────
+  # Reached only after the model/provider check (7a), `config validate` (7b), the stability window,
+  # /healthz 200 and the launched package at the target (8). Any failure above went through _rollback.
+  _drop_config_backup
+
   # ── 9. RELEASE ─────────────────────────────────────────────────────────────
   STATE_QUIESCED=0
   _restore_selfheal
@@ -1227,7 +2608,8 @@ do_upgrade() {
   echo ""
   _ok "ATOMIC UPGRADE COMPLETE"
   _say "  binary : $OLD_VERSION -> $(_measured_version) (measured)"
-  _say "  config : ${CONFIG_BACKUP:+backup retained at $CONFIG_BACKUP}"
+  _say "  config : ${CONFIG_BACKUP:+backup retained at $CONFIG_BACKUP (could not be deleted)}${CONFIG_BACKUP_GONE:+backup deleted: $CONFIG_BACKUP_GONE}"
+  [ -z "$PLUGIN_QUARANTINED" ] || _say "  plugins: entry DISABLED because its module fails to load:$PLUGIN_QUARANTINED  (restore steps in $PLUGIN_RECORD)"
   return 0
 }
 

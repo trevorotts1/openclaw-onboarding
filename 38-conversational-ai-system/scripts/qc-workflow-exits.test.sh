@@ -67,7 +67,11 @@ Win.
 ## On escalation
 Escalate.
 EOF
-printf '# support intake\n' > "$G/support-intake.md"
+# This file is referenced as an exit-rule route target, so it has to be a
+# real modern playbook. A bare `# support intake` is classified LEGACY, and one
+# legacy file downgrades the whole run to NEEDS-MIGRATION — the "good" fixture
+# then asserted a verdict it could never reach.
+printf '# Support intake\n\n## Phase 1 - Intake\nTake the request.\n' > "$G/support-intake.md"
 
 [ "$(verdict_of "$G")" = "PASS" ] && ok "good fixture: verdict PASS" || bad "good fixture: expected PASS"
 [ "$(exit_of "$G")" = "0" ] && ok "good fixture: exit 0" || bad "good fixture: expected exit 0"

@@ -7,7 +7,7 @@
 # It runs, in order:
 #   1. entry --self-test (deps/version/hash-pin + all 8 provers + orchestrator).
 #   2. JSON validity of every shipped .json.
-#   3. PROVIDER-PURITY scan: ZERO Anthropic ids (api.anthropic.com / claude-*) in the
+#   3. PROVIDER-PURITY scan: ZERO provider/model ids (Gemini / OpenAI image ids) in the
 #      BAKED PROMPTS (the client-path runtime generation content) — AC-1.
 #   4. SECRET scan: no inline key patterns anywhere in the skill tree — AC-6.
 #   5. GOLDEN REPRODUCE — content-authenticity gate, prove the five committed golden
@@ -68,9 +68,9 @@ done < <(find "$SKILL_DIR" -name '*.json' -not -path '*/.*')
 
 echo "== Skill 56 verify :: (3) provider-purity (ZERO provider/model ids in the BAKED PROMPTS) =="
 # The baked prompts are the client-path RUNTIME generation content. They must be 100%
-# provider-agnostic. The enforcement scripts, spec JSON, and docs name Anthropic/Gemini/OpenAI
+# provider-agnostic. The enforcement scripts, spec JSON, and docs name Gemini/OpenAI
 # on purpose (to FORBID them / document rule R1) and are out of scope (AC-1).
-if hits="$(grep -rIl -E -i 'api\.anthropic\.com|claude-[0-9]|\bgemini\b|gpt-image-1|\bopenai\b|gpt-4|dall-?e|sk-ant-|sk-proj-' \
+if hits="$(grep -rIl -E -i '\bgemini\b|gpt-image-1|\bopenai\b|gpt-4|dall-?e|sk-proj-' \
             "$SKILL_DIR/prompts/baked" 2>/dev/null)"; then
   if [ -n "$hits" ]; then
     echo "  [FAIL] provider/model id(s) found in the baked prompts:"; echo "$hits" | sed 's/^/         /'; fails=$((fails+1))

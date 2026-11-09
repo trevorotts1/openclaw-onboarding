@@ -4,7 +4,11 @@
 # items from protocols/pre-handoff-qc-protocol.md. Human-judgment items
 # (tone, copy, agent behavior) stay in the markdown checklist.
 #
-# OS-aware (Darwin + Linux). Exit 0 on full pass, 1 if any item fails.
+# OS-aware (Darwin + Linux). Exit 0 = PASS, 1 = FAIL, 3 = NEEDS-MIGRATION
+# (install NOT complete). COMPLETION requires zero FAIL items AND
+# legacy_needs_migration == 0 across all four status files. Gates retain exit 0
+# for NEEDS-MIGRATION so fleet UPDATE is not blocked. This checklist alone may
+# report install COMPLETE.
 
 set -euo pipefail
 
@@ -28,9 +32,102 @@ fi
 
 PASS=0
 FAIL=0
+MIGRATE=0
 report_pass() { echo "  [PASS] $*"; PASS=$((PASS+1)); }
 report_fail() { echo "  [FAIL] $*"; FAIL=$((FAIL+1)); }
+report_migrate() { echo "  [NEEDS-MIGRATION] $*"; MIGRATE=$((MIGRATE+1)); }
+NA=0
+report_na() { echo "  [NA] $*"; NA=$((NA+1)); }
+SKIP=0
+report_skip() { echo "  [SKIP] $*"; SKIP=$((SKIP+1)); }
 section()     { echo ""; echo "=== $* ==="; }
+
+QC_STATUS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/qc38-status.XXXXXX")" || QC_STATUS_DIR=""
+trap '[ -z "${QC_STATUS_DIR:-}" ] || rm -rf "$QC_STATUS_DIR"' EXIT
+if [ -z "$QC_STATUS_DIR" ]; then
+  report_fail "cannot create QC status directory; completion cannot be proven"
+fi
+
+QC_LEGACY_SEEN=""
+QC_LEGACY_MAX=0
+QC_MIGRATION_DIR=""
+# >>> QC_READ_STATUS
+qc_read_status() {
+  local path="$1" line
+  [ -f "$path" ] || return 1
+  local _qc_status_py
+  IFS= read -r -d '' _qc_status_py <<'PY_QC_STATUS' || true
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        d = json.load(f)
+    verdict = d.get("verdict")
+    legacy = d.get("legacy_needs_migration")
+    failures = d.get("new_style_failures")
+    files = d.get("legacy_files")
+    directory = d.get("workflows_dir")
+    if type(legacy) is not int or type(failures) is not int:
+        raise ValueError("invalid counts")
+    if verdict not in {"PASS", "NEEDS-MIGRATION", "FAIL", "UNINITIALISED"}:
+        raise ValueError("invalid verdict")
+    # UNINITIALISED is written by the gates' NOTHING-TO-CHECK path: 0 playbooks
+    # examined on a bare box, so it is neither a pass nor a failure. Counts must
+    # agree with that; an UNINITIALISED verdict carrying failures or legacy
+    # playbooks is a contradictory file and stays rejected.
+    if verdict == "UNINITIALISED" and (failures or legacy):
+        raise ValueError("UNINITIALISED with non-zero counts")
+    if not isinstance(files, list) or not all(isinstance(x, str) for x in files):
+        raise ValueError("invalid legacy_files")
+    if not isinstance(directory, str):
+        raise ValueError("invalid workflows_dir")
+    print("%d\x1f%d\x1f%s\x1f%s\x1f%s" % (legacy, failures, verdict, ",".join(files), directory))
+except Exception:
+    raise SystemExit(1)
+PY_QC_STATUS
+  line="$(printf '%s' "$_qc_status_py" | python3 -I - "$path")" || return 1
+  IFS=$'\x1f' read -r QC_ST_LEGACY QC_ST_FAILS QC_ST_VERDICT QC_ST_FILES QC_ST_DIR <<< "$line"
+  [[ "$QC_ST_LEGACY" =~ ^[0-9]+$ && "$QC_ST_FAILS" =~ ^[0-9]+$ ]] || return 1
+  case "$QC_ST_VERDICT" in PASS|NEEDS-MIGRATION|FAIL|UNINITIALISED) return 0 ;; esac
+  return 1
+}
+# <<< QC_READ_STATUS
+
+qc_record_legacy() {
+  local name
+  IFS=',' read -r -a _qc_files <<< "${QC_ST_FILES:-}"
+  for name in "${_qc_files[@]}"; do
+    [ -n "$name" ] || continue
+    name="${name##*/}"
+    case ",$QC_LEGACY_SEEN," in
+      *,"$name",*) ;;
+      *) QC_LEGACY_SEEN="${QC_LEGACY_SEEN:+$QC_LEGACY_SEEN,}$name" ;;
+    esac
+  done
+  if [ -z "$QC_MIGRATION_DIR" ] && [ -n "${QC_ST_DIR:-}" ]; then
+    QC_MIGRATION_DIR="$QC_ST_DIR"
+  fi
+}
+
+# >>> QC_STATUS_DISPOSITION
+# One decision point for a status file that qc_read_status accepted. FAIL is red;
+# UNINITIALISED (the gates' NOTHING-TO-CHECK path, 0 playbooks examined) is a
+# labelled SKIP that neither passes nor fails the run; anything else unknown is
+# still red, so a new verdict can never slip through unhandled.
+qc_report_disposition() {
+  local gate="$1" pass_msg="$2"
+  case "${QC_ST_VERDICT:-}" in
+    PASS) report_pass "$pass_msg" ;;
+    NEEDS-MIGRATION)
+      qc_record_legacy
+      if [ "$QC_ST_LEGACY" -gt "$QC_LEGACY_MAX" ]; then QC_LEGACY_MAX="$QC_ST_LEGACY"; fi
+      report_migrate "$gate: $QC_ST_LEGACY legacy playbook(s); file list and exact migration command appear in QC SUMMARY"
+      ;;
+    FAIL) report_fail "$gate: $QC_ST_FAILS failure(s) — run $gate.sh directly for detail" ;;
+    UNINITIALISED) report_skip "$gate: nothing to verify on this box (verdict UNINITIALISED, 0 playbooks examined); this is not a pass and not a failure" ;;
+    *) report_fail "$gate: unhandled verdict '${QC_ST_VERDICT:-}' - an unknown verdict is never a pass" ;;
+  esac
+}
+# <<< QC_STATUS_DISPOSITION
 
 # -------- Resolve skill 38 root --------
 # Resolve DYNAMICALLY from this script's own location — this script lives at
@@ -64,7 +161,7 @@ done
 if [ -f "$SKILL38_ROOT/../QC-PROTOCOL.md" ]; then
   report_pass "../QC-PROTOCOL.md (repo-root governing Sub-Agent Handoff + Mandatory QC Protocol)"
 else
-  echo "  [SKIP] ../QC-PROTOCOL.md not found relative to the skill root (expected when the skill is installed standalone, outside the onboarding repo)"
+  report_skip "../QC-PROTOCOL.md not found relative to the skill root (expected when the skill is installed standalone, outside the onboarding repo)"
 fi
 
 section "File existence — templates/ (journey + channel)"
@@ -96,6 +193,7 @@ SCRIPT_FILES=(
   "scripts/qc-send-directive.sh"
   "scripts/qc-conversation-memory.sh"
   "scripts/qc-playbook-doc.sh"
+  "scripts/qc-doc-counts.sh"
   "scripts/qc-reference-sheet.sh"
   "scripts/22-notify-client-doc.sh"
   "scripts/qc-notify-client-doc.sh"
@@ -106,6 +204,7 @@ SCRIPT_FILES=(
   "scripts/qc-notion-doc-standard.sh"
   "scripts/33-runtime-tool-gating-prover.sh"
   "scripts/qc-runtime-tool-gating.sh"
+  "scripts/qc-followup-exclusion.sh"
 )
 for f in "${SCRIPT_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
@@ -181,7 +280,7 @@ if [ -n "${PUBLIC_HOSTNAME:-}" ] && [ -n "${ROUTE_ID:-}" ]; then
       ;;
   esac
 else
-  echo "  [SKIP] PUBLIC_HOSTNAME or ROUTE_ID not set; cannot probe tunnel"
+  report_skip "PUBLIC_HOSTNAME or ROUTE_ID not set; cannot probe tunnel"
 fi
 
 # -------- AGENTS.md marker blocks --------
@@ -246,7 +345,15 @@ if [ -f "$QC_TRINITY" ]; then
   bash "$QC_TRINITY" >/dev/null 2>&1 || TRINITY_RC=$?
   case "$TRINITY_RC" in
     0) report_pass "every registered workflow has its playbook + Build-with-AI prompt" ;;
-    3) echo "  [SKIP] no conversation-workflows folder yet (nothing to check)" ;;
+    3)
+      TRINITY_JSON="$(bash "$QC_TRINITY" --json 2>/dev/null || true)"
+      TRINITY_VERDICT="$(printf '%s\n' "$TRINITY_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("verdict", ""))' 2>/dev/null || true)"
+      case "$TRINITY_VERDICT" in
+        NO_FOLDER) report_skip "no conversation-workflows folder yet (nothing to check)" ;;
+        EMPTY_REGISTRY) report_fail "conversation-workflows folder has zero registered playbooks; the Trinity cannot be proven vacuously" ;;
+        *) report_fail "qc-trinity-registry.sh returned rc 3 but its JSON verdict was missing or unreadable; run it directly for detail" ;;
+      esac
+      ;;
     *) report_fail "qc-trinity-registry.sh found incomplete trinity row(s) — run it directly for detail" ;;
   esac
 else
@@ -281,17 +388,70 @@ else
   report_fail "qc-conversation-memory.sh not found (looked in scripts/)"
 fi
 
+# -------- Prose counts vs disk (machine-enforced) --------
+# SKILL.md and INSTALL.md state numbers (scripts, protocols, references, the
+# numbered install range). Those numbers drift, and the old advisory in the
+# repo-root bump-version.sh printed a WARN and returned 0 unconditionally, so
+# drift could ship. This gate fails on a mismatch. Without this call the gate
+# exists and nothing runs it.
+section "Prose asset counts vs disk (qc-doc-counts.sh)"
+QC_COUNTS="$SCRIPT_DIR/qc-doc-counts.sh"
+[ -f "$QC_COUNTS" ] || QC_COUNTS="$SKILL38_ROOT/scripts/qc-doc-counts.sh"
+if [ -f "$QC_COUNTS" ]; then
+  COUNTS_RC=0
+  bash "$QC_COUNTS" >/dev/null 2>&1 || COUNTS_RC=$?
+  case "$COUNTS_RC" in
+    0) report_pass "qc-doc-counts: every stated count agrees with disk" ;;
+    1) report_fail "qc-doc-counts: a stated count disagrees with disk — run qc-doc-counts.sh for the file, the claim and the real number" ;;
+    2) report_fail "qc-doc-counts could not verify the counts (exit 2). Unverified is never a pass." ;;
+    *) report_fail "qc-doc-counts returned unexpected exit $COUNTS_RC" ;;
+  esac
+else
+  report_fail "qc-doc-counts.sh not found (looked in scripts/) — the prose-count gate cannot silently disappear"
+fi
+
 # -------- Per-playbook human-facing doc gate (machine-enforced) --------
 section "Per-playbook human-facing doc gate (qc-playbook-doc.sh)"
 QC_PBDOC="$SCRIPT_DIR/qc-playbook-doc.sh"
 [ -f "$QC_PBDOC" ] || QC_PBDOC="$SKILL38_ROOT/scripts/qc-playbook-doc.sh"
 if [ -f "$QC_PBDOC" ]; then
   PBDOC_RC=0
-  bash "$QC_PBDOC" >/dev/null 2>&1 || PBDOC_RC=$?
+  bash "$QC_PBDOC" --status-file "$QC_STATUS_DIR/qc-playbook-doc.json" >/dev/null 2>&1 || PBDOC_RC=$?
   case "$PBDOC_RC" in
-    0) report_pass "every registered conversation playbook has a recorded human-facing doc (Notion → Google Docs → text) in the client's account" ;;
-    2) echo "  [SKIP] no conversation playbooks registered yet (nothing to check) — gate fires once the first playbook is built" ;;
-    3) echo "  [SKIP] no conversation-workflows folder yet (run 09-install-conversation-workflows.sh)" ;;
+    0|1)
+      if [ -z "$QC_STATUS_DIR" ] || ! qc_read_status "$QC_STATUS_DIR/qc-playbook-doc.json"; then
+        report_fail "qc-playbook-doc exited $PBDOC_RC but wrote no readable status file - absent status is a failure, never a pass"
+      else
+        qc_report_disposition "qc-playbook-doc" "every registered conversation playbook has a recorded human-facing doc (Notion → Google Docs → text) in the client's account"
+      fi
+      ;;
+    2)
+      PBDOC_POINTER="${HOME}/.openclaw/.skill-38-master-files-dir"
+      PBDOC_DIR=""
+      if [ -f "$PBDOC_POINTER" ]; then
+        PBDOC_MASTER_DIR="$(cat "$PBDOC_POINTER" 2>/dev/null || true)"
+        if [ -n "$PBDOC_MASTER_DIR" ]; then
+          PBDOC_DIR="${PBDOC_MASTER_DIR%/}/conversation-workflows"
+        fi
+      fi
+      PBDOC_COUNT=0
+      if [ -n "$PBDOC_DIR" ] && [ -d "$PBDOC_DIR" ]; then
+        for PBDOC_FILE in "$PBDOC_DIR"/*.md; do
+          [ -f "$PBDOC_FILE" ] || continue
+          PBDOC_NAME="${PBDOC_FILE##*/}"
+          case "$PBDOC_NAME" in
+            registry.md|*--build-with-ai-prompt.md|*--workflow-ai-prompt.md|*--verification-checklist.md|*--ghl-side.md) continue ;;
+          esac
+          PBDOC_COUNT=$((PBDOC_COUNT + 1))
+        done
+      fi
+      if [ "$PBDOC_COUNT" -eq 0 ]; then
+        report_skip "no conversation playbooks registered yet (nothing to check) — gate fires once the first playbook is built"
+      else
+        report_fail "qc-playbook-doc.sh returned NO_PLAYBOOKS while $PBDOC_COUNT playbook file(s) ARE on disk; gate is blind, not that there is nothing to check"
+      fi
+      ;;
+    3) report_skip "no conversation-workflows folder yet (run 09-install-conversation-workflows.sh)" ;;
     *) report_fail "qc-playbook-doc.sh found a registered playbook with NO recorded human-facing doc (the Notion→Docs→text deliverable was skipped) — run it directly for detail" ;;
   esac
 else
@@ -346,14 +506,20 @@ if [ -n "$STATE_FOUND" ]; then
     report_fail "clientDocDelivered is NOT true in $STATE_FOUND — the client was never sent their doc link via Telegram (run scripts/22-notify-client-doc.sh; the install is not complete)"
   fi
 else
-  echo "  [SKIP] run-state file not found; cannot assert clientDocDelivered (run scripts/22-notify-client-doc.sh during the live install)"
+  report_skip "run-state file not found; cannot assert clientDocDelivered (run scripts/22-notify-client-doc.sh during the live install)"
 fi
 
 # -------- Backend-ready gate: the agent is ready to RECEIVE --------
 # The install is not "complete" until the backend can RECEIVE inbound: a live
-# hooks.mappings entry for HOOK_NAME with deliver:false and a working model, AND
-# /healthz returns 200. Testing only happens after BOTH the doc AND this pass.
-section "Backend ready to receive (hooks.mappings live + deliver:false + model + /healthz 200)"
+# hooks.mappings entry for HOOK_NAME with deliver:false, AND /healthz returns
+# 200. Testing only happens after BOTH the doc AND this pass.
+# PBB-017 DECISION: `model` is OPTIONAL on a hooks.mappings entry — agentId is
+# sufficient and the run falls back to the agent's own configured model. Only a
+# PRESENT-but-BLANK override is refused (OpenClaw's normalizeAgentPayload
+# rejects it). Before this repair the predicate demanded a non-empty `model`,
+# so it failed the writer's own correct fresh-install mapping with `no-model`
+# while qc-backend-ready.sh and 24-self-test-hook.sh both passed it.
+section "Backend ready to receive (hooks.mappings live + deliver:false + /healthz 200)"
 OC_CONFIG=""
 for cfg in "${OPENCLAW_CONFIG:-}" "${HOME}/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json" "/root/.openclaw/openclaw.json"; do
   [ -n "$cfg" ] && [ -f "$cfg" ] && { OC_CONFIG="$cfg"; break; }
@@ -385,25 +551,27 @@ if chosen is None and maps:
 if chosen is None:
     print("ERR:no-live-hooks-mapping"); sys.exit(0)
 deliver = chosen.get("deliver", None)
-model = (chosen.get("model") or "").strip()
 problems = []
 if deliver is not False:
     problems.append("deliver-not-false")
-if not model:
-    problems.append("no-model")
+# PBB-017: an ABSENT `model` is valid (the agent-configured model runs the
+# mapping). Only a present-but-blank override is refused — the same rule
+# lib-hook-mapping-contract.sh applies to every gate.
+if "model" in chosen and not str(chosen.get("model") or "").strip():
+    problems.append("blank-model-override")
 if problems:
     print("ERR:" + ",".join(problems)); sys.exit(0)
 print("OK")
 PY_BACKEND_EOF
 )"
   case "$BACKEND_OUT" in
-    OK) report_pass "hooks.mappings is live with deliver:false and a model set ($OC_CONFIG)" ;;
+    OK) report_pass "hooks.mappings is live with deliver:false and no blank model override ($OC_CONFIG)" ;;
     ERR:no-live-hooks-mapping) report_fail "no live hooks.mappings agent entry — the backend cannot RECEIVE inbound (run scripts/15-configure-hooks-mappings.sh)" ;;
-    ERR:*) report_fail "hooks.mappings is not receive-ready: ${BACKEND_OUT#ERR:} (need deliver:false + a working model)" ;;
+    ERR:*) report_fail "hooks.mappings is not receive-ready: ${BACKEND_OUT#ERR:} (need deliver:false; a model override is optional and must not be blank)" ;;
     *) report_fail "could not evaluate hooks.mappings readiness from $OC_CONFIG" ;;
   esac
 else
-  echo "  [SKIP] openclaw.json not found (or python3 missing); cannot assert hooks.mappings readiness"
+  report_skip "openclaw.json not found (or python3 missing); cannot assert hooks.mappings readiness"
 fi
 
 # /healthz 200 — the gateway is up and ready to receive.
@@ -420,14 +588,15 @@ elif command -v openclaw >/dev/null 2>&1; then
   if [ "$LOCAL_HZ" = "200" ]; then
     report_pass "/healthz returns 200 (localhost) — gateway is up and ready to receive"
   else
-    echo "  [SKIP] PUBLIC_HOSTNAME unset and localhost /healthz not 200 (HTTP $LOCAL_HZ); cannot assert gateway readiness here"
+    report_skip "PUBLIC_HOSTNAME unset and localhost /healthz not 200 (HTTP $LOCAL_HZ); cannot assert gateway readiness here"
   fi
 else
-  echo "  [SKIP] PUBLIC_HOSTNAME unset and openclaw CLI not on PATH; cannot probe /healthz"
+  report_skip "PUBLIC_HOSTNAME unset and openclaw CLI not on PATH; cannot probe /healthz"
 fi
 
 # -------- Backend ready to RECEIVE (live gate; SKIPs with no install) --------
-# hooks.mappings live + deliver:false + a working model + healthz 200. On a box
+# hooks.mappings live + deliver:false (a `model` override is OPTIONAL — PBB-017;
+# the agent's own configured model runs the mapping) + healthz 200. On a box
 # with no install this exits 3 (SKIP).
 section "Backend ready to RECEIVE (qc-backend-ready.sh)"
 QC_BACKEND="$SCRIPT_DIR/qc-backend-ready.sh"
@@ -436,9 +605,9 @@ if [ -f "$QC_BACKEND" ]; then
   BACKEND_RC=0
   bash "$QC_BACKEND" >/dev/null 2>&1 || BACKEND_RC=$?
   case "$BACKEND_RC" in
-    0) report_pass "backend ready to receive: hooks.mappings live + deliver:false + a working model + healthz 200 (testing may proceed once the client doc gate also passes)" ;;
-    3) echo "  [SKIP] no openclaw.json on this box — cannot verify backend readiness here" ;;
-    *) report_fail "qc-backend-ready.sh: backend NOT ready to receive (hooks.mappings / deliver:false / model / healthz) — do NOT test, do NOT hand off; run it directly for detail" ;;
+    0) report_pass "backend ready to receive: hooks.mappings live + deliver:false + no blank model override + healthz 200 (testing may proceed once the client doc gate also passes)" ;;
+    3) report_skip "no openclaw.json on this box — cannot verify backend readiness here" ;;
+    *) report_fail "qc-backend-ready.sh: backend NOT ready to receive (hooks.mappings / deliver:false / blank model override / healthz) — do NOT test, do NOT hand off; run it directly for detail" ;;
   esac
 else
   report_fail "qc-backend-ready.sh not found (looked in scripts/)"
@@ -516,7 +685,7 @@ if [ -f "$TOOLS_MD_CHECK" ]; then
     report_fail "client TOOLS.md is MISSING the GHL API quick-reference block ($TOOLS_MD_CHECK) — run scripts/24-update-tools-md.sh"
   fi
 else
-  echo "  [SKIP] client TOOLS.md not found at $TOOLS_MD_CHECK; cannot assert the GHL quick-reference block (run scripts/24-update-tools-md.sh during the live install)"
+  report_skip "client TOOLS.md not found at $TOOLS_MD_CHECK; cannot assert the GHL quick-reference block (run scripts/24-update-tools-md.sh during the live install)"
 fi
 
 # -------- conversational-logs dir presence + writability --------
@@ -533,7 +702,7 @@ if [ -n "${MASTER_FILES_DIR:-}" ]; then
     report_fail "conversational-logs dir MISSING: $LOGS_DIR — run 09-install-conversation-workflows.sh"
   fi
 else
-  echo "  [SKIP] MASTER_FILES_DIR not resolved; cannot check conversational-logs dir"
+  report_skip "MASTER_FILES_DIR not resolved; cannot check conversational-logs dir"
 fi
 
 
@@ -609,7 +778,7 @@ if [ -n "$ST_STATE_FOUND" ]; then
     report_fail "selfTestPassed is NOT true in $ST_STATE_FOUND — run scripts/24-self-test-hook.sh until it passes; do NOT mark complete or tell the client to test"
   fi
 else
-  echo "  [SKIP] run-state file not found; cannot assert selfTestPassed (run scripts/24-self-test-hook.sh during the live install)"
+  report_skip "run-state file not found; cannot assert selfTestPassed (run scripts/24-self-test-hook.sh during the live install)"
 fi
 
 # -------- Communication Playbook Standard gate (machine-enforced) --------
@@ -779,11 +948,18 @@ section "Per-phase tool gating (qc-tool-gating.sh)"
 QC_TOOLGATE="$SCRIPT_DIR/qc-tool-gating.sh"
 [ -f "$QC_TOOLGATE" ] || QC_TOOLGATE="$SKILL38_ROOT/scripts/qc-tool-gating.sh"
 if [ -f "$QC_TOOLGATE" ]; then
-  if bash "$QC_TOOLGATE" >/dev/null 2>&1; then
-    report_pass "U-1 wiring holds (protocols/tool-gating-protocol.md + STEP_1_88_TOOL_GATING marker + MEMORY Rule 32 + tool-gate-events.jsonl seeded; every checked phase is in-vocabulary and escalate_to_human is never gated off)"
-  else
-    report_fail "qc-tool-gating.sh found a tool-gating violation or missing wiring - run it directly for detail"
-  fi
+  TOOLGATE_RC=0
+  bash "$QC_TOOLGATE" --status-file "$QC_STATUS_DIR/qc-tool-gating.json" >/dev/null 2>&1 || TOOLGATE_RC=$?
+  case "$TOOLGATE_RC" in
+    0|1)
+      if [ -z "$QC_STATUS_DIR" ] || ! qc_read_status "$QC_STATUS_DIR/qc-tool-gating.json"; then
+        report_fail "qc-tool-gating exited $TOOLGATE_RC but wrote no readable status file - absent status is a failure, never a pass"
+      else
+        qc_report_disposition "qc-tool-gating" "U-1 wiring holds (protocols/tool-gating-protocol.md + STEP_1_88_TOOL_GATING marker + MEMORY Rule 32 + tool-gate-events.jsonl seeded; every checked phase is in-vocabulary and escalate_to_human is never gated off)"
+      fi
+      ;;
+    *) report_fail "qc-tool-gating.sh found a tool-gating violation or missing wiring - run it directly for detail" ;;
+  esac
 else
   report_fail "qc-tool-gating.sh not found (looked in scripts/)"
 fi
@@ -805,11 +981,18 @@ section "Tag-driven workflow exits (qc-workflow-exits.sh)"
 QC_EXITS="$SCRIPT_DIR/qc-workflow-exits.sh"
 [ -f "$QC_EXITS" ] || QC_EXITS="$SKILL38_ROOT/scripts/qc-workflow-exits.sh"
 if [ -f "$QC_EXITS" ]; then
-  if bash "$QC_EXITS" >/dev/null 2>&1; then
-    report_pass "U-2 wiring holds (protocols/workflow-exit-rules-protocol.md + STEP_1_30_EXIT_RULES marker + MEMORY Rule 33 + workflow-exit-events.jsonl seeded; every exit rule has a valid action and a resolvable route target)"
-  else
-    report_fail "qc-workflow-exits.sh found an exit-rule violation or missing wiring - run it directly for detail"
-  fi
+  EXITS_RC=0
+  bash "$QC_EXITS" --status-file "$QC_STATUS_DIR/qc-workflow-exits.json" >/dev/null 2>&1 || EXITS_RC=$?
+  case "$EXITS_RC" in
+    0|1)
+      if [ -z "$QC_STATUS_DIR" ] || ! qc_read_status "$QC_STATUS_DIR/qc-workflow-exits.json"; then
+        report_fail "qc-workflow-exits exited $EXITS_RC but wrote no readable status file - absent status is a failure, never a pass"
+      else
+        qc_report_disposition "qc-workflow-exits" "U-2 wiring holds (protocols/workflow-exit-rules-protocol.md + STEP_1_30_EXIT_RULES marker + MEMORY Rule 33 + workflow-exit-events.jsonl seeded; every exit rule has a valid action and a resolvable route target)"
+      fi
+      ;;
+    *) report_fail "qc-workflow-exits.sh found an exit-rule violation or missing wiring - run it directly for detail" ;;
+  esac
 else
   report_fail "qc-workflow-exits.sh not found (looked in scripts/)"
 fi
@@ -818,13 +1001,60 @@ section "Machine-readable playbook declares (qc-playbook-declares.sh)"
 QC_DECLARES="$SCRIPT_DIR/qc-playbook-declares.sh"
 [ -f "$QC_DECLARES" ] || QC_DECLARES="$SKILL38_ROOT/scripts/qc-playbook-declares.sh"
 if [ -f "$QC_DECLARES" ]; then
-  if bash "$QC_DECLARES" >/dev/null 2>&1; then
-    report_pass "U-9 + U-12 wiring holds (Section E declares block documented; every declared tools-used/exits-used/fields-used/calendars reference resolves; legacy playbooks WARN, dangling references FAIL)"
-  else
-    report_fail "qc-playbook-declares.sh found a declares violation or missing wiring - run it directly for detail"
-  fi
+  DECLARES_RC=0
+  bash "$QC_DECLARES" --status-file "$QC_STATUS_DIR/qc-playbook-declares.json" >/dev/null 2>&1 || DECLARES_RC=$?
+  case "$DECLARES_RC" in
+    0|1)
+      if [ -z "$QC_STATUS_DIR" ] || ! qc_read_status "$QC_STATUS_DIR/qc-playbook-declares.json"; then
+        report_fail "qc-playbook-declares exited $DECLARES_RC but wrote no readable status file - absent status is a failure, never a pass"
+      else
+        qc_report_disposition "qc-playbook-declares" "U-9 + U-12 wiring holds (Section E declares block documented; every declared tools-used/exits-used/fields-used/calendars reference resolves; legacy playbooks WARN, dangling references FAIL)"
+      fi
+      ;;
+    *) report_fail "qc-playbook-declares.sh found a declares violation or missing wiring - run it directly for detail" ;;
+  esac
 else
   report_fail "qc-playbook-declares.sh not found (looked in scripts/)"
+fi
+
+section "Conversational playbook craft (qc-playbook-craft.sh)"
+QC_CRAFT="$SCRIPT_DIR/qc-playbook-craft.sh"
+[ -f "$QC_CRAFT" ] || QC_CRAFT="$SKILL38_ROOT/scripts/qc-playbook-craft.sh"
+if [ -f "$QC_CRAFT" ]; then
+  CRAFT_RC=0
+  bash "$QC_CRAFT" >/dev/null 2>&1 || CRAFT_RC=$?
+  case "$CRAFT_RC" in
+    0) report_pass "all six craft contracts hold: objection library, turn discipline, ambiguity and multi-intent, stall recovery, golden transcript, conversational KPIs" ;;
+    2) report_skip "no conversation-workflows folder yet" ;;
+    3)
+      CRAFT_WF_DIR=""
+      CRAFT_POINTER="${HOME}/.openclaw/.skill-38-master-files-dir"
+      if [ -f "$CRAFT_POINTER" ]; then
+        CRAFT_MASTER_DIR="$(cat "$CRAFT_POINTER" 2>/dev/null || true)"
+        [ -n "$CRAFT_MASTER_DIR" ] && CRAFT_WF_DIR="${CRAFT_MASTER_DIR%/}/conversation-workflows"
+      fi
+      CRAFT_COUNT=0
+      if [ -n "$CRAFT_WF_DIR" ] && [ -d "$CRAFT_WF_DIR" ]; then
+        for CRAFT_FILE in "$CRAFT_WF_DIR"/*.md; do
+          [ -f "$CRAFT_FILE" ] || continue
+          CRAFT_NAME="${CRAFT_FILE##*/}"
+          case "$CRAFT_NAME" in
+            registry.md|*--build-with-ai-prompt.md|*--workflow-ai-prompt.md|*--verification-checklist.md|*--ghl-side.md) continue ;;
+          esac
+          CRAFT_COUNT=$((CRAFT_COUNT + 1))
+        done
+      fi
+      if [ "$CRAFT_COUNT" -eq 0 ]; then
+        report_skip "no conversation playbook files yet (nothing to check)"
+      else
+        report_fail "qc-playbook-craft.sh returned NO_PLAYBOOKS while playbook file(s) exist on disk (blind gate, not an empty folder)"
+      fi
+      ;;
+    4) report_fail "qc-playbook-craft.sh cannot judge (playbook_engine.py or python3 unavailable)" ;;
+    *) report_fail "qc-playbook-craft.sh found a conversational craft defect (objection library, turn discipline, ambiguity, stall recovery, golden transcript, KPIs) - run it directly for detail" ;;
+  esac
+else
+  report_fail "qc-playbook-craft.sh not found (looked in scripts/)"
 fi
 
 section "Opportunity/pipeline stage sync (qc-opportunity-sync.sh)"
@@ -866,26 +1096,135 @@ else
   report_fail "qc-lattice-pointer.sh not found (looked in scripts/)"
 fi
 
+section "Interactive workflow owner (qc-interactive-owner.sh)"
+QC_INTERACTIVE="$SCRIPT_DIR/qc-interactive-owner.sh"
+[ -f "$QC_INTERACTIVE" ] || QC_INTERACTIVE="$SKILL38_ROOT/scripts/qc-interactive-owner.sh"
+if [ -f "$QC_INTERACTIVE" ]; then
+  if bash "$QC_INTERACTIVE" >/dev/null 2>&1; then
+    report_pass "T-19 holds (launch/interactive-owner-contract.md + tools/interactive_owner.py + its suite; OpenClaw inbound is the default owner, controls/callbacks/free text route to it, stale taps are refused with no route, and a contract naming two responders is refused)"
+  else
+    report_fail "qc-interactive-owner.sh failed - an interactive event reached two responders, a stale tap routed, or the contract document/tools are missing; run it directly for detail"
+  fi
+else
+  report_fail "qc-interactive-owner.sh not found (looked in scripts/)"
+fi
+
+section "Purple follow-up ownership — the legacy 10-touch cadence is excluded (qc-followup-exclusion.sh)"
+QC_FOLLOWUP="$SCRIPT_DIR/qc-followup-exclusion.sh"
+[ -f "$QC_FOLLOWUP" ] || QC_FOLLOWUP="$SKILL38_ROOT/scripts/qc-followup-exclusion.sh"
+if [ -f "$QC_FOLLOWUP" ]; then
+  if bash "$QC_FOLLOWUP" >/dev/null 2>&1; then
+    report_pass "C4 holds (a contact with a Purple collection_sequence_id, open or closed, never enters the 10-touch cadence; the shared reminder machine owns follow-up in the protocol, the AGENTS.md stanza writer and the canonical rules reference; the stale Pre-Feature-15 / Until v5.7 notes and installer fragments are gone)"
+  else
+    report_fail "qc-followup-exclusion.sh found a C4 violation - a Purple collection contact could re-enter the legacy 10-touch sequence, a stale note survived, or the gate is unwired; run it directly for detail"
+  fi
+else
+  report_fail "qc-followup-exclusion.sh not found (looked in scripts/)"
+fi
+
+section "Launch Conversation-AI completion gate (launch/qc-launch-conversation-ai.sh)"
+LAUNCH_GATE="$SKILL38_ROOT/launch/qc-launch-conversation-ai.sh"
+[ -f "$LAUNCH_GATE" ] || LAUNCH_GATE="$SCRIPT_DIR/../launch/qc-launch-conversation-ai.sh"
+BUNDLE_DIR="${SKILL38_LAUNCH_BUNDLE_DIR:-${MASTER_FILES_DIR:+$MASTER_FILES_DIR/launch/conversation-ai}}"
+RECORD_FILE="${SKILL38_LAUNCH_RECORD:-${MASTER_FILES_DIR:+$MASTER_FILES_DIR/launch/launch-plan.json}}"
+if [ ! -f "$LAUNCH_GATE" ]; then
+  report_fail "launch Conversation-AI completion gate missing; expected $LAUNCH_GATE"
+else
+  BUNDLE_COUNT=0
+  if [ -n "$BUNDLE_DIR" ] && [ -d "$BUNDLE_DIR" ]; then
+    for BUNDLE_FILE in "$BUNDLE_DIR"/*.json; do
+      [ -f "$BUNDLE_FILE" ] || continue
+      BUNDLE_COUNT=$((BUNDLE_COUNT + 1))
+    done
+  fi
+  if [ "$BUNDLE_COUNT" -gt 0 ]; then
+    LAUNCH_RC=0
+    bash "$LAUNCH_GATE" --dir "$BUNDLE_DIR" >/dev/null 2>&1 || LAUNCH_RC=$?
+    case "$LAUNCH_RC" in
+      0) report_pass "launch Conversation-AI completion gate passed for $BUNDLE_COUNT bundle(s)" ;;
+      1) report_fail "launch Conversation-AI completion gate found invalid completion evidence; run it directly for detail" ;;
+      2) report_fail "launch Conversation-AI completion gate could not judge due to usage or IO error; this is never a pass" ;;
+      *) report_fail "launch Conversation-AI completion gate exited unexpectedly with code $LAUNCH_RC; run it directly for detail" ;;
+    esac
+  elif { [ -n "$RECORD_FILE" ] && [ -r "$RECORD_FILE" ] && grep -qF "Conversation AI: not requested" "$RECORD_FILE"; } || { [ -n "$RECORD_FILE" ] && [ -r "$RECORD_FILE" ] && python3 - "$RECORD_FILE" <<'PY_LAUNCH_RECORD_EOF'
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        data = json.load(f)
+    raise SystemExit(0 if isinstance(data.get("conversation_ai"), dict) and data["conversation_ai"].get("requested") is False else 1)
+except Exception:
+    raise SystemExit(1)
+PY_LAUNCH_RECORD_EOF
+  }; then
+    report_na "Conversation AI: not requested for this launch, so no completion bundle is expected (recorded in $RECORD_FILE)"
+  else
+    report_na "No launch completion bundle found. Paths tried: gate=$LAUNCH_GATE, BUNDLE_DIR=$BUNDLE_DIR, RECORD_FILE=$RECORD_FILE. No not-requested record found. This is NOT proof of completion and NOT a pass."
+  fi
+fi
+
 # -------- Final summary --------
 section "QC SUMMARY"
 echo "  PASS: $PASS"
 echo "  FAIL: $FAIL"
-if [ "$FAIL" -eq 0 ]; then
-  echo ""
-  echo "  RESULT: PASS — all mechanical QC items green. Proceed to human-judgment items in protocols/pre-handoff-qc-protocol.md."
-  # Command Center Kanban: mechanical QC passed -> move the install task to
-  # `review` so the INDEPENDENT CC auto-scorer can promote it (the builder never
-  # self-grades to done). FAIL-SOFT: cc-task.sh always exits 0 and `|| true`
-  # guarantees it cannot change this script's exit code. No-ops when CC is absent.
-  bash "$SCRIPT_DIR/cc-task.sh" review || true
-  exit 0
-else
-  echo ""
-  echo "  RESULT: FAIL — $FAIL item(s) need attention. Do NOT seal the Run Manifest."
-  # Command Center Kanban: mechanical QC FAILED -> move the install task to `blocked`
-  # so the failure is VISIBLE on the board (never left stranded at in_progress, never
-  # wrongly marked done). FAIL-SOFT: cc-task.sh always exits 0 and `|| true` keeps it
-  # from changing this script's exit code. No-ops when CC is absent. (FIX-XC-06)
-  bash "$SCRIPT_DIR/cc-task.sh" fail "mechanical QC: $FAIL item(s) failed" || true
-  exit 1
+echo "  NA:   $NA"
+echo "  SKIP: $SKIP (nothing to verify on this box; not a pass, not a failure)"
+QC_MIGRATE_TOTAL=0
+if [ -n "$QC_LEGACY_SEEN" ]; then
+  IFS=',' read -r -a _qc_count_files <<< "$QC_LEGACY_SEEN"
+  for _qc_count_name in "${_qc_count_files[@]}"; do
+    if [ -n "$_qc_count_name" ]; then
+      QC_MIGRATE_TOTAL=$((QC_MIGRATE_TOTAL+1))
+    fi
+  done
 fi
+if [ "$QC_MIGRATE_TOTAL" -eq 0 ] && [ "$QC_LEGACY_MAX" -gt 0 ]; then
+  QC_MIGRATE_TOTAL="$QC_LEGACY_MAX"
+fi
+echo "  LEGACY NEEDS-MIGRATION: $QC_MIGRATE_TOTAL playbook(s)"
+# >>> QC_COMPLETION_GATE
+qc_completion_gate() {
+  local fail_count="$1" legacy_count="$2"
+  if [ "$fail_count" -gt 0 ]; then echo FAIL; return 1; fi
+  if [ "$legacy_count" -gt 0 ]; then echo NEEDS-MIGRATION; return 3; fi
+  echo PASS
+  return 0
+}
+# <<< QC_COMPLETION_GATE
+
+QC_RESULT_RC=0
+QC_RESULT="$(qc_completion_gate "$FAIL" "$QC_MIGRATE_TOTAL")" || QC_RESULT_RC=$?
+case "$QC_RESULT_RC" in
+  0)
+    echo ""
+    echo "  RESULT: PASS — all mechanical QC items green. Proceed to human-judgment items in protocols/pre-handoff-qc-protocol.md."
+    # Command Center Kanban: mechanical QC passed -> move the install task to
+    # `review` so the INDEPENDENT CC auto-scorer can promote it (the builder never
+    # self-grades to done). FAIL-SOFT: cc-task.sh always exits 0 and `|| true`
+    # guarantees it cannot change this script's exit code. No-ops when CC is absent.
+    bash "$SCRIPT_DIR/cc-task.sh" review || true
+    exit 0
+    ;;
+  3)
+    echo ""
+    echo "  RESULT: NEEDS-MIGRATION — $QC_MIGRATE_TOTAL legacy playbook(s) still need migration; this install is NOT complete."
+    IFS=',' read -r -a _qc_summary_files <<< "$QC_LEGACY_SEEN"
+    for _qc_name in "${_qc_summary_files[@]}"; do
+      if [ -n "$_qc_name" ]; then echo "  [NEEDS-MIGRATION] $_qc_name"; fi
+    done
+    _qc_migration_dir="${QC_MIGRATION_DIR:-<conversation-workflows dir>}"
+    echo "  Fix: bash scripts/33-migrate-legacy-playbooks.sh $_qc_migration_dir --write"
+    bash "$SCRIPT_DIR/cc-task.sh" fail "mechanical QC: $QC_MIGRATE_TOTAL legacy playbook(s) need migration" || true
+    exit 3
+    ;;
+  1)
+    echo ""
+    echo "  RESULT: FAIL — $FAIL item(s) need attention. Do NOT seal the Run Manifest."
+    # Command Center Kanban: mechanical QC FAILED -> move the install task to `blocked`
+    # so the failure is VISIBLE on the board (never left stranded at in_progress, never
+    # wrongly marked done). FAIL-SOFT: cc-task.sh always exits 0 and `|| true` keeps it
+    # from changing this script's exit code. No-ops when CC is absent. (FIX-XC-06)
+    bash "$SCRIPT_DIR/cc-task.sh" fail "mechanical QC: $FAIL item(s) failed" || true
+    exit 1
+    ;;
+esac

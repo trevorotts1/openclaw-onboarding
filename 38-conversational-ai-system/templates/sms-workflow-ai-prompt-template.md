@@ -68,6 +68,7 @@ ACTIONS (in this exact order):
       "to": "{{contact.phone}}",
       "thinking": "medium",
       "contact_id": "{{contact.id}}",
+  "message_id": "{{message.id}}",
       "first_name": "{{contact.first_name}}",
       "last_name": "{{contact.last_name}}",
       "email": "{{contact.email}}",

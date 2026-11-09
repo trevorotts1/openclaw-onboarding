@@ -4,7 +4,13 @@
 Usage:
     python3 produce.py --instance upsell_1 \
         --request <request.json> --copy <copy.json> --journey <journey.json> \
+        [--launch <launch.json>] \
         --copy-artifact-path <path-as-recorded> --out <bundle.json>
+
+Exit 0 ok; 2 fail-closed (AdapterError, unreadable input): message on stderr,
+no bundle written. --launch is the approved launch record: it names which U2
+entry paths are enabled and holds the scarcity facts (scarcity_facts) copy
+wording must match.
 
 Reads only local JSON fixtures. Writes one deterministic bundle
 {"result": ..., "page_plan": ..., "native_binding": ...}. No network,
@@ -31,6 +37,7 @@ def main(argv=None) -> int:
     parser.add_argument("--request", required=True)
     parser.add_argument("--copy", required=True)
     parser.add_argument("--journey", required=True)
+    parser.add_argument("--launch", default=None, help="Approved launch record JSON.")
     parser.add_argument(
         "--copy-artifact-path",
         default=None,
@@ -39,24 +46,28 @@ def main(argv=None) -> int:
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
 
-    request = common.load_json(args.request)
-    copy_doc = common.load_json(args.copy)
-    journey = common.load_json(args.journey)
-    copy_sha256 = common.sha256_file(args.copy)
-    artifact_path = args.copy_artifact_path or args.copy
-
     builder = (
         upsell1_adapter.build_bundle
         if args.instance == "upsell_1"
         else upsell2_adapter.build_bundle
     )
-    bundle = builder(
-        request,
-        copy_doc,
-        journey,
-        copy_sha256=copy_sha256,
-        copy_artifact_path=artifact_path,
-    )
+    try:
+        request = common.load_json(args.request)
+        copy_doc = common.load_json(args.copy)
+        journey = common.load_json(args.journey)
+        launch = common.load_json(args.launch) if args.launch else None
+        copy_sha256 = common.sha256_file(args.copy)
+        bundle = builder(
+            request,
+            copy_doc,
+            journey,
+            copy_sha256=copy_sha256,
+            copy_artifact_path=args.copy_artifact_path or args.copy,
+            launch=launch,
+        )
+    except (common.AdapterError, OSError, ValueError) as exc:
+        print("FAIL-CLOSED: %s" % exc, file=sys.stderr)
+        return 2
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(bundle, indent=2) + "\n", encoding="utf-8")

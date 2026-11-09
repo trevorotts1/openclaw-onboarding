@@ -61,16 +61,38 @@
       "id": "P4-MEDIA",
       "order": 4,
       "name": "GHL media folder + upload (DELEGATED to Skill 6)",
-      "produces_artifact": "media_ledger.json (GHL media URLs)",
+      "produces_artifact": "media_ledger.json (GHL media URLs) + the hosting binding the launcher admits",
       "delegate": "06-ghl-install-pages :: ghl_media.py (ensure_funnel_media_folders + upload_media)",
-      "gate": "GHL-host assertion enforced at P9"
+      "gate": "GHL-host assertion enforced at P9",
+      "hosting_binding": {
+        "consumer": "83-black-friday-launcher/launcher_core/image_stages.py::hosted_admission",
+        "producer": "83-black-friday-launcher/launcher_core/image_stages.py::write_hosting_binding",
+        "sources": [
+          "media_ledger.json (this rail's declared output)",
+          "45-design-intelligence-library/scripts/graphics_ghl_push.py -> media_library.json (the graphics route's receipt ledger)"
+        ],
+        "binding_file": "hosting-binding.json",
+        "schema": "launcher.hosting-binding/1",
+        "required_keys": [
+          "local_path",
+          "sha256",
+          "location_id",
+          "page",
+          "slot",
+          "ghl_folder_id",
+          "ghl_media_id",
+          "ghl_upload_status",
+          "public_url"
+        ],
+        "rule": "A hosted URL alone is not an upload. The binding binds the CURRENT local artifact's SHA-256 to the exact run/page/revision, tenant/location, verified folder, remote media id and final URL. CDN transformations are expected: the local hash is the identity, the remote bytes are never compared to it. No record with a missing key is admitted."
+      }
     },
     {
       "id": "P5-HTML",
       "order": 5,
       "name": "Per-page HTML fragment assembly",
       "produces_artifact": "pages/<profile>.fragment.html (one per 3/5/7 matrix page)",
-      "gate": "run_signature_funnel._gate_html_fragments (non-empty fragment per matrix profile; fail-closed)",
+      "gate": "run_signature_funnel._gate_html_fragments (non-empty fragment per matrix profile; fail-closed) + prove_sf_build.html_fragment_violations (STR-18: every fragment is PARSED for its profile's data-section markers and count; run by the P7 prover)",
       "py_symbol": "run_signature_funnel._gate_html_fragments"
     },
     {
@@ -90,7 +112,7 @@
       "produces_artifact": "build_receipt.json (GHL funnel + preview URLs)",
       "delegate": "06-ghl-install-pages :: ghl_rest_canvas.py / ghl_builder.py",
       "chk_wrapper": "_chk_sf_build",
-      "gate": "run_signature_funnel._gate_build (FIX-COPY-02: requires the FAB scorecard build/fab-artifact.json — copy echoed from copy_ledger.json — THEN prove_sf_build.py funnel-build QC >= 8.5 + non-empty preview URL per page; fail-closed)",
+      "gate": "run_signature_funnel._gate_build (FIX-COPY-02: requires the FAB scorecard build/fab-artifact.json — copy echoed from copy_ledger.json — THEN prove_sf_build.py funnel-build QC >= 8.5 + non-empty preview URL per page; fail-closed). prove_sf_build.py also reads the TOOL evidence under the run dir (STR-18/S06-08/IMG-16): parsed page fragments, the Skill 6 verify run under build/evidence (ghl_gate.require_pass re-run, QC recomputed, preview URLs bound to passing records) and the page-images wireframe + mockup set for every page",
       "produces_fab_scorecard": "build/fab-artifact.json (copy_ledger echoed; the >=8.5 copy-substance gate scores this)",
       "py_symbol": "run_signature_funnel._gate_build"
     },
@@ -197,7 +219,7 @@
       "py_symbol": "prove_sf_copy.verify"
     },
     "AF-FUN-SECTION-MISSING": {
-      "trigger": "a required section for the page profile is absent",
+      "trigger": "a required section for the page profile is absent, OR a page type the locked 3/5/7 funnel_matrix requires has no page in the copy ledger (main-only ledger; STR-19), OR the ledger contradicts the locked brief size / the size is unresolved (fail-closed)",
       "enforced_by": "P1-COPY",
       "py_symbol": "prove_sf_copy.verify"
     },
@@ -586,11 +608,6 @@
       "enforced_by": "P9-CERTIFY",
       "py_symbol": "prove_sf_cert.evaluate_model_receipt"
     },
-    "AF-FUN-MODEL-NOANTHROPIC": {
-      "trigger": "authoring model provider is Anthropic/Claude (client skills never use Anthropic); FIX-XC-09e",
-      "enforced_by": "P9-CERTIFY",
-      "py_symbol": "prove_sf_cert.evaluate_model_receipt"
-    },
     "AF-FUN-BUILD-PAGESET": {
       "trigger": "the build receipt does not carry every page type the locked 3/5/7 funnel matrix requires (an under-sized receipt — a 7-step funnel with 3 pages — no longer certifies); A10/T0-11",
       "enforced_by": "P7-BUILD",
@@ -610,6 +627,26 @@
       "trigger": "a page preview_url resolves to a placeholder/example/loopback host (a caller-authored stand-in is not a built preview); A10/T0-11",
       "enforced_by": "P7-BUILD",
       "py_symbol": "prove_sf_build.verify"
+    },
+    "AF-FUN-HTML-SECTIONS": {
+      "trigger": "a pages/<profile>.fragment.html lacks its root page marker, does not carry exactly the profile's data-section markers in order (12 for main, 8 for derived pages, TY-1..TY-3 for thank-you), or a section carries no real text (a fragment of 'x' fails; STR-18)",
+      "enforced_by": "P5-HTML/P7-BUILD",
+      "py_symbol": "prove_sf_build.html_fragment_violations"
+    },
+    "AF-FUN-BUILD-QC-RECORD": {
+      "trigger": "no tool-run QC record: build/evidence is absent, ghl_gate.require_pass re-run on it is non-zero, the QC recomputed from the raw verify records is below the 8.5 floor, or the receipt qc_score is higher than the recomputed one (a receipt that only says 9.0 fails; STR-18/S06-08)",
+      "enforced_by": "P7-BUILD",
+      "py_symbol": "prove_sf_build.tool_run_violations"
+    },
+    "AF-FUN-BUILD-PREVIEW-UNBOUND": {
+      "trigger": "a receipt preview_url is not a URL that a passing raw verify record checked (a real-looking host the tool never visited; STR-18)",
+      "enforced_by": "P7-BUILD",
+      "py_symbol": "prove_sf_build.tool_run_violations"
+    },
+    "AF-FUN-BUILD-VISUAL": {
+      "trigger": "a page of the funnel has no wireframe/mockup set: page-images/page-images-receipt.json absent, or a page lacks its desktop-wireframe / mobile-tablet / visual-mockup stage-executor-record with images, or a record does not match the receipt sha256 (no certificate without visual direction; IMG-16)",
+      "enforced_by": "P7-BUILD",
+      "py_symbol": "prove_sf_build.visual_direction_violations"
     },
     "AF-FUN-DELEG-IMAGES": {
       "trigger": "P3-IMAGES: media ledger carries no image records or an image has no real image-provider task id (file existence is no longer proof of delegated image generation); A10/T0-09",

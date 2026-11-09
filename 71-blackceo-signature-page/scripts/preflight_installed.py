@@ -65,6 +65,9 @@ SHARED_REFS = (
     ("shared-utils/signature_launch/design/tokens/tokens.py",
      "scripts/launch_context.py:421",
      "emitting the tokens component for the run's brand"),
+    ("shared-utils/signature_launch/design/image_slots.py",
+     "scripts/validate_page.py",
+     "checking every page image against the image-map (slot id, URL, QC'd file hash)"),
 )
 
 # Local assets the production scripts declare by constant.
@@ -174,14 +177,36 @@ def check_shared(root: Path):
             if path.is_file():
                 rows.append(("PASS", "shared tokens component", ""))
             else:
-                # emit_design_tokens records component_not_in_tree and carries
-                # on, so this is a recorded degradation, not a failed call.
+                # A token-driven page is REFUSED without the component (the
+                # call below shows the refusal); a plain call records
+                # component_not_in_tree. Reported, not gating: a lone install
+                # that never imports a launch request does not need it.
+                try:
+                    lc.emit_design_tokens(str(root), None, token_driven=True)
+                    refusal = "NOT refused (unexpected)"
+                except lc.LaunchContextError as refused:
+                    refusal = "a token-driven page is refused: " + str(refused)[-160:]
                 rows.append(("DEGRADED", "shared tokens component",
-                             f"resolved to {path} (absent); design tokens are recorded as "
-                             f"component_not_in_tree rather than emitted"))
+                             f"resolved to {path} (absent); {refusal}"))
         except Exception as exc:                       # noqa: BLE001
             rows.append(("FAIL", "shared tokens component",
                          f"{type(exc).__name__}: {exc}"))
+        try:
+            rec = lc.verify_design_css(str(root))
+            if rec["status"] == "verified":
+                rows.append(("PASS", "shared design.css hash matches the recorded SHA-256", ""))
+        except lc.LaunchContextError as exc:
+            rows.append(("FAIL", "shared design.css hash mismatch", str(exc)[-220:]))
+        except Exception as exc:                       # noqa: BLE001
+            rows.append(("FAIL", "shared design.css hash check", f"{type(exc).__name__}: {exc}"))
+        try:
+            slots = Path(lc.shared_component_path(str(root), lc.IMAGE_SLOTS_REF))
+            rows.append(("PASS" if slots.is_file() else "DEGRADED", "shared image-slot contract",
+                         "" if slots.is_file() else
+                         f"resolved to {slots} (absent); validate_page.py refuses a page "
+                         "with content images until it is installed"))
+        except Exception as exc:                       # noqa: BLE001
+            rows.append(("FAIL", "shared image-slot contract", f"{type(exc).__name__}: {exc}"))
     except Exception as exc:                           # noqa: BLE001
         rows.append(("FAIL", "shared consumers import", f"{type(exc).__name__}: {exc}"))
     finally:
@@ -189,8 +214,9 @@ def check_shared(root: Path):
         sys.path.remove(str(scripts))
 
     css = root.parent / "shared-utils/signature_launch/design/design.css"
-    rows.append(("PASS" if css.is_file() else "REF", "shared design.css (recorded component ref)",
-                 "" if css.is_file() else f"absent at {css}; recorded in a produced page, no read path in this tree"))
+    if not css.is_file():
+        rows.append(("REF", "shared design.css (recorded component ref)",
+                     f"absent at {css}; a token-driven page import is refused without it"))
     return rows
 
 
@@ -477,6 +503,25 @@ def check_dry_run(root: Path):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def repo_shaped(root: Path) -> bool:
+    """True when this tree sits inside the repository (its parent holds the repo tooling)."""
+    return (Path(root).parent / "scripts" / "check-skill71-parity.py").is_file()
+
+
+def repo_test_command(root: Path) -> str | None:
+    """The command that runs the repository suite, or None when this install has none.
+
+    The path is the installation's OWN resolved location. The old text hard-coded
+    `$HOME/openclaw-onboarding/71-blackceo-signature-page`, which is another repository
+    under the operator's home: it is not this install, and printing it invited a run
+    that proves nothing about the box. A lone-directory install has no repository
+    suite, so it reports None instead of an invented command.
+    """
+    if not repo_shaped(root):
+        return None
+    return f"cd {Path(root).resolve()} && python3 -m pytest -q tests"
+
+
 def repo_only_tests(root: Path):
     """Tests that pull fixtures from the repository root cannot run here."""
     tests = root / "tests"
@@ -514,7 +559,8 @@ def main(argv=None) -> int:
     rows += layout_rows + import_rows + shared_rows + dry_rows
 
     repo_only, total = repo_only_tests(root)
-    repo_shaped = (root.parent / "scripts" / "check-skill71-parity.py").is_file()
+    has_repo_layout = repo_shaped(root)
+    test_command = repo_test_command(root)
     # A demonstrated gap keeps the verdict honest even when the exercised path
     # succeeded: the dry run need not reach a conditional dependency for that
     # dependency to be missing. verdict_is_ready is the single place that rule lives.
@@ -525,23 +571,20 @@ def main(argv=None) -> int:
             "target": str(root), "ready": ready,
             "rows": [{"status": s, "check": c, "detail": d} for s, c, d in rows],
             "repo_only_tests": repo_only, "tests_total": total,
-            "canonical_test_command": (f"cd {Path.home()}/openclaw-onboarding/71-blackceo-signature-page"
-                                       " && python3 -m pytest -q tests"),
+            "canonical_test_command": test_command,
         }, indent=2))
     else:
         print(f"Skill 71 installed-runtime preflight — target: {root}")
         for status, check, detail in rows:
             print(f"  [{status}] {check}" + (f" — {detail}" if detail else ""))
-        print(f"  [{'AVAILABLE' if repo_shaped else 'NOT RUN'}] repository suite: "
+        print(f"  [{'AVAILABLE' if has_repo_layout else 'NOT RUN'}] repository suite: "
               f"{repo_only} of {total} test files resolve fixtures from the repository root")
-        if repo_shaped:
+        if has_repo_layout:
             print("            this tree has the repository layout; the preflight does not run them —")
-            print("            command: cd ~/openclaw-onboarding/71-blackceo-signature-page "
-                  "&& python3 -m pytest -q tests")
+            print(f"            command: {test_command}")
         else:
-            print("            a lone-directory install cannot run them; canonical command:")
-            print("            cd ~/openclaw-onboarding/71-blackceo-signature-page "
-                  "&& python3 -m pytest -q tests")
+            print("            a lone-directory install carries no repository suite; "
+                  "no command is offered for one")
         print("VERDICT:", "installed runtime ready" if ready else "installed runtime GAP")
     return 0 if ready else 1
 

@@ -1,0 +1,57 @@
+{
+  "unit": "S75-T06",
+  "acceptance_row": "S75-A06",
+  "acceptance_row_text": "Real writing dispatch is correlated to output; every featured/speaking/reacting/recurring person has a stable profile; no generic unexplained extras or missing cast bypass.",
+  "acceptance_row_source": "<HOME>/Downloads/Skill 75 - Story, Character Bible and Music Upgrade/ACCEPTANCE-MATRIX.md",
+  "head": "1af52e281fc08fac069112242faeaecdd1debf93",
+  "base": "7a206be199853840ebf4b8da570ee71eb6bdba0f",
+  "checks": [
+    {
+      "command": "git -C <clean-clone> log origin/main --format='%H|%ci|%s' (filtered for the subject token S75-T06); then git -C <clean-clone> merge-base --is-ancestor 1af52e281fc08fac069112242faeaecdd1debf93 origin/main",
+      "rc": 0,
+      "last_line": "head is the newest origin/main commit whose subject names S75-T06; merge-base --is-ancestor rc=0"
+    },
+    {
+      "command": "python3 -I test_cast_writer_s75_t06.py   (cwd: 75-drama-song-ad-factory/scripts/core/character_bible, at tree b61bb6c49332de3059b8454d537980f9fdf0623e)",
+      "rc": 0,
+      "last_line": "68 passed, 0 failed, 68 total"
+    },
+    {
+      "command": "python3 -I test_cast_writer_s75_t06.py   in a throwaway copy under the lane scratch, after ONE mutation in cast_writer.py verify_receipt (response_digest vs canonical_digest(response) comparison disabled)",
+      "rc": 1,
+      "last_line": "67 passed, 1 failed, 68 total -- FAIL test_tampered_response_breaks_the_receipt: AssertionError"
+    }
+  ],
+  "literal_binding": [
+    {
+      "clause": "Real writing dispatch is correlated to output",
+      "command": "python3 -I test_cast_writer_s75_t06.py   (cwd: 75-drama-song-ad-factory/scripts/core/character_bible, at tree b61bb6c49332de3059b8454d537980f9fdf0623e)",
+      "rc": 0,
+      "last_line": "ok test_dispatch_is_invoked_once_with_exact_revisions; ok test_receipt_correlates_output_to_the_captured_response; ok test_tampered_response_breaks_the_receipt; ok test_missing_dispatcher_refuses_before_any_work; 68 passed, 0 failed, 68 total"
+    },
+    {
+      "clause": "every featured/speaking/reacting/recurring person has a stable profile",
+      "command": "python3 -I test_cast_writer_s75_t06.py   (cwd: 75-drama-song-ad-factory/scripts/core/character_bible, at tree b61bb6c49332de3059b8454d537980f9fdf0623e)",
+      "rc": 0,
+      "last_line": "ok test_every_identity_carries_wants_fears_beliefs_and_speech; ok test_reaction_people_and_meaningful_extras_must_be_cast; ok test_scene_identity_revision_binding_needs_a_cast_profile; ok test_undeclared_speaker_is_refused; ok test_anonymous_speaker_is_refused; ok test_lip_sync_performer_binding_must_be_cast; ok test_performer_id_binding_must_be_cast; 68 passed, 0 failed, 68 total"
+    },
+    {
+      "clause": "no generic unexplained extras or missing cast bypass",
+      "command": "python3 -I test_cast_writer_s75_t06.py   (cwd: 75-drama-song-ad-factory/scripts/core/character_bible, at tree b61bb6c49332de3059b8454d537980f9fdf0623e)",
+      "rc": 0,
+      "last_line": "ok test_generic_descriptor_as_display_name_is_refused; ok test_generic_descriptor_refused_in_either_position; ok test_the_generic_extra_family_is_closed_in_both_positions; ok test_missing_cast_key_is_not_an_empty_cast; ok test_empty_cast_is_refused; ok test_incomplete_cast_is_refused_by_name; ok test_people_free_requires_a_stated_reason; ok test_no_modern_coinage_descriptor_is_accepted_through_author_cast; 68 passed, 0 failed, 68 total"
+    }
+  ],
+  "clauses": [
+    "Real writing dispatch is correlated to output",
+    "every featured/speaking/reacting/recurring person has a stable profile",
+    "no generic unexplained extras or missing cast bypass"
+  ],
+  "unproven_clauses": [],
+  "verdict": "PASS",
+  "no_verifiable_check": false,
+  "author_checker_lineage": "author: deepseek-chain builder-chain lane; it minted this receipt and wrote no product code (this branch adds only this file). checker: the in-tree check 75-drama-song-ad-factory/scripts/core/character_bible/test_cast_writer_s75_t06.py, authored under the unit itself and not by this lane. That check is PASS and is live: one mutation in verify_receipt flips test_tampered_response_breaks_the_receipt to FAIL. No separate independent reviewer ran for this mint, so this receipt is an author-side candidate, not an independent QC verdict.",
+  "minted_at": "2026-10-28T07:41:38Z",
+  "tree_digest": "b61bb6c49332de3059b8454d537980f9fdf0623e",
+  "honesty_note": "Checks prove the in-tree cast-writer check for S75-T06 passes at tree b61bb6c4 and that it reacts to a changed receipt-correlation limb, and that the named head is an ancestor of origin/main. They do not prove any end-to-end drama production run, any live provider dispatch (dispatch is injected in this module by design), any Notion or library write, or that the recorded residual 'Le/Lê + role noun' generic-name channel (owner decision pending, pinned in CONTROL_NAMES) is resolved. Bounded proof rule: one candidate test file was examined and it exercised the row, so no second candidate was opened."
+}

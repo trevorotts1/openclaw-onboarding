@@ -97,7 +97,7 @@ applies to disclosure copy behavior.
   payment method and billing type (doc 09 section 7 capability matrix;
   recorded in the checkout request as `native_capability_evidence_ref`,
   a required field of S79's own checkout request schema:
-  `work/schema/checkout.schema.json`, `$defs/checkout_request`).
+  `references/checkout.schema.json`, `$defs/checkout_request`).
 
 ## 4. Outputs
 
@@ -402,7 +402,7 @@ Disposition: ANSWERED BY S49 RECORD.
   pending or failed payment traverses no paid edge and is never a
   decline.
 - Source: S49 concurrence on S79's interface positions, Q9
-  (2026-10-16), `handoffs/S49-concurrence-s79-q9-int03.md`.
+  (2026-10-16), S49-concurrence-s79-q9-int03 (design-room record, not shipped in this repository).
 
 ## 8. Disposition of CR-S81-001..009 against this revision
 
@@ -416,7 +416,7 @@ concurrence filing. Section 9 records the resulting gap state.
 
 S81 filed nine change requests against the draft on 2026-10-16
 (CR-S81-001..009). S79 answered all nine on 2026-10-17
-(`handoffs/change-requests/S79-REPLY-CR-S81-001-009.md`), accepting
+S79-REPLY-CR-S81-001-009 (design-room record, not shipped in this repository), accepting
 interface-text changes into this revision. The S79 room then closed
 without writing the revision. The dispositions below record, per
 request, what the confirmed contract position is on the filed record,

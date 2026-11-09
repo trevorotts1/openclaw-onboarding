@@ -65,7 +65,11 @@ _ADAPTERS_DIR = Path(__file__).resolve().parent.parent / "adapters"
 if _ADAPTERS_DIR.is_dir() and str(_ADAPTERS_DIR) not in sys.path:
     sys.path.insert(0, str(_ADAPTERS_DIR))
 
-from adapter_common import ADAPTER_VERIFICATION_SOURCES  # noqa: E402
+from adapter_common import (  # noqa: E402
+    ADAPTER_VERIFICATION_SOURCES,
+    REQUEST_SCHEMA_PATH,
+    load_json,
+)
 from routing_state import PaymentAttemptGuard  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -116,7 +120,15 @@ TRANSITIONS = {
 VERIFIED_SOURCES = ADAPTER_VERIFICATION_SOURCES
 
 ENTRY_CONTEXTS = frozenset({"from_upsell_1", "from_downsell_1"})
-BILLING_TYPES = frozenset({"one_time", "recurring"})
+# UPS-28: ONE billing vocabulary. adapter_common owns the request contract
+# (REQUEST_SCHEMA_PATH) and render_disclosure accepts every type in it, so the
+# binding core takes the same set (one_time, recurring, installment, trial)
+# instead of a private subset that refuses what the adapters already render.
+# native_upsell.py imports this name; nothing else defines it. Fail closed:
+# an unreadable schema raises at import, it is never defaulted.
+BILLING_TYPES = frozenset(
+    load_json(REQUEST_SCHEMA_PATH)["properties"]["disclosure"]["properties"]["billing_type"]["enum"]
+)
 
 _CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 # A structured evidence reference: a scheme-prefixed ref (ledger:...,
@@ -194,8 +206,9 @@ class BindingContext:
     parent_order_ref plus the adapter verification source that proved it.
     capability_evidence_ref is REQUIRED (interface section 3): without
     recorded capability evidence there is nothing lawful to bind.
-    recurring_terms is required iff billing_type == "recurring", and
-    forbidden for one_time (mirrors adapter_common.render_disclosure).
+    recurring_terms is required for every billing_type except one_time
+    (recurring, installment, trial), and forbidden for one_time (mirrors
+    adapter_common.render_disclosure).
 
     F2 repair (interface section 3, full list): launch_revision is the
     launch revision as its OWN field, distinct from launch_ref;
@@ -273,11 +286,12 @@ class BindingContext:
             raise BindingError("currency must be a three-letter uppercase code.")
         if self.billing_type not in BILLING_TYPES:
             raise BindingError("billing_type must be one of %s." % sorted(BILLING_TYPES))
-        if self.billing_type == "recurring":
+        if self.billing_type != "one_time":
             if not isinstance(self.recurring_terms, Mapping) or not self.recurring_terms:
                 raise BindingError(
-                    "billing_type 'recurring' requires recurring_terms so the "
+                    "billing_type %r requires recurring_terms so the "
                     "obligation can be disclosed before authorization."
+                    % (self.billing_type,)
                 )
         elif self.recurring_terms is not None:
             raise BindingError("A one_time binding must not carry recurring terms.")

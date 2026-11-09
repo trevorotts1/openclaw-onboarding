@@ -20,5 +20,10 @@
     "yes",
     "9.2",
     "client-directed brief - lighthouse letters; caption+slide overrides logged"
-  ]
+  ],
+  "spreadsheet_id": "sheet-northwind-planner",
+  "schema_version": "planner-2026.09-v1",
+  "row_key": "2026-07-06",
+  "updatedRange": "Planner!A2:T2",
+  "content_hash": "2bbb1747619a0d32775b31dfc3879b45ebe630869f5b420c6111a977cd027d4c"
 }

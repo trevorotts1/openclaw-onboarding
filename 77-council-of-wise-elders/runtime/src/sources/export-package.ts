@@ -17,9 +17,9 @@
  * packages is reconciled at the integration review, per the build plan.
  */
 
-import type { PackQualification, WorkCoverage } from './coverage';
-import { isSeatId, validateAdvisorPack, type PackValidationOptions } from './packs';
-import { errorDiagnostic, hasErrors, type Diagnostic } from './schemas';
+import type { PackQualification, WorkCoverage } from './coverage.js';
+import { isSeatId, validateAdvisorPack, type PackValidationOptions } from './packs.js';
+import { errorDiagnostic, hasErrors, type Diagnostic } from './schemas.js';
 
 export interface Skill22ExportPackage {
   seat_id: string;

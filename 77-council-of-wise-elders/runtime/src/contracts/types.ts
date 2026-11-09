@@ -48,7 +48,7 @@ export type {
   TypedFact,
   Verdict,
   VerifiedQuoteCandidate,
-} from './schemas';
+} from './schemas.js';
 
 export type {
   AmendmentDisposition,
@@ -81,7 +81,7 @@ export type {
   ValidationStatus,
   VerdictLabel,
   CouncilEventType,
-} from './enums';
+} from './enums.js';
 
-export type { Money, Clock, IdSource } from './primitives';
-export type { ContractErrorCode, ValidationIssue, ValidationResult } from './errors';
+export type { Money, Clock, IdSource } from './primitives.js';
+export type { ContractErrorCode, ValidationIssue, ValidationResult } from './errors.js';

@@ -254,6 +254,12 @@ def test_sync_submit_hands_save_its_envelope():
     tmp = tempfile.mkdtemp(prefix="v2971-sync-")
     try:
         calls = []
+        # F11 refuses a saved path that is missing or empty, so the fake save
+        # adapter must materialize the bytes it reports.
+        wpath, apath = os.path.join(tmp, "w_0.json"), os.path.join(tmp, "a.mp3")
+        for _p in (wpath, apath):
+            with open(_p, "wb") as _f:
+                _f.write(b"offline-output")
 
         def fake_runner(argv):
             calls.append(list(argv))
@@ -268,7 +274,7 @@ def test_sync_submit_hands_save_its_envelope():
                                                  "data": {"alignedWords": [{"word": "w"}]}},
                                     "sync": True}}
             if sub == "save":
-                return 0, {"state": "success", "saved_paths": ["/tmp/w_0.json"]}
+                return 0, {"state": "success", "saved_paths": [wpath]}
             if sub == "wait":
                 return 0, {"state": "success"}
             return 0, {"ok": True}
@@ -289,14 +295,18 @@ def test_sync_submit_hands_save_its_envelope():
             stage="word-timings")
         save_argv = [c for c in calls if len(c) > 1 and c[1] == "save"]
         check("4: the sync job dispatched ok", env.get("outcome") == "ok", str(env))
-        # dispatch removes its own temp dir in `finally`, so the file is gone by
-        # now; the receipt is the ARGV it actually built.
-        check("4: save was called with --info pointing at sync-info.json",
-              bool(save_argv) and "--info" in save_argv[0]
-              and save_argv[0][save_argv[0].index("--info") + 1].endswith("sync-info.json"),
+        # F11 keeps the sync envelope under the save dir (it is the only copy
+        # of the result), so --info points at that retained file, which a
+        # later save-only resume can still read.
+        info = (save_argv[0][save_argv[0].index("--info") + 1]
+                if save_argv and "--info" in save_argv[0] else "")
+        check("4: save was called with --info pointing at the retained sync info",
+              os.path.basename(info).startswith(".kie-sync-info-")
+              and os.path.dirname(info) == os.path.join(tmp, "out")
+              and os.path.isfile(info),
               str(save_argv))
         check("4: the saved word-timing file reaches the envelope",
-              "/tmp/w_0.json" in (env.get("evidence", {}).get("saved_paths") or []),
+              wpath in (env.get("evidence", {}).get("saved_paths") or []),
               str(env.get("evidence")))
 
         # The async path must NOT pass --info.
@@ -315,7 +325,7 @@ def test_sync_submit_hands_save_its_envelope():
                 return 0, {"state": "success", "task_id": "T1",
                            "raw_family": "market", "credits_consumed": 3}
             if sub == "save":
-                return 0, {"state": "success", "saved_paths": ["/tmp/a.mp3"]}
+                return 0, {"state": "success", "saved_paths": [apath]}
             return 0, {"ok": True}
 
         db2 = os.path.join(tmp, "spend2.db")

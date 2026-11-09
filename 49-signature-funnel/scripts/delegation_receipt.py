@@ -37,6 +37,13 @@ against an author who deliberately hand-forges a provider adapter log — no
 offline, deterministic prover can be. It is honest about that rather than
 claiming cryptographic provenance it does not have.
 
+HARNESS IDENTITY (ENF-17): `recorded_by` is a label, and a JSONL line is text anyone can
+append. Every line a real adapter process writes therefore also carries `harness_sig`, an
+HMAC under the OPERATOR KEY (prove_sf_cert.load_operator_key — a secret the AI session does
+not hold) over the line and the run it belongs to. `require_signed()` / `verify_delivery_store()`
+are the CLIENT-DELIVERY forms: an ABSENT store, an UNSIGNED line, a line signed for another
+run, or one with a bad signature all FAIL. A line the AI appended by hand cannot be signed.
+
 SEQUENCING (A10): this WRITING side lands before any phase REQUIRES it. Callers
 in this release use `validate_if_present()` — receipts are validated strictly
 whenever they exist, and their presence/absence is recorded on the certificate,
@@ -51,6 +58,8 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
+import hmac
 import inspect
 import json
 import sys
@@ -62,6 +71,10 @@ EXIT_VIOLATION = 2
 EXIT_FAILCLOSED = 3
 
 RECEIPTS_REL = "delegation_receipts.jsonl"
+SIG_FIELD = "harness_sig"
+# Set ONLY by this module's own CLI (a separate adapter process naming itself); a library
+# caller cannot relabel itself — see _caller_module().
+_CLI_ADAPTER: Optional[str] = None
 
 # Modules that are the SUBJECT of a certificate. A receipt stamped with one of
 # these was written by the thing being judged and is rejected outright.
@@ -96,6 +109,8 @@ def _caller_module() -> str:
     caller-supplied: a producer cannot label itself as somebody else through this
     API, so an orchestrator that writes its own receipt is stamped as such and the
     requirer rejects it."""
+    if _CLI_ADAPTER:
+        return _CLI_ADAPTER
     for frame in inspect.stack()[2:]:
         name = frame.frame.f_globals.get("__name__", "")
         if name != __name__:
@@ -122,6 +137,40 @@ def _real_id(value: Any) -> bool:
         return False
     v = value.strip()
     return bool(v) and v.lower() not in PLACEHOLDER_IDS
+
+
+_CERT_MOD: Any = None
+
+
+def _cert_module() -> Any:
+    """prove_sf_cert, found next to this file whatever the caller's sys.path (a consumer
+    may load this module by file path). sys.path is never mutated."""
+    global _CERT_MOD
+    if _CERT_MOD is None:
+        try:
+            import prove_sf_cert as mod
+        except ImportError:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "s49_prove_sf_cert", Path(__file__).resolve().parent / "prove_sf_cert.py")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        _CERT_MOD = mod
+    return _CERT_MOD
+
+
+def _operator_key(run_dir: Optional[Path] = None) -> Optional[str]:
+    try:
+        return _cert_module().load_operator_key(run_dir)[0]
+    except Exception:  # noqa: BLE001 — no key available == cannot sign, never a crash
+        return None
+
+
+def _entry_sig(entry: Dict[str, Any], key: str) -> str:
+    body = {k: v for k, v in entry.items() if k != SIG_FIELD}
+    return hmac.new(key.encode("utf-8"),
+                    json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+                    hashlib.sha256).hexdigest()
 
 
 def _status_ok(value: Any) -> bool:
@@ -155,11 +204,15 @@ def record(run_dir: Path,
         "remote_id": str(remote_id),
         "covers": [str(c) for c in (covers or [])],
         "recorded_by": _caller_module(),
+        "run_id": Path(run_dir).resolve().name,
         "at": _now(),
     }
     if extra:
         for k, v in extra.items():
             entry.setdefault(str(k), v)
+    key = _operator_key(Path(run_dir))
+    if key:  # a process without the operator key writes an UNSIGNED line, which delivery refuses
+        entry[SIG_FIELD] = _entry_sig(entry, key)
     path = Path(run_dir) / RECEIPTS_REL
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
@@ -209,19 +262,39 @@ def reset(run_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 # REQUIRER.
 # ---------------------------------------------------------------------------
+def _sig_fails(e: Dict[str, Any], who: str, af: str, key: Optional[str],
+               run_id: Optional[str]) -> List[str]:
+    sig = e.get(SIG_FIELD)
+    if not isinstance(sig, str) or not sig:
+        return [f"{af}-UNSIGNED: {who} carries no harness signature — a hand-written line "
+                "is not provider evidence"]
+    if key is None:
+        return [f"{af}-UNSIGNED: no operator key to verify {who}'s harness signature (fail-closed)"]
+    if not hmac.compare_digest(_entry_sig(e, key), sig):
+        return [f"{af}-UNSIGNED: {who} harness signature does not match the operator key — forged"]
+    if run_id is not None and e.get("run_id") != run_id:
+        return [f"{af}-UNSIGNED: {who} was signed for run {e.get('run_id')!r}, not {run_id!r}"]
+    return []
+
+
 def _check_entries(entries: List[Dict[str, Any]],
                    phase: str,
                    af: str,
-                   must_cover: Optional[Iterable[str]]) -> List[str]:
+                   must_cover: Optional[Iterable[str]],
+                   signed_for: Optional[Path] = None) -> List[str]:
     fails: List[str] = []
     scoped = [e for e in entries if str(e.get("phase", "")).strip() == phase]
     if not scoped:
         fails.append(f"{af}-MISSING-PHASE: no provider receipt recorded for phase {phase!r}")
         return fails
+    key = _operator_key(signed_for) if signed_for is not None else None
+    run_id = Path(signed_for).resolve().name if signed_for is not None else None
 
     covered = set()
     for i, e in enumerate(scoped):
         who = f"{phase} receipt #{i} ({e.get('provider', '?')}/{e.get('operation', '?')})"
+        if signed_for is not None:
+            fails.extend(_sig_fails(e, who, af, key, run_id))
         if is_subject_module(e.get("recorded_by")):
             fails.append(
                 f"{af}-SELF-AUTHORED: {who} was recorded by "
@@ -252,8 +325,11 @@ def _check_entries(entries: List[Dict[str, Any]],
 
 def require(run_dir: Path, phase: str, *,
             must_cover: Optional[Iterable[str]] = None,
-            af: str = "AF-DELEG-RECEIPT") -> Tuple[bool, str]:
-    """HARD form: the phase does not attest without a valid provider receipt."""
+            af: str = "AF-DELEG-RECEIPT",
+            signed: bool = False) -> Tuple[bool, str]:
+    """HARD form: the phase does not attest without a valid provider receipt. With
+    signed=True (the client-delivery form) every receipt must also carry a valid harness
+    signature for THIS run."""
     try:
         entries = load(run_dir)
     except ReceiptError as exc:
@@ -261,11 +337,47 @@ def require(run_dir: Path, phase: str, *,
     if not entries:
         return False, (f"{af}-ABSENT: no {RECEIPTS_REL} in the run dir — the delegated "
                        f"phase {phase} has no provider evidence (fail-closed)")
-    fails = _check_entries(entries, phase, af, must_cover)
+    fails = _check_entries(entries, phase, af, must_cover, Path(run_dir) if signed else None)
     if fails:
         return False, " | ".join(fails)
     n = sum(1 for e in entries if str(e.get("phase", "")).strip() == phase)
-    return True, f"{n} provider receipt(s) verified for {phase}"
+    return True, f"{n} provider receipt(s) verified for {phase}" + (" (harness-signed)" if signed else "")
+
+
+def require_signed(run_dir: Path, phase: str, *,
+                   must_cover: Optional[Iterable[str]] = None,
+                   af: str = "AF-DELEG-RECEIPT") -> Tuple[bool, str]:
+    """CLIENT-DELIVERY form (ENF-17): an absent store, an unsigned/forged line, or a line
+    signed for another run FAILS. 'absent' is never an attestation."""
+    return require(run_dir, phase, must_cover=must_cover, af=af, signed=True)
+
+
+def verify_delivery_store(run_dir: Path, phases: Iterable[str] = (),
+                          af: str = "AF-DELEG-RECEIPT") -> Tuple[bool, str]:
+    """Gate for a client-delivery package (83 check / assemble): the store must exist, be
+    non-empty, and EVERY line must be harness-signed for this run and not authored by a
+    certified module; each named phase must be covered by at least one such line."""
+    run_dir = Path(run_dir)
+    try:
+        entries = load(run_dir)
+    except ReceiptError as exc:
+        return False, f"{af}-MALFORMED: {exc}"
+    if not entries:
+        return False, (f"{af}-ABSENT: no {RECEIPTS_REL} in {run_dir.name} — a client delivery "
+                       "without a provider receipt store is not provider-backed (fail-closed)")
+    key = _operator_key(run_dir)
+    fails: List[str] = []
+    for i, e in enumerate(entries):
+        who = f"receipt line #{i} ({e.get('phase', '?')}/{e.get('provider', '?')})"
+        fails.extend(_sig_fails(e, who, af, key, run_dir.resolve().name))
+        if is_subject_module(e.get("recorded_by")):
+            fails.append(f"{af}-SELF-AUTHORED: {who} recorded by {e.get('recorded_by')!r}")
+    for ph in phases:
+        if not any(str(e.get("phase", "")).strip() == ph for e in entries):
+            fails.append(f"{af}-MISSING-PHASE: no provider receipt recorded for phase {ph!r}")
+    if fails:
+        return False, " | ".join(fails)
+    return True, f"{len(entries)} harness-signed provider receipt(s) verified"
 
 
 def validate_if_present(run_dir: Path, phase: str, *,
@@ -296,13 +408,17 @@ def validate_if_present(run_dir: Path, phase: str, *,
 
 
 def store_state(run_dir: Path) -> str:
-    """'verified-store' / 'absent' / 'malformed' — the value a certificate records
-    so a reader can tell whether the delegated phases were receipt-backed."""
+    """'present' / 'unsigned' / 'absent' / 'malformed' — the value a certificate records
+    so a reader can tell whether the delegated phases were receipt-backed. 'present' now
+    means every line is harness-signed for this run; a hand-written store reads 'unsigned'."""
     try:
         entries = load(run_dir)
     except ReceiptError:
         return "malformed"
-    return "present" if entries else "absent"
+    if not entries:
+        return "absent"
+    ok, _ = verify_delivery_store(run_dir)
+    return "present" if ok else "unsigned"
 
 
 # ---------------------------------------------------------------------------
@@ -431,6 +547,62 @@ def _self_test() -> int:
         say(good and state == "absent" and store_state(rd) == "absent",
             "absent store -> attests with state='absent' (recorded on the certificate)")
 
+    # (10) ENF-17 — CLIENT-DELIVERY form: the receipt store must be present AND harness-signed.
+    import os
+    saved = os.environ.get("SF_OPERATOR_KEY_FILE")
+    with tempfile.TemporaryDirectory() as keydir, tempfile.TemporaryDirectory() as td:
+        kf = Path(keydir) / "operator.key"
+        kf.write_text("selftest-operator-key-0123456789abcdef\n", encoding="utf-8")
+        kf.chmod(0o600)
+        rd = Path(td) / "run-a"
+        rd.mkdir()
+        os.environ["SF_OPERATOR_KEY_FILE"] = str(kf)
+        try:
+            good, detail = verify_delivery_store(rd, ["P3-IMAGES"])
+            say(not good and "ABSENT" in detail, f"absent store fails a client delivery ({detail[:60]})")
+            # a line the AI hand-appends: well-formed, honest-looking, unsigned
+            (rd / RECEIPTS_REL).write_text(json.dumps({
+                "phase": "P3-IMAGES", "provider": "kie", "operation": "createTask",
+                "provider_response_id": "kie-resp-1", "http_status": 200, "remote_id": "img-a",
+                "covers": ["img-a"], "recorded_by": "kie_image_adapter", "at": _now()}) + "\n",
+                encoding="utf-8")
+            good, detail = verify_delivery_store(rd, ["P3-IMAGES"])
+            good2, detail2 = require_signed(rd, "P3-IMAGES", must_cover=["img-a"])
+            say(not good and not good2 and "UNSIGNED" in detail and "UNSIGNED" in detail2,
+                "self-written (unsigned) receipt line fails delivery in both signed forms")
+            say(store_state(rd) == "unsigned", "a hand-written store reads 'unsigned', never 'present'")
+            reset(rd)
+            stub.emit(rd, "P3-IMAGES", ["img-a"])  # adapter process holding the operator key
+            good, detail = verify_delivery_store(rd, ["P3-IMAGES"])
+            good2, detail2 = require_signed(rd, "P3-IMAGES", must_cover=["img-a"])
+            say(good and good2 and store_state(rd) == "present",
+                f"harness-signed adapter receipts pass delivery ({detail})")
+            good, detail = verify_delivery_store(rd, ["P3-IMAGES", "P4-MEDIA"])
+            say(not good and "MISSING-PHASE" in detail, "a phase with no receipt fails delivery")
+            # signature is bound to the run: the same file dropped into another run fails
+            other = Path(td) / "run-b"
+            other.mkdir()
+            (other / RECEIPTS_REL).write_text((rd / RECEIPTS_REL).read_text(encoding="utf-8"), encoding="utf-8")
+            good, detail = verify_delivery_store(other)
+            say(not good and "UNSIGNED" in detail, "receipts copied into another run fail (run-bound signature)")
+            # a line edited after signing fails
+            line = json.loads((rd / RECEIPTS_REL).read_text(encoding="utf-8").splitlines()[0])
+            line["covers"] = ["img-a", "img-ghost"]
+            (rd / RECEIPTS_REL).write_text(json.dumps(line) + "\n", encoding="utf-8")
+            good, detail = verify_delivery_store(rd)
+            say(not good and "forged" in detail, "an edited signed line fails (signature no longer matches)")
+            # without the operator key nothing verifies
+            os.environ.pop("SF_OPERATOR_KEY_FILE", None)
+            reset(rd)
+            stub.emit(rd, "P3-IMAGES", ["img-a"])   # unsigned: no key in this process
+            good, detail = verify_delivery_store(rd)
+            say(not good and "UNSIGNED" in detail, "no operator key -> receipts are unsigned and delivery fails")
+        finally:
+            if saved is None:
+                os.environ.pop("SF_OPERATOR_KEY_FILE", None)
+            else:
+                os.environ["SF_OPERATOR_KEY_FILE"] = saved
+
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
 
@@ -445,6 +617,11 @@ def main(argv: List[str]) -> int:
     ap.add_argument("--run-dir", help="the run directory")
     ap.add_argument("--record", action="store_true", help="append one provider receipt")
     ap.add_argument("--verify", metavar="PHASE", help="require a valid receipt for PHASE")
+    ap.add_argument("--verify-delivery", nargs="*", metavar="PHASE", default=None,
+                    help="CLIENT-DELIVERY gate (ENF-17): store present, every line harness-signed "
+                         "for this run, each named PHASE covered")
+    ap.add_argument("--adapter", help="the adapter process's own name, for --record (the line is "
+                                      "only delivery-valid when the process holds the operator key)")
     ap.add_argument("--phase")
     ap.add_argument("--provider")
     ap.add_argument("--operation", default="call")
@@ -462,6 +639,13 @@ def main(argv: List[str]) -> int:
         print("USAGE ERROR: pass --run-dir (or --self-test).")
         return EXIT_FAILCLOSED
     run_dir = Path(args.run_dir).expanduser().resolve()
+    global _CLI_ADAPTER
+    _CLI_ADAPTER = (args.adapter or "").strip() or None
+
+    if args.verify_delivery is not None:
+        ok, detail = verify_delivery_store(run_dir, args.verify_delivery)
+        print(("PASS: " if ok else "FAIL: ") + detail)
+        return EXIT_OK if ok else EXIT_VIOLATION
 
     if args.record:
         missing = [f for f, v in (("--phase", args.phase), ("--provider", args.provider),
@@ -483,7 +667,7 @@ def main(argv: List[str]) -> int:
         print(("PASS: " if ok else "FAIL: ") + detail)
         return EXIT_OK if ok else EXIT_VIOLATION
 
-    print("USAGE ERROR: pass --record, --verify PHASE, or --self-test.")
+    print("USAGE ERROR: pass --record, --verify PHASE, --verify-delivery, or --self-test.")
     return EXIT_FAILCLOSED
 
 

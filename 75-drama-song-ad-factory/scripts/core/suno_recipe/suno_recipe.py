@@ -294,6 +294,11 @@ MISPLACED_CALLBACK_KEYS = ("callback_url", "callbackUrl", "callback",
                            "call_back_url", "CallBackUrl")
 
 _SPOKEN_WORD_RE = re.compile(r"\b(spoken|speaks?|speaking|speech|talk\w*|narrat\w*)\b", re.I)
+#: C05-CUE-RATES: the one instrument name the delivery-word scan false-positives
+#: on. A "talking drum" is percussion, not a spoken-delivery direction, so it is
+#: removed before the at-most-once count. Nothing else is excused: "spoken",
+#: "speaks", "speech", "narrated" and any other "talk*" still count.
+_INSTRUMENT_TALK_RE = re.compile(r"\btalking\s+drum\b", re.I)
 
 
 class RecipeError(ValueError):
@@ -1248,6 +1253,7 @@ def check_style_text(text):
     # not counted against the at-most-once rule.
     own = text.replace(_MS.DELIVERY_MAP_CLAUSES[0][1], "")
     own = own.replace(_MS.DELIVERY_MAP_CLAUSES[1][1], "").replace(_MS.DELIVERY_MAP_CLAUSES[2][1], "")
+    own = _INSTRUMENT_TALK_RE.sub("", own)   # "talking drum" is percussion, not a delivery
     n = len(_SPOKEN_WORD_RE.findall(own))
     if n > 1:
         errs.append("style text names spoken delivery %d times, at most once" % n)

@@ -13,7 +13,7 @@
 #   4. idempotency                            (re-run entry -> reproduce certificate_sha) [prose-gated]
 #   5. tone-core lockstep                     (verify_tone_core_sync.py PASS)
 #   6. shared_tone_core manifest key present
-#   7. no-Anthropic + no-client-name + no-absolute-path scans over shipped files
+#   7. no-client-name + no-absolute-path scans over shipped files
 #   8. version routing                        (version=book accepted; version=brand parks/handoff)
 #   11. mini-app gate (U20)                   (isolation prover + worker node --test + live smoke)
 #
@@ -188,14 +188,11 @@ else
     fails=$((fails + 1))
 fi
 
-# 7) no-Anthropic / no-client-name / no-absolute-path scans over shipped files.
+# 7) no-client-name / no-absolute-path scans over shipped files.
 echo "-- 7) anti-pattern scans over shipped files --"
 if SKILL_DIR="$SKILL_DIR" "$PY" - <<'PY'
 import os, re, sys
 skill = os.environ["SKILL_DIR"]
-# concrete Anthropic MODEL-ID shapes only (lowercase config ids) — NOT the words
-# "Anthropic"/"claude" used in this skill's own ban documentation.
-anth = re.compile(r"claude-(?:opus|sonnet|haiku|instant|fable)\b|claude-\d|anthropic/[a-z]|us\.anthropic\.[a-z]")
 # box-specific absolute paths must never be baked into shipped files. (Fragment-built
 # so this scanner file does not self-match its own pattern.)
 abspath = re.compile("/" + "Users/" + "|/home/[a-z]")
@@ -224,8 +221,6 @@ for root, dirs, files in os.walk(skill):
             src = open(p, "r", errors="replace").read()
         except Exception:
             continue
-        for m in anth.finditer(src):
-            hits.append("ANTHROPIC %s: %s" % (rel, m.group(0)))
         for m in abspath.finditer(src):
             hits.append("ABSPATH %s: %s" % (rel, m.group(0)))
 if hits:
@@ -233,11 +228,11 @@ if hits:
     for h in hits:
         print("    " + h, file=sys.stderr)
     sys.exit(2)
-print("no concrete Anthropic model id, no baked absolute path in the shipped skill")
+print("no baked absolute path in the shipped skill")
 sys.exit(0)
 PY
 then
-    printf '  [PASS] no-Anthropic + no-absolute-path scan\n'
+    printf '  [PASS] no-absolute-path scan\n'
 else
     printf '  [FAIL] anti-pattern scan tripped\n'; fails=$((fails + 1))
 fi

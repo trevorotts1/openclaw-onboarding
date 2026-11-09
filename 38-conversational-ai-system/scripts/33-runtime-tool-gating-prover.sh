@@ -306,7 +306,8 @@ trap 'cleanup; rm -f "$BODY_FILE" 2>/dev/null || true' EXIT
   printf '"channel":"sms",'
   printf '"to":"%s",'              "$TEST_PHONE"
   printf '"thinking":"medium",'
-  printf '"contact_id":"%s",'      "$TEST_CONTACT_ID"
+  printf '"contact_id":"%s",
+  "message_id": "{{message.id}}",'      "$TEST_CONTACT_ID"
   printf '"first_name":"Gating",'
   printf '"last_name":"Probe",'
   printf '"email":"gating-probe@example.com",'

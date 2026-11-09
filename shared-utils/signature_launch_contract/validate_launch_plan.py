@@ -12,7 +12,9 @@ cross-field rules a generic schema engine cannot express:
   * unit ids are unique across pages, email_sequences, text_sets, automations
   * every ``waits_for`` id resolves to a unit in the same plan, never itself
   * the ``waits_for`` graph is acyclic (a cycle would stall the swarm forever)
-  * doors_close_at is after doors_open_at
+  * the launch calendar obeys the one shared law in calendar_law.py
+    (Black Friday: teaser < countdown <= doors_open <= launch < cyber_monday
+    <= last_call < doors_close; otherwise doors_open <= launch < doors_close)
   * conversation_ai.requested == false  =>  mode == "none" (and vice versa)
   * failed_payment automations exist only when offer.payment_plans is true
   * conversation_ai_reply automations exist only when AI is requested
@@ -35,6 +37,7 @@ Exit 0 = every plan valid; 1 = errors printed one per line; 2 = usage/IO.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import sys
@@ -54,10 +57,18 @@ KNOWN_KEYWORDS = {
 }
 ANNOTATION_KEYWORDS = {"$schema", "$id", "title", "description", "definitions"}
 
-_UNIT_ARRAYS = ("pages", "email_sequences", "text_sets", "automations")
+_UNIT_ARRAYS = ("pages", "email_sequences", "text_sets", "automations", "commerce_units")
 _FAILED_PAYMENT_FAMILY = "failed_payment"
 _AI_FAMILY = "conversation_ai_reply"
 _PROMOTIONAL_CAP = 5
+
+
+def _calendar_law():
+    """The one calendar law, loaded by path: consumers load this file by path too."""
+    spec = importlib.util.spec_from_file_location("signature_launch_calendar_law", HERE / "calendar_law.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def load_json(path: Path) -> dict:
@@ -214,14 +225,7 @@ def validate_plan(plan: dict, schema: dict) -> list:
         graph[unit_id] = [item for item in waits_for if item in units]
     _check_cycles(units, graph, errors)
 
-    calendar = plan["launch_calendar"]
-    try:
-        opened = datetime.fromisoformat(calendar["doors_open_at"].replace("Z", "+00:00"))
-        closed = datetime.fromisoformat(calendar["doors_close_at"].replace("Z", "+00:00"))
-        if closed <= opened:
-            errors.append("launch_calendar: doors_close_at must be after doors_open_at")
-    except ValueError:
-        pass  # already reported by the schema walker
+    errors.extend(_calendar_law().violations(plan["launch_calendar"]))
 
     ai = plan["conversation_ai"]
     if ai["requested"] and ai["mode"] == "none":

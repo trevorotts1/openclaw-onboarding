@@ -33,6 +33,7 @@ ORCH = SKILL_DIR / "run_signature_funnel.py"
 PY = sys.executable or "python3"
 
 sys.path.insert(0, str(SCRIPTS))
+import prove_sf_build  # noqa: E402  (P7 gate + the tool-run evidence fixture it reads)
 import prove_sf_graph  # noqa: E402  (canonical 3/5/7 matrix + graph/derived fixtures)
 from prove_sf_prompt_floor import _GRADE_BLOCK as SIG_GRADE_BLOCK  # noqa: E402  (canonical verbatim grade block)
 from prove_sf_prompt_floor import (  # noqa: E402  (FIX-IMG-07 required image set)
@@ -43,8 +44,9 @@ import direction_bank  # noqa: E402  (genuine, scene-bound art direction that fi
 
 GOLDEN_SIZE = 7
 
-# Documented example nonce (NOT a secret — this is a golden specimen, not a live run).
-GOLDEN_NONCE = "golden-daybreak-nonce-v1"
+# ENF-16: the certificate is signed with a throwaway OPERATOR key made per run in a temp dir
+# outside every run dir (see _new_operator_key). No nonce or key is committed or caller-supplied.
+GOLDEN_ROUTING_RECORD = {"model": "golden-specimen-model", "provider": "specimen", "tier": "content"}
 
 PRODUCT = "The Daybreak Method"
 OFFER_LEDGER = [
@@ -1849,7 +1851,7 @@ passed its fail-closed gate. Minted by the canonical no-skip orchestrator
 - **Skill version:** `{cert.get('skill_version')}`
 - **Issued at:** `{cert.get('issued_at')}`
 - **All phases pass:** **{cert.get('all_phases_pass')}**
-- **Nonce fingerprint:** `{cert.get('nonce_fingerprint')}` (specimen nonce `{GOLDEN_NONCE}`)
+- **Operator key fingerprint:** `{cert.get('operator_key_fingerprint')}` (the specimen key is ephemeral and discarded, so this committed certificate checks structurally only)
 - **HMAC signature:** `{cert.get('signature')}`
 - **Delivery:** preview-only; publishing requires explicit human approval (PRD §7 gate 7).
 
@@ -1863,8 +1865,9 @@ passed its fail-closed gate. Minted by the canonical no-skip orchestrator
 
 ```bash
 python3 49-signature-funnel/scripts/prove_sf_cert.py \\
-  --cert 49-signature-funnel/examples/golden-daybreak/delivery/golden-daybreak-FINAL/PROCESS-CERTIFICATE.json \\
-  --nonce {GOLDEN_NONCE}      # PASS (exit 0)
+  --cert 49-signature-funnel/examples/golden-daybreak/delivery/golden-daybreak-FINAL/PROCESS-CERTIFICATE.json
+# Without the operator key this reports AF-FUN-CERT-SIGNATURE (ENF-16); it passes only under
+# the key that minted it (SF_OPERATOR_KEY_FILE), which a reproduce run discards.
 ```
 
 No certificate — or a tampered one — means the funnel is NOT done
@@ -1909,11 +1912,15 @@ def _emit_build_artifacts(dst: Path) -> list:
     (dst / "pages").mkdir(parents=True, exist_ok=True)
     for profile in pages:
         rel = f"pages/{profile}.fragment.html"
-        (dst / rel).write_text(
-            f"<section class=\"sf-page\" data-stage=\"{profile}\">\n"
-            f"  <h1>{PRODUCT} — {profile} page</h1>\n"
-            f"  <div class=\"sf-body\">Signature-styled {profile} fragment for the golden funnel.</div>\n"
-            f"</section>\n", encoding="utf-8")
+        # P5-HTML parses the fragment: a root page marker and the profile's data-section markers in order,
+        # each around real text (prove_sf_build.html_fragment_violations).
+        ids = prove_sf_build.required_section_ids(prove_sf_build._structure(), profile)
+        body = "".join(f"  <div class=\"sf-sec\" data-section=\"{sid}\"><p>{PRODUCT} {profile} section {sid}: "
+                       "signature-styled copy for the golden funnel.</p></div>\n" for sid in ids)
+        if not ids:  # the design-only checkout carries microcopy, no numbered sections
+            body = f"  <p>{PRODUCT} {profile} page: signature-styled order microcopy for the golden funnel.</p>\n"
+        (dst / rel).write_text(f"<section class=\"sf-page\" data-page=\"{profile}\">\n{body}</section>\n",
+                               encoding="utf-8")
         rels.append(rel)
     _write_json(dst / "funnel_graph.json", prove_sf_graph._valid_graph(GOLDEN_SIZE))
     receipt = {
@@ -1931,12 +1938,68 @@ def _emit_build_artifacts(dst: Path) -> list:
     return rels + ["funnel_graph.json", "build_receipt.json", "derived_pages.json"]
 
 
-def _orchestrate(run_dir: Path, nonce: str) -> tuple:
-    nf = run_dir / ".sf_run_nonce"
-    nf.write_text(nonce, encoding="utf-8")
-    os.chmod(nf, 0o600)
-    proc = subprocess.run([PY, str(ORCH), "--run-dir", str(run_dir), "--nonce", nonce],
-                          capture_output=True, text=True)
+def _stage_build_evidence(run_dir: Path) -> None:
+    """P7 reads what the TOOLS wrote under the run dir, not the receipt: a sealed Skill 6 verify run
+    (build/evidence) and a wireframe + mockup set (page-images). Neither can be committed (the verify run's
+    nonce lives outside the tree), so each run dir gets prove_sf_build's own fixture; the committed golden page
+    fragments are restored over its generic ones so they are the fragments actually checked.
+    Test fixture only; never a substitute for a real tool run."""
+    prove_sf_build.write_valid_run_evidence(
+        run_dir, GOLDEN_SIZE, json.loads((HERE / "build_receipt.json").read_text(encoding="utf-8")))
+    for frag in (HERE / "pages").glob("*.fragment.html"):
+        (run_dir / "pages" / frag.name).write_text(frag.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def _prove_build() -> tuple:
+    """prove_sf_build on the golden receipt, in a throwaway run dir that carries the staged evidence."""
+    with tempfile.TemporaryDirectory(prefix="golden_daybreak_build_") as td:
+        run_dir = Path(td)
+        _stage_build_evidence(run_dir)
+        return _prove("prove_sf_build.py", ["--receipt", str(run_dir / "build_receipt.json"),
+                                            "--funnel-size", str(GOLDEN_SIZE), "--run-dir", str(run_dir)])
+
+
+def _new_operator_key(tmp: Path) -> Path:
+    """A throwaway 0600 operator key in `tmp`, which must be OUTSIDE every run dir."""
+    import secrets
+    kf = tmp / "operator.key"
+    kf.write_text(secrets.token_hex(32) + "\n", encoding="utf-8")
+    os.chmod(kf, 0o600)
+    return kf
+
+
+def _key_env(key_file: Path) -> dict:
+    env = {k: v for k, v in os.environ.items() if k != "SF_RUN_NONCE"}
+    env["SF_OPERATOR_KEY_FILE"] = str(key_file)
+    return env
+
+
+def _orchestrate(run_dir: Path, key_file: Path) -> tuple:
+    """Mint the harness-style model receipt, emit stub provider receipts (both signed with the
+    operator key), then run the orchestrator with NO nonce."""
+    env = _key_env(key_file)
+    routing = key_file.parent / "routing-record.json"
+    routing.write_text(json.dumps(GOLDEN_ROUTING_RECORD), encoding="utf-8")
+    mint = subprocess.run([PY, str(SCRIPTS / "prove_sf_cert.py"), "--mint-model-receipt", str(routing),
+                           "--run-dir", str(run_dir)], capture_output=True, text=True, env=env)
+    if mint.returncode != 0:
+        return mint.returncode, mint.stdout + mint.stderr
+    sys.path.insert(0, str(SKILL_DIR))
+    import run_signature_funnel as orch  # noqa: E402
+    saved = os.environ.get("SF_OPERATOR_KEY_FILE")
+    os.environ["SF_OPERATOR_KEY_FILE"] = str(key_file)
+    try:
+        media = json.loads((run_dir / "media_ledger.json").read_text(encoding="utf-8"))
+        keys = [orch._image_key(i) for i in media["images"]]
+        orch._stub_provider_emit(run_dir, "P3-IMAGES", keys)
+        orch._stub_provider_emit(run_dir, "P4-MEDIA", keys)
+    finally:
+        if saved is None:
+            os.environ.pop("SF_OPERATOR_KEY_FILE", None)
+        else:
+            os.environ["SF_OPERATOR_KEY_FILE"] = saved
+    proc = subprocess.run([PY, str(ORCH), "--run-dir", str(run_dir)],
+                          capture_output=True, text=True, env=env)
     return proc.returncode, (proc.stdout + proc.stderr)
 
 
@@ -2011,12 +2074,13 @@ def main() -> int:
         ("prove_sf_copy.py", ["--ledger", str(HERE / "copy_ledger.json")]),
         ("prove_sf_prompt_floor.py", ["--ledger", str(HERE / "prompt_ledger.json")]),
         ("prove_sf_graph.py", ["--graph", str(HERE / "funnel_graph.json")]),
-        ("prove_sf_build.py", ["--receipt", str(HERE / "build_receipt.json")]),
         ("prove_sf_no_pitch.py", ["--ledger", str(HERE / "media_ledger.json")]),
     ]
     prover_results = {}
+    # prove_sf_build keeps its place in the run order but is proven on the staged run dir
+    checks.insert(4, ("prove_sf_build.py", None))
     for script, args in checks:
-        rc, out = _prove(script, args)
+        rc, out = _prove_build() if args is None else _prove(script, args)
         prover_results[script] = {"rc": rc, "pass": rc == 0, "tail": out.strip().splitlines()[-1:]}
         print(f"  [{'PASS' if rc == 0 else 'FAIL'}] golden {script} (rc={rc})")
         if rc != 0:
@@ -2025,7 +2089,9 @@ def main() -> int:
     _write_json(HERE / "working" / "prover_results.json", prover_results)
 
     # 2) orchestrate the golden run-dir -> signed certificate
-    with tempfile.TemporaryDirectory(prefix="golden_daybreak_") as td:
+    with tempfile.TemporaryDirectory(prefix="golden_daybreak_") as td, \
+            tempfile.TemporaryDirectory(prefix="golden_daybreak_key_") as keydir:
+        key_file = _new_operator_key(Path(keydir))
         run_dir = Path(td) / "run-golden-daybreak"
         run_dir.mkdir()
         for name in ledgers:
@@ -2040,7 +2106,8 @@ def main() -> int:
             dst_p = run_dir / rel
             dst_p.parent.mkdir(parents=True, exist_ok=True)
             dst_p.write_text((HERE / rel).read_text(encoding="utf-8"), encoding="utf-8")
-        rc, out = _orchestrate(run_dir, GOLDEN_NONCE)
+        _stage_build_evidence(run_dir)
+        rc, out = _orchestrate(run_dir, key_file)
         cert_path = run_dir / "PROCESS-CERTIFICATE.json"
         certified = rc == 0 and cert_path.exists()
         print(f"  [{'PASS' if certified else 'FAIL'}] golden through orchestrator -> certificate (rc={rc})")
@@ -2049,10 +2116,12 @@ def main() -> int:
             fin = HERE / "delivery" / "golden-daybreak-FINAL"
             _write_json(fin / "PROCESS-CERTIFICATE.json", cert)
             _write_cert_md(fin / "PROCESS-CERTIFICATE.md", cert)
-            # re-verify the emitted cert with the documented nonce
-            vrc, vout = _prove("prove_sf_cert.py",
-                               ["--cert", str(HERE / "delivery" / "golden-daybreak-FINAL" / "PROCESS-CERTIFICATE.json"),
-                                "--nonce", GOLDEN_NONCE])
+            # re-verify the emitted cert under the same throwaway operator key (no nonce exists)
+            vproc = subprocess.run(
+                [PY, str(SCRIPTS / "prove_sf_cert.py"), "--cert",
+                 str(HERE / "delivery" / "golden-daybreak-FINAL" / "PROCESS-CERTIFICATE.json")],
+                capture_output=True, text=True, env=_key_env(key_file))
+            vrc = vproc.returncode
             print(f"  [{'PASS' if vrc == 0 else 'FAIL'}] committed certificate re-verifies (rc={vrc})")
             ok = ok and vrc == 0
         else:
@@ -2075,7 +2144,9 @@ def main() -> int:
     _write_json(HERE / "broken-variants" / "REJECTION-RESULTS.json", rejection)
 
     # 3b) E2E: the unapproved brief drives the orchestrator to NO certificate (fail-closed P0)
-    with tempfile.TemporaryDirectory(prefix="golden_daybreak_e2e_") as td:
+    with tempfile.TemporaryDirectory(prefix="golden_daybreak_e2e_") as td, \
+            tempfile.TemporaryDirectory(prefix="golden_daybreak_e2ekey_") as keydir:
+        key_file = _new_operator_key(Path(keydir))
         run_dir = Path(td) / "run-unapproved"
         run_dir.mkdir()
         for name in ("copy_ledger.json", "prompt_ledger.json", "media_ledger.json"):
@@ -2083,9 +2154,13 @@ def main() -> int:
         (run_dir / "brief.json").write_text(
             (HERE / "broken-variants" / "E_unapproved" / "brief.json").read_text(encoding="utf-8"),
             encoding="utf-8")
-        rc, out = _orchestrate(run_dir, GOLDEN_NONCE)
+        # grounded persona, so P0 fails ONLY on the unapproved brief
+        (run_dir / "persona-selection-log.md").write_text(
+            (HERE / "persona-selection-log.md").read_text(encoding="utf-8"), encoding="utf-8")
+        rc, out = _orchestrate(run_dir, key_file)
         no_cert = not (run_dir / "PROCESS-CERTIFICATE.json").exists()
-        e2e_ok = rc != 0 and no_cert
+        # the abort must be the P0 intake gate, not the front door refusing the call
+        e2e_ok = rc != 0 and no_cert and "AF-FUN-INTAKE-UNLOCKED" in out and "AF-FUN-FRONT-DOOR" not in out
         print(f"  [{'PASS' if e2e_ok else 'FAIL'}] E2E unapproved -> orchestrator aborts, NO certificate (rc={rc})")
         rejection["E_unapproved"]["e2e_orchestrator_rc"] = rc
         rejection["E_unapproved"]["e2e_no_certificate"] = no_cert

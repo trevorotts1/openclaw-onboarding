@@ -18,8 +18,10 @@ owns all engine contact.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import uuid
+from pathlib import Path
 from typing import Optional, Protocol
 
 EXIT_OK = 0
@@ -28,6 +30,55 @@ EXIT_VALIDATION = 4  # envelope/plan validation failed
 EXIT_BLOCKED = 5     # named blocker (auth state)
 
 SKILL44_VERSION = "siglaunch-s44-receiver-0.2"
+
+# S44-19 (decision: native GHL for Black Friday 2026). The siglaunch
+# pipeline (receiver -> normalizer -> processor) has no runner: no CLI,
+# webhook, poller or production catalog. The declared purchase path for
+# Black Friday 2026 is the native Convert and Flow post-sale workflows;
+# siglaunch is a later, separately approved path. This module refuses to
+# run as a production entry until a runner exists and this flag is flipped
+# by an owner-approved change.
+BLACK_FRIDAY_2026_PURCHASE_PATH = "native-ghl-post-sale-workflows"
+PRODUCTION_ENTRY_ENABLED = False
+EXIT_NOT_PRODUCTION = 6
+
+
+def main(argv=None) -> int:
+    import sys
+    print("siglaunch receiver is not a production entry: the Black Friday "
+          "2026 purchase path is " + BLACK_FRIDAY_2026_PURCHASE_PATH
+          + " (no runner exists; refusing).", file=sys.stderr)
+    return EXIT_NOT_PRODUCTION
+
+# S44-17: an approval is only what the Command Center minted from the
+# client's own reply. The receiver asks the one shared verifier
+# (shared-utils/signature_launch_contract/approval_record.py); it never
+# accepts a hash the requester computed itself.
+APPROVAL_KIND = "launch_plan_build"
+APPROVAL_SCOPE = ("workflows_draft_build",)
+_APPROVAL_RECORD_PATH = (Path(__file__).resolve().parents[4] / "shared-utils"
+                         / "signature_launch_contract"
+                         / "approval_record.py")
+
+
+class _VerifierUnavailable(Exception):
+    """The approval store cannot be consulted; fail closed."""
+
+
+def _load_approval_record():
+    if not _APPROVAL_RECORD_PATH.is_file():
+        raise _VerifierUnavailable(
+            "shared approval_record verifier is not installed")
+    spec = importlib.util.spec_from_file_location(
+        "siglaunch_approval_record", _APPROVAL_RECORD_PATH)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def default_approval_verifier(*args, **kwargs):
+    """approval_record.verify, loaded from shared-utils on first use."""
+    return _load_approval_record().verify(*args, **kwargs)
 
 _ENVELOPE_FIELDS = {
     "request_id", "request_version", "location_id", "launch_id",
@@ -46,6 +97,24 @@ _REQUIRED = _ENVELOPE_FIELDS - {"notes", "handoff_sha256",
                                 "required_evidence"}
 
 _HEX = set("0123456789abcdef")
+
+# The launch document dispatches as ONE operation.  Its slug names the
+# document, never a workflow, so it can never collide with a plan slug.
+_DOCUMENT_SLUG = "<launch-document>"
+
+
+def is_automation_build_document(value) -> bool:
+    """True when ``value`` is a launch-c automation-build document.
+
+    Deliberately duplicated from caf_executor (five lines) rather than
+    imported: the receiver must stay executor-agnostic so a fake executor can
+    stand in, and importing the production adapter would make that fake
+    depend on the real one.
+    """
+    return (isinstance(value, dict)
+            and value.get("draft_only") is True
+            and isinstance(value.get("builds"), list))
+
 
 
 def _is_sha256_hex(value) -> bool:
@@ -124,10 +193,14 @@ class Executor(Protocol):
 
 
 class Receiver:
-    def __init__(self, store, executor: Executor, configured_location: str):
+    def __init__(self, store, executor: Executor, configured_location: str,
+                 approval_verifier=None):
         self.store = store
         self.executor = executor
         self.configured_location = configured_location
+        # Same signature as approval_record.verify. Injectable so a test can
+        # stand in for the Command Center; the default is the real verifier.
+        self.approval_verifier = approval_verifier or default_approval_verifier
         # Resolved once per receiver: the exact evidence the carrier can
         # fill. Requests are checked against this set before any build.
         self.evidence_fields = executor_evidence_fields(executor)
@@ -179,14 +252,14 @@ class Receiver:
                     isinstance(field, str) and field
                     for field in required_evidence):
                 return self._refuse(
-                    EXIT_VALIDATION, "REQUIRED_EVIDENCE_INVALID",
+                    request, EXIT_VALIDATION, "REQUIRED_EVIDENCE_INVALID",
                     "required_evidence must be a list of non-empty "
                     "field names")
             unmet = sorted(set(required_evidence)
                            - self.evidence_fields)
             if unmet:
                 return self._refuse(
-                    EXIT_VALIDATION, "EVIDENCE_UNPRODUCIBLE",
+                    request, EXIT_VALIDATION, "EVIDENCE_UNPRODUCIBLE",
                     "executor cannot produce required evidence fields: "
                     f"{unmet}")
         # 2. deploy mode: fail-closed, never defaulted
@@ -201,6 +274,9 @@ class Receiver:
                 "refused before any engine call")
         # 4. approval hash over the plan as received
         approval = request["approval"]
+        if not isinstance(approval, dict):
+            return self._refuse(request, EXIT_VALIDATION, "APPROVAL_INVALID",
+                                "approval must be an object")
         if approval.get("plan_hash") != plan_hash(request["plan"]):
             return self._refuse(request, EXIT_VALIDATION, "PLAN_HASH_MISMATCH",
                                 "approval plan_hash does not match the "
@@ -213,11 +289,32 @@ class Receiver:
                     "request_version is lower than the recorded version")
             if prior["state"] == "complete" and prior["receipt"] is not None:
                 return EXIT_OK, prior["receipt"]
+        # 5b. S44-17: the approval must resolve in the Command Center
+        # record store (approver, scope, plan hash, expiry). The hash in
+        # the request is requester-computed and proves integrity only.
+        try:
+            verified = self.approval_verifier(
+                approval.get("ref"), APPROVAL_KIND, plan_hash(request["plan"]),
+                list(APPROVAL_SCOPE))
+        except _VerifierUnavailable as e:
+            return self._refuse(request, EXIT_BLOCKED,
+                                "APPROVAL_UNAVAILABLE", str(e))
+        except Exception as e:  # ApprovalRefused / ApprovalUnavailable / bug
+            code = getattr(e, "code", None)
+            if code:
+                return self._refuse(request, EXIT_GATE, code, str(e))
+            return self._refuse(
+                request, EXIT_BLOCKED, "APPROVAL_UNAVAILABLE",
+                "approval store could not be consulted "
+                f"({type(e).__name__}); refusing, never defaulting to approved")
+        if not (isinstance(verified, dict) and verified.get("ok") is True):
+            return self._refuse(request, EXIT_GATE, "APPROVAL_NOT_VERIFIED",
+                                "approval verifier did not return ok")
         # 6. capability probe (fresh evidence per dispatch attempt)
         probe = self.executor.probe()
         token_state = probe.get("token_state")
         if token_state != "healthy":
-            receipt = self._receipt_shell(request, probe)
+            receipt = self._receipt_shell(request, probe, verified)
             receipt["outcome"] = "refused"
             receipt["status"] = "blocked"
             receipt["status_claimed"] = "blocked-auth"
@@ -238,7 +335,7 @@ class Receiver:
         except ValueError as e:
             return self._refuse(request, EXIT_VALIDATION, "PLAN_INVALID", str(e))
         # 8. per-workflow execution with resume semantics
-        receipt = self._receipt_shell(request, probe)
+        receipt = self._receipt_shell(request, probe, verified)
         prior_ops = {}
         if prior and prior["receipt"]:
             prior_ops = {op["slug"]: op
@@ -401,7 +498,8 @@ class Receiver:
         "qc.checklist_complete (human-review WF items are graded by the "
         "Step-9 QC agent, not the executor)")
 
-    def _receipt_shell(self, request: dict, probe: dict) -> dict:
+    def _receipt_shell(self, request: dict, probe: dict,
+                       verified: Optional[dict] = None) -> dict:
         notes = list(request.get("notes", []))
         if request.get("handoff_sha256") is not None:
             notes.append(
@@ -416,7 +514,8 @@ class Receiver:
             # design 1.4 per-request fields
             "deploy_mode": request["deploy_mode"],
             "approval": {"ref": approval.get("ref"),
-                         "plan_hash": approval.get("plan_hash")},
+                         "plan_hash": approval.get("plan_hash"),
+                         "verified_by": (verified or {}).get("authority")},
             # seam packet sections 2/4: the hash-lock echo (None when
             # the dispatch carried no handoff)
             "handoff_sha256": request.get("handoff_sha256"),
@@ -556,6 +655,27 @@ class Receiver:
         declared, exceptions = self._partition_workflows(request)
         for entry in declared.values():
             self._validate_trigger_contract(entry)
+        if is_automation_build_document(plan):
+            # The launch document is the ONLY carrier of the expanded
+            # compiler's evidence (guard conditions, schedule suppression,
+            # unit keys, browser ledger).  It compiles and builds as ONE
+            # document through --from-automation-build; a raw plan would drop
+            # all of that.
+            build_ids = [str(b.get("id")) for b in plan.get("builds") or []
+                         if isinstance(b, dict) and b.get("id")]
+            if not build_ids:
+                raise ValueError("automation-build document carries no builds")
+            undeclared = [b for b in build_ids if b not in declared]
+            if undeclared:
+                raise ValueError(
+                    "automation-build build(s) %s are not declared in the "
+                    "request's workflows[]; refusing" % undeclared)
+            extra = [slug for slug in declared if slug not in build_ids]
+            if extra:
+                raise ValueError(
+                    "request workflow(s) %s have no automation build in the "
+                    "document; refusing" % extra)
+            return [(_DOCUMENT_SLUG, plan)], exceptions
         out = []
         for slug, wf_def in plan.items():
             if slug in ("_meta", "folder"):
@@ -687,8 +807,101 @@ class Receiver:
         exp_trigger = declared.get("trigger", {})
         return exp_trigger.get("type") in observed_types
 
+    def _execute_document(self, request: dict, document: dict,
+                          probe: dict) -> dict:
+        """Dispatch a whole launch-c automation-build document as ONE unit.
+
+        The engine compiles it through ``--from-automation-build``, so the
+        guard conditions, schedule suppression, unit keys and browser ledger
+        reach the installed graph.  Per-unit results are read from the engine's
+        own ``workflow_ids`` map; a unit the compiler refused is carried
+        verbatim and drags the verdict, never hidden behind the units that
+        built.
+        """
+        launch_id = document.get("launch_id")
+        op = {"slug": _DOCUMENT_SLUG, "status_claimed": "failed",
+              "workflow_id": None, "workflow_ids": {},
+              "expect": [], "readback": None, "errors": [],
+              "name": "launch automation build %s" % (launch_id or "(unnamed)"),
+              "folder": None,
+              "build_method": self._build_method({}, probe),
+              "trigger": None,
+              "mechanism": None,
+              "launch_id": launch_id,
+              "builds": [str(b.get("id")) for b in document.get("builds") or []
+                         if isinstance(b, dict) and b.get("id")],
+              "refusals": [],
+              "qc": {"script": "qc-built-workflow.sh",
+                     "exit_code": None, "rubric": None,
+                     "checklist_instance": None,
+                     "checklist_complete": None, "wf_items": None},
+              "readback_summary": {"exists": False, "status": None}}
+        missing = []
+        for entry in request["workflows"]:
+            if not isinstance(entry, dict) or "no_workflow_reason" in entry:
+                continue
+            missing.extend(self.executor.dependencies_present(
+                request["location_id"], entry))
+        if missing:
+            op["errors"].append(f"missing dependencies: {missing}")
+            return self._attach_evidence(op)
+        if not self.executor.snapshot(request["location_id"], "launch-document"):
+            op["errors"].append(
+                "pre-write snapshot failed: state unreadable, build "
+                "aborted with no write sent")
+            return self._attach_evidence(op)
+        result = self.executor.build(document)
+        stats = result.get("stats") or {}
+        op["errors"] = list(result.get("errors", []))
+        op["build_stats"] = result.get("stats")
+        op["refusals"] = list(result.get("refusals") or [])
+        workflow_ids = result.get("workflow_ids")
+        if not isinstance(workflow_ids, dict):
+            workflow_ids = {}
+        op["workflow_ids"] = {str(k): str(v) for k, v in workflow_ids.items()
+                              if isinstance(v, str) and v}
+        units = result.get("unit_results") or {}
+        readbacks = {slug: unit.get("export")
+                     for slug, unit in units.items() if unit.get("export")}
+        op["readback"] = readbacks or None
+        if len(op["workflow_ids"]) == 1:
+            op["workflow_id"] = next(iter(op["workflow_ids"].values()))
+        qc_codes = [unit.get("qc_exit_code") for unit in units.values()]
+        op["qc"] = {
+            "script": "qc-built-workflow.sh",
+            "exit_code": (0 if qc_codes and all(c == 0 for c in qc_codes)
+                          else next((c for c in qc_codes if c not in (None, 0)),
+                                    qc_codes[0] if qc_codes else None)),
+            "rubric": next((unit.get("rubric") for unit in units.values()
+                            if unit.get("rubric") is not None), None),
+            "checklist_instance": None,
+            "checklist_complete": None,
+            "wf_items": next((unit.get("wf_items") for unit in units.values()
+                              if unit.get("wf_items")), None)}
+        every_unit_read = bool(op["workflow_ids"]) and all(
+            isinstance(readbacks.get(slug), dict) for slug in op["workflow_ids"])
+        checks = [
+            {"name": "document_compiled",
+             "ok": bool(op["workflow_ids"]) or bool(op["refusals"])},
+            {"name": "no_compile_refusals", "ok": not op["refusals"]},
+            {"name": "every_unit_readback", "ok": every_unit_read},
+            {"name": "channel_actions_complete",
+             "ok": not (stats.get("incomplete_actions") or [])},
+            {"name": "qc_exit_zero",
+             "ok": bool(qc_codes) and all(c == 0 for c in qc_codes)}]
+        op["expect"] = checks
+        op["readback_summary"] = {
+            "exists": every_unit_read and all(c["ok"] for c in checks),
+            "status": next((rb.get("status") for rb in readbacks.values()
+                            if isinstance(rb, dict)), None)}
+        if result.get("exit_code") == 0 and all(c["ok"] for c in checks):
+            op["status_claimed"] = "created"
+        return self._attach_evidence(op)
+
     def _execute_one(self, request: dict, slug: str,
                      builder_plan: dict, probe: dict) -> dict:
+        if slug == _DOCUMENT_SLUG or is_automation_build_document(builder_plan):
+            return self._execute_document(request, builder_plan, probe)
         declared = next(w for w in request["workflows"]
                         if w.get("slug") == slug)
         mechanism = self._effective_mechanism(declared, builder_plan, slug)
@@ -755,10 +968,18 @@ class Receiver:
         checks.append({
             "name": "draft_state_recorded",
             "ok": export.get("status") == "draft"})
+        # F05: an absent Allow Reentry value on the export is UNKNOWN, never
+        # False.  The setting is only proven when the provider reported a
+        # boolean and it matches what the dispatch requested.
+        observed_reentry = export.get("allowMultiple")
+        declared_reentry = declared.get("allow_multiple")
+        expected_reentry = declared_reentry if isinstance(declared_reentry, bool) else False
         checks.append({
             "name": "reentry_matches_contract",
-            "ok": export.get("allowMultiple") ==
-                  declared.get("allow_multiple", False)})
+            "ok": isinstance(observed_reentry, bool)
+                  and observed_reentry == expected_reentry,
+            "observed": observed_reentry,
+            "expected": expected_reentry})
         checks.append({
             "name": "qc_exit_zero",
             "ok": result.get("qc_exit_code") == 0})
@@ -798,6 +1019,25 @@ def judge_receipt(receipt: dict) -> dict:
         # is a judge failure by name, never silently verified.
         if (op.get("evidence") or {}).get("unmet_required_fields"):
             verdicts[op["slug"]] = "FAILED_CHECKS"
+            continue
+        if op.get("slug") == _DOCUMENT_SLUG:
+            # A launch document claims many workflows: every one it claims a
+            # remote id for must have a read-back carrying that same id, and
+            # every declared check must pass.  Anything less is unverified.
+            claimed = op.get("workflow_ids") or {}
+            readbacks = op.get("readback") or {}
+            if not claimed:
+                verdicts[op["slug"]] = "UNVERIFIED"
+                continue
+            if not all(isinstance(readbacks.get(slug), dict)
+                       and readbacks[slug].get("id") == workflow_id
+                       for slug, workflow_id in claimed.items()):
+                verdicts[op["slug"]] = "UNVERIFIED"
+                continue
+            if not all(c.get("ok") for c in op.get("expect", [])):
+                verdicts[op["slug"]] = "FAILED_CHECKS"
+                continue
+            verdicts[op["slug"]] = "VERIFIED"
             continue
         claimed_id = op.get("workflow_id")
         readback = op.get("readback") or {}
@@ -884,6 +1124,34 @@ def stage14_outcome(request: dict, exit_code: int, result: dict) -> dict:
         for i, op in enumerate(result.get("operations", [])):
             if op.get("status_claimed") == "skipped":
                 continue  # already recorded in form_exceptions
+            if op.get("slug") == _DOCUMENT_SLUG:
+                # A launch document built several workflows in one engine run;
+                # file one row per workflow, each with its own read-back, so no
+                # unit borrows another unit's evidence.
+                readbacks = op.get("readback") or {}
+                qc_in = op.get("qc") or {}
+                for slug, workflow_id in (op.get("workflow_ids") or {}).items():
+                    index = len(workflows)
+                    rb = readbacks.get(slug) or {}
+                    wf = {"workflow_id": workflow_id, "name": slug,
+                          "trigger": None, "mechanism": None,
+                          "build_method": op.get("build_method")}
+                    for field in ("trigger", "mechanism"):
+                        unproducible.append(f"workflows[{index}].{field}")
+                    wf["qc"] = {"script": qc_in.get("script"),
+                                "exit_code": qc_in.get("exit_code")}
+                    for key in ("checklist_instance", "checklist_complete",
+                                "wf_items"):
+                        wf["qc"][key] = qc_in.get(key)
+                        if qc_in.get(key) is None:
+                            unproducible.append(f"workflows[{index}].qc.{key}")
+                    wf["readback"] = ({"exists": bool(rb),
+                                       "status": rb.get("status")}
+                                      if rb else None)
+                    if wf["readback"] is None:
+                        unproducible.append(f"workflows[{index}].readback")
+                    workflows.append(wf)
+                continue
             trig = op.get("trigger") or {}
             origin = trig.get("origin") if isinstance(trig, dict) else None
             wf = {"workflow_id": op.get("workflow_id"),
@@ -936,3 +1204,7 @@ def stage14_outcome(request: dict, exit_code: int, result: dict) -> dict:
         unproducible.append(key)
     record["unproducible"] = unproducible
     return record
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

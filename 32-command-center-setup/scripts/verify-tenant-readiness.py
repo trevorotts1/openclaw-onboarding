@@ -12,7 +12,39 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'23-ai-workforce-bluep
 from workforce_state import read,update
 from datetime import datetime,timezone
 
-def verify(state,env,fetch=None):
+class AccessRedirect(Exception):
+    """The public host answered with a redirect to its own Cloudflare Access login."""
+
+class ReceiverRefused(Exception):
+    """The Command Center answered 403/503 with a JSON body naming why (its `missing[]` or `error`)."""
+    def __init__(self,status,names):super().__init__('HTTP '+str(status));self.status,self.names=status,names
+
+def _probe(url,headers,timeout=15):
+    """GET one readiness receipt without ever following a redirect (the bearer token must not leave this origin).
+
+    A redirect to *.cloudflareaccess.com raises AccessRedirect; a 403/503 with a JSON body raises ReceiverRefused
+    carrying the receiver's own reason names; any other failure is the plain urllib error."""
+    import re,urllib.error,urllib.request
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self,*args,**kwargs):return None
+    try:
+        with urllib.request.build_opener(NoRedirect()).open(Request(url,headers=headers),timeout=timeout) as response:
+            if response.status!=200:raise ValueError('readiness status is not 200')
+            return json.loads(response.read(65537))
+    except urllib.error.HTTPError as exc:
+        if exc.code in (301,302,303,307,308):
+            login=urlsplit(exc.headers.get('Location') or '')
+            if login.scheme=='https' and (login.hostname or '').lower().endswith('.cloudflareaccess.com'):exc.close();raise AccessRedirect() from None
+        if exc.code in (403,503):
+            try:body=json.loads(exc.read(65537))
+            except (ValueError,OSError):body=None
+            if isinstance(body,dict):
+                names=body.get('missing') if isinstance(body.get('missing'),list) and body.get('missing') else [body.get('error')]
+                names=[n for n in names if isinstance(n,str) and re.fullmatch(r'[A-Za-z0-9_.:-]{1,80}',n)][:20]
+                exc.close();raise ReceiverRefused(exc.code,names or ['no reason given']) from None
+        raise
+
+def verify(state,env,fetch=None,local_fetch=None):
     expected={'tenantId':env.get('MC_TENANT_ID'),'companyId':state.get('companyId') or env.get('MC_COMPANY_ID'),
               'installationId':env.get('MC_INSTALLATION_ID')}
     url=env.get('MC_TENANT_PUBLIC_URL') or state.get('commandCenterUrl') or ''
@@ -22,23 +54,28 @@ def verify(state,env,fetch=None):
     if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password:missing.append('client HTTPS origin')
     if state.get('companyId') and env.get('MC_COMPANY_ID') and state['companyId']!=env['MC_COMPANY_ID']:missing.append('company identity conflict')
     if missing:return {'ready':False,'missing':missing}
-    host=parsed.hostname.lower();endpoint='https://'+parsed.netloc+'/api/auth/tenant-ready'
-    if env.get('MC_REQUIRE_REMOTE_RECEIVER')=='1':endpoint+='?requireRemoteReceiver=1'
-    def network():
-        # Do not follow redirects carrying bearer credentials to another origin.
-        import urllib.request
-        class NoRedirect(urllib.request.HTTPRedirectHandler):
-            def redirect_request(self,*args,**kwargs):return None
-        request=Request(endpoint,headers={'Authorization':'Bearer '+env['MC_API_TOKEN']})
-        with urllib.request.build_opener(NoRedirect()).open(request,timeout=15) as response:
-            if response.status!=200:raise ValueError('readiness status is not 200')
-            return json.loads(response.read(65537))
-    try:receipt=fetch() if fetch else network()
-    except Exception as exc:return {'ready':False,'missing':['authenticated readiness probe failed: '+type(exc).__name__]}
+    host=parsed.hostname.lower();path='/api/auth/tenant-ready'+('?requireRemoteReceiver=1' if env.get('MC_REQUIRE_REMOTE_RECEIVER')=='1' else '')
+    auth={'Authorization':'Bearer '+env['MC_API_TOKEN']}
+    def network():return _probe('https://'+parsed.netloc+path,auth)
+    def loopback():
+        # The Command Center resolves its tenant from the Host header plus the bearer token, so the on-box request
+        # carries the public Host. Same endpoint, same receipt, same identity checks below.
+        port=str(env.get('DASHBOARD_PORT') or env.get('CC_PORT') or 4000)
+        if not port.isdigit() or not 0<int(port)<65536:raise ValueError('invalid Command Center port')
+        return _probe('http://127.0.0.1:'+port+path,dict(auth,Host=parsed.netloc))
+    via='public'
+    try:
+        try:receipt=fetch() if fetch else network()
+        except AccessRedirect:
+            # Cloudflare Access fronts the public host and answers every unauthenticated request with a 302 to its
+            # login: that says nothing about readiness. Ask the Command Center itself, on this box.
+            via='loopback';receipt=(local_fetch or loopback)()
+    except ReceiverRefused as exc:return {'ready':False,'missing':['receiver refused readiness (HTTP '+str(exc.status)+'): '+', '.join(exc.names)]}
+    except Exception as exc:return {'ready':False,'missing':['authenticated readiness probe failed'+(' (loopback, public host is behind Cloudflare Access)' if via=='loopback' else '')+': '+type(exc).__name__]}
     for key,value in dict(expected,host=host,kind='self',protocol='interview.v1').items():
         if receipt.get(key)!=value:missing.append(key+' mismatch')
     if receipt.get('ready') is not True or receipt.get('missing')!=[]:missing.append('receiver readiness')
-    return dict(expected,host=host,ready=not missing,missing=missing,protocol='interview.v1')
+    return dict(expected,host=host,ready=not missing,missing=missing,protocol='interview.v1',probe=via)
 
 # ==============================================================================
 # Startability gate (item 04): "can this box actually start the interview?"
@@ -176,11 +213,65 @@ def startability(before,env,args):
     ok,detail=_mint_only_proof(sender,args.state,chat)
     checks['invitation_mint']={'ok':ok,'detail':detail}
     if not ok:failed.append('invitation_mint')
+    # T-40 shared readiness projection: installed/running/live are three
+    # distinct states, and the stored proof is checked for invalidation —
+    # a rebind, disconnect or upgrade must make a stale proof read invalid.
+    sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'shared-utils'))
+    import shared_readiness
+    prior_proof=None
+    prior_path=Path(args.state).parent/'company-discovery'/STARTABILITY_PROOF_NAME
+    if prior_path.exists():
+        try:candidate=json.loads(prior_path.read_text())
+        except ValueError:candidate=None
+        if isinstance(candidate,dict) and isinstance(candidate.get('readinessProjection'),dict):
+            prior_proof=candidate['readinessProjection']
+    projection=shared_readiness.project(
+        surface='command-center.startability',
+        binding=str(expected_identity.get('host') or ''),
+        version=str(before.get('buildId') or ''),
+        installed=checks['canonical_process']['ok'],
+        running=checks['local_health']['ok'],
+        live=checks['public_readiness']['ok'],
+        prior=prior_proof)
+    stale=[]
+    if prior_proof is not None and not shared_readiness.proof_valid(prior_proof,projection):
+        stale=['previous proof invalidated: '+','.join(projection['events'] or ['identity'])]
+    # C5 step 2: the tenant's Messenger Page is a readiness FACT, recorded on the
+    # readiness record under the account binding revision that owns it. The Page
+    # id and revision are supplied to the installer (never guessed); a Page id
+    # that was recorded under a different revision, or a different Page id, is
+    # REFUSED here and reported — the door never outlives the binding that made
+    # it. No supplied Page id records nothing and invents nothing.
+    prior_page=prior_proof.get('pageBinding') if isinstance(prior_proof,dict) else None
+    page_record=dict(prior_page) if isinstance(prior_page,dict) else {}
+    page_id=str(env.get('MC_MESSENGER_PAGE_ID') or '').strip()
+    page_revision=str(env.get('MC_ACCOUNT_BINDING_REVISION') or '').strip()
+    page_binding,page_errors=None,[]
+    if page_id and page_revision:
+        identity_record={'tenant_id':str(before.get('tenantId') or env.get('MC_TENANT_ID') or ''),
+                         'account_id':str(before.get('companyId') or env.get('MC_COMPANY_ID') or ''),
+                         'messenger_page_id':page_id,
+                         'account_binding_revision':page_revision}
+        page_binding,page_errors=shared_readiness.page_binding_from_record(identity_record)
+        if page_binding is not None:
+            if not page_record:
+                page_record={'binding':page_revision,
+                             'tenant_id':page_binding.tenant_id,
+                             'account_id':page_binding.account_id}
+            page_record,page_errors=shared_readiness.record_page_binding(page_record,page_binding)
+    if page_errors:
+        failed.append('page_binding')
+        checks['page_binding']={'ok':False,'detail':page_errors}
+    elif page_binding is not None:
+        checks['page_binding']={'ok':True,
+                                'detail':'Page '+page_binding.page_id+' recorded at '+page_revision}
     proof={'protocol':'interview-startability.v1','stage':'startability','ready':not failed,'missing':failed,
            'checks':checks,'host':receipt.get('host'),'companyId':before.get('companyId'),
            'tenantId':before.get('tenantId'),'installationId':before.get('installationId'),
            'buildId':before.get('buildId'),'checkedAt':datetime.now(timezone.utc).isoformat(),
            'ownerHash':hashlib.sha256(chat.encode()).hexdigest() if isinstance(chat,str) and chat else None,
+           'readinessProjection':projection,'pageBinding':page_record,
+           'invalidatedPriorProofs':stale,
            'ticket':'discarded','delivery':'not-attempted'}
     # Scoped, sanitized proof only: no secrets, no ticket, no recipient value.
     proof_path=Path(args.state).parent/'company-discovery'/STARTABILITY_PROOF_NAME
@@ -193,8 +284,11 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('state');parser.add_argument('--interview',action='store_true');parser.add_argument('--env-file',type=Path)
     parser.add_argument('--startability',action='store_true');parser.add_argument('--no-send',action='store_true')
-    parser.add_argument('--app-dir');parser.add_argument('--pm2-app',default='blackceo-command-center');parser.add_argument('--port',type=int,default=4000)
+    parser.add_argument('--app-dir');parser.add_argument('--pm2-app',default='blackceo-command-center');parser.add_argument('--port',type=int,default=None)
     args=parser.parse_args();path=args.state;before=read(path);env=dict(os.environ)
+    # The on-box Command Center port: --port, else the installer's DASHBOARD_PORT / CC_PORT, else the CC default.
+    ambient=env.get('DASHBOARD_PORT') or env.get('CC_PORT') or ''
+    args.port=args.port or (int(ambient) if ambient.isdigit() else 4000);env['DASHBOARD_PORT']=str(args.port)
     if args.env_file:
         import importlib.util
         spec=importlib.util.spec_from_file_location('launch',Path(__file__).with_name('interview-launch.py'))

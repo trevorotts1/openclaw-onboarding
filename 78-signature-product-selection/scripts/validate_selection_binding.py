@@ -5,6 +5,11 @@ Validates a selection.json intent against the current approved launch catalog
 before Skill 79 checkout consumes it. Rejects query-string price authority,
 cross-tenant selections, stale revisions, and native mapping drift (A05).
 
+This is a checkout-time gate: it needs a visitor's selection, which does not exist while the page is
+built, so the build chain cannot call it. No host runs it on a live selection yet (PRD-05), so it is
+NOT part of the skill's "done" claim (runtime-manifest.json "done_claim"). The gates that do run in
+the build chain are the plan builder's catalog check and validate_selection_content.validate_manuscript.
+
 Usage:
   validate_selection_binding.py <selection.json> <launch.json> [--query <json>]
   validate_selection_binding.py --self-test

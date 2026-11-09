@@ -1,0 +1,10 @@
+[
+  {
+    "artifact_id": "fb-carousel-contract",
+    "reviewer_id": "reviewer-qc-1"
+  },
+  {
+    "artifact_id": "reformat-contract",
+    "reviewer_id": "reviewer-qc-1"
+  }
+]

@@ -59,7 +59,7 @@
         "null"
       ],
       "minLength": 1,
-      "description": "v1.2 (CR-S44-003, ruled by S49): OPTIONAL opaque provider order identity of the initial order — populated ONLY when the provider's native read-back on a later extra-purchase event actually carries it. Never synthesized, never derived, never required, and never load-bearing for dedupe, grants, or revocations. Absent in v1.0 and v1.1 events; consumers must tolerate absence."
+      "description": "v1.2 (CR-S44-003, ruled by S49): OPTIONAL opaque provider order identity of the initial order — populated ONLY when the provider's native read-back on a later extra-purchase event actually carries it. Never synthesized, never derived, never required, and never load-bearing for dedupe, grants, or revocations. The one consumer use: the S82 purchase-event adapter reads it as the LINK that groups a later one-click extra that carries its own native_order_ref under its initial order into one thank-you snapshot (DTY-21); absence falls back to native_order_ref grouping. Absent in v1.0 and v1.1 events; consumers must tolerate absence."
     },
     "occurred_at": {
       "type": "string",

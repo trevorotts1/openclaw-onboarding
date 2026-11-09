@@ -1,27 +1,32 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-validate_prompt.py - Skill 66 kie-image prompt validator (v1.1.0).
+validate_prompt.py - Skill 66 kie-image prompt validator (v2.3.0).
 
-Prompt budget (owner order 2026-10-05, KIE prompt rule 12): a prompt uses 95-100% of the model's character
-max and is never below 80% of it. This script keeps no band of its own: it calls the shared enforcer
-shared-utils/kie_prompt_enforcer.py, which wraps Skill 74 `prompt-budget --check` (live schema first, registry
-snapshot second). When that adapter is absent or unreachable the limit is the models.json cap
-(live_schema_cap_chars, else vendor_hard_cap_chars, else owner_observed_cap_chars). Unknown limit -> UNKNOWN
-warning, no floor.
+Prompt budget (F18 2026-11-07, superseding the 80-percent warning-only band): a prompt
+must use 95-100% of the model's VERIFIED character maximum. Below 95% FAILS and must be
+revised; below 80% is a particularly clear hard failure; above the documented maximum
+FAILS; an UNKNOWN maximum REFUSES a pass. This script keeps no band of its own: it calls
+the shared policy service through shared-utils/kie_prompt_enforcer.py, which wraps Skill
+74 `prompt-budget --check` (live schema first, registry snapshot second). When that
+adapter is absent or unreachable the limit is the models.json cap (live_schema_cap_chars,
+else vendor_hard_cap_chars, else owner_observed_cap_chars); with no such cap the verdict
+is UNKNOWN_MAX and the prompt is invalid.
 
-  floor = ceil(0.80 * max)   below it  -> invalid (exit 1), prints the exact chars to ADD
-  target = 95%..100% of max  80-95%    -> valid with a warning to expand
+  floor = ceil(0.95 * max)   below it  -> invalid (exit 1), prints the exact chars to ADD
+  target = 95%..100% of max  in it      -> PASS
   max                        above it  -> invalid hard fail (exit 2), prints the exact chars to CUT
+  80% hard floor             below it  -> invalid (exit 1), a particularly clear failure
 
-The old house band (5,000 / 9,000 / 19,000) is retired by this order. Token-capped models (Qwen) get a
-token estimate warning only (never a fake char cap). STDLIB PYTHON3 ONLY. No secrets read.
+The old house band (5,000 / 9,000 / 19,000) is retired by owner order. Token-capped
+models (Qwen) get no fake char cap; with no verified character maximum they cannot pass.
+STDLIB PYTHON3 ONLY. No secrets read.
 
-Exit codes:  0 acceptable (warnings may exist) | 1 invalid (below floor, unknown model, strict warning)
+Exit codes:  0 acceptable (warnings may exist) | 1 invalid (out of band, unknown max, strict)
              2 above the maximum (hard)
 
 Output: single JSON object on stdout: { model_id, cap_status, chars, tokens_est, max, floor, target_min,
-  target_max, limit_source, status, errors[], warnings[], valid }.
+  target_max, limit_source, status, ratio, prompt_sha256, policy_version, errors[], warnings[], valid }.
 """
 
 import argparse
@@ -48,7 +53,7 @@ def _load_enforcer():
 
 KPE = _load_enforcer()
 
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models.json")
 
@@ -80,11 +85,12 @@ def _result(model_id, cap_status, chars, **kw):
 
 
 def _from_verdict(model_id, cap_status, chars, v, warnings):
-    """Map a shared-enforcer verdict onto this validator's result shape."""
+    """Map a shared-policy verdict onto this validator's result shape."""
     errors = [] if v["ok"] else [v["message"]]
     r = _result(model_id, cap_status, chars, max=v["max"], floor=v["floor"], target_min=v["target_min"],
                 target_max=v["max"], limit_source=v["source"], status=v["status"], errors=errors,
-                warnings=warnings + list(v["warnings"]))
+                warnings=warnings + list(v["warnings"]), ratio=v.get("ratio"),
+                prompt_sha256=v.get("prompt_sha256"), policy_version=v.get("policy_version"))
     if v["status"] == "ABOVE_MAX":
         r["hard_cap_chars"] = v["max"]
     return r
@@ -99,16 +105,22 @@ def validate_body(prompt, model_id, strict):
     v = KPE.check(model_id, prompt, fallback_max=fb)  # Skill 74 prompt-budget --check: live schema, registry, policy owner
     cap = (entry or {}).get("cap_status", "SKILL-74")
     if v["status"] == "ADAPTER_UNAVAILABLE":
-        if entry is None:
-            return _result(model_id, "UNKNOWN", chars, errors=["model %r not in registry" % model_id], status="UNKNOWN")
-        cap = entry.get("cap_status", "NOT_PUBLISHED")
-        w = ["Skill 74 adapter unavailable; limit taken from models.json (%s)" % cap]
-        tcap = entry.get("vendor_hard_cap_tokens")
-        if tcap and token_estimate(chars) > tcap:
-            w.append("estimated %d tokens (chars/4) exceeds documented %d token cap for %s; the docs cap is TOKENS "
-                     "not chars: trim, and treat as approximate" % (token_estimate(chars), tcap, model_id))
-        w.append("prompt limit UNKNOWN for %s (cap_status %s): no floor enforced; no cap invented" % (model_id, cap))
-        r = _result(model_id, cap, chars, status="UNKNOWN", limit_source="models.json:%s" % cap, warnings=w)
+        # No verified maximum anywhere: an unknown maximum cannot PASS (F18).
+        w = ["Skill 74 adapter unavailable"]
+        if entry is not None:
+            tcap = entry.get("vendor_hard_cap_tokens")
+            if tcap:
+                w.append("the documented %d-token limit applies in its own units; this validator has no "
+                         "tokenizer and does not convert it to a character cap" % tcap)
+            w.append("prompt limit UNKNOWN for %s (cap_status %s): no verified character maximum, "
+                     "refusing a pass" % (model_id, cap))
+        errs = ([("model %r not in registry" % model_id)] if entry is None else []) + [v["message"]]
+        r = _result(model_id, cap, chars, status="UNKNOWN_MAX",
+                    limit_source=("models.json:%s" % cap) if entry is not None else "none",
+                    errors=errs, warnings=w)
+    elif v["status"] == "UNKNOWN_MAX" and entry is None:
+        r = _result(model_id, "UNKNOWN", chars, status="UNKNOWN_MAX",
+                    errors=["model %r not in registry" % model_id])
     else:
         r = _from_verdict(model_id, cap, chars, v, [])
     if strict:
@@ -142,31 +154,38 @@ def validate_prompt(prompt, model_id, strict=False):
 # Bridge off: limits come from models.json (gpt-2.5 20,000 DOCS; legacy gpt-image-2 20,000 live schema (N43 25,000 superseded);
 # wan/ideogram/imagen 5,000 verified; seedream not published -> UNKNOWN).
 STATIC_CASES = [
-    ("wan 5000 = max ok", 5000, "wan/2-7-image", True, "OK", False),
+    ("wan 5000 = max ok", 5000, "wan/2-7-image", True, "PASS", False),
     ("wan 5001 above max", 5001, "wan/2-7-image", False, "ABOVE_MAX", True),
-    ("wan 4800 in target ok", 4800, "wan/2-7-image", True, "OK", False),
-    ("wan 3999 below 80% floor rejected", 3999, "wan/2-7-image", False, "BELOW_FLOOR", False),
-    ("wan 4000 = floor ok (warn expand)", 4000, "wan/2-7-image", True, "BELOW_TARGET", False),
-    ("gpt-2.5 20000 = max ok", 20000, "gpt-image-2-5-sunburst-text-to-image", True, "OK", False),
-    ("gpt-2.5 19000 = 95% ok", 19000, "gpt-image-2-5-sunburst-text-to-image", True, "OK", False),
+    ("wan 4800 = 96% ok", 4800, "wan/2-7-image", True, "PASS", False),
+    ("wan 4700 = 94% warns and expands (owner rule 12)", 4700, "wan/2-7-image", True,
+     "BELOW_TARGET", False),
+    ("wan 3999 below 80% hard floor rejected", 3999, "wan/2-7-image", False, "BELOW_FLOOR", False),
+    ("wan 4000 = 80% warns and expands", 4000, "wan/2-7-image", True, "BELOW_TARGET", False),
+    ("gpt-2.5 20000 = max ok", 20000, "gpt-image-2-5-sunburst-text-to-image", True, "PASS", False),
+    ("gpt-2.5 19000 = 95% ok", 19000, "gpt-image-2-5-sunburst-text-to-image", True, "PASS", False),
+    ("gpt-2.5 19200 = 96% ok", 19200, "gpt-image-2-5-sunburst-text-to-image", True, "PASS", False),
+    ("gpt-2.5 18800 = 94% warns and expands", 18800, "gpt-image-2-5-sunburst-text-to-image", True,
+     "BELOW_TARGET", False),
     ("gpt-2.5 20001 above max rejected", 20001, "gpt-image-2-5-sunburst-text-to-image", False, "ABOVE_MAX", True),
-    ("gpt-2.5 16000 = 80% floor ok (warn expand)", 16000, "gpt-image-2-5-sunburst-text-to-image", True,
+    ("gpt-2.5 16000 = 80% warns and expands", 16000, "gpt-image-2-5-sunburst-text-to-image", True,
      "BELOW_TARGET", False),
     ("gpt-2.5 15999 under 80% rejected", 15999, "gpt-image-2-5-sunburst-text-to-image", False, "BELOW_FLOOR", False),
     ("gpt-2.5 9500 (old house target) now rejected", 9500, "gpt-image-2-5-sunburst-text-to-image", False,
      "BELOW_FLOOR", False),
     ("gpt-2.5 300 chars rejected", 300, "gpt-image-2-5-sunburst-text-to-image", False, "BELOW_FLOOR", False),
-    ("legacy gpt-image-2 20000 = live schema max ok", 20000, "gpt-image-2-text-to-image", True, "OK", False),
-    ("legacy gpt-image-2 15999 below its 16000 floor", 15999, "gpt-image-2-text-to-image", False, "BELOW_FLOOR", False),
+    ("legacy gpt-image-2 20000 = live schema max ok", 20000, "gpt-image-2-text-to-image", True, "PASS", False),
+    ("legacy gpt-image-2 15999 below its 16000 hard floor", 15999, "gpt-image-2-text-to-image", False,
+     "BELOW_FLOOR", False),
     ("legacy gpt-image-2 20001 above max (N43 25,000 superseded)", 20001, "gpt-image-2-text-to-image", False,
      "ABOVE_MAX", True),
-    ("ideogram 5000 ok", 5000, "ideogram/v3-text-to-image", True, "OK", False),
+    ("ideogram 5000 ok", 5000, "ideogram/v3-text-to-image", True, "PASS", False),
     ("ideogram 5001 above max", 5001, "ideogram/v3-text-to-image", False, "ABOVE_MAX", True),
-    ("imagen4 5000 ok", 5000, "google/imagen4", True, "OK", False),
-    ("qwen token-capped: no fake char cap, no floor", 200, "qwen3/text-to-image", True, "UNKNOWN", False),
-    ("seedream not published: UNKNOWN, no floor", 9000, "seedream/5-pro-text-to-image", True, "UNKNOWN", False),
-    ("seedream not published zero chars ok", 0, "seedream/5-pro-text-to-image", True, "UNKNOWN", False),
-    ("unknown model fails", 5, "not/a-model", False, "UNKNOWN", False),
+    ("imagen4 5000 ok", 5000, "google/imagen4", True, "PASS", False),
+    ("qwen token-capped: no fake char cap, unknown max REFUSES", 200, "qwen3/text-to-image", False,
+     "UNKNOWN_MAX", False),
+    ("seedream not published: unknown max REFUSES", 9000, "seedream/5-pro-text-to-image", False,
+     "UNKNOWN_MAX", False),
+    ("unknown model fails", 5, "not/a-model", False, "UNKNOWN_MAX", False),
 ]
 
 # Adapter on, answered by a fake Skill 74 that judges like the real CLI: a model 66 has never heard of (the newest
@@ -186,8 +205,9 @@ print(json.dumps({"state": "fail" if err else "validated", "warnings": [], "erro
 sys.exit(rc)
 """
 ADAPTER_CASES = [
-    ("new model 29000 ok via adapter", 29000, "gpt-image-3-aurora-text-to-image", True, "OK", False),
+    ("new model 29000 ok via adapter", 29000, "gpt-image-3-aurora-text-to-image", True, "PASS", False),
     ("new model 23999 under 80% rejected", 23999, "gpt-image-3-aurora-text-to-image", False, "BELOW_FLOOR", False),
+    ("new model 28000 = 93% warns and expands", 28000, "gpt-image-3-aurora-text-to-image", True, "BELOW_TARGET", False),
     ("new model 30001 above max rejected", 30001, "gpt-image-3-aurora-text-to-image", False, "ABOVE_MAX", True),
     ("adapter limit beats models.json (gpt-2.5 now 30000)", 20000, "gpt-image-2-5-sunburst-text-to-image", False,
      "BELOW_FLOOR", False),
@@ -215,7 +235,7 @@ def selftest():
     if res["chars"] != 4500:
         failures.append("FAIL whitespace not stripped before count: %s" % res["chars"])
     res = validate_prompt("x" * 100, "wan/2-7-image")
-    if not any("ADD at least 3900" in e for e in res["errors"]):
+    if not any("ADD at least 4650" in e for e in res["errors"]):
         failures.append("FAIL below-floor message must name the exact chars to add: %s" % res["errors"])
     res = validate_prompt("x" * 5003, "wan/2-7-image")
     if not any("CUT exactly 3 chars" in e for e in res["errors"]):
@@ -227,7 +247,7 @@ def selftest():
         os.environ["KIE_LIVE_ADAPTER_PATH"] = script
         _run_cases(ADAPTER_CASES, failures)
         os.environ["KIE_LIVE_ADAPTER_PATH"] = os.path.join(d, "missing.py")  # unreachable adapter -> models.json
-        _run_cases([("adapter unreachable: models.json limit", 20000, "gpt-image-2-5-sunburst-text-to-image", True, "OK",
+        _run_cases([("adapter unreachable: models.json limit", 20000, "gpt-image-2-5-sunburst-text-to-image", True, "PASS",
                      False)], failures)
     if saved is None:
         os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)

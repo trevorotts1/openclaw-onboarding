@@ -14,8 +14,10 @@ Targets are keyed by (offer_id, price_choice_id): an offer with several
 approved billing schedules gets one target per price choice. The plan fails
 closed when any selectable price choice lacks a target, when two entries
 claim the same (offer, price choice) or the same target reference, when a
-target's native IDs do not match the approved catalog, or, when the caller
-supplies an allowlist, when a target reference is not on it. S78 emits this
+target's native IDs do not match the approved catalog, when a production launch (anything but test_only) has a null
+or blank native product/price id on the catalog or on a target (the plan would
+point a checkout at no product), or, when the caller supplies an allowlist,
+when a target reference is not on it. S78 emits this
 plan; it never edits S79's checkout implementation.
 
 Usage:
@@ -28,7 +30,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from selection_core import Violation, check_invocation, validate_catalog  # noqa: E402
+from selection_core import Violation, _nonblank, check_invocation, validate_catalog  # noqa: E402
 from build_selection_plan import SELF_TEST_LAUNCH  # noqa: E402
 
 V_BINDING_INCOMPLETE = "S78-BINDING-INCOMPLETE"
@@ -38,13 +40,24 @@ V_BINDING_DRIFT = "S78-BINDING-TARGET-DRIFT"
 V_BINDING_ALLOWLIST = "S78-BINDING-NOT-ALLOWLISTED"
 
 
-def emit_plan(launch, targets, *, route, allowlist=None):
+def emit_plan(launch, targets, *, route, allowlist=None, approval_verifier=None):
     if route not in ("per_offer_targets", "platform_native_selection"):
         raise Violation(V_BINDING_INCOMPLETE, f"Unknown handoff route {route!r}.")
     if check_invocation(launch) != "proceed":
         raise Violation(V_BINDING_INCOMPLETE, "Binding plan requires a multiple_options launch.")
-    validate_catalog(launch)
+    validate_catalog(launch, approval_verifier=approval_verifier)
     mains = [o for o in launch["offers"] if o.get("slot") == "main"]
+    production = launch.get("test_only") is not True
+    if production:
+        for offer in mains:
+            for price in offer["prices"]:
+                if not _nonblank(offer.get("native_product_id")) or not _nonblank(price.get("native_price_id")):
+                    raise Violation(
+                        V_BINDING_INCOMPLETE,
+                        f"Offer {offer['offer_id']!r} / price {price['price_choice_id']!r} has a null or blank "
+                        "native product/price id on a production launch; the native product must be created "
+                        "and read back before a binding plan can claim it.",
+                    )
     by_key = {}
     seen_targets = set()
     for t in targets:
@@ -66,6 +79,11 @@ def emit_plan(launch, targets, *, route, allowlist=None):
                 raise Violation(
                     V_BINDING_INCOMPLETE,
                     f"Offer {offer['offer_id']!r} price choice {price['price_choice_id']!r} has no native checkout target.",
+                )
+            if production and not (_nonblank(t.get("native_product_id")) and _nonblank(t.get("native_price_id"))):
+                raise Violation(
+                    V_BINDING_INCOMPLETE,
+                    f"Target for {offer['offer_id']!r} / {price['price_choice_id']!r} has a null or blank native id on a production launch.",
                 )
             if t.get("native_product_id") != offer.get("native_product_id") or t.get("native_price_id") != price.get("native_price_id"):
                 raise Violation(

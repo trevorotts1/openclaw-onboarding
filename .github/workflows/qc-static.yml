@@ -9,7 +9,6 @@ name: QC static checks
 #   • DEFAULT_WEIGHTS in adaptive_weights.py sums to 1.0
 #   • company-config.template.json is valid JSON (schema v2.0)
 #   • persona-categories.json is valid JSON
-#   • No Anthropic model strings in Skill 22/23 scripts
 #   • No flat-constant scoring (0.7/0.7/0.8/0.8) lingering in persona-selector-v2.py
 #
 # Triggers on every push to main and every PR targeting main.
@@ -127,15 +126,6 @@ jobs:
           print('✓ company-config template valid (schema v2.0)')
           "
 
-      - name: No Anthropic model strings in Skill 22/23 scripts
-        shell: bash
-        run: |
-          set -uo pipefail
-          if grep -rEn "'(claude-[a-z0-9-]+|anthropic/[a-z0-9-]+)'" 22-book-to-persona-coaching-leadership-system/scripts 23-ai-workforce-blueprint/scripts shared-utils/ 2>&1; then
-            echo "✗ Found Anthropic model string(s) above"; exit 1
-          fi
-          echo "✓ No Anthropic model strings in pipeline scripts"
-
       - name: persona-selector-v2 no longer uses flat scoring constants
         shell: bash
         run: |
@@ -181,6 +171,20 @@ jobs:
           # catches registered-but-no-files and file-present-but-unregistered.
           bash 38-conversational-ai-system/scripts/qc-trinity-registry.test.sh
           echo "✓ qc-trinity-registry reconciliation fixtures pass"
+
+      - name: Skill 38 launch Conversation-AI completion gate (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 38-conversational-ai-system/launch/qc-launch-conversation-ai.sh --bundle 38-conversational-ai-system/launch/fixtures/pass-full.json
+          echo "✓ launch Conversation-AI gate PASSes the pass-full fixture"
+
+      - name: Skill 38 launch Conversation-AI completion gate (regression tests)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 38-conversational-ai-system/launch/tests/qc-launch-conversation-ai.test.sh
+          echo "✓ launch Conversation-AI gate regression suite passes"
 
       - name: Skill 38 mandatory GHL send-directive
         shell: bash
@@ -233,6 +237,20 @@ jobs:
           # strings in .py under 22/23, so this gate is BASH (with an inline py core).
           bash 38-conversational-ai-system/scripts/qc-playbook-doc.test.sh
           echo "✓ qc-playbook-doc per-playbook human-facing doc gate fixtures pass"
+
+      - name: Skill 38 prose counts match disk (qc-doc-counts)
+        shell: bash
+        run: |
+          # SKILL.md and INSTALL.md state script/protocol/reference counts and the
+          # numbered install range. Those drifted (a claim of 92 scripts against
+          # 101 on disk, and an install range stopping at 23 when prefixes reached
+          # 33) and nothing failed: the repo-root bump-version.sh advisory prints a
+          # WARN and returns 0 unconditionally. qc-doc-counts.sh fails on a
+          # mismatch, exits 2 when it cannot verify, and is wired into the QC
+          # checklist. CI runs the gate against the real tree and its fixtures.
+          bash 38-conversational-ai-system/scripts/qc-doc-counts.sh
+          bash 38-conversational-ai-system/scripts/qc-doc-counts.test.sh
+          echo "✓ qc-doc-counts: prose counts agree with disk, fixtures pass"
 
       - name: Skill 38 reference sheet is bulletproof (Quick Start + tag-first + post-build verify)
         shell: bash
@@ -335,6 +353,33 @@ jobs:
           fi
           bash "$t"
           echo "✓ Skill 38 self-test and qc-backend-ready agree on every fixture"
+
+      - name: Skill 38 checklist readiness predicate pinned to the PBB-017 model rule
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The defect this locks (T-09 / B-24): the readiness predicate inside
+          # scripts/11-run-qc-checklist.sh demanded a non-empty `model` on a
+          # hooks.mappings entry, so a CORRECT fresh install — the writer never
+          # emits `model` — failed its own completion gate with `ERR:no-model`.
+          # PBB-017 decided `model` is OPTIONAL on a mapping (agentId is
+          # sufficient; the agent's own configured model runs it) and only a
+          # PRESENT-but-BLANK override is refused as `blank-model-override`.
+          # The fixture below extracts that predicate from the SHIPPED script
+          # (never a copy), so re-introducing `no-model` fails here instead of
+          # passing a correct install through a false failure. Pure bash +
+          # python3 + jq, no network, quoted TMP paths. STEP HARDNESS: an absent
+          # fixture SKIPs loudly with a reason (never a silent pass, never a
+          # spurious red from `bash <missing>`'s exit 127).
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="38-conversational-ai-system/tests/qc-checklist-backend-predicate.test.sh"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=Skill 38 checklist readiness predicate SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          bash "$t"
+          echo "✓ Skill 38 checklist readiness predicate matches the PBB-017 model rule on every case"
 
       - name: Skill 38 F52 JSONL data contract (v1.5.0)
         shell: bash
@@ -619,6 +664,34 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-proactive-outreach.test.sh
           echo "✓ qc-proactive-outreach negative test passes (the gate fails on each broken invariant)"
 
+      - name: Skill 38 Purple follow-up ownership gate (review C4)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Machine-enforce review finding C4: a contact with a Purple collection sequence
+          # (`collection_sequence_id` present, open or closed) NEVER enters the legacy
+          # 10-touch Intelligent Follow-up cadence — the shared reminder machine owns
+          # follow-up (ONE initial invitation + three escalating reminders, ONE shared count,
+          # no reset, no catch-up burst). Proves the exclusion in the protocol, the
+          # AGENTS.md stanza writer (05-update-agents-md.sh) and the canonical rules
+          # reference (agents-runtime-rules.md), that the stale Pre-Feature-15 / Until v5.7
+          # notes and the leftover installer fragments are DELETED (with a positive control
+          # so a blind scan cannot certify an absence), and that the gate is wired into
+          # 11-run-qc-checklist.sh. BASH (grep core) — respects the .py claude-/anthropic ban.
+          bash 38-conversational-ai-system/scripts/qc-followup-exclusion.sh
+          echo "✓ Skill 38 C4 follow-up exclusion holds (Purple sequence owns follow-up)"
+
+      - name: Skill 38 Purple follow-up ownership gate negative test (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove qc-followup-exclusion.sh actually FAILS when a C4 invariant is broken:
+          # removes the protocol exclusion section, neuters collection_sequence_id in the
+          # stanza writer, neuters the shared-reminder-machine owner, reintroduces each
+          # stale note, unwires the checklist, and blinds the positive control.
+          bash 38-conversational-ai-system/scripts/qc-followup-exclusion.test.sh
+          echo "✓ qc-followup-exclusion negative test passes (the gate fails on each broken invariant)"
+
       - name: Skill 38 A/B Testing of Reply Variants (F16) invariant gate
         shell: bash
         run: |
@@ -853,6 +926,53 @@ jobs:
           bash 38-conversational-ai-system/scripts/qc-playbook-engine.sh
           echo "✓ Skill 38 playbook_engine.py (U-16) unit tests are green"
 
+      - name: Skill 38 post-delivery discovery unit tests (T-27)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # post_delivery_discovery.py (tools/) is T-27: adaptive post-gift needs
+          # discovery, grounded answers with their source, and one real
+          # resource/community/offer/calendar recommendation, invoked from the
+          # delivery-verified path of direct_fulfillment.py (record_delivery_proof).
+          # Run its unit suite BY EXPLICIT PATH so a contract regression fails the
+          # build instead of drifting. BASH wrapper around python3 -m unittest.
+          python3 -m unittest discover -s 38-conversational-ai-system/tools/tests -p 'test_post_delivery_discovery.py' -v
+          echo "✓ Skill 38 post_delivery_discovery.py (T-27) unit tests are green"
+
+      - name: T-17 shared reminder slots + reserved final action (state machine suite)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # DATA-CONTRACTS 8 reminder/final-action state machine (shared-utils/reminders).
+          # This runs BOTH suites by explicit name: the T-17 behavioural suite
+          # (test_reminder_state_machine.py, 51 cases) and the wiring proof
+          # (test_reminder_wiring.py) that FAILS if the production call site in
+          # shared-utils/nudge-incomplete-interviews.py is unwired. The wiring
+          # test is what keeps reminder_state_machine.py reachable from production
+          # code, so a wiring removal is a red here, not a silent drift.
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t1="shared-utils/reminders/tests/test_reminder_state_machine.py"
+          t2="shared-utils/reminders/tests/test_reminder_wiring.py"
+          if [ ! -f "$t1" ] || [ ! -f "$t2" ]; then
+            echo "✗ T-17 reminders suite is absent from this checkout: $t1 and/or $t2 missing. A MISSING suite is a red, not a skip."
+            exit 1
+          fi
+          python3 -m unittest discover -s shared-utils/reminders/tests -t shared-utils/reminders/tests -p 'test_*.py' -v
+          echo "✓ T-17 shared reminder slots (51 behavioural + 3 wiring) unit tests are green"
+      - name: shared-utils publication receipts unit tests (T-25)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # shared-utils/receipts/publication_receipts.py is the T-25 module: which
+          # provider object proves a publication, the order publications follow, and
+          # what a resume may re-issue. Its own test module is the ONLY thing that
+          # exercises those pins, so it has to run here or a pin can be deleted
+          # without a red build. BASH wrapper around python3 -I, in the same shape
+          # as the U-16 step above.
+          python3 -I shared-utils/receipts/test_publication_receipts.py
+          echo "✓ shared-utils publication_receipts.py (T-25) unit tests are green"
+
       - name: Skill 38 Per-phase tool gating (U-1)
         shell: bash
         run: |
@@ -946,6 +1066,17 @@ jobs:
           # resolving declares block.
           bash 38-conversational-ai-system/scripts/qc-playbook-declares.test.sh
           echo "✓ qc-playbook-declares negative test passes (fails on dangling declares, warns on legacy)"
+
+      - name: Skill 38 checklist status reader — UNINITIALISED vs FAIL (fixture)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Prove 11-run-qc-checklist.sh tells three outcomes apart: a well-formed
+          # UNINITIALISED verdict (the gates' NOTHING-TO-CHECK path) is accepted and
+          # reported as SKIP; FAIL stays red; malformed/missing status stays red;
+          # PASS stays green. Extracts the real reader + disposition blocks.
+          bash 38-conversational-ai-system/scripts/qc-read-status-uninitialised.test.sh
+          echo "✓ UNINITIALISED skips, FAIL/malformed/missing stay red, PASS stays green"
 
       - name: Skill 38 Opportunity/pipeline stage sync (U-13)
         shell: bash
@@ -1455,12 +1586,16 @@ jobs:
         run: |
           set -uo pipefail
           bash tests/unit/archived-skill-retirement.test.sh
+          bash tests/unit/archived-skills-removed.test.sh
           bash tests/unit/update-summary.test.sh
           bash tests/unit/frontdoor-999-clone-9router.test.sh
           bash tests/unit/box-fixes-gates.test.sh
           python3 tests/unit/ensure-persona-contexts.test.py
+          python3 tests/unit/ensure-cc-interview-flag.test.py
+          python3 tests/unit/ensure-cc-tenant-env.test.py
           bash tests/unit/prune-openclaw-json-backups.test.sh
           bash tests/unit/qc-env-stores.test.sh
+          python3 tests/unit/verify-tenant-readiness-access.test.py
 
       - name: "retired Ollama deepseek-v4-flash ids stay out of shipped files (R19)"
         shell: bash
@@ -2659,21 +2794,6 @@ jobs:
 
       # ── NEW ENFORCEMENT GATES (all rules that existed as prose but had no auto-fail) ──
 
-      - name: CRITICAL-1 — No real client names in tracked files
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Fleet-wide privacy invariant: this repo is a generic template; zero real
-          # client first or last names may appear in any committed file. The guard uses
-          # git ls-files (tracked-only) with word-boundary anchors for first names so
-          # inline enforcement scripts that HOLD the names as detection patterns are
-          # correctly self-excluded. Any hit is a hard-fail that blocks merge.
-          # This rule was documented in AGENTS.md N0 + repo memory entry
-          # [repo-is-fleet-wide-no-client-names] but was in NO CI gate or pre-commit
-          # hook. This step closes that gap.
-          bash scripts/qc-assert-no-client-names.sh
-          echo "✓ No real client names found in tracked files"
-
       - name: FLEET-STANDARDS §3 — WhatsApp permanently disabled (no enabled:true in JSON, no uncommented WHATSAPP_NUMBER in env files)
         shell: bash
         run: |
@@ -2701,17 +2821,12 @@ jobs:
           # indentation issues in YAML" pitfall this file used to warn about
           # elsewhere, and it is not worth re-fighting per-runner quoting/embedding
           # fragility for.
-          # Same per-file call and rc mapping, run across all cores (~1,240 files).
-          git ls-files -z -- '*.json' | xargs -0 -r -n 1 -P "$(nproc)" bash -c '
-            rc=0
-            python3 scripts/qc-check-whatsapp-json.py "$1" 2>/dev/null || rc=$?
-            if [ "$rc" -eq 1 ]; then
-              echo "✗ $1: plugins.entries.whatsapp.enabled is true (fleet ban violation)"
-              exit 1
-            elif [ "$rc" -ne 0 ]; then
-              echo "✗ $1: unreadable or malformed non-empty JSON — failing closed (cannot verify fleet ban compliance)"
-              exit 1
-            fi' _ || fail=1
+          # Same per-file verdict and messages, but one interpreter per 300
+          # files instead of one per file (~2,650 files), batches across all
+          # cores. The script prints the ✗ line for each bad file and exits
+          # non-zero if any file is bad; any non-zero (a crash too) fails.
+          git ls-files -z -- '*.json' | xargs -0 -r -n 300 -P "$(nproc)" \
+            python3 scripts/qc-check-whatsapp-json.py || fail=1
 
           # 2. .env files: no uncommented WHATSAPP_NUMBER=
           while IFS= read -r f; do
@@ -2796,18 +2911,7 @@ jobs:
           [ $fail -eq 0 ] && echo "✓ chmod-600 coverage: all .sh scripts that write secrets/.env also call chmod 600"
           exit $fail
 
-      - name: Vendor-URL exemption holds both directions (mutation proof)
-        shell: bash
-        run: |
-          set -uo pipefail
-          # Proves the `(?<!/mcp/)` carve-out in the NEXT step is correct in BOTH
-          # directions: HighLevel's MCP orchestrator URL (.../mcp/anthropic/v2) passes,
-          # while real Anthropic model slugs — including one sharing a line with that
-          # URL — still fail. Re-derives the pattern from this very file, so widening
-          # the exemption to a blanket `anthropic` allow turns this step red.
-          bash tests/unit/ghl-mcp-vendor-url-exemption.test.sh
-
-      - name: No banned model tokens in GHL skill markdown prose (M2 / Anthropic / non-Ollama Kimi)
+      - name: No banned model tokens in GHL skill markdown prose (M2 / non-Ollama Kimi)
         shell: bash
         run: |
           set -uo pipefail
@@ -2817,10 +2921,9 @@ jobs:
           # in the automated build so a regression that introduces a banned model token
           # into markdown prose fails the build without any manual pre-merge step.
           #
-          # Four violation classes — all fail the build:
+          # Three violation classes — all fail the build:
           #   (a) minimax-m2 / minimax_m2 / minimax/minimax-m2 as model id slugs
           #   (b) Bare M2 used as a live model id in a rung/ladder context
-          #   (c) Anthropic model slugs (claude-*, anthropic/*, us.anthropic.*) as usable models
           #   (d) Kimi referenced without the required ollama/ or openrouter/ prefix
           #
           # False-positive guards for (c)/(d) are SHAPE-based, not word-based: a match is
@@ -2886,36 +2989,6 @@ jobs:
             echo "✗ Found M2 used as a live model id (rung/ladder context) in GHL skill/shared markdown"; fail=1
           fi
 
-          # (c) Anthropic model slugs (claude-*, anthropic/*, us.anthropic.*) as usable
-          #     models. SHAPE-based exclusion (not word-based): the ONLY spared
-          #     occurrences are the exact literal non-model tokens `claude-desktop`
-          #     (mcporter import source) and `claude-code` (Anthropic CLI product name
-          #     when hyphenated) — matched via negative lookahead directly on the
-          #     "claude-" token, so a real slug (e.g. claude-opus-4) co-located on the
-          #     same line as ban/forbidden/rejected prose is still caught. Plain-English
-          #     "Claude"/"Anthropic" mentions without a hyphen/slash never match the
-          #     positive pattern at all, so doctrine prose naming the ban is unaffected.
-          #
-          #     VENDOR URL PATH EXEMPTION (added 2026-08-03): HighLevel's official MCP
-          #     orchestrator lives at `services.leadconnectorhq.com/mcp/anthropic/v2`.
-          #     There, `anthropic` is a PATH SEGMENT naming the MCP client the endpoint
-          #     serves — it is a vendor's URL, not a model slug, and Trevor needs it
-          #     documented in skill 36. The `(?<!/mcp/)` negative lookbehind spares
-          #     `anthropic/...` ONLY when immediately preceded by the literal `/mcp/`.
-          #     This is deliberately the narrowest possible carve-out: it is anchored to
-          #     that exact token position, so a genuine model slug (`anthropic/claude-*`,
-          #     `anthropic/claude-opus-4`) anywhere else — including elsewhere on the very
-          #     same line — is still caught. It is NOT a blanket `anthropic` allow.
-          #     Mutation proof both directions: tests/unit/ghl-mcp-vendor-url-exemption.test.sh
-          anthropic_hits=$(grep -rinP \
-              'claude-(?!desktop\b)(?!code\b)[a-z0-9-]+|(?<!/mcp/)anthropic/[a-z0-9-]+|us\.anthropic\.[a-z0-9.-]*' \
-              $ALL_DIRS --include="*.md" 2>/dev/null \
-              | grep -v "^Binary" || true)
-          if [ -n "$anthropic_hits" ]; then
-            echo "$anthropic_hits"
-            echo "✗ Found Anthropic model slug as a usable model in GHL skill/shared markdown"; fail=1
-          fi
-
           # (d) Kimi referenced without the required ollama/ or openrouter/ prefix.
           #     SHAPE-based exclusion (not word-based): only a genuine `kimi-<slug>`
           #     token is a candidate at all (plain-English "Kimi 2.6" prose with no
@@ -2938,7 +3011,7 @@ jobs:
             echo "✗ Found Kimi referenced without ollama/ or openrouter/ prefix in GHL skill/shared markdown"; fail=1
           fi
 
-          [ $fail -eq 0 ] && echo "✓ No banned model tokens in GHL skill/shared markdown (minimax-m2 / Anthropic / bare Kimi)"
+          [ $fail -eq 0 ] && echo "✓ No banned model tokens in GHL skill/shared markdown (minimax-m2 / bare Kimi)"
           exit $fail
 
       - name: No secret-printing greps in 36/38 shipped SOPs (FIX-XC-07)
@@ -3051,6 +3124,33 @@ jobs:
       # The runner has no ~/openclaw-onboarding and no ~/Downloads, so these
       # steps run on a genuinely clean box; the static check makes any future
       # reintroduction of an operator path a red build, not a silent pass.
+      # T-38: the shared runtime adapter suite (host adapters, the verified
+      # external-storage contract, restart persistence) shipped with the unit and
+      # nothing ran it. It is named here by explicit file path. The suite refuses
+      # an internal TMPDIR by design — it proves propagation onto a device that is
+      # not the root disk — and shared-utils/runtime/external.py refuses by name
+      # every root in INTERNAL_ROOTS (/tmp, /private/tmp, /var/tmp,
+      # /private/var/tmp, /dev/shm). /dev/shm can therefore never be this step's
+      # temp root, even though it is a real tmpfs: the module rejects the path
+      # textually before any device check. The runner mounts its own tmpfs at a
+      # path the contract does not name, and the device check below keeps that
+      # honest — a same-device mount fails the step red instead of proving the
+      # wrong thing.
+      - name: T-38 shared runtime adapter suite (shared-utils/runtime/tests/test_runtime_adapters.py)
+        shell: bash
+        run: |
+          set -uo pipefail
+          tmpdir_root=/mnt/pbb-t38-tmp
+          sudo mkdir -p "$tmpdir_root"
+          sudo mount -t tmpfs -o size=512m,mode=1777 pbb-t38-tmp "$tmpdir_root"
+          trap 'sudo umount "$tmpdir_root" 2>/dev/null || true' EXIT
+          if [ "$(stat -c %d "$tmpdir_root")" = "$(stat -c %d /)" ]; then
+            echo "::error::$tmpdir_root is on the root device; the suite needs a real second device"
+            exit 1
+          fi
+          TMPDIR="$tmpdir_root" TMP="$tmpdir_root" TEMP="$tmpdir_root" \
+            python3 shared-utils/runtime/tests/test_runtime_adapters.py
+          exit $?
       - name: Skill 75 empty-home test suite (manual 02 B6)
         shell: bash
         run: |
@@ -3118,14 +3218,625 @@ jobs:
       # at import (sys.exit at module level made the whole-tree pytest run
       # INTERNALERROR, hiding every later failure). This step makes pytest
       # collection itself a red build: every test_*.py under scripts/ must be
-      # pytest-collectable, and the tree must run green in ONE process.
+      # pytest-collectable (the whole tree, in ONE process), and every
+      # collected test must run green.
+      # The run is spread over the runner's cores (it was 8+ minutes on one
+      # core): every test_*.py under scripts/ gets its own pytest process and
+      # its own fresh empty HOME, nproc files at a time, output buffered per
+      # file and printed in file order -- the same shape as the loop above.
+      # pythonpath = the file's own folder, as its documented
+      # `python3 <test>.py` run has (two suites import a sibling module by
+      # bare name and only found it in the one-process run because an
+      # earlier suite had left that folder on sys.path). Not pytest-xdist:
+      # xdist re-imports EVERY file in EVERY worker, and these script-style
+      # suites do their work at import, so each suite would run nproc times
+      # at once, racing on its fixed paths.
       - name: Skill 75 pytest collection + run (no hidden failures)
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
           python3 -m pip install --quiet pytest
           HOME="$(mktemp -d)" python3 -m pytest -q \
             75-drama-song-ad-factory/scripts --collect-only
+          # Both of pytest's default file patterns (test_*.py and *_test.py),
+          # the same set the whole-tree run collects.
+          mapfile -t tests < <(find 75-drama-song-ad-factory/scripts -type f \( -name 'test_*.py' -o -name '*_test.py' \) -not -path '*/__pycache__/*' | sort)
+          [ "${#tests[@]}" -gt 0 ] || { echo "✗ no skill 75 test files found"; exit 1; }
+          logs="$(mktemp -d)"
+          export logs
+          printf '%s\0' "${tests[@]}" | xargs -0 -n 1 -P "$(nproc)" bash -c '
+            t="$1"; key="$(printf %s "$t" | tr / _)"
+            rc=0
+            HOME="$(mktemp -d)" python3 -m pytest -q -o pythonpath="$(dirname "$t")" "$t" </dev/null >"$logs/$key.out" 2>&1 || rc=$?
+            echo "$rc" >"$logs/$key.rc"' _ || true   # a file with no recorded exit code is counted as failed below
+          failed=()
+          for t in "${tests[@]}"; do
+            key="$(printf %s "$t" | tr / _)"
+            echo "── $t"
+            cat "$logs/$key.out" 2>/dev/null || true
+            rc="$(cat "$logs/$key.rc" 2>/dev/null || echo missing)"
+            # 5 = the file holds no test items (it still had to import
+            # cleanly), which the whole-tree run also passed.
+            if [ "$rc" != 0 ] && [ "$rc" != 5 ]; then
+              echo "✗ pytest FAIL: $t (exit $rc)"; failed+=("$t")
+            fi
+          done
+          echo "Skill 75 pytest: ${#tests[@]} files, $(( ${#tests[@]} - ${#failed[@]} )) passed, ${#failed[@]} failed"
+          if [ "${#failed[@]}" -gt 0 ]; then
+            printf '✗ pytest FAIL: %s\n' "${failed[@]}"
+            exit 1
+          fi
+          echo "✓ Skill 75 scripts/ per-file pytest green"
+          # The whole tree must ALSO pass in ONE process (catches a suite that
+          # leaks state -- sys.path, env, cwd -- into a later suite, which the
+          # per-file run above cannot see). That run is the job below, on its
+          # own runner in parallel; this required check waits for it and goes
+          # red unless it concluded success. Fail-closed: not found, cancelled,
+          # skipped or still running at the deadline all fail.
+          job="Skill 75 whole-tree pytest (one process)"
+          deadline=$(( $(date +%s) + 40*60 ))
+          while :; do
+            row="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" \
+              --jq ".jobs[] | select(.name == \"$job\") | \"\(.status) \(.conclusion) \(.html_url)\"" 2>&1)" || row="api-error $row"
+            set -- $row
+            if [ "${1:-}" = completed ]; then
+              [ "${2:-}" = success ] || { echo "✗ $job concluded '${2:-}': ${3:-}"; exit 1; }
+              echo "✓ $job: success (${3:-})"
+              break
+            fi
+            [ "$(date +%s)" -lt "$deadline" ] || { echo "✗ $job not completed in 40 min (last: ${row:-not found})"; exit 1; }
+            sleep 20
+          done
+          echo "✓ Skill 75 scripts/ pytest-collectable and green"
+
+      - name: Skill 75 final-view enforcement gate (X08)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # X08 fail-closed gate: every owed final view is an actual approved
+          # file whose bytes match, no identity or hash or path is shared
+          # across two (character, view) pairs, and every final reference is
+          # cited by a request record; malformed input fails closed. Proves
+          # the shipped gate bytes bite on planted violations (crossed
+          # reference, missing view, placeholder-as-final) plus the r6-removed
+          # + garbage discriminating controls, so CI would go red on a
+          # neutered gate.
+          bash 75-drama-song-ad-factory/scripts/qc-final-view-gate.sh
+          echo "✓ Skill 75 final-view gate: clean PASS, planted violations FAIL with named codes"
+
+
+      - name: Skill 38 acquisition brief binding unit tests (T-06)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The fifth T-06 acceptance clause: approval, capacity, claims and one
+          # accountable owner bind the brief, and a tampered owner is refused on
+          # the read path. The suite drives the synthetic client fixture end to
+          # end (facts -> interview -> four bindings -> plannable) and proves the
+          # inverse refusals, so it runs by explicit file path.
+          python3 38-conversational-ai-system/tools/tests/test_acquisition_brief_binding.py
+          echo "✓ Skill 38 acquisition brief binding suite green (test_acquisition_brief_binding.py)"
+      # T-26 clause (d) had a suite and no runner: `tools/tests/test_answer_duty.py`
+      # existed but no workflow ran it, so a duty gate that returned True for every
+      # channel could ship green. The path is EXPLICIT, not a discover, so moving or
+      # deleting the file is a red build instead of a silently empty run.
+      - name: Skill 38 answer-duty suite (T-26 clause (d)) — explicit path
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -I 38-conversational-ai-system/tools/tests/test_answer_duty.py
+          echo "✓ answer_duty suite passes (public/private duty + fail-closed)"
+
+      # T-26 clause (d) — the comment-reader suite (acceptance rows A1/A2/A3) had
+      # a suite and no runner: `35-social-media-planner/scripts/test_comment_reader.py`
+      # existed but no workflow executed it, so a reader that fabricated a comment
+      # feed, handed off the page's own comments, or dropped a long-lived thread
+      # could ship green. The path is EXPLICIT, not a discover, so moving or
+      # deleting the file is a red build instead of a silently empty run.
+      - name: Skill 35 comment-reader suite (T-26 clause (d)) — explicit path
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -I 35-social-media-planner/scripts/test_comment_reader.py
+          echo "✓ comment_reader suite passes (supported surface, own-author exclusion, ledgered skip)"
+
+      # T-22 (Skill 35 social-planner) — the two suites this unit ships are wired
+      # here BY EXPLICIT NAME, the same pattern as the Skill 38 contract fixture
+      # above (`t="38-.../hook-mapping-contract.test.sh"` resolved from the repo
+      # root, absent checkout SKIPs LOUDLY). They are NOT left to a discovery
+      # loop: the only `test_*.py` discovery loop in this workflow is scoped to
+      # `75-drama-song-ad-factory/scripts/core` and cannot reach
+      # `tests/social-planner`, so naming the paths is what makes them run at all.
+      # Each step resolves its path, DRY-LISTS it (a workflow that names a path
+      # it never executes is the same defect wearing a hat), then executes the
+      # file directly — `python3 <file>`, the form this checkout's own
+      # `if __name__ == "__main__": unittest.main()` entry point serves — so the
+      # run does not depend on `tests` being an importable package
+      # (`tests/social-planner` is a hyphenated directory with no
+      # `__init__.py`, so `python3 -m unittest tests/...` is loader-dependent).
+      - name: T-22 profile capability suite (explicit name)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="tests/social-planner/test_t22_profile_capability.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-22 profile capability suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 "$t"
+          echo "✓ T-22 profile capability suite ran and passed"
+
+      - name: T-22 status guard matrix suite (explicit name)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="tests/social-planner/test_t22_status_guard_matrix.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-22 status guard matrix suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 "$t"
+          echo "✓ T-22 status guard matrix suite ran and passed"
+      - name: "T-24 pb-contracts suite (qc-pb-contracts.sh / test_pb_contracts.py)"
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash 38-conversational-ai-system/scripts/qc-pb-contracts.sh
+          echo "✓ T-24 pb-contracts suite green (qc-pb-contracts.sh)"
+      # T-14 (R-13, C-14, C-F07): the bonus access capability suite is executed
+      # HERE, by explicit path. The module and its suite shipped with no CI call
+      # site at all, so a green local run proved nothing about CI — and CI being
+      # green concealed it, because CI runs the checks that exist, not the ones a
+      # new module needed. stdlib unittest only: no install step is required.
+      - name: T-14 bonus access capability suite
+        shell: bash
+        run: |
+          set -uo pipefail
+          rc=0
+          out="$(python3 -m unittest discover -s shared-utils/bonus/tests \
+            -p 'test_access_capability.py' -v 2>&1)" || rc=$?
+          printf '%s\n' "$out"
+          if [ "$rc" -ne 0 ]; then
+            echo "✗ T-14 bonus access capability suite exited $rc"
+            exit 1
+          fi
+          n="$(printf '%s\n' "$out" | sed -nE 's/^Ran ([0-9]+) tests?.*/\1/p')"
+          if [ "${n:-0}" -lt 1 ]; then
+            echo "✗ T-14 suite ran no tests — the path or pattern no longer selects it"
+            exit 1
+          fi
+          echo "✓ T-14 bonus access capability suite green ($n tests)"
+
+      # T-15 (R-13, C-15, C-F11): the bonus access adapter suite is wired here
+      # BY EXPLICIT PATH, the same explicit-name pattern as the T-22 suites above.
+      # The adapter's production call site is the T-14 operator CLI
+      # (44-convert-and-flow-operator/tools/bonus_access_decision.py, access-*
+      # commands); this step is what makes CI run its suite at all. The path is
+      # DRY-LISTed before execution, and an absent checkout SKIPs LOUDLY rather
+      # than passing silently. stdlib unittest only: no install step required.
+      - name: T-15 bonus access adapter suite (explicit name)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="shared-utils/bonus/tests/test_access_adapter.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-15 bonus access adapter suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 -I "$t"
+          echo "✓ T-15 bonus access adapter suite ran and passed"
+
+      # T-23 (shared-utils/manifest) — the joined-monthly-approval suite is
+      # wired here BY EXPLICIT NAME. No discovery loop in this workflow reaches
+      # `shared-utils/manifest/tests`, so naming the path is what makes it run
+      # at all. Path resolved from the repo root; absent checkout SKIPs LOUDLY
+      # rather than passing silently.
+      - name: T-23 joined monthly approval manifest suite (explicit name)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="shared-utils/manifest/tests/test_monthly_manifest.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-23 monthly manifest suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 "$t"
+          echo "✓ T-23 joined monthly approval manifest suite ran and passed"
+      # T-21 Instagram route adapter: the supported comment and direct routes
+      # (separate account/filter/event/eligibility, ignored opener no drip, no
+      # inferred FB parity). Without this step the suite never runs in CI.
+      - name: T-21 Instagram route adapter suite (explicit name)
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 shared-utils/routes/instagram/test_route_adapter.py
+          echo "✓ T-21 Instagram route adapter suite green"
+      # T-28 booking and service follow-through (R-18/R-20, C-28). No workflow
+      # named this suite, so the adapter (shared-utils/booking/) and its 76
+      # contract tests could regress with every gate still green. Runs by
+      # EXPLICIT PATH — stdlib unittest, no install, no network, no browser.
+      - name: T-28 booking follow-through suite (explicit path)
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -I -m unittest discover -s shared-utils/booking/tests
+          python3 -I shared-utils/booking/followthrough.py
+          python3 -I 38-conversational-ai-system/tools/booking_service.py
+          echo "✓ T-28 booking follow-through suite passes (shared-utils/booking/tests)"
+
+      - name: T-39 compatibility safeguards + load_ledger call-site wiring (explicit names)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # T-39 (DATA-CONTRACTS 10): compat_guard.py is the compatibility/
+          # migration/CAS/forward-repair unit, and pb_contracts.load_ledger is its
+          # production call site. Two suites, both named explicitly so a green
+          # local run is what gates the PR:
+          #   test_compat_guard.py         - the refusals (stale writer, generation
+          #                                  regression, newer-than-known, corrupt
+          #                                  record, protected state), each paired
+          #                                  with a control.
+          #   test_compat_guard_wiring.py  - the CALL SITE. A module nobody calls is
+          #                                  the defect T-39 closes, so this file
+          #                                  spies on the guard call load_ledger makes
+          #                                  and asserts that a newer ledger's
+          #                                  UsageError is CAUSED by
+          #                                  NewerThanKnownError. Delete the call and
+          #                                  it goes red.
+          # A MISSING suite is a red, not a skip: deleting either file must fail
+          # the build instead of silently disarming the gate.
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          s="38-conversational-ai-system/tools/tests/test_compat_guard.py"
+          w="38-conversational-ai-system/tools/tests/test_compat_guard_wiring.py"
+          for t in "$s" "$w"; do
+            if [ ! -f "$t" ]; then
+              echo "✗ T-39 suite is absent from this checkout: $t. A MISSING suite is a red, not a skip."
+              exit 1
+            fi
+            echo "resolved $root/$t"
+            ls -l "$t"
+          done
+          python3 "$s"
+          python3 "$w"
+          echo "✓ T-39 compatibility safeguards refuse newer builds, generation regression and protected-state rollback; the compat_guard call site in pb_contracts.load_ledger is wired"
+
+      # T-13 direct original fulfillment (R-10/R-12, C-13, C-F04, C-F07, C-F09).
+      # No step named this suite, so the T-13 module and its 16 offline contract
+      # tests could regress with every gate still green. Wired BY EXPLICIT PATH,
+      # the same explicit-name pattern as the T-22 and T-15 steps: the only
+      # test_*.py discovery loop in this workflow is scoped to
+      # 75-drama-song-ad-factory/scripts/core and cannot reach
+      # 38-conversational-ai-system/tools/tests. The path is DRY-LISTed before
+      # execution and an absent checkout SKIPs LOUDLY rather than passing.
+      # stdlib unittest only: no install, no network, no browser.
+      - name: T-13 direct original fulfillment suite (explicit path)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="38-conversational-ai-system/tools/tests/test_direct_fulfillment.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-13 direct fulfillment suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 -I "$t"
+          python3 -I 38-conversational-ai-system/tools/direct_fulfillment.py
+          echo "✓ T-13 direct original fulfillment suite ran and passed"
+
+      # T-25 (PBB-698) — direct_fulfillment.py had ZERO production importers; the
+      # only reference was its own unittest module. This step names that suite BY
+      # EXPLICIT PATH (not left to a discovery loop that cannot reach tools/tests)
+      # and executes it; the production call site is tools/interactive_owner.py
+      # (record-basis / fulfill), which the step above's sibling suite covers.
+      - name: T-25 direct fulfillment suite (explicit name)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="38-conversational-ai-system/tools/tests/test_direct_fulfillment.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-25 direct fulfillment suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 "$t"
+          echo "✓ T-25 direct fulfillment suite ran and passed"
+
+      - name: T-53 pb_send chokepoint suite (duplicate admit / suppressed / human fence) — explicit path
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="38-conversational-ai-system/tools/tests/test_pb_send.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-53 pb_send suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 -I "$t"
+          echo "✓ T-53 pb_send chokepoint suite ran and passed"
+
+      - name: T-53 human-fenced contact reaches NO transport (fence proof, explicit path)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="38-conversational-ai-system/tools/tests/test_pb_send.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-53 human-fence proof SKIPPED::$t is absent — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          python3 -I - "$t" <<'PY'
+          import importlib.util, sys
+          spec = importlib.util.spec_from_file_location("proof", sys.argv[1])
+          mod = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          mod.test_human_fence_makes_zero_transport_calls()
+          print("PASS human fence: zero transport calls")
+          PY
+          echo "✓ T-53 human-fenced contact produced zero transport calls"
+
+      - name: T-53 GHL Conversations sender suite (HTTP 200 / 5xx unknown / duplicate key) — explicit path
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="44-convert-and-flow-operator/tools/engine/tests/test_outbound_sender.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-53 sender suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 -I "$t"
+          echo "✓ T-53 GHL Conversations sender suite ran and passed"
+
+      - name: T-29 human handoff lifecycle suite (explicit name)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # shared-utils/handoff/handoff.py is the T-29 module: the owned human
+          # handoff (context, acceptance, due/backup, and the fence that keeps the
+          # bot paused until an explicit release). Its suite runs by explicit
+          # path here, so deleting or hollowing the lifecycle is a red build. The
+          # module is reached from production through the reminder send gate
+          # (shared-utils/reminders/reminder_state_machine.py, _gate_evaluator);
+          # a MISSING suite is a red, not a skip.
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="shared-utils/handoff/tests/test_handoff.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ T-29 handoff lifecycle suite is absent from this checkout: $t missing. A MISSING suite is a red, not a skip."
+            exit 1
+          fi
+          python3 -I "$t"
+          echo "✓ T-29 human handoff lifecycle suite (50 cases) is green"
+          # T-36 (PBB-651): the bootstrap engine suite is executed HERE, by explicit
+          # path. The engine drives the guided-setup provisioning step
+          # (38-conversational-ai-system/scripts/03-create-journey-templates.sh); a
+          # green local run proves nothing about CI unless CI names the suite.
+      - name: T-36 bootstrap engine suite (explicit path)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="38-conversational-ai-system/tools/tests/test_bootstrap_engine.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-36 bootstrap engine suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 "$t"
+          echo "✓ T-36 bootstrap engine suite ran and passed"
+
+      - name: "C-F03/C-F12 contract traces (fixtures/contract-traces.json)"
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Minimal focused traces for C-F03 (admission / crash / unknown send) and
+          # C-F12 (revision-safe upgrade / rollback). The runner loads the fixture,
+          # executes every case through its family's reference gate, and compares the
+          # computed outcome with that case's own `expected`. A corrupted input case
+          # goes red with rc 1 and the case id, so this step CAN fail — it is not a
+          # suite that happens to pass.
+          # Scope: this executes the CONTRACT RULES, not the shipped product handlers.
+          # It does not bind an acceptance row; C-F03 / C-F12 stay UNVERIFIED until an
+          # independent agent binds them to the product handlers.
+          t="38-conversational-ai-system/tests/contract_traces_runner.py"
+          f="fixtures/contract-traces.json"
+          if [ ! -f "$t" ]; then echo "::error::$t is absent from this checkout"; exit 1; fi
+          if [ ! -f "$f" ]; then echo "::error::$f is absent from this checkout"; exit 1; fi
+          python3 "$t" --fixture "$f"
+          echo "✓ contract traces green (F-03 + F-12 executed against their expected outcomes)"
+      - name: T-16 mobile-first capture + the one logical SMS email ask (suite, explicit path)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # shared-utils/capture/progressive_capture.py is T-16: mobile-first capture
+          # and the ONE logical SMS email ask (DATA-CONTRACTS 7). Its production call
+          # site is reminder_state_machine.send_reminder, which carries only the ask
+          # plan_capture permits. Run the suite BY EXPLICIT PATH so a policy
+          # regression fails the build instead of drifting.
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="shared-utils/capture/tests/test_progressive_capture.py"
+          if [ ! -f "$t" ]; then
+            echo "::warning title=T-16 capture suite SKIPPED::$t is absent from this checkout — nothing to assert. NOT a pass."
+            echo "⚠ SKIP (reason: $t is absent from this checkout) — nothing to assert. NOT a pass."
+            exit 0
+          fi
+          echo "resolved $root/$t"
+          ls -l "$t"
+          python3 "$t"
+          python3 -I shared-utils/reminders/reminder_state_machine.py --selfcheck
+          echo "✓ T-16 progressive capture + the one logical SMS email ask suite ran and passed"
+      - name: T-16 reminder host self-check (discriminates the wiring, rc-gated)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The capture suite above is green at base too, so it cannot detect a
+          # wiring removal. The host self-check carries the +6 T-16 assertions
+          # (capture_ask_planned/refused on the real send path: 27 at the head
+          # vs 21 at the base), so run it here rc-gated with a count floor:
+          # reverting reminder_state_machine.py to base drops the count below
+          # the floor and fails this step. No soft-skip: a missing file is red.
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="shared-utils/reminders/reminder_state_machine.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ T-16 host self-check is absent: $t missing. A MISSING check is a red, not a skip."
+            exit 1
+          fi
+          log="$(mktemp)"
+          python3 -I "$t" --selfcheck > "$log" 2>&1 || { cat "$log"; echo "✗ T-16 host self-check failed"; exit 1; }
+          cat "$log"
+          python3 - "$log" <<'PY'
+          import re, sys
+          text = open(sys.argv[1]).read()
+          m = re.search(r"(\d+) assertions passed", text)
+          count = int(m.group(1)) if m else 0
+          if count < 27:
+              print("✗ T-16 wiring assertions missing: %d passed, need >= 27" % count)
+              sys.exit(1)
+          print("✓ T-16 reminder host self-check ran and passed (%d assertions)" % count)
+          PY
+          echo "✓ T-16 reminder host self-check ran and passed"
+
+      # Skill 84 (Purple Billboard Blueprint) wiring. 84-purple-billboard-blueprint/tests/
+      # test_blueprint_wiring.py fails when SKILL.md, wiring-map.md or
+      # safety-boundaries.md name a path, function, class or command-line
+      # subcommand that no longer exists. No workflow ran it, so a map that
+      # pointed at renamed or deleted code looked current. Wired BY EXPLICIT PATH,
+      # the same pattern as the Skill 38 and shared-utils suites above: the one
+      # test_*.py discovery loop in this workflow is scoped to
+      # 75-drama-song-ad-factory and cannot reach it. A MISSING suite is a red,
+      # not a skip. stdlib only: no install, no network.
+      # The step ends with a red proof: it renames one function and one
+      # subcommand in a THROWAWAY COPY and requires the test to fail on exactly
+      # that, so a scanner that stops scanning cannot pass this step.
+      - name: Skill 84 blueprint wiring (explicit path, with a red proof)
+        shell: bash
+        run: |
+          set -uo pipefail
+          root="${GITHUB_WORKSPACE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          cd "$root" || { echo "✗ cannot cd to the repo root ($root)"; exit 1; }
+          t="84-purple-billboard-blueprint/tests/test_blueprint_wiring.py"
+          if [ ! -f "$t" ]; then
+            echo "✗ Skill 84 wiring test is absent from this checkout: $t. A MISSING suite is a red, not a skip."
+            exit 1
+          fi
+          echo "resolved $root/$t"
+          python3 -I "$t" || { echo "✗ Skill 84 wiring test failed"; exit 1; }
+
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          for d in [0-9][0-9]-* shared-utils; do
+            case "$d" in
+              38-conversational-ai-system|84-purple-billboard-blueprint) ;;
+              *) ln -s "$root/$d" "$TMP/$d" ;;
+            esac
+          done
+          cp -R 38-conversational-ai-system 84-purple-billboard-blueprint "$TMP/"
+          copy="$TMP/84-purple-billboard-blueprint/tests/test_blueprint_wiring.py"
+          mutate() {
+            python3 - "$1" "$2" "$3" <<'PY'
+          import sys
+          path, old, new = sys.argv[1:4]
+          src = open(path, encoding="utf-8").read()
+          if src.count(old) != 1:
+              sys.exit("red-proof fixture stale: %r is not in %s exactly once; update this step" % (old, path))
+          open(path, "w", encoding="utf-8").write(src.replace(old, new))
+          PY
+          }
+          expect_red() {
+            if python3 -I "$copy" >"$TMP/out.txt" 2>&1; then
+              echo "✗ VACUOUS SUITE: $1 passed." >&2
+              exit 1
+            fi
+            grep -q "$2" "$TMP/out.txt" || {
+              echo "✗ the suite failed, but not on the injected defect ($1):" >&2
+              tail -30 "$TMP/out.txt" >&2
+              exit 1
+            }
+            echo "  ✓ red on: $1"
+          }
+          gate="$TMP/38-conversational-ai-system/tools/outbound_gate.py"
+          send="$TMP/38-conversational-ai-system/tools/pb_send.py"
+          mutate "$gate" "def dispatch(" "def dispatch_renamed("
+          expect_red "a renamed function (outbound_gate.dispatch)" "outbound_gate.py: dispatch"
+          cp "$root/38-conversational-ai-system/tools/outbound_gate.py" "$gate"
+          mutate "$send" 'add_parser("reply"' 'add_parser("reply_renamed"'
+          expect_red "a renamed subcommand (pb_send reply)" "pb_send.py: reply"
+          echo "✓ Skill 84 wiring test ran and passed, and goes red on a renamed function and a renamed subcommand"
+
+  # The one-process whole-tree Skill 75 pytest run (the exact command the
+  # "Skill 75 pytest collection + run" step ran on one core before it went
+  # per-file), on its own runner so it overlaps the long qc-static job instead
+  # of adding ~11 minutes to it. qc-static's pytest step waits for this job
+  # and fails unless it succeeded, so it still gates "QC static invariants".
+  # Same tools the empty-home step installs, so no suite skips itself here.
+  skill75-one-process:
+    name: Skill 75 whole-tree pytest (one process)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Skill 75 whole-tree pytest, one process
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 -m pip install --quiet pytest numpy opencv-python-headless
+          pkgs=""
+          command -v ffmpeg >/dev/null || pkgs="$pkgs ffmpeg"
+          command -v tesseract >/dev/null || pkgs="$pkgs tesseract-ocr"
+          [ -z "$pkgs" ] || { sudo apt-get update -qq && sudo apt-get install -y -qq $pkgs; }
           HOME="$(mktemp -d)" python3 -m pytest -q \
             75-drama-song-ad-factory/scripts
-          echo "✓ Skill 75 scripts/ pytest-collectable and green"

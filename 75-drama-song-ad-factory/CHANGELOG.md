@@ -4,6 +4,167 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## v2.9.155 - 2026-11-02 - chore(batch): version stamp for batch PR #2784 (ST2, X01, F14, PR #2779)
+
+- **G3 version stamp, skill 75 v2.9.154 -> v2.9.155.** Batch PR #2784 combines ST2, X01,
+  F14 and PR #2779 and changes skill 75 content (delivery checklist, clips, package,
+  intake preflight, lane size) without a `skill-version.txt` bump, which fails G3. Bumped
+  to the next patch and kept the `SKILL.md` frontmatter `version:` in agreement. No
+  release or tag is created here.
+
+## v2.9.138 - 2026-11-01 - fix(enroll): hand the studio receipt to the runtime user
+
+- **G3 version stamp, skill 75 v2.9.137 -> v2.9.138.** `shared-bridge/enroll-on-install.sh`
+  now chowns the enrollment receipt (`machine.key`, `machine.url`, `client.url`,
+  `capability.json`, `state.json`) to the owner of the state root and re-tightens it to
+  600, on both the fresh-enroll and the `enroll --resume` paths. Inside a container the
+  installer runs as root while the gateway runs as `node`, and a root-owned 600 key is
+  unreadable by the runtime: the box reported `NO_KEY` / "no machine key; run enroll
+  first" immediately after a successful enroll. No-op on a single-user box. No secret
+  handling changed. No release or tag is created here.
+
+## v2.9.136 - 2026-11-01 - chore(c05): version stamp for the eighteen-style cue and rate wiring
+
+- **G3 version stamp, skill 75 v2.9.135 -> v2.9.136.** The C05 change set touches
+  skill 75 content (ten music prompt templates, `song_choices`, and `suno_recipe`)
+  without a `skill-version.txt` bump, which fails G3. Bumped to the next patch and
+  kept the `SKILL.md` frontmatter `version:` in agreement; no other file holds this
+  version. No release or tag is created here.
+
+## v2.9.134 - 2026-10-28 - chore(train20): land the S75-T41 receipt and its guard tests
+
+Lands the S75-T41 receipt, attempts and suno prompt guard tests in the train20 batch.
+
+## v2.9.133
+
+- Suno outbound alias guard now fails closed in the case that still leaked: shipped
+  catalog unreadable AND the caller supplies a partial catalog. The seam raises
+  `DispatchError: MISSING_ALIAS_CATALOG` instead of sending an unswept style.
+  Before the fix that combination put `in the style of Whitney Houston` on the
+  wire (1 send, 1953 bytes); after it, 0 sends and nothing on the wire.
+
+## v2.9.132 - 2026-10-28 - chore(batch-consolidate-20261028-0700): version stamp for the consolidated fanout batch
+
+- **Consolidation 20261028-0700 version stamp, skill 75 v2.9.131 -> v2.9.132.** Skill content changed by units merged into batch/consolidate-20261028-0700. Version stamp, SKILL.md frontmatter and this entry only.
+
+## v2.9.131 - 2026-10-28 - chore(batch-fanout-0250-lane9): version stamp for batch lane 9
+
+- **Batch fanout lane 9 version stamp, skill 75 v2.9.130 -> v2.9.131.** Main reads v2.9.130, so this lane takes main+1 and G3 sees a real bump against the merge base. The units in this lane touching skill 75 are S75-CATALOG (`s75/S75-CATALOG` @ `678b021e`), S75-T32-R1 (`s75/S75-T32-r1` @ `6a7be9f9`) and S75-T41-SHARED-RULE (`s75/S75-T41-shared-rule` @ `61390619`). They add the folk-storytelling prompt template, a real-content replay driver with its recorded S75-T41 fixture, and the story-first acceptance suite (`tests/story_first_acceptance/`). No other skill code changed in this commit; version stamp and this entry only.
+
+## v2.9.130 - 2026-10-27 - chore(batch-20261027-2326): version stamp for S75X-W3
+
+- **Batch 20261027-2326 version stamp, skill 75 v2.9.129 -> v2.9.130.** S75X-W3 (`s75/verdicts-S75X-W3` @ `5fc917d2`) is the only unit in this batch touching skill 75. Main already reads v2.9.129, so the batch takes main+1 and G3 sees a real bump against the merge base. The unit's Studio replay now sends ONE reply per turn — a growing replay prefix per answer — so a refused turn fails closed before the run line is printed, with the named refusal codes `QUESTION_NOT_PRESENTED`, `ONE_REPLY_AT_A_TIME`, `INTAKE_REPLAY_MISMATCH`, `REPLAY_SESSION_UNREADABLE` and `REPLAY_FAILED`. No skill code changed in this commit; version stamp and this entry only.
+
+## v2.9.129 - 2026-10-27 - chore(batch-20261027-2050): update stamp onto 7f9eb460
+
+- **Batch 20261027-2050 update stamp, skill 75 v2.9.128 -> v2.9.129.** The branch was merged with main `7f9eb460adc6fa0778a304bf3959923217c5096f` (PR #2648 merge train, which set skill 75 to v2.9.128). Main therefore already reads v2.9.128, so this batch takes main+1. No skill code changed in this commit; version stamp and this entry only. The Skill 38 stamp is unchanged from main.
+
+## v2.9.128 - 2026-10-27 - chore(batch-20261027-2050): version stamp for S75-T02 and S75-T15
+
+- **Batch 20261027-2050 version stamp, skill 75 v2.9.127 -> v2.9.128.** S75-T02 (`s75/S75-T02-r1` @ `89a7ffc03`) and S75-T15 (`s75/S75-T15-r6` @ `a6400314f`) are the two units in this batch. T15 carried its own bump to v2.9.128 on its branch; merge commit `0eb33a361` took that higher value under the room's take-the-higher rule, so the batch's net effect on skill 75 is exactly one bump, v2.9.127 -> v2.9.128. This changelog commit changes no version file and no skill code.
+
+## v2.9.128 - 2026-10-27 - chore(batch-20261027-2022): version stamp
+
+- **Batch 20261027-2022 version stamp, skill 75 v2.9.127 -> v2.9.128.** Eleven units composed onto 6b9ed732 (`cc273cc1`, `f589ff0f`, `16c0946a`, `d3bf0bf3`, `11c27b48`, `72e99726`, `885d55f5`, `e910f203`, `f4b6fa2c`, `674ee09a`, `0708e87b`). No skill code changed in this commit; version stamp and this entry only.
+
+## v2.9.126 - 2026-10-27 - chore(batch-20261027-0211): version stamp for S75-T04
+
+- **Batch 20261027-0211 version stamp, skill 75 v2.9.125 -> v2.9.126.** S75-T04 (`s75/S75-T04-r6-stage` @ `c027f419`) is the only unit in this batch touching skill 75. No skill code changed in this commit; version stamp only.
+
+## v2.9.116 - 2026-10-26 - G3 re-bump: S75-T11, S75-T16, S75-T17, S75-T26, S75-T36 batch
+
+- **G3 re-bump only.** Main advanced its own `skill-version.txt` to v2.9.115,
+  the same value this branch had already taken, so after the branch was brought up
+  to date with main the bump no longer appeared in the diff against the merge base
+  and the G3 guard ("skill content change requires skill-version.txt bump") failed.
+  This patch raises the version to one level above main (v2.9.116) so the bump is
+  visible to G3. No skill code changed in this commit.
+
+## v2.9.115 - 2026-10-26 - G3 re-bump: S75-T21, S75-T34, S75-T39 batch
+
+- **G3 re-bump only.** Main advanced its own `skill-version.txt` to v2.9.114, the
+  same value this branch had already taken, so after the branch was brought up to
+  date with main the bump no longer appeared in the diff against the merge base
+  and the G3 guard ("skill content change requires skill-version.txt bump") failed.
+  This patch raises the version to one level above main so the bump is visible to
+  G3. No skill code changed in this commit.
+
+## v2.9.114 - 2026-10-26 - S75-T21, S75-T34, S75-T39 batch
+
+- **S75-T21 — music styles: Pop Rock, Reggaeton and Country Rap recipes.** Three
+  style recipes land on the current main (r2), with a deterministic recipe test
+  file and the attempt-1 artefact amended with the resolved head. `suno_recipe`
+  carries the recipe parameters through to the Suno createTask contract.
+- **S75-T34 — supervisor policy adapter.** Detect, stop, isolate, reconcile and
+  activate across a bounded policy surface, with 100+ deterministic cases.
+- **S75-T39 — one hygiene facet per repository event, never a global sweep.**
+  Facet dispatch routes a single event to a single facet, with its own
+  deterministic test file.
+- The same diff also carries **S75-T16** — the character-library sync protocol
+  (ids, bounded retry, revisions, conflicts, offline snapshots) and its 31
+  deterministic cases.
+
+## v2.9.114 - 2026-10-25 - Drama-to-Demand upgrades recorded (no behaviour change)
+
+Version pair moved `v2.9.113` -> `v2.9.114` so the release record matches the
+code. This release edits only `skill-version.txt`, the `SKILL.md` version field
+and the two documents that record behaviour; no product file changed. The
+behaviour below already ships in the `v2.9.111`-`v2.9.113` line, which carried
+batch version bumps with no changelog entry, so this is the first entry since
+`v2.9.110`.
+
+What a client or an operator sees:
+
+- **The card opens by asking what the video is for.** A new run asks one plain
+  question per message, starts on that question, offers the budget the client
+  already gave in the brief as the recommended option, and reuses a saved
+  character by name instead of asking again. No client-facing question uses
+  screenwriting or method jargon. A resumed project replays exactly the
+  questions it already answered and its approved files are untouched.
+- **Three real opening choices, not one tame line.** The reference library
+  holds four worked example sets; each shows three genuinely different
+  openings for the same business - a different kind of crisis, a different
+  question, a different first line - and every candidate spells out the spoken
+  first line, the headline, the first thing the viewer sees, the question it
+  opens, why that audience cares and how the story connects to the actual
+  offer. The strongest for shock, curiosity and relevance is recommended, and a
+  counterexample table shows tame openings rejected. Fiction may invent a
+  dramatic event again; an invented event is still refused when it would be
+  presented as a verified fact about a real person or product.
+- **The story may open on the consequence without losing its spine.** The
+  twelve beats keep their ids and their true cause-and-effect order; how they
+  are told is declared separately, and the script, the performed lines and the
+  shots must all agree with the declared order. Every beat still states its
+  action, its change, what the viewer now understands, the question it leaves
+  open and who carries it.
+- **Every musical turn says why and what the viewer hears.** The spoken hook,
+  the first singing at the drop, the hero shift and the earned solution hook
+  each carry a written reason and the intended audible change (from, to,
+  rhythm, emotional direction, vocal). A chorus that arrives before the story
+  has earned it is refused.
+- **The purpose the client chose decides which rules apply.** A lesson,
+  testimonial or sales run is judged by its own purpose's rules and the purpose
+  is never guessed from the script's words. Every supported launcher (text,
+  telegram-json, openclaw-json, Studio) records the purpose and the planned
+  gates in `control/method.json` for a new run.
+- **The approved opening actually reaches the film.** The approved opening line
+  and the first visible action are carried into the generated scene plan and
+  the shot order; an opening image that could be read two ways is refused until
+  the intended reading is recorded.
+- **Mouth-shape clips stay inside the policy.** 25-30% of the ad length
+  targeted, 35% hard maximum, clips 4-6 seconds, never fewer than three, and
+  the first 12 seconds clearly articulated. A request that cannot satisfy all
+  of that is surfaced, never silently changed.
+
+Provenance: S75X-W1 (opening coaching, opening candidates), S75X-W2
+(presentation order, blueprint turns), S75X-W3 (recorded purpose reaches the
+story check and every launcher), S75X-W4 (opening scene, blueprint music
+request, lip-sync policy). The accepted tests for all four pass on this tree:
+`test_opening_flow_default_s75x.py`, `test_presentation_order_u1.py`,
+`test_method_plan.py`, `test_factory_card_purpose_w3u2.py`,
+`test_stage_purpose.py`, `test_opening_scene_w4.py`,
+`test_blueprint_inputs_s75xw4u2.py`, `test_lipsync_clips.py`.
+
 ## v2.9.110 - 2026-10-24 - governed production admission
 
 Production entrypoints and paid dispatch require authoritative intake, the

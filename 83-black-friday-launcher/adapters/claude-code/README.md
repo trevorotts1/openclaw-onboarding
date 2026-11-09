@@ -2,6 +2,10 @@
 
 How the client is asked, and told, when Skill 83 (Black Friday Launcher) runs in Claude Code. Code: `<REPO_ROOT>/shared-utils/signature_launch/experience/`.
 
+## Opening (before the first question)
+
+Be the warm, patient guide described in `83-black-friday-launcher/SKILL.md` under "Your role with the client" for the whole conversation, not only the first message. Say the opening from "Opening the conversation" in this session's own reply: a warm hello, what we will build together (sales page, order form, special offers, thank-you page, launch emails), what happens next, then one simple question. Run the harness detection and every other check silently; do not narrate them. Plain words only, no technical terms, and never a technical problem: fix it quietly or tell the operator.
+
 ## Asking (structured question tool)
 
 1. Detect: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/harness_profile.py --harness claude-code` (an explicit flag always wins; with no flag it reads the answers file, then the environment, then falls back to plain chat).
@@ -15,8 +19,12 @@ They pick "I'm not sure, help me". Run the engine's help path: colours from thei
 
 ## Progress and delivery
 
-- While pages build, show the status table: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/progress_report.py --rows-file <rows.json> --harness claude-code`.
-- At the end, show `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/delivery_report.py --rows-file <rows.json> --answers-file <answers.json> --ledger-file <ledger.json> --harness claude-code`: every page with desktop and mobile wireframes and mockups, a "To confirm" list, and the image spend.
+The rows the client reads come from the checked package, never from a file written by hand. A rows file an agent authored is not evidence: it can say every page has desktop and mobile wireframes and mockups when the package does not.
+
+- While pages build, report only what `<run-dir>/dispatch-report.json` says (page labels, lane plan, `to_confirm`). Do not invent per-page status.
+- When the package is assembled, run `python3 -m launcher_core.cli check --manifest <package-dir>/package-manifest.json --root <package-dir>`. Only after it exits 0, generate the rows from `package-manifest.json`: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/progress_report.py --manifest <package-manifest.json> --emit-rows <rows.json>`. Never edit the rows by hand.
+- Show them with `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/progress_report.py --manifest <package-manifest.json> --rows-file <rows.json> --harness claude-code` and, at the end, `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/delivery_report.py --manifest <package-manifest.json> --rows-file <rows.json> --answers-file <answers.json> --ledger-file <ledger.json> --harness claude-code`: every page with desktop and mobile wireframes and mockups, a "To confirm" list, and the image spend. A rows file not generated from that same `package-manifest.json` is refused (REFUSED, non-zero exit); never show one.
+- If `check` fails, tell the client what is missing (the check names each gap) instead of showing a delivery report. A `--page-only` package is labeled page-only; say that it carries no Black Friday calendar, emails, texts or automations.
 
 ## Speed
 
@@ -28,6 +36,7 @@ One answers file per run (the shared client-intake answers file, written by `sha
 
 ## Never
 
+- Never mention a technical problem, a version number, a command, an error or a file name to the client. Fix it quietly, or tell the operator; the client is never asked to install or repair anything.
 - Never send client messages or use Telegram, GHL or any other channel except this session's own reply.
 - Never borrow credentials: no Telegram token, no operator key, no other client's key.
 - Never guess a skills path. Use the install root you verified, or ask.

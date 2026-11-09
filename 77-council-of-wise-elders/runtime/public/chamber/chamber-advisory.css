@@ -1,0 +1,552 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Chamber advisory panel: the finished council's answer, in plain language.
+   ───────────────────────────────────────────────────────────────────────────
+   Colours come only from the tokens in chamber-theme.css (the theme test
+   enforces that). Touch targets are at least 44px, focus uses the shared gold
+   ring, and the whole panel stacks on a phone.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ch-adv {
+  display: block;
+  padding: var(--ch-space-4);
+}
+.ch-adv[hidden],
+.ch-adv [hidden] { display: none; }
+
+/* Once the answer is rendered the advisory panel owns the options and the
+   verdict wording: the decision header's bare vote bar and its "Verdict: …"
+   badge would otherwise repeat a number with no label, or read as a green
+   light for a placeholder option. Presentation only. */
+.ch-dec--answered .ch-dec-options,
+.ch-dec--answered .ch-dec-badges { display: none; }
+
+/* The room keeps its headline and its seats; its shorthand verdict line is
+   replaced by the panel below the room. */
+.ch-has-answer .ch-round-explain { display: none; }
+
+@media (min-width: 600px) {
+  .ch-adv { padding: var(--ch-space-5); }
+}
+
+/* ── Head ───────────────────────────────────────────────────────────────── */
+
+.ch-adv-head { min-width: 0; }
+
+.ch-adv-kicker { margin: 0 0 var(--ch-space-2); }
+
+.ch-adv-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -.01em;
+  color: var(--ch-ink);
+}
+@media (min-width: 600px) {
+  .ch-adv-title { font-size: 28px; }
+}
+
+.ch-adv-sub {
+  margin: var(--ch-space-2) 0 0;
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--ch-ink-muted);
+  overflow-wrap: anywhere;
+}
+@media (min-width: 600px) {
+  .ch-adv-sub { font-size: 17px; }
+}
+
+.ch-adv-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-2);
+  margin-top: var(--ch-space-3);
+}
+
+.ch-adv-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 var(--ch-space-2);
+  background: var(--ch-surface-3);
+  border: 1px solid var(--ch-line);
+  border-radius: var(--ch-radius-chip);
+  color: var(--ch-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.ch-adv-chip--verdict {
+  background: var(--ch-gold-soft);
+  border-color: var(--ch-gold);
+  color: var(--ch-ink);
+}
+.ch-adv-chip--reco {
+  background: var(--ch-gold);
+  border-color: var(--ch-gold);
+  color: var(--ch-on-gold);
+}
+.ch-adv-chip--warn {
+  border-color: var(--ch-line-strong);
+  color: var(--ch-ink);
+}
+
+.ch-adv-note {
+  margin: var(--ch-space-3) 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ch-ink-faint);
+}
+
+/* One line that keeps the two numbers honest: a preference count and a score
+   are not probabilities. */
+.ch-adv-legendline {
+  margin: var(--ch-space-2) 0 0;
+  max-width: 72ch;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ch-ink-muted);
+}
+.ch-adv-legendline:empty { display: none; }
+
+/* ── Start here ─────────────────────────────────────────────────────────── */
+
+.ch-adv-start {
+  margin-top: var(--ch-space-4);
+  padding: var(--ch-space-4);
+  background: var(--ch-surface-2);
+  border: 1px solid var(--ch-gold);
+  border-radius: var(--ch-radius-card);
+}
+.ch-adv-start[hidden] { display: none; }
+
+.ch-adv-start-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ch-gold-strong);
+}
+
+.ch-adv-start-title {
+  margin: var(--ch-space-2) 0 0;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--ch-ink);
+  overflow-wrap: anywhere;
+}
+
+.ch-adv-start-text {
+  margin: var(--ch-space-1) 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ch-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.ch-adv-start-chip {
+  margin: var(--ch-space-2) 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ch-ink-muted);
+}
+.ch-adv-start-chip[hidden] { display: none; }
+
+/* CTR-156: other independent first steps are named beneath the one start
+   action; the recorded order is never changed by this line. */
+.ch-adv-start-note {
+  margin: var(--ch-space-2) 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ch-ink-muted);
+  overflow-wrap: anywhere;
+}
+.ch-adv-start-note[hidden] { display: none; }
+
+/* ── Controls, directly under the answer ───────────────────────────────── */
+
+/* Download, follow-up and compare paint right below the summary so they are
+   reachable before the long detail. The detail still follows in full. */
+.ch-adv-early {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ch-space-2);
+  margin-top: var(--ch-space-4);
+  padding-top: var(--ch-space-4);
+  border-top: 1px solid var(--ch-line);
+}
+
+.ch-adv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-2);
+  margin-top: 0;
+}
+
+.ch-adv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ch-space-2);
+  min-height: 44px;
+  white-space: normal;
+  text-align: center;
+}
+
+.ch-adv-download { text-decoration: none; }
+
+.ch-adv-ico { flex: none; width: 16px; height: 16px; }
+
+.ch-adv-btn-text { min-width: 0; }
+
+@media (max-width: 599.98px) {
+  .ch-adv-actions { flex-direction: column; }
+  .ch-adv-actions .ch-btn { width: 100%; }
+  .ch-adv-early .ch-adv-download { width: 100%; }
+  .ch-adv-start { padding: var(--ch-space-3); }
+}
+
+/* ── Follow-up draft ────────────────────────────────────────────────────── */
+
+.ch-adv-follow {
+  margin-top: var(--ch-space-4);
+  padding: var(--ch-space-4);
+  background: var(--ch-surface-2);
+  border: 1px solid var(--ch-line);
+  border-radius: var(--ch-radius-card);
+}
+
+.ch-adv-label {
+  display: block;
+  margin-bottom: var(--ch-space-2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ch-ink);
+}
+
+.ch-adv-input {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--ch-space-2) var(--ch-space-3);
+  background: var(--ch-surface-1);
+  color: var(--ch-ink);
+  border: 1px solid var(--ch-line-strong);
+  border-radius: var(--ch-radius-chip);
+  font: 400 15px/1.5 var(--ch-font);
+  resize: vertical;
+}
+.ch-adv-input:read-only { color: var(--ch-ink-muted); }
+.ch-adv-input--mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.ch-adv-hint {
+  margin: var(--ch-space-2) 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ch-ink-faint);
+}
+
+.ch-adv-follow .ch-btn { margin-top: var(--ch-space-3); }
+
+/* ── Blocks ─────────────────────────────────────────────────────────────── */
+
+.ch-adv-block {
+  margin-top: var(--ch-space-5);
+  padding-top: var(--ch-space-4);
+  border-top: 1px solid var(--ch-line);
+}
+
+.ch-adv-h3 {
+  margin: 0 0 var(--ch-space-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--ch-ink-muted);
+}
+
+/* A block is a native disclosure: the whole summary row is the control, at
+   least 44px tall, and it says how many items are folded behind it. */
+summary.ch-adv-h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ch-space-2);
+  min-height: 44px;
+  margin: 0;
+  cursor: pointer;
+}
+summary.ch-adv-h3::marker { color: var(--ch-gold-strong); }
+/* A plain text caret keeps the open/closed state visible without relying on
+   the browser marker, which the flex row suppresses. */
+summary.ch-adv-h3 .ch-adv-h3-text::before {
+  content: '\25B8';
+  margin-right: var(--ch-space-2);
+  color: var(--ch-gold-strong);
+}
+.ch-adv-block[open] > summary.ch-adv-h3 .ch-adv-h3-text::before,
+.ch-adv-options-details[open] > summary.ch-adv-h3 .ch-adv-h3-text::before {
+  content: '\25BE';
+}
+summary.ch-adv-h3:focus-visible {
+  outline: 2px solid var(--ch-gold);
+  outline-offset: 2px;
+}
+.ch-adv-block[open] > summary.ch-adv-h3 { margin-bottom: var(--ch-space-2); }
+
+.ch-adv-h3-text { min-width: 0; }
+
+.ch-adv-count {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--ch-line-strong);
+  border-radius: var(--ch-radius-pill);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--ch-ink);
+}
+.ch-adv-count[hidden] { display: none; }
+
+.ch-adv-list {
+  margin: 0;
+  padding-left: var(--ch-space-5);
+  color: var(--ch-ink);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.ch-adv-item { margin: 0 0 var(--ch-space-2); overflow-wrap: anywhere; }
+.ch-adv-item:last-child { margin-bottom: 0; }
+
+.ch-adv-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ch-ink);
+  overflow-wrap: anywhere;
+}
+
+.ch-adv-details { margin-top: var(--ch-space-3); }
+
+.ch-adv-summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ch-ink-muted);
+}
+.ch-adv-details[open] .ch-adv-summary { color: var(--ch-ink); }
+
+/* ── Proposed steps ─────────────────────────────────────────────────────── */
+
+.ch-adv-steps { padding-left: var(--ch-space-5); }
+
+.ch-adv-step { margin-bottom: var(--ch-space-3); }
+
+.ch-adv-step-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--ch-ink);
+  overflow-wrap: anywhere;
+}
+
+.ch-adv-step-text {
+  margin: var(--ch-space-1) 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ch-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.ch-adv-step-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-1);
+  margin: var(--ch-space-2) 0 0;
+}
+
+/* CTR-156: the recorded finish line, or the model's honest note that the
+   saved record stated none, plus the step's own approval sentence. */
+.ch-adv-step-done,
+.ch-adv-step-approval {
+  margin: var(--ch-space-2) 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ch-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+/* ── Readiness (separate from the verdict word) ─────────────────────────── */
+
+.ch-adv-readiness-status {
+  margin: 0 0 var(--ch-space-2);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--ch-ink);
+  overflow-wrap: anywhere;
+}
+
+.ch-adv-readiness-label {
+  margin: var(--ch-space-3) 0 var(--ch-space-1);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ch-ink-muted);
+}
+
+/* ── Options ────────────────────────────────────────────────────────────── */
+
+/* Alternatives fold away until asked for; the fieldset inside carries no
+   second border of its own. */
+.ch-adv-options-details {
+  margin: var(--ch-space-5) 0 0;
+  padding-top: var(--ch-space-4);
+  border-top: 1px solid var(--ch-line);
+}
+.ch-adv-options-details[hidden] { display: none; }
+
+.ch-adv-options {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.ch-adv-legend {
+  padding: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ch-ink-muted);
+}
+
+.ch-adv-option-group {
+  display: grid;
+  gap: var(--ch-space-2);
+  margin-top: var(--ch-space-3);
+}
+
+.ch-adv-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ch-space-3);
+  min-height: 44px;
+  padding: var(--ch-space-3);
+  background: var(--ch-surface-2);
+  border: 1px solid var(--ch-line);
+  border-radius: var(--ch-radius-card);
+  cursor: pointer;
+}
+
+label.ch-adv-option:hover { border-color: var(--ch-line-strong); }
+
+.ch-adv-radio {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  accent-color: var(--ch-gold);
+}
+
+/* The whole selected card is visibly chosen, not just the dot. */
+.ch-adv-option[data-selected="true"] {
+  border-color: var(--ch-gold);
+  background: var(--ch-surface-3);
+}
+
+.ch-adv-option-body {
+  display: block;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ch-adv-option-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ch-space-2);
+}
+
+.ch-adv-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  background: var(--ch-surface-3);
+  border: 1px solid var(--ch-line);
+  border-radius: var(--ch-radius-chip);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ch-ink);
+}
+
+.ch-adv-option-label {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--ch-ink);
+  overflow-wrap: anywhere;
+}
+
+.ch-adv-option-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ch-space-1);
+  margin-top: var(--ch-space-2);
+}
+
+/* ── What happens next ──────────────────────────────────────────────────── */
+
+.ch-adv-next {
+  margin-top: var(--ch-space-5);
+  padding-top: var(--ch-space-4);
+  border-top: 1px solid var(--ch-line);
+}
+.ch-adv-next .ch-adv-input { margin-top: var(--ch-space-2); }
+.ch-adv-next .ch-btn { margin-top: var(--ch-space-3); }
+
+/* ── PDF integration anchor (CTR-136) ──────────────────────────────────── */
+/* Empty until the PDF lane mounts its control here, so it takes no space. */
+
+.ch-adv-pdf {
+  margin-top: var(--ch-space-5);
+}
+.ch-adv-pdf:empty {
+  display: none;
+}
+.ch-adv-pdf .ch-btn {
+  min-height: 44px;
+}
+
+/* ── Live status ────────────────────────────────────────────────────────── */
+
+.ch-adv-status {
+  margin: var(--ch-space-4) 0 0;
+  min-height: 1.2em;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ch-ink-faint);
+}
+.ch-adv-status:empty { margin: 0; min-height: 0; }

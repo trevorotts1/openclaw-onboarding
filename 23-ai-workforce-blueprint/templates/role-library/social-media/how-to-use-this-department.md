@@ -165,6 +165,7 @@ You never have to know these by name or type a command. Just say what you want i
 |---|---|
 | "post my content this week" · "run my social" · "schedule posts" · "plan my social calendar" | Multi-agent content publishing engine |
 | "run my social week end-to-end" · "a week of content" · "a full week of posts across all platforms" | Productionized weekly social engine |
+| "run my purple billboard" · "a giveaway post with a keyword" · "prepare my 30 days of billboard posts" · "turn my post comments into conversations" | Gets your monthly Purple Billboard posts ready for you to approve, then helps with the replies to comments and messages, sends people your free gift and helps them book a call with you |
 
 You do not have to get the routing right or name the skill. The plain-language ask is enough. See `universal-sops/native-skill-invocation.md` for how your specialists reach for these from your intent.
 <!-- END DEPT_SKILLS_V1 -->

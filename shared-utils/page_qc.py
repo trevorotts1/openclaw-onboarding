@@ -17,8 +17,9 @@ This module **extends, never replaces** the existing gates:
 
 JUDGE: the client's own judge model via `06-ghl-install-pages/tools/model_router.py`'s
 `qc` role (MiniMax M3 vision-capable, probe-gated -> OpenRouter MiniMax M3 -> Gemini
-3.5 Flash last-resort). NEVER Anthropic (model_router's `assert_no_anthropic` is called
-on every ladder build). judge != writer, per the standing Quality-Control protocol.
+3.5 Flash last-resort). There is no vendor rule on judge models: the ladder is exactly
+the models the client configured, and no Anthropic id is singled out or refused
+(Trevor order 2026-10-29). judge != writer, per the standing Quality-Control protocol.
 
 SIX DIMENSIONS (weights sum to 100; each scored 0-10):
   S1 Conversion likelihood      25 — offer clarity, call-to-action prominence, friction,

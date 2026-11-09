@@ -227,3 +227,40 @@ def test_presentation_changes_the_creative_fingerprint():
     b = SA.build_manifest(_source(), presentation=CONSEQUENCE_FIRST)
     assert a["fingerprint"] != b["fingerprint"]
     assert list(SA.BEATS) == [r["beat"] for r in a["beats"]]
+
+# --- QC S75X-W2-U1: own ids, malformed declarations, flat/block conflict ----
+
+LESSON = [SA.LESSON_INTRO if b == "product_intro" else b for b in SA.BEATS]
+
+def _lesson_story(order, rows=LESSON):
+    story = _story(order, beats=list(LESSON))
+    story["story_beats"] = [dict(STATEMENT, story_beat_id=b) for b in rows]
+    return story
+
+def test_lesson_consequence_first_keeps_its_own_beat_eight_id():
+    order = ["vindication"] + [b for b in LESSON if b != "vindication"]
+    r = SA.validate_story(_lesson_story(order), purpose="lesson")
+    assert (r["outcome"], r["reason_code"]) == ("ok", "story-valid"), r
+    assert r["beats"][7] == SA.LESSON_INTRO
+
+def test_presenting_a_beat_under_another_id_is_refused_as_relabelling():
+    r = SA.validate_story(_lesson_story(CONSEQUENCE_FIRST), purpose="lesson")
+    assert r["reason_code"] == "presentation-relabelled", r
+
+def test_a_malformed_declaration_never_passes_as_canonical():
+    bare = _story(CONSEQUENCE_FIRST)
+    bare["presentation"] = list(CONSEQUENCE_FIRST)          # bare list = its order
+    assert SA.validate_story(bare)["outcome"] == "ok"
+    bare["story_beats"] = []
+    assert "beat-statement-missing" in _codes(bare)
+    for key, val in (("presentation", "vindication first"),
+                     ("presentation_order", ",".join(CONSEQUENCE_FIRST))):
+        story = _story(None, **{key: val})
+        assert SA.declares_presentation(story)
+        assert "presentation-invalid" in _codes(story), (key, _codes(story))
+
+def test_a_flat_order_disagreeing_with_the_block_is_refused():
+    story = _story(CONSEQUENCE_FIRST, presentation_order=list(SA.BEATS))
+    assert "presentation-view-mismatch" in _codes(story)
+    assert SA.validate_story(_story(CONSEQUENCE_FIRST,
+                                    presentation_order=list(CONSEQUENCE_FIRST)))["outcome"] == "ok"

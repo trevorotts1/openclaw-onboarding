@@ -13,7 +13,9 @@
 # What it does (per dept folder under $OC_ROOT/workspace/departments/):
 #   1. Detect the four scaffolder-written files (IDENTITY/SOUL/MEMORY/HEARTBEAT)
 #      that have NO company-name reference.
-#   2. Move them to a `.backfill-backup/` subfolder with timestamp
+#   2. Copy them to the box's ONE central backup folder
+#      (<backup root>/backfill-dept-personalization/<UTC stamp>/<dept>/, outside
+#      every workspace, newest 3 runs kept) before they are replaced
 #      (we never destroy operator-edited content).
 #   3. Re-run scaffold-agent-files.sh with --force so the new personalized
 #      templates land in their place.
@@ -90,6 +92,18 @@ pretty_name() {
       ;;
   esac
 }
+
+# The backups go to the box's ONE central backup folder, never into a department folder.
+# The path is only computed here (--dry-run creates nothing); mkdir -p creates it on first use.
+_CB="$OC_ROOT/skills/shared-utils/central_backup.py"
+[[ -f "$_CB" ]] || _CB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/shared-utils/central_backup.py"
+BACKFILL_RUN=""
+if [[ $DRY_RUN -eq 0 ]]; then
+  if [[ ! -f "$_CB" ]] || ! BACKFILL_RUN="$(python3 "$_CB" run-dir --tool backfill-dept-personalization --dry-run)"; then
+    echo "[backfill] FATAL: shared-utils/central_backup.py not available - refusing to back up inside a department folder. Run the weekly update first." >&2
+    exit 1
+  fi
+fi
 
 DEPT_ROOT="$OC_ROOT/workspace/departments"
 if [[ ! -d "$DEPT_ROOT" ]]; then
@@ -227,7 +241,7 @@ for dept_dir in "$DEPT_ROOT"/*/; do
   fi
 
   # Backup the four scaffolder-written files before re-writing them
-  backup_dir="$dept_dir/.backfill-backup-$(date -u +%Y%m%dT%H%M%SZ)"
+  backup_dir="$BACKFILL_RUN/$slug"
   mkdir -p "$backup_dir"
   for f in IDENTITY.md SOUL.md MEMORY.md HEARTBEAT.md; do
     if [[ -f "$dept_dir/$f" ]]; then
@@ -256,6 +270,10 @@ for dept_dir in "$DEPT_ROOT"/*/; do
     done
   fi
 done
+
+if [[ -n "$BACKFILL_RUN" && -d "$BACKFILL_RUN" ]]; then
+  python3 "$_CB" prune --tool backfill-dept-personalization || echo "[backfill] WARN: backup prune did not finish (all backups kept)" >&2
+fi
 
 echo ""
 echo "[backfill] summary:"

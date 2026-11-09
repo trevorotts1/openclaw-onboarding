@@ -14,12 +14,12 @@
  * visibility flag on the record, never a state.
  */
 
-import { ContractError } from './errors';
+import { ContractError } from './errors.js';
 import {
   TERMINAL_STATES,
   type SessionMode,
   type SessionState,
-} from './enums';
+} from './enums.js';
 
 export type TransitionActor = 'owner' | 'system' | 'worker' | 'chair';
 

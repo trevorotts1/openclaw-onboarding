@@ -491,6 +491,7 @@ def _blueprint_turns(blueprint):
     }
     # A blueprint whose first sung word is required is never an instrumental-
     # only request; the flag is stated, never guessed.
+    _method_plan.turns_ride(turns, _method_plan.musical_turns(blueprint))
     return {"turns": turns, "instrumental": False,
             "instrumental_support_s": round(support, 3)}
 

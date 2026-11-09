@@ -35,11 +35,14 @@ on:
     paths:
       - scripts/install-hardening.sh
       - scripts/apply-fleet-standards.sh
+      - scripts/verify-routing.sh
       - update-skills.sh
       - tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
       - tests/unit/fleet-standards-legacy-exec-mode.test.sh
+      - tests/unit/fleet-standards-version-detector-rollback.test.sh
       - scripts/repair-model-sovereignty.sh
       - tests/unit/repair-model-sovereignty-no-truncate.test.sh
+      - tests/unit/no-anthropic-rule.test.sh
       - scripts/ensure-burn-guard.sh
       - scripts/oc-schema-migrate.py
       - tests/unit/burn-guard.test.sh
@@ -49,11 +52,14 @@ on:
     paths:
       - scripts/install-hardening.sh
       - scripts/apply-fleet-standards.sh
+      - scripts/verify-routing.sh
       - update-skills.sh
       - tests/unit/hardening-bounded-brew-and-whisper-probe.test.sh
       - tests/unit/fleet-standards-legacy-exec-mode.test.sh
+      - tests/unit/fleet-standards-version-detector-rollback.test.sh
       - scripts/repair-model-sovereignty.sh
       - tests/unit/repair-model-sovereignty-no-truncate.test.sh
+      - tests/unit/no-anthropic-rule.test.sh
       - scripts/ensure-burn-guard.sh
       - scripts/oc-schema-migrate.py
       - tests/unit/burn-guard.test.sh
@@ -87,8 +93,21 @@ jobs:
           chmod +x tests/unit/fleet-standards-legacy-exec-mode.test.sh
           bash tests/unit/fleet-standards-legacy-exec-mode.test.sh
 
+      - name: Version detector parses line 2; unknown version never writes the poison key
+        run: |
+          # 2026-11-06: a CLI shim that writes a banner to stderr made the old
+          # line-1-only detector read the wrong schema, write agents.defaults.tools
+          # on 2026.10.8, and ROLL BACK the entire standards apply. This leg runs
+          # the real script against that exact CLI shape and asserts the standards
+          # actually land -- plus that a genuine validator failure still rolls back.
+          chmod +x tests/unit/fleet-standards-version-detector-rollback.test.sh
+          bash tests/unit/fleet-standards-version-detector-rollback.test.sh
+
       - name: Model-sovereignty repair never truncates fallback chains
         run: bash tests/unit/repair-model-sovereignty-no-truncate.test.sh
+
+      - name: No rule against Anthropic models (the whole roll keeps an Anthropic fallback/provider/plugin)
+        run: bash tests/unit/no-anthropic-rule.test.sh
 
       - name: Burn guard keeps skill-collection-review crons off (unset/auto -> the value the installed build accepts)
         run: bash tests/unit/burn-guard.test.sh

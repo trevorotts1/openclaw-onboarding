@@ -260,6 +260,30 @@ def musical_turns(blueprint, method=None):
     return out
 
 
+def turns_ride(request_turns, turns):
+    """Carry the recorded reason and audible change onto a request's own turn
+    receipt, matched by cue id (never by name).
+
+    The request keeps its own keys; this adds ``reason`` and the full
+    ``audible_change`` beside them, and mirrors the flat AUDIBLE_FIELDS the
+    receipt already uses onto every turn whose cue states them. Returns the
+    receipt."""
+    by_cue = {t.get("cue_id"): t for t in turns or []}
+    for slot in (request_turns or {}).values():
+        if not isinstance(slot, dict):
+            continue
+        t = by_cue.get(slot.get("cue_id"))
+        if not t:
+            continue
+        slot["reason"] = t.get("reason")
+        slot["audible_change"] = t.get("audible_change")
+        aud = t.get("audible_change") or {}
+        for flat, nested in zip(AUDIBLE_FIELDS,
+                                ("to", "rhythm", "emotional_direction")):
+            if aud.get(nested):
+                slot[flat] = aud[nested]
+    return request_turns
+
 def _contract(beat, cue):
     """The seven 14.3 questions answered from the beat and its cue; a question
     the blueprint does not answer stays None and is named ``unresolved``."""

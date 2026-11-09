@@ -13,7 +13,7 @@
 #    status: queued|processing|done|failed, text, transcript_json,
 #    still_frame, error, created_at_utc, done_at_utc}
 #
-# PROVIDER-NEUTRAL, HARD NON-ANTHROPIC (MASTER-PLAN section 4 + section 9 U13):
+# PROVIDER-NEUTRAL (MASTER-PLAN section 4 + section 9 U13):
 #   * default transcription  -> `npx hyperframes transcribe <media> --model small`
 #     (`small` is whisper multilingual auto-detect). NEVER `.en` models unless
 #     the client STATES English — `.en` models silently TRANSLATE non-English
@@ -23,8 +23,7 @@
 #     small (auto-detect, no .en, no --language).
 #   * client-provider ASR    -> optional per-client resolver fallback keyed by
 #     name in capability-map.json["resolvers"] (e.g. Skill 30 Fish Audio or the
-#     client's configured speech provider). The resolved model_id is RE-CHECKED
-#     against /anthropic|claude/i and hard-fails if it matches.
+#     client's configured speech provider).
 #   * pdf/txt box-side       -> pdftotext primary, pandoc fallback for PDF;
 #     .txt direct read. Browser pdf.js is the FIRST path (U09); this box-side
 #     fallback only runs when pdf.js yields nothing.
@@ -39,8 +38,6 @@
 #
 # NEW AF CODES (MASTER-PLAN section 4, prefixed AF-BW-MA-*):
 #   AF-BW-MA-EXTRACT-NO-TEXT  scanned/image-only PDF -> failed (never empty-done)
-#   AF-BW-MA-ANTHROPIC        resolved transcription model id matches
-#                             /anthropic|claude/i  (hard-fail)
 #   AF-BW-MA-CAPABILITY       required capability absent locally AND no client
 #                             resolver (hard-fail the job, exit-7 pattern)
 #   AF-BW-MA-REJECT-FORMAT    source extension not on the allowlist
@@ -60,9 +57,8 @@
 # {intake_id, answer_id, channel, source_uri, source_sha256}) plus an optional
 # client_language hint and an optional capabilities read. The engine fills the
 # rest: status, text, transcript_json, still_frame, error, done_at_utc.
-# No Anthropic ids anywhere in this file by construction.
 # =============================================================================
-"""Provider-neutral, hard non-Anthropic media extraction/transcription engine."""
+"""Provider-neutral media extraction/transcription engine."""
 
 from __future__ import annotations
 
@@ -85,7 +81,6 @@ import _bw_common as c  # noqa: E402
 
 # ---- AF codes (MASTER-PLAN section 4) --------------------------------------
 AF_EXTRACT_NO_TEXT = "AF-BW-MA-EXTRACT-NO-TEXT"
-AF_ANTHROPIC = "AF-BW-MA-ANTHROPIC"
 AF_CAPABILITY = "AF-BW-MA-CAPABILITY"
 AF_REJECT_FORMAT = "AF-BW-MA-REJECT-FORMAT"
 AF_REJECT_SIZE = "AF-BW-MA-REJECT-SIZE"
@@ -125,10 +120,6 @@ TEXT_CAPS = {
 UNSUPPORTED_EXTENSIONS = {"docx", "doc"}
 
 # ---- regexes ----------------------------------------------------------------
-# Anthropic / claude model-id family — the SAME expression the no-Anthropic
-# prover (prove_bw_noanthropic.py) uses, kept in sync here for the resolved
-# transcription model id re-check.
-_ANTHROPIC_RE = re.compile(r"anthropic|claude", re.IGNORECASE)
 # Control chars stripped from extracted text (C0 + DEL + C1, keep \n \t \r).
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]")
 # Music-note tokens whisper emits on instrumental passages — not speech.
@@ -218,25 +209,6 @@ def _resolver_from_map(capability_map, client_resolver):
         return None
     entry = resolvers.get(client_resolver)
     return entry if isinstance(entry, dict) else None
-
-
-# ---------------------------------------------------------------------------
-# Anthropic re-check on the resolved transcription model id
-# ---------------------------------------------------------------------------
-
-def recheck_resolved_model(model_id, result: c.Result) -> bool:
-    """AF-BW-MA-ANTHROPIC re-check on a RESOLVED transcription model id.
-
-    Any model id matching /anthropic|claude/i hard-fails — the same rule the
-    no-Anthropic prover applies to RUN-LEDGER model ids, now applied at the
-    resolved transcription call. Returns True on violation (fail-closed).
-    """
-    if model_id and _ANTHROPIC_RE.search(str(model_id)):
-        result.fail(AF_ANTHROPIC, "resolved transcription model id %r matches "
-                   "/anthropic|claude/i (client boxes never run Anthropic)"
-                   % model_id)
-        return True
-    return False
 
 
 # ---------------------------------------------------------------------------
@@ -533,9 +505,6 @@ def _extract_media(out: dict, source_path: Path, capability_map,
     if resolver:
         provider = resolver.get("provider")
         model_id = resolver.get("model_id")
-        # AF-BW-MA-ANTHROPIC re-check on the RESOLVED model id — hard-fail.
-        if recheck_resolved_model(model_id, result):
-            return _finish(out, result, now)
         # provider-neutral default is `hyperframes`; anything else is not wired
         # in this unit (resolver wiring/live tests live in U15).
         if provider == "hyperframes":
@@ -655,20 +624,6 @@ def self_test() -> int:
     checks.append(("wrapper {text} passthrough",
                    join_transcript_text({"text": "single line"}) == "single line"))
 
-    # 7. Anthropic re-check on the resolved model id.
-    r = c.Result("st")
-    recheck_resolved_model("openrouter/deepseek", r)
-    checks.append(("non-Anthropic model id passes the re-check", r.passed))
-    r2 = c.Result("st")
-    hit = recheck_resolved_model("anthropic/claude-opus-4", r2)
-    checks.append(("anthropic/claude-opus-4 triggers AF-BW-MA-ANTHROPIC",
-                   hit and not r2.passed
-                   and any(code == AF_ANTHROPIC for code, _ in r2.violations)))
-    r3 = c.Result("st")
-    hit3 = recheck_resolved_model("whisper-claude", r3)
-    checks.append(("bare 'claude' in a model id triggers AF-BW-MA-ANTHROPIC",
-                   hit3 and not r3.passed))
-
     # 8. EXTRACT-NO-TEXT for scanned/image-only PDF (fail, never done-with-empty).
     tmpdir = Path("/tmp/ma-u13-selftest")
     tmpdir.mkdir(exist_ok=True)
@@ -740,17 +695,6 @@ def self_test() -> int:
                "resolvers": {"fish-audio": {"provider": "hyperframes",
                                             "model_id": "client-whisper",
                                             "engine": None, "argv": []}}}
-    bad_cap_map = {"transcribe": False,
-                   "resolvers": {"bad": {"provider": "hyperframes",
-                                         "model_id": "anthropic/claude-haiku",
-                                         "engine": None, "argv": []}}}
-    out = extract(dict(base_job), capability_map=bad_cap_map,
-                  client_resolver="bad")
-    checks.append(("client resolver model id re-checked for Anthropic "
-                   "(AF-BW-MA-ANTHROPIC)",
-                   out["status"] == "failed"
-                   and AF_ANTHROPIC in (out.get("error") or "")))
-
     # positive hyperframes-resolver path (injected fixture).
     ok_impl = lambda p, lang, engine=None, extra_args=(): (  # noqa: E731
         {"words": [{"text": "hello"}, {"text": "from"}, {"text": "the"},
@@ -801,7 +745,7 @@ def self_test() -> int:
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Book Writer mini-app U13 transcription engine "
-                    "(provider-neutral, hard non-Anthropic).")
+                    "(provider-neutral).")
     ap.add_argument("job", nargs="?", help="job.json (partial job record)")
     ap.add_argument("--capability-map", help="capability-map.json path")
     ap.add_argument("--client-resolver", help="per-client ASR resolver name")

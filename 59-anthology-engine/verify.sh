@@ -8,9 +8,9 @@
 #
 # Checks: house-layout presence; version agreement; ENGINE-MANIFEST parses with
 # S0..S9; field-map carries the exact PRD Section 6 keys; model-map template has
-# the five tiers and no Anthropic-family id; nudge templates are em-dash-free and
+# the five tiers; nudge templates are em-dash-free and
 # fence-free; the PDF house style honors the 14-point floor; every stage runner
-# byte-compiles and passes --self-test; no Anthropic-family id in any owned file.
+# byte-compiles and passes --self-test.
 #
 # Exit 0 = verified; 4 = drift found.
 set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
@@ -23,7 +23,6 @@ if [ "${1:-}" = "stamp-pin" ]; then
         "$SELF_DIR/anthology-engine-entry.sh"
         "$SELF_DIR/ENGINE-MANIFEST.json"
         "$SCRIPTS/guard-prompt-pins.py"
-        "$SCRIPTS/guard-no-anthropic-runtime.py"
         "$SCRIPTS/guard-font-floor.py"
         "$SCRIPTS/guard-cron-inventory.py"
     )
@@ -145,23 +144,12 @@ try:
 except Exception as exc:
     fails.append("field-map check error: %s" % exc)
 
-# --- model-map template: five tiers, no Anthropic-family id ---
-_a = "anthro" + "pic"; _c = "clau" + "de-"
-banned = re.compile(_c + r"|" + _a + r"/|us\." + _a + r"\.", re.I)
+# --- model-map template: five tiers ---
 try:
     mm_txt = io.open(p("config/model-map.template.json"), encoding="utf-8").read()
     mm = json.loads(mm_txt)
     for t in ("HEAVY-WRITER", "LIGHT", "JUDGE", "LONGCTX", "IMAGE"):
         need(t in mm.get("tiers", {}), "model-map missing tier %s" % t)
-    def walk(node):
-        if isinstance(node, dict):
-            for v in node.values(): yield from walk(v)
-        elif isinstance(node, list):
-            for v in node: yield from walk(v)
-        elif isinstance(node, str):
-            yield node
-    for s in walk(mm.get("tiers", {})):
-        need(not banned.search(s), "model-map tier value carries an Anthropic-family id: %r" % s)
 except Exception as exc:
     fails.append("model-map check error: %s" % exc)
 
@@ -337,24 +325,14 @@ if os.path.isfile(_sg):
 else:
     fails.append("missing U17 drift gate self-test target: scripts/qc-snapshot-fixture.sh")
 
-# --- no Anthropic-family id in any owned text file ---
+# --- owned text files (scanned below for Google API key literals) ---
 owned = ["SKILL.md", "INSTRUCTIONS.md", "HOW-TO-USE.md", "MASTERDOC.md", "REPAIRS.md",
          "CHANGELOG.md", "ENGINE-MANIFEST.json", "anthology-engine-entry.sh",
          "install.sh", "preflight.sh", "verify.sh", "verify-deps.sh",
          "config/engine-config.template.json", "config/model-map.template.json",
          "config/field-map.json"] + ["scripts/" + f for f in stage_files]
-for rel in owned:
-    fp = p(rel)
-    if not os.path.isfile(fp): continue
-    try:
-        txt = io.open(fp, encoding="utf-8", errors="replace").read()
-    except Exception:
-        continue
-    if banned.search(txt):
-        fails.append("Anthropic-family id shape found in owned file: %s" % rel)
-
 # --- no Google API key literal in any owned text file ---
-# Module-level beside the Anthropic-id scan above, so it runs on EVERY verify.sh run
+# Module-level, so it runs on EVERY verify.sh run
 # (it once sat inside the inventory-missing branch and never executed on a healthy tree).
 _google_api_re = re.compile(r'AIza[0-9A-Za-z_-]{35}')
 for rel in owned:
@@ -415,7 +393,6 @@ enforce_candidates = [
     p("anthology-engine-entry.sh"),
     p("ENGINE-MANIFEST.json"),
     p("scripts", "guard-prompt-pins.py"),
-    p("scripts", "guard-no-anthropic-runtime.py"),
     p("scripts", "guard-font-floor.py"),
     p("scripts", "guard-cron-inventory.py"),
 ]

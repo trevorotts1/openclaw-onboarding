@@ -1,0 +1,28 @@
+{
+  "unit": "S75-T41",
+  "attempt": 4,
+  "head": "000ed03f454842880927eaa79dbb0a6a64495c36",
+  "candidate_head_claim": "70e9a8d11b9f0098f5ee69f88a85d9d1fc5259e7",
+  "candidate_head_exists": true,
+  "verdict": "PASS",
+  "checks": [
+    {"name": "live tip read", "result": "branch s75x/receipt-S75-T41 resolves on origin to 000ed03f, matches worktree tip; candidate 70e9a8d11 exists as parent commit"},
+    {"name": "attempt file six keys", "result": "attempt-4.json carries schema/unit/attempt/candidate/push_proof/diff/measurements/path_gate plus clause0_repair evidence; verdict null (builder claims none)"},
+    {"name": "head_sha binding", "result": "candidate.head 70e9a8d11 exists; tip 000ed03f pushed to origin (ls-remote match), fast-forward, no force; test blob 06563abd identical at 70e9a8d11 and tip"},
+    {"name": "base credible", "result": "base 97ba85615 exists (batch fanout lane 4 #2661); receipt-branch cut from judged head, not required to be tip ancestor"},
+    {"name": "checker identity", "result": "builder claims no checker (correct); independent_checker section copied verbatim from qc/REBUILD.s75-S75-T41-shared-rule.opus.json with source named, unit-string mismatch disclosed, no invention"},
+    {"name": "evidence-only diff", "result": "fix commit touches test_suno_prompt_guard.py only (test blob 21cf25f2->06563abd); guard suno_prompt_guard.py byte-identical 4bf828b9 across f7bcc4e/70e9a8d/000ed03; no fixture/recipe/compiler change"},
+    {"name": "operator path scan", "result": "edited file 1164 lines: home 0, volume 0, tilde 0; positive control fires (own scan of attempt text shows prefixes), so zero is measured"},
+    {"name": "clause-0 selector live", "result": "Ran 11 tests OK rc 0 at tip"},
+    {"name": "full file live", "result": "Ran 54 tests OK rc 0 at tip"},
+    {"name": "self-check live", "result": "Ran 21 tests OK rc 0 at tip"},
+    {"name": "QC two-way control", "result": "independent harness: honest PASSES; blank (ids kept, injects emptied) FAILS; lie (case-variant id, canonical spelling inject) FAILS. Old-head check passes blank (defect confirmed). New check measures bytes, not ids."}
+  ],
+  "defects": [],
+  "clause0_repair_substantive": true,
+  "clause0_quote": "old: ids=[case[id] for case in self.cases]; for wanted in self.REQUIRED_CASES: self.assertIn(wanted, ids) -- oracle is the test's own tuple. new: payload=deep_merge(envelope(catalog,STYLE_IDS[0]),case[inject]); dimensions=_witnessed(payload) read from bytes via _forms_in (catalogue display names), walker paths, negation regex, protected-path predicate; missing=REQUIRED_DIMENSIONS-witnessed must be empty; each id naming a dimension bytes do not show fails.",
+  "residuals_noted": ["clause-3 byte-identical unproven entry not addressed (out of room scope)", "independent_checker carried from different-branch receipt, disclosed not invented", "shared clone core.worktree dead path reported not repaired"],
+  "measured_at": "2026-10-28T11:54:23Z",
+  "model": "route=opus-chain; served=not configured in this lane",
+  "checker": "qc-opus-chain (independent of builder-rung-deepseek-chain)"
+}

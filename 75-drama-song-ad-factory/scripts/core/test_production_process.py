@@ -391,6 +391,31 @@ class ProductionProcessTest(unittest.TestCase):
             self.assertEqual(r["reason_code"], "PRODUCTION_PREDECESSOR_INCOMPLETE")
             self.assertFalse(r["production_admitted"])
 
+    def test_complete_predecessor_with_current_artifact_admits_the_next_stage(self):
+        rid = confirmed_run(self.run)
+        complete_stage(self.run, "research")
+        r = process.admit_production(self.run, "creative-strategy", run_id=rid)
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["reason_code"], "PRODUCTION_STAGE_ADMITTED")
+
+    def test_complete_predecessor_with_deleted_artifact_is_an_order_violation(self):
+        rid = confirmed_run(self.run)
+        complete_stage(self.run, "research")
+        (self.run / "research" / "receipt.json").unlink()
+        r = process.admit_production(self.run, "creative-strategy", run_id=rid)
+        self.assertFalse(r["ok"], r)
+        self.assertEqual(r["reason_code"], "PRODUCTION_ORDER_VIOLATION")
+        self.assertEqual(r["predecessor"], "research")
+        self.assertEqual(r["governed_reason_code"], "PRODUCTION_PREDECESSOR_EVIDENCE_MISSING")
+
+    def test_empty_predecessor_artifact_keeps_the_governed_evidence_code(self):
+        rid = confirmed_run(self.run)
+        complete_stage(self.run, "research")
+        (self.run / "research" / "receipt.json").write_text("", encoding="utf-8")
+        r = process.admit_production(self.run, "creative-strategy", run_id=rid)
+        self.assertFalse(r["ok"], r)
+        self.assertEqual(r["reason_code"], "PRODUCTION_PREDECESSOR_EVIDENCE_MISSING")
+
 
 if __name__ == "__main__":
     unittest.main()

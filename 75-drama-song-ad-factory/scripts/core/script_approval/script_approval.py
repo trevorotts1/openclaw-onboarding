@@ -251,6 +251,23 @@ def record_near(*dirs):
     return None
 
 
+def script_sha_near(*dirs):
+    """The current spoken-script digest found in the run folder (and each
+    folder's parent, the same search ``record_near`` uses), or None when the run
+    carries no readable script. Dispatch callers hold only lyrics; this is how
+    they pass the digest the gate requires."""
+    for d in dirs:
+        for c in ((d, os.path.dirname(os.path.abspath(d))) if d else ()):
+            try:
+                with open(os.path.join(c, "creative", "script.json"), encoding="utf-8") as stream:
+                    doc = json.load(stream)
+                sheet = doc["sheet"]
+            except (OSError, ValueError, TypeError, KeyError):
+                continue
+            return script_sha(doc.get("title") or "Your song", doc.get("story") or [], sheet)
+    return None
+
+
 def mark_sent(run_dir):
     """The script message reached the client: a resume must not send it again."""
     state, rec = AE.load_record(run_dir)
@@ -477,11 +494,26 @@ def handle_reply(run_dir, reply, title, story, sheet, lyrics, apply_edit, rechec
             "story": story, "sheet": sheet, "lyrics": lyrics, "messages": msgs}
 
 
-def check_script_approval(record, lyrics):
+#: Refusal when a record binds a presented spoken script but the caller
+#: omits its current digest. The omission would silently authorize production,
+#: so it is a named refusal instead -- the caller must pass the digest already
+#: held. Only None means omitted; {}, False, 0, [] and malformed maps are not
+#: omission and are handled by their own checks.
+SCRIPT_DIGEST_REQUIRED = "SCRIPT_DIGEST_REQUIRED"
+ARTIFACT_CHANGED = "ARTIFACT_CHANGED"
+
+
+def check_script_approval(record, lyrics, script_sha=None):
     """The gate. None = go; else the refusal dict. No record, or required false
-    = not asked for = today's behaviour. Required: approved for THESE lyrics
-    only. Missing or corrupt approval data is an explicit UNKNOWN refusal --
-    never permission, never a silent go."""
+    = not asked for = today's behaviour. Required: approved for THESE CURRENT
+    BYTES ONLY. When the caller supplies the current spoken-script digest, both
+    kinds are compared against the presented revisions and BOTH must carry a
+    live approval: an unchanged lyrics approval can never certify a changed
+    spoken script. A record that binds a presented spoken script and a caller
+    that OMITS the current digest is a structured refusal
+    (SCRIPT_DIGEST_REQUIRED) -- the omission is never permission. Missing or
+    corrupt approval data is an explicit UNKNOWN refusal -- never permission,
+    never a silent go."""
     if record is None:
         return None
     if not isinstance(record, dict):
@@ -504,9 +536,31 @@ def check_script_approval(record, lyrics):
                 "detail": "the maker %r approved their own script; an independent reviewer must "
                           "approve before the song is made" % maker}
     if record.get("status") == "approved":
-        if "approvals" in record:
-            ev = AE.active_approval(record, "lyrics", lyrics_sha(lyrics))
-            if ev is not None:
+        cur_lyrics = lyrics_sha(lyrics)
+        art = record.get("artifacts")
+        if isinstance(art, dict) and art:
+            if script_sha is not None and \
+                    (art.get("script") or {}).get("sha256") != script_sha:
+                return {"reason_code": ARTIFACT_CHANGED,
+                        "detail": "the presented script changed; the approval of the "
+                                  "older revision cannot certify the current package and "
+                                  "the current revision must be presented and approved",
+                        "changed": ["script"]}
+            if AE.active_approval(record, "lyrics", cur_lyrics) is not None and \
+                    (script_sha is None or
+                     AE.active_approval(record, "script", script_sha) is not None):
+                if script_sha is None and (art.get("script") or {}).get("sha256"):
+                    return {"reason_code": SCRIPT_DIGEST_REQUIRED,
+                            "detail": "this approval binds a presented spoken script; "
+                                      "the current spoken-script digest (script_sha) "
+                                      "is required before the record can authorize "
+                                      "production",
+                            "required": ["script_sha"]}
+                return None
+        elif "approvals" in record:
+            ev = AE.active_approval(record, "lyrics", cur_lyrics)
+            if ev is not None and (script_sha is None or
+                    AE.active_approval(record, "script", script_sha) is not None):
                 return None
         elif record.get("lyrics_sha") == lyrics_sha(lyrics):
             return None                          # legacy record shape

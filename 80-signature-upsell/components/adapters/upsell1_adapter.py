@@ -19,9 +19,100 @@ or incompatible U1 entitlements are suppressed or routed safely to the
 final thank-you - never double-charged.
 """
 
-from typing import Dict, Mapping, Optional
+import re
+from typing import Dict, List, Mapping, Optional
 
 import adapter_common as common
+
+# U1 and D1 are mutually exclusive (launch plan: offers[].excludes names the
+# other; routing_state refuses the pair). The two slots are fixed by the
+# profile, so the pair is stated here once and shared with the U2 adapter.
+EXCLUSIVE_SLOTS = ("upsell_1", "downsell_1")
+
+# Copy keys that hold the copy author's OWN evidence claims: never a source.
+_AUTHOR_EVIDENCE_KEYS = frozenset({"verified_scarcity_evidence", "verified_proof_evidence"})
+
+
+def mutual_exclusion_problem(journey: Optional[Mapping]) -> Optional[str]:
+    """Name the exclusion when one journey carries both a U1 and a D1 record."""
+    if all(common.journey_record_for(journey, s) is not None for s in EXCLUSIVE_SLOTS):
+        return (
+            "U1 and D1 are mutually exclusive (launch plan offers[].excludes): "
+            "the journey carries both an upsell_1 and a downsell_1 purchase "
+            "record, which cannot happen; refusing to pick one silently"
+        )
+    return None
+
+
+def launch_scarcity_facts(launch: Optional[Mapping]) -> List[Mapping]:
+    """Scarcity facts of the approved launch record (promotion dates, stock).
+
+    Each is {family, fact, source_ref}; family is the validator profile's
+    time_bound / availability / exclusivity. An entry missing any of the
+    three is not a fact. The copy document is never a source.
+    """
+    facts = []
+    for entry in (launch or {}).get("scarcity_facts") or []:
+        if isinstance(entry, Mapping) and all(
+            isinstance(entry.get(k), str) and entry[k].strip()
+            for k in ("family", "fact", "source_ref")
+        ):
+            facts.append(entry)
+    return facts
+
+
+def _copy_strings(node):
+    if isinstance(node, str):
+        yield node
+    elif isinstance(node, Mapping):
+        for key, value in node.items():
+            if key not in _AUTHOR_EVIDENCE_KEYS:
+                yield from _copy_strings(value)
+    elif isinstance(node, (list, tuple)):
+        for value in node:
+            yield from _copy_strings(value)
+
+
+def scarcity_problems(
+    request: Mapping, copy_doc: Mapping, launch: Optional[Mapping]
+) -> List[str]:
+    """Every scarcity claim must be backed by a launch-record fact.
+
+    (1) request.factual_scarcity_evidence entries must each equal a launch
+    fact (fact text and source_ref); (2) scarcity wording in the copy needs
+    a launch fact of the same family (any family for the bare markers).
+    """
+    facts = launch_scarcity_facts(launch)
+    have = {f["family"] for f in facts}
+    keyed = {(f["fact"].strip().lower(), f["source_ref"].strip()) for f in facts}
+    problems = []
+    for entry in request.get("factual_scarcity_evidence") or []:
+        key = (
+            str((entry or {}).get("fact") or "").strip().lower(),
+            str((entry or {}).get("source_ref") or "").strip(),
+        ) if isinstance(entry, Mapping) else None
+        if key not in keyed:
+            problems.append(
+                "factual_scarcity_evidence entry %r matches no scarcity fact "
+                "of the approved launch record; copy-authored evidence is "
+                "not a source" % (entry,)
+            )
+    profile = common.load_json(common.PROFILE_PATH)
+    text = "\n".join(_copy_strings(copy_doc))
+    for pat in (profile.get("validator_patterns") or {}).get("scarcity_claim_patterns") or []:
+        if re.search(pat["regex"], text, re.IGNORECASE) and pat["family"] not in have:
+            problems.append(
+                "copy scarcity wording (%s, %s) has no matching %s fact in "
+                "the launch record" % (pat["id"], pat["family"], pat["family"])
+            )
+    low = text.lower()
+    for marker in (profile.get("validator_denylists") or {}).get("invented_scarcity_markers") or []:
+        if marker in low and not have:
+            problems.append(
+                "copy scarcity marker %r has no scarcity fact in the launch "
+                "record" % marker
+            )
+    return problems
 
 
 def build_bundle(
@@ -31,11 +122,18 @@ def build_bundle(
     *,
     copy_sha256: str,
     copy_artifact_path: str,
+    launch: Optional[Mapping] = None,
 ) -> Dict[str, object]:
     common.validate_request(request, "upsell_1")
     common.validate_routes_for_instance(request, "upsell_1")
     if request.get("entry_context") is not None:
         raise common.AdapterError("U1 has no entry context; it follows checkout.")
+    excluded = mutual_exclusion_problem(journey)
+    if excluded:
+        raise common.AdapterError(excluded)
+    scarcity = scarcity_problems(request, copy_doc, launch)
+    if scarcity:
+        raise common.AdapterError("; ".join(scarcity))
 
     orig = common.original_purchase_check(request, journey)
     eligibility_ok = orig["verified"]

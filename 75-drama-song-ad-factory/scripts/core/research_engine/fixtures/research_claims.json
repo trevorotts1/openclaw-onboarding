@@ -1,0 +1,779 @@
+{
+  "_comment": "S75-T04 focused fixture. One substantive sourced bundle plus an explicitly fictional premise must pass; untagged, padded, keyword-stuffed and unsupported-business bundles must fail. No live client, no network, no paid provider.",
+  "accept": {
+    "offer": "A 12-week sleep coaching program for shift workers",
+    "audience": "nurses on rotating night shifts who cannot fall asleep after work",
+    "action": "book a free 20 minute call",
+    "sub_avatar": {
+      "avatar": "night-shift nurse",
+      "emotional_wound": "awake at 4am with a shift starting at 7pm",
+      "desired_transformation": "sleeping a full block after a shift"
+    },
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/example-shift-sleep",
+        "retrieved": "2026-10-20"
+      },
+      {
+        "id": "src-2",
+        "url": "https://www.bls.gov/ooh/healthcare/registered-nurses.htm",
+        "retrieved": "2026-10-20"
+      }
+    ],
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Rotating shift work is associated with shorter sleep duration in nurses.",
+        "source": "src-1",
+        "provenance": "public-fact",
+        "sections": [
+          "audience"
+        ],
+        "locator": "abstract"
+      },
+      {
+        "id": "c2",
+        "text": "Registered nursing is one of the larger occupations in the United States.",
+        "source": "src-2",
+        "provenance": "public-fact",
+        "sections": [
+          "market"
+        ]
+      },
+      {
+        "id": "c3",
+        "text": "Most competing sleep programs are built around office schedules rather than hospital shift rotations.",
+        "source": "src-2",
+        "provenance": "public-fact",
+        "sections": [
+          "competitors"
+        ]
+      },
+      {
+        "id": "c4",
+        "text": "Our clients report sleeping through the night within three weeks.",
+        "provenance": "owner-fact",
+        "owner_ref": "answer:q11",
+        "sections": [
+          "market"
+        ]
+      }
+    ],
+    "premise": "The hero is a night-shift nurse who has not slept properly in two years and hides it from the charge nurse."
+  },
+  "reject_untagged": {
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/source",
+        "retrieved": "2026-10-20"
+      }
+    ],
+    "claims": [
+      {
+        "id": "u1",
+        "text": "Nurses on rotating shifts sleep less than day staff.",
+        "source": "src-1"
+      },
+      {
+        "id": "u2",
+        "text": "Sleep coaching programs usually target office workers.",
+        "source": "src-1"
+      }
+    ]
+  },
+  "reject_keyword_stuffing": {
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/stuffed",
+        "retrieved": "2026-10-20"
+      }
+    ],
+    "claims": [
+      {
+        "id": "s1",
+        "text": "sleep coach, sleep coach near me, best sleep supplement, buy now, backlinks, seo services",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "sections": [
+          "market",
+          "audience",
+          "competitors"
+        ]
+      },
+      {
+        "id": "s2",
+        "text": "buy backlinks, crypto signals, weight loss tea, katy perry diet, seo package",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "sections": [
+          "market",
+          "audience",
+          "competitors"
+        ]
+      }
+    ]
+  },
+  "reject_unsupported_business": {
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/market-report",
+        "retrieved": "2026-10-20"
+      }
+    ],
+    "claims": [
+      {
+        "id": "b1",
+        "text": "We increased client revenue 300% and guarantee results within 30 days.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "sections": [
+          "market"
+        ]
+      },
+      {
+        "id": "b2",
+        "text": "Sleep coaching demand is rising among hospital staff.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "sections": [
+          "audience",
+          "competitors"
+        ]
+      }
+    ]
+  },
+  "reject_empty": {
+    "sources": [],
+    "claims": [],
+    "padding": "research research research research research research research research"
+  },
+  "reject_business_phrasings": {
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/market-report",
+        "retrieved": "2026-10-20"
+      }
+    ],
+    "claims": [
+      {
+        "id": "p1",
+        "text": "Over 4,000 customers have enrolled in this program since 2024.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "sections": [
+          "market"
+        ]
+      },
+      {
+        "id": "p2",
+        "text": "This program is the most trusted sleep coaching service in Dallas.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "sections": [
+          "audience"
+        ]
+      },
+      {
+        "id": "p3",
+        "text": "Our program has served thousands of families since 2019.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "sections": [
+          "competitors"
+        ]
+      }
+    ]
+  },
+  "reject_sentence_keyword_stuffing": {
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/stuffed",
+        "retrieved": "2026-10-20"
+      }
+    ],
+    "claims": [
+      {
+        "id": "k1",
+        "text": "Best sleep coach near me best sleep coaching program best sleep coach for nurses best sleep coaching.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "sections": [
+          "market",
+          "audience",
+          "competitors"
+        ]
+      },
+      {
+        "id": "k2",
+        "text": "sleep coach near me sleep coaching Dallas sleep coach Fort Worth sleep coach Plano sleep coach Frisco sleep coach Arlington",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "sections": [
+          "market",
+          "audience",
+          "competitors"
+        ]
+      }
+    ]
+  },
+  "accept_market_facts": {
+    "offer": "a 12-week sleep coaching program for shift workers",
+    "audience": "nurses on rotating night shifts who cannot fall asleep after work",
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/report",
+        "retrieved": "2026-10-20",
+        "excerpts": [
+          "Fifty percent of night-shift nurses report short sleep.",
+          "Registered nursing is one of the larger occupations in the United States.",
+          "Most competing sleep programs are built around office schedules rather than hospital shift rotations."
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "id": "m1",
+        "text": "Over fifty percent of night-shift nurses report short sleep.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "sections": [
+          "audience"
+        ],
+        "class": "audience-evidence",
+        "support": {
+          "source": "src-1",
+          "locator": "abstract, sentence 2",
+          "quote": "Fifty percent of night-shift nurses report short sleep."
+        },
+        "about": {
+          "fact": "audience",
+          "anchor": "nurses",
+          "fact_text": "nurses on rotating night shifts who cannot fall asleep after work"
+        }
+      },
+      {
+        "id": "m2",
+        "text": "Registered nursing is one of the larger occupations in the United States.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "sections": [
+          "market"
+        ],
+        "about": {
+          "fact": "audience",
+          "anchor": "nursing",
+          "fact_text": "nurses on rotating night shifts who cannot fall asleep after work"
+        }
+      },
+      {
+        "id": "m3",
+        "text": "Most competing sleep programs are built around office schedules rather than hospital shift rotations.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "sections": [
+          "competitors"
+        ],
+        "about": {
+          "fact": "competitors",
+          "anchor": "sleep",
+          "fact_text": "a 12-week sleep coaching program for shift workers"
+        }
+      }
+    ]
+  },
+  "reject_spam_sentence": {
+    "_comment": "THE named bypass: five sentences of off-domain spam filed as public-fact. Refused: it asserts nothing, it relates to no owner fact of the run, and its superlative carries no citation.",
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/market-report",
+        "retrieved": "2026-10-20"
+      }
+    ],
+    "claims": [
+      {
+        "id": "sp1",
+        "text": "Buy backlinks. Cheap SEO signals. Crypto pumps now. Diet tea fast. Best mattress ever.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "locator": "p.2",
+        "sections": [
+          "market",
+          "audience",
+          "competitors"
+        ]
+      }
+    ]
+  },
+  "reject_spam_sentence_forged_support": {
+    "_comment": "The same spam with a forged owner-fact relation, an allow-list class and a citation for some other sentence.",
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/market-report",
+        "retrieved": "2026-10-20"
+      }
+    ],
+    "claims": [
+      {
+        "id": "sp2",
+        "text": "Buy backlinks. Cheap SEO signals. Crypto pumps now. Diet tea fast. Best mattress ever.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "class": "market-size",
+        "about": {
+          "fact": "offer",
+          "anchor": "sleep"
+        },
+        "support": {
+          "source": "src-1",
+          "locator": "p.2",
+          "quote": "reported in the study"
+        },
+        "sections": [
+          "market",
+          "audience",
+          "competitors"
+        ]
+      }
+    ],
+    "offer": "A 12-week sleep coaching program for shift workers",
+    "audience": "nurses on rotating night shifts who cannot fall asleep after work"
+  },
+  "reject_rank_phrasings": {
+    "_comment": "One-character and look-alike reshaping of a rank claim. \"#1\" is read as a claim in every spelling: hash + digit, hash + letter, fullwidth, numero sign, 'No. 1', '1st'.",
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/market-report",
+        "retrieved": "2026-10-20"
+      }
+    ],
+    "texts": [
+      "Rated the #1 sleep program in Dallas by local families.",
+      "Rated the #l sleep program in Dallas by local families.",
+      "Rated the ＃１ sleep program in Dallas by local families.",
+      "Rated the №1 sleep program in Dallas by local families.",
+      "Rated the No. 1 sleep program in Dallas by local families.",
+      "Rated the 1st sleep program in Dallas by local families."
+    ]
+  },
+  "reject_count_phrasings": {
+    "_comment": "Count claims spelled out or in digits: a count needs a citation for that claim or it is refused.",
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/market-report",
+        "retrieved": "2026-10-20"
+      }
+    ],
+    "texts": [
+      "Four thousand families served and counting.",
+      "More than 4,000 customers have joined since 2024.",
+      "Over 250 clients served since 2019."
+    ]
+  },
+  "reject_price_style": {
+    "_comment": "'$' styled content is read as a claim, not as prose.",
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/market-report",
+        "retrieved": "2026-10-20"
+      }
+    ],
+    "texts": [
+      "$199/month. Best value in Dallas.",
+      "Program pricing: $99 setup, $49 a month."
+    ]
+  },
+  "reject_parody_citation": {
+    "_comment": "Allow-list class + a quote for some other sentence: the citation does not carry the claim's own numbers.",
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/market-report",
+        "retrieved": "2026-10-20",
+        "excerpts": [
+          "Customers have enrolled in this program each season."
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "id": "pc1",
+        "text": "Over 4,000 customers have enrolled in this program since 2024.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "class": "market-size",
+        "support": {
+          "source": "src-1",
+          "locator": "p.4",
+          "quote": "Customers have enrolled in this program"
+        },
+        "sections": [
+          "market"
+        ]
+      }
+    ]
+  },
+  "reject_laundered_self_claim": {
+    "_comment": "The allow-list does not launder the business's own guarantee or price into a market fact.",
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/market-report",
+        "retrieved": "2026-10-20",
+        "excerpts": [
+          "Our program guarantees results or your money back for $199 a month."
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "id": "sl1",
+        "text": "Our program guarantees results or your money back for $199 a month.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "class": "competitor-pricing",
+        "support": {
+          "source": "src-1",
+          "locator": "pricing page",
+          "quote": "Our program guarantees results or your money back for $199 a month."
+        },
+        "sections": [
+          "market",
+          "competitors"
+        ]
+      }
+    ]
+  },
+  "type_confusion_bundles": {
+    "_comment": "Wrong types must be refused, never crash the validator.",
+    "claims_not_a_list": {
+      "claims": {
+        "a": 1
+      },
+      "sources": []
+    },
+    "claim_not_an_object": {
+      "claims": [
+        "Buy backlinks."
+      ],
+      "sources": []
+    },
+    "text_not_a_string": {
+      "claims": [
+        {
+          "id": "t1",
+          "text": 123,
+          "provenance": "public-fact",
+          "source": "src-1"
+        }
+      ],
+      "sources": [
+        {
+          "id": "src-1",
+          "url": "https://example.invalid/market-report",
+          "retrieved": "2026-10-20"
+        }
+      ]
+    },
+    "support_is_a_string": {
+      "claims": [
+        {
+          "id": "t2",
+          "text": "Sleep coaching demand is rising among hospital staff.",
+          "provenance": "public-fact",
+          "source": "src-1",
+          "support": "src-1",
+          "sections": [
+            "market"
+          ]
+        }
+      ],
+      "sources": [
+        {
+          "id": "src-1",
+          "url": "https://example.invalid/market-report",
+          "retrieved": "2026-10-20"
+        }
+      ]
+    },
+    "about_is_a_list": {
+      "claims": [
+        {
+          "id": "t3",
+          "text": "Sleep coaching demand is rising among hospital staff.",
+          "provenance": "public-fact",
+          "source": "src-1",
+          "about": [
+            "audience"
+          ],
+          "sections": [
+            "market"
+          ]
+        }
+      ],
+      "sources": [
+        {
+          "id": "src-1",
+          "url": "https://example.invalid/market-report",
+          "retrieved": "2026-10-20"
+        }
+      ]
+    },
+    "class_is_a_number": {
+      "claims": [
+        {
+          "id": "t4",
+          "text": "The sleep coaching market grew 31% last year.",
+          "provenance": "public-fact",
+          "source": "src-1",
+          "class": 3,
+          "sections": [
+            "market"
+          ]
+        }
+      ],
+      "sources": [
+        {
+          "id": "src-1",
+          "url": "https://example.invalid/market-report",
+          "retrieved": "2026-10-20"
+        }
+      ]
+    },
+    "source_id_is_an_object": {
+      "claims": [
+        {
+          "id": "t5",
+          "text": "Sleep coaching demand is rising among hospital staff.",
+          "provenance": "public-fact",
+          "source": {
+            "id": "src-1"
+          },
+          "sections": [
+            "market"
+          ]
+        }
+      ],
+      "sources": [
+        {
+          "id": "src-1",
+          "url": "https://example.invalid/market-report",
+          "retrieved": "2026-10-20"
+        }
+      ]
+    },
+    "sections_is_a_string": {
+      "claims": [
+        {
+          "id": "t6",
+          "text": "Sleep coaching demand is rising among hospital staff.",
+          "provenance": "public-fact",
+          "source": "src-1",
+          "sections": "market"
+        }
+      ],
+      "sources": [
+        {
+          "id": "src-1",
+          "url": "https://example.invalid/market-report",
+          "retrieved": "2026-10-20"
+        }
+      ]
+    },
+    "quote_is_a_list": {
+      "claims": [
+        {
+          "id": "t7",
+          "text": "The sleep coaching market grew 31% last year.",
+          "provenance": "public-fact",
+          "source": "src-1",
+          "class": "market-growth",
+          "support": {
+            "source": "src-1",
+            "locator": "p.1",
+            "quote": [
+              "grew 31% last year"
+            ]
+          },
+          "sections": [
+            "market"
+          ]
+        }
+      ],
+      "sources": [
+        {
+          "id": "src-1",
+          "url": "https://example.invalid/market-report",
+          "retrieved": "2026-10-20",
+          "excerpts": [
+            "The sleep coaching market grew 31% last year."
+          ]
+        }
+      ]
+    }
+  },
+  "accept_market_claims": {
+    "_comment": "Legitimate market claims — competitor pricing and market growth — pass through the allow-list when each is cited for that exact claim.",
+    "offer": "a 12-week sleep coaching program for shift workers",
+    "audience": "nurses on rotating night shifts who cannot fall asleep after work",
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/market-report",
+        "retrieved": "2026-10-20",
+        "excerpts": [
+          "Competitor sleep programs in Dallas charge between $150 and $300 a month.",
+          "The sleep coaching market grew 31% last year."
+        ]
+      },
+      {
+        "id": "src-2",
+        "url": "https://example.invalid/shift-study",
+        "retrieved": "2026-10-20",
+        "excerpts": [
+          "Night-shift nurses report short sleep after rotating shifts."
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "id": "mc1",
+        "text": "Competitor sleep programs in Dallas charge between $150 and $300 a month.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "class": "competitor-pricing",
+        "about": {
+          "fact": "competitors",
+          "anchor": "sleep",
+          "fact_text": "a 12-week sleep coaching program for shift workers"
+        },
+        "support": {
+          "source": "src-1",
+          "locator": "pricing table",
+          "quote": "charge between $150 and $300 a month"
+        },
+        "sections": [
+          "competitors"
+        ]
+      },
+      {
+        "id": "mc2",
+        "text": "The sleep coaching market grew 31% last year.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "class": "market-growth",
+        "about": {
+          "fact": "offer",
+          "anchor": "sleep",
+          "fact_text": "a 12-week sleep coaching program for shift workers"
+        },
+        "support": {
+          "source": "src-1",
+          "locator": "p.3",
+          "quote": "grew 31% last year"
+        },
+        "sections": [
+          "market"
+        ]
+      },
+      {
+        "id": "mc3",
+        "text": "Night-shift nurses report short sleep after rotating shifts.",
+        "provenance": "public-fact",
+        "source": "src-2",
+        "class": "audience-evidence",
+        "about": {
+          "fact": "audience",
+          "anchor": "nurses",
+          "fact_text": "nurses on rotating night shifts who cannot fall asleep after work"
+        },
+        "support": {
+          "source": "src-2",
+          "locator": "abstract",
+          "quote": "Night-shift nurses report short sleep after rotating shifts."
+        },
+        "sections": [
+          "audience"
+        ]
+      }
+    ]
+  },
+  "accept_similar_vocabulary": {
+    "_comment": "A genuine sourced bundle carrying the spam's own vocabulary (backlinks, buy, best, listings) — accepted because each entry asserts something about this run's owner facts and is cited for that claim. Round 5: the vocabulary is grounded in the OWNER's own recorded words above, not in the source's excerpts. The excerpts used to be what made these rows pass, which is the same mechanism spam laundering used; that mechanism is gone from claims._grounded_stems.",
+    "offer": "a 12-week sleep coaching program for shift workers",
+    "audience": "nurses on rotating night shifts who cannot fall asleep after work, most of whom found us through backlinks and placement ads they buy",
+    "sources": [
+      {
+        "id": "src-1",
+        "url": "https://example.invalid/market-report",
+        "retrieved": "2026-10-20",
+        "excerpts": [
+          "Across competitor sites the best documented referral channel for sleep coaching is backlinks from hospital wellness pages.",
+          "Sleep coaches who publish referral pages report more enquiries than those who buy placement ads.",
+          "Sleep coaching searches rise every winter as shift schedules change."
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "id": "sv1",
+        "text": "Across competitor sites the best documented referral channel for sleep coaching is backlinks from hospital wellness pages.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "class": "competitor-ranking",
+        "about": {
+          "fact": "competitors",
+          "anchor": "sleep",
+          "fact_text": "a 12-week sleep coaching program for shift workers"
+        },
+        "support": {
+          "source": "src-1",
+          "locator": "p.7",
+          "quote": "the best documented referral channel for sleep coaching is backlinks"
+        },
+        "sections": [
+          "competitors"
+        ]
+      },
+      {
+        "id": "sv2",
+        "text": "Sleep coaches who publish referral pages report more enquiries than those who buy placement ads.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "about": {
+          "fact": "offer",
+          "anchor": "sleep",
+          "fact_text": "a 12-week sleep coaching program for shift workers"
+        },
+        "sections": [
+          "audience"
+        ]
+      },
+      {
+        "id": "sv3",
+        "text": "Sleep coaching searches rise every winter as shift schedules change.",
+        "provenance": "public-fact",
+        "source": "src-1",
+        "about": {
+          "fact": "offer",
+          "anchor": "sleep",
+          "fact_text": "a 12-week sleep coaching program for shift workers"
+        },
+        "sections": [
+          "market"
+        ]
+      }
+    ]
+  }
+}

@@ -1,5 +1,7 @@
 /* Decision header panel (W29 unit B). Colours only through var(--ch-*). */
 
+/* One column at every width: the option rows live below the council, so a
+   second header column would only ever be an empty gutter. */
 .ch-dec {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -9,13 +11,6 @@
 }
 .ch-dec [hidden] {
   display: none !important;
-}
-
-@media (min-width: 768px) {
-  .ch-dec {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 46%);
-    gap: var(--ch-space-6, 32px);
-  }
 }
 
 /* ---- title column ---- */
@@ -130,7 +125,7 @@
   transition: width 600ms var(--ch-ease);
 }
 .ch-dec-value {
-  min-width: 2ch;
+  min-width: 3.5ch;
   text-align: right;
   font: 400 14px / 24px var(--ch-font);
   font-variant-numeric: tabular-nums;
@@ -153,4 +148,77 @@
   .ch-dec-fill {
     transition: none;
   }
+}
+
+/* ---- Compact header: question, then one short status line ------------- */
+
+.ch-dec-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid var(--ch-line-strong);
+  border-radius: var(--ch-radius-pill, 999px);
+  font: 700 11px / 1.4 var(--ch-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ch-ink-muted);
+}
+.ch-dec-status[data-status='complete'] {
+  border-color: var(--ch-gold);
+  background: var(--ch-gold-soft);
+  color: var(--ch-gold-strong);
+}
+
+/* A session header stays compact: the room directly below carries the
+   discussion, so the question is not a hero block. */
+.ch-dec:not(.ch-dec--empty) {
+  padding: var(--ch-space-4, 16px);
+  gap: var(--ch-space-4, 16px);
+}
+.ch-dec:not(.ch-dec--empty) .ch-dec-title {
+  font: 600 clamp(18px, 1.9vw, 24px) / 1.25 var(--ch-font);
+}
+
+/* Once the advisory panel under the council owns the answer, the header stays
+   one full-width line with no gap; the bars below the council step aside (see
+   .ch-has-answer further down) so the options are not printed twice. */
+.ch-dec.ch-dec--answered {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+/* ---- Option detail panel: below the council room in every state --------- */
+
+.ch-dec-options-panel {
+  display: block;
+  padding: var(--ch-space-4, 16px);
+}
+.ch-dec-options-panel[hidden] {
+  display: none;
+}
+@media (min-width: 600px) {
+  .ch-dec-options-panel {
+    padding: var(--ch-space-5, 24px);
+  }
+}
+
+/* The shares below the council are a live snapshot, never the verdict. */
+.ch-dec-note {
+  margin: 0 0 var(--ch-space-3, 12px);
+  font: 700 11px / 1.4 var(--ch-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ch-ink-muted);
+}
+.ch-dec-note:empty {
+  display: none;
+}
+
+/* The advisory panel repeats the options in full detail once an answer is on
+   the page, so this shorthand panel is hidden only in that case. A completed
+   session with no verdict has no advisory panel and keeps its bars here. */
+.ch-has-answer .ch-dec-options-panel {
+  display: none;
 }

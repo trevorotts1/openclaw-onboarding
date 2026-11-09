@@ -43,9 +43,17 @@ class RouteInvariantError(ValueError):
 
 
 def compile_route(launch: Dict[str, Any]) -> Dict[str, Any]:
-    """Compile + serialize with the real compiler; return graph and hash."""
+    """Compile + serialize with the real compiler; return graph and hash.
+
+    The compiled graph must hold doc 02 section 4 (`graph_violations`) or this raises
+    RouteInvariantError, so `cli route` and `cli assemble` (which compile through here) refuse a
+    graph that is missing a contract edge. `check_package` re-runs the same law on the carried graph.
+    """
     compiler = substrate.compiler()
     graph = compiler.compile_route(launch)
+    # A declared route_graph_hash is a claim about a stored graph, judged by graph_violations(launch);
+    # it is not a property of the graph being compiled right now.
+    assert_route_law({k: v for k, v in launch.items() if k != "route_graph_hash"}, graph)
     raw = compiler.serialize_graph(graph)
     return {
         "graph": graph,

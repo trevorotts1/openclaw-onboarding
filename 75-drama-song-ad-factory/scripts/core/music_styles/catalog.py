@@ -34,9 +34,13 @@ import unicodedata
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _CORE = os.path.dirname(_HERE)
-for _p in (_HERE, _CORE):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+# core/ only. Never _HERE: this package's own folder at the front of sys.path
+# makes every later bare `import music_styles` in the process bind the leaf
+# music_styles.py instead of this package, so a suite's imports depended on
+# which suite ran before it (catalog_calculator/test_card_render.py lost
+# batch_mode after test_agnes_price.py in one pytest process).
+if _CORE not in sys.path:
+    sys.path.insert(0, _CORE)
 
 #: The original-records module, loaded BY FILE PATH (the same pattern
 #: core/music_styles/music_styles.py uses for duration_registry). A plain
@@ -1002,15 +1006,29 @@ def register_style(record):
 def validate_catalog():
     """Raise CatalogError on any malformed record; return the count.
 
-    Checks: exactly MAX_STYLES unique ids and labels, every record field,
-    every trait field non-empty, a positive tempo range, and no client
-    reference leaking into the compiled traits or provider hint.
+    The expected count is DERIVED from STYLE_IDS, never a literal: a
+    validator that returns a hard-wired 18 accepts a catalog that lost a
+    record, which is exactly the breakage an instrument must refuse. An
+    inconsistent MAX_STYLES is refused explicitly rather than tolerated.
+
+    Checks: as many records as STYLE_IDS names, keys in that order,
+    unique labels, every record field, every trait field non-empty, a
+    positive tempo range, and no client reference leaking into the
+    compiled traits or provider hint.
     """
-    if len(CATALOG) != MAX_STYLES:
+    expected = len(STYLE_IDS)
+    if MAX_STYLES != expected:
+        raise CatalogError("BAD_CATALOG",
+                           "MAX_STYLES declares %d but STYLE_IDS names %d"
+                           % (MAX_STYLES, expected))
+    if len(CATALOG) != expected:
         raise CatalogError("BAD_CATALOG",
                            "catalog holds %d styles, not %d"
-                           % (len(CATALOG), MAX_STYLES))
-    if len({_norm(r["label"]) for r in CATALOG.values()}) != MAX_STYLES:
+                           % (len(CATALOG), expected))
+    if tuple(CATALOG) != tuple(STYLE_IDS):
+        raise CatalogError("BAD_CATALOG",
+                           "catalog keys differ from STYLE_IDS")
+    if len({_norm(r["label"]) for r in CATALOG.values()}) != expected:
         raise CatalogError("BAD_CATALOG", "style labels are not unique")
     for sid, rec in CATALOG.items():
         missing = [f for f in RECORD_FIELDS if f not in rec]

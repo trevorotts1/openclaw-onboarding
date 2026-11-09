@@ -1,0 +1,38 @@
+{
+  "unit": "GRAPHIFY-DISPOSITION",
+  "original_path": "<operator>/loop-control/w77s/evidence/GRAPHIFY-DISPOSITION.keep-decision-1083.json",
+  "original_path_sha256": "13a21ba74f20a9c942501082510a065f1f156400afd8e8cff91c34e466a08996",
+  "original_sha256": "3b4acdafa523acc1e1bcb53cb92d8ad5bbb48ed7e291d67ea820ed60b3eb096c",
+  "redacted_sha256": "ce6fb47e679baf241c5109e682627f947a6e01f19c9ea45379dd2c5b2b8691d8",
+  "redactions": [
+    {
+      "from": "<absolute repo path prefix>",
+      "from_sha256": "cdf6561dded92e3d163351d4508b77ad3ef2b9596f17f17a4634ef2ffd84e72b",
+      "to": "",
+      "count": 0
+    },
+    {
+      "from": "<absolute operator home path>",
+      "from_sha256": "a659cfd81683b854f73a154bf005456a7a2d6d7bab5322f3671233afa1c723ee",
+      "to": "<operator>",
+      "count": 6
+    },
+    {
+      "from": "<dash-encoded operator home path>",
+      "from_sha256": "856185961f7d8debf6fb52b3727edc78ecd4149bec8df75e9851f04340868eb7",
+      "to": "-<operator>",
+      "count": 0
+    }
+  ],
+  "original_path_redactions": [
+    {
+      "from": "<absolute operator home path>",
+      "from_sha256": "a659cfd81683b854f73a154bf005456a7a2d6d7bab5322f3671233afa1c723ee",
+      "to": "<operator>",
+      "count": 1
+    }
+  ],
+  "redaction_rule": "<absolute repo path prefix> -> repo-relative (prefix dropped); <absolute operator home path> -> <operator>; <dash-encoded operator home path> -> -<operator>; literals never restated here, only their sha256 in redactions[]",
+  "inverse_check": "pass",
+  "copied_at": "2026-10-26T23:59:10Z"
+}

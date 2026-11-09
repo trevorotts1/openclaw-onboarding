@@ -249,8 +249,21 @@ checklist with the client's answer.
 > checklist / QC rubric / export is OPERATOR-LOG language and is never quoted verbatim
 > to the client.
 
-**Only after the gating questions are answered may the agent proceed to TRINITY routing / the
-Per-operation decision rule.**
+**RECORD THE ANSWERS IN A SIGNED RUN FILE (S44-24 — BINDING).** The two answers are not prose.
+They are recorded through the approval flow (the Command Center approval record minted only from
+the client's own reply, verified by `shared-utils/signature_launch_contract/approval_record.py`),
+whose record scope carries `publish:<DRAFT|LIVE>` and `reentry:<ONCE|ALLOW-MULTIPLE>`. Write the
+PLAN MODE run file `plan-mode.json` next to the evidence root:
+
+```json
+{"approval_id": "<id from the approval flow>", "plan_hash": "<hash the client replied with>",
+ "publish_intent": "DRAFT", "re_entry": "ONCE", "build_model": "<model that builds>"}
+```
+
+A file the build agent wrote on its own is worthless: `qc-built-workflow.sh` asks the approval
+verifier to confirm the record, so an invented `approval_id` fails. Never guess an answer to make
+the file verify. **Only after the gating questions are answered and the run file exists may the
+agent proceed to TRINITY routing / the Per-operation decision rule.**
 
 ---
 
@@ -271,6 +284,26 @@ Operators never memorize CLI syntax. Say what you want in Telegram; the agent ro
 | "Review/audit this workflow" / "check this workflow" / "inspect this workflow" | `caf workflows export <id>` / `caf workflows get <id>` (**NOT Tier 0** — these route through the **internal Firebase client** and REQUIRE the Firebase refresh token; only `workflows list` is PIT). If the Firebase token is absent → Tier-4 agent-browser read-back (export cannot run). Then escalate per skill 36 for what export cannot show (e.g. trigger-bucket state) |
 | "Create a new sub-account / location for <NAME>" / "spin up a client sub-account" | `caf --experimental locations create --name "<NAME>" --company-id <AGENCY_FIRESTORE_ID>` (Firebase/internal path — see Agency operations below) |
 | "Add a user to <SUBACCOUNT>" / "create a login for <PERSON>" / "give <PERSON> access" | `caf locations add-user --location-id <SUBACCOUNT_ID> --company-id <AGENCY_FIRESTORE_ID> --first-name <FIRST> --last-name <LAST> --email <EMAIL> --role <user\|admin>` (agency PIT public path; omit password → invite email; defaults to a SUB-ACCOUNT user — see Agency operations below) |
+
+
+## Dependency exports for Skill 38 gates
+
+Generate the calendar and pipeline exports from live GHL data:
+
+```bash
+python3 tools/export_deps.py --workflows-dir <master-files>/conversation-workflows
+```
+
+The producer writes these files:
+
+- `<master-files>/conversation-workflows/.caf-calendars-export.json`
+- `<master-files>/conversation-workflows/.caf-pipelines-export.json`
+
+Exit codes: `0` means both exports succeeded; `2` means usage or path resolution error; `3` means caf failure or invalid response shape. The producer requires a live PIT-authenticated `caf`. No network means no export, never a fabricated one.
+
+Skill 38's `qc-playbook-declares.sh` fails with `REQUIRES_OPERATOR` when a playbook declares calendars or applied tags and the required export is absent. `qc-opportunity-sync.sh` fails with `REQUIRES_OPERATOR` when a playbook declares a pipeline or stage-map and the pipelines export is absent. Both gates fail closed; missing exports never mean skipped validation.
+
+Regenerate both exports after any calendar or pipeline change in GHL.
 
 ---
 
@@ -421,9 +454,9 @@ etc. are PLACEHOLDERS — substitute the live values at runtime.)
 When the operator asks to "build a workflow / playbook / funnel" AND the workflow contains
 a conversational node:
 
-1. Skill 44 builds the GHL automation structure (the HANDS)
-2. Skill 44 AUTO-INVOKES skill 38 for the brain (communications playbook + Build-with-AI prompt)
-3. All three TRINITY legs ship together, or the build is NOT registered
+1. Skill 38 authors the communications playbook, its declares block, and its build contract FIRST (Skill 44 does not begin before those exist)
+2. Skill 44 reads that build contract and declares block and builds the GHL automation structure to exactly that spec, refusing to build when the contract is missing or stale (`playbook_structure_hash` mismatch). Skill 44 never invents, alters, or reverses the order and never authors playbook content.
+3. All three TRINITY legs and the build contract ship together, or the build is NOT registered
 
 **WF-19 is a MECHANICAL HARD GATE for conversational builds (FIX-S36-27).** Run the Step-9 QC
 with `--conversational`: `./qc-built-workflow.sh <workflow-id> --conversational …`. That flag
@@ -530,7 +563,9 @@ default model where it differs from the build model.
    subagent-delegation-pattern.md: "Verify the chosen model exists in the OpenClaw config and
    has an API key available"; per MEMORY ollama-cloud-baseurl-trap). If no independent model is
    available, ask the client which model should run QC; never silently QC on the build model
-   itself. RECORD which model QC'd.
+   itself. RECORD which model QC'd: pass it as `--qc-model <model>` at Step 9.3 and it is written to the
+   build-events ledger. The script refuses exit 0 when `--qc-model` is absent or equals the
+   `build_model` in the signed PLAN MODE run file.
    Recommendation: a high-reasoning model from a different family than the build model, because
    independence is the point of the QC pass.
 
@@ -554,9 +589,28 @@ DONE** until either (a) the Firebase token is restored and the export-based QC r
 (b) an **agent-browser read-back** independently confirms every checklist item against the live
 GHL UI. "No token" never means "skip QC" — it means "not done".
 
-The sub-agent runs `qc-built-workflow.sh <workflow-id>` (in the skill folder) which
-machine-asserts the mechanically-checkable items, returns per-item PASS/FAIL JSON, AND emits the
-weighted quality-rubric floor score (the `rubric` block).
+The sub-agent runs (in the skill folder):
+
+```bash
+./qc-built-workflow.sh <workflow-id> --publish-intent <DRAFT|LIVE> --re-entry <ONCE|ALLOW-MULTIPLE> \
+  --plan-mode-file <plan-mode.json> --qc-model <qc model> --grades <grades.json> --deps <deps.json> --json
+```
+
+which machine-asserts the mechanically-checkable items, returns per-item PASS/FAIL JSON, AND emits
+the weighted quality-rubric floor score (the `rubric` block). **Exit 0 is earned, never default
+(S44-24):** it needs (a) the signed PLAN MODE run file, verified, with `publish_intent`/`re_entry`
+equal to the flags (absent or different = exit 1); (b) a QC model different from the build model;
+(c) a PASS/FAIL grade with observed text for EVERY `REQUIRES_HUMAN_REVIEW` item (WF-1, 2, 8, 9,
+10, 11, 13, 14, 16, 17, 19, 20 on a mechanical build; 11 on a `--conversational` build) in
+`grades.json` = `{"workflow_id": "<id>", "grades": {"WF-1": {"grade": "PASS", "observed": "..."}, ...}}`.
+Any ungraded item exits 2 (UNGRADED, not a pass); a FAIL grade exits 1. The build agent must not
+run this script and report the result as QC; only the independent QC sub-agent's run counts.
+
+**Launch builds (Skill 49/83) — WF-9 is mechanical (S44-11).** Add `--launch-schedule
+<schedule.json>` (the compiled wait schedule: `{"waits": [{"kind": "until_date", "until":
+"2026-11-26T09:00:00-05:00"}, {"kind": "delay", "value": 2, "unit": "days"}]}`). WF-9 then
+compares the export's wait nodes against it (dates as UTC instants); a date send built as a
+duration wait, a missing wait or an extra wait fails WF-9. `--launch` without a schedule fails WF-9.
 
 For EACH checklist item (WF-1..WF-21) the QC sub-agent returns an explicit PASS / FAIL with
 the observed value vs expected value.
@@ -645,8 +699,9 @@ a blocker to declaring the (already-verified) build done to the client.
 Append to the build-events ledger at:
 `~/.openclaw/tools/convert-and-flow-cli/data/build-events.jsonl`
 
-Each QC run logs: model used, per-item verdicts, pass/fail result, any escalation, workflow id,
-timestamp. This makes a crash/limit mid-QC recoverable (per MEMORY persistent-ledger rule).
+Each QC run logs: model used (`qc_model`, plus the signed file's `build_model`), the PLAN MODE
+gate result and approval id, ungraded items, per-item verdicts, pass/fail result, any escalation,
+workflow id, timestamp. `qc-built-workflow.sh` appends the `qc_run` event itself. This makes a crash/limit mid-QC recoverable (per MEMORY persistent-ledger rule).
 
 ---
 

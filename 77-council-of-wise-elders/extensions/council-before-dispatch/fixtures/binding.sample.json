@@ -1,0 +1,13 @@
+{
+  "_fixture": "UNEXECUTED SAMPLE — the explicit per-box binding shape. Placeholders only.",
+  "schema": "blackceo.council-before-dispatch.binding/v1",
+  "telegram": {
+    "accountId": "example-account",
+    "conversationId": "0000000001",
+    "senderIds": ["0000000001"]
+  },
+  "agent": {
+    "id": "example-agent",
+    "workspace": "/abs/path/to/agent-workspace"
+  }
+}

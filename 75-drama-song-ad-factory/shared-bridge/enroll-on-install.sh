@@ -90,6 +90,37 @@ resolve_secret() {
     return 1
 }
 
+# ---- receipt ownership -------------------------------------------------------
+# Inside a container the installer runs as root while the gateway runs as `node`.
+# A root-owned 600 receipt is unreadable by the runtime, which then refuses with
+# NO_KEY even though enrollment succeeded — the box looks enrolled in the files
+# and broken in the product. Hand the receipt to whoever owns the state root; on
+# a single-user box the owner IS the caller and this is a no-op.
+hand_receipt_to_owner() {
+    # A symlinked state root is never trusted: this function runs as root.
+    [ -d "$STATE" ] && [ ! -L "$STATE" ] || return 0
+    [ "$(id -u 2>/dev/null || echo 0)" = "0" ] || return 0
+    local owner f p
+    owner=$(stat -c '%u:%g' "$STATE" 2>/dev/null || stat -f '%u:%g' "$STATE" 2>/dev/null) || return 0
+    # Numeric uid:gid only — never a name that could resolve elsewhere, and never
+    # root (handing the receipt to root is the bug this function exists to fix).
+    case "$owner" in
+        [0-9]*:[0-9]*) ;;
+        *) return 0 ;;
+    esac
+    [ "$owner" = "0:0" ] && return 0
+    for f in machine.key machine.url client.url; do
+        p="$STATE/$f"
+        [ -f "$p" ] || continue
+        [ -L "$p" ] && continue                        # a planted symlink is never followed
+        # Only files THIS pass wrote as root are ours to hand over.
+        [ "$(stat -c '%u' "$p" 2>/dev/null || stat -f '%u' "$p" 2>/dev/null)" = "0" ] || continue
+        chown "$owner" "$p" 2>/dev/null || continue
+        chmod 600 "$p" 2>/dev/null || true
+    done
+    return 0
+}
+
 # ---- 1. refuse to run without the bridge itself ------------------------------
 if [ ! -f "$BRIDGE" ]; then
     echo "warn: drama-studio enroll skipped: bridge not found ($BRIDGE)" >&2
@@ -117,6 +148,7 @@ if [ -f "$STATE/machine.key" ] || [ -f "${HOME:-}/.drama-studio/machine.key" ]; 
     RC=0
     OUT="$("$PYTHON" "$BRIDGE" enroll --resume 2>&1)" || RC=$?
     if [ "$RC" -eq 0 ]; then
+        hand_receipt_to_owner
         if printf '%s' "$OUT" | grep -q '"recovered": true'; then
             echo "drama-studio: enrollment receipt recovered at $STATE (valid key preserved, no re-enrol)"
         else
@@ -150,6 +182,7 @@ OUT="$(DS_ENROLLMENT_SECRET="$SECRET" "$PYTHON" "$BRIDGE" enroll 2>&1)" || RC=$?
 SECRET=""
 
 if [ "$RC" -eq 0 ]; then
+    hand_receipt_to_owner
     echo "drama-studio: enrolled this box (machine key written to $STATE/machine.key)"
     exit 0
 fi

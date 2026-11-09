@@ -81,8 +81,17 @@ for (const f of ["agents/openai.yaml", "config/defaults.json",
   "runtime/tsconfig.json", "runtime/README.md",
   "scripts/build-bundles.mjs", "scripts/verify-bundles.mjs",
   "scripts/install-runtime.mjs", "scripts/doctor.mjs",
+  "scripts/install-council-plugin.mjs", "scripts/verify-council-plugin.mjs",
   "scripts/export-skill22.mjs", "scripts/qc-council-of-wise-elders.sh",
-  "scripts/qc-council-of-wise-elders.ps1"]) {
+  "scripts/qc-council-of-wise-elders.ps1",
+  "extensions/council-before-dispatch/index.js",
+  "extensions/council-before-dispatch/openclaw.plugin.json",
+  "extensions/council-before-dispatch/package.json",
+  "extensions/council-before-dispatch/lib/core.mjs",
+  "extensions/council-before-dispatch/lib/entry-validate.mjs",
+  "extensions/council-before-dispatch/provision.mjs",
+  "extensions/council-before-dispatch/INSTALL.md",
+  "extensions/council-before-dispatch/CONTRACT.md"]) {
   if (!existsSync(join(root, f))) missing.push(f);
 }
 for (const r of REFERENCES) {
@@ -200,6 +209,14 @@ if (existsSync(manifestPath)) {
     pass(`manifest tree hash matches (${manifest.file_count} files)`);
   } else {
     fail(`manifest drift: computed ${aggregate} over ${entries.length} files, manifest says ${manifest.aggregate_sha256} over ${manifest.file_count}. Rebuild with scripts/build-bundles.mjs`);
+  }
+  // The fourth version carrier. scripts/selected-tree-gate.mjs (wire.sh's
+  // TREE_GATE) refuses a tree whose manifest skill_version disagrees with the
+  // other three, so the doctor must refuse it first, not pass it.
+  if (norm(manifest.skill_version) && norm(manifest.skill_version) === norm(versionFile)) {
+    pass(`manifest skill_version matches version (${norm(versionFile)})`);
+  } else {
+    fail(`manifest skill_version ${manifest.skill_version ?? "(missing)"} != version ${versionFile.trim()}. Rebuild with scripts/build-bundles.mjs`);
   }
 } else {
   fail("manifest.json missing: run scripts/build-bundles.mjs");

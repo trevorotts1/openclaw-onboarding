@@ -19,6 +19,7 @@ import importlib
 import os
 import sys
 import tempfile
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))          # core/
@@ -42,7 +43,16 @@ def _forbid_make_runner(*_a, **_k):
     raise AssertionError("real Skill 74 runner disabled in tests")
 
 
-MODULE.make_runner = _forbid_make_runner
+_NO_REAL_RUNNER = mock.patch.object(MODULE, "make_runner", _forbid_make_runner)
+
+
+def setup_module(_module=None):
+    """Scoped, not global: pytest runs this per file, teardown restores it."""
+    _NO_REAL_RUNNER.start()
+
+
+def teardown_module(_module=None):
+    _NO_REAL_RUNNER.stop()
 
 
 class Fake74:
@@ -75,7 +85,7 @@ class Fake74:
                         "credits_consumed": self.credits})
         if sub == "save":
             path = os.path.join(tmp, "f5-%d.png" % len(self.calls))
-            open(path, "w").close()
+            open(path, "wb").write(b"f5-bytes")
             return (0, {"state": "success", "task_id": "t-x",
                         "saved_paths": [path],
                         "credits_consumed": self.credits})
@@ -254,4 +264,5 @@ def main():
 
 
 if __name__ == "__main__":
+    setup_module()
     sys.exit(main())

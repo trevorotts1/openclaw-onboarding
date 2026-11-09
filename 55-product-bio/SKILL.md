@@ -1,7 +1,7 @@
 ---
 name: product-bio
 description: The Product Bio Engine — a governed skill that turns a 4-field intake into the master-brain product bio: a 6,000-7,000-word, 10-section sales knowledge base (10 intros, 15-20 power adjectives, ICP, description, positioning, 8-10 objections, 10-12 FAQs, 8-10 social proof, StoryBrand 2.0, 24 named signature closes + a completion-verification block) AND its Google-Docs-importable HTML. It bakes Trevor Otts's two verbatim system prompts (sha256-pinned), replaces the 25-node n8n / Google Drive / Slack / Gmail workflow with a local-only pipeline on the CLIENT's own model providers, and gates every SACRED count with fail-closed, model-free Python provers that MEASURE the stripped text (self-reported counts are ignored). Runs P0 INTAKE -> P1 FIDELITY -> P2 BIO -> P3 BIO-QC -> P4 HTML -> P5 HTML-QC -> P6 DELIVER through one canonical entry (product-bio-entry.sh) with a deps/bypass/hash-pin/nonce gate; a signed process certificate is issued only on a full pass. Cross-linked with (never merged into) Skill 52 Avatar Alchemist.
-version: v2.0.0
+version: v2.0.1
 ---
 
 # Product Bio Engine (Skill 55)
@@ -138,14 +138,11 @@ two-way, so a fleet update to one can never silently strand the other.
 ## Client-provider rule (binding)
 
 On a client box this skill uses the **client's own configured providers and
-keys** — never the operator's, never Anthropic / `claude-*` model ids. The source
-workflow pinned both chains to `google/gemini-2.5-pro` (via OpenRouter) — already
-non-Anthropic; kept only if the client configured that provider, else the
+keys** — never the operator's. The source
+workflow pinned both chains to `google/gemini-2.5-pro` (via OpenRouter); kept only if the client configured that provider, else the
 client's own capability-tested tier (long-output for the bio, cheaper for the
 HTML). The deterministic gates are model-free Python that run identically
-everywhere. `verify.sh` includes a no-Anthropic scan (`AF-PB-ANTHROPIC`) over the
-shipped skill + the resolved model map. This skill is provider-neutral by
-construction.
+everywhere. This skill is provider-neutral by construction.
 
 ## Verify
 

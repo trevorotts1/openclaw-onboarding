@@ -49,7 +49,7 @@ support which work). They are retained for tier_of_model(),
 capabilities_for_model() and existing callers. The selectors do NOT walk
 CHAINS as a family preference order.
 
-In every selection path: NEVER select Anthropic models. Hardcoded filter.
+Selection only ever draws from the client's own configured models; there is no vendor ban.
 
 OLLAMA CLOUD ID SHAPES (ISSUE-08). The classification patterns match the
 three shapes the fleet actually runs, not just the bare `:cloud` tag:
@@ -80,26 +80,13 @@ import sys
 from typing import Optional
 
 
-# Hardcoded filter — never recommend these. ROOT-anchored (MODEL-01), never
-# per-generation, so renamed/future Claude families stay forbidden with no code
-# change. Kept at BYTE parity with the Command Center TypeScript selector's
-# FORBIDDEN_PREFIXES (blackceo-command-center src/lib/model-selector.ts):
-#   anthropic/            canonical provider-prefixed route
-#   anthropic.            Bedrock/Vertex dot-form (anthropic.claude-…, any gen)
-#   openrouter/anthropic/ nested OpenRouter route
-#   claude-               any Claude family/generation slug w/ no provider prefix
-#                         (claude-5, claude-fable-5, claude-mythos-5, claude-instant)
-# The old per-generation list (claude-3/-4/-opus/-sonnet/-haiku) silently ALLOWED
-# the anthropic. dot route, claude-5/future gens, and named future models.
-# Bare opus/sonnet/haiku (no vendor prefix, no `claude-` stem) are NOT routable
-# model ids on any connector, so they are deliberately NOT matched — a substring
-# match would false-positive on unrelated ids.
-FORBIDDEN_PREFIXES = (
-    "anthropic/",
-    "anthropic.",
-    "openrouter/anthropic/",
-    "claude-",
-)
+# Forbidden-model filter. There is NO rule against Anthropic / Claude models any
+# more (Trevor order 2026-10-29), so the list is empty and `_is_forbidden` is
+# always False. The name is kept so every importer (the repair sweep, the
+# assert gate, skill resolvers) keeps working unchanged. Nothing here ADDS an
+# Anthropic model: the selector still only ever picks from the client's own
+# configured inventory.
+FORBIDDEN_PREFIXES: tuple = ()
 
 # ─── Intelligent Model Selector ───────────────────────────────────────────────
 # ROUTE-TIER CLASSIFICATION (PLAN.md §2), single source of truth for the
@@ -116,9 +103,8 @@ FORBIDDEN_PREFIXES = (
 #                              is never a valid resolution, see FREE_SENTINELS)
 #
 # A proprietary OpenRouter route (openrouter/openai/*, openrouter/google/*-pro,
-# openrouter/anthropic/*) is NOT a Tier-2 open-source model. Anthropic is
-# forbidden outright (FORBIDDEN_PREFIXES); other proprietary routes are not
-# silently selected by the ranking.
+# openrouter/anthropic/*) is NOT a Tier-2 open-source model, so the ranking never
+# silently selects one; a client-configured one is still kept and usable.
 TIER_OLLAMA_CLOUD = 1
 TIER_OPENROUTER_OSS = 2
 TIER_FREE = 3
@@ -581,8 +567,8 @@ def _configured_default_model(cfg: dict) -> Optional[str]:
 
     Accepts the canonical object form ({"primary": ...}) and a bare string.
     Returns None when no default is configured, or when the configured
-    default is forbidden (the Anthropic filter applies to defaults too: a
-    forbidden default is treated as unconfigured so the caller surfaces
+    default is forbidden (FORBIDDEN_PREFIXES is empty, so none is; a
+    forbidden default would be treated as unconfigured so the caller surfaces
     owner input rather than dispatching it).
     """
     if not isinstance(cfg, dict):
@@ -608,9 +594,8 @@ def _parse_version(s: str) -> tuple:
 
 
 def _is_forbidden(model_id: str) -> bool:
-    # Substring match against the ROOT anchors (MODEL-01). Semantics kept identical
-    # to the TS twin's isForbidden (`mid.includes(p)`): `p in mid` already subsumes
-    # `startswith`, so both engines forbid the SAME set. See parity check.
+    # FORBIDDEN_PREFIXES is empty (no rule against Anthropic models), so this is
+    # always False; kept so every importer keeps working.
     mid = model_id.lower()
     return any(mid.startswith(p) or p in mid for p in FORBIDDEN_PREFIXES)
 
@@ -868,7 +853,7 @@ def select_model_for_skill(
         f"{', ' + purpose if purpose else ''}). "
         f"This tier needs a model with these capabilities: {required_text}. "
         f"None of the models in your openclaw.json qualifies, and no "
-        f"configured default model is set. Anthropic models are excluded by policy.\n\n"
+        f"configured default model is set.\n\n"
         f"Available models in your config: "
         f"{', '.join(available) if available else '(none discoverable)'}\n\n"
         f"Which model should I use for {skill_name or 'this skill'}? "

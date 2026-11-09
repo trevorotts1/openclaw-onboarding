@@ -1,0 +1,153 @@
+{
+  "note": "Synthetic shapes only: every question, reason and step below is invented test data, not a real council run and not a client's session.",
+  "sessions": {
+    "placeholder": {
+      "record": {
+        "session_id": "sess-fixture-placeholder",
+        "brief": {
+          "question": "FIXTURE: an unclear question with no options supplied",
+          "options": [
+            {
+              "id": "option-explore",
+              "kind": "other",
+              "label": "Explore the question with the Council; no option has been chosen yet."
+            }
+          ]
+        },
+        "verdict": {
+          "result_kind": "scored",
+          "label": "GO_WITH_CONDITIONS",
+          "recommended_option_id": "option-explore",
+          "option_scores": [
+            {
+              "option_id": "option-explore",
+              "display_score": 7.4,
+              "score": 7.388888888888889,
+              "coverage": 1,
+              "denominator": 9,
+              "weighted_sum": 66.5,
+              "spread": 1
+            }
+          ],
+          "main_reasons": [
+            "FIXTURE reason one: the goal was never defined as a measurable outcome.",
+            "FIXTURE reason two: naming a tactic now would be precision-free advice.",
+            "FIXTURE reason three: the question bundles several different decisions into one."
+          ],
+          "prerequisites": [
+            "FIXTURE condition one: define the outcome before any tactic.",
+            "FIXTURE condition two: record the current baseline.",
+            "FIXTURE condition one: define the outcome before any tactic."
+          ],
+          "strongest_dissent": null,
+          "critical_unknowns": [
+            "FIXTURE unknown one: what growth means here.",
+            "FIXTURE unknown two: who the audience is.",
+            "FIXTURE unknown three: whether paid promotion is permitted.",
+            "FIXTURE unknown four: what resources exist.",
+            "FIXTURE unknown five: what the owner will not do."
+          ],
+          "action_proposals": [
+            {
+              "action_id": "act-fixture-1",
+              "title": "FIXTURE step one: define the measurable outcome.",
+              "description": "FIXTURE step one description.",
+              "risk_class": "medium",
+              "execution_authorization_required": true
+            }
+          ],
+          "validation_status": "valid",
+          "ratification_status": "not_required"
+        }
+      },
+      "view": {
+        "id": "sess-fixture-placeholder",
+        "status": "complete",
+        "voters": 9,
+        "options": [
+          {
+            "id": "option-explore",
+            "letter": "A",
+            "label": "Explore the question with the Council; no option has been chosen yet.",
+            "votes": 9,
+            "score": 7.4,
+            "recommended": true
+          }
+        ]
+      }
+    },
+    "actionable": {
+      "record": {
+        "session_id": "sess-fixture-actionable",
+        "brief": {
+          "question": "FIXTURE: which launch option should we take?",
+          "options": [
+            { "id": "option-a", "kind": "status_quo", "label": "FIXTURE: keep the current plan" },
+            { "id": "option-b", "kind": "bounded_test", "label": "FIXTURE: run a two-week test" }
+          ]
+        },
+        "verdict": {
+          "result_kind": "scored",
+          "label": "GO",
+          "recommended_option_id": "option-b",
+          "option_scores": [
+            { "option_id": "option-a", "display_score": 5.5, "coverage": 1 },
+            { "option_id": "option-b", "display_score": 8.2, "coverage": 1 }
+          ],
+          "main_reasons": ["FIXTURE: the test bounds the downside.", "FIXTURE: it produces evidence either way."],
+          "prerequisites": ["FIXTURE: set a two-week review date."],
+          "strongest_dissent": "FIXTURE dissent: the test spends focus that the current plan needs.",
+          "critical_unknowns": ["FIXTURE unknown: current conversion rate."],
+          "action_proposals": [
+            {
+              "action_id": "act-fixture-2",
+              "title": "FIXTURE step: draft the test plan.",
+              "description": "FIXTURE step: draft the test plan description.",
+              "risk_class": "low",
+              "execution_authorization_required": true
+            },
+            {
+              "action_id": "act-fixture-3",
+              "title": "FIXTURE step: book the review.",
+              "description": "FIXTURE step: book the review description.",
+              "risk_class": "low",
+              "execution_authorization_required": true
+            }
+          ],
+          "validation_status": "valid",
+          "ratification_status": "not_required"
+        }
+      },
+      "view": {
+        "id": "sess-fixture-actionable",
+        "status": "complete",
+        "voters": 9,
+        "options": [
+          { "id": "option-a", "letter": "A", "label": "FIXTURE: keep the current plan", "votes": 2, "score": 5.5, "recommended": false },
+          { "id": "option-b", "letter": "B", "label": "FIXTURE: run a two-week test", "votes": 7, "score": 8.2, "recommended": true }
+        ]
+      }
+    },
+    "consult": {
+      "record": {
+        "session_id": "sess-fixture-consult",
+        "brief": {
+          "question": "FIXTURE consult: what does the evidence say about pricing?",
+          "options": [{ "id": "option-explore", "kind": "other", "label": "FIXTURE: explore" }]
+        },
+        "verdict": {
+          "result_kind": "consult",
+          "consult_card": { "answer": "FIXTURE answer: the evidence on file does not settle the price." },
+          "next_step": "FIXTURE next step: collect three comparable price points.",
+          "validation_status": "valid"
+        }
+      },
+      "view": {
+        "id": "sess-fixture-consult",
+        "status": "complete",
+        "voters": 1,
+        "options": []
+      }
+    }
+  }
+}

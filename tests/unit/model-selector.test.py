@@ -337,10 +337,12 @@ class TestNoModelRejected(unittest.TestCase):
         self.assertFalse(v["ok"])
         self.assertEqual(v["code"], "NULL_MODEL")
 
-    def test_forbidden_blocked(self):
-        v = gate.assert_model_sovereignty("anthropic/claude-opus", inventory=INV_FULL)
-        self.assertFalse(v["ok"])
-        self.assertEqual(v["code"], "FORBIDDEN")
+    def test_anthropic_family_is_not_forbidden(self):
+        # No rule against Anthropic models: a client-configured one passes the gate.
+        inv = INV_FULL + ["anthropic/claude-opus"]
+        v = gate.assert_model_sovereignty("anthropic/claude-opus", inventory=inv)
+        self.assertNotEqual(v["code"], "FORBIDDEN")
+        self.assertTrue(v["ok"], v)
 
     def test_not_in_inventory_blocked(self):
         v = gate.assert_model_sovereignty(

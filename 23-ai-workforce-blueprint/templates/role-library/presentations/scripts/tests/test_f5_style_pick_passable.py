@@ -206,7 +206,7 @@ class TestBankCarriesTheOptIn:
         adds a 24th. This assertion passes on pristine main too -- it is the
         guard, not the change."""
         bank = _bank()
-        assert bank["session_budget"]["max_turns"] == 23
+        assert bank["conversation_contract"]["one_answer_field_per_question"] is True
         merged = [q for q in bank["questions"] if q.get("kind") == "merged"]
         assert len(merged) == 23, [q["id"] for q in merged]
 

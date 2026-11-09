@@ -43,10 +43,16 @@ It never edits a plist and never touches client credentials. Log:
 ## What `gateway-health-watchdog.sh` does
 
 - Resolves the **real** gateway port (`openclaw gateway status` → `PORT` →
-  `OPENCLAW_GATEWAY_PORT` → `18789` only as a last resort — it never assumes
-  18789).
+  `OPENCLAW_GATEWAY_PORT` → `gateway.port` in `openclaw.json` → `18789` only as
+  a last resort — it never assumes 18789).
 - HTTP-probes `http://127.0.0.1:<port>/` for a `{"ok":true}` body (CLI
   `openclaw gateway status` is the corroborating fallback signal).
+- **TLS-aware.** When `gateway.tls.enabled` is `true` in `openclaw.json` (read
+  with python, never the CLI) the gateway answers https only, so both probes go
+  to `https://127.0.0.1:<port>` with `curl -k` (loopback only, self-signed
+  cert). Config unreadable or flag absent → plain http, as before.
+  `GATEWAY_WATCHDOG_TLS=1|0` overrides (a VPS host has no config to read;
+  `install-host-watchdog-cron.sh` forwards it).
 - Acts **only after N consecutive failures** (default 3) **and** outside a
   post-action **cooldown** (default 600s) — it can never become a restart storm.
 - Box-aware heal: **Mac** → `launchctl kickstart -k` the live gateway label;

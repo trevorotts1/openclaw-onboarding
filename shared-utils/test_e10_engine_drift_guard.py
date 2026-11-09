@@ -59,52 +59,6 @@ def test_repo_currently_matches_recorded_baseline():
 
 
 # ---------------------------------------------------------------------------
-# 2a. guard-no-anthropic-runtime.py -- the six MODEL-ID-SHAPE patterns both
-# engines independently implement and share (see classification doc: the
-# sk-ant-/ANTHROPIC_API_KEY value shapes are NOT shared -- 58 folds them into
-# this file, 59 delegates them to the sibling scan-no-secrets.sh -- so those are
-# deliberately excluded from this battery).
-# ---------------------------------------------------------------------------
-ANTHROPIC_SHAPE_POSITIVES = [
-    'model = "claude-opus-4-20260101"',
-    "route via anthropic/claude-3-opus",
-    "arn: us.anthropic.claude-v2:1",
-    "import from '@anthropic-ai/sdk'",
-    "POST https://api.anthropic.com/v1/messages",
-    '"provider": "anthropic"',
-]
-ANTHROPIC_SHAPE_NEGATIVES = [
-    "we never call anthropic or claude in this engine",
-    "deny_patterns: [claude, anthropic, opus, sonnet, haiku]",
-    "class AnthropicIdentifierError(ValueError): pass",
-]
-
-
-def _podcast_anthropic_guard():
-    return _load(PODCAST_SCRIPTS / "guard-no-anthropic-runtime.py", "e10_g58_anthropic")
-
-
-def _anthology_anthropic_guard():
-    return _load(ANTHOLOGY_SCRIPTS / "guard-no-anthropic-runtime.py", "e10_g59_anthropic")
-
-
-def test_anthropic_guard_shared_shapes_both_flag_every_positive():
-    g58 = _podcast_anthropic_guard()
-    g59 = _anthology_anthropic_guard()
-    for text in ANTHROPIC_SHAPE_POSITIVES:
-        assert bool(g58.scan_anthropic(text)), "58 guard missed a shared shape: %r" % text
-        assert g59.deny(text), "59 guard missed a shared shape: %r" % text
-
-
-def test_anthropic_guard_shared_shapes_both_clear_every_negative():
-    g58 = _podcast_anthropic_guard()
-    g59 = _anthology_anthropic_guard()
-    for text in ANTHROPIC_SHAPE_NEGATIVES:
-        assert not bool(g58.scan_anthropic(text)), "58 guard false-positived on: %r" % text
-        assert not g59.deny(text), "59 guard false-positived on: %r" % text
-
-
-# ---------------------------------------------------------------------------
 # 2b. guard-cron-inventory.py -- the "exactly one recurring engine job passes,
 # two or more fails" invariant, over each engine's OWN inventory shape (they are
 # NOT interchangeable shapes -- that is the point; each is driven through its

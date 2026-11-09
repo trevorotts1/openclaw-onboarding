@@ -29,6 +29,56 @@ if _TOOLS_DIR not in sys.path:
 
 import pytest
 
+import ghl_verify  # noqa: E402
+
+
+# ── Live-evidence seal ────────────────────────────────────────────────────────
+# Since S06-04 the gate re-hashes the render manifest's dom/png/console files and
+# needs the 0600 run-nonce file ghl_verify.verify_all leaves OUTSIDE the evidence
+# tree. _seal() writes exactly those, so a "genuine" tree here is the shape the
+# real writer produces; an unsealed tree is a hand-forged one and must fail.
+
+@pytest.fixture(autouse=True)
+def _nonce_dir(tmp_path_factory, monkeypatch):
+    monkeypatch.setenv(ghl_verify.NONCE_DIR_ENV, str(tmp_path_factory.mktemp("nonces")))
+
+
+def _seal(run_dir) -> None:
+    run_dir = str(run_dir)
+    raw_path = os.path.join(run_dir, ghl_verify.RAW_REL)
+    summary_path = os.path.join(run_dir, ghl_verify.SUMMARY_REL)
+    with open(raw_path) as f:
+        raw = json.load(f)
+    render = os.path.join(run_dir, "render")
+    os.makedirs(render, exist_ok=True)
+    manifest = {}
+    for i, r in enumerate(raw):
+        step = r.get("step") or r.get("page_id") or f"row{i}"
+        marker = r.setdefault("marker", f"SEAL-MARKER-{step}") if r.get("PASS") is True else "SEAL"
+        entry = {}
+        for key, ext, data in (("dom", "dom.html", f"<html><body><p>{marker}</p></body></html>".encode()),
+                               ("png", "png", b"\x89PNG\r\n\x1a\n" + b"x" * 64),
+                               ("console", "console.json", b"[]")):
+            p = os.path.join(render, f"{step}.{ext}")
+            with open(p, "wb") as f:
+                f.write(data)
+            entry[f"{key}_path"] = p
+            entry[f"{key}_sha256"] = ghl_verify._sha256_file(p)
+        manifest[step] = entry
+    with open(raw_path, "w") as f:
+        json.dump(raw, f)
+    with open(summary_path) as f:
+        summary = json.load(f)
+    if summary.get("raw_sha256"):
+        summary["raw_sha256"] = ghl_verify._sha256_file(raw_path)
+        with open(summary_path, "w") as f:
+            json.dump(summary, f)
+    manifest_path = os.path.join(run_dir, ghl_verify.RENDER_MANIFEST_REL)
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f)
+    if summary.get("run_nonce"):  # a tree with no nonce stays unsealed (rc 5 case)
+        ghl_verify.write_run_nonce(run_dir, summary["run_nonce"], raw_path, manifest_path)
+
 
 # ── Import ghl_gate (may not exist yet — skip when B2 not landed) ─────────────
 
@@ -102,6 +152,7 @@ class TestProseMdCannotOverrideGate:
         # Plant the FAILING machine summary (the truth).
         _write_summary(run_dir, overall_pass=False, passed=0, total=1)
         _write_raw(run_dir, [{"step": "home", "PASS": False, "http_code": 500}])
+        _seal(run_dir)
 
         # Plant prose files claiming PASS (the lies the pre-flight wrote).
         with open(os.path.join(run_dir, "run-funnel.md"), "w") as f:
@@ -132,6 +183,7 @@ class TestProseMdCannotOverrideGate:
         run_dir = str(tmp_path)
         _write_summary(run_dir, overall_pass=True, passed=1, total=1)
         _write_raw(run_dir, [{"step": "home", "PASS": True, "http_code": 200}])
+        _seal(run_dir)
 
         rc = gate.require_pass(run_dir)
         assert rc == 0, \
@@ -151,6 +203,7 @@ class TestProseMdCannotOverrideGate:
             {"step": "optin", "PASS": False, "http_code": 403},
             {"step": "thanks", "PASS": False, "http_code": 403},
         ])
+        _seal(run_dir)
 
         # The fabricated ledger (exactly what the pre-flight produced for the funnel).
         ledger = {
@@ -187,6 +240,7 @@ class TestMockTrustBlocksGate:
         _write_summary(run_dir, overall_pass=True, passed=1, total=1,
                        trust="MOCK")
         _write_raw(run_dir, [{"step": "home", "PASS": True, "http_code": 200}])
+        _seal(run_dir)
 
         rc = gate.require_pass(run_dir)
         assert rc != 0, \
@@ -207,6 +261,7 @@ class TestMockTrustBlocksGate:
         _write_summary(run_dir, overall_pass=True, passed=1, total=1,
                        trust=sentinel)
         _write_raw(run_dir, [{"step": "home", "PASS": True, "http_code": 200}])
+        _seal(run_dir)
 
         rc = gate.require_pass(run_dir)
         assert rc != 0, \
@@ -226,6 +281,7 @@ class TestMockTrustBlocksGate:
             {"step": "optin", "PASS": True, "http_code": 200},
             {"step": "thanks", "PASS": True, "http_code": 200},
         ])
+        _seal(run_dir)
 
         rc = gate.require_pass(run_dir)
         assert rc == 0, \
@@ -253,6 +309,7 @@ class TestGateIgnoresAllOtherFiles:
             {"step": "about", "PASS": False, "http_code": 500},
             {"step": "contact", "PASS": False, "http_code": 500},
         ])
+        _seal(run_dir)
 
         # Decoy files with optimistic content (matching what the pre-flight wrote).
         with open(os.path.join(run_dir, "build.log"), "w") as f:

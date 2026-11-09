@@ -46,7 +46,7 @@ EX_CLEAN=0; EX_ERR=1; EX_USAGE=2; EX_DEP=3; EX_VIOLATION=4
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 ENGINE_DIR="$(cd "$SELF_DIR/.." && pwd)"
 TAG="[scan-no-client-identifiers]"
-SELF_NAMES="scan-no-secrets.sh scan-no-json-exports.sh scan-no-client-identifiers.sh guard-no-anthropic-runtime.py"
+SELF_NAMES="scan-no-secrets.sh scan-no-json-exports.sh scan-no-client-identifiers.sh"
 
 SELFTEST_TMP=""
 _cleanup_selftest() { [ -n "${SELFTEST_TMP:-}" ] && rm -rf "$SELFTEST_TMP"; return 0; }

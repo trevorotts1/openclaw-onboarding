@@ -98,12 +98,12 @@ run_repair "$SANDBOX/n3.json" "$SANDBOX/r3"
 if python3 - "$SANDBOX/n3.json" <<'EOF'
 import json, sys
 fb = json.load(open(sys.argv[1]))["agents"]["defaults"]["model"]["fallbacks"]
-sys.exit(0 if fb == ["agnes/agnes-2.5-flash", "ollama/kimi-k2.6:cloud",
-                     "ollama/gemma4:31b-cloud",
+sys.exit(0 if fb == ["agnes/agnes-2.5-flash", "anthropic/claude-x",
+                     "ollama/kimi-k2.6:cloud", "ollama/gemma4:31b-cloud",
                      "openrouter/z-ai/glm-5.3-flash"] else 1)
 EOF
-then ok "N3: anthropic + -preview scrubbed; the 4 legitimate fallbacks kept in order"
-else bad "N3: scrub wrong (expected exactly the 4 legitimate entries, last = OpenRouter)"; fi
+then ok "N3: -preview scrubbed; the Anthropic fallback and the 4 other fallbacks kept in order"
+else bad "N3: scrub wrong (expected the 5 legitimate entries incl. the Anthropic one, -preview removed)"; fi
 
 printf '\n----------------------------------------\n'
 printf 'repair-model-sovereignty-no-truncate: %d passed, %d failed\n' "$PASS" "$FAIL"

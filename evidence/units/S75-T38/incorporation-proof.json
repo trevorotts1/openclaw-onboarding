@@ -1,0 +1,68 @@
+{
+ "schema": "s75/incorporation-proof.v1",
+ "unit_id": "S75-T38",
+ "acceptance_id": "S75-A38",
+ "written_at": "2026-10-26",
+ "repository": "blackceo-command-center",
+ "remote": "https://github.com/trevorotts1/blackceo-command-center.git",
+ "current_head": {
+  "ref": "refs/heads/main",
+  "sha": "c716c0164d487713370d8d5bcb4dd092de700d35",
+  "captured_by": "git -C <OPERATOR_HOME>/skill75-repair/lanes/S75-T38-cc-lane rev-parse origin/main (after git fetch origin --prune)",
+  "captured_at": "2026-10-26"
+ },
+ "unit_change": {
+  "branch": "s75/S75-T38-cc-r1",
+  "head_sha": "b772bcf7d4890fed6dfb58adf4cc591feab5a689",
+  "parent_sha": "c716c0164d487713370d8d5bcb4dd092de700d35",
+  "commits_since_current_head": 1,
+  "pushed": true,
+  "remote_ref_sha": "b772bcf7d4890fed6dfb58adf4cc591feab5a689",
+  "remote_ref_source": "git ls-remote origin refs/heads/s75/S75-T38-cc-r1",
+  "ancestry_check": {
+   "command": "git merge-base --is-ancestor c716c0164d487713370d8d5bcb4dd092de700d35 b772bcf7d4890fed6dfb58adf4cc591feab5a689",
+   "exit_code": 0,
+   "meaning": "current origin/main is an ancestor of the change commit; the change is built directly on current head with exactly one commit"
+  },
+  "changed_files": [
+   {
+    "path": "scripts/check-tool-registry-references.py",
+    "status": "M",
+    "blob_at_current_head": "2ce8ca726a604e4f4f848f09fe901535d26157ef",
+    "blob_at_change_parent": "2ce8ca726a604e4f4f848f09fe901535d26157ef",
+    "blob_at_change_head": "b227f6a244f3afec31307948daacc7e142908092",
+    "parent_equals_current_head": true
+   }
+  ],
+  "diff_command": "git diff --name-status c716c0164d487713370d8d5bcb4dd092de700d35 b772bcf7d4890fed6dfb58adf4cc591feab5a689"
+ },
+ "preexisting_real_change": {
+  "sha": "8220cfd136",
+  "subject": "fix(cc-deploy): QC pass 2 - mirror the app's .env.local parse exactly, never abort mid-update",
+  "ancestry_check": {
+   "command": "git merge-base --is-ancestor 8220cfd136 c716c0164d487713370d8d5bcb4dd092de700d35",
+   "exit_code": 0,
+   "meaning": "a real, previously landed Command Center change is reachable from current head"
+  },
+  "content_equivalence": [
+   {
+    "path": "shared-utils/resolve_db.py",
+    "blob_at_change": "cf2bb5d13288f273975e46e655a190302f0a8b2e",
+    "blob_at_current_head": "cf2bb5d13288f273975e46e655a190302f0a8b2e",
+    "equal": true
+   },
+   {
+    "path": "update.sh",
+    "blob_at_change": "84929d29b9f0bdc7745bd0757ed7f3b92158c766",
+    "blob_at_current_head": "84929d29b9f0bdc7745bd0757ed7f3b92158c766",
+    "equal": true
+   }
+  ]
+ },
+ "method_note": "Two independent incorporation facts are recorded: (1) the unit branch descends from the exact current head with one commit and its parent blob equals the current-head blob for the changed file; (2) a previously landed real CC change (8220cfd136) is both an ancestor of current head and byte-identical at current head for both files it touched. Ancestry is the primary proof; content equivalence is the second, independent form the acceptance row allows.",
+ "limitations": [
+  "The unit change is on a branch and is NOT in origin/main's tree; no merge to main was performed (branch-only rule).",
+  "The pre-existing change proof reuses a commit already merged by the batch train; it is evidence of incorporation, not new work by this unit.",
+  "The current head captured here can advance; re-run the ancestry commands against the then-current origin/main to re-validate."
+ ]
+}

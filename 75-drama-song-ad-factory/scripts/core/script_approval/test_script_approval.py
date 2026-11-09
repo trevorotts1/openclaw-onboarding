@@ -150,8 +150,10 @@ def test_approve_continues_and_edit_changes_script_and_resends():
     ok = SA.handle_reply(run, "approve", TITLE, STORY, SHEET, r["lyrics"], _edit, lambda s, h: [])
     assert ok["status"] == "approved"
     rec = SA.record_for(run)
-    assert SA.check_script_approval(rec, r["lyrics"]) is None
-    assert SA.check_script_approval(rec, r["lyrics"] + " changed") is not None   # edited after approval
+    # the approved bytes are the EDITED script the client approved
+    edited_sha = SA.script_sha(TITLE, r["story"], r["sheet"])
+    assert SA.check_script_approval(rec, r["lyrics"], edited_sha) is None
+    assert SA.check_script_approval(rec, r["lyrics"] + " changed", edited_sha) is not None   # edited after approval
 
 
 def test_no_path_unchanged():

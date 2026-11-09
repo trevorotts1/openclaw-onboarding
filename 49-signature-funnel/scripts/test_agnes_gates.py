@@ -42,8 +42,11 @@ from agnes_gates import (  # noqa: E402
 
 ALL_ELEMENTS = {"subject", "environment", "style", "lighting",
                 "composition", "output"}
-KNOWN_ENTRY_HASH = ("ace1998862604904b5e2e224c0f85c87daf1ea0"
-                    "7b74d2b60608589a4631e0532")
+# The active kie-rule-12-band entry as re-stamped by U-images-07 (IMG-20: the 80/95 percent band, no
+# fixed character numbers; the earlier entry is kept as kie-rule-12-band-r1). The registry stores this
+# hash and resolve_governing_citation recomputes it from the entry's own bytes before returning it.
+KNOWN_ENTRY_HASH = ("0981c8f0e6e754d6f473fffbb385e92655be7080"
+                    "8356cc0d3c3761c07dbb741c")
 
 
 def long_prompt(chars: int) -> str:

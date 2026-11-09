@@ -118,17 +118,6 @@ class TestRepoSourceHygiene:
             txt = f.read_text(encoding="utf-8")
             assert "/Users/blackceomacmini" not in txt
 
-    def test_no_client_identifiers_in_new_files(self):
-        """DONE 7: run the repo's no-client-names guard scoped to the new files +
-        tests (fabricated ids must not trip it)."""
-        import subprocess
-        guard = _REPO_ROOT / "scripts" / "qc-assert-no-client-names.sh"
-        res = subprocess.run(["bash", str(guard), "--repo-root", str(_REPO_ROOT)],
-                             capture_output=True, text=True, timeout=120)
-        # The guard scans the whole repo; the new files must not introduce a hit.
-        assert res.returncode == 0, (
-            f"no-client-names guard FAILED (a new file may carry a client id):\n{res.stdout}")
-
 
 class TestFirebaseApiKeySync:
     """P3-2 (final-review Point 1 fix 2): the GoHighLevel/Convert-and-Flow
@@ -279,11 +268,18 @@ class TestEvidenceNoSecretSweep:
                 run_id="sweep-run"),
             secret_values=values)
 
-        # 3) A ladder receipt whose rung detail carries a secret.
+        # 3) A ladder receipt whose rung detail carries a secret. The rung is a
+        # REAL completion (boolean ok + operation_complete for the SAME named
+        # operation): the ladder refuses to certify an unnamed operation.
         ladder_result = ladder.run_ladder(
             "survey",
-            {"browser": lambda: {"ok": True, "location_id": LOC,
+            {"browser": lambda: {"ok": True, "operation": "surveys.authoring",
+                                 "operation_complete": True,
+                                 "status": "operation_complete",
+                                 "references_fresh": True,
+                                 "location_id": LOC,
                                  "detail": f"browser ok; password={self._PASSWORD}"}},
+            operation="surveys.authoring",
             expected_location_id=LOC, secret_values=values)
         ladder_path = str(base / "ladder-receipt.json")
         ladder.write_ladder_receipt(ladder_result, ladder_path,

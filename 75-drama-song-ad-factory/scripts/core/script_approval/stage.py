@@ -114,10 +114,37 @@ def _doc(run_dir):
                                   "erm_drop", "hero_shift", "cta") if d.get(k)}
 
 
-def _send(run_dir, deliver, msgs):
+def _studio_order(run_dir):
+    """The studio order this run came from, or None (a chat/manual run)."""
+    d = _load(os.path.join(run_dir, "control", "studio-order.json"))
+    return d if isinstance(d, dict) and d.get("order_id") else None
+
+
+def _send(run_dir, deliver, msgs, studio_publish=None):
+    # ST11A: a studio-configured run must publish the presentation to the
+    # Studio sink and keep the receipt BEFORE sent is marked. Chat/text
+    # delivery alone never counts as Studio-sent; a refused Studio publish
+    # raises so the failure stays recoverable (no false sent).
+    receipt = None
+    if _studio_order(run_dir) is not None:
+        if studio_publish is None:
+            studio_publish = _default_studio_publish
+        receipt = studio_publish(run_dir, list(msgs))
+        if receipt is None:
+            raise RuntimeError("studio publication refused: script not sent")
     for m in msgs:
         deliver(m)
     SA.mark_sent(run_dir)
+    if receipt is not None:
+        with open(os.path.join(run_dir, "control", "studio-script-receipt.json"),
+                  "w", encoding="utf-8") as f:
+            json.dump(receipt, f, indent=2, sort_keys=True)
+    return receipt
+
+
+def _default_studio_publish(run_dir, msgs):
+    """No Studio sink wired for this caller: refuse rather than fake success."""
+    raise RuntimeError("studio sink not wired for script presentation")
 
 
 def _unknown(state_detail):
@@ -138,7 +165,8 @@ def _recover_answer(reply):
     return None
 
 
-def run_stage(run_dir, deliver, reply=None, apply_edit=None, checks=None, context=None):
+def run_stage(run_dir, deliver, reply=None, apply_edit=None, checks=None,
+              context=None, studio_publish=None):
     st = card_answers.load(run_dir)
     dec = card_answers.decision(st, SA.QUESTION_ID)
     if dec["state"] == card_answers.UNKNOWN:
@@ -162,7 +190,8 @@ def run_stage(run_dir, deliver, reply=None, apply_edit=None, checks=None, contex
         return {"outcome": "blocked", "problems": ["creative/script.json is missing or has no sheet"]}
     title, story, sheet, lyrics, elements = doc
     check = checks or (lambda s, h: _problems(run_dir))
-    if rec and rec.get("status") == "approved" and SA.check_script_approval(rec, lyrics) is None:
+    if rec and rec.get("status") == "approved" and \
+            SA.check_script_approval(rec, lyrics, SA.script_sha(title, story, sheet)) is None:
         return {"outcome": "go", "reason": "approved", "messages": []}
     if rec is None:                                       # first time: checks, record, send, pause
         problems = list(check(story, sheet))
@@ -170,14 +199,14 @@ def run_stage(run_dir, deliver, reply=None, apply_edit=None, checks=None, contex
             return {"outcome": "blocked", "problems": problems}
         msgs = SA.request_approval(run_dir, title, story, sheet, lyrics,
                                    context=context, elements=elements)
-        _send(run_dir, deliver, msgs)
+        _send(run_dir, deliver, msgs, studio_publish)
         return {"outcome": "waiting", "reason": "script-sent", "messages": msgs}
     if reply is None:                                     # resume: stay paused; re-send only if never delivered
         if not rec.get("sent"):
             msgs = SA.request_approval(run_dir, title, story, sheet, lyrics,
                                        maker=rec.get("maker"), context=context,
                                        elements=elements)
-            _send(run_dir, deliver, msgs)
+            _send(run_dir, deliver, msgs, studio_publish)
             return {"outcome": "waiting", "reason": "script-sent", "messages": msgs}
         return {"outcome": "waiting", "reason": "awaiting-client-reply", "messages": []}
     r = SA.handle_reply(run_dir, reply, title, story, sheet, lyrics,
@@ -194,7 +223,7 @@ def run_stage(run_dir, deliver, reply=None, apply_edit=None, checks=None, contex
         d.update(story=[list(a) for a in r["story"]], sheet=r["sheet"], lyrics=r["lyrics"])
         with open(os.path.join(run_dir, SCRIPT), "w", encoding="utf-8") as f:
             json.dump(d, f, indent=2)
-        _send(run_dir, deliver, r["messages"])
+        _send(run_dir, deliver, r["messages"], studio_publish)
         return {"outcome": "waiting", "reason": "edit-resent", "messages": r["messages"]}
     msgs = r["messages"]                   # one concrete question, or an acknowledgement
     for m in msgs:

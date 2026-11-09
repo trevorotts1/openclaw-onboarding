@@ -225,6 +225,7 @@ This role contributes to the company revenue cascade by: **generating the qualif
 |---|---|---|---|
 | **38** conversational-ai-system | "set up a booking bot" · "a conversational qualifier" · "an AI that books calls" | `~/.openclaw/skills/38-conversational-ai-system/` | `universal-sops/SOP-CONV-AI-01-OPERATING-THE-CONVERSATIONAL-AI-SYSTEM.md/` |
 | **39** real-estate-playbook | "look up a property" · "qualify a real estate lead" · "schedule a showing" | `~/.openclaw/skills/39-real-estate-playbook/` | — |
+| **84** purple-billboard-blueprint | "run my purple billboard" · "a giveaway post with a keyword" · "prepare my 30 days of billboard posts" | `~/.openclaw/skills/84-purple-billboard-blueprint/` | `universal-sops/social-media-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures (Numbered)

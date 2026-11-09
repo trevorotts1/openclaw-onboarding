@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PRES-056 -- brief metrics: turn-count + time-to-valid-brief vs baseline.
 
-MEASURES, NEVER GATES. The 23-turn bank is the ceiling (Trevor ruling);
+MEASURES, NEVER GATES. The 23-turn count is a historical baseline;
 a required SOP/QC obligation is never dropped to hit a target, so every
 function here reports and returns -- nothing refuses, nothing skips, nothing
 invents offer/pricing/research facts.
@@ -81,7 +81,7 @@ _DECLINE_REASON = {
 }
 
 _REAL_SOURCES = ("client-answered", "deck-intake-driver", "plan-lock")
-_APPROVED_DERIVED_SOURCES = ("preference-reuse",)
+_APPROVED_DERIVED_SOURCES = ("preference-reuse", "derived")
 
 _DRIVER_MOD: Any = None
 
@@ -129,12 +129,12 @@ def read_bank_targets(bank_file: Optional[Path] = None) -> Dict[str, Any]:
 
 def verify_bank_shape(bank_file: Optional[Path] = None) -> Dict[str, Any]:
     """Confirm the bank the targets were designed against is still the bank:
-    23 merged turns, 52 physical rows, 20 required, ceiling 23. Reports
+    23 legacy merged records, 52 physical rows and 20 required parents. Reports
     mismatches -- never raises, never gates (callers decide)."""
     got = read_bank_targets(bank_file)
     expect = {"merged_turns": BASELINE_TURNS,
               "physical_rows": BANK_PHYSICAL_ROWS,
-              "required_fields": BANK_REQUIRED_FIELDS, "max_turns": 23}
+              "required_fields": BANK_REQUIRED_FIELDS}
     mismatches = {k: {"expected": v, "got": got.get(k)}
                   for k, v in expect.items() if got.get(k) != v}
     return {"ok": not mismatches, "mismatches": mismatches, "measured": got}

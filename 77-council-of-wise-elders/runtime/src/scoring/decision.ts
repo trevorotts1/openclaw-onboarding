@@ -60,6 +60,7 @@ import {
   type VerdictLabel,
 } from '../contracts/index.js';
 import type { CriticalDomainApplicability } from './critical-domains.js';
+import { isUnresolvedExplorationOption } from '../brief/exploration.js';
 
 /** One seat's final-round judgment on one option, from a returned card. */
 export interface OptionScoreInput {
@@ -359,6 +360,17 @@ export function analyzeDecision(input: DecisionInput): DecisionAnalysis {
       (id) => `hard constraint ${id} confirmed FAIL; option is disqualified (Section 12.3)`,
     );
     let eligible = hardFailures.length === 0;
+
+    // CTR-133: an unresolved exploration candidate is not a decision option.
+    // It is never eligible, so it can never lead, be recommended, or carry a
+    // band label. Genuine indecision (WAIT / INSUFFICIENT_EVIDENCE with a null
+    // recommendation) remains a distinct, honest outcome.
+    if (isUnresolvedExplorationOption(option)) {
+      eligible = false;
+      eligibilityReasons.push(
+        'unresolved exploration candidate: no real alternative was stated, so it cannot be scored or recommended (CTR-133)',
+      );
+    }
 
     // Professional review failure is a hard failure of the option, not
     // a score adjustment (Section 12.7).

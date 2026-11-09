@@ -13,7 +13,7 @@
 #   4. JSON sanity on the shipped contracts + intake-spec conformance;
 #   5. GOLDEN REPRODUCE — prove the four committed golden ledgers pass their gates,
 #      re-verify the committed golden certificate, and drive the golden ledgers
-#      through the canonical orchestrator (fresh nonce, temp run-dir) to a fresh
+#      through the canonical orchestrator (throwaway operator key, temp run-dir) to a fresh
 #      signed certificate that self-validates;
 #   6. BROKEN-VARIANT REJECTIONS — each deliberately-broken variant must be REJECTED
 #      (nonzero) carrying its DISTINCT AF-FUN-* code, and the "unapproved" variant
@@ -30,7 +30,6 @@ SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SCRIPTS="$SKILL_DIR/scripts"
 ORCH="$SKILL_DIR/run_signature_funnel.py"
 GOLDEN="$SKILL_DIR/examples/golden-daybreak"
-GOLDEN_NONCE="golden-daybreak-nonce-v1"     # documented example nonce (specimen, not a secret)
 PY="${PYTHON:-python3}"
 fails=0
 
@@ -101,11 +100,28 @@ run "full launch plan: pages + emails + texts + automations + AI (test_launch_pl
 # ---------------------------------------------------------------------------
 echo "-- golden reproduce (examples/golden-daybreak) --"
 if [ -d "$GOLDEN" ]; then
+  # The golden run dir. P5-P7 read what the TOOLS wrote under it (page fragments, a sealed Skill 6 verify run,
+  # the wireframe + mockup set), none of which can be committed (the verify run's nonce lives outside the tree),
+  # so prove_sf_build's own evidence fixture stages them in a throwaway dir; the committed golden fragments are
+  # restored over its generic ones so they are the fragments actually checked. Fixture only, never a real tool run.
+  TMP="$(mktemp -d "${TMPDIR:-/tmp}/sf49_golden.XXXXXX")"
+  trap 'rm -rf "$TMP"' EXIT
+  RD="$TMP/run-golden"
+  mkdir -p "$RD"
+  mkdir -m 700 "$TMP/ghl-nonces"; export GHL_VERIFY_NONCE_DIR="$TMP/ghl-nonces"
+  cp "$GOLDEN/brief.json" "$GOLDEN/copy_ledger.json" "$GOLDEN/prompt_ledger.json" "$GOLDEN/media_ledger.json" \
+     "$GOLDEN/persona-selection-log.md" "$RD/"   # FIX-XC-02a: persona grounding is P0 fail-closed
+  # P5-P8 artifacts (fragments + graph + build receipt + derived-page ledger)
+  cp "$GOLDEN/funnel_graph.json" "$GOLDEN/build_receipt.json" "$GOLDEN/derived_pages.json" "$RD/"
+  "$PY" -c 'import sys,json; sys.path.insert(0,sys.argv[1]); from pathlib import Path; import prove_sf_build as b; r=json.load(open(sys.argv[3])); b.write_valid_run_evidence(Path(sys.argv[2]), r["funnel_size"], r)' \
+     "$SCRIPTS" "$RD" "$GOLDEN/build_receipt.json" && cp "$GOLDEN"/pages/*.fragment.html "$RD/pages/" \
+     || { printf '  [FAIL] could not stage the golden build evidence\n'; fails=$((fails + 1)); }
+
   run "golden brief  -> prove_sf_intake"       "$PY" "$SCRIPTS/prove_sf_intake.py" "$GOLDEN/brief.json"
   run "golden copy   -> prove_sf_copy"         "$PY" "$SCRIPTS/prove_sf_copy.py" --ledger "$GOLDEN/copy_ledger.json"
   run "golden prompts-> prove_sf_prompt_floor" "$PY" "$SCRIPTS/prove_sf_prompt_floor.py" --ledger "$GOLDEN/prompt_ledger.json"
   run "golden graph  -> prove_sf_graph"        "$PY" "$SCRIPTS/prove_sf_graph.py" --graph "$GOLDEN/funnel_graph.json"
-  run "golden build  -> prove_sf_build"        "$PY" "$SCRIPTS/prove_sf_build.py" --receipt "$GOLDEN/build_receipt.json"
+  run "golden build  -> prove_sf_build"        "$PY" "$SCRIPTS/prove_sf_build.py" --receipt "$RD/build_receipt.json" --funnel-size 7 --run-dir "$RD"
   run "golden media  -> prove_sf_no_pitch"     "$PY" "$SCRIPTS/prove_sf_no_pitch.py" --ledger "$GOLDEN/media_ledger.json"
   # FIX-IMG-07 — the golden prompt AND media ledgers cover every required image slot.
   run "golden prompt coverage (--structure)" "$PY" "$SCRIPTS/prove_sf_prompt_floor.py" \
@@ -115,28 +131,30 @@ if [ -d "$GOLDEN" ]; then
 
   CERT="$GOLDEN/delivery/golden-daybreak-FINAL/PROCESS-CERTIFICATE.json"
   if [ -f "$CERT" ]; then
-    run "committed golden certificate re-verifies" \
-        "$PY" "$SCRIPTS/prove_sf_cert.py" --cert "$CERT" --nonce "$GOLDEN_NONCE"
+    # ENF-16: the committed cert was signed with a specimen secret that no longer exists, so it
+    # can only be checked structurally here; by signature it must NOT verify without the operator key.
+    run "committed golden certificate is well-formed (contiguous, all phases pass)" "$PY" -c 'import sys,json; sys.path.insert(0,sys.argv[1]); import prove_sf_cert as c; f={k for k,_ in c.verify(json.load(open(sys.argv[2])),None)}; sys.exit(0 if f=={"AF-FUN-CERT-SIGNATURE","AF-FUN-PROCESS-INTEGRITY"} else 1)' "$SCRIPTS" "$CERT"
+    reject "committed golden certificate does not verify without the operator key (ENF-16)" "AF-FUN-CERT-SIGNATURE" \
+           env -u SF_RUN_NONCE -u SF_OPERATOR_KEY_FILE "$PY" "$SCRIPTS/prove_sf_cert.py" --cert "$CERT"
   else
     printf '  [FAIL] committed golden certificate missing at %s\n' "$CERT"; fails=$((fails + 1))
   fi
 
-  # reproduce through the canonical orchestrator in a throwaway run-dir (fresh nonce)
-  TMP="$(mktemp -d "${TMPDIR:-/tmp}/sf49_golden.XXXXXX")"
-  trap 'rm -rf "$TMP"' EXIT
-  RD="$TMP/run-golden"
-  mkdir -p "$RD"
-  cp "$GOLDEN/brief.json" "$GOLDEN/copy_ledger.json" "$GOLDEN/prompt_ledger.json" "$GOLDEN/media_ledger.json" \
-     "$GOLDEN/persona-selection-log.md" "$RD/"   # FIX-XC-02a: persona grounding is P0 fail-closed
-  # P5-P8 artifacts (fragments + graph + build receipt + derived-page ledger)
-  cp "$GOLDEN/funnel_graph.json" "$GOLDEN/build_receipt.json" "$GOLDEN/derived_pages.json" "$RD/"
-  cp -R "$GOLDEN/pages" "$RD/pages"
-  FRESH_NONCE="verify-golden-$$-$RANDOM"
-  printf '%s' "$FRESH_NONCE" > "$RD/.sf_run_nonce"; chmod 600 "$RD/.sf_run_nonce"
-  if "$PY" "$ORCH" --run-dir "$RD" --nonce "$FRESH_NONCE" >"$TMP/orch.log" 2>&1 && [ -f "$RD/PROCESS-CERTIFICATE.json" ]; then
+  # reproduce through the canonical orchestrator in the staged run-dir (throwaway operator key)
+  # throwaway operator key OUTSIDE the run dir + a harness-style model receipt and stub provider receipts
+  KEY="$TMP/operator/operator.key"; mkdir -p "$TMP/operator"
+  ( umask 077; "$PY" -c 'import secrets;print(secrets.token_hex(32))' > "$KEY" ); chmod 600 "$KEY"
+  seed_run() {   # seed_run <run-dir>: model receipt + stub P3/P4 receipts, signed with $KEY
+    SF_OPERATOR_KEY_FILE="$KEY" "$PY" "$SCRIPTS/prove_sf_cert.py" --mint-model-receipt "$TMP/routing-record.json" --run-dir "$1" >/dev/null && \
+    SF_OPERATOR_KEY_FILE="$KEY" "$PY" -c 'import sys,json; sys.path[:0]=[sys.argv[1],sys.argv[2]]; from pathlib import Path; import run_signature_funnel as o; rd=Path(sys.argv[3]); ks=[o._image_key(i) for i in json.load(open(rd/"media_ledger.json"))["images"]]; o._stub_provider_emit(rd,"P3-IMAGES",ks); o._stub_provider_emit(rd,"P4-MEDIA",ks)' "$SCRIPTS" "$SKILL_DIR" "$1"
+  }
+  printf '%s' '{"model":"golden-specimen-model","provider":"specimen","tier":"content"}' > "$TMP/routing-record.json"
+  if seed_run "$RD" && env -u SF_RUN_NONCE SF_OPERATOR_KEY_FILE="$KEY" "$PY" "$ORCH" --run-dir "$RD" >"$TMP/orch.log" 2>&1 && [ -f "$RD/PROCESS-CERTIFICATE.json" ]; then
     printf '  [PASS] golden through orchestrator -> signed certificate minted\n'
     run "reproduced certificate self-validates" \
-        "$PY" "$SCRIPTS/prove_sf_cert.py" --cert "$RD/PROCESS-CERTIFICATE.json" --nonce "$FRESH_NONCE"
+        env SF_OPERATOR_KEY_FILE="$KEY" "$PY" "$SCRIPTS/prove_sf_cert.py" --cert "$RD/PROCESS-CERTIFICATE.json"
+    reject "reproduced certificate fails without the operator key" "AF-FUN-CERT-SIGNATURE" \
+           env -u SF_OPERATOR_KEY_FILE "$PY" "$SCRIPTS/prove_sf_cert.py" --cert "$RD/PROCESS-CERTIFICATE.json"
   else
     printf '  [FAIL] golden did not certify through the orchestrator\n'
     sed 's/^/         /' "$TMP/orch.log"; fails=$((fails + 1))
@@ -167,14 +185,17 @@ if [ -d "$GOLDEN" ]; then
   RD2="$TMP2/run-unapproved"; mkdir -p "$RD2"
   cp "$GOLDEN/copy_ledger.json" "$GOLDEN/prompt_ledger.json" "$GOLDEN/media_ledger.json" "$RD2/"
   cp "$BV/E_unapproved/brief.json" "$RD2/brief.json"
-  N2="verify-e2e-$$-$RANDOM"
-  printf '%s' "$N2" > "$RD2/.sf_run_nonce"; chmod 600 "$RD2/.sf_run_nonce"
-  "$PY" "$ORCH" --run-dir "$RD2" --nonce "$N2" >"$TMP2/orch.log" 2>&1; e2erc=$?
-  if [ "$e2erc" -ne 0 ] && [ ! -f "$RD2/PROCESS-CERTIFICATE.json" ]; then
-    printf '  [PASS] E2E unapproved -> orchestrator aborts (rc=%s), NO certificate issued\n' "$e2erc"
+  cp "$GOLDEN/persona-selection-log.md" "$RD2/"   # grounded persona, so P0 fails ONLY on the unapproved brief
+  # same key, model receipt and stub receipts as the golden run, so the ONLY reason to abort is P0
+  seed_run "$RD2"
+  env -u SF_RUN_NONCE SF_OPERATOR_KEY_FILE="$KEY" "$PY" "$ORCH" --run-dir "$RD2" >"$TMP2/orch.log" 2>&1; e2erc=$?
+  if [ "$e2erc" -ne 0 ] && [ ! -f "$RD2/PROCESS-CERTIFICATE.json" ] \
+     && grep -q -- "AF-FUN-INTAKE-UNLOCKED" "$TMP2/orch.log" && ! grep -q -- "AF-FUN-FRONT-DOOR" "$TMP2/orch.log"; then
+    printf '  [PASS] E2E unapproved -> orchestrator aborts at P0 (rc=%s) carrying AF-FUN-INTAKE-UNLOCKED, NO certificate issued\n' "$e2erc"
   else
-    printf '  [FAIL] E2E unapproved -> expected abort + no cert, got rc=%s cert_exists=%s\n' \
+    printf '  [FAIL] E2E unapproved -> expected P0 abort (AF-FUN-INTAKE-UNLOCKED, not FRONT-DOOR) + no cert, got rc=%s cert_exists=%s\n' \
            "$e2erc" "$([ -f "$RD2/PROCESS-CERTIFICATE.json" ] && echo yes || echo no)"
+    sed 's/^/         /' "$TMP2/orch.log"
     fails=$((fails + 1))
   fi
   rm -rf "$TMP2"

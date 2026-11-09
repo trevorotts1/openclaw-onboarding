@@ -1,5 +1,330 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## [3.9.13] - 2026-10-28 - chore(train11): version stamp for the twelve-unit train
+## [3.9.12] - 2026-10-27 - chore(batch-20261027-0754): version stamp for T-56 (scope includes T-57)
+
+- **Batch 20261027-0754 version stamp, Skill 35 v3.9.11 -> v3.9.12.** T-56 (`pb/PBB-944/t-56-rebase` @ `75d69adb`) touches skill 35 files in this batch (`35-social-media-planner/references/playbook.md`; scope includes T-57). No skill code changed in this commit; version stamp only.
+
+## [3.9.11] - 2026-10-27 - chore(batch-20261027-0623): version stamp for T-54 (onboarding half)
+
+- **Batch 20261027-0623 version stamp, Skill 35 v3.9.10 -> v3.9.11.** T-54 (`pb/PBB-917-wave1/T-54` @ `d6ecc90b`) touches skill 35 files in this batch (its command-center half already landed via command-center PR #613). No skill code changed in this commit; version stamp only.
+
+## [3.9.9] - 2026-10-25 - T-22c repair 5: the release number is unique, and the coverage text names what it does not cover
+
+Two defects closed here. Both were found by re-measuring rather than trusting an
+earlier round's figures.
+
+- **The release number was below the field, and one branch was carrying it.**
+  `3.9.2` was allocated at the 8741377b round. Re-measured in this round — the
+  ref population moves as branches are pushed, so every figure below is
+  re-derived here, not carried over:
+  `git for-each-ref --format='%(refname)' refs/remotes/origin | wc -l` reports
+  **2043** refs (bare prefix, no `/*` glob; the glob form
+  `git for-each-ref --format='%(refname)' 'refs/remotes/origin/*' | wc -l`
+  reports only **113**). Reading `35-social-media-planner/skill-version.txt`
+  at the tip of every one of those 2043 refs, `3.9.2` is held by **one** ref:
+  `origin/pb/PBB-396/t-22-repair4`. This branch held `3.9.2` only at its own
+  parent commit (`git show 97d2d0bf2:35-social-media-planner/skill-version.txt`
+  → `v3.9.2`) — that pre-commit state is not a second ref, and the earlier
+  "held by two refs" wording conflated the two. `3.9.2` is also **below** the
+  numeric maximum `3.9.8` (held by `origin/pb/PBB-460/t-26-build`). Scoring is
+  numeric `major*1000000 + minor*1000 + patch`, never lexical; the lexical trap
+  is live in this very numbering (`"3.9.10" > "3.9.9"` is `False` as a string
+  while `3009010 > 3009009`, so the next bump past `3.9.9` would sort below it).
+  **`3.9.9` is the first number strictly above the measured maximum that no ref
+  claims** (same scan: `3.9.9` has exactly one holder, this branch
+  `origin/pb/PBB-441/t-22-update`, and no other ref claims it). Main carries
+  `3.8.2`, so `3009009 > 3008002` — strictly above main. Both markers move
+  together: `skill-version.txt` and the `SKILL.md` front-matter `version:` line
+  (`SKILL.md:14` → `version: 3.9.9`), which is the pair
+  `06-ghl-install-pages/scripts/check-version-drift.py` compares.
+
+- **`PROFILE-CAPABILITIES.md` claimed "No channel or account is polled, observed
+  or watched" while the same skill's `SKILL.md` §Phase 4 and `INSTRUCTIONS.md`
+  §Phase 5 declare an Engagement Monitor that "Poll APIs for likes/views" and
+  "runs continuously for 7 days post-publish".** Both cannot be true of the
+  skill. The clause this artefact serves is *"public monitoring not claimed"*, so
+  the sentence is narrowed to what this contract actually does, and the
+  Engagement Monitor is named and explicitly fenced off: it is not this contract,
+  `_truth_of()` never reads it, and it is not the public-monitor evidence
+  `policy.unattended_coverage.required_proof` demands. Coverage stays
+  `unproved` and `published-by-system` stays unreportable. Nothing is deleted
+  from `SKILL.md` or `INSTRUCTIONS.md` — those describe a different subsystem.
+
+
+## [3.9.8] - 2026-10-25 - T-26 repair: an exclusion that refuses, a duty its owner enforces, a log keyed on the id alone
+
+Closes the PBB-472 FAIL (repair PBB-479). The first build had the right intent and
+one clause of real code; five defects were proved against it. Each is closed
+below by a probe, and what did not earn its line was deleted rather than kept.
+
+- **Own-author exclusion now REFUSES when it cannot work.** The page's own comment
+  arrives on the SAME read surface as a prospect's, so without the account ids
+  nothing can tell them apart. `comment_reader.run()` raises `ValueError` when
+  `own_author_ids` is absent or empty and the CLI exits 2, so the self-reply loop
+  cannot start silently. The earlier sentence "an empty id set … is never a
+  silent pass" was FALSE — the probe handed the page's own comment off with exit
+  0 — so it is replaced by the behaviour. `prove_content_conversation_loop.py`,
+  the only in-repo driver, now passes the fixture's account id.
+- **The duty is read and enforced by its OWNER, not stamped and ignored.** Every
+  handoff carries `- duty: public_answer`; the new
+  `38-conversational-ai-system/tools/answer_duty.py` parses that line out of the
+  log and permits only a public-comment answer for it — a DM or an SMS is
+  refused — while `private_answer` permits the DM and not the public thread. On
+  the first build `PRIVATE_ANSWER_DUTY` had no production reader anywhere in the
+  repository and no code path could emit or consume it; the constant is DELETED
+  rather than kept as a label. One written token, two permissions, one gate.
+- **Log identity is the stable author id alone.** The path was
+  `comment-<id>__<name>.md`, so a display-name change ("Jamie Rivers" →
+  "Jamie R.") or a missing name forked the thread and hid the earlier turns — and
+  the old test held the name constant, so it could not see it. The path is now
+  `comment-<id>.md`, and a log already on disk under the old shape is found and
+  reused so existing threads are not orphaned.
+- **The duty test now leads on behaviour.** It drives the real owner module and
+  asserts the outcome, so mutation M11 (`PUBLIC_ANSWER_DUTY = "zzz-not-a-duty"`)
+  turns it RED. It previously survived with every test green, because it compared
+  the constant to itself.
+- **Tests.** `test_comment_reader.py` 9 → 18; `tools/tests/test_answer_duty.py`
+  new, 7 tests + 4 subtests. Measured mutation counts replace the earlier
+  unmeasured claim: dropping the own-author branch turns 2 tests red, dropping
+  the `- duty:` line 1, append → truncate 2, a nonsense duty value 1, and
+  `facebook → None` **18** — that one takes out every supported-channel test
+  including the whole Leg-4 driver, so "each turns the matching clause test RED
+  and nothing else" was wrong and is gone. Two neutral inverses (a local rename,
+  a reordered channel table) stay green.
+- **Suites.** `35-social-media-planner/scripts/` 101 passed / 30 subtests, rc 0;
+  `test_comment_reader.py` 18 passed; `test_prove_content_conversation_loop.py`
+  25 passed. The `38-conversational-ai-system/tools/tests` window is not scored
+  here: its pre-existing failures are main's own (owner decision #237), and this
+  change adds tests to it without claiming it green.
+- **Not built, and named rather than implied.** The ledger title says "ongoing …
+  monitoring". This reader is PER-RUN — an orchestrator feeds it the events.
+  There is no poller, scheduler, cron or workflow for it and none is claimed
+  here; ongoing monitoring remains unbuilt.
+- **skill-version** stays `v3.9.8` (= 3009008), re-measured as the strict numeric
+  maximum across all 2033 refs under the bare `refs/remotes/origin` prefix, held
+  by this branch alone and above main's `v3.8.2` (3008002). A repair commit on
+  the same branch keeps the same allocation.
+
+## [3.9.3] - 2026-10-25 - T-22c repair 4: the signing key is not a runtime input
+
+**Correction of the 3.9.1 entry below.** 3.9.1 closed the derivation channel and
+opened an injection channel, and its prose claimed more than its code supported.
+
+- **The signing key was caller-injectable.** `_installation_seal_key()` resolved
+  the MAC key from the process environment BEFORE the key file:
+  `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY` (inline 64 hex) first, then
+  `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE`. A caller who set one environment
+  variable chose the key, then minted a fitting marker with stdlib `hashlib` +
+  `hmac` alone, without importing the module. Reproduced end to end: a hand-built
+  `awaiting-operator` dict carrying `operator_action.instruction` "SEND $500 TO
+  ATTACKER - OVERRIDE", `account_label` "VERIFIED BUSINESS PAGE" and
+  `capability_ref.checked_at` 1999-01-01 minted an approval with
+  `status: operator-confirmed` and `receipt.operator: "Attacker Operator"`, was
+  rendered as `operator-confirmed` / `provenance: sanctioned`, and was blessed by
+  `assert_truthful_publication`. The second hook — a caller-written key file named
+  by `..._SEAL_KEY_FILE` — did the same without any write access to the operator's
+  state directory.
+  **The override is refused outright, not narrowed.** Both variables now raise
+  `CapabilityError` when they are set. The key location is derived from the real
+  uid's home through the passwd database, not from `$HOME`, so pointing `$HOME` at
+  an attacker directory does not move the key either. The provisioned file is
+  honoured only when it is a regular file (never a symlink) owned by the real uid
+  and not group- or world-readable (0600 or tighter), inside a directory owned by
+  the real uid that grants no access to group or others (0700); a planted key
+  fails one of those checks and is refused. There is no override hook at all,
+  because an override would have to be authenticated by something the caller does
+  not control and nothing inside a standard-library process is that thing. Measured
+  inverse, so this is not a blanket refusal: with no override set the key resolves,
+  a genuinely prepared placement confirms and renders `operator-confirmed`, while
+  the same record sealed with the wrong key and a record with no marker are both
+  refused.
+- **The prose was false as written** — the second false claim of this shape. 3.9.1
+  asserted "A hand-built dict or a hand-edited file cannot mint a placement id, an
+  operator receipt or a status claim" and then gave a reason that covered only the
+  derivation channel, while a hand-built dict did mint through the environment
+  hook. The claim is now scoped to the adversary it is measured against (standard
+  library plus control of the process environment), the module docstring and
+  `PROFILE-CAPABILITIES.md` name the refusal of both environment variables and the
+  `$HOME` derivation as the mechanism, and the ceiling is stated once and
+  consistently: a caller running as the installation owner who can read or replace
+  the key file can still sign, which is the same privilege as editing the module.
+- **Correction to the 3.9.1 bullet above:** "(or supplied as
+  `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY` / `..._SEAL_KEY_FILE`)" described a
+  location that no longer exists and that was itself the defect. The key is
+  provisioned at
+  `<real home of the real uid>/.openclaw/state/personal-profile-capability/seal.key`
+  and is never supplied by the caller.
+**Renumbered before landing.** The first cut of this entry claimed 3.9.2; a
+concurrent unlanded repair branch (`origin/pb/PBB-396/t-22-repair4`) claims
+3.9.2 as well, so 3.9.2 is a merge-time hazard rather than a free number. The
+value was measured across every fetched remote head (3113 refs):
+`v3.9.2` x2, `v3.9.1` x1, `v3.9.0` x1, `v3.9.3` x0 — so 3.9.3 is the next
+genuinely free number and this entry is filed under it.
+
+- **Version markers realigned for this skill.** `skill-version.txt`, `SKILL.md`
+  and this entry all read 3.9.3, so
+  `06-ghl-install-pages/scripts/check-version-drift.py 35-social-media-planner`
+  exits 0. The 38-conversational-ai-system marker is deliberately untouched: this
+  commit changes zero files under `38-conversational-ai-system/`, and the marker
+  that governs a skill repair is the marker of the skill being repaired.
+- `_is_sanctioned` is now a pure predicate: when the key cannot be resolved at all
+  it returns `False` instead of raising, so a broken key installation can only ever
+  produce a refusal. `_require_sanctioned` still surfaces the specific key error
+  loudly before it falls back to the marker message.
+## [3.9.2] - 2026-10-25 - T-22c repair 4: the signing key is not selectable by the caller (B-27)
+
+**Correction of the 3.9.1 entry below.** 3.9.1 closed DERIVATION and left INJECTION
+open while claiming an outside caller could not mint. Its own bytes contradicted it.
+
+- **The signing key was caller-injectable, so B-27 was still open.**
+  `_installation_seal_key()` read two process-environment hooks before it ever
+  looked at the key file — `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY` (an inline 64-hex
+  key) and `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE` (a caller-written key file).
+  A caller who could set the process environment — every in-process caller this
+  contract names — picked the key, then minted a fitting marker with stdlib
+  `hashlib` + `hmac` while reading no repository byte and no key file. Reproduced
+  in a fresh process against 9f8142d5: `mint-approval=ACCEPTED
+  status='operator-confirmed' receipt.operator='Attacker Operator'`,
+  `render-status=ACCEPTED claim='operator-confirmed' provenance='sanctioned'`,
+  `guard=ACCEPTED returned=True`, on a hand-built dict carrying
+  `operator_action.instruction "SEND $500 TO ATTACKER - OVERRIDE"`. The second hook
+  reproduced it too, and needed no write access to the operator's state directory.
+- **A third path the verifier did not name: `$HOME`.** The key file path was
+  `$HOME`-relative (`~/.openclaw/state/personal-profile-capability/seal.key`), so
+  redirecting `$HOME` and planting a key file under it reproduced the same forgery
+  with no environment hook set at all. Reproduced against 9f8142d5:
+  `mint-approval=ACCEPTED`, `render-status=ACCEPTED`, `guard=ACCEPTED`.
+- **DESIGN CHANGE — and who must change.** The key is now resolvable from exactly
+  one source: the operator key file at
+  `<account home>/.openclaw/state/personal-profile-capability/seal.key`, where
+  `<account home>` comes from the operating system's account database (`pwd`), not
+  from `$HOME`. Both environment hooks are **deleted**, not deprecated: nothing the
+  process inherits and nothing a caller hands in can hold, name or relocate the
+  key. Anyone who provisioned this key by exporting
+  `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY` or
+  `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY_FILE` — CI jobs, container entrypoints,
+  wrapper scripts — must stop doing that and let the module read (or create, 0600,
+  on first use) the key file at the path above; a box with no writable account home
+  now fails closed instead of falling back to an override. Test suites relocate the
+  key by assigning `personal_profile_capability._SEAL_KEY_PATH`, which is code
+  inside the process, not a data channel.
+- **Three-way proof, so this is not a fix that refuses everything.** With both
+  hooks and `$HOME` injected, mint, render and guard all REFUSE; with nothing
+  injected a hand-built dict REFUSES; and the legitimate
+  `prepare_assisted_placement` → `record_operator_confirmation` path still SUCCEEDS
+  (status `operator-confirmed`, claim `operator-confirmed`, guard `True`).
+- **The false sentences are gone.** `PROFILE-CAPABILITIES.md` and
+  `_require_sanctioned` said unqualified that a hand-built dict or a hand-edited
+  file "cannot mint a placement id, an operator receipt or a status claim", with a
+  reason that covered only derivation. Every such claim now names, in its own
+  sentence, the two signing paths that genuinely remain: reading the installation
+  key file, and running code inside this process. The "Ceiling, stated honestly"
+  block and the ponytail comment name both as well. `PROFILE-CAPABILITIES.md`'s
+  "browser test" is corrected to "test" — there is no browser test.
+
+
+## [3.9.1] - 2026-10-25 - T-22c repair 3: the marker is unforgeable and covers the whole record
+
+**Correction of the 3.9.0 entry below.** The provenance claim in 3.9.0 was false as
+written. Two defects were proved against 858b3812 and are fixed here.
+
+- **The marker was forgeable from shipped bytes.** The 3.9.0 key was
+  `sha256(b"personal-profile-capability/seal-v1" + b"\x00" + <the declaration>)`.
+  Both inputs ship in the repository and on every deployed box, and the algorithm
+  and domain string were printed in the module source, so an outside caller with
+  stdlib `hashlib` + `hmac` could mint a marker on a hand-built dict without
+  importing the module. Reproduced: a hand-built package with an externally
+  computed marker was accepted by `record_operator_confirmation` (status
+  `operator-confirmed`, receipt issued, placement id minted), rendered as an
+  operator-confirmed claim, and blessed by `assert_truthful_publication`; the
+  control without a marker was refused. The key is now 32 bytes from
+  `os.urandom()`, stored outside the repository in a `0600` file (or supplied as
+  `PERSONAL_PROFILE_CAPABILITY_SEAL_KEY` / `..._SEAL_KEY_FILE`), so no shipped byte
+  determines it and the old `sha256(domain + declaration)` key no longer validates.
+  **The two overrides named here were themselves the injection bypass and are
+  deleted at 3.9.2 above** — a caller who could set the process environment could
+  supply the key through either of them and mint a fitting marker without reading
+  any file at all. Marker version is now 2; version 1 markers are refused.
+- **The MAC covered seven fields.** `operator_action`, `capability_ref`,
+  `channel_label` and `account_label` were outside it, so a marker copied from a
+  sanctioned record fitted an edited one. Reproduced: an attacker
+  `operator_action.instruction` still minted an operator-confirmed status; edited
+  `capability_ref` (`checked_at`, `source_urls`) still rendered; edited labels
+  still rendered "VERIFIED BUSINESS PAGE"; and dropping `operator_action` entirely
+  still confirmed. The payload is now the **whole record minus the marker**, so
+  every field that is rendered or acted upon is inside the MAC and any added,
+  removed or edited field breaks it. Serialisation is strict (no `default=str`).
+- **Version markers realigned.** 3.9.0 bumped `skill-version.txt` but left
+  `SKILL.md` at 3.8.2, so `06-ghl-install-pages/scripts/check-version-drift.py`
+  reported DRIFT (exit 1) and the Skill-06 gate at
+  `06-ghl-install-pages/qc-ghl-install-pages.sh:87` would have skipped every
+  deployed box. All three markers now read 3.9.1.
+- Docs corrected: `PROFILE-CAPABILITIES.md`, the module docstring and the module
+  ponytail comment now state a ceiling (a caller that can read the
+  installation's key file can still sign) instead of claiming the key was
+  unreachable while it was derived from public bytes. **This sentence was itself
+  false as written and 3.9.2 above corrects it:** that was not the real ceiling,
+  because the two environment hooks and a `$HOME` redirect gave a caller two more
+  signing paths that this bullet never named.
+
+
+## [3.9.0] - 2026-10-25 - T-22b: authority is provenance, not shape (B-27) and unattended coverage is not claimed (B-04)
+
+- B-27 closed structurally. `prepare_assisted_placement` now stamps the package
+  with a provenance marker (HMAC-SHA256 over route, channel, account_type, action,
+  placement, status and receipt, keyed from the declaration it is checked
+  against), and `record_operator_confirmation` refuses any package that does not
+  carry one (`_require_sanctioned`). Before this, a hand-built dict carrying the
+  correctly recomputed `placement_id` was confirmed as `operator-confirmed`, and a
+  hand-built `operator-confirmed` record with a self-consistent receipt passed the
+  guard: `minted=6 refused=0` across six arbitrary-dict attacks. After this,
+  `minted=0 refused=6`. A copied marker does not fit an edited record, because the
+  MAC covers the fields an edit changes.
+- The read path is bound to the declaration. `_truth_of` resolves channel, account
+  type and action against `config/profile-capabilities.json` before rendering any
+  claim, and refuses a route the declaration does not grant that account type. An
+  undeclared account type (e.g. `instagram/brand`) can no longer mint a
+  `published-by-system` claim, and a personal profile cannot be laundered past the
+  unattended rule by renaming its account type. Every assisted claim must also
+  recompute to its own `placement_id`; a record with no placement is refused.
+- `_refusal` no longer accepts a caller-supplied capability dict: it resolves the
+  capability itself, so a forged capability object has no path into a refusal.
+- B-04 made honest. Unattended coverage is declared `unproved` in
+  `policy.unattended_coverage` (status, `monitoring: false`, the narrow test scope,
+  the required proof, and the pending owner decision), and `_truth_of` REFUSES
+  every unattended publication claim instead of rendering `published-by-system`.
+  The refusal names the required proof and the owner who must decide it.
+  `unattended_coverage()` reports the same block and never claims monitoring.
+  The browser test is stated as narrow: declaration plus assisted paths only, no
+  public monitoring.
+- `PROFILE-CAPABILITIES.md`: mode table no longer says the system performs
+  unattended actions; the status-surface table no longer offers an unattended
+  claim; new "Coverage honesty (B-04)" section states the narrow test, the unproved
+  coverage, the four required proofs and the pending owner decision. `SKILL.md` and
+  `INSTRUCTIONS.md` now say the declaration grants unattended actions but coverage is
+  unproved, instead of "what the system can do unattended".
+- Tests: `test_t22_status_guard_matrix.py` 10 -> 33 tests (before/after each
+  measured by running the suite on this branch's own commits: `git show
+  3bb547262:tests/social-planner/test_t22_status_guard_matrix.py` carries 10
+  test methods, the file at this commit carries 33 — `python3
+  tests/social-planner/test_t22_status_guard_matrix.py` → `Ran 33 tests ... OK`).
+  New `TestArbitraryDictCannotMint` (8 test methods, counted by importing the
+  file and enumerating `test_*` methods on that class: hand-built package cannot
+  become an approval, hand-built confirmed record refused by both surfaces,
+  copied marker does not fit an edited record, undeclared account type refused,
+  ungranted route refused, no-placement record refused, refusal path takes no
+  caller capability, sanctioned values still work) plus a sanctioned inverse
+  control. The known-good page-publication control
+  encoded the B-04 over-claim (a hand-built `published-by-system` passed both
+  surfaces); it now requires the sanctioned assisted paths to pass and the
+  unattended claim to be refused. `test_t22_profile_capability.py` stays 16 tests
+  (measured: `python3 tests/social-planner/test_t22_profile_capability.py` →
+  `Ran 16 tests ... OK`).
+  Mutation control: disabling both seal checks turns exactly the 3 seal-dependent
+  tests red.
+- skill-version v3.8.2 -> v3.9.0.
+
 ## [3.8.2] - 2026-10-24 - T-22c repair: a receipt is proof only when the placement_id recomputes
 
 - The receipt is now provable, not self-consistent. `prepare_assisted_placement`

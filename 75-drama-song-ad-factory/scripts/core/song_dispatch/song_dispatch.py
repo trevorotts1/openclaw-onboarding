@@ -65,6 +65,110 @@ import words_fit as _WF      # noqa: E402
 import music_qc.pace_change as _PC   # noqa: E402
 import music_qc.rap_check as _RC     # noqa: E402
 import timing_guard as _TG     # noqa: E402  WW-24: measured-only evidence provenance
+#: S75-T41: the FINAL outgoing artist/alias guard, run at the dispatch seam.
+from music_styles import suno_prompt_guard as _PG   # noqa: E402
+try:                                                # noqa: E402
+    from music_styles import catalog as _SHIPPED_CATALOG  # noqa: E402
+except ImportError:                             # script/top-level import
+    import catalog as _SHIPPED_CATALOG          # noqa: E402
+
+
+def _shipped_alias_catalog():
+    """The shipped 18-style catalog in guard-catalog shape, or {} when unreadable.
+
+    S75-A41 fail-closed (S75-T41-alias): ``run_takes`` must never guard with an
+    empty alias set -- with no aliases the matcher can never hit and a raw
+    artist name sails through with a PASS.  The shipped catalog (display refs
+    per style plus the guard's recorded-alias table) is ALWAYS in force, so a
+    caller that omits ``alias_catalog`` is still swept.  A caller-supplied
+    catalog can only ADD references, never remove these.
+    """
+    try:
+        styles = {}
+        for sid in _SHIPPED_CATALOG.style_ids():
+            refs = list(_SHIPPED_CATALOG.client_references(sid) or ())
+            extra = []
+            for ref in refs:
+                extra.extend(_PG.ALIASES.get(ref) or ())
+            styles[sid] = {"style_id": sid,
+                           "client_references": {"artists": refs,
+                                                 "aliases": extra,
+                                                 "reference_songs": []}}
+    except Exception:
+        return {}
+    return {"styles": styles}
+
+
+def _with_shipped_aliases(supplied):
+    """Guard catalog that always contains the shipped 18-style references.
+
+    ``supplied`` (the ``alias_catalog`` argument or request["_alias_catalog"])
+    may be a full catalog (``{"styles": ...}``) or one flat display-references
+    mapping (``{"artists": [...], ...}``) -- the shape a single run declares at
+    the dispatch seam.  Either way its references are UNIONED with the shipped
+    set; when it is empty or missing the shipped set stands alone, never an
+    empty matcher.  Returns {} only when the shipped catalog itself is
+    unreadable, which the caller refuses loudly.
+    """
+    shipped = _shipped_alias_catalog()
+    if not shipped.get("styles"):
+        # Fail closed: no shipped refs means no matcher at all, and a
+        # caller-supplied catalog alone would sweep only its own refs --
+        # exactly how a raw artist name reaches the transport.  The caller
+        # refuses loudly on the empty return, whatever the caller supplied.
+        return {}
+    if not supplied:
+        return shipped
+    merged = dict((shipped.get("styles") or {}))
+    records = []
+    if isinstance(supplied, dict) and any(
+            key in supplied for key in ("artists", "aliases", "reference_songs")):
+        records = [{"style_id": "<run>", "client_references": supplied}]
+    else:
+        try:
+            records = list(_PG._records(supplied))
+        except Exception:
+            records = []
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        refs = rec.get("client_references")
+        if not isinstance(refs, dict):
+            continue
+        sid = rec.get("style_id") or rec.get("id") or "<run>"
+        prior = ((merged.get(sid) or {}).get("client_references") or {})
+        def _as_list(value):
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, (list, tuple)):
+                return [v for v in value if isinstance(v, str)]
+            if isinstance(value, dict):
+                out = []
+                for artist, extra in value.items():
+                    if isinstance(artist, str):
+                        out.append(artist)
+                    out.extend(_as_list(extra))
+                return out
+            return []
+        def _union(old, new):
+            seen, out = set(), []
+            for value in list(old or []) + list(new or []):
+                if value not in seen:
+                    seen.add(value)
+                    out.append(value)
+            return out
+        merged[sid] = {"style_id": sid,
+                       "client_references": {
+                           "artists": _union(prior.get("artists"),
+                                             _as_list(refs.get("artists"))),
+                           "aliases": _union(prior.get("aliases"),
+                                             _as_list(refs.get("aliases"))),
+                           "reference_songs": _union(
+                               prior.get("reference_songs"),
+                               _as_list(refs.get("reference_songs")))}}
+    if not merged:
+        return dict(shipped)
+    return {"styles": merged}
 
 TOOL_NAME = "song_dispatch"
 TOOL_VERSION = "1.2.0"
@@ -232,6 +336,20 @@ def _lyrics_of(req):
     lyrics source can never reach the judge or the provider.
     """
     return (_R.envelope_input(req) or {}).get("lyrics") or ""
+
+
+#: S75-T41: internal judging / gate metadata that rides a request but is never
+#: provider text (same class as ``_hook_plan`` / ``_pace_plan``).  Everything
+#: else in a request IS outbound and passes the guard before dispatch.
+_INTERNAL_KEYS = ("card_receipt", "run_dir", "id")
+
+
+def _outbound_view(req):
+    """The EXACT provider payload inside a request: every key that is not
+    internal judging/gate metadata.  This is what the guard inspects and what
+    the transport dispatches -- one view, so nothing can ride out beside it."""
+    return {k: v for k, v in (req or {}).items()
+            if k not in _INTERNAL_KEYS and not str(k).startswith("_")}
 
 
 def _input_of(req):
@@ -1448,9 +1566,21 @@ def constituent_ok(rec):
     return True, ""
 
 
+def _take_request_digest(request):
+    """Canonical sha256 of the exact outbound take request (X06)."""
+    blob = json.dumps(request, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _freeze_take_request(request):
+    """A detached canonical copy: the validated bytes are the submitted bytes."""
+    return json.loads(json.dumps(request, sort_keys=True, default=str))
+
+
 def run_takes(request, plan, generate, measure, save, script_words, hook_text,
               spoken_range_pct=None, cap_cents=SPEND_CAP_CENTS, cost_cents=GEN_COST_CENTS,
-              kie=_LG.kie_request, style_id=None, script_approval=None, run_dir=None):
+              kie=_LG.kie_request, style_id=None, script_approval=None, run_dir=None,
+              alias_catalog=None):
     """Generate until a take passes or the cap is spent.
 
     generate(request) -> list of takes (2 per generation, each with audio ids);
@@ -1475,11 +1605,38 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     if envelope_errs:
         raise DispatchError("REQUEST_ENVELOPE_REJECTED: %s"
                             % "; ".join(envelope_errs))
+    # S75-T41: THE outbound artist/alias guard, at the real send seam -- on the
+    # EXACT provider payload the transport would serialize, BEFORE any spend
+    # and before the transport is ever reached.  Every payload passes it here;
+    # a catalog reference in an instruction field leaves only approved musical
+    # traits behind, and one the rewrite cannot clear REFUSES this submission
+    # (zero provider calls).  The run's display references are declared as
+    # ``alias_catalog`` (or request["_alias_catalog"], moved off the payload
+    # like the other internal metadata) -- and the SHIPPED 18-style catalog is
+    # ALWAYS in force beneath them (``_with_shipped_aliases``), so omitting the
+    # catalog can never silently skip the sweep: a caller that supplies nothing
+    # is still guarded by every shipped reference and recorded alias.  Only a
+    # shipped catalog that is itself unreadable refuses here, by name.
+    view = _outbound_view(request)
+    catalog = _with_shipped_aliases(
+        alias_catalog if alias_catalog is not None
+        else request.get("_alias_catalog"))
+    if not catalog:
+        raise DispatchError("MISSING_ALIAS_CATALOG: the shipped 18-style "
+                            "catalog is unreadable, so the outbound sweep "
+                            "cannot run; refusing rather than sending unswept")
+    try:
+        receipt = _PG.guard_or_raise(view, catalog)
+    except _PG.PromptGuardError as exc:
+        raise DispatchError("OUTGOING_REFERENCE_BLOCKED: %s" % exc) from exc
+    request = dict(receipt["payload"],
+                   **{k: v for k, v in request.items() if k not in view})
     inp = _input_of(request)
     # SCRIPT APPROVAL: a client who asked to approve the script first gets no generation until they do.
     if script_approval is None:       # found in the run folder; nobody passes it by hand
         script_approval = _SA.record_near(run_dir, request.get("run_dir"))
-    refusal = _SA.check_script_approval(script_approval, _lyrics_of(request))
+    refusal = _SA.check_script_approval(script_approval, _lyrics_of(request),
+                                        _SA.script_sha_near(run_dir, request.get("run_dir")))
     if refusal:
         raise DispatchError("%s: %s" % (refusal["reason_code"], refusal["detail"]))
     # G9 / CPR-R2: the request asks for the DELIVERED seconds, exactly. The old
@@ -1562,10 +1719,53 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
     # the same arrangement.
     refuse_asr("faster-" + "wh" + "isper")
     plan = dict(plan, sheet_text=plan.get("sheet_text") or _lyrics_of(request))
+    # X06: freeze ONE outbound snapshot and re-admit it INSIDE the governor
+    # callback, after acquisition and on every retry. A mutation of the
+    # caller's request, a stale/legacy approval record or a changed saved
+    # election is refused before the generator is called; the snapshot handed
+    # to ``generate`` is the same object re-checked here.
+    take_request = _freeze_take_request(request)
+    take_digest = _take_request_digest(take_request)
+    admitted_lyrics = _lyrics_of(take_request)
+
+    def _admit_take():
+        if _take_request_digest(take_request) != take_digest:
+            raise DispatchError("REQUEST_CHANGED_AFTER_ADMISSION: prepare the request again")
+        frozen_inp = _input_of(take_request)
+        frozen_errs = _R.check_envelope(take_request)
+        if frozen_errs:
+            raise DispatchError("REQUEST_ENVELOPE_REJECTED: %s" % "; ".join(frozen_errs))
+        if _lyrics_of(take_request) != admitted_lyrics:
+            raise DispatchError("REQUEST_CHANGED_AFTER_ADMISSION: the lyrics changed")
+        pace_errs = (_PC.check_pace_plan(order) +
+                     _SCM.check_pace_style(frozen_inp.get("style"), order))
+        if _PC.pace_provider_leak(take_request):
+            pace_errs.append("PACE_INTERNAL_METADATA_IN_PAYLOAD: the internal "
+                             "_pace_plan judging metadata reaches a provider field")
+        if pace_errs:
+            raise DispatchError("PACE_PAYLOAD_REJECTED: %s" % "; ".join(pace_errs))
+        current = _SA.record_near(run_dir, take_request.get("run_dir"))
+        if current is None:
+            current = script_approval          # the caller's own record, when none is saved
+        fresh_refusal = _SA.check_script_approval(
+            current, _lyrics_of(take_request),
+            _SA.script_sha_near(run_dir, take_request.get("run_dir")))
+        if fresh_refusal:
+            raise DispatchError("%s: %s" % (fresh_refusal["reason_code"], fresh_refusal["detail"]))
+        if run_dir:
+            from production_process import current_script_election
+            elected = current_script_election(run_dir)
+            if elected is True and not (isinstance(current, dict) and current.get("required") is True):
+                raise DispatchError(
+                    "SCRIPT_APPROVAL_ELECTION_CHANGED: the saved client answer elects "
+                    "script approval, but the current record does not require it; "
+                    "nothing was sent to the music generator")
+        return generate(take_request)
+
     spent, receipts = 0, []
     while spent + cost_cents <= cap_cents:
         spent += cost_cents
-        for take in kie(lambda: generate(request), "song generate", generation=True):
+        for take in kie(_admit_take, "song generate", generation=True):
             take = dict(take, **measure(take))
             rcpt = judge_take(take, plan, script_words, hook_text, spoken_range_pct,
                               style_id, _lyrics_of(request))
@@ -1576,7 +1776,8 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
             if take_accepted(rcpt)[0]:
                 return {"delivered": take, "verdict": rcpt["verdict"],
                         "receipt": constituent_receipt(take, rcpt, plan),
-                        "receipts": receipts, "spent_cents": spent, "duration": duration}
+                        "receipts": receipts, "spent_cents": spent,
+                        "duration": duration, "submitted_digest": take_digest}
             # S75-W05-U5 (spec 6.5, D29): a low-confidence sung/spoken
             # classification is uncertainty, never a definite creative failure
             # -- STOP before any regeneration. The existing-take ladder runs
@@ -1584,7 +1785,8 @@ def run_takes(request, plan, generate, measure, save, script_words, hook_text,
             # it is exhausted may new paid generation be considered.
             if (rcpt.get("review") or {}).get("required"):
                 return {"delivered": None, "verdict": rcpt["verdict"],
-                        "receipts": receipts, "spent_cents": spent, "duration": duration,
+                        "receipts": receipts, "spent_cents": spent,
+                        "duration": duration, "submitted_digest": take_digest,
                         "review_required": rcpt["review"]}
     return {"delivered": None, "verdict": "FAIL", "receipts": receipts, "spent_cents": spent,
-            "duration": duration}
+            "duration": duration, "submitted_digest": take_digest}

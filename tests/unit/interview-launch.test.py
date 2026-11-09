@@ -46,6 +46,16 @@ class Launch(unittest.TestCase):
         self.assertEqual(values['MC_COMPANY_ID'],s['companyId']);self.assertNotEqual(s['companyId'],'client-a')
         self.assertEqual(values['OPENCLAW_WORKSPACE_ROOT'],str(self.state.parent.resolve()))
         self.assertNotIn('commandCenterPublicOrigin',s)
+    def test_provision_records_access_subject_only_for_a_real_owner_email(self):
+        from urllib.parse import urlsplit
+        for email,expected in (('Owner@Example.test',['owner@example.test']),('pending+owner@example.test',None)):
+            with self.subTest(email=email):
+                self.initialize();state=json.loads(self.state.read_text());state['contactEmail']=email;self.state.write_text(json.dumps(state))
+                (self.app/'.env.local').write_text('MC_API_TOKEN=fixture-token\n')
+                m.provision(self.state,self.app,self.root,{})
+                entry=json.loads(m.env_read(self.app/'.env.local')['MC_TENANT_REGISTRY_JSON'])[urlsplit(state['commandCenterUrl']).hostname]
+                self.assertEqual(entry.get('subjects'),expected);self.assertNotIn('issuer',entry);self.assertNotIn('audience',entry)
+                self.tearDown();self.setUp()
     def test_reprovision_preserves_completed_state_and_access_selectors(self):
         self.initialize();state=json.loads(self.state.read_text())
         state.update(interviewComplete=True,interviewCompletedAt='2026-06-20T12:00:44Z')

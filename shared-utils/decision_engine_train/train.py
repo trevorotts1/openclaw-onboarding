@@ -113,17 +113,27 @@ def validate_qc_receipt(entry):
     """An entry is eligible only with a matching independent PASS receipt.
 
     Changed SHA loses eligibility: receipt must name this exact SHA, carry
-    verdict PASS, and come from the independent reviewer route. Anything
-    else fails closed with a reason string.
+    verdict PASS, and come from the independent reviewer route. A missing or
+    empty SHA on either side is never a match — ``None == None`` must not
+    pass. Anything else fails closed with a reason string.
     """
-    receipt = entry.get("qc_receipt") or {}
+    if not isinstance(entry, dict):
+        return False, "qc entry must be an object"
+    receipt = entry.get("qc_receipt")
+    receipt = receipt if isinstance(receipt, dict) else {}
     if receipt.get("verdict") != "PASS":
         return False, "qc verdict is not PASS"
     if receipt.get("reviewer_route") != INDEPENDENT_ROUTE:
         return False, "qc reviewer is not %s" % INDEPENDENT_ROUTE
     if not receipt.get("reviewer"):
         return False, "qc reviewer identity missing"
-    if receipt.get("sha") != entry.get("sha"):
+    entry_sha = entry.get("sha")
+    receipt_sha = receipt.get("sha")
+    if entry_sha is None or not str(entry_sha):
+        return False, "entry SHA is unobserved"
+    if receipt_sha is None or not str(receipt_sha):
+        return False, "qc receipt SHA is unobserved"
+    if receipt_sha != entry_sha:
         return False, "changed SHA loses eligibility"
     return True, ""
 

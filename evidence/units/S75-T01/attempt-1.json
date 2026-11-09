@@ -1,0 +1,43 @@
+{
+  "schema": "blackceo.s75.attempt-receipt/v1",
+  "unit": "S75-T01",
+  "attempt": 1,
+  "generated_at": "2026-10-24T20:50:17Z",
+  "repair_author": "REPAIR AUTHOR (evidence-only)",
+  "product_code_changed": false,
+  "branch_worktree_repo_touched": false,
+  "produces": [
+    {
+      "path": "evidence/source-reconciliation.json",
+      "sha256": "e45d2f30cb5ec150a735c42fe0a0fb83e20df42e146117cdf8330c9852a27d4f",
+      "bytes": 75754
+    },
+    {
+      "path": "evidence/emergency-owner-handoff.json",
+      "sha256": "9a4965e2f3d3a8ccf767f7918349ff62e433522a92b63b0f4dd1d17bb553d96e",
+      "bytes": 3270
+    }
+  ],
+  "source_of_content": "evidence/S75-T01-reconciliation.json reused; all three flavor heads re-read live with git at 2026-10-24T20:50:17Z and each recorded with its command, output, read_at and reflog validation evidence.",
+  "verification": {
+    "flavor_heads_reverified": true,
+    "commands": [
+      "git -C <PATH>/openclaw-onboarding rev-parse origin/main -> f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b",
+      "git -C <PATH>/.openclaw/persist-home/999-setup rev-parse origin/main -> 6e9d69def27dd4adfffbe7a03ccf0e47d871f03b",
+      "git -C <PATH>/blackceo-command-center rev-parse origin/main -> 7816a3c560ff2c50126e38b139ad644c472b99ac",
+      "git -C <repo> log -1 --format=%H|%cI|%s origin/main (all three)",
+      "git -C <repo> reflog show origin/main --date=iso (all three) -> reflog evidence recorded per flavor",
+      "git -C <PATH>/openclaw-onboarding status --porcelain=v1 --untracked-files=all -> 3 entries, all UNATTRIBUTED",
+      "git -C <PATH>/openclaw-onboarding for-each-ref + merge-base --is-ancestor + diff --name-only -> 99 s75 refs, 47 active, per-branch changed-file lists"
+    ],
+    "read_at": "2026-10-24T20:50:17Z"
+  },
+  "contradictions_carried_not_dropped": [
+    "held-file untouched claim contradicted by batch/s75-b5-prep",
+    "no-unit-mutated-shared-state claim contradicted by 2 modified + 1 untracked files in shared ONB checkout",
+    "recorded contradiction kept: batch/s75-b5-prep (dd3881cff1c917e604385f03fe85ebf0a32cbd9d) names 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py against origin/main"
+  ],
+  "head_observation_semantics": "Each flavor head is a point-in-time observation valid only at its read_at, not a permanent truth. head_reverified=true is stamped only on values read live in this session.",
+  "prior_attempt_failure_corrected": "Attempt 1 failed for a stale CC head: the census claimed a3b43318944132f0847f33f395dcb0ea38ba30a7 with head_reverified=true while live origin/main was 7816a3c560ff2c50126e38b139ad644c472b99ac (fast-forward landed 2026-10-24 16:32:20 -0400, before the census mtime 16:36:27). Corrected: CC head re-read live and stamped only with read_at + reflog evidence.",
+  "emergency_owner_handoff_unchanged": "evidence/emergency-owner-handoff.json kept as-is; owner 01a16e50 stays UNKNOWN, not invented. No flavor-head change affects its content (it cites branch head dd3881cf, not flavor heads)."
+}

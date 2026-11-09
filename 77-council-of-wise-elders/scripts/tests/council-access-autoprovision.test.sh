@@ -121,7 +121,7 @@ FIXTURE_OFFSET=10 fixture delta > "$WORK/delta.json"
 jq -s -c '.[0] as $d | .[1] | .dns += $d.dns | .apps += $d.apps | .tunnels += $d.tunnels | .policies += $d.policies' "$WORK/delta.json" "$WORK/after2.json" > "$WORK/f.json"
 start_fake "$WORK/f.json"
 run_job --apply
-check "delta provisioned automatically, alpha untouched" test "$(rcpt '[.provisioned, .counts.ALREADY_PROVISIONED]')" = '[["delta.'$Z'"],1]'
+check "delta provisioned automatically; alpha, provisioned by an earlier run, is named in the address list too" test "$(rcpt '[.provisioned, .counts.ALREADY_PROVISIONED]')" = '[["alpha.'$Z'","delta.'$Z'"],1]'
 check "exactly 3 writes (delta only)" test "$(nonget_count)" = 3
 
 echo "== 5b. new reason codes are carried, named, and never fail the run"

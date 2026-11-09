@@ -11,7 +11,7 @@ in this package (see SKILL.md, Build status). Every council request
 resolves the capability and runs through the council service: a service
 that reports not ready, no usable model route, or no compatible
 Command Center release for managed mode means the request refuses with
-the precise typed state and spends no provider requests. Convening is
+the precise typed state and uses no provider requests. Convening is
 the approval; there is no separate grant or approval step. A completed
 live session is not yet established on any machine, so no instruction
 below is a claim that live completion is proven; composition, admission,
@@ -22,9 +22,20 @@ and dispatch are the proven live legs.
 1. Recognize the front-door phrases in SKILL.md, or a department request
    that names the decision and carries its origin task. Do not start a
    full council for an ordinary "should I" question unless the client
-   asks for the council.
-2. Resolve existing sessions first. If a council is already open for the
-   same decision, continue it; never create a duplicate.
+   asks for the council. Size a new decision with the four checks in
+   SKILL.md step 2 (can it be undone, other people affected, lock-in,
+   values pulling against each other; there is no money check), announce
+   the size in one line, and honor the client's override: "quick answer"
+   is light, "full council" is heavy.
+2. Resolve existing sessions first, and know what "open" means. An
+   explicit front-door ask ("ask the council", "take this to the council")
+   ALWAYS opens a new session: a COMPLETED sitting on the same question is
+   context and never the answer, and a BLOCKED one is resolved rather than
+   reused. Only a session actually in progress is continued; never create a
+   duplicate of a running one. Read that list with `council-ask sessions`
+   (the service store), never with `blackceo-council status` (the CLI's
+   local store, which reports COUNCIL_SESSION_NOT_FOUND for sessions the
+   service holds).
 3. Build the brief from permitted context only, with the one shared
    brief-builder (`runtime/src/brief/permitted-brief.ts`) running FIRST
    in the convene flow. It reads the door's own memory files through
@@ -40,31 +51,66 @@ and dispatch are the proven live legs.
    brief carries only `private_preference_ref`, an opaque handle), and
    never exceeds its 2000-word cap. The brief shape is identical
    whichever door the client came through.
-4. Show the prepared brief before spending. Unknowns stay unknown; a
-   standard-company placeholder is never presented as a confirmed fact.
-5. Ask the client which model to use. Run `blackceo-council routes`,
-   list the options, and offer the harness default: the claude-nine
-   configured default on claude-nine, Sonnet on Claude Code, or the
-   latest DeepSeek Flash on DeepSeek (resolved from the provider's model
-   list at run time, never pinned). Never pick silently. Pass the
-   client's choice with `--route` and `--model`; when the client defers,
-   pass nothing and the detected harness decides (`--harness` overrides).
+4. Do not stop to show a draft brief or ask the client to choose a model.
+   Unknowns stay unknown; a standard-company placeholder is never
+   presented as a confirmed fact.
+5. The supported front door resolves the calling agent's own configured
+   route. Run it from the calling agent's own workspace. If the route
+   cannot be resolved — ROUTE_CHOICE_REQUIRED, ROUTE_NOT_CONFIGURED,
+   ROUTE_NOT_COMPOSABLE, ROUTE_MODEL_NOT_OFFERED, or OLLAMA_PLAN_REQUIRED —
+   **ask the client**, in one message, in this order, and never invent or
+   force a provider:
+   a. "Which Ollama plan do you pay for: the $20/month plan or the
+      $100+/month plan?"
+   b. If they have no Ollama plan, **recommend OpenRouter** and offer it as
+      the default, because its advisors run in parallel with no plan cap,
+      so a sitting completes far sooner.
+   Then convene on the answer (`--ollama-plan 20|100`, or their OpenRouter
+   route and model). Ask once; remember the answer for later sittings.
+   Never present the runtime's routes as the calling agent's own models.
 6. For a question that depends on current facts, research the web first
    with your own tools and pass the findings with `--fresh-facts FILE`, a
    JSON array of `{claim, url, title, retrieved_at}`. Keep "From the
    elder's books" and "From the web today" separate in everything you
    tell the client, and never fabricate a finding, URL or date.
-7. Convene with `blackceo-council convene --brief FILE` (or `--sample`
-   for the built-in sample decision). Convening is the approval: no
-   grant, no approval prompt. Report the session id, the exact model
+7. Convene with `council-ask ask --brief FILE [--mode light|medium|heavy]`.
+   It is the supported front door: it proves the service answers first
+   (refusing `COUNCIL_SERVICE_DOWN` instead of improvising), convenes
+   through `blackceo-council convene`, and prints the chamber link while
+   popping it on a desktop, so the link is never a second, optional step.
+   The underlying client is
+   `blackceo-council convene --brief FILE --mode light|medium|heavy` (or
+   `--sample` for the built-in sample decision). Convening with no `--mode`
+   runs medium; that default is deliberate, so name the mode you
+   announced. Every mode seats all nine advisors: the mode changes the
+   rounds and the concurrency, never the panel. `--seat-ids` does not
+   shrink that roster: for light, medium and heavy a shorter list is
+   refused with `light mode requires all nine seats` (or the matching
+   medium/heavy message), so pass `--seat-ids id,id,...` only to name the
+   panel explicitly. Smaller panels belong to the four older modes, whose
+   own panel rules are in `runtime/src/intake/panel.ts` (selected 2 to 8,
+   quick four, consult one). On the client's own Ollama
+   pass `--ollama-plan 20` or `--ollama-plan 100`, and
+   `--fallback-model ID` to name the OpenRouter model used when Ollama
+   fails. When the client has no Ollama plan, convene on their OpenRouter
+   route instead — `--route openrouter-configured` — because uncapped
+   parallelism finishes the sitting sooner. OpenRouter carries a standing
+   default so no model name is needed: DeepSeek Flash, preferring the pinned
+   1017 variant, otherwise the newest DeepSeek Flash the provider offers. Pass
+   `--model <their own configured OpenRouter model, namespace and all>` to
+   choose a different one; an explicit model always wins. Anyone who wants
+   OpenRouter gets OpenRouter. Convening is
+   the approval: no grant, no approval prompt. Report the session id, the
+   exact model
    label, whether it was the client's choice or the harness default, and
    the links the command prints. Send the client the `chamber_url`
-   exactly as printed, never a 127.0.0.1 link. If the output has no
-   `chamber_url`, do not invent, guess, or build a link: tell the client
-   the Council is running, the result will be shared here, and their
-   private Council link is still being set up (it is set up automatically:
-   ask the client for nothing, and never mention scripts, servers, fleet or
-   Cloudflare). Use `blackceo-council`, or
+   exactly as printed, never a 127.0.0.1 link. A sitting that did not open
+   must never be answered in chat: do not take up the client's question
+   yourself, and never describe a Council as running when no session
+   exists. If the output has no `chamber_url`, say plainly that the Council
+   did not open, give the typed code and its recovery in one line, and fix
+   that cause — do not invent, guess, or build a link (never mention
+   scripts, servers, fleet or Cloudflare to the client). Use `blackceo-council`, or
    `$OPENCLAW_ROOT/council-runtime/bin/blackceo-council` when it is not on
    PATH. If the box cannot convene, run `bash scripts/verify-council-box.sh`
    and report its `COUNCIL_BOX:` line and the matching fix from
@@ -103,7 +149,27 @@ brief shape serve both.
 
 ## Modes
 
-- Full council: all rounds, bounded ratification, full report.
+Three council sizes, sized from the question and never from money. Every
+mode seats the full nine-advisor council; the mode changes the rounds and
+the concurrency only, never how many seats are used:
+
+- **Light.** All 9 seats, exactly 2 rounds, at most 3 provider calls in
+  parallel (waves of 3), cap 50 provider requests. No separate vote pass:
+  the verdict is composed from the round-2 advisor cards and recorded as
+  `ratification: not_required`. A light question may never stop early, and
+  it never skips a round.
+- **Medium.** All 9 seats, 1 to 4 rounds, cap 50 provider requests. After
+  every completed round the chair checks the stop rule in
+  references/protocol.md and stops when the panel has converged.
+- **Heavy.** All 9 seats, 3 to 10 rounds, cap 100 provider requests. The
+  stop rule is evaluated from round 3 onward; rounds 1 and 2 always run.
+
+Client overrides always win: "quick answer" means light, "full council"
+means heavy. The medium size is used when no size is named.
+
+The four older modes keep working exactly as before:
+
+- Full council: all three rounds, bounded ratification, full report.
 - Quick council: may end after the early rounds only under the strict
   conditions in references/protocol.md; a quick council never pretends
   ratification happened.
@@ -121,7 +187,8 @@ brief shape serve both.
   disagreement is a defect.
 - New factual input during a round is queued as a brief amendment and
   applied at the next defined boundary, never injected mid-round.
-- The session ceiling is 50 provider requests, hard. When a request's
+- The session ceiling is 50 provider requests for light and medium, and
+  100 for heavy, hard. When a request's
   completion is uncertain, it is recorded as unknown and never replayed
   just to make the display green.
 - Pause, resume, and cancel act on the existing session. A cancelled

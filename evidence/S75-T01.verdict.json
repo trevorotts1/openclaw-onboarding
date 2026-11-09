@@ -1,0 +1,26 @@
+{
+  "verdict": "PASS",
+  "unit_id": "S75-T01",
+  "branch": "none — read-only reconciliation; no s75/S75-T01 branch or worktree exists (verified via `git branch -a --list '*T01*'` on openclaw-onboarding and `git worktree list`; worktrees/ dir holds S75-T03..T41, no S75-T01). No product code was authored, so there is no candidate commit; git log -1 / git diff origin/main --stat are N/A by design (deliverable is an evidence artifact, product_files_edited=false).",
+  "head": "candidate artifact evidence/S75-T01-reconciliation.json sha256=95b56db995b1e43dcbaf0586a0a804c461c62292f53432c32c1fc8996aaa718a (18717 bytes, JSON parses clean); bases re-derived at QC time: ONB origin/main 569eee7a79397d34275b0bb0da22a6349bd47f2d, N999 origin/main 65b8b484a034e615cd98d5ebccb61524058c9e43, CC origin/main a3b43318944132f0847f33f395dcb0ea38ba30a7 — all three match the artifact exactly.",
+  "criteria_checked": [
+    {
+      "criterion": "Read-only source/owner census resolves both flavors (S75-A01)",
+      "result": "PASS",
+      "evidence": "Independently re-derived, not taken from builder report: git fetch + rev-parse origin/main in <PATH>/openclaw-onboarding (569eee7a7, matches), <PATH>/drama-song-factory-build/999-setup (65b8b484a, matches; 999 clone agrees), <PATH>/blackceo-command-center (a3b43318, matches). Both ONB and N999 flavors resolved with repo, clone, skill_root, heads and ownership state; sampled-fix presence re-checked (PROVIDER_LOOKUP_REQUIRED in spend_ledger.py on both origin/mains, git grep rc=0 both)."
+    },
+    {
+      "criterion": "exact factory/approval handoff is explicit, OR those files remain held while unrelated units proceed (S75-A01)",
+      "result": "PASS via the second disjunct (files held)",
+      "evidence": "Handoff is NOT explicit: re-ran the search myself with a known-good control — grep -rl '01a16e50' over skill75-repair, drama-song-factory-build and the package dir returns only the 10 package documents plus the reconciliation artifact itself (no handoff file), while control grep -rl 'SFR-001' finds 3 real files in skill75-repair (instrument discriminates). Hold is real and observed: no branch among S75-T03..T25 worktrees touches factory.py or character_approval.py (per-worktree git diff --name-only origin/main...HEAD scan, zero hits), unrelated units proceed, and the artifact itself withholds the gate ('does_not_establish: That T13 may proceed... ownership gate for 01a16e50 is still UNVERIFIED'). Nothing fabricated."
+    }
+  ],
+  "test_command": "cd <PATH>/openclaw-onboarding && git fetch origin --prune && git rev-parse origin/main; cd <PATH>/drama-song-factory-build/999-setup && git fetch origin && git rev-parse origin/main; cd <PATH>/blackceo-command-center && git fetch origin && git rev-parse origin/main; git grep -l PROVIDER_LOOKUP_REQUIRED origin/main -- '*spend_ledger*' (both repos); per-worktree: git diff --name-only origin/main...HEAD | grep -E 'factory\\.py|character_approval' over all worktrees/S75-T*; grep -rl 01a16e50 <3 roots> with grep -rl SFR-001 control; python3 -I json.load of the artifact; wc -c + shasum -a 256 of the artifact. No unit test ships with T01 (read-only census); these re-derivations are the check.",
+  "test_result": "PASS — all three heads byte-match the artifact; provider-lookup fix present on both mains; zero worktree branches edit factory.py/character_approval.py; 01a16e50 handoff search negative with passing control; artifact 18717 bytes, parses clean, sha256 95b56db9...aaa718a.",
+  "reasons": [
+    "S75-A01 satisfied on both halves: both flavors independently re-derive to the recorded heads, and although the exact factory/approval handoff is provably absent (verified with a discriminating control, not builder claim), the criterion's alternative holds in observed reality — those files are untouched by every active branch while unrelated units proceed.",
+    "Gap (non-blocking): evidence sits at evidence/S75-T01-reconciliation.json, not the ledger's receipt_path_pattern evidence/units/S75-T01/attempt-<verified-generation>.json, and the ledger's second proposed output emergency-owner-handoff.json does not exist — consistent with the allowed 'files remain held' branch, but the flat path deviates from the ledger pattern project-wide (same convention as S75-T03/T05/T18-T25 builds and verdicts, including this verdict path).",
+    "Gap (non-blocking): task-ledger.json still records S75-T01 status NOT_STARTED / verification UNVERIFIED / actual_evidence [] — bookkeeping not updated by the builder; ledger row should be updated at acknowledgement time.",
+    "Caveat carried forward, correctly flagged by the artifact: 11 S75X units remain UNDETERMINED (not failed), and the 01a16e50 handoff absence is proven only over the three searched roots, not client boxes or unsearched remotes."
+  ]
+}

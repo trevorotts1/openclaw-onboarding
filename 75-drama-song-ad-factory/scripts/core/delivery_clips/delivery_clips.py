@@ -56,12 +56,21 @@ Gate contract:
   * a clip the card promised (3, 5 or 10 minutes) but the folder does not
     hold fails closed (``CLIPS_MISSING``), naming the exact file.
 
+What the run OWES is derived once, by ``run_inputs.delivery_context`` from the
+run's own saved answers (never from the folder, the brief or the receipt):
+the packaging adapter plans against it and ``check_clips(run_dir=...)`` looks
+for exactly that set. The planned (kind, seconds, file name) set must equal it
+(``CLIPS_OBLIGATION_MISMATCH``) -- a method run that is not a campaign still
+ships the contract's Clip names, and a campaign can never satisfy its trailers
+with clip names. A 60/90 second ad owes nothing and stages nothing.
+
 stdlib only; shells to ffmpeg/ffprobe through the gate.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -102,6 +111,22 @@ _KINDS = {"clip": (CLIP_ITEM, "Clip"),
           "ad": (AD_ITEM, "Ad")}
 #: the plan keys every trailer/ad receipt row must carry, fail closed.
 _PIECE_KEYS = ("source_in", "source_out", "trailer_in", "trailer_out")
+
+
+def _finite_coordinate(value):
+    """True for a real, finite coordinate: no bool, no NaN, no +/-infinity.
+
+    ``bool`` is an ``int`` subclass, so it is refused before the numeric test;
+    ``math.isfinite`` is what keeps NaN and both infinities out of every
+    boundary the checker compares. A value too large to convert is refused
+    rather than raised.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except (TypeError, OverflowError):
+        return False
 
 
 class DeliveryClipsError(ValueError):
@@ -146,30 +171,110 @@ def clip_file_name(seconds, kind="clip"):
     return _CLIP_FILES[seconds]
 
 
+def _coordinate_problem(piece):
+    """Why this piece's four coordinates are unusable, or ``None``.
+
+    Every coordinate is a real finite number -- a bool, a string, NaN or
+    either infinity is a malformed record, not a window. Coordinates are
+    nonnegative, and a range opens only when its end is strictly after its
+    start: a reversed or zero-width range names nothing to cut. The end card
+    is the one piece with no source range: both source keys are explicitly
+    null while its trailer window stays measured.
+
+    ponytail: no upper bound is claimed -- the authoritative clip length is
+    not available at this boundary, so the window only has to be finite,
+    nonnegative and increasing.
+    """
+    for key in ("trailer_in", "trailer_out"):
+        if not _finite_coordinate(piece.get(key)):
+            return "%s is not a finite number (%r)" % (key, piece.get(key))
+    for key in ("trailer_in", "trailer_out"):
+        if piece[key] < 0:
+            return "%s is negative (%r)" % (key, piece[key])
+    if piece["trailer_out"] <= piece["trailer_in"]:
+        return ("the trailer window is empty or reversed (%r -> %r)"
+                % (piece["trailer_in"], piece["trailer_out"]))
+    start, end = piece.get("source_in"), piece.get("source_out")
+    if start is None and end is None:
+        return None                     # the end card holds no source range
+    if start is None or end is None:
+        return "the source window is half-empty"
+    if not (_finite_coordinate(start) and _finite_coordinate(end)):
+        return "the source window is not finite (%r -> %r)" % (start, end)
+    for key, value in (("source_in", start), ("source_out", end)):
+        if value < 0:
+            return "%s is negative (%r)" % (key, value)
+    if end <= start:
+        return ("the source window is empty or reversed (%r -> %r)"
+                % (start, end))
+    return None
+
+
+def _require_valid_piece(piece, name):
+    """Fail closed before a malformed window is recorded, cut or listed."""
+    why = _coordinate_problem(piece)
+    if why:
+        raise DeliveryClipsError(
+            "TRAILER_SOURCE_MAP_INVALID: %r piece %r %s"
+            % (name, piece.get("piece"), why))
+
+
 def source_map(plan):
     """The receipt's ``source_map`` for a trailer/ad plan, fail closed.
 
     Method ``10.5`` records ``{source_in, source_out, trailer_in,
     trailer_out}`` per piece: the pieces the plan joined, or -- when the plan
-    carries one whole window instead -- that window as one piece.
+    carries one whole window instead -- that window as one piece. Every piece
+    must carry all four keys, and at least one piece must name a real source
+    window; an explicit null source range is allowed only for the end card,
+    never for the whole map.
     """
     pieces = plan.get("pieces")
     if isinstance(pieces, list) and pieces:
-        out = [{k: p[k] for k in _PIECE_KEYS if k in p} for p in pieces]
-        return [p for p in out if p]
+        out = []
+        for piece in pieces:
+            missing = [key for key in _PIECE_KEYS if key not in piece]
+            if missing:
+                raise DeliveryClipsError(
+                    "TRAILER_SOURCE_MAP_INCOMPLETE: %r piece %r lacks %s"
+                    % (plan.get("name"), piece.get("piece"),
+                       ", ".join(missing)))
+            _require_valid_piece(piece, plan.get("name"))
+            out.append({key: piece[key] for key in _PIECE_KEYS})
+        _require_source_window(out, plan.get("name"))
+        return out
     if plan.get("start_s") is not None and plan.get("end_s") is not None:
-        return [{"source_in": plan["start_s"], "source_out": plan["end_s"],
+        piece = {"source_in": plan["start_s"], "source_out": plan["end_s"],
                  "trailer_in": plan.get("trailer_in", 0.0),
                  "trailer_out": plan.get(
-                     "trailer_out", plan.get("duration_s"))}]
+                     "trailer_out", plan.get("duration_s"))}
+        _require_valid_piece(piece, plan.get("name"))
+        _require_source_window([piece], plan.get("name"))
+        return [piece]
     raise DeliveryClipsError(
         "TRAILER_NO_SOURCE_MAP: %r carries neither pieces[] nor "
         "start_s/end_s, so no source map can be recorded"
         % (plan.get("name"),))
 
 
+def _real_source_window(piece):
+    """True when this piece names a real finite, nonnegative source range."""
+    start, end = piece.get("source_in"), piece.get("source_out")
+    if not (_finite_coordinate(start) and _finite_coordinate(end)):
+        return False
+    return start >= 0 and end > start
+
+
+def _require_source_window(pieces, name):
+    """A source map needs source provenance; an end card alone is not one."""
+    if not any(_real_source_window(piece) for piece in pieces):
+        raise DeliveryClipsError(
+            "TRAILER_NO_SOURCE_WINDOW: %r records no piece with a real source "
+            "window (an all-null end card is not a source map)" % (name,))
+
+
 def deliver_clips(timeline, chosen_length_s, master, delivery_dir,
-                  runner=None, audio_gate=None):
+                  runner=None, audio_gate=None, expected=None):
     """Cut the two clips into ``delivery_dir`` and list them in receipt + README.
 
     Returns the receipt rows (one per cut file). Fail closed: no window, an
@@ -177,10 +282,16 @@ def deliver_clips(timeline, chosen_length_s, master, delivery_dir,
     with the folder left empty of partial clips; an unknown length or a
     delivered file that does not pass ``delivery_audio.check_delivery_audio()``
     after the rename raises ``DeliveryClipsError``.
+
+    expected: the run's resolved derivative obligations, ``(file name, kind,
+    seconds)`` from ``run_inputs.delivery_context``. When it is given the
+    planned set must equal it exactly, before anything is cut.
     """
     out = Path(delivery_dir)
     out.mkdir(parents=True, exist_ok=True)
     plans = plan_clips(timeline, chosen_length_s)
+    if expected is not None:
+        _require_planned_obligations(plans, expected)
     if not plans:
         return []                      # 60/90 s ads carry no clips: nothing owed
 
@@ -269,58 +380,218 @@ def _destination_text(destination):
     return json.dumps(destination, sort_keys=True)
 
 
-def check_clips(delivery_dir, chosen_length_s, ffprobe="ffprobe",
-                ffmpeg="ffmpeg"):
-    """QC: (PASS|FAIL|UNAVAILABLE, detail). Fail closed on anything missing."""
-    promised = clips_for(chosen_length_s)
-    if not promised:
-        return (PASS, "%ss ad owes no clips" % chosen_length_s)
+def _planned_derivatives(plans):
+    """(delivery file name, kind, seconds) for every plan, in plan order."""
+    out = []
+    for plan in plans:
+        kind = plan_kind(plan)
+        seconds = int(plan["clip_length_s"])
+        out.append((clip_file_name(seconds, kind), kind, seconds))
+    return out
+
+
+def _require_planned_obligations(plans, expected):
+    """The planner must plan exactly the files the run owes -- no more, less."""
+    planned = _planned_derivatives(plans)
+    if sorted(planned) != sorted(expected):
+        raise DeliveryClipsError(
+            "CLIPS_OBLIGATION_MISMATCH: the run owes %s, the planner produced %s"
+            % (sorted(expected), sorted(planned)))
+
+
+def _owed_derivatives(ctx):
+    """The derivative files this run's own resolved context owes (items 6/13)."""
+    out = []
+    for item in ctx["items"]:
+        if item.key == "clips":
+            kind = "trailer" if ctx["campaign"] else "clip"
+        elif item.key == "ad_clips":
+            kind = "ad"
+        else:
+            continue
+        for seconds, name in zip((60, 90), item.files):
+            out.append((name, kind, seconds))
+    return out
+
+
+def _timeline_campaign(timeline):
+    """Whether ``clip_cutdown``'s planner will plan campaign derivatives here."""
+    if not timeline.get("method"):
+        return False
+    from clip_cutdown import trailer as _trailer       # noqa: PLC0415
+    return _trailer.purpose(timeline) == "campaign"
+
+
+def _structural_wanted(rows, promised):
+    """Structural fallback when the caller named no run.
+
+    ponytail: without the run, the receipt's own naming family is the only
+    evidence of which names to look for; a method family is still required in
+    full (both trailers and/or both ad clips), so a partial receipt can never
+    shrink the obligation. Pass ``run_dir`` for the authoritative set.
+    """
+    kinds = {r.get("kind") for r in rows}
+    wanted = []
+    if "trailer" in kinds:
+        wanted += [(clip_file_name(s, "trailer"), "trailer", s) for s in promised]
+    if "ad" in kinds:
+        wanted += [(clip_file_name(s, "ad"), "ad", s) for s in promised]
+    if wanted:
+        return wanted
+    return [(clip_file_name(s), "clip", s) for s in promised]
+
+
+def _destination_problem(destination):
+    """Where the trailer/ad sends the viewer must be recorded, not blank."""
+    if isinstance(destination, str) and destination.strip():
+        return None
+    if isinstance(destination, dict) and destination:
+        return None
+    return "records no destination"
+
+
+def _source_map_problem(source_map):
+    """A method row's source map must carry usable windows, not a truthy blob.
+
+    Every piece must carry BOTH source keys (an absent key is not an end
+    card), sits somewhere on the finished cut (``trailer_in``/
+    ``trailer_out``), and every piece that comes from the master names a real
+    source window. The end card is the one piece with no source range: it holds
+    the master's own music, so its ``source_in``/``source_out`` are explicitly
+    null while its trailer window stays measured. A map whose every piece is
+    such a null end card has no source provenance and is refused.
+    """
+    if not isinstance(source_map, list) or not source_map:
+        return "records no source map"
+    has_source = False
+    for piece in source_map:
+        if not isinstance(piece, dict):
+            return "records a source map piece that is not an object"
+        for key in ("source_in", "source_out"):
+            if key not in piece:
+                return "records a source map piece with no %s key" % key
+        # every boundary is checked finite BEFORE any comparison: NaN and
+        # both infinities compare false against themselves, so a bare
+        # ``end <= start`` would wave them through.
+        for key in ("trailer_in", "trailer_out"):
+            value = piece.get(key)
+            if not _finite_coordinate(value):
+                return "records a source map piece with no numeric %s" % key
+        for key in ("trailer_in", "trailer_out"):
+            if piece[key] < 0:
+                return "records a source map piece with a negative %s" % key
+        if piece["trailer_out"] <= piece["trailer_in"]:
+            return "records a source map piece with an empty trailer window"
+        start, end = piece["source_in"], piece["source_out"]
+        if start is None and end is None:
+            continue                    # the end card holds no source range
+        if start is None or end is None:
+            return "records a source map piece with a half-empty source window"
+        for key, value in (("source_in", start), ("source_out", end)):
+            if not _finite_coordinate(value):
+                return ("records a source map piece with no numeric %s" % key)
+        for key, value in (("source_in", start), ("source_out", end)):
+            if value < 0:
+                return "records a source map piece with a negative %s" % key
+        if end <= start:
+            return "records a source map piece with an empty source window"
+        has_source = True
+    if not has_source:
+        return "records no source window (every piece is an end card)"
+    return None
+
+
+def _method_row_problem(row):
+    """A trailer/ad receipt row must say where it points and where it came from."""
+    return (_destination_problem(row.get("destination")) or
+            _source_map_problem(row.get("source_map")))
+
+
+def _delivered_problem(d, name, kind, seconds, rows, readme, ffprobe, ffmpeg):
+    """None when this owed file is present, listed, mapped and passes the gate."""
+    path = d / name
+    if not path.is_file() or path.stat().st_size == 0:
+        return (FAIL, "delivery missing the %d-second %s (%s)"
+                % (seconds, kind, name))
+    row = next((r for r in rows if r.get("file") == name), None)
+    if row is None:
+        return (FAIL, "%s not listed in %s" % (name, RECEIPT_NAME))
+    if row.get("kind") != kind or row.get("clip_length_s") != seconds:
+        return (FAIL, "%s is listed as %r/%rs; the run owes %s/%ds"
+                % (name, row.get("kind"), row.get("clip_length_s"),
+                   kind, seconds))
+    if kind != "clip":
+        why = _method_row_problem(row)
+        if why:
+            return (FAIL, "%s %s" % (name, why))
+    if name not in readme:
+        return (FAIL, "%s not listed in %s" % (name, README_NAME))
+    try:
+        g = delivery_audio.check_delivery_audio(path, ffprobe, ffmpeg)
+    except Exception as exc:      # noqa: BLE001 - a broken gate is UNAVAILABLE
+        return (UNAVAILABLE, "audio gate could not read %s: %s" % (name, exc))
+    if not g["ok"]:
+        if g["reason_code"] in (delivery_audio.UNREADABLE,):
+            return (UNAVAILABLE, "UNAVAILABLE: %s: %s" % (name, g["reason"]))
+        return (FAIL, "%s failed the delivery audio gate (%s): %s"
+                % (name, g["reason_code"], g["reason"]))
+    return None
+
+
+def check_clips(delivery_dir, chosen_length_s=None, ffprobe="ffprobe",
+                ffmpeg="ffmpeg", *, run_dir=None, require_authority=False):
+    """QC: (PASS|FAIL|UNAVAILABLE, detail). Fail closed on anything missing.
+
+    With ``run_dir`` the expected set comes from that run's own saved context
+    (``run_inputs.delivery_context``); the receipt row is evidence of each
+    expected file, never the source of the expected set. Without it the check
+    is structural (see ``_structural_wanted``) and a method family is still
+    required in full -- but structural inspection is never authoritative: a
+    caller that needs a production verdict sets ``require_authority`` and is
+    refused outright when it supplies no run.
+    """
     d = Path(delivery_dir)
+    if run_dir is None and require_authority:
+        return (FAIL, "CLIPS_NO_RUN_AUTHORITY: no run context supplied; a "
+                      "folder inspection alone cannot grant a production PASS")
+    wanted = None
+    if run_dir is not None:
+        from delivery_package import run_inputs as RI       # noqa: PLC0415
+        try:
+            ctx = RI.delivery_context(run_dir)
+        except RI.RunInputError as exc:
+            return (FAIL, "CLIPS_RUN_AUTHORITY_UNVERIFIED: %s" % exc)
+        chosen_length_s = ctx["chosen_length_s"]
+        wanted = _owed_derivatives(ctx)
+        if not wanted:
+            return (PASS, "%ss ad owes no clips" % chosen_length_s)
+    else:
+        promised = clips_for(chosen_length_s)
+        if not promised:
+            return (PASS, "%ss ad owes no clips" % chosen_length_s)
     try:
         receipt = json.loads((d / RECEIPT_NAME).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return (FAIL, "%s missing or unreadable; cannot list the clips"
                 % RECEIPT_NAME)
-    listed = {r.get("file") for r in receipt.get("delivery_clips") or []}
+    rows = [r for r in receipt.get("delivery_clips") or []
+            if isinstance(r, dict)]
     readme = (d / README_NAME).read_text(encoding="utf-8") \
         if (d / README_NAME).is_file() else ""
-    # a method run owes its trailer/ad files (named by this module and written
-    # only once every cut passed); every other run owes the contract's two
-    # clips. ponytail: the receipt rows ARE the promise -- deliver_clips writes
-    # them as one merge after all cuts, so a partial set never reaches here.
-    method_rows = [r for r in receipt.get("delivery_clips") or []
-                   if r.get("kind") in ("trailer", "ad")]
-    if method_rows:
-        wanted = [(r["file"], r["kind"], r.get("clip_length_s"))
-                  for r in method_rows]
-        done = ("%d trailer/ad file(s) present, listed and AAC-LC 48 kHz "
-                "faststart" % len(wanted))
-    else:
-        wanted = [(clip_file_name(s), "clip", s) for s in promised]
-        done = "both clips present, listed and AAC-LC 48 kHz faststart"
+    structural = wanted is None
+    if wanted is None:
+        wanted = _structural_wanted(rows, promised)
+    method = any(kind != "clip" for _name, kind, _seconds in wanted)
+    done = ("%d trailer/ad file(s) present, listed and AAC-LC 48 kHz faststart"
+            % len(wanted) if method
+            else "both clips present, listed and AAC-LC 48 kHz faststart")
+    if structural and method:
+        done = "structural inspection only (no run authority): " + done
     for name, kind, seconds in wanted:
-        p = d / name
-        if not p.is_file() or p.stat().st_size == 0:
-            if kind != "clip":
-                return (FAIL, "delivery missing the %d-second %s (%s)"
-                        % (seconds, kind, name))
-            return (FAIL, "delivery missing the %d-second clip (%s)"
-                    % (seconds, name))
-        if name not in listed:
-            return (FAIL, "%s not listed in %s" % (name, RECEIPT_NAME))
-        if name not in readme:
-            return (FAIL, "%s not listed in %s" % (name, README_NAME))
-        try:
-            g = delivery_audio.check_delivery_audio(p, ffprobe, ffmpeg)
-        except Exception as exc:      # noqa: BLE001 - a broken gate is UNAVAILABLE
-            return (UNAVAILABLE, "audio gate could not read %s: %s"
-                    % (name, exc))
-        if not g["ok"]:
-            if g["reason_code"] in (delivery_audio.UNREADABLE,):
-                return (UNAVAILABLE, "UNAVAILABLE: %s: %s"
-                        % (name, g["reason"]))
-            return (FAIL, "%s failed the delivery audio gate (%s): %s"
-                    % (name, g["reason_code"], g["reason"]))
+        problem = _delivered_problem(d, name, kind, seconds, rows, readme,
+                                     ffprobe, ffmpeg)
+        if problem is not None:
+            return problem
     return (PASS, done)
 
 
@@ -367,22 +638,42 @@ def main(argv=None):
         description="DEL-06: cut the 60/90 s clips into the delivery folder "
                     "(numbered names, every file through the delivery audio "
                     "gate) and list them in the receipt and README")
-    ap.add_argument("timeline", help="the run's edit/timeline.json")
-    ap.add_argument("--length", type=int, required=True,
-                    help="chosen ad length in seconds")
-    ap.add_argument("--master", required=True, help="rendered master mp4")
+    ap.add_argument("timeline", nargs="?",
+                    help="the run's edit/timeline.json (required to cut)")
+    ap.add_argument("--length", type=int,
+                    help="chosen ad length in seconds (required to cut)")
+    ap.add_argument("--master",
+                    help="rendered master mp4 (required to cut)")
     ap.add_argument("--delivery", required=True, help="the delivery folder")
+    ap.add_argument("--run",
+                    help="the run folder whose own saved answers own the "
+                         "obligations (required with --check)")
     ap.add_argument("--check", action="store_true",
-                    help="check only; do not cut (exit 5 on a FAIL)")
+                    help="check only; requires --run (exit 5 on a FAIL)")
     ns = ap.parse_args(argv)
     if ns.check:
-        verdict, detail = check_clips(ns.delivery, ns.length)
+        if not ns.run:
+            ap.error("--check requires --run RUN: a context-free folder "
+                     "inspection cannot grant a production PASS")
+        verdict, detail = check_clips(ns.delivery, run_dir=ns.run,
+                                      require_authority=True)
         print(json.dumps({"check": TOOL_NAME, "verdict": verdict,
                           "detail": detail}, indent=2))
         return 0 if verdict == PASS else 5
+    if ns.length is None or not ns.timeline or not ns.master:
+        ap.error("cutting clips needs TIMELINE, --length and --master")
     with open(ns.timeline, encoding="utf-8") as fh:
         timeline = json.load(fh)
-    rows = deliver_clips(timeline, ns.length, ns.master, ns.delivery)
+    expected = None
+    if ns.run:
+        from delivery_package import run_inputs as RI       # noqa: PLC0415
+        ctx = RI.delivery_context(ns.run)
+        if ctx["chosen_length_s"] != ns.length:
+            ap.error("--length %d disagrees with the run's own saved %d"
+                     % (ns.length, ctx["chosen_length_s"]))
+        expected = _owed_derivatives(ctx)
+    rows = deliver_clips(timeline, ns.length, ns.master, ns.delivery,
+                         expected=expected)
     print(json.dumps(rows, indent=2))
     return 0
 
@@ -392,20 +683,29 @@ def produce_delivery(run_dir, item):
     """DEL-13 packaging adapter: the REAL DEL-06 deliver path (60/90 clips).
 
     Reads the run's ``edit/timeline.json``, the rendered master
-    (``edit/ad.mp4``) and the chosen ad length (card answer, else the brief),
-    then calls ``deliver_clips`` -- the same entry the CLI runs: whole-line
-    windows from ``clip_cutdown.plan_clips``, cut through
-    ``clip_cutdown.run_clips``, every clip through the delivery audio gate
-    and listed in the receipt and README. Fixture bytes are never written:
-    ``contract.produce_item`` is test-only and no deliver path imports it.
-    Signature: produce_delivery(run_dir, item) -> list[Path].
+    (``edit/ad.mp4``) and the length/purpose the client's own confirmed
+    answers recorded (``run_inputs.delivery_context``, never the brief), then
+    calls ``deliver_clips`` -- the same entry the CLI runs: whole-line windows
+    from ``clip_cutdown.plan_clips``, cut through ``clip_cutdown.run_clips``,
+    every clip through the delivery audio gate and listed in the receipt and
+    README. The timeline must plan the same purpose the saved context records,
+    and the planned set must equal the owed files exactly. Fixture bytes are
+    never written: ``contract.produce_item`` is test-only and no deliver path
+    imports it. Signature: produce_delivery(run_dir, item) -> list[Path].
     """
     from delivery_package import run_inputs as RI
-    out = RI.delivery_dir(run_dir)
+    ctx = RI.delivery_context(run_dir)
     timeline = RI.load_json(run_dir, os.path.join("edit", "timeline.json"))
-    length = RI.chosen_length_s(run_dir)
+    planned_campaign = _timeline_campaign(timeline)
+    if planned_campaign != ctx["campaign"]:
+        raise DeliveryClipsError(
+            "CLIPS_PURPOSE_MISMATCH: the saved run is %s, the timeline plans %s"
+            % ("a campaign" if ctx["campaign"] else "not a campaign",
+               "campaign derivatives" if planned_campaign else "ordinary clips"))
+    out = RI.delivery_dir(run_dir)
     master = RI.as_run(run_dir) / "edit" / "ad.mp4"
-    deliver_clips(timeline, length, str(master), str(out))
+    deliver_clips(timeline, ctx["chosen_length_s"], str(master), str(out),
+                  expected=_owed_derivatives(ctx))
     return RI.stage(item, out)
 
 

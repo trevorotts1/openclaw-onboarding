@@ -38,9 +38,29 @@ record (`route.launch_record`), the manifest and the receipt. `blocks_build` and
 `is_permission` are literal `false`, so no caller can turn advice into a gate.
 Tests inject a stub runner; no live paid session is required or started.
 
+**Honest label (CON-16).** Without a live session the step is a package check,
+not advice, and every record says so: `council_session_held: false`,
+`advice_state: pending_live_session`, and a `client_summary` reading "No Council
+advice was obtained ... This is not a Council review." The status value
+`ready_no_advice` means only "the Skill 77 package is installed and intact"; the
+verify log's `DOCTOR: PASS` is that package check and nothing more
+(`doctor.mjs` is covered by Skill 77's manifest hash, so it is left unchanged). Callers that need real
+advice pass `council_required=True` to `planning_step`, which refuses with
+`AF-LAUNCH-COUNCIL-REQUIRED` unless a session returned advice.
+
 **Ceiling.** The default runner reports readiness only. Producing actual advice
-needs the owner's live Council path; until then the record says
-`advice_state: pending_live_session`.
+needs the owner's live Council path (recommended: submit the launch summary
+through the Command Center council API, advice staying non-blocking); until then
+the record says `council_session_held: false`.
+
+### 2b. A second downsell (`downsell_2`) is refused by name
+
+**Decision.** The interview can name a second downsell but neither the intake nor
+the Skill 49 record has a slot with its own offer and price, so a `downsell_2`
+page would be built with no price fact. This release refuses it:
+`constants.UNSUPPORTED_OFFER_ROLES["downsell_2"]` is "a second downsell is not
+supported in this release". A priced slot (its own offer, price and hash entry)
+is the alternative and is not built here.
 
 ### 3. Native Convert and Flow checkout mapping
 
@@ -53,12 +73,21 @@ verified facts onto the contract's field names, and calls the real
 `79-signature-order-form/scripts/validate_checkout.py:validate_request` as a
 live binding probe. `routes/adapters.py:NATIVE_SURFACES["checkout"]` carries the
 contract, the validator and `dispatch_adapter: False`. `adapter_for("checkout")`
-still refuses.
+still refuses. The per-offer realisation lives in
+`launcher_core/checkout_instances.py`: `build()` emits ONE S79
+`combined_single_offer` request per (main offer, price choice), and the real S78
+`emit_binding_plan` maps one native target to each instance.
 
-**Ceiling.** `folded_levels` has three main offers and no selection page; the
-S79 contract's two modes (`combined_single_offer`, `post_selection`) express
-neither, so that launch shape records `checkout_mode_state: contract_gap`
-instead of an invented mode. Fields a launch does not supply stay in `unknown`.
+**Ceiling.** `multiple_options` and `folded_levels` share one realisation,
+`per_offer_instances`: each main price choice gets its own native
+`combined_single_offer` order form with its own page id, its own bump
+applicability and its own S79 validator verdict, so `checkout_mode_state` is
+`resolved` rather than a contract gap. Only the page in front of the checkout
+differs (the selection page or the folded signature page), and `selection_ref`
+is always null. Missing native ids, terms, consent, capability/fulfillment
+references or bump component facts are recorded as a rejected instance
+(`AF-LAUNCH-CHECKOUT-REJECTED`), never defaulted. Fields a launch does not
+supply stay in `unknown`.
 
 ### 4. Verified offer facts only
 
@@ -90,8 +119,10 @@ selection page.
 `single_simple`, `multiple_options` and `free_entry` are unchanged, and the
 Elevation shape still compiles exactly as it did.
 
-**Ceiling.** The mode does not decide how the order form presents three levels;
-that is recorded in the checkout mapping as an open contract gap, not guessed.
+**Ceiling.** The mode does not decide the page copy in front of the checkout.
+The order form itself is decided: one native `combined_single_offer` instance
+per main price choice (§3), so each of the three levels reaches its own order
+form with no selection page.
 
 ---
 
@@ -124,3 +155,18 @@ node.
 
 **Ceiling:** no teaching content, no page and no offer is invented. When the
 owner supplies the material, the teaching state changes in one place.
+
+## Carried to owners (after this unit merges)
+
+The Council label and the downsell_2 refusal text land here as constants and tests. These edits sit in
+files other units own, so they are carried to those owners. The receipt.json label, the by-name intake
+refusal and the SKILL.md wording land with them once this unit has merged. No advice is obtained from a
+live Council session until the owner supplies the live path.
+
+- C1 U-launcher-core-01, `launcher_core/package.py`: receipt council block gains `council_session_held` (is True) and `client_summary` (default `COUNCIL_NO_ADVICE_SUMMARY`).
+- C2 U-launcher-core-01, `tests/test_assemble_binding.py`: receipt.json asserts both keys (fresh and legacy council dict).
+- C3 U-products-01, `launcher_core/intake.py`: refuse a role in `UNSUPPORTED_OFFER_ROLES` by name before the generic `OFFER_ROLES` check.
+- C4 U-products-01, `tests/test_intake_validation.py`: a priced downsell_2 offer is refused with "a second downsell is not supported in this release".
+- C5 U-products-05, `shared-utils/client_intake/launcher_intake.py`: an answers-file downsell_2 (not "none") is refused with the same text.
+- C6 U-products-05, `shared-utils/client_intake/tests/test_launcher_intake.py`: refusal and "none" pass-through tests.
+- C7 U-launcher-core-07, `SKILL.md`: description line 8 and step 4 say package check, no advice without a live session.

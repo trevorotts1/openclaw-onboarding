@@ -54,6 +54,25 @@ facts and are neither used nor cross-checked here. author_session is
 the translator's own invocation context (the dispatch run), never a
 value from S82's documents.
 
+DESIGN-ONLY mode (--design-only, DTY-01): a launch package is built before
+any sale exists, so there is no purchase snapshot, result document or
+manifest to translate. This mode needs only the page-request and the
+page's Skill 71 design run folder. It emits status "authored", proof L0,
+independent_review false and the standing blocker
+THANK-YOU-RUNTIME-NOT-INSTALLED: the page is a design deliverable and the
+purchase-time runtime is installed later.
+
+TRUST (DTY-02): in the translate mode nothing the S82 documents assert
+about themselves is believed. validate_thank_you (which includes
+validate_entitlements) is re-run over the result's order_view against
+the purchase snapshot named by manifest.provenance (refused when it is
+not supplied or its sha does not match provenance.snapshot_sha256); the
+document's own validation booleans are ignored for passing; a recorded
+review must name a record_ref file whose sha is manifest
+independent_review.record_sha256 and a reviewer present in the dispatch
+session registry; at least one artifact must exist. All problems are
+reported together. Refusals print to stderr.
+
 Deterministic, stdlib only. Exit 0 ok, 2 violation, 3 usage/fail-closed.
 """
 
@@ -71,6 +90,13 @@ EXIT_OK = 0
 EXIT_VIOLATION = 2
 EXIT_FAILCLOSED = 3
 
+DESIGN_BLOCKER = "THANK-YOU-RUNTIME-NOT-INSTALLED"
+DESIGN_BLOCKER_TEXT = (
+    "the thank-you page is a design deliverable only: the purchase-time "
+    "runtime (Skill 82 resolver against a real purchase snapshot) is not "
+    "installed, so no order view, no-pitch check or entitlement check "
+    "exists for it yet")
+SESSION_REGISTRY_NAME = "dispatch-session-registry.json"
 LEVELS = ("L0", "L1", "L2", "L3", "L4", "L5")
 PROOF_CAP = "L2"
 STATUS_CAP = "locally_verified"
@@ -301,22 +327,124 @@ def _derive_review(man: Dict[str, Any], author_session: str):
         "'recorded' or 'none')")
 
 
+def _find_file(ref: str, res_dir: Path,
+               work_dir: Optional[Path]) -> Optional[Path]:
+    p = Path(ref)
+    candidates = [p] if p.is_absolute() else \
+        [res_dir / p, Path.cwd() / p] + \
+        ([work_dir / p] if work_dir else [])
+    return next((c for c in candidates if c.is_file()), None)
+
+
+def _sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _s82_scripts() -> Optional[Path]:
+    """Skill 82's scripts dir under either layout (repo root or 999 package)."""
+    for root in Path(__file__).resolve().parents:
+        for rel in ("82-signature-thank-you", "signature-thank-you",
+                    ".claude/skills/signature-thank-you",
+                    ".claude/skills/82-signature-thank-you"):
+            d = root / rel / "scripts"
+            if (d / "validate_thank_you.py").is_file():
+                return d
+    return None
+
+
+def _recompute_validation(req: Dict[str, Any], res: Dict[str, Any],
+                          man: Dict[str, Any], res_dir: Path,
+                          work_dir: Optional[Path]) -> None:
+    """Re-run S82's own validators; the document's booleans are not read."""
+    view = res["order_view"]
+    if not isinstance(view, dict):
+        raise TranslationError(
+            "validation recomputed: order_view is null or not an object; "
+            "a result that is not blocked must carry the order view it "
+            "displays")
+    prov = man["provenance"]
+    ref, want = prov["snapshot_ref"], prov.get("snapshot_sha256")
+    if not isinstance(ref, str) or not ref or \
+            not isinstance(want, str) or not want:
+        raise TranslationError(
+            "validation recomputed: manifest.provenance names no purchase "
+            "snapshot (snapshot_ref and snapshot_sha256 are both "
+            "required); the validators cannot run without it")
+    found = _find_file(ref, res_dir, work_dir)
+    if found is None:
+        raise TranslationError(
+            f"validation recomputed: snapshot {ref!r} does not resolve to "
+            "a file")
+    if _sha(found) != want:
+        raise TranslationError(
+            f"validation recomputed: snapshot {ref!r} does not hash to "
+            "manifest.provenance.snapshot_sha256")
+    snapshot = _load(found, "purchase snapshot")
+    if not isinstance(snapshot, dict):
+        raise TranslationError("validation recomputed: the purchase "
+                               "snapshot is not a JSON object")
+    scripts = _s82_scripts()
+    if scripts is None:
+        raise TranslationError(
+            "validation recomputed: Skill 82's validators were not found "
+            "beside this skill; refusing to trust unverified booleans")
+    sys.path.insert(0, str(scripts))
+    from validate_thank_you import validate_thank_you
+    errors = [f"snapshot {k} {snapshot.get(k)!r} != page-request "
+              f"{req[k]!r}" for k in
+              ("tenant_id", "location_id", "launch_id", "test_only")
+              if snapshot.get(k) != req[k]]
+    # ponytail: the S44 fulfillment map has no sha in the manifest, so it is
+    # not passed in; validate_thank_you then skips only its exact
+    # paid+granted equality. Add map_sha256 to the manifest to restore it.
+    errors += validate_thank_you(view, snapshot)
+    if errors:
+        raise TranslationError(
+            "validation recomputed: the S82 validators fail over the "
+            "order_view: " + "; ".join(errors))
+
+
+def _check_review_record(man: Dict[str, Any], res_dir: Path,
+                         work_dir: Optional[Path],
+                         registry_path: Path) -> None:
+    rev = man["independent_review"]
+    if rev["status"] != "recorded":
+        return
+    found = _find_file(rev["record_ref"], res_dir, work_dir)
+    if found is None:
+        raise TranslationError(
+            f"record_ref unresolved: {rev['record_ref']!r} is not a file; "
+            "a recorded review must point at its record")
+    want = rev.get("record_sha256")
+    if not isinstance(want, str) or _sha(found) != want:
+        raise TranslationError(
+            f"record_ref unresolved: {rev['record_ref']!r} does not hash to "
+            "independent_review.record_sha256 (missing or different)")
+    try:
+        doc = json.loads(registry_path.read_text(encoding="utf-8"))
+        known = doc.get("sessions") if isinstance(doc, dict) else doc
+        known = known if isinstance(known, list) else []
+    except (OSError, ValueError):
+        known = []
+    if rev["reviewer"] not in known:
+        raise TranslationError(
+            f"reviewer unregistered: {rev['reviewer']!r} is not a session "
+            f"the dispatch recorded in {registry_path.name}; a reviewer's "
+            "own say-so is not a review")
+
+
 def _verify_artifacts(res: Dict[str, Any], res_dir: Path,
                       work_dir: Optional[Path]) -> List[Dict[str, str]]:
     out: List[Dict[str, str]] = []
     for a in res["artifacts"]:
         claimed = a["sha256"]
-        p = Path(a["path"])
-        candidates = [p] if p.is_absolute() else \
-            [res_dir / p, Path.cwd() / p] + \
-            ([work_dir / p] if work_dir else [])
-        found = next((c for c in candidates if c.is_file()), None)
+        found = _find_file(a["path"], res_dir, work_dir)
         if found is None:
             raise TranslationError(
                 f"artifact {a['path']!r} claimed by the thank-you "
                 "result document does not resolve to a real file; "
                 "refusing to carry an unverified artifact claim")
-        actual = hashlib.sha256(found.read_bytes()).hexdigest()
+        actual = _sha(found)
         if actual != claimed:
             raise TranslationError(
                 f"artifact {a['path']!r} hashes to {actual}, not the "
@@ -359,17 +487,11 @@ def _cap_proof(proof_class: str) -> str:
     return LEVELS[min(LEVELS.index(proof_class), LEVELS.index(PROOF_CAP))]
 
 
-def translate(req: Dict[str, Any], res: Dict[str, Any],
-              man: Dict[str, Any], *, author_session: str,
-              res_path: Path,
-              work_dir: Optional[Path]) -> Dict[str, Any]:
-    _cross_check_identity(req, res, man)
-    _check_manifest_binds_result(man, res_path)
-    independent_review, reviewer_session = _derive_review(
-        man, author_session)
-    artifacts = _verify_artifacts(res, res_path.resolve().parent,
-                                  work_dir)
-    status, blockers = _derive_status(res)
+def _page_result(req: Dict[str, Any], *, status: str,
+                 artifacts: List[Dict[str, str]], author_session: str,
+                 reviewer_session: Optional[str], independent_review: bool,
+                 proof_class: str, blockers: List[str],
+                 native_bindings_ref: Optional[str]) -> Dict[str, Any]:
     return {
         "schema_version": "1.0",
         "tenant_id": req["tenant_id"],
@@ -384,11 +506,83 @@ def translate(req: Dict[str, Any], res: Dict[str, Any],
         "author_session": author_session,
         "reviewer_session": reviewer_session,
         "independent_review": independent_review,
-        "proof_class": _cap_proof(res["proof_class"]),
+        "proof_class": proof_class,
         "blockers": blockers,
-        "native_bindings_ref": man["native_bindings_ref"]["envelope_ref"],
+        "native_bindings_ref": native_bindings_ref,
         "test_only": req["test_only"],
     }
+
+
+def _merge_design(artifacts: List[Dict[str, str]],
+                  images_run_dir: Optional[Path]) -> List[Dict[str, str]]:
+    if not images_run_dir:
+        return artifacts
+    import page_set
+    found = {a["path"]: a for a in artifacts}
+    found.update({a["path"]: a for a in
+                  page_set.design_artifacts("thank_you", images_run_dir)})
+    return [found[k] for k in sorted(found)]
+
+
+def translate_design_only(req: Dict[str, Any], *, author_session: str,
+                          images_run_dir: Optional[Path]) -> Dict[str, Any]:
+    """A launch-time thank-you: design artifacts only, never a sale's proof."""
+    artifacts = _merge_design([], images_run_dir)
+    if not artifacts:
+        raise TranslationError(
+            "no artifacts: design-only needs the thank-you page's design "
+            "files; pass --images-run-dir pointing at its Skill 71 run "
+            "folder (it holds none)")
+    return _page_result(
+        req, status="authored", artifacts=artifacts,
+        author_session=author_session, reviewer_session=None,
+        independent_review=False, proof_class="L0",
+        blockers=[DESIGN_BLOCKER, DESIGN_BLOCKER_TEXT],
+        native_bindings_ref=None)
+
+
+def translate(req: Dict[str, Any], res: Dict[str, Any],
+              man: Dict[str, Any], *, author_session: str,
+              res_path: Path, work_dir: Optional[Path],
+              registry_path: Optional[Path] = None,
+              images_run_dir: Optional[Path] = None) -> Dict[str, Any]:
+    _cross_check_identity(req, res, man)
+    _check_manifest_binds_result(man, res_path)
+    independent_review, reviewer_session = _derive_review(
+        man, author_session)
+    res_dir = res_path.resolve().parent
+    registry_path = registry_path or \
+        (work_dir or res_dir) / SESSION_REGISTRY_NAME
+    status, blockers = _derive_status(res)
+    # Every check runs so a forged pair is refused with all its faults named.
+    problems: List[str] = []
+    artifacts: List[Dict[str, str]] = []
+    checks = [lambda: _check_review_record(man, res_dir, work_dir,
+                                           registry_path)]
+    if status != "blocked":
+        checks.insert(0, lambda: _recompute_validation(
+            req, res, man, res_dir, work_dir))
+    for check in checks:
+        try:
+            check()
+        except TranslationError as exc:
+            problems.append(str(exc))
+    try:
+        artifacts = _verify_artifacts(res, res_dir, work_dir)
+    except TranslationError as exc:
+        problems.append(str(exc))
+    artifacts = _merge_design(artifacts, images_run_dir)
+    if not artifacts and not res["artifacts"]:
+        problems.append("no artifacts: the result carries none and no "
+                        "design files were supplied")
+    if problems:
+        raise TranslationError("; ".join(problems))
+    return _page_result(
+        req, status=status, artifacts=artifacts,
+        author_session=author_session, reviewer_session=reviewer_session,
+        independent_review=independent_review,
+        proof_class=_cap_proof(res["proof_class"]), blockers=blockers,
+        native_bindings_ref=man["native_bindings_ref"]["envelope_ref"])
 
 
 def _author_session_from_context(args) -> Optional[str]:
@@ -422,6 +616,15 @@ def main(argv: List[str]) -> int:
                     help="the thank-you page's Skill 71 image run folder: every design "
                          "file in it (section images, PDFs, boards) is listed in the "
                          "page-result beside the S82 artifacts")
+    ap.add_argument("--design-only", action="store_true",
+                    help="launch-time mode: no S82 result, manifest or "
+                         "purchase snapshot is read; needs --images-run-dir; "
+                         "emits authored/L0 with the standing blocker "
+                         + DESIGN_BLOCKER)
+    ap.add_argument("--session-registry", default=None,
+                    help="JSON list of dispatch-recorded session ids a "
+                         "recorded reviewer must appear in (default: "
+                         "<work_dir>/" + SESSION_REGISTRY_NAME + ")")
     ap.add_argument("--author-session", default=None,
                     help="the dispatch run's session identity (the "
                          "page-result author); falls back to "
@@ -434,34 +637,37 @@ def main(argv: List[str]) -> int:
         print("USAGE ERROR: no author session: pass --author-session or "
               "set SIGNATURE_LAUNCH_AUTHOR_SESSION. The page-result "
               "author is the dispatch run and is never taken from S82's "
-              "documents.")
+              "documents.", file=sys.stderr)
         return EXIT_FAILCLOSED
     req_path = Path(args.request)
     work_dir = Path(args.work_dir) if args.work_dir else None
     base = work_dir if work_dir else req_path.resolve().parent
-    res_path = Path(args.s82_result) if args.s82_result else \
-        base / "thank-you-result.json"
-    man_path = Path(args.manifest) if args.manifest else \
-        base / "thank-you-run-manifest.json"
+    images = Path(args.images_run_dir) if args.images_run_dir else None
     try:
         req = _check_request(_load(req_path, "page-request"))
-        res = _check_s82_result(_load(res_path, "thank-you result "
-                                             "document"))
-        man = _check_manifest(_load(man_path, "run manifest"))
-        out = translate(req, res, man, author_session=author_session,
-                        res_path=res_path, work_dir=work_dir)
+        if args.design_only:
+            out = translate_design_only(req, author_session=author_session,
+                                        images_run_dir=images)
+        else:
+            res_path = Path(args.s82_result) if args.s82_result else \
+                base / "thank-you-result.json"
+            man_path = Path(args.manifest) if args.manifest else \
+                base / "thank-you-run-manifest.json"
+            res = _check_s82_result(_load(res_path, "thank-you result "
+                                                 "document"))
+            man = _check_manifest(_load(man_path, "run manifest"))
+            out = translate(
+                req, res, man, author_session=author_session,
+                res_path=res_path, work_dir=work_dir, images_run_dir=images,
+                registry_path=Path(args.session_registry)
+                if args.session_registry else None)
     except TranslationError as exc:
-        print(f"TRANSLATION REFUSED: {exc}")
+        print(f"TRANSLATION REFUSED: {exc}", file=sys.stderr)
         return EXIT_VIOLATION
-    if args.images_run_dir:
-        import page_set
-        found = {a["path"]: a for a in out["artifacts"]}
-        found.update({a["path"]: a for a in
-                      page_set.design_artifacts("thank_you", Path(args.images_run_dir))})
-        out["artifacts"] = [found[k] for k in sorted(found)]
     Path(args.result).write_text(json.dumps(out, indent=2) + "\n",
                                  encoding="utf-8")
     print(json.dumps({"translated": True, "status": out["status"],
+                      "design_only": bool(args.design_only),
                       "proof_class": out["proof_class"],
                       "independent_review": out["independent_review"]}))
     return EXIT_OK

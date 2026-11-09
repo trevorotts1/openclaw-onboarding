@@ -1,0 +1,270 @@
+{
+  "schema": "blackceo.s75.t01-reconciliation/v1",
+  "package_id": "S75_STORY_FIRST_20261024",
+  "generated_at": "2026-10-24T20:20:00+00:00",
+  "mode": "READ_ONLY_RECONCILIATION",
+  "product_files_edited": false,
+  "inputs_read": [
+    "<PATH>/Downloads/Skill 75 - Story, Character Bible and Music Upgrade/DEPENDENCIES-AND-OWNERSHIP.md",
+    "<PATH>/Downloads/Skill 75 - Story, Character Bible and Music Upgrade/task-ledger.json",
+    "<PATH>/skill75-repair/evidence/ (all verdicts and repair receipts)",
+    "<PATH>/openclaw-onboarding/75-drama-song-ad-factory/evidence/S75X-W5/S75X-W5-U1.verdict.json",
+    "<PATH>/skill75-repair/SWARM-PLAN-V2.json"
+  ],
+  "heads": {
+    "ONB": {
+      "repository": "trevorotts1/openclaw-onboarding",
+      "clone": "<PATH>/openclaw-onboarding",
+      "skill_root": "75-drama-song-ad-factory",
+      "origin_main_at_first_fetch": "dccd6811719e4212a8efa36674ffe00f1d243c53",
+      "origin_main_at_first_fetch_subject": "Merge pull request #2539 from trevorotts1/batch/auto-merge (merge train: #2535)",
+      "origin_main_read_at_end_of_task": "569eee7a79397d34275b0bb0da22a6349bd47f2d",
+      "origin_main_read_at_end_of_task_subject": "Merge T-39 atomic CAS and generation-safe migration (PBB-078); allocate Skill 38 v2.0.31 (#2542)",
+      "head_moved_during_task": true,
+      "commits_gained_mid_task": 5,
+      "mid_task_commits_confined_to": "T-39 / PBB-078 / PBB-152 / Skill 38 v2.0.31 allocation; no Skill 75 overlap observed in the 5 commit subjects",
+      "fetch_note": "git fetch origin --prune removed remote branch origin/batch/auto-merge (already merged)",
+      "worktree_family": "15 build worktrees on /Volumes/mac mini m4/.../worktrees/ share this repo's object store (rev-parse --git-common-dir = <PATH>/openclaw-onboarding/.git)",
+      "ledger_sampled_revision": "3558a033aea6cabc9acf5f0e37886c420ed8a78b (DISCOVERIES.md) is now behind origin/main"
+    },
+    "N999": {
+      "repository": "trevorotts1/999-setup",
+      "skill_root": ".claude/skills/drama-song-ad-factory",
+      "origin_main": "65b8b484a034e615cd98d5ebccb61524058c9e43",
+      "origin_main_subject": "Merge pull request #317 from trevorotts1/fix/s75-cli-smoke-precedence",
+      "origin_main_committed": "2026-10-24T15:05:02-04:00",
+      "clones_located": [
+        {
+          "path": "<PATH>/.openclaw/persist-home/999-setup",
+          "origin": "https://github.com/trevorotts1/999-setup.git",
+          "local_head": "d056770b4",
+          "origin_main_after_fetch": "65b8b484a034e615cd98d5ebccb61524058c9e43"
+        },
+        {
+          "path": "<PATH>/drama-song-factory-build/999-setup",
+          "origin": "https://github.com/trevorotts1/999-setup.git",
+          "local_head": "c5773eea",
+          "origin_main_after_fetch": "65b8b484a034e615cd98d5ebccb61524058c9e43",
+          "fetch_advanced_main": "eac897e7..65b8b484"
+        },
+        {
+          "path": "<PATH>/wt/999-setup",
+          "origin": "https://github.com/trevorotts1/999-setup.git",
+          "local_head": "ce66faeb",
+          "origin_main_after_fetch": "65b8b484a034e615cd98d5ebccb61524058c9e43"
+        },
+        {
+          "path": "<PATH>/.claude/state/council-elders/lanes/W01-U005-lane/999-setup-wt",
+          "origin": "https://github.com/trevorotts1/999-setup.git",
+          "local_head": "3833cf9cf",
+          "origin_main_after_fetch": "65b8b484a034e615cd98d5ebccb61524058c9e43"
+        }
+      ],
+      "clones_all_agree_on_origin_main": true,
+      "not_git_clones_checked": [
+        "<PATH>/drama-song-factory-build/run/skill75-999snap/999-setup (no .git)",
+        "<PATH>/drama-song-factory-build/run/skill75-999snap/999-setup-clean (no .git)"
+      ]
+    },
+    "CC": {
+      "repository": "trevorotts1/blackceo-command-center",
+      "clone": "<PATH>/blackceo-command-center",
+      "origin_main_after_fetch": "a3b43318944132f0847f33f395dcb0ea38ba30a7",
+      "origin_main_subject": "Merge pull request #596 from trevorotts1/batch/pbb-089-t35",
+      "ledger_state": "canonical_targets.CC = UNVERIFIED_T01_CONDITIONAL; this head is observed, not ledger-adopted"
+    }
+  },
+  "accepted_fixes_present_on_remote_main": [
+    {
+      "fix": "SFR-001 / S75-W00-U5 keepalive registrar contract + prompt duties",
+      "repo": "ONB",
+      "fix_commit": "e9d726109a482047988ff21353d0c273c720a047",
+      "commit_is_ancestor_of_origin_main": false,
+      "content_present": true,
+      "evidence": "0/47 added lines absent from origin/main at 569eee7a",
+      "files": ["75-drama-song-ad-factory/timer-artifacts/install-keepalive-cron.sh", "75-drama-song-ad-factory/timer-artifacts/keepalive-cron-prompt.txt"],
+      "receipt": "<PATH>/skill75-repair/evidence/S75-REPAIR-W00-U5/RECEIPT.md"
+    },
+    {
+      "fix": "SFR-002 / S75-W02-U2 batch.py passes integer cents to spend_ledger.init_run",
+      "repo": "ONB",
+      "fix_commit": "0f71a3f8d18e415bc7b1d5ed26dce5ef99b2c98c",
+      "commit_is_ancestor_of_origin_main": false,
+      "content_present": true,
+      "evidence": "0/2 added lines absent",
+      "files": ["75-drama-song-ad-factory/scripts/core/batch_mode/batch.py"],
+      "receipt": "<PATH>/skill75-repair/evidence/S75-REPAIR-W02-U2/RECEIPT.md"
+    },
+    {
+      "fix": "SFR-003 / S75-W05-U3 load duration_registry leaf by file path",
+      "repo": "ONB",
+      "fix_commit": "bd222543f85d3e316b7ac053110f89981079d69d",
+      "commit_is_ancestor_of_origin_main": false,
+      "content_present": true,
+      "evidence": "0/16 added lines absent",
+      "files": ["75-drama-song-ad-factory/scripts/core/music_styles/music_styles.py"],
+      "receipt": "<PATH>/skill75-repair/evidence/S75-REPAIR-W05/RECEIPT-U3.md"
+    },
+    {
+      "fix": "SFR-003 / S75-W05-U5 trust sorted hook timing, reject only overlap corruption",
+      "repo": "ONB",
+      "fix_commit": "d40ca4984de627f8e38223d77593310cc48bc4a4",
+      "commit_is_ancestor_of_origin_main": false,
+      "content_present": true,
+      "evidence": "0/21 added lines absent",
+      "files": ["75-drama-song-ad-factory/scripts/core/sung_hook/hook_placement.py"],
+      "receipt": "<PATH>/skill75-repair/evidence/S75-REPAIR-W05/RECEIPT-U5.md"
+    },
+    {
+      "fix": "SFR-004 / S75-W07-U1 faster-whisper module name derived from constant (F17 scan)",
+      "repo": "ONB",
+      "fix_commit": "96f4658f4072309239786d1373482b283524c21c",
+      "commit_is_ancestor_of_origin_main": false,
+      "content_present": true,
+      "evidence": "0/6 added lines absent",
+      "files": ["75-drama-song-ad-factory/scripts/core/intake_preflight/preflight.py"],
+      "receipt": "<PATH>/skill75-repair/evidence/S75-REPAIR-W07/RECEIPT-U1.md"
+    },
+    {
+      "fix": "SFR-004 / S75-W07-U3 run-timer.sh union of W07-U2 seams and W07-U3 capability gate / wake propagation",
+      "repo": "ONB",
+      "fix_commit": "1693d528bd947cb0dd96dbb04f394269270072fd",
+      "commit_is_ancestor_of_origin_main": true,
+      "content_present": true,
+      "evidence": "86/88 added lines present; the 2 absent lines are header comment continuations, not executable code ('# ... exits 0 without polling and without repeating any line. Unpaired notices are'). Functional markers verified present: DS_CAPABILITY_DISABLED (2 hits), 'the handoff is not complete and stays queued' (line 322), capability gate wired",
+      "files": ["75-drama-song-ad-factory/timer-artifacts/run-timer.sh"],
+      "receipt": "<PATH>/skill75-repair/evidence/S75-REPAIR-W07/RECEIPT-U3-CONFLICT.md"
+    },
+    {
+      "fix": "SFR-005 / S75-REPAIR-CC-W08-U1 replay-safe reopen ordinal in CC media campaign adapter",
+      "repo": "CC",
+      "fix_commit": "edefeb207b1e5eb4ad5af20c50eb4734e464ab03",
+      "commit_is_ancestor_of_origin_main": false,
+      "content_present": true,
+      "evidence": "0/66 added lines absent from CC origin/main at a3b43318; distinctive _reopen_ordinal / reason.startswith('reopen:') implementation present",
+      "files": ["adapters/drama-song-factory/media_campaign_adapter.py", "adapters/drama-song-factory/test_media_campaign_adapter.py"],
+      "receipt": "<PATH>/skill75-repair/evidence/S75-REPAIR-CC-W08-U1/RECEIPT.md",
+      "note": "Receipt states 'never merged, never pushed'; content nonetheless matches CC origin/main, so landing path is not the recorded commit lineage"
+    },
+    {
+      "fix": "S75X-W5-U1 item_1 script_approval port into 999",
+      "repo": "N999",
+      "content_present": true,
+      "evidence": "all five files exist on 999 origin/main; card_answers.py sha256_16=6e421fcbcb110c75 and stage.py sha256_16=556be8fe605dda80 are byte-identical to the verdict's recorded hashes; approval_events.py and script_approval.py are present but advanced beyond the recorded hashes (642 vs 559 lines, 515 vs 440 lines)",
+      "verdict": "<PATH>/openclaw-onboarding/75-drama-song-ad-factory/evidence/S75X-W5/S75X-W5-U1.verdict.json"
+    },
+    {
+      "fix": "S75X-W5-U1 item_2 suno recipe syllable band (preferred 4-12, hard_max none)",
+      "repo": "N999",
+      "content_present": true,
+      "evidence": "suno_recipe.py on 999 origin/main defines constraint_policy, evaluate_sheet_constraints, check_lyric_sheet(warnings_out=...), prepare(..., warnings=...); DEFAULT_CONSTRAINT_POLICY.sung_line = preferred_min_syllables 4 / preferred_max_syllables 12 / hard_max_syllables None",
+      "verdict": "<PATH>/openclaw-onboarding/75-drama-song-ad-factory/evidence/S75X-W5/S75X-W5-U1.verdict.json"
+    },
+    {
+      "fix": "S75X-W5-U1 item_3 D10 rendered-opening gate port into 999",
+      "repo": "N999",
+      "content_present": true,
+      "evidence": "rendered_opening_gate, classify_wordless_lead, opening_hooks_gate, opening_repair_plan present in .claude/skills/drama-song-ad-factory/scripts/core/story_coverage/story_coverage.py; test_story_opening_media_zero.py present",
+      "verdict": "<PATH>/openclaw-onboarding/75-drama-song-ad-factory/evidence/S75X-W5/S75X-W5-U1.verdict.json"
+    },
+    {
+      "fix": "S75-999-provider-lookup (PROVIDER_LOOKUP_REQUIRED instead of silent fallback)",
+      "repo": "N999 and ONB",
+      "content_present": true,
+      "evidence": "PROVIDER_LOOKUP_REQUIRED present in spend_ledger.py on 999 origin/main and on ONB origin/main",
+      "verdict": "<PATH>/skill75-repair/evidence/S75-QC/S75-999-provider-lookup.verdict.json",
+      "before_after_evidence": "<PATH>/skill75-repair/evidence/S75-999-PROVIDER-BEFORE/ (BEFORE.json, AFTER.json, exact-966939b6, exact-eca6a9e2)"
+    }
+  ],
+  "accepted_fixes_absent_or_unverified": [
+    {
+      "item": "Emergency task 01a16e50-177f-7476-8bf1-dbd252a75030 owner-handoff evidence artifact",
+      "state": "ABSENT_FROM_NAMED_SOURCES",
+      "sources_searched": [
+        "<PATH>/skill75-repair (recursive, incl. evidence/)",
+        "<PATH>/drama-song-factory-build",
+        "<PATH>/Downloads/Skill 75 - Story, Character Bible and Music Upgrade"
+      ],
+      "result": "No artifact carries that task UUID. The UUID appears only inside the package documents (10 files: DEPENDENCIES-AND-OWNERSHIP.md, TERMINAL-KICKOFF.md, task-ledger.json, SPEC.md, DECISIONS.md, DISCOVERIES.md, MIGRATION-AND-COMPATIBILITY.md, SWARM-MANAGEMENT.md, README.md, BATCH-MERGE.md), as a retained-overlap ownership statement (DEC-19).",
+      "consequence": "T13's external_ownership_gates.state for that source_task stays UNVERIFIED. Exact file-by-file handoff is not evidenced on disk.",
+      "not_checked": "Client boxes, Contabo/VPS hosts, and remote branches outside trevorotts1/openclaw-onboarding, trevorotts1/999-setup, trevorotts1/blackceo-command-center were not searched."
+    },
+    {
+      "item": "S75X-* verdict files under <PATH>/skill75-repair/evidence/",
+      "state": "ABSENT_FROM_NAMED_SOURCES",
+      "sources_searched": [
+        "find <PATH>/skill75-repair -iname '*S75X*' -> 0 results",
+        "grep -rl 'S75X' <PATH>/skill75-repair -> 2 hits, both plan files (SWARM-PLAN-V2.json, SWARM-PLAN-DRAFT.json), no verdicts",
+        "find over <PATH>/openclaw-onboarding and <PATH>/drama-song-factory-build for 'S75X-*' files -> 1 hit"
+      ],
+      "only_s75x_verdict_found": "<PATH>/openclaw-onboarding/75-drama-song-ad-factory/evidence/S75X-W5/S75X-W5-U1.verdict.json",
+      "consequence": "S75X-W5-U1 is the only S75X unit with a recovered verdict. No verdict was recovered for S75X-W1-U1/U2, W2-U1/U2, W3-U1/U2, W4-U1/U2/U3, W5-U2, W6-U1/U2 (12 planned units in SWARM-PLAN-V2.json)."
+    },
+    {
+      "item": "Acceptance status of the 11 S75X units without a recovered verdict",
+      "state": "UNDETERMINED",
+      "note": "Their absence of a verdict file is not failure and not acceptance. SWARM-PLAN-V2.json carries no per-unit state field for S75X units."
+    },
+    {
+      "item": "CC half of S75-W08-U1 (candidate head 1d19dfa677bd0ca4b7103ec6e807811f668e2d90)",
+      "state": "NOT_ANCESTOR_OF_CC_ORIGIN_MAIN",
+      "note": "The accepted fix content is on CC origin/main via the edefeb2 lineage, but the candidate head itself is not an ancestor and is absent from the CC clone's object store check by ancestry only; exact landing commit not identified."
+    },
+    {
+      "item": "ONB half merge 5d4acf8e (named in SFR-005 receipt)",
+      "state": "UNRESOLVED_SHORT_SHA",
+      "note": "5d4acf8e and 164c45a5 do not resolve in the ONB clone object store; 7dc0c591 does resolve and is an ancestor of ONB origin/main. The short SHAs are 8-char prefixes and were not expanded further."
+    },
+    {
+      "item": "S75-D3-spatial-motion",
+      "state": "MIXED_VERDICTS",
+      "note": "S75-D3-spatial-motion.verdict.json = FAIL, while r3 and r3.REJECTED-placeholders variants = PASS. Not an emergency-repair item; recorded so the FAIL is not silently dropped."
+    }
+  ],
+  "evidence_paths": {
+    "repair_root": "<PATH>/skill75-repair/evidence/",
+    "repair_receipts": [
+      "<PATH>/skill75-repair/evidence/S75-REPAIR-W00-U5/RECEIPT.md",
+      "<PATH>/skill75-repair/evidence/S75-REPAIR-W02-U2/RECEIPT.md",
+      "<PATH>/skill75-repair/evidence/S75-REPAIR-W05/RECEIPT-U3.md",
+      "<PATH>/skill75-repair/evidence/S75-REPAIR-W05/RECEIPT-U5.md",
+      "<PATH>/skill75-repair/evidence/S75-REPAIR-W07/RECEIPT-U1.md",
+      "<PATH>/skill75-repair/evidence/S75-REPAIR-W07/RECEIPT-U3-CONFLICT.md",
+      "<PATH>/skill75-repair/evidence/S75-REPAIR-CC-W08-U1/RECEIPT.md"
+    ],
+    "repair_verdicts": [
+      "<PATH>/skill75-repair/evidence/S75-REPAIR-W00-U5/S75-REPAIR-W00-U5.verdict.json",
+      "<PATH>/skill75-repair/evidence/S75-REPAIR-W02-U2/S75-REPAIR-W02-U2.verdict.json",
+      "<PATH>/skill75-repair/evidence/S75-REPAIR-W05/S75-REPAIR-W05-U3.verdict.json",
+      "<PATH>/skill75-repair/evidence/S75-REPAIR-W05/S75-REPAIR-W05-U5.verdict.json",
+      "<PATH>/skill75-repair/evidence/S75-REPAIR-W07/S75-REPAIR-W07-U1.verdict.json",
+      "<PATH>/skill75-repair/evidence/S75-REPAIR-W07/S75-RESOLVE-W07-U3.verdict.json",
+      "<PATH>/skill75-repair/evidence/S75-REPAIR-CC-W08-U1/S75-REPAIR-CC-W08-U1.verdict.json"
+    ],
+    "s75x_verdict": "<PATH>/openclaw-onboarding/75-drama-song-ad-factory/evidence/S75X-W5/S75X-W5-U1.verdict.json",
+    "swarm_plan": "<PATH>/skill75-repair/SWARM-PLAN-V2.json",
+    "provider_evidence": "<PATH>/skill75-repair/evidence/S75-999-PROVIDER-BEFORE/",
+    "provider_999_repro": "<PATH>/skill75-repair/evidence/PROVIDER999/",
+    "qc_verdict_corpus": "<PATH>/skill75-repair/evidence/ (78 verdict-named JSON files scanned: 77 PASS, 1 FAIL at S75-D3-spatial-motion; 0 parse errors)"
+  },
+  "method": {
+    "present_test": "For each fix commit, take the lines it added per changed file (git diff -U0 <sha>^ <sha>, '+' lines, blank lines dropped) and test each line's exact presence in the file as stored at origin/main. Count absent lines.",
+    "why_two_tests": "Commit ancestry alone is wrong here: five of six ONB fixes were landed by rebase/squash and are not ancestors of origin/main even though their content is present. Ancestry is recorded but not decisive.",
+    "not_proven": "Line presence is not byte identity of a file and not proof that every changed hunk survived later edits.",
+    "commands_used": ["git fetch origin --prune", "git rev-parse origin/main", "git merge-base --is-ancestor", "git diff -U0 <sha>^ <sha>", "git show origin/main:<path>", "shasum -a 256"]
+  },
+  "uncertainty": [
+    "ONB origin/main advanced by 5 commits during this task (dccd6811 -> 569eee7a); another session pushed T-39 work. All presence re-checks were re-run against 569eee7a and returned identical results.",
+    "CC repository identity is still UNVERIFIED_T01_CONDITIONAL in task-ledger.json. The clone at <PATH>/blackceo-command-center is observed, not ledger-adopted.",
+    "The emergency task 01a16e50 handoff remains unproven; no handoff artifact exists in the searched locations. This is a search result over named sources, not proof the handoff never happened on a client box or an unsearched remote branch.",
+    "S75X units other than W5-U1 are undetermined, not failed.",
+    "SFR-005's receipt says the fix was never merged or pushed, yet its content is on CC origin/main. Landing lineage is unexplained; the content claim is the strong one.",
+    "approval_events.py and script_approval.py on 999 origin/main are longer than the verdict's recorded line counts and hash differently, consistent with later work on top of the port; exact-repair preservation is inferred, not hash-proven.",
+    "Two run-timer.sh comment lines from the SFR-004/U3 fix are absent on main; code lines all match."
+  ],
+  "does_not_establish": [
+    "That T13 may proceed: the external ownership gate for 01a16e50 is still UNVERIFIED and requires the exact file-by-file handoff.",
+    "That any S75X unit besides W5-U1 is accepted, or that the 999 adapter tree is at whole-tree parity (the verdict itself disclaims parity).",
+    "Any merge, push, or write authority for this reconciliation."
+  ]
+}

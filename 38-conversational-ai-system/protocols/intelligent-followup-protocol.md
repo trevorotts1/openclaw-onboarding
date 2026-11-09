@@ -6,6 +6,20 @@ sequence over 30 days. First 5 touchpoints fire in first 72 hours.
 Hands off from Sales Brain (Step 9.23) when stalled-conversation detection
 fires. Operator can also manually trigger ("follow up with <contact>").
 
+## Purple collection sequence exclusion — the shared reminder machine owns follow-up
+
+**Never enter this sequence for a contact with a Purple collection sequence that is
+open OR closed.** If the contact record carries a `collection_sequence_id` (the field
+the shared reminder machine writes for a Purple Billboard capture), this 10-touchpoint
+cadence is FORBIDDEN for that contact. The shared reminder machine owns follow-up
+exclusively: ONE initial invitation plus three escalating reminders, ONE shared count,
+no reset and no catch-up burst. No parallel sequence may be scheduled beside it and
+this protocol may not add a touch, a channel switch or a discount to it.
+
+The exclusion holds for the life of the `collection_sequence_id` (open or closed) and
+survives any later stall of the same conversation. Follow-up only belongs to this
+protocol when no Purple collection sequence is attached to the contact.
+
 ## Tags this protocol creates (all `ZHC-` prefixed)
 
 Every tag this protocol applies is created BY THE AGENT, so per the ZHC
@@ -130,8 +144,7 @@ The agent enters this sequence when ANY of these fire:
    AND without escalation
 
 The Sales Brain (Step 9.23) hands off to this protocol when it detects
-stalling. Until v5.7 ships F29 hand-off, agent tags contact
-`ZHC-stalled-sales` for operator manual handling.
+stalling and tags the contact `ZHC-stalled-sales`.
 
 ## Implementation — cron job per stalled conversation
 
@@ -160,13 +173,6 @@ crons are cleaned up. T10 additionally applies `ZHC-cold-lead-released`; a
 negative signal at any touch applies `ZHC-followup-opted-out` and ends the
 sequence immediately.
 
-## Pre-Feature-15 implementation
-
-This protocol uses direct OpenClaw cron scheduling until Feature 15
-(Proactive Outreach Campaigns) ships. Once F15 lands, this protocol
-will migrate to F15's outreach infrastructure for centralized campaign
-management.
-
 ## Per-workflow customization
 
 Operator can override the cadence per Conversation Workflow (Step 9.20)
@@ -177,21 +183,3 @@ of that specific workflow.
 Example: a high-ticket coaching workflow might use a longer cadence (10
 touchpoints over 60 days with first 5 in 7 days), while an impulse-buy
 product might use a shorter cadence (5 touchpoints over 7 days).
-```
-
-**B. Append to MEMORY.md design principles — Rule 10:**
-
-```markdown
-### Rule 10 — Follow-up sequences front-load the first 72 hours
-
-When a sales conversation stalls, the agent runs a 10-touchpoint sequence
-over 30 days with the first 5 touchpoints in the first 72 hours. Industry
-data: most sales close in 72h or never. The remaining 5 touchpoints over
-27 days serve as long-tail re-engagement. Respect quiet hours, channel
-preferences, and negative signals (stop/unsubscribe/not interested ends
-sequence immediately).
-```
-
-**C. Append to Run Manifest:**
-
-```markdown

@@ -1,0 +1,86 @@
+{
+  "schema": "s75.unit-build-receipt/v1",
+  "unit": "S75-T39",
+  "acceptance_row": "S75-A39",
+  "title": "No global cleanup wave: each repo event starts its facet",
+  "attempt": 1,
+  "mode": "verify-only",
+  "status": "landed-already",
+  "repository": "<PATH>/openclaw-onboarding",
+  "head": "2bc48ff43ff8d16d69f8495aeb00f3aca95e06a2",
+  "candidate_head": "2bc48ff43ff8d16d69f8495aeb00f3aca95e06a2",
+  "candidate_subject": "S75-T39: one hygiene facet per repository event, never a global sweep",
+  "base": "ecfe474cde4e62e7a4ab814818263bd1420c9607",
+  "base_source": "ledger.json units[S75-T39].base; also the pre-T39 comparison point used for the suite-delta check below",
+  "verified_against": "13f86c3153703703072462dcc0d807f856ae553b",
+  "verified_against_source": "origin/main at fetch time (git rev-parse origin/main), lane fast-forwarded with git merge --ff-only origin/main",
+  "landed_proof": {
+    "command": "git merge-base --is-ancestor origin/s75/S75-T39-r1 origin/main",
+    "exit": 0,
+    "interpretation": "the T39 candidate commit 2bc48ff4 is contained in origin/main, so the unit work is landed, not an unmerged tip",
+    "owned_path_diff_vs_main": {
+      "command": "git diff --stat 2bc48ff43 origin/main -- 75-drama-song-ad-factory/scripts/core/hygiene/",
+      "exit": 0,
+      "output": "(empty - the three T39 files are byte-identical between the candidate commit and current origin/main)"
+    }
+  },
+  "files_changed": [
+    "evidence/units/S75-T39/attempt-1.json"
+  ],
+  "files_changed_note": "verify-only run: no source file was modified. The only file added by this attempt is this receipt. The unit's own landed change set (already on origin/main) is 75-drama-song-ad-factory/scripts/core/hygiene/__init__.py, /facet_dispatch.py, /test_facet_dispatch_s75_t39.py - 3 files, 536 insertions, nothing else.",
+  "dependencies": {
+    "modules": [],
+    "third_party": [],
+    "note": "facet_dispatch.py is a leaf module; git grep found zero importers of facet_dispatch or core.hygiene anywhere in the tree, so no other module can be affected by it"
+  },
+  "tests_run": [
+    {
+      "cmd": "cd 75-drama-song-ad-factory/scripts/core/hygiene && python3 -I test_facet_dispatch_s75_t39.py",
+      "exit": 0,
+      "status": "PASS",
+      "result": "Ran 24 tests in 0.011s - OK (24/24)",
+      "role": "owned test file for this unit"
+    },
+    {
+      "cmd": "cd 75-drama-song-ad-factory/scripts/core && python3 -I -m unittest discover -s . -p 'test_*.py' -t .",
+      "exit": 1,
+      "status": "RED_PRE_EXISTING",
+      "result": "Ran 1412 tests in 139.604s - FAILED (failures=11, errors=12)",
+      "role": "whole-tree discovery run, reported for transparency; not green",
+      "note": "identical 23-test red set exists at base ecfe474 with no T39 code present (see tests_run entry 3); every red module is green when run standalone (entry 4); zero red test names mention hygiene or facet"
+    },
+    {
+      "cmd": "cd <TMP>/t39-base-probe/75-drama-song-ad-factory/scripts/core && python3 -I -m unittest discover -s . -p 'test_*.py' -t .   # detached worktree at ecfe474 (pre-T39)",
+      "exit": 1,
+      "status": "RED_PRE_EXISTING",
+      "result": "Ran 1181 tests in 101.780s - FAILED (failures=11, errors=12); red test-name set is byte-identical to the main run (23 names, set difference empty both ways)",
+      "role": "control proving the whole-tree red is not caused by T39"
+    },
+    {
+      "cmd": "cd 75-drama-song-ad-factory/scripts/core && for m in delivery_checklist/test_video_model_delivery_f16.py load_governor/test_load_governor.py singing_detector/test_singing_detector.py singing_detector/test_receipt_evidence_g5.py singing_detector/test_singing_detector_amend_g2.py kie_dispatch/test_production_process_gate.py; do python3 -I $m; done",
+      "exit": 0,
+      "status": "PASS",
+      "result": "all six modules exit 0 standalone on origin/main (delivery_checklist: Ran 9 tests OK; kie_dispatch: Ran 20 tests OK; load_governor and the three singing_detector scripts are not unittest-based and exit 0 silently)",
+      "role": "localises the whole-tree red to discovery-order/fixture interference, not to module defects"
+    }
+  ],
+  "claims": [
+    "The S75-T39 change (one hygiene facet per repository event, never a global sweep) is present on current origin/main at 13f86c31 and is byte-identical to the candidate commit 2bc48ff4 in all three owned paths.",
+    "The unit's owned test file passes on current origin/main: 24 tests, 0 failures, exit 0.",
+    "The whole-tree suite red state is pre-existing and unrelated: the same 23 failing/erroring test names occur at base ecfe474 with no T39 code in the tree, and the set difference against the main run is empty in both directions.",
+    "facet_dispatch.py has no importers in the repository, so it cannot influence any other module's test outcome.",
+    "The row's evidence column asks for evidence/units/S75-T39/attempt-<verified-generation>.json; that path did not exist on origin/main before this attempt (evidence/units/ was absent) and this attempt supplies it."
+  ],
+  "not_claimed": [
+    "No independent verification. I am the author of this receipt; a different agent must judge row S75-A39. The prior round-1 verdict (PASS, row_fully_met true, head 2bc48ff4) was read as context and is not re-issued here.",
+    "The whole-tree python3 -I unittest discover run is NOT green (11 failures, 12 errors). I do not claim a green surrounding suite; I claim the red set is pre-existing and T39-independent, and I show the base control that proves it.",
+    "No live caller of dispatch_event exists in the repository yet. The module is landed and tested but not wired into any runtime path.",
+    "The verifier's original independent probe (probe_t39_independent.py, 77 checks) and its mutation battery are not re-run: the directory <PATH>/loop-control/s75/t39verify no longer exists, so those instruments were not available to this attempt. Only the author's own test file and the repository suite were executed.",
+    "The repository CI fast-guard scripts/ci/fast-guards.d/rescue-rangers-rr015-gates.sh was invoked and aborted with 'cd: null directory' because it requires caller-supplied arguments; it is not a T39 gate and is reported as not-run, not as passing.",
+    "No memory-tier or long-running gates were run. No mutation battery was repeated. No change was made to any loop-control state file."
+  ],
+  "receipt_path_in_repo": "evidence/units/S75-T39/attempt-1.json",
+  "authored_at": "2026-10-26",
+  "branch": "s75/S75-T39-r1",
+  "lane": "<PATH>/skill75-repair/lanes/S75-T39-build-lane"
+}

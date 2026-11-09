@@ -1,0 +1,45 @@
+{
+  "dependencies": {
+    "base_sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "base_ref": "origin/main",
+    "unit_head_sha": "1fdf4e79390f784173389066409ee955526960ba",
+    "unit_merge_sha": "absent: unit is not merged; its QC receipt records base b37010c6a001bb5a51913d6e567911258f9ac2e0 and head 1fdf4e79390f784173389066409ee955526960ba with verdict PASS, and no merge commit exists yet",
+    "unit_receipt": "<CONTROL>/qc/S75-T35.1fdf4e79390f784173389066409ee955526960ba.json",
+    "unit_receipt_location_note": "out-of-repo control-disk reference: the QC receipt is not tracked in this repository; <CONTROL> stands for the operator control disk root"
+  },
+  "independent_checker": {
+    "checker_id": "fresh-qc-opus-chain-lane-T35",
+    "checker_model": "route=opus-chain; served=not observed by the lane",
+    "receipt": "<CONTROL>/qc/S75-T35.1fdf4e79390f784173389066409ee955526960ba.json"
+  },
+  "repository_gate": {
+    "workflow": ".github/workflows/qc-static.yml",
+    "workflow_ref": "origin/main",
+    "workflow_sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "applies_to_unit_paths": true,
+    "steps": [
+      {
+        "name": "Operator personal chat id must not reach agent-facing files (scrub-operator-chat-id)",
+        "pathscope": "indirect",
+        "applies_to_unit_paths": true,
+        "reason": "step body runs `python3 scripts/scrub-operator-chat-id.py --check`; that script enumerates every tracked file with `git ls-files -z` (scripts/scrub-operator-chat-id.py line 166) and walks the working tree with os.walk (line 170), so it reads evidence/units/S75-T35/*.json even though no pathspec names that directory"
+      }
+    ],
+    "non_reading_steps": "Of 168 steps, 'Checkout repo' and 'Set up Python' are infrastructure and the remaining 165 are path-scoped to explicit targets (shared-utils/, 22-book-to-persona-coaching-leadership-system/, 23-ai-workforce-blueprint/, 38-conversational-ai-system/, tests/unit/<named file>, scripts/ci/<named script>) that cannot reach evidence/units/S75-T35/.",
+    "scope_note": "Step bodies were parsed from the workflow at origin/main in a detached worktree; pathscope was classified from each step's own path arguments plus an enumeration check of the invoked scripts that plausibly span the tree. Scripts called by path-scoped steps were not exhaustively audited."
+  },
+  "candidate": {
+    "branch": "s75x/receipt-S75-T35",
+    "head": "63eff1daa46045bbe55a124e781581bfa414568f",
+    "changed_files": [
+      "evidence/units/S75-T35/attempt-2.json",
+      "evidence/units/S75-T35/receipt.json"
+    ],
+    "superseded_by_note": "This artefact certifies the tree at 63eff1daa46045bbe55a124e781581bfa414568f (the filed tip). A commit cannot name itself, so candidate.head and head_sha name that certified tree; the commit carrying this correction sits after it on the same branch and changes no evidence content other than this note and the record fields listed here."
+  },
+  "base": {
+    "sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "merge_tree_rc": 0
+  },
+  "head_sha": "63eff1daa46045bbe55a124e781581bfa414568f"
+}

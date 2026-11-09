@@ -14,8 +14,8 @@
  * - a tie within 0.25 points is a near tie, not false precision.
  */
 
-import { ContractError } from './errors';
-import type { VerdictLabel } from './enums';
+import { ContractError } from './errors.js';
+import type { VerdictLabel } from './enums.js';
 
 export interface SeatScoreEntry {
   seat_id: string;

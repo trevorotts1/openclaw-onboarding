@@ -1,0 +1,748 @@
+#!/usr/bin/env python3
+"""Round-four adversarial probes for the grounding rule in claims.py.
+
+The third round's survivors were reworded spam, keyword runs, and a claim that
+manufactured its own owner fact with `about.fact_text`. Everything below is a
+NEW input — none of these strings is in test_claim_semantics.py — and each is
+proved refused, alongside the legitimate grounded facts that must keep passing.
+
+Runs under pytest AND script-style (`python3 test_claim_grounding.py`).
+No network, no provider, no live client.
+"""
+import json
+import os
+import sys
+
+try:
+    import pytest
+except ImportError:
+    pytest = None
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+
+import claims as C          # noqa: E402
+import research as R        # noqa: E402
+
+OFFER = "A 12-week sleep coaching program for shift workers"
+AUDIENCE = ("nurses on rotating night shifts who cannot fall asleep after work")
+ACTION = "book a free 20 minute call"
+FACTS = {"offer": OFFER, "audience": AUDIENCE, "action": ACTION}
+SRC = {"id": "src-1", "url": "https://example.invalid/report", "retrieved": "2026-10-20"}
+EXCERPTS = ["Competing Dallas sleep programs charge between $220 and $540 a month.",
+            "About 30 percent of Dallas nurses report sleeping fewer than six hours "
+            "a night.",
+            "Sleep coaching demand in Dallas has grown steadily since 2021.",
+            "Across hospital pages the best documented referral channel is the "
+            "sleep clinic list."]
+SEC = ["market", "audience", "competitors"]
+
+
+def _claim(cid, text, **kw):
+    rec = {"id": cid, "text": text,
+           "provenance": kw.pop("provenance", "public-fact"),
+           "source": kw.pop("source", "src-1"), "sections": SEC}
+    rec.update(kw)
+    return rec
+
+
+def _bundle(claims, sources=None, facts=None):
+    rec = {"schema_version": C.BUNDLE_SCHEMA_VERSION,
+           "sources": [SRC] if sources is None else sources, "claims": claims}
+    rec.update(facts or {})
+    return rec
+
+
+def _refused(bundle, needle=None):
+    errors = C.validate_bundle(bundle)
+    assert errors, "expected refusal, bundle was accepted"
+    if needle:
+        assert any(needle in e for e in errors), (needle, errors)
+    return errors
+
+
+def _accepted(bundle):
+    errors = C.validate_bundle(bundle)
+    assert errors == [], errors
+
+
+# ------------------------------------------- the self-supplied fact, refused
+
+def test_fact_text_the_claim_carries_is_never_its_own_evidence():
+    """THE named bypass: a claim that names the owner fact it informs and hands
+    the validator the fact's text itself. Refused with the run's facts recorded,
+    and refused again when the run records none — the check is read from the
+    bundle's own owner-fact record, never from inside the claim."""
+    spam = "Backlinks help websites rank and convert."
+    for label, facts in (("run records its owner facts", FACTS),
+                         ("run records no owner fact at all", {}),
+                         ("claim files its own fact without a provenance tag",
+                          {"facts": [{"field": "offer",
+                                      "text": "we help Dallas families sleep"}]})):
+        errors = _refused(_bundle(
+            [_claim("s1", spam,
+                    about={"fact": "market", "anchor": "help",
+                           "fact_text": "we help Dallas families sleep"})],
+            facts=facts), "fact_text")
+        assert any("never from a text the claim carries" in e for e in errors), (
+            label, errors)
+
+
+def test_fact_text_that_contradicts_the_record_is_refused():
+    errors = _refused(_bundle(
+        [_claim("s2", "Sleep coaches sell backlinks to tired clinics.",
+                about={"fact": "offer", "anchor": "sleep",
+                       "fact_text": "a sleep coaching program that sells backlinks"})],
+        facts=FACTS), "fact_text")
+    assert any("never from a text the claim carries" in e for e in errors), errors
+
+
+def test_fact_text_copied_from_a_different_owner_fact_is_refused():
+    """The audience's text quoted as the offer's is still the claim's own
+    evidence — the named field is checked against what the run recorded."""
+    _refused(_bundle(
+        [_claim("s3", "Sleep coaching demand among nurses has risen since 2021.",
+                about={"fact": "audience", "anchor": "sleep", "fact_text": OFFER})],
+        facts=FACTS), "fact_text")
+
+
+def test_about_naming_an_owner_fact_the_run_never_recorded_is_refused():
+    _refused(_bundle(
+        [_claim("s4", "Backlinks help our websites rank and convert.",
+                about={"fact": "action", "anchor": "help"})],
+        facts={"offer": OFFER, "audience": AUDIENCE}), "records no action owner fact")
+
+
+def test_a_fact_the_claim_files_about_itself_grounds_nothing():
+    """An entry with no owner-fact provenance tag is not an owner statement."""
+    _refused(_bundle(
+        [_claim("s5", "Backlinks help our websites rank and convert.",
+                about={"fact": "offer", "anchor": "help"})],
+        facts={"facts": [{"field": "offer", "text": "we help Dallas families sleep"}]}),
+        "records no offer owner fact")
+
+
+def test_fact_text_of_the_wrong_type_is_refused_without_crashing():
+    _refused(_bundle(
+        [_claim("s6", "Backlinks help our websites rank and convert.",
+                about={"fact": "market", "anchor": "help",
+                       "fact_text": ["we help Dallas families sleep"]})],
+        facts=FACTS), "about.fact_text must be a string")
+
+
+def test_a_fact_text_that_matches_the_record_is_only_a_copy():
+    """Over-refusal control: a claim that quotes the recorded owner fact back
+    is accepted — the copy is checked against the record, not invented."""
+    _accepted(_bundle(
+        [_claim("ok1", "Sleep coaching demand among nurses has risen since 2021.",
+                about={"fact": "offer", "anchor": "sleep", "fact_text": OFFER})],
+        facts=FACTS))
+    # ... and the same copy folded into look-alike glyphs is still a copy
+    _accepted(_bundle(
+        [_claim("ok2", "Sleep coaching demand among nurses has risen since 2021.",
+                about={"fact": "offer", "anchor": "sleep",
+                       "fact_text": "Ａ 12-week sleep coaching program for shift "
+                                    "workers"})],
+        facts=FACTS))
+
+
+# --------------------------------- reworded spam, in ordinary vocabulary
+
+SPAM = [
+    ("Sleep coaches sell billboard space to tired landlords. "
+     "Sleep programs offer vape subscriptions to tired families. "
+     "Sleep clinics list sneaker deals for tired mothers."),
+    ("Sleep coaches sell car warranties to tired nurses."),
+    ("Competing sleep programs rent billboard space to tired landlords."),
+    ("Sleep coaches recommend crypto wallets to tired shift workers. "
+     "Sleep programs recommend vape pens to tired nurses."),
+    ("Sleep coaches sell backlinks to nurses."),
+]
+
+
+def test_reworded_spam_is_refused_however_it_is_worded():
+    for i, text in enumerate(SPAM):
+        errors = _refused(_bundle(
+            [_claim("sp%d" % i, text, about={"fact": "offer", "anchor": "sleep"})],
+            facts=FACTS))
+        assert any("not about this run" in e or "keyword stuffing" in e
+                   for e in errors), (text, errors)
+
+
+def test_spam_filed_as_an_owner_statement_is_refused_the_same_way():
+    _refused(_bundle(
+        [_claim("sp-o", "Sleep coaches sell backlinks to nurses.",
+                provenance="owner-fact", owner_ref="answer:q4",
+                about={"fact": "offer", "anchor": "sleep"})], facts=FACTS),
+        "not about this run")
+
+
+def test_a_claim_that_sells_what_the_run_records_still_passes():
+    """Over-refusal control: the same sentence shape with grounded content."""
+    _accepted(_bundle(
+        [_claim("ok3", "Sleep coaches sell sleep coaching to tired nurses.",
+                about={"fact": "offer", "anchor": "sleep"})], facts=FACTS))
+
+
+# ------------------------------------------------------------ keyword runs
+
+RUNS = [
+    "sleep clinic plano insomnia help sleep coaching fort worth backlinks",
+    "sleep clinic plano insomnia helps sleep coaching fort worth backlinks",
+    "the sleep clinic plano insomnia help sleep coaching fort worth backlinks",
+    "a sleep coaches dallas insomnia helping sleep clinic dallas backlinks",
+    "sleep, coaches, dallas, insomnia, help, clinic, backlinks",
+    "sleep coaches dallas. sleep clinic plano. sleep backlinks help",
+]
+
+
+def test_keyword_runs_are_refused_with_or_without_a_verb():
+    for i, text in enumerate(RUNS):
+        errors = _refused(_bundle(
+            [_claim("k%d" % i, text, about={"fact": "offer", "anchor": "sleep"})],
+            facts=FACTS))
+        assert any("keyword stuffing" in e or "not about this run" in e
+                   for e in errors), (text, errors)
+
+
+# ------------------------------------------- what must keep passing, passes
+
+CITED = [
+    ("competitor pricing", "Competing Dallas sleep programs charge between $220 "
+                           "and $540 a month.", "competitor-pricing",
+     "charge between $220 and $540 a month", "competitors", "sleep", OFFER),
+    ("audience statistic", "About 30 percent of Dallas nurses report sleeping "
+                           "fewer than six hours a night.", "audience-evidence",
+     "About 30 percent of Dallas nurses report sleeping fewer than six hours "
+     "a night.", "audience", "nurses", AUDIENCE),
+    ("market growth", "Sleep coaching demand in Dallas has grown steadily since "
+                      "2021.", "market-growth",
+     "Sleep coaching demand in Dallas has grown steadily since 2021.",
+     "market", "sleep", OFFER),
+    ("the spam's own vocabulary, grounded",
+     "Across hospital pages the best documented referral channel is the sleep "
+     "clinic list.", "competitor-ranking",
+     "the best documented referral channel is the sleep clinic list",
+     "competitors", "sleep", OFFER),
+]
+
+
+def test_legitimate_grounded_facts_pass_the_same_instrument():
+    sources = [dict(SRC, excerpts=EXCERPTS)]
+    for label, text, cls, quote, fact, anchor, fact_text in CITED:
+        _accepted(_bundle(
+            [_claim("ok-" + cls, text, **{"class": cls,
+                                          "support": {"source": "src-1",
+                                                      "locator": "p.1",
+                                                      "quote": quote},
+                                          "about": {"fact": fact, "anchor": anchor,
+                                                    "fact_text": fact_text.lower()}})],
+            sources=sources, facts=FACTS))
+
+
+def test_claims_grounded_only_in_the_run_owner_facts_pass():
+    _accepted(_bundle(
+        [_claim("ok4", "Shift workers report short sleep after rotating shifts.",
+                about={"fact": "audience", "anchor": "shift"})], facts=FACTS))
+    _accepted(_bundle(
+        [_claim("ok5", "Our clients report sleeping through the night within "
+                       "three weeks.", provenance="owner-fact",
+                owner_ref="answer:q11",
+                about={"fact": "audience", "anchor": "night", "fact_text": AUDIENCE})],
+        facts=FACTS))
+
+
+def test_sourced_claims_still_pass_when_filed_bare():
+    """The third round kept uncited sourced claims passing; they still do."""
+    for text, fact, anchor in (
+            ("Sleep coaching in Dallas is marketed mostly through local search "
+             "and referral.", "offer", "sleep"),
+            ("Shift workers report disturbed sleep after rotating shifts.",
+             "audience", "shift"),
+            ("Sleep coaching programs attract tired commuters in Dallas.",
+             "offer", "sleep"),
+            ("Registered nursing is one of the larger occupations in the "
+             "United States.", "audience", "nursing")):
+        _accepted(_bundle(
+            [_claim("ok-bare", text, about={"fact": fact, "anchor": anchor})],
+            facts=FACTS))
+
+
+# ------------------------------------------------------------- end to end
+
+def test_cli_refuses_the_self_supplied_fact_and_accepts_a_grounded_bundle(tmp_path):
+    good = _bundle(
+        [_claim("g1", "Sleep coaching demand among nurses has risen since 2021.",
+                about={"fact": "offer", "anchor": "sleep", "fact_text": OFFER})],
+        facts=FACTS)
+    path = tmp_path / "bundle.json"
+    path.write_text(json.dumps(good), encoding="utf-8")
+    assert R.main(["--validate-bundle", str(path)]) == 0
+
+    bad = _bundle(
+        [_claim("b1", "Backlinks help our websites rank and convert.",
+                about={"fact": "offer", "anchor": "help",
+                       "fact_text": "we help Dallas families sleep"})], facts=FACTS)
+    path.write_text(json.dumps(bad), encoding="utf-8")
+    assert R.main(["--validate-bundle", str(path)]) == R.EXIT["rejected"] == 4
+
+
+def test_stage_refuses_the_self_supplied_fact_before_it_writes(tmp_path):
+    brief = dict(FACTS)
+    brief.update({"sub_avatar": {"avatar": "nurse", "emotional_wound": "awake",
+                                 "desired_transformation": "rested"},
+                  "sources": [SRC],
+                  "claims": [{"id": "c1",
+                              "text": "Backlinks help our websites rank and convert.",
+                              "source": "src-1",
+                              "about": {"fact": "offer", "anchor": "help",
+                                        "fact_text": "we help Dallas families sleep"}}]})
+    env, code = R.run_stage(brief, str(tmp_path), gather=False)
+    assert code == R.EXIT["rejected"], env
+    assert not (tmp_path / "research").exists(), "no artifact on refusal"
+
+
+# ----------------- round five: the three families that survived round four
+
+MAJORITY_SPAM = [
+    "Tired nurses and weary mothers want backlinks after long winter shifts.",
+    "Sleep services give tired parents mattress deals every winter.",
+    "Sleep coaching keeps tired nurses awake with diet tea.",
+    "Sleep programs keep tired families awake with crypto pumps.",
+    "Sleep studies find tired nurses want diet tea after shifts.",
+    "Tired nurses want backlinks after shifts.",
+    "Sleep clinics find tired parents want diet tea after winter shifts.",
+]
+CAPITAL_SPAM = [
+    "Sleep coaches help tired nurses with Backlinks.",
+    "Sleep coaches rank Crypto and Backlinks for tired nurses.",
+    "Sleep coaches help tired nurses with Mattress Deals.",
+]
+LAUNDERED = [
+    "Sleep coaches sell mattress deals to tired parents.",
+    "Sleep programs offer crypto pumps to tired families.",
+    "Sleep services list diet tea for tired mothers.",
+    "Sleep clinics price mattress deals for tired parents.",
+    "Sleep coaches sell backlinks to tired clinics.",
+]
+
+
+def _about_offer():
+    return {"fact": "offer", "anchor": "sleep", "fact_text": OFFER}
+
+
+def test_a_minority_of_unrecorded_words_is_still_a_sentence_about_something_else():
+    """Round five. A majority of grounded words no longer buys a pass: the head
+    of a stretch of content is the word the stretch is ABOUT, and if the run
+    records no such word the sentence is about something else however many
+    grounded words pad it. Round four counted, and counting let these through."""
+    for i, text in enumerate(MAJORITY_SPAM):
+        _refused(_bundle([_claim("mv%d" % i, text, about=_about_offer())],
+                         facts=FACTS), "not about this run")
+
+
+def test_a_capital_letter_names_nothing_in_a_predicates_complement():
+    """Round five. 'Backlinks' where the predicate asserts it is content
+    exactly as 'backlinks' is. The lower-case twin is refused by the same rule,
+    which is what proves the capital letter was the only difference."""
+    for i, text in enumerate(CAPITAL_SPAM):
+        _refused(_bundle([_claim("cap%d" % i, text, about=_about_offer())],
+                         facts=FACTS), "not about this run")
+        _refused(_bundle([_claim("low%d" % i, text.lower(), about=_about_offer())],
+                         facts=FACTS), "not about this run")
+
+
+def test_the_filers_own_excerpt_is_never_grounding():
+    """Round five. A source record the filer wrote cannot be what makes the
+    filer's own claim about this run. Quoting the claim into `excerpts` used to
+    ground every word of it; it grounds nothing now, so the only place this
+    record appears is the citation check."""
+    for i, text in enumerate(LAUNDERED):
+        src = dict(SRC, excerpts=[text])
+        _refused(_bundle([_claim("ld%d" % i, text, about=_about_offer())],
+                         sources=[src], facts=FACTS), "not about this run")
+    # hidden among genuine excerpt sentences, and as one long excerpt
+    src = dict(SRC, excerpts=["Night-shift nurses report short sleep after "
+                              "rotating shifts."] + LAUNDERED)
+    _refused(_bundle([_claim("ld-hid", LAUNDERED[0], about=_about_offer())],
+                     sources=[src], facts=FACTS), "not about this run")
+    _refused(_bundle([_claim("ld-run", " ".join(LAUNDERED),
+                             about=_about_offer())],
+                     sources=[src], facts=FACTS), "not about this run")
+    # over-refusal control: a genuine sourced sentence never needed the excerpt
+    genuine = "Night-shift nurses report short sleep after rotating shifts."
+    _accepted(_bundle([_claim("ld-ok", genuine,
+                              about={"fact": "audience", "anchor": "nurses"})],
+                      sources=[dict(SRC, excerpts=[genuine])], facts=FACTS))
+
+
+def test_a_name_where_a_name_may_sit_is_still_a_name():
+    """Over-refusal control for round five's naming rule. A place name in the
+    subject, or after a non-transfer preposition, is naming material: it names,
+    it does not assert."""
+    for text, fact, anchor in (
+            ("Dallas has over 40 sleep coaching practices listed publicly.",
+             "offer", "sleep"),
+            ("Sleep coaching programs attract tired commuters in Dallas.",
+             "offer", "sleep"),
+            ("Registered nursing is one of the larger occupations in the "
+             "United States.", "audience", "nursing")):
+        kw = {"about": {"fact": fact, "anchor": anchor}}
+        if "40" in text:                   # 'listed' is a rank marker
+            kw["class"] = "market-size"
+            kw["support"] = {"source": "src-1", "locator": "p.1",
+                             "quote": "over 40 sleep coaching practices listed"}
+        _accepted(_bundle([_claim("nm", text, **kw)], facts=FACTS))
+
+
+# ----------------- round six: the modifier-position family round five opened
+#
+# Round five closed three families and left this one open: an irrelevant
+# keyword stuffed in FRONT of a grounded head, in a sentence that is otherwise
+# ordinary research prose. Eight such strings wrote a complete seven-file
+# bundle at both heads. The repair refuses them from what the sentence ASSERTS
+# — the predicate's type and the role it gives each argument — never from a
+# word being on a list.
+
+SLEEP = {"fact": "offer", "anchor": "sleep", "fact_text": OFFER}
+SHIFT = {"fact": "offer", "anchor": "shift", "fact_text": OFFER}
+NIGHT = {"fact": "audience", "anchor": "night", "fact_text": AUDIENCE}
+NURSE = {"fact": "audience", "anchor": "nurse", "fact_text": AUDIENCE}
+
+STUFFED = [
+    ("Backlinks help tired nurses to sleep.", SLEEP),
+    ("The backlinks help tired nurses sleep.", SLEEP),
+    ("Tired nurses want a backlinks service after long winter shifts.", SHIFT),
+    ("Backlinks improve sleep quality for tired nurses.", SLEEP),
+    ("Mattress deals improve sleep quality for tired nurses.", SLEEP),
+    ("Diet tea improves sleep duration for tired nurses.", SLEEP),
+    ("Crypto pumps improve sleep outcomes for tired nurses.", SLEEP),
+    ("Sleep coaches track backlinks, referral channels and search demand "
+     "for tired nurses.", SLEEP),
+    ("Backlinks drive sleep demand for tired nurses.", SLEEP),
+    ("Diet tea shapes sleep patterns for tired nurses.", SLEEP),
+    ("Mattress deals set the sleep rate for tired nurses.", SLEEP),
+    ("Crypto pumps lift sleep trends for tired nurses.", SLEEP),
+    ("Tired nurses follow backlinks to sleep services.", SLEEP),
+    ("Backlinks raise sleep enquiries from tired nurses.", SLEEP),
+    ("Nurses buy diet tea for sleep quality after winter shifts.", SLEEP),
+    ("Sleep coaches price mattress deals for tired nurses.", SLEEP),
+]
+
+# the same shape reached through a REPORTING predicate, which is the harder
+# half: the sentence only observes, so nothing in it looks like a sale.
+STUFFED_REPORTED = [
+    ("Nurses report backlinks service demand.", NURSE),
+    ("Nurses report mattress deals sleep quality.", SLEEP),
+    ("Sleep studies find backlinks referral demand.", SLEEP),
+    ("Sleep coaching searches rise with backlinks channels.", SLEEP),
+    ("Sleep research tracks backlinks and diet tea demand.", SLEEP),
+    ("Sleep demand among nurses reflects backlinks channels.", SLEEP),
+    ("Sleep quality research covers mattress deals patterns.", SLEEP),
+    ("Nurses report crypto pumps sleep outcomes.", SLEEP),
+]
+
+
+def test_a_stuffed_keyword_in_front_of_a_grounded_head_is_refused():
+    """Round six. Round five refused the run-of-keywords shapes and let these
+    through, because the stuffed word sat in a modifier position and the phrase
+    head behind it was a word the run records. The refusal now comes from the
+    assertion type: a sentence that asserts what a thing DOES is a claim about
+    that thing, and the thing has to be something the run records."""
+    for i, (text, about) in enumerate(STUFFED):
+        errors = _refused(_bundle([_claim("st%d" % i, text, about=about)],
+                                  facts=FACTS))
+        assert any("not about this run" in e or "keyword stuffing" in e
+                   for e in errors), (text, errors)
+
+
+def test_a_stuffed_keyword_reported_rather_than_sold_is_refused_too():
+    """The same stuffing put behind a verb that only observes. These carry no
+    sale and no benefit, so any rule keyed to selling misses all eight."""
+    for i, (text, about) in enumerate(STUFFED_REPORTED):
+        errors = _refused(_bundle([_claim("sr%d" % i, text, about=about)],
+                                  facts=FACTS))
+        assert any("not about this run" in e or "keyword stuffing" in e
+                   for e in errors), (text, errors)
+
+
+# Round six over-refusal controls. Every one of these is the kind of sentence
+# round five's closed RESEARCH_WORDS list refused, because its phrase head is
+# an ordinary research noun the list did not hold: firefighter, problems,
+# times, nap, meals, peaks, accountants.
+
+OUT_OF_VOCABULARY = [
+    ("firefighters on rotating shifts report short sleep.", SLEEP),
+    ("Remote workers report fewer sleep problems than commuters.", SLEEP),
+    ("Commuters lose sleep to long travel times.", SLEEP),
+    ("Retail staff on closing shifts nap before driving home.", SHIFT),
+    ("Hospitality workers report irregular meals and short sleep.", SLEEP),
+    ("New parents wake several times a night.", NIGHT),
+    ("Demand for sleep coaching among accountants rose last year.", SLEEP),
+    ("Search demand for sleep coaching peaks in January.", SLEEP),
+]
+
+# and the attributive adjectives, which describe their head rather than name a
+# thing: a rule that reads 'disturbed sleep' as stuffed research prose has
+# become the list it replaced.
+ATTRIBUTIVE = [
+    ("Hospitality workers report irregular habits and short sleep.", SLEEP),
+    ("Shift workers report disturbed sleep after rotating shifts.", SLEEP),
+    ("Hospitality workers report fresh meals and short sleep.", SLEEP),
+    ("New parents report broken sleep in the first months.", SLEEP),
+    ("Commuters report crowded travel and short sleep.", SLEEP),
+    ("Remote workers report quiet homes and long sleep.", SLEEP),
+]
+
+
+def test_research_prose_whose_nouns_are_not_in_the_vocabulary_still_passes():
+    """Over-refusal control for round six. These were refused at the round-five
+    head on exactly one phrase head each. The control is not vacuous: those
+    heads are in neither the closed research vocabulary nor the run's own owner
+    facts, so nothing except the sentence's own structure can let them pass."""
+    stray = {"firefighters", "problems", "times", "nap", "meals", "peaks",
+             "accountants"}
+    owned = set()
+    for text in FACTS.values():
+        owned.update(C._stem(w) for w in C._content_tokens(text))
+    assert not (stray & C.RESEARCH_WORDS), "control went vacuous: in the list"
+    assert not ({C._stem(w) for w in stray} & owned), (
+        "control went vacuous: in the owner facts")
+    for i, (text, about) in enumerate(OUT_OF_VOCABULARY):
+        _accepted(_bundle([_claim("ov%d" % i, text, about=about)],
+                          facts=FACTS))
+
+
+def test_an_attributive_describes_its_head_it_does_not_name_a_thing():
+    """Over-refusal control for round six's modifier rule. A participle or a
+    derived attributive qualifies its head; only a word that NAMES sits in a
+    modifier and gets read as a smuggled referent."""
+    for i, (text, about) in enumerate(ATTRIBUTIVE):
+        _accepted(_bundle([_claim("at%d" % i, text, about=about)],
+                          facts=FACTS))
+
+
+# Round seven. Round six fixed sv1 and left sv2: a cited, sourced competitor
+# observation whose COMPARISON CLASS carries vocabulary the owner never
+# recorded passed only while the owner record was doctored to say ', most of
+# whom found us through backlinks and placement ads they buy'. The repair is a
+# comparison-class carve-out in claims._check_topic — a cohort a measured
+# quantity is compared against is DESCRIBED, not asserted — so the fixture's
+# accept_similar_vocabulary passes on an owner record that never says the words
+# under test. This control runs the shape against that clean record and says
+# so, so the pass cannot be quietly re-bought with the data.
+
+COMPARED_AGAINST = [
+    "Sleep coaches who publish referral pages report more enquiries than "
+    "those who buy placement ads.",
+    "Sleep coaches who publish referral pages report more enquiries than "
+    "those who buy backlinks.",
+    "Sleep studies report more enquiries for coaches who list referral pages "
+    "than for those who buy placement ads.",
+]
+
+# the same vocabulary OUTSIDE a comparison class. A carve-out that also let
+# these through would have traded the over-refusal for the stuffing family
+# round six just closed, so each one is proved still refused here.
+NOT_COMPARED_AGAINST = [
+    "Sleep coaches report more enquiries than backlinks channels.",
+    "Sleep coaches who buy mattress deals report more enquiries.",
+    "Sleep coaches report more enquiries than those who buy placement ads "
+    "and sleep coaches sell mattress deals.",
+]
+
+def test_a_competitor_observation_passes_on_an_owner_record_that_never_named_the_channel():
+    """The clean owner record is the whole point of this control. AUDIENCE is
+    the pre-round-five wording; if anyone re-buys the fixture's pass by writing
+    the channel into the owner record, the assertions below fail loudly instead
+    of this test passing on doctored data."""
+    assert "backlinks" not in AUDIENCE and "placement ads" not in AUDIENCE, (
+        "control went vacuous: the owner record now carries the channel")
+    unrecorded = {"backlinks", "ads", "mattress", "deals"}
+    owned = set()
+    for text in FACTS.values():
+        owned.update(C._stem(w) for w in C._content_tokens(text))
+    research = {C._stem(w) for w in C.RESEARCH_WORDS}
+    assert not ({C._stem(w) for w in unrecorded} & owned), (
+        "control went vacuous: the channel is now in the owner facts")
+    assert not ({C._stem(w) for w in unrecorded} & research), (
+        "control went vacuous: the channel is now in the research vocabulary")
+    for i, text in enumerate(COMPARED_AGAINST):
+        _accepted(_bundle([_claim("cp%d" % i, text, about=SLEEP)], facts=FACTS))
+    for i, text in enumerate(NOT_COMPARED_AGAINST):
+        _refused(_bundle([_claim("nc%d" % i, text, about=SLEEP)], facts=FACTS))
+
+
+# Round eight. Round seven's carve-out ended only at a conjunction, and the
+# token stream it reads carries no punctuation at all, so a comma or semicolon
+# did not end it: the exempt span ran past the mark to the end of the sentence
+# and the term-run and effect tests skipped whatever was stuffed behind it. The
+# boundary is now read from the sentence's own characters
+# (claims._clause_punct_stops), so a comma splice is a clause boundary. Each
+# string below is the row fixture's own keyword run, or an unsupported sale
+# claim, joined to a clean comparison class by a different mark.
+STUFFING = ("buy backlinks, crypto signals, weight loss tea, katy perry diet, "
+            "seo package")
+CLASS = "Sleep coaches report more enquiries than those who buy placement ads"
+
+JOINED = [
+    "%s, %s." % (CLASS, STUFFING),
+    "%s; %s." % (CLASS, STUFFING),
+    "%s, our program sells mattress deals." % CLASS,
+    "%s; our program sells mattress deals." % CLASS,
+    "%s: our program sells mattress deals." % CLASS,
+    "%s — our program sells mattress deals." % CLASS,
+    "%s (%s)." % (CLASS, STUFFING),
+]
+
+def test_the_comparison_class_ends_at_a_clause_boundary_not_the_sentence():
+    """The exempt span is the class's description, not everything after it. A
+    comma, semicolon, colon, dash or bracket ends it exactly as 'and' does, so
+    the run stuffed behind the mark is asserted content again. The class on the
+    left of the mark still has to pass: the carve-out itself is not removed."""
+    for i, text in enumerate(JOINED):
+        _refused(_bundle([_claim("cb%d" % i, text, about=SLEEP)], facts=FACTS))
+    _accepted(_bundle([_claim("cbok", CLASS + ".", about=SLEEP)], facts=FACTS))
+
+def test_stage_refuses_the_stuffed_tail_a_clause_boundary_does_not_hide(tmp_path):
+    """The refusal above must exist in the shipped stage, not only here: a test
+    that passes while research.run_stage writes the artifact is not a fix."""
+    brief = dict(FACTS)
+    brief.update({"sub_avatar": {"avatar": "nurse", "emotional_wound": "awake",
+                                 "desired_transformation": "rested"},
+                  "sources": [SRC],
+                  "claims": [{"id": "c1", "text": JOINED[0],
+                              "provenance": "public-fact", "source": "src-1",
+                              "sections": SEC,
+                              "about": {"fact": "offer", "anchor": "sleep"}}]})
+    env, code = R.run_stage(brief, str(tmp_path), gather=False)
+    assert code == R.EXIT["rejected"] == 4, env
+    assert not (tmp_path / "research").exists(), "no artifact on refusal"
+
+# Round nine. Round eight's boundary read a hyphen or an apostrophe as a word
+# joiner UNCONDITIONALLY, so the class's exempt span ran past the mark and the
+# whole keyword run behind it was class description. A hyphen and an apostrophe
+# do both kinds of work, and which kind is read from the mark's own place in the
+# gap between two words: a spaced mark separates, an attached hyphen joins a
+# compound and the span ends after that compound, a leading apostrophe
+# separates, a trailing apostrophe is a possessive or a contraction. The
+# strings below are the row fixture's own keyword run and its sale claim,
+# joined to a clean comparison class by each of those marks.
+JOINED_MARKS = [
+    "%s - %s." % (CLASS, STUFFING),
+    "%s -- %s." % (CLASS, STUFFING),
+    "%s\t-\t%s." % (CLASS, STUFFING),
+    "%s - %s." % (CLASS, STUFFING),
+    "%s-%s." % (CLASS, STUFFING),
+    "%s ' %s." % (CLASS, STUFFING),
+    "%s ’ %s." % (CLASS, STUFFING),
+    "%s ’ %s." % (CLASS, "our program sells mattress deals"),
+    "%s ' %s." % (CLASS, "our program sells mattress deals"),
+    "%s - %s." % (CLASS, "our program sells mattress deals"),
+    "%s -%s." % (CLASS, "our program sells mattress deals"),
+    "%s - we sell mattress deals." % CLASS,
+]
+
+# the marks doing WORD work, which nothing above may have broken. Each is a
+# hyphen or an apostrophe inside a real word, not a clause boundary.
+WORD_INTERNAL = [
+    "A 12-week sleep coaching program for shift workers helps nurses sleep "
+    "after work.",
+    "The 12-week sleep coaching program reports more enquiries for shift "
+    "workers.",
+    "Sleep coaches who publish referral pages report more enquiries than "
+    "those who buy placement ads, a 20-minute call away for nurses on "
+    "rotating night shifts.",
+    "The coaches’ own referral pages report sleep data for nurses.",
+    "The coaches' own referral pages report sleep data for nurses.",
+    "It’s a self-reported sleep program for shift workers.",
+    "O’Brien reports sleep data for nurses on rotating night shifts.",
+    "N’Golo reports sleep data for nurses on rotating night shifts.",
+    "D’Angelo reports sleep data for nurses on rotating night shifts.",
+    "This is an evidence-based sleep program for shift workers.",
+    "Night-shift nurses report sleep problems after work.",
+    "The follow-up call with nurses is a free 20 minute call.",
+    "Self-reported sleep data for nurses on rotating night shifts grew "
+    "since 2021.",
+    "Sleep coaches report more enquiries than those who buy placement ads, "
+    "evidence-based sleep care for nurses.",
+    "Sleep coaches report more enquiries than those who buy placement ads, "
+    "coaches’ referral pages for nurses.",
+    "Sleep coaches report more enquiries than those who buy placement ads, "
+    "O’Brien sleep data for nurses.",
+    "Sleep coaches report more enquiries than those who buy evidence-based "
+    "placement ads.",
+]
+
+def test_a_hyphen_or_apostrophe_that_separates_ends_the_class_description():
+    """Round eight let the exempt span run past a hyphen or an apostrophe, so
+    the keyword run behind the mark was read as class description. A mark that
+    separates clauses ends the description, however it is spaced: the run
+    behind it is asserted content again and the class on the left of the mark
+    still has to pass."""
+    for i, text in enumerate(JOINED_MARKS):
+        _refused(_bundle([_claim("jm%d" % i, text, about=SLEEP)], facts=FACTS))
+    _accepted(_bundle([_claim("jmok", CLASS + ".", about=SLEEP)], facts=FACTS))
+
+def test_the_hyphen_and_apostrophe_that_join_words_still_join_them():
+    """The other half of the same rule. A hyphen inside a compound adjective
+    and an apostrophe inside a possessive or a contraction are word work, not
+    clause work: '12-week', 'evidence-based', 'coaches’', 'O’Brien',
+    'don’t' are read as words and the sentence passes exactly as it did
+    before the boundary was read from the characters."""
+    for i, text in enumerate(WORD_INTERNAL):
+        # the anchor has to sit in the sentence the claim actually makes
+        about = NURSE if "nurses" in text and "sleep" not in text else SLEEP
+        _accepted(_bundle([_claim("wi%d" % i, text, about=about)], facts=FACTS))
+
+def test_stage_refuses_the_run_an_attached_hyphen_hides(tmp_path):
+    """The refusal above must exist in the shipped stage, not only here: a test
+    that passes while research.run_stage writes the artifact is not a fix."""
+    for i, text in enumerate(JOINED_MARKS):
+        brief = dict(FACTS)
+        brief.update({"sub_avatar": {"avatar": "nurse",
+                                     "emotional_wound": "awake",
+                                     "desired_transformation": "rested"},
+                      "sources": [SRC],
+                      "claims": [{"id": "c1", "text": text,
+                                  "provenance": "public-fact",
+                                  "source": "src-1", "sections": SEC,
+                                  "about": SLEEP}]})
+        out = str(tmp_path / ("j%d" % i))
+        env, code = R.run_stage(brief, out, gather=False)
+        assert code == R.EXIT["rejected"] == 4, (text, env)
+        assert not (os.path.exists(out) and os.listdir(out)), (
+            "no artifact on refusal: %s" % text)
+
+def main():
+    """Script-style run: same checks, plain output."""
+    import inspect
+    import shutil
+    import tempfile
+    from pathlib import Path
+    names = [n for n, fn in sorted(globals().items())
+             if n.startswith("test_") and callable(fn)]
+    failed = 0
+    for name in names:
+        fn = globals()[name]
+        tmp = None
+        kwargs = {}
+        for param in inspect.signature(fn).parameters:
+            if param == "tmp_path":
+                tmp = Path(tempfile.mkdtemp(prefix="research-grounding-"))
+                kwargs[param] = tmp
+        try:
+            fn(**kwargs)
+            print("PASS %s" % name)
+        except AssertionError as exc:
+            failed += 1
+            print("FAIL %s: %s" % (name, exc))
+        finally:
+            if tmp is not None:
+                shutil.rmtree(tmp, ignore_errors=True)
+    print("%d checks, %d failed" % (len(names), failed))
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -24,11 +24,11 @@ from pathlib import Path
 
 from cli_anything.gohighlevel.utils.workflow_builder import (
     CampaignBuilder,
-    link_steps,
     tag_step,
     validate_campaign,
     wait_step,
 )
+from cli_anything.gohighlevel.utils.workflow_link_guard import link_steps_or_refuse
 from cli_anything.gohighlevel.utils.ghl_internal_client import (
     InternalGHLClient,
     TokenManager,
@@ -159,7 +159,7 @@ def build_workflow() -> dict:
 
     raw_steps.append(tag_step(f"Apply {COMPLETION_TAG}", [COMPLETION_TAG]))
 
-    steps = link_steps(raw_steps)
+    steps = link_steps_or_refuse(raw_steps)
 
     return {
         "post_purchase_nurture": {

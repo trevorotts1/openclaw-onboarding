@@ -229,8 +229,11 @@ def extract_results(resp):
 
 
 # ------------------------------------------------- registry / limits helpers
-FLOOR_PCT, TARGET_PCT, PREFLIGHT_MULT = 80, 95, 1.30
-# Owner order 2026-10-05: prompts use 95-100% of a model's max, never below 80%.
+FLOOR_PCT, TARGET_PCT, PREFLIGHT_MULT = 95, 95, 1.30
+# Owner order 2026-10-05, section 12 of 07-kie-setup/references/kie-common-rules.md: 95 to 100
+# percent of a model's verified max passes; 80 to below 95 percent warns and expands (it PASSES
+# and names the characters to add); below 80 percent is the hard reject; above the max is the
+# ceiling reject. The arithmetic itself lives in shared-utils/prompt_policy.py only.
 KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-5-sunburst-text-to-image"}  # last-resort default (N43 today)
 DEFAULT_CAPS = {"gpt-image": ["Text to Image", "Image to Image"]}
 LATEST_TTL = CATALOG_TTL
@@ -329,10 +332,40 @@ def preflight_amount(credits):
     return None if credits is None else math.ceil(round(credits * PREFLIGHT_MULT * 100, 6)) / 100.0
 
 
+def _policy():
+    """The ONE canonical prompt policy (shared-utils/prompt_policy.py).
+
+    Never a second band: when the module is missing this returns None and every prompt
+    verdict fails closed instead of inventing numbers.
+    """
+    global _POLICY
+    try:
+        return _POLICY
+    except NameError:
+        pass
+    here = os.path.dirname(os.path.abspath(__file__))
+    roots = [os.path.join(here, "..", "..", "shared-utils"),
+             os.path.join(os.environ.get("OPENCLAW_SKILLS_DIR", ""), "shared-utils"),
+             os.path.join(os.path.expanduser("~"), ".openclaw", "skills", "shared-utils"),
+             "/data/.openclaw/skills/shared-utils"]
+    _POLICY = None
+    for d in roots:
+        if d and os.path.isfile(os.path.join(d, "prompt_policy.py")):
+            if os.path.abspath(d) not in sys.path:
+                sys.path.insert(0, os.path.abspath(d))
+            import prompt_policy
+            _POLICY = prompt_policy
+            break
+    return _POLICY
+
+
 def budget(max_chars):
-    """Prompt budget from a model max. Integer math: no float rounding surprises."""
-    m = int(max_chars)
-    return {"max": m, "floor": -(-m * FLOOR_PCT // 100), "target_min": -(-m * TARGET_PCT // 100), "target_max": m}
+    """Prompt budget from a verified model max. The policy owns the arithmetic."""
+    p = _policy()
+    if p is None:
+        raise KieError("policy_unavailable",
+                       "shared-utils/prompt_policy.py is missing; refusing to invent a prompt band")
+    return p.band_numbers(max_chars)
 
 
 _LIMIT_RE = re.compile(
@@ -913,7 +946,60 @@ class Adapter:
         except KieError as e:
             return self.fail(e, **base)
 
+    def _prompt_gate(self, model, inp):
+        """THE LAST PAID-SUBMIT BOUNDARY: house minimum AND provider maximum, on the
+        exact prompt this call will send. A separate `prompt-budget` command is not the
+        run path; a run that omits it is gated here instead.
+
+        -> a result envelope, or None when the model exposes no prompt field, the payload
+        does not carry it (schema validation owns a missing required field), or a
+        hermetic TRANSPORT TEST set KIE_PROMPT_POLICY_TEST_OFF=1 (test hook only; a real
+        run never sets it, so the band is enforced by default).
+        """
+        if self.env.get("KIE_PROMPT_POLICY_TEST_OFF") == "1":
+            return None
+        lim = self._limits(model)
+        name = lim.get("field")
+        if name is None or name not in inp:
+            return None
+        text = inp.get(name)
+        if not isinstance(text, str):
+            return self.result(state="fail", model_id=model, error={
+                "code": "prompt_missing", "msg": "input.%s must be a string" % name},
+                data={"prompt_policy": {"ok": False, "status": "PROMPT_MISSING", "field": name}})
+        gate = self.cmd_prompt_budget(model, check=True, prompt_text=text)
+        data = dict(gate.get("data") or {}, ok=gate["state"] != "fail")
+        if data["ok"]:
+            # FREEZE: the counted, hashed string is the string that is sent. Without this the
+            # provider received the raw text (fence, surrounding whitespace, NFD) while the
+            # receipt named a hash of the normalized text.
+            pol = _policy()
+            if pol is None:
+                return self.result(state="fail", model_id=model, error={
+                    "code": "policy_unavailable",
+                    "msg": "the canonical prompt policy is unavailable; refusing to send an "
+                           "unmeasured prompt"},
+                    data={"prompt_policy": {"ok": False, "status": "POLICY_UNAVAILABLE",
+                                            "field": name}})
+            inp[name] = pol.normalize_text(text)
+            data["prompt_sha256"] = pol.text_sha256(inp[name])
+        self.receipt("prompt_policy", model=model, status=data.get("status"),
+                     chars=data.get("chars"), max=data.get("max"),
+                     ratio=data.get("ratio"), prompt_sha256=data.get("prompt_sha256"),
+                     policy_version=data.get("policy_version"))
+        return self.result(state="validated" if data["ok"] else "fail", model_id=model,
+                           warnings=gate.get("warnings") or [], error=gate.get("error"),
+                           data={"prompt_policy": data})
+
     def _dispatch(self, req, model, inp, path, method, base):
+        gate = self._prompt_gate(model, inp)
+        if gate is not None and gate["state"] == "fail":
+            return self.result(
+                state="fail",
+                error=gate.get("error") or {"code": "prompt_out_of_band",
+                                            "msg": "prompt is outside the strict band"},
+                warnings=gate.get("warnings") or [], data=gate.get("data"), **base)
+        policy = ((gate or {}).get("data") or {}).get("prompt_policy")
         if path == JOB_PATH:
             body = {"model": model, "input": inp}
             if req.get("callBackUrl"):
@@ -931,13 +1017,21 @@ class Adapter:
                 inner = data.get("data")
                 if data and (inner is not None or data.get("code") is not None
                              or data.get("msg") is not None):
+                    self.receipt("prompt_policy_submit", model=model, task_id="sync",
+                                 prompt_sha256=(policy or {}).get("prompt_sha256"),
+                                 status=(policy or {}).get("status"))
                     return self.result(state="success",
-                                       data={"response": data, "sync": True},
+                                       data={"response": data, "sync": True,
+                                             "prompt_policy": policy},
                                        warnings=["sync response on createTask: "
                                                  "payload in data.response; no job to poll"],
                                        **base)
                 raise KieError("bad_response", "createTask returned no taskId")
-            return self.result(state="queued", task_id=tid, **base)
+            self.receipt("prompt_policy_submit", model=model, task_id=tid,
+                         prompt_sha256=(policy or {}).get("prompt_sha256"),
+                         status=(policy or {}).get("status"))
+            return self.result(state="queued", task_id=tid,
+                               data={"prompt_policy": policy}, **base)
         body = dict(inp)  # sync path: schema-declared path and body; model added only if absent
         body.setdefault("model", model)
         j = self.call("POST", self.api + path, body, timeout=300)
@@ -945,7 +1039,11 @@ class Adapter:
         urls, _ = extract_results(resp)  # dedicated endpoints (Runway, Veo) can return the result link directly
         if not urls and isinstance(resp, dict):
             urls, _ = extract_results(resp.get("response"))
-        return self.result(state="success", result_urls=urls, data={"response": resp},
+        self.receipt("prompt_policy_submit", model=model, task_id="sync",
+                     prompt_sha256=(policy or {}).get("prompt_sha256"),
+                     status=(policy or {}).get("status"))
+        return self.result(state="success", result_urls=urls,
+                           data={"response": resp, "prompt_policy": policy},
                            warnings=["sync endpoint: result is in data.response; no task to poll"], **base)
 
     # -- polling
@@ -1284,82 +1382,101 @@ class Adapter:
         return (ent or {}).get("taskType") or []
 
     def cmd_prompt_budget(self, model, check=False, prompt_text=None):
+        """Prompt band for one model. The policy owns the band, the count and the hash.
+
+        Exit codes (CLI): 0 pass; 3 below the 80 percent hard floor (ADD named); 4 above the
+        documented maximum (CUT named); 5 in the 80-to-below-95 percent band, which PASSES with
+        a warn-and-expand ADD, or out of band otherwise (above the target ceiling, or an UNKNOWN
+        maximum, which never passes).
+        """
         lim = self._limits(model)
-        mx, verb = lim["max"], lim["verbatim"]
-        band = lim["band"]
-        ceiling = lim["ceiling_only"] or verb
-        d = {"field": lim["field"], "max": mx, "verbatim": verb, "limit_source": lim["source"],
-             "floor": None, "target_min": None, "target_max": mx, "status": "OK", "exit_code": 0}
+        p = _policy()
+        d = {"field": lim["field"], "max": lim["max"], "verbatim": lim["verbatim"],
+             "limit_source": lim["source"], "floor": None, "target_min": None,
+             "target_max": lim["max"], "status": "OK", "exit_code": 0,
+             "max_known": lim["max"] is not None, "provider": "kie",
+             "policy_version": getattr(p, "POLICY_VERSION", None), "schema_version": None}
         w = list(lim["notes"])
+        if p is None:
+            d.update(status="POLICY_UNAVAILABLE", exit_code=5, max_known=False)
+            w.append("shared-utils/prompt_policy.py is missing: refusing (fail closed)")
+            return self.result(state="fail", model_id=model, warnings=w, data=d, error={
+                "code": "policy_unavailable",
+                "msg": "the canonical prompt policy is unavailable; no band was invented"})
         if lim["field"] is None:
             d["status"] = "NO_PROMPT_FIELD"
             w.append("no prompt field found for %s; nothing to budget" % model)
-        elif band and mx is not None:
-            # Owner band (U15c): the band's own floor and target hold over the 80/95 rule.
+            return self.result(state="validated", model_id=model, warnings=w, data=d)
+
+        mx, band = lim["max"], lim["band"]
+        ceiling = lim["ceiling_only"] or lim["verbatim"]
+        override = None
+        if band and mx is not None:
+            # Owner band (U15c): an explicit, recorded per-model band still governs.
             if band["hard_max"] != mx:
                 w.append("owner band %s raises the max to %d from %s" % (
                     lim["band_owner"], band["hard_max"], mx))
             mx = band["hard_max"]
-            d.update(max=mx, floor=band["floor"], target_min=band["target_min"], target_max=band["target_max"],
-                     band_owner=band["owner"], below_floor_action=band.get("below_floor"),
+            override = band
+            d.update(max=mx, floor=band["floor"], target_min=band["target_min"],
+                     target_max=band["target_max"], band_owner=band["owner"],
+                     below_floor_action=band.get("below_floor"),
                      above_target_action=band.get("above_target"))
-            w.append("owner band from %s: floor %d, target %d-%d, hard max %d (%s) - the 80/95 house rule does not apply here" % (
-                lim["band_owner"], band["floor"], band["target_min"], band["target_max"], mx, band["owner"]))
+            w.append("owner band from %s: floor %d, target %d-%d, hard max %d (%s) - the house "
+                     "band does not apply here" % (lim["band_owner"], band["floor"],
+                                                   band["target_min"], band["target_max"], mx,
+                                                   band["owner"]))
         elif mx is None:
-            d["status"] = "UNKNOWN"
-            w.append("prompt limit UNKNOWN for %s: no schema maxLength and no policy-owner limit; floor not enforced" % model)
-        elif verb:
-            d["status"] = "VERBATIM"
-            w.append("%s is verbatim content (spoken or sung exactly): no floor, ceiling %d applies" % (lim["field"], mx))
-        elif ceiling:
-            d["status"] = "CEILING_ONLY"
-            w.append("%s is ceiling-only (no floor): %d <= %d applies, no minimum" % (lim["field"], 0, mx))
-        else:
-            d.update(budget(mx))
-        if check and mx is not None:
-            n = len((prompt_text or "").strip())
-            pct = round(100.0 * n / mx, 1)
-            d.update(chars=n, percent_of_max=pct)
-            if n > mx:
-                d.update(status="ABOVE_MAX", exit_code=4, cut=n - mx)
-                if band:
-                    w.append("over the hard max: %s (cut %d chars)" % (band.get("above_hard_max", "REFUSE"), n - mx))
-            elif band and n < d["floor"]:
-                d.update(status="BELOW_FLOOR", exit_code=3, add_to_floor=d["floor"] - n, add_to_target=d["target_min"] - n)
-                w.append("below the owner floor %d: %s (add %d chars; %d to reach the %d target)" % (
-                    d["floor"], band.get("below_floor", "FLAG_AND_EXPAND"), d["add_to_floor"],
-                    d["add_to_target"], d["target_min"]))
-            elif band and n > band["target_max"]:
-                d["status"] = "TRIM"
-                d["trim_to_target"] = n - band["target_max"]
-                w.append("prompt is %d chars (target %d-%d): TRIM %d chars - %s; never accept it as at-target" % (
-                    n, band["target_min"], band["target_max"], d["trim_to_target"],
-                    band.get("above_target", "TRIM")))
-            elif not verb and not ceiling and n < d["floor"]:
-                d.update(status="BELOW_FLOOR", exit_code=3, add_to_floor=d["floor"] - n, add_to_target=d["target_min"] - n)
-            elif not verb and not ceiling and n < d["target_min"]:
-                d["status"] = "BELOW_TARGET"
-                w.append("prompt is %d chars (%s%% of max); target is 95-100%%: add %d chars to reach %d" % (
-                    n, pct, d["target_min"] - n, d["target_min"]))
-        d["max_known"] = mx is not None
-        if d["exit_code"] == 4:
+            d.update(status="UNKNOWN_MAX", exit_code=5)
+            w.append("prompt maximum UNKNOWN for %s: no schema maxLength and no policy-owner limit; "
+                     "an unknown maximum cannot pass" % model)
             return self.result(state="fail", model_id=model, warnings=w, data=d, error={
-                "code": "prompt_above_max", "msg": "prompt is %d chars; max is %d; CUT exactly %d chars" % (
-                    d["chars"], mx, d["cut"])})
-        if d["exit_code"] == 3:
-            if band:
-                err = {"code": "prompt_below_floor",
-                       "msg": "prompt is %d chars; band floor is %d: ADD at least %d chars (%s); %d to reach the %d target" % (
-                           d["chars"], d["floor"], d["add_to_floor"],
-                           band.get("below_floor", "FLAG_AND_EXPAND"), d["add_to_target"], d["target_min"])}
-            else:
-                err = {"code": "prompt_below_floor",
-                       "msg": "prompt is %d chars (%s%% of max %d); floor is %d: ADD at least %d chars "
-                              "(%d to reach the 95%% target of %d)" % (
-                                  d["chars"], d["percent_of_max"], mx, d["floor"],
-                                  d["add_to_floor"], d["add_to_target"], d["target_min"])}
-            return self.result(state="fail", model_id=model, warnings=w, data=d, error=err)
-        return self.result(state="validated", model_id=model, warnings=w, data=d)
+                "code": "prompt_max_unknown",
+                "msg": "prompt maximum UNKNOWN for %s; refusing to pass a prompt with no verified maximum"
+                       % model})
+        elif ceiling:
+            d.update(floor=None, target_min=None, target_max=mx)
+            d["status"] = "VERBATIM" if lim["verbatim"] else "CEILING_ONLY"
+            w.append("%s is %s: no floor, ceiling %d applies" % (
+                lim["field"], "verbatim content (spoken or sung exactly)" if lim["verbatim"]
+                else "ceiling-only (no floor)", mx))
+        else:
+            b = p.band_numbers(mx)
+            d.update(floor=b["floor"], target_min=b["target_min"], target_max=b["target_max"])
+
+        if not check:
+            return self.result(state="validated", model_id=model, warnings=w, data=d)
+
+        verdict = p.evaluate(
+            prompt_text or "", model=model, max_chars=mx, max_source=lim["source"],
+            kind="verbatim" if lim["verbatim"] else "descriptive",
+            ceiling_only=bool(lim["ceiling_only"]), band_override=override,
+            limit={"max": mx})
+        d.update(chars=verdict["count"], percent_of_max=verdict["ratio"], ratio=verdict["ratio"],
+                 floor=verdict["floor"], target_min=verdict["target_min"],
+                 target_max=verdict["target_max"], status=verdict["status"],
+                 prompt_sha256=verdict["prompt_sha256"],
+                 policy_version=verdict["policy_version"],
+                 schema_version=verdict["schema_version"])
+        w = w + list(verdict["warnings"])
+        code = {"PASS": 0, "VERBATIM_EXEMPT": 0, "CEILING_ONLY": 0, "TRIM": 0,
+                "BELOW_FLOOR": 3, "ABOVE_MAX": 4}.get(verdict["status"], 5)
+        d["exit_code"] = code
+        if verdict["ok"]:
+            return self.result(state="validated", model_id=model, warnings=w, data=d)
+        if verdict["status"] == "ABOVE_MAX":
+            d["cut"] = verdict["cut"]
+            err = {"code": "prompt_above_max",
+                   "msg": "prompt is %d chars; max is %d; CUT exactly %d chars" % (
+                       verdict["count"], mx, verdict["cut"])}
+        elif verdict["status"] == "BELOW_FLOOR":
+            d.update(add_to_floor=verdict["add"],
+                     add_to_target=(verdict["target_min"] - verdict["count"])
+                     if verdict["target_min"] is not None else verdict["add"])
+            err = {"code": "prompt_below_floor", "msg": verdict["message"]}
+        else:
+            err = {"code": "prompt_out_of_band", "msg": verdict["message"]}
+        return self.result(state="fail", model_id=model, warnings=w, data=d, error=err)
 
     # -- latest generation of a family (owner order 2026-10-05: GPT Image follows the newest generation)
     def _promo_state(self):
@@ -1615,7 +1732,7 @@ def main(argv=None, adapter=None, out=sys.stdout):
     except (KieError, OSError, ValueError) as e:
         r = ad.result(state="fail", error={"code": getattr(e, "code", "error"), "msg": ad.redact(getattr(e, "msg", str(e)))})
     out.write(ad.redact(json.dumps(r, indent=2)) + "\n")
-    if exit_code:  # prompt-budget --check: 3 below the floor, 4 above the max
+    if exit_code:  # prompt-budget --check: 3 below the 80 percent floor, 4 above the max, 5 warn-and-expand or out of band
         return exit_code
     return 1 if r["state"] == "fail" else 0
 

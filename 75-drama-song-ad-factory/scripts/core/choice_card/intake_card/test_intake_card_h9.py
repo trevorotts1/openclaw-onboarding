@@ -88,7 +88,18 @@ def test_messages_under_limit_and_split_between_questions():
     small = IC.render_messages(limit=1000)
     assert len(small) > 1
     assert all(len(m) <= 1000 for m in small)
-    assert "\n\n".join(small) == CARD         # only blank-line seams were cut
+    # Only seams were cut: blank lines between questions, plus one line seam
+    # inside a question too long for one message (the eighteen-style music
+    # menu). That continuation opens under its own "(continued)" header.
+    rebuilt = ""
+    for m in small:
+        head, _, rest = m.partition("\n")
+        if head.endswith(" (continued)"):
+            rebuilt += "\n" + rest
+        else:
+            rebuilt += ("\n\n" if rebuilt else "") + m
+    assert rebuilt == CARD
+    assert any(m.startswith("Question 8 of 14 - MUSIC STYLE (continued)\n") for m in small)
     for m in small:                       # never starts a message mid-question
         assert m.startswith("Question") or m == IC._closing(IC.QUESTIONS)
     # a single oversize question still splits on line boundaries

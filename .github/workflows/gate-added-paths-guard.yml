@@ -1,0 +1,102 @@
+name: Added-lines absolute-path guard
+
+# Enforces owner decision D-27 (2026-10-27): a change may not ADD a
+# host-specific absolute path to this repo. Two roots are banned in ADDED lines
+# only — the macOS external-volume root and the macOS user-home root. They are
+# named in tools/gate-added-paths.sh, which assembles both from parts so the
+# scanner never contains the text it scans for. Do not write either root as a
+# literal anywhere in this workflow: this file is itself scanned, and a guard
+# that trips on its own commit is a guard nobody can land.
+#
+# Why a PR check and not a pre-commit hook: the property being judged is a
+# property of a RANGE (what the branch adds relative to its merge base), not of
+# one commit. A pre-commit hook only ever sees the commit being made and cannot
+# see the branch. .githooks/pre-push carries the same check locally.
+#
+# Why added-lines only: the banned roots already appear in many files on main.
+# A whole-tree scan would fail on main and the gate would be turned off within a
+# week. Only what a change ADDS is judged — main stays green by construction.
+#
+# FAIL-CLOSED: the guard's exit 2 means "the scan could not run", never "clean".
+# BOTH exit 1 (hits) and exit 2 (instrument error) fail this job. Only exit 0
+# passes. Anything else — a crash, a 127, a missing script — also fails.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  control:
+    name: Prove the guard discriminates before trusting it
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Control suite (asserts an exact exit code per case)
+        shell: bash
+        run: |
+          set -uo pipefail
+          bash tests/unit/gate-added-paths-guard.test.sh
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::control suite failed (rc=$rc) — the guard is not trustworthy yet"
+            exit 1
+          fi
+          echo "control suite PASSED (rc=0)"
+
+  guard:
+    name: Judge this PR's added lines
+    runs-on: ubuntu-latest
+    needs: control
+    steps:
+      - name: Checkout repo (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run the guard against the PR base...head diff
+        shell: bash
+        env:
+          # Untrusted values are passed through env, never interpolated into the
+          # shell body — a branch name is attacker-influenceable text.
+          BASE_REF: ${{ github.base_ref }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -uo pipefail
+          case "$BASE_REF" in
+            *[!A-Za-z0-9._/-]*|'')
+              echo "::error::base ref is not a safe branch name — refusing to build a ref from it"
+              exit 1
+              ;;
+          esac
+          BASE="origin/${BASE_REF}"
+          echo "base=$BASE head=$PR_HEAD"
+          bash tools/gate-added-paths.sh . "$BASE" "$PR_HEAD"
+          rc=$?
+          echo "guard rc=$rc"
+          case "$rc" in
+            0)
+              echo "PASS: no banned absolute path added by this PR"
+              exit 0
+              ;;
+            1)
+              echo "::error::this PR ADDS a banned host-specific absolute path — see hits above"
+              exit 1
+              ;;
+            2)
+              echo "::error::guard could not run (exit 2, INSTRUMENT_ERROR) — failing closed rather than reporting clean"
+              exit 1
+              ;;
+            *)
+              echo "::error::guard exited unexpectedly ($rc) — failing closed"
+              exit 1
+              ;;
+          esac

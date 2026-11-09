@@ -1,21 +1,45 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "sequence_stack",
   "id": "soap-opera-sequence",
   "name": "Soap Opera Sequence (5-Email Bonding / Emotion Close)",
-  "aliases": ["SOS", "5-day welcome sequence", "indoctrination sequence", "Attractive Character bonding sequence", "Emotion close sequence", "new-lead nurture"],
+  "aliases": [
+    "SOS",
+    "5-day welcome sequence",
+    "indoctrination sequence",
+    "Attractive Character bonding sequence",
+    "Emotion close sequence",
+    "new-lead nurture"
+  ],
   "category": "sales-close-sequences",
-  "source_books": ["DotCom Secrets (Russell Brunson)", "Expert Secrets (Epiphany Bridge)", "Network Marketing Secrets (Epiphany Bridge Script)", "Copywriting Secrets (Jim Edwards) — subject lines + hooks"],
+  "source_books": [
+    "DotCom Secrets (Russell Brunson)",
+    "Expert Secrets (Epiphany Bridge)",
+    "Network Marketing Secrets (Epiphany Bridge Script)",
+    "Copywriting Secrets (Jim Edwards) — subject lines + hooks"
+  ],
   "role_in_3_closes": "This is the EMOTION close. People buy on emotion and justify with logic (Brunson, NMS Secret #4). The Soap Opera Sequence bonds the new subscriber to the Attractive Character so they are emotionally invested BEFORE any logic or fear close runs.",
   "trigger": {
     "type": "opt-in",
-    "events": ["New lead opts in to a lead magnet / squeeze page", "New subscriber added to a list", "First purchase (welcome variant)"],
+    "events": [
+      "New lead opts in to a lead magnet / squeeze page",
+      "New subscriber added to a list",
+      "First purchase (welcome variant)"
+    ],
     "entry_conditions": "Contact has email; tag 'sos-started' not already present.",
     "exit_conditions": "Contact purchases the promoted offer (move to buyer sequence) OR completes Email 5 (graduate to Seinfeld Daily Sequence)."
   },
-  "channels": ["Email (primary)", "SMS (optional Email-2/Email-5 nudge)", "Facebook Messenger (optional mirror — DotCom/Lead Funnels multi-channel)"],
+  "channels": [
+    "Email (primary)",
+    "SMS (optional Email-2/Email-5 nudge)",
+    "Facebook Messenger (optional mirror — DotCom/Lead Funnels multi-channel)"
+  ],
   "cadence": "One email per day for 5 days (Day 0–4). Open-loop cliffhanger at the end of each email pulls the reader into the next day.",
   "copy_persona": {
     "primary": "Russell Brunson — Attractive Character + Epiphany Bridge",
-    "supporting": ["Jim Edwards (Copywriting Secrets) — curiosity subject lines, the 'open loop' hook, Before/After/Bridge"],
+    "supporting": [
+      "Jim Edwards (Copywriting Secrets) — curiosity subject lines, the 'open loop' hook, Before/After/Bridge"
+    ],
     "scripts": [
       "Epiphany Bridge Script (NMS Secret #4): Backstory → Desire → External struggle → Internal struggle → Wall → Epiphany → Plan → Conflict → Achievement → Transformation",
       "Attractive Character elements: Backstory, Parables, Character Flaws, Polarity",
@@ -96,13 +120,20 @@
       "Wait 1 day → Email 5 (+ SMS: 'This closes tonight: [link]')",
       "Add Tag 'sos-complete' → triggers enrollment into Seinfeld Daily Sequence workflow"
     ],
-    "wait_steps": ["5 × Wait 1 Day steps (use 'Wait until' a send-window time, e.g. 8:00am contact timezone, to keep daily rhythm)"],
+    "wait_steps": [
+      "5 × Wait 1 Day steps (use 'Wait until' a send-window time, e.g. 8:00am contact timezone, to keep daily rhythm)"
+    ],
     "if_else": [
       "Goal/Branch: IF 'Purchase Made' (tag 'buyer-[offer]') at ANY point → remove from SOS, enroll in buyer onboarding, STOP further close emails.",
       "Branch on Email 1 open: IF not opened after 24h → resend Email 1 with new subject line before continuing.",
       "Branch on Email 5 click + no purchase → enroll in 'scarcity-deadline-close' workflow for a final 24h push."
     ],
-    "tags_custom_fields": ["sos-started", "sos-complete", "buyer-[offer]", "sos-email5-clicked"],
+    "tags_custom_fields": [
+      "sos-started",
+      "sos-complete",
+      "buyer-[offer]",
+      "sos-email5-clicked"
+    ],
     "notes": "GoHighLevel: build as a single Workflow. Use 'Wait' steps (not drip-style 'Campaign') so the purchase Goal can short-circuit the sequence. Personalize {{contact.first_name}}. Mirror Email 2 & Email 5 to Messenger via the GHL Facebook/Instagram messaging action if a Messenger opt-in exists (DotCom/Lead Funnels multi-channel principle). Honor every deadline literally — do NOT re-open a closed cart (Edwards integrity guardrail)."
   },
   "integrity_guardrails": [
@@ -110,5 +141,11 @@
     "The Epiphany Bridge story must be TRUE — never fabricate the backstory.",
     "Every claim/benefit needs provable proof (Edwards)."
   ],
-  "kpis": ["Email open rate (Email 1 sets the relationship)", "Email 3→4 click-through (epiphany landed)", "Email 5 conversion rate", "% graduating to Seinfeld", "Revenue per new lead over 5 days"]
+  "kpis": [
+    "Email open rate (Email 1 sets the relationship)",
+    "Email 3→4 click-through (epiphany landed)",
+    "Email 5 conversion rate",
+    "% graduating to Seinfeld",
+    "Revenue per new lead over 5 days"
+  ]
 }

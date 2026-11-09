@@ -14,12 +14,14 @@ build_dispatch_config(checkout_design=...); it never builds or binds the form.
 """
 from __future__ import annotations
 
+import argparse
 import inspect
+import json
 import re
 import shlex
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import substrate
 
@@ -79,7 +81,9 @@ ADAPTERS: Dict[str, Dict[str, Any]] = {
         "note": ("native S78 chain: build_plan, then run_image_stages.main (the order "
                  "page's wireframes and mockups through Skill 71's shared image "
                  "service; required, never skipped), then "
-                 "emit_page_result.emit"),
+                 "emit_page_result.emit, then this file's attach-design-artifacts "
+                 "step, which lists the order page designs in the result (emit "
+                 "alone writes none and assemble refuses the page)"),
     },
     "upsell_1": {
         "dispatch": True,
@@ -125,7 +129,9 @@ ADAPTERS: Dict[str, Dict[str, Any]] = {
             "82-signature-thank-you/scripts/thank_you_resolver.py",
         ),
         "timeout_s": 600,
-        "note": "translates the S82 result + companion run manifest",
+        "note": ("design-only at launch: 71 shared_page_service + run_page_role_stages "
+                 "draw the page, then the translator runs with --design-only (no S82 "
+                 "result or manifest exists before a sale)"),
     },
 }
 
@@ -270,7 +276,7 @@ EXPECTED_SIGNATURES = (
      "82-signature-thank-you/scripts/run_manifest.py",
      "82-signature-thank-you/scripts", "build_run_manifest",
      ("view", "snapshot", "fulfillment_map", "independent_review",
-      "envelope_ref", "snapshot_ref", "map_ref", "result_ref")),
+      "envelope_ref", "snapshot_ref", "map_ref", "snapshot_sha256", "result_ref")),
     ("s82_thank_you_resolver.resolve_order_view",
      "82-signature-thank-you/scripts/thank_you_resolver.py", None,
      "resolve_order_view",
@@ -327,6 +333,110 @@ def _python() -> str:
     return sys.executable or "python3"
 
 
+class AdapterNotAllowed(AdapterError):
+    """An adapter command is not one of the pinned wrapper paths."""
+
+
+# The only programs an adapter may run: the wrappers each page role ships, by file name and the skill
+# folder they must resolve under (either install layout). Anything else, `python3 -c ...`, a script
+# the AI wrote, a shell that runs something unlisted, is refused by name (ENF-08).
+PINNED_WRAPPERS: Dict[str, str] = {
+    "landing_bridge.py": "49-signature-funnel/scripts",
+    "upsell_wrapper.py": "49-signature-funnel/scripts",
+    "downsell_wrapper.py": "49-signature-funnel/scripts",
+    "checkout_wrapper.py": "49-signature-funnel/scripts",
+    "translate_thank_you_result.py": "49-signature-funnel/scripts",
+    "shared_page_service.py": "71-blackceo-signature-page/scripts",
+    "build_selection_plan.py": "78-signature-product-selection/scripts",
+    "run_image_stages.py": "78-signature-product-selection/scripts",
+    "emit_page_result.py": "78-signature-product-selection/scripts",
+    "adapters.py": "83-black-friday-launcher/routes",  # this file's own attach-design-artifacts step
+}
+# Programs a pinned wrapper may itself run through --pipeline-command (a string it splits and executes).
+PIPELINE_WRAPPERS: Dict[str, str] = {"run_page_role_stages.py": "71-blackceo-signature-page/scripts"}
+# The free design-file stand-in. It is allowed only when the caller says the launch is test_only.
+TEST_CONSUMERS: Dict[str, str] = {"lane83_fake_consumer.py": "83-black-friday-launcher/tests"}
+ADAPTER_KEYS = tuple(ADAPTERS) + ("checkout", "downsell_2")
+_PYTHON = re.compile(r"^python[0-9.]*$")
+_THIS_FILE = Path(__file__).resolve()
+
+
+def _pinned(token: str, table: Dict[str, str]) -> bool:
+    name = Path(token).name
+    if name not in table:
+        return False
+    try:
+        path = Path(token).resolve()
+        if name == "adapters.py" and table is PINNED_WRAPPERS:
+            return path == _THIS_FILE
+        return path == substrate.source(f"{table[name]}/{name}").resolve()
+    except Exception:  # an uninstalled skill folder (SkillResolutionError) pins nothing
+        return False
+
+
+def _check_program(key: str, argv: List[str], tables: tuple) -> None:
+    if len(argv) < 2 or not (argv[0] == sys.executable or _PYTHON.match(Path(argv[0]).name)):
+        raise AdapterNotAllowed(f"adapter not in allow-list: {key}: {argv[:2]!r} is not python plus a pinned wrapper")
+    if not any(_pinned(argv[1], table) for table in tables):
+        raise AdapterNotAllowed(f"adapter not in allow-list: {key}: {argv[1]!r} is not a pinned wrapper path")
+    for index, part in enumerate(argv):
+        if part == "--pipeline-command" and index + 1 < len(argv):
+            try:
+                inner = shlex.split(argv[index + 1])
+            except ValueError as exc:
+                raise AdapterNotAllowed(f"adapter not in allow-list: {key}: unreadable --pipeline-command ({exc})")
+            _check_program(key, inner, (PIPELINE_WRAPPERS,))
+
+
+def _check_script(key: str, script: str, tables: tuple) -> None:
+    """`bash -c` is allowed only as `python wrapper ... && python wrapper ... [> file]`: no substitution,
+    pipe, subshell, newline or other command can ride along."""
+    if "\n" in script or "\r" in script or "`" in script or "$" in script:
+        raise AdapterNotAllowed(f"adapter not in allow-list: {key}: the shell script holds a newline or substitution")
+    lexer = shlex.shlex(script, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+    except ValueError as exc:
+        raise AdapterNotAllowed(f"adapter not in allow-list: {key}: unreadable shell script ({exc})")
+    segments: List[List[str]] = [[]]
+    for token in tokens:
+        if token == "&&":
+            segments.append([])
+        else:
+            segments[-1].append(token)
+    for segment in segments:
+        if ">" in segment:
+            if segment.count(">") != 1 or segment.index(">") != len(segment) - 2:
+                raise AdapterNotAllowed(f"adapter not in allow-list: {key}: only one trailing '> file' is allowed")
+            segment = segment[:-2]
+        if any(t and set(t) <= set("|;&<>()") for t in segment):
+            raise AdapterNotAllowed(f"adapter not in allow-list: {key}: shell operator in the script")
+        _check_program(key, segment, tables)
+
+
+def validate_adapter_config(config: Any, *, test_only: bool = False) -> None:
+    """Refuse a supplied adapter configuration (--adapters, a launch request's adapters) that is not made of
+    pinned wrappers. Same placeholder refusal as build_dispatch_config; the fake design consumer passes only
+    when test_only is true. Raises AdapterNotAllowed ('adapter not in allow-list') or AdapterError."""
+    adapters = config.get("adapters") if isinstance(config, dict) else None
+    if not isinstance(adapters, dict) or not adapters:
+        raise AdapterError("adapter config: 'adapters' must be a non-empty object of role -> command")
+    tables = (PINNED_WRAPPERS,) + ((TEST_CONSUMERS,) if test_only else ())
+    for key, spec in adapters.items():
+        if key not in ADAPTER_KEYS:
+            raise AdapterNotAllowed(f"adapter not in allow-list: {key!r} is not a page role")
+        command = spec.get("command") if isinstance(spec, dict) else None
+        if not isinstance(command, list) or not command or not all(isinstance(p, str) and p for p in command):
+            raise AdapterError(f"adapters.{key}.command must be a non-empty list of strings")
+        for part in command:
+            _refuse_placeholder(f"adapters.{key}.command", part)
+        if command[0] == "bash" and len(command) == 3 and command[1] == "-c":
+            _check_script(key, command[2], tables)
+        else:
+            _check_program(key, command, tables)
+
+
 # The shared image inputs (contract C3) every page follows: one style, one owner, one cap. A role's
 # wrapper receives each value through whichever flag it declares, so every role is bound to the same
 # brand file, owner, spend cap and design style, and none can be drawn under a different one.
@@ -373,6 +483,22 @@ def image_wiring(config: Dict[str, Any]) -> Dict[str, List[str]]:
             for role, spec in config["adapters"].items()}
 
 
+def _routed_roles(launch_path: Path) -> set:
+    """The page roles Skill 49 compiles into this launch's route graph (journey mode plus launch extras).
+
+    A record that carries neither journey_mode nor extras names no routing facts, so every role is kept (the
+    behavior before routed roles existed); one that carries them and is not routable is refused."""
+    try:
+        doc = json.loads(launch_path.read_text(encoding="utf-8"))
+        if not isinstance(doc, dict):
+            raise ValueError("the record is not a JSON object")
+        if "journey_mode" not in doc and "extras" not in doc:  # names no routing facts: keep the full set
+            return set(ADAPTERS)
+        return set(substrate.compiler().expected_roles(doc))
+    except (OSError, ValueError) as exc:  # RouteError is a ValueError
+        raise AdapterError(f"launch_record: cannot read the routed roles: {exc}") from exc
+
+
 def build_dispatch_config(*, work_dir: str | Path,
                           launch_record: str | Path,
                           bridge_config: str | Path,
@@ -388,7 +514,10 @@ def build_dispatch_config(*, work_dir: str | Path,
                           allow_paid: bool = False,
                           python: Optional[str] = None,
                           checkout_design: Optional[Dict[str, Any]] = None,
-                          image_plan: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                          image_plan: Optional[Dict[str, Any]] = None,
+                          extra_pages: Sequence[str] = (),
+                          thank_you_manuscript: str | Path | None = None,
+                          thank_you_design_prose: str | Path | None = None) -> Dict[str, Any]:
     """Bind the real adapter commands for one launch. Fails closed.
 
     No /path/to entry, no <...> token and no missing file may be emitted as
@@ -401,12 +530,21 @@ def build_dispatch_config(*, work_dir: str | Path,
     has a product_selection page gets all of its pages, so the order page's
     image step is never optional: a missing, empty or "none" value is refused
     the same way a missing launch_record is. The product_selection command
-    makes the images before it writes the page result and never passes
-    --allow-paid.
+    makes the images, writes the page result, then lists the image files in it
+    (attach-design-artifacts), so the result carries the order page designs and
+    a status that follows the image stage. It passes --allow-paid to 78 only
+    when allow_paid is true, the same condition the upsell and downsell pages
+    use; allow_paid is the approved image plan's (it must agree with
+    image_plan["allow_paid"] when that is given), never a default.
+
+    Only the launch extras in the compiled route graph (upsell_1, downsell_1, upsell_2) need copy, journey
+    and enrichment files and get an adapter entry; extra_pages=("downsell_2",) adds the second downsell
+    (copy only) when downsell_1 is routed. The thank_you entry is design-only: Skill 71's shared image
+    service, run_page_role_stages, then the translator with --design-only.
 
     image_plan (the resolved C3 inputs: design_style, brand_file, brand_owner, image_cap, ...) binds
     every role to the same style, owner, cap and Skill 71 root through the flags each wrapper declares;
-    see image_flags and image_wiring.
+    see image_flags and image_wiring. The finished config is checked by validate_adapter_config.
     """
     work = Path(work_dir)
     if not work.is_dir():
@@ -416,6 +554,10 @@ def build_dispatch_config(*, work_dir: str | Path,
     _refuse_placeholder("author_session", author_session)
     python = python or _python()
     _refuse_placeholder("python", python)
+    paid = bool(allow_paid)
+    if image_plan is not None and "allow_paid" in image_plan and bool(image_plan["allow_paid"]) != paid:
+        raise AdapterError("allow_paid disagrees with image_plan.allow_paid: the spend approval is the "
+                           "image plan's, so no page is built under two different answers")
     root49 = substrate.source("49-signature-funnel/scripts")
     root71 = substrate.source("71-blackceo-signature-page")
     root78 = substrate.source("78-signature-product-selection/scripts")
@@ -441,14 +583,39 @@ def build_dispatch_config(*, work_dir: str | Path,
                      for role, path in journey.items()}
     enrichment_files = {role: _require_file(f"enrichment.{role}", path)
                         for role, path in enrichment.items()}
-    for role in ("upsell_1", "upsell_2", "downsell_1"):
+    routed = _routed_roles(launch_path)
+    wanted = [role for role in ("upsell_1", "upsell_2", "downsell_1") if role in routed]
+    extra_pages = tuple(extra_pages)
+    if set(extra_pages) - {"downsell_2"}:
+        raise AdapterError(f"extra_pages: {sorted(set(extra_pages) - {'downsell_2'})} is not an extra page")
+    if "downsell_2" in extra_pages and "downsell_1" not in routed:
+        raise AdapterError("extra_pages: downsell_2 rides on downsell_1, which this launch does not route")
+    for role in wanted:
         for label, mapping in (("copy", copy_files), ("journey", journey_files),
                                ("enrichment", enrichment_files)):
             if role not in mapping:
                 raise AdapterError(f"{label}.{role}: missing per-launch input")
+    if "downsell_2" in extra_pages and "downsell_2" not in copy_files:
+        raise AdapterError("copy.downsell_2: missing per-launch input")
 
     def quote(value: Any) -> str:
         return shlex.quote(str(value))
+
+    def sh(*tokens: Any) -> str:
+        """One shell command: the dispatch placeholders in double quotes (so a path with spaces holds), the rest quoted."""
+        return " ".join(f'"{t}"' if str(t) in ("{request}", "{result}") or str(t).startswith("{work_dir}")
+                        else quote(t) for t in tokens)
+
+    plan_file, images_dir = work / "selection-plan.json", work / "order-page-images"
+    abs_work = work.resolve()  # the thank-you pipeline runs from its own folder, so its paths are absolute
+    thank_you_run = abs_work / "thank_you-run"
+    manuscript = (_require_file("thank_you_manuscript", thank_you_manuscript) if thank_you_manuscript
+                  else abs_work / "copy-thank_you.md")
+    prose = (_require_file("thank_you_design_prose", thank_you_design_prose) if thank_you_design_prose
+             else abs_work / "design-prose.json")
+    thank_you_stages = [python, root71 / "scripts" / "run_page_role_stages.py", thank_you_run,
+                        "--manuscript", manuscript, "--design-prose", prose, "--provider", image_provider,
+                        *(["--allow-paid"] if paid else [])]
 
     adapters: Dict[str, Dict[str, Any]] = {
         "landing": {
@@ -463,29 +630,38 @@ def build_dispatch_config(*, work_dir: str | Path,
         "product_selection": {
             "command": [
                 "bash", "-c",
-                f"{quote(python)} {quote(root78 / 'build_selection_plan.py')} "
-                f"{quote(launch_path)} > {quote(work / 'selection-plan.json')} "
-                f"&& {quote(python)} {quote(root78 / 'run_image_stages.py')} "
-                f"--plan {quote(work / 'selection-plan.json')} "
-                f"--request \"{{request}}\" "
-                f"--run-dir {quote(work / 'order-page-images')} "
-                f"--launch-record {quote(launch_path)} "
-                f"--inputs {quote(order_inputs_path)} "
-                f"&& {quote(python)} {quote(root78 / 'emit_page_result.py')} "
-                f"{quote(work / 'selection-plan.json')} "
-                f"--output \"{{result}}\" --author-session s49-native-selection "
-                f"--request \"{{request}}\"",
+                " && ".join([
+                    f"{sh(python, root78 / 'build_selection_plan.py', launch_path)} > {quote(plan_file)}",
+                    sh(python, root78 / "run_image_stages.py", "--plan", plan_file, "--request", "{request}",
+                       "--run-dir", images_dir, "--launch-record", launch_path, "--inputs", order_inputs_path,
+                       *(["--allow-paid"] if paid else [])),
+                    sh(python, root78 / "emit_page_result.py", plan_file, "--output", "{result}",
+                       "--author-session", "s49-native-selection", "--request", "{request}"),
+                    # the page result lists the order page designs, and its status follows the image stage
+                    sh(python, _THIS_FILE, "attach-design-artifacts", "--result", "{result}",
+                       "--run-dir", images_dir),
+                ]),
             ],
             "timeout_s": ADAPTERS["product_selection"]["timeout_s"],
         },
         "thank_you": {
-            "command": [python, str(root49 / "translate_thank_you_result.py"),
-                        "{request}", "{result}", "{work_dir}",
-                        "--author-session", author_session],
+            "command": [
+                "bash", "-c",
+                " && ".join([
+                    sh(python, root71 / "scripts" / "shared_page_service.py", "--request", "{request}",
+                       "--run-dir", thank_you_run, "--page-version", "thank-you", "--image-inputs", images_path,
+                       "--launch-record", launch_path, "--route-graph", "{work_dir}/route-graph.json",
+                       "--pipeline-command", shlex.join(str(part) for part in thank_you_stages)),
+                    sh(python, root49 / "translate_thank_you_result.py", "{request}", "{result}", "{work_dir}",
+                       "--design-only", "--images-run-dir", thank_you_run, "--author-session", author_session),
+                ]),
+            ],
             "timeout_s": ADAPTERS["thank_you"]["timeout_s"],
         },
     }
     for role in ("upsell_1", "upsell_2"):
+        if role not in routed:
+            continue
         adapters[role] = {
             "command": [python, str(root49 / "upsell_wrapper.py"),
                         "--slot", role,
@@ -502,28 +678,50 @@ def build_dispatch_config(*, work_dir: str | Path,
                         # stub is free, kie spends money and needs allow_paid
                         "--bridge-config", str(bridge_path),
                         "--image-provider", image_provider,
-                        *(["--allow-paid"] if allow_paid else [])],
+                        *(["--allow-paid"] if paid else [])],
             "timeout_s": ADAPTERS[role]["timeout_s"],
         }
-    adapters["downsell_1"] = {
-        "command": [python, str(root49 / "downsell_wrapper.py"),
-                    "--request", "{request}",
-                    "--result", "{result}",
-                    "--launch", str(launch_path),
-                    "--route-graph", "{work_dir}/route-graph.json",
-                    "--copy", str(copy_files["downsell_1"]),
-                    "--journey", str(journey_files["downsell_1"]),
-                    "--enrichment", str(enrichment_files["downsell_1"]),
-                    "--skill81-root", str(root81)],
-        "timeout_s": ADAPTERS["downsell_1"]["timeout_s"],
-    }
+        if role == "upsell_2" and "upsell_1" in copy_files:
+            # U2 copy is checked against the U1 copy the launch supplied
+            adapters[role]["command"] += ["--u1-copy", str(copy_files["upsell_1"])]
+    if "downsell_1" in routed:
+        adapters["downsell_1"] = {
+            "command": [python, str(root49 / "downsell_wrapper.py"),
+                        "--request", "{request}",
+                        "--result", "{result}",
+                        "--launch", str(launch_path),
+                        "--route-graph", "{work_dir}/route-graph.json",
+                        "--copy", str(copy_files["downsell_1"]),
+                        "--journey", str(journey_files["downsell_1"]),
+                        "--enrichment", str(enrichment_files["downsell_1"]),
+                        "--skill81-root", str(root81)],
+            "timeout_s": ADAPTERS["downsell_1"]["timeout_s"],
+        }
+    if "downsell_2" in extra_pages:  # rides on the downsell_1 request; design only, labelled Downsell 2
+        adapters["downsell_2"] = {
+            "command": [python, str(root49 / "downsell_wrapper.py"),
+                        "--role-instance", "downsell_2",
+                        "--request", "{request}",
+                        "--result", "{result}",
+                        "--launch", str(launch_path),
+                        "--route-graph", "{work_dir}/route-graph.json",
+                        "--copy", str(copy_files["downsell_2"]),
+                        # a design page: its own images, in its own folder (never downsell_1's)
+                        "--skill71-root", str(root71),
+                        "--image-inputs", str(images_path),
+                        "--images-run-dir", "{work_dir}/downsell_2-images",
+                        "--image-provider", image_provider,
+                        *(["--allow-paid"] if paid else []),
+                        "--author-session", author_session],
+            "timeout_s": ADAPTERS["downsell_1"]["timeout_s"],
+        }
     if checkout_design is not None:
         surface = NATIVE_SURFACES["checkout"]
-        manuscript = _require_file("checkout_design.manuscript", checkout_design["manuscript"])
+        manuscript_file = _require_file("checkout_design.manuscript", checkout_design["manuscript"])
         brand_file = _require_file("checkout_design.brand_file", checkout_design["brand_file"])
         command = [python, str(substrate.source(surface["design_module"])),
                    "--request", "{request}", "--result", "{result}",
-                   "--manuscript", str(manuscript),
+                   "--manuscript", str(manuscript_file),
                    "--design-prose", "{work_dir}/design-prose-checkout.json",
                    "--launch", str(launch_path),
                    "--route-graph", "{work_dir}/route-graph.json",
@@ -538,17 +736,20 @@ def build_dispatch_config(*, work_dir: str | Path,
     if image_plan is not None:
         scripts = {"landing": "landing_bridge.py", "upsell_1": "upsell_wrapper.py",
                    "upsell_2": "upsell_wrapper.py", "downsell_1": "downsell_wrapper.py",
-                   "thank_you": "translate_thank_you_result.py", "checkout": "checkout_wrapper.py"}
+                   "downsell_2": "downsell_wrapper.py", "checkout": "checkout_wrapper.py"}
         for role, name in scripts.items():
             if role in adapters:
                 adapters[role]["command"] += image_flags(
                     root49 / name, adapters[role]["command"], image_plan, images_path, root71)
         # the downsell wrapper draws its own pages, so it carries the provider the others already do
-        down = adapters["downsell_1"]["command"]
-        if "--image-provider" not in down and _declares(root49 / "downsell_wrapper.py", "--image-provider"):
-            down += ["--image-provider", image_provider]
-            if allow_paid and "--allow-paid" not in down:
-                down.append("--allow-paid")
+        for role in ("downsell_1", "downsell_2"):
+            if role not in adapters:
+                continue
+            down = adapters[role]["command"]
+            if "--image-provider" not in down and _declares(root49 / "downsell_wrapper.py", "--image-provider"):
+                down += ["--image-provider", image_provider]
+                if paid and "--allow-paid" not in down:
+                    down.append("--allow-paid")
     for role, spec in adapters.items():
         for part in spec["command"]:
             _refuse_placeholder(f"adapters.{role}.command", str(part))
@@ -556,4 +757,54 @@ def build_dispatch_config(*, work_dir: str | Path,
     if "checkout" in adapters and not any(design_module in str(p) for p in adapters["checkout"]["command"]):
         raise AdapterError("checkout may only be the design-only adapter; the native form is never "
                            "a dispatch adapter")
-    return {"adapters": adapters}
+    config = {"adapters": adapters}
+    validate_adapter_config(config)  # what this builder emits is held to the same allow-list as a supplied config
+    return config
+
+
+def attach_design_artifacts(result_path: str | Path, run_dir: str | Path,
+                            page_key: str = "product_selection") -> Dict[str, Any]:
+    """The last step of the product_selection command: list the image stage's design files in the page result.
+
+    emit_page_result writes the result before it knows the images, so it carries no artifacts and the package
+    assembler refuses the page. This reads Skill 49's own deliverable list (page_set.design_artifacts), refuses
+    a run that left nothing, and makes the status follow the image stage: a page whose section images are not
+    all there is `blocked` with each missing deliverable named. Review PDFs and boards are paid-provider
+    renders, so on a stub run they stay "render pending" and do not block."""
+    page_set = substrate.load("49-signature-funnel/scripts/page_set.py", "launcher_page_set",
+                              "49-signature-funnel/scripts")
+    run_dir = Path(run_dir)
+    result = json.loads(Path(result_path).read_text(encoding="utf-8"))
+    artifacts = page_set.design_artifacts(page_key, run_dir)
+    if not artifacts:
+        raise AdapterError(f"{page_key}: the image stages left no design files in {run_dir}")
+    state = page_set.check_deliverables(page_key, run_dir, rendered=False)
+    result["artifacts"] = artifacts
+    if not state["images_complete"]:
+        result["status"] = "blocked"
+        result["blockers"] = list(result.get("blockers") or []) + [
+            f"{page_key}: image stage did not produce {item}" for item in state["missing"]]
+    Path(result_path).write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    return result
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description="Launcher adapter steps run inside a dispatch command.")
+    sub = parser.add_subparsers(dest="step", required=True)
+    attach = sub.add_parser("attach-design-artifacts",
+                            help="list the order page image files in the page result Skill 78 wrote")
+    attach.add_argument("--result", required=True)
+    attach.add_argument("--run-dir", required=True)
+    attach.add_argument("--page-key", default="product_selection")
+    args = parser.parse_args(argv)
+    try:
+        result = attach_design_artifacts(args.result, args.run_dir, args.page_key)
+    except (AdapterError, OSError, ValueError, KeyError) as exc:
+        print(f"FAIL-CLOSED: {exc}", file=sys.stderr)
+        return 3
+    print(json.dumps({"artifacts": len(result["artifacts"]), "status": result["status"]}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -133,6 +133,14 @@ py_gate_case "qc-tool-gating.sh"    "STEP_1_88_TOOL_GATING"  "tool-gating-protoc
 
 hdr "No live AGENTS.md at all (bare CI checkout) — SKIP, never a spurious FAIL"
 NOWHERE="$WORK/does-not-exist/AGENTS.md"
+
+# A controlled, known-good playbooks dir. The verdict assertion below must not
+# inherit the box's own master-files dir: a genuinely legacy playbook THERE is
+# correctly reported as NEEDS-MIGRATION, which says nothing about whether the
+# absence of a live AGENTS.md caused a failure. Pin the input, assert the trigger.
+GOOD_DIR="$WORK/good-workflows"
+mkdir -p "$GOOD_DIR"
+cp "$SKILL_DIR/tools/tests/fixtures/good-playbook.md" "$GOOD_DIR/"
 for script_marker in \
   "qc-segmentation.sh:STEP_1_85_SEGMENTATION_AWARENESS" \
   "qc-multi-tenant.sh:STEP_0_8_MULTI_TENANT_ISOLATION" \
@@ -150,10 +158,11 @@ for script_marker in \
   fi
 done
 for script in qc-workflow-exits.sh qc-tool-gating.sh; do
-  json="$(AGENTS_MD="$NOWHERE" bash "$SKILL_DIR/scripts/$script" --json 2>/dev/null)"
+  json="$(AGENTS_MD="$NOWHERE" bash "$SKILL_DIR/scripts/$script" --dir "$GOOD_DIR" --json 2>/dev/null)"
   verdict="$(printf '%s' "$json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('verdict','?'))" 2>/dev/null)"
-  # PASS here means: absence of a live file did not itself add a failure (the
-  # gate's overall verdict on the real skill tree is otherwise PASS).
+  # PASS here means: absence of a live file did not itself add a failure, with
+  # the playbook input pinned to a dir that is otherwise PASS. If the gate
+  # treated the missing AGENTS.md as a failure, this is FAIL and the test bites.
   if [ "$verdict" = "PASS" ]; then
     ok "$script — no live AGENTS.md anywhere -> overall verdict still PASS (SKIP, not a false FAIL)"
   else

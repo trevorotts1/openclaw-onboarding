@@ -46,6 +46,18 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 FETCH_TIMEOUT = 30
 MAX_BODY_BYTES = 5 * 1024 * 1024
 
+# ONE marker contract with Skill 6 (S06-22): the build marker is a DATA
+# ATTRIBUTE on the root <html> element, value "run_id=<id>;page=<id>;rev=<n>;
+# input=<hash>[;commit=<sha>]" taken from the page-result. Skill 6's
+# tools/ghl_verify.py (ROOT_MARKER_ATTR, marker_from_page_result) asserts the
+# very same attribute in the rendered DOM; a comment cannot be the contract
+# because render_check strips comments before it looks for the marker.
+ROOT_MARKER_ATTR = "data-skill71-build"
+ROOT_MARKER_PATTERN = re.compile(
+    r"<html\b[^>]*?\s" + re.escape(ROOT_MARKER_ATTR) + r"=[\"'](?P<value>[^\"']*)[\"']", re.I)
+
+# Legacy forms (comment / meta) are still READ so already-published pages keep
+# verifying, but they are not what new pages emit.
 BUILD_MARKER_PATTERNS = [
     re.compile(r"<!--\s*skill71-build\s+run_id=(?P<run_id>[^\s>]+)\s+commit=(?P<commit>[0-9a-fA-F]{7,64})\s*-->"),
     re.compile(r"<meta\s+name=[\"']skill71-build[\"']\s+content=[\"']run_id=(?P<run_id>[^;\"']+);\s*commit=(?P<commit>[0-9a-fA-F]{7,64})[\"']", re.I),
@@ -257,6 +269,14 @@ def normalize_url(url):
 
 
 def extract_build_marker(html):
+    m = ROOT_MARKER_PATTERN.search(html)
+    if m:
+        fields = dict(kv.split("=", 1) for kv in m.group("value").split(";") if "=" in kv)
+        if fields.get("run_id"):
+            return {"run_id": fields["run_id"],
+                    "commit_sha": fields.get("commit", "").lower(),
+                    "page": fields.get("page", ""), "input": fields.get("input", ""),
+                    "form": "root-attribute"}
     for pat in BUILD_MARKER_PATTERNS:
         m = pat.search(html)
         if m:
@@ -364,7 +384,7 @@ def check_provenance_composition(run_dir, receipt, public_url, final_url, marker
                                  f"but provenance deployment URL is {vercel_url}")
     commit = ((prov.get("github") or {}).get("commit_sha") or "")
     if marker:
-        if commit and marker["commit_sha"] != str(commit).lower():
+        if commit and marker["commit_sha"] and marker["commit_sha"] != str(commit).lower():
             lines.append(f"fetched page build marker commit {marker['commit_sha'][:12]}... "
                          f"does not match provenance github.commit_sha "
                          f"{str(commit)[:12]}...")
@@ -373,7 +393,7 @@ def check_provenance_composition(run_dir, receipt, public_url, final_url, marker
                          f"not match provenance run_id {prov['run_id']!r}")
     elif kind == "vercel-embed":
         lines.append("fetched page carries no skill71 build marker "
-                     "(<!-- skill71-build run_id=... commit=... -->): provenance "
+                     f"(root-element {ROOT_MARKER_ATTR}=\"run_id=...;...\"): provenance "
                      "cannot be verified against the live bytes")
     return lines
 

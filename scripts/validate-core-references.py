@@ -36,6 +36,11 @@ Exit: 0 when every file passes, 1 otherwise. Output is JSON on stdout.
 from __future__ import annotations
 
 import argparse
+import sys as _sys
+from pathlib import Path as _Path
+
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))
+import bootstrap_protection as _bp
 import json
 import os
 import re
@@ -54,6 +59,12 @@ DEFAULT_BUDGET = {
 
 POLICY_MARKER = "<!-- CORE_REFERENCE_POLICY_V1 -->"
 
+# Which blocks carry binding rules is decided in ONE place, by name, heading or
+# body content (bootstrap_protection.py). The previous version hardcoded a single
+# block NAME, so it protected exactly one box's naming scheme and passed any box
+# that called the same rules something else.
+
+
 # A backticked absolute path on any platform this fleet runs on: macOS boxes
 # live under /Users, VPS boxes under /data (and /root for a container home).
 _ABS_PATH_RE = re.compile(r"`((?:/Users/|/data/|/root/|/opt/|/home/)[^`]+)`")
@@ -68,6 +79,11 @@ _ABS_PATH_RE = re.compile(r"`((?:/Users/|/data/|/root/|/opt/|/home/)[^`]+)`")
 # construction, and a prefix list would only create silent blind spots on any
 # box whose master-files root sits somewhere the list did not anticipate.
 _POINTER_RE = re.compile(r"\*\*Full text:\*\*\s+(/\S+)")
+# Same pointer, but keeping the "§SECTION" tail. The path-only pattern above
+# cannot see the section, so a pointer to a file that exists but no longer
+# carries that section used to pass as valid.
+_POINTER_LINE_RE = re.compile(
+    r"\*\*Full text:\*\*\s+(/\S+)(?:\s*§\s*([^—\n]+?))?\s*(?:—|$)")
 _MARKER_RE = re.compile(r"<!--\s*(?:(BEGIN|END)\s+)?([A-Za-z][A-Za-z0-9_:\-. ]*?)\s*-->")
 
 # A path that is a TEMPLATE or a prose example, not a literal target to check.
@@ -181,12 +197,55 @@ def validate(workspace: Path, budget: dict[str, int], require_policy: bool) -> d
         # Every pointer must resolve, with no suffix filter and no placeholder
         # escape hatch: a pointer is a literal promise that this exact file is
         # readable right now.
-        for raw in _POINTER_RE.findall(text):
+        # A protected block must still carry its rules. Tags balancing is not
+        # enough: a body emptied between two balanced tags passes every other
+        # check in this file.
+        protected = _bp.protected_blocks(text)
+        # The drift this catches: a box that RUNS the skill-38 family (so it
+        # should carry the six rules) but whose protected block is gone. A box
+        # that does not run that family has nothing to protect -- failing it
+        # flags every healthy minimal tree and makes the compactor refuse to
+        # move anything, which is exactly what broke compact-bootstrap's suite.
+        _runs_family = bool(re.search(r"<!--\s*BEGIN\s+(SKILL38:|skill:38)",
+                                      text, re.IGNORECASE))
+        if (not protected and name == "AGENTS.md" and _runs_family
+                and not _bp.carries_binding_rules(text)):
+            errors.append(f"{name}: NO protected block and NO binding rules found "
+                          f"-- unvalidated, not clean")
+        for pname, seg in protected:
+            body = re.sub(r"<!--.*?-->", "", seg, flags=re.DOTALL)
+            body = "\n".join(l for l in body.splitlines() if l.strip())
+            if "**Full text:**" in body:
+                errors.append(f"{name}: {pname}: binding-rules block was replaced by a pointer")
+                continue
+            if len(body.splitlines()) < 2:
+                errors.append(f"{name}: {pname}: binding-rules block has an empty or gutted body")
+                continue
+            if _bp.carries_binding_rules(body) and not re.search(
+                    r"^\s*\d+[.)]\s+\S", body, re.MULTILINE):
+                errors.append(f"{name}: {pname}: binding-rules block no longer contains its numbered rules")
+
+        for pm in _POINTER_LINE_RE.finditer(text):
+            raw = pm.group(1)
             ref = Path(raw.split("#", 1)[0].rstrip("/"))
             checked.add(str(ref))
             if not ref.exists():
                 errors.append(f"{name}: DANGLING POINTER — full text not at {ref}")
                 missing_refs.append(str(ref))
+                continue
+            # The file existing is not enough: a pointer names a SECTION. If the
+            # section is not in the reference, the reader following the pointer
+            # finds nothing and the rule is gone even though the path resolves.
+            label = (pm.group(2) or "").strip()
+            if label:
+                try:
+                    ref_text = ref.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    ref_text = ""
+                if label not in ref_text:
+                    errors.append(
+                        f"{name}: POINTER SECTION MISSING — {ref} has no §{label}")
+                    missing_refs.append(str(ref) + " §" + label)
 
     return {
         "ok": not errors,

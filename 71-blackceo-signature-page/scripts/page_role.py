@@ -133,6 +133,36 @@ def request_spec(request):
     return spec
 
 
+# The section that exists exactly when the funnel has an order bump (loop decision, 2026-11-02):
+# a request that says `order_bump: false` has no such section and refuses a stray one; a request
+# that says true, or says nothing, keeps the spec's full sequence and still requires it.
+BUMP_SECTION = {"checkout": "3"}
+
+
+def allowed_sequences(spec, request=None) -> list:
+    """Every canonical section sequence a spec accepts: its own, plus each optional-children
+    expansion (5 -> 5A,5B,5C), minus the order bump section when the request says
+    `order_bump: false`. ONE resolver, read by both the request builder and the
+    executor, so neither accepts a manuscript the other refuses."""
+    base = list(spec["sequence"])
+    out = [base]
+    for parent, child in ((spec.get("containment") or {}).get("child_sections") or {}).items():
+        if parent in base and child.get("ids"):
+            i = base.index(parent)
+            out.append(base[:i] + list(child["ids"]) + base[i + 1:])
+    bump = BUMP_SECTION.get(spec.get("page_role"))
+    if bump and isinstance(request, dict) and request.get("order_bump") is False:
+        out = [[i for i in seq if i != bump] for seq in out]
+    return out
+
+
+def child_names(spec) -> dict:
+    """{child section id: name} for every optional child section (5A, 5B, 5C), from the spec's
+    containment block: a child has no entry of its own in `sections`."""
+    return {cid: name for block in (((spec.get("containment") or {}).get("child_sections")) or {}).values()
+            for cid, name in (block.get("names") or {}).items()}
+
+
 def section_spec(spec, section_id):
     """The spec's section entry for a request section id ("S02", "2" and "02" are the same)."""
     want = str(section_id or "").strip().upper().lstrip("S").lstrip("0")

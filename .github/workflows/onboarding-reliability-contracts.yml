@@ -12,7 +12,12 @@ concurrency:
 jobs:
   reliability-contracts:
     name: State, post-interview recovery and authoritative delivery (${{ matrix.python }})
-    runs-on: ubuntu-latest
+    # Pinned: setup-python ships no CPython 3.9 build for the ubuntu-26.04 image
+    # (the versions manifest lists 3.9 for 22.04/24.04 only), so ubuntu-latest
+    # floats the 3.9 leg into a setup failure before any test runs. 24.04 is the
+    # image this job last went green on (run 41154594329) and keeps both matrix
+    # legs executing.
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     strategy:
       matrix:

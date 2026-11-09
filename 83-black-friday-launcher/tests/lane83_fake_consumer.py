@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """A free stand-in for a page skill: answers one Skill 49 page request with typed, labeled design files.
 
-Used only by the Lane 83 tests. It makes no network call and spends nothing. Usage (the adapter seam
+Used only by the Lane 83 tests. It makes no network call and spends nothing, and it refuses any page
+request whose test_only is not true (adapters.validate_adapter_config also admits it only for a test_only
+launch). Usage (the adapter seam
 substitutes {request} and {result}):
 
     lane83_fake_consumer.py <request.json> <result.json> <labels.py> [--omit KIND] [--provider stub|kie]
@@ -43,6 +45,10 @@ def main(argv):
     ap.add_argument("--pages", default="", help="landing pages to draw in the one result (landing, sales)")
     args = ap.parse_args(argv)
     req = json.loads(Path(args.request).read_text(encoding="utf-8"))
+    if req.get("test_only") is not True:  # it fabricates labelled design files: never for a real launch
+        print("REFUSED: lane83_fake_consumer.py draws labelled placeholders and answers only a test_only "
+              "page request", file=sys.stderr)
+        return 3
     labels = load_labels(args.labels)
     time.sleep(args.sleep)
 

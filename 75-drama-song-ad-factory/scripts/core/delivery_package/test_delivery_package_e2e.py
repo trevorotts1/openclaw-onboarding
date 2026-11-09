@@ -47,6 +47,7 @@ _CORE = _HERE.parents[0]                       # .../scripts/core
 if str(_CORE) not in sys.path:
     sys.path.insert(0, str(_CORE))
 
+from choice_card.intake_card import intake_session as session  # noqa: E402
 import delivery_package.contract as C           # noqa: E402
 import delivery_package.packaging as P          # noqa: E402
 import protected_names as PN                     # noqa: E402
@@ -108,6 +109,36 @@ BRIEF = {
 
 VIEWS = ("close-up", "side-profile", "three-quarter", "full-standing")
 
+#: The real client replies the confirmed intake session records. The run's
+#: three-minute answer carries its two clips, so the package still owes the
+#: twelve base items exactly as this end-to-end test has always proven.
+INTAKE_REPLIES = {
+    "offer": "A gentle morning routine that fits before the house wakes",
+    "link": LINK, "audience": "people who want a calm start",
+    "character": "Sample Character", "photos": "Generate the photos",
+    "models": "deepseek-chain builds, opus-chain checks", "spend": "$25",
+    "script": "1", "song": "1", "storyboard": "1",
+    "length": "3 minutes + 60s and 90s clips",
+}
+
+
+def confirm_intake(run_dir):
+    """Write the REAL confirmed intake the packaging call resolves."""
+    turn = session.process([], run_dir=run_dir, purpose_flow=False,
+                           runtime="claude-nine")
+    for _ in range(40):
+        if turn.get("done"):
+            return turn["run_id"]
+        qid = turn.get("question_id")
+        raw = "yes" if qid == "recap" else INTAKE_REPLIES.get(qid, "1")
+        turn = session.process(
+            [raw], run_dir=run_dir, purpose_flow=False, runtime="claude-nine",
+            question_id=qid, question_digest=turn.get("question_digest"),
+            source="client", source_ref="w39-e2e:" + str(qid))
+        if turn.get("outcome") == "error":
+            raise AssertionError(turn)
+    raise AssertionError("intake did not reach its confirmation: %r" % turn)
+
 
 def _chunk(tag, data):
     return (struct.pack(">I", len(data)) + tag + data
@@ -159,6 +190,7 @@ def build_real_run(run_dir):
     if run_dir.exists():
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True)
+    confirm_intake(run_dir)             # the run's real, confirmed authority
 
     # approved script + its approval record (script_pdf, lyric_sheet, kit)
     lyrics = "\n".join(ln for sec in SHEET for ln in sec["lines"])
@@ -170,14 +202,9 @@ def build_real_run(run_dir):
        {"required": True, "status": "approved",
         "lyrics_sha": SA.lyrics_sha(lyrics), "sent": True})
 
-    # brief + card answers (kit, chosen length, storyboard approval)
+    # brief (kit input). card-answers.json was written by the CONFIRMED
+    # intake above -- the one authority the packaging call resolves.
     _w(run_dir, "brief.json", dict(BRIEF))
-    _w(run_dir, "card-answers.json", [
-        {"id": "length", "text": "3 minutes", "n": AD_LENGTH_S},
-        {"id": "shape", "text": "9:16 vertical"},
-        {"id": "storyboard_approval", "text": "Yes"},
-        {"id": "script_approval", "text": "Yes"},
-    ])
 
     # approved storyboard: shots, cards, stills, gate + approval records
     shots, contracts, stills = [], {}, {}

@@ -25,12 +25,9 @@ transcription engine) must satisfy.
    AF-BK-VERSION). Audio and video are separate gentle tabs when the config
    offers both; the best-fit mode is highlighted, none forced.
 
-## Provider-neutral (NEVER Anthropic)
+## Provider-neutral
 
-This module performs **no transcription** and names **no model provider**. It
-carries the `verifyNoAnthropic` AF-BW-MA-ANTHROPIC re-check: any resolved
-transcription model id matching `/anthropic|claude/i` is a **hard fail** —
-never a silent fallback, never an Anthropic id. No operator keys, no client
+This module performs **no transcription** and names **no model provider**. No operator keys, no client
 credentials — the edge stays a dumb relay.
 
 ## Warm low-overwhelm

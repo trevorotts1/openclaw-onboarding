@@ -94,6 +94,13 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/fleet-standards-plugins-allow.XXXXXX")"
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT
 
+# The shipped deny-list is EMPTY (no rule against Anthropic). The deny-set MECHANISM
+# (subtract a listed id from the enumeration) is still generic, so it is proven here
+# against a fixture deny-list naming "anthropic"; the real shipped list is asserted
+# empty in check (6) below.
+TEST_DENYLIST="$TMP/fixture-denylist.json"
+printf '{"deny_plugin_ids": ["anthropic"]}' > "$TEST_DENYLIST"
+
 # ---------------------------------------------------------------------------
 # Extract the "DYNAMIC plugins.allow" block LIVE out of the shipped script,
 # bounded by its own start anchor (the block's own header comment) and the
@@ -255,7 +262,7 @@ printf '{"plugins": {"allow": ["stale-old-id"]}}' > "$CFG1"
 OUT1="$TMP/cfg1-out.json"
 LOG1="$TMP/log1.txt"
 
-run_block "$CFG1" "$OUT1" "$LOG1" "$FIXTURE_PLUGINS_JSON" "1" "$REAL_DENYLIST"
+run_block "$CFG1" "$OUT1" "$LOG1" "$FIXTURE_PLUGINS_JSON" "1" "$TEST_DENYLIST"
 rc1=$?
 
 if [[ "$rc1" -eq 0 ]]; then
@@ -325,7 +332,7 @@ cp "$OUT1" "$CFG3"
 OUT3="$TMP/cfg3-out.json"
 LOG3="$TMP/log3.txt"
 
-run_block "$CFG3" "$OUT3" "$LOG3" "$FIXTURE_PLUGINS_JSON" "1" "$REAL_DENYLIST"
+run_block "$CFG3" "$OUT3" "$LOG3" "$FIXTURE_PLUGINS_JSON" "1" "$TEST_DENYLIST"
 rc3=$?
 
 if [[ "$rc3" -eq 0 ]]; then
@@ -368,7 +375,7 @@ printf '{"plugins": {"allow": ["untouched-existing-id"]}, "channels": {"telegram
 OUT4="$TMP/cfg4-out.json"
 LOG4="$TMP/log4.txt"
 
-run_block "$CFG4" "$OUT4" "$LOG4" "" "0" "$REAL_DENYLIST"
+run_block "$CFG4" "$OUT4" "$LOG4" "" "0" "$TEST_DENYLIST"
 rc4=$?
 
 if [[ "$rc4" -eq 0 ]]; then
@@ -485,6 +492,27 @@ if printf '%s\n' "$allow5c" | grep -qx 'anthropic'; then
   pass "5c-ii [bonus]: non-list 'deny_plugin_ids' -> falls back to the PRE-FIX behavior ('anthropic' included)"
 else
   fail "5c-ii [bonus]: expected 'anthropic' present in plugins.allow with a non-list deny_plugin_ids. allow=[$allow5c]"
+fi
+
+# ---------------------------------------------------------------------------
+# (6) NO ANTHROPIC RULE -- the shipped deny-list is empty, so the enumerator keeps
+#     'anthropic' in plugins.allow like any other installed plugin.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- (6) NO ANTHROPIC RULE: the shipped deny-list is empty; 'anthropic' stays in plugins.allow ---"
+if python3 -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))['deny_plugin_ids']==[] else 1)" "$REAL_DENYLIST"; then
+  pass "6a: config/plugins-sovereignty-denylist.json deny_plugin_ids is empty"
+else
+  fail "6a: the shipped deny-list is not empty"
+fi
+CFG6="$TMP/cfg6-in.json"; printf '{"plugins": {"allow": ["anthropic", "moonshot"]}}' > "$CFG6"
+OUT6="$TMP/cfg6-out.json"; LOG6="$TMP/log6.txt"
+run_block "$CFG6" "$OUT6" "$LOG6" "$FIXTURE_PLUGINS_JSON" "1" "$REAL_DENYLIST"
+allow6="$(python3 "$ALLOW_OF" "$OUT6" 2>/dev/null)"
+if printf '%s\n' "$allow6" | grep -qx 'anthropic'; then
+  pass "6b: with the real (empty) deny-list, 'anthropic' stays in plugins.allow"
+else
+  fail "6b: 'anthropic' was removed from plugins.allow by the enumerator. allow=[$allow6]"
 fi
 
 # ---------------------------------------------------------------------------

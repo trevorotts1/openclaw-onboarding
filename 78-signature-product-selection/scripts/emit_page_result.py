@@ -30,11 +30,20 @@ false and reviewer_session null until a real independent review exists;
 an installed proof class is emitted only by an authorized installation
 run, never by this emitter.
 
+--image-run-dir <dir> (the --run-dir run_image_stages.py drew into) makes every file of that run
+the page's artifacts, sha256 each, so a multiple-options launch no longer returns a page result with
+zero artifacts (STR-03). The run's copy/internal-manuscript.md is gated first with
+validate_selection_content.validate_manuscript against the plan; a missing manuscript, an empty run
+dir or a violation is a fail-closed error and no result file is written. Only the page's own
+pipeline outputs are listed: the runtime and session scripts (selection_runtime.py,
+selection_session_store.py, selection_session.py) have no host yet (PRD-05) and are not part of
+what this result claims.
+
 Usage:
   emit_page_result.py <plan.json> --output <result.json> \
       --author-session <id> --request <request.json> \
       [--status authored|locally_verified|blocked] [--test-only] \
-      [--artifact <path> ...] [--reviewer-session <id>] \
+      [--artifact <path> ...] [--image-run-dir <dir>] [--reviewer-session <id>] \
       [--native-bindings-ref <ref>] [--blocker <text> ...]
   emit_page_result.py <plan.json> --output <result.json> \
       --author-session <id> --request-id <id> \
@@ -49,6 +58,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_selection_plan import SELF_TEST_LAUNCH, build_plan  # noqa: E402
+from selection_core import Violation  # noqa: E402
+from validate_selection_content import validate_manuscript  # noqa: E402
 
 LOCAL_STATUSES = {"authored", "locally_verified", "blocked"}
 PAGE_RESULT_FIELDS = (
@@ -67,9 +78,26 @@ def _echoed(request, explicit, field):
     return None
 
 
+def run_dir_artifacts(plan, run_dir):
+    """Every file the image run wrote, after the run's manuscript passes the content gate."""
+    run_dir = Path(run_dir)
+    manuscript = run_dir / "copy" / "internal-manuscript.md"
+    if not manuscript.is_file():
+        raise ValueError(f"image run dir {run_dir} has no copy/internal-manuscript.md; the page copy cannot be checked")
+    try:
+        validate_manuscript(manuscript.read_text(encoding="utf-8"), plan)
+    except Violation as exc:
+        raise ValueError(f"[{exc.code}] {exc.message}")
+    files = sorted(p for p in run_dir.rglob("*") if p.is_file() and not p.is_symlink())
+    if not files:
+        raise ValueError(f"image run dir {run_dir} holds no output files")
+    return files
+
+
 def emit(plan, *, author_session, request_id=None, page_id=None, input_hash=None,
          request=None, artifact_paths=(), status="locally_verified",
-         test_only=False, reviewer_session=None, native_bindings_ref=None, blockers=()):
+         test_only=False, reviewer_session=None, native_bindings_ref=None, blockers=(),
+         image_run_dir=None):
     if status not in LOCAL_STATUSES:
         raise ValueError(f"Status {status!r} is not emittable by the local emitter; installed/live statuses come from installation runs.")
     outcome = plan.get("outcome")
@@ -86,6 +114,13 @@ def emit(plan, *, author_session, request_id=None, page_id=None, input_hash=None
         raise ValueError("input_hash must be echoed from the request (pass --input-hash or a request document); the emitter does not hash the plan in its place.")
     if request is not None and "test_only" in request:
         test_only = bool(request["test_only"])
+    if reviewer_session is not None and reviewer_session == author_session:
+        raise ValueError("reviewer_session equals author_session; an independent review needs a different session.")
+    artifact_paths = list(artifact_paths)
+    if image_run_dir is not None:
+        if outcome != "plan":
+            raise ValueError("a declined single-offer plan has no order page images to list.")
+        artifact_paths += run_dir_artifacts(plan, image_run_dir)
     artifacts = []
     for p in artifact_paths:
         path = Path(p)
@@ -162,6 +197,20 @@ def self_test():
     assert "outcome" not in d and d["tenant_id"] == "TEST-TENANT"
     d_profile = emit_selection_result(declined, author_session="self-test", request=request)
     assert d_profile["outcome"] == "declined_single_offer"
+    import tempfile
+    from emit_section_manuscript import write as write_manuscript
+    with tempfile.TemporaryDirectory() as td:
+        write_manuscript_plan = Path(td) / "plan.json"
+        write_manuscript_plan.write_text(json.dumps(plan))
+        write_manuscript(write_manuscript_plan, Path(td) / "run")
+        listed = emit(plan, author_session="self-test", request=request, image_run_dir=Path(td) / "run")["artifacts"]
+        assert {Path(a["path"]).name for a in listed} == {"internal-manuscript.md", "copy-manifest.json"}, listed
+        try:
+            emit(plan, author_session="self-test", request=request, image_run_dir=Path(td) / "no-such-run")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("an image run dir with no manuscript was accepted")
     print("emit_page_result --self-test: PASS (page-result 1.0 shape, page_id/input_hash echoed from request, no outcome in page result, outcome carried in selection-result profile, L1, review flags honest, missing echo source refused)")
     return 0
 
@@ -176,7 +225,7 @@ def main(argv):
 
     output = opt("--output") or opt("--out")
     if not args or "--author-session" not in argv or output is None:
-        print("usage: emit_page_result.py <plan.json> --output <result.json> --author-session <id> (--request <request.json> | --request-id <id> --page-id <id> --input-hash <hash>) [--status ...] [--artifact <path> ...]", file=sys.stderr)
+        print("usage: emit_page_result.py <plan.json> --output <result.json> --author-session <id> (--request <request.json> | --request-id <id> --page-id <id> --input-hash <hash>) [--status ...] [--artifact <path> ...] [--image-run-dir <dir>]", file=sys.stderr)
         return 3
     try:
         plan = json.loads(Path(args[0]).read_text())
@@ -191,6 +240,7 @@ def main(argv):
             input_hash=opt("--input-hash"),
             request=request,
             artifact_paths=[argv[i + 1] for i, a in enumerate(argv) if a == "--artifact"],
+            image_run_dir=opt("--image-run-dir"),
             status=opt("--status", "locally_verified"),
             test_only="--test-only" in argv,
             reviewer_session=opt("--reviewer-session"),

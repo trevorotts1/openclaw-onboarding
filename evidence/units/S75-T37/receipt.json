@@ -1,0 +1,62 @@
+{
+ "acceptance_row": "S75-A37",
+ "acceptance_row_source": "<HOME>/Downloads/Skill 75 - Story, Character Bible and Music Upgrade/ACCEPTANCE-MATRIX.md",
+ "acceptance_row_text": "Correct-target incorporation is proven; uncertain merge/ack reconciles once without duplicate landing; N999 need not wait for ONB fixture facets.",
+ "affected_requirement": "S75-A37 clauses 1-3: correct-target incorporation proof; uncertain merge/ack single reconciliation; N999 independence from ONB fixture facets",
+ "author_checker_lineage": "mint: d6-mint-S75-T37-b3 (opus); checker: s75-checker-T37 (opus provenance-repair lane, independent re-run, MATCH) \u2014 see evidence/units/S75-T37/checker.json; independent verify-T37 lane (CONFIRMED) \u2014 see evidence/units/S75-T37/verify-T37.json",
+ "base": "97ba85615f12af53ff31fc9aca99f02fdf33430d",
+ "checks": [
+  {
+   "command": "python3 -I CONTROL/tests/test_correct_target_s75_t37.py CorrectTarget WrongTarget LocalOnlyMerge ChecksAreNotMoods RemoteUrlIdentity",
+   "last_line": "OK",
+   "rc": 0
+  },
+  {
+   "command": "python3 -I CONTROL/tests/test_correct_target_s75_t37.py ReconcileOnce",
+   "last_line": "OK",
+   "rc": 0
+  },
+  {
+   "command": "python3 -I CONTROL/tests/test_correct_target_s75_t37.py N999NeedsNoOnbFacet",
+   "last_line": "OK",
+   "rc": 0
+  }
+ ],
+ "clauses": [
+  "Correct-target incorporation is proven",
+  "uncertain merge/ack reconciles once without duplicate landing",
+  "N999 need not wait for ONB fixture facets"
+ ],
+ "dependency_revisions": [
+  "openclaw-onboarding@6138d6eb6420c2587a1fd3588dce8b86007c3659",
+  "origin/main@97ba85615f12af53ff31fc9aca99f02fdf33430d"
+ ],
+ "head": "6138d6eb6420c2587a1fd3588dce8b86007c3659",
+ "lane": "d6-mint-S75-T37-b3",
+ "literal_binding": [
+  {
+   "clause": "Correct-target incorporation is proven",
+   "command": "python3 -I CONTROL/tests/test_correct_target_s75_t37.py CorrectTarget WrongTarget LocalOnlyMerge ChecksAreNotMoods RemoteUrlIdentity",
+   "last_line": "OK",
+   "rc": 0
+  },
+  {
+   "clause": "uncertain merge/ack reconciles once without duplicate landing",
+   "command": "python3 -I CONTROL/tests/test_correct_target_s75_t37.py ReconcileOnce",
+   "last_line": "OK",
+   "rc": 0
+  },
+  {
+   "clause": "N999 need not wait for ONB fixture facets",
+   "command": "python3 -I CONTROL/tests/test_correct_target_s75_t37.py N999NeedsNoOnbFacet",
+   "last_line": "OK",
+   "rc": 0
+  }
+ ],
+ "minted_at": "2026-10-28T07:13:32Z",
+ "no_verifiable_check": false,
+ "tree_digest": "5c02303dfc4bd5e1abbd00453bcc7c1fd599fbfe",
+ "unit": "S75-T37",
+ "unproven_clauses": [],
+ "verdict": "PASS"
+}

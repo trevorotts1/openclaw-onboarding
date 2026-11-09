@@ -20,6 +20,8 @@ done
 front_ver="$("$PY" -c "import re,pathlib; t=pathlib.Path('$ROOT/SKILL.md').read_text(); print(re.search(r'^version:\s*(\S+)', t, re.M).group(1))")"
 file_ver="$(tr -d '[:space:]' < "$ROOT/skill-version.txt")"
 if [ "$front_ver" = "$file_ver" ]; then printf '  [PASS] version lockstep %s\n' "$front_ver"; else printf '  [FAIL] version drift %s != %s\n' "$front_ver" "$file_ver"; fails=$((fails+1)); fi
+manifest_ver="$("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1])).get("skill_version"))' "$ROOT/runtime-manifest.json" 2>/dev/null)"
+if [ "$manifest_ver" = "$file_ver" ]; then printf '  [PASS] runtime-manifest version lockstep %s\n' "$manifest_ver"; else printf '  [FAIL] runtime-manifest version drift %s != %s\n' "$manifest_ver" "$file_ver"; fails=$((fails+1)); fi
 run "runtime descriptor claims no installation" "$PY" - "$ROOT" <<'PYEOF'
 import json, sys
 from pathlib import Path
@@ -75,6 +77,20 @@ import sys
 from pathlib import Path
 root = Path(sys.argv[1])
 sys.path.insert(0, str(root / "scripts"))
+# PYDEPS-ACTIVATION:BEGIN (shared contract, byte-identical in every file that imports jsonschema; stdlib only)
+# jsonschema lives in <root>/pydeps/py<X.Y>/ when pip refuses the interpreter (PEP 668); put it on sys.path first.
+import os as _os
+import sys as _sys
+
+_pytag = "py%d.%d" % _sys.version_info[:2]
+_pyroot = _os.environ.get("OPENCLAW_ROOT") or (
+    "/data/.openclaw" if _os.path.isdir("/data/.openclaw") else _os.path.expanduser("~/.openclaw"))
+_sys.path[:0] = [_d for _d in (
+    [_os.environ["OC_PYDEPS_DIR"]] if _os.environ.get("OC_PYDEPS_DIR") else
+    [_os.path.join(_pyroot, "pydeps", _pytag), _os.path.expanduser("~/.claude/pydeps/" + _pytag)])
+    if _os.path.isdir(_d) and _d not in _sys.path]
+del _pytag, _pyroot
+# PYDEPS-ACTIVATION:END
 try:
     import jsonschema
 except ImportError:

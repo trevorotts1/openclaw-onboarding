@@ -63,16 +63,15 @@ then
 fi
 
 # SK1-02: resolve a CLIENT-OWNED embedding provider for memorySearch. Anthropic is
-# NEVER valid here: (1) Anthropic ships no embeddings API, so writing it to
-# memorySearch.provider breaks memory search outright; (2) clients never use
-# Anthropic. Choose openai or google by key presence, else FAIL LOUD — never fall
+# not valid here because Anthropic ships no embeddings API, so writing it to
+# memorySearch.provider breaks memory search outright. Choose openai or google by key presence, else FAIL LOUD — never fall
 # back to Anthropic and never silently default to a provider whose key is absent.
 if has_key "OPENAI_API_KEY"; then
   PROVIDER="openai"
 elif has_key "GEMINI_API_KEY" || has_key "GOOGLE_API_KEY"; then
   PROVIDER="google"
 else
-  echo "[O.6] ERROR: no client-owned embedding provider key found (need OPENAI_API_KEY or GEMINI_API_KEY/GOOGLE_API_KEY). Anthropic has no embeddings API and is never used, so memorySearch cannot be configured. Add a valid embedding provider key and re-run." >&2
+  echo "[O.6] ERROR: no client-owned embedding provider key found (need OPENAI_API_KEY or GEMINI_API_KEY/GOOGLE_API_KEY). Anthropic has no embeddings API, so memorySearch cannot be configured. Add a valid embedding provider key and re-run." >&2
   exit 1
 fi
 

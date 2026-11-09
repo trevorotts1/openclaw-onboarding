@@ -16,7 +16,8 @@
 #      (`docker exec <container> openclaw gateway status` / the container's PORT
 #      env) and maps that to the host-published port (`docker port <container>`).
 #   2. Runs a ONE-SHOT reachability probe over the exact host->container path the
-#      cron will use (curl http://127.0.0.1:<resolved-port>/ and /healthz). If the
+#      cron will use (curl http://127.0.0.1:<resolved-port>/ and /healthz; https with
+#      -k when the container's gateway.tls.enabled is true). If the
 #      gateway is NOT reachable there, it REFUSES to arm the cron (loud warning +
 #      dry-run hint, exits non-zero) — never installs a cron that would mark a
 #      HEALTHY container unhealthy and docker-restart it on a loop.
@@ -40,6 +41,9 @@
 #   OPENCLAW_CONTAINER_NAME / _USER      target container + exec user (auto-detected)
 #   GATEWAY_WATCHDOG_PORT                force the host-reachable gateway port
 #                                        (skips auto-resolution; still probed)
+#   GATEWAY_WATCHDOG_TLS                 1 = the gateway answers https only
+#                                        (gateway.tls.enabled); default: read from the
+#                                        container's openclaw.json, forwarded to the cron
 #   GATEWAY_WATCHDOG_FAILS / _COOLDOWN / _TIMEOUT  forwarded to the watchdog
 set -euo pipefail
 
@@ -155,6 +159,23 @@ if [ -z "$HOST_PORT" ]; then
   fi
 fi
 
+# ---- Does the gateway answer https only? ------------------------------------
+# gateway.tls.enabled=true makes a plain http:// probe read a healthy gateway as
+# dead (empty reply), and the cron would then `docker restart` it on a loop. The
+# flag lives in the config INSIDE the container, which the host cannot read
+# directly: ask the container, parse on the host. Unreadable => http, as before.
+GW_TLS="${GATEWAY_WATCHDOG_TLS:-}"
+case "$GW_TLS" in 0|1) ;; *)
+  GW_TLS="$(oc_exec 'cat /data/.openclaw/openclaw.json' | python3 -c 'import json,sys
+try:
+    t=((json.load(sys.stdin).get("gateway") or {}).get("tls") or {}).get("enabled")
+    print(1 if str(t).lower()=="true" else 0)
+except Exception:
+    print(0)' 2>/dev/null || echo 0)" ;;
+esac
+PROBE_SCHEME=http; PROBE_K=""
+if [ "$GW_TLS" = "1" ]; then PROBE_SCHEME=https; PROBE_K="-k"; fi   # loopback only, self-signed cert
+
 # ---- Pre-arm reachability gate (the D1 blocker fix) -------------------------
 # Probe the EXACT host->container path the cron will use. Two corroborating
 # signals (mirrors the watchdog's is_healthy A/B): {"ok":true} on / OR 200 on
@@ -163,10 +184,12 @@ fi
 probe_reachable() {
   _port="$1"
   case "$_port" in ''|*[!0-9]*) return 1 ;; esac
-  _body="$(curl -fsS --max-time "$PROBE_TIMEOUT" "http://127.0.0.1:${_port}/" 2>/dev/null || true)"
+  # shellcheck disable=SC2086  # PROBE_K is empty or the single word -k
+  _body="$(curl -fsS $PROBE_K --max-time "$PROBE_TIMEOUT" "${PROBE_SCHEME}://127.0.0.1:${_port}/" 2>/dev/null || true)"
   case "$_body" in *'"ok":true'*|*'"ok": true'*) return 0 ;; esac
-  _code="$(curl -s -o /dev/null -w '%{http_code}' --max-time "$PROBE_TIMEOUT" \
-           "http://127.0.0.1:${_port}/healthz" 2>/dev/null || true)"
+  # shellcheck disable=SC2086
+  _code="$(curl -s $PROBE_K -o /dev/null -w '%{http_code}' --max-time "$PROBE_TIMEOUT" \
+           "${PROBE_SCHEME}://127.0.0.1:${_port}/healthz" 2>/dev/null || true)"
   [ "$_code" = "200" ] && return 0
   return 1
 }
@@ -188,8 +211,8 @@ if [ "$REACHABLE" != "1" ]; then
   echo "  Exec user         : ${CUSER}" >&2
   echo "  Inner gw port      : ${INNER_PORT:-<unresolved>}" >&2
   echo "  Host probe port    : ${HOST_PORT:-<unresolved>}" >&2
-  echo "  Probed (both failed): http://127.0.0.1:${HOST_PORT:-<port>}/  (no {\"ok\":true})" >&2
-  echo "                        http://127.0.0.1:${HOST_PORT:-<port>}/healthz  (no HTTP 200)" >&2
+  echo "  Probed (both failed): ${PROBE_SCHEME}://127.0.0.1:${HOST_PORT:-<port>}/  (no {\"ok\":true})" >&2
+  echo "                        ${PROBE_SCHEME}://127.0.0.1:${HOST_PORT:-<port>}/healthz  (no HTTP 200)" >&2
   echo "" >&2
   echo "  A */${INTERVAL_MIN} cron probing an unreachable port would count a HEALTHY" >&2
   echo "  container as failing and 'docker restart' it on a loop. Not arming." >&2
@@ -228,6 +251,9 @@ CRON_ENV="GATEWAY_WATCHDOG_PORT=${HOST_PORT} PORT=${HOST_PORT} OPENCLAW_CONTAINE
 [ -n "${GATEWAY_WATCHDOG_FAILS:-}" ]    && CRON_ENV="$CRON_ENV GATEWAY_WATCHDOG_FAILS=${GATEWAY_WATCHDOG_FAILS}"
 [ -n "${GATEWAY_WATCHDOG_COOLDOWN:-}" ] && CRON_ENV="$CRON_ENV GATEWAY_WATCHDOG_COOLDOWN=${GATEWAY_WATCHDOG_COOLDOWN}"
 [ -n "${GATEWAY_WATCHDOG_TIMEOUT:-}" ]  && CRON_ENV="$CRON_ENV GATEWAY_WATCHDOG_TIMEOUT=${GATEWAY_WATCHDOG_TIMEOUT}"
+# The host has no openclaw.json to read, so the watchdog cannot see the TLS flag
+# itself: forward what was read from the container.
+[ "$GW_TLS" = "1" ] && CRON_ENV="$CRON_ENV GATEWAY_WATCHDOG_TLS=1"
 CRON_LINE="*/${INTERVAL_MIN} * * * * ${CRON_ENV} /bin/sh ${DEST_WATCHDOG} >> ${CRON_LOG} 2>&1"
 
 # NOTE on the `|| true` guards below: under `set -euo pipefail`, `crontab -l`

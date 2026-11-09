@@ -16,7 +16,7 @@ But the nonce is a PRESENCE check only (a 48-char hex string is trivial to
 hand-write) — so a real dispatch does NOT trust "entry.sh must have run because
 a nonce file exists." Instead, at every real dispatch this module RE-VERIFIES,
 in-process, right now: gate-integrity (pinned hashes), the stdlib-only dep
-scan, the Anthropic-id bypass-scan, and the egress scan (aa_egress_gate.py).
+scan and the egress scan (aa_egress_gate.py).
 A hand-forged `printf 'XXXXXXXXXXXXXXXX' > .entry-nonce` no longer buys a
 dispatch: the SAME checks entry.sh runs are re-run here, unconditionally,
 regardless of how aa_director.py was invoked.
@@ -47,7 +47,7 @@ Repairs R1-R6 (see REPAIRS.md) are OFF BY DEFAULT so a run is FAITHFUL to Trevor
 original LIVE workflow output. --apply-repairs opts INTO them; the foreman records
 the mode in RUN-LEDGER.json and prepends a mode banner to every dispatched stage so
 sub-agents follow the live behavior (default) or apply the 'REPAIR R#' directives
-(opt-in). R7 (the Anthropic ban) is NOT a fidelity repair and is ALWAYS enforced.
+(opt-in).
 
 Exit 0 = ok/brand-dispatch, 2 = schedule/precedence/front-door/intake violation,
 3 = usage/IO error, 4 = version=book correctly ROUTED or PARKED (hard-stop, by
@@ -84,19 +84,18 @@ AD_TAIL = [f"{n:02d}-ad-set-{n-21}" for n in range(23, 35)]  # ad sets 2..13 (fa
 def dispatch_preamble(apply_repairs: bool) -> str:
     """The mode banner the foreman prepends to EVERY dispatched stage. It governs
     whether the sub-agent applies the baked 'REPAIR R#' directives. Default = OFF
-    (faithful to the live workflow); --apply-repairs turns them ON. R7 (Anthropic
-    ban) is unconditional and stated in both modes."""
+    (faithful to the live workflow); --apply-repairs turns them ON."""
     if apply_repairs:
         return ("MODE: repairs ON (--apply-repairs). APPLY every 'REPAIR R#' directive in this "
                 "prompt (R1 blended-tone gets the 4 tone ANALYSIS docs; R2 solution-aware-pt2 "
                 "injects the Solution-Aware doc; R3 cheat-sheet references the 7-Tier framework; "
                 "R4 each ad set uses its TRUE restored category; R5 fill the product/offer line; "
-                "R6 the hero uses the Answer-9 doc). R7: NEVER emit an Anthropic/claude model id.")
+                "R6 the hero uses the Answer-9 doc).")
     return ("MODE: faithful-live (repairs OFF, default). IGNORE every 'REPAIR R#' directive and "
             "reproduce the ORIGINAL live behavior (R1 blended-tone gets only the tone-style NAMES; "
             "R2 solution-aware-pt2 keeps the source Problem-Aware injection; R3 leaves the cheat-sheet "
             "as source; R4 ad sets follow the source 'category 2' wiring; R5 leaves the product line "
-            "as source; R6 the Answer-9 doc stays unused). R7: NEVER emit an Anthropic/claude model id.")
+            "as source; R6 the Answer-9 doc stays unused).")
 
 
 # ===========================================================================
@@ -217,9 +216,8 @@ def _receipt_verified(run_dir: Path, sid: str, key: Optional[bytes]) -> bool:
 def _dispatch(prompt: str, sid: str, model_hint: str, dispatch_cmd: Optional[str]) -> Tuple[str, str]:
     """The ONE adapter seam. With --dispatch-cmd, run that command (prompt on
     stdin) and parse JSON {"text","model"} from stdout. Otherwise fall back to
-    the documented `openclaw agent --json` client-provider path. Never invokes
-    an Anthropic endpoint — the returned model id is G-NOANTHROPIC-checked by the
-    caller."""
+    the documented `openclaw agent --json` client-provider path. The returned
+    model id is recorded as returned."""
     env = {**os.environ, "AA_STAGE": sid, "AA_MODEL_HINT": model_hint}
     if dispatch_cmd:
         proc = subprocess.run(dispatch_cmd, shell=True, input=prompt, capture_output=True,
@@ -260,7 +258,7 @@ def _park(run_dir: Path, sid: str, reason: str) -> None:
 # FIX-XC-09f — model-map is CONSUMED here (it used to be written by preflight.sh
 # and read by nothing). At dispatch time the foreman loads the box's own
 # model-map.json (the CLIENT's configured provider tiers, minted by preflight.sh
-# from the box's real OpenClaw config — NEVER Anthropic), resolves each stage's
+# from the box's real OpenClaw config), resolves each stage's
 # declared tier (A/B/SEARCH) to the box's concrete model id, defaults the
 # provider cap from provider_caps.concurrent (the fleet <=3-Ollama provisioning
 # rule, not the old hardcoded 10), and records the resolved tier ids in
@@ -275,8 +273,7 @@ def load_model_map(run_dir: Optional[Path], root: Path) -> Optional[Dict[str, An
     <run-dir>/model-map.json, then <skill-root>/model-map.json. Returns the parsed
     map (with a `_source` key added) or None when the box has no map yet (the
     foreman then falls back to abstract tier hints + the conservative default cap).
-    Defense-in-depth: a map carrying an Anthropic-shaped tier id is REFUSED here
-    (raises) — preflight already bans it, but the consumer never trusts that."""
+    """
     candidates: List[Path] = []
     env_path = os.environ.get("AA_MODEL_MAP")
     if env_path:
@@ -291,11 +288,6 @@ def load_model_map(run_dir: Optional[Path], root: Path) -> Optional[Dict[str, An
             mm = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        for tier, tid in (mm.get("tiers") or {}).items():
-            if is_anthropic_model(tid):
-                raise ValueError(
-                    f"AF-AV-NOANTHROPIC: model-map tier {tier}={tid!r} is an Anthropic/Claude model "
-                    f"(client-path rule) — refusing to consume {p}")
         mm["_source"] = str(p)
         return mm
     return None
@@ -318,7 +310,7 @@ def _provider_cap_from_map(mm: Optional[Dict[str, Any]]) -> int:
 def _resolve_tier_id(stage: Dict[str, Any], model_map: Optional[Dict[str, Any]]) -> Tuple[str, str]:
     """Resolve the stage's declared tier (A/B/SEARCH) to (tier_letter, model_id).
     With a model-map present the tier resolves to the box's OWN concrete id (the
-    client's configured provider, never a hardcoded Anthropic id); absent a map the
+    client's configured provider); absent a map the
     id is the abstract 'tier-a' hint the adapter may honor (unchanged legacy seam)."""
     tier = str(stage.get("tier", "") or (stage.get("model") or {}).get("tier", "")).upper()
     abstract = _ABSTRACT_TIER_HINT.get(tier, "")
@@ -403,10 +395,6 @@ def run_dispatch(manifest: Dict[str, Any], run_dir: Path, *,
                     except DispatchError as exc:
                         last_err = str(exc)
                         continue
-                    # G-NOANTHROPIC on the REAL returned model id (fail-closed).
-                    if is_anthropic_model(model):
-                        _park(run_dir, sid, f"AF-AV-NOANTHROPIC: dispatch returned an Anthropic model id {model!r}")
-                        return 2
                     if _stage_output_ok(cand_text):
                         text = cand_text
                         break
@@ -537,33 +525,12 @@ def _require_nonce(nonce_path: str | None) -> bool:
 
 _FORBIDDEN_DEP_RE = re.compile(r"\bimport\s+(requests|openai|anthropic|httpx|aiohttp)\b")
 
-# SK2-16 — the ONE canonical Anthropic detector (shared-utils). `is_anthropic_model`
-# tests a discrete model-id string; `text_has_anthropic_model_id` scans free text
-# (prompts/manifests) for an id-shaped Anthropic reference without false-positiving
-# on prose that merely names the vendor. Fail-closed vendored fallback below.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "shared-utils"))
-try:
-    from assert_model_sovereignty import (  # type: ignore  # noqa: E402
-        is_anthropic_model,
-        text_has_anthropic_model_id,
-    )
-except Exception:  # noqa: BLE001
-    _AA_ANTHROPIC_RE = re.compile(r"anthropic|claude|\b(?:opus|sonnet|haiku)\b", re.IGNORECASE)
-    _AA_ANTHROPIC_TEXT_RE = re.compile(r"anthropic[/.][a-z0-9]|\bclaude-[a-z0-9]", re.IGNORECASE)
-
-    def is_anthropic_model(model_id) -> bool:  # type: ignore
-        return bool(_AA_ANTHROPIC_RE.search(str(model_id or "")))
-
-    def text_has_anthropic_model_id(text) -> bool:  # type: ignore
-        return bool(_AA_ANTHROPIC_TEXT_RE.search(str(text or "")))
-
-
 def _skill_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
 def _front_door_reverify() -> List[str]:
-    """RE-RUN deps + bypass-scan (Anthropic ids + egress) + hash-pin in-process,
+    """RE-RUN deps + bypass-scan (egress) + hash-pin in-process,
     regardless of the nonce's provenance. This is what closes the QC finding
     'aa_director accepts a hand-forged nonce and never re-verifies deps/
     bypass-scan/hash-pin' — those checks now live HERE, not only in entry.sh,
@@ -581,22 +548,7 @@ def _front_door_reverify() -> List[str]:
         if _FORBIDDEN_DEP_RE.search(src):
             problems.append(f"deps: {py.name} imports a forbidden external runtime dep")
 
-    # 2) bypass-scan: no Anthropic ids in prompts/manifests (id-shaped scan — does
-    #    not false-positive on prose that names the vendor while documenting removal)
-    for p in (root / "prompts").rglob("*.md"):
-        try:
-            if text_has_anthropic_model_id(p.read_text(encoding="utf-8", errors="replace")):
-                problems.append(f"bypass-scan: Anthropic/claude model id found in {p.relative_to(root)}")
-        except OSError:
-            continue
-    for j in root.glob("*.json"):
-        try:
-            if text_has_anthropic_model_id(j.read_text(encoding="utf-8", errors="replace")):
-                problems.append(f"bypass-scan: Anthropic/claude model id found in {j.name}")
-        except OSError:
-            continue
-
-    # 3) egress-scan: no ungoverned uploader path (AF-AV-EGRESS)
+    # 2) egress-scan: no ungoverned uploader path (AF-AV-EGRESS)
     egress_violations = egress_gate.scan_dir(root / "scripts")
     for code, msg in egress_violations:
         problems.append(f"egress-scan [{code}]: {msg}")
@@ -806,8 +758,7 @@ def _version_gate(run_dir: Path) -> Tuple[int, Dict[str, Any]]:
 def _dispatch_self_test() -> bool:
     """Offline proof of the FIX-XC-05b dispatch loop with a MOCK adapter: a full
     3-stage run writes HMAC-signed receipts + ledger rows with the real returned
-    model id; --resume skips receipted stages; an Anthropic model id parks
-    (AF-AV-NOANTHROPIC); and recovery exhaustion parks (redo-then-PARK)."""
+    model id; --resume skips receipted stages; and recovery exhaustion parks (redo-then-PARK)."""
     import tempfile
     import textwrap
     ok = True
@@ -840,11 +791,6 @@ def _dispatch_self_test() -> bool:
             import sys, json
             _ = sys.stdin.read()
             print(json.dumps({"text": "# ok\\n" + ("word " * 60), "model": "ollama-cloud/qwen3-235b"}))
-        '''))
-        anthro = _mock("mock_anthropic.py", textwrap.dedent('''
-            import sys, json
-            _ = sys.stdin.read()
-            print(json.dumps({"text": "# ok\\n" + ("word " * 60), "model": "anthropic/claude-3-5-sonnet"}))
         '''))
         empty = _mock("mock_empty.py", textwrap.dedent('''
             import sys, json
@@ -889,19 +835,6 @@ def _dispatch_self_test() -> bool:
         else:
             ok = False
             print(f"SELF-TEST FAIL: --resume did not skip receipted stages (rc={rc2}).")
-
-        # (3) an Anthropic model id from the adapter PARKS the run (AF-AV-NOANTHROPIC)
-        rda = _mkrun("anthro")
-        keya = bytes.fromhex((rda / ".foreman-key").read_text().strip())
-        rca = run_dispatch(mini, rda, dispatch_cmd=anthro, apply_repairs=False, provider_cap=10,
-                           fast_ads=False, resume=False, online_links=False, key=keya, root=troot)
-        parked = (rda / "PARKED.json")
-        if rca == 2 and parked.exists() and "NOANTHROPIC" in parked.read_text():
-            print("SELF-TEST ok: an Anthropic model id returned by the adapter -> rc 2 + PARKED "
-                  "(AF-AV-NOANTHROPIC on the REAL returned model id).")
-        else:
-            ok = False
-            print(f"SELF-TEST FAIL: Anthropic model id not blocked (rc={rca}, parked={parked.exists()}).")
 
         # (4) recovery exhaustion (empty output, max_fix_attempts=2) -> redo-then-PARK
         rde = _mkrun("exhaust")
@@ -963,23 +896,6 @@ def _dispatch_self_test() -> bool:
             print("SELF-TEST FAIL: model-map-absent fallback wrong "
                   f"(cap={_provider_cap_from_map(None)}, abstract={abstract!r}).")
 
-        # (7) FIX-XC-09f: a model-map carrying an Anthropic-shaped tier id is REFUSED
-        #     by the consumer (defense-in-depth on the client-path ban), read from disk.
-        rda2 = _mkrun("mm-anthropic")
-        (rda2 / "model-map.json").write_text(json.dumps(
-            {"tiers": {"A": "anthropic/claude-3-5-sonnet"}, "provider_caps": {"concurrent": 3}}),
-            encoding="utf-8")
-        refused = False
-        try:
-            load_model_map(rda2, troot)
-        except ValueError as exc:
-            refused = "NOANTHROPIC" in str(exc)
-        if refused:
-            print("SELF-TEST ok: (FIX-XC-09f) a model-map with an Anthropic-shaped tier id is REFUSED "
-                  "by load_model_map (AF-AV-NOANTHROPIC, client-path ban).")
-        else:
-            ok = False
-            print("SELF-TEST FAIL: an Anthropic-tainted model-map was not refused by the consumer.")
 
     return ok
 
@@ -1030,7 +946,7 @@ def run_self_test(manifest) -> int:
     else:
         print("SELF-TEST ok: front-door nonce required (missing/short nonce refused).")
 
-    # (f) the dispatch banner differs by mode and R7 is stated unconditionally;
+    # (f) the dispatch banner differs by mode;
     #     the schedule is identical in both modes (topology preserved — repairs
     #     change prompt CONTENT + the R4 gate, never the DAG). R3 (RATIFIED
     #     2026-07-05): the CLIENT-run default is repairs ON; the two opt-outs are
@@ -1049,11 +965,10 @@ def run_self_test(manifest) -> int:
         and _resolve_repairs(a_apply, None) is True         # --apply-repairs ON
     )
     if ("repairs OFF" in off and "repairs ON" in on and off != on
-            and "Anthropic" in off and "Anthropic" in on
             and compute_waves(stages, False) == compute_waves(stages, False)
             and resolver_ok):
         print("SELF-TEST ok: CLIENT-run repairs default ON (R3); --no-repairs / intake.apply_repairs=false "
-              "opt out; dispatch banner mode-specific; R7 unconditional.")
+              "opt out; dispatch banner mode-specific.")
     else:
         ok = False; print(f"SELF-TEST FAIL: repairs banner/default resolution wrong (resolver_ok={resolver_ok}).")
 
@@ -1162,7 +1077,7 @@ def main(argv) -> int:
     ap.add_argument("--no-repairs", action="store_true",
                     help="FIDELITY/regression run: force source repairs R1-R6 OFF (faithful to Trevor's "
                          "original LIVE workflow). The two opt-outs from the client default are this flag "
-                         "and intake.apply_repairs=false. R7 (the Anthropic ban) is always on regardless.")
+                         "and intake.apply_repairs=false.")
     ap.add_argument("--provider-cap", type=int, default=None,
                     help="max concurrent authors; DEFAULT resolves from model-map.json "
                          "provider_caps.concurrent (fleet Ollama-only boxes cap 3), never a hardcoded 10")
@@ -1218,7 +1133,7 @@ def main(argv) -> int:
               "(deps -> bypass-scan -> hash-pin -> nonce), then pass --nonce.")
         return 2
 
-    # unconditional RE-VERIFY: deps + bypass-scan (Anthropic ids + egress) +
+    # unconditional RE-VERIFY: deps + bypass-scan (egress) +
     # hash-pin, run BY THIS PROCESS, right now — regardless of whether entry.sh
     # actually ran, or whether the nonce is genuine or hand-forged. This is
     # what closes the "aa_director never re-verifies deps/bypass-scan/hash-pin"

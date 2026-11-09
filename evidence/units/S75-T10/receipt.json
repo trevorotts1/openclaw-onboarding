@@ -1,0 +1,26 @@
+{
+ "unit": "S75-T10",
+ "head": "7ea8b53bcafd4128a2dc84f7a563d300a0bcde12",
+ "verdict": "PASS",
+ "minted_at": "2026-10-28T06:55:07Z",
+ "lane": "d6-mint-S75-T10-b2",
+ "acceptance_row": "S75-A10",
+ "checks": [
+  {
+   "command": "python3 -I 75-drama-song-ad-factory/scripts/core/test_script_writer.py",
+   "rc": 0,
+   "last_line": "19 passed, 0 failed, 19 total"
+  },
+  {
+   "command": "python3 -I -c \"import py_compile; py_compile.compile('75-drama-song-ad-factory/scripts/core/script_writer.py', doraise=True); print('compile-ok script_writer.py')\"",
+   "rc": 0,
+   "last_line": "compile-ok script_writer.py"
+  },
+  {
+   "command": "python3 -I -c \"import json; d=json.load(open('75-drama-song-ad-factory/scripts/core/fixtures/rich_script.json')); print('keys:', sorted(d.keys())); print('has_response:', 'response' in d, 'has_request:', 'request' in d)\"",
+   "rc": 0,
+   "last_line": "has_response: True has_request: True"
+  }
+ ],
+ "no_verifiable_check": false
+}

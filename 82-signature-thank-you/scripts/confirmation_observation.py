@@ -29,9 +29,11 @@ status. Stdlib only; deterministic: no clock, no randomness.
 import hashlib
 import json
 import os
+import re
 import sys
 
 RECORD_TYPE = "confirmation_shown"
+EV1 = re.compile(r"^ev1:[0-9a-f]{64}$")
 
 
 def entitlement_version_for(view):
@@ -103,6 +105,30 @@ def build_confirmation_observation(view):
         "emits_send": False,
         "test_only": bool(view.get("test_only", False)),
     }
+
+
+def post_confirmation_observation(view, store):
+    """Post the observation to the S44 store's action ledger (DTY-22).
+
+    store: the S44 Store (claim_action). The record is claimed under
+    (tenant, order_ref, "*", "confirmation_shown", dedupe_key), so a page
+    refresh finds the existing claim and adds nothing: one record per
+    journey. Only a view carrying S44's ev1 entitlement_version may post:
+    the derived fallback can never equal S44's ev1 key, so posting it
+    would record an observation S44 can never match. The page emits no
+    send; S44's worker still owns the one onboarding send.
+
+    Returns {"posted": True} for the first post, {"posted": False} for a
+    repeat.
+    """
+    record = build_confirmation_observation(view)
+    if not EV1.match(record["entitlement_version"]):
+        raise ValueError(
+            "view carries no S44 ev1 entitlement_version; refusing to post "
+            "an observation whose key S44 could never match")
+    key = (record["tenant_id"], record["order_ref"], "*", RECORD_TYPE,
+           record["dedupe_key"])
+    return {"posted": store.claim_action(key, record) is None}
 
 
 def _load(path):

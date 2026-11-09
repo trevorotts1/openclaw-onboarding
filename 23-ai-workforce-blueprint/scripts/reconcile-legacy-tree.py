@@ -24,9 +24,10 @@ C5 phantom-duplicate mode (--merge-duplicates): reconcile phantom-duplicate
 department trees in the ACTIVE workspace — two sibling dirs under departments/
 that resolve to the same canonical slug (billing + billing-finance, legal +
 legal-compliance). Keeps the canonical winner, layers the loser's unique role
-folders into it, and archives the loser (+ any '.bak' dept dirs) OUTSIDE
-departments/ under <company>/departments-archive/<ts>/ (never deletes). This mode
-does NOT require a legacy /clawd/departments tree.
+folders into it, and archives the loser (+ any '.bak' dept dirs) OUTSIDE the
+workspace, in the box's ONE central backup folder: <backup root>/departments-archive/<ts>/
+(never deletes the loser; shared-utils/central_backup.py keeps the newest 3 archives). This
+mode does NOT require a legacy /clawd/departments tree.
 
 Usage:
   python3 reconcile-legacy-tree.py                      # dry-run (legacy-path copy)
@@ -52,8 +53,14 @@ from pathlib import Path
 # Resolve detect_platform via the vendored lib/ (v10.15.4) with fallbacks.
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
-for cand in (SKILL_DIR / "lib", SKILL_DIR.parent.parent / "shared-utils", SKILL_DIR / "shared-utils"):
+for cand in (SKILL_DIR / "lib", SKILL_DIR.parent.parent / "shared-utils", SKILL_DIR / "shared-utils",
+             SKILL_DIR.parent / "shared-utils"):
     sys.path.insert(0, str(cand))
+
+try:
+    import central_backup  # the box's one backup folder, outside every workspace
+except ImportError:
+    central_backup = None
 
 try:
     from detect_platform import get_openclaw_paths
@@ -171,7 +178,8 @@ def merge_duplicate_dept_trees(target_root: Path, apply: bool, log, journal) -> 
     normalize to the SAME canonical slug (billing + billing-finance, legal +
     legal-compliance, Sales + sales), keep the canonical WINNER, LAYER any role
     folders unique to the loser INTO the winner, then ARCHIVE the loser OUTSIDE
-    departments/ (never delete — moved to <company>/departments-archive/<ts>/).
+    departments/ (never delete — moved to <backup root>/departments-archive/<ts>/,
+    the box's central backup folder, NOT a folder inside the workspace).
     Phantom '.bak' dept dirs are relocated to the same archive (they poison the
     SOP/substance gate). Read-only unless apply=True.
 
@@ -187,7 +195,11 @@ def merge_duplicate_dept_trees(target_root: Path, apply: bool, log, journal) -> 
                 "would_merge": 0, "would_archive": 0}
 
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    archive_root = target_root.parent / "departments-archive" / ts
+    if central_backup is not None:
+        archive_root = central_backup.run_dir("departments-archive", create=False)
+    else:  # partial bundle without shared-utils: keep the archive rather than skip it
+        archive_root = target_root.parent / "departments-archive" / ts
+        log("[reconcile] WARN shared-utils/central_backup.py not found; archiving beside departments/")
 
     def _archive(src: Path, reason: str):
         """Move a dir OUT of departments/ into the archive (apply), or log intent."""
@@ -255,6 +267,8 @@ def merge_duplicate_dept_trees(target_root: Path, apply: bool, log, journal) -> 
         log(f"  {k:>20} = {v}")
     if apply and (counters["archived_dirs"] or counters["backups_archived"]):
         log(f"[reconcile] archived trees preserved under: {archive_root}")
+        if central_backup is not None:
+            central_backup.prune("departments-archive")
     return counters
 
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# qc-23-key-bodies.sh — machine-enforce the 23-key GHL RAW BODY rule.
+# qc-23-key-bodies.sh — machine-enforce the 24-key GHL RAW BODY rule.
 #
 # Scans every GHL Custom Webhook RAW BODY example (object A) embedded in this
 # skill's references/, templates/, and scripts/ and ASSERTS, for each:
 #   1. It is valid JSON (after neutralizing GHL `{{merge}}` tokens and
 #      `<TEMPLATE_PLACEHOLDER>` substitution markers).
 #   2. It is FLAT — no nested objects, no nested arrays-of-objects.
-#   3. It has EXACTLY 23 top-level keys (23 = the mandated minimum AND the
-#      canonical shape; a sub-23 body is a stripped body, the exact failure
+#   3. It has EXACTLY 24 top-level keys (24 = the mandated minimum AND the
+#      canonical shape; a sub-24 body is a stripped body, the exact failure
 #      §14 of GHL-INBOUND-AND-PLAYBOOKS.md was written to kill).
 #   4. Its `messageTemplate` value is PLACEHOLDER-FREE (no `{{…}}`), or GHL
 #      throws "Error while parsing the object to JSON" and Skips the webhook.
@@ -68,12 +68,12 @@ SCAN_DIRS = ["references", "templates", "scripts"]
 
 # RAW-JSON fixtures scanned as a WHOLE-FILE object-A body (no fenced blocks). The
 # U-15 Convert-and-Flow snapshot ships the inbound Customer-Replied webhook body as a
-# raw .json file (no backtick fences), and it must obey the same FLAT 23-key rule so
+# raw .json file (no backtick fences), and it must obey the same FLAT 24-key rule so
 # snapshot drift from the standard fails CI. Add new raw-JSON bodies here.
 RAW_JSON_FILES = ["references/snapshot-inbound-workflow-fixture.json"]
 
 # No files are excluded by name. The v6.0 source playbook is scanned too — its
-# per-channel GHL RAW BODY examples must obey the same 23-key rule, and its
+# per-channel GHL RAW BODY examples must obey the same 24-key rule, and its
 # object-B server-mapping blocks (camelCase "agentId") are skipped by the
 # agent_id discriminator, not by a blanket file exclusion.
 EXCLUDE_NAMES = set()
@@ -83,6 +83,7 @@ EXPECTED_KEYS = [
     "session_key", "messageTemplate", "deliver", "timeoutSeconds", "channel",
     "to", "thinking", "contact_id", "first_name", "last_name", "email",
     "phone", "subject", "message_body", "location_id", "location_name",
+    "message_id",
 ]
 EXPECTED_SET = set(EXPECTED_KEYS)
 
@@ -169,7 +170,7 @@ def find_object_a_blocks(text):
     bodies (contain the snake_case key "agent_id"). This includes bodies embedded
     in ```json, ```text, no-language Build-with-AI prompt blocks, AND ```bash
     `curl -d '{…}'` smoke tests — all are real GHL RAW BODIES that must obey the
-    23-key rule. Object-B server mappings use camelCase "agentId" (no snake_case
+    24-key rule. Object-B server mappings use camelCase "agentId" (no snake_case
     "agent_id") and are skipped by the discriminator."""
     for _lang, body in iter_fenced_blocks(text):
         idx = body.find('"agent_id"')
@@ -218,10 +219,10 @@ def lint_block(raw):
         if isinstance(v, (dict, list)):
             violations.append(f"key '{k}' has a nested {type(v).__name__} (body must be flat)")
 
-    # Rule 3: exactly 23 keys, and they must be the canonical 23.
+    # Rule 3: exactly 24 keys, and they must be the canonical 23.
     keys = list(obj.keys())
-    if len(keys) != 23:
-        violations.append(f"has {len(keys)} keys, expected exactly 23")
+    if len(keys) != 24:
+        violations.append(f"has {len(keys)} keys, expected exactly 24")
     missing = EXPECTED_SET - set(keys)
     extra = set(keys) - EXPECTED_SET
     if missing:
@@ -300,7 +301,7 @@ if JSON_MODE:
                    ("NO_BODIES" if total_blocks == 0 else "FAIL"),
     }, indent=2))
 else:
-    print("=== qc-23-key-bodies: GHL RAW BODY 23-key linter ===")
+    print("=== qc-23-key-bodies: GHL RAW BODY 24-key linter ===")
     print(f"skill_dir : {SKILL_DIR}")
     print(f"scanned   : {total_blocks} object-A bodies across {total_files} files")
     if excluded:
@@ -315,9 +316,9 @@ else:
     if total_blocks == 0:
         print("RESULT: NO BODIES FOUND — the scan target moved; the linter is blind. Treating as FAIL.")
     elif failures:
-        print(f"RESULT: FAIL — {len(failures)} body/bodies violate the 23-key rule.")
+        print(f"RESULT: FAIL — {len(failures)} body/bodies violate the 24-key rule.")
     else:
-        print(f"RESULT: PASS — all {total_blocks} GHL RAW BODY examples are 23-key, flat, placeholder-free.")
+        print(f"RESULT: PASS — all {total_blocks} GHL RAW BODY examples are 24-key, flat, placeholder-free.")
 
 if total_blocks == 0:
     sys.exit(2)

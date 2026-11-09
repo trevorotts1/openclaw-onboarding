@@ -774,6 +774,7 @@ export class RatificationRoundExecutor implements OperationExecutorPort {
       'ratification',
       null,
       ctx.attempt_kind === 'output_repair' ? ctx.repair_issues : [],
+      3,
     );
 
     let response: TransportResponse;
@@ -803,7 +804,7 @@ export class RatificationRoundExecutor implements OperationExecutorPort {
           // each seat sees the draft, the relevant challenges, and the
           // frozen evidence).
           relevant_cruxes: assignedCruxesFor(cruxes, seatId),
-          output_contract: cardOutputContract('ratification', null),
+          output_contract: cardOutputContract('ratification', null, 3),
         },
       });
     } catch (error) {
@@ -952,6 +953,7 @@ export class RatificationRoundExecutor implements OperationExecutorPort {
         snapshot,
         seatId,
         operation: 'round_3_ratification',
+        round: 3,
         systemText: RATIFICATION_ROUND_SYSTEM,
       }),
     );

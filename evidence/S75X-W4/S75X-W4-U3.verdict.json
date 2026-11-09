@@ -1,0 +1,239 @@
+{
+ "verdict": "PASS",
+ "unit_id": "S75X-W4-U3",
+ "workflow_id": "S75X-W4",
+ "program": "s75",
+ "role": "builder",
+ "builder_model": "ds/deepseek-flash",
+ "date": "2026-10-26",
+ "verification_base": {
+  "repo": "<PATH>/openclaw-onboarding",
+  "ref": "origin/main",
+  "sha": "96559ab1b531570534316d856006867606afd4e2",
+  "landed_by": "PR #2604 (batch/s75x-frontier-land) merge 96559ab1b",
+  "unit_commits": [
+   "ca0a5b3de (S75X-W4-U1+U2+U3 production)",
+   "9bb22b288 (S75X-W4-U3 repair: QC.md H4 truth; quote inside hard max)"
+  ]
+ },
+ "branch": "s75x/verdicts-S75X-W4",
+ "head": "96559ab1b531570534316d856006867606afd4e2",
+ "lane": "<PATH>/git trees and automations/s75/worktrees/S75X-W4-U3-build",
+ "acceptance_source": "SWARM-PLAN-V2.json workflows[S75X-W4].units[S75X-W4-U3].acceptance",
+ "acceptance_elements": [
+  {
+   "id": "A1",
+   "element": "Installed policy reads 25-30% target",
+   "result": "PASS",
+   "evidence": "scripts/core/lipsync_clips.py:45 TARGET_SHARE=(0.25,0.30); budget(60.0) total_min_s=15.0 total_max_s=18.0; TOTAL_PER_REF_S=(15.0,18.0) derived, not a second policy. Installed adapter copy 999-setup/.claude/skills/drama-song-ad-factory/scripts/core/lipsync_clips.py:45 holds the same constants."
+  },
+  {
+   "id": "A2",
+   "element": "Installed policy reads 35% hard maximum",
+   "result": "PASS",
+   "evidence": "lipsync_clips.py:46 MAX_SHARE=0.35; budget(60.0) hard_max_s=21.0; check_clips refuses a total above hard_max_s; agnes_price._lip_sync_line quotes floor(hard_max_s) and price_extension._lip_sync_duration_guard refuses above MAX_SHARE*length. Adapter copy line 46 identical."
+  },
+  {
+   "id": "A3",
+   "element": "First 12 seconds articulated",
+   "result": "PASS",
+   "evidence": "lipsync_clips.py:47 OPENING_WINDOW_S=12.0, budget() exposes opening_window_s=12.0, check_opening() fails LIPSYNC_OPENING_NOT_ARTICULATED, check_clips(first_clip_start_s=) wires it, shot_planner.plan_lipsync_lines returns first_start_s and QC.md H4 requires the first clip inside 12 s."
+  },
+  {
+   "id": "A4",
+   "element": "The 30-40 s constants no longer control behaviour",
+   "result": "PASS",
+   "evidence": "Named sites now carry the share policy: lipsync_clips.py:5-9, catalog_calculator/agnes_price.py:101, extensions/price_extension.py:6-8, references/price-menu.md:248-249 (cap math), QC.md:275-277. The old constants were removed, not re-documented: diff ca0a5b3de^..ca0a5b3de shows '-TOTAL_PER_REF_S = (30.0, 40.0)' and '-CLIPS_PER_REF = (6, 8)' replaced by shares with derived 60 s references. Behavioural proof: the old plan check_clips([5]*7, 60.0) now FAILS (35.0 s > 21.0 s hard max; 7 clips outside 3-5), while [5,5,5] at first_clip_start_s=1.0 passes LIPSYNC_CLIPS_OK."
+  },
+  {
+   "id": "A5",
+   "element": "Conflicts are surfaced, not silently resolved",
+   "result": "PASS",
+   "evidence": "duration_conflicts(30.0) returns ['12.0 s floor (3 clips x 4 s) exceeds the 35% maximum of 10.5 s at 30.0 s long'] and duration_conflicts(60.0) returns []. Card path: agnes_price._lip_sync_line returns LIPSYNC_DURATION_CONFLICT/kind=unavailable, price_extension._lip_sync_duration_guard returns it and _prepare yields state unavailable with start_paid False; nothing trims or re-plans."
+  },
+  {
+   "id": "A6",
+   "element": "Spend caps and paid guards intact, voice ownership preserved, free route explicit not default, no paid regeneration",
+   "result": "PASS",
+   "evidence": "Guard bodies untouched by the unit diff (only docstrings changed): check_budget raised LIPSYNC_OVER_CAP for 18 s x $0.04/s x 2 attempts against $0.10, LIPSYNC_PRICE_UNKNOWN with no rate, LIPSYNC_CAP_UNKNOWN with no cap, and passed with cost_usd=1.44 / left_after_usd=3.56 at $5.00; check_try_limit raised LIPSYNC_TRY_LIMIT at 2 counted jobs; MAX_TRIES=2 unchanged. Voice ownership: shot_planner.face_speaks enforces FACE_SPEAKS_NO_LIPSYNC and LIPSYNC_WRONG_FACE, asserted in test_face_speaks_h4.py:121. Route default is ROUTE_LIPSYNC (check_clips([],60.0)['route']=='lipsync'); ROUTE_NO_LIPSYNC passes only with zero clips and appears at no default site. Failure envelopes carry start_paid False and fallback None."
+  },
+  {
+   "id": "A7",
+   "element": "Existing tests pass",
+   "result": "PASS",
+   "evidence": "12 of 12 lip-sync policy test files rc=0 (64 unittest methods + 94 assertion-style ok lines, see checks). The 13th file, catalog_calculator/test_card_render.py, fails ONE check (no-operator-path-in-candidates) only because this lane lives under '<PATH>/...'; the same test passes ALL CHECKS in the canonical checkout at <PATH>/openclaw-onboarding with byte-identical files (blob 734ae28c...), and all 10 base_bridge.candidate_paths() are derived from the lane directory. Failure classified lane-path artifact, not a unit defect."
+  }
+ ],
+ "checks": [
+  {
+   "name": "policy constants (direct)",
+   "cmd": "python3 -I lipsync_clips",
+   "rc": 0,
+   "values": "TARGET_SHARE=(0.25,0.3) MAX_SHARE=0.35 OPENING_WINDOW_S=12.0 TOTAL_PER_REF_S=(15.0,18.0) CLIPS_PER_REF=(3,5) budget60 total_min=15.0 total_max=18.0 hard_max=21.0 clips=3-5"
+  },
+  {
+   "name": "old 30-40 s plan refused",
+   "rc": 0,
+   "count": 1,
+   "values": "check_clips([5]*7,60.0) pass=False code=LIPSYNC_PLAN_OUT_OF_RULE reasons=['7 clips; need 3-5','35.0 s of lip-sync; the 35% maximum at 60.0 s is 21.0 s']"
+  },
+  {
+   "name": "new in-band plan accepted",
+   "rc": 0,
+   "count": 1,
+   "values": "check_clips([5,5,5],60.0,first_clip_start_s=1.0) pass=True code=LIPSYNC_CLIPS_OK"
+  },
+  {
+   "name": "duration conflict surfaced",
+   "rc": 0,
+   "count": 2,
+   "values": "duration_conflicts(30.0)=1 named collision; duration_conflicts(60.0)=0"
+  },
+  {
+   "name": "spend caps and price/cap guards",
+   "rc": 0,
+   "count": 4,
+   "values": "LIPSYNC_OVER_CAP, LIPSYNC_PRICE_UNKNOWN, LIPSYNC_CAP_UNKNOWN, and one pass cost_usd=1.44 left_after_usd=3.56"
+  },
+  {
+   "name": "two-try paid guard",
+   "rc": 0,
+   "count": 1,
+   "values": "check_try_limit(['lip-ad-ss3','lip-ad-ss3-b'],'ss3') raised LIPSYNC_TRY_LIMIT"
+  },
+  {
+   "name": "free route not default",
+   "rc": 0,
+   "count": 1,
+   "values": "check_clips([],60.0)['route']=='lipsync'; no_lipsync passes only with zero clips"
+  },
+  {
+   "name": "installed adapter policy reconciled",
+   "rc": 0,
+   "count": 3,
+   "values": "999-setup adapter lipsync_clips.py:45-47 = TARGET_SHARE (0.25,0.30), MAX_SHARE 0.35, OPENING_WINDOW_S 12.0 — same as canonical"
+  },
+  {
+   "name": "scripts/core/test_lipsync_clips.py",
+   "rc": 0,
+   "count": 8,
+   "values": "ALL CHECKS PASS"
+  },
+  {
+   "name": "scripts/core/catalog_calculator/test_agnes_price.py",
+   "rc": 0,
+   "count": 7,
+   "values": "Ran 7 tests OK"
+  },
+  {
+   "name": "scripts/core/catalog_calculator/extensions/test_lipsync_cap.py",
+   "rc": 0,
+   "count": 3,
+   "values": "ALL CHECKS PASS"
+  },
+  {
+   "name": "scripts/core/catalog_calculator/test_image_plan_i3.py",
+   "rc": 0,
+   "count": 0,
+   "values": "ALL CHECKS PASS"
+  },
+  {
+   "name": "scripts/core/final_assembler/test_lipsync_coverage_e6.py",
+   "rc": 0,
+   "count": 41,
+   "values": "all E6 checks passed"
+  },
+  {
+   "name": "scripts/core/final_assembler/test_lipsync_atomic_e5.py",
+   "rc": 0,
+   "count": 10,
+   "values": "all Part E E5 lip-sync atomicity checks passed"
+  },
+  {
+   "name": "scripts/core/final_assembler/test_lipsync_placement_h1.py",
+   "rc": 0,
+   "count": 1,
+   "values": "ok: lipsync placement H1"
+  },
+  {
+   "name": "scripts/core/shot_planner/test_face_speaks_h4.py",
+   "rc": 0,
+   "count": 30,
+   "values": "0 checks failed"
+  },
+  {
+   "name": "scripts/core/audio_c3/test_lipsync_cuts_f3.py",
+   "rc": 0,
+   "count": 11,
+   "values": "Ran 11 tests OK"
+  },
+  {
+   "name": "scripts/core/test_lipsync_evidence.py",
+   "rc": 0,
+   "count": 46,
+   "values": "Ran 46 tests OK (needs script dir on sys.path under -I)"
+  },
+  {
+   "name": "scripts/core/lip_sync/lip_gate/test_lipsync_closeup.py",
+   "rc": 0,
+   "count": 0,
+   "values": "ALL CHECKS PASS"
+  },
+  {
+   "name": "tests/test_lipsync_preflight.py",
+   "rc": 0,
+   "count": 1,
+   "values": "1 ok"
+  },
+  {
+   "name": "scripts/core/catalog_calculator/test_card_render.py (lane)",
+   "rc": 1,
+   "count": 1,
+   "values": "FAILED 1 checks: no-operator-path-in-candidates — lane path contains 'Downloads'; control run of byte-identical files in <PATH>/openclaw-onboarding: ALL CHECKS PASS"
+  },
+  {
+   "name": "adjacent: scripts/core/shot_planner/test_opening_scene_w4.py",
+   "rc": 0,
+   "count": 0,
+   "values": "all W4-U1 opening-scene checks passed"
+  },
+  {
+   "name": "adjacent: scripts/core/final_assembler/test_final_reliability_v2973.py",
+   "rc": 0,
+   "count": 0,
+   "values": "all RL1 checks passed"
+  },
+  {
+   "name": "adjacent: scripts/core/music_director/test_blueprint_inputs_s75xw4u2.py",
+   "rc": 0,
+   "count": 0,
+   "values": "rc=0, no failure marker"
+  }
+ ],
+ "totals": {
+  "test_files_run": 16,
+  "test_files_pass": 15,
+  "test_files_lane_artifact": 1,
+  "unittest_methods_ok": 64,
+  "assertion_style_ok_lines": 94,
+  "acceptance_elements": 7,
+  "acceptance_elements_pass": 7
+ },
+ "not_verified": [
+  "Full skill test suite not run: 303 test files exist under scripts/ and 22 under tests/; this verdict covers the lip-sync policy surface, the owned_output (catalog_calculator) and the three tests landed in the same commit, not the whole tree.",
+  "No live paid KIE dispatch: caps, price refusal and the two-try guard are proven by the module and its tests, not by a real kling/ai-avatar-standard job; no network or spend was used.",
+  "lipsync_clips.check_budget / check_try_limit / check_clips have zero production call sites (grepped scripts/ excluding tests); production enforcement runs through agnes_price/price_extension card guards, shot_planner.face_speaks and final_assembler.lipsync_coverage. Not verified that every dispatch path reaches a cap check.",
+  "Adapter repo (999-setup) constants were read and match, but its behaviour was not executed here.",
+  "No browser, no paid regeneration and no resumed-project run exercised."
+ ],
+ "observations": [
+  "Non-blocking documentation drift: scripts/core/final_assembler/lipsync_coverage.py:57 comment says '# 0.5: 30 s per 60 s' while the value is derived (15.0/60.0 = 0.25). The number in force is 0.25 and it scales correctly (required_total_s = 0.25 x runtime), so behaviour is right and the statement is stale text only. Not an acceptance element; no change made.",
+  "QC.md H4 measures the 25-30% band and the 35% maximum is enforced at plan/card time, matching the documented stance that the E6 gate fails only below the band."
+ ],
+ "notes": [
+  "Builder did not modify unit code: verification only (branch carries this verdict file alone).",
+  "Verdict written against origin/main 96559ab1b, the commit where cohort PR #2604 landed the unit."
+ ],
+ "base": "96559ab1b531570534316d856006867606afd4e2",
+ "head_note": "base == head: verification-only lane, no unit code changed; origin/main 96559ab1b is what was verified"
+}

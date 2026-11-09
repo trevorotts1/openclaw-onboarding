@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT))
@@ -101,14 +102,32 @@ class NeverDefaultedTests(unittest.TestCase):
         self.assertIn("nothing has been spent", ctx.exception.detail.lower())
 
     def test_a_real_run_with_cap_and_approval_may_spend_only_inside_them(self):
-        inputs, _ = resolve({**BASE, "image_cap": 120, "paid_render_approval_ref": "APPR-9"}, test_only=False)
-        self.assertEqual((inputs["executor_provider"], inputs["allow_paid"], inputs["image_cap"]),
-                         ("kie", True, 120))
+        with tempfile.TemporaryDirectory() as tmp:
+            brand = Path(tmp) / "brand.json"
+            brand.write_text(json.dumps({"palette_status": "provided"}), encoding="utf-8")
+            raw = {**BASE, "brand_file": str(brand), "design_style": "B", "image_cap": 120,
+                   "image_cap_minor": 960, "image_currency": "USD", "paid_render_approval_ref": "APPR-9"}
+            verify = mock.Mock(return_value={"ok": True, "approval_id": "APPR-9", "kind": "paid_asset_budget",
+                                             "authority": "command-center"})
+            with mock.patch.object(image_plan, "_approval_verify", return_value=verify):
+                inputs, _ = resolve(raw, test_only=False, plan_hash="a" * 64)
+                self.assertEqual((inputs["executor_provider"], inputs["allow_paid"], inputs["image_cap"]),
+                                 ("kie", True, 120))
+                with self.assertRaises(ImagePlanError) as ctx:  # 121 pictures cost more than 960 cents at 8 each
+                    resolve({**raw, "image_cap": 121}, test_only=False, plan_hash="a" * 64)
+            self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-CAP")
+            verify.assert_called_once()
 
-    def test_an_unbuilt_provider_is_refused_by_name_with_nothing_spent(self):
+    def test_an_unbuilt_provider_draws_stub_pictures_on_a_practice_run_and_is_refused_for_paid_pictures(self):
         for name in ("agnes", "other_explicit"):
-            with self.assertRaises(ImagePlanError) as ctx:
-                resolve({**BASE, "image_provider": name}, test_only=True)
+            inputs, _ = resolve({**BASE, "image_provider": name}, test_only=True)
+            self.assertEqual(inputs["executor_provider"], "stub")
+            self.assertFalse(inputs["allow_paid"])
+            with mock.patch.object(image_plan, "_verify_paid_budget", return_value=None):
+                with self.assertRaises(ImagePlanError) as ctx:
+                    resolve({**BASE, "image_provider": name, "design_style": "A", "image_cap": 10,
+                             "image_cap_minor": 80, "image_currency": "USD",
+                             "paid_render_approval_ref": "TEST-APPROVAL-REF"}, test_only=False)
             self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-PROVIDER")
             self.assertIn(name, ctx.exception.detail)
             self.assertIn("nothing was spent", ctx.exception.detail.lower())
@@ -130,7 +149,8 @@ class FileTests(unittest.TestCase):
 
     def test_the_shared_file_holds_the_contract_keys_and_nothing_else(self):
         doc = image_plan.image_inputs_file(self.inputs())
-        self.assertEqual(sorted(doc), sorted(image_plan.C3_KEYS))  # Skill 49 refuses any other key
+        self.assertLessEqual(set(image_plan.C3_KEYS), set(doc))                                    # every contract key
+        self.assertLessEqual(set(doc), set(substrate.dispatch().pset.IMAGE_INPUT_KEYS))  # Skill 49 refuses any other key
         self.assertEqual(doc["image_provider"], "stub")            # the provider that really runs
 
     def test_skill_49_accepts_the_shared_file_it_is_handed(self):

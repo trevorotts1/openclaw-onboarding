@@ -12,7 +12,6 @@
 #      2b. extra golden bundles reproduce      (SERVICE + PHYSICAL-PRODUCT goldens)
 #   3. broken-variants reject                  (each attack fixture trips its AF, exit 2)
 #   4. prompt-fidelity pins                    (baked assets match recorded sha256)
-#   5. no-Anthropic scan                       (AF-PB-ANTHROPIC: no claude-*/anthropic/* id)
 #   6. end-to-end golden pilot through the entry (a full pass issues a certificate)
 #      6b. extra golden bundle pilots          (SERVICE + PHYSICAL-PRODUCT end-to-end)
 #
@@ -141,51 +140,6 @@ expect_reject "html-loss"            prove_pb_html.py     "AF-PB-HTML-LOSS"     
 
 # 4) prompt-fidelity pins (explicit, already covered above but named for clarity).
 run "prompt-fidelity pins match" "$PY" "$SCRIPTS/prove_pb_fidelity.py"
-
-# 5) no-Anthropic scan (AF-PB-ANTHROPIC) — no concrete claude-*/anthropic/* MODEL
-#    id anywhere in the shipped skill (its own anti-Anthropic prose is not an id).
-echo "  -- no-Anthropic scan (AF-PB-ANTHROPIC) --"
-if SKILL_DIR="$SKILL_DIR" "$PY" - <<'PY'
-import os, re, sys
-skill = os.environ["SKILL_DIR"]
-# Concrete Anthropic MODEL-ID shapes only (lowercase, as real config ids are) —
-# NOT the words "Anthropic"/"claude-*" wildcards or "Anthropic/claude-*" prose
-# used in this skill's own ban documentation. Case-SENSITIVE on purpose.
-# ROOT-ANCHORED (MODEL-01), matching the canonical shared-utils text detector:
-# any claude-<id-char> token, never a per-generation enumeration. The old
-# enumerated suffix list silently ALLOWED an unenumerated future family id (a
-# renamed/future claude-<family> generation). Still prose-safe (case-sensitive,
-# lowercase ids only): the claude-* wildcard and the bare word "claude" used in
-# this skill's own ban docs never carry claude-<alnum>. This comment itself is
-# deliberately id-shape-free so the whole-dir scan does not flag verify.sh.
-pat = re.compile(r"claude-[a-z0-9]"
-                 r"|anthropic/[a-z]"
-                 r"|us\.anthropic\.[a-z]")
-hits = []
-for root, dirs, files in os.walk(skill):
-    dirs[:] = [d for d in dirs if d not in (".git", "__pycache__")]
-    for fn in files:
-        p = os.path.join(root, fn)
-        try:
-            src = open(p, "r", errors="replace").read()
-        except Exception:
-            continue
-        for m in pat.finditer(src):
-            rel = os.path.relpath(p, skill)
-            hits.append("%s: %s" % (rel, m.group(0)))
-if hits:
-    print("AF-PB-ANTHROPIC: concrete Anthropic model id(s) found in the shipped skill:", file=sys.stderr)
-    for h in hits:
-        print("    " + h, file=sys.stderr)
-    sys.exit(2)
-print("no concrete Anthropic model id in the shipped skill")
-sys.exit(0)
-PY
-then
-    printf '  [PASS] no-Anthropic scan (AF-PB-ANTHROPIC)\n'
-else
-    printf '  [FAIL] no-Anthropic scan (AF-PB-ANTHROPIC)\n'; fails=$((fails + 1))
-fi
 
 # 6) end-to-end golden pilot through the entry (a full pass issues a certificate).
 echo "  -- golden pilot through product-bio-entry.sh --"

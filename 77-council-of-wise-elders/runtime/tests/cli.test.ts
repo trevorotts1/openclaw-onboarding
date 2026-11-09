@@ -140,7 +140,7 @@ test('cli: create, status, verdict-not-ready, and authorization honesty', async 
   );
 });
 
-test('cli: sample run completes, exports markdown and json, refuses pdf, replays events', async () => {
+test('cli: sample run completes, exports markdown and json, refuses a bare pdf export without --out, replays events', async () => {
   const dir = tempDataDir('cli-sample');
   let c = capture();
   const code = await runCli(['sample', 'run', '--json', '--data-dir', dir], c.io);
@@ -170,13 +170,27 @@ test('cli: sample run completes, exports markdown and json, refuses pdf, replays
   assert.ok(c.out().includes('Verdict content SHA-256:'));
 
   c = capture();
-  assert.equal(
-    await runCli(['export', 'sess-fixture-1', '--format', 'pdf', '--json', '--data-dir', dir], c.io),
-    3,
+  const pdfCode = await runCli(
+    ['export', 'sess-fixture-1', '--format', 'pdf', '--json', '--data-dir', dir],
+    c.io,
   );
+  // v1.0.74 contract (CHANGELOG v1.0.71 "Binary-safe CLI"): PDF is a real
+  // binary deliverable and the CLI requires --out, so the bytes are never
+  // printed as text. A bare `--format pdf` therefore refuses and writes
+  // nothing to stdout. Which refusal fires is host-dependent by design, so
+  // pin the exact code-to-exit pair rather than one host's value:
+  //   renderer present -> the --out guard -> COUNCIL_USAGE / exit 2
+  //   renderer absent  -> EXPORT_FORMAT_NOT_READY -> COUNCIL_FEATURE_NOT_READY / exit 3
+  assert.equal(c.out(), '', 'a refusing pdf export prints no bytes to stdout');
+  const pdfRefusal = JSON.parse(c.err()) as { error: { code: string } };
+  const refusalExitCode: Record<string, number> = {
+    COUNCIL_USAGE: 2,
+    COUNCIL_FEATURE_NOT_READY: 3,
+  };
   assert.equal(
-    (JSON.parse(c.err()) as { error: { code: string } }).error.code,
-    'COUNCIL_FEATURE_NOT_READY',
+    refusalExitCode[pdfRefusal.error.code],
+    pdfCode,
+    `exit code must match the pdf refusal code ${pdfRefusal.error.code}`,
   );
 
   c = capture();

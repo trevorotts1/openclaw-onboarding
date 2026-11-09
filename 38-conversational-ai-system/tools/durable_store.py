@@ -165,6 +165,16 @@ CREATE TABLE IF NOT EXISTS gate_checks (
     PRIMARY KEY (action_id, attempt_no)
 );
 
+CREATE TABLE IF NOT EXISTS keyword_mappings (
+    tenant_id               TEXT NOT NULL,
+    keyword_norm            TEXT NOT NULL,
+    promised_item_version   TEXT NOT NULL,
+    first_cycle_id          TEXT NOT NULL,
+    first_seen_ts           REAL NOT NULL,
+    retired_at              REAL,
+    PRIMARY KEY (tenant_id, keyword_norm)
+);
+
 CREATE TABLE IF NOT EXISTS reconciliation_runs (
     action_id       TEXT NOT NULL,
     run_no          INTEGER NOT NULL,
@@ -178,6 +188,10 @@ CREATE TABLE IF NOT EXISTS reconciliation_runs (
 
 class DurableStoreError(ValueError):
     """Raised on bad input or an illegal state transition. Always fail closed."""
+
+
+class _PreSendBlocked(Exception):
+    """Internal: the point-of-use guard refused. Rolls the attempt back."""
 
 
 # ── small validators ────────────────────────────────────────────────────────
@@ -522,6 +536,94 @@ class DurableStore:
                 (worker_id, ts, action_id, int(fence), worker_id),
             )
             return cur.rowcount == 1
+
+    def begin_attempt_guarded(self, action_id: str, fence: int, worker_id: str,
+                              *, pre_send: Optional[Any] = None,
+                              epoch: Optional[Tuple[str, str, int]] = None,
+                              now: Optional[float] = None) -> Tuple[bool, Optional[str]]:
+        """begin_attempt with the guard evaluated inside the SAME transaction.
+
+        The point-of-use check is not "just before the send" in wall-clock terms:
+        it is inside the IMMEDIATE transaction that creates the attempt row, so
+        no other writer can commit between the check and the commit that lets a
+        send happen.
+
+        pre_send() -> True/False, or (ok, reason). False rolls the attempt back.
+        epoch=(tenant_id, canonical_contact_id, expected) adds a compare-and-swap
+        on suppression_epochs to the INSERT itself: the attempt row is created
+        only while the fence still reads `expected`. That closes the window even
+        when the gate already decided ALLOW before the suppression landed.
+
+        Returns (started, reason). started=False with a reason means the state
+        changed under the gate: NOTHING may be sent. started=False with None is
+        the ordinary not-queued/canceled/leased refusal.
+        """
+        _str(worker_id, "worker_id")
+        ts = _ts(now)
+        if epoch is not None:
+            if (not isinstance(epoch, tuple) or len(epoch) != 3
+                    or not all(isinstance(part, str) for part in epoch[:2])
+                    or not isinstance(epoch[2], int)):
+                raise DurableStoreError(
+                    "bad_input: epoch must be (tenant_id, contact, int)")
+        try:
+            with _Tx(self._db) as cur:
+                has_fence = cur.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table'"
+                    " AND name='suppression_epochs'").fetchone() is not None
+                sql = (
+                    "INSERT INTO outbox_attempts (action_id, attempt_no, fence,"
+                    " worker_id, started_at, ended_at, outcome)"
+                    " SELECT a.action_id, a.tries, a.fence, ?, ?, NULL, NULL"
+                    " FROM outbox_actions a"
+                    " WHERE a.action_id=? AND a.state='queued' AND a.fence=?"
+                    "   AND a.lease_owner=?"
+                    "   AND NOT EXISTS (SELECT 1 FROM outbox_attempts x"
+                    "        WHERE x.action_id=a.action_id AND x.outcome IS NULL)")
+                params: Tuple[Any, ...] = (worker_id, ts, action_id, int(fence),
+                                           worker_id)
+                if epoch is not None:
+                    if has_fence:
+                        sql += (" AND (SELECT COALESCE(MAX(epoch), 0)"
+                                " FROM suppression_epochs WHERE tenant_id=?"
+                                " AND canonical_contact_id=?)=?")
+                        params += (epoch[0], epoch[1], int(epoch[2]))
+                    else:
+                        # No fence table means no suppression was ever durable
+                        # in this database: only the never-suppressed epoch
+                        # (0) may proceed. Anything else fails closed.
+                        sql += " AND ?=0"
+                        params += (int(epoch[2]),)
+                cur.execute(sql, params)
+                if cur.rowcount != 1:
+                    if epoch is not None and has_fence:
+                        moved = cur.execute(
+                            "SELECT COALESCE(MAX(epoch), 0) AS e"
+                            " FROM suppression_epochs WHERE tenant_id=?"
+                            " AND canonical_contact_id=?",
+                            (epoch[0], epoch[1])).fetchone()["e"]
+                        if int(moved) != int(epoch[2]):
+                            # A suppression committed after the fence token was
+                            # read: say so, so the caller blocks rather than
+                            # reporting an ordinary lease race.
+                            return (False, "suppression_epoch_moved:%s->%s"
+                                    % (epoch[2], moved))
+                    return (False, None)
+                if pre_send is None:
+                    return (True, None)
+                decision = pre_send()
+                if isinstance(decision, tuple):
+                    ok = bool(decision[0])
+                    reason = str(decision[1]) if len(decision) > 1 else "pre_send"
+                else:
+                    ok = bool(decision)
+                    reason = "pre_send"
+                if not ok:
+                    # Roll back: the attempt row must not survive a refusal.
+                    raise _PreSendBlocked(reason)
+                return (True, None)
+        except _PreSendBlocked as blocked:
+            return (False, str(blocked))
 
     # ── OUTBOX: outcomes ────────────────────────────────────────────────────
 
@@ -945,6 +1047,58 @@ class DurableStore:
                 " ORDER BY run_no", (action_id,)).fetchall()]
 
     # ── observation helpers ─────────────────────────────────────────────────
+
+    # -- H8: the permanent per-tenant keyword registry ---------------------
+    def register_keyword(self, *, tenant_id: str, keyword_norm: str,
+                         promised_item_version: str, first_cycle_id: str,
+                         now: Optional[float] = None) -> bool:
+        """First use records the mapping; a repeat against another item is refused.
+
+        The row is a tombstone: ``retired_at`` is set when a keyword leaves service,
+        and it is never deleted, so an old keyword can never be recycled onto a
+        different promised item. Returns True when the mapping holds (fresh or the
+        same item), False when it names a different item.
+        """
+        ts = _ts(now)
+
+        def fn() -> bool:
+            cur = self._db.execute(
+                "SELECT promised_item_version, retired_at FROM keyword_mappings"
+                " WHERE tenant_id = ? AND keyword_norm = ?", (tenant_id, keyword_norm))
+            row = cur.fetchone()
+            if row is None:
+                self._db.execute(
+                    "INSERT INTO keyword_mappings (tenant_id, keyword_norm,"
+                    " promised_item_version, first_cycle_id, first_seen_ts, retired_at)"
+                    " VALUES (?, ?, ?, ?, ?, NULL)",
+                    (tenant_id, keyword_norm, promised_item_version, first_cycle_id, ts))
+                self._db.commit()
+                return True
+            version, retired_at = row[0], row[1]
+            if retired_at is None and version != promised_item_version:
+                return False
+            return True
+
+        return self._retry(fn, what="register_keyword")
+
+    def keyword_item(self, tenant_id: str, keyword_norm: str) -> Optional[Dict[str, Any]]:
+        cur = self._db.execute(
+            "SELECT tenant_id, keyword_norm, promised_item_version, first_cycle_id,"
+            " first_seen_ts, retired_at FROM keyword_mappings"
+            " WHERE tenant_id = ? AND keyword_norm = ?", (tenant_id, keyword_norm))
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return {"tenant_id": row[0], "keyword_norm": row[1],
+                "promised_item_version": row[2], "first_cycle_id": row[3],
+                "first_seen_ts": row[4], "retired_at": row[5]}
+
+    def keyword_rows(self, tenant_id: str) -> List[Dict[str, Any]]:
+        cur = self._db.execute(
+            "SELECT keyword_norm, promised_item_version, first_cycle_id, retired_at"
+            " FROM keyword_mappings WHERE tenant_id = ? ORDER BY keyword_norm", (tenant_id,))
+        return [{"keyword_norm": r[0], "promised_item_version": r[1],
+                 "first_cycle_id": r[2], "retired_at": r[3]} for r in cur.fetchall()]
 
     def counts(self) -> Dict[str, int]:
         with _Tx(self._db) as cur:

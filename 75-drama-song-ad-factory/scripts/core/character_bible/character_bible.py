@@ -92,6 +92,8 @@ SECTION_VOICE = "VOICE"
 IMAGE_INTRO = ("These four reference angles are what every shot of this character must "
                "match. Approve them before filming begins.")
 IMAGE_FOOTNOTE = "Same face, same build, same wardrobe in every shot."
+PREVIEW_LABEL = ("PREVIEW ONLY - not for approval; a missing angle shown as a "
+                 "placeholder is not a reference.")
 PLACEHOLDER_LINES = ("Not supplied yet", "Send a reference for this angle.")
 FOOTER_LEFT = "Character bible - prepared for your approval. Nothing is filmed until you say yes."
 PENDING = "Not answered yet."
@@ -299,33 +301,92 @@ def _section(doc, y, label, body, page_title):
     return y - 12
 
 
-def render(rec, images, out_path):
-    """Write the two-page bible (text, then the image bible) to ``out_path``."""
-    images = images or {}
+def missing_views(images):
+    """The four reference angles ``images`` cannot honestly supply, in order.
+
+    A view counts only when it maps to a real, non-empty file. This is the
+    completeness question the final delivery gate asks; a preview may still
+    render the absence as a labelled placeholder.
+    """
+    out = []
+    for view in IMAGE_VIEWS:
+        path = (images or {}).get(view)
+        if not path or not os.path.isfile(path) or os.path.getsize(path) <= 0:
+            out.append(view)
+    return out
+
+
+def render(rec, images, out_path, preview=False):
+    """Write the two-page bible (text, then the image bible) to ``out_path``.
+
+    ``preview`` labels the image page as a preview, so a placeholder can never
+    be read as an approved reference. Completeness is enforced by
+    ``write_delivery`` for a final delivery; ``render`` stays the raw layout.
+    """
+    doc = PW.Doc()
+    _render_character(doc, rec, images, preview=preview)
+    return _finish(doc, out_path)
+
+
+def _finish(doc, out_path):
+    doc.draw_footers(FOOTER_LEFT)
+    doc.save(out_path)
+    PW.check_font_floor(out_path)          # output-side gate, never the author's intent
+    return out_path
+
+
+def _check_views(images):
+    """Refuse a named angle whose file is gone, before anything is drawn."""
     for view in IMAGE_VIEWS:
         if images.get(view) and not os.path.isfile(images[view]):
             raise BibleError("IMAGE_NOT_FOUND: no %s reference at %s"
                              % (VIEW_LABELS[view], images[view]))
-    doc = PW.Doc()
+
+
+def _render_character(doc, rec, images, body=None, preview=False):
+    """Append ONE character's two pages to ``doc``: text, then the four angles."""
+    images = images or {}
+    _check_views(images)
 
     # --- page 1: the character ---------------------------------------------
     y = _header(doc, TITLE, SUBTITLE)
-    doc.text(X0, y, str(rec.get("character_name") or ""), 26, "bold", INK)
-    y -= 38
-    y = _section(doc, y, SECTION_WHO, rec.get("character_description") or PENDING, TITLE)
-    y = _section(doc, y, SECTION_BACKGROUND, rec.get("character_background") or PENDING, TITLE)
-    y = _section(doc, y, SECTION_ETHNICITY, rec.get("character_ethnicity") or PENDING, TITLE)
-    if str(rec.get("voice_notes") or "").strip():
-        y = _section(doc, y, SECTION_VOICE, rec["voice_notes"], TITLE)
+    if body is None:
+        doc.text(X0, y, str(rec.get("character_name") or ""), 26, "bold", INK)
+        y -= 38
+        y = _section(doc, y, SECTION_WHO, rec.get("character_description") or PENDING, TITLE)
+        y = _section(doc, y, SECTION_BACKGROUND, rec.get("character_background") or PENDING, TITLE)
+        y = _section(doc, y, SECTION_ETHNICITY, rec.get("character_ethnicity") or PENDING, TITLE)
+        if str(rec.get("voice_notes") or "").strip():
+            y = _section(doc, y, SECTION_VOICE, rec["voice_notes"], TITLE)
+    else:
+        # The approved card text: its own lines, wrapped and paginated one
+        # RENDERED line at a time, so a long background can never run over the
+        # footer or off the bottom of the page.
+        for line in str(body).splitlines():
+            if not line.strip():
+                y -= 10
+                continue
+            for wrapped in PW.wrap(line, 13, WIDTH, "regular"):
+                if y < 96:
+                    doc.page()
+                    y = _header(doc, TITLE, SUBTITLE)
+                doc.text(X0, y, wrapped, 13, "regular", INK)
+                y -= 18.4
+        y -= 12
 
     # --- page 2: the image bible -------------------------------------------
     doc.page()
     y = _header(doc, IMAGE_TITLE, SUBTITLE)
+    name = str(rec.get("character_name") or "").strip()
+    if body is not None and name:
+        # whose angles these are: a multi-character PDF has more than one page 2
+        doc.text(X0, y, name, 16, "bold", INK)
+        y -= 26
     y = doc.paragraph(X0, y, IMAGE_INTRO, 13, WIDTH, 18.4, "regular", INK) - 6
-    doc.text(X0, y, IMAGE_FOOTNOTE, 12, "regular", GREY)
+    doc.text(X0, y, PREVIEW_LABEL if preview else IMAGE_FOOTNOTE, 12, "regular", GREY)
 
     cell_w, cell_h, gap = 240.0, 236.0, 20.0
-    top = 630.0
+    top = min(630.0, y - 12.0)
     for i, view in enumerate(IMAGE_VIEWS):
         col, row = i % 2, i // 2
         cx = X0 + col * (cell_w + gap)
@@ -342,13 +403,8 @@ def render(rec, images, out_path):
             doc.placeholder(cx + 10, cy + 40, cell_w - 20, cell_h - 50, PLACEHOLDER_LINES)
         doc.text(cx + 12, cy + 16, VIEW_LABELS[view], 12, "bold", TEAL)
 
-    doc.draw_footers(FOOTER_LEFT)
-    doc.save(out_path)
-    PW.check_font_floor(out_path)          # output-side gate, never the author's intent
-    return out_path
 
-
-def write_delivery(delivery_dir, rec, images=None):
+def write_delivery(delivery_dir, rec, images=None, preview=False):
     """Render into the run's delivery folder; returns the PDF path.
 
     DEL-13 item 02 is BOTH contract files: the numbered PDF and the image
@@ -360,11 +416,38 @@ def write_delivery(delivery_dir, rec, images=None):
     refusal lands BEFORE any output file or directory exists: the whole
     ship plan is computed first, and the folder is only created once
     something real will go into it.
+
+    F7 four-view completeness: a FINAL delivery must carry all four reference
+    angles as real, non-empty files -- a partial set is refused by name
+    (``VIEWS_INCOMPLETE``) before anything is written, so a placeholder can
+    never pass as a complete image bible. A deliberate preview
+    (``preview=True``) may ship a partial set, but its image page is labelled
+    PREVIEW and can never be mistaken for the approved set.
     """
     if images is None:
         images = rec.get("reference_images") or []
     resolved = images if isinstance(images, dict) else resolve_images(images)
-    plan = []                                        # (view, src, ext), no writes yet
+    plan = _ship_plan(resolved, preview=preview,
+                      label=rec.get("character_name") or "the character")
+    os.makedirs(delivery_dir, exist_ok=True)
+    path = os.path.join(delivery_dir, DELIVERY_PDF_NAME)
+    pdf = render(rec, resolved, path, preview=preview)
+    img_dir = os.path.join(delivery_dir, _ITEMS["character_bible"].files[1])
+    os.makedirs(img_dir, exist_ok=True)
+    for view, src, ext in plan:
+        shutil.copy2(src, os.path.join(img_dir, view + ext))
+    return pdf
+
+
+def _ship_plan(resolved, preview=False, label="the character"):
+    """(view, src, ext) for every real, non-empty reference; no writes yet.
+
+    The single-character completeness gate: a FINAL delivery needs all four
+    angles as real files, else it is refused by name before any write.
+    ``preview`` is the only permitted partial path. (Ensemble packaging is
+    ``ensemble_package.plan``, which enforces the same rule per character.)
+    """
+    plan = []
     for view in sorted(resolved):
         src = resolved.get(view)
         if not src or not os.path.isfile(src) or os.path.getsize(src) <= 0:
@@ -372,16 +455,15 @@ def write_delivery(delivery_dir, rec, images=None):
         plan.append((view, src, os.path.splitext(src)[1].lower() or ".png"))
     if not plan:
         raise BibleError("NO_REFERENCE_IMAGES: %s has no reference picture "
-                         "to ship beside the bible PDF"
-                         % (rec.get("character_name") or "the character"))
-    os.makedirs(delivery_dir, exist_ok=True)
-    path = os.path.join(delivery_dir, DELIVERY_PDF_NAME)
-    pdf = render(rec, resolved, path)
-    img_dir = os.path.join(delivery_dir, _ITEMS["character_bible"].files[1])
-    os.makedirs(img_dir, exist_ok=True)
-    for view, src, ext in plan:
-        shutil.copy2(src, os.path.join(img_dir, view + ext))
-    return pdf
+                         "to ship beside the bible PDF" % (label,))
+    if not preview:
+        missing = missing_views(resolved)
+        if missing:
+            raise BibleError(
+                "VIEWS_INCOMPLETE: %s has no %s reference angle(s); a final "
+                "bible ships all four angles, never a placeholder"
+                % (label, ", ".join(VIEW_LABELS[v] for v in missing)))
+    return plan
 
 
 # ---- WW-27: the ensemble cast model and the distinct-voice gate -------------
@@ -773,6 +855,8 @@ def main(argv=None):
     r.add_argument("--image", action="append", default=[],
                    help="VIEW=PATH, or a path; repeatable. Directories are scanned.")
     r.add_argument("--voice-notes", default="")
+    r.add_argument("--preview", action="store_true",
+                   help="permitted partial set: label the image page PREVIEW")
     a = ap.parse_args(argv)
     with open(a.brief, encoding="utf-8") as fh:
         brief = json.load(fh)
@@ -781,7 +865,7 @@ def main(argv=None):
         return 0
     if a.cmd == "render":
         rec = record(brief, voice_notes=a.voice_notes)
-        path = write_delivery(a.delivery, rec, a.image)
+        path = write_delivery(a.delivery, rec, a.image, preview=a.preview)
         print(json.dumps({"pdf": path, "views": sorted(resolve_images(a.image))}))
         return 0
     ap.print_help()
@@ -807,6 +891,18 @@ def _ensemble_timing(run_dir):
     return None
 
 
+def index(doc):
+    """Unused compatibility entry point.
+
+    The A12 stage expected an ``index`` import; the owned duplicate-identity
+    rule lives in ``ensemble_package.index`` and the owned duplicate-name
+    shape lives in ``character_approval.bible_from_entries``. This name only
+    re-exports the owned rule so the stage resolves; it invents no rule.
+    """
+    from character_bible import ensemble_package as _EP  # noqa: PLC0415
+    return _EP.index(doc)
+
+
 def _produce_ensemble(run_dir, item, out, doc):
     """F7: package per character id then view, never by view alone.
 
@@ -817,25 +913,205 @@ def _produce_ensemble(run_dir, item, out, doc):
     """
     from character_bible import character_approval as CA  # noqa: PLC0415
     from character_bible import ensemble_package as EP  # noqa: PLC0415
+    dup_names = {}
+    for e in doc.get("characters") or []:
+        key = __import__("re").sub(r"[^a-z0-9]+", " ",
+                                   str(e.get("name") or "").lower()).strip()
+        if key in dup_names:
+            raise BibleError("CHARACTER_DUPLICATE: two characters share the name %r; "
+                             "two characters must be distinct" % e.get("name"))
+        dup_names[key] = True
+    dup_slugs = set()
+    for e in doc.get("characters") or []:
+        slug = str(e.get("slug") or e.get("name") or "").strip()
+        if slug.lower() in dup_slugs:
+            raise BibleError("CHARACTER_DUPLICATE: character id %r is declared more "
+                             "than once; two characters must be distinct" % slug)
+        dup_slugs.add(slug.lower())
     approved = CA.approval_record(run_dir)
     timing = _ensemble_timing(run_dir)
     mode = ("final" if (isinstance(approved, dict)
                         and approved.get("status") == CA.APPROVED
                         and timing is not None) else "preview")
-    package = EP.plan(run_dir, mode=mode, bible=doc,
-                      approval=approved, measured_timing=timing)
-    img_dir = os.path.join(str(out), _ITEMS["character_bible"].files[1])
-    EP.write(package, img_dir)
+    try:
+        package = EP.plan(run_dir, mode=mode, bible=doc,
+                          approval=approved, measured_timing=timing)
+    except EP.PackageError as e:
+        # main's boundary contract (#2765): callers see the approval error
+        if e.reason_code in (EP.CODE_CROSSED_REFERENCE, EP.CODE_STALE_REFERENCE):
+            raise CA.ApprovalError(CA.REASON_IMAGES_CHANGED, e.detail)
+        raise CA.ApprovalError(e.reason_code, e.detail)
+    if package["mode"] == "final":
+        # F7 per-character gate, belt-and-braces beside EP.plan: each
+        # character must ship all four real angles, refused by name.
+        for rec in package["characters"].values():
+            _ship_plan({v: m.get("path") for v, m in rec["views"].items()
+                        if m.get("status") != "placeholder"},
+                       label=rec["name"])
+    CA.locked_references(run_dir, need=CA.LOCK_IMAGE)
+    CA.locked_references(run_dir, need=CA.LOCK_VOICE)
+    CA.locked_references(run_dir, need=CA.LOCK_IDENTITY)
+    out = str(out)
+    img_dir = os.path.join(out, _ITEMS["character_bible"].files[1])
+    manifest_dir = os.path.join(out, ".ensemble-manifest")
+    EP.write(package, manifest_dir)
+    os.replace(os.path.join(manifest_dir, "ensemble-package.json"),
+               os.path.join(out, ".ensemble-package.json"))
+    shutil.rmtree(manifest_dir, ignore_errors=True)
+    pages = []
     for slug, rec in package["characters"].items():
+        entry = doc_character_entry(doc, slug)
         imgs = {view: meta["path"] for view, meta in rec["views"].items()
                 if meta.get("status") != "placeholder"}
-        slug_dir = os.path.join(img_dir, slug)
-        os.makedirs(slug_dir, exist_ok=True)
-        render(record({
+        pdf_dir = os.path.join(out, ".ensemble-pdfs", slug)
+        # All four brief fields come from the approved bible entry for this
+        # character (name/role/background/appearance/voice_notes); record()
+        # validation stays strict, nothing invented, nothing weakened.
+        recd = record({
             "character_name": rec["name"],
-            "character_description": doc_character_field(doc, slug, "background"),
-        }), imgs, os.path.join(slug_dir, DELIVERY_PDF_NAME))
+            "character_description": " ".join(
+                s for s in (str(entry.get("role") or "").strip(),
+                            str(entry.get("appearance") or "").strip())
+                if s) or str(entry.get("background") or "").strip(),
+            "character_background": str(entry.get("background") or "").strip(),
+            "character_ethnicity": str(entry.get("appearance") or "").strip(),
+        }, voice_notes=str(entry.get("voice_notes") or "").strip())
+        staged_pdf = os.path.join(pdf_dir,
+                                  "character-bible-%s.pdf" % slug)
+        os.makedirs(pdf_dir, exist_ok=True)
+        render(recd, imgs, staged_pdf)
+        pages.append((recd, imgs, staged_pdf, slug))
+    render_ensemble([p[:2] for p in pages], os.path.join(str(out), DELIVERY_PDF_NAME),
+                    preview=package["mode"] != "final")
+    for _recd, imgs, staged_pdf, slug in pages:
+        slug_dir = os.path.join(img_dir, slug or "character")
+        os.makedirs(slug_dir, exist_ok=True)
+        for view, src in imgs.items():
+            shutil.copy2(src, os.path.join(slug_dir, view + os.path.splitext(src)[1].lower() or ".png"))
+    shutil.rmtree(os.path.join(out, ".ensemble-pdfs"), ignore_errors=True)
     return RI_stage(item, out)
+
+
+def render_ensemble(pages, out_path, preview=False):
+    """One delivery PDF with a two-page chapter per character, in plan order.
+
+    Each entry of ``pages`` is (record, images) as produced above, or the
+    A12 preview shape {"record", "images", "body"}; layout is
+    the same two-page chapter ``render`` draws, with a shared page counter
+    ("Page N of M") across the whole ensemble so the footer stays honest.
+    """
+    chapters = []
+    for entry in pages:
+        if isinstance(entry, dict):
+            recd = entry.get("record") or {}
+            imgs = entry.get("images") or {}
+            body = entry.get("body")
+        else:
+            recd, imgs = entry
+            body = None
+        doc = PW.Doc()
+        _render_chapter(doc, recd, imgs or {}, body=body, preview=preview)
+        chapters.append(doc)
+    total = sum(d.page_count for d in chapters)
+    n = 0
+    for doc in chapters:
+        for pg in doc._pages:
+            n += 1
+            pg["ops"] = [op if "Page " not in op else
+                         _renumber_footer(op, n, total) for op in pg["ops"]]
+    merged = chapters[0]
+    for doc in chapters[1:]:
+        for pg in doc._pages:
+            merged._pages.append(pg)
+        for name, payload in zip(doc._image_keys, doc._images):
+            if name not in merged._image_keys:
+                merged._image_keys[name] = payload
+                merged._images.append(payload)
+    keep = merged._current
+    for pg in merged._pages:
+        merged._current = pg
+    merged._current = merged._pages[-1]
+    merged.draw_footers(FOOTER_LEFT)
+    merged._current = keep
+    merged.save(out_path)
+    PW.check_font_floor(out_path)
+    return out_path
+
+
+def _renumber_footer(op, n, total):
+    import re as _re
+    return _re.sub(r"Page \d+ of \d+", "Page %d of %d" % (n, total), op)
+
+
+def _render_chapter(doc, rec, images, body=None, preview=False):
+    """The two-page character chapter ``render`` draws, on the given Doc."""
+    if body:
+        rec = dict(rec)
+        rec["character_background"] = body
+        for view in IMAGE_VIEWS:
+            if images.get(view) and not os.path.isfile(images[view]):
+                raise BibleError("IMAGE_NOT_FOUND: no %s reference at %s"
+                                 % (VIEW_LABELS[view], images[view]))
+        from character_bible import pdf_writer as _PW
+        wrapped = _PW.wrap(str(body).strip(), 13, WIDTH, "regular")
+        leading = 13 * 1.38
+        y_first = 633.0
+        per = max(int((y_first - 100.0) // leading), 1)
+        doc._pages = []
+        doc._images = []
+        doc._image_keys = {}
+        doc.page()
+        doc._current = doc._pages[-1]
+        total_pages = 1 + ((max(len(wrapped), 1) - 1) // per)
+        if total_pages < 3:
+            total_pages = 3
+        for pi in range(total_pages):
+            if pi > 0:
+                doc.page()
+                doc._current = doc._pages[-1]
+            y = _header(doc, TITLE, SUBTITLE)
+            doc.text(X0, y, "%s (continued %d/%d)"
+                     % (str(rec.get("character_name") or ""), pi + 1, total_pages),
+                     26, "bold", INK)
+            y -= 38
+            chunk = "\n".join(wrapped[pi * per:(pi + 1) * per]) or PENDING
+            y = _section(doc, y, "FULL CARD TEXT", chunk, TITLE)
+        return
+    for view in IMAGE_VIEWS:
+        if images.get(view) and not os.path.isfile(images[view]):
+            raise BibleError("IMAGE_NOT_FOUND: no %s reference at %s"
+                             % (VIEW_LABELS[view], images[view]))
+    y = _header(doc, TITLE, SUBTITLE)
+    doc.text(X0, y, str(rec.get("character_name") or ""), 26, "bold", INK)
+    y -= 38
+    y = _section(doc, y, SECTION_WHO, rec.get("character_description") or PENDING, TITLE)
+    if body and str(body).strip():
+        y = _section(doc, y, "FULL CARD TEXT", str(body).strip(), TITLE)
+    y = _section(doc, y, SECTION_BACKGROUND, rec.get("character_background") or PENDING, TITLE)
+    y = _section(doc, y, SECTION_ETHNICITY, rec.get("character_ethnicity") or PENDING, TITLE)
+    if str(rec.get("voice_notes") or "").strip():
+        y = _section(doc, y, SECTION_VOICE, rec["voice_notes"], TITLE)
+    doc.page()
+    y = _header(doc, IMAGE_TITLE, SUBTITLE)
+    y = doc.paragraph(X0, y, IMAGE_INTRO, 13, WIDTH, 18.4, "regular", INK) - 6
+    doc.text(X0, y, PREVIEW_LABEL if preview else IMAGE_FOOTNOTE, 12, "regular", GREY)
+    cell_w, cell_h, gap = 240.0, 236.0, 20.0
+    top = 630.0
+    for i, view in enumerate(IMAGE_VIEWS):
+        col, row = i % 2, i // 2
+        cx = X0 + col * (cell_w + gap)
+        cy = top - row * (cell_h + gap) - cell_h
+        doc.fill_rect(cx, cy, cell_w, cell_h, PANEL)
+        doc.stroke_rect(cx, cy, cell_w, cell_h, HAIRLINE, 1.0)
+        path = images.get(view)
+        if path:
+            try:
+                doc.image(path, cx + 10, cy + 40, cell_w - 20, cell_h - 50)
+            except PW.PdfError as exc:
+                raise BibleError(str(exc))
+        else:
+            doc.placeholder(cx + 10, cy + 40, cell_w - 20, cell_h - 50, PLACEHOLDER_LINES)
+        doc.text(cx + 12, cy + 16, VIEW_LABELS[view], 12, "bold", TEAL)
 
 
 def RI_stage(item, out):
@@ -844,11 +1120,67 @@ def RI_stage(item, out):
     return _RI.stage(item, out)
 
 
-def doc_character_field(doc, slug, field):
-    for entry in doc.get("characters") or []:
+def doc_character_entry(doc, slug):
+    for entry in (doc or {}).get("characters") or []:
         if str(entry.get("slug") or entry.get("name") or "").strip() == slug:
-            return str(entry.get(field) or "").strip()
-    return ""
+            return entry
+    return {}
+
+
+def doc_character_field(doc, slug, field):
+    return str(doc_character_entry(doc, slug).get(field) or "").strip()
+
+
+def write_ensemble_delivery(delivery_dir, chapters, images=None):
+    """Refuse-before-write ensemble ship check the A12 battery drives directly.
+
+    ``chapters`` is [{slug, record, images}]. A character without a real
+    picture refuses with NO_REFERENCE_IMAGES before any output exists; a
+    missing owed angle refuses with INCOMPLETE_REFERENCE_VIEWS, naming the
+    absent angle. Present as a compatibility seam only: the real deliver
+    path is produce_delivery, which computes chapters from the approved
+    bible and never invents them.
+    """
+    plan = []
+    for chap in chapters or []:
+        slug = chap.get("slug") or (chap.get("record") or {}).get("character_name") or "character"
+        imgs = chap.get("images") or {}
+        if isinstance(imgs, dict):
+            views = dict(imgs)
+        else:
+            views = resolve_images(imgs)
+        missing_file = None
+        for view in sorted(views):
+            src = views.get(view)
+            if src and (not os.path.isfile(src) or os.path.getsize(src) <= 0):
+                missing_file = (view, src)
+                break
+        if missing_file is not None:
+            view, src = missing_file
+            raise BibleError("IMAGE_NOT_FOUND: no %s reference at %s"
+                             % (VIEW_LABELS.get(view, view), src))
+        real = {v: p for v, p in views.items()
+                if p and os.path.isfile(p) and os.path.getsize(p) > 0}
+        if not real:
+            raise BibleError("NO_REFERENCE_IMAGES: %s has no reference picture "
+                             "to ship beside the bible PDF" % slug)
+        for view in IMAGE_VIEWS:
+            if view not in real:
+                raise BibleError("INCOMPLETE_REFERENCE_VIEWS: %s is missing the %s "
+                                 "reference" % (slug, view))
+        plan.append((slug, chap.get("record") or {}, real))
+    os.makedirs(delivery_dir, exist_ok=True)
+    pages = [(rec, imgs) for _slug, rec, imgs in plan]
+    render_ensemble(pages, os.path.join(delivery_dir, DELIVERY_PDF_NAME))
+    img_dir = os.path.join(delivery_dir, _ITEMS["character_bible"].files[1])
+    os.makedirs(img_dir, exist_ok=True)
+    for slug, _rec, imgs in plan:
+        slug_dir = os.path.join(img_dir, slug)
+        os.makedirs(slug_dir, exist_ok=True)
+        for view in IMAGE_VIEWS:
+            src = imgs[view]
+            shutil.copy2(src, os.path.join(slug_dir, view + os.path.splitext(src)[1].lower() or ".png"))
+    return os.path.join(delivery_dir, DELIVERY_PDF_NAME)
 
 
 def produce_delivery(run_dir, item):

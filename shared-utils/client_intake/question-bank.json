@@ -1,7 +1,7 @@
 {
   "schema": "client-intake-question-bank/v1",
-  "version": "1.1.0",
-  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'. Launch-automation questions (spec 3.5) apply to launch and bf modes, never legacy; the launch date and the sender facts are never defaulted, so no deadline or sender is invented.",
+  "version": "1.4.0",
+  "notes": "One canonical question per ask, shared by Skill 49 (launch and legacy), Skill 71, Skill 83. Same questions and same answers file in claude-nine, Claude Code and OpenClaw; only the rendering differs. choices has at most 3 entries; the renderer always adds the help_label option. never_default questions are never defaulted; every other question may fall back to its default, flagged 'to confirm'. Launch-automation questions (spec 3.5) apply to launch and bf modes, never legacy; the launch date and the sender facts are never defaulted, so no deadline or sender is invented. Mode page is Skill 71's page-only profile (profiles.page): one page, not a funnel, and it opens the client's existing answers file so every confirmed launch answer is reused instead of asked again. The profile's question list is the ask list for a page run. A signature page always needs its canonical renders, so the image questions no longer offer a no-pictures option. The payment-plan flag is derived from billing and is never asked; see system_fields.payment_plans. The design style (A Block / B Circle / C Hybrid) is a foundation question asked right after the client's name, before any design work or paid pictures, and it never carries a stand-in example image. The engine records every answer under one answer contract: client_choice, accepted_recommendation or unknown - a recommendation stays proposed until the client accepts it, and missing evidence stays unknown. The brand provenance (source, version, digest, palette status) and the approved monetary spend ceiling (cap_minor plus currency) travel with the answers, so the producer that used a brand file can match it to the plan and a paid run can never read a picture count as its budget.",
   "help_label": "I'm not sure, help me",
   "introduction": "Let's build a launch that fits your business. I'll help you clarify what you're selling, who it helps, and how to present it. Then we'll turn your approved plan into the supported launch pages and follow-up materials. We'll take one question at a time. You can ask for an example, ask me to recommend an answer, or ask me to use what you've already shared. You'll review the plan before we build.",
   "question_estimate_template": "about {n} short questions, depending on what we already know",
@@ -32,8 +32,47 @@
   "modes": [
     "launch",
     "legacy",
-    "bf"
+    "bf",
+    "page"
   ],
+  "profiles": {
+    "page": {
+      "skills": [71],
+      "description": "The page-only interview for one BlackCEO Signature page, and the page run's exact ask list: ask these questions and nothing else. It asks the offer, audience, proof, story, brand, image and length questions a page needs (including the one offer-shape question that decides price versus packages), and never the funnel length, page set, bump, upsell or downsell extras, account setup, launch-automation or plan-approval work that belongs to Skill 49. Record the page kind (sales or opt_in) before length: an opt-in landing page is long-form only and the engine refuses standard for it. Every page needs its canonical renders, so there is no no-images answer.",
+      "reuse": "Confirmed answers are never re-asked: a page run opens the client's existing answers file with --mode page, every launch answer already confirmed is reused, and only the open questions of this profile are asked - the shared bank's full queue is never walked on a page run. A never_default answer stays open; it is never inferred from the earlier run.",
+      "questions": [
+        "interview_mode",
+        "business_name",
+        "offer_name",
+        "offer_description",
+        "audience",
+        "offer_transformation",
+        "pains",
+        "deliverables",
+        "proof",
+        "voice",
+        "design_style",
+        "founder_story",
+        "funnel_shape",
+        "price",
+        "packages",
+        "billing",
+        "brand_colors",
+        "brand_primary",
+        "brand_secondary",
+        "brand_accent",
+        "brand_background",
+        "logo",
+        "fonts",
+        "photos_founder",
+        "photos_permission",
+        "image_provider",
+        "image_cap",
+        "paid_render_approval",
+        "copy_profile"
+      ]
+    }
+  },
   "system_fields": {
     "schema_version": "set by the launch record writer",
     "tenant_id": "from verified account access",
@@ -44,19 +83,21 @@
     "route_graph_ref": "compiled from the funnel shape",
     "route_graph_hash": "compiled from the funnel shape",
     "plan_approval_ref": "plan_approval question",
-    "offers": "built from offer_name, price, deliverables, extras",
+    "offers": "built from offer_name, price, packages, deliverables, extras by launcher_intake.to_launcher_intake, each offer carrying its answers-file question id as source_ref; the intake is bound to the answers file by hash",
     "extras": "built from bump, upsell_1, downsell_1, upsell_2, downsell_2",
     "bump_enabled": "from the bump question",
     "brand_ref": "path of the brand file generated from the brand answers",
     "brand_hash": "sha256 of that brand file",
     "source_refs": "paths of the answers file and brand file",
+    "answers_file": "the client-intake-answers/v1 file this bank's answers are written to; set by the launch run, never asked",
     "test_only": "set by the run flags",
     "image_provider": "image_provider question",
     "journey_mode": "funnel_shape question",
     "approval": "plan_approval question",
     "brand": "brand_colors, fonts, logo and photos questions",
     "entitlement_attestation": "entitlement question",
-    "page-version": "derived from copy_profile and page_set"
+    "page-version": "derived from copy_profile and page_set",
+    "payment_plans": "derived from billing (offers.main.billing_type: one_time = false, recurring or installment = true); never asked, because billing already answers it"
   },
   "questions": [
     {
@@ -256,7 +297,7 @@
     {
       "id": "audience",
       "group": "offer",
-      "text": "Who is this for? Name 3 to 6 kinds of people, and for each one, what do they want?",
+      "text": "Who is this for? Name at least one kind of person and what they want. More than one is welcome when they want different things.",
       "why": "The page speaks to these people directly.",
       "answer_type": "free_text",
       "choices": [],
@@ -366,6 +407,7 @@
       ],
       "legacy_ids": [
         "a4_deliverables",
+        "a4b_exclusions",
         "q5"
       ],
       "required_by": []
@@ -413,20 +455,20 @@
     {
       "id": "founder_story",
       "group": "offer",
-      "text": "Tell me your story in three short parts: one low moment from your own struggle, the moment you decided things would change, and who you built this for.",
-      "why": "The personal letter on the page is your real story.",
+      "text": "Share any founder context you want the page to use: how you got here, who you built this for, and what you want them to know about you. Skip anything private. This one is optional: leaving it blank is a complete answer.",
+      "why": "The personal letter on the page can carry your real context, and only the parts you choose to share.",
       "answer_type": "free_text",
       "choices": [],
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "A scene, not a summary. Where were you standing, what did you feel?",
+        "explain": "Professional background, credentials, or the reason you started all count. Nothing sensitive is required. A blank answer leaves the letter written from what you already told me.",
         "examples": []
       },
       "default": null,
       "never_default": true,
-      "required": "always",
-      "condition": "mode == legacy",
+      "required": "optional",
+      "condition": "mode != launch",
       "targets": [
         "founder_story"
       ],
@@ -465,6 +507,76 @@
         "q9"
       ],
       "required_by": []
+    },
+    {
+      "id": "design_style",
+      "group": "design",
+      "text": "Which look do you want for your pages: A Block, B Circle, or C Hybrid?",
+      "why": "The style sets the shape of the photos and sections on every page. I ask it here, in the foundation questions, so it is settled before any design work or paid pictures.",
+      "answer_type": "choice",
+      "choices": [
+        "A Block",
+        "B Circle",
+        "C Hybrid"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "style",
+        "explain": "A Block: clean rectangles with straight edges, like a well-made magazine - classic and polished. B Circle: round photos with colored rings and soft curves - warm and friendly. C Hybrid: the Block layout, with round frames only on the personal pictures (you, your team, your clients) - modern and personal. Each style changes the SHAPE of the pictures and sections; it never changes your colors, your words or your brand. If you are not sure, tell me three words for how you want your brand to feel and I will recommend one for you to approve or change.",
+        "examples": [
+          "Classic and professional, like a business magazine: A",
+          "Warm and friendly, round photos of real people: B",
+          "Modern and personal, straight layout with round photos of people: C"
+        ]
+      },
+      "default": {
+        "value": "A",
+        "flag": "to confirm",
+        "reason": "Block is the most neutral look."
+      },
+      "never_default": false,
+      "required": "always",
+      "condition": "always",
+      "targets": [
+        "design_style"
+      ],
+      "legacy_ids": [],
+      "required_by": [
+        "71:design-style"
+      ],
+      "feel_keywords": {
+        "A": [
+          "classic",
+          "polished",
+          "professional",
+          "corporate",
+          "trusted",
+          "clean",
+          "serious"
+        ],
+        "B": [
+          "warm",
+          "friendly",
+          "playful",
+          "soft",
+          "fun",
+          "cozy",
+          "community"
+        ],
+        "C": [
+          "modern",
+          "personal",
+          "approachable",
+          "balanced",
+          "fresh",
+          "human"
+        ]
+      },
+      "choice_explanations": {
+        "A Block": "Clean rectangles and straight edges, like a magazine layout - classic, polished and easy to read.",
+        "B Circle": "Round photos with colored rings and soft curves - warm, friendly and a little playful.",
+        "C Hybrid": "The Block layout with round frames only on the personal pictures (you, your team, your clients) - modern and personal. No example image is shown for Hybrid yet: none has been uploaded, so I will not show a stand-in as if it were real."
+      }
     },
     {
       "id": "representation",
@@ -706,7 +818,7 @@
       },
       "never_default": false,
       "required": "always",
-      "condition": "always",
+      "condition": "mode != page",
       "targets": [
         "bump"
       ],
@@ -746,7 +858,7 @@
       },
       "never_default": false,
       "required": "always",
-      "condition": "always",
+      "condition": "mode != page",
       "targets": [
         "upsell_1"
       ],
@@ -845,7 +957,7 @@
       "id": "downsell_2",
       "group": "funnel",
       "text": "If they pass on the second upsell, what is the smallest true yes you can offer?",
-      "why": "A last smaller offer keeps buyers who are not ready.",
+      "why": "A last smaller offer keeps buyers who are not ready. Asked only in the older step-by-step funnel: the launch record has no slot for a second smaller offer's own price, so a launch never asks for one.",
       "answer_type": "offer",
       "choices": [
         "Yes, I have one",
@@ -865,7 +977,7 @@
       },
       "never_default": false,
       "required": "always",
-      "condition": "upsell_2 != none",
+      "condition": "mode == legacy",
       "targets": [
         "downsell_2"
       ],
@@ -883,7 +995,7 @@
       "id": "page_set",
       "group": "funnel",
       "text": "Which pages should I build?",
-      "why": "Every page you build gets desktop and phone sketches and designs.",
+      "why": "Every page you build gets desktop and phone sketches and designs, and the pages you pick set how many pictures are needed (4 per section): the next picture question shows that ceiling.",
       "answer_type": "choice",
       "choices": [
         "Every page my funnel needs (recommended)",
@@ -905,7 +1017,7 @@
       },
       "never_default": false,
       "required": "always",
-      "condition": "always",
+      "condition": "mode != page",
       "targets": [
         "page_set"
       ],
@@ -914,8 +1026,8 @@
         "49:page_set"
       ],
       "choice_explanations": {
-        "Every page my funnel needs (recommended)": "The full journey is built so no buyer hits a dead end.",
-        "Only the main page and checkout": "The minimum to take a payment; extras can come later.",
+        "Every page my funnel needs (recommended)": "The full journey is built so no buyer hits a dead end. Picture ceiling: 88 for one offer with no extras, up to 264 for several packages, every extra and both landing pages.",
+        "Only the main page and checkout": "The minimum to take a payment; extras can come later. Picture ceiling: 68 (80 with the long-form sales page).",
         "Help me choose": "I recommend the smallest set of pages that serves your plan."
       }
     },
@@ -1225,73 +1337,46 @@
       }
     },
     {
-      "id": "design_style",
+      "id": "visual_direction",
       "group": "design",
-      "text": "Which look do you want for your page: A, B or C?",
-      "why": "The style sets the shape of the photos and sections.",
-      "answer_type": "choice",
+      "text": "Do you have a specific look in mind for your pages, like a brand or style you want them to feel like? Or should I use our house look?",
+      "why": "Without a direction every page gets the house look. If you name one, every page of your funnel follows it; I never pick an outside style for you.",
+      "answer_type": "free_text",
       "choices": [
-        "A Block",
-        "B Circle",
-        "C Hybrid"
+        "House look (recommended)",
+        "Like my own brand or site",
+        "Like an outside style I name"
       ],
       "help": {
         "label": "I'm not sure, help me",
-        "kind": "style",
-        "explain": "A Block: clean rectangles, classic and polished. B Circle: round photos with colored rings, warm and friendly. C Hybrid: Block structure with round photos only for personal pictures. If you are unsure, tell me three words for how you want your brand to feel.",
+        "kind": "explain",
+        "explain": "House look: our standard polished look, used unless you say otherwise. Your own brand or site: tell me which one (a name or a link) and the pages follow that feel. An outside style: name the style or reference you like. You must say which one: if you pick the house look, I record that you chose it.",
         "examples": [
-          "Classic and professional: A",
-          "Warm and friendly: B",
-          "Modern and personal: C"
+          "House look",
+          "Like my own site: https://example.com",
+          "Like an outside style: warm editorial magazine"
         ]
       },
       "default": {
-        "value": "A",
+        "value": "house look",
         "flag": "to confirm",
-        "reason": "Block is the most neutral look."
+        "reason": "The house look until you confirm it or name your own direction."
       },
       "never_default": false,
       "required": "always",
-      "condition": "always",
+      "condition": "mode == bf",
       "targets": [
-        "design_style"
+        "visual_direction"
       ],
       "legacy_ids": [],
       "required_by": [
-        "71:design-style"
+        "71:creative_direction",
+        "83:image_plan.creative_direction"
       ],
-      "feel_keywords": {
-        "A": [
-          "classic",
-          "polished",
-          "professional",
-          "corporate",
-          "trusted",
-          "clean",
-          "serious"
-        ],
-        "B": [
-          "warm",
-          "friendly",
-          "playful",
-          "soft",
-          "fun",
-          "cozy",
-          "community"
-        ],
-        "C": [
-          "modern",
-          "personal",
-          "approachable",
-          "balanced",
-          "fresh",
-          "human"
-        ]
-      },
       "choice_explanations": {
-        "A Block": "Rectangles and clean edges - structured and confident.",
-        "B Circle": "Rounded shapes - softer and friendlier.",
-        "C Hybrid": "A mix of both - balanced and flexible."
+        "House look (recommended)": "Every page gets our standard look; you confirm it so it is your choice, not a silent default.",
+        "Like my own brand or site": "Every page follows the brand or site you name.",
+        "Like an outside style I name": "Every page follows the style or reference you name."
       }
     },
     {
@@ -1323,17 +1408,16 @@
       "id": "image_provider",
       "group": "images",
       "text": "Which image service should make your pictures?",
-      "why": "I only name a service after checking it works for you.",
+      "why": "I only name a service after checking it works for you. Every page needs its generated pictures; there is no no-images option. The Black Friday launcher draws paid pictures with KIE only today. If your image service is Agnes or another one, a practice run with placeholder pictures still works, but paid pictures need KIE; I stop before anything is sent or spent.",
       "answer_type": "choice",
       "choices": [
         "My connected service",
-        "Recommend one",
-        "No images needed"
+        "Recommend one"
       ],
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "This is the service that draws the pictures. If you are not sure, I use the one already connected to your account.",
+        "explain": "This is the service that draws the generated photography each page section is built around. If you are not sure, I use the one already connected to your account. Logos and photos you send are placed as files and never generated, and paid pictures still need your separate OK.",
         "examples": []
       },
       "default": {
@@ -1355,32 +1439,31 @@
         "49-launch:image_provider"
       ],
       "choice_explanations": {
-        "My connected service": "The image service already connected to your account.",
-        "Recommend one": "I recommend one only after checking what is actually available.",
-        "No images needed": "The pages are built without generated pictures."
+        "My connected service": "The image service already connected to your account. The launcher can use it only when that service is KIE.",
+        "Recommend one": "I recommend one only after checking what is actually available; for the launcher that is KIE."
       }
     },
     {
       "id": "image_cap",
       "group": "images",
       "text": "What is the most pictures I should make for this launch?",
-      "why": "It is a ceiling, not a purchase. Paid pictures also need your separate OK.",
+      "why": "It is a ceiling, not a purchase, and it must cover the pages you chose or the last pages are skipped. Paid pictures also need your separate OK.",
       "answer_type": "number",
       "choices": [
-        "12",
-        "24",
-        "No pictures"
+        "88",
+        "168",
+        "264"
       ],
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "Each page needs a handful of pictures. 12 covers a small funnel, 24 a full one.",
+        "explain": "Every image stage renders one image per copy section, per platform, so every section of every page gets 4 pictures (a desktop and a phone sketch, then a desktop and a phone design) and each page needs its full set and cannot be built with none. Pictures per page: opt-in page 60, sales page 48 (60 long-form), page where buyers choose 20, checkout 20, each upsell or smaller-offer page 32, thank-you 20. By page set: only the main page and checkout is 68 (80 long-form); every page my funnel needs is 88 for one offer with no extras, 168 for several packages or levels with no extras, 244 for one offer with every extra and 264 for several packages with every extra. Pick a number at least as large as your page set. These are generated photography costs; logos and photos you send are placed as files for free, and paid pictures still need your separate OK.",
         "examples": []
       },
       "default": {
-        "value": 12,
+        "value": 264,
         "flag": "to confirm",
-        "reason": "A modest ceiling; raising it needs your OK."
+        "reason": "The largest funnel's ceiling, so no page is skipped; it is a limit, not a purchase, and paid pictures still need your separate OK."
       },
       "never_default": false,
       "required": "always",
@@ -1393,9 +1476,9 @@
         "71:image-cap"
       ],
       "choice_explanations": {
-        "12": "A tight set - the essential pictures.",
-        "24": "A fuller set across the pages.",
-        "No pictures": "No generated pictures this launch."
+        "88": "One offer with no extras: sales page, checkout and thank-you. It also covers only the main page and checkout (68, or 80 with the long-form sales page).",
+        "168": "Several packages or levels with no extras: both landing pages, the page where buyers choose, checkout and thank-you.",
+        "264": "The full funnel: several packages, every extra and both landing pages."
       }
     },
     {
@@ -1435,8 +1518,8 @@
     {
       "id": "copy_profile",
       "group": "design",
-      "text": "Should the main page be the standard length, or the long, detailed version?",
-      "why": "Length is your choice.",
+      "text": "Should the main page be the standard length, or the long, detailed version? An opt-in landing page is long-form only; standard is for a sales page.",
+      "why": "Length is your choice on a sales page. An opt-in landing page has one valid length: long-form only.",
       "answer_type": "choice",
       "choices": [
         "Standard",
@@ -1446,13 +1529,13 @@
       "help": {
         "label": "I'm not sure, help me",
         "kind": "explain",
-        "explain": "Standard is shorter and quicker to read. Long-form tells more of the story and suits bigger prices.",
+        "explain": "Standard is shorter and quicker to read. Long-form tells more of the story and suits bigger prices. If this page is the opt-in landing page, it is long-form only - the build refuses standard for it.",
         "examples": []
       },
       "default": {
         "value": "standard",
         "flag": "to confirm",
-        "reason": "Standard length until you choose."
+        "reason": "Standard length for a sales page until you choose; an opt-in landing page is long-form only."
       },
       "never_default": false,
       "required": "always",
@@ -1655,7 +1738,7 @@
       "default": null,
       "never_default": true,
       "required": "optional",
-      "condition": "mode != legacy",
+      "condition": "access_delivery == yes",
       "targets": [
         "access_url",
         "delivery_bindings"
@@ -1669,7 +1752,7 @@
       "id": "payment_plans",
       "group": "launch",
       "text": "Will this offer be paid in full, or do you offer payment plans?",
-      "why": "Payment plans turn on the failed-payment recovery automation; without them it is never built.",
+      "why": "Payment plans turn on the failed-payment recovery automation; without them it is never built. The flag comes from the billing answer, so this is only read, never asked.",
       "answer_type": "choice",
       "choices": [
         "Paid in full",
@@ -1684,7 +1767,7 @@
       "default": null,
       "never_default": true,
       "required": "always",
-      "condition": "mode != legacy",
+      "condition": "payment_plans answered",
       "targets": [
         "payment_plans"
       ],
@@ -1792,6 +1875,90 @@
       }
     },
     {
+      "id": "d6_reentry",
+      "group": "launch",
+      "text": "If someone buys from you more than once — the main offer now and an upgrade or a second package later — should the after-purchase automation run again for that new purchase?",
+      "why": "It sets the after-purchase automation's reentry and enrolment. Running again delivers the new purchase's access once per purchase; running once per contact never re-delivers. The setting is applied to the workflow and read back, and if you do not answer it is recorded as not set rather than guessed.",
+      "answer_type": "choice",
+      "choices": [
+        "Run it again for each new purchase",
+        "Run it once per contact",
+        "Not sure — decide later"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "The safe default for most launches is to run it again for each new purchase, so a real second purchase still gets its access.",
+        "examples": [
+          "Run it again for each new purchase.",
+          "Run it once per contact."
+        ],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "optional",
+      "condition": "mode == bf",
+      "targets": [
+        "launch.automation_reentry"
+      ],
+      "legacy_ids": [
+        "d6_reentry"
+      ],
+      "required_by": [],
+      "choice_explanations": {
+        "Run it again for each new purchase": "A later, separate purchase gets its own access and welcome. The same purchase never repeats because delivery is deduplicated on the purchase identity.",
+        "Run it once per contact": "Each contact enters the after-purchase automation only once, even if they buy again later.",
+        "Not sure — decide later": "Nothing is set and it is recorded as not set. You can answer later and the plan updates."
+      }
+    },
+    {
+      "id": "d7_purchase_identity",
+      "group": "launch",
+      "text": "Which record from your checkout will identify one purchase, so the same purchase can never grant access twice?",
+      "why": "The after-purchase automation grants access once per purchase, so it needs the record that identifies a purchase. A transaction ID or a purchased line ID identifies one purchase; an order ID alone can carry several purchases, so it is never used as the dedupe key. If you are not sure, it is left unknown and nothing is guessed.",
+      "answer_type": "choice",
+      "choices": [
+        "Transaction ID (recommended)",
+        "Purchased line ID",
+        "Not sure — leave unknown"
+      ],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Choose Transaction ID unless your checkout reports each purchased line separately, in which case Purchased line ID is the precise key.",
+        "examples": [
+          "Transaction ID (recommended)",
+          "Purchased line ID"
+        ],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "optional",
+      "condition": "mode == bf",
+      "targets": [
+        "launch.purchase_identity"
+      ],
+      "legacy_ids": [
+        "d7_purchase_identity"
+      ],
+      "required_by": [],
+      "choice_explanations": {
+        "Transaction ID (recommended)": "One settled transaction identifies one purchase. This is the safest key.",
+        "Purchased line ID": "One purchased line identifies one purchase, even when an order carries several changes.",
+        "Not sure — leave unknown": "Nothing is assumed. The plan records the identity as not declared, and the automation must not claim it can deduplicate."
+      }
+    },
+    {
       "id": "community_truth",
       "group": "launch",
       "text": "I need three real facts: your community link, what the bonus is, and a yes that you will really send the personal text.",
@@ -1851,6 +2018,34 @@
         "Please check for me": "I verify it against your account record before anything runs.",
         "No": "This launch needs its own arrangement."
       }
+    },
+    {
+      "id": "checkout_terms",
+      "group": "launch",
+      "text": "What guarantee, terms and checkout consent wording should your order form show? Send the exact words, or links to the pages where they live.",
+      "why": "The order form shows these word for word. I never write a guarantee, terms or consent line for you.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "The guarantee is your refund promise. The terms are the rules of the purchase. The consent line is what the buyer agrees to when paying. If you have none yet, say so and we settle them together before anything is built.",
+        "examples": [
+          "30-day money-back guarantee; terms at yoursite.com/terms",
+          "I agree to the terms and to receive emails about my purchase."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == bf",
+      "targets": [
+        "checkout_terms"
+      ],
+      "legacy_ids": [],
+      "required_by": [
+        "83:checkout_terms"
+      ]
     },
     {
       "id": "bf_promotion",
@@ -1919,6 +2114,39 @@
       ],
       "legacy_ids": [],
       "required_by": []
+    },
+    {
+      "id": "bf_seat_limit",
+      "group": "bf",
+      "text": "How many buyers can you really take in this promotion? Give a number, or say there is no limit.",
+      "why": "A page may only say \"only 50 left\" when 50 is your real number. The limit you give here is the only one a page is allowed to show.",
+      "answer_type": "free_text",
+      "choices": [],
+      "help": {
+        "label": "I'm not sure, help me",
+        "kind": "explain",
+        "explain": "Think about how many people you can serve well, with delivery and support. If there is no real limit, say \"no limit\": then no page claims scarcity.",
+        "examples": [
+          "20",
+          "No limit"
+        ],
+        "actions": [
+          "Show me an example.",
+          "Help me answer this.",
+          "Recommend something using what you already know about my business."
+        ]
+      },
+      "default": null,
+      "never_default": true,
+      "required": "always",
+      "condition": "mode == bf",
+      "targets": [
+        "bf_seat_limit"
+      ],
+      "legacy_ids": [],
+      "required_by": [
+        "83:promotion"
+      ]
     },
     {
       "id": "bf_buyers",

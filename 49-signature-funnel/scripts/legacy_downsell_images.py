@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import re
 import subprocess
@@ -159,13 +160,30 @@ def manuscript_for(slug, ledger_page, args, product_title):
     return "\n".join(line for row in rows for line in manuscript_section(row, row["section"]))
 
 
+def _image_model(args):
+    """The image-to-image model every page is drawn with, resolved through Skill 66 (IMG-19): the
+    --image-model override, the stub's placeholder, else Skill 66's own selector. Never a literal id."""
+    if args.image_model:
+        return args.image_model
+    if args.image_provider == "stub":
+        return "STUB-NO-MODEL"
+    path = Path(__file__).resolve().parents[2] / "shared-utils" / "signature_launch" / "image_model.py"
+    try:
+        spec = importlib.util.spec_from_file_location("signature_launch_image_model", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.resolve()
+    except Exception as exc:  # ImageModelError, a missing file, a broken Skill 66 tree
+        raise Refused(f"images: Skill 66 did not resolve the image-to-image model ({exc}); nothing is drawn")
+
+
 def draw(run, build_args, args, scripts):
-    """The three stages through Skill 71's own builder and executor, in the run folder."""
-    model = args.image_model or ("STUB-NO-MODEL" if args.image_provider == "stub"
-                                 else "gpt-image-2-5-sunburst-image-to-image")
+    """The three stages through Skill 71's own builder and executor, in the run folder.
+    args.image_model is already resolved (main, once per run)."""
+    model = args.image_model
     py = sys.executable
     for stage in STAGES:
-        build = [py, str(scripts / "build_production_request.py"), *build_args, "--stage", stage,
+        build = [py, str(HERE / "build_production_request_with_layouts.py"), str(scripts), *build_args, "--stage", stage,
                  "--model", model, "--out", f"production-request-{stage}.json", "--run-dir", "."]
         if args.design_prose:
             build += ["--design-prose", str(args.design_prose.resolve())]
@@ -272,6 +290,7 @@ def main(argv=None):
         if args.checkout_manuscript and not args.checkout_manuscript.is_file():
             raise Refused(f"--checkout-manuscript {args.checkout_manuscript} is not a file")
         slugs = targets(structure, size, args.page, entries, bool(args.checkout_manuscript))
+        args.image_model = _image_model(args)  # once per run: every page records the same id
         report = {"funnel_size": size, "pages": {},
                   "not_built": {s: NOT_BUILT[s] for s in structure["funnel_matrix"][str(size)]
                                 if s in NOT_BUILT and not (s == "checkout" and args.checkout_manuscript)}}

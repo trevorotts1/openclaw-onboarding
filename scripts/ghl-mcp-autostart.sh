@@ -433,9 +433,21 @@ _ghl_listener_state() {
   printf 'unknown'
 }
 
+# 1 when gateway.tls.enabled is true in the config file named by $1, else 0 (also
+# unreadable). A TLS gateway answers https ONLY: an http:// probe gets an empty
+# reply, so a healthy gateway would read as down.
+_gw_tls_flag() {
+  OC_CFG="$1" python3 -c 'import json,os
+try:
+    t=((json.load(open(os.environ["OC_CFG"])).get("gateway") or {}).get("tls") or {}).get("enabled")
+    print(1 if str(t).lower()=="true" else 0)
+except Exception:
+    print(0)' 2>/dev/null || printf '0'
+}
+
 _ghl_gw_up() {
   command -v curl >/dev/null 2>&1 || return 1
-  local port code
+  local port code s=http k=""
   port="18789"
   if [ -f "$OC_JSON" ] && command -v python3 >/dev/null 2>&1; then
     port="$(python3 - "$OC_JSON" <<'PYEOF' 2>/dev/null || printf '18789'
@@ -447,7 +459,9 @@ except Exception:
 PYEOF
 )"
   fi
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:${port:-18789}/healthz" 2>/dev/null || true)"
+  if [ -f "$OC_JSON" ] && [ "$(_gw_tls_flag "$OC_JSON")" = "1" ]; then s=https; k="-k"; fi
+  # shellcheck disable=SC2086  # k is empty or the single word -k (loopback only)
+  code="$(curl -s $k -o /dev/null -w '%{http_code}' --max-time 3 "$s://127.0.0.1:${port:-18789}/healthz" 2>/dev/null || true)"
   [ "$code" = "200" ]
 }
 
@@ -645,6 +659,12 @@ _ghl_ret_archive_secret_scan() {
        2>/dev/null | grep -q .; then
     return 1
   fi
+  # 1b. No env-file shape may survive the tar excludes into the tree. Scoped to
+  #     tree/: supervisor/ legitimately carries the delivered ghl-mcp-pin.env.
+  if find "$d/tree" -type f \( -name '.env' -o -name '.env.*' -o -name '*.env' \
+       -o -name '*.env.bak*' -o -name '.env.bak-*' \) 2>/dev/null | grep -q .; then
+    return 1
+  fi
   # 2. No live secret VALUE may appear anywhere in the archived bytes.
   while IFS= read -r val; do
     [ -n "$val" ] || continue
@@ -670,11 +690,18 @@ _ghl_ret_archive() {
 
   if [ -d "$src" ]; then
     command -v tar >/dev/null 2>&1 || return 1
+    # Every env-file SHAPE stays out of the archive, not just the two exact
+    # names: a client's own backup (.env.bak-<ts>, .env.production, prod.env,
+    # x.env.bak2) holds the live key, and archiving it made the secret scan
+    # below refuse every retirement (Big Fleet Roll 20261029). tar only reads:
+    # the files stay exactly where the client put them. The scan keeps these
+    # five shapes in step (check 1b) and still guards every other byte.
     payload="$dest/community-mcp.tar"
     ( cd "$src" && tar -cf "$payload" \
         --exclude 'node_modules' --exclude '*/node_modules' --exclude './node_modules' \
         --exclude '*node_modules*' \
         --exclude '.env' --exclude './.env' --exclude '.ghl-mcp.env' --exclude './.ghl-mcp.env' \
+        --exclude '.env.*' --exclude '*.env' --exclude '*.env.bak*' --exclude '.env.bak-*' \
         --exclude '.git' --exclude './.git' \
         --exclude '*.log' --exclude 'logs' --exclude './logs' \
         --exclude '*.db' --exclude '*.sqlite' --exclude '*.sqlite3' \
@@ -1644,14 +1671,16 @@ PROBE="$(
 # is gated on it. Port = gateway.port from openclaw.json (default 18789).
 gw_up() {
   command -v curl >/dev/null 2>&1 || return 1
-  local _cfg _port _code
+  local _cfg _port _code _s=http _k=""
   _cfg="${OPENCLAW_CONFIG:-${OC_JSON:-$HOME/.openclaw/openclaw.json}}"
   _port="$(OC_CFG="$_cfg" python3 -c 'import json,os
 try:
     print(int((json.load(open(os.environ["OC_CFG"])).get("gateway") or {}).get("port") or 18789))
 except Exception:
     print(18789)' 2>/dev/null)"
-  _code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:${_port:-18789}/healthz" 2>/dev/null || true)"
+  if [ "$(_gw_tls_flag "$_cfg")" = "1" ]; then _s=https; _k="-k"; fi
+  # shellcheck disable=SC2086  # _k is empty or the single word -k (loopback only)
+  _code="$(curl -s $_k -o /dev/null -w '%{http_code}' --max-time 3 "$_s://127.0.0.1:${_port:-18789}/healthz" 2>/dev/null || true)"
   [ "$_code" = "200" ]
 }
 

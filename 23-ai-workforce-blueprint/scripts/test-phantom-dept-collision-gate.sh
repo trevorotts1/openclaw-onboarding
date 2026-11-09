@@ -106,17 +106,19 @@ echo "=== T8: reconcile --merge-duplicates --apply reconciles + archives ==="
 DD=$(mk_departments t8 billing-finance legal legal-compliance marketing)
 mkdir -p "$DD/billing/07-unique-billing-role/x"        # billing loser + unique role
 mkdir -p "$DD/legal.bak-20260601/01-y"                 # phantom backup
-python3 "$RECONCILE" --merge-duplicates --apply --target "$DD" --log-dir "$TMP/t8logs" >/dev/null 2>&1; RC=$?
+OPENCLAW_BACKUP_DIR="$TMP/t8/central" python3 "$RECONCILE" --merge-duplicates --apply --target "$DD" --log-dir "$TMP/t8logs" >/dev/null 2>&1; RC=$?
 if [ "$RC" -eq 0 ]; then ok "T8: apply rc=0"; else bad "T8: apply expected rc=0, got $RC"; fi
 if [ ! -d "$DD/billing" ]; then ok "T8: loser 'billing' removed from departments/"; else bad "T8: loser 'billing' still in departments/"; fi
 if [ -d "$DD/billing-finance" ]; then ok "T8: canonical winner 'billing-finance' kept"; else bad "T8: winner 'billing-finance' missing"; fi
 if [ -d "$DD/billing-finance/07-unique-billing-role" ]; then ok "T8: loser's unique role LAYERED into winner"; else bad "T8: unique role not layered"; fi
 if [ ! -d "$DD/legal.bak-20260601" ]; then ok "T8: phantom .bak dir moved OUT of departments/"; else bad "T8: .bak dir still present"; fi
-ARCH_COUNT=$(find "$TMP/t8/departments-archive" -maxdepth 2 -mindepth 2 -type d 2>/dev/null | wc -l | tr -d ' ')
-if [ "$ARCH_COUNT" -ge 3 ]; then ok "T8: losers + .bak preserved under departments-archive/ ($ARCH_COUNT dirs)"; else bad "T8: archive missing preserved trees ($ARCH_COUNT)"; fi
+# The archive is the box's ONE central backup folder, never a folder beside departments/.
+ARCH_COUNT=$(find "$TMP/t8/central/departments-archive" -maxdepth 2 -mindepth 2 -type d 2>/dev/null | wc -l | tr -d ' ')
+if [ "$ARCH_COUNT" -ge 3 ]; then ok "T8: losers + .bak preserved under the central departments-archive/ ($ARCH_COUNT dirs)"; else bad "T8: central archive missing preserved trees ($ARCH_COUNT)"; fi
+if [ ! -e "$TMP/t8/departments-archive" ]; then ok "T8: no departments-archive/ folder left beside departments/"; else bad "T8: departments-archive/ still written beside departments/"; fi
 if check_collisions "$DD"; then ok "T8: gate CLEAN (rc=0) after reconcile"; else bad "T8: gate still dirty after reconcile"; fi
 # Idempotent: a second apply finds nothing.
-python3 "$RECONCILE" --merge-duplicates --apply --target "$DD" --log-dir "$TMP/t8logs2" >/dev/null 2>&1; RC2=$?
+OPENCLAW_BACKUP_DIR="$TMP/t8/central" python3 "$RECONCILE" --merge-duplicates --apply --target "$DD" --log-dir "$TMP/t8logs2" >/dev/null 2>&1; RC2=$?
 if [ "$RC2" -eq 0 ]; then ok "T8: second apply idempotent (rc=0)"; else bad "T8: second apply not idempotent (rc=$RC2)"; fi
 
 echo "=== T9: case-insensitive canonical resolution (Sales == sales) ==="

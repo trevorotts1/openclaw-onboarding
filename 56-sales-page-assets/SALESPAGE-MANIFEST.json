@@ -493,7 +493,7 @@
       "py_symbol": "run_sales_page_assets._check_front_door"
     },
     "AF-SP56-CANONICAL-BYPASS": {
-      "trigger": "run working files hand-roll GHL REST / ImgBB / raw image createTask / a KIE client script / mail sender / Anthropic call (Skill 74 result files under receipts/kie74/ are allow-listed)",
+      "trigger": "run working files hand-roll GHL REST / ImgBB / raw image createTask / a KIE client script / mail sender (Skill 74 result files under receipts/kie74/ are allow-listed)",
       "enforced_by": "front-door",
       "py_symbol": "sales-page-assets-entry.sh:step_bypass_scan"
     },
@@ -509,11 +509,6 @@
     },
     "AF-SP56-MODEL-TIER": {
       "trigger": "model-content-receipt absent or authoring tier is not an execution/content tier (client's own strongest model must write copy); FIX-XC-09e",
-      "enforced_by": "P9-CERTIFY",
-      "py_symbol": "prove_sp_cert.evaluate_model_receipt"
-    },
-    "AF-SP56-MODEL-NOANTHROPIC": {
-      "trigger": "authoring model provider is Anthropic/Claude (client skills never use Anthropic); FIX-XC-09e",
       "enforced_by": "P9-CERTIFY",
       "py_symbol": "prove_sp_cert.evaluate_model_receipt"
     },

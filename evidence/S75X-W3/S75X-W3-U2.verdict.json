@@ -1,0 +1,163 @@
+{
+  "schema": "blackceo.unit-verdict/v1",
+  "program": "s75",
+  "workflow_id": "S75X-W3",
+  "unit_id": "S75X-W3-U2",
+  "role": "builder",
+  "verdict": "FAIL",
+  "verified_at_utc": "2026-10-26",
+  "repo": "trevorotts1/openclaw-onboarding",
+  "base_ref": "origin/main",
+  "base_sha": "96559ab1b531570534316d856006867606afd4e2",
+  "head_sha_verified": "96559ab1b531570534316d856006867606afd4e2",
+  "branch": "s75x/verdicts-S75X-W3",
+  "lane": "<portable-drive>/Downloads/git trees and automations/s75/worktrees/S75X-W3-U2-build",
+  "owned_output": "75-drama-song-ad-factory/scripts/core/intake_preflight/",
+  "acceptance_verbatim": "A new run through each supported launcher produces the method record and enters the upgraded strategy; a resumed run is untouched; factory tests pass.",
+  "elements": [
+    {
+      "id": "E1a",
+      "text": "A new run through the Claude Code chat launcher produces control/method.json and enters the upgraded strategy",
+      "result": "PASS",
+      "evidence": "scripts/core/intake_preflight/test_factory_card_purpose_w3u2.py block [1]: launcher chooses purpose card=True, exit 0, recap locked in, control/method.json written, purpose=campaign, gates A-F planned, factory reads it back, next hands out the purpose block"
+    },
+    {
+      "id": "E1b",
+      "text": "A new run through the Telegram launcher produces control/method.json",
+      "result": "PASS",
+      "evidence": "test_factory_card_purpose_w3u2.py block [2]: --format telegram-json exit 0, one message built, control/method.json written"
+    },
+    {
+      "id": "E1c",
+      "text": "A new run through the Studio launcher produces control/method.json",
+      "result": "FAIL",
+      "evidence": "Finding F1; independent execution of shared-bridge/studio_bridge._replay on a new run with purpose-shaped replies returned REPLAY_FAILED (exit 1) on 3 consecutive attempts and never wrote control/method.json"
+    },
+    {
+      "id": "E2",
+      "text": "A resumed run is untouched",
+      "result": "PASS",
+      "evidence": "test_factory_card_purpose_w3u2.py block [4]: legacy card kept for a resumed run, legacy recap locked in, no method.json invented, approved storyboard gate.json + approval.json byte-identical, run stayed on the legacy list"
+    },
+    {
+      "id": "E3",
+      "text": "Factory tests pass",
+      "result": "PASS",
+      "evidence": "21/21 test files under the owned output dir exit 0; 25/25 adjacent intake_card test files exit 0 (46 files, 0 failures)"
+    }
+  ],
+  "checks": [
+    {
+      "id": "C1",
+      "what": "python3 -I over every test file in the owned output dir (scripts/core/intake_preflight/test_*.py)",
+      "count_passed": 21,
+      "count_failed": 0,
+      "count_total": 21,
+      "detail": "per-file exit codes all 0; representative verbatim tails: test_factory_card_purpose_w3u2: 35 checks 0 failures PASS; test_factory_method_agnes: 148 checks 0 failures PASS; test_factory_next: PASS (35 checks, 0 failures); test_factory_studio: PASS (13 tests, 0 failures); test_final_recap_b7: 29 checks 0 failed; test_intake_preflight: all 13 H8+L4 tests passed; test_preflight_capability_derivation: all 11 W07-U1 tests passed; test_stage_machine_w02u1: ALL 13 CHECKS PASSED; others OK/PASS"
+    },
+    {
+      "id": "C2",
+      "what": "python3 -I over adjacent dependency tests (scripts/core/choice_card/intake_card/test_*.py)",
+      "count_passed": 25,
+      "count_failed": 0,
+      "count_total": 25
+    },
+    {
+      "id": "C3",
+      "what": "Discriminating control: same W3-U2 test against factory.py reverted to pre-fix 4097da39502b8f1dcaa4aad813da54a5a67be4ea in a scratch copy",
+      "count_passed": 0,
+      "count_failed": 1,
+      "count_total": 1,
+      "detail": "aborts at check 1: AttributeError: module 'factory' has no attribute '_purpose_flow_for' -- the test binds to the unit's fix and is not vacuous. First control run failed for a missing sibling 74-kie-live-adapter (VIDEO_MODEL_UNRESOLVABLE); that was my control setup, corrected by linking the sibling, and is NOT counted as a unit result."
+    },
+    {
+      "id": "C4",
+      "what": "Independent Studio launcher probe: studio_bridge._replay(new run with control/studio-order.json, 18 purpose-shaped replies), 3 attempts",
+      "count_passed": 0,
+      "count_failed": 3,
+      "count_total": 3,
+      "detail": "each attempt returned EXIT 1 (REPLAY_FAILED), control/method.json False after all three"
+    },
+    {
+      "id": "C5",
+      "what": "Positive control on the same factory entrypoint: one no-reply prime call then one reply per call over the same purpose-shaped list",
+      "count_passed": 1,
+      "count_failed": 0,
+      "count_total": 1,
+      "detail": "final rc 0, control/method.json True -- so the purpose card itself completes; the failure in C4 is the launcher's call pattern, not the card"
+    },
+    {
+      "id": "C6",
+      "what": "Studio replay guard vs order shape: studio_bridge._question_mismatch",
+      "count_passed": 2,
+      "count_failed": 0,
+      "count_total": 2,
+      "detail": "purpose-shaped 18 replies -> None (guard passes); legacy-shaped 15 replies -> (2, 16) i.e. refused and the order is cancelled with REPLAY_QUESTION_MISMATCH"
+    },
+    {
+      "id": "C7",
+      "what": "Launcher surface enumeration: which entrypoints reach factory.py card",
+      "count_passed": 3,
+      "count_failed": 0,
+      "count_total": 3,
+      "detail": "scripts/openclaw_adapter.py resolves core/intake_preflight/factory.py; shared-bridge/studio_bridge.py:1138 shells python factory.py card --step; scripts/core/intake_preflight/card_session_cli.py is the in-package adapter. factory.py:2930 _purpose_flow_for decides the card from the run dir, so the purpose default applies to all three"
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "acceptance-blocking",
+      "element": "E1c",
+      "title": "Studio launcher never produces control/method.json: _replay sends the whole reply list in one call, which the card refuses",
+      "detail": "shared-bridge/studio_bridge.py:1138-1141 builds ONE argv carrying every reply (--reply r1 --reply r2 ...) and never first primes a pending question. scripts/core/choice_card/intake_card/intake_session.py:495-501 refuses any turn whose reply list has more than one unrecorded entry (len(new) > 1 -> ONE_REPLY_AT_A_TIME, outcome waiting, rc 2), and :480 refuses replies when no question was presented yet in this session (QUESTION_NOT_PRESENTED). The bridge treats any nonzero rc as REPLAY_FAILED and returns before printing the poll line (studio_bridge.py:1301-1302), so a NEW Studio order never reaches the wake/next step and no method record is ever written.",
+      "observed": "3/3 replay attempts EXIT 1 REPLAY_FAILED; control/method.json absent after each; poll would return error before emitting the run line",
+      "expected_by_acceptance": "control/method.json present and the run inside the upgraded strategy after a new Studio order",
+      "attribution": "PRE-EXISTING, not introduced by this unit: the same bulk replay also fails against factory.py reverted to pre-fix 4097da395 (legacy reply list: EXIT 1, no method record). The unit's own test block [3] asserts the refusal path only ('no method record claimed without accepted replies'), so it does not prove E1c.",
+      "scope_note": "The defective code is shared-bridge/studio_bridge.py and scripts/core/choice_card/intake_card/intake_session.py. Neither is in this unit's owned_output (75-drama-song-ad-factory/scripts/core/intake_preflight/), and no unit in SWARM-PLAN-V2.json owns shared-bridge. No fix applied, per instruction.",
+      "reproduction": [
+        "cd '<lane>/75-drama-song-ad-factory'",
+        "create run dir with control/state.sqlite3 (state_store.Store.init_run over the 12 batch_mode stages) and control/studio-order.json",
+        "call studio_bridge._replay(<skill root>, run, <18 purpose-shaped replies>) -> EXIT 1, REPLAY_FAILED",
+        "repeat the same call -> still EXIT 1 (a retry cannot prime the pending question because the bulk list is refused before any answer is recorded)",
+        "control: factory.py card --step --run-dir <run> with no reply once, then one reply per call -> rc 0 and control/method.json written"
+      ]
+    },
+    {
+      "id": "F2",
+      "severity": "observation",
+      "element": "E1c",
+      "title": "Existing legacy-shaped Studio orders are now cancelled instead of retried",
+      "detail": "studio_bridge._question_mismatch counts replies against the card with purpose_flow=True unconditionally (shared-bridge/studio_bridge.py:1090). A legacy-shaped 15-reply order now returns (2, 16) and _refuse_mismatch cancels it at the studio with REPLAY_QUESTION_MISMATCH. A purpose-shaped 18-reply order passes the guard (None) and then dies on F1. Reported as context for F1; not counted as a separate acceptance failure because the same bulk-replay refusal already blocked those orders.",
+      "attribution": "The guard lives in shared-bridge (no owner in the plan). Whether the guard was purpose_flow=True before this unit was not established; no blame assigned."
+    },
+    {
+      "id": "F3",
+      "severity": "observation",
+      "element": "E1a/E1b",
+      "title": "Purpose default is read from the run directory, so every launcher that reaches factory.py card inherits it",
+      "detail": "factory.py:2930 _purpose_flow_for: an explicit flag wins; else control/method.json, control/studio-order.json, a saved PURPOSE answer, or a run with no progress files -> purpose card; a run with no run dir or with recorded progress -> keeps the card it had. _run_is_new returns False on an unreadable store, so a broken store preserves rather than reshapes. This is what makes E2 hold. Not a defect; recorded so the decision surface is auditable.",
+      "attribution": "By design, tested by blocks [1][2][4][5][6]"
+    }
+  ],
+  "not_verified": [
+    "No live end-to-end Studio order against a real studio API was run (no network, no machine key). F1 is established at the _replay/poll boundary, not against a live studio server.",
+    "No live Telegram send was made (--format telegram-json payload construction only; 'the one message was built' is a payload assertion, not a delivery).",
+    "No OpenClaw-runtime card turn was executed; scripts/openclaw_adapter.py was read, not run, and is therefore counted as 'resolves to the same factory.py entrypoint' rather than a separately proven launcher.",
+    "Skill-level tests outside the factory package (75-drama-song-ad-factory/tests/, mini-app, packaging, install fixtures) were NOT run; 'factory tests pass' is verified for scripts/core/intake_preflight/ (21 files) and scripts/core/choice_card/intake_card/ (25 files) only.",
+    "Whether a pre-existing legacy-shaped Studio order was already refused before this unit (F2 attribution) was not established.",
+    "No fix was attempted and no file was modified, so the FAIL is reported as found."
+  ],
+  "commands_run": [
+    "git -C <operator>/openclaw-onboarding fetch origin --prune",
+    "git worktree add '<lane>' -b s75x/verdicts-S75X-W3 96559ab1b531570534316d856006867606afd4e2",
+    "cd '<lane>/75-drama-song-ad-factory' && for f in scripts/core/intake_preflight/test_*.py; do python3 -I \"$f\"; done",
+    "cd '<lane>/75-drama-song-ad-factory' && for f in scripts/core/choice_card/intake_card/test_*.py; do python3 -I \"$f\"; done",
+    "python3 -I '<scratch>/w3u2-control/75-drama-song-ad-factory/scripts/core/intake_preflight/test_factory_card_purpose_w3u2.py'  (factory.py at 4097da395)",
+    "python3 -I heredoc probes in '<lane>/75-drama-song-ad-factory' for C4, C5, C6 (stdlib only, no network)"
+  ],
+  "notes": [
+    "Plan text cites intake_preflight/factory.py:1367 for _method_record; at this base the function is factory.py:1509 (_method_record) with _method_record_from_answers at :1478. Line drift only, not a discrepancy in behaviour.",
+    "Base and verified head are the same commit; this verdict commit adds only evidence/S75X-W3/S75X-W3-U2.verdict.json.",
+    "No file outside evidence/S75X-W3/ was written in the lane. Scratch control copy lives at <portable-drive>/Downloads/git trees and automations/s75/scratch/w3u2-control."
+  ]
+}

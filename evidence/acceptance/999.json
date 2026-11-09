@@ -1,0 +1,385 @@
+{
+  "acceptance": {
+    "checker": "s75-t32-qc-opus-chain: workflow QC-and-fixer lane; did not author the code under test",
+    "checker_distinct_from_author": true,
+    "verdict": "UNAVAILABLE"
+  },
+  "author": "S75-T32 repair author (rounds 1-7; rebase and evidence redaction by the S75-T32 builder lane)",
+  "base": {
+    "commit": "0c93f458770c222defde6154503ac4d969048dd3",
+    "ref": "origin/main",
+    "repository": "trevorotts1/openclaw-onboarding"
+  },
+  "candidate": {
+    "branch": "HEAD",
+    "checkout_commit": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
+    "commit": null,
+    "filing_note": "this commit is the head the facets executed at; the commit that files this receipt is its child and changes only this receipt",
+    "head_verified_at_execution": false,
+    "repository": "trevorotts1/999-setup",
+    "repository_identity": {
+      "declared_repository": "trevorotts1/999-setup",
+      "digest": null,
+      "digest_scope": null,
+      "identity_proven": false,
+      "mode": "unresolved",
+      "pin": {
+        "digest": null,
+        "note": "Pinned revision. The tree digest is null until the pinned checkout is provisioned and its bytes are measured; while it is null, a tree placed at the pin path is REFUSED rather than accepted on its name alone. Fill this from the provisioned tree before any 999 release claim.",
+        "repository": "trevorotts1/999-setup",
+        "revision": "33ef8ec5b17e171b646926ccb4ec77ee5e865d49"
+      },
+      "proven_repository": null,
+      "refusals": [
+        "no directory at None, so no repository identity can be read"
+      ],
+      "remote": null,
+      "remote_url": null,
+      "revision": null,
+      "revision_source": null
+    },
+    "revision_gate": {
+      "at_origin_main": null,
+      "clean_excluding_instrument_output": null,
+      "is_origin_revision": null,
+      "mode": null,
+      "provenance": {
+        "declared_repository": "trevorotts1/999-setup",
+        "digest": null,
+        "digest_scope": null,
+        "identity_proven": false,
+        "mode": "unresolved",
+        "pin": {
+          "digest": null,
+          "note": "Pinned revision. The tree digest is null until the pinned checkout is provisioned and its bytes are measured; while it is null, a tree placed at the pin path is REFUSED rather than accepted on its name alone. Fill this from the provisioned tree before any 999 release claim.",
+          "repository": "trevorotts1/999-setup",
+          "revision": "33ef8ec5b17e171b646926ccb4ec77ee5e865d49"
+        },
+        "proven_repository": null,
+        "refusals": [
+          "no directory at None, so no repository identity can be read"
+        ],
+        "remote": null,
+        "remote_url": null,
+        "revision": null,
+        "revision_source": null
+      },
+      "revision": null,
+      "revision_source": null,
+      "root": null,
+      "status": "REFUSED",
+      "violations": [
+        "no directory at None, so no repository identity can be read",
+        "no candidate skill root resolved"
+      ]
+    },
+    "worktree_clean_excluding_receipts": true
+  },
+  "checks": {
+    "cells_fail": 0,
+    "cells_not_applicable": 0,
+    "cells_pass": 0,
+    "cells_total": 0,
+    "controls_green": 0,
+    "controls_red": 0,
+    "facets_green": 0,
+    "facets_red": 0
+  },
+  "contracts": {
+    "adapter_module": "scripts/core/package_flavor_adapter.py",
+    "core_digest": null,
+    "core_module": "scripts/core/story_first_contracts.py",
+    "core_schema_version": null,
+    "file_digests": {},
+    "seam": null,
+    "skill_root": null,
+    "stage_count": null
+  },
+  "coverage": {
+    "cells": {
+      "Notion migration": {
+        "clause": "Notion migration is exercised by both flavour facets (product gap; see not_covered for the owing unit)",
+        "rows": [
+          "S75-A32"
+        ]
+      },
+      "approval ordering": {
+        "clause": "preference is not approval; approval binds to current digests",
+        "rows": [
+          "S75-A12",
+          "S75-A13",
+          "S75-A32"
+        ]
+      },
+      "cast bypass": {
+        "clause": "cast cannot be bypassed: empty, partial and undefined speakers all fail closed",
+        "rows": [
+          "S75-A07",
+          "S75-A09",
+          "S75-A32"
+        ]
+      },
+      "identity setting changes": {
+        "clause": "a setting change cannot rewrite identity; a pinned stale world revision is refused",
+        "rows": [
+          "S75-A05",
+          "S75-A08",
+          "S75-A32"
+        ]
+      },
+      "missing foundation": {
+        "clause": "missing foundation cannot bypass the gate",
+        "rows": [
+          "S75-A09",
+          "S75-A13",
+          "S75-A32"
+        ]
+      },
+      "original byte preservation": {
+        "clause": "original descriptions survive byte-for-byte",
+        "rows": [
+          "S75-A18",
+          "S75-A32"
+        ]
+      },
+      "paid compatibility": {
+        "clause": "paid compatibility is exercised by both flavour facets (product gap; see not_covered for the owing unit)",
+        "rows": [
+          "S75-A32"
+        ]
+      },
+      "scene richness": {
+        "clause": "one-line placeholders are refused; a rich scene validates",
+        "rows": [
+          "S75-A09",
+          "S75-A11",
+          "S75-A32"
+        ]
+      },
+      "style18": {
+        "clause": "exactly eighteen styles, unique and resolvable",
+        "rows": [
+          "S75-A18",
+          "S75-A32"
+        ]
+      }
+    },
+    "covered": {
+      "approval_ordering_and_binding": {
+        "clause": "preference is not artifact approval; full-script approval before music; storyboard approval before video; bindings must match current digests",
+        "rows": [
+          "S75-A12",
+          "S75-A13",
+          "S75-A32"
+        ]
+      },
+      "complete_fixture_validates": {
+        "clause": "schema validates a complete fixture (identity, world, cast, scene)",
+        "rows": [
+          "S75-A03",
+          "S75-A05",
+          "S75-A08",
+          "S75-A09"
+        ]
+      },
+      "identity_survives_world_revision": {
+        "clause": "identity record has no world binding, so a setting change cannot rewrite it (structural only)",
+        "rows": [
+          "S75-A05",
+          "S75-A08",
+          "S75-A32"
+        ]
+      },
+      "invalid_scene_reference_refused": {
+        "clause": "valid cast/location references; stale world revision refused",
+        "rows": [
+          "S75-A09",
+          "S75-A32"
+        ]
+      },
+      "missing_cast_refused": {
+        "clause": "absent cast fields fail closed; missing cast prevents script",
+        "rows": [
+          "S75-A07",
+          "S75-A09",
+          "S75-A32"
+        ]
+      },
+      "missing_foundation_refused": {
+        "clause": "missing foundations cannot bypass the gate; missing world/story plan prevents script",
+        "rows": [
+          "S75-A09",
+          "S75-A13",
+          "S75-A32"
+        ]
+      },
+      "no_future_artifact_deadlock": {
+        "clause": "runtime graph has no future-artifact deadlock",
+        "rows": [
+          "S75-A03",
+          "S75-A32"
+        ]
+      },
+      "one_line_scene_refused": {
+        "clause": "one-line placeholders and beat-only records fail new generation",
+        "rows": [
+          "S75-A09",
+          "S75-A11",
+          "S75-A32"
+        ]
+      },
+      "package_seam_and_differences": {
+        "clause": "adapters preserve package differences; each flavor resolves through one seam",
+        "rows": [
+          "S75-A03",
+          "S75-A32"
+        ]
+      },
+      "undefined_speaker_refused": {
+        "clause": "undefined speakers fail closed",
+        "rows": [
+          "S75-A07",
+          "S75-A32"
+        ]
+      }
+    },
+    "not_covered": {
+      "18 style end-to-end render/dispatch paths": "the eighteen styles are delivered and ARE exercised (cell_matrix style18 resolves all eighteen ids in music_styles.catalog); what is not covered here is end-to-end render and dispatch through the production pipeline. Owed by S75-T29 (ONB-PACKAGE-OWNER) for the onboarding flavour and S75-T30 (N999-PACKAGE-OWNER) for 999.",
+      "Notion offline snapshot / new-existing-mixed / retry / conflict / migration": "capability absent from both repositories. Owed by S75-T17 (CHARACTER-MIGRATION-OWNER), blocked on S75-T15, S75-T16, S75-T28. The cell_matrix Notion migration cell executes a presence scan over character_library/migration.py, sync.py, notion_store.py and cache.py and reports NOT_APPLICABLE with this reason.",
+      "affected-only invalidation of plan/script/visual outputs": "the shared contracts declare stage dependencies and approval bindings but implement no output invalidation. Owed by S75-T28 (COMPATIBILITY-OWNER).",
+      "elected full-script-before-music via user election": "ordering is enforced; the election record itself is outside these modules. Owed by S75-T29 (ONB-PACKAGE-OWNER) / S75-T30 (N999-PACKAGE-OWNER).",
+      "genuine writing dispatch": "no dispatch call exists in the shared contract modules; asserting it here would invent a criterion",
+      "old paid output / raw answer / approval preservation": "capability absent from both repositories. Owed by S75-T28 (COMPATIBILITY-OWNER: compatibility.py, contracts/legacy-compatibility-map.json, tests/fixtures/paid_artifact_preservation.json), blocked on S75-T01, S75-T03. The cell_matrix paid compatibility cell executes a presence scan over those three carriers and a token scan of the shared contracts, and reports NOT_APPLICABLE with this reason."
+    },
+    "note": "a row is touched only for the named clause; no row is claimed fully covered",
+    "rows_touched": [
+      "S75-A03",
+      "S75-A05",
+      "S75-A07",
+      "S75-A08",
+      "S75-A09",
+      "S75-A11",
+      "S75-A12",
+      "S75-A13",
+      "S75-A18",
+      "S75-A32"
+    ]
+  },
+  "dependencies": {
+    "model_calls": "none",
+    "network": "none",
+    "python": null,
+    "spend": "none"
+  },
+  "executed": [],
+  "execution": {
+    "verdict": "UNAVAILABLE"
+  },
+  "flavor": "999",
+  "generated_at": "2026-10-26T16:23:16Z",
+  "harness": {
+    "branch": "HEAD",
+    "commit": "fe25719cc7617f362e5b46e9a7cb8dc19fc3e886",
+    "repository": "trevorotts1/openclaw-onboarding"
+  },
+  "literal_binding": {
+    "contract_files": [
+      "scripts/core/story_first_contracts.py",
+      "scripts/core/package_flavor_adapter.py",
+      "scripts/core/contracts/flavor-999.json"
+    ],
+    "contract_module": "scripts/core/story_first_contracts.py",
+    "seam": "package_flavor_adapter.resolve"
+  },
+  "not_executed": [
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "package_seam_and_differences",
+      "reason": "REFUSED - resolved skill root is not a measurable revision: no directory at None, so no repository identity can be read; no candidate skill root resolved; sources checked: /private/tmp/s75t32-qc-r7/tests/story_first_acceptance/pins/999-setup/33ef8ec5b17e171b646926ccb4ec77ee5e865d49/.claude/skills/drama-song-ad-factory"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "complete_fixture_validates",
+      "reason": "REFUSED - resolved skill root is not a measurable revision: no directory at None, so no repository identity can be read; no candidate skill root resolved; sources checked: /private/tmp/s75t32-qc-r7/tests/story_first_acceptance/pins/999-setup/33ef8ec5b17e171b646926ccb4ec77ee5e865d49/.claude/skills/drama-song-ad-factory"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "missing_cast_refused",
+      "reason": "REFUSED - resolved skill root is not a measurable revision: no directory at None, so no repository identity can be read; no candidate skill root resolved; sources checked: /private/tmp/s75t32-qc-r7/tests/story_first_acceptance/pins/999-setup/33ef8ec5b17e171b646926ccb4ec77ee5e865d49/.claude/skills/drama-song-ad-factory"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "undefined_speaker_refused",
+      "reason": "REFUSED - resolved skill root is not a measurable revision: no directory at None, so no repository identity can be read; no candidate skill root resolved; sources checked: /private/tmp/s75t32-qc-r7/tests/story_first_acceptance/pins/999-setup/33ef8ec5b17e171b646926ccb4ec77ee5e865d49/.claude/skills/drama-song-ad-factory"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "invalid_scene_reference_refused",
+      "reason": "REFUSED - resolved skill root is not a measurable revision: no directory at None, so no repository identity can be read; no candidate skill root resolved; sources checked: /private/tmp/s75t32-qc-r7/tests/story_first_acceptance/pins/999-setup/33ef8ec5b17e171b646926ccb4ec77ee5e865d49/.claude/skills/drama-song-ad-factory"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "missing_foundation_refused",
+      "reason": "REFUSED - resolved skill root is not a measurable revision: no directory at None, so no repository identity can be read; no candidate skill root resolved; sources checked: /private/tmp/s75t32-qc-r7/tests/story_first_acceptance/pins/999-setup/33ef8ec5b17e171b646926ccb4ec77ee5e865d49/.claude/skills/drama-song-ad-factory"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "one_line_scene_refused",
+      "reason": "REFUSED - resolved skill root is not a measurable revision: no directory at None, so no repository identity can be read; no candidate skill root resolved; sources checked: /private/tmp/s75t32-qc-r7/tests/story_first_acceptance/pins/999-setup/33ef8ec5b17e171b646926ccb4ec77ee5e865d49/.claude/skills/drama-song-ad-factory"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "approval_ordering_and_binding",
+      "reason": "REFUSED - resolved skill root is not a measurable revision: no directory at None, so no repository identity can be read; no candidate skill root resolved; sources checked: /private/tmp/s75t32-qc-r7/tests/story_first_acceptance/pins/999-setup/33ef8ec5b17e171b646926ccb4ec77ee5e865d49/.claude/skills/drama-song-ad-factory"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "no_future_artifact_deadlock",
+      "reason": "REFUSED - resolved skill root is not a measurable revision: no directory at None, so no repository identity can be read; no candidate skill root resolved; sources checked: /private/tmp/s75t32-qc-r7/tests/story_first_acceptance/pins/999-setup/33ef8ec5b17e171b646926ccb4ec77ee5e865d49/.claude/skills/drama-song-ad-factory"
+    },
+    {
+      "class": "CANDIDATE_NOT_LANDED",
+      "facet": "identity_survives_world_revision",
+      "reason": "REFUSED - resolved skill root is not a measurable revision: no directory at None, so no repository identity can be read; no candidate skill root resolved; sources checked: /private/tmp/s75t32-qc-r7/tests/story_first_acceptance/pins/999-setup/33ef8ec5b17e171b646926ccb4ec77ee5e865d49/.claude/skills/drama-song-ad-factory"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "18 style end-to-end render/dispatch paths",
+      "reason": "not stated by the shared contracts: the eighteen styles are delivered and ARE exercised (cell_matrix style18 resolves all eighteen ids in music_styles.catalog); what is not covered here is end-to-end render and dispatch through the production pipeline. Owed by S75-T29 (ONB-PACKAGE-OWNER) for the onboarding flavour and S75-T30 (N999-PACKAGE-OWNER) for 999."
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "Notion offline snapshot / new-existing-mixed / retry / conflict / migration",
+      "reason": "not stated by the shared contracts: capability absent from both repositories. Owed by S75-T17 (CHARACTER-MIGRATION-OWNER), blocked on S75-T15, S75-T16, S75-T28. The cell_matrix Notion migration cell executes a presence scan over character_library/migration.py, sync.py, notion_store.py and cache.py and reports NOT_APPLICABLE with this reason."
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "affected-only invalidation of plan/script/visual outputs",
+      "reason": "not stated by the shared contracts: the shared contracts declare stage dependencies and approval bindings but implement no output invalidation. Owed by S75-T28 (COMPATIBILITY-OWNER)."
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "elected full-script-before-music via user election",
+      "reason": "not stated by the shared contracts: ordering is enforced; the election record itself is outside these modules. Owed by S75-T29 (ONB-PACKAGE-OWNER) / S75-T30 (N999-PACKAGE-OWNER)."
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "genuine writing dispatch",
+      "reason": "not stated by the shared contracts: no dispatch call exists in the shared contract modules; asserting it here would invent a criterion"
+    },
+    {
+      "class": "NOT_MODELLED_BY_CONTRACTS",
+      "facet": "old paid output / raw answer / approval preservation",
+      "reason": "not stated by the shared contracts: capability absent from both repositories. Owed by S75-T28 (COMPATIBILITY-OWNER: compatibility.py, contracts/legacy-compatibility-map.json, tests/fixtures/paid_artifact_preservation.json), blocked on S75-T01, S75-T03. The cell_matrix paid compatibility cell executes a presence scan over those three carriers and a token scan of the shared contracts, and reports NOT_APPLICABLE with this reason."
+    }
+  ],
+  "receipt_version": "s75.cross_flavor.receipt.v1",
+  "repository": "trevorotts1/999-setup",
+  "unaffected_proof": {
+    "cross_flavor_blocking": false,
+    "method": "one subprocess and one receipt per flavor; each flavor loads only its own scripts/core, so neither flavor's absence can block or contaminate the other",
+    "note": "S75-A36 and S75-A37 require each release to proceed without the other flavor's fixtures",
+    "this_flavor_executed": []
+  },
+  "unit_id": "S75-T32"
+}

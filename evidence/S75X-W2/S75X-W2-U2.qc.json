@@ -1,0 +1,332 @@
+{
+ "schema": "blackceo.s75.unit-qc/v1",
+ "program": "s75",
+ "workflow_id": "S75X-W2",
+ "unit_id": "S75X-W2-U2",
+ "agent_role": "qc-fixer",
+ "plane": "verify-fix",
+ "date": "2026-10-26",
+ "repo": "https://github.com/trevorotts1/openclaw-onboarding.git",
+ "lane": "<PATH>/s75/worktrees/S75X-W2-U2-qc",
+ "verdict_branch": "s75x/verdicts-S75X-W2",
+ "base_sha": "96559ab1b531570534316d856006867606afd4e2",
+ "builder_verdict_sha": "acfb10db7c48862efd25b78f8586636c2fb92ec4",
+ "qc_head_before_fix": "246a9666d881725f1c7b3a08d99d982f5f4bdd66",
+ "verdict_on_builder": "CONFIRMED",
+ "verdict_on_builder_reason": "Independent re-run in the QC lane reproduced the builder's numbers exactly (37 method_plan tests pass; C1-C5 pass; C4 music-request turns carry reason on 0 of 4 and audible-change fields on 1 of 4; every projection's only external naming was the package/999_adapter.py callable() probe). The acceptance element 'Blueprint fields populate actual downstream inputs' failed at 96559ab: the projections existed but no production code called them. Negative-result control re-run on the same instrument: pace_order 6 files, true_at_beat 33 files, gates( 10 files -- the instrument discriminates, so the zeros were real.",
+ "verdict_after_fix": "PASS",
+ "findings_verified": [
+  {
+   "id": "F1",
+   "verified": true,
+   "detail": "shot_seeds had 0 production consumers; shot_planner.py did not import method_plan; nothing wrote the planner input from creative/blueprint.json."
+  },
+  {
+   "id": "F2",
+   "verified": true,
+   "detail": "storyboard_input had 0 production consumers; approval_runner._approve reviewed with contracts.json only; SKILL.md:1560-1561 'storyboard_input feeds the storyboard review' was false at 96559ab."
+  },
+  {
+   "id": "F3",
+   "verified": true,
+   "detail": "music_request_input had 0 consumers; music_director.blueprint_request_inputs turned out 4 turns with reason on 0 of 4 and pace_after/rhythmic_change/emotional_direction on 1 of 4 (hero_shift only); factory._pace_into_music never wrote turns into $RUN/music/req.json."
+  },
+  {
+   "id": "F4",
+   "verified": true,
+   "detail": "production_map had no consumer outside its own test and the adapter callable probe."
+  }
+ ],
+ "fixes_applied": [
+  {
+   "id": "X1",
+   "for": "F3",
+   "where": [
+    "75-drama-song-ad-factory/scripts/core/method_plan/method_plan.py (new turns_ride)",
+    "75-drama-song-ad-factory/scripts/core/music_director/__init__.py (_blueprint_turns)",
+    "75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py (_pace_into_music)"
+   ],
+   "what": "method_plan.turns_ride carries each turn's recorded reason and audible_change (and the flat AUDIBLE_FIELDS mirrors) onto the request's own turn receipt, matched by cue_id. music_director._blueprint_turns now rides them, and factory._pace_into_music consumes method_plan.music_request_input and writes pace_order + true_at_beat + turns into $RUN/music/req.json. The request's own turn keys are preserved; the pinned top-level request key set (test_blueprint_inputs_s75xw4u2.py:117) is untouched."
+  },
+  {
+   "id": "X2",
+   "for": "F1",
+   "where": [
+    "75-drama-song-ad-factory/scripts/core/shot_planner/shot_planner.py (new shots_from_blueprint)",
+    "75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py (new _seeds_into_storyboard, called from cmd_next at the storyboard stage)"
+   ],
+   "what": "shot_planner.shots_from_blueprint builds the planner's own SHOT_FIELDS input records from the blueprint via method_plan.shot_seeds (the planner now imports method_plan). factory writes $RUN/storyboard/shot-seeds.json (one seed per story beat, unresolved fields named, never invented) beside shot-list.json when the storyboard stage is handed out, and returns the write receipt on the next card."
+  },
+  {
+   "id": "X3",
+   "for": "F2",
+   "where": [
+    "75-drama-song-ad-factory/scripts/core/storyboard_director/approval_runner.py (new _method_contracts; _approve review call)"
+   ],
+   "what": "method_plan.storyboard_input feeds the storyboard review: the blueprint's 14.3 contract answers ride each card and are merged FILL-ONLY into the contract view passed to storyboard_director.adversarial_review. The run's own contracts.json answers always win; shots, contracts.json and the approval record are untouched (the approval revision hashes stay computed from contracts.json, so production_process's re-check at admission is unaffected). SKILL.md:1560-1561 is now true."
+  },
+  {
+   "id": "X4",
+   "for": "F4",
+   "where": [
+    "75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py (_method_plan_block)"
+   ],
+   "what": "The stage record now carries the projections with the validate() report: shot_seeds, storyboard_input and the production_map receipt (its designed purpose per its own docstring), each guarded to report UNDETERMINED beside blueprint_check instead of hiding."
+  }
+ ],
+ "acceptance_results_after_fix": [
+  {
+   "element": "Blueprint fields populate actual downstream inputs",
+   "result": "PASS",
+   "evidence": [
+    "shot_seeds: 3 naming sites outside its own module -- factory._seeds_into_storyboard (writes storyboard/shot-seeds.json, the planner input artifact), factory._method_plan_block (stage record), shot_planner.shots_from_blueprint (the planner's own input builder).",
+    "storyboard_input: 3 -- approval_runner._method_contracts (feeds adversarial_review, the storyboard review), factory._method_plan_block (stage record).",
+    "music_request_input: 2 -- factory._pace_into_music (writes turns into $RUN/music/req.json).",
+    "production_map: 2 -- factory._method_plan_block (the receipt, returned on the next card).",
+    "C4 after fix: request turns carry reason on 4 of 4 and audible-change fields on 4 of 4.",
+    "C9 after fix: factory writes merged['turns'], calls mp.shot_seeds, calls mp.storyboard_input."
+   ]
+  },
+  {
+   "element": "Every required musical turn carries a recorded reason plus intended audible change",
+   "result": "PASS",
+   "evidence": [
+    "method_plan.musical_turns: 4 of 4 reason + 4 of 4 audible_change (unchanged, gates still enforced: C3 all three tamper gates fire).",
+    "The provider request turns now carry the same recorded reason + audible_change (was the element-2 caveat; removed)."
+   ]
+  },
+  {
+   "element": "No competing beat engine exists",
+   "result": "PASS",
+   "evidence": [
+    "teaching_map 12 rows == story_arc.BEATS 12, rows_equal_beats true (unchanged)."
+   ]
+  },
+  {
+   "element": "Existing method_plan tests pass",
+   "result": "PASS",
+   "evidence": [
+    "python3 -m pytest -q scripts/core/method_plan -> 41 passed (37 pre-existing + 4 new wiring checks) rc=0.",
+    "python3 -I scripts/core/method_plan/test_method_plan.py -> 37 ok, rc=0. No pre-existing test changed or weakened."
+   ]
+  }
+ ],
+ "tests": {
+  "method_plan_pytest": "41 passed in 0.13s (rc=0)",
+  "method_plan_standalone": "python3 -I test_method_plan.py -> 37 ok (rc=0)",
+  "wiring_standalone": "python3 -I test_wiring_w2u2.py -> 4 ok (rc=0)",
+  "music_director_plus_music_qc": "166 passed (rc=0)",
+  "storyboard_director_plus_shot_planner": "78 passed, 4 subtests (rc=0)",
+  "intake_preflight": "90 passed, 23 subtests (rc=0)",
+  "song_dispatch_plus_sung_hook": "103 passed, 2 subtests (rc=0)",
+  "suno_recipe_plus_music_styles": "241 passed, 1 warning, 8 subtests (rc=0)"
+ },
+ "checks_before_after": {
+  "C1_teaching_rows": [
+   12,
+   12
+  ],
+  "C1_story_arc_beats": [
+   12,
+   12
+  ],
+  "C1_rows_equal_beats": [
+   true,
+   true
+  ],
+  "C2_turn_count": [
+   4,
+   4
+  ],
+  "C2_turns_with_reason": [
+   4,
+   4
+  ],
+  "C2_turns_with_audible": [
+   4,
+   4
+  ],
+  "C3_reason_gate": [
+   true,
+   true
+  ],
+  "C3_audible_gate": [
+   true,
+   true
+  ],
+  "C3_spoken_gate": [
+   true,
+   true
+  ],
+  "C4_request_turns_with_reason": [
+   0,
+   4
+  ],
+  "C4_request_turns_with_audible": [
+   1,
+   4
+  ],
+  "C5_pace_seam_errors": [
+   [],
+   []
+  ],
+  "C5_pace_boundary_s": [
+   22.0,
+   22.0
+  ],
+  "C5_pace_return_s": [
+   38.0,
+   38.0
+  ],
+  "C6_consumers_shot_seeds": [
+   0,
+   3
+  ],
+  "C6_consumers_storyboard_input": [
+   0,
+   3
+  ],
+  "C6_consumers_music_request_input": [
+   0,
+   2
+  ],
+  "C6_consumers_production_map": [
+   0,
+   2
+  ],
+  "C7_storyboard_imports_method_plan": [
+   false,
+   true
+  ],
+  "C8_shot_planner_imports_method_plan": [
+   false,
+   true
+  ],
+  "C9_factory_writes_turns": [
+   false,
+   true
+  ],
+  "C9_factory_calls_shot_seeds": [
+   false,
+   true
+  ],
+  "C9_factory_calls_storyboard_input": [
+   false,
+   true
+  ],
+  "note": "First value measured in the QC lane at 246a9666 (code identical to 96559ab), second after the fix. C6 counts naming sites in production .py outside scripts/core/method_plan/ (the 999_adapter callable probe included in both counts)."
+ },
+ "negative_result_controls": [
+  {
+   "control": "consumer instrument on pace_order",
+   "consumers_found": 6,
+   "verdict": "instrument discriminates"
+  },
+  {
+   "control": "consumer instrument on true_at_beat",
+   "consumers_found": 33,
+   "verdict": "instrument discriminates"
+  },
+  {
+   "control": "consumer instrument on '.validate('",
+   "consumers_found": 6,
+   "verdict": "instrument discriminates"
+  },
+  {
+   "control": "consumer instrument on 'gates('",
+   "consumers_found": 10,
+   "verdict": "instrument discriminates"
+  },
+  {
+   "note": "Same walk, same lane, before the fix: projections 0 vs pace_order 6 / true_at_beat 33. Zeros were a property of the projections, not the check."
+  }
+ ],
+ "receipts": [
+  "git rev-parse origin/s75x/verdicts-S75X-W2 at QC start -> 246a9666d881725f1c7b3a08d99d982f5f4bdd66 (verdict commits only; git diff 96559ab..246a966 = 2 evidence JSON files, 0 code)",
+  "python3 -I <PATH>/s75/scratch/s75x-w2-u2-qc-checks.py -> before/after table above",
+  "python3 -m pytest -q scripts/core/method_plan scripts/core/intake_preflight -> 131 passed, 23 subtests (rc=0)",
+  "python3 -I scripts/core/method_plan/test_wiring_w2u2.py -> test_factory_wires_seeds_turns_and_receipt / test_request_turns_carry_reason_and_audible / test_shot_planner_input_from_blueprint / test_storyboard_review_input_from_blueprint all ok",
+  "code changes confined to 75-drama-song-ad-factory/scripts/core/{method_plan,music_director,intake_preflight,storyboard_director,shot_planner}; main never touched"
+ ],
+ "residual_notes": [
+  "C8_shot_planner_binds_from_shot_list (a builder-constructed string check: 'shot-list.json' inside shot_planner.py) remains false and is not load-bearing: shot_planner binds shots passed as data (bind_plan), it never names the artifact path; the artifact producer and the seeds handoff are factory's storyboard stage.",
+  "Whether an out-of-repo department SOP instructs the storyboard artist to author shot-list.json from storyboard/shot-seeds.json was not verified (outside this repo). In-repo the handoff artifact, the planner-side builder and the review feed now exist.",
+  "The full repository test suite was not run (the skill-wide pytest exceeds a 120s window per S75X-W2-U1's note); all suites for the five touched modules and their immediate consumers passed.",
+  "No live factory stage or run directory was executed: no spend, no provider call, no rendered storyboard review at runtime; verification is offline function calls plus the run-dir writers exercised on temporary directories.",
+  "The merge into the review's contract view is fill-only by design (contracts.json remains the artist's file); a shot_id present in shot-list.json but absent from the blueprint's story beats simply gets no blueprint answers."
+ ],
+ "qc_pass_2": {
+  "date": "2026-10-27",
+  "agent_role": "qc-fixer (second pass, independent lane)",
+  "lane": "<PATH>/s75/worktrees/S75X-W2-U2-qc",
+  "head_before": "63fde447396746c06a6b3f7603fd8fc88ebd4c9a",
+  "builder_verdict": "acfb10db7c48862efd25b78f8586636c2fb92ec4 FAIL at 96559ab1b -- CONFIRMED (element 1 failed at main; elements 2-4 passed).",
+  "first_qc_fix_verdict": "PARTIAL. Turns reason/audible on the music_director receipt (X1), shot_planner.shots_from_blueprint (X2), storyboard/shot-seeds.json writer and production_map receipt (X4) verified. Two of the claimed downstream feeds did not reach their real consumer:",
+  "findings": [
+   {
+    "id": "Q1",
+    "severity": "blocking",
+    "what": "storyboard review feed matched blueprint cards to shots by shot_id only. Cards carry blueprint story_beat_id (SB-01..SB-08); real shot lists use their own ids (s1, S030, K11, shot-0 in-repo). Probe with 8 real shots on the 8 beat windows: 0 of 8 shots received a blueprint answer and 8 orphan SB-0N contract entries were added to the review view.",
+    "where": "75-drama-song-ad-factory/scripts/core/storyboard_director/approval_runner.py _method_contracts"
+   },
+   {
+    "id": "Q2",
+    "severity": "blocking",
+    "what": "music request feed wrote pace_order / true_at_beat / turns into $RUN/music/req.json, but the music command (song_choices.py generate -> song_choices._load_request) reads the order ONLY as pace_plan/_pace_plan and the hook plan ONLY as hook_plan/_hook_plan. Probe: runner_pace_plan_present False, runner_hook_plan_present False after _pace_into_music. song_dispatch.run_takes refuses a run with no pace order (PACE_TURNS_REQUIRED), so the blueprint order never reached the gate or the style.",
+    "where": "75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py _pace_into_music"
+   }
+  ],
+  "fixes": [
+   {
+    "id": "QF1",
+    "for": "Q1",
+    "what": "_method_contracts(run_dir, contracts, shots) takes the approved shots; each real shot takes the card whose beat window holds its song_start (start <= t < end; last beat holds its end) or the card whose id equals its own. Cards no real shot lands on are never added. Fill-only preserved. _approve passes the approved shots."
+   },
+   {
+    "id": "QF2",
+    "for": "Q2",
+    "what": "_pace_into_music also fills pace_plan (the blueprint pace order) and hook_plan (method_plan.hook_plan_seed) when the request carries neither key nor its underscore form. Fill-only: an approved pace_plan/hook_plan is kept."
+   }
+  ],
+  "tests_added": "method_plan/test_wiring_w2u2.py: storyboard test now asserts 8/8 real-id shots filled with their beat's why_it_belongs and no orphan ids; factory test now asserts song_choices._load_request sees pace_plan == method_plan pace_order and hook_plan == hook_plan_seed, check_pace_plan == [], and fill-only keeps an approved plan. Existing assertions kept; none weakened.",
+  "negative_control": "New tests run against HEAD 63fde4473 code (git archive copy, new test file only): 2 failed, 2 passed (test_storyboard_review_input_from_blueprint, test_factory_wires_seeds_turns_and_receipt fail). With the fix: 4 passed.",
+  "probes_after_fix": {
+   "review_real_shots_filled": "8 of 8 (was 0 of 8)",
+   "review_orphan_ids_added": "0 (was 8)",
+   "music_runner_pace_plan_present": true,
+   "music_runner_hook_plan_present": true,
+   "check_pace_plan_errors": [],
+   "beat_errors": [],
+   "fill_only_kept": true
+  },
+  "tests_after_fix": {
+   "method_plan (pytest)": "41 passed",
+   "test_method_plan.py (python3 -I)": "37 ok",
+   "test_wiring_w2u2.py (python3 -I)": "4 ok",
+   "intake_preflight": "90 passed, 23 subtests passed",
+   "music_director": "15 passed",
+   "music_qc": "151 passed",
+   "storyboard_director": "36 passed, 4 subtests passed",
+   "shot_planner": "42 passed",
+   "song_dispatch": "63 passed, 2 subtests passed",
+   "sung_hook": "40 passed",
+   "suno_recipe": "72 passed, 8 subtests passed",
+   "music_styles": "169 passed",
+   "song_choices": "26 passed",
+   "song_contract": "11 passed",
+   "package/test_999_adapter.py": "7 failed, 25 passed -- PRE-EXISTING: same file at main 96559ab1b (clean archive) 8 failed, 24 passed; shared cause 'notion: declared scripts/core/character_library/notion_store.py absent but ... present' plus 'package-check exited 1'. Not introduced by U2; not fixed here (out of owned scope)."
+  },
+  "acceptance_after_qc_pass_2": {
+   "Blueprint fields populate actual downstream inputs": "PASS -- shot planner (shot_planner.shots_from_blueprint + storyboard/shot-seeds.json at the storyboard stage), storyboard review (adversarial_review contracts filled per real shot by beat window), music request (pace_plan + hook_plan read by song_choices._load_request; turns with reason/audible on music_director receipt and req.json).",
+   "Every required musical turn carries a recorded reason plus intended audible change": "PASS -- 4/4 reason, 4/4 audible on method_plan.musical_turns and on music_director.blueprint_request_inputs turns.",
+   "No competing beat engine exists": "PASS -- teaching_map 12 rows == story_arc.BEATS; no second beat list added.",
+   "Existing method_plan tests pass": "PASS -- 37/37 pre-existing unchanged."
+  },
+  "verdict": "FIXED",
+  "not_verified": [
+   "references/sync-manifest.json canonical_sha256 rows are stale for factory.py, approval_runner.py, music_director/__init__.py already at main; shot_planner.py first drifts on this branch (63fde4473). No in-repo test or script reads sync-manifest.json (git grep: only CHANGELOG.md and sync-manifest.md mention it), so it was not regenerated here.",
+   "No live factory run, no spend, no provider call; full repository test suite not run.",
+   "Out-of-repo department SOPs instructing the storyboard artist to read storyboard/shot-seeds.json not searched."
+  ]
+ }
+}

@@ -47,7 +47,7 @@ inline, and runs that upkeep weekly as a quiet OpenClaw cron job.
 - [ ] Re-apply makes no add or edit call; check passes.
 - [ ] A drifted job is edited in place, never duplicated; duplicates are
       reported (exit 1) and never deleted.
-- [ ] Missing, Anthropic or off-list model ids refuse with exit 4
+- [ ] Missing or off-list model ids refuse with exit 4
       and create nothing; a missing flag refuses with exit 5; a gateway failure
       is exit 2; a bad argument is exit 3.
 

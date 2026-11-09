@@ -58,12 +58,17 @@ _SLUG_RE = re.compile(r'^[a-z0-9][a-z0-9\-]{2,}$')
 
 
 def _persona_registry_dir() -> Optional[Path]:
-    """Resolve the Skill-22 persona registry dir if co-located; else None (offline-safe)."""
-    root = _SCRIPT_DIR.parent.parent  # 49-signature-funnel/scripts -> repo root
-    for cand in (root / "22-book-to-persona-coaching-leadership-system" / "personas",
-                 root / "23-ai-workforce-blueprint" / "personas"):
-        if cand.is_dir():
-            return cand
+    """Resolve the Skill-22 persona registry dir: the repo layout (skills side by side), then
+    the installed skill roots (999 / OpenClaw layout). None == UNRESOLVED, which the gate treats
+    as a FAILURE (ENF-25): without a registry no slug can be proven registered."""
+    root = _SCRIPT_DIR.parent.parent  # 49-signature-funnel/scripts -> skills root
+    roots = (root, Path.home() / ".openclaw" / "skills", Path("/data/.openclaw/skills"),
+             Path.home() / "clawd" / "skills")
+    for r in roots:
+        for cand in (r / "22-book-to-persona-coaching-leadership-system" / "personas",
+                     r / "23-ai-workforce-blueprint" / "personas"):
+            if cand.is_dir():
+                return cand
     return None
 
 
@@ -78,10 +83,14 @@ def _log_names_registered_persona(log_text: Optional[str]) -> Tuple[bool, str]:
     if not _SLUG_RE.match(slug):
         return (False, f"persona slug {slug!r} is not a valid registered-slug shape")
     reg = _persona_registry_dir()
-    if reg is not None:
-        registered = {p.name.lower() for p in reg.iterdir() if p.is_dir()}
-        if registered and slug not in registered:
-            return (False, f"persona slug {slug!r} is not a registered persona under {reg.name}/")
+    if reg is None:
+        return (False, f"persona registry unresolved on this box — {slug!r} cannot be proven "
+                       "registered (fail-closed; install Skill 22 beside Skill 49)")
+    registered = {p.name.lower() for p in reg.iterdir() if p.is_dir()}
+    if not registered:
+        return (False, f"persona registry {reg.name}/ is empty — {slug!r} cannot be proven registered")
+    if slug not in registered:
+        return (False, f"persona slug {slug!r} is not a registered persona under {reg.name}/")
     return (True, slug)
 
 # Required intake answer keys (Part 8 sequence). Checkpoint-gated by funnel size.
@@ -314,7 +323,14 @@ _VALID_PERSONA_LOG = (
 
 
 def self_test() -> int:
+    import tempfile
     ok = True
+    # Hermetic registry: the VALID fixtures must not depend on which layout the box has.
+    _tmp = tempfile.TemporaryDirectory()
+    (Path(_tmp.name) / "hormozi-100m-offers").mkdir()
+    global _persona_registry_dir
+    _real_registry = _persona_registry_dir
+    _persona_registry_dir = lambda: Path(_tmp.name)  # noqa: E731
 
     def check_pass(name, fixture, persona_log=_VALID_PERSONA_LOG):
         nonlocal ok
@@ -366,6 +382,14 @@ def self_test() -> int:
     check_fail("no-persona-log", _valid_runtime(3), AF_PERSONA_LOG, persona_log=None)
     check_fail("unregistered-persona", _valid_runtime(3), AF_PERSONA_LOG,
                persona_log="- selected_persona: not-a-real-persona-xyz\n")
+
+    # ENF-25 — 999 layout: no persona registry resolvable. Even a well-formed slug must FAIL.
+    _persona_registry_dir = lambda: None  # noqa: E731
+    check_fail("registry-unresolved", _valid_runtime(3), AF_PERSONA_LOG)
+    check_fail("invented-slug-no-registry", _valid_runtime(3), AF_PERSONA_LOG,
+               persona_log="- selected_persona: totally-invented-persona\n")
+    _persona_registry_dir = _real_registry
+    _tmp.cleanup()
 
     print("== self-test:", "ALL ASSERTIONS PASSED ==" if ok else "FAILED ==")
     return 0 if ok else 1

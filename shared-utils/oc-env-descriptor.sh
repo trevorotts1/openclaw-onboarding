@@ -335,7 +335,7 @@ PORTY
 # Never returns "ready" on absence of evidence.
 # ---------------------------------------------------------------------------
 ocd_app_ready() {
-  local port url code body status payload
+  local port url code body status payload k=""
   local attempts="${OC_APP_READY_ATTEMPTS:-3}" timeout_s="${OC_APP_READY_TIMEOUT:-5}" i=1
   local last_ready="" last_detail=""
   OCD_READY=""; OCD_READY_DETAIL=""
@@ -348,7 +348,17 @@ ocd_app_ready() {
     port="$OCD_GATEWAY_PORT"
     if [ -z "$port" ]; then OCD_READY="undetermined"; OCD_READY_DETAIL="no gateway port resolved"; return 2; fi
     url="http://127.0.0.1:${port}/healthz"
+    # gateway.tls.enabled=true => the gateway answers https ONLY (http:// gets an
+    # empty reply and would read as not-ready). Same rule as the gateway watchdog.
+    if [ -f "$OCD_JSON" ] && [ "$(OC_CFG="$OCD_JSON" python3 -c 'import json,os
+try:
+    t=((json.load(open(os.environ["OC_CFG"])).get("gateway") or {}).get("tls") or {}).get("enabled")
+    print(1 if str(t).lower()=="true" else 0)
+except Exception:
+    print(0)' 2>/dev/null)" = "1" ]; then url="https://127.0.0.1:${port}/healthz"; fi
   fi
+  # Loopback https carries the gateway's self-signed cert: -k, loopback only.
+  case "$url" in https://127.0.0.1[:/]*|https://localhost[:/]*) k="-k" ;; esac
   if ! command -v curl >/dev/null 2>&1; then
     OCD_READY="undetermined"; OCD_READY_DETAIL="curl not on PATH — cannot prove app readiness"; return 2
   fi
@@ -357,7 +367,8 @@ ocd_app_ready() {
   # Retry; only the REPEATED verdict is reported, so a slow first connect can
   # never manufacture a false "undetermined" (and never a false "ready").
   while [ "$i" -le "$attempts" ]; do
-    body="$(curl -s -m "$timeout_s" -o - -w $'\n%{http_code}' "$url" 2>/dev/null)"; code=$?
+    # shellcheck disable=SC2086  # k is empty or the single word -k
+    body="$(curl -s $k -m "$timeout_s" -o - -w $'\n%{http_code}' "$url" 2>/dev/null)"; code=$?
     case "$code" in
       7)
         last_ready="not-ready"; last_detail="connection refused at $url (nothing listening — gateway is down)" ;;

@@ -1182,6 +1182,36 @@ interface ModelResolution {
 }
 
 /**
+ * A provider-level standing default, used only when the configuration allows
+ * several models and names none of them as its default.
+ *
+ * OpenRouter is the one provider with a standing default, set by the operator:
+ * DeepSeek Flash, preferring the pinned 1017 variant, and otherwise the newest
+ * DeepSeek Flash the provider offers. That is a documented policy, not a guess:
+ * it is deterministic from the candidate list, it is reported in the route's
+ * model label, and an explicit `--model` always wins over it.
+ */
+export function providerPolicyDefault(providerId: string, candidates: readonly string[]): string | null {
+  const openRouter = providerId === 'openrouter' || providerId.startsWith('openrouter-');
+  if (!openRouter) return null;
+  const flash = candidates.filter((id) => /deepseek/i.test(id) && /flash/i.test(id));
+  if (flash.length === 0) return null;
+  const pinned = flash.find((id) => /(?:^|[^0-9])1017(?:[^0-9]|$)/.test(id));
+  if (pinned) return pinned;
+  const versioned = flash
+    .map((id) => ({ id, nums: (id.match(/\d+(?:\.\d+)*/g) ?? []).map((n) => Number(n)) }))
+    .sort((a, b) => {
+      const len = Math.max(a.nums.length, b.nums.length);
+      for (let i = 0; i < len; i += 1) {
+        const diff = (b.nums[i] ?? 0) - (a.nums[i] ?? 0);
+        if (diff !== 0) return diff;
+      }
+      return a.id.localeCompare(b.id);
+    });
+  return versioned[0]?.id ?? null;
+}
+
+/**
  * Resolve the configuration's OWN model for one provider. A single
  * explicit selection wins; more than one equally valid candidate is
  * ambiguous and is refused, never guessed.
@@ -1240,6 +1270,17 @@ function resolveConfiguredModel(
     return { modelId: id, entry: modelEntryOf(provider, id), candidates, failure: null };
   }
   if (allowed.length > 1) {
+    // A provider-level standing default beats the ambiguity refusal. OpenRouter
+    // carries one (DeepSeek Flash); an explicit --model still wins upstream.
+    const policyDefault = providerPolicyDefault(providerId, candidates);
+    if (policyDefault !== null) {
+      return {
+        modelId: policyDefault,
+        entry: modelEntryOf(provider, policyDefault),
+        candidates,
+        failure: null,
+      };
+    }
     return {
       modelId: null,
       entry: null,

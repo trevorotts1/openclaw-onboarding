@@ -8,6 +8,11 @@ primary outcome when the catalog carries them), page-level FAQ and trust
 items when the launch carries them, and the asset list INTEGRATION
 packages. Fails closed on any catalog violation.
 
+A launch record whose test_only is false is a live run: build_plan treats it as production
+whatever the flag says, so a test_only offer in it fails with S78-TEST-ONLY-IN-PRODUCTION. Every
+main offer must also carry deliverables, so the Compare section always has rows to show
+(S78-OFFER-NO-DELIVERABLES / S78-NO-COMPARISON-ROWS); a page of bare prices is refused here, not padded.
+
 Usage:
   build_selection_plan.py <launch.json> [--recommendation <rec.json>] [--production]
   build_selection_plan.py --self-test
@@ -36,8 +41,17 @@ def build_plan(launch, recommendation=None, production=False):
             "launch_id": launch.get("launch_id"),
             "revision": launch.get("revision"),
         }
-    validate_catalog(launch, production=production)
+    validate_catalog(launch, production=production or launch.get("test_only") is False)
+    for offer in launch["offers"]:
+        if offer.get("slot") == "main" and not (offer.get("deliverables") or offer.get("limited_deliverables")
+                                                or offer.get("conditional_deliverables")):
+            raise Violation(
+                "S78-OFFER-NO-DELIVERABLES",
+                f"Offer {offer.get('offer_id')!r} lists no deliverables; the Compare section would have nothing "
+                "to compare and the page would be bare prices. Supply the level's deliverables, never invent them.")
     matrix = normalize_matrix(launch)
+    if not matrix["rows"]:
+        raise Violation("S78-NO-COMPARISON-ROWS", "The comparison matrix has no rows; a selection page needs something to compare.")
     rec = build_recommendation(launch, recommendation)
     offers = []
     for offer in launch["offers"]:
@@ -125,7 +139,22 @@ def self_test():
         assert v.code == "S78-UNKNOWN-PRICE", v.code
     else:
         raise AssertionError("unknown price was not rejected")
-    print("build_selection_plan --self-test: PASS (plan, matrix states, single-offer decline, unknown-price rejection)")
+    live = dict(SELF_TEST_LAUNCH, test_only=False)  # a live run carrying test_only offers
+    try:
+        build_plan(live)
+    except Violation as v:
+        assert v.code == "S78-TEST-ONLY-IN-PRODUCTION", v.code
+    else:
+        raise AssertionError("a test_only offer passed in a live run")
+    bare = json.loads(json.dumps(SELF_TEST_LAUNCH))
+    bare["offers"][0]["deliverables"] = []
+    try:
+        build_plan(bare)
+    except Violation as v:
+        assert v.code == "S78-OFFER-NO-DELIVERABLES", v.code
+    else:
+        raise AssertionError("an offer with no deliverables was not refused")
+    print("build_selection_plan --self-test: PASS (plan, matrix states, single-offer decline, unknown-price rejection, live-run test_only refusal, no-deliverables refusal)")
     return 0
 
 

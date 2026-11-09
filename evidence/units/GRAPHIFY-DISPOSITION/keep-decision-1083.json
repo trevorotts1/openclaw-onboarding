@@ -1,0 +1,132 @@
+{
+ "unit": "GRAPHIFY-DISPOSITION",
+ "lane": "fix:graphify-done-1083",
+ "project": "w77s",
+ "written_at": "2026-10-26T14:39:28-04:00",
+ "decision": "Boss 2026-10-26: keep, owned by graphify",
+ "disposition": "KEEP",
+ "disposition_status": "DONE-KEEP",
+ "authority": {
+  "file": "<operator>/loop-control/w77s/DECISIONS.md",
+  "section": "Closed by the Boss (relayed, on Trevor's order)",
+  "stamp": "2026-10-26 14:35 EDT",
+  "boss_verbatim_excerpt": "(2) GRAPHIFY-DISPOSITION = KEEP: <operator>/graphify-snapshots is the graphify skill's read cache, not your hygiene; mark the unit DONE-KEEP with decision \"Boss 2026-10-26: keep, owned by graphify\".",
+  "relay_note": "The Boss states Trevor ordered the Boss to make this decision; the quote above is the Boss's verbatim text as recorded in DECISIONS.md, read by this lane, not retyped from memory."
+ },
+ "artifact_disposition": {
+  "path": "<operator>/graphify-snapshots/openclaw-onboarding-f795e09ad20a3ac931f31a9b8943edc879e397c7",
+  "exists": true,
+  "is_directory": true,
+  "kib_measured": 905840,
+  "owner": "the graphify skill (read cache) \u2014 NOT this room's hygiene",
+  "deletions_by_this_lane": "none; nothing on disk was removed or moved",
+  "measured_by": "python os.path.exists/isdir + du -sk at 2026-10-26T14:39:28-04:00"
+ },
+ "kit": {
+  "path": "<operator>/.claude/skills/swarm-control/swarmctl.py",
+  "sha256": "c17a3c43d8a35bb1f864b8e7412bed2449be42e17bf3a9f719a7edfe9ecada04",
+  "phase_set_read": [
+   "READY",
+   "BUILDING",
+   "BUILT",
+   "IN_QC",
+   "ACCEPTED",
+   "IN_BATCH",
+   "MERGED",
+   "DELIVERED",
+   "NOT_TESTED",
+   "CLEANED",
+   "BLOCKED",
+   "WAITING_DECISION",
+   "WAITING_TEST",
+   "REPAIR"
+  ],
+  "waiting_decision_exit_rule": "decision_event_problem() requires ledger decision_event -> a verified owner event file ($HOME/.swarm-owner-authority/<EVENT_ID>.json, source harness-user-input, authority owner, kind decision, same project, unit == ledger id). No such event exists and this lane may not write one, so the row cannot stay in WAITING_DECISION without the kit printing SELF-RECLASSIFIED and forcing it back into active work.",
+  "chosen_phase": "DELIVERED",
+  "why_this_phase": "DELIVERED is in PHASES, ACCEPTED and LANDED/DONE_FOR_COMPLETION; it is the only kit-legal done phase that matches the facts: the unit's whole output is a decision record that now exists on disk (delivery_path + delivery_sha). MERGED would be false (nothing merged), CLEANED would be false (nothing was cleaned - the artifact was kept), NOT_TESTED would be false (no live-testing domain)."
+ },
+ "ledger": {
+  "path": "<operator>/loop-control/w77s/ledger.json",
+  "sha256_before": "3eb3034e1d85c3c12378811d025fe4af7319a425554a9c858b8395509fc72390",
+  "field_changes": [
+   {
+    "field": "phase",
+    "old": "WAITING_DECISION",
+    "new": "DELIVERED"
+   },
+   {
+    "field": "title",
+    "old": "Keep-or-discard disposition for the graphify-snapshots worktree (885M) \u2014 waiting on Trevor, STAYS IN THE COUNT until he answers",
+    "new": "Keep-or-discard disposition for the graphify-snapshots worktree (885M) \u2014 waiting on Trevor, STAYS IN THE COUNT until he answers \u2014 DECIDED KEEP 2026-10-26 (Boss, on Trevor's order); owned by graphify"
+   },
+   {
+    "field": "decision",
+    "old": "(absent)",
+    "new": "Boss 2026-10-26: keep, owned by graphify"
+   },
+   {
+    "field": "disposition",
+    "old": "(absent)",
+    "new": "KEEP"
+   },
+   {
+    "field": "disposition_status",
+    "old": "(absent)",
+    "new": "DONE-KEEP"
+   },
+   {
+    "field": "decided_by",
+    "old": "(absent)",
+    "new": "The Boss (relayed, on Trevor's order) 2026-10-26 14:35 EDT"
+   },
+   {
+    "field": "decided_at",
+    "old": "(absent)",
+    "new": "2026-10-26T14:39:34-04:00"
+   },
+   {
+    "field": "delivered_at",
+    "old": "(absent)",
+    "new": "2026-10-26T14:39:34-04:00"
+   },
+   {
+    "field": "delivery_path",
+    "old": "(absent)",
+    "new": "<operator>/loop-control/w77s/evidence/GRAPHIFY-DISPOSITION.keep-decision-1083.json"
+   },
+   {
+    "field": "delivery_sha",
+    "old": "(absent)",
+    "new": "= sha256 of the file at delivery_path (self-referential, therefore not restated here)"
+   },
+   {
+    "field": "digest",
+    "old": null,
+    "new": "= first 9 hex chars of sha256 of the file at delivery_path"
+   },
+   {
+    "field": "last_progress_at",
+    "old": null,
+    "new": "2026-10-26T14:39:34-04:00"
+   },
+   {
+    "field": "last_event_kind",
+    "old": null,
+    "new": "delivered"
+   },
+   {
+    "field": "notes",
+    "old": "open unit per Trevor rule 2 (2026-10-25): anything waiting on him stays an open unit in the count; never labeled his decision",
+    "new": "open unit per Trevor rule 2 (2026-10-25): anything waiting on him stays an open unit in the count; never labeled his decision"
+   }
+  ],
+  "self_note": "This file cannot state the ledger's final sha256 without invalidating itself (the ledger records this file's sha256 as delivery_sha). The exact before/after ledger shas and the applied field diff are in the lane receipt control/reports/fix-graphify-done-1083.json and .md."
+ },
+ "credit_state": {
+  "credited": false,
+  "why": "kit credit needs phase in DONE_FOR_COMPLETION AND qc_ok AND (remote proof OR delivery proof). Delivery proof is true once delivery_sha matches; qc_ok is false because there is no independent PASS receipt at qc/GRAPHIFY-DISPOSITION.<digest>.json yet. No chain may QC its own build, so a PASS receipt must come from an independent Opus QC lane.",
+  "residual_for_a_later_lane": "qc/<unit>.<digest>.json needs non-empty head and base strings (receipt_problem); this row keeps head/base null on purpose so it adds no false BUILD RECONCILIATION note. An Opus QC lane that writes the receipt must also record head/base tokens (HYGIENE-W77S precedent: registry-8of8), which will then surface one BUILD RECONCILIATION note naming it - a cost recorded here, not hidden."
+ },
+ "owner_event_written": false,
+ "claim": "No file was written under $HOME/.swarm-owner-authority or anywhere claiming owner authority, and no scope-manifest change was attempted. authority that moves the frozen scope stays with Trevor's harness."
+}

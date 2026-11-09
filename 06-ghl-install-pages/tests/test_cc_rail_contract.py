@@ -212,8 +212,56 @@ class TestIngestPersonaParity:
 # ─────────────────────────────────────────────────────────────────────────────
 # 2) FRONT-DOOR / NONCE ENTRY DISCIPLINE — ghl_gate.py
 # ─────────────────────────────────────────────────────────────────────────────
+# ── Live-evidence seal ────────────────────────────────────────────────────────
+# Since S06-04 the gate re-hashes the render manifest's dom/png/console files and
+# needs the 0600 run-nonce file ghl_verify.verify_all leaves OUTSIDE the evidence
+# tree. _seal() writes exactly those, so a "genuine" tree here is the shape the
+# real writer produces; an unsealed tree is a hand-forged one and must fail.
+
+@pytest.fixture(autouse=True)
+def _nonce_dir(tmp_path_factory, monkeypatch):
+    monkeypatch.setenv(ghl_verify.NONCE_DIR_ENV, str(tmp_path_factory.mktemp("nonces")))
+
+
+def _seal(run_dir) -> None:
+    run_dir = str(run_dir)
+    raw_path = os.path.join(run_dir, ghl_verify.RAW_REL)
+    summary_path = os.path.join(run_dir, ghl_verify.SUMMARY_REL)
+    with open(raw_path) as f:
+        raw = json.load(f)
+    render = os.path.join(run_dir, "render")
+    os.makedirs(render, exist_ok=True)
+    manifest = {}
+    for i, r in enumerate(raw):
+        step = r.get("step") or r.get("page_id") or f"row{i}"
+        marker = r.setdefault("marker", f"SEAL-MARKER-{step}") if r.get("PASS") is True else "SEAL"
+        entry = {}
+        for key, ext, data in (("dom", "dom.html", f"<html><body><p>{marker}</p></body></html>".encode()),
+                               ("png", "png", b"\x89PNG\r\n\x1a\n" + b"x" * 64),
+                               ("console", "console.json", b"[]")):
+            p = os.path.join(render, f"{step}.{ext}")
+            with open(p, "wb") as f:
+                f.write(data)
+            entry[f"{key}_path"] = p
+            entry[f"{key}_sha256"] = ghl_verify._sha256_file(p)
+        manifest[step] = entry
+    with open(raw_path, "w") as f:
+        json.dump(raw, f)
+    with open(summary_path) as f:
+        summary = json.load(f)
+    if summary.get("raw_sha256"):
+        summary["raw_sha256"] = ghl_verify._sha256_file(raw_path)
+        with open(summary_path, "w") as f:
+            json.dump(summary, f)
+    manifest_path = os.path.join(run_dir, ghl_verify.RENDER_MANIFEST_REL)
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f)
+    if summary.get("run_nonce"):  # a tree with no nonce stays unsealed (rc 5 case)
+        ghl_verify.write_run_nonce(run_dir, summary["run_nonce"], raw_path, manifest_path)
+
+
 def _write_evidence(root: Path, *, summary_over: dict | None = None,
-                    raw=None, bind_raw_sha=False) -> Path:
+                    raw=None, bind_raw_sha=False, seal=True) -> Path:
     """Write a minimal machine-written evidence tree ghl_gate reads. Returns root.
 
     Defaults produce a well-formed, canonical-writer, LIVE, overall_pass=True tree
@@ -235,6 +283,8 @@ def _write_evidence(root: Path, *, summary_over: dict | None = None,
     if summary_over:
         summary.update(summary_over)
     (root / ghl_verify.SUMMARY_REL).write_text(json.dumps(summary), encoding="utf-8")
+    if seal:
+        _seal(root)
     return root
 
 

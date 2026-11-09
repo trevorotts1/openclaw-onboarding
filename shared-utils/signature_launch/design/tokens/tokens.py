@@ -67,6 +67,18 @@ def _value_or_none(value):
     return None if is_missing(value) else value
 
 
+def _font_key(value):
+    return str(value).replace('"', "").replace("'", "").strip().lower()
+
+
+def is_banned_font(brand, value):
+    """True when a font name is in the brand file's banned_fonts."""
+    if is_missing(value):
+        return False
+    banned = {_font_key(f) for f in (brand.get("banned_fonts") or [])}
+    return _font_key(value) in banned
+
+
 def _collect_missing(brand):
     missing = []
 
@@ -83,6 +95,8 @@ def _collect_missing(brand):
     fonts = brand.get("fonts") or {}
     for key in ("display", "body", "accent"):
         note("fonts." + key, fonts.get(key))
+        if is_banned_font(brand, fonts.get(key)):
+            missing.append({"field": "fonts." + key, "state": "banned_font"})
     logo = brand.get("logo") or {}
     note("logo.files", logo.get("files"))
     note("logo.masthead_files", logo.get("masthead_files"))
@@ -125,10 +139,15 @@ def resolve_tokens(brand):
         "logo_only": {k: _value_or_none(v) for k, v in logo_only.items()},
         "color_tolerance": brand.get("color_tolerance"),
     }
+    def font(key):
+        # A banned font is never a token: it stays named in `missing`.
+        value = _value_or_none(fonts.get(key))
+        return None if is_banned_font(brand, value) else value
+
     typography = {
-        "display": _value_or_none(fonts.get("display")),
-        "body": _value_or_none(fonts.get("body")),
-        "accent": _value_or_none(fonts.get("accent")),
+        "display": font("display"),
+        "body": font("body"),
+        "accent": font("accent"),
         "banned_fonts": list(brand.get("banned_fonts") or []),
         "font_policy": brand.get("font_policy"),
     }
@@ -201,6 +220,42 @@ def tokens_to_css(resolution):
             lines.append("  --sl-radius-%s: %s;" % (key, radii[key]))
     lines.append("}")
     return "\n".join(lines) + "\n"
+
+
+def page_css(resolution):
+    """tokens_to_css() plus the base rules that make a page USE the tokens.
+
+    Every page renderer (Skill 71 and Skills 78 to 82) emits this one block:
+    the :root variables and rules that read only var(--sl-*), so the page's
+    colors and fonts are the client's own. A token that did not resolve
+    produces no rule, never a default font or color.
+    """
+    colors = resolution.get("colors") or {}
+    typography = resolution.get("typography") or {}
+    body = []
+    if colors.get("ground_light") is not None:
+        body.append("background: var(--sl-color-ground-light);")
+    if colors.get("ground_dark") is not None:
+        body.append("color: var(--sl-color-ground-dark);")
+    if typography.get("body") is not None:
+        body.append("font-family: var(--sl-font-body);")
+    lines = []
+    if body:
+        lines.append("body { %s }" % " ".join(body))
+    if typography.get("body") is not None:
+        lines.append("button, input, select, textarea { font-family: inherit; }")
+    if typography.get("display") is not None:
+        lines.append("h1, h2, h3, h4, h5, h6 { font-family: var(--sl-font-display); }")
+    cta = []
+    if colors.get("accent") is not None:
+        cta.append("background: var(--sl-color-accent);")
+    if colors.get("ground_dark") is not None:
+        cta.append("color: var(--sl-color-ground-dark);")
+    if typography.get("accent") is not None:
+        cta.append("font-family: var(--sl-font-accent);")
+    if cta:
+        lines.append(".sl-cta, button.sl-cta { %s }" % " ".join(cta))
+    return tokens_to_css(resolution) + "".join(line + "\n" for line in lines)
 
 
 def resolution_to_json(resolution):

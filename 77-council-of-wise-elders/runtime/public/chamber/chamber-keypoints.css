@@ -69,6 +69,40 @@
   display: none;
 }
 
+/* ---- Native disclosure in the side column ------------------------------ */
+/* The <details class="ch-panel ch-activity"> wrapper owns the card, so a
+   closed summary is still framed; the panel inside drops its own card look.
+   Collapsed by default: the history is secondary to the council room. */
+
+.ch-activity {
+  min-width: 0;
+  align-self: start;
+}
+
+.ch-activity-summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--ch-space-4);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ch-ink-muted);
+}
+
+.ch-activity[open] .ch-activity-summary {
+  border-bottom: 1px solid var(--ch-line);
+  color: var(--ch-ink);
+}
+
+.ch-activity .ch-kp {
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .ch-kp-item {
     animation: ch-kp-in var(--ch-dur) var(--ch-ease);

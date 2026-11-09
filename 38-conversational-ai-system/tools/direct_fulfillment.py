@@ -42,10 +42,12 @@ Assert-based self-check:  python3 -I direct_fulfillment.py
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
 import sqlite3
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -75,6 +77,7 @@ from outbound_gate import (  # noqa: E402
     ST_SEND_ERROR,
     ST_SENT,
     ST_UNKNOWN,
+    answer_duty_evaluator,
     dispatch,
 )
 from reconciliation import (  # noqa: E402
@@ -83,6 +86,13 @@ from reconciliation import (  # noqa: E402
     needs_reconciliation,
     resolve_unknown,
     sweep_inflight,
+)
+# The post-gift step (T-27). This module owns "the gift is delivered", so the
+# delivery-verified path in record_delivery_proof is where useful help is made.
+from post_delivery_discovery import (  # noqa: E402
+    Catalog,
+    Discovery,
+    KnowledgeBase,
 )
 
 # FulfillmentOutcome.status values.
@@ -105,6 +115,78 @@ D_FAILED = "failed"
 BASES = ("requested_in_conversation", "owner_approved")
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+# ── Instagram route gate (T-21) ─────────────────────────────────────────────
+# An Instagram destination is not a generic send. pb_contracts.DM_CHANNELS
+# names IG_DM as a first-class channel, so a delivery to an Instagram channel
+# must pass the T-21 adapter's separate account/filter/event/eligibility rules
+# (and its ignored-opener bound) before the common gate may dispatch. The
+# adapter is loaded by path exactly as it loads its own upstream modules: one
+# copy, never restated here.
+IG_CHANNELS = frozenset({"IG_DM", "IG_PUBLIC"})
+
+_IG_ROUTE_MODULE: Any = None
+
+
+def _load_instagram_routes() -> Any:
+    """The T-21 Instagram route adapter, or None when not on this tree."""
+    global _IG_ROUTE_MODULE
+    if _IG_ROUTE_MODULE is not None:
+        return _IG_ROUTE_MODULE
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = (parent / "shared-utils" / "routes" / "instagram"
+                     / "route_adapter.py")
+        if not candidate.is_file():
+            continue
+        spec = importlib.util.spec_from_file_location(
+            "ig_route_adapter", candidate)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        # Register before exec so the adapter's own dataclasses resolve their
+        # module during class creation (same reason its _upstream does this).
+        sys.modules["ig_route_adapter"] = module
+        spec.loader.exec_module(module)
+        _IG_ROUTE_MODULE = module
+        return module
+    return None
+
+
+def instagram_route_evaluator(basis: "DeliveryBasis",
+                              route: Optional[Dict[str, Any]] = None
+                              ) -> Callable[[Dict[str, Any]], Any]:
+    """The T-21 gate for one Instagram delivery; fail closed without it.
+
+    ``route`` carries the caller's real Instagram context (account,
+    route_store, capability, event, purpose, thread_key, own_actor_ids). When
+    it is missing the delivery is refused rather than sent on the generic gate
+    alone: a Facebook Page id never resolves an Instagram account, and a
+    comment alone is never an inbound-DM window.
+    """
+    ctx = dict(route or {})
+    module = _load_instagram_routes()
+    account = ctx.get("account")
+    route_store = ctx.get("route_store")
+    if module is None or account is None or route_store is None:
+        def refused(_ctx: Dict[str, Any]) -> Dict[str, Any]:
+            return {"verdict": "SUPPRESSED",
+                    "evidence": {"reason": "ig_route_unavailable",
+                                 "channel": basis.channel}}
+        return refused
+    return module.make_gate_evaluator(
+        account=account,
+        route_store=route_store,
+        purpose=ctx.get("purpose"),
+        channel=basis.channel,
+        thread_key=ctx.get("thread_key"),
+        event=ctx.get("event"),
+        filter_=ctx.get("filter_"),
+        capability=ctx.get("capability"),
+        consent_evaluator=ctx.get("consent_evaluator"),
+        inbox=ctx.get("inbox"),
+        own_actor_ids=ctx.get("own_actor_ids", ()),
+    )
 
 
 class FulfillmentError(ValueError):
@@ -364,6 +446,8 @@ class FulfillmentOutcome:
     delivery_status: str = D_NOT_SENT
     continuation_allowed: bool = False
     continuation_reason: str = ""
+    # T-27 post-gift help, computed on the delivery-verified path.
+    post_gift_help: Optional[Dict[str, Any]] = None
 
 
 def _intent_key(basis: DeliveryBasis) -> str:
@@ -463,8 +547,17 @@ def fulfill(store: DurableStore, ledger: FulfillmentLedger,
             transport: Callable[[Dict[str, Any]], Dict[str, Any]],
             item: PromisedItem, basis: DeliveryBasis, *, worker_id: str,
             consent_evaluator: Optional[Callable[[Dict[str, Any]], Any]] = None,
+            answer_duty_log: Optional[str] = None,
+            answer_channel: Optional[str] = None,
+            instagram_route: Optional[Dict[str, Any]] = None,
             now: Optional[float] = None) -> FulfillmentOutcome:
-    """Send the original item once. Safe to call again: never double-sends."""
+    """Send the original item once. Safe to call again: never double-sends.
+
+    When the send answers a turn, pass the turn's conversational log as
+    ``answer_duty_log`` and the channel it will answer on: the T-26 clause (d)
+    duty gate then refuses a channel the log's last ``- duty:`` forbids. An
+    original-gift send answers nothing, so the gate stands down for it.
+    """
     item.validated()
     basis.validated()
     if item.item_id != basis.item_id or item.version != basis.version:
@@ -517,14 +610,25 @@ def fulfill(store: DurableStore, ledger: FulfillmentLedger,
 
     store.queue(action_id, now=now)
 
-    evaluator = _compose(_basis_evaluator(ledger, basis), consent_evaluator)
+    # Basis, then the T-26 clause (d) answer duty, then consent: every gate must
+    # pass. The duty gate only bites when the caller says this send answers a
+    # turn (answer_duty_log supplied).
+    evaluator = _compose(
+        _compose(_basis_evaluator(ledger, basis), answer_duty_evaluator()),
+        consent_evaluator)
+    if basis.channel in IG_CHANNELS:
+        # T-21: an Instagram delivery passes the route adapter's own gate too.
+        evaluator = _compose(evaluator,
+                             instagram_route_evaluator(basis, instagram_route))
     payload = {"item": item.identity(), "content_uri": item.content_uri,
                "destination": destination.as_record()}
 
     def sender(ctx: Dict[str, Any]) -> Dict[str, Any]:
         return transport({**ctx, **payload})
 
-    out = dispatch(store, evaluator, sender, action_id, worker_id, now=now)
+    out = dispatch(store, evaluator, sender, action_id, worker_id, now=now,
+                   context={"answer_duty_log": answer_duty_log,
+                            "channel": answer_channel})
 
     if out.status == ST_SENT:
         return outcome(
@@ -629,10 +733,63 @@ def resume(store: DurableStore, ledger: FulfillmentLedger,
         continuation_reason="outcome unresolved; no retry is possible")
 
 
+def post_gift_help(catalog: Optional[Catalog] = None,
+                   knowledge: Optional[KnowledgeBase] = None,
+                   known_needs: Optional[Dict[str, Any]] = None,
+                   refused_needs: tuple = (),
+                   questions_asked: tuple = ()) -> Dict[str, Any]:
+    """Useful help after the gift (T-27): grounded answers and real recommendations.
+
+    The production call site is the delivery-verified path of
+    record_delivery_proof below: a verified delivery is when help is owed.
+    Answers come only from the stored knowledge base and carry their source;
+    an unmatched topic is `unknown`, never invented text. Each recommendation
+    names a real catalogue item of kind resource/community/offer/calendar that
+    matches a KNOWN need. Discovery stays adaptive: the pending questions are a
+    function of the catalogue and what is already known, never a fixed three,
+    and one known need is enough to recommend, so nothing is gated on a
+    questionnaire being finished. Capture state is not consulted: phone-only,
+    email-only and declined people get identical help.
+    """
+    discovery = Discovery(catalog if catalog is not None else Catalog(),
+                          knowledge)
+    for field_name, value in (known_needs or {}).items():
+        discovery.learn(field_name, value)
+    for field_name in refused_needs:
+        discovery.refuse(field_name)
+
+    recs = discovery.recommend(limit=4)
+    by_kind = {}
+    for rec in recs.get("recommendations", []):
+        by_kind.setdefault(rec["kind"], rec)
+    pending = discovery.questions()
+    return {
+        "answers": {topic: discovery.answer(topic) for topic in questions_asked},
+        "recommendation": recs,
+        "recommendations_by_kind": by_kind,
+        "kinds_reached": sorted(by_kind),
+        "next_question": pending[0] if pending else None,
+        "questions_remaining": len(pending),
+        "known_needs": discovery.known(),
+    }
+
+
 def record_delivery_proof(store: DurableStore, item: PromisedItem,
                           basis: DeliveryBasis, proof: Dict[str, Any], *,
-                          now: Optional[float] = None) -> FulfillmentOutcome:
-    """Promote accepted -> delivered from an ACTUAL receipt. Never inferred."""
+                          now: Optional[float] = None,
+                          help_catalog: Optional[Catalog] = None,
+                          help_knowledge: Optional[KnowledgeBase] = None,
+                          known_needs: Optional[Dict[str, Any]] = None,
+                          refused_needs: tuple = (),
+                          questions_asked: tuple = ()) -> FulfillmentOutcome:
+    """Promote accepted -> delivered from an ACTUAL receipt. Never inferred.
+
+    A verified delivery is also when useful help is owed (R-17), so this
+    production entry point computes post-gift help on that path and returns it
+    with the outcome. A caller that holds the client's catalogue passes it as
+    help_catalog; with none supplied the truthful result is a no-match, never
+    an invented recommendation.
+    """
     item.validated()
     basis.validated()
     if not isinstance(proof, dict):
@@ -665,11 +822,15 @@ def record_delivery_proof(store: DurableStore, item: PromisedItem,
         raise FulfillmentError(
             f"illegal_transition: delivery proof from {state!r} (nothing was accepted)")
     after = store.record_completion(action_id, proof, now=now)
+    # The gift is delivered: useful help runs now (T-27). One call site, on the
+    # verified-delivery path - the only place the person is owed help.
+    help_now = post_gift_help(help_catalog, help_knowledge, known_needs,
+                              refused_needs, questions_asked)
     return FulfillmentOutcome(
         F_ALREADY_SATISFIED, reason="delivery_verified", action_id=action_id,
         state=after["state"], item_id=item.item_id, version=item.version,
         destination=destination.as_record(), transport_receipt=dict(proof),
-        delivery_status=D_DELIVERED)
+        delivery_status=D_DELIVERED, post_gift_help=help_now)
 
 
 # ── assert-based self-check (stdlib only) ──────────────────────────────────
@@ -721,8 +882,40 @@ def _selfcheck() -> int:
     ok(cont.delivery_status == D_ACCEPTED, "label stays accepted without a receipt")
 
     proof = {**out.transport_receipt}
-    done = record_delivery_proof(store, item, basis, proof)
+    # T-27 wiring proof: the delivery-verified path produces post-gift help.
+    # A real item of each of the four kinds is recommendable here, an answer
+    # carries its source, and no questionnaire gates any of it.
+    catalog = Catalog()
+    catalog.add("res-1", "resource", "Starter guide",
+                "https://client-site.com/starter-guide", ["goal"])
+    catalog.add("com-1", "community", "Members circle",
+                "https://client-site.com/community", ["experience_level"])
+    catalog.add("off-1", "offer", "Paid deep-dive",
+                "https://client-site.com/deep-dive", ["budget"])
+    catalog.add("cal-1", "calendar", "Live Q and A",
+                "https://client-site.com/qa", ["timezone"])
+    kb = KnowledgeBase()
+    kb.add("what is included", "The guide plus the worksheet.",
+           "https://client-site.com/faq")
+    done = record_delivery_proof(
+        store, item, basis, proof, help_catalog=catalog, help_knowledge=kb,
+        known_needs={"goal": "grow", "experience_level": "beginner",
+                     "budget": "paid", "timezone": "America/New_York"},
+        questions_asked=("what is included",))
     ok(done.delivery_status == D_DELIVERED, "real receipt means delivered")
+    help_now = done.post_gift_help
+    ok(help_now["kinds_reached"] == ["calendar", "community", "offer", "resource"],
+       "post-gift help returns a real item of each of the four kinds")
+    ok(help_now["answers"]["what is included"]["source"]
+       == "https://client-site.com/faq", "a post-gift answer carries its source")
+    ok(help_now["recommendation"]["status"] == "ok",
+       "post-gift recommendation is a real match, not a guess")
+    ok(help_now["next_question"] is None or help_now["questions_remaining"] >= 1,
+       "discovery continues adaptively after the gift")
+    open_help = post_gift_help()
+    ok(open_help["recommendation"]["status"] == "no_match"
+       and open_help["answers"] == {},
+       "no catalogue and no known need: no_match, never an invented item")
 
     store.close()
     ledger.close()

@@ -17,8 +17,8 @@
  * and stored, never a UI reserialization.
  */
 
-import { ContractError } from './errors';
-import { sha256Hex } from './sha256';
+import { ContractError } from './errors.js';
+import { sha256Hex } from './sha256.js';
 
 export type CanonicalValue =
   | null

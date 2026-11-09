@@ -46,6 +46,8 @@ def plan_doc(calendar=None, page_url="https://example.com/landing", sequences=No
         "schema_version": "1.0.0",
         "launch_id": "l07-synthetic",
         "launch_calendar": calendar,
+        "a2p_ready": False,
+        "conversation_ai": {"requested": False, "mode": "none"},
         "pages": [{"id": "page_landing", "kind": "landing", "url": page_url,
                    "waits_for": []}],
         "email_sequences": [
@@ -55,7 +57,7 @@ def plan_doc(calendar=None, page_url="https://example.com/landing", sequences=No
         ],
         "text_sets": text_sets or [],
         "automations": automations or [
-            {"id": "auto_pre_launch", "family": "pre_launch", "template": "new",
+            {"id": "auto_pre_launch", "family": "pre_launch", "template": "launch-a/launch-a-prelaunch-window",
              "build_rail": "skill44_engine", "draft_only": True,
              "trigger": {"type": "tag_added"}, "waits_for": ["email_pre_launch"]}
         ],
@@ -142,13 +144,16 @@ class CalendarTests(unittest.TestCase):
                 "timezone": "America/New_York",
             })
             rc, doc = Harness(plan, {"email_pre_launch": build_doc("email_pre_launch", 2)}).run()
-            self.assertEqual(rc, 0, offset)
+            self.assertEqual(rc, 4, offset)   # every pre-launch send is past at NOW
+            self.assertIsNotNone(doc, offset)
             self.assertTrue(doc["calendar"]["dst_ambiguous"])
             self.assertTrue(doc["calendar"]["launch_at"].endswith(offset), doc["calendar"])
 
     def test_phase_order_is_strict(self):
+        # Order is the shared calendar law's (the shared validator runs first);
+        # launch at the moment doors open is lawful, doors closing first is not.
         plan = plan_doc()
-        plan["launch_calendar"]["launch_at"] = plan["launch_calendar"]["doors_open_at"]
+        plan["launch_calendar"]["doors_close_at"] = "2026-11-03T08:00:00-05:00"
         rc, doc = Harness(plan, {"email_pre_launch": build_doc("email_pre_launch", 2)}).run()
         self.assertEqual(rc, 2)
         self.assertIsNone(doc)
@@ -171,7 +176,7 @@ class ScheduleCompileTests(unittest.TestCase):
                 ("email_doors_closing", "doors_closing", 2, ["email_pre_launch"]),
             ],
             automations=[{
-                "id": "auto_pre_launch", "family": "pre_launch", "template": "new",
+                "id": "auto_pre_launch", "family": "pre_launch", "template": "launch-a/launch-a-prelaunch-window",
                 "build_rail": "skill44_engine", "draft_only": True,
                 "trigger": {"type": "tag_added"},
                 "waits_for": ["email_pre_launch", "email_doors_closing"],
@@ -197,15 +202,15 @@ class ScheduleCompileTests(unittest.TestCase):
         self.assertEqual([n["phase"] for n in build["schedule"]["calendar_nodes"]],
                          ["doors_open", "launch", "doors_close"])
 
-    def test_late_compile_suppresses_expired_prelaunch_ctas(self):
+    def test_late_compile_all_sends_past_blocks_with_no_future_sends(self):
         plan = plan_doc(calendar=self._calendar())
         late = datetime.fromisoformat("2026-11-03T10:00:00-05:00")
         rc, doc = Harness(plan, {"email_pre_launch": build_doc(
             "email_pre_launch", 2, waits=[(1, "days")])}).run(now=late)
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)   # every pre-launch send is past: nothing left to build
         build = doc["builds"][0]
         self.assertEqual(build["state"], "blocked")
-        self.assertIn("schedule_suppressed:email_pre_launch", build["blocked_by"])
+        self.assertIn("no_future_sends", build["blocked_by"])
         self.assertTrue(build["suppressed"])
         self.assertTrue(all(item["reason"] == "PAST-TIME-SUPPRESSED"
                             for item in build["suppressed"]))
@@ -217,7 +222,7 @@ class ScheduleCompileTests(unittest.TestCase):
             "email_pre_launch", 2, waits=[(30, "days")])}
         rc, doc = Harness(plan, builds).run(now=datetime.fromisoformat(
             "2026-11-03T08:59:30-05:00"))
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)
         build = doc["builds"][0]
         self.assertEqual(build["state"], "blocked")
         self.assertEqual(len(build["suppressed"]), 2)
@@ -233,7 +238,7 @@ class ScheduleCompileTests(unittest.TestCase):
             calendar=calendar,
             sequences=[("email_doors_closing", "doors_closing", 2, [])],
             automations=[{
-                "id": "auto_closing", "family": "pre_launch", "template": "new",
+                "id": "auto_closing", "family": "pre_launch", "template": "launch-a/launch-a-prelaunch-window",
                 "build_rail": "skill44_engine", "draft_only": True,
                 "trigger": {"type": "tag_added"}, "waits_for": ["email_doors_closing"],
             }],
@@ -260,7 +265,7 @@ class ScheduleCompileTests(unittest.TestCase):
             sequences=[("email_abandoned_checkout", "abandoned_checkout", 2, [])],
             automations=[{
                 "id": "auto_abandoned_checkout", "family": "abandoned_checkout",
-                "template": "new", "build_rail": "skill44_engine",
+                "template": "launch-b/abandoned-checkout-recovery", "build_rail": "skill44_engine",
                 "draft_only": True, "trigger": {"type": "checkout_started_unpaid"},
                 "waits_for": ["email_abandoned_checkout"],
             }],
@@ -281,14 +286,14 @@ class DependencyAndMetadataTests(unittest.TestCase):
         plan["automations"][0]["waits_for"] = ["page_landing", "email_pre_launch"]
         plan["pages"][0]["url"] = None
         rc, doc = Harness(plan, {"email_pre_launch": build_doc("email_pre_launch", 2)}).run()
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)
         self.assertIn("page_url:page_landing", doc["builds"][0]["blocked_by"])
         self.assertEqual(doc["builds"][0]["state"], "blocked")
 
     def test_count_mismatch_blocks(self):
         plan = plan_doc()
         rc, doc = Harness(plan, {"email_pre_launch": build_doc("email_pre_launch", 1)}).run()
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)
         self.assertIn("email_count:email_pre_launch", doc["builds"][0]["blocked_by"])
 
     def test_missing_suppression_guards_block(self):
@@ -297,7 +302,7 @@ class DependencyAndMetadataTests(unittest.TestCase):
                               "suppression_rules": []}}
         rc, doc = Harness(plan, {"email_pre_launch": build_doc(
             "email_pre_launch", 2, meta=meta)}).run()
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)
         reasons = doc["builds"][0]["blocked_by"]
         self.assertTrue(any(reason.startswith("guards:email_pre_launch:") for reason in reasons),
                         reasons)

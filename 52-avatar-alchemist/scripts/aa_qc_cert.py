@@ -42,20 +42,6 @@ SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 import aa_build_check as build  # noqa: E402
 
-# SK2-16 — the ONE canonical Anthropic model-id detector lives in
-# shared-utils/assert_model_sovereignty.py. Fail-closed vendored fallback (same
-# canonical pattern) so detection can never silently weaken if shared-utils is
-# not resolvable at runtime.
-sys.path.insert(0, str(SKILL_ROOT.parent / "shared-utils"))
-try:
-    from assert_model_sovereignty import is_anthropic_model  # type: ignore  # noqa: E402
-except Exception:  # noqa: BLE001
-    import re as _re
-    _AA_ANTHROPIC_RE = _re.compile(r"anthropic|claude|\b(?:opus|sonnet|haiku)\b", _re.IGNORECASE)
-
-    def is_anthropic_model(model_id) -> bool:  # type: ignore
-        return bool(_AA_ANTHROPIC_RE.search(str(model_id or "")))
-
 QC_METHODOLOGY = (
     "deterministic 10-category structural/provenance composite computed by "
     "aa_qc_cert.py (a separate program from the generator and the delivery "
@@ -159,10 +145,10 @@ def score_categories(manifest: Dict[str, Any], run_dir: Path) -> Tuple[Dict[str,
     leaks = sum(len(build._tokens_left(t)) for t in artifacts.values())
     cats["placeholder_cleanliness"] = 10.0 if leaks == 0 else max(0.0, 10.0 - leaks)
 
-    # 9. provider purity (G-NOANTHROPIC)
+    # 9. model provenance (every stage records its resolved model id)
     violations, _ = build.verify(manifest, state)
-    noanthropic_bad = sum(1 for c, _ in violations if c == "AF-AV-NOANTHROPIC")
-    cats["provider_purity"] = 10.0 if noanthropic_bad == 0 else 0.0
+    unrecorded_bad = sum(1 for c, _ in violations if c == "AF-AV-MODEL-UNRECORDED")
+    cats["provider_purity"] = 10.0 if unrecorded_bad == 0 else 0.0
 
     # 10. section relevance (avatar Q1-30 + five-lists)
     rel_checks = []
@@ -224,7 +210,7 @@ def verify_signature(cert: Dict[str, Any], key: bytes) -> bool:
 # quality bar. This adds the missing second leg: a DETACHED QC-SEMANTIC.json
 # produced by an independent VERIFIER sub-agent (!= any stage author), running
 # the client's own TIER-A model, applying the 10-category OpenClaw QC Protocol
-# to EACH artifact. The verifier model id is recorded + G-NOANTHROPIC-checked,
+# to EACH artifact. The verifier model id is recorded,
 # the full verifier transcript's sha256 is embedded, and the whole certificate
 # is HMAC-signed with the per-run foreman key. aa_delivery_gate.py requires
 # BOTH certificates, with the semantic score >= 8.5, before it will deliver.
@@ -240,7 +226,7 @@ OPENCLAW_QC_CATEGORIES = [
     "structure", "tone_fidelity", "relevance", "depth", "polish",
 ]
 # a CLIENT tier-A id placeholder for the deterministic stand-in verifier; a real
-# run records the client box's own tier-A model. NEVER an Anthropic id.
+# run records the client box's own tier-A model.
 VERIFIER_TIER_A_DEFAULT = "ollama-cloud/qwen3-235b"
 
 
@@ -327,11 +313,6 @@ def verify_semantic_signature(cert: Dict[str, Any], key: bytes) -> bool:
     return hmac.compare_digest(_hmac(key, _canon(cert)), sig)
 
 
-def semantic_verifier_is_anthropic(cert: Dict[str, Any]) -> bool:
-    # SK2-16 — defer to the one canonical detector (shared-utils).
-    return is_anthropic_model(cert.get("verifier_model", ""))
-
-
 # ---------------------------------------------------------------------------
 # self-test
 # ---------------------------------------------------------------------------
@@ -397,12 +378,11 @@ def run_self_test(manifest: Dict[str, Any]) -> int:
         judgment = synth_semantic_judgment(manifest, run_dir, base=9.0)
         sem = build_semantic_certificate(manifest, run_dir, "selftest", key, judgment)
         if (sem["semantic_score"] >= 8.5 and verify_semantic_signature(sem, key)
-                and not semantic_verifier_is_anthropic(sem)
                 and sem["artifact_count"] == len(manifest["stages"])
                 and len(sem["transcript_sha256"]) == 64):
             print(f"SELF-TEST ok: (FIX-XC-03d) semantic cert -> score={sem['semantic_score']} over "
                   f"{sem['artifact_count']} artifacts (10-cat OpenClaw QC), verifier "
-                  f"{sem['verifier_model']!r} (non-Anthropic), transcript sha256 bound, HMAC verifies.")
+                  f"{sem['verifier_model']!r}, transcript sha256 bound, HMAC verifies.")
         else:
             ok = False
             print(f"SELF-TEST FAIL: semantic cert -> {sem}")
@@ -413,15 +393,6 @@ def run_self_test(manifest: Dict[str, Any]) -> int:
             print("SELF-TEST FAIL: a hand-edited semantic_score STILL verified.")
         else:
             print("SELF-TEST ok: a hand-edited semantic_score fails signature verification.")
-        # an Anthropic verifier model is detectable (delivery gate rejects it)
-        anthro_sem = build_semantic_certificate(manifest, run_dir, "selftest", key,
-                                                synth_semantic_judgment(manifest, run_dir,
-                                                                        verifier_model="anthropic/claude-3-5-sonnet"))
-        if semantic_verifier_is_anthropic(anthro_sem):
-            print("SELF-TEST ok: an Anthropic verifier model id is detected (G-NOANTHROPIC on the semantic leg).")
-        else:
-            ok = False
-            print("SELF-TEST FAIL: an Anthropic verifier model id was NOT detected.")
 
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
@@ -473,9 +444,6 @@ def main(argv: List[str]) -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"USAGE/IO ERROR: {exc}")
             return 3
-        if semantic_verifier_is_anthropic(sem):
-            print(f"REFUSED: verifier model {sem['verifier_model']!r} is an Anthropic id (G-NOANTHROPIC).")
-            return 2
         if args.out:
             Path(args.out).write_text(json.dumps(sem, indent=2) + "\n", encoding="utf-8")
             print(f"QC-SEMANTIC written: {args.out}")

@@ -1,0 +1,87 @@
+name: launch-family-parity
+
+# CON-06: 999 vendors the launch family (Skills 83, 49, 71, 78-82, 6, 44, 50 and
+# the shared-utils signature_launch, client_intake and signature_launch_contract
+# trees) from this repository. scripts/sync_launch_family_to_999.py copies by
+# allowlist; this job runs scripts/check-launch-family-parity.py over this
+# checkout and a fresh 999-setup checkout and fails on any difference outside
+# the declared 999-only allowlist. It also runs the sync's own tests.
+# The 999 workflow step and the 999 copy of the checker are delivered by
+# U-sync-999-03. This job goes green only once the 999 sync units (the
+# U-sync-999-01 launcher_core/cli.py hand merge included) are on 999-setup main.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '49-signature-funnel/**'
+      - '50-email-engine/**'
+      - '06-ghl-install-pages/**'
+      - '44-convert-and-flow-operator/**'
+      - '71-blackceo-signature-page/**'
+      - '78-signature-product-selection/**'
+      - '79-signature-order-form/**'
+      - '80-signature-upsell/**'
+      - '81-signature-downsell/**'
+      - '82-signature-thank-you/**'
+      - '83-black-friday-launcher/**'
+      - 'shared-utils/signature_launch/**'
+      - 'shared-utils/signature_launch_contract/**'
+      - 'shared-utils/client_intake/**'
+      - 'scripts/sync_launch_family_to_999.py'
+      - 'scripts/check-launch-family-parity.py'
+      - 'scripts/sync_skill71_to_999.py'
+      - 'scripts/check-skill71-parity.py'
+      - 'tests/test_launch_family_sync.py'
+      - '.github/workflows/launch-family-parity.yml'
+  pull_request:
+    paths:
+      - 'scripts/sync_launch_family_to_999.py'
+      - 'scripts/check-launch-family-parity.py'
+      - 'scripts/sync_skill71_to_999.py'
+      - 'scripts/check-skill71-parity.py'
+      - 'tests/test_launch_family_sync.py'
+      - '.github/workflows/launch-family-parity.yml'
+  schedule:
+    # 999-setup moves without a commit here, so it also runs on a clock
+    - cron: '41 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout openclaw-onboarding (the sync source, this repository)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: onboarding-checkout
+      - name: Checkout trevorotts1/999-setup (the sync target)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: trevorotts1/999-setup
+          ref: main
+          path: nine-checkout
+      - name: Sync tests
+        working-directory: onboarding-checkout
+        run: |
+          python3 -m pip install --quiet pytest==8.3.4
+          python3 -m pytest tests/test_launch_family_sync.py -q
+      - name: Launch-family parity, zero differences outside the 999-only allowlist
+        working-directory: onboarding-checkout
+        run: |
+          python3 scripts/check-launch-family-parity.py \
+            --onboarding . --nine ../nine-checkout --json "$RUNNER_TEMP/launch-family-parity.json"
+      - name: Upload the parity report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launch-family-parity
+          path: ${{ runner.temp }}/launch-family-parity.json
+          if-no-files-found: ignore

@@ -67,12 +67,14 @@ import {
   verdictSuperseded,
 } from './errors.js';
 import {
+  assertCoverImageDataUri,
   assertRedactionComplete,
   buildReportModel,
   DEFAULT_ROUTE_DISPLAY,
   type RedactionProfile,
   type ReportContext,
 } from './model.js';
+import type { InstallationCapabilitySnapshot } from './capability-snapshot.js';
 import {
   renderMarkdown,
   renderPrintHtml,
@@ -82,12 +84,15 @@ import {
 } from './render.js';
 import {
   isReportFormat,
+  PDF_MISSING_PIECE,
   REPORT_FORMAT_REGISTRY,
   REPORT_FORMATS,
   reportFilename,
+  reportFormatRegistry,
   type DeliverableRegistry,
   type ReportFormat,
 } from './registry.js';
+import { sha256OfBytes, type PdfRenderPort } from './pdf-renderer.js';
 import {
   exportEventId,
   type ExportJournalPort,
@@ -103,6 +108,22 @@ export interface ReportExportContextInput {
   session_mode?: string | null;
   route_display?: string;
   seat_qualifications?: Partial<Record<SeatId, string>>;
+  /** CTR-146: the trusted installation binding for a capability snapshot. */
+  installation_id?: string | null;
+  /** CTR-146: recorded sitting-size provenance, when the host has it. */
+  mode_selection?: {
+    mode: string;
+    source: 'client' | 'auto';
+    reason: string;
+  } | null;
+  /** CTR-146: shipped seat descriptors (lane, owned question). */
+  seat_descriptors?: Partial<
+    Record<SeatId, { lane: string | null; owned_question: string | null }>
+  >;
+  /** CTR-146: this installation's own skills/departments, validated in the model. */
+  capability_snapshot?: InstallationCapabilitySnapshot | null;
+  /** CTR-146: compressed cover image derivative; asset wiring owns it. */
+  cover_image_data_uri?: string | null;
 }
 
 export interface ReportExportRequest {
@@ -132,7 +153,9 @@ export interface ExportedArtifact {
   filename: string;
   media_type: string;
   sha256: string;
+  /** Exact bytes; base64 when `encoding` is base64 (PDF), else UTF-8 text. */
   bytes: string;
+  encoding: 'utf8' | 'base64';
   redacted: boolean;
   /** True when this artifact was already journaled under the same request ID. */
   replayed: boolean;
@@ -153,6 +176,12 @@ export interface ReportExportServiceDeps {
   journal: ExportJournalPort;
   registry: DeliverableRegistry;
   liveness?: SessionLivenessPort;
+  /**
+   * Host PDF renderer capability (directive Section 24.3). Bound only
+   * when the host actually has a renderer; the pdf deliverable is
+   * ready only when this port is present and its probe passes.
+   */
+  pdf?: PdfRenderPort;
 }
 
 interface SessionTarget {
@@ -203,11 +232,13 @@ export class ReportExportService {
   private readonly journal: ExportJournalPort;
   private readonly registry: DeliverableRegistry;
   private readonly liveness: SessionLivenessPort | undefined;
+  private readonly pdf: PdfRenderPort | undefined;
 
   constructor(deps: ReportExportServiceDeps) {
     this.journal = deps.journal;
     this.registry = deps.registry;
     this.liveness = deps.liveness;
+    this.pdf = deps.pdf;
   }
 
   async exportReport(request: ReportExportRequest): Promise<ReportExportResult> {
@@ -232,9 +263,11 @@ export class ReportExportService {
     );
     states.push('authorized');
 
-    // Format readiness: typed refusal naming the missing piece.
+    // Format readiness: typed refusal naming the missing piece. PDF is
+    // ready only when this host's renderer capability probe passes.
+    const formats = reportFormatRegistry(this.pdfReadiness());
     for (const format of requestedFormats) {
-      const descriptor = REPORT_FORMAT_REGISTRY[format];
+      const descriptor = formats[format];
       if (descriptor.status === 'not_ready') {
         throw new ReportExportError(
           'EXPORT_FORMAT_NOT_READY',
@@ -298,7 +331,16 @@ export class ReportExportService {
       session_mode: request.context.session_mode ?? null,
       route_display: request.context.route_display ?? DEFAULT_ROUTE_DISPLAY,
       seat_qualifications: request.context.seat_qualifications ?? {},
+      installation_id: request.context.installation_id ?? null,
+      mode_selection: request.context.mode_selection ?? null,
+      seat_descriptors: request.context.seat_descriptors ?? {},
+      capability_snapshot: request.context.capability_snapshot ?? null,
     };
+    // CTR-146: the cover image is transport, not report content; validate
+    // it once and hand it only to the print renderer.
+    const coverImageDataUri = assertCoverImageDataUri(
+      request.context.cover_image_data_uri ?? null,
+    );
     const redaction = request.redaction ?? null;
     const model = buildReportModel({
       verdict,
@@ -313,7 +355,18 @@ export class ReportExportService {
     // Render every ready format from the one model, even when only
     // some are requested: the record JSON binds the sibling hashes.
     const markdown = renderMarkdown(model);
-    const printHtml = renderPrintHtml(model);
+    // A redacted report never embeds image bytes: a redaction target
+    // cannot be proven absent from compressed pixels, so the cover prints
+    // the redaction note and no image at all (no portraits and no wordmark
+    // band), rather than risk a leak or a false pass.
+    const printHtml = renderPrintHtml(model, {
+      cover_image_data_uri: redaction === null ? coverImageDataUri : null,
+      // CTR-147: the frame and divider are generated decoration, but a
+      // redacted export embeds no image bytes at all, so they are
+      // explicitly disabled rather than left to the packaged default.
+      frame_image_data_uri: redaction === null ? undefined : null,
+      divider_image_data_uri: redaction === null ? undefined : null,
+    });
     const siblings: SiblingArtifact[] = [
       {
         format: 'markdown',
@@ -340,18 +393,52 @@ export class ReportExportService {
         missing_piece: null,
       },
     ];
-    const bytesByFormat = new Map<ReportFormat, string>();
-    bytesByFormat.set('markdown', markdown);
-    bytesByFormat.set('print_html', printHtml);
+    const rendered = new Map<
+      ReportFormat,
+      { bytes: string; encoding: 'utf8' | 'base64'; redaction_text: string }
+    >();
+    rendered.set('markdown', { bytes: markdown, encoding: 'utf8', redaction_text: markdown });
+    rendered.set('print_html', { bytes: printHtml, encoding: 'utf8', redaction_text: printHtml });
+
+    // PDF is the same print document, rendered to real PDF bytes by the
+    // host renderer. No renderer means the readiness loop above already
+    // refused; a renderer that fails is a typed EXPORT_RENDER_FAILED.
+    if (requestedFormats.includes('pdf')) {
+      const pdf = await this.renderPdf(printHtml);
+      const pdfSha256 = sha256OfBytes(pdf);
+      rendered.set('pdf', {
+        bytes: pdf.toString('base64'),
+        encoding: 'base64',
+        // The PDF's own content is the print document it was made from.
+        redaction_text: printHtml,
+      });
+      siblings.push({
+        format: 'pdf',
+        filename: reportFilename({
+          session_id: request.session_id,
+          verdict_revision: verdict.verdict_revision,
+          format: 'pdf',
+          redacted,
+        }),
+        sha256: pdfSha256,
+        status: 'ready',
+        missing_piece: null,
+      });
+    }
     if (requestedFormats.includes('record_json')) {
-      bytesByFormat.set('record_json', renderRecordJson(model, siblings));
+      const recordJson = renderRecordJson(model, siblings);
+      rendered.set('record_json', {
+        bytes: recordJson,
+        encoding: 'utf8',
+        redaction_text: recordJson,
+      });
     }
     states.push('rendered');
 
     const artifacts: ExportedArtifact[] = [];
     for (const format of requestedFormats) {
-      const bytes = bytesByFormat.get(format);
-      if (bytes === undefined) continue;
+      const entry = rendered.get(format);
+      if (entry === undefined) continue;
       artifacts.push({
         deliverable_id: exportEventId(request.request_id, format),
         format,
@@ -362,15 +449,22 @@ export class ReportExportService {
           redacted,
         }),
         media_type: REPORT_FORMAT_REGISTRY[format].media_type,
-        sha256: sha256OfText(bytes),
-        bytes,
+        sha256:
+          entry.encoding === 'base64'
+            ? sha256OfBytes(Buffer.from(entry.bytes, 'base64'))
+            : sha256OfText(entry.bytes),
+        bytes: entry.bytes,
+        encoding: entry.encoding,
         redacted,
         replayed: false,
       });
     }
     if (redaction !== null) {
       assertRedactionComplete(
-        artifacts.map((a) => ({ filename: a.filename, bytes: a.bytes })),
+        artifacts.map((a) => ({
+          filename: a.filename,
+          bytes: rendered.get(a.format)?.redaction_text ?? a.bytes,
+        })),
         redaction,
       );
     }
@@ -428,6 +522,7 @@ export class ReportExportService {
         filename: artifact.filename,
         media_type: artifact.media_type,
         bytes: artifact.bytes,
+        encoding: artifact.encoding,
         sha256: artifact.sha256,
         verdict_revision: verdict.verdict_revision,
         verdict_content_sha256: verdict.content_sha256,
@@ -466,6 +561,7 @@ export class ReportExportService {
     media_type: string;
     sha256: string;
     bytes: string;
+    encoding: 'utf8' | 'base64';
     verdict_revision: number;
     verdict_content_sha256: string;
   }> {
@@ -493,6 +589,7 @@ export class ReportExportService {
       media_type: deliverable.media_type,
       sha256: deliverable.sha256,
       bytes: deliverable.bytes,
+      encoding: deliverable.encoding ?? 'utf8',
       verdict_revision: deliverable.verdict_revision,
       verdict_content_sha256: deliverable.verdict_content_sha256,
     };
@@ -518,6 +615,28 @@ export class ReportExportService {
       throw new AuthorizationError(decision.code, decision.message);
     }
     return this.registry.delete(args.deliverable_id);
+  }
+
+  /** Render the print document to real PDF bytes through the host. */
+  private async renderPdf(printHtml: string): Promise<Buffer> {
+    if (!this.pdf) {
+      throw new ReportExportError(
+        'EXPORT_FORMAT_NOT_READY',
+        `The pdf deliverable is registered but not ready: ${PDF_MISSING_PIECE}.`,
+        { missing_piece: PDF_MISSING_PIECE },
+      );
+    }
+    return this.pdf.render(printHtml);
+  }
+
+  /** Host renderer readiness; a missing port is a missing renderer. */
+  private pdfReadiness(): { pdf_available: boolean; pdf_detail?: string } {
+    if (!this.pdf) return { pdf_available: false, pdf_detail: PDF_MISSING_PIECE };
+    const capability = this.pdf.probe();
+    return {
+      pdf_available: capability.available,
+      pdf_detail: capability.detail,
+    };
   }
 
   private resolveFormats(

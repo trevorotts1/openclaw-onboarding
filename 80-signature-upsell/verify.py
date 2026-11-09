@@ -13,8 +13,9 @@ non-zero on ANY failure:
   6. binding core test suite     (components/binding/test_binding.py) —
      staged; proves the S80-06 extra-offer binding at L1 interface level
      against the TEST-ONLY fixture driver only
-  7. renderer determinism: re-render in the staged mirror and require every
-     generated page file to be byte-identical to the packaged pages
+  7. renderer determinism: re-render (render_pages.py --test-only) in the staged
+     mirror and require every generated page file to be byte-identical to the
+     packaged pages
   8. schema validation of the examples: every examples/*.example bundle's
      "result" against schemas/upsell-result.schema.json, and every example
      request against schemas/upsell-request.schema.json
@@ -46,6 +47,21 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+# PYDEPS-ACTIVATION:BEGIN (shared contract, byte-identical in every file that imports jsonschema; stdlib only)
+# jsonschema lives in <root>/pydeps/py<X.Y>/ when pip refuses the interpreter (PEP 668); put it on sys.path first.
+import os as _os
+import sys as _sys
+
+_pytag = "py%d.%d" % _sys.version_info[:2]
+_pyroot = _os.environ.get("OPENCLAW_ROOT") or (
+    "/data/.openclaw" if _os.path.isdir("/data/.openclaw") else _os.path.expanduser("~/.openclaw"))
+_sys.path[:0] = [_d for _d in (
+    [_os.environ["OC_PYDEPS_DIR"]] if _os.environ.get("OC_PYDEPS_DIR") else
+    [_os.path.join(_pyroot, "pydeps", _pytag), _os.path.expanduser("~/.claude/pydeps/" + _pytag)])
+    if _os.path.isdir(_d) and _d not in _sys.path]
+del _pytag, _pyroot
+# PYDEPS-ACTIVATION:END
 
 SKILL = Path(__file__).resolve().parent
 CORE = SKILL / "components" / "80-signature-upsell"
@@ -169,7 +185,7 @@ def main():
 
         # renderer determinism: regenerate in the mirror, compare to package
         run("renderer (staged mirror)",
-            [sys.executable, "render_pages.py"], stage_work / "pages")
+            [sys.executable, "render_pages.py", "--test-only"], stage_work / "pages")
         run("page checker (staged mirror)",
             [sys.executable, "check_pages.py"], stage_work / "pages")
         pkg_pages = tree_hashes(PAGES)

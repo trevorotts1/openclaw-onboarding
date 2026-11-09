@@ -1100,7 +1100,7 @@ def self_test():
                               "style": "x" * n, "title": "t", "duration": 30,
                               "negative_tags": "choir, reverb, echo"}}
         _expect_exit(write("style-79.json", style_req(790)), "music", 2)    # 79 percent rejected
-        _expect_exit(write("style-80.json", style_req(800)), "music", 0)    # 80 percent floor passes (target warning)
+        _expect_exit(write("style-80.json", style_req(800)), "music", 0)    # 80 percent warns and expands (owner rule 12)
         _expect_exit(write("style-95.json", style_req(950)), "music", 0)    # 95 percent passes
         _expect_exit(write("style-100.json", style_req(1000)), "music", 0)  # 100 percent passes
         _expect_exit(write("style-101.json", style_req(1001)), "music", 2)  # 101 percent rejected
@@ -1123,8 +1123,8 @@ def self_test():
         import subprocess
         r = subprocess.run([sys.executable, __file__, "--domain", "music", "--payload", str(td / "style-79.json")],
                            capture_output=True, text=True)
-        if "ADD at least 10" not in r.stdout:
-            raise SystemExit("SELF-TEST FAIL: style floor message must name the exact chars to add (10)\n" + r.stdout)
+        if "ADD at least 160" not in r.stdout:
+            raise SystemExit("SELF-TEST FAIL: style floor message must name the exact chars to add (160 = the gap to the 95% band floor 950)\n" + r.stdout)
         # verbatim TTS text keeps only its ceiling: a short script is fine
         _expect_exit(write("tts-short.json", {"model": "elevenlabs/text-to-speech-turbo-2-5",
                                               "callBackUrl": "https://x/cb", "input": {"text": "hi"}}), "tts", 0)

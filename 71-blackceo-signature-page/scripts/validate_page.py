@@ -24,7 +24,12 @@ after the same eager-load routine render_page.py uses:
                    lorem ipsum, {{. WARN instead of FAIL when intake.test_run.
   6. Images        mode page: all loaded, none shipping loading="lazy", and each
                    mapped image's rendered width at 1440 >= 90% of its
-                   desktop_slot_px from image-map.json.
+                   desktop_slot_px from image-map.json. Every content image
+                   (not the logo, not the founder photo) must map to an
+                   image-map entry (data-image-slot, else its src) carrying that
+                   entry's URL or file, and its bytes must hash to the QC'd
+                   file: the shared image-slot contract
+                   (shared-utils/signature_launch/design/image_slots.py).
                    mode mockup: [data-image-slot] blocks at the exact declared
                    slot size.
   7. Overflow      document.scrollingElement.scrollWidth <= innerWidth at every
@@ -259,6 +264,7 @@ IMAGES_JS = """() => {
       slot: img.getAttribute('data-image-slot'),
       founder: !!(img.closest && img.closest('[data-slot="founder"]')) ||
                img.getAttribute('data-slot') === 'founder',
+      logo: !!(img.closest && img.closest('[data-brand="logo"]')),
       complete: img.complete && img.naturalWidth > 0,
       width: r.width,
       visible: visible
@@ -1499,6 +1505,43 @@ def check_authored_tokens(tokens, palette, logo_only):
     return errors
 
 
+def load_image_slots():
+    """The shared image-slot contract (one implementation for every renderer),
+    found beside this skill like the other shared components. Fail-closed."""
+    import importlib.util
+    import launch_context
+    root = Path(__file__).resolve().parents[1]
+    path = launch_context.shared_component_path(root, launch_context.IMAGE_SLOTS_REF)
+    if not path.is_file():
+        die2(f"the shared image-slot contract is not installed ({path}); "
+             "a page with content images cannot be checked against its image-map")
+    spec = importlib.util.spec_from_file_location("signature_launch_image_slots", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def image_contract_errors(content_imgs, image_map, base_dirs, fetch, require_map=False):
+    """IMG-18: every content image must map to an image-map entry, carry that
+    entry's URL or file, and hash to the QC'd file. Founder and logo images have
+    their own gates and are not passed in. With no image-map at all, a launch
+    run (require_map) fails each image; any other run keeps the existing
+    "image-map.json not found" warning."""
+    if not content_imgs:
+        return []
+    if image_map is None:
+        if not require_map:
+            return []
+        return [f"image src does not map to an image-map entry: {img['src']} "
+                "(image-map.json not found)" for img in content_imgs]
+    mod = load_image_slots()
+    try:
+        slots = mod.build_slots(image_map, base_dirs)
+    except mod.ImageSlotError as exc:
+        return [f"image-map: {exc}"]
+    return mod.check_page_images(slots, content_imgs, fetch)
+
+
 def resolve_image_bytes(page, src, page_url_dir):
     """Fetch the bytes behind an img src for SHA-256 (file, http, data URI)."""
     if src.startswith("data:"):
@@ -1795,6 +1838,16 @@ def main():
                                             f"below 90% of its {slot_px}px slot"
                                         )
                         if width == max_width:
+                            map_dirs = [d for d in (
+                                image_map_path.parent if image_map_path else None,
+                                Path(args.run_dir) if args.run_dir else None,
+                                page_url_dir, page_url_dir.parent) if d]
+                            errors.extend(image_contract_errors(
+                                [i for i in imgs_res["imgs"]
+                                 if i["visible"] and not i["founder"] and not i["logo"]],
+                                image_map, map_dirs,
+                                lambda src: resolve_image_bytes(page, src, page_url_dir),
+                                require_map=bool(intake.get("launch_profile") or intake.get("launch"))))
                             founder_res = page.evaluate(FOUNDER_JS)
                             width_results[width]["founder"] = founder_res
                             if is_blackceo and founder_res.get("present"):

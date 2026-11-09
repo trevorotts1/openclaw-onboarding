@@ -99,6 +99,26 @@ CANDIDATE_NAMES: Dict[str, Tuple[str, ...]] = {
     for cid in CANONICAL_IDS
 }
 
+# The W8 commerce modules live under their numbered skill dir, so a fresh
+# install of the skill carries them. The old skills/06-ghl-delivery,
+# skills/79-checkout and skills/80-upsell paths are thin re-exports only.
+COMMERCE_MODULES: Dict[str, Tuple[str, str]] = {
+    "order_components": ("06-ghl-install-pages", "tools/order_components.py"),
+    "order_bumps": ("79-signature-order-form", "scripts/order_bumps.py"),
+    "native_upsell": ("80-signature-upsell", "components/binding/native_upsell.py"),
+}
+
+
+def commerce_module_path(name: str, root: Path) -> Optional[Path]:
+    """Path of a commerce module inside the numbered skill dir under ``root``,
+    or None when the name is unknown or the file is absent (fail closed)."""
+    where = COMMERCE_MODULES.get(name)
+    if where is None:
+        return None
+    path = Path(root) / where[0] / where[1]
+    return path if path.is_file() else None
+
+
 _SKILL_MD = "SKILL.md"
 _VERSION_FILE = "skill-version.txt"
 
@@ -344,6 +364,10 @@ def _selfcheck() -> int:
             for cid, r in live.items():
                 ok((r.real_path / _SKILL_MD).is_file(), f"live SKILL.md present for {cid}")
                 ok(r.version is not None, f"live version present for {cid}")
+            for mod, (cid, _rel) in COMMERCE_MODULES.items():
+                ok(cid in CANONICAL_IDS, f"commerce module {mod} lives in a canonical skill dir")
+                ok(commerce_module_path(mod, live_root) is not None, f"live {mod} present in {cid}")
+        ok(commerce_module_path("nope", tmp) is None, "unknown commerce module fails closed")
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

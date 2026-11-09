@@ -1,0 +1,55 @@
+{
+  "unit": "S75-T08",
+  "attempt": 1,
+  "dependencies": [
+    {
+      "role": "base",
+      "sha": "f1c5ea993d0fabe41bd438c033395f18bf86e667",
+      "source": "receipt.base"
+    },
+    {
+      "role": "unit_merge",
+      "sha": "bd74cff7cd74103b0d91903d5e64404df877039a",
+      "source": "branch head of s75x/receipt-S75-T08"
+    }
+  ],
+  "independent_checker": {
+    "checker_id": "fresh-qc-opus-chain-lane-T08-both-tables",
+    "checker_model": "route=opus-chain; served=not observed by the lane"
+  },
+  "repository_gate": {
+    "workflow": ".github/workflows/qc-static.yml",
+    "workflow_revision": "origin/main",
+    "steps": [
+      {
+        "name": "Skill 75 empty-home test suite (manual 02 B6)",
+        "pathspecs": [
+          "75-drama-song-ad-factory/scripts/qc-operator-path-leak.sh",
+          "75-drama-song-ad-factory/scripts/core/**"
+        ]
+      },
+      {
+        "name": "Skill 75 pytest collection + run (no hidden failures)",
+        "pathspecs": [
+          "75-drama-song-ad-factory/scripts",
+          "75-drama-song-ad-factory/scripts/**/test_*.py"
+        ]
+      }
+    ],
+    "applies_to_unit_paths": true,
+    "basis_kind": "candidate.changed_files (evidence/units/S75-T08/receipt.json) plus the code path the receipt cites (75-drama-song-ad-factory/scripts/core/story_first_contracts.py)",
+    "notes": "Both steps read the cited code path: the pytest step collects and runs 75-drama-song-ad-factory/scripts (including core/test_story_first_contracts.py) and qc-operator-path-leak.sh scans scripts/core. No step in this workflow reads evidence/units/S75-T08/receipt.json itself."
+  },
+  "candidate": {
+    "branch": "s75x/receipt-S75-T08",
+    "head": "bd74cff7cd74103b0d91903d5e64404df877039a",
+    "changed_files": [
+      "evidence/units/S75-T08/receipt.json"
+    ]
+  },
+  "base": {
+    "sha": "f1c5ea993d0fabe41bd438c033395f18bf86e667",
+    "merge_tree_rc": 0
+  },
+  "head_sha": "bd74cff7cd74103b0d91903d5e64404df877039a"
+}

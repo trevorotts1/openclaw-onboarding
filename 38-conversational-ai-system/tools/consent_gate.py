@@ -9,8 +9,9 @@ Section 7 precedence, implemented in this order and reported that way:
 
   1. global stop        suppresses outbound for that contact, every channel
   2. channel opt-out    blocks THAT channel only
-  3. human ownership    fences the bot until an explicit release
-  4. field refusal      suppresses that ask/topic/offer/campaign only
+  3. sequence refusal   blocks THAT sequence only
+  4. human ownership    fences the bot until an explicit release
+  5. field refusal      suppresses that ask/topic/offer/campaign only
 
 "Unknown refusal scope is not broader permission": when a dispatch does not
 say which channel it is on and a channel opt-out exists, the gate BLOCKS
@@ -81,12 +82,15 @@ from tenant_identity import (  # noqa: E402
 
 SCOPE_GLOBAL = "global"
 SCOPE_CHANNEL = "channel"
+SCOPE_SEQUENCE = "sequence"
 SCOPE_TOPIC = "topic"
 SCOPE_OFFER = "offer"
 SCOPE_CAMPAIGN = "campaign"
 
-SCOPES = (SCOPE_GLOBAL, SCOPE_CHANNEL, SCOPE_TOPIC, SCOPE_OFFER, SCOPE_CAMPAIGN)
-VALUE_SCOPES = (SCOPE_CHANNEL, SCOPE_TOPIC, SCOPE_OFFER, SCOPE_CAMPAIGN)
+SCOPES = (SCOPE_GLOBAL, SCOPE_CHANNEL, SCOPE_SEQUENCE, SCOPE_TOPIC,
+          SCOPE_OFFER, SCOPE_CAMPAIGN)
+VALUE_SCOPES = (SCOPE_CHANNEL, SCOPE_SEQUENCE, SCOPE_TOPIC, SCOPE_OFFER,
+                SCOPE_CAMPAIGN)
 
 DECISION_REFUSE = "refuse"
 DECISION_GRANT = "grant"
@@ -97,8 +101,13 @@ REASON_LEGACY_GLOBAL = "consent:global_stop_recorded_in_identity"
 REASON_CHANNEL = "consent:channel_opt_out"
 REASON_CHANNEL_UNRESOLVED = "consent:channel_unresolved"
 REASON_LEGACY_CHANNEL = "consent:channel_opt_out_recorded_in_identity"
+REASON_SEQUENCE = "consent:sequence_refusal"
+REASON_SEQUENCE_UNRESOLVED = "consent:sequence_unresolved"
 REASON_HUMAN = "consent:human_owned"
 REASON_FIELD = "consent:field_refusal"
+
+# Reported verbatim in every verdict's evidence.
+PRECEDENCE = "global>channel>sequence>human>field"
 
 FENCE_ACTIVE = "human"
 FENCE_RELEASED = "released"
@@ -229,6 +238,23 @@ class ConsentStore:
         ts = _ts(now)
         self.identity.verify(tenant_id, canonical_contact_id)
         with self.identity.write_transaction() as conn:
+            if decision == DECISION_GRANT:
+                latest = conn.execute(
+                    "SELECT decision FROM consent_decisions WHERE tenant_id=?"
+                    " AND canonical_contact_id=? AND scope_kind=?"
+                    " AND scope_value=? ORDER BY seq DESC LIMIT 1",
+                    (tenant_id, canonical_contact_id, scope_kind, value),
+                ).fetchone()
+                if latest is not None and latest["decision"] == DECISION_REFUSE:
+                    # Re-entry is an act of authority, not a timeout. Without a
+                    # named human and a stated reason there is nothing to audit
+                    # and nothing that distinguishes a deliberate release from
+                    # a bug that wrote the wrong decision.
+                    if not (actor or "").strip() or not (reason or "").strip():
+                        raise ConsentError(
+                            "reentry_requires_authority: lifting a refusal at"
+                            " %s=%r requires a recorded actor and reason"
+                            % (scope_kind, value))
             if capture_id is not None:
                 existing = conn.execute(
                     "SELECT * FROM consent_decisions WHERE tenant_id = ?"
@@ -433,6 +459,7 @@ class ConsentStore:
         canonical_contact_id: str,
         *,
         channel: Optional[str] = None,
+        sequence: Optional[str] = None,
         topic: Optional[str] = None,
         offer: Optional[str] = None,
         campaign: Optional[str] = None,
@@ -440,9 +467,11 @@ class ConsentStore:
         """Section 7 precedence. Returns {"allowed", "reason", "blocking"}.
 
         Missing channel is NOT treated as "some other channel": an existing
-        channel opt-out blocks with channel_unresolved. Missing topic/offer/
-        campaign means the send carries nothing of that kind, so a refusal for
-        that kind cannot match it.
+        channel opt-out blocks with channel_unresolved. A sequence refusal is
+        treated the same way - a send that cannot name its sequence cannot
+        prove it is a different one, so it blocks. Missing topic/offer/campaign
+        means the send carries nothing of that kind, so a refusal for that kind
+        cannot match it.
         """
         tenant_id = _id(tenant_id, "tenant_id")
         canonical_contact_id = _id(canonical_contact_id, "canonical_contact_id")
@@ -450,6 +479,7 @@ class ConsentStore:
         refusals = self.active_refusals(tenant_id, canonical_contact_id)
         by_scope = {(r["scope_kind"], r["scope_value"]): r for r in refusals}
         channel_key = _norm(channel) if channel else None
+        sequence_key = _norm(sequence) if sequence else None
         fence = self.human_fence(tenant_id, canonical_contact_id)
         legacy = self.legacy_suppression(tenant_id, canonical_contact_id)
 
@@ -460,8 +490,9 @@ class ConsentStore:
                 "reason": reason,
                 "blocking": blocking,
                 "evidence": {
-                    "precedence": "global>channel>human>field",
+                    "precedence": PRECEDENCE,
                     "channel": channel_key,
+                    "sequence": sequence_key,
                     "scope": blocking.get("scope_kind"),
                     "scope_value": blocking.get("scope_value", ""),
                     **(evidence or {}),
@@ -499,7 +530,21 @@ class ConsentStore:
                            {"legacy_suppression": legacy,
                             "unknown_scope_is_not_permission": True})
 
-        # 3. human ownership fences the bot.
+        # 3. sequence refusal - only that sequence; an unnamed sequence blocks.
+        if sequence_key is not None:
+            hit = by_scope.get((SCOPE_SEQUENCE, sequence_key))
+            if hit is not None:
+                return blocked(REASON_SEQUENCE, hit)
+        else:
+            seqs = [r for r in refusals if r["scope_kind"] == SCOPE_SEQUENCE]
+            if seqs:
+                return blocked(
+                    REASON_SEQUENCE_UNRESOLVED,
+                    {"scope_kind": SCOPE_SEQUENCE,
+                     "scope_value": seqs[0]["scope_value"]},
+                    {"unknown_scope_is_not_permission": True})
+
+        # 4. human ownership fences the bot.
         if fence["active"]:
             return blocked(REASON_HUMAN,
                            {"scope_kind": "human_fence",
@@ -507,7 +552,7 @@ class ConsentStore:
                             "revision": fence["revision"]},
                            {"human_fence": fence})
 
-        # 4. field refusal - that ask/topic/offer/campaign only.
+        # 5. field refusal - that ask/topic/offer/campaign only.
         for kind, value in ((SCOPE_TOPIC, topic), (SCOPE_OFFER, offer),
                             (SCOPE_CAMPAIGN, campaign)):
             if value is None:
@@ -516,8 +561,8 @@ class ConsentStore:
             if hit is not None:
                 return blocked(REASON_FIELD, hit)
         return {"allowed": True, "reason": "consent:clear", "blocking": None,
-                "evidence": {"channel": channel_key,
-                             "precedence": "global>channel>human>field"}}
+                "evidence": {"channel": channel_key, "sequence": sequence_key,
+                             "precedence": PRECEDENCE}}
 
     # ── contact merge ──────────────────────────────────────────────────────
 
@@ -608,8 +653,9 @@ def make_gate_evaluator(
         if channel is None and channel_of is not None:
             channel = channel_of(action)
         decision = consent.decide(
-            tenant_id, contact, channel=channel, topic=ctx.get("topic"),
-            offer=ctx.get("offer"), campaign=ctx.get("campaign"))
+            tenant_id, contact, channel=channel, sequence=ctx.get("sequence"),
+            topic=ctx.get("topic"), offer=ctx.get("offer"),
+            campaign=ctx.get("campaign"))
         if decision["allowed"]:
             return {"verdict": "ALLOW", "evidence": decision["evidence"]}
         return {"verdict": "SUPPRESSED",
@@ -618,6 +664,11 @@ def make_gate_evaluator(
                              "blocking": decision["blocking"]},
                 "checked_at": ctx.get("now")}
 
+    # Marks the evaluator as reading durable suppression state on every call, so
+    # outbound_gate.dispatch() re-runs it inside the transaction that starts the
+    # send. A gate that is only consulted once, before the commit, is the defect
+    # this attribute exists to prevent.
+    evaluator.consent_guard = True
     return evaluator
 
 
@@ -678,6 +729,41 @@ class ConsentCapture:
             data={scope_value or scope_kind: decision},
             owner_id=owner_id, fence=fence)
 
+    def serve(self, tenant_id: str, canonical_contact_id: str,
+              collection_sequence_id: str, capture_id: str, *,
+              help_text: str = "") -> Dict[str, Any]:
+        """What to say for a capture that already exists. Never a restart.
+
+        PARTIAL CAPTURE SERVES THE ORIGINAL. The text is the step recorded at
+        begin(), read at the capture's own cursor, so an interrupted capture
+        resumes the ask the person was already answering instead of minting a
+        new one. A rejected capture serves help only: `original` is None and
+        `restart_allowed` is False, so no caller can turn a rejected ask into a
+        fresh offer. Nothing here writes.
+        """
+        state = self.captures.get(tenant_id, canonical_contact_id,
+                                  collection_sequence_id, capture_id)
+        if state is None:
+            raise ConsentError(f"bad_input: unknown capture {capture_id!r}")
+        steps = state["steps"]
+        cursor = int(state["cursor"])
+        base = {"capture_id": capture_id, "restart_allowed": False,
+                "help": help_text or "help: say adjust, skip or stop"}
+        if state["state"] == "rejected":
+            return {"kind": "help", "original": None, "original_step_index": None,
+                    "remaining": 0,
+                    "rejection_reason": state.get("rejection_reason"),
+                    **base}
+        if state["state"] == "complete":
+            return {"kind": "complete", "original": None,
+                    "original_step_index": None, "remaining": 0, **base}
+        if cursor >= len(steps):
+            return {"kind": "awaiting_close", "original": None,
+                    "original_step_index": None, "remaining": 0, **base}
+        return {"kind": "original", "original": steps[cursor],
+                "original_step_index": cursor,
+                "remaining": len(steps) - cursor, **base}
+
     def complete(self, tenant_id: str, canonical_contact_id: str,
                  collection_sequence_id: str, capture_id: str, *,
                  owner_id: str, fence: int) -> Dict[str, Any]:
@@ -729,7 +815,8 @@ def _selfcheck() -> int:
        "topic refusal blocks that topic")
     ok(consent.decide("t1", contact, channel="sms", topic="onboarding")["allowed"],
        "topic refusal does not block another topic")
-    consent.grant("t1", contact, scope_kind=SCOPE_TOPIC, scope_value="pricing")
+    consent.grant("t1", contact, scope_kind=SCOPE_TOPIC, scope_value="pricing",
+                  actor="jill", reason="customer asked about pricing again")
     ok(consent.decide("t1", contact, channel="sms", topic="pricing")["allowed"],
        "a grant lifts its own scope")
 
@@ -746,7 +833,8 @@ def _selfcheck() -> int:
     consent.grant("t1", contact, scope_kind=SCOPE_TOPIC, scope_value="x")
     ok(not consent.decide("t1", contact, channel="email", topic="x")["allowed"],
        "a narrow grant never lifts a global stop")
-    consent.lift_global_stop("t1", contact)
+    consent.lift_global_stop("t1", contact, actor="jill",
+                             reason="customer asked to resume")
 
     consent.human_takeover("t1", contact, actor="jill")
     ok(not consent.decide("t1", contact, channel="email")["allowed"],

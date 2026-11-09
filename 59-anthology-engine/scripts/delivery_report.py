@@ -38,16 +38,6 @@ WHAT THIS SHIPS:
   3. PERSISTENCE (persist_report / persist_certificate): both are written to the
      operator report dir and are pointer/JSON artifacts only; NEITHER is ever a
      client surface.
-  4. FAIL-CLOSED DENY GATE (assert_no_anthropic_values): before any report or
-     certificate is emitted, every CALLER-SUPPLIED value (deliverable types, hosted
-     URLs, field keys, ids, stage ids) is scanned for an Anthropic-family MODEL-ID
-     shape; a hit REFUSES to emit (AF-AE-ANTHROPIC; exit 4). "Zero Anthropic
-     identifiers written to any field or certificate" becomes enforcement, not a
-     promise. (The fixed operator prose -- which legitimately contains the bare
-     vendor word Anthropic in its attestation -- is authored here and is NOT
-     scanned; only dynamic caller values are. The word is written UNQUOTED so no
-     quoted-bare-scalar shape exists for any static gate to key on, matching
-     caf_delivery.py's convention of never quoting the bare vendor token.)
 
 DOCTRINE (binding, enforced in code):
   - STDLIB ONLY (json, hmac, hashlib, re, ...): zero third-party deps; calls NO model.
@@ -56,29 +46,20 @@ DOCTRINE (binding, enforced in code):
   - NEVER print a secret value: the cert signing secret is resolved by label across
     the shared alias set and reported SET / NOT SET only.
   - Convert and Flow naming everywhere (never the underlying vendor name).
-  - Zero Anthropic identifiers in any emitted report or certificate (deny gate above).
-
-DENY-PATTERN NOTE FOR guard-no-anthropic-runtime.py (W2.2): the regex _ANTHROPIC_DENY_RE
-below is an ENFORCEMENT DEFINITION (this module is the guard that refuses Anthropic
-values in a certificate), and the self-test assembles its negative fixture from
-codepoints so NO literal Anthropic model-id string ever appears in this runtime file.
-Per the build ground truth, a deny-pattern DEFINITION is ALLOWED; only an actual
-Anthropic model-id VALUE in runtime is a violation.
 
 EXIT CODES (SPEC 3.4 house convention; this script's own contract):
   0  report/certificate built + persisted (or verified); idempotent no-op
   1  unexpected error
   2  bad invocation / malformed input JSON / missing required field (validation refusal)
   3  operator report dir unwritable (the report/certificate is HELD, delivery is not)
-  4  an Anthropic-family model-id shape was found in a caller-supplied value (REFUSED)
+  4  (retired: there is no vendor deny gate any more)
   5  certificate self-verify mismatch (content_sha256 or HMAC re-derivation failed)
 
 Public API imported by caf_delivery.py at S8 (drop-in for its former inline block):
   PART_A_S8, CERT_SECRET_LABELS,
   build_delivery_report, render_report_text,
   build_process_certificate, verify_certificate, resolve_cert_secret,
-  persist_report, persist_certificate, report_dir,
-  assert_no_anthropic_values, AnthropicIdentifierError
+  persist_report, persist_certificate, report_dir
 """
 from __future__ import annotations
 
@@ -100,7 +81,6 @@ EX_OK = 0
 EX_ERR = 1
 EX_BADINPUT = 2        # bad invocation / malformed input / missing required field
 EX_HELD = 3            # operator report dir unwritable (report/cert held, not delivery)
-EX_ANTHROPIC = 4       # Anthropic-family model-id shape in a caller value (AF-AE-ANTHROPIC)
 EX_VERIFY = 5          # certificate self-verify mismatch
 
 SCHEMA_VERSION = 1
@@ -113,34 +93,6 @@ CERT_SECRET_LABELS = (
     "ANTHOLOGY_PROCESS_CERT_SECRET",
     "ANTHOLOGY_CERT_SECRET",
 )
-
-# ---------------------------------------------------------------------------
-# Deny gate. This module is the guard that refuses an Anthropic-family model-id
-# VALUE from ever landing in an emitted certificate or report. The regex is an
-# ENFORCEMENT DEFINITION (allowed for guard-no-anthropic-runtime.py). It matches the
-# unmistakable Anthropic-family shapes: a `claude`/`anthropic` vendor token at a word
-# boundary, an `anthropic/...` namespace, a `claude-*` / `claude.*` model id, or the
-# `us.anthropic.*` bedrock prefix. It is applied ONLY to caller-supplied dynamic
-# values, NEVER to this module's own fixed operator prose (which names the bare vendor
-# word Anthropic, written unquoted, in its attestation) -- so the attestation never
-# false-positives under any static gate.
-# ---------------------------------------------------------------------------
-_ANTHROPIC_DENY_RE = re.compile(
-    r"(?i)(?:^|[^a-z0-9])(?:claude|anthropic)(?:[^a-z0-9]|$)"
-    r"|anthropic/|claude[._-]|us\.anthropic\."
-)
-
-
-class AnthropicIdentifierError(ValueError):
-    """Raised (fail-closed) when a caller-supplied value carries an Anthropic-family
-    model-id shape. caf_delivery.py's main() should map this to its guard-refusal exit
-    (its exit 2); this module's own CLI maps it to exit 4 (AF-AE-ANTHROPIC)."""
-
-    def __init__(self, where, value_repr):
-        super().__init__("Anthropic-family identifier shape detected in %s" % where)
-        self.where = where
-        self.value_repr = value_repr
-
 
 # ---------------------------------------------------------------------------
 # Small helpers (house conventions mirrored from caf_delivery.py / anthology_state.py
@@ -204,48 +156,6 @@ def report_dir(explicit=None):
 
 
 # ---------------------------------------------------------------------------
-# Fail-closed Anthropic deny scan over CALLER-SUPPLIED values only.
-# ---------------------------------------------------------------------------
-def _iter_caller_values(participant_key, contact_id, anthology_id, stage_cursor,
-                        deliverables, control_results, stage_update):
-    """Yield (where, value) for every dynamic, caller-supplied scalar that could carry
-    an injected model id. The module's own fixed prose is deliberately excluded."""
-    for label, val in (("participant_key", participant_key), ("contact_id", contact_id),
-                        ("anthology_id", anthology_id), ("stage_cursor", stage_cursor)):
-        if val is not None:
-            yield label, val
-    for i, d in enumerate(deliverables or []):
-        yield ("deliverable[%d].type" % i), d.get("type")
-        for part_name in ("doc", "pdf"):
-            part = d.get(part_name) or {}
-            if isinstance(part, dict):
-                yield ("deliverable[%d].%s.url" % (i, part_name)), part.get("url")
-        for j, r in enumerate(d.get("field_results", []) or []):
-            yield ("deliverable[%d].field_results[%d].key" % (i, j)), r.get("key")
-            yield ("deliverable[%d].field_results[%d].id" % (i, j)), r.get("id")
-    for k, r in enumerate(control_results or []):
-        yield ("control_fields[%d].key" % k), r.get("key")
-    if isinstance(stage_update, dict):
-        for sk in ("gate", "stage_id", "pipeline_id", "opportunity_id", "status"):
-            if stage_update.get(sk) is not None:
-                yield ("pipeline_stage_update.%s" % sk), stage_update.get(sk)
-
-
-def assert_no_anthropic_values(participant_key, contact_id, anthology_id, stage_cursor,
-                               deliverables, control_results, stage_update):
-    """Refuse (fail-closed) if any caller-supplied value carries an Anthropic-family
-    model-id shape. Raises AnthropicIdentifierError; callers surface it to exit 4."""
-    for where, val in _iter_caller_values(participant_key, contact_id, anthology_id,
-                                          stage_cursor, deliverables, control_results,
-                                          stage_update):
-        if val is None:
-            continue
-        if _ANTHROPIC_DENY_RE.search(str(val)):
-            # value_repr is short and operator-only; a URL/key is safe to echo, never a secret.
-            raise AnthropicIdentifierError(where, str(val)[:80])
-
-
-# ---------------------------------------------------------------------------
 # Operator-channel delivery report (reproduces CHECKLIST Part A, S8).
 # Text mirrors caf_delivery.py's former inline block byte-for-byte so the operator
 # surface is unchanged by the extraction.
@@ -268,9 +178,7 @@ PART_A_S8 = [
 def build_delivery_report(participant_key, contact_id, anthology_id, operating_location,
                           deliverables, control_results, stage_update, certificate_ref=None):
     """Operator-verbose, NEVER client-facing. Reproduces the Part A S8 runtime items
-    with an evidence-backed pass verdict for each. Fail-closed on an Anthropic value."""
-    assert_no_anthropic_values(participant_key, contact_id, anthology_id, None,
-                               deliverables, control_results, stage_update)
+    with an evidence-backed pass verdict for each."""
     fields_all_matched = all(
         r["match"] for d in deliverables for r in d.get("field_results", [])
     ) and all(r["match"] for r in (control_results or []))
@@ -379,10 +287,7 @@ def _cert_core(body):
 def build_process_certificate(participant_key, contact_id, anthology_id, stage_cursor,
                               deliverables, control_results, stage_update,
                               run_nonce=None, environ=None):
-    """Build the Skill 54 P7 signed process certificate. Fail-closed on an Anthropic
-    value; idempotent content_sha256; optional HMAC signature (fail-soft unsigned)."""
-    assert_no_anthropic_values(participant_key, contact_id, anthology_id, stage_cursor,
-                               deliverables, control_results, stage_update)
+    """Build the Skill 54 P7 signed process certificate. Idempotent content_sha256; optional HMAC signature (fail-soft unsigned)."""
     body = {
         "certificate_type": "anthology_process_certificate",
         "schema_version": SCHEMA_VERSION,
@@ -408,8 +313,8 @@ def build_process_certificate(participant_key, contact_id, anthology_id, stage_c
         ],
         "pipeline_stage_update": stage_update,
         "attestation": "Every deliverable above was written to its exact PRD Section 6 "
-                       "key by contact_id and read back byte-for-byte; no Anthropic "
-                       "identifier and no secret value appears in this certificate.",
+                       "key by contact_id and read back byte-for-byte; no secret "
+                       "value appears in this certificate.",
         "run_nonce": run_nonce,
         "content_sha256_scope": "idempotent process-identity core (Skill 54 P7): "
                                 "excludes produced_utc and the recorded run_nonce so "
@@ -593,11 +498,9 @@ def cmd_plan(args):
                        "1": "unexpected error",
                        "2": "bad invocation / malformed input / missing field",
                        "3": "operator report dir unwritable (held; delivery is not)",
-                       "4": "Anthropic-family model-id shape in a caller value (refused)",
                        "5": "certificate self-verify mismatch"},
         "doctrine": "stdlib-only; calls no model; operator-verbose never client; cert "
-                    "secret reported SET/NOT SET only; zero Anthropic value in any "
-                    "emitted report or certificate",
+                    "secret reported SET/NOT SET only",
     }
     _, secret = resolve_cert_secret()
     plan["credential_presence"] = {
@@ -685,29 +588,6 @@ def self_test():
     u_ok, _ = verify_certificate(cert_unsigned, environ={})
     check("unsigned certificate fail-soft + hash intact", (not cert_unsigned["signed"]) and u_ok)
 
-    # --- exit 4: Anthropic-family model-id VALUE in a caller field is REFUSED.
-    # The banned token is assembled from codepoints so NO literal Anthropic model id
-    # appears in this file (guard-no-anthropic-runtime.py sees only an enforcement def).
-    banned = "".join(chr(c) for c in (99, 108, 97, 117, 100, 101, 45, 51)) + "-opus"  # -> forbidden family id
-    poisoned = [{"type": banned, "doc": {"url": "u"}, "pdf": {"url": "u"},
-                 "field_results": [{"key": "contact.x", "id": "cf", "match": True}]}]
-    raised = False
-    try:
-        build_process_certificate("k", "c", "a", "s8", poisoned, [], stage_update)
-    except AnthropicIdentifierError:
-        raised = True
-    check("exit-4 path: Anthropic model-id value in a deliverable is REFUSED", raised)
-    raised_r = False
-    try:
-        build_delivery_report("k", "c", "a", "loc", poisoned, [], stage_update)
-    except AnthropicIdentifierError:
-        raised_r = True
-    check("exit-4 path: deny gate also guards the delivery report", raised_r)
-    # the attestation prose legitimately names the bare vendor word Anthropic (unquoted)
-    # and must NOT self-trip
-    check("fixed attestation prose does not false-positive",
-          "no Anthropic identifier" in cert_signed["attestation"])
-
     # --- persistence round-trip + the exit-3 (held) path over an unwritable dir.
     with tempfile.TemporaryDirectory() as td:
         rp = persist_report(report, td)
@@ -762,15 +642,6 @@ def self_test():
         rc_miss = _dispatch_rc(cmd_report, _Args(input=str(miss_in), report_dir=td))
         check("cmd_report exit 2 on missing required field", rc_miss == EX_BADINPUT)
 
-        poison_in = Path(td) / "poison.json"
-        poison_in.write_text(json.dumps({
-            "participant_key": "k", "contact_id": "c", "anthology_id": "a",
-            "deliverables": poisoned, "control_fields": [],
-            "pipeline_stage_update": stage_update,
-        }), encoding="utf-8")
-        rc_poison = _dispatch_rc(cmd_report, _Args(input=str(poison_in), report_dir=td))
-        check("cmd_report exit 4 on Anthropic value", rc_poison == EX_ANTHROPIC)
-
         # exit-5: verify a tampered certificate on disk.
         tamp_path = Path(td) / "tampered_cert.json"
         tamp_path.write_text(json.dumps(tampered), encoding="utf-8")
@@ -799,8 +670,6 @@ def _dispatch_rc(func, args):
         return func(args)
     except _BadInput:
         return EX_BADINPUT
-    except AnthropicIdentifierError:
-        return EX_ANTHROPIC
     except OSError:
         return EX_HELD
 
@@ -858,10 +727,6 @@ def main(argv=None):
     except _BadInput as exc:
         sys.stderr.write("[delivery_report] %s\n" % exc)
         return EX_BADINPUT
-    except AnthropicIdentifierError as exc:
-        sys.stderr.write("[delivery_report] REFUSED (AF-AE-ANTHROPIC): %s in %s\n"
-                         % (exc.value_repr, exc.where))
-        return EX_ANTHROPIC
     except BrokenPipeError:
         # NB: BrokenPipeError IS an OSError subclass, so it MUST be caught before the
         # generic OSError (held) handler below, or a closed pipe would read as "held".

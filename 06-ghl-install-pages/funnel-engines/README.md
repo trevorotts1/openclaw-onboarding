@@ -38,6 +38,7 @@ in front of it and only fires for a **specialist IP funnel** whose engine has re
 |---|---|---|---|
 | `signature-funnel` | 49-signature-funnel | Trevor Otts 12-section Hero + 3/5/7 funnel | `49-signature-funnel/signature-funnel-entry.sh` |
 | `sales-page-assets` | 56-sales-page-assets | Direct-Response asset stack: 8-section main sales page, 9-section upsell, downsell recovery page, high-ticket long-form page, order-bump copy | `56-sales-page-assets/sales-page-assets-entry.sh` |
+| `black-friday-launcher` | 83-black-friday-launcher | Helps an owner get a Black Friday (or any offer) sale ready: sales page, order form, special offers, thank-you page and launch emails, all as drafts to look over first. Picked ahead of Skill 56 (priority 12), so a launch request is not sent to the direct-response sales page set; honours launch_mode `black_friday_launch`. Skill 6 puts the pages in the account; the order form and one-click offers stay drafts until one practice run in a test account is done (S06-02, CHK-19) | `83-black-friday-launcher/launcher_core/cli.py` |
 | `cinematic-web-funnel-engine` | 62-cinematic-web-funnel-engine | Scroll-controlled cinematic scene sequences assembled into a website (readiness: skeleton, certify_capable false; the selector STEP-0 refuses a production route into it without --force-skeleton) | `62-cinematic-web-funnel-engine/cinematic-web-funnel-entry.sh` |
 
 ## How to register a SECOND entry (no selector code change)
@@ -76,6 +77,10 @@ deliverable-**labeling grammar** shared by Skills 49 and 56 stands as the labeli
 `SKILL.md`); Skill 56 owns that grammar. A future entry registers the same way, by appending
 ONE object to `engines[]`, and the table above is extended in the same change:
 `tests/test_s06_09_parity.py` fails while the table and the registry disagree.
+
+Skill **83** is registered as the fourth entry (id
+`black-friday-launcher`, priority 12 above Skill 56's) so a Black Friday / launch request is composed by the launcher;
+a bare 'launch' alone stays NO_ENGINE_MATCH.
 
 ## CLI
 

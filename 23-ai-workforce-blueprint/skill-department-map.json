@@ -142,33 +142,11 @@
    "execution_sops": []
   },
   {
-   "skill": "11",
-   "slug": "superdesign",
-   "name": "superdesign",
-   "client_facing": false,
-   "archived": true,
-   "description": "ARCHIVED.",
-   "dept_owner": "openclaw-maintenance",
-   "intent_triggers": [],
-   "execution_sops": []
-  },
-  {
    "skill": "12",
    "slug": "openrouter-setup",
    "name": "openrouter-setup",
    "client_facing": false,
    "description": "Install-time: OpenRouter setup.",
-   "dept_owner": "openclaw-maintenance",
-   "intent_triggers": [],
-   "execution_sops": []
-  },
-  {
-   "skill": "13",
-   "slug": "google-workspace-setup",
-   "name": "google-workspace-setup",
-   "client_facing": false,
-   "archived": true,
-   "description": "ARCHIVED.",
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
    "execution_sops": []
@@ -278,17 +256,6 @@
    "name": "youtube-watcher",
    "client_facing": false,
    "description": "Install-time: YouTube monitoring/watcher.",
-   "dept_owner": "openclaw-maintenance",
-   "intent_triggers": [],
-   "execution_sops": []
-  },
-  {
-   "skill": "21",
-   "slug": "tavily-search",
-   "name": "tavily-search",
-   "client_facing": false,
-   "archived": true,
-   "description": "ARCHIVED.",
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
    "execution_sops": []
@@ -484,28 +451,6 @@
    "name": "command-center-setup",
    "client_facing": false,
    "description": "Install-time: Command Center dashboard setup.",
-   "dept_owner": "openclaw-maintenance",
-   "intent_triggers": [],
-   "execution_sops": []
-  },
-  {
-   "skill": "33",
-   "slug": "department-heads",
-   "name": "department-heads",
-   "client_facing": false,
-   "archived": true,
-   "description": "ARCHIVED.",
-   "dept_owner": "openclaw-maintenance",
-   "intent_triggers": [],
-   "execution_sops": []
-  },
-  {
-   "skill": "34",
-   "slug": "intelligent-staffing",
-   "name": "intelligent-staffing",
-   "client_facing": false,
-   "archived": true,
-   "description": "ARCHIVED.",
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
    "execution_sops": []
@@ -1735,7 +1680,7 @@
    "slug": "black-friday-launcher",
    "name": "black-friday-launcher",
    "client_facing": true,
-   "description": "Composes the separate page skills into one runtime walk for the buyer: validated intake, build-time page generation kept separate from buyer-time navigation, the canonical verified-payment route graph (U1 after the original purchase, D1 only on an explicit U1 decline, U2 only after a verified U1 or D1 purchase), a fail-closed entitlement attestation gate (Brand Management membership qualifies without a purchase; School of AI alone does not qualify; ZHC only with Brand Management), Council advice recorded in launch planning and never blocking, and native Convert and Flow checkout bound by contract and never a dispatch adapter. Verified offer facts only: a defaulted price, level or entitlement fails the build. Cross-sales is carried as an offer relationship on the thank-you page with teaching content marked pending. Records itself as number 83 with number_final=false and enabled_in_999=false until its dependency package is satisfied.",
+   "description": "Helps you get your Black Friday sale ready, with your sales page, order form, special offers, thank-you page and launch emails, all as drafts for you to look over first. Operator detail, not for the client: composes the separate page skills into one runtime walk for the buyer: validated intake, build-time page generation kept separate from buyer-time navigation, the canonical verified-payment route graph (U1 after the original purchase, D1 only on an explicit U1 decline, U2 only after a verified U1 or D1 purchase), a fail-closed entitlement attestation gate (Brand Management membership qualifies without a purchase; School of AI alone does not qualify; ZHC only with Brand Management), Council advice recorded in launch planning and never blocking, and native Convert and Flow checkout bound by contract and never a dispatch adapter. Verified offer facts only: a defaulted price, level or entitlement fails the build. Cross-sales is carried as an offer relationship on the thank-you page with teaching content marked pending. Registered as number 83 (number_final=true) and enabled in 999 (enabled_in_999=true) once its dependency package is satisfied; the folded_levels shape routes and assembles but is delivery-blocked until Skill 79 names a checkout mode.",
    "departments": [
     "web-development",
     "funnels",
@@ -1765,6 +1710,43 @@
    ],
    "execution_sops": [
     "funnel-craft"
+   ]
+  },
+  {
+   "skill": "84",
+   "slug": "purple-billboard-blueprint",
+   "name": "purple-billboard-blueprint",
+   "client_facing": true,
+   "description": "Gets your monthly Purple Billboard posts ready for you to approve, then helps with the replies to comments and messages, sends people your free gift and helps them book a call with you. Wires the Purple Billboard client-acquisition system end to end: monthly 30-pack approval, keyword giveaway posts published through Skills 35 and 57, comment and DM routing, original gift and bonus delivery, mobile and email capture with reminders, and booking and human handoff. Routes each step to the module that already implements it in Skills 38, 44 and 35 and in shared-utils, and states the safety boundaries. Adds no new engine, scheduler or endpoint.",
+   "departments": [
+    "social-media",
+    "sales"
+   ],
+   "roles": [
+    {
+     "dept": "social-media",
+     "primary": true,
+     "slug": "director-of-social-media"
+    },
+    {
+     "dept": "social-media",
+     "primary": false,
+     "slug": "facebook-specialist"
+    },
+    {
+     "dept": "sales",
+     "primary": false,
+     "slug": "appointment-setter"
+    }
+   ],
+   "intent_triggers": [
+    "run my purple billboard",
+    "a giveaway post with a keyword",
+    "prepare my 30 days of billboard posts",
+    "turn my post comments into conversations"
+   ],
+   "execution_sops": [
+    "social-media-craft"
    ]
   }
  ]

@@ -7,7 +7,9 @@
 > or unused evidence fails closed. This release does not change numeric quotas
 > or the duration formula, and does not update active client runs.
 
-> **v27.1.66 - Council (Skill 77) v1.0.30: the verdict says why.** Under the verdict the Council screen now lists what has to happen first, how strong the evidence is and where the elders disagree, and Key Points show what each named elder argued instead of only phase headings.
+> **v27.1.71 - Presentation intake asks one actual question at a time.** The mini app and agent collect one independent answer before continuing, preserve saved answers and conditional flows, and reject compound intake prompts.
+>
+> **v27.1.70 - Council (Skill 77) v1.0.30: the verdict says why.** Under the verdict the Council screen now lists what has to happen first, how strong the evidence is and where the elders disagree, and Key Points show what each named elder argued instead of only phase headings.
 >
 > **v27.1.46 - Council (Skill 77) v1.0.29: client polish on the live screen.** The New question window uses plain wording, every model route has a friendly name and a plain "not available yet" note, all six steps show on a phone, and the status page and operator help no longer carry stale notices.
 >
@@ -17,7 +19,7 @@
 >
 > **v27.1.42 - Council (Skill 77) v1.0.25: W27 hardening.** First-status pre-warm so the first Council status call answers from a warm cache, the service launcher upstreamed into the skill, the skill root resolved from the installed binary, and a live chamber view over real sessions. Existing compatibility pin: **v7.6.112**.
 >
-> **v26.4.18 - Batch MGB015: three Skill 75 units (Skill 75 v2.9.6).** A style-aware length plan where a rap style keeps the fixed closing call-to-action cap and spends the rest on rap, captions caught early (display spellings, intake, the sheet, on-screen text, grammar flags), and docs in lockstep with the prompt. Paired Command Center: **v7.6.112**.
+> **v26.4.18 - Batch MGB015: three Skill 75 units (Skill 75 v2.9.6).** A style-aware length plan where a rap style keeps the fixed closing call-to-action cap and spends the rest on rap, captions caught early (display spellings, intake, the sheet, on-screen text, grammar flags), and docs in lockstep with the prompt. Paired Command Center: **v7.6.126**.
 >
 > **v26.4.17 - Batch MGB012: eight Skill 75 units (Skill 75 v2.9.5).** One lyric tag grammar that knows rap, prompt caps at the caller for H3, Kling and Hailuo, per-style and per-length Suno V6 templates, the H3 assembler and its 5,000-6,800 band, Kling as the card's video model, the length-class table with prompt compliance at final QC, and voice tags checked against the cast. Paired Command Center: **v7.6.112**.
 >
@@ -36,13 +38,13 @@
 > **v26.4.7 — Drama song ad factory batch (Skill 75 v2.8.0).** One batch release of 24 units: Part H (lip-sync offset and measured gate, fades and long gaps, pictures planned from real song timestamps, one singing rule with the 5/10 point band, readable intake card, protected names in captions, delivery checklist Q8-Q11, no hand-written pipeline scripts, song files MP3 320 and WAV), Part I (caption spelling and website, scenes match the song and faces, character reference sets, master length L-2, clean endings, character library, one-question-at-a-time intake, one sung hook by a length formula), the Suno song recipe default, the F1/F14/F15/E7 amendments, and the runtime-parity alias fix. Builds on v26.4.6. Paired Command Center: **v7.6.111**.
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v27.1.66.
+> **Version:** see `/version` - this repo at v27.1.71.
 
 
 
 Private interview invitation validity follows the issuing Command Center. With paired v7.6.123, links remain reusable until completion, then expire **24 hours after the first completion**; older issuers retain their declared expiry and reuse rules. Command Center issues a separate **30-day browser sign-in**. Submitted answers stay in the client's existing interview after access expires. An explicit **“resume my interview”** request renews private access through Skill 23; routine installer replays do not send another invitation. Same-browser unfinished drafts and saved interview phase recovery require the paired Command Center update. Legacy grants without company binding need a fresh private link. See [renewal and Cloudflare recovery](docs/interview-launch-recovery.md#expired-link-or-client-request-to-resume).
 
-## Current release: v27.1.66
+## Current release: v27.1.71
 
 ### Standard company placeholder (v26.4.9)
 If a client's AI Workforce interview is still incomplete 14 days after onboarding started
@@ -204,7 +206,7 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 >
 > **NOTE (v20.0.39) — feat: Presentation Department change order v2 + ROLE-16 Healer-Presentations.** Comprehensive P0-P5 presentation pipeline fixes (API contract, doctrine restorations, Hook Lab, Delivery Concierge, Presenter Coach, Capacity/Reliability watchdog), plus ROLE-16 Healer-Presentations added to presentations department. Presentations dept count 15->16, total_roles 281->282. See [CHANGELOG.md](CHANGELOG.md).
 >
-> **NOTE (v20.0.39) — feat: shared core-file unification (Zero-Human-Workforce file model).** On every box, ALL of an account's agents + sub-agents now SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via symlink (not duplicated); per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's own. `link_shared_core_files()` runs at install (`install.sh` Step 10a) and on every update (`update-skills.sh`). Co-mingling guard: the symlink target is always the LOCAL box's own canonical, resolved from that box's own `openclaw.json` — never a cross-box/cross-account path. Nested workflow agents (`*/workflows/*/agents/*`) are exempt. Non-destructive (backups + additive `IDENTITY.md` preservation) and idempotent. QC check 9.9 enforces it. Full rule: [docs/SHARED-CORE-FILES.md](docs/SHARED-CORE-FILES.md). See [CHANGELOG.md](CHANGELOG.md).
+> **NOTE (v20.0.39) — feat: shared core-file unification (Zero-Human-Workforce file model).** On every box, ALL of an account's agents + sub-agents now SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via a verified real-file copy (amended 2026-07-31: never a symlink, the runtime rejects it); per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's own. `link_shared_core_files()` runs at install (`install.sh` Step 10a) and on every update (`update-skills.sh`). Co-mingling guard: the copy source is always the LOCAL box's own canonical, resolved from that box's own `openclaw.json` — never a cross-box/cross-account path. Nested workflow agents (`*/workflows/*/agents/*`) are exempt. Non-destructive (backups + additive `IDENTITY.md` preservation) and idempotent. QC check 9.9 enforces it. Full rule: [docs/SHARED-CORE-FILES.md](docs/SHARED-CORE-FILES.md). See [CHANGELOG.md](CHANGELOG.md).
 >
 > **NOTE (v20.0.39) — fix: safe_json_edit validate/rollback guard added (parity with VPS v10.16.49 skills.path fix).** The VPS updater was writing `skills.path` into `openclaw.json` — rejected by OpenClaw 2026.5.x — which aborted the entire VPS updater before writing `.onboarding-version`. Mac updater had no such write but equally lacked a validate/rollback harness. `safe_json_edit()` added as a forward-defense guard for any future direct json edits. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -214,14 +216,14 @@ Publishing a release does not deploy client machines or certify live gateway/pro
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v27.1.66** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v27.1.71** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.
 
 > Previously the VPS installer was a separate repo (`trevorotts1/openclaw-onboarding-vps`). That repo will become an archived pointer to this unified one. Do not add new features to the VPS repo.
 
-This repo contains **83 numbered skill folders (01–83)**: 78 active plus 5 archived (11, 13, 21, 33, 34), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
+This repo contains **79 numbered skill folders** (numbered 01 to 84; 11, 13, 21, 33 and 34 were retired and are no longer shipped or installed), plus an install script and update script. See the [Skill Inventory](#skill-inventory-folder-names) below for the full live list.
 
 > **First time installing or updating?** Read **[ONBOARDING-TRIGGERS.md](ONBOARDING-TRIGGERS.md)** — it shows exactly how to start a fresh install or run an update via Terminal or Telegram.
 
@@ -281,9 +283,7 @@ That file is the master instruction file. It contains:
 | 08-vercel-setup | Vercel Setup |
 | 09-context7 | Context7 Setup |
 | 10-github-setup | GitHub Setup |
-| 11-superdesign-ARCHIVED | SuperDesign (ARCHIVED — replaced by Skill 45 Design Intelligence Library) |
 | 12-openrouter-setup | OpenRouter Setup |
-| 13-google-workspace-setup-ARCHIVED | Google Workspace Setup (ARCHIVED — replaced by skill 14) |
 | 14-google-workspace-integration | Google Workspace Integration |
 | 15-blackceo-team-management | BlackCEO Team Management |
 | 16-summarize-youtube | Summarize YouTube |
@@ -291,7 +291,6 @@ That file is the master instruction file. It contains:
 | 18-proactive-agent | Proactive Agent |
 | 19-humanizer | Humanizer |
 | 20-youtube-watcher | YouTube Watcher |
-| 21-tavily-search-ARCHIVED | Tavily Search (ARCHIVED — Tavily no longer used; replaced by Skill 03 Agent Browser) |
 | 22-book-to-persona-coaching-leadership-system | Book-to-Persona Coaching Leadership System |
 | 23-ai-workforce-blueprint | AI Workforce Blueprint |
 | 24-storyboard-writer | Storyboard Writer |
@@ -303,8 +302,6 @@ That file is the master instruction file. It contains:
 | 30-fish-audio-api-reference | Fish Audio API Reference |
 | 31-upgraded-memory-system | Upgraded Memory System |
 | 32-command-center-setup | Command Center Setup |
-| 33-department-heads-ARCHIVED | Department Heads (ARCHIVED) |
-| 34-intelligent-staffing-ARCHIVED | Intelligent Staffing (ARCHIVED) |
 | 35-social-media-planner | Social Media Planner — FFmpeg ≥4.0 + kie.ai key required. Routes GHL operations through skill 36 MCPs when installed. |
 | 36-ghl-mcp-setup | **GHL MCP Setup** — 5-tier GHL access chain: Official MCP (36 tools) → Community MCP (588 tools) → REST API (skill 29) → Playwright → Codex Computer Use. Sets `$GHL_COMMUNITY_MCP_URL`, installs launchd plist (macOS), wires cardinal rules into SOUL.md/AGENTS.md/TOOLS.md/MEMORY.md, includes 20-assertion QC script. |
 | 37-zhc-closeout | **ZHC Closeout** — the zero-human-company build-completion sequence: closeout infographics + celebration video, the multi-section Notion page tree in the client's own workspace, the owner Telegram sequence, the Command Center fire, and n8n wire-up. |
@@ -353,9 +350,10 @@ That file is the master instruction file. It contains:
 | 80-signature-upsell | **Signature Upsell 1 + Upsell 2 (v0.2.0)** — the Signature Launch upsell skill: builds both upsell page instances (Upsell 1 after a verified original purchase; Upsell 2, one canonical page with its own offer mapping, after a verified accepted Upsell 1 or Downsell 1 purchase) from one reusable skill, each instance separately built and separately tested. Uses the derived eight-section owner copy profile (sections 8–11 excluded, section 12 replaced by the "7 Reasons To Commit" section, a CTA in every section), the deterministic copy validator and substantive review rubric, the route state machine (a failed or pending payment is neither acceptance nor decline; U2 never shows after both are declined), and the local page renderer. Every CTA invokes the same guarded native product-bound one-click action with the exact amount (integer minor units) and one-time/recurring terms disclosed adjacent; eligibility is proven purchase only (a bump alone never qualifies for Upsell 2, and a client-side claim such as acceptedU1=true is never proof); already-owned offers are suppressed, never double-charged. |
 | 81-signature-downsell | **Signature Downsell (v0.1.0)** — the Signature Launch downsell skill: builds the Downsell 1 page, the reshaped alternative offer shown only after an explicit Upsell 1 decline (a failed or pending payment is never a decline), derived from the 12-section landing format cut to eight sections (sections 8–11 removed, section 12 replaced by the renumbered "When Time Runs Out" section listing 7 missed-out consequences), a CTA in every section, truthful scarcity only, every CTA invoking the same guarded native product-bound one-click action with the exact amount and terms disclosed adjacent. Downsell 1 paid routes to the same Upsell 2 when enabled, else the final thank-you; Downsell 1 declined routes to the final thank-you with the original order valid and untouched. |
 | 82-signature-thank-you | **Signature Thank-You (v0.1.0)** — the terminal Signature Launch thank-you / confirmation page skill: builds the post-purchase confirmation and access experience showing exactly what the customer actually purchased (verified against the normalized purchase snapshot and Skill 44 entitlement state), its actual charges and terms, and what happens next. No new pitch, no new offer, no new-charge CTA; fulfillment authority is Skill 44 — this skill consumes entitlement state, never grants it, and fulfillment never depends on the buyer reaching the page. |
-| 83-black-friday-launcher | **Black Friday Launcher (v0.2.0)** — the launcher that composes the separate page skills into one runtime walk for the buyer: validated intake, build-time page generation kept separate from buyer-time navigation, the canonical verified-payment route graph (U1 after the original purchase, D1 only on an explicit U1 decline, U2 only after a verified U1 or D1 purchase), a fail-closed entitlement attestation gate (Brand Management membership qualifies without a purchase; School of AI alone does not; ZHC only with Brand Management), Council advice recorded in launch planning and never blocking, native Convert and Flow checkout bound by contract and never a dispatch adapter, and package/receipt assembly with completeness checks. Verified offer facts only; a defaulted price, level or entitlement fails the build. Cross-sales is carried as an offer relationship on the thank-you page with the teaching content marked pending. Records itself as number 83 with number_final=false and enabled_in_999=false until its dependency package is satisfied. |
+| 83-black-friday-launcher | **Black Friday Launcher (v0.2.12)** — the launcher that composes the separate page skills into one runtime walk for the buyer: validated intake, build-time page generation kept separate from buyer-time navigation, the canonical verified-payment route graph (U1 after the original purchase, D1 only on an explicit U1 decline, U2 only after a verified U1 or D1 purchase), a fail-closed entitlement attestation gate (Brand Management membership qualifies without a purchase; School of AI alone does not; ZHC only with Brand Management), Council advice recorded in launch planning and never blocking, native Convert and Flow checkout bound by contract and never a dispatch adapter, and package/receipt assembly with completeness checks. Verified offer facts only; a defaulted price, level or entitlement fails the build. Cross-sales is carried as an offer relationship on the thank-you page with the teaching content marked pending. Registered as number 83 (number_final=true) and enabled in 999 (enabled_in_999=true) once its dependency package is satisfied; the folded_levels shape routes and assembles but is delivery-blocked until Skill 79 names a checkout mode. |
+| 84-purple-billboard-blueprint | **Purple Billboard Blueprint (v0.1.1)** — the instruction and wiring layer for the Purple Billboard client-acquisition system (hook post, comment reveal, Bonus comment, keyword giveaway, one billboard a day prepared as 30 packs for one monthly approval). The system was built as pieces inside Skills 38, 44, 35 and 57 and in shared-utils with no skill naming them; this skill routes each step of the flow (discovery, asset inventory, monthly approval, publication through Skills 35 and 57, comment and DM routing, original fulfillment, bonus, capture, reminders, booking and handoff, outcomes) to the exact existing module, carries the playbook method and the behavior spec as references, and states the safety boundaries: every outbound action through the common gate, no activation without the owner's written authorization, personal-profile publishing unproven, bonus access blocked until its capability decision clears. It adds no new engine, scheduler, router or endpoint. |
 
-**Total: 83 numbered skill folders** (01–83): **78 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
+**Total: 79 numbered skill folders.** The numbers 11, 13, 21, 33 and 34 are retired: they are not shipped, and every update roll moves any copy an older roll left on a box out of the skills folder (see `docs/archived-skill-tombstones.json`). This matches the live skill tree on `main`.
 
 
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.
@@ -410,21 +408,25 @@ See **[docs/STT-TRANSCRIPTION.md](docs/STT-TRANSCRIPTION.md)** for the full note
 ## Shared Core Files (Zero-Human-Workforce file model)
 
 On **every box**, all of that account's agents and sub-agents **share the box's
-ONE canonical `AGENTS.md`, `TOOLS.md`, and `USER.md`** via **symlink** (not
-duplicated). Each agent keeps its **own** `IDENTITY.md`, `SOUL.md`, `MEMORY.md`,
-and `HEARTBEAT.md`.
+ONE canonical `AGENTS.md`, `TOOLS.md`, and `USER.md`**: each agent workspace
+holds a **real-file copy of the box's master, re-synced on every roll, never a
+symlink** (the OpenClaw runtime treats a symlink that leaves the agent's own
+workspace as a missing file). Each agent keeps its **own** `IDENTITY.md`,
+`SOUL.md`, `MEMORY.md`, and `HEARTBEAT.md`; department-specific content goes in
+that department's `IDENTITY.md`, never in the three shared files.
 
 - **CANON_DIR** = the box's default agent workspace (`agents.defaults.workspace`,
   same resolver as `install.sh` Step 10).
-- **Co-mingling guard:** the symlink target is always the LOCAL box's own
+- **Co-mingling guard:** the copy source is always the LOCAL box's own
   canonical, resolved from that box's own `openclaw.json` — never a hardcoded or
-  cross-box/cross-account path. A client box links to the client's own files.
+  cross-box/cross-account path. A client box copies from the client's own files,
+  and the company tree it syncs is this box's own company only.
 - **Nested workflow agent exemption:** internal workflow micro-agents (`*/workflows/*/agents/*`)
   are never touched.
 - **Non-destructive + idempotent:** real files are backed up
   (`*.bak-unify-<ts>`) and any unique content is preserved into
-  the agent's own `IDENTITY.md` before linking; correct symlinks are no-ops on
-  re-run. Backups are bounded: the `$UNIFY_BAK_KEEP` newest (default 3) are
+  the agent's own `IDENTITY.md` before the copy is replaced; a copy already
+  identical to the master is a no-op on re-run. Backups are bounded: the `$UNIFY_BAK_KEEP` newest (default 3) are
   kept per target, oldest deleted first. A second pass at the end of every
   roll (`reclaim_unify_backups`) bounds the backups the unify scan cannot
   reach — orphaned role folders, hidden archive dot-dirs, and the out-of-tree

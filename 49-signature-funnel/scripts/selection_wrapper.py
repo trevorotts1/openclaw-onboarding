@@ -87,6 +87,14 @@ at {result}; any failure prints FAIL-CLOSED to stderr, exits 3, and
 removes any file at {result} so a stale result can never be mistaken
 for this run's answer. Exit 2 is reserved for usage errors.
 
+THE COPY GATE (PRD-20). After the plan is built the wrapper writes the plan's five-section
+manuscript (emit_section_manuscript.py) and runs Skill 78's validate_selection_content.py on it
+against the launch record, so a claim ("most popular", "only 50 left"), a wrong or hidden price or
+exclusion, an empty Compare section or, when the launch record says test_only is false, a test_only
+offer fails closed here too and no result file is left. NOTE (CON-26): the product_selection chain
+Skill 83 dispatches is build_selection_plan -> run_image_stages -> emit_page_result, not this wrapper;
+the wrapper stays for fixture-level execution and the CR-S49-002 echo checks.
+
 Stdlib only. No network. No live routing: Skill 78's SKILL.md says do
 not route live launches to it yet; this wrapper is for the dispatch
 seam and fixture-level execution until S78's install status changes.
@@ -381,6 +389,13 @@ def run_wrapper(args: argparse.Namespace) -> int:
             raise WrapperError(f"plan builder stdout is not JSON: {exc}")
         plan_path = work_dir / "selection-plan.json"
         plan_path.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+
+        if plan.get("outcome") == "plan":
+            _run([sys.executable, str(s78_scripts / "emit_section_manuscript.py"), str(plan_path),
+                  "--run-dir", str(work_dir / "selection-manuscript")], "Skill 78 manuscript builder")
+            _run([sys.executable, str(s78_scripts / "validate_selection_content.py"),
+                  str(work_dir / "selection-manuscript" / "copy" / "internal-manuscript.md"),
+                  str(Path(args.launch))], "Skill 78 copy gate")
 
         emitted_path = work_dir / "selection-result.emitted.json"
         emit_argv = [sys.executable, emitter, str(plan_path),

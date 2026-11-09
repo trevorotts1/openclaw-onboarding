@@ -9,6 +9,7 @@ rated_price_fn below at the resolution each model really renders.
 
 Stdlib only. No network.
 """
+import hashlib
 import json
 import os
 import re
@@ -33,6 +34,9 @@ REGISTRY_RELS = (
     ("999-setup", "installer-registration", "helpers", "74-kie-live-adapter",
      "references", "kie-model-registry.json"),
 )
+#: sha256(registry bytes) -> frozenset of its model ids.  Every card render
+#: asks for the ids, and re-parsing the ~500 KB registry each time dominated
+#: intake runtime.  Keyed on the BYTES, so an edited registry is re-parsed.
 REGISTRY_CACHE = {}
 
 
@@ -89,12 +93,19 @@ def registry_ids(explicit=None):
     path = resolve_registry(explicit)
     if not path:
         return None
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
-    models = data.get("models") if isinstance(data, dict) else None
-    if not isinstance(models, list):
-        return None
-    return {m.get("id") for m in models if isinstance(m, dict) and m.get("id")}
+    with open(path, "rb") as f:
+        raw = f.read()
+    key = hashlib.sha256(raw).digest()
+    ids = REGISTRY_CACHE.get(key)
+    if ids is None:
+        data = json.loads(raw.decode("utf-8"))
+        models = data.get("models") if isinstance(data, dict) else None
+        if not isinstance(models, list):
+            return None
+        ids = frozenset(m.get("id") for m in models
+                        if isinstance(m, dict) and m.get("id"))
+        REGISTRY_CACHE[key] = ids
+    return set(ids)
 
 
 def resolve_choices(explicit=None):

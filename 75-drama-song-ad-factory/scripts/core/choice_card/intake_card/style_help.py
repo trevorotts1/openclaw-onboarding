@@ -32,22 +32,21 @@ _SIGNALS = (
 
 
 def _catalog(catalog=None):
-    """The one catalog of record: ``{style_id: record}``."""
+    """The one catalog of record: ``{style_id: record}``, all eighteen
+    offered styles, read from ``music_styles.catalog``. Nothing is copied here.
+    """
     if catalog is not None:
         return catalog
-    from music_styles import music_styles as MS
-    return MS.STYLES
+    from music_styles import catalog as CAT
+    return {sid: CAT.style(sid) for sid in CAT.STYLE_IDS}
 
 
 def style_ids(catalog=None):
     """Catalog order, never a second list."""
     if catalog is not None:
         return tuple(catalog)
-    try:
-        from music_styles import music_styles as MS
-        return tuple(MS.style_ids())
-    except (ImportError, AttributeError):
-        return tuple(_catalog())
+    from music_styles import catalog as CAT
+    return tuple(CAT.STYLE_IDS)
 
 
 def _card_sentence(style_id):

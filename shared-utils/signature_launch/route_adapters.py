@@ -32,10 +32,12 @@ the skill file when it is present beside shared-utils/):
   * PAGE_ROLE_MAP      the same file, page_role_map (Fix 15: ONE page_type ->
                        page_role table)
   * preset_graph       the branching law of 49-signature-funnel/scripts/
-                       prove_sf_graph.py _valid_graph: "each upsell accept
-                       jumps past its downsell, decline falls to it; each
-                       downsell proceeds to the next offer; last offer ->
-                       thank-you" (MASTERDOC section 3 Branching).
+                       prove_sf_graph.py _valid_graph and compile_launch_route.py
+                       (the launch route law): "each upsell accept jumps past
+                       its downsell, decline falls to it; a downsell paid goes
+                       to the next offer, a downsell DECLINE goes to the
+                       thank-you; last offer -> thank-you" (MASTERDOC section 3
+                       Branching).
   * PENDING_BEHAVIOR   49-signature-funnel/scripts/compile_launch_route.py.
 
 Deterministic, stdlib only, no network, no model. Never reads a secret.
@@ -267,13 +269,16 @@ def preset_graph(size: int) -> Dict[str, Any]:
 
     Mirrors 49-signature-funnel/scripts/prove_sf_graph.py _valid_graph:
     "main -> (checkout ->) upsell chain; each upsell accept jumps past its
-    downsell, decline falls to it; each downsell proceeds to the next offer;
-    last offer -> thank-you."
+    downsell, decline falls to it; a downsell paid proceeds to the next offer
+    and a downsell decline goes to the thank-you; last offer -> thank-you."
+    (compile_launch_route.py: downsell_1 paid -> U2 or thank-you, decline ->
+    thank-you.)
     """
     entries = preset_page_set(size)
     node_ids = [e["id"] for e in entries]
     spine = [n for n in node_ids if n != "thank-you"]
     updown = {"upsell": "downsell", "upsell-2": "downsell-2"}
+    downsells = set(updown.values())
     edges: List[Dict[str, str]] = []
 
     def next_after(idx: int) -> str:
@@ -289,7 +294,10 @@ def preset_graph(size: int) -> Dict[str, Any]:
             else:
                 edges.append({"from": node, "to": next_after(i), "on": "accept"})
                 edges.append({"from": node, "to": next_after(i), "on": "decline"})
-        else:  # main / checkout / downsell
+        elif node in downsells:  # paid -> next offer, decline -> thank-you
+            edges.append({"from": node, "to": next_after(i), "on": "accept"})
+            edges.append({"from": node, "to": "thank-you", "on": "decline"})
+        else:  # main / checkout
             edges.append({"from": node, "to": next_after(i), "on": "proceed"})
     return {"nodes": entries, "edges": edges}
 
@@ -490,9 +498,9 @@ def _self_check() -> None:
     u1 = {e["kind"]: e["to"] for e in _edges_by_source(d5, li["upsell"])}
     _ck(u1["accept"] == li["upsell-2"], "upsell accept jumps past downsell to upsell-2")
     _ck(u1["decline"] == li["downsell"], "upsell decline falls through to downsell")
-    dn = _edges_by_source(d5, li["downsell"])
-    _ck(dn[0]["to"] == li["upsell-2"] and dn[0]["kind"] == "success",
-        "downsell proceeds to the next offer (success)")
+    dn = {e["kind"]: e["to"] for e in _edges_by_source(d5, li["downsell"])}
+    _ck(dn == {"accept": li["upsell-2"], "decline": li["thank-you"]},
+        "downsell paid -> next offer, decline -> thank-you (DTY-25)")
     u2 = {e["kind"]: e["to"] for e in _edges_by_source(d5, li["upsell-2"])}
     _ck(u2["accept"] == li["thank-you"] and u2["decline"] == li["thank-you"],
         "preset 5 upsell-2 (no downsell-2) both ways to thank-you")
@@ -507,7 +515,7 @@ def _self_check() -> None:
     _ck(u2["accept"] == li["thank-you"], "upsell-2 accept jumps past downsell-2 to thank-you")
     _ck(u2["decline"] == li["downsell-2"], "upsell-2 decline falls through to downsell-2")
     d2 = _edges_by_source(d7, li["downsell-2"])
-    _ck(d2[0]["to"] == li["thank-you"], "downsell-2 proceeds to thank-you (last offer)")
+    _ck({e["to"] for e in d2} == {li["thank-you"]}, "downsell-2 both ways to thank-you (last offer)")
     _ck(_edges_by_source(d7, li["thank-you"]) == [], "thank-you is terminal")
 
     # -- distinct identity for pages sharing a role --------------------------

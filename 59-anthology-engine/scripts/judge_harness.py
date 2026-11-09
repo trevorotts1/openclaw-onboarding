@@ -55,25 +55,14 @@ SCRIPTS = SKILL_DIR / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-# model_router.py (W1.9) owns the JUDGE-tier chain and the Anthropic deny pattern.
-# Reuse both so the harness and the router agree on what an Anthropic-shaped id is
-# and this file carries no contiguous banned literal. Guarded so the harness still
+# model_router.py (W1.9) owns the JUDGE-tier chain. Guarded so the harness still
 # imports (for offline gate evaluation and self-test) on a checkout without it.
 try:
     import model_router as _mr  # type: ignore
     _route_default = _mr.route
-    _is_anthropic_shaped = _mr.is_anthropic_shaped
 except Exception:  # pragma: no cover - offline fallback
     _mr = None
     _route_default = None
-    _A = "anthro" + "pic"
-    _C = "clau" + "de"
-    _ANTHROPIC_RE = re.compile(
-        r"(?i)(^|[^a-z0-9])(" + _C + r"|" + _A + r")([^a-z0-9]|$)"
-        r"|" + _A + r"/" + r"|" + _C + r"-" + r"|us\." + _A + r"\.")
-
-    def _is_anthropic_shaped(text: str) -> bool:  # type: ignore
-        return bool(text) and bool(_ANTHROPIC_RE.search(str(text)))
 
 EX_OK, EX_ERR, EX_INDEP, EX_FAIL = 0, 1, 2, 4
 
@@ -159,10 +148,6 @@ def enforce_independence(writer_tier: Optional[str], writer_model: str, writer_p
         raise BadInvocation(
             "writer_model is required to prove judge independence (model_router records the "
             "honest resolved drafting model; pass it in the envelope)")
-    if _is_anthropic_shaped(judge_model):
-        raise JudgeIndependenceViolation(
-            "AF-AE-JUDGE-INDEPENDENCE: the JUDGE resolved to an Anthropic-family id, which the "
-            "engine never runs at call time")
     if _norm(judge_model) == _norm(writer_model):
         raise JudgeIndependenceViolation(
             "AF-AE-JUDGE-INDEPENDENCE: the JUDGE resolution (%r) equals the writer resolution; "
@@ -637,13 +622,13 @@ def self_test() -> int:
     except JudgeIndependenceViolation:
         checks.append(("colliding personas refused", True))
 
-    # 5) independence: a judge that resolves to an Anthropic id is refused (fragment id).
+    # 5) independence: an Anthropic-family judge id is NOT refused (no vendor rule).
     try:
         enforce_independence("HEAVY-WRITER", "glm-5.2", "author",
                              "cl" + "aude-" + "opus-4", JUDGE_PERSONA)
-        checks.append(("Anthropic-shaped judge refused", False))
+        checks.append(("Anthropic-family judge accepted", True))
     except JudgeIndependenceViolation:
-        checks.append(("Anthropic-shaped judge refused", True))
+        checks.append(("Anthropic-family judge accepted", False))
 
     # 6) missing writer_model is a fail-closed bad invocation.
     try:

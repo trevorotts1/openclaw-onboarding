@@ -59,6 +59,15 @@ The request schema requires `entry_guard_ref` (string, minLength 1) but does not
 
 The record the ref names carries the journey facts the guard reads: a verified main purchase (`main_purchased_verified`) and the U1 outcome (`u1_event`), where `u1_event` qualifies only as the literal "explicit_decline" (a failed or pending U1 payment never qualifies), alongside `u1_accepted`. The enabled flags the guard also reads (U1, D1, U2 enabled) are launch facts, not journey facts: they are sourced from the launch record's extras under route law (D1 and U2 cannot remain enabled when U1 is disabled), not from the record this ref names.
 
+## Design-time dispatch versus runtime and install stages (S49 wrapper)
+
+D1 at S49 dispatch is a design deliverable: no purchase, decline or install happens. The S49 wrapper (`49-signature-funnel/scripts/downsell_wrapper.py`) therefore treats the guard and the native ids as follows, and the result says so:
+
+- **Entry guard is DESIGN-ONLY at dispatch.** The wrapper evaluates `check_entry_guard` over the launch record's enablement facts plus a fixed design-time journey marker (verified main purchase, explicit U1 decline, U1 not accepted: what the runtime stage must observe). An optional staged journey file is hashed and recorded; one that claims a verified main purchase while the launch record's `test_only` is not true is refused, because a design run observes no purchase. Every result carries the blocker `D1-ENTRY-GUARD-RUNTIME-ONLY`. The real guard above is a runtime-stage gate and is never claimed by a dispatch result.
+- **Native ids are pending at design time.** Convert and Flow product and price ids exist only after the Skill 6 install, which runs after design. A design dispatch accepts null `native_product_id` and `native_price_id` and carries the standing blocker `D1-NATIVE-IDS-PENDING-INSTALL`. A non-blank id that is a placeholder (for example "TBD") or malformed is refused at every stage. The install stage (`--stage install`) requires both ids non-blank and well-formed; verification against the native catalog read-back happens there, not in the wrapper (`D1-INSTALL-READBACK-NOT-RECORDED` stays a standing blocker).
+- **Offer exclusions by real id.** The launch plan writes the other offer's real `offer_id` in `excludes`. The wrapper maps it to the `U1` / `D1` labels the pinned validator reads, on copies of the offers; a missing exclusion still fails `D1-OFFER-EXCLUDES-U1-MISSING` / `D1-OFFER-U1-EXCLUDES-D1-MISSING`.
+- **Status ceiling.** A dispatch result is `authored` / `L1` unless all three image stages left records under a non-stub provider (then `locally_verified` / `L2`, never higher). A stub provider adds `D1-STUB-IMAGES`.
+
 ## Event handoff to S44
 
 The GHL adapter may report a D1 purchase as an upsell-type purchase. S44 distinguishes D1 using the verified product/page/slot mapping, never an invented native `downsell_purchased` trigger. Downsell is a business role, not necessarily a separate vendor transaction type.

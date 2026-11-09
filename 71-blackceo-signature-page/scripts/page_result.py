@@ -96,6 +96,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 from pathlib import Path
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
@@ -558,6 +559,28 @@ def receipt_binding(request, receipt):
 # Builders.
 # ---------------------------------------------------------------------------
 
+PENDING_STRUCTURE = {"decision": "structure pending approval"}
+
+
+def structure_approval(request):
+    """The ratification record (spec `structure_approval`) of the structure this page is built to.
+    A page whose spec carries none is labelled "structure pending approval", never silently approved."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import copy_forms
+        import role_spec
+        role = request.get("page_role")
+        spec = role_spec.load(role)
+        if spec is None:
+            form = copy_forms.form_for_role(role) or copy_forms.norm(request.get("copy_profile"))
+            spec = copy_forms.load_spec(form) if form else {}
+        return spec.get("structure_approval") or dict(PENDING_STRUCTURE)
+    except (ImportError, OSError, ValueError, KeyError, TypeError):
+        return dict(PENDING_STRUCTURE)
+    finally:
+        sys.path.pop(0)
+
+
 def build_handoff(run_dir, request, route, submission, submission_state,
                   receipt_present, routing_authorized, routing_basis,
                   status, binding="no_identity_fields"):
@@ -593,6 +616,7 @@ def build_handoff(run_dir, request, route, submission, submission_state,
         "page_id": request.get("page_id"),
         "input_hash": request.get("input_hash"),
         "page_role": request.get("page_role"),
+        "structure_approval": structure_approval(request),
         "page_status": status,
         "next_role": route["next_role"],
         "next_page_id": route["next_page_id"],

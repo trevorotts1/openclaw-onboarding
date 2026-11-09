@@ -34,6 +34,10 @@ class ReadbackSpec:
     query: Mapping[str, Any] | None = None
     expect: Mapping[str, Any] | None = None
     description: str | None = None
+    #: Opt-in: also match ``expect`` one level into a NAMED collection envelope
+    #: (GHL's ``{"conversations":[…]}`` / ``{"messages":{…}}``). Default False
+    #: keeps every existing plan's shallow semantics unchanged.
+    scan_nested: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.operation_id, str) or not self.operation_id.strip():
@@ -136,22 +140,25 @@ def evaluate_readback(
         return ReadbackStatus.verified
     return (
         ReadbackStatus.mismatch
-        if _mismatch(spec.expect, parsed_body)
+        if _mismatch(spec.expect, parsed_body, scan_nested=spec.scan_nested)
         else ReadbackStatus.verified
     )
 
 
-def _mismatch(expect: Mapping[str, Any], parsed: Any) -> bool:
+def _mismatch(expect: Mapping[str, Any], parsed: Any, *,
+              scan_nested: bool = False) -> bool:
     # ponytail: shallow subset match at root and one level under "data"; add a
-    # path expression when a real plan needs deeper nesting.
+    # path expression when a real plan needs deeper nesting. ``scan_nested`` is
+    # the documented upgrade for GHL conversation envelopes, whose collections
+    # live under a NAMED key ({"conversations":[…]} / {"messages":{…}}).
     for key, wanted in expect.items():
-        found, value = _lookup(parsed, str(key))
+        found, value = _lookup(parsed, str(key), scan_nested=scan_nested)
         if not found or value != wanted:
             return True
     return False
 
 
-def _lookup(parsed: Any, key: str) -> tuple[bool, Any]:
+def _lookup(parsed: Any, key: str, *, scan_nested: bool = False) -> tuple[bool, Any]:
     if isinstance(parsed, Mapping):
         if key in parsed:
             return True, parsed[key]
@@ -162,4 +169,18 @@ def _lookup(parsed: Any, key: str) -> tuple[bool, Any]:
             for item in data:
                 if isinstance(item, Mapping) and key in item:
                     return True, item[key]
+        if scan_nested:
+            for value in parsed.values():
+                if isinstance(value, Mapping):
+                    if key in value:
+                        return True, value[key]
+                    inner = value.get("messages")
+                    if isinstance(inner, list):
+                        for item in inner:
+                            if isinstance(item, Mapping) and key in item:
+                                return True, item[key]
+                elif isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, Mapping) and key in item:
+                            return True, item[key]
     return False, None

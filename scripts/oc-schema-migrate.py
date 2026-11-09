@@ -99,6 +99,22 @@
 #       the binary itself. exit 0 = answered, 3 = could not be determined (which
 #       the caller MUST treat as "do not migrate", never as "migrate anyway").
 #
+#   plugin-attribute <doctor-output> <config>
+#       Read the output of a bounded `openclaw doctor` and name the ONE plugin whose
+#       module failed to load (ERR_MODULE_NOT_FOUND from a plugin export). Prints
+#       "<plugin-id><TAB><failing import>". Evidence is a PATH COMPONENT of the failing
+#       frame (extensions/<id>, @openclaw/<id>, openclaw-<id>) or "plugin <id>" in the
+#       same error block, matched against the ids in `plugins.entries` that are not
+#       already disabled - never a bare word, never an id the config does not carry.
+#       exit 0 = attributed, 3 = no load error, or none/several candidates (prints why;
+#       the caller must NOT disable anything on 3).
+#
+#   plugin-disable <config> <id> <out>
+#       Write <config> to <out> with ONLY `plugins.entries.<id>.enabled` set to false.
+#       The allow list, the entry's `config` and every other key are untouched, and an
+#       entry that does not exist is never invented. Prints "was=<true|false|unset>".
+#       exit 0 = written, 3 = refused, 1 = write failed.
+#
 # ─── PYTHON COMPAT ───────────────────────────────────────────────────────────
 # %-formatting and no f-strings throughout, matching the inline detectors
 # already embedded in update-skills.sh / setup-weekly-update.sh, so this file
@@ -106,6 +122,7 @@
 
 import json
 import os
+import re
 import sys
 
 SCHEMA_KEY_LEGACY = 'list'
@@ -584,6 +601,68 @@ def workshop_transform(cfg, allowed, props):
     return changes
 
 
+# ─── PLUGIN QUARANTINE (#24) ─────────────────────────────────────────────────
+_LOAD_ERR = re.compile(r'ERR_MODULE_NOT_FOUND|ERR_PACKAGE_PATH_NOT_EXPORTED|Cannot find (?:module|package) ')
+_SDK_IMPORT = re.compile(r'(openclaw/plugin-sdk/[A-Za-z0-9_./-]+)')
+_MISSING_IMPORT = re.compile(r"Cannot find (?:module|package) '([^']{1,200})'")
+
+
+def _plugin_entries(cfg):
+    plugins = cfg.get('plugins') if isinstance(cfg, dict) else None
+    entries = plugins.get('entries') if isinstance(plugins, dict) else None
+    return entries if isinstance(entries, dict) else {}
+
+
+def _block_names_plugin(block, pid):
+    """True when the error block ties the failure to plugin <pid> by a path component."""
+    for tok in re.findall(r"[^\s'\"()<>,;]+", block):
+        parts = tok.replace('\\', '/').split('/')
+        for i in range(1, len(parts)):
+            if parts[i] == pid and parts[i - 1] in ('extensions', '@openclaw', 'plugins'):
+                return True
+        if ('openclaw-' + pid) in parts or (pid + '-plugin') in parts:
+            return True
+    return re.search(r'plugins?[ :"\'`\[]+' + re.escape(pid) + r'(?![A-Za-z0-9_-])', block) is not None
+
+
+def attribute_plugin(text, cfg):
+    """(plugin id, failing import) for the single enabled plugin entry the load error names."""
+    lines = text.splitlines()
+    hits = [i for i, ln in enumerate(lines) if _LOAD_ERR.search(ln)]
+    if not hits:
+        raise Undetermined('no module-load error in the doctor output')
+    ids = [k for k, v in _plugin_entries(cfg).items()
+           if isinstance(k, str) and isinstance(v, dict) and v.get('enabled') is not False]
+    count = {}
+    imports = {}
+    for i in hits:
+        block = '\n'.join(lines[max(0, i - 2):i + 4])
+        m = _SDK_IMPORT.search(block) or _MISSING_IMPORT.search(block)
+        imp = re.sub(r'[^A-Za-z0-9_./@:-]', '?', m.group(1))[:200] if m else '(import not shown)'
+        for pid in ids:
+            if _block_names_plugin(block, pid):
+                count[pid] = count.get(pid, 0) + 1
+                imports.setdefault(pid, imp)
+    if not count:
+        raise Undetermined('a module-load error appears but names no enabled plugin entry of this config')
+    best = max(count.values())
+    top = sorted(k for k, v in count.items() if v == best)
+    if len(top) != 1:
+        raise Undetermined('the module-load errors name several plugins equally (%s) - not attributable'
+                           % ', '.join(re.sub(r'[^A-Za-z0-9_.@/-]', '?', t) for t in top))
+    return top[0], imports[top[0]]
+
+
+def plugin_disable(cfg, pid):
+    """Set plugins.entries.<pid>.enabled = false and nothing else; returns the previous value."""
+    entry = _plugin_entries(cfg).get(pid)
+    if not isinstance(entry, dict):
+        raise Undetermined('plugins.entries has no entry for that plugin - nothing to disable, and an entry is never invented')
+    was = entry.get('enabled', 'unset')
+    entry['enabled'] = False
+    return {True: 'true', False: 'false'}.get(was, 'unset') if isinstance(was, (bool, str)) else 'other'
+
+
 def _usage(stream=sys.stderr):
     stream.write(
         'Usage:\n'
@@ -593,7 +672,9 @@ def _usage(stream=sys.stderr):
         '  oc-schema-migrate.py workspace <config>          # prints the resolved workspace\n'
         '  oc-schema-migrate.py schema-keys <schema.json>   # 0=answered 3=undeterminable\n'
         '  oc-schema-migrate.py workshop-target  <schema.json>                # prints propose|off (nothing if the build has no such key)\n'
-        '  oc-schema-migrate.py workshop-migrate <schema.json> <config> <out> # 0=ok (out written ONLY if changed) 3=refused\n')
+        '  oc-schema-migrate.py workshop-migrate <schema.json> <config> <out> # 0=ok (out written ONLY if changed) 3=refused\n'
+        '  oc-schema-migrate.py plugin-attribute <doctor-output> <config>     # 0=prints <id><TAB><import> 3=not attributable\n'
+        '  oc-schema-migrate.py plugin-disable   <config> <id> <out>          # 0=written (only plugins.entries.<id>.enabled) 3=refused\n')
 
 
 def main(argv):
@@ -723,6 +804,40 @@ def main(argv):
             sys.stderr.write('WRITE FAILED: could not write %s: %s\n' % (argv[4], e))
             return EXIT_FAIL
         print('migrated: ' + '; '.join(changes))
+        return EXIT_OK
+
+    if cmd == 'plugin-attribute':
+        if len(argv) != 4:
+            _usage()
+            return EXIT_USAGE
+        try:
+            with open(argv[2], encoding='utf-8', errors='replace') as fh:
+                text = fh.read()
+            pid, imp = attribute_plugin(text, _load(argv[3]))
+        except (IOError, Undetermined) as e:
+            print('NONE: %s' % e)
+            return EXIT_UNDETERMINED
+        print('%s\t%s' % (pid, imp))
+        return EXIT_OK
+
+    if cmd == 'plugin-disable':
+        if len(argv) != 5:
+            _usage()
+            return EXIT_USAGE
+        try:
+            cfg = _load(argv[2])
+            was = plugin_disable(cfg, argv[3])
+        except Undetermined as e:
+            sys.stderr.write('REFUSED: %s\n' % e)
+            return EXIT_UNDETERMINED
+        try:
+            with open(argv[4], 'w', encoding='utf-8') as fh:
+                json.dump(cfg, fh, indent=_sniff_indent(argv[2]), ensure_ascii=False)
+                fh.write('\n')
+        except Exception as e:
+            sys.stderr.write('WRITE FAILED: could not write %s: %s\n' % (argv[4], e))
+            return EXIT_FAIL
+        print('was=%s' % was)
         return EXIT_OK
 
     _usage()

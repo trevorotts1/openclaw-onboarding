@@ -1,0 +1,1387 @@
+#!/usr/bin/env python3
+"""Acceptance proof for the interactive-owner contract (PBB-115 T-19 / C-19).
+
+Each acceptance clause has its own test class, and every refusal case asserts
+the exact code and that no route came back -- a refusal that still named a
+responder would re-open the two-responder defect the contract exists to close.
+
+Acceptance: "OpenClaw default; workflow controls/callbacks/free text/stale tap;
+no two responders."
+
+Run: python3 tools/tests/test_interactive_owner.py
+     bash scripts/qc-interactive-owner.sh
+"""
+from __future__ import annotations
+
+import contextlib
+import copy
+import hashlib
+import io
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+TOOLS_DIR = Path(__file__).resolve().parents[1]
+SKILL_ROOT = TOOLS_DIR.parent
+REPO_ROOT = SKILL_ROOT.parent
+
+sys.path.insert(0, str(TOOLS_DIR))
+
+import interactive_owner as owner  # noqa: E402
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "interactive-owner"
+
+
+def fixture(name):
+    return str(FIXTURES / name)
+
+
+def load_fixture(name):
+    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
+def base_contract():
+    return load_fixture("valid.json")
+
+
+def controls_contract(**overrides):
+    doc = base_contract()
+    doc.update(overrides)
+    return doc
+
+
+class ContractFixtureTests(unittest.TestCase):
+    def test_canonical_fixture_validates(self):
+        self.assertEqual(owner.validate_contract(base_contract()), [])
+
+    def test_schema_rejects_an_unknown_property(self):
+        doc = controls_contract(second_owner="native_ghl")
+        errors = owner.validate_contract(doc)
+        self.assertTrue(errors)
+        self.assertIn("unexpected property", errors[0])
+
+    def test_schema_rejects_an_unknown_free_text_policy(self):
+        doc = base_contract()
+        doc["steps"][0]["free_text"] = "maybe"
+        errors = owner.validate_contract(doc)
+        self.assertTrue(any("free_text" in err for err in errors), errors)
+
+    def test_schema_rejects_a_control_list_without_a_control(self):
+        doc = base_contract()
+        doc["steps"][0]["controls"] = []
+        self.assertTrue(owner.validate_contract(doc))
+
+    def test_a_repeated_step_id_is_refused(self):
+        doc = base_contract()
+        doc["steps"].append(copy.deepcopy(doc["steps"][0]))
+        errors = owner.validate_contract(doc)
+        self.assertTrue(errors)
+        self.assertTrue(errors[0].startswith(owner.DUPLICATE_STEP), errors)
+
+
+class OpenClawDefaultTests(unittest.TestCase):
+    """Acceptance clause 1: OpenClaw is the default owner."""
+
+    def test_owner_omitted_defaults_to_openclaw_inbound(self):
+        doc = base_contract()
+        self.assertNotIn("owner", doc)
+        self.assertEqual(owner.validate_contract(doc), [])
+        verdict = owner.resolve_event(
+            doc,
+            {
+                "kind": "control",
+                "step_id": "pick_time",
+                "control_id": "tue_10am",
+                "generation": 3,
+            },
+        )
+        self.assertEqual(verdict["status"], "accepted")
+        self.assertEqual(verdict["route"]["id"], owner.OWNER_OPENCLAW)
+        self.assertEqual(verdict["route"]["kind"], owner.OWNER_OPENCLAW)
+
+    def test_the_default_owner_carries_the_inbound_path(self):
+        doc = base_contract()
+        verdict = owner.resolve_event(
+            doc,
+            {
+                "kind": "free_text",
+                "step_id": "pick_time",
+                "generation": 3,
+            },
+        )
+        self.assertEqual(verdict["route"]["inbound_path"], "hooks/skill38-inbound")
+
+    def test_an_explicit_openclaw_owner_still_resolves(self):
+        doc = controls_contract(owner={"kind": "openclaw_inbound"})
+        verdict = owner.resolve_event(
+            doc,
+            {
+                "kind": "callback",
+                "step_id": "pick_time",
+                "control_id": "wed_2pm",
+                "generation": 3,
+            },
+        )
+        self.assertEqual(verdict["status"], "accepted")
+        self.assertEqual(verdict["route"]["id"], owner.OWNER_OPENCLAW)
+
+
+class WorkflowControlTests(unittest.TestCase):
+    """Acceptance clause 2a: rendered workflow controls resolve to the owner."""
+
+    def test_a_control_press_routes_to_the_owner(self):
+        verdict = owner.resolve_event(
+            base_contract(),
+            {
+                "kind": "control",
+                "step_id": "pick_time",
+                "control_id": "wed_2pm",
+                "generation": 3,
+            },
+        )
+        self.assertEqual(verdict["status"], "accepted")
+        self.assertEqual(verdict["code"], owner.ROUTED)
+        self.assertEqual(verdict["input"], "control")
+        self.assertEqual(verdict["control_id"], "wed_2pm")
+
+    def test_a_control_the_step_does_not_offer_is_refused(self):
+        verdict = owner.resolve_event(
+            base_contract(),
+            {
+                "kind": "control",
+                "step_id": "pick_time",
+                "control_id": "thu_4pm",
+                "generation": 3,
+            },
+        )
+        self.assertEqual(verdict["status"], "refused")
+        self.assertEqual(verdict["code"], owner.UNKNOWN_CONTROL)
+        self.assertIsNone(verdict["route"])
+
+    def test_a_control_from_an_unknown_step_is_refused(self):
+        verdict = owner.resolve_event(
+            base_contract(),
+            {
+                "kind": "control",
+                "step_id": "not_a_step",
+                "control_id": "tue_10am",
+                "generation": 3,
+            },
+        )
+        self.assertEqual(verdict["code"], owner.UNKNOWN_STEP)
+        self.assertIsNone(verdict["route"])
+
+    def test_a_control_without_a_control_id_is_malformed(self):
+        verdict = owner.resolve_event(
+            base_contract(),
+            {"kind": "control", "step_id": "pick_time", "generation": 3},
+        )
+        self.assertEqual(verdict["code"], owner.MALFORMED_EVENT)
+
+
+class CallbackTests(unittest.TestCase):
+    """Acceptance clause 2b: provider callbacks resolve to the same owner."""
+
+    def test_a_callback_routes_to_the_same_owner_as_a_control(self):
+        doc = base_contract()
+        control = owner.resolve_event(
+            doc,
+            {
+                "kind": "control",
+                "step_id": "pick_time",
+                "control_id": "tue_10am",
+                "generation": 3,
+            },
+        )
+        callback = owner.resolve_event(
+            doc,
+            {
+                "kind": "callback",
+                "step_id": "pick_time",
+                "control_id": "tue_10am",
+                "generation": 3,
+            },
+        )
+        self.assertEqual(callback["status"], "accepted")
+        self.assertEqual(callback["input"], "callback")
+        self.assertEqual(callback["route"], control["route"])
+
+    def test_a_callback_without_a_control_id_is_malformed(self):
+        verdict = owner.resolve_event(
+            base_contract(),
+            {"kind": "callback", "step_id": "pick_time", "generation": 3},
+        )
+        self.assertEqual(verdict["code"], owner.MALFORMED_EVENT)
+        self.assertIsNone(verdict["route"])
+
+    def test_a_callback_for_an_unknown_control_is_refused(self):
+        verdict = owner.resolve_event(
+            base_contract(),
+            {
+                "kind": "callback",
+                "step_id": "confirm",
+                "control_id": "tue_10am",
+                "generation": 1,
+            },
+        )
+        self.assertEqual(verdict["code"], owner.UNKNOWN_CONTROL)
+        self.assertIsNone(verdict["route"])
+
+
+class FreeTextTests(unittest.TestCase):
+    """Acceptance clause 2c: free text follows the same single owner."""
+
+    def test_free_text_is_routed_when_the_step_accepts_it(self):
+        verdict = owner.resolve_event(
+            base_contract(),
+            {"kind": "free_text", "step_id": "pick_time", "generation": 3},
+        )
+        self.assertEqual(verdict["status"], "accepted")
+        self.assertEqual(verdict["input"], "free_text")
+        self.assertEqual(verdict["route"]["id"], owner.OWNER_OPENCLAW)
+
+    def test_free_text_is_refused_when_the_step_rejects_it(self):
+        verdict = owner.resolve_event(
+            base_contract(),
+            {"kind": "free_text", "step_id": "confirm", "generation": 1},
+        )
+        self.assertEqual(verdict["status"], "refused")
+        self.assertEqual(verdict["code"], owner.FREE_TEXT_REJECTED)
+        self.assertIsNone(verdict["route"])
+
+    def test_free_text_on_an_unknown_step_is_refused(self):
+        verdict = owner.resolve_event(
+            base_contract(),
+            {"kind": "free_text", "step_id": "nope", "generation": 3},
+        )
+        self.assertEqual(verdict["code"], owner.UNKNOWN_STEP)
+
+
+class StaleTapTests(unittest.TestCase):
+    """Acceptance clause 2d: a stale tap is refused, never answered twice."""
+
+    def test_a_stale_control_tap_is_refused(self):
+        verdict = owner.resolve_event(
+            base_contract(),
+            {
+                "kind": "control",
+                "step_id": "pick_time",
+                "control_id": "tue_10am",
+                "generation": 2,
+            },
+        )
+        self.assertEqual(verdict["status"], "refused")
+        self.assertEqual(verdict["code"], owner.STALE_TAP)
+        self.assertIsNone(verdict["route"])
+
+    def test_a_stale_callback_is_refused(self):
+        verdict = owner.resolve_event(
+            base_contract(),
+            {
+                "kind": "callback",
+                "step_id": "pick_time",
+                "control_id": "wed_2pm",
+                "generation": 1,
+            },
+        )
+        self.assertEqual(verdict["code"], owner.STALE_TAP)
+        self.assertIsNone(verdict["route"])
+
+    def test_a_future_generation_is_refused_too(self):
+        verdict = owner.resolve_event(
+            base_contract(),
+            {
+                "kind": "control",
+                "step_id": "pick_time",
+                "control_id": "tue_10am",
+                "generation": 4,
+            },
+        )
+        self.assertEqual(verdict["code"], owner.STALE_TAP)
+
+    def test_the_current_generation_is_accepted(self):
+        verdict = owner.resolve_event(
+            base_contract(),
+            {
+                "kind": "control",
+                "step_id": "pick_time",
+                "control_id": "tue_10am",
+                "generation": 3,
+            },
+        )
+        self.assertEqual(verdict["status"], "accepted")
+
+    def test_a_missing_generation_is_malformed_not_stale(self):
+        verdict = owner.resolve_event(
+            base_contract(),
+            {"kind": "control", "step_id": "pick_time", "control_id": "tue_10am"},
+        )
+        self.assertEqual(verdict["code"], owner.MALFORMED_EVENT)
+
+
+class SingleResponderTests(unittest.TestCase):
+    """Acceptance clause 3: no two responders, ever."""
+
+    def test_two_responders_are_refused(self):
+        doc = load_fixture("two-responders.json")
+        errors = owner.validate_contract(doc)
+        self.assertTrue(errors)
+        self.assertTrue(errors[0].startswith(owner.TWO_RESPONDERS), errors)
+        verdict = owner.resolve_event(
+            doc,
+            {
+                "kind": "control",
+                "step_id": "pick_time",
+                "control_id": "tue_10am",
+                "generation": 1,
+            },
+        )
+        self.assertEqual(verdict["status"], "refused")
+        self.assertEqual(verdict["code"], owner.TWO_RESPONDERS)
+        self.assertIsNone(verdict["route"])
+
+    def test_zero_responders_are_refused(self):
+        doc = controls_contract(responders=[])
+        errors = owner.validate_contract(doc)
+        self.assertTrue(errors)
+        self.assertTrue(errors[0].startswith(owner.NO_RESPONDER), errors)
+
+    def test_a_responder_kind_that_disagrees_with_the_owner_is_refused(self):
+        doc = controls_contract(
+            owner={"kind": "openclaw_inbound"},
+            responders=[{"id": "openclaw_inbound", "kind": "native_ghl"}],
+        )
+        errors = owner.validate_contract(doc)
+        self.assertTrue(errors)
+        self.assertTrue(errors[0].startswith(owner.RESPONDER_MISMATCH), errors)
+
+    def test_a_single_matching_responder_passes(self):
+        doc = controls_contract(
+            owner={"kind": "openclaw_inbound"},
+            responders=[{"id": "openclaw_inbound", "kind": "openclaw_inbound"}],
+        )
+        self.assertEqual(owner.validate_contract(doc), [])
+
+    def test_the_default_derives_exactly_one_responder(self):
+        doc = base_contract()
+        self.assertNotIn("responders", doc)
+        self.assertEqual(owner.validate_contract(doc), [])
+
+
+class NativeGhlOwnerTests(unittest.TestCase):
+    """A native GHL owner is admitted only through the launch gate's verdict."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="interactive-owner-"))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def write_bundle(self, reply_owner):
+        bundle = self.tmp / "launch-bundle.json"
+        bundle.write_text(json.dumps({"reply_owner": reply_owner}), encoding="utf-8")
+        return bundle
+
+    def native_doc(self, bundle_name):
+        return controls_contract(
+            owner={"kind": "native_ghl", "launch_bundle": bundle_name},
+            responders=[{"id": "native_ghl", "kind": "native_ghl"}],
+        )
+
+    def test_native_ghl_without_a_launch_bundle_is_refused(self):
+        doc = controls_contract(
+            owner={"kind": "native_ghl"},
+            responders=[{"id": "native_ghl", "kind": "native_ghl"}],
+        )
+        errors = owner.validate_contract(doc)
+        self.assertTrue(errors)
+        self.assertTrue(errors[0].startswith(owner.OWNER_NOT_VERIFIED), errors)
+
+    def test_native_ghl_is_refused_when_the_bundle_names_openclaw(self):
+        bundle = self.write_bundle({"kind": "openclaw_inbound"})
+        doc = self.native_doc(bundle.name)
+        launch_owner = owner.load_launch_owner(bundle.name, self.tmp)
+        # The read has to have landed before the refusal means anything: a
+        # bundle that names OpenClaw and a bundle that yielded no owner at all
+        # are refused with the same code, so only the record itself separates
+        # "the gate refused a real verdict" from "nothing was ever read".
+        self.assertEqual(launch_owner, {"kind": "openclaw_inbound"})
+        errors = owner.validate_contract(doc, launch_owner)
+        self.assertTrue(errors)
+        self.assertTrue(errors[0].startswith(owner.OWNER_NOT_VERIFIED), errors)
+        self.assertIn("does not name native_ghl", errors[0])
+
+    def test_native_ghl_is_allowed_when_the_bundle_names_it(self):
+        bundle = self.write_bundle({"kind": "native_ghl"})
+        doc = self.native_doc(bundle.name)
+        launch_owner = owner.load_launch_owner(bundle.name, self.tmp)
+        self.assertEqual(owner.validate_contract(doc, launch_owner), [])
+        verdict = owner.resolve_event(
+            doc,
+            {
+                "kind": "callback",
+                "step_id": "pick_time",
+                "control_id": "tue_10am",
+                "generation": 3,
+            },
+            launch_owner,
+        )
+        self.assertEqual(verdict["status"], "accepted")
+        self.assertEqual(verdict["route"]["kind"], owner.OWNER_NATIVE_GHL)
+
+    def test_this_module_never_judges_translation_approval(self):
+        # The launch gate owns REPLY_OWNER_TRANSLATION. A bundle that names
+        # native_ghl but carries no approval marker is still admitted HERE, and
+        # still refused THERE -- one authority, no second copy of the guard.
+        bundle = self.write_bundle({"kind": "native_ghl"})
+        doc = self.native_doc(bundle.name)
+        launch_owner = owner.load_launch_owner(bundle.name, self.tmp)
+        self.assertNotIn("translation_approved", launch_owner)
+        self.assertEqual(owner.validate_contract(doc, launch_owner), [])
+
+
+class OwnershipDocumentTests(unittest.TestCase):
+    """The 44-side of the conflict, pinned by content rather than prose trust."""
+
+    def test_skill_44_declares_it_never_answers_an_interactive_step(self):
+        text = (REPO_ROOT / "44-convert-and-flow-operator" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("never answers a conversation or an interactive step", text)
+        self.assertIn("launch/interactive-owner-contract.md", text)
+
+    def test_skill_38_points_at_the_interactive_contract(self):
+        text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("launch/interactive-owner-contract.md", text)
+
+    def test_the_contract_document_names_all_four_inputs(self):
+        text = (SKILL_ROOT / "launch" / "interactive-owner-contract.md").read_text(
+            encoding="utf-8"
+        )
+        for token in ("control", "callback", "free text", "stale tap", "one responder"):
+            self.assertIn(token, text.lower())
+
+
+class CliTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="interactive-owner-cli-"))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def run_cli(self, *argv):
+        buffer = io.StringIO()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(err):
+            code = owner.main(list(argv))
+        return code, buffer.getvalue(), err.getvalue()
+
+    def test_validate_accepts_the_canonical_fixture(self):
+        code, out, _ = self.run_cli("validate", "--contract", fixture("valid.json"))
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["status"], "accepted")
+
+    def test_validate_refuses_two_responders(self):
+        code, out, _ = self.run_cli(
+            "validate", "--contract", fixture("two-responders.json")
+        )
+        self.assertEqual(code, 1)
+        payload = json.loads(out)
+        self.assertEqual(payload["status"], "refused")
+        self.assertTrue(payload["errors"][0].startswith(owner.TWO_RESPONDERS))
+
+    def test_resolve_returns_zero_for_an_accepted_tap(self):
+        event = json.dumps(
+            {
+                "kind": "control",
+                "step_id": "pick_time",
+                "control_id": "wed_2pm",
+                "generation": 3,
+            }
+        )
+        code, out, _ = self.run_cli(
+            "resolve", "--contract", fixture("valid.json"), "--event", event
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["route"]["id"], owner.OWNER_OPENCLAW)
+
+    def test_resolve_returns_one_for_a_stale_tap(self):
+        event = json.dumps(
+            {
+                "kind": "control",
+                "step_id": "pick_time",
+                "control_id": "wed_2pm",
+                "generation": 2,
+            }
+        )
+        code, out, _ = self.run_cli(
+            "resolve", "--contract", fixture("valid.json"), "--event", event
+        )
+        self.assertEqual(code, 1)
+        payload = json.loads(out)
+        self.assertEqual(payload["code"], owner.STALE_TAP)
+        self.assertIsNone(payload["route"])
+
+    def test_usage_is_exit_two(self):
+        code, _, err = self.run_cli("nonsense")
+        self.assertEqual(code, 2)
+        self.assertIn("unknown command", err)
+
+    def test_an_unparseable_inline_event_is_a_usage_exit_not_a_traceback(self):
+        # The inline --event value is caller-controlled text at a trust
+        # boundary. Unparseable input must reach the documented exit 2 with the
+        # usage error; a raw json traceback is exit 1 and prints no verdict at
+        # all, which is neither of the two answers the contract documents.
+        code, out, err = self.run_cli(
+            "resolve", "--contract", fixture("valid.json"), "--event", "{not json"
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("invalid JSON event", err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(out.strip(), "")
+
+    def test_the_same_bad_json_is_the_same_exit_inline_or_in_a_file(self):
+        path = self.tmp / "bad-event.json"
+        path.write_text("{not json", encoding="utf-8")
+        code, out, err = self.run_cli(
+            "resolve", "--contract", fixture("valid.json"), "--event", str(path)
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("invalid JSON", err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(out.strip(), "")
+
+    def test_resolve_still_reads_a_valid_event_from_a_file(self):
+        # Inverse: the file branch of _parse_event is untouched and still
+        # routes, so the fix did not narrow what counts as a usable event.
+        path = self.tmp / "event.json"
+        path.write_text(
+            json.dumps({
+                "kind": "control",
+                "step_id": "pick_time",
+                "control_id": "wed_2pm",
+                "generation": 3,
+            }),
+            encoding="utf-8",
+        )
+        code, out, _ = self.run_cli(
+            "resolve", "--contract", fixture("valid.json"), "--event", str(path)
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["route"]["id"], owner.OWNER_OPENCLAW)
+
+
+class FulfillmentCliTests(unittest.TestCase):
+    """PBB-698 T-25: the owner that answers a step may also deliver the gift.
+
+    ``direct_fulfillment.py`` had no production importer, so the exactly-once
+    delivery path was reachable only from its own unittest module. These tests
+    prove the CLI that now calls it: resolution runs BEFORE any effect (a stale
+    tap leaves no outbox row, no journal line and no transport call), the
+    durable basis is written by its own command and never minted by the send,
+    and a repeat call reports ``already_satisfied`` instead of sending twice.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="interactive-owner-fulfill-"))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def run_cli(self, *argv):
+        buffer = io.StringIO()
+        err = io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(err):
+            code = owner.main(list(argv))
+        return code, buffer.getvalue(), err.getvalue()
+
+    def write(self, name, doc):
+        path = self.tmp / name
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        return str(path)
+
+    def item(self, **overrides):
+        doc = {
+            "item_id": "gift-1",
+            "version": "1",
+            "content_sha256": hashlib.sha256(b"the gift").hexdigest(),
+            "approved": True,
+            "purpose": owner.PURPOSE_ORIGINAL_GIFT,
+            "content_uri": "https://example.test/gift-1",
+        }
+        doc.update(overrides)
+        return doc
+
+    def basis(self, **overrides):
+        doc = {
+            "tenant_id": "tenant-alpha",
+            "canonical_contact_id": "c-1",
+            "item_id": "gift-1",
+            "version": "1",
+            "basis": "owner_approved",
+            "actor": "op-1",
+            "evidence": "contract:launch-ai/tenant-alpha/loc-1/spring-offer",
+            "channel": "sms",
+            "address": "+15550100",
+        }
+        doc.update(overrides)
+        return doc
+
+    def fulfill_argv(self, item_path, basis_path, event=None):
+        return (
+            "fulfill",
+            "--contract", fixture("valid.json"),
+            "--event", GOOD_EVENT if event is None else event,
+            "--outbox", str(self.tmp / "outbox.db"),
+            "--ledger", str(self.tmp / "ledger.db"),
+            "--journal", str(self.tmp / "journal.jsonl"),
+            "--item", item_path,
+            "--basis", basis_path,
+        )
+
+    def journal_lines(self):
+        path = self.tmp / "journal.jsonl"
+        if not path.exists():
+            return []
+        return [line for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()]
+
+    def test_stale_tap_is_refused_before_any_effect(self):
+        item = self.write("item.json", self.item())
+        basis = self.write("basis.json", self.basis())
+        stale = json.dumps({"kind": "control", "step_id": "pick_time",
+                            "control_id": "wed_2pm", "generation": 2})
+        code, out, _ = self.run_cli(*self.fulfill_argv(item, basis, stale))
+        payload = json.loads(out)
+        self.assertEqual(code, 1)
+        self.assertEqual(payload["status"], "refused")
+        self.assertEqual(payload["code"], owner.STALE_TAP)
+        self.assertFalse((self.tmp / "outbox.db").exists())
+        self.assertFalse((self.tmp / "journal.jsonl").exists())
+
+    def test_no_recorded_basis_means_no_send(self):
+        item = self.write("item.json", self.item())
+        basis = self.write("basis.json", self.basis())
+        code, out, _ = self.run_cli(*self.fulfill_argv(item, basis))
+        payload = json.loads(out)
+        self.assertEqual(code, 1)
+        self.assertEqual(payload["status"], "refused")
+        self.assertEqual(payload["reason"], "no_delivery_basis")
+        self.assertEqual(self.journal_lines(), [])
+
+    def test_record_basis_sends_nothing(self):
+        basis = self.write("basis.json", self.basis())
+        code, out, _ = self.run_cli(
+            "record-basis", "--ledger", str(self.tmp / "ledger.db"), "--basis", basis
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(out)["ok"])
+        self.assertFalse((self.tmp / "journal.jsonl").exists())
+        self.assertFalse((self.tmp / "outbox.db").exists())
+
+    def test_fulfill_sends_once_then_reports_already_satisfied(self):
+        item = self.write("item.json", self.item())
+        basis = self.write("basis.json", self.basis())
+        code, out, _ = self.run_cli(
+            "record-basis", "--ledger", str(self.tmp / "ledger.db"), "--basis", basis
+        )
+        self.assertEqual(code, 0)
+
+        argv = self.fulfill_argv(item, basis)
+        first_code, first_out, _ = self.run_cli(*argv)
+        first = json.loads(first_out)
+        self.assertEqual(first_code, 0)
+        self.assertTrue(first["ok"])
+        self.assertEqual(first["status"], "sent")
+        self.assertEqual(len(self.journal_lines()), 1)
+
+        second_code, second_out, _ = self.run_cli(*argv)
+        second = json.loads(second_out)
+        self.assertEqual(second_code, 0)
+        self.assertEqual(second["status"], "already_satisfied")
+        self.assertEqual(second["action_id"], first["action_id"])
+        self.assertEqual(len(self.journal_lines()), 1)
+
+    def test_item_purpose_must_be_the_original_gift(self):
+        item = self.write("item.json", self.item(purpose="ORDER_UPDATE"))
+        basis = self.write("basis.json", self.basis())
+        code, out, err = self.run_cli(*self.fulfill_argv(item, basis))
+        self.assertEqual(code, 2)
+        self.assertEqual(out, "")
+        self.assertIn("ORIGINAL_GIFT", err)
+
+    def test_basis_for_a_different_item_is_refused(self):
+        item = self.write("item.json", self.item())
+        basis = self.write("basis.json", self.basis(item_id="gift-2"))
+        code, out, err = self.run_cli(*self.fulfill_argv(item, basis))
+        self.assertEqual(code, 2)
+        self.assertEqual(out, "")
+        self.assertIn("different promised item", err)
+
+    def test_an_unapproved_item_is_never_sent(self):
+        item = self.write("item.json", self.item(approved=False))
+        basis = self.write("basis.json", self.basis())
+        code, out, _ = self.run_cli(
+            "record-basis", "--ledger", str(self.tmp / "ledger.db"), "--basis", basis
+        )
+        self.assertEqual(code, 0)
+        code, out, err = self.run_cli(*self.fulfill_argv(item, basis))
+        self.assertEqual(code, 2)
+        self.assertIn("not approved", err)
+        self.assertEqual(self.journal_lines(), [])
+
+
+GOOD_EVENT = json.dumps(
+    {"kind": "control", "step_id": "pick_time", "control_id": "wed_2pm", "generation": 3}
+)
+# Valid JSON that is not an object. Every one is a document a caller can hand
+# the tool; none of them is a contract or an event.
+NON_OBJECTS = (("null", "null"), ("list", "[]"), ("string", '"hello"'),
+               ("int", "5"), ("bool", "true"))
+
+
+class HostileInputTests(unittest.TestCase):
+    """PBB-157 review: a null event was accepted and a non-object contract crashed.
+
+    Every case asserts the exit code, the verdict code, ``route: None`` and no
+    traceback, so a test passes only on the documented answer and never on
+    "some failure happened".
+    """
+
+    setUp = CliTests.setUp
+    tearDown = CliTests.tearDown
+    run_cli = CliTests.run_cli
+
+    def write(self, name, data):
+        path = self.tmp / name
+        path.write_bytes(data if isinstance(data, bytes) else data.encode("utf-8"))
+        return str(path)
+
+    def assert_refused(self, argv, want_code):
+        code, out, err = self.run_cli(*argv)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(code, 1, (out, err))
+        payload = json.loads(out)
+        self.assertEqual(payload["status"], "refused")
+        self.assertEqual(payload["code"], want_code)
+        self.assertIsNone(payload["route"])
+        return payload
+
+    def assert_usage(self, argv, needle):
+        code, out, err = self.run_cli(*argv)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(code, 2, (out, err))
+        self.assertEqual(out.strip(), "")
+        self.assertIn(needle, err)
+
+    # Defect 1 -- fail-open: a null event must never be accepted.
+
+    def test_a_null_inline_event_is_refused_not_accepted(self):
+        self.assert_refused(
+            ("resolve", "--contract", fixture("valid.json"), "--event", "null"),
+            owner.MALFORMED_EVENT,
+        )
+
+    def test_a_null_event_file_is_refused_not_accepted(self):
+        path = self.write("event-null.json", "null")
+        self.assert_refused(
+            ("resolve", "--contract", fixture("valid.json"), "--event", path),
+            owner.MALFORMED_EVENT,
+        )
+
+    def test_resolve_contract_with_a_none_event_is_a_refusal(self):
+        verdict = owner.resolve_contract(fixture("valid.json"), None)
+        self.assertEqual(verdict["status"], "refused")
+        self.assertEqual(verdict.get("code"), owner.MALFORMED_EVENT)
+        self.assertIsNone(verdict.get("route"))
+
+    def test_every_non_object_event_is_malformed(self):
+        for name, text in NON_OBJECTS[1:] + (("object", "{}"),):
+            with self.subTest(event=name):
+                self.assert_refused(
+                    ("resolve", "--contract", fixture("valid.json"), "--event", text),
+                    owner.MALFORMED_EVENT,
+                )
+
+    def test_omitting_the_event_still_only_validates(self):
+        # Inverse: the validate-only path is the omitted event, not a None one.
+        result = owner.resolve_contract(fixture("valid.json"))
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(result["errors"], [])
+        refused = owner.resolve_contract(fixture("two-responders.json"))
+        self.assertEqual(refused["status"], "refused")
+        self.assertTrue(refused["errors"][0].startswith(owner.TWO_RESPONDERS))
+
+    # Defect 2 -- crash: a contract that is not an object is a verdict.
+
+    def test_a_non_object_contract_is_refused_by_validate(self):
+        for name, text in NON_OBJECTS:
+            with self.subTest(contract=name):
+                path = self.write("contract-%s.json" % name, text)
+                code, out, err = self.run_cli("validate", "--contract", path)
+                self.assertNotIn("Traceback", err)
+                self.assertEqual(code, 1, (out, err))
+                payload = json.loads(out)
+                self.assertEqual(payload["status"], "refused")
+                self.assertTrue(
+                    payload["errors"][0].startswith(owner.INVALID_CONTRACT), payload
+                )
+
+    def test_a_non_object_contract_is_refused_by_resolve(self):
+        for name, text in NON_OBJECTS:
+            with self.subTest(contract=name):
+                path = self.write("contract-%s.json" % name, text)
+                self.assert_refused(
+                    ("resolve", "--contract", path, "--event", GOOD_EVENT),
+                    owner.INVALID_CONTRACT,
+                )
+
+    def test_a_non_object_owner_is_refused_not_crashed(self):
+        for name, value in (("string", "native_ghl"), ("int", 5), ("list", ["x"])):
+            with self.subTest(owner=name):
+                path = self.write(
+                    "owner-%s.json" % name,
+                    json.dumps(controls_contract(owner=value)),
+                )
+                code, out, err = self.run_cli("validate", "--contract", path)
+                self.assertNotIn("Traceback", err)
+                self.assertEqual(code, 1, (out, err))
+                self.assertTrue(
+                    json.loads(out)["errors"][0].startswith(owner.INVALID_CONTRACT)
+                )
+                self.assert_refused(
+                    ("resolve", "--contract", path, "--event", GOOD_EVENT),
+                    owner.INVALID_CONTRACT,
+                )
+
+    def test_schema_refusals_carry_the_stable_invalid_contract_code(self):
+        for doc in (None, [], "hello", controls_contract(second_owner="x")):
+            with self.subTest(doc=repr(doc)[:40]):
+                errors = owner.validate_contract(doc)
+                self.assertTrue(errors)
+                self.assertTrue(errors[0].startswith(owner.INVALID_CONTRACT), errors)
+
+    def test_a_valid_contract_from_a_file_still_routes(self):
+        # Inverse: the canonical bytes still validate and still route.
+        code, out, _ = self.run_cli("validate", "--contract", fixture("valid.json"))
+        self.assertEqual(code, 0)
+        code, out, _ = self.run_cli(
+            "resolve", "--contract", fixture("valid.json"), "--event", GOOD_EVENT
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["route"]["id"], owner.OWNER_OPENCLAW)
+
+    # Same class, IO side: an unreadable caller path is "2 = usage or IO".
+
+    def test_unreadable_paths_are_a_usage_exit_not_a_traceback(self):
+        folder = self.tmp / "a-folder"
+        folder.mkdir()
+        latin = self.write("latin.json", b'{"x": "\xff"}')
+        cases = (
+            ("contract is a folder", ("validate", "--contract", str(folder))),
+            ("contract not UTF-8", ("validate", "--contract", latin)),
+            ("event file not UTF-8",
+             ("resolve", "--contract", fixture("valid.json"), "--event", latin)),
+            ("launch bundle is a folder",
+             ("validate", "--contract", fixture("valid.json"),
+              "--launch-bundle", str(folder))),
+            ("inline event nested past the parser limit",
+             ("resolve", "--contract", fixture("valid.json"), "--event", "[" * 1000000)),
+            ("contract value nested past the checker limit",
+             ("validate", "--contract", self.write(
+                 "deep.json",
+                 '{"schema_version": 1, "contract_id": "x", "owner": {"kind": '
+                 + "[" * 100000 + "]" * 100000 + "}, "
+                 + json.dumps({"steps": base_contract()["steps"]})[1:],
+             ))),
+        )
+        for label, argv in cases:
+            with self.subTest(case=label):
+                self.assert_usage(argv, "usage:")
+
+    def test_a_long_inline_event_is_parsed_not_probed_to_a_crash(self):
+        # The file-or-inline probe used to raise OSError (name too long) on
+        # Python 3.9 for any inline event longer than one path component, so a
+        # valid event crashed instead of routing.
+        event = json.dumps(dict(json.loads(GOOD_EVENT), note="x" * 400))
+        code, out, err = self.run_cli(
+            "resolve", "--contract", fixture("valid.json"), "--event", event
+        )
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(code, 0, (out, err))
+        self.assertEqual(json.loads(out)["route"]["id"], owner.OWNER_OPENCLAW)
+
+
+class ContractCodeTests(unittest.TestCase):
+    """PBB-261 D3: the codes the contract document names are the codes emitted.
+
+    ``validate_schema`` returns as soon as a field fails its declared type, so
+    with the schema first these two declared refusals were unreachable: a
+    contract naming ``responders`` as a string answered ``INVALID_CONTRACT:
+    $.responders: expected type array`` and a step with ``free_text: "maybe"``
+    answered ``INVALID_CONTRACT: $.steps[0].free_text: ...`` -- never the
+    ``NO_RESPONDER`` / ``INVALID_STEP`` the contract document tells a caller to
+    assert on. Each case asserts the exact code, so it fails on "some refusal
+    happened" as well as on acceptance.
+    """
+
+    def test_a_non_list_responders_field_reports_no_responder(self):
+        doc = controls_contract(responders="openclaw_inbound")
+        errors = owner.validate_contract(doc)
+        self.assertTrue(errors)
+        self.assertEqual(errors[0].split(":", 1)[0], owner.NO_RESPONDER)
+        self.assertIn("responders must be a list", errors[0])
+
+    def test_a_non_list_responders_field_is_a_refusal_not_an_acceptance(self):
+        path = self.tmp_path("responders-string.json", json.dumps(
+            controls_contract(responders="openclaw_inbound")))
+        code, out, err = self.run_cli("validate", "--contract", path)
+        self.assertEqual(code, 1)
+        payload = json.loads(out)
+        self.assertEqual(payload["status"], "refused")
+        self.assertEqual(payload["errors"][0].split(":", 1)[0], owner.NO_RESPONDER)
+
+    def test_an_unknown_free_text_policy_reports_invalid_step(self):
+        doc = base_contract()
+        doc["steps"][0]["free_text"] = "maybe"
+        errors = owner.validate_contract(doc)
+        self.assertTrue(errors)
+        self.assertEqual(errors[0].split(":", 1)[0], owner.INVALID_STEP)
+
+    def test_a_missing_free_text_policy_reports_invalid_step_too(self):
+        # Class, not instance: the schema's ``required`` list would have
+        # swallowed this one as well.
+        doc = base_contract()
+        del doc["steps"][0]["free_text"]
+        errors = owner.validate_contract(doc)
+        self.assertEqual(errors[0].split(":", 1)[0], owner.INVALID_STEP)
+
+    def test_the_declared_codes_survive_a_bad_free_text_on_a_non_first_step(self):
+        doc = base_contract()
+        doc["steps"][1]["free_text"] = "whenever"
+        errors = owner.validate_contract(doc)
+        self.assertEqual(errors[0].split(":", 1)[0], owner.INVALID_STEP)
+
+    def test_a_contract_that_only_fails_the_schema_still_says_invalid_contract(self):
+        # Inverse: moving the guards forward did not steal INVALID_CONTRACT
+        # from a document that is simply the wrong shape.
+        errors = owner.validate_contract(controls_contract(second_owner="x"))
+        self.assertTrue(errors[0].startswith(owner.INVALID_CONTRACT), errors)
+        self.assertEqual(owner.validate_contract(None)[0].split(":", 1)[0],
+                         owner.INVALID_CONTRACT)
+
+    setUp = CliTests.setUp
+    tearDown = CliTests.tearDown
+    run_cli = CliTests.run_cli
+
+    def tmp_path(self, name, text):
+        path = self.tmp / name
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+
+class WhitespaceIdentityTests(unittest.TestCase):
+    """PBB-261 D4: a whitespace-only name is not an identity.
+
+    The event side judged ``step_id`` and ``control_id`` with ``_nonempty``; the
+    contract side used the schema's ``minLength: 1``, which a run of spaces
+    satisfies. So a step declared ``step_id: "   "`` validated and was then
+    unroutable by any event -- its id could only ever be echoed back as
+    ``MALFORMED_EVENT``.
+    """
+
+    setUp = CliTests.setUp
+    tearDown = CliTests.tearDown
+    run_cli = CliTests.run_cli
+
+    def tmp_path(self, name, text):
+        path = self.tmp / name
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def assert_refused_step(self, doc):
+        errors = owner.validate_contract(doc)
+        self.assertTrue(errors, "a whitespace-only identity was accepted")
+        self.assertEqual(errors[0].split(":", 1)[0], owner.INVALID_STEP, errors)
+        return errors
+
+    def test_a_whitespace_only_step_id_is_refused(self):
+        doc = base_contract()
+        doc["steps"][0]["step_id"] = "   "
+        self.assert_refused_step(doc)
+
+    def test_a_whitespace_only_control_id_is_refused(self):
+        doc = base_contract()
+        doc["steps"][0]["controls"] = ["  "]
+        self.assert_refused_step(doc)
+
+    def test_an_empty_step_id_is_refused(self):
+        doc = base_contract()
+        doc["steps"][0]["step_id"] = ""
+        self.assert_refused_step(doc)
+
+    def test_an_empty_control_id_is_refused(self):
+        doc = base_contract()
+        doc["steps"][0]["controls"] = [""]
+        self.assert_refused_step(doc)
+
+    def test_a_whitespace_only_step_id_is_refused_through_the_cli(self):
+        doc = base_contract()
+        doc["steps"][0]["step_id"] = "   "
+        path = self.tmp_path("blank-stepid.json", json.dumps(doc))
+        code, out, err = self.run_cli("validate", "--contract", path)
+        self.assertEqual(code, 1)
+        self.assertNotIn("Traceback", err)
+        payload = json.loads(out)
+        self.assertEqual(payload["status"], "refused")
+        self.assertIsNone(payload.get("route"))
+
+    def test_a_short_step_id_still_validates(self):
+        # Inverse: the rule is "not blank", not "long". A one-character id is
+        # legal and still routes, so the fix did not narrow what counts as an
+        # identity.
+        doc = controls_contract(steps=[
+            {"step_id": "s", "generation": 1, "controls": ["a"], "free_text": "accept"},
+        ])
+        self.assertEqual(owner.validate_contract(doc), [])
+        verdict = owner.resolve_event(
+            doc, {"kind": "control", "step_id": "s", "control_id": "a", "generation": 1})
+        self.assertEqual(verdict["status"], "accepted")
+
+    def test_the_routed_identity_is_the_owner_kind_not_the_responder_label(self):
+        # The responder `id` is a label: `_owner_record` builds the route from
+        # the owner kind, so a blank label can never become a routing key. The
+        # identities an event can echo -- step_id and control_id -- are the ones
+        # the contract refuses when blank.
+        doc = controls_contract(
+            owner={"kind": "openclaw_inbound"},
+            responders=[{"id": "  ", "kind": "openclaw_inbound"}],
+        )
+        self.assertEqual(owner.validate_contract(doc), [])
+        verdict = owner.resolve_event(
+            doc,
+            {"kind": "control", "step_id": "pick_time", "control_id": "tue_10am",
+             "generation": 3},
+        )
+        self.assertEqual(verdict["route"]["id"], owner.OWNER_OPENCLAW)
+
+
+class FreeTextGenerationTests(unittest.TestCase):
+    """PBB-261 M1: the generation is a tap rule, not a typed-message rule.
+
+    Contract §3 gives ``generation`` to the step re-render and §4 routes free
+    text on the step's policy alone, but ``resolve_event`` checked the
+    generation before branching, so a typed message was answered ``STALE_TAP``
+    and a ``reject`` step with a stale generation said ``STALE_TAP`` instead of
+    the ``FREE_TEXT_REJECTED`` §4 promises.
+    """
+
+    def test_free_text_routes_on_a_stale_generation(self):
+        verdict = owner.resolve_event(
+            base_contract(), {"kind": "free_text", "step_id": "pick_time", "generation": 2})
+        self.assertEqual(verdict["status"], "accepted")
+        self.assertEqual(verdict["code"], owner.ROUTED)
+        self.assertEqual(verdict["input"], "free_text")
+
+    def test_free_text_routes_on_a_future_generation(self):
+        verdict = owner.resolve_event(
+            base_contract(), {"kind": "free_text", "step_id": "pick_time", "generation": 99})
+        self.assertEqual(verdict["status"], "accepted")
+
+    def test_free_text_routes_with_no_generation_at_all(self):
+        verdict = owner.resolve_event(
+            base_contract(), {"kind": "free_text", "step_id": "pick_time"})
+        self.assertEqual(verdict["status"], "accepted")
+        self.assertEqual(verdict["input"], "free_text")
+
+    def test_rejected_free_text_says_free_text_rejected_on_a_stale_generation(self):
+        verdict = owner.resolve_event(
+            base_contract(), {"kind": "free_text", "step_id": "confirm", "generation": 2})
+        self.assertEqual(verdict["code"], owner.FREE_TEXT_REJECTED)
+        self.assertIsNone(verdict["route"])
+
+    def test_rejected_free_text_says_free_text_rejected_on_a_future_generation(self):
+        verdict = owner.resolve_event(
+            base_contract(), {"kind": "free_text", "step_id": "confirm", "generation": 9})
+        self.assertEqual(verdict["code"], owner.FREE_TEXT_REJECTED)
+
+    def test_a_tap_still_needs_the_current_generation(self):
+        # Inverse: dropping the generation from the free-text path did not drop
+        # it from the tap path. STALE_TAP is still derived for a control.
+        for generation in (2, 4):
+            verdict = owner.resolve_event(base_contract(), {
+                "kind": "control", "step_id": "pick_time", "control_id": "tue_10am",
+                "generation": generation})
+            self.assertEqual(verdict["code"], owner.STALE_TAP, generation)
+            self.assertIsNone(verdict["route"])
+
+    def test_an_unknown_control_answers_unknown_control_whatever_it_carries(self):
+        # The class behind "a long inline event is parsed and judged": the
+        # control identity is the routing fact, so a tap naming a control the
+        # step never rendered is UNKNOWN_CONTROL even when its generation is
+        # missing or wrong.
+        for event in (
+            {"kind": "control", "step_id": "pick_time", "control_id": "x" * 900},
+            {"kind": "control", "step_id": "pick_time", "control_id": "zzz",
+             "generation": 3},
+            {"kind": "control", "step_id": "pick_time", "control_id": "zzz",
+             "generation": "3"},
+        ):
+            with self.subTest(control=event["control_id"][:12]):
+                verdict = owner.resolve_event(base_contract(), event)
+                self.assertEqual(verdict["code"], owner.UNKNOWN_CONTROL)
+                self.assertIsNone(verdict["route"])
+
+    def test_a_known_control_with_no_generation_is_still_malformed(self):
+        verdict = owner.resolve_event(base_contract(), {
+            "kind": "control", "step_id": "pick_time", "control_id": "tue_10am"})
+        self.assertEqual(verdict["code"], owner.MALFORMED_EVENT)
+
+
+class DepthLimitTests(unittest.TestCase):
+    """PBB-261 M2: contract §7's exit 2 for over-deep input now exists.
+
+    3 000-deep and 100 000-deep JSON used to parse and return a verdict, so
+    "input nested deeper than the checker can walk" documented a failure mode
+    the tool did not have.
+    """
+
+    setUp = CliTests.setUp
+    tearDown = CliTests.tearDown
+    run_cli = CliTests.run_cli
+
+    def tmp_path(self, name, text):
+        path = self.tmp / name
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def assert_usage(self, argv):
+        code, out, err = self.run_cli(*argv)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(code, 2, (out, err))
+        self.assertEqual(out.strip(), "")
+        self.assertIn("usage:", err)
+
+    def test_a_deep_event_is_a_usage_exit(self):
+        for depth in (200, 3000):
+            with self.subTest(depth=depth):
+                self.assert_usage(("resolve", "--contract", fixture("valid.json"),
+                                   "--event", "[" * depth + "]" * depth))
+
+    def test_a_deep_contract_is_a_usage_exit(self):
+        for depth in (200, 3000):
+            with self.subTest(depth=depth):
+                path = self.tmp_path("deep-%d.json" % depth,
+                                     '{"a":' * depth + "1" + "}" * depth)
+                self.assert_usage(("validate", "--contract", path))
+
+    def test_a_contract_at_the_depth_a_real_one_uses_still_validates(self):
+        # Inverse: the limit is far above any real contract (four or five
+        # levels), so the guard never fires on a document a caller can write.
+        code, out, _ = self.run_cli("validate", "--contract", fixture("valid.json"))
+        self.assertEqual(code, 0)
+        self.assertEqual(owner.DEPTH_LIMIT, 64)
+
+
+class BookkeepingTests(unittest.TestCase):
+    """PBB-261 D1/D2: the shipped version is above main's, and unique.
+
+    The marker is compared remote-against-local by ``check-updates.sh``, so a
+    version at or below ``origin/main``'s reads as "not newer" on every deployed
+    box; and a CHANGELOG number already published on ``main`` for another task
+    makes one number name two changes.
+
+    Every invariant here describes an UNMERGED release: a version this change
+    ADDS, strictly above what ``origin/main`` publishes. On ``main`` itself --
+    and on any branch whose versions ``main`` already carries, which is every
+    branch after it is merged -- the comparison is self-referential and can
+    never hold. So the baseline is the fork point (``merge-base``), not main's
+    moving tip, ``adds_release()`` gates the "strictly above main" halves, and
+    the "never lowered", "newest-first" and "not re-published" halves keep
+    biting on the regression (marker v2.0.31) and on any real release branch.
+
+    Reading the fork point also makes the suite hermetic: against the live tip
+    it flipped between diagnostic values as ``main`` advanced ((2,0,133) vs
+    (2,0,133) on 2026-10-25, (2,0,178) vs (2,0,178) at 5b3e800), always red.
+
+    Skipped only when the checkout has no ``origin/main`` to compare against.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.git_ok = False
+        try:
+            probe = subprocess.run(
+                ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify", "origin/main"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        except OSError:
+            return
+        cls.git_ok = probe.returncode == 0
+
+    def git(self, *argv):
+        return subprocess.run(
+            ["git", "-C", str(REPO_ROOT)] + list(argv),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+
+    # -- what this checkout forked from, which is what "above main" is relative
+    # -- to once main keeps moving. main's live tip is only used to prove a
+    # -- release this change ADDS is not already published.
+
+    def merge_base(self):
+        return self.git("merge-base", "HEAD", "origin/main").stdout.strip()
+
+    def base_show(self, rel):
+        return self.git("show", "%s:%s" % (self.merge_base(), rel)).stdout
+
+    def base_marker(self):
+        return self.base_show("38-conversational-ai-system/"
+                              "skill-version.txt").strip()
+
+    def base_changelog_versions(self):
+        return self.parse_versions(self.base_show(
+            "38-conversational-ai-system/CHANGELOG.md"))
+
+    def adds_release(self):
+        """True only when this checkout carries a release its fork point lacks."""
+        return (self.local_marker().lstrip("v") != self.base_marker().lstrip("v")
+                or self.changelog_versions() != self.base_changelog_versions())
+
+    def versions_this_change_adds(self):
+        """The versions in this file that the fork point does not already have."""
+        base = set(self.base_changelog_versions())
+        added = {"%d.%d.%d" % v for v in self.changelog_versions()
+                 if v not in base}
+        base_marker = self.base_marker().lstrip("v")
+        local_marker = self.local_marker().lstrip("v")
+        if local_marker != base_marker:
+            added.add(local_marker)
+        return sorted(added)
+
+    def main_marker(self):
+        return self.git("show", "origin/main:38-conversational-ai-system/"
+                                "skill-version.txt").stdout.strip()
+
+    def local_marker(self):
+        return (SKILL_ROOT / "skill-version.txt").read_text(encoding="utf-8").strip()
+
+    @staticmethod
+    def parse_versions(text):
+        return [tuple(int(p) for p in m.split("."))
+                for m in re.findall(r"^## \[?v?(\d+\.\d+\.\d+)\]?", text, re.M)]
+
+    def changelog_versions(self):
+        return self.parse_versions(
+            (SKILL_ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
+
+    def main_changelog_versions(self):
+        return self.parse_versions(self.git(
+            "show", "origin/main:38-conversational-ai-system/"
+                    "CHANGELOG.md").stdout)
+
+    def test_the_shipped_version_is_strictly_above_main_s(self):
+        if not self.git_ok:
+            self.skipTest("no origin/main in this checkout to compare against")
+        local = tuple(int(p) for p in self.local_marker().lstrip("v").split("."))
+        base = tuple(int(p) for p in self.base_marker().lstrip("v").split("."))
+        main = tuple(int(p) for p in self.main_marker().lstrip("v").split("."))
+        # Always bites: a change may never LOWER the marker below the one it
+        # forked from (the reviewed regression ships v2.0.31 against a higher
+        # fork point).
+        self.assertGreaterEqual(local, base,
+                                "the shipped version must never be below what "
+                                "this change forked from")
+        if not self.adds_release():
+            # This checkout ships no marker of its own, so nothing can be
+            # "above main". Assert that premise instead of the tautology it
+            # implies, so the case is checked rather than skipped.
+            self.assertLessEqual(local, main,
+                                 "a marker this change does not add cannot sit "
+                                 "above main's")
+            return
+        self.assertGreater(local, main,
+                           "a release this change adds must be strictly above "
+                           "main's")
+
+    def test_no_version_this_branch_ships_appears_on_main(self):
+        if not self.git_ok:
+            self.skipTest("no origin/main in this checkout to compare against")
+        # A version names a change when it is a heading, so the question is
+        # whether main ASSIGNS this number, never whether main's prose writes
+        # the digits: main_changelog_versions reads headings only (main's
+        # a010d673b heading-only rule), not a whole-tree fixed-string scan.
+        main_headers = {"%d.%d.%d" % v for v in self.main_changelog_versions()}
+        added = self.versions_this_change_adds()
+        for version in added:
+            with self.subTest(version=version):
+                self.assertNotIn(version, main_headers,
+                                 "%s already names an entry on origin/main" % version)
+        if added:
+            return
+        # Nothing new is published here: prove the premise on the versions this
+        # file carries, so the empty case is checked rather than vacuous.
+        for version in ("%d.%d.%d" % v for v in self.changelog_versions()[:4]):
+            with self.subTest(version=version, carried=True):
+                self.assertIn(version, main_headers,
+                              "%s is not on origin/main, so this checkout ships it "
+                              "unpublished" % version)
+
+    def test_the_changelog_is_strictly_monotonic_where_this_change_speaks(self):
+        # Newest-first, always. Below main's newest the file is main's own
+        # legacy history -- it already carries one deliberate reversal (1.0.0
+        # then a v2.0.0 generation roll) -- and rewriting it is not this task's.
+        versions = self.changelog_versions()
+        self.assertGreaterEqual(len(versions), 4)
+        for earlier, later in zip(versions[:4], versions[1:4]):
+            self.assertGreater(earlier, later,
+                               "the four T-19 entries must be newest-first and "
+                               "distinct: %s" % (versions[:4],))
+        if not self.git_ok:
+            self.skipTest("no origin/main in this checkout to compare against")
+        main_top = max(self.main_changelog_versions())
+        if not self.adds_release():
+            self.assertLessEqual(versions[0], main_top,
+                                 "a checkout that adds no version cannot sit "
+                                 "above main's newest")
+            return
+        self.assertGreater(versions[0], main_top,
+                           "the newest entry must sit above main's newest")
+        owned = [v for v in versions if v >= main_top]
+        for earlier, later in zip(owned, owned[1:]):
+            self.assertGreaterEqual(earlier, later,
+                                     "the CHANGELOG is newest-first: %s then %s"
+                                     % (earlier, later))
+
+    def test_no_version_names_two_different_changes(self):
+        # D2 in its own words: "the same number now names three different
+        # changes". main's own file repeats one number per entry for a single
+        # task, so the rule is pinned against what this change owns: the four
+        # T-19 blocks are four distinct numbers and none of the versions this
+        # change ADDS may already name an entry on main.
+        t19 = self.changelog_versions()[:4]
+        self.assertEqual(len(set(t19)), 4,
+                         "the four T-19 entries must not share a version: %s" % t19)
+        if not self.git_ok:
+            self.skipTest("no origin/main in this checkout to compare against")
+        main_headers = set(self.main_changelog_versions())
+        added = [tuple(int(p) for p in v.split("."))
+                 for v in self.versions_this_change_adds()]
+        if not added:
+            # Nothing new: every number at the top of this file must already
+            # name an entry on main, so no number is used twice.
+            for version in t19:
+                self.assertIn(version, main_headers,
+                              "%s is not on main, so this checkout ships an "
+                              "unpublished version" % (version,))
+            return
+        for version in added:
+            self.assertNotIn(version, main_headers,
+                             "%s already names an entry on origin/main" % (version,))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

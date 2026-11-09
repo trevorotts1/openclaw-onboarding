@@ -1817,7 +1817,15 @@ TRIGGER (case-insensitive) — the incoming owner message contains ANY of:
   "pitch our new offer" or "present the Q3 numbers" is NOT a presentation build. Route only on
   presentation/deck/slide-specific forms above, including "pitch deck" and "presentation deck".)
 
-WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these three steps, in order — nothing before them:
+COUNCIL ASK EXCEPTION (narrow): if the message is an explicit request to convene or consult
+the Council of Wise Elders — for example "ask my Council of Wise Elders", "ask the council",
+"take this decision to the council", "review this plan with the council", or "ask the
+<named elder> seat" — this reflex does NOT fire. Run Skill 77's Council front door first,
+open a NEW session, and send the owner the exact `Chamber link:` line. If the same message
+also asks for a presentation build, route that separate build through STEP 1 AFTER the Council
+ask is handled. A message that only mentions a deck/slide is still a presentation request.
+
+WHEN TRIGGERED (and not a Council ask) your FIRST and ONLY action is EXACTLY these three steps, in order — nothing before them:
 
   ‼ Your VERY FIRST tool call is the STEP 1 mc-route.sh helper below — literally the first thing you do.
   Do NOT read any file, do NOT run sessions_list, do NOT "check" or "verify the department

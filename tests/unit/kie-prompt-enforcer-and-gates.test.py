@@ -2,10 +2,13 @@
 """KIE prompt rule 12 (owner order 2026-10-05): one shared Python enforcer, no separate band anywhere.
 
 Two halves:
-  * the enforcer itself (shared-utils/kie_prompt_enforcer.py): 79 percent rejected naming the chars to ADD,
-    95 and 100 percent pass, 101 percent rejected naming the chars to CUT, verbatim fields exempt from the
-    floor, unknown limit has no floor, the 3-try rewrite loop and its escalation, fail closed without the
-    adapter. It runs the REAL Skill 74 adapter against its registry snapshot (empty HOME, no key).
+  * the enforcer itself (shared-utils/kie_prompt_enforcer.py, a thin surface over the ONE
+    canonical policy shared-utils/prompt_policy.py): 79 percent rejected naming the chars to
+    ADD, 94 percent rejected (the removed warning-only path), 96 and 100 percent pass, 101
+    percent rejected naming the chars to CUT, verbatim fields exempt from the floor, an
+    UNKNOWN limit REFUSES a pass, the 3-try rewrite loop and its escalation, fail closed
+    without the adapter. It runs the REAL Skill 74 adapter against its registry snapshot
+    (empty HOME, no key).
   * the declared gate list (shared-utils/kie_prompt_gates.json), checked structurally (ast and json walks, no text
     search): (a) no declared gate holds a numeric character band under any name (a len(...) compared with a literal,
     a band-named integer constant, a min/max/floor/ceiling key with a number); (b) a gate that imports the enforcer
@@ -41,14 +44,21 @@ class TestEnforcer(unittest.TestCase):
         v = K.check(M, "x" * (MAX * 79 // 100))
         self.assertFalse(v["ok"])
         self.assertEqual(v["status"], "BELOW_FLOOR")
-        self.assertEqual(v["add"], 200)
-        self.assertIn("ADD at least 200", v["message"])
+        self.assertEqual(v["add"], 3200)  # to the strict 95 percent floor, not the old 80 percent
+        self.assertIn("ADD at least 3200", v["message"])
 
-    def test_floor_95_and_100_percent_pass(self):
-        self.assertTrue(K.check(M, "x" * 16000)["ok"])  # 80 percent floor passes with a target warning
-        self.assertEqual(K.check(M, "x" * 16000)["status"], "BELOW_TARGET")
-        self.assertEqual(K.check(M, "x" * 19000)["status"], "OK")
-        self.assertEqual(K.check(M, "x" * 20000)["status"], "OK")
+    def test_owner_rule_12_80_to_95_percent_warns_and_expands(self):
+        # Owner order 2026-10-05 (kie-common-rules.md section 12): below 80 percent rejects;
+        # 80 to below 95 percent PASSES with the characters to add; 95 to 100 percent passes.
+        v = K.check(M, "x" * 16000)  # 80 percent
+        self.assertTrue(v["ok"])
+        self.assertEqual(v["status"], "BELOW_TARGET")
+        v = K.check(M, "x" * 18800)  # 94 percent
+        self.assertTrue(v["ok"])
+        self.assertEqual(v["status"], "BELOW_TARGET")
+        self.assertEqual(K.check(M, "x" * 19200)["status"], "PASS")  # 96 percent
+        self.assertEqual(K.check(M, "x" * 19000)["status"], "PASS")
+        self.assertEqual(K.check(M, "x" * 20000)["status"], "PASS")
 
     def test_101_percent_rejected_with_chars_to_cut(self):
         v = K.check(M, "x" * (MAX * 101 // 100))
@@ -61,9 +71,10 @@ class TestEnforcer(unittest.TestCase):
         self.assertTrue(K.check(M, "a short spoken script", "verbatim")["ok"])
         self.assertFalse(K.check(M, "x" * (MAX + 1), "verbatim")["ok"])
 
-    def test_unknown_limit_has_no_floor(self):
+    def test_unknown_limit_has_no_floor_and_cannot_pass(self):
         v = K.check("no-such-kie-model-xyz", "tiny")
-        self.assertTrue(v["ok"], v)
+        self.assertFalse(v["ok"], v)  # an UNKNOWN maximum never silently PASSES
+        self.assertEqual(v["status"], "UNKNOWN_MAX")
 
     def test_require_and_problems(self):
         with self.assertRaises(K.PromptBudgetError):
@@ -121,7 +132,7 @@ class TestEnforcer(unittest.TestCase):
             K.clear_cache()
             self.assertTrue(K.check("m", "x" * 19000)["ok"])
             low, high = K.check("m", "y" * 15000), K.check("m", "z" * 20200)
-            self.assertEqual((low["status"], low["add"]), ("BELOW_FLOOR", 1000))
+            self.assertEqual((low["status"], low["add"]), ("BELOW_FLOOR", 4000))
             self.assertEqual((high["status"], high["cut"]), ("ABOVE_MAX", 200))
             self.assertEqual(os.path.getsize(counter), 1)
         finally:
@@ -308,6 +319,13 @@ def imports_enforcer(src):
                for n in ast.walk(ast.parse(src)))
 
 
+def imports_policy(src):
+    return any((isinstance(n, ast.Import) and any(a.name == "prompt_policy" for a in n.names))
+               or (isinstance(n, ast.ImportFrom) and n.module == "prompt_policy")
+               or (isinstance(n, ast.Constant) and n.value == "prompt_policy.py")
+               for n in ast.walk(ast.parse(src)))
+
+
 def undeclared_prompt_length_checks(src):
     """Discovery: a prompt length compared with a literal, or a prompt-length constant (any scope)."""
     tree, out = ast.parse(src), []
@@ -354,7 +372,9 @@ def gate_violations(root=REPO, decl=DECL):
     direct = list(decl["gate_modules"])
     delegating = decl["delegating_gate_modules"]
     adapter = decl["adapter_direct_gate_modules"]
-    for rel in direct + [d["path"] for d in delegating] + [d["path"] for d in adapter]:
+    policy_direct = decl.get("policy_gate_modules") or []
+    policy_calls = set(decl.get("policy_calls") or [])
+    for rel in direct + [d["path"] for d in delegating] + [d["path"] for d in adapter] + policy_direct:
         src = _read(rel, root)
         ok_names = set(allowed.get(rel, []))
         for line, key in band_findings(src):
@@ -374,6 +394,12 @@ def gate_violations(root=REPO, decl=DECL):
             bad.append(f"{rel}: does not import shared-utils/kie_prompt_enforcer.py")
         elif not calls_attr(src, ALIASES, ENF_CALLS):
             bad.append(f"{rel}: imports the enforcer but never calls it")
+    for rel in policy_direct:
+        src = _read(rel, root)
+        if not imports_policy(src):
+            bad.append(f"{rel}: does not import shared-utils/prompt_policy.py")
+        elif not calls_attr(src, {"POLICY", "prompt_policy"}, policy_calls):
+            bad.append(f"{rel}: imports the canonical policy but never calls it")
     for d in delegating:
         if not calls_attr(_read(d["path"], root), {d["via"]}, set(d["calls"])):
             bad.append(f"{d['path']}: never calls {d['via']}.{'/'.join(d['calls'])}")
@@ -396,7 +422,8 @@ def gate_violations(root=REPO, decl=DECL):
 
 def discovery_violations(root=REPO, decl=DECL):
     declared = set(decl["gate_modules"]) | {d["path"] for d in decl["delegating_gate_modules"]} | \
-        {d["path"] for d in decl["adapter_direct_gate_modules"]} | {e["path"] for e in decl["exemptions"]}
+        {d["path"] for d in decl["adapter_direct_gate_modules"]} | {e["path"] for e in decl["exemptions"]} | \
+        set(decl.get("policy_gate_modules") or [])
     declared.add(decl["enforcer"])
     declared |= set(decl.get("enforcer_copies", []))
     bad = []
@@ -454,7 +481,8 @@ class TestMutationProofs(unittest.TestCase):
         return root
 
     def _only(self, rel):
-        one = dict(DECL, gate_modules=[rel], delegating_gate_modules=[], adapter_direct_gate_modules=[], data_files=[])
+        one = dict(DECL, gate_modules=[rel], delegating_gate_modules=[], adapter_direct_gate_modules=[],
+                   data_files=[], policy_gate_modules=[])
         return one
 
     def test_a_band_reintroduced_under_a_new_name_is_caught(self):
@@ -482,6 +510,14 @@ class TestMutationProofs(unittest.TestCase):
         root = self._mutated(rel, lambda s: s.replace("kie_prompt_enforcer", "other_module"))
         bad = gate_violations(root, self._only(rel))
         self.assertTrue(any("does not import" in b for b in bad), bad)
+
+    def test_a_policy_import_without_a_call_is_caught(self):
+        rel = "71-blackceo-signature-page/scripts/validate_prompt.py"
+        root = self._mutated(rel, lambda s: re.sub(r"POLICY\.(freeze|band_numbers)\(",
+                                                   "(lambda *a, **k: {})( ", s))
+        one = dict(self._only(rel), gate_modules=[], policy_gate_modules=[rel])
+        bad = gate_violations(root, one)
+        self.assertTrue(any("canonical policy but never calls it" in b for b in bad), bad)
 
     def test_a_band_key_in_a_data_file_is_caught(self):
         rel = "23-ai-workforce-blueprint/templates/role-library/graphics/connection-manifest.json"

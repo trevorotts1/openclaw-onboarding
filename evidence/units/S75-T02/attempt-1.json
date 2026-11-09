@@ -1,0 +1,43 @@
+{
+  "dependencies": {
+    "branch": "s75x/receipt-S75-T02",
+    "measured_tip": "988dd6b114b89359bef5e2e09eed2af8abdb5975",
+    "evidence_contract": "six non-empty top-level keys: dependencies, independent_checker, repository_gate, candidate, base, head_sha",
+    "prior_artefacts_on_branch": [
+      "evidence/units/S75-T02/receipt.json",
+      "evidence/units/S75-T02/arbiter-receipt.json",
+      "evidence/units/S75-T02/attempt-candidate-1.json",
+      "evidence/units/S75-T02/attempt-candidate-2.json"
+    ],
+    "qc_receipt": "<CONTROL>/qc/S75-T02.cb893281b5af64c410f844ce200bba2823376ce7.opus.json",
+    "qc_receipt_note": "The receipt is on the control disk and is not tracked in this repository.",
+    "written_at": "2026-10-28T09:38:46Z"
+  },
+  "independent_checker": {
+    "checker_id": "fresh-qc-opus-chain-lane-S75-T02",
+    "checker_model": "route=opus-chain; served=not configured in this lane",
+    "source_receipt": "<CONTROL>/qc/S75-T02.fa6fd24.qc-opus-chain.json",
+    "source_receipt_location": "<CONTROL>/qc, not tracked in this repository",
+    "receipt_head": "fa6fd24c8060dede348019827e42d085fbbc4e3e",
+    "receipt_verdict": "PASS",
+    "note": "checker_id and checker_model are copied verbatim from the receipt whose head equals this branch tip. The previous citation pointed at S75-T02.cb893281....opus.json, whose head is 92785aa and not this tip, and whose checker field merely repeats the model name."
+  },
+  "repository_gate": {
+    "check": "json content scanned for control-disk path prefixes",
+    "users_occurrences": 0,
+    "volumes_occurrences": 0,
+    "result": "users=0 volumes=0"
+  },
+  "candidate": {
+    "head": "988dd6b114b89359bef5e2e09eed2af8abdb5975",
+    "head_sha": "988dd6b114b89359bef5e2e09eed2af8abdb5975",
+    "self_reference_note": "A commit cannot name the commit that carries it; head therefore names the measured branch tip, and the commit carrying this file is created after that measurement.",
+    "written_at": "2026-10-28T09:38:46Z"
+  },
+  "base": {
+    "sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "note": "merge-tree is not measurable from this shallow clone; that is a limitation of the clone, not a fact about main."
+  },
+  "head_sha": "988dd6b114b89359bef5e2e09eed2af8abdb5975",
+  "checker_citation_corrected": true
+}

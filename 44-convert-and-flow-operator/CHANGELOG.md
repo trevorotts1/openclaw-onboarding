@@ -1,3 +1,164 @@
+## [v2.1.42] - 2026-11-04 - jsonschema activation for the siglaunch normalizer and processor
+
+`tools/siglaunch/normalizer/normalizer.py` and `tools/siglaunch/processor/processor.py` now put the shared pydeps folder
+(`<root>/pydeps/py<X.Y>/`, the `pip install --target` folder for an externally-managed Python) on `sys.path` before they
+`import jsonschema`, using the same byte-identical stdlib-only snippet as Skill 79's `validate_checkout.py`. No behaviour
+changes on a box where jsonschema is already importable. `SKILL.md` gains an operator note (never `--break-system-packages`,
+never a venv, never tell the client). `skill-version.txt` and the `SKILL.md` frontmatter move v2.1.41 -> v2.1.42.
+
+## [v2.1.40] - 2026-10-28 - chore(train11): version stamp for the twelve-unit train
+
+## [v2.1.39] - 2026-10-28 - rebase lane: version stamp above main for the changelog merge
+
+Main is already at v2.1.38, so this merge keeps both changelog entry sets and carries a stamp above main's. No engine, CLI, template, guard or QC script behaviour changed.
+
+## [v2.1.38] - 2026-10-28 - batch 20261028-0631: the four changelog stamps for this skill, landed in one lane
+
+Four changelog-only units landed together (`fix/s38-44-changelog` @ `8278e0d8`, `-v2` @ `98f0dae9`, `-v3` @ `52a1f2b9`, `-v4` @ `2c1a4054`). They are cumulative edits to this one file; the v2.1.36 and v2.1.37 entries below are carried verbatim from the v4 branch. No engine, CLI, template or QC script behaviour changed in this batch.
+
+### Version lockstep
+
+`skill-version.txt` moves v2.1.37 -> v2.1.38 and the `SKILL.md` frontmatter follows. No other file in the skill was touched by the version stamp.
+
+## [v2.1.37] - 2026-10-27 - batch 20261027-2242: the automation-template schema lane rebuilt on main, plus a real template-count pin
+
+The schema lane landed once before on a base that could not merge, so it was rebuilt on current main and paired with the count pin the guard was missing. Two commits, not one: the rebuild is `33825d414be3faec7eb2fbf261aaa07712afedb5` and the count pin is `049dd8a3962c8a8977027c4d2642fdbf565f85db`. Both landed on main in `135cf961114db06097fa3ad8222dd44be1ddf9e0`.
+
+### The template schema, now on a base that merges
+
+The automation-template library carries a machine-readable layer: every template declares `schema_version` and `kind`, the buildable set is expressed as graphs, and the rest are recorded as prose-only with a reason naming a fact the prose never gives. Sixteen templates are buildable and thirty-three are prose-only of forty-nine. The catalog index no longer counts the two non-template data files, so `templateCount` is forty-nine and the guard excludes `automation-build.schema.json` and `text-sets.json` from the template set. Thirteen prose-only reasons were refined to the prose that actually exists; nothing was invented to fill a gap.
+
+### The count is pinned on both sides
+
+`scripts/check-funnel-automation-library-drift.py` carries one constant, `EXPECTED_TEMPLATE_COUNT = 49`, checked against **both** the index length and the disk count, and its success line derives the printed number from that constant instead of a literal. The pin value moved with the measure: fifty-one `.json` files under the old guard rule at `7f9eb460adc6fa0778a304bf3959923217c5096f`, forty-nine templates here, the difference being the two files the guard now excludes by name. Stated plainly: main's previous one-sided disk pin already caught deleting a template file together with its index row, because the disk count moved either way. What is new is the index-side check, the derived message, `tests/unit/funnel-automation-library-drift-guard.test.py`, and one line wiring that test into `scripts/ci/fast-guards.d/funnel-automation-libraries-guard.sh`. The regression test covers four cases — clean tree, file-only loss, index-only loss and symmetric loss — and it fails when the pin is removed, when the pin is set to fifty-one, or when **both** count checks are dropped; dropping only one side still passes, because the other side's pin and the index-versus-disk set comparison cover the same loss.
+
+## [v2.1.36] - 2026-10-27 - batch 20261027-2022: two test-only units (portable mktemp template pinned, graph fixture presence asserted)
+
+Two test-only units shipped between v2.1.35 and this stamp. No engine, CLI, template or QC script behaviour changed in this batch; within this skill the only non-test files touched are the two version markers.
+
+### The portable mktemp template is pinned by a test
+
+`qc-built-workflow.sh` writes its export through `mktemp "${TMPDIR:-/tmp}/qc-wf-export-XXXXXX"`. BSD `mktemp` requires the Xs to be the last characters of the template, so the earlier `...XXXXXX.json` form created that literal shared path instead of a unique one. The script calls `mktemp` once and installs `trap 'rm -f "$TMP"' EXIT`, so one run does not collide with itself; the failure appears when that literal path already exists — from an interrupted earlier run, another checkout or a parallel job — and the call then dies with `mktemp: mkstemp failed on <path>: File exists`, rc 1. The pre-existing suite did not catch this: with the old form restored, the fifty pre-existing tests in `tests/test_qc_built_workflow.py` stay green and the only failure is the new test itself (50 passed, 1 failed). Which assert it fails on depends on the restored form, so both are named: the form that actually shipped before the fix was `mktemp /tmp/qc-wf-export-XXXXXX.json`, unquoted and with a suffix after the Xs, and restoring it fails the test at its own template lookup (`no quoted mktemp template found`), before any `mktemp` runs; a quoted template that still carries a suffix fails one step later, at the second call, with `mktemp: mkstemp failed on <path>: File exists`. `tests/test_qc_built_workflow.py::test_export_temp_template_is_portable` (f589ff0f8) reads the quoted template out of the script with a regex rather than restating it, points `TMPDIR` at `tmp_path`, runs `mktemp` twice and requires two distinct paths, so a future edit that puts a suffix after the Xs now fails the suite.
+
+### A missing graph fixture is not a malformed one
+
+`validate_graph` maps both an absent export and an unparseable one to rc 2 with verdict UNVERIFIED. A case pointed at a path that does not exist would therefore look like a passing malformed-input test while proving nothing. cc273cc1 hoists the parametrize list in `tests/test_validate_graph.py` into a module-level `GRAPH_CASES` and adds `test_every_named_fixture_exists`, which asserts every fixture the cases name is actually present. `unparseable.badjson` is still exercised by the existing cases and still returns rc 2 with verdict UNVERIFIED.
+
+### Version lockstep
+
+`skill-version.txt` moves v2.1.35 -> v2.1.36 and the `SKILL.md` frontmatter follows. No other file in the skill was touched by the version stamp.
+
+## [v2.1.36] - 2026-10-27 - batch 20261027-2022: two test-only units (portable mktemp template pinned, graph fixture presence asserted)
+
+Two test-only units shipped between v2.1.35 and this stamp. No engine, CLI, template or QC script behaviour changed in this batch; the only non-test files touched are the two version markers.
+
+### The portable mktemp template is pinned by a test
+
+`qc-built-workflow.sh` writes its export through `mktemp "${TMPDIR:-/tmp}/qc-wf-export-XXXXXX"`. BSD `mktemp` requires the Xs to be the last characters of the template, so the earlier `...XXXXXX.json` form created that literal shared path instead of a unique one. The script calls `mktemp` once and installs `trap 'rm -f "$TMP"' EXIT`, so one run does not collide with itself; the failure appears when that literal path already exists — from an interrupted earlier run, another checkout or a parallel job — and the call then dies with `mktemp: mkstemp failed on <path>: File exists`, rc 1. The pre-existing suite did not catch this: with the old form restored, `tests/test_qc_built_workflow.py` stays green (50 passed, 1 failed, and the single failure is the new test itself, which fails because the old unquoted form does not match its quoted-template regex). `tests/test_qc_built_workflow.py::test_export_temp_template_is_portable` (f589ff0f8) reads the quoted template out of the script with a regex rather than restating it, points `TMPDIR` at `tmp_path`, runs `mktemp` twice and requires two distinct paths, so a future edit that puts a suffix after the Xs now fails the suite.
+
+### A missing graph fixture is not a malformed one
+
+`validate_graph` maps both an absent export and an unparseable one to rc 2 with verdict UNVERIFIED. A case pointed at a path that does not exist would therefore look like a passing malformed-input test while proving nothing. cc273cc1 hoists the parametrize list in `tests/test_validate_graph.py` into a module-level `GRAPH_CASES` and adds `test_every_named_fixture_exists`, which asserts every fixture the cases name is actually present. `unparseable.badjson` is still exercised by the existing cases and still returns rc 2 with verdict UNVERIFIED.
+
+### Version lockstep
+
+`skill-version.txt` moves v2.1.35 -> v2.1.36 and the `SKILL.md` frontmatter follows. No other file in the skill was touched by the version stamp.
+
+## [v2.1.35] - 2026-10-27 - batch 20261027-1826: five units (schema graph, portable mktemp, malformed-JSON fixture, UNINITIALISED skip, status field shift)
+
+Five units shipped between v2.1.28 and this stamp. The merge room assigns the version; the entries below are carried verbatim from the batch's pending changelog.
+
+### Machine-readable template schema and generated counts
+
+The template library gained a machine-readable layer. Every template now declares a
+`schema_version` and a `kind`, the buildable set is expressed as graphs rather than
+prose where the prose genuinely states the whole graph, and the remaining templates
+are recorded as prose-only with a reason that names a fact the prose never gives.
+The conversion was not taken on trust: three templates were converted, then withdrawn
+again when two independent lanes disagreed on whether their prose could carry the
+graph, and the census settled at sixteen buildable and thirty-three prose-only of
+forty-nine. The three withdrawal reasons were themselves narrowed twice after review
+showed the first drafts claimed gaps the markdown actually states. `catalog-index.json`
+also carried two non-template data files and reported fifty-one entries; it now reports
+forty-nine, matching what `apply_template_schema.py` and `test_template_graphs.py`
+already excluded.
+
+### Portable temp-file template in the build gate
+
+`qc-built-workflow.sh` created its export file with `mktemp /tmp/qc-wf-export-XXXXXX.json`.
+BSD `mktemp` requires the Xs to be the last characters of the template; with a suffix
+after them it creates that literal path instead of a unique one, so the first invocation
+in a run succeeded and later ones died with `File exists`. The suite was therefore red on
+macOS and green on Linux, and the same tree could be reported green or red depending on
+whether the literal file happened to exist. The template is now
+`${TMPDIR:-/tmp}/qc-wf-export.XXXXXX`, and a test extracts that template from the script
+and runs it twice, requiring two distinct paths, so the behaviour is pinned rather than
+the symptom.
+
+### Malformed-JSON fixture kept out of the tracked `.json` set
+
+A graph-integrity test needs a deliberately unparseable fixture, and
+`tests/fixtures/graph/unparseable.json` was exactly that. The repo's static-invariants
+step parses every tracked `.json` file and fails closed on any non-empty one that will
+not parse, so a fixture doing its job turned the whole batch red. The fixture is
+unchanged in content and renamed to `unparseable.badjson`, outside the glob, with the
+three references in `test_validate_graph.py` following it. Nothing globs the graph
+fixtures directory, so coverage is unchanged, and the fixture still bites: the validator
+still returns rc 2 with verdict UNVERIFIED, and replacing the fixture with valid JSON
+turns the test red.
+
+### Checklist status reader: UNINITIALISED is a skip, not a failure
+
+The checklist's status reader accepted only PASS, NEEDS-MIGRATION and FAIL, so the
+UNINITIALISED status file written by the gates read as "exited 0 but wrote no readable
+status file" and a bare box reported red. The reader now accepts UNINITIALISED only when
+both counts are zero and reports it as SKIP, explicitly neither a pass nor a failure,
+while UNINITIALISED carrying failures or legacy playbooks stays red and unknown,
+malformed, missing or non-integer input stays red. On a bare box the run moved from
+twelve failures to nine with exactly three FAIL-to-SKIP lines and nothing else changed;
+a broken or configured-empty box is unchanged. The same script also failed to parse at
+all under macOS bash 3.2, because it placed a here-document inside a command
+substitution: the python program now feeds `read -r -d ''` and the substitution pipes
+`printf` into the interpreter, with the program text unchanged. Every tracked shell file
+in the repo now parses under bash 3.2.
+
+### Status-reader field shift on an empty list
+
+`qc_read_status` split its five fields on tab with `IFS=$'\t'`. Tab is IFS whitespace,
+so an empty `legacy_files` field collapsed and every field after it shifted left: on a
+clean PASS status file with no legacy playbooks the workflows directory landed in
+`QC_ST_FILES` and `QC_ST_DIR` was empty, which also stripped the basename off the
+directory before recording it. The separator is now U+001F, which is not IFS whitespace,
+in both the producer and the reader. A test case covers a status file whose
+`legacy_files` is empty and asserts the directory field survives intact; it fails against
+the previous tree and passes on this one.
+
+## [v2.1.28] - 2026-10-27 - chore(batch-20261027-0702): bump skill 44 to v2.1.28 for T-53
+
+- **Batch 20261027-0702 version stamp, skill 44 v2.1.27 -> v2.1.28.** T-53 (`pb/PBB-916-wave1/T-53` @ `92a7c7f`) touches 44-convert-and-flow-operator outbound sender and readback (3 files). No skill code changed in this commit; version stamp only.
+
+## [v2.1.27] - 2026-10-27 - chore(batch-20261027-0516): version stamp for T-15 bonus access adapter call site
+
+- **Batch 20261027-0516 version stamp, skill 44 v2.1.26 -> v2.1.27.** T-15 adds the bonus access adapter production call site in 44-convert-and-flow-operator/tools/bonus_access_decision.py. No skill code changed in this commit; version stamp only.
+
+## [v2.1.26] - 2026-10-26 - version bump above main-carried v2.1.25 (PBB-833R COMBINE7)
+
+Main now carries v2.1.25, so this combine re-bumps one patch above it
+to satisfy `G3 — skill content change requires skill-version.txt bump`.
+Markers only; no code change.
+
+- skill-version.txt, SKILL.md frontmatter and this CHANGELOG agree on v2.1.26.
+
+## [v2.1.25] - 2026-10-24 - build-only, never a responder (PBB-115 T-19 / C-19)
+
+Adds the missing half of the D-15 ownership conflict: this skill built native GHL workflows that could answer, while Skill 38 declares it owns every inbound conversation. The rule is now stated where the build happens.
+
+- **SKILL.md** gains one closing pointer: this skill builds and QC's the GHL workflow that renders interactive controls, and **never answers a conversation or an interactive step**. A native GHL workflow node is a build artifact, not a responder. The single-owner contract — OpenClaw inbound by default, with rendered controls, provider callbacks, free text and stale taps all resolving to one owner, and any contract naming two responders refused — lives at `38-conversational-ai-system/launch/interactive-owner-contract.md`.
+- **No code change.** No engine, CLI, template or QC script behaviour changes; the pointer is a documentation boundary, and the machine proof lives in Skill 38 (`scripts/qc-interactive-owner.sh`, 40 tests) which asserts this line is present and that this skill points at the contract.
+- **Version lockstep.** `skill-version.txt` and the SKILL.md frontmatter both move v2.1.24 -> v2.1.25. Existing suites unchanged: `pytest tests` 84 passed.
+
+
+
 ## [v2.1.20] - 2026-10-19 - capability-gate breadth suite
 
 - adds tests/test_capability_breadth.py exercising the capability gate across 140 operations
@@ -25,6 +186,10 @@ Markers only; no code change.
 - credential precedence and quoted-value behavior unchanged
 
 # Changelog — convert-and-flow-operator (Skill 44)
+
+## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
+
+No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.
 
 ## [2.1.18] - 2026-10-19 - fix(ghl): bind the V4 route/enable probe to the call tenant
 
@@ -1131,7 +1296,3 @@ by an Opus diagnostic 2026-06-11. These are NEW bugs — disjoint from the 1.0.3
   platform/vps/ (venv at /data/.openclaw/tools/..., owner-nudge on expired token).
 - Client-facing plain-language auto-re-grab disclosure in INSTALL.md (binding transparency).
 - qc-convert-and-flow.sh with assertions for all acceptance criteria.
-
-## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
-
-No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.

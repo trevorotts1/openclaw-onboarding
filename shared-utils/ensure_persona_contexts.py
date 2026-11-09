@@ -9,10 +9,14 @@ boxes provisioned earlier never had it. Every update/roll runs this.
   ensure_persona_contexts.py [--app DIR] [--oc-root DIR] [--check]
 
 Rules: keyed by each company_id in use (workspaces table, else MC_COMPANY_ID);
-the company config must carry that same id, its slug is the context slug; an
-existing VALID entry is never overwritten; nothing is guessed (no discovery by
-newest folder); the file is rewritten atomically (0600) and re-read to verify.
-Never prints env values.
+validity is the Command Center's own rule (personaCompanyContext): a company
+config with no id fields, or whose id fields ALL equal the key, is valid; one
+whose id fields name a different company is not. A config therefore serves ONE
+company id: this script never adds an id to a config, and a second id that maps
+to the same company folder is reported, never "fixed" by adding it. The config's
+slug is the context slug; an existing VALID entry is never overwritten; nothing
+is guessed (no discovery by newest folder); the file is rewritten atomically
+(0600) and re-read to verify. Never prints env values.
 
 Exit: 0 present-valid or written, 3 missing/undetermined (the roll check fails
 loudly), 4 no Command Center .env.local on this box (not applicable).
@@ -27,7 +31,12 @@ KEY = "MC_PERSONA_COMPANY_CONTEXTS_JSON"
 
 
 def _cfg_ids(cfg):
-    return [cfg[k] for k in ("companyId", "company_id", "id") if k in cfg]
+    return [cfg[k] for k in ("company_id", "companyId", "id") if isinstance(cfg.get(k), str) and cfg[k].strip()]
+
+
+def _cfg_ok(cfg, cid):
+    """The Command Center's rule: every id the config carries must equal cid (an id-less config is bound by the context map)."""
+    return all(i == cid for i in _cfg_ids(cfg))
 
 
 def _cfg_slug(cfg, root):
@@ -45,7 +54,7 @@ def _valid(ctx, cid):
         if not (root.is_dir() and conf.is_file() and Path(ctx["personaCatalog"]).is_file()):
             return False
         cfg = json.loads(conf.read_text())
-        return bool(ctx.get("companySlug")) and cid in _cfg_ids(cfg)
+        return bool(ctx.get("companySlug")) and _cfg_ok(cfg, cid)
     except (KeyError, OSError, ValueError, TypeError, AttributeError):
         return False
 
@@ -110,16 +119,15 @@ def run(app, oc_root, check_only=False):
     except ValueError:
         return 3, "company config is not valid JSON: %s" % conf
     slug = _cfg_slug(cfg, root)
-    wrote, bad = [], []
-    for cid in todo:
-        if cid in _cfg_ids(cfg):
-            contexts[cid] = {"companyRoot": str(root), "companyConfig": str(conf),
-                             "companySlug": slug, "personaCatalog": str(catalog.resolve())}
-            wrote.append(cid)
-        else:
-            bad.append(cid)
-    if bad:
-        return 3, "company config %s does not carry company id(s) %s -- nothing written for them" % (conf, ", ".join(bad))
+    wrote = [i for i in todo if _cfg_ok(cfg, i)]
+    bad = [i for i in todo if i not in wrote]
+    refused = ("company config %s names a different company than id(s) %s -- nothing written for them "
+               "(never add a second id to a config; give each company its own company folder and config)" % (conf, ", ".join(bad)))
+    if not wrote:
+        return 3, refused
+    for cid in wrote:
+        contexts[cid] = {"companyRoot": str(root), "companyConfig": str(conf),
+                         "companySlug": slug, "personaCatalog": str(catalog.resolve())}
     lines = [l for l in envf.read_text().split("\n") if l.split("=", 1)[0].strip() != KEY]
     while lines and not lines[-1].strip():
         lines.pop()
@@ -130,9 +138,10 @@ def run(app, oc_root, check_only=False):
     os.chmod(tmp, 0o600)
     os.replace(tmp, envf)
     after = json.loads(read_env(envf)[KEY])
-    if not all(_valid(after.get(i) or {}, i) for i in ids):
+    if not all(_valid(after.get(i) or {}, i) for i in wrote):
         return 3, "wrote but verification FAILED"
-    return 0, "written for %d company id(s); verified (restart Command Center to load it)" % len(wrote)
+    done = "written for %d company id(s); verified (restart Command Center to load it)" % len(wrote)
+    return (3, done + "; " + refused) if bad else (0, done)
 
 
 def main(argv=None):

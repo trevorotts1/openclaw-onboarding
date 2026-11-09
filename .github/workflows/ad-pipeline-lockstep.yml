@@ -13,7 +13,7 @@ name: FB/IG ad pipeline lockstep (Skill 48)
 #   4. GOOD/BAD fixture self-test  — the foreman ATTESTS the GOOD run through PUBLISH
 #                                    (exit 0) and HARD-ABORTS the BAD bypass run
 #                                    (AF-FBAD-DEP-SKIPPED, exit 2) so the gate provably bites.
-#   5. qc-assert-no-client-names.sh — fleet-wide privacy invariant.
+#   5. (client-name check removed from CI on Trevor's order, 2026-11-02.)
 #   6. qc-facebook-ad-generator.sh — install QC stays green (no regression).
 
 on:
@@ -29,6 +29,7 @@ on:
       - "48-facebook-ad-generator/scripts/test_ad_recovery.py"
       - "48-facebook-ad-generator/scripts/cc_board.py"
       - "48-facebook-ad-generator/scripts/test_cc_board.py"
+      - "48-facebook-ad-generator/scripts/test_kie_adapter_resultjson_decode.py"
       - "scripts/unpark-ad-run.sh"
       - "48-facebook-ad-generator/test-fixtures/make-ad-fixtures.sh"
       - "48-facebook-ad-generator/test-fixtures/run-foreman-stubbed.py"
@@ -50,6 +51,7 @@ on:
       - "48-facebook-ad-generator/scripts/test_ad_recovery.py"
       - "48-facebook-ad-generator/scripts/cc_board.py"
       - "48-facebook-ad-generator/scripts/test_cc_board.py"
+      - "48-facebook-ad-generator/scripts/test_kie_adapter_resultjson_decode.py"
       - "scripts/unpark-ad-run.sh"
       - "48-facebook-ad-generator/test-fixtures/make-ad-fixtures.sh"
       - "48-facebook-ad-generator/test-fixtures/run-foreman-stubbed.py"
@@ -167,13 +169,6 @@ jobs:
             exit 1
           fi
           echo "BAD bypass run HARD-ABORTED with AF-FBAD-DEP-SKIPPED (exit 2) as expected."
-
-      - name: qc-assert-no-client-names.sh — fleet privacy invariant (exit 0 required)
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/qc-assert-no-client-names.sh
-          echo "no-client-names: PASS."
 
       - name: qc-facebook-ad-generator.sh — install QC stays green (exit 0 required)
         shell: bash

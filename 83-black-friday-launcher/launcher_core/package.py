@@ -15,10 +15,11 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .constants import (
     COUNCIL_ENTRY_POINT,
+    COUNCIL_NO_ADVICE_SUMMARY,
     COUNCIL_SKILL_SLUG,
     DECIDED,
     FUNNEL_SKILL_SLUG,
@@ -35,9 +36,13 @@ from .constants import (
 )
 from . import checkout as checkout_module
 from . import council as council_module
+from . import image_plan as image_plan_module
+from . import intake as intake_module
+from . import launch_bridge
 from . import launch_plan as launch_plan_module
 from . import page_designs
 from . import route as route_module
+from .check_rules import delivery_units
 from .intake import offer_facts
 
 # A second page of a role that the route graph does not repeat. The piece is keyed by its slot
@@ -56,6 +61,59 @@ _RECEIPTS_REL = "delegation_receipts.jsonl"
 RECEIPT_SCHEMA_REF = "receipt.schema.json"
 RECEIPT_SCHEMA_VERSION = "1.1"
 RECEIPT_TYPE = "launcher.package.v1"
+
+# What a package claims to deliver. A full Black Friday launch must carry the shared
+# U-CONTRACT plan: the seasonal calendar and every planned email, text and automation.
+# Without a plan the package is pages only and says so, in the manifest and the receipt.
+DELIVERY_SCOPE_FULL = "full_launch"
+DELIVERY_SCOPE_PAGE_ONLY = "page_only"
+DELIVERY_LABELS = {
+    DELIVERY_SCOPE_FULL: "full Black Friday launch (calendar, emails, texts and automations "
+                         "delivered)",
+    DELIVERY_SCOPE_PAGE_ONLY: "page-only (no shared launch plan: the Black Friday calendar, "
+                              "emails, texts and automations are not part of this package)",
+}
+
+# A package that carries open page blockers is never labelled a full launch (CHK-17): a page-result's
+# own blockers (the order form is not built, the checkout pictures are placeholders) travel with it.
+DELIVERY_LABEL_DESIGN_ONLY = ("design-only (open page blockers: the pages are drawn but not finished; "
+                              "see each piece's blockers)")
+# Open until the native checkout install (CHK-01) ships; recorded on every package.
+SEAM_NATIVE_CHECKOUT_INSTALL = "native_checkout_install"
+
+# F06: installation and publication are separate stages, recorded separately from the
+# construction receipts. A package is only ever labelled with the stage the EVIDENCE
+# proves; a local or draft package is never relabelled installed or live.
+ACTIVATION_STATES = ("local_prepared", "draft_constructed", "installed", "published")
+ACTIVATION_RECORD_REL = "activation.json"
+ACTIVATION_LABELS = {
+    "local_prepared": "prepared locally (nothing installed and nothing published)",
+    "draft_constructed": "drafts constructed (saved as drafts; nothing live)",
+    "installed": "installed (native records read back; not published)",
+    "published": "published (the live page was re-read and its URL observed)",
+}
+_ACTIVATION_READBACK_ROUTES = ("GET /funnels/page/", "GET /funnels/funnel/fetch/")
+_INSTALL_FACTS = ("native_product_id", "native_price_id", "workflow_id",
+                  "order_form_step", "funnel_step_id")
+
+# ENF-03: the dispatch run this package is bound to. launch_bridge.run lays these down.
+DISPATCH_MANIFEST_REL = "dispatch/dispatch-manifest.json"
+LAUNCH_RECORD_REL = "launch.json"
+# ENF-07: launch_bridge.run writes the run's own report; a bound package takes its to_confirm and
+# landing_pages from it, never from the caller.
+DISPATCH_REPORT_REL = "dispatch-report.json"
+# ENF-09: landing_bridge.py writes bridge-receipt-<result stem>.json beside each landing result.
+BRIDGE_RECEIPT_DIR = "bridge-receipts"
+LANDING_REQUEST_ROLE = "landing"
+# launch_bridge.run writes this (the writer half is carried to U-products-03); a strict binding requires it,
+# so a changed entitlement basis or approval is caught. A non-strict run (found beside the pieces,
+# test_only intake) verifies it when present and records 'absent' otherwise.
+INTAKE_SNAPSHOT_REL = "intake-at-dispatch.json"
+DISPATCH_STATE_BOUND = "bound"
+DISPATCH_STATE_UNBOUND_FIXTURE = "unbound_fixture"
+_REQUEST_RESULT_KEYS = ("request_id", "input_hash", "status", "proof_class", "independent_review",
+                        "blockers", "author_session", "reviewer_session", "test_only")
+_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
 
 # Proof classes are separate facts, never one ladder collapsed into a status:
 # authored bytes, a draft installation, a test record, a live observation.
@@ -183,6 +241,12 @@ def _validate_piece(piece: Any, node: Dict[str, str], intake: Dict[str, Any]) ->
         raise PackageError("AF-LAUNCH-PKG-PIECE", f"{role}: unknown proof_class {proof!r}")
     if not isinstance(piece.get("independent_review"), bool):
         raise PackageError("AF-LAUNCH-PKG-PIECE", f"{role}: independent_review must be a boolean")
+    if piece["independent_review"] is True:
+        reviewer = piece.get("reviewer_session")
+        if not _nonempty_str(reviewer) or reviewer == piece["author_session"]:
+            raise PackageError("AF-LAUNCH-PKG-REVIEW",
+                               f"{role}: independent_review is true but no reviewer session is "
+                               "recorded (or reviewer == author)")
     if not isinstance(piece.get("test_only"), bool):
         raise PackageError("AF-LAUNCH-PKG-PIECE", f"{role}: test_only must be a boolean")
     if piece.get("native_bindings_ref") is not None and not isinstance(piece["native_bindings_ref"], str):
@@ -222,6 +286,9 @@ def _validate_piece(piece: Any, node: Dict[str, str], intake: Dict[str, Any]) ->
         "status": status,
         "proof_class": proof,
         "independent_review": piece["independent_review"],
+        "reviewer_session": piece.get("reviewer_session"),
+        # CHK-17: the page-result's own blockers travel with the piece, never dropped at packaging.
+        "blockers": list(piece["blockers"]),
         "artifacts": clean_artifacts,
     }
     if isinstance(piece.get("image_provider"), str) and piece["image_provider"].strip():
@@ -245,7 +312,8 @@ def _page_deliveries(plan: Dict[str, Any], pieces: Dict[str, Any]) -> Dict[str, 
 
 
 def _launch_plan_record(plan: Optional[Dict[str, Any]], deliveries: Optional[Dict[str, Any]],
-                        pieces: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+                        pieces: Dict[str, Any],
+                        launch: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """The calendar + completeness record, or a named refusal when a planned unit is missing."""
     if plan is None:
         return None
@@ -253,7 +321,7 @@ def _launch_plan_record(plan: Optional[Dict[str, Any]], deliveries: Optional[Dic
     try:
         for unit_id, result in _page_deliveries(plan, pieces).items():
             supplied.setdefault(unit_id, result)
-        record = launch_plan_module.record(plan, supplied)
+        record = launch_plan_module.record(plan, supplied, intake=launch)
         launch_plan_module.assert_complete(record["completeness"])
     except launch_plan_module.LaunchPlanError as exc:
         raise PackageError(exc.code, exc.detail) from exc
@@ -299,6 +367,7 @@ def _piece_receipt(piece: Dict[str, Any], unit_id: str, unit_type: str,
         "lane_validation": dict(LANE_VALIDATION),
         "proof": _proof(piece["status"]),
         "status": piece["status"],
+        "blockers": list(piece.get("blockers") or []),
     }
 
 
@@ -418,9 +487,10 @@ def _lane_receipt(unit: Dict[str, Any], delivery: Any, intake: Dict[str, Any],
 def _unit_receipts(ordered: List[Dict[str, Any]], intake: Dict[str, Any],
                    plan: Optional[Dict[str, Any]], pieces: Dict[str, Any],
                    plan_ref: Optional[Dict[str, Any]], run_dir: Path,
-                   lane_deliveries: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+                   lane_deliveries: Optional[Dict[str, Any]] = None,
+                   approved: Optional[str] = None) -> List[Dict[str, Any]]:
     """Every planned unit's typed receipt, or every delivered piece's when page-only."""
-    approved = intake["approval"]["hash"]
+    approved = approved or intake["approval"]["hash"]
     if plan is None or plan_ref is None:
         return [_piece_receipt(piece, piece["slot"], "page", intake, approved, None, run_dir)
                 for piece in ordered]
@@ -442,22 +512,622 @@ def _unit_receipts(ordered: List[Dict[str, Any]], intake: Dict[str, Any],
                                           run_dir, unit_type="page",
                                           delivery_marker="declared"))
         else:
+            if unit["type"] == "automation":
+                # S44-21: a done.txt and three free-text strings never seal an automation.
+                try:
+                    builds = json.loads((run_dir / delivery_units.BUILDS_DOC).read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    builds = {}
+                fails = delivery_units.automation_violations(
+                    unit["id"], lane_deliveries.get(unit["id"]), plan.get("launch_id"),
+                    delivery_units.reader_hashes(builds, plan.get("launch_id")), run_dir)
+                if fails:
+                    raise PackageError(delivery_units.CODE_AUTOMATION, "; ".join(fails))
             rows.append(_lane_receipt(unit, lane_deliveries.get(unit["id"]), intake,
                                       approved, plan_ref["sha256"], plan_ref["path"],
                                       run_dir))
     return rows
 
 
+# --- ENF-03: assemble is bound to the dispatch run --------------------------------------------
+# A package is the record of a dispatch that happened. The dispatch run's launch record, manifest,
+# stored requests and stored results are the only authority: a piece file anyone could hand-write,
+# a request id that is a free string and an approval hash that is a label are not.
+
+def _canonical(obj: Any) -> str:
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"))
+
+
+def _read_run_json(root: Path, rel: str, code: str, what: str) -> Any:
+    path = root / rel
+    if not path.is_file():
+        raise PackageError(code, f"{what} {rel!r} is missing from the dispatch run")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise PackageError(code, f"{what} {rel!r} is unreadable ({exc})") from exc
+
+
+def _find_dispatch_root(dispatch_run: Optional[Path],
+                        candidates: List[Path]) -> Tuple[Optional[Path], bool]:
+    """(the dispatch run dir, named explicitly). None when no dispatch run is in evidence."""
+    if dispatch_run is not None:
+        root = Path(dispatch_run)
+        if not (root / DISPATCH_MANIFEST_REL).is_file():
+            raise PackageError("AF-LAUNCH-PKG-DISPATCH-MISSING",
+                               f"the named dispatch run has no {DISPATCH_MANIFEST_REL}: a package "
+                               "is assembled from a dispatch that happened")
+        return root.resolve(), True
+    for cand in candidates:
+        if (Path(cand) / DISPATCH_MANIFEST_REL).is_file():
+            return Path(cand).resolve(), False
+    return None, False
+
+
+def _dispatched_choices(launch: Dict[str, Any]) -> Dict[str, Any]:
+    """The client's landing/extra page choices the dispatched record carries as plan-bound structure refs.
+
+    They are not intake fields (the plan hash already binds them at dispatch), so the rebuilt record
+    takes them from the dispatched one; everything the intake does own is still compared."""
+    refs = {}
+    for ref in launch.get("source_refs") or []:
+        if isinstance(ref, str) and ref.startswith(launch_bridge.STRUCTURE_PREFIX) and "=" in ref:
+            key, _, value = ref[len(launch_bridge.STRUCTURE_PREFIX):].partition("=")
+            refs[key] = [v for v in value.split(",") if v]
+    out: Dict[str, Any] = {}
+    if refs.get("landing_pages"):
+        out["landing_pages"] = refs["landing_pages"]
+    if refs.get("extra_pages"):
+        out["extra_pages"] = refs["extra_pages"]
+    return out
+
+
+def _expected_launch(intake: Dict[str, Any], dispatched: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The launch record this intake produces, exactly as launch_bridge.run derives it."""
+    try:
+        inputs, _ = image_plan_module.resolve(intake.get("image_plan"),
+                                              test_only=bool(intake.get("test_only", True)))
+        graph = route_module.compile_route(intake)
+        return launch_bridge.to_launch_record(intake, graph, inputs, **_dispatched_choices(dispatched or {}))
+    except (image_plan_module.ImagePlanError, route_module.RouteError) as exc:
+        raise PackageError("AF-LAUNCH-PKG-PLAN-DRIFT",
+                           f"the intake cannot be turned back into the dispatched launch record "
+                           f"({exc})") from exc
+
+
+def _drift_detail(launch: Dict[str, Any], expected: Dict[str, Any]) -> str:
+    parts: List[str] = []
+    for key in sorted(set(launch) | set(expected)):
+        if key != "offers" and launch.get(key) != expected.get(key):
+            parts.append(key)
+    dispatched = {o.get("offer_id"): o for o in launch.get("offers") or []}
+    now = {o.get("offer_id"): o for o in expected.get("offers") or []}
+    for oid in sorted(set(dispatched) | set(now), key=str):
+        a, b = dispatched.get(oid), now.get(oid)
+        if a is None or b is None:
+            parts.append(f"offer {oid!r} {'added' if a is None else 'removed'}")
+            continue
+        for key in sorted(set(a) | set(b)):
+            if a.get(key) == b.get(key):
+                continue
+            if key == "prices":
+                was = [x.get("amount_minor") for x in a.get(key) or []]
+                is_now = [x.get("amount_minor") for x in b.get(key) or []]
+                parts.append(f"offer {oid!r} price {was} was dispatched, {is_now} now")
+            else:
+                parts.append(f"offer {oid!r} {key}")
+    return ", ".join(parts) or "the records differ"
+
+
+def _bind_dispatch(root: Path, intake: Dict[str, Any], route: Dict[str, Any],
+                   strict: bool) -> Dict[str, Any]:
+    """Load the dispatch run and prove the intake, the route and the request ids are its own.
+
+    strict (a named dispatch run, or any non-test run) also requires the intake's approval hash to
+    BE the recomputed plan hash: the approved_plan_hash is computed, never accepted as a label.
+    """
+    dl = launch_bridge.substrate.dispatch()
+    launch = _read_run_json(root, LAUNCH_RECORD_REL, "AF-LAUNCH-PKG-DISPATCH-MISSING", "launch record")
+    manifest = _read_run_json(root, DISPATCH_MANIFEST_REL, "AF-LAUNCH-PKG-DISPATCH-MISSING",
+                              "dispatch manifest")
+    if not isinstance(launch, dict) or not isinstance(manifest, dict):
+        raise PackageError("AF-LAUNCH-PKG-DISPATCH-PLAN",
+                           "the launch record and the dispatch manifest must be objects")
+    fails = launch_bridge.check_launch_record(launch)
+    if fails:
+        raise PackageError("AF-LAUNCH-PKG-DISPATCH-PLAN",
+                           "Skill 49 does not accept the dispatched launch record: " + "; ".join(fails))
+    plan_hash = dl.vlp.plan_document_hash(launch)
+    if manifest.get("plan_document_hash") != plan_hash:
+        raise PackageError("AF-LAUNCH-PKG-DISPATCH-PLAN",
+                           "dispatch-manifest.json names a plan hash that is not the recomputed hash "
+                           f"of launch.json ({plan_hash})")
+    if (manifest.get("launch_id"), manifest.get("revision")) != (launch.get("launch_id"),
+                                                                 launch.get("revision")):
+        raise PackageError("AF-LAUNCH-PKG-DISPATCH-PLAN",
+                           "dispatch-manifest.json is for another launch or revision than launch.json")
+    report = _read_run_json(root, DISPATCH_REPORT_REL, "AF-LAUNCH-PKG-DISPATCH-REPORT", "dispatch report")
+    if not (isinstance(report, dict) and isinstance(report.get("to_confirm"), list)
+            and isinstance(report.get("landing_pages"), list)):
+        raise PackageError("AF-LAUNCH-PKG-DISPATCH-REPORT",
+                           "the dispatch report must carry to_confirm and landing_pages lists")
+    expected = _expected_launch(intake, launch)
+    if _canonical(expected) != _canonical(launch):
+        raise PackageError("AF-LAUNCH-PKG-PLAN-DRIFT",
+                           "the intake no longer produces the launch record that was dispatched and "
+                           f"approved: {_drift_detail(launch, expected)}")
+    plan_hash_matches = intake["approval"]["hash"] == plan_hash
+    if strict and not plan_hash_matches:
+        raise PackageError("AF-LAUNCH-PKG-APPROVAL-HASH",
+                           "the intake's approval hash is not the recomputed plan hash "
+                           f"({plan_hash}); approved_plan_hash is computed, never a free string")
+
+    snapshot_state = "absent"
+    snapshot_path = root / INTAKE_SNAPSHOT_REL
+    if strict and not snapshot_path.is_file():
+        raise PackageError("AF-LAUNCH-PKG-INTAKE-MISSING",
+                           "the dispatch run carries no intake-at-dispatch.json, so the entitlement "
+                           "basis and approval it was dispatched with cannot be proven; re-dispatch "
+                           "the run")
+    if snapshot_path.is_file():
+        try:
+            snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise PackageError("AF-LAUNCH-PKG-INTAKE-DRIFT",
+                               f"{INTAKE_SNAPSHOT_REL} is unreadable or invalid ({exc})") from exc
+        if not isinstance(snapshot, dict):
+            raise PackageError("AF-LAUNCH-PKG-INTAKE-DRIFT", f"{INTAKE_SNAPSHOT_REL} is not an object")
+        try:  # launch_bridge.run writes the validated intake; a raw payload is validated here
+            snapshot = intake_module.validate(snapshot)
+        except intake_module.IntakeError:
+            pass  # already normalized: the comparison below catches any difference
+        changed = sorted(k for k in set(snapshot) | set(intake) if snapshot.get(k) != intake.get(k))
+        if changed:
+            raise PackageError("AF-LAUNCH-PKG-INTAKE-DRIFT",
+                               "the intake differs from the one the run was dispatched with in: "
+                               + ", ".join(changed))
+        snapshot_state = "verified"
+
+    requests: Dict[str, Dict[str, Any]] = {}
+    for entry in manifest.get("requests") or []:
+        role, page_id = entry.get("page_role"), entry.get("page_id")
+        input_hash = dl.request_input_hash(launch, page_id, role)
+        if entry.get("input_hash") != input_hash \
+                or entry.get("request_id") != dl.dispatch_key(launch, role, input_hash):
+            raise PackageError("AF-LAUNCH-PKG-REQUEST",
+                               f"dispatch-manifest.json request for {role!r} is not the one the "
+                               "plan hash derives")
+        stored = _read_run_json(root, f"dispatch/request-{role}.json", "AF-LAUNCH-PKG-REQUEST",
+                                "stored page request")
+        if any(stored.get(k) != entry.get(k) for k in ("request_id", "input_hash", "page_id")):
+            raise PackageError("AF-LAUNCH-PKG-REQUEST",
+                               f"the stored request for {role!r} disagrees with dispatch-manifest.json")
+        requests[role] = {**entry, "stored": stored}
+    route_roles = {n["role"]: n["page_id"] for n in route["nodes"]}
+    if set(requests) != set(route_roles) \
+            or any(requests[r]["page_id"] != pid for r, pid in route_roles.items()):
+        raise PackageError("AF-LAUNCH-PKG-REQUEST",
+                           "the dispatched requests are not this route's pages: dispatched "
+                           f"{sorted(requests)}, route {sorted(route_roles)}")
+    return {
+        "state": DISPATCH_STATE_BOUND, "root": root, "plan_document_hash": plan_hash,
+        "requests": requests, "plan_hash_matches": plan_hash_matches,
+        "to_confirm": report["to_confirm"], "landing_pages": report["landing_pages"],
+        "landing_results": {},
+        "record": {
+            "dispatch_report": {"path": DISPATCH_REPORT_REL,
+                                "sha256": _sha256_file(root / DISPATCH_REPORT_REL)},
+            "state": DISPATCH_STATE_BOUND,
+            "dispatch_manifest": {"path": DISPATCH_MANIFEST_REL,
+                                  "sha256": _sha256_file(root / DISPATCH_MANIFEST_REL)},
+            "launch": {"path": LAUNCH_RECORD_REL, "sha256": _sha256_file(root / LAUNCH_RECORD_REL)},
+            "plan_document_hash": plan_hash,
+            "requests": [{"page_role": r, "request_id": requests[r]["request_id"],
+                          "input_hash": requests[r]["input_hash"]} for r in sorted(requests)],
+            "intake_approval_hash_is_plan_hash": plan_hash_matches,
+            "intake_snapshot": snapshot_state,
+        },
+    }
+
+
+def _receipts_module():
+    return launch_bridge.substrate.load("49-signature-funnel/scripts/collect_launch_receipts.py",
+                                        "launcher_collect_launch_receipts")
+
+
+def _bind_piece(binding: Dict[str, Any], raw: Any, request_role: str, slot: str,
+                extra: bool) -> None:
+    """One piece is the dispatch's own answer to its own request, not a hand-written file."""
+    if not isinstance(raw, dict):
+        return  # _validate_piece names the shape fault
+    request = binding["requests"].get(request_role)
+    if request is None:
+        raise PackageError("AF-LAUNCH-PKG-REQUEST",
+                           f"{slot}: dispatch-manifest.json has no request for {request_role!r}")
+    if raw.get("request_id") != request["request_id"]:
+        known = raw.get("request_id") in {r["request_id"] for r in binding["requests"].values()}
+        raise PackageError("AF-LAUNCH-PKG-REQUEST",
+                           f"{slot}: request_id {raw.get('request_id')!r} "
+                           + ("belongs to another page's request" if known
+                              else "is not in dispatch-manifest.json")
+                           + f"; the {request_role} request is {request['request_id']!r}")
+    if raw.get("input_hash") != request["input_hash"]:
+        raise PackageError("AF-LAUNCH-PKG-REQUEST",
+                           f"{slot}: input_hash {raw.get('input_hash')!r} is not the dispatched "
+                           f"request's {request['input_hash']!r}")
+    stored_request = dict(request["stored"])
+    if extra and raw.get("page_id") != stored_request.get("page_id"):
+        stored_request.pop("page_id", None)  # a slot page rides on its parent's request
+    fails = _receipts_module().validate_result(raw, stored_request)
+    if fails:
+        raise PackageError("AF-LAUNCH-PKG-ECHO",
+                           f"{slot}: the result does not echo its dispatched request: "
+                           + "; ".join(fails))
+    dispatch_dir = binding["root"] / "dispatch"
+    names = ([f"page-result-{slot}.json", f"result-{request_role}.json"] if extra
+             else [f"result-{request_role}.json"])
+    stored_path = next((dispatch_dir / n for n in names if (dispatch_dir / n).is_file()), None)
+    if stored_path is None:
+        raise PackageError("AF-LAUNCH-PKG-RESULT",
+                           f"{slot}: the dispatch run stored no result for it ({names[0]})")
+    try:
+        stored = json.loads(stored_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise PackageError("AF-LAUNCH-PKG-RESULT", f"{slot}: stored result unreadable ({exc})") from exc
+    if request_role == LANDING_REQUEST_ROLE:
+        binding["landing_results"][slot] = stored_path
+    drifted = [k for k in _REQUEST_RESULT_KEYS if raw.get(k) != stored.get(k)]
+    if drifted:
+        raise PackageError("AF-LAUNCH-PKG-RESULT",
+                           f"{slot}: the piece differs from the dispatch's stored result in "
+                           + ", ".join(drifted))
+    have = {(a.get("path"), a.get("sha256")) for a in stored.get("artifacts") or []
+            if isinstance(a, dict)}
+    for art in raw.get("artifacts") or []:
+        if not isinstance(art, dict) or (art.get("path"), art.get("sha256")) not in have:
+            raise PackageError("AF-LAUNCH-PKG-RESULT",
+                               f"{slot}: artifact {art.get('path') if isinstance(art, dict) else art!r} "
+                               "is not one the dispatch produced")
+
+
+BRIDGE_RECEIPT_CODE = "AF-LAUNCH-PKG-BRIDGE-RECEIPT"
+
+
+def bridge_receipt_violations(receipt: Any, delivery: bool) -> List[str]:
+    """ENF-09: why a landing result's bridge-receipt sidecar (landing_bridge.py) is not a finished
+    page. Plain sentences; the caller prefixes the code. Shared by assemble and check."""
+    if not isinstance(receipt, dict):
+        return ["the bridge receipt is not a JSON object"]
+    fails: List[str] = []
+    for prefix, label in (("", "the landing page"), ("opt_in_", "the opt-in landing page")):
+        if prefix and not any(k.startswith(prefix) for k in receipt):
+            continue
+        if receipt.get(f"{prefix}receipt_validation") == "vendored_schema_fallback":
+            fails.append(f"{label} was validated by the vendored schema fallback, not Skill 49's own "
+                         "validator")
+        # a run that declares itself a draft has its gate open by design; only a delivery refuses that (below)
+        if (f"{prefix}pipeline_exit" in receipt or not prefix) and not (receipt.get("draft") is True and not delivery):
+            if receipt.get(f"{prefix}pipeline_exit") != 0:
+                fails.append(f"{label}'s production stage gate exited "
+                             f"{receipt.get(f'{prefix}pipeline_exit')!r}, not 0 (production is not closed)")
+    if delivery and receipt.get("draft") is not False:
+        fails.append("the landing page is a draft (its production gate is open), and a delivery "
+                     "package is never a draft")
+    return fails
+
+
+def _bind_bridge_receipts(binding: Dict[str, Any], delivery: bool) -> List[Tuple[Path, bytes]]:
+    """Read the sidecar beside every landing result the dispatch stored and refuse a bad one.
+
+    A sidecar that is present is always judged. One that is absent refuses a client delivery
+    only: a hand-built test run has none (its consumer is a free fake, not landing_bridge.py).
+    Returns the (package-relative path, bytes) pairs assemble copies into the package.
+    """
+    kept: List[Dict[str, Any]] = []
+    files: List[Tuple[Path, bytes]] = []
+    for slot, result_path in sorted(binding["landing_results"].items()):
+        sidecar = result_path.with_name(f"bridge-receipt-{result_path.stem}.json")
+        if not sidecar.is_file():
+            if delivery:
+                raise PackageError(BRIDGE_RECEIPT_CODE,
+                                   f"{slot}: the landing result has no {sidecar.name}, so a draft or a "
+                                   "vendored-schema fallback cannot be ruled out")
+            continue
+        raw = sidecar.read_bytes()
+        try:
+            doc = json.loads(raw.decode("utf-8"))
+        except (OSError, ValueError) as exc:
+            raise PackageError(BRIDGE_RECEIPT_CODE, f"{slot}: {sidecar.name} is unreadable ({exc})") from exc
+        fails = bridge_receipt_violations(doc, delivery)
+        if fails:
+            raise PackageError(BRIDGE_RECEIPT_CODE, f"{slot}: " + "; ".join(fails))
+        rel = Path(BRIDGE_RECEIPT_DIR) / sidecar.name
+        kept.append({"slot": slot, "path": str(rel), "sha256": _sha256_bytes(raw)})
+        files.append((rel, raw))
+    binding["record"]["bridge_receipts"] = kept
+    return files
+
+
+def _verify_design_waiver(waiver: Any, approved_hash: str) -> Dict[str, Any]:
+    """STR-01: designs may be waived only by a recorded owner approval bound to THIS plan hash."""
+    if not isinstance(waiver, Mapping) or not _nonempty_str(waiver.get("approval_ref")):
+        raise PackageError("AF-LAUNCH-PKG-DESIGN-WAIVER",
+                           "assembling without the page designs needs a verified owner approval "
+                           "(design_waiver with an approval_ref); none was supplied")
+    if waiver.get("subject_type") != "design_waiver" or waiver.get("revoked") is True \
+            or not _nonempty_str(waiver.get("owner_identity_ref")):
+        raise PackageError("AF-LAUNCH-PKG-DESIGN-WAIVER",
+                           "the design waiver must be an unrevoked design_waiver approval from a "
+                           "named owner")
+    if waiver.get("subject_hash") != approved_hash:
+        raise PackageError("AF-LAUNCH-PKG-DESIGN-WAIVER",
+                           "the design waiver approves another plan hash than this package's")
+    return {"approval_ref": waiver["approval_ref"], "subject_hash": approved_hash,
+            "owner_identity_ref": waiver["owner_identity_ref"]}
+
+
+def _paid_image_renders(ordered: List[Dict[str, Any]]) -> int:
+    """Picture files a paid provider rendered: the one live effect an offline build can have."""
+    count = 0
+    for piece in ordered:
+        for art in piece["artifacts"]:
+            kind = str(art.get("kind") or "")
+            image = kind.endswith("_section") or kind == "board" \
+                or str(art["path"]).lower().endswith(_IMAGE_SUFFIXES)
+            provider = art.get("provider") or piece.get("image_provider")
+            if image and provider and provider != "stub":
+                count += 1
+    return count
+
+
+
+def _resolve_delivery_scope(requested: Optional[str],
+                            plan: Optional[Dict[str, Any]]) -> str:
+    """Full-launch delivery always requires the shared plan. Unrequested scope follows the
+    plan, so a plan-free package is never silently called a full launch."""
+    if requested is None:
+        return DELIVERY_SCOPE_FULL if plan is not None else DELIVERY_SCOPE_PAGE_ONLY
+    if requested not in DELIVERY_LABELS:
+        raise PackageError("AF-LAUNCH-SCOPE-UNKNOWN",
+                           f"unknown delivery scope {requested!r}; use "
+                           f"{DELIVERY_SCOPE_FULL!r} or {DELIVERY_SCOPE_PAGE_ONLY!r}")
+    if requested == DELIVERY_SCOPE_FULL and plan is None:
+        raise PackageError(
+            "AF-LAUNCH-PLAN-REQUIRED",
+            "full-launch delivery requires the shared launch plan (calendar and every planned "
+            "unit); pass delivery_scope='page_only' (cli: --page-only) for a page-only package")
+    if requested == DELIVERY_SCOPE_PAGE_ONLY and plan is not None:
+        raise PackageError(
+            "AF-LAUNCH-SCOPE-CONFLICT",
+            "a page-only package cannot carry a launch plan; assemble a full launch instead")
+    return requested
+
+
+def _landing_run_roots(dispatch_root: Optional[Path]) -> List[Path]:
+    """The landing bridge's run folder(s), from the config the dispatch wrote beside its run. The bridge lists
+    its files relative to that folder (an opt-in run's carry its folder name, so they resolve from its parent)."""
+    if dispatch_root is None:
+        return []
+    try:
+        landing = json.loads((Path(dispatch_root) / "dispatch" / "landing-bridge.json")
+                             .read_text(encoding="utf-8")).get("landing")
+    except (OSError, ValueError, AttributeError):
+        return []
+    if not isinstance(landing, dict) or not landing.get("run_dir"):
+        return []
+    roots = [Path(landing["run_dir"])]
+    opt_in = landing.get("opt_in")
+    if isinstance(opt_in, dict) and opt_in.get("run_dir"):
+        roots.append(Path(opt_in["run_dir"]).parent)
+    return roots
+
+
+def _artifact_source(path: str, source_root: Path, landing_roots: Sequence[Path]) -> Path:
+    """Where a piece's artifact lives: absolute as given, else beside the run, else in the landing run folder."""
+    src = Path(path)
+    if src.is_absolute():
+        return src
+    if not (source_root / src).is_file():
+        src = next((r / src for r in landing_roots if (r / src).is_file()), src)
+        if src.is_absolute():
+            return src
+    return source_root / src
+
+
+REPO_FIXTURE_DIR = "stand-in-inputs"  # where a test run's repo fixture is laid out inside its page folder
+
+
+def _is_repo_fixture(src: Path, run_roots: Sequence[Path]) -> bool:
+    """True for a repo fixture or test file: inside the skill repository under a fixtures/ or tests/ folder
+    and not inside the run itself. A client package must never name one by its repo path (F7)."""
+    src = src.resolve()
+    if any(src.is_relative_to(Path(r).resolve()) for r in run_roots):
+        return False
+    try:
+        parts = src.relative_to(REPO_ROOT.resolve()).parts[:-1]
+    except ValueError:
+        return False
+    return "fixtures" in parts or "tests" in parts
+
+
+def _activation_readback_violations(readback: Any, stage: str, *,
+                                    page_ids: Sequence[str] = (),
+                                    location_id: str = "") -> List[str]:
+    """Why *readback* does not prove *stage*. Observed facts only; never a local flag.
+
+    *page_ids* and *location_id* bind the evidence to THIS launch: a read-back for
+    another page or another client's location proves nothing about this package.
+    That is the same binding the publisher gate applies before it will publish
+    (``ghl_publish_approval.record_refusals`` names the target location and the
+    page ids its record covers), so a stage can never be claimed here on evidence
+    the publisher would refuse.
+    """
+    if not isinstance(readback, Mapping):
+        return ["no activation read-back record"]
+    why: List[str] = []
+    source = str(readback.get("source") or "").strip()
+    if not any(source.startswith(route) for route in _ACTIVATION_READBACK_ROUTES):
+        why.append(f"read-back source {source!r} is not an observed canonical read")
+    for key in ("page_id", "page_url", "observed_at"):
+        if not _nonempty_str(readback.get(key)):
+            why.append(f"read-back {key} must be the observed value")
+    url = str(readback.get("page_url") or "").strip().lower()
+    if url and not url.startswith("https://"):
+        why.append("read-back page_url must be the actual https page URL")
+    if location_id:
+        seen_location = str(readback.get("location_id") or "").strip()
+        if seen_location and seen_location != str(location_id).strip():
+            why.append(f"read-back names location {seen_location!r}, not this launch's "
+                       f"{str(location_id).strip()!r}")
+    if page_ids:
+        seen_page = str(readback.get("page_id") or "").strip()
+        if seen_page and seen_page not in {str(p) for p in page_ids}:
+            why.append(f"read-back is for page {seen_page!r}, which is not one of this "
+                       "package's pages")
+    if stage == "published":
+        if str(readback.get("page_type") or "").strip().lower() not in ("published", "live"):
+            why.append("read-back page_type is not published/live; a draft stays a draft")
+        version = readback.get("page_version")
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            why.append("read-back page_version must be the observed live integer")
+    if stage == "installed":
+        install = readback.get("install")
+        if not isinstance(install, Mapping) or not any(
+                _nonempty_str(install.get(key)) for key in _INSTALL_FACTS):
+            why.append("read-back install carries no observed native record "
+                       f"(one of {list(_INSTALL_FACTS)})")
+        elif any(key in install and not _nonempty_str(install[key]) for key in _INSTALL_FACTS):
+            why.append("every install fact present must be a non-empty observed value")
+    return why
+
+
+def _activation(intake: Dict[str, Any], binding: Optional[Dict[str, Any]],
+                readback: Any) -> Dict[str, Any]:
+    """The desired stage, the stage the evidence proves, and the authority carried.
+
+    Base stage is decided by the run itself: no dispatch run means ``local_prepared``;
+    a bound dispatch means ``draft_constructed``. A read-back may lift the achieved
+    stage, but only to the stage the caller actually authorized: a local/draft intake
+    with a "published" read-back is refused (never relabel a local package live), and a
+    read-back past the desired stage is refused. A desired install/publication with no
+    read-back stays pending and says so; it is never claimed.
+    """
+    desired = ((intake.get("activation") or {}).get("desired_state")
+               or "local_prepared")
+    if desired not in ACTIVATION_STATES:
+        raise PackageError("AF-LAUNCH-ACTIVATION-STATE",
+                           f"unknown desired activation state {desired!r}")
+    # Authorization is recorded BEFORE the stage is reachable, in this writer too —
+    # not only in intake.validate(), so a hand-built intake cannot reach install or
+    # publication by skipping the validator.
+    authority = (intake.get("activation") or {}).get("authority")
+    if desired in ("installed", "published") and not isinstance(authority, Mapping):
+        raise PackageError(
+            "AF-LAUNCH-ACTIVATION-AUTHORITY",
+            f"{desired!r} needs the recorded authority that covers this page and location; "
+            "a stage is never reached without one")
+    base = "draft_constructed" if binding is not None else "local_prepared"
+    achieved = base
+    pending: Optional[str] = None
+    if readback is not None:
+        stage = str(readback.get("stage") or "").strip()
+        if stage not in ACTIVATION_STATES:
+            raise PackageError("AF-LAUNCH-ACTIVATION-STATE",
+                               f"read-back stage {stage!r} is not one of {ACTIVATION_STATES!r}")
+        if stage in ("local_prepared", "draft_constructed"):
+            raise PackageError("AF-LAUNCH-ACTIVATION-READBACK",
+                               "a read-back proves an installed or published stage, not "
+                               f"{stage!r}; the run itself decides that stage")
+        if ACTIVATION_STATES.index(stage) > ACTIVATION_STATES.index(desired):
+            raise PackageError("AF-LAUNCH-ACTIVATION-SCOPE",
+                               f"the read-back proves {stage!r} but the recorded authority "
+                               f"covers only {desired!r}; never claim more than was authorized")
+        why = _activation_readback_violations(readback, stage,
+                                              location_id=str(intake["location_id"]))
+        if why:
+            raise PackageError("AF-LAUNCH-ACTIVATION-READBACK", "; ".join(why))
+        achieved = stage
+    if desired in ("installed", "published") and achieved != desired:
+        pending = desired
+    return {
+        "desired_state": desired,
+        "achieved_state": achieved,
+        "label": ACTIVATION_LABELS[achieved],
+        "authority": authority,
+        "pending_stage": pending,
+        "activation_pending": pending is not None,
+        "readback": dict(readback) if isinstance(readback, Mapping) else None,
+        "source": (intake.get("activation") or {}).get("source"),
+    }
+
+
+def _client_handoff(intake: Dict[str, Any], ordered: List[Dict[str, Any]],
+                    plan_record: Optional[Dict[str, Any]], activation: Dict[str, Any],
+                    open_blockers: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """One concise handoff naming what the client actually has — nothing invented.
+
+    Free asset, approved paid offers, page links, workflow states and delivery
+    destinations come from the records that hold them. A link exists only when a
+    read-back observed it; an unobserved page is listed as not published. Every
+    unresolved operation is named, never smoothed over.
+    """
+    offers = intake.get("offers") or []
+    free = [{"offer_id": o["offer_id"], "name": o["name"]}
+            for o in offers if int((o.get("price") or {}).get("amount_minor") or 0) == 0]
+    paid = [{"offer_id": o["offer_id"], "name": o["name"], "role": o["role"],
+             "amount_minor": o["price"]["amount_minor"], "currency": o["price"]["currency"]}
+            for o in offers if int(o["price"]["amount_minor"]) > 0]
+    readback = activation.get("readback") or {}
+    links = ([{"page_id": readback.get("page_id"), "url": readback.get("page_url")}]
+             if activation.get("achieved_state") in ("installed", "published")
+             and readback.get("page_url") else [])
+    workflow_states: List[Dict[str, Any]] = []
+    if plan_record is not None:
+        workflow_states = [{"unit_id": u["id"], "type": u["type"], "state": u["state"]}
+                           for u in (plan_record.get("completeness") or {}).get("units") or []
+                           if u["type"] in ("email", "text", "automation", "conversation_ai")]
+    destinations = {o["offer_id"]: (o.get("delivery") or {}).get("destination")
+                    for o in offers if (o.get("delivery") or {}).get("destination")}
+    unresolved: List[str] = []
+    if activation.get("activation_pending"):
+        unresolved.append(f"activation: {activation['pending_stage']} still pending")
+    if plan_record is not None:
+        unresolved += [f"planned unit not delivered: {u}"
+                       for u in (plan_record.get("completeness") or {}).get("missing") or []]
+    unresolved += [f"{b['slot']}: open blocker" for b in open_blockers]
+    pages = [p["slot"] for p in ordered]
+    return {
+        "free_asset": free or None,
+        "free_asset_note": ("recorded" if free else
+                            "this intake records no free asset"),
+        "approved_paid_offers": paid,
+        "page_links": links,
+        "page_links_note": ("observed read-back" if links else
+                            "not published; no read-back observed a public URL"),
+        "pages": pages,
+        "workflow_states": workflow_states,
+        "delivery_destinations": destinations,
+        "activation": {"desired_state": activation.get("desired_state"),
+                       "achieved_state": activation.get("achieved_state")},
+        "unresolved_operations": unresolved,
+    }
+
+
 def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              pieces: Dict[str, Any], source_root: Optional[Path] = None,
              council: Optional[Dict[str, Any]] = None,
-             council_runner=None, require_designs: bool = False,
+             council_runner=None, require_designs: Optional[bool] = None,
              image_plan: Optional[Dict[str, Any]] = None,
              to_confirm: Optional[List[Dict[str, Any]]] = None,
              design_approvals: Optional[Dict[str, Any]] = None,
              landing_pages: Optional[List[str]] = None,
              launch_plan: Optional[Dict[str, Any]] = None,
-             deliveries: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+             deliveries: Optional[Dict[str, Any]] = None,
+             delivery_scope: Optional[str] = None,
+             dispatch_run: Optional[Path] = None,
+             design_waiver: Optional[Dict[str, Any]] = None,
+             checkout_readback: Optional[Dict[str, Any]] = None,
+             activation_readback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Write package-manifest.json + receipt.json into run_dir. Returns both records.
 
     Artifacts are copied into run_dir/pieces/<page_id>/ so the delivered package
@@ -468,7 +1138,12 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     renamed hash. Two different files that would land on one path are refused.
 
     require_designs makes AF-LAUNCH-PAGE-DESIGNS part of the package's own checks: every page
-    must carry its full labeled set of desktop and mobile wireframes and mockups. image_plan,
+    must carry its full labeled set of desktop and mobile wireframes and mockups. Explicit False
+    (the CLI's --allow-no-designs) always needs a verified design_waiver bound to the approved hash.
+    An unchosen value (None) is designs required for any dispatched or live package, and stays
+    not-required only for a hand-built test fixture with no dispatch run (recorded
+    dispatch_binding.state = "unbound_fixture"). checkout_readback, when given, is passed to
+    checkout.order_form_mapping (CHK-10). image_plan,
     to_confirm and design_approvals are recorded so the delivery report can say which choices
     were defaults awaiting the client's confirmation.
 
@@ -486,23 +1161,145 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     "request": {...}} with artifact bytes already staged inside run_dir. A bare
     state claim with no lane receipt is planning evidence, never delivery proof:
     the unit stays PLANNED and assembly refuses.
+
+    delivery_scope names what is delivered. ``full_launch`` requires the shared
+    plan: without it the seasonal calendar and the planned-unit checks would be
+    skipped and a page-only package would pass as a Black Friday launch. With no
+    plan the only honest scope is ``page_only``, which is recorded in the manifest
+    and the receipt. When the caller names no scope it follows the plan, so a
+    plan-free package is labelled page-only rather than silently accepted.
+
+    Activation (F06) is recorded SEPARATELY from construction: ``activation.json`` carries
+    the client's desired stage, the stage the evidence proves (``local_prepared``,
+    ``draft_constructed``, ``installed`` or ``published``), the recorded authority, and the
+    construction receipts it belongs to. ``activation_readback`` is the observed record of
+    an installation or publication (route, page id, https page URL, observed_at, and for a
+    publication the live page_type/page_version; for an installation the native record
+    id). A read-back past the authorized stage is refused, a local/draft intake with a
+    live read-back is refused (never relabel a local package live), and a desired
+    installation/publication with no read-back stays pending instead of being claimed.
+
+    Bound to the dispatch (ENF-03). ``dispatch_run`` names the run dir that holds launch.json and
+    dispatch/dispatch-manifest.json (when omitted, ``source_root`` or ``run_dir`` is used if it holds
+    them). The plan hash is RECOMPUTED from launch.json; the intake must re-derive that launch record
+    (a changed price or offer is AF-LAUNCH-PKG-PLAN-DRIFT); every piece must carry the manifest's
+    request_id and input_hash for its role, echo its stored request (collect_launch_receipts.
+    validate_result) and be the dispatch's own stored result (AF-LAUNCH-PKG-REQUEST / -ECHO /
+    -RESULT). approved_plan_hash is that computed hash, never the intake's string. A named
+    ``dispatch_run``, or any non-test intake, also requires the intake's approval hash to equal it.
+    Hand-built fixtures with no dispatch run keep assembling only for a test_only intake and are
+    recorded ``dispatch_binding.state = "unbound_fixture"``; a live intake without one refuses.
+
+    A bound package takes ``to_confirm`` and ``landing_pages`` from the run's dispatch-report.json and
+    refuses without it (AF-LAUNCH-PKG-DISPATCH-REPORT); a caller's list that differs is refused too.
+    Each landing result's bridge-receipt sidecar is judged (AF-LAUNCH-PKG-BRIDGE-RECEIPT): a vendored-schema
+    fallback or a non-zero pipeline exit refuses, a draft refuses a delivery, and a missing sidecar refuses a
+    client delivery. A client delivery (test_only false) also needs Skill 49's live receipt store to verify.
+
+    Open page blockers travel with each piece into the manifest and receipt units. A full launch
+    refuses to assemble while any are open (AF-LAUNCH-PKG-BLOCKERS); a page-only package is labelled
+    design-only. ``require_designs=False`` needs a verified ``design_waiver`` bound to the plan hash.
+    A client delivery (a dispatched full launch, or any non-test intake) needs Skill 49's lane
+    receipts in the store; live_effects names the paid picture renders instead of a constant.
     """
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     source_root = Path(source_root).resolve() if source_root else run_dir.resolve()
+    # ENF-24: a graph handed straight to assemble must hold doc 02 section 4 before anything is written.
+    law = route_module.route_law.graph_violations(route_module.launch_record(intake), route)
+    if law:
+        raise PackageError("AF-LAUNCH-ROUTE-LAW",
+                           "the route graph breaks doc 02 section 4: " + "; ".join(law))
+    scope = _resolve_delivery_scope(delivery_scope, launch_plan)
+    open_raw = {slot: piece["blockers"] for slot, piece in pieces.items()
+                if isinstance(piece, dict) and isinstance(piece.get("blockers"), list)
+                and piece["blockers"]}
+    if open_raw and scope == DELIVERY_SCOPE_FULL:
+        raise PackageError(
+            "AF-LAUNCH-PKG-BLOCKERS",
+            "a full launch cannot carry open page blockers (assemble a page-only, design-only "
+            "package instead): " + "; ".join(
+                f"{slot}: {json.dumps(b, sort_keys=True, default=str)}" for slot, b in open_raw.items()))
+    test_only = bool(intake.get("test_only", True))
+    root, explicit = _find_dispatch_root(dispatch_run, [source_root, run_dir.resolve()])
+    binding = None
+    if root is not None:
+        binding = _bind_dispatch(root, intake, route, strict=explicit or not test_only)
+        approved = binding["plan_document_hash"]
+        dispatch_record = binding["record"]
+        # ENF-07: the run's own dispatch-report.json is authoritative for what was defaulted and which
+        # landing pages were planned; a caller's list that differs is refused, never believed.
+        for name, given, run_value in (("to_confirm", to_confirm, binding["to_confirm"]),
+                                       ("landing_pages", landing_pages, binding["landing_pages"])):
+            if given is not None and list(given) != run_value:
+                raise PackageError("AF-LAUNCH-PKG-DISPATCH-REPORT",
+                                   f"{name} differs from the dispatch run's {DISPATCH_REPORT_REL}")
+        to_confirm, landing_pages = binding["to_confirm"], binding["landing_pages"]
+    else:
+        if not test_only:
+            raise PackageError("AF-LAUNCH-PKG-DISPATCH-MISSING",
+                               "a live (non-test) package is assembled from a dispatch run: no "
+                               f"{DISPATCH_MANIFEST_REL} was found beside the pieces")
+        approved = intake["approval"]["hash"]
+        dispatch_record = {"state": DISPATCH_STATE_UNBOUND_FIXTURE,
+                           "detail": "no dispatch run: hand-built test fixture, not a dispatched build"}
+    activation = _activation(intake, binding, activation_readback)
+    # The activation record is written SEPARATELY from the construction receipts,
+    # before the manifest, so its own digest can be carried by the manifest without
+    # a cycle. The construction receipts it names stay the originals.
+    activation_record = {
+        "schema": "launcher.activation/v1",
+        "launch_id": intake["launch_id"],
+        "tenant_id": intake["tenant_id"],
+        "location_id": intake["location_id"],
+        "revision": intake["revision"],
+        **{k: activation[k] for k in ("desired_state", "achieved_state", "authority",
+                                      "pending_stage", "activation_pending", "readback",
+                                      "source")},
+        "construction_receipts": {
+            "dispatch_binding": dispatch_record,
+            "launch_record": LAUNCH_RECORD_REL,
+            "dispatch_manifest": DISPATCH_MANIFEST_REL,
+        },
+        "recorded_at": _now(),
+        "note": ("activation is recorded apart from construction: an installed or published "
+                 "stage is claimed only from an observed read-back, and a local/draft package "
+                 "is never relabelled live"),
+    }
+    activation_path = run_dir / ACTIVATION_RECORD_REL
+    activation_path.write_text(json.dumps(activation_record, indent=2, sort_keys=True) + "\n",
+                               encoding="utf-8")
+    activation_ref = {"path": ACTIVATION_RECORD_REL, "sha256": _sha256_file(activation_path)}
     evidence = receipt_evidence(run_dir)
     if evidence["state"] in ("malformed", "unavailable"):
         raise PackageError("AF-LAUNCH-PKG-RECEIPTS",
                            f"Skill 49 receipt store is {evidence['state']}: {evidence.get('detail', '')}")
+    if not test_only:
+        # ENF-17: the live store must verify (every line harness-signed), never the recorded word.
+        module = _load_receipt_module()
+        verify = getattr(module, "verify_delivery_store", None)
+        if not callable(verify):
+            raise PackageError("AF-LAUNCH-PKG-RECEIPTS",
+                               "Skill 49's receipt module has no verify_delivery_store")
+        store_ok, store_detail = verify(run_dir)
+        if not store_ok:
+            raise PackageError("AF-LAUNCH-PKG-RECEIPTS", store_detail)
+    client_delivery = (binding is not None and scope == DELIVERY_SCOPE_FULL) or not test_only
+    if client_delivery and (evidence["state"] != "verified" or not evidence.get("entries")):
+        raise PackageError("AF-LAUNCH-PKG-RECEIPTS",
+                           f"a client delivery needs Skill 49's lane receipts; the store is "
+                           f"{evidence['state']!r} with {evidence.get('entries', 0)} entries")
 
     if council is None:
         council = council_module.planning_step(intake, runner=council_runner)
-    checkout = checkout_module.order_form_mapping(intake, route)
+    checkout = checkout_module.order_form_mapping(
+        intake, route, **({"readback": checkout_readback} if checkout_readback is not None else {}))
     if launch_plan is not None and launch_plan.get("launch_id") != intake["launch_id"]:
         raise PackageError("AF-LAUNCH-PLAN-LAUNCH",
                            f"the launch plan is for {launch_plan.get('launch_id')!r}, not "
                            f"{intake['launch_id']!r}")
-    plan_record = _launch_plan_record(launch_plan, deliveries, pieces)
+    plan_record = _launch_plan_record(launch_plan, deliveries, pieces,
+                                      {**intake, "approved_plan_hash": approved})
 
     ordered: List[Dict[str, Any]] = []
     for node in route["nodes"]:
@@ -511,6 +1308,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             raise PackageError("AF-LAUNCH-PKG-MISSING",
                                f"route node {node['role']} has no delivered piece")
         ordered.append(_validate_piece(piece, node, intake))
+        if binding is not None:
+            _bind_piece(binding, piece, node["role"], node["role"], False)
     if landing_pages and set(landing_pages) == {"landing", "sales"} and "sales" not in pieces:
         raise PackageError("AF-LAUNCH-PKG-MISSING",
                            "the client's plan has both landing pages but no signature sales page piece "
@@ -525,18 +1324,54 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         node = {"role": parent, "role_instance": slot, "echoed_page_id": parent_node["page_id"],
                 "page_id": route_module.route_law._page_id(intake["launch_id"], slot)}
         ordered.append(_validate_piece(pieces[slot], node, intake))
+        if binding is not None:
+            _bind_piece(binding, pieces[slot], parent, slot, True)
 
+    bridge_files: List[Tuple[Path, bytes]] = []
+    if binding is not None:
+        bridge_files = _bind_bridge_receipts(binding, delivery=client_delivery)
+
+    designs_required = require_designs if require_designs is not None else (binding is not None or not test_only)
+    waiver = None
+    if require_designs is False:
+        waiver = _verify_design_waiver(design_waiver, approved)
+    if design_approvals is not None:
+        # STR-25: an approved Design Board must resolve to a recorded Skill 71 approval, and a relative
+        # reference is copied byte-for-byte into the package so `check` re-resolves the same record.
+        bad = page_designs.approval_violations(design_approvals, source_root)
+        if bad:
+            raise PackageError(page_designs.CODE, "; ".join(bad))
+        for entry in design_approvals.values():
+            ref = entry.get("approval_ref") if isinstance(entry, dict) else None
+            if not (isinstance(entry, dict) and entry.get("state") == "approved" and _nonempty_str(ref)):
+                continue
+            if Path(ref).is_absolute():
+                continue  # recorded unchanged
+            src = (source_root / ref).resolve()
+            if not src.is_relative_to(source_root):
+                raise PackageError(page_designs.CODE,
+                                   f"approval record {ref!r} resolves outside the run it came from")
+            dest = run_dir / ref
+            if src != dest.resolve():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(src.read_bytes())
+
+    landing_roots = _landing_run_roots(root)
     for piece in ordered:
         copied: List[Dict[str, Any]] = []
-        sources = []
-        for art in piece["artifacts"]:
-            src = Path(art["path"])
-            sources.append(src if src.is_absolute() else source_root / src)
-        base = Path(os.path.commonpath([str(p.parent) for p in sources])) if sources else source_root
-        for art in piece["artifacts"]:
-            src = Path(art["path"])
-            if not src.is_absolute():
-                src = source_root / src
+        sources = [_artifact_source(art["path"], source_root, landing_roots) for art in piece["artifacts"]]
+        # F7: a repo fixture (a test run's stand-in page copy) is never laid out by its repo path, and its
+        # folders must not decide where the run's own files land. A client package refuses one outright.
+        run_roots = [source_root, run_dir, *landing_roots]
+        repo_fixture = [_is_repo_fixture(p, run_roots) for p in sources]
+        if any(repo_fixture) and not test_only:
+            raise PackageError("AF-LAUNCH-PKG-REPO-FIXTURE",
+                               f"{piece['role']}: artifact "
+                               f"{piece['artifacts'][repo_fixture.index(True)]['path']!r} is a repo fixture; "
+                               "a client package carries only files the run produced")
+        own = [p for p, fx in zip(sources, repo_fixture) if not fx]
+        base = Path(os.path.commonpath([str(p.parent) for p in own])) if own else source_root
+        for art, src, fx in zip(piece["artifacts"], sources, repo_fixture):
             if not src.is_file():
                 raise PackageError("AF-LAUNCH-PKG-ARTIFACT-MISSING",
                                    f"{piece['role']}: artifact {art['path']!r} does not exist")
@@ -546,10 +1381,13 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                 raise PackageError("AF-LAUNCH-PKG-HASH",
                                    f"{piece['role']}: artifact {art['path']!r} is {actual}, "
                                    f"declared {art['sha256']}")
-            inside = src.resolve().relative_to(base.resolve())
             prefix = Path("pieces") / piece["page_id"]
-            if inside.parts[:2] == prefix.parts:  # already laid out as pieces/<page_id>/...
-                inside = Path(*inside.parts[2:])
+            if fx:
+                inside = Path(REPO_FIXTURE_DIR) / src.name
+            else:
+                inside = src.resolve().relative_to(base.resolve())
+                if inside.parts[:2] == prefix.parts:  # already laid out as pieces/<page_id>/...
+                    inside = Path(*inside.parts[2:])
             rel = str(prefix / inside)
             dest = run_dir / rel
             if dest.exists() and _sha256_file(dest) != actual:
@@ -564,6 +1402,9 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             copied.append({"path": rel, "sha256": actual, **entry})
         piece["artifacts"] = copied
 
+    for rel, raw in bridge_files:
+        (run_dir / rel).parent.mkdir(parents=True, exist_ok=True)
+        (run_dir / rel).write_bytes(raw)
     intake_path = run_dir / "intake.json"
     route_path = run_dir / "route-graph.json"
     council_path = run_dir / "council-advice.json"
@@ -586,6 +1427,19 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                     "contract_sha256": _sha256_path(REPO_ROOT / launch_plan_module.PLAN_CONTRACT_REF)}
         calendar_ref = {"path": "launch-calendar.json", "sha256": _sha256_file(calendar_path)}
 
+    open_blockers = [{"slot": p["slot"], "page_id": p["page_id"], "role": p["role"],
+                      "blockers": p["blockers"]} for p in ordered if p["blockers"]]
+    delivery_label = DELIVERY_LABELS[scope]
+    if open_blockers:
+        delivery_label = f"{DELIVERY_LABEL_DESIGN_ONLY}; {delivery_label}"
+    if waiver is not None:
+        delivery_label += f"; designs waived (owner approval {waiver['approval_ref']})"
+    seams = [seam["id"] for seam in SEAMS]
+    if SEAM_NATIVE_CHECKOUT_INSTALL not in seams:
+        seams.append(SEAM_NATIVE_CHECKOUT_INSTALL)
+    paid_renders = _paid_image_renders(ordered)
+    live_effects = f"paid_image_renders:{paid_renders}" if paid_renders else "none"
+
     cross_sales = route.get("cross_sales") or {
         "relationships": [], "teaching": {"state": "pending"}, "route_node": False,
         "surface": "thank_you",
@@ -593,13 +1447,24 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "launcher": {"skill": SKILL_NAME, "version": SKILL_VERSION,
-                     "skill_number_working": SKILL_NUMBER, "skill_number_final": False},
+                     "skill_number_working": SKILL_NUMBER, "skill_number_final": True},
         "tenant_id": intake["tenant_id"],
         "location_id": intake["location_id"],
         "launch_id": intake["launch_id"],
         "revision": intake["revision"],
-        "approved_plan_hash": intake["approval"]["hash"],
+        "approved_plan_hash": approved,
+        "dispatch_binding": dispatch_record,
         "journey_mode": intake["journey_mode"],
+        "delivery_scope": scope,
+        "delivery_label": delivery_label,
+        "activation": {**activation, "record": activation_ref},
+        "activation_label": f"{activation['achieved_state']}: {activation['label']}"
+                            + (f"; pending {activation['pending_stage']}"
+                               if activation["activation_pending"] else ""),
+        "client_handoff": _client_handoff(intake, ordered, plan_record, activation,
+                                          open_blockers),
+        "open_blockers": open_blockers,
+        "design_waiver": waiver,
         "intake": {"path": "intake.json", "sha256": _sha256_file(intake_path)},
         "route_graph": {"path": "route-graph.json", "sha256": _sha256_file(route_path)},
         "pieces": ordered,
@@ -615,7 +1480,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             "council_entry": {"path": _repo_ref(council_module.entry_point()),
                               "sha256": _sha256_path(council_module.entry_point())},
         },
-        "seams": [s["id"] for s in SEAMS],
+        "seams": seams,
         "decided": [d["id"] for d in DECIDED],
         "entitlement": intake["entitlement"],
         "offer_facts": offer_facts(intake),
@@ -624,9 +1489,9 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "checkout": {**checkout, "mapping_path": "checkout-mapping.json",
                      "mapping_sha256": _sha256_file(checkout_path)},
         "cross_sales": cross_sales,
-        "live_effects": "none",
-        "test_only": bool(intake.get("test_only", True)),
-        "designs_required": bool(require_designs),
+        "live_effects": live_effects,
+        "test_only": test_only,
+        "designs_required": designs_required,
         "design_approvals": design_approvals or page_designs.default_approvals(),
         "image_plan": image_plan,
         "to_confirm": list(to_confirm or []),
@@ -652,11 +1517,19 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "tenant_id": intake["tenant_id"],
         "location_id": intake["location_id"],
         "revision": intake["revision"],
-        "approved_plan_hash": intake["approval"]["hash"],
+        "approved_plan_hash": approved,
+        "dispatch_binding": dispatch_record,
         "assembled_at": manifest["assembled_at"],
+        "delivery_scope": scope,
+        "delivery_label": delivery_label,
+        "activation": {**activation, "record": activation_ref},
+        "activation_label": manifest["activation_label"],
+        "client_handoff": manifest["client_handoff"],
+        "open_blockers": open_blockers,
+        "design_waiver": waiver,
         "manifest": {"path": "package-manifest.json", "sha256": _sha256_file(manifest_path)},
         "units": _unit_receipts(ordered, intake, launch_plan, pieces, plan_ref, run_dir,
-                                lane_deliveries=deliveries),
+                                lane_deliveries=deliveries, approved=approved),
         "lane_validations": [
             dict(LANE_VALIDATION),
             {"lane": "L05", "contract": checkout["contract"], "state": "recorded",
@@ -684,6 +1557,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             "entry_point": council["entry_point"],
             "status": council["status"],
             "advice_state": council["advice_state"],
+            "council_session_held": council.get("council_session_held") is True,
+            "client_summary": council.get("client_summary") or COUNCIL_NO_ADVICE_SUMMARY,
             "blocks_build": False,
             "is_permission": False,
             "advice_path": "council-advice.json",
@@ -701,11 +1576,11 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         },
         "offer_facts": offer_facts(intake),
         "cross_sales": cross_sales,
-        "seams": [s["id"] for s in SEAMS],
+        "seams": seams,
         "decided": [d["id"] for d in DECIDED],
         "to_confirm": manifest["to_confirm"],
         "design_approvals": manifest["design_approvals"],
-        "live_effects": "none",
+        "live_effects": live_effects,
         "test_only": manifest["test_only"],
     }
     if plan_record is not None:

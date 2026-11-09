@@ -5,10 +5,13 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
+import secrets
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT))
@@ -25,7 +28,7 @@ from launcher_core.constants import (  # noqa: E402
 )
 
 
-def base_intake(mode: str = "single_simple") -> dict:
+def _base_intake_raw(mode: str = "single_simple") -> dict:
     offers = [{"offer_id": "main-1", "name": "Black Friday Launch", "role": "main",
                "price": {"amount_minor": 49700, "currency": "USD"}}]
     if mode == "multiple_options":
@@ -43,9 +46,11 @@ def base_intake(mode: str = "single_simple") -> dict:
         "approval": {"ref": "approval-1", "hash": "b" * 64},
         "entitlement_attestation": {
             "basis": "purchase",
-            "evidence_ref": "evidence-1",
+            "evidence_ref": "TEST-ONLY-EVIDENCE",
             "attested_by": "operator",
-            "purchase_reference": "order-1",
+            "purchase_reference": "TEST-ONLY-PURCHASE-REFERENCE",
+            "amount_minor": 49700,
+            "currency": "USD",
         },
         "offers": offers,
     }
@@ -61,7 +66,8 @@ def with_upsells(payload: dict) -> dict:
         {"offer_id": "u2", "name": "Upsell Two", "role": "upsell_2",
          "price": {"amount_minor": 29700, "currency": "USD"}},
     ]
-    return p
+    del p["answers_file"]  # the client's answers must say the added offers too
+    return with_checkout_facts(p)
 
 
 def make_pieces(run_dir: Path, graph: dict, normalized: dict) -> dict:
@@ -204,8 +210,9 @@ class IntakeTest(unittest.TestCase):
         payload = base_intake()
         payload["offers"].append({"offer_id": "u2", "name": "U2", "role": "upsell_2",
                                   "price": {"amount_minor": 100, "currency": "USD"}})
+        del payload["answers_file"]  # the client's answers must say the added offer too
         with self.assertRaises(intake.IntakeError) as ctx:
-            intake.validate(payload)
+            intake.validate(with_checkout_facts(payload))
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-INTAKE-ROUTE")
 
 
@@ -296,17 +303,28 @@ class PackageTest(unittest.TestCase):
     def test_a_real_s49_receipt_moves_the_store_to_verified(self):
         module = package._load_receipt_module()
         self.assertIsNotNone(module, "Skill 49 delegation_receipt.py must be reachable")
-        module.record(self.run_dir, phase="P3-IMAGES", provider="kie",
-                      operation="createTask", provider_response_id="task-123",
-                      http_status=200, remote_id="media-456", covers=["img-1"])
-        evidence = package.receipt_evidence(self.run_dir)
-        self.assertEqual(evidence["state"], "verified")
-        self.assertEqual(evidence["entries"], 1)
-        # Re-assembling seals the verified store into the receipt.
-        out = package.assemble(self.run_dir, self.normalized, self.graph, self.pieces,
-                               council_runner=stub_council)
-        self.assertEqual(out["receipt"]["receipt_evidence"]["state"], "verified")
-        self.assertEqual(checks.check_package(self.manifest_path, self.run_dir), [])
+        receipt = dict(phase="P3-IMAGES", provider="kie", operation="createTask",
+                       provider_response_id="task-123", http_status=200,
+                       remote_id="media-456", covers=["img-1"])
+        # ENF-17: a process without the operator key writes an unsigned line -> not verified.
+        module.record(self.run_dir, **receipt)
+        self.assertEqual(package.receipt_evidence(self.run_dir)["state"], "unsigned")
+        module.reset(self.run_dir)
+        # The harness (operator key outside the run dir) writes a signed line -> verified.
+        with tempfile.TemporaryDirectory() as keydir:
+            keyfile = Path(keydir) / "operator.key"
+            keyfile.write_text(secrets.token_hex(32) + "\n", encoding="utf-8")
+            keyfile.chmod(0o600)
+            with mock.patch.dict(os.environ, {"SF_OPERATOR_KEY_FILE": str(keyfile)}):
+                module.record(self.run_dir, **receipt)
+                evidence = package.receipt_evidence(self.run_dir)
+                self.assertEqual(evidence["state"], "verified")
+                self.assertEqual(evidence["entries"], 1)
+                # Re-assembling seals the verified store into the receipt.
+                out = package.assemble(self.run_dir, self.normalized, self.graph, self.pieces,
+                                       council_runner=stub_council)
+                self.assertEqual(out["receipt"]["receipt_evidence"]["state"], "verified")
+                self.assertEqual(checks.check_package(self.manifest_path, self.run_dir), [])
 
     def test_clean_package_passes_checks(self):
         self.assertEqual(checks.check_package(self.manifest_path, self.run_dir), [])
@@ -372,6 +390,62 @@ class PackageTest(unittest.TestCase):
         self.assertTrue(checks.is_placeholder_path("skills/<name>/SKILL.md"))
         self.assertFalse(checks.is_placeholder_path("launcher_core/cli.py"))
         self.assertEqual(len(PLACEHOLDER_TOKENS), len(set(PLACEHOLDER_TOKENS)))
+
+
+
+CHECKOUT_TERMS = {
+    "guarantee_ref": "TEST-ONLY-GUARANTEE-REF", "guarantee_text": "Test-only guarantee text.",
+    "terms_ref": "TEST-ONLY-TERMS-REF", "terms_text": "Test-only terms text.",
+    "consent_ref": "TEST-ONLY-CONSENT-REF", "consent_text": "Test-only consent text.",
+}
+
+
+_ANSWERS_DIR = tempfile.TemporaryDirectory()  # the client's answers files for the inline intakes below
+
+
+def _answers_doc(offers: list) -> dict:
+    """A client-intake-answers/v1 doc that says exactly what the inline offers say (every entry provided)."""
+    answers = {"billing": {"value": "one_time", "status": "provided"}}
+    mains = []
+    for o in offers:
+        item = {"offer_id": o["offer_id"], "display_name": o["name"],
+                "price": {"amount_minor": o["price"]["amount_minor"], "currency": o["price"]["currency"]},
+                "deliverables": list((o.get("level") or {}).get("deliverables") or [])}
+        if o["role"] == "main":
+            mains.append(item)
+        else:
+            answers[o["role"]] = {"value": item, "status": "provided"}
+    answers["packages"] = {"value": mains, "status": "provided"}
+    return {"schema": "client-intake-answers/v1", "answers": answers}
+
+
+def with_checkout_facts(payload: dict) -> dict:
+    """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer,
+    and the price provenance (source_ref per offer plus the answers file they resolve in)."""
+    payload.setdefault("checkout_terms", dict(CHECKOUT_TERMS))
+    mains = 0
+    for o in payload["offers"]:
+        o.setdefault("delivery", {"destination": f"https://members.example.com/{o['offer_id']}",
+                                  "owner_confirmed": True})
+        if o["role"] in ("upsell_1", "downsell_1", "upsell_2") or (
+                o["role"] == "main" and payload["journey_mode"] != "single_simple"):
+            o.setdefault("level", {"state": "supplied", "name": o["name"],
+                                   "deliverables": [f"{o['name']} access"]})
+        if o["role"] == "main":
+            o["price"].setdefault("source_ref", f"answers-file:packages[{mains}]")
+            mains += 1
+        else:
+            o["price"].setdefault("source_ref", f"answers-file:{o['role']}")
+    if "answers_file" not in payload:
+        text = json.dumps(_answers_doc(payload["offers"]), indent=1, sort_keys=True)
+        path = Path(_ANSWERS_DIR.name) / f"answers-{hashlib.sha256(text.encode()).hexdigest()[:16]}.json"
+        path.write_text(text, encoding="utf-8")
+        payload["answers_file"] = str(path)
+    return payload
+
+
+def base_intake(*args, **kwargs) -> dict:
+    return with_checkout_facts(_base_intake_raw(*args, **kwargs))
 
 
 if __name__ == "__main__":

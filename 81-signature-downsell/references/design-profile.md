@@ -17,6 +17,16 @@ Approved copy -> section/action plan -> desktop wireframe -> mobile wireframe (i
 7. **Brand comes from the launch brand file only** (shared tokens and loader owned by S71). No per-page palette invention. Imagery follows the launch creative direction with provider provenance recorded per asset; a planned asset is not a generated asset.
 8. **Accessibility and performance** per doc 16: real buttons for actions, links for navigation, visible focus order preserved, no animation that hides price or shifts the pay button, reduced-motion respected.
 
+## Result extension and money statements (derived, never attested)
+
+The D1 result extension and, for a trial, recurring or installment price, the disclosure document are DERIVED by `49-signature-funnel/scripts/downsell_extension.py` from the validated page copy, the launch record's D1 offer and the route graph. The operator stages neither. The same bytes come out of the same inputs.
+
+- Every currency amount on the page (headings, bodies, CTA labels, missed-out items, the decline label; digits, ISO codes, "dollars" or "bucks", and amounts written as words) must equal a due-now, renewal or schedule amount of THIS D1 offer. An amount from another offer is refused (`price-not-in-record`), and a page that never states the due-now amount is refused (`price-not-on-page`).
+- A trial, recurring or installment page must also state the renewal amount, the billing interval next to the money or renewal terms, and a cancellation statement, plus the trial length for a trial (`missing-renewal-terms`).
+- A staged extension is only cross-checked: its `billing_type`, due-now and renewal figures, CTA action refs, decline action ref and route must equal what is derived (`billing_type mismatch`).
+- `entitlements_removed_vs_u1` is computed from the U1 and D1 offers. D1 may not grant any entitlement a main or bump offer grants (`D1-OFFER-REGRANTS-MAIN`), and the base-purchase check covers every main and bump offer, not only a launch with one main.
+- Design consequence: the wireframes and mockups are drawn from copy that has already passed these checks, so the price a client approves is the price charged.
+
 ## QC gates for this profile
 
 Independent copy and visual review of the entire page and every error/disclosure state; each applicable criterion at least 8/10, target average 8.5. Automatic fails per doc 16 section 8 (wrong price/product, concealed recurring charge, invented scarcity or proof, broken native action, incorrect entitlement) apply unchanged.

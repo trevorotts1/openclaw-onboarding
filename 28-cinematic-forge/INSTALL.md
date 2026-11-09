@@ -188,9 +188,9 @@ The agent should:
 
 The agent executing Cinematic Forge MUST be a model that supports tool calls (API requests, file operations, etc.):
 
-**Model: the client's choice, or the client's configured default model** (client-available, Ollama Cloud first, never Anthropic). If the client has not selected a model and no default is configured, ask the client which model to use before proceeding.
+**Model: the client's choice, or the client's configured default model** (client-available; there is no vendor rule, so an Anthropic / Claude model the client configured is used like any other). If the client has not selected a model and no default is configured, ask the client which model to use before proceeding.
 **Recommendation:** a model with reliable tool calling and a large context window, because this skill executes through API calls and long multi-step tool chains.
-**BANNED:** any model that cannot make tool calls; Anthropic models (operator-only, cost-prohibitive for clients)
+**BANNED:** any model that cannot make tool calls. No model is banned for its vendor (Trevor order 2026-10-29).
 
 ## Important Notes
 

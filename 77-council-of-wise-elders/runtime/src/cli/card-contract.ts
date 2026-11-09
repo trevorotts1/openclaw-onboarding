@@ -1,5 +1,5 @@
 /**
- * Card contract conveyance (RP-046-4, DEFECT-046-C).
+ * Card contract conveyance (RP-046-4, DEFECT-046-C; CTR-138).
  *
  * Attempt 4 of the D-021 canary proved the transport, the lease
  * heartbeat (RP-046-3), the response extraction, and the strict
@@ -36,6 +36,25 @@
  * the ledger, and the lease behavior are all unchanged: a
  * non-conforming card still fails validation in exactly the same
  * words as before.
+ *
+ * CTR-138, from the round-3 sitting sess-ad4ee659 (2026-10-30):
+ * three further rules the validator enforces were missing from the
+ * explicit card contract before generation.
+ * - The call's round number was absent from that contract, and from
+ *   the prompt for seats that already had a challenge assigned, so
+ *   seats reported the previous round ("round: challenge cards are
+ *   round 3, got 2").
+ * - The three approved Jakes lens IDs were named only AFTER a
+ *   failure, so the seat invented them
+ *   ("source_use JAKES_LENS_UNKNOWN: Lens instinct-intellect-balance
+ *   is not one of the seat's three lenses"), and the generated
+ *   schema typed lenses_used as free text while the validator
+ *   accepts three values.
+ * - The closed-object rule was never stated, so an option_scores
+ *   entry carried an extra "evidence_ids_note" key and was rejected
+ *   ("option_scores.0: Unrecognized key: \"evidence_ids_note\"").
+ * The same rules are now stated up front and restated on the one
+ * permitted repair.
  */
 
 import { SEAT_ROSTER, cardAuthorJsonSchema } from '../contracts/index.js';
@@ -44,6 +63,14 @@ export type CardContractPurpose = 'advisor' | 'ratification' | 'consult';
 
 /** A concrete value in the only due_at shape the validator accepts. */
 export const DUE_AT_EXAMPLE = '2026-11-15T17:00:00Z';
+
+/**
+ * The three approved lenses of the Jakes seat, read from the same
+ * roster the validator checks (src/sources/packs.ts), so the contract
+ * can never name a lens the validator rejects.
+ */
+export const JAKES_LENS_IDS: readonly string[] =
+  SEAT_ROSTER.find((s) => s.seat_id === 'td-jakes')?.lenses ?? [];
 
 /**
  * The required field names for a card kind, read from the same
@@ -59,14 +86,71 @@ export function requiredCardFields(purpose: CardContractPurpose): string[] {
 }
 
 /**
+ * The keys one option_scores entry accepts, read from the same
+ * generated JSON Schema the validator enforces.
+ */
+export function optionScoreFields(purpose: CardContractPurpose): string[] {
+  const schema = cardAuthorJsonSchema(purpose) as {
+    properties?: Record<
+      string,
+      { items?: { properties?: Record<string, unknown> } }
+    >;
+  };
+  return Object.keys(schema.properties?.option_scores?.items?.properties ?? {});
+}
+
+/**
  * Two validator rules the contract never told the model (real-run
  * acceptance, session sess-3d85c907): evidence reference fields accept
  * only evidence manifest IDs, and lenses_used belongs to td-jakes only.
  */
 export const EVIDENCE_ID_RULE =
   'Evidence reference arrays (evidence_ids, option_scores[].evidence_ids, framework_applications[].case_evidence_ids) may hold only evidence_id values copied from the evidence manifest in the supplied input. The brief\'s own fact, assumption, unknown, and constraint IDs (for example fact-1, asm-1, unk-1, con-1) are NOT evidence IDs and fail validation if used there. When the evidence manifest is empty or no entry fits, those arrays must be [].';
+
+/** The Jakes lens rule, with the three approved IDs named up front. */
 export const LENSES_RULE =
-  'lenses_used: omit this field entirely unless seat_id is "td-jakes". Any other seat that includes lenses_used fails validation.';
+  `lenses_used: omit this field entirely unless seat_id is "td-jakes". Any other seat that includes lenses_used fails validation. For "td-jakes" it may hold only these exact IDs, copied verbatim: ${JAKES_LENS_IDS.join(', ')}. Any other lens name fails validation, and the seat is still ONE seat and ONE vote.`;
+
+/** The object's round number, which the validator checks per round. */
+export function roundRule(round: number): string {
+  return `The object's "round" field must be the number ${round}, a JSON number, because this call is round ${round}. Any other round value fails validation.`;
+}
+
+/**
+ * CTR-151 future-generation wording.
+ *
+ * The reader report builds its summary, its ordered actions, and its
+ * "information needed" list from fields the seat already writes. In the
+ * observed 47-page report those fields carried round-internal shorthand
+ * ("crux-2", "opt-repurpose-longform") that a client cannot act on.
+ *
+ * This rule names only fields the strict schema ALREADY enforces. It adds
+ * no field, relaxes no validation, and spends no extra call. CTR-155: it is
+ * sent only for `purpose === 'advisor'`, the one card kind whose schema
+ * defines the named fields; ratification and consult never receive it.
+ */
+export const PLAIN_LANGUAGE_RULE = [
+  'Write the reader-facing fields in plain language for a busy non-specialist, using only the fields the schema already defines:',
+  'conditions[].description is the ACTION: one concrete instruction a person could start, in ordinary words, with no internal jargon, shorthand, or ID;',
+  'critical_unknowns[] is the INFORMATION NEEDED: each entry names one fact the client must supply, phrased as a plain question or as what is missing;',
+  'decisive_arguments[] opens with the plain SUMMARY of your reasoning in one short sentence a non-expert could repeat, then the detail that supports it;',
+  'change_my_mind is the one piece of evidence that would change your position, in plain words.',
+  'Never invent a deadline, metric, result, owner, or approval: if it is not in the supplied input, record it as an unknown or leave it null.',
+].join(' ');
+
+/**
+ * Every card object is a strict object in the enforced schema: a key
+ * the schema does not name fails validation.
+ */
+export function closedObjectRule(purpose: CardContractPurpose): string {
+  const fields = optionScoreFields(purpose);
+  const base =
+    'Every JSON object in the card is closed: it accepts only the keys the supplied JSON Schema names, and any extra key fails validation.';
+  if (fields.length === 0) {
+    return `${base} Do not add explanatory note fields anywhere in the object.`;
+  }
+  return `${base} Each option_scores entry accepts exactly ${fields.join(', ')}; put any commentary in "rationale" and never add a note or explanation key to an entry.`;
+}
 
 /**
  * The contract lines for one operation.
@@ -75,21 +159,32 @@ export const LENSES_RULE =
  * calls, the challenge IDs issued to this seat for THIS call (an
  * empty array when none have been issued, which is every Round 1
  * call); null for purposes that issue no challenges.
+ *
+ * `round` is the round number this call must report on the card;
+ * null when the purpose carries no round (consult).
  */
 export function cardContractLines(
   purpose: CardContractPurpose,
   challengeIds: string[] | null,
+  round: number | null = null,
 ): string[] {
   const fields = requiredCardFields(purpose);
   const lines = [
     'Return exactly one JSON object and nothing else: no prose, no markdown, no code fences.',
     `The object's "card_kind" field must be exactly "${purpose}" and the object must conform to the supplied JSON Schema. No other card_kind value is valid for this call.`,
+    ...(round === null ? [] : [roundRule(round)]),
     `Include every required field, with a value for each: ${fields.join(', ')}. A card missing any of these fields fails validation; a partial card is not accepted.`,
     'Copy schema_version, session_id, brief_revision, seat_id, input_manifest_sha256, and pack_version exactly from the supplied input; do not invent or alter them.',
     'Every ID string in the card must be an opaque ID: letters, digits, and the characters . _ : - only, with no spaces. Copy IDs exactly from the supplied input where one is supplied. Never put a person\'s name, a framework name, a title, or a sentence in an ID field.',
     EVIDENCE_ID_RULE,
+    closedObjectRule(purpose),
   ];
   if (purpose === 'advisor') {
+    // CTR-155: only the advisor schema carries conditions[], critical_unknowns[],
+    // decisive_arguments[] and change_my_mind. Sending this rule to
+    // ratification or consult invited the model to satisfy fields its own
+    // schema does not define, so it is scoped to the advisor purpose.
+    lines.push(PLAIN_LANGUAGE_RULE);
     lines.push(LENSES_RULE);
     if (challengeIds !== null && challengeIds.length > 0) {
       lines.push(
@@ -111,8 +206,9 @@ export function cardContractLines(
 export function cardContractInstruction(
   purpose: CardContractPurpose,
   challengeIds: string[] | null,
+  round: number | null = null,
 ): string {
-  return cardContractLines(purpose, challengeIds).join('\n');
+  return cardContractLines(purpose, challengeIds, round).join('\n');
 }
 
 /** Marks a repair issue as "the reply did not parse"; the text after it is the parser's message. */
@@ -124,8 +220,7 @@ export const NOT_JSON_ISSUE = 'response was not valid JSON: ';
  */
 function closedSetHints(issues: string[]): string[] {
   if (!issues.some((issue) => issue.includes('JAKES_LENS_UNKNOWN'))) return [];
-  const lenses = SEAT_ROSTER.find((s) => s.seat_id === 'td-jakes')?.lenses ?? [];
-  return [`lenses_used may contain only these values: ${lenses.join(', ')}.`];
+  return [`lenses_used may contain only these values: ${JAKES_LENS_IDS.join(', ')}.`];
 }
 
 /**
@@ -138,6 +233,7 @@ export function cardRepairInstruction(
   purpose: CardContractPurpose,
   challengeIds: string[] | null,
   issues: string[],
+  round: number | null = null,
 ): string {
   const notJson = issues[0]?.startsWith(NOT_JSON_ISSUE) ? issues[0].slice(NOT_JSON_ISSUE.length) : null;
   return [
@@ -146,9 +242,28 @@ export function cardRepairInstruction(
       : `Your previous output failed validation: ${issues.join('; ')}.`,
     ...closedSetHints(issues),
     'The contract for this call, restated in full:',
-    ...cardContractLines(purpose, challengeIds),
+    ...cardContractLines(purpose, challengeIds, round),
     'Return the complete corrected card only: one JSON object with every required field present, and nothing else (no prose, no markdown, no code fences, no partial card).',
   ].join('\n');
+}
+
+/**
+ * The generated schema types lenses_used as free text while the
+ * validator accepts only the seat's three lenses. Restrict the schema
+ * handed to the model to the same closed set, read from the roster, so
+ * the two cannot disagree. The generated artifact, the committed
+ * contracts, and the validator are untouched.
+ */
+function restrictLensesToApprovedSet(schema: unknown): unknown {
+  if (typeof schema !== 'object' || schema === null) return schema;
+  const properties = (schema as { properties?: unknown }).properties;
+  if (typeof properties !== 'object' || properties === null) return schema;
+  const field = (properties as Record<string, unknown>).lenses_used;
+  if (typeof field !== 'object' || field === null) return schema;
+  const items = (field as { items?: unknown }).items;
+  if (typeof items !== 'object' || items === null) return schema;
+  (items as { enum?: readonly string[] }).enum = [...JAKES_LENS_IDS];
+  return schema;
 }
 
 /**
@@ -161,11 +276,12 @@ export function cardRepairInstruction(
 export function cardOutputContract(
   purpose: CardContractPurpose,
   challengeIds: string[] | null,
+  round: number | null = null,
 ) {
   return {
     card_kind: purpose,
-    instruction: cardContractInstruction(purpose, challengeIds),
-    json_schema: cardAuthorJsonSchema(purpose),
+    instruction: cardContractInstruction(purpose, challengeIds, round),
+    json_schema: restrictLensesToApprovedSet(cardAuthorJsonSchema(purpose)),
   };
 }
 
@@ -174,10 +290,11 @@ export function cardRequestSystem(
   purpose: CardContractPurpose,
   challengeIds: string[] | null,
   repairIssues: string[],
+  round: number | null = null,
 ): string {
-  const system = `${baseSystem}\n${cardContractInstruction(purpose, challengeIds)}`;
+  const system = `${baseSystem}\n${cardContractInstruction(purpose, challengeIds, round)}`;
   return repairIssues.length > 0
-    ? `${system}\n${cardRepairInstruction(purpose, challengeIds, repairIssues)}`
+    ? `${system}\n${cardRepairInstruction(purpose, challengeIds, repairIssues, round)}`
     : system;
 }
 
@@ -191,8 +308,9 @@ const REPAIR_ISSUES_RESERVE = 'x'.repeat(2048);
 export function cardSystemBytes(
   baseSystem: string,
   purpose: CardContractPurpose,
+  round: number | null = null,
 ): number {
   return new TextEncoder().encode(
-    cardRequestSystem(baseSystem, purpose, [], [REPAIR_ISSUES_RESERVE]),
+    cardRequestSystem(baseSystem, purpose, [], [REPAIR_ISSUES_RESERVE], round),
   ).length;
 }

@@ -2,16 +2,14 @@
 # =============================================================================
 # SKILL 54 — ANTHOLOGY WRITER :: MODEL-ROLE PROVER  (fail-closed, stdlib-only)
 # -----------------------------------------------------------------------------
-# FIX-13: Model-role correctness is only half-enforced — aw_build_check.py bans
-# Anthropic ids but the engine never reads model-map.json for dispatch; P2/P4/P5
-# dispatch no model. This prover closes the gap:
+# FIX-13: Model-role correctness — the engine never reads model-map.json for
+# dispatch; P2/P4/P5 dispatch no model. This prover closes the gap:
 #
 #   (a) reads model-map.json (the RESOLVED client model map)
 #   (b) reads RUN-LEDGER.json (the run ledger from FIX-02)
-#   (c) validates each stage used a NON-Anthropic model (no Anthropic-or-Claude pattern)
-#   (d) validates the model is in the resolved model-map
+#   (c) validates the model each stage used is in the resolved model-map
 #
-# AF-AW-MODEL-ROLE — a model id in RUN-LEDGER.json is Anthropic OR not in the
+# AF-AW-MODEL-ROLE — a model id in RUN-LEDGER.json is not in the
 #   resolved model-map (model-role contract violation).
 #
 # EXIT: 0 PASS · 2 AUTOFAIL · 3 USAGE/IO.
@@ -30,7 +28,6 @@ import _aw_common as c  # noqa: E402
 AF_MODEL_ROLE = "AF-AW-MODEL-ROLE"
 
 _FIX = Path(__file__).resolve().parent.parent / "test-fixtures"
-_ANTHROPIC_RE = re.compile(r"anthropic|claude", re.I)
 
 
 def _model_ids(ledger: dict) -> list:
@@ -58,8 +55,7 @@ def _model_map_models(model_map: dict) -> set:
 
 
 def evaluate(ledger: dict, model_map: dict) -> c.Result:
-    """Validate model-role correctness: every stage model is non-Anthropic AND in
-    the resolved model map."""
+    """Validate model-role correctness: every stage model is in the resolved model map."""
     r = c.Result("prove_aw_model_role")
     ids = _model_ids(ledger)
     allowed = _model_map_models(model_map)
@@ -76,17 +72,13 @@ def evaluate(ledger: dict, model_map: dict) -> c.Result:
         return r
 
     for stage_id, model in ids:
-        if _ANTHROPIC_RE.search(model):
-            r.fail(AF_MODEL_ROLE, "stage %s resolved to an Anthropic model id %r — "
-                   "client runtime must use the client's strongest NON-Anthropic model"
-                   % (stage_id, model))
-        elif model.strip() not in allowed:
+        if model.strip() not in allowed:
             r.fail(AF_MODEL_ROLE, "stage %s resolved to model %r which is NOT in the "
                    "resolved model-map.json — model-role contract requires every stage's "
                    "model to be one of the client's resolved tiers" % (stage_id, model))
 
     if r.passed:
-        r.note("%d resolved model id(s), all non-Anthropic and in the resolved model map"
+        r.note("%d resolved model id(s), all in the resolved model map"
                % len(ids))
     return r
 
@@ -100,18 +92,11 @@ def prove(ledger_path, model_map_path, as_json=False) -> int:
 def self_test() -> int:
     checks = []
 
-    # Golden: all models in the golden RUN-LEDGER are non-Anthropic AND in the
-    # golden model-map.
+    # Golden: all models in the golden RUN-LEDGER are in the golden model-map.
     g_ledger = c.read_json(_FIX / "golden" / "RUN-LEDGER.json")
     g_map = c.read_json(_FIX / "golden" / "model-map.json")
-    checks.append(("golden ledger + model-map PASS (all models in map, none Anthropic)",
+    checks.append(("golden ledger + model-map PASS (all models in map)",
                    evaluate(g_ledger, g_map).passed))
-
-    # Attack: an Anthropic model id fails with AF-AW-MODEL-ROLE.
-    a_ledger = c.read_json(_FIX / "attack" / "ledger_anthropic.json")
-    a_result = evaluate(a_ledger, g_map)
-    checks.append(("anthropic model id ledger AUTOFAILs AF-AW-MODEL-ROLE",
-                   any(code == AF_MODEL_ROLE for code, _ in a_result.violations)))
 
     # Attack: a model not in the model map fails with AF-AW-MODEL-ROLE.
     nm_ledger = c.read_json(_FIX / "attack" / "ledger_model_not_in_map.json")

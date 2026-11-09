@@ -34,9 +34,6 @@ no fetch, no media capture of its own — callers pass adapters). The SPA
 
 ## Constraints (fail-closed)
 
-- **NO Anthropic id anywhere** (AF-BW-MA-ANTHROPIC). `verifyNoAnthropic`
-  re-checks any resolved transcription job view — an anthropic/claude model id
-  is a hard fail, never a silent fallback.
 - **NO {{...}} placeholders** in shipped code.
 - **NO real zone/account id.** The upload body carries no such field (the
   self-test asserts the exact key set).

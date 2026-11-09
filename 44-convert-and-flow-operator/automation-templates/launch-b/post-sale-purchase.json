@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "sequence_stack",
   "id": "launch-post-sale-purchase",
   "name": "Launch Post-Sale Purchase — Access + Welcome, Promo Stop, Next Follow-Up",
   "aliases": [
@@ -116,6 +118,45 @@
       "A genuinely different later offer approved in the launch plan"
     ]
   },
+  "dedupe_identity": {
+    "rule": "One delivery per verified purchased line — never per order, never per contact.",
+    "components": [
+      "tenant_id",
+      "native_transaction_ref (the selected native flow's own transaction identity)",
+      "native_line_ref (the purchased line)",
+      "action (grant_access / initiate_fulfillment / access email / access text / add_to_workflow)",
+      "campaign version"
+    ],
+    "order_ref_role": "Grouping only. When a native event carries no transaction ref, the order ref stands in for it and the key stays line-scoped, so a bare order id is never an identity. When one order carries several transactions (successive extra purchases), each line keeps its own transaction identity and nothing collapses into the order.",
+    "enforced_by": "S44 claimed action ledger — `processor.purchase_identity()`, `_action_key()` and `_right_key()`. A redelivery finds the existing claim and adds no effect; an unknown (parked) grant is withheld from the fulfillment queue instead of being delivered.",
+    "unknown_rule": "An unresolved or absent observation stays unknown. It is never normalised to granted, delivered, or a convenient boolean."
+  },
+  "delivery_paths": {
+    "rule": "Access is delivered from the verified purchase event. A thank-you page is a view, never a step.",
+    "paths": [
+      {
+        "id": "event_access_message",
+        "owner": "this short handler",
+        "triggers_on": "the verified paid transaction line",
+        "action": "Access + welcome email, plus the approved access text when the launch is email + text and A2P is approved",
+        "depends_on_thank_you_visit": false
+      },
+      {
+        "id": "entitlement_fulfillment",
+        "owner": "S44 event worker",
+        "triggers_on": "the same verified paid transaction line",
+        "action": "One `initiate_fulfillment` claimed action per line, executed by the fulfillment worker from `DurableProcessor.pending_fulfillments()`",
+        "depends_on_thank_you_visit": false
+      }
+    ],
+    "page_role": "The thank-you page emits no send of any kind and grants nothing; it records one idempotent `confirmation_shown` observation. Closing the browser before thank-you cannot deny a confirmed buyer access."
+  },
+  "long_sequence_separation": {
+    "rule": "This handler is short and wait-free. Long nurture, onboarding, review and win-back sequences are separate workflows that the handler references, never contains.",
+    "no_wait_steps": true,
+    "long_sequences": "Enrolled by reference through `add_to_workflow` — exactly one variant-appropriate follow-up. No wait, drip or nurture node may live in this handler.",
+    "suppression_first": "Promotional tags and campaign state are removed before the welcome, before the next follow-up, and before any queued promotional send can fire."
+  },
   "build": {
     "engine": "Skill 44 internal-API engine (`caf workflows create` / `CampaignBuilder`), with the managed-browser Tier-4 backstop for the trigger and any unverified payload",
     "api_ceiling": "The official GHL API has no workflow create, update, publish or trigger endpoint; its only workflow operation is GET /workflows/. Do not attempt an API-only build.",
@@ -139,15 +180,107 @@
     ]
   },
   "quality": {
-    "checklist_lines": ["A1", "A2", "X1"],
+    "checklist_lines": [
+      "A1",
+      "A2",
+      "X1"
+    ],
     "wf_checks": "WF-1..21 and FAB-QC >= 8.5 apply to the built workflow",
     "assertions": [
       "Suppression runs before any welcome or follow-up step",
       "No wait step longer than the short handler allows",
       "Access granted once per verified transaction line",
+      "Dedupe uses tenant + transaction + purchased-line + action + campaign version, never order id alone",
+      "Access message and entitlement fulfillment are created from the verified purchase event with no thank-you visit required",
+      "An unknown grant is withheld from delivery and reported as unknown, never normalised to granted",
       "No promo node remains reachable for a paid buyer",
       "Everything is draft_only; no live switch-on",
       "No client account touched during the build"
     ]
-  }
+  },
+  "build_graph": [
+    {
+      "id": "trg",
+      "type": "trigger",
+      "attributes": {
+        "event": "Order Submitted / Payment Received",
+        "ref": "Order Submitted / Payment Received"
+      }
+    },
+    {
+      "id": "n1",
+      "type": "remove_contact_tag",
+      "after": "trg",
+      "attributes": {
+        "tags_removed": "every launch promotional tag on the buyer",
+        "ref": "1. Stop promotional sends first - Remove every launch promotional tag on the buyer"
+      }
+    },
+    {
+      "id": "n2",
+      "type": "add_contact_tag",
+      "after": "n1",
+      "attributes": {
+        "tags": [
+          "launch buyer tag",
+          "variant tag (main / upsell-N / downsell-N)"
+        ],
+        "ref": "2. Mark buyer + variant - Add the launch buyer tag and the variant tag"
+      }
+    },
+    {
+      "id": "n3",
+      "type": "email",
+      "after": "n2",
+      "attributes": {
+        "message": "Access + welcome email",
+        "timing": "Immediately",
+        "ref": "3. Access + welcome email"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "if_else",
+      "after": "n3",
+      "branches": {
+        "true": "n5",
+        "false": "n6"
+      },
+      "attributes": {
+        "condition": "email + text launch and A2P approved",
+        "ref": "4. Access + welcome text - Immediately (when email + text launch and A2P approved)"
+      }
+    },
+    {
+      "id": "n5",
+      "type": "sms",
+      "after": "n4",
+      "attributes": {
+        "message": "Access + welcome text",
+        "ref": "4. Access + welcome text"
+      }
+    },
+    {
+      "id": "n6",
+      "type": "add_to_workflow",
+      "after": [
+        "n4",
+        "n5"
+      ],
+      "attributes": {
+        "workflow": "next follow-up for the purchased variant",
+        "join": true,
+        "ref": "5. Start the next follow-up - Immediately after access is granted"
+      }
+    },
+    {
+      "id": "n7",
+      "type": "workflow_goal",
+      "after": "n6",
+      "attributes": {
+        "goal": "handler closed",
+        "ref": "6. Close the handler - End"
+      }
+    }
+  ]
 }

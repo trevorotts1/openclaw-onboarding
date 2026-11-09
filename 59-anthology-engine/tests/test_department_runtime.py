@@ -11,7 +11,7 @@ materializes exactly the runtime the Command Center dispatch check looks for
 (the openclaw.json agents.list[] dept-<slug> entry + ~/.openclaw/agents/dept-<slug>/
 dir), against a HERMETIC / mocked dispatch gate -- a synthetic board card BLOCKS
 before wiring and RELEASES after. No live gateway, no live Command Center, no
-credential value, no Anthropic identifier. Python 3 stdlib only.
+credential value. Python 3 stdlib only.
 
 Run: python3 -m pytest 59-anthology-engine/tests/test_department_runtime.py -q
  or: python3 59-anthology-engine/tests/test_department_runtime.py
@@ -135,13 +135,12 @@ def test_command_center_absent_holds_not_crashes():
         assert _mock_cc_dispatch(oc, DEPT_SLUG) == "no_specialist_runtime"
 
 
-def test_wired_config_has_no_anthropic_id_and_no_secret_value():
+def test_wired_config_has_no_secret_value():
     with tempfile.TemporaryDirectory() as td:
         oc = Path(td) / ".openclaw"
         _write_cfg(oc)
         assert _wire(oc).returncode == 0
         blob = (oc / "openclaw.json").read_text(encoding="utf-8")
-        assert not BANNED.search(blob), "wired openclaw.json carries an Anthropic-family id"
         # The wiring writes only labels/paths -- never a credential-shaped 64-hex value.
         assert not re.search(r"[0-9a-f]{64}", blob), "wired config carries a secret-shaped value"
 

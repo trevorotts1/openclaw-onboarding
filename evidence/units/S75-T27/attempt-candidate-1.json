@@ -1,0 +1,70 @@
+{
+  "schema_version": "blackceo.evidence.unit-attempt/v1",
+  "unit": "S75-T27",
+  "acceptance_row": "S75-A27",
+  "role": "candidate-build-ahead",
+  "branch": "s75/S75-T27-r1",
+  "base": "5a54ddd7f8171ea7e3608cc1d508b06e82077d9e",
+  "base_ref": "origin/main",
+  "base_proved_from_origin": true,
+  "base_proof": "git ls-remote https://github.com/trevorotts1/openclaw-onboarding.git refs/heads/main -> 5a54ddd7f8171ea7e3608cc1d508b06e82077d9e; the lane worktree was created with `git worktree add ... -b s75/S75-T27-r1 origin/main` and HEAD was that exact 40-hex before any edit",
+  "head": "57ad2329c4dc4c466288c23851ca33c62653eb23",
+  "head_note": "the commit that carries the candidate code and tests; this receipt is its immediate child and the branch tip",
+  "written_at": "2026-10-26",
+  "mode": "candidate-build",
+  "not_landed_already_proof": "git ls-remote origin: no refs/heads/s75/S75-T27*; `git ls-tree -r --name-only origin/main | grep -i keyframe` empty and `find . -iname '*keyframe*'` finds no keyframes module at base, so the scope was not on main and this is a real build, not verify-only",
+  "files_changed": [
+    "75-drama-song-ad-factory/scripts/core/keyframes/__init__.py",
+    "75-drama-song-ad-factory/scripts/core/keyframes/keyframes.py",
+    "75-drama-song-ad-factory/scripts/core/keyframes/test_keyframes.py"
+  ],
+  "additive_only": "git diff --name-status base..head is three A rows; no D or M row, nothing owned by another unit touched",
+  "deliverable": {
+    "module": "keyframes/keyframes.py",
+    "api": "build_manifest(continuity, run_id=None) -> manifest; shot_set_digest(manifest); write_manifest(path, manifest); load_manifest(path); CLI `build --continuity <record> --out <manifest>`",
+    "record_shapes": "a shot list, or the storyboard envelope {\"shots\": [...]}; each shot needs shot_id and numeric song_start < song_end",
+    "ordering": "one keyframe per continuity shot, emitted in the record's own order with index 1..n, at_s/start_s/end_s and duration_s copied from that shot's window, and line_ids copied from shows_line_ids (fallback lyric_line_ids); the record is never re-sorted",
+    "refusals": {
+      "CONTINUITY_MISSING": "record absent, not a record, no 'shots' key, or an empty shot list",
+      "CONTINUITY_UNORDERED": "a shot starts before the previous shot ends (out of order, overlapping, or a window that runs backwards)",
+      "CONTINUITY_SHAPE": "shot not an object, missing shot_id, or a non-numeric window",
+      "CONTINUITY_DUPLICATE_SHOT": "the same shot_id twice"
+    },
+    "manifest_contract": "{\"schema_version\": \"blackceo.keyframes/v1\", \"stage\": \"image-keyframes\", \"run_id\", \"shot_count\", \"keyframes\": [...], \"shot_set_digest\": <sha256 over ordered rows>, \"id\": \"keyframes/<shot_set_digest>\"} written to keyframes/manifest.json -- the artifact and stage directory the factory registry row for image-keyframes already names",
+    "no_spend": "no provider call, no model id, no spend and no image bytes; rows carry status 'planned' so this file cannot claim a generated keyframe"
+  },
+  "tests_run": {
+    "owned": {
+      "command": "cd 75-drama-song-ad-factory && python3 -I scripts/core/keyframes/test_keyframes.py",
+      "result": "PASS 21/21, exit 0",
+      "covers": "ordering (A27-1..A27-9b: count, order, windows copied, line binding, indexes, planned status, stage id, stable digest, different-set digest, reversed record refused) and refusal (A27-10..A27-16: absent / no shots key / empty list / not-a-record / out-of-order / overlap / backwards / no shot_id / non-numeric window / duplicate shot_id), plus round trip and CLI refusal writing nothing (A27-17..A27-21)"
+    },
+    "surrounding": {
+      "command": "HOME=\"$(mktemp -d)\" python3 -m pytest -q 75-drama-song-ad-factory/scripts/core",
+      "result": "3540 passed, 5 skipped, 23 warnings, 183 subtests passed in 530.42s"
+    },
+    "collection": {
+      "command": "HOME=\"$(mktemp -d)\" python3 -m pytest -q 75-drama-song-ad-factory/scripts --collect-only",
+      "result": "3599 tests collected, 0 errors"
+    },
+    "repository_gate": {
+      "command": "bash 75-drama-song-ad-factory/scripts/qc-operator-path-leak.sh",
+      "result": "rc=0, clean -- 430 non-test files scanned, zero operator/build-workspace path strings"
+    },
+    "no_test_weakened": "no existing test file was read-modified; the diff adds three new files only"
+  },
+  "claims": [
+    "Keyframe generation is derived from the timed continuity record: one keyframe per shot, in the record's own order, bound to that shot's song window and lyric line.",
+    "Generation refuses rather than invents when the record is missing or malformed: CONTINUITY_MISSING, CONTINUITY_UNORDERED, CONTINUITY_SHAPE, CONTINUITY_DUPLICATE_SHOT.",
+    "The output is the image-keyframes stage artifact: keyframes/manifest.json with the keyframes/<shot-set-digest> id the factory registry row already names.",
+    "Ordering and refusal are proven by 21 executable checks (python3 -I, exit 0) and the surrounding skill-75 core pytest suite stays green (3540 passed, 5 skipped, 0 failed)."
+  ],
+  "not_claimed": [
+    "No unit acceptance: S75-A27 stays UNVERIFIED and the decision stays with the owner (Trevor).",
+    "No ledger, TODO.md or RESUME.md edit; D-10 owner decision is untouched.",
+    "No provider call, image generated, spend recorded or approval gate changed -- the other half of acceptance row A27 (video waits for elected approval bound to intended artifacts) is out of this unit's declared scope and is not claimed here.",
+    "Not merged and not pushed to main; branch-only.",
+    "No calibration claim about picture-to-line visual similarity (that is the removed continuity_frames measurement scope, not this ordering contract)."
+  ],
+  "shape_statement": "This is a candidate build-ahead on a decision-locked unit: three new stdlib-only files under 75-drama-song-ad-factory/scripts/core/keyframes (module, package export, test), built on s75/S75-T27-r1 off origin/main 5a54ddd7, committed as 57ad2329c, with the receipt as its child commit. Nothing was accepted, merged, or written outside the lane."
+}

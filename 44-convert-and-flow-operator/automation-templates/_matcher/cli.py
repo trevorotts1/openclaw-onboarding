@@ -40,6 +40,17 @@ def run_match(text: str, mode: str | None, as_json: bool, threshold: float) -> i
     print(f"decision    : {dec['decision']}   imposes={dec['imposes_on_user']} "
           f"await_confirm={dec['await_confirm']}")
     print(f"matched     : {dec['matched_template']} ({dec['matched_name']})")
+    plan = dec.get("workflow_plan") or {}
+    key = dec.get("matched_template_key") or ""
+    group, _, matched_id = key.partition("/")
+    record = cat.get(matched_id, group=group) if matched_id else None
+    if plan.get("buildable"):
+        graph = plan.get("build_graph") or []
+        print(f"buildable   : True   (build_graph {len(graph)} nodes)")
+    elif (record or {}).get("buildable"):
+        print("buildable   : True   (build_graph available; plan attaches on USE_TEMPLATE)")
+    else:
+        print("buildable   : False  (prose-only — no build_graph; agent must author one)")
     print(f"confidence  : {dec['confidence']}  (threshold {dec['threshold']})")
     print(f"rationale   : {dec['rationale']}")
     print("top:")

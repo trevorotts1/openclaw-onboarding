@@ -28,7 +28,11 @@ WHAT IT READS
 -------------
   * scorecard/verify-summary.json    — the summary written by ghl_verify.verify_all
   * logs/final-preview-verify.json   — the raw per-page results (source of truth)
-  * scorecard/render-manifest.json   — artifact sha256 binding
+  * scorecard/render-manifest.json   — artifact sha256 binding (REQUIRED)
+  * the dom/png/console files the manifest names (re-hashed, non-empty, DOM
+    carries the marker) and the 0600 run-nonce file ghl_verify.verify_all
+    leaves OUTSIDE the evidence tree (ghl_verify.nonce_dir()).  A tree written
+    by hand has neither, so it can no longer pass (S06-04).
 
 WHAT IT NEVER READS
 -------------------
@@ -112,12 +116,6 @@ def _gate_verdict(evidence_root: str) -> dict:
     if not isinstance(raw, list):
         raise GateVerdictError("GATE FAIL: final-preview-verify.json is not a JSON list", rc=4)
 
-    # render-manifest.json is optional but checked when present.
-    render_manifest: dict | None = None
-    if os.path.isfile(manifest_path):
-        rm = _read_json(manifest_path, "scorecard/render-manifest.json")
-        render_manifest = rm if isinstance(rm, dict) else None
-
     checks_passed: list[str] = []
 
     # ── Check 1: writer identity ───────────────────────────────────────────────
@@ -137,7 +135,8 @@ def _gate_verdict(evidence_root: str) -> dict:
         )
     checks_passed.append("writer_identity")
 
-    # ── Check 2: trust must not be a mock/non-shippable value ────────────────────
+    # ── Check 2: trust must be LIVE (absent = LIVE, as before S06-04; a MOCK
+    # run never leaves a nonce file, so dropping the field cannot pass 2b) ────
     trust = summary.get("trust", "LIVE")
     if trust in _NON_SHIPPABLE_TRUST or os.path.isfile(mock_sentinel):
         raise GateVerdictError(
@@ -145,7 +144,30 @@ def _gate_verdict(evidence_root: str) -> dict:
             "MOCK-DO-NOT-SHIP sentinel.  A mock verdict cannot be accepted as a "
             "shippable build pass.", rc=2
         )
+    if trust != "LIVE":
+        raise GateVerdictError(
+            f"GATE FAIL: summary.trust={trust!r}; only trust='LIVE' is shippable.",
+            rc=5,
+        )
     checks_passed.append("trust_not_mock")
+
+    # render-manifest.json is REQUIRED (S06-04): it is the only record that a
+    # page was actually rendered. A tree without it is hand-forged or partial.
+    rm = _read_json(manifest_path, "scorecard/render-manifest.json")
+    if not isinstance(rm, dict) or not rm:
+        raise GateVerdictError(
+            "GATE FAIL: render-manifest.json is empty or not a JSON object — "
+            "no page was rendered", rc=4)
+    render_manifest: dict = rm
+
+    # ── Check 2b: nonce bound to a 0600 file OUTSIDE the evidence tree ───────────
+    # (S06-04) A writer string + UUID inside the tree can be typed by hand; the
+    # nonce file can only be left by ghl_verify.verify_all on this box.
+    try:
+        ghl_verify.assert_run_nonce(evidence_root, run_nonce, raw_path, manifest_path)
+    except ghl_verify.VerifyContradiction as e:
+        raise GateVerdictError(f"GATE FAIL (run_nonce not genuine): {e}", rc=5) from e
+    checks_passed.append("run_nonce_file")
 
     # ── Check 3: raw_sha256 binding ────────────────────────────────────────────
     embedded_raw_sha = summary.get("raw_sha256", "")
@@ -170,6 +192,13 @@ def _gate_verdict(evidence_root: str) -> dict:
             f"GATE FAIL (VerifyContradiction): {e}", rc=3
         ) from e
     checks_passed.append("consistency_guard")
+
+    # ── Check 4b: every PASS row was rendered (dom/png/console re-hashed) ────────
+    try:
+        ghl_verify.assert_artifacts_rendered(raw, render_manifest)
+    except ghl_verify.VerifyContradiction as e:
+        raise GateVerdictError(f"GATE FAIL (artifact re-hash): {e}", rc=3) from e
+    checks_passed.append("artifacts_rehashed")
 
     # ── Check 5: no forbidden override strings ─────────────────────────────────
     # These strings were used to rationalize failures as non-failures.  Their
@@ -201,7 +230,7 @@ def _gate_verdict(evidence_root: str) -> dict:
         "checks": checks_passed,
         "summary_path": summary_path,
         "raw_path": raw_path,
-        "manifest_path": manifest_path if render_manifest is not None else "",
+        "manifest_path": manifest_path,
         "rc": rc,
     }
 

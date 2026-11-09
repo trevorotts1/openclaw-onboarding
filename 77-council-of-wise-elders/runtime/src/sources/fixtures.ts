@@ -7,8 +7,8 @@
  * validator boundaries, never to stand in for source material.
  */
 
-import { sha256Hex } from '../contracts/sha256';
-import type { PackInput } from './packs';
+import { sha256Hex } from '../contracts/sha256.js';
+import type { PackInput } from './packs.js';
 
 function fixtureRecord(overrides: Record<string, unknown>): Record<string, unknown> {
   return {

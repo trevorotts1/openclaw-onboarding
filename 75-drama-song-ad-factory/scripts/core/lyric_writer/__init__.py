@@ -10,18 +10,26 @@ from .lyric_structure import (
     switch_allowance,
 )
 from .lyric_writer import (
+    CAST_MANIFEST_KEY,
+    CODE_CAST_FOUNDATION_INVALID,
+    CODE_CAST_FOUNDATION_MISSING,
     MAX_WORDS,
     SCHEMA_VERSION,
     TOOL_VERSION,
     brief_words,
     check_sung_lines,
+    require_cast_manifest,
     spoken_word_budget,
     steer_opening,
+    validate_authored_lyrics,
     validate_campaign,
     validate_lyrics,
 )
 
 __all__ = [
+    "CAST_MANIFEST_KEY",
+    "CODE_CAST_FOUNDATION_INVALID",
+    "CODE_CAST_FOUNDATION_MISSING",
     "MAX_WORDS",
     "SCHEMA_VERSION",
     "SWITCH_EVERY_S",
@@ -34,9 +42,11 @@ __all__ = [
     "delivery_switches",
     "lint_delivery_grammar",
     "render_tag",
+    "require_cast_manifest",
     "spoken_word_budget",
     "steer_opening",
     "switch_allowance",
+    "validate_authored_lyrics",
     "validate_campaign",
     "validate_lyrics",
 ]

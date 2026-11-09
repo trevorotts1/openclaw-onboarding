@@ -46,6 +46,27 @@ def _result(ok, code, detail, **context):
                 **context)
 
 
+_F10_SANDBOX_PROFILE_TEMPLATE = """(version 1)
+(allow default)
+(deny file-write* (subpath "{store}"))
+(deny network*)
+"""
+
+
+def _sandbox_wiring(store=None):
+    """F10 wiring descriptor: sandbox confines untrusted producers.
+
+    Additive only; takes no authority decision. Untrusted-producer spawn
+    goes through sandbox_wrapper.build_argv (sandbox-exec -f profile);
+    provider/delivery stay in the trusted caller. Template semantics match
+    proven mechanism d192ab35 (allow default; deny file-write* to store;
+    deny network*).
+    """
+    return {"enforced": True, "launcher": "/usr/bin/sandbox-exec",
+            "deny": ["file-write*", "network*"],
+            "template_sha256": hashlib.sha256(_F10_SANDBOX_PROFILE_TEMPLATE.encode()).hexdigest()}
+
+
 def _graph():
     # Reuse the published, validated graph. Never maintain a second stage list.
     from batch_mode.batch import STAGES
@@ -114,6 +135,28 @@ def _preferences(rows):
     return out
 
 
+def current_script_election(run_dir):
+    """X06 step 4: the CURRENT saved script-approval election, or None.
+
+    Dispatch gates ask this instead of trusting an approval record's own
+    legacy ``required`` flag. None (no authoritative saved answer for this
+    run) leaves the record's own governed shape in force; True means the
+    client's persisted Yes elects script approval, so only a current
+    event-backed decision for these exact lyrics may proceed.
+    """
+    from script_approval import card_answers
+    try:
+        saved = card_answers.load(str(run_dir))
+        if saved.get("state") != card_answers.OK:
+            return None
+        row = (saved.get("by_id") or {}).get("script")
+        if not isinstance(row, dict) or type(row.get("n")) is not int or row["n"] not in (1, 2):
+            return None
+        return row["n"] == 1
+    except (ImportError, OSError, ValueError, TypeError, KeyError) as exc:
+        raise ValueError("the current script election is unreadable: %s" % exc) from exc
+
+
 def _session_authority(run_dir, state, run_id, live_model):
     from choice_card.intake_card import intake_card as card
     from choice_card.intake_card import intake_session
@@ -177,9 +220,17 @@ def _script_proof(run_dir, run_id, *, required=True):
     status, rec = events.load_record(str(run_dir))
     if status != "ok" or not isinstance(rec, dict) or events.is_unknown_record(rec):
         return _result(False, "PRODUCTION_SCRIPT_APPROVAL_MISSING", "The whole script and lyrics have no readable artifact approval.")
-    old_refusal = approval.check_script_approval(rec, lyrics)
+    old_refusal = approval.check_script_approval(rec, lyrics, hashes["script"])
     if old_refusal:
-        return _result(False, old_refusal["reason_code"], old_refusal["detail"])
+        # The gate names a changed artifact ARTIFACT_CHANGED; this module's
+        # public reason-code contract reports every approval that does not
+        # cover the current bytes as PRODUCTION_SCRIPT_APPROVAL_UNVERIFIED
+        # (the same refusal the revision loop below emits). Both refuse; only
+        # the exported name is normalized here.
+        code = ("PRODUCTION_SCRIPT_APPROVAL_UNVERIFIED"
+                if old_refusal["reason_code"] == approval.ARTIFACT_CHANGED
+                else old_refusal["reason_code"])
+        return _result(False, code, old_refusal["detail"])
     bound_run = rec.get("run_id") or (rec.get("run") or {}).get("run_id")
     if bound_run and str(bound_run) != run_id:
         return _result(False, "PRODUCTION_APPROVAL_SCOPE_MISMATCH", "The script approval belongs to another run.")
@@ -450,6 +501,25 @@ def _offline_proof(value):
     return False
 
 
+def _order_violation(root, stage, states, registry, order):
+    """C01 ordering option B: a COMPLETE row whose declared artifacts are gone.
+
+    Independent of the governed history check -- it reads the raw state map and
+    only file existence, exactly the predecessor contradiction the owner's
+    order decision names. Returns the first (predecessor, artifact) the order
+    gate refuses, or None when it agrees the order is intact.
+    """
+    if stage not in order:
+        return None
+    for predecessor in order[:order.index(stage)]:
+        entry = registry.get(predecessor) or {}
+        if not entry.get("required", True) or states.get(predecessor) != "COMPLETE":
+            continue
+        for rel in entry.get("required_artifacts", []):
+            if not (root / rel).exists():
+                return predecessor, rel
+    return None
+
 def admit_production(run_dir, stage, *, run_id=None):
     """Admit exactly one current stage via the repository's validated graph.
 
@@ -460,8 +530,9 @@ def admit_production(run_dir, stage, *, run_id=None):
     intake = inspect_intake(run_dir, run_id=run_id)
     context = dict(run_dir=intake.get("run_dir"), run_id=intake.get("run_id"), stage=stage,
                    current_state=None, authority=intake.get("authority"))
+    context["sandbox_wiring"] = _sandbox_wiring()
     if not intake["ok"]:
-        return dict(intake, stage=stage, current_state=None)
+        return dict(intake, stage=stage, current_state=None, sandbox_wiring=context["sandbox_wiring"])
     try:
         root = Path(run_dir).resolve()
         order, registry = _graph()
@@ -487,6 +558,12 @@ def admit_production(run_dir, stage, *, run_id=None):
             for rel in registry[predecessor].get("required_artifacts", []):
                 path = (root / rel).resolve()
                 if not path.is_relative_to(root) or not path.is_file() or path.stat().st_size == 0:
+                    if _order_violation(root, stage, states, registry, order) == (predecessor, rel):
+                        return _result(False, "PRODUCTION_ORDER_VIOLATION",
+                                       "Required predecessor %s has no current %s artifact." % (predecessor, rel),
+                                       predecessor=predecessor,
+                                       governed_reason_code="PRODUCTION_PREDECESSOR_EVIDENCE_MISSING",
+                                       **context)
                     return _result(False, "PRODUCTION_PREDECESSOR_EVIDENCE_MISSING",
                                    "Required predecessor %s has no current %s artifact." % (predecessor, rel),
                                    predecessor=predecessor, **context)

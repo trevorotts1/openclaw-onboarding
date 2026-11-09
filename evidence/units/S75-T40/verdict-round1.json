@@ -1,0 +1,98 @@
+{
+  "schema": "blackceo.evidence.unit-verdict/v1",
+  "unit": "S75-T40",
+  "acceptance_row": "S75-A40",
+  "role": "INDEPENDENT QC VERIFIER (did not write this code)",
+  "round": 1,
+  "verdict": "PASS",
+  "verdict_basis": "Every S75-A40 acceptance element is demonstrated by evidence the verifier re-produced independently: 41 obligations and 2 required targets reconcile with denominators 41/41/2 intact; installed/live are explicit NOT_PERFORMED; teardown performed NONE and closed NOTHING with no acknowledgement, so nothing closed without a matching acknowledgement. Named findings below are recorded, none contradicts an acceptance element.",
+  "verified_revision": {
+    "branch": "s75/S75-T40-r1",
+    "tip": "9cc740a303ca2f1a321ddba5a034af0f68385962",
+    "remote_tip_matches": true,
+    "code_head": "5fd69aca95b4e041bd4f62f99d43b2abc0ba1791",
+    "base": "13f86c3153703703072462dcc0d807f856ae553b",
+    "base_is_ancestor_of_tip": true,
+    "lane": "<PATH>/skill75-repair/lanes/S75-T40-verify-lane",
+    "lane_note": "branch s75/S75-T40-r1 was already checked out in the builder's lane, so git worktree add <branch> was refused; the verify lane is a DETACHED worktree at the exact branch tip 9cc740a3. No builder lane, worktree, branch or receipt was touched."
+  },
+  "acceptance_elements": [
+    {
+      "element": "41 build/accepted obligations reconcile without denominator shrink",
+      "result": "DEMONSTRATED",
+      "proof": "Independent read-only census of <PATH>/loop-control/s75/ledger.json: 41 units S75-T01..T41 in order, every weight 1, weight sum 41, 41 unique acceptance rows S75-A01..A41 one per unit, S75-A40 maps to S75-T40. Authority task-ledger sha256 e10310263440428a2bd7fe21f0f2013906686f16eaff65e69e6e15a2aa6eecf1 (matches receipt stamp), fixed_task_count 41, fixed_acceptance_count 41, fixed_current_weight 41, sum(fixed_weight) 41. Reconciler re-run twice live: 13 PASS / 0 FAIL / exit 0 both runs, including authority.unit_set_equal and denominator.not_shrunk; declared denominators built=41 build_accepted=41 unchanged before and after."
+    },
+    {
+      "element": "2 required targets reconcile without denominator shrink",
+      "result": "DEMONSTRATED (accounting; pair identity recorded as Finding 1)",
+      "proof": "targets.count PASS (2 measured / 2 required), targets.exact_revision PASS (2/2 exact 40-hex). Artifact records remote_proved=true for both: openclaw-onboarding origin/main 13f86c3153703703072462dcc0d807f856ae553b (the proven base commit of this branch) and blackceo-command-center origin/main c716c0164d487713370d8d5bcb4dd092de700d35. Verifier re-checked remotes live: CC origin/main is still c716c016..., 999-setup origin/main is still e8dc28ee86045ebc65da4b0dac8f4e149e1c2009, ONB origin/main has advanced to e27c5cfb972c52d7011c46c3142a99b6ad97b4bc exactly as the receipt records (PR #2599, unrelated, carries no T40 work). Denominator merged_required_targets stays 2; not shrunk."
+    },
+    {
+      "element": "installed/live remain explicit if unperformed",
+      "result": "DEMONSTRATED",
+      "proof": "attempt-1.json installed_live: installed=NOT_PERFORMED, live=NOT_PERFORMED, with why_explicit statement. Nothing installed anywhere; Trevor's live status stays NOT_TESTED."
+    },
+    {
+      "element": "finite owned teardown closes only on matching acknowledgement",
+      "result": "DEMONSTRATED",
+      "proof": "attempt-1.json teardown: performed=NONE, closed=NOTHING, acknowledgements_received=none (none requested). No teardown attempted, so nothing could have closed; the clause is satisfied by performing none, not by claiming a close."
+    },
+    {
+      "element": "evidence cell: attempt receipt with exact candidate/base/dependencies and independent checker",
+      "result": "DEMONSTRATED",
+      "proof": "evidence/units/S75-T40/attempt-1.json exists (attempt 1, round 1; the matrix's attempt-<verified-generation>.json pattern is uniform boilerplate in every ACCEPTANCE-MATRIX.md row). Candidate head 5fd69aca95b4e041bd4f62f99d43b2abc0ba1791, base 13f86c315..., dependencies listed (stdlib only). Independent checker = reconcile.py + test_reconcile_s75_t40.py: verifier read the source and confirmed real input mutation (deepcopy + drop unit, duplicate acceptance row, zero weight, missing authority unit, shrunk denominator, one target, unresolved revision) with the same instrument accepting the live census. Post-code-head commits (e6d58b4, 7c671bb9, 9cc740a3) touch only attempt-1.json, so the tested tree is the head tree."
+    },
+    {
+      "element": "repository required gates when applicable",
+      "result": "APPLICABLE GATE RED AT BASE (pre-existing; Finding 2)",
+      "proof": "python3 -I scripts/ci/test_fast_guards_mapping.py fails with KeyError 'anthology-shared-run-dir-guard' at line 80 in the verify lane (exit 1) AND identically from a pristine detached worktree at base 13f86c315 (exit 1, same KeyError) - like-with-like control. The branch diff contains zero files outside evidence/units/S75-T40/, so it cannot affect that mapping. Base defect, outside owned scope, reported not repaired."
+    }
+  ],
+  "checks_run": [
+    {"command": "cd evidence/units/S75-T40 && python3 -I test_reconcile_s75_t40.py", "result": "Ran 10 tests in 0.013s - OK, exit 0", "counts": "10 tests, 10 ok, 0 fail; includes 7 negative controls refused (40-unit census, duplicated acceptance row, zero weight, missing authority unit, shrunk declared denominator, 1 target, unresolved revision)"},
+    {"command": "python3 -I reconcile.py --target <ONB> --target <CC> --observed <N999> --json-out <scratch> (run 1)", "result": "13 PASS, 0 FAIL, exit 0", "counts": "13/13"},
+    {"command": "python3 -I reconcile.py --target <ONB> --target <CC> --observed <N999> --json-out <scratch> (run 2, fresh ledger read)", "result": "13 PASS, 0 FAIL, exit 0", "counts": "13/13"},
+    {"command": "python3 -I json.load(reconciliation.json) + sha256", "result": "41 unit rows, 13 checks, ok=true; sha256 8ae8a8a3b3a7564f17a8d84ecd4cf616a5c26a4373d96b1e1ddbb6e7c8451c1d = receipt stamp", "counts": "1 artifact"},
+    {"command": "independent census read of ledger.json (READ_ONLY)", "result": "41 units S75-T01..T41 in order, weights all 1, sum 41, 41 unique rows S75-A01..A41, A40->T40", "counts": "41/41/41"},
+    {"command": "shasum -a 256 authority task-ledger.json + field read", "result": "e1031026... matches receipt; fixed_task_count=41 fixed_acceptance_count=41 fixed_current_weight=41", "counts": "1 file"},
+    {"command": "git diff --stat origin/main...HEAD and git diff --name-only 13f86c315..HEAD", "result": "exactly 4 files, all under evidence/units/S75-T40/, 1292 insertions, 0 deletions: attempt-1.json (154), reconcile.py (218), reconciliation.json (802), test_reconcile_s75_t40.py (118)", "counts": "4 paths"},
+    {"command": "git merge-base --is-ancestor 13f86c315 HEAD", "result": "exit 0 (base is ancestor of tip)", "counts": "1"},
+    {"command": "git log --oneline 13f86c315..HEAD; git diff --name-only 5fd69aca..9cc740a3; git diff --stat 13f86c315..5fd69aca", "result": "4 commits; post-code-head commits touch only attempt-1.json; code head adds 3 files / 1138 insertions = receipt claim", "counts": "4 commits"},
+    {"command": "git ls-remote origin (ONB, CC, 999-setup, unit branch)", "result": "branch tip 9cc740a3 = checkout; CC c716c016 matches; 999 e8dc28ee matches; ONB main now e27c5cfb9 (advance recorded in receipt)", "counts": "4 refs"},
+    {"command": "python3 -I scripts/ci/test_fast_guards_mapping.py (lane and pristine base worktree 13f86c315)", "result": "both exit 1 with identical KeyError 'anthology-shared-run-dir-guard' line 80", "counts": "2 runs, 2 identical failures"}
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "non-blocking (owner decision)",
+      "finding": "Required-target pair identity is contradictory in authority: the T40 task note names ONB+CC, counters.merged_required_targets.unit reads 'required whole-scope ONB/N999 target handoffs' (denominator 2), canonical_targets marks CC 'UNVERIFIED_T01_CONDITIONAL', and ledger project.repos lists ONB+999-setup. The receipt measures all three revisions and claims only the 2-target denominator accounting, which is what S75-A40's non-shrink element requires. Deciding the pair is an owner-level decision (D-16 territory) and is not a defect in this unit's work."
+    },
+    {
+      "id": "F2",
+      "severity": "non-blocking (pre-existing base defect)",
+      "finding": "scripts/ci/test_fast_guards_mapping.py fails at base with KeyError 'anthology-shared-run-dir-guard' (line 80), reproduced by the verifier from a pristine worktree at 13f86c315. Exists on main before this branch; outside owned scope; reported, not repaired."
+    },
+    {
+      "id": "F3",
+      "severity": "informational",
+      "finding": "origin/main advanced from 13f86c315 to e27c5cfb9 (PR #2599, 71-blackceo-signature-page batch) during the build. Branch deliberately not rebased, no force-push; the unit's delta is confined to evidence/units/S75-T40/ (verified). The merge train rebases."
+    },
+    {
+      "id": "F4",
+      "severity": "informational",
+      "finding": "The authority task's proposed outputs evidence/final-handoff.json, state/HANDOFF.md and evidence/closure.json were not produced. They are PROPOSED_RELATIVE_PATHS_RESOLVE_AND_LEASE_BEFORE_EDIT and outside this unit's owned scope (the reconciliation receipt). S75-A40's evidence cell does not require them."
+    }
+  ],
+  "not_verified": [
+    "The numerator of any counter (merged_required_targets 0/2, build_accepted 0/41, built 0/41): this unit reconciles denominators only; nothing is claimed built, accepted or merged.",
+    "Which pair of targets is authoritative (ONB+CC vs ONB/N999) - owner decision, see F1.",
+    "Honesty or correctness of per-unit ledger fields for other units (verdicts, heads, merge_shas); each row's verdict is owned by its own verifier.",
+    "Installed state on any box and live/product testing (Trevor's; stays NOT_TESTED).",
+    "The full repository CI suite beyond scripts/ci/test_fast_guards_mapping.py; no full-repo suite was run.",
+    "Force-push or rewrite history on any remote; only current remote refs were observed.",
+    "The no-backup-copies guard script (aborts outside the CI harness env; its exit code proves nothing, consistent with the builder's report)."
+  ],
+  "ledger_writes": "NONE. <PATH>/loop-control/s75/ledger.json was opened read-only only (census reads); no loop-control state file was written.",
+  "written_at": "2026-10-26",
+  "written_by": "independent QC verifier (opus-chain), separate from the builder agent"
+}

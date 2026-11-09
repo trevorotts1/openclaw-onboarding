@@ -25,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parent
@@ -451,16 +452,11 @@ class RealProducerPipelineTests(unittest.TestCase):
         res = li.assemble_plan(session)
         self.assertNotEqual(res.get("state"), "awaiting_missing_fact",
                             res.get("missing"))
-        approval = {
-            "schema_version": "1.0", "approval_id": "APPR-L01",
-            "subject_type": "launch_plan_build",
-            "subject_hash": session["plan_hash"],
-            "owner_identity_ref": session["client_identity_ref"],
-            "source_message_ref": "msg-l01", "recorded_at": li._now(),
-            "scope": ["launch_plan_build"], "revoked": False,
-            "verification_class":
-                "recorded_consent_not_cryptographically_sealed",
-        }
+        approval = {"schema_version": "1.0", "approval_id": "APPR-L01", "kind": "launch_plan_build",
+                   "plan_hash": session["plan_hash"], "client_identity": session["client_identity_ref"],
+                   "source_message_ref": "msg-l01", "scope": ["launch_plan_build"],
+                   "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "revoked": False,
+                   "verification_class": "recorded_consent_not_cryptographically_sealed"}
         li.approve(session, approval, worker_identity_ref="worker:l06-test")
         # The producer's own digest rule pins the full plan at approval.
         full = session.get("launch_plan")

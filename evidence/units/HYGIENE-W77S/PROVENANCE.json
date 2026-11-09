@@ -1,0 +1,31 @@
+{
+  "unit": "HYGIENE-W77S",
+  "original_path": "/Volumes/mac mini m4/Downloads/git trees and automations/w77s/evidence/HYGIENE-W77S.registry-8of8-rows.json",
+  "original_path_sha256": "ea3cf1a75b06be3b217799cff0c15b095e0a064f3809e16d976adaa262ec5ac7",
+  "original_sha256": "d745c5763ded5a1fa4215e7f487c97db8271daedf2e82a193e4af729651282d6",
+  "redacted_sha256": "0d28e161644a7e03e7d99a6a132cf2263564d936fc44898dd1938076e95bcbab",
+  "redactions": [
+    {
+      "from": "<absolute repo path prefix>",
+      "from_sha256": "cdf6561dded92e3d163351d4508b77ad3ef2b9596f17f17a4634ef2ffd84e72b",
+      "to": "",
+      "count": 0
+    },
+    {
+      "from": "<absolute operator home path>",
+      "from_sha256": "a659cfd81683b854f73a154bf005456a7a2d6d7bab5322f3671233afa1c723ee",
+      "to": "<operator>",
+      "count": 1
+    },
+    {
+      "from": "<dash-encoded operator home path>",
+      "from_sha256": "856185961f7d8debf6fb52b3727edc78ecd4149bec8df75e9851f04340868eb7",
+      "to": "-<operator>",
+      "count": 0
+    }
+  ],
+  "original_path_redactions": [],
+  "redaction_rule": "<absolute repo path prefix> -> repo-relative (prefix dropped); <absolute operator home path> -> <operator>; <dash-encoded operator home path> -> -<operator>; literals never restated here, only their sha256 in redactions[]",
+  "inverse_check": "pass",
+  "copied_at": "2026-10-26T23:59:10Z"
+}

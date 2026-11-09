@@ -119,7 +119,7 @@ export const INTAKE_CONTRACT = {
         id: "named_methodology",
         order: 1.5,
         kind: "text",
-        prompt: "Do you have a named methodology, framework, or system you deliver this through — what is it called, in your own words?",
+        prompt: "What is the name of your methodology, framework, or system?",
         help: "The branded method name — client-supplied only, never invented for you. If you don&rsquo;t have a named method, say so plainly (e.g. &lsquo;no formal name, we just do X&rsquo;) rather than inventing one — an honest &lsquo;no&rsquo; is still a real answer.",
         label: "Named methodology",
         placeholder: "e.g. The Three-Move Pipeline System, or 'no formal name'",
@@ -138,7 +138,7 @@ export const INTAKE_CONTRACT = {
         id: "transformation_promise",
         order: 2,
         kind: "text",
-        prompt: "What&rsquo;s the before-and-after this offer delivers — who are they before, and who are they after?",
+        prompt: "What transformation does this offer promise?",
         help: "The transformation promise drives the whole arc.",
         label: "Transformation promise",
         placeholder: "e.g. stuck and overwhelmed → clear, confident, closing",
@@ -215,7 +215,7 @@ export const INTAKE_CONTRACT = {
         id: "brand_primary",
         order: 5,
         kind: "logo",
-        prompt: "Do you have a <span class=\"emph\">logo</span> or brand colors for the slides?",
+        prompt: "Which <span class=\"emph\">logo</span> should appear on the slides?",
         help: "If no logo is on file, provide one here — or we build without one and stay on-brand to the presentation system.",
         label: "Logo",
         required: false,
@@ -649,5 +649,26 @@ export const INTAKE_CONTRACT = {
     boolean_normalization: { "true": "yes", "false": "no" }
   }
 };
+
+/** Update only known compound copy when resuming an older minted session.
+ * IDs, values, field paths, ordering and conditions remain that session's own.
+ */
+export function singleQuestionPayload(payload) {
+  const legacy = {
+    named_methodology: /do you have.*what is it called/i,
+    transformation_promise: /who are they before.*who are they after/i,
+    brand_primary: /logo.*brand colors/i,
+  };
+  return { ...payload, questions: (payload.questions || []).map((q) => {
+    if (payload.question_set === "standard" && legacy[q.id]?.test(q.prompt || "")) {
+      const field = INTAKE_CONTRACT.fields.find((f) => f.id === q.id);
+      return { ...q, prompt: field.question.prompt };
+    }
+    if (payload.question_set === "signature" && q.id === "frame_selection") {
+      return { ...q, prompt: (q.prompt || "").replace("Not sure? Say", "For examples, say") };
+    }
+    return q;
+  }) };
+}
 
 export default INTAKE_CONTRACT;

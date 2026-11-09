@@ -264,6 +264,30 @@ echo "rc=$?"     # 0 all present; 2 missing or broken (informational, per Step 2
 Exact fixture shapes and captured outputs for 5b/5c: `EXAMPLES.md`
 (Examples 1 and 6). Then run `QC.md` and score ≥ 8.5/10.
 
+## Step 5e: Emergency owner (per install)
+
+The emergency owner is a PER-INSTALL value, never a hard-coded name. It is the
+operator a gate escalates to when the run has no named approver. Resolution
+reads the install's existing config root (`$OPENCLAW_HOME`, else `~/.openclaw`):
+
+1. `onCallOperator` in `<root>/onboarding-identity.json` (the installer's own
+   identity record — the ONE named key this adds) wins on any box. This is
+   where a client install records that client's own on-call operator.
+2. An operator-box install (the durable `<root>/.operator-is-owner` marker, or
+   `CC_OPERATOR_IS_OWNER=1`) with no recorded value defaults to `Trevor`.
+3. A client install with no recorded value FAILS CLOSED: the gate refuses
+   (`EMERGENCY_OWNER_UNCONFIGURED`), records the refusal, and never defaults to
+   Trevor and never invents a name.
+
+Check it (exit 0 = resolved, 4 = refused):
+
+```bash
+PYTHONPATH=scripts/core python3 -m intake_preflight.factory owner --run-dir "$RUN"
+```
+
+A malformed `onCallOperator` (not a string, blank, over 200 characters) and an
+unreadable config are refused on every box.
+
 ## Step 6: Run storage
 
 Campaign runs live under an operator-approved persistent root (section 21

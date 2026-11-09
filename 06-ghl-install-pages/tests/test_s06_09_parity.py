@@ -102,7 +102,7 @@ def test_isolated_probe_records_honest_fallbacks(tmp_path):
 def test_isolated_imports_degrade_without_openclaw(tmp_path):
     """Imports exercised on an isolated install (a copy of tools/ with
     no repo parent and no ~/.openclaw) degrade exactly as documented:
-    the model router loses only its sovereignty delegate, the media
+    the model router imports cleanly, the media
     module falls back to its embedded enforcer copy, and the secret
     resolver resolves nothing while naming its sources."""
     tools_copy = tmp_path / "iso" / "skill" / "tools"
@@ -116,14 +116,6 @@ def test_isolated_imports_degrade_without_openclaw(tmp_path):
         "import sys\n"
         f"sys.path.insert(0, {str(tools_copy)!r})\n"
         "import model_router\n"
-        "assert model_router._ams is None, 'sovereignty delegate should be absent'\n"
-        "try:\n"
-        "    model_router.assert_no_anthropic("
-        "[{'rung': 1, 'provider': 'anthropic', 'models': []}])\n"
-        "except model_router.AnthropicModelError:\n"
-        "    pass\n"
-        "else:\n"
-        "    raise AssertionError('internal Anthropic guard did not fire')\n"
         "import ghl_media\n"
         "mod = ghl_media._load_kie_prompt_enforcer()\n"
         "assert mod.__file__.endswith('_kie_prompt_enforcer_embedded.py'), "

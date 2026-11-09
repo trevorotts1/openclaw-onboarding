@@ -350,9 +350,10 @@ GENERATED_TASK = {"file": "image-generation-qc/Image-001.png",
 
 class SuppliedAssetGateTest(unittest.TestCase):
     """Item 3 supplied-asset machinery in stage_gate.py: supplied
-    inventory entries (source begins with "supplied") are exempt from
-    style-selection governance, and their transport slice is a
-    supplied-asset entry verified against the filed bytes."""
+    inventory entries (source begins with "supplied", or stock) are exempt
+    from style-selection governance only with a supplied_asset record (who
+    supplied it, client record, when, hand-over sha256), and their transport
+    slice is a supplied-asset entry verified against the filed bytes."""
 
     def build_run(self, td_name, supplied=True):
         td = self.td / td_name
@@ -387,7 +388,12 @@ class SuppliedAssetGateTest(unittest.TestCase):
         img2 = {"id": "IMG-002"}
         if supplied:
             img2.update({"source": "supplied-founder-photo",
-                         "sha256": PNG_1PX_SHA, "requested_ratio": "4:5"})
+                         "sha256": PNG_1PX_SHA, "requested_ratio": "4:5",
+                         # IMG-15 hand-over record: who, which client record, when, sha
+                         "supplied_asset": {"supplied_by": "Fixture owner",
+                                            "client_record": "intake.json#brand_owner",
+                                            "supplied_at": "2026-11-02T00:00:00Z",
+                                            "sha256": PNG_1PX_SHA}})
         write(run / "desktop-wireframe" / "image-inventory.json",
               json.dumps({"images": [{"id": "IMG-001"}, img2]}))
         write(run / "visual-mockup" / "page-visual-bible.json",
@@ -420,12 +426,14 @@ class SuppliedAssetGateTest(unittest.TestCase):
                         "image-inventory-prompts", item)
 
     def put_generation_receipt(self, run, supplied_entry):
-        write(run / "receipts" / "kie74" / "task-001.json", json.dumps({
+        # the receipt stage_executor writes: bound to the saved bytes (Image-001.png) and the credit draw
+        stage_gate._kie74_receipt_module().write_bound_receipt(run, {
             "provider": "kie", "adapter": "74-kie-live-adapter",
             "adapter_mode": "active", "backend": "native-live",
             "model_id": "gpt-image-2", "task_id": "task-001", "state": "success",
-            "saved_paths": ["image-generation-qc/Image-001.png"],
-            "warnings": [], "data": {}}))
+            "result_urls": ["https://example.invalid/a.png"],
+            "saved_paths": ["image-generation-qc/Image-001.png"], "fallback_used": False,
+            "warnings": [], "data": {}}, "image-generation-qc/Image-001.png", 100.0, 96.0)
         put_receipt(run, "image-generation-qc",
                     cost={"provider": "kie", "credits_before": 100.0,
                           "credits_after": 96.0},
@@ -481,6 +489,29 @@ class SuppliedAssetGateTest(unittest.TestCase):
         self.assertEqual(
             state["items"]["image-generation-qc"]["IMG-002"]["status"],
             "closed")
+
+    def test_supplied_item_without_supplied_asset_record_fails_by_name(self):
+        # IMG-15: a supplied entry with no hand-over record is refused.
+        contract, run = self.build_run("norecord", supplied=True)
+        inv_path = run / "desktop-wireframe" / "image-inventory.json"
+        inv = json.loads(inv_path.read_text())
+        for img in inv["images"]:
+            img.pop("supplied_asset", None)
+        inv_path.write_text(json.dumps(inv))
+        proc = self.close_prompt_item(contract, run, "IMG-002")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        entry = self.stage_supplied_files(run)
+        self.put_generation_receipt(run, entry)
+        proc = run_write_review(contract, run, "image-generation-qc",
+                                "Image-002", "sess-rev-img",
+                                scores_json(fidelity=9, craft=9))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        proc = run_gate(contract, "close-item", str(run),
+                        "image-generation-qc", "IMG-002")
+        self.assertEqual(proc.returncode, 1)
+        out = proc.stdout + proc.stderr
+        self.assertIn("IMG-002", out)
+        self.assertIn("needs a supplied_asset record", out)
 
     def test_supplied_transport_sha_mismatch_fails_by_name(self):
         proc = self.close_prompt_item(self.contract, self.run, "IMG-002")

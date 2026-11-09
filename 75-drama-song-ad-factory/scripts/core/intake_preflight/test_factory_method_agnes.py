@@ -23,6 +23,7 @@ agnes_quota admission record the box does not carry yet.
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -171,13 +172,36 @@ def storyboard_fixture(run, *, shots=None, contracts=None, stills=None, count=3,
     return shots
 
 
+#: tmp dir -> one confirmed R1 run.  The confirmation walk is the same
+#: client turns every time and dominated this file's runtime (35 identical
+#: walks), so it runs once per tmp dir and every run starts from a byte copy.
+#: The copy holds no absolute path (checked), and the locked-model assertion
+#: confirmed_fixture makes is re-made on every copy.
+_CONFIRMED = {}
+
+
+def _confirmed_copy(tmp, run):
+    from kie_dispatch import model_lock
+    template = _CONFIRMED.get(str(tmp))
+    if template is None or not template.is_dir():
+        template = Path(tmp) / ("confirmed-%s" % uuid.uuid4().hex[:8]) / "R1"
+        (template / "control").mkdir(parents=True)
+        confirmed_fixture(template)
+        _CONFIRMED[str(tmp)] = template
+    shutil.copytree(template, run)
+    # confirmed_fixture already asserted the template's lock is the expected one.
+    locked = model_lock.read_locked_model(template / "control/state.sqlite3",
+                                          template.name)
+    assert locked and model_lock.read_locked_model(
+        run / "control/state.sqlite3", run.name) == locked, run
+
+
 def make_run(tmp, stage, method=None, agnes=None, progress=None,
              storyboard=None):
     """A governed run whose first unfinished canonical stage is `stage`."""
     from test_production_process import approve_script
     run = Path(tmp) / ("run-%s" % uuid.uuid4().hex[:8]) / "R1"
-    (run / "control").mkdir(parents=True)
-    confirmed_fixture(run)
+    _confirmed_copy(tmp, run)
     # Model the supported historical absence of these optional projections;
     # authoritative raw answers and the explicit recap remain intact.
     receipt = run / "control/card-receipt.json"

@@ -75,9 +75,15 @@ from catalog_calculator.extensions import base_bridge      # noqa: E402
 paths = base_bridge.candidate_paths()
 check("first-candidate-is-shipped",
       paths[0] == os.path.realpath(CALC), paths[0])
-check("no-operator-path-in-candidates",
-      all("Downloads" not in p for p in paths),
-      [p for p in paths if "Downloads" in p])
+# Judge each candidate RELATIVE to this checkout: a checkout that itself lives
+# under a 'Downloads' folder (every operator lane does) is not an operator
+# path. Anything outside the checkout fails, and so does 'Downloads' inside it.
+# (REPO above is the skill folder; its parent is the checkout root, the top
+# of base_bridge's ancestor walk.)
+_ROOT = os.path.realpath(os.path.dirname(REPO)) + os.sep
+_bad = [p for p in paths if not os.path.realpath(p).startswith(_ROOT)
+        or "Downloads" in os.path.realpath(p)[len(_ROOT):]]
+check("no-operator-path-in-candidates", not _bad, _bad)
 check("bridge-finds-shipped", base_bridge.find_calculator() == os.path.realpath(CALC),
       str(base_bridge.find_calculator()))
 
@@ -85,8 +91,8 @@ check("bridge-finds-shipped", base_bridge.find_calculator() == os.path.realpath(
 from catalog_calculator import card_render                 # noqa: E402
 try:
     import batch_mode as B                                 # noqa: E402
-except ImportError:
-    B = None
+except ImportError as _b_err:                              # named in the FAIL row
+    B, _B_ERR = None, repr(_b_err)
 
 EXPECTED_ROWS = ("Length", "Shape", "Style", "Music", "Voice", "Clips",
                  "Video model")
@@ -142,17 +148,21 @@ if B is not None:
           and priced_card["price_usd"] == 1.88,          # 1.25 x 1.50 envelope, half-up
           priced_card.get("price_usd"))
     check("batch-start-allowed-gated", priced_card["start_allowed"] is True)
-    tmp = os.path.join(os.sep + "tmp", "w75-W2-C-U1-materialize-check")
+    # A private dir per run: a fixed /tmp name was shared by every concurrent
+    # run of this file, which rmtree'd and re-materialized one another.
     import shutil
-    if os.path.isdir(tmp):          # reruns must be idempotent
-        shutil.rmtree(tmp)
-    _card_out = B.materialize(priced_card, tmp,
-                              price_fn=lambda b, f: 1.25, check=False)
-    check("materialize-with-price-writes-manifest",
-          os.path.isfile(os.path.join(tmp, _card_out["batch_id"],
-                                      "batch-manifest.json")))
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="w75-W2-C-U1-materialize-")
+    try:
+        _card_out = B.materialize(priced_card, tmp,
+                                  price_fn=lambda b, f: 1.25, check=False)
+        check("materialize-with-price-writes-manifest",
+              os.path.isfile(os.path.join(tmp, _card_out["batch_id"],
+                                          "batch-manifest.json")))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 else:
-    check("batch-import", False, "batch_mode did not import")
+    check("batch-import", False, "batch_mode did not import: " + _B_ERR)
 
 # ------------------------------------------------------- 5. live CLI legs
 # The calculator CLI converts credits without any Skill 74 call.

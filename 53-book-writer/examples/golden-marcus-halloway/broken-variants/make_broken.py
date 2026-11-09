@@ -44,7 +44,6 @@ import prove_bw_tone as p_tone                # noqa: E402
 import prove_bw_challenge as p_chal           # noqa: E402
 import prove_bw_433 as p_433                  # noqa: E402
 import prove_bw_placeholder as p_ph           # noqa: E402
-import prove_bw_noanthropic as p_anth         # noqa: E402
 import prove_bw_anon as p_anon                # noqa: E402
 import prove_bw_process as p_proc             # noqa: E402
 
@@ -130,16 +129,6 @@ def v_avatar():
         return BLOCKED
     bad = "# Avatar Dossier\n" + " ".join(av.split()[:400])   # truncate under floor
     return _res(p_avatar.evaluate(bad).violations)
-
-
-def v_anthropic():
-    led = _json("RUN-LEDGER.json") or {"stages": [{"stage": "13-create-outline", "model": "ollama-cloud/x"}]}
-    led = copy.deepcopy(led)
-    if led.get("stages"):
-        led["stages"][0]["model"] = "anthropic/claude-opus-4"
-    else:
-        led = {"stages": [{"stage": "x", "model": "anthropic/claude-opus-4"}]}
-    return _res(p_anth.evaluate(led, env={}).violations)
 
 
 def v_anon():
@@ -263,7 +252,6 @@ VARIANTS: List[Tuple[str, str, str, Any]] = [
     ("10_433_counts", "AF-BK-433-COUNTS", "prove_bw_433.py", v_433_counts),
     ("11_433_map", "AF-BK-433-MAP", "prove_bw_433.py", v_433_map),
     ("12_placeholder", "AF-BK-PLACEHOLDER", "prove_bw_placeholder.py", v_placeholder),
-    ("13_anthropic", "AF-BK-ANTHROPIC", "prove_bw_noanthropic.py", v_anthropic),
     ("14_anon", "AF-BK-ANON", "prove_bw_anon.py", v_anon),
     ("15_stage_skipped", "AF-BK-STAGE-SKIPPED", "prove_bw_process.py", v_stage_skipped),
     ("16_process_integrity", "AF-BK-PROCESS-INTEGRITY", "prove_bw_process.py", v_process_integrity),

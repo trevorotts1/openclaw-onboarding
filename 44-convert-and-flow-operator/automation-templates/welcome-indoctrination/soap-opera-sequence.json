@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "sequence_stack",
   "id": "soap-opera-sequence",
   "name": "Soap Opera Sequence (5-Email Bonding Sequence)",
   "aliases": [
@@ -26,7 +28,10 @@
     "fires": "Once per contact, on FIRST opt-in only",
     "reentry_guard": "Only enter if tag 'sos-started' does NOT already exist"
   },
-  "channels": ["email (auto-responder, 1/day for 5 days)", "optional SMS mirror nudge on no-open"],
+  "channels": [
+    "email (auto-responder, 1/day for 5 days)",
+    "optional SMS mirror nudge on no-open"
+  ],
   "cadence": "Auto-responder, one email per day for 5 consecutive days (Brunson recommends once/day for this sequence for best results)",
   "sequence": [
     {
@@ -130,9 +135,20 @@
     "builder": "Skill 44 — Convert & Flow Operator (caf), Tier 0 PRIMARY in the 6-tier GHL access chain. Builds directly via internal API when GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN is present + healthy; if token missing/expired, BUILD falls to Tier 4 (agent-browser) backstop and the owner is nudged — nothing silent.",
     "dependencies_first": {
       "note": "caf REFUSES to build a workflow whose tags / custom fields / custom values don't exist yet (dependency-first contract). Create these BEFORE the workflow.",
-      "tags": ["sos-started", "sos-complete", "sos-purchased"],
-      "custom_fields": ["sos_start_date (date)"],
-      "custom_values": ["{{ac_name}}", "{{brand_tag}}", "{{core_offer_url}}", "{{free_gift_url}}"]
+      "tags": [
+        "sos-started",
+        "sos-complete",
+        "sos-purchased"
+      ],
+      "custom_fields": [
+        "sos_start_date (date)"
+      ],
+      "custom_values": [
+        "{{ac_name}}",
+        "{{brand_tag}}",
+        "{{core_offer_url}}",
+        "{{free_gift_url}}"
+      ]
     },
     "workflow": {
       "trigger": "Form Submitted (opt-in squeeze form) OR Funnel Step Submitted OR Contact Created filtered to opt-in source. Trigger filter: tag 'sos-started' is NOT present (re-entry guard).",

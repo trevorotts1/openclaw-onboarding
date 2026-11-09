@@ -259,12 +259,14 @@ RESTRICTIONS: Dict[str, Tuple[str, str]] = {
         "06-ghl-install-pages/tools/ghl_survey_rest.py (via fallback-ladder.json surface 'survey')",
     ),
     "products_prices_undocumented_here": (
-        "No products/prices endpoint is documented in this repo's verified references. "
-        "Products/prices support is INCOMPLETE until an operation is confirmed via the "
-        "official MCP search_operations/describe_operation or vendor docs; no endpoint is "
-        "invented here. Reported incomplete, never as done.",
-        "29-ghl-convert-and-flow/references/ (no /products/ or /prices/ row); "
-        "GHL-DELIVERY-SPEC.md Commerce section",
+        "Product and price create/read use the documented public routes registered below "
+        "(products.* / products.prices.*). Everything else in the products family is "
+        "INCOMPLETE and reported, never as done: variants, membership offers, inventory "
+        "tracking, price edit/delete, and binding a price to a native checkout component "
+        "(no public route; managed builder execution). No endpoint is invented here.",
+        "29-ghl-convert-and-flow/references/modules.md (products, 27 endpoints); "
+        "shared-utils/ghl/products_prices.py (official apps/products.json, CreateProductDto/"
+        "CreatePriceDto)",
     ),
     "community_mcp_retired": (
         "The self-hosted community GHL MCP is RETIRED and never a route; boxes must verify "
@@ -372,6 +374,30 @@ OPERATIONS: Tuple[Capability, ...] = (
     _C("opportunities.update", Transport.PUBLIC_REST, "PUT /opportunities/{id}",
        frozenset({OpClass.EDIT}), Support.VERIFIED,
        "05-ghl-setup/INSTRUCTIONS.md", resource="opportunities", readback=True),
+
+    # --- products and prices (REST, VERIFIED: official apps/products.json) ---
+    _C("products.list", Transport.PUBLIC_REST, "GET /products/",
+       frozenset({OpClass.LIST}), Support.VERIFIED, "29-ghl-convert-and-flow/references/modules.md (products); shared-utils/ghl/products_prices.py (official apps/products.json)", resource="products",
+       constraints=("locationId query is required",)),
+    _C("products.get", Transport.PUBLIC_REST, "GET /products/{productId}",
+       frozenset({OpClass.READ}), Support.VERIFIED, "29-ghl-convert-and-flow/references/modules.md (products); shared-utils/ghl/products_prices.py (official apps/products.json)", resource="products",
+       constraints=("locationId query is required",)),
+    _C("products.create", Transport.PUBLIC_REST, "POST /products/",
+       frozenset({OpClass.CREATE}), Support.VERIFIED, "29-ghl-convert-and-flow/references/modules.md (products); shared-utils/ghl/products_prices.py (official apps/products.json)", resource="products", readback=True,
+       constraints=("read first and reconcile before create; needs a verified automation_write "
+                    "approval record; never name a product with an internal prefix (buyers see it)",)),
+    _C("products.prices.list", Transport.PUBLIC_REST, "GET /products/{productId}/price",
+       frozenset({OpClass.LIST}), Support.VERIFIED, "29-ghl-convert-and-flow/references/modules.md (products); shared-utils/ghl/products_prices.py (official apps/products.json)", resource="products",
+       constraints=("locationId query is required",)),
+    _C("products.prices.get", Transport.PUBLIC_REST, "GET /products/{productId}/price/{priceId}",
+       frozenset({OpClass.READ}), Support.VERIFIED, "29-ghl-convert-and-flow/references/modules.md (products); shared-utils/ghl/products_prices.py (official apps/products.json)", resource="products",
+       constraints=("locationId query is required",)),
+    _C("products.prices.create", Transport.PUBLIC_REST, "POST /products/{productId}/price",
+       frozenset({OpClass.CREATE}), Support.VERIFIED, "29-ghl-convert-and-flow/references/modules.md (products); shared-utils/ghl/products_prices.py (official apps/products.json)", resource="products", readback=True,
+       constraints=("amount is a decimal in MAJOR units (CreatePriceDto example 99.99): convert "
+                    "only through products_prices.minor_to_api_amount with the ISO-4217 exponent",
+                    "read first and reconcile before create; needs a verified automation_write "
+                    "approval record")),
 
     # --- media (REST, VERIFIED) ---
     _C("medias.list", Transport.PUBLIC_REST, "GET /medias/",
@@ -671,8 +697,13 @@ def self_check() -> None:
     upsert = next(c for c in OPERATIONS if c.capability_id == "contacts.upsert")
     assert upsert.readback and upsert.op_classes == frozenset({OpClass.CREATE, OpClass.EDIT})
 
-    # 7. Products/prices: reported INCOMPLETE, never as done, never invented.
-    assert select_route(OpClass.CREATE, resource="products", dynamic_confirmed=False) == []
+    # 7. Products/prices: the documented create routes are registered; the rest of the
+    #    family stays reported INCOMPLETE (restriction kept for object_router).
+    prod_create = select_route(OpClass.CREATE, resource="products", dynamic_confirmed=False)
+    assert prod_create and prod_create[0].route == "POST /products/", prod_create
+    assert {c.route for c in prod_create} == {"POST /products/", "POST /products/{productId}/price"}
+    assert all(c.readback for c in prod_create)
+    assert select_route(OpClass.EDIT, resource="products", dynamic_confirmed=False) == []
     assert any("products_prices" in rid for rid in RESTRICTIONS)
 
     # 8. Dynamic surfaces carry no static write grant.
@@ -687,12 +718,13 @@ def self_check() -> None:
     assert MAX_429_RETRIES == 3 and MAX_5XX_RETRIES == 1
 
     # 10. Missing route raises and says "incomplete", never "done".
+    assert require_route(OpClass.CREATE, resource="products").route == "POST /products/"
     try:
-        require_route(OpClass.CREATE, resource="products")
+        require_route(OpClass.EDIT, resource="products")
     except UnsupportedOperation as exc:
         assert "incomplete" in str(exc)
     else:
-        raise AssertionError("require_route must refuse unverified products create")
+        raise AssertionError("require_route must refuse an unregistered products edit")
 
 
 if __name__ == "__main__":

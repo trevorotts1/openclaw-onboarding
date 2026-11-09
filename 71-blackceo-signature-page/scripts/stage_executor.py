@@ -32,6 +32,15 @@ Providers:
 What the switch is: `--provider kie --allow-paid` plus a client-owned
 KIE_API_KEY in the environment. Everything else is inert.
 
+The ceiling and the receipts (IMG-21, IMG-06). The kie route also needs intake.json
+`image_cap` (the approved picture ceiling). Each paid render is reserved in
+<run_dir>/image-spend-ledger.json before the call and refused once the cap is used, so
+the Design Board, the final mockups and every QC retry count; a direct run of a NEXT
+command spends nothing past it. Each delivered image gets receipts/kie74/<task_id>.json
+written here (never by hand): the adapter result plus a binding of task id, sha256 of
+the saved bytes and the measured credits_before/credits_after. receipt_gate_problems()
+re-hashes the PNGs; shared_page_service.py applies it to every production run.
+
 Input: <run_dir>/production-request.json (see
 references/generation-execution.md). Sections drive the jobs; each
 later stage attaches the actual PNGs the earlier stages wrote as
@@ -60,6 +69,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -68,8 +78,14 @@ import struct
 import subprocess
 import sys
 import tempfile
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+try:
+    import fcntl  # ponytail: POSIX lock; without it (Windows) the ceiling is still checked, just not race-proof
+except ImportError:
+    fcntl = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import circle_image  # noqa: E402  design styles B and C: circle slots
@@ -77,6 +93,7 @@ import design_style  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import sibling_skill  # noqa: E402  the ONE sibling-skill resolver (either directory convention)
 import reference_use  # noqa: E402  SPF022: reference images are structure only
 import brand_colors  # noqa: E402  SPF019: client brand colors gate
 import hypersaturation  # noqa: E402  SPF020: page color system + image grade, client colors
@@ -91,6 +108,7 @@ COMBINE = SKILL_ROOT / "scripts" / "combine_review_pdf.py"
 DEFAULT_REQUEST = "production-request.json"
 RECORD = "stage-executor-record.json"
 BOARD_STAGE = "design-board"  # SPF021: one client-approved board per page, after the images, before final-mockups
+GATE = SKILL_ROOT / "scripts" / "stage_gate.py"  # the one authority for whether a stage may start
 
 STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup", "final-mockups")
 # per stage: list of (output template, width, height-hint)
@@ -374,26 +392,54 @@ def sanitize_prompt(text: str) -> str:
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
-def prompt_budget(model: str | None):
-    """The model's recorded band: hard maximum, 80% floor, 95% target.
+def _prompt_policy():
+    """The ONE canonical prompt policy (shared-utils/prompt_policy.py)."""
+    global _POLICY
+    try:
+        return _POLICY
+    except NameError:
+        pass
+    _POLICY = None
+    roots = [SKILL_ROOT.parent / "shared-utils"]
+    if os.environ.get("OPENCLAW_SKILLS_DIR"):
+        roots.append(Path(os.environ["OPENCLAW_SKILLS_DIR"]) / "shared-utils")
+    roots += [Path.home() / ".openclaw" / "skills" / "shared-utils",
+              Path("/data/.openclaw/skills/shared-utils")]
+    for d in roots:
+        if (d / "prompt_policy.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            try:
+                import prompt_policy
+                _POLICY = prompt_policy
+            except Exception:
+                _POLICY = None
+            break
+    return _POLICY
 
-    The policy file is the authority; a model with no recorded maximum has
-    no band (None), exactly like the skill's validator.
+
+def policy_band_numbers(max_chars):
+    """The strict band (floor = ceil(0.95 x max)) from the one policy service."""
+    m = int(max_chars)
+    pol = _prompt_policy()
+    if pol is not None:
+        return pol.band_numbers(m)
+    floor = -(-m * 95 // 100)
+    return {"max": m, "floor": floor, "target_min": floor, "target_max": m}
+
+
+def prompt_budget(model: str | None):
+    """The model's strict recorded band: hard maximum, 95 percent floor, 95 percent target.
+
+    The policy file records WHICH maximum governs this route; the band arithmetic comes
+    from the one policy service. A model with no recorded maximum has no band (None), and
+    the paid boundary then refuses a pass rather than inventing one.
     """
     try:
         policy = json.loads((SKILL_ROOT / "references" / "prompt-budget-policy.json")
                             .read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    band = policy.get("band") or {}
-    try:
-        floor_pct = int(band.get("floor_pct") or 80)
-    except (TypeError, ValueError):
-        floor_pct = 80
-    target_pct = 95
-    match = re.match(r"\s*(\d+)", str(band.get("target_pct") or ""))
-    if match:
-        target_pct = int(match.group(1))
     for entry in policy.get("models") or []:
         match = entry.get("match")
         if not (model and match and str(match) in model and entry.get("unit") == "chars"):
@@ -402,9 +448,10 @@ def prompt_budget(model: str | None):
             cap = int(entry.get("max_chars"))
         except (TypeError, ValueError):
             return None
-        return {"max_chars": cap,
-                "floor_chars": cap * floor_pct // 100,
-                "target_chars": cap * target_pct // 100}
+        band = policy_band_numbers(cap)
+        return {"max_chars": cap, "floor_chars": band["floor"],
+                "target_chars": band["target_min"],
+                "source": "prompt-budget-policy:%s" % entry.get("cap_status", "UNKNOWN")}
     return None
 
 def prompt_cap(model: str | None):
@@ -419,7 +466,8 @@ def _cta_label(value) -> str:
 
 def cta_labels(section: dict) -> list:
     """Every button label a section carries: one `cta`, or `cta_labels` (one button per package
-    card on the product-selection page's Section 3)."""
+    card on product-selection; the utility actions side by side on the thank-you page, whose
+    `cta_layout` is "utility")."""
     many = [str(x).strip().rstrip(".") for x in section.get("cta_labels") or [] if str(x).strip()]
     return many or ([_cta_label(section.get("cta"))] if _cta_label(section.get("cta")) else [])
 
@@ -515,15 +563,113 @@ def copy_contract(section: dict, closing: str = "") -> str:
                      " | ".join(f'"{x}"' for x in labels))
     many = cta_labels(section)
     if len(many) > 1:
-        lines.append("CTA LABELS — one button per package card, in card order, each printed exactly: "
-                     + " | ".join(f'"{x}"' for x in many))
+        # The treatment belongs to the page type: a package page repeats one button per card,
+        # a utility page (thank-you) keeps its actions side by side or one per access card, as
+        # the spec's own `cta.note` states (the first action filled, the rest outlined).
+        if section.get("cta_layout") == "utility":
+            note = str(section.get("cta_note") or "").strip().rstrip(".")
+            if not note:  # the spec states the treatment; a guessed one is a defect
+                raise ExecutorError(
+                    f"section {label}: the utility actions carry no declared treatment "
+                    "(cta_note); rebuild the request from the spec, never a guessed treatment")
+            treatment = note[0].lower() + note[1:] + "; "
+            lead = ("CTA LABELS — utility actions on this page, each its own button, "
+                    + treatment + "each printed exactly: ")
+        else:
+            lead = "CTA LABELS — one button per package card, in card order, each printed exactly: "
+        lines.append(lead + " | ".join(f'"{x}"' for x in many))
     elif cta:
         lines.append(f'CTA LABEL — print exactly: "{cta}"')
     elif closing:
         lines.append(f'CLOSING BUTTON LABEL — print exactly: "{closing}"')
     return "\n".join(lines)
 
-def negative_block(stage: str | None = None, steps: bool = True, page_spec: dict | None = None) -> str:
+def steps_in_spec(spec) -> dict | None:
+    """The numbered-steps band of a page spec, or None when the page carries no steps band.
+
+    Read from the governing spec's own metadata (references/copy-specs/**, the same files the
+    section-count check reads): a section marked `steps: true` or carrying `step_rules.step_count`.
+    The Standard's section 11 declares seven steps, the thank-you page's section 4 four to six,
+    and the checkout, upsell, downsell and product-selection specs declare none at all.
+    """
+    for entry in (spec or {}).get("sections") or []:
+        if not isinstance(entry, dict):
+            continue
+        rules = entry.get("step_rules") if isinstance(entry.get("step_rules"), dict) else {}
+        count = rules.get("step_count") if isinstance(rules.get("step_count"), dict) else {}
+        if entry.get("steps") or count:
+            return {"section_id": entry.get("id"), "name": entry.get("name"),
+                    "count": count.get("default"), "min": count.get("min"),
+                    "max": count.get("max"), "kind": count.get("kind")}
+    return None
+
+
+def _step_rule(band: dict | None, page_spec: dict | None, default_count: int = 0) -> str:
+    """The negative block's steps sentence for THIS page, or '' when the page has no steps band.
+
+    A page type with its own wording (the thank-you page) keeps its band's range; every other page
+    reads its governing spec's count; a page whose structure has no steps band gets no steps rule.
+    The main sales skeleton's seven badges are never ordered onto a role that does not carry them
+    (a five-section checkout, an eight-band upsell, a thank-you page's four to six). `default_count`
+    is the count to use when the wire carries neither a band nor a spec: the Standard landing
+    skeleton has always carried seven, and dropping that default silently removed the step rule
+    from every landing prompt built without a role spec.
+    """
+    if page_spec:
+        band = band if band and band.get("max") else steps_in_spec(page_spec)
+        if band and band.get("min") and band.get("max"):
+            return (f"Do not mis-number the steps: the badges read 1, 2, 3 and on up to the last step "
+                    f"once each ({band['min']} to {band['max']} steps), with one step label per badge "
+                    "and no badge the copy does not carry. ")
+        return ("Do not mis-number the steps: the badges read 1, 2, 3 and on up to the last step once "
+                "each, with one step label per badge and no badge the copy does not carry. ")
+    try:
+        count = int((band or {}).get("count") or 0)
+    except (TypeError, ValueError):
+        count = 0
+    if count < 1:
+        count = int(default_count or 0)
+    if count < 1:
+        return ""
+    return (f"Do not mis-number the {count} steps: exactly {count} badges reading "
+            + ", ".join(str(i) for i in range(1, count + 1))
+            + f" once each, and exactly {count} step labels. ")
+
+
+def role_structure_block(stage: str, section: dict, request: dict, width: int) -> str:
+    """The page type's ACTUAL section structure for one mockup slice.
+
+    The wireframe stages carry the page type's full build spec already (wireframe_spec reads the
+    same role files). The mockup stages were drawn from the landing skeleton: PAGE TYPE STRUCTURE
+    was composed only for page types whose spec carries a `layout` block, so a checkout, upsell or
+    downsell mockup was never told which page type's structure it draws. This reads the role spec
+    Skill 71 already routes to (references/copy-specs/roles/<role>.json, stamped into the request
+    by load_request) and names that section's own structure. It names identity and composition
+    only: the section's layout prose is the builder's job, and repeating it here would put the
+    same sentences in every slice (the padding rule refuses repeated n-gram blocks).
+    """
+    block = page_role.layout_block(stage, section, request, width)
+    if block:
+        return block
+    if stage not in hypersaturation.MOCKUP_STAGES:
+        return ""
+    spec = request.get("_role_spec")
+    if not isinstance(spec, dict):
+        return ""
+    sid = canon_section_id(section.get("section_id"))
+    entry = role_spec.section(spec, sid)
+    if not isinstance(entry, dict) or not entry:
+        return ""
+    page = str(spec.get("page_role") or "page").replace("_", " ")
+    # One short line, unique per section: the section id and its composition role are the only
+    # tokens that differ between slices, so no 8-word run can repeat across the page's prompts
+    # (the padding rule refuses repeated n-gram blocks).
+    return (f"PAGE TYPE STRUCTURE — {page} page, section {sid} "
+            f"({entry.get('composition_role') or 'page block'}); not a landing section.")
+
+
+def negative_block(stage: str | None = None, steps: bool = True, page_spec: dict | None = None,
+                   step_rule: str | None = None) -> str:
     """The skill's own defect-class negative block, applied at the wire.
 
     Stage aware: a wireframe stage prints annotations (section number and
@@ -540,12 +686,10 @@ def negative_block(stage: str | None = None, steps: bool = True, page_spec: dict
                 "(section number and name, type specs, slot labels with pixel size, "
                 "ratio and treatment, behavior notes); no placeholder tokens, no "
                 "agent notes, no lorem, no bracketed markers, no watermarks.")
-    if page_spec:  # a page type with its own steps rule (the thank-you page: four to six steps)
-        step_rule = ("Do not mis-number the steps: the badges read 1, 2, 3 and on up to the last step "
-                     "once each, with one step label per badge and no badge the copy does not carry. ")
-    else:
-        step_rule = ("Do not mis-number the 7 steps: exactly 7 badges reading 1, 2, 3, 4, 5, 6, 7 "
-                     "once each, and exactly 7 step labels. ") if steps else ""
+    if step_rule is None:
+        # No rule supplied by the caller: derive it from the page's own structure, keeping the
+        # legacy seven-step default when the wire carries no role spec at all.
+        step_rule = _step_rule(None, page_spec, default_count=7 if steps else 0)
     return (
         "NEGATIVE BLOCK — do not duplicate a section number, do not print the "
         "same number twice, do not skip a number. " + step_rule + "Do not garble any label, mug slogan, or caption: no "
@@ -565,6 +709,55 @@ def frame_contract(width: int, ratio: str) -> str:
 
 class ExecutorError(Exception):
     """A named failure; the message is printed and the run stops."""
+
+
+def stage_start_check(run_dir: Path, stage: str, item: str | None = None) -> tuple[int, str]:
+    """Skill 71's own start check for one stage, or for one item of an itemized stage.
+
+    The gate is the only authority for whether a stage may start: it verifies the stage's whole
+    transitive dependency chain is closed with matching artifact hashes, the stage's
+    requires_artifacts exist, the client's brand colours are resolved, and, for an item, that the
+    item's own dependency (its prompt, for image-generation-qc) is closed. This calls the gate;
+    it never re-implements or relaxes a rule. Before this, a direct run of this command began a
+    stage the run had not reached: final mockups before the page's images, generation before its
+    prompts, a mockup before the board the client approved.
+    """
+    verb = "check-item" if item else "check"
+    argv = [sys.executable, str(GATE), verb, str(run_dir), stage] + ([str(item)] if item else [])
+    proc = subprocess.run(argv, capture_output=True, text=True)
+    return proc.returncode, ((proc.stdout or "") + (proc.stderr or "")).strip()
+
+
+def require_stage_start(run_dir: Path, stage: str, provider: str, item: str | None = None) -> dict:
+    """The gate's verdict on this execution, and the refusal where one is owed.
+
+    A paid run always refuses: it would spend money on a stage the run has not reached. A stub run
+    on a gate-driven run (one that carries private/state.json) refuses too, because that run claims
+    to be a gated pipeline and is held to the gate. A stub run on a bare fixture with no gate state
+    still proves the wire end to end; it records the gate's own lines as status
+    "ungated_fixture" in every record it writes, so its placeholders can never be read as a gated
+    stage. Nothing here writes a receipt: the verdict travels in this command's own record.
+    """
+    rc, text = stage_start_check(run_dir, stage, item)
+    verdict = {"status": "pass", "stage": stage, "checked": "item" if item else "stage",
+               "gate_exit": rc, "detail": text}
+    if item:
+        verdict["item"] = item
+    if rc == 0:
+        return verdict
+    where = f"{stage} item {item}" if item else f"stage {stage}"
+    if provider == "kie" or (Path(run_dir) / "private" / "state.json").is_file():
+        first = next((line for line in text.splitlines() if line.startswith("- ")), text or "no output")
+        first = first.lstrip("- ").strip()
+        # the gate already names the stage ("stage X cannot start: ..."); keep its reason only
+        first = re.sub(rf"^(?:stage|item) .*? cannot start:\s*", "", first)
+        raise ExecutorError(f"{where} cannot start: {first} "
+                            "(stage_gate.py check refused it; no provider call was made)")
+    print(f"WARN start_check {where}: the run carries no gate state, so this is an ungated "
+          f"fixture; the gate's refusal is recorded, never hidden: "
+          f"{next((l for l in text.splitlines() if l.startswith('- ')), text)[:200]}", file=sys.stderr)
+    verdict["status"] = "ungated_fixture"
+    return verdict
 
 
 def require_brand_colors(run_dir: Path) -> str:
@@ -609,15 +802,11 @@ def declared_copy_version(run_dir: Path, request: dict):
     return None
 
 
-def allowed_section_sequences(spec: dict) -> list:
-    """The spec sequence, plus each optional-children expansion (5 -> 5A,5B,5C)."""
-    base = list(spec["sequence"])
-    out = [base]
-    for parent, child in (spec.get("containment", {}).get("child_sections") or {}).items():
-        if parent in base and child.get("ids"):
-            i = base.index(parent)
-            out.append(base[:i] + list(child["ids"]) + base[i + 1:])
-    return out
+def allowed_section_sequences(spec: dict, request=None) -> list:
+    """The sequence the spec accepts: its own, plus each optional-children expansion
+    (5 -> 5A,5B,5C). page_role.allowed_sequences is the one resolver; the request
+    builder reads the same function, so the two never disagree."""
+    return page_role.allowed_sequences(spec, request)
 
 
 STRUCTURES_FILE = SKILL_ROOT / "references" / "page-structures.json"
@@ -648,6 +837,27 @@ def page_role_for(run_dir: Path, request: dict) -> str:
     return page_role.declared_role(run_dir, request)  # also reads a role form's copy_version
 
 
+def check_band_layout_tags(role, ids, request):
+    """A role with a declared layout (references/page-structures.json layouts.<role>, the upsell
+    bands) must carry, section for section, the layout_tag that layout declares: every upsell band
+    is drawn from its declared layout, never from the heading. Roles without a layout are unchanged."""
+    try:
+        data = json.loads(STRUCTURES_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ExecutorError(f"cannot read {STRUCTURES_FILE.name}: {exc}")
+    layout = (data.get("layouts") or {}).get(role)
+    if not isinstance(layout, dict):
+        return
+    by_id = {canon_section_id(s["id"]): s["layout_tag"] for s in layout.get("sections") or []}
+    for i, section_id in enumerate(ids):
+        want, got = by_id.get(section_id), request["sections"][i].get("layout_tag")
+        if got != want:
+            raise ExecutorError(
+                f"band layout: section {section_id} of {role} carries layout_tag {got!r} but "
+                f"references/page-structures.json layouts.{role} declares {want!r}; every upsell band "
+                "is drawn from its declared layout")
+
+
 def check_section_count(run_dir: Path, request: dict, paid: bool = False):
     """Fail closed unless the request carries one section per canonical section of
     the page it builds, in order: the selected form's copy sections (Standard 12,
@@ -655,7 +865,8 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
     page role's own sequence (references/copy-specs/roles/<role>.json, checkout 5)
     for a run whose page_role has one. A non-landing page role with an entry in
     references/page-structures.json is checked against that entry's sequence
-    instead (Downsell 8).
+    instead (Downsell 8). An upsell role also carries the layout_tag its declared band layout
+    names for each section (check_band_layout_tags).
 
     Never band-compressed: a request that merges sections to fit fewer images
     is refused by name before any prompt is composed or any call is made.
@@ -675,8 +886,14 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
         spec, label = rspec, f"{rspec['page_role']} page"
     else:
         pspec = page_role.spec_for_role(role)
+        # copy_forms.form_for_role is the one registry of page role -> form (it reads a form's
+        # plural `page_roles` too), so this guard sees every page type, not only the specs
+        # page_role.spec_for_role knows (it needs wireframe.form_label).
+        want_form = copy_forms.form_for_role(role) if role != page_role.LANDING_ROLE else None
         if pspec and not version:
             version = pspec["copy_version"]  # a role page needs no landing copy_version
+        if not version and want_form:
+            version = want_form  # a registered page type is checked from its own role, paid or not
         if not version:
             if paid:
                 raise ExecutorError(
@@ -691,13 +908,17 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
                 f"copy_version {version!r} is not one of {', '.join(copy_forms.FORMS)} "
                 "(no copy spec for it in references/copy-specs/)")
         spec = json.loads(copy_forms.spec_path(version).read_text(encoding="utf-8"))
-        spec_role = spec.get("page_role")
-        if (pspec or spec_role) and (spec_role or page_role.LANDING_ROLE) != role:
+        if want_form and want_form != version:
             raise ExecutorError(
-                f"page role {role!r} and copy_version {version!r} disagree: copy_version "
-                f"{version!r} is the {spec_role or 'landing'} page's canonical form, and "
-                f"{role!r} has its own ({pspec['copy_version'] if pspec else 'landing'}); "
-                "declare the page's own form (a page type is never forced into another's sections)")
+                f"page role {role!r} and copy_version {version!r} disagree: {version!r} is "
+                f"another page type's canonical form and {role!r} is built from the "
+                f"{want_form!r} form; declare the page's own form (a page type is never "
+                "forced into another's sections)")
+        if not want_form and version not in copy_forms.LANDING_FORMS:
+            raise ExecutorError(
+                f"page role {role!r} and copy_version {version!r} disagree: {version!r} is a "
+                f"page type's own form and {role!r} is a landing page, which takes standard "
+                "or long-form (a page type is never forced into another's sections)")
         try:  # SPF030: a declared page kind may only use the copy forms it allows (a landing-role page)
             kind = page_kinds.declared(run_dir, request)
             if kind:
@@ -706,7 +927,10 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
             raise ExecutorError(f"page kind: {exc}")
         label = f"{version} copy"
     ids = [canon_section_id(s["section_id"]) for s in request["sections"]]
-    allowed = allowed_section_sequences(spec)
+    # The page's own numbered-steps band travels with the request, so every prompt stage orders
+    # exactly the steps this page's structure declares (and none at all on a page without one).
+    request["_step_band"] = steps_in_spec(spec)
+    allowed = allowed_section_sequences(spec, request)
     if ids not in allowed:
         want = allowed[0]
         raise ExecutorError(
@@ -715,6 +939,7 @@ def check_section_count(run_dir: Path, request: dict, paid: bool = False):
             f"{[i for i in want if i not in ids]}, unexpected "
             f"{[i for i in ids if i not in want]}. One request section per canonical "
             "copy section, in order; never band-compress sections")
+    check_band_layout_tags(role, ids, request)
     sources, absent = [], []
     for path in _copy_source_candidates(run_dir, request):
         if not path.is_file():
@@ -972,7 +1197,11 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     copy_block = copy_contract(section, closing or "")
     frame_block = frame_contract(width, ratio or "")
     neg_block = negative_block(stage, steps=request_form(request) not in copy_forms.NO_STEPS_FORMS,
-                               page_spec=page_role.request_spec(request))
+                               page_spec=page_role.request_spec(request),
+                               step_rule=_step_rule(
+                                   request.get("_step_band"), page_role.request_spec(request),
+                                   default_count=(7 if request_form(request)
+                                                  not in copy_forms.NO_STEPS_FORMS else 0)))
     ref_block = reference_use.reference_block(request.get("references"),
                                               request.get("reference_roles"))
     color_block = str(request.get("_brand_block") or "")
@@ -994,7 +1223,7 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     style_blk = (design_style.style_block(request["design_style"], stage, slots)
                  if request.get("design_style") else "")
     comp_block = composition.block(stage, resolved, typed_refs)
-    role_block = page_role.layout_block(stage, section, request, width)
+    role_block = role_structure_block(stage, section, request, width)
     named = (("COPY", copy_block), ("BRAND COLORS", color_block), ("PAGE COLOR SYSTEM", page_color),
              ("IMAGE GRADE", image_grade), ("REFERENCE ROLES", ref_block), ("FRAME CONTRACT", frame_block),
              ("COMPOSITION", comp_block), ("PAGE TYPE STRUCTURE", role_block), ("NEGATIVE", neg_block),
@@ -1042,10 +1271,14 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
                 "the verbatim copy")
         if deficit > 0:
             message = (f"{stage} section {index}: {len(prompt)} chars, {deficit} below the "
-                       f"{budget['floor_chars']}-char floor ({budget['target_chars']}-char "
-                       "target); add genuine specification")
-            if strict_floor:  # owner Decision 1: under the floor fails the prompt stage
+                       f"{budget['floor_chars']}-char strict floor ({budget['target_chars']}-char "
+                       "target); add genuine specification, never repetition or whitespace")
+            if strict_floor:
+                # The PAID KIE path authors strictly: below 95 percent is a hard revision.
                 raise ExecutorError(f"prompt budget: {message}")
+            # A stub/local compose (no paid call) records the deficit. The last paid-submit
+            # boundary still refuses: KieProvider.generate freezes and re-checks the payload,
+            # and the Skill 74 adapter gates createTask (F18 item 5).
             print(f"WARN prompt_budget {message}", file=sys.stderr)
     return (prompt, sizes) if with_sizes else prompt
 
@@ -1061,7 +1294,31 @@ def build_input(job: dict, request: dict) -> dict:
         base["aspect_ratio"] = job["ratio"]
     extra = request.get("input_extra")
     if isinstance(extra, dict):
-        base.update(extra)
+        if "prompt" in extra:
+            # F18: a later override may not silently replace the measured prompt. It is
+            # REJECTED unless the caller asks for full revalidation, and then it must pass
+            # the band before it is used.
+            pol = _prompt_policy()
+            if pol is None:
+                raise ExecutorError(
+                    "input_extra carries a prompt and shared-utils/prompt_policy.py is "
+                    "missing; the override cannot be revalidated, so the render is refused "
+                    "(no API call was made)")
+            budget = prompt_budget(request.get("model")) or {}
+            gate = pol.apply_input_extra(
+                {"prompt": base["prompt"]}, extra, prompt_key="prompt",
+                model=request.get("model"), max_chars=budget.get("max_chars"),
+                max_source=budget.get("source"),
+                revalidate=bool(request.get("input_extra_revalidate")))
+            if not gate["ok"]:
+                raise ExecutorError(
+                    "input_extra would replace the prompt after composition and measurement, "
+                    "so the request sent would not be the one reviewed or counted: %s"
+                    % "; ".join(gate["problems"]))
+            base.update(gate["params"])
+            base.update({k: v for k, v in extra.items() if k != "prompt"})
+        else:
+            base.update(extra)
     if exact:  # a request-level extra can never add a picture to the board either
         base["input_urls"] = refs
     return base
@@ -1093,8 +1350,11 @@ class StubProvider:
 
     def generate(self, job: dict, request: dict) -> dict:
         stub_png(job["out"], job["width"], job["height"], job["label"])
+        delivered = True
+        if job.get("identity") and job.get("run_dir"):
+            delivered = promote_attempt(job["run_dir"], job)
         return {"provider": "stub", "mode": "stub", "model": request.get("model") or "stub-model",
-                "saved_paths": [str(job["out"])]}
+                "saved_paths": [str(job.get("final") or job["out"])], "delivered": delivered}
 
 
 # Graphics hook (SOP-GIP-02): every wireframe and mockup section carries baked text, so a model that
@@ -1124,70 +1384,816 @@ def require_png(path: Path) -> None:
             f"PNG, so this one is refused instead of being renamed")
 
 
+LEDGER = "image-spend-ledger.json"  # per-run, one entry per paid render (reserved, then confirmed)
+
+# Durable image-job lifecycle (F21). Seven identity fields name a request so it can never
+# collide across runs, plan revisions, page instances, viewports, stages, slots or attempts;
+# the ledger states keep accepted/uncertain paid work RESERVED until it is reconciled.
+IMAGE_JOBS = "image-jobs"          # <run>/image-jobs/<target-slug>/{requests,current.json,attempt-NNN.json}
+ATTEMPT_DIR = ".attempts"          # <stage>/.attempts/<target-slug>/<file>: staging, never the artifact
+STALE_DIR = "stale"                # a superseded output is moved here, never deleted
+JOB_STATES = ("reserved", "accepted", "uncertain", "settled", "refunded", "released")
+HELD_STATES = ("reserved", "accepted", "uncertain")   # in flight OR unresolved: still the client's money
+CAP_STATES = HELD_STATES + ("settled",)                # the only rows that count against image_cap
+# Errors the provider returns BEFORE it accepts a job: nothing was queued, so nothing was spent.
+DEFINITIVE_REJECT = frozenset({
+    "validation_failed", "bad_request", "bad_file", "bad_url", "bad_response",
+    "host_not_allowed", "unsupported_model", "model_not_found", "bad_model",
+})
+
+
+def image_ceiling(run_dir: Path) -> int:
+    """The approved picture ceiling: intake.json image_cap. A paid run with no recorded ceiling is
+    refused, so a direct run of a NEXT command can never spend past what the client approved."""
+    try:
+        cap = json.loads((run_dir / "intake.json").read_text(encoding="utf-8")).get("image_cap")
+    except (OSError, ValueError, AttributeError):
+        cap = None
+    if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
+        raise ExecutorError(
+            "refusing the paid route: intake.json carries no approved image_cap (a whole number, 0 or "
+            "more), so there is no ceiling to spend against (no API call was made)")
+    return cap
+
+
+def _ledger_edit(run_dir: Path, edit):
+    """Apply edit(calls) to the run's ledger under an exclusive lock; returns edit's result."""
+    path = run_dir / LEDGER
+    with open(path, "a+", encoding="utf-8") as fh:
+        if fcntl:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        fh.seek(0)
+        text = fh.read()
+        try:
+            calls = json.loads(text)["calls"] if text.strip() else []
+        except (ValueError, KeyError, TypeError):
+            raise ExecutorError(f"{LEDGER} is unreadable; refusing to spend against a broken ledger")
+        out = edit(calls)
+        fh.seek(0)
+        fh.truncate()
+        fh.write(json.dumps({"calls": calls}, indent=2, sort_keys=True) + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    return out
+
+
+def row_state(call: dict) -> str:
+    """The lifecycle state of one ledger row. Rows written before this change carried only
+    `status` (reserved|done); they still read correctly."""
+    state = str(call.get("state") or "").strip()
+    return state if state in JOB_STATES else ("settled" if call.get("status") == "done" else "reserved")
+
+
+def counts_against_cap(call: dict) -> bool:
+    return row_state(call) in CAP_STATES
+
+
+def _same_identity(call, key) -> bool:
+    return bool(key) and str((call.get("identity") or {}).get("key") or "") == str(key)
+
+
+BASE_IDENTITY_FIELDS = ("run", "plan_revision", "page_instance", "viewport", "stage", "slot")
+
+
+def _same_target(call, identity) -> bool:
+    """The same LOGICAL job: the six base fields, attempt EXCLUDED.
+
+    A retry always claims a fresh attempt, so a guard keyed on the seven-field request key
+    never fires for the one case it exists for — resubmitting a job whose earlier attempt is
+    still accepted or uncertain. The scope is exactly what the refusal message states.
+    """
+    if not identity:
+        return False
+    got = call.get("identity") or {}
+    return all(str(got.get(f) or "") == str(identity.get(f) or "")
+               for f in BASE_IDENTITY_FIELDS)
+
+
+def held_rows(run_dir: Path, key: str | None = None) -> list:
+    """Paid work that is in flight or unresolved (reserved, accepted, uncertain)."""
+    try:
+        calls = json.loads((run_dir / LEDGER).read_text(encoding="utf-8")).get("calls") or []
+    except (OSError, ValueError, AttributeError):
+        return []
+    return [c for c in calls if isinstance(c, dict) and row_state(c) in HELD_STATES
+            and (key is None or _same_identity(c, key))]
+
+
+def _transition(run_dir: Path, rid: str, want: str, **fields) -> dict:
+    """Move one reservation to `want`, merging fields, under the ledger lock."""
+    def edit(calls):
+        for call in calls:
+            if call.get("id") != rid:
+                continue
+            call.update(fields)
+            call["state"] = want
+            call["status"] = "done" if want == "settled" else want
+            return dict(call)
+        raise ExecutorError(f"{LEDGER} has no reservation {rid}; refusing to invent one")
+    return _ledger_edit(run_dir, edit)
+
+
+def reserve_render(run_dir: Path, cap: int, label: str, identity: dict | None = None,
+                   attempt: int = 1, request_sha256: str | None = None) -> str:
+    """Count one paid render against the ceiling BEFORE the call (parallel workers cannot
+    overshoot); a crash leaves the reservation in place, which fails closed.
+
+    Refused while an earlier job for the SAME logical target (run, plan revision, page,
+    viewport, stage, slot — the attempt is the retry, not the job) is accepted or
+    uncertain: an unresolved submit is never proof that resubmitting is free."""
+    rid = uuid.uuid4().hex
+
+    def edit(calls):
+        for call in calls:
+            if _same_target(call, identity) and row_state(call) in ("accepted", "uncertain"):
+                raise ExecutorError(
+                    f"{label}: this exact job is {row_state(call)!r} "
+                    f"(task_id={call.get('task_id')!r}); reconcile it before issuing another paid "
+                    "job for the same run, plan revision, page, viewport, stage and slot")
+        used = sum(1 for call in calls if counts_against_cap(call))
+        if used >= cap:
+            raise ExecutorError(
+                f"image ceiling reached: {used} of {cap} approved paid renders are already used in "
+                f"this run ({LEDGER}); no API call was made for {label}")
+        row = {"id": rid, "label": label, "state": "reserved", "status": "reserved",
+               "at": now_iso(), "attempt": int(attempt)}
+        if identity:
+            row["identity"] = identity
+        if request_sha256:
+            row["request_sha256"] = request_sha256
+        calls.append(row)
+    _ledger_edit(run_dir, edit)
+    return rid
+
+
+def settle_render(run_dir: Path, rid: str, **fields) -> None:
+    """Back-compat: fields confirm the render; no fields release a reservation that provably
+    never reached the provider. The paid path uses mark_accepted/mark_settled/mark_uncertain."""
+    _transition(run_dir, rid, "settled" if fields else "released", **fields)
+
+
+def mark_accepted(run_dir: Path, rid: str, task_id, request_sha256: str | None = None) -> dict:
+    """Persist the provider job id and the submitted request hash BEFORE the wait.
+
+    From here the job is paid work: the reservation stays held whatever the wait, the
+    local save or a crash does afterwards.
+    """
+    fields = {"accepted_at": now_iso()}
+    if task_id not in (None, ""):
+        fields["task_id"] = str(task_id)
+    if request_sha256:
+        fields["request_sha256"] = request_sha256
+    return _transition(run_dir, rid, "accepted", **fields)
+
+
+def mark_uncertain(run_dir: Path, rid: str, reason: str, **fields) -> dict:
+    """Accepted-but-unresolved paid work: KEEP the reservation and record why."""
+    return _transition(run_dir, rid, "uncertain", reason=reason, uncertain_at=now_iso(), **fields)
+
+
+def mark_refunded(run_dir: Path, rid: str, reason: str, **fields) -> dict:
+    """The provider itself reported a failed job with zero credits consumed: nothing was spent."""
+    return _transition(run_dir, rid, "refunded", reason=reason, refunded_at=now_iso(), **fields)
+
+
+def mark_released(run_dir: Path, rid: str, reason: str, **fields) -> dict:
+    """Released only when it is PROVEN no remote job was accepted (a pre-acceptance rejection)."""
+    return _transition(run_dir, rid, "released", reason=reason, released_at=now_iso(), **fields)
+
+
+# ---------------------------------------------------------------------------
+# Durable request identity + per-attempt immutable results (F21)
+# ---------------------------------------------------------------------------
+def read_json_file(path: Path) -> dict:
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def atomic_write_json(path: Path, data) -> None:
+    """Write one JSON file so a reader never sees a half file (temp + fsync + os.replace)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(data, indent=2, sort_keys=True) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+class _jobs_lock:
+    """One exclusive lock for attempt allocation and the current-attempt pointer."""
+
+    def __init__(self, run_dir: Path):
+        path = Path(run_dir) / IMAGE_JOBS / ".lock"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.fh = open(path, "a+", encoding="utf-8")
+        if fcntl:
+            fcntl.flock(self.fh, fcntl.LOCK_EX)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.fh.close()
+        return False
+
+
+def run_identity(run_dir: Path) -> str:
+    """The run this request belongs to: intake/job run_id, else the run directory's name."""
+    for name in ("intake.json", "job.json"):
+        data = read_json_file(Path(run_dir) / name)
+        for key in ("run_id", "job_id", "slug"):
+            if str(data.get(key) or "").strip():
+                return str(data[key]).strip()
+    return Path(run_dir).resolve().name
+
+
+def plan_revision(run_dir: Path, request: dict) -> str:
+    """A digest of the plan's own decisions: the request minus executor-private keys, plus
+    the copy source and the slot inventory the prompts are read from. A dependency that
+    changed (copy, slots, request) changes this and invalidates every earlier output."""
+    public = {k: v for k, v in (request or {}).items() if not str(k).startswith("_")}
+    h = hashlib.sha256(json.dumps(public, sort_keys=True, default=str).encode("utf-8"))
+    for rel in ("copy/copy-manifest.json", "desktop-wireframe/image-inventory.json"):
+        path = Path(run_dir) / rel
+        if path.is_file():
+            h.update(rel.encode("utf-8"))
+            h.update(sha256(path).encode("utf-8"))
+    return h.hexdigest()
+
+
+def page_instance(run_dir: Path, request: dict) -> str:
+    """Which page of the run this request builds: role + declared kind."""
+    try:
+        role = str((request or {}).get("page_role") or page_role.declared_role(run_dir, request)
+                   or page_role.LANDING_ROLE)
+    except Exception:  # noqa: BLE001  a malformed request must not hide the role in the name
+        role = str((request or {}).get("page_role") or "unknown")
+    return f"{role}:{(request or {}).get('page_kind') or 'undeclared'}"
+
+
+def base_identity(run_dir: Path, request: dict, *, stage: str, slot: str,
+                  viewport: str) -> dict:
+    """The six identity fields that are known before an attempt is allocated."""
+    return {
+        "run": run_identity(run_dir),
+        "plan_revision": plan_revision(run_dir, request),
+        "page_instance": page_instance(run_dir, request),
+        "viewport": str(viewport),
+        "stage": str(stage),
+        "slot": str(slot),
+    }
+
+
+def _target_slug(ident: dict) -> str:
+    """Readable, collision-free folder name for one job target (attempt excluded)."""
+    slot = re.sub(r"[^A-Za-z0-9._-]+", "-", str(ident.get("slot") or "slot")).strip("-") or "slot"
+    if len(slot) > 32:
+        slot = slot[:32]
+    key = hashlib.sha256(json.dumps({k: ident.get(k) for k in
+                                     ("run", "plan_revision", "page_instance", "viewport",
+                                      "stage", "slot")}, sort_keys=True).encode("utf-8")).hexdigest()
+    return f"{ident.get('stage')}-{slot}-{ident.get('viewport')}-{key[:12]}"
+
+
+def allocate_attempt(run_dir: Path, ident: dict) -> dict:
+    """Reserve the next attempt number for this target under an exclusive lock and return the
+    complete identity (with `attempt` and its `key`). The number is CLAIMED on disk at
+    allocation, so a rejected or crashed attempt can never have its number reissued."""
+    with _jobs_lock(run_dir):
+        target = Path(run_dir) / IMAGE_JOBS / _target_slug(ident)
+        target.mkdir(parents=True, exist_ok=True)
+        seen = []
+        for path in list(target.glob("attempt-*.json")) + list(target.glob("attempt-*.claim")):
+            match = re.match(r"attempt-(\d+)\.(?:json|claim)$", path.name)
+            if match:
+                seen.append(int(match.group(1)))
+        pointer = read_json_file(target / "current.json")
+        attempt = max(seen + [int(pointer.get("attempt") or 0)]) + 1
+        full = dict(ident, attempt=attempt)
+        full["key"] = hashlib.sha256(json.dumps(full, sort_keys=True).encode("utf-8")).hexdigest()
+        (target / f"attempt-{attempt:03d}.claim").write_text(
+            json.dumps({"identity": full, "claimed_at": now_iso()}, sort_keys=True) + "\n",
+            encoding="utf-8")
+        return full
+
+
+def identity_path(run_dir: Path, ident: dict) -> Path:
+    """The attempt's own immutable record file."""
+    return (Path(run_dir) / IMAGE_JOBS / _target_slug(ident)
+            / f"attempt-{int(ident['attempt']):03d}.json")
+
+
+def current_pointer_path(run_dir: Path, ident: dict) -> Path:
+    return Path(run_dir) / IMAGE_JOBS / _target_slug(ident) / "current.json"
+
+
+def attempt_is_current(run_dir: Path, ident: dict) -> bool:
+    """True when no LATER attempt has already taken the current pointer."""
+    pointer = read_json_file(current_pointer_path(run_dir, ident))
+    return int(pointer.get("attempt") or 0) <= int(ident["attempt"])
+
+
+def advance_current(run_dir: Path, ident: dict, record: dict) -> bool:
+    """Point the target at this attempt; a slower OLDER attempt can never take it back."""
+    with _jobs_lock(run_dir):
+        path = current_pointer_path(run_dir, ident)
+        pointer = read_json_file(path)
+        if int(pointer.get("attempt") or 0) > int(ident["attempt"]):
+            return False
+        atomic_write_json(path, {"attempt": int(ident["attempt"]), "key": ident["key"],
+                                 "at": now_iso(), "record": record})
+    return True
+
+
+def write_attempt_result(run_dir: Path, ident: dict, entry: dict) -> Path:
+    """Persist one attempt's immutable result. A different identity never overwrites another
+    identity's file; the same identity merges into its own attempt file."""
+    path = identity_path(run_dir, ident)
+    existing = read_json_file(path)
+    if existing and (existing.get("identity") or {}).get("key") not in (None, ident["key"]):
+        path = path.with_name(path.name.replace(".json", f"-{ident['key'][:8]}.json"))
+    payload = dict(existing, **entry)
+    payload["identity"] = ident
+    payload.setdefault("attempt_at", now_iso())
+    atomic_write_json(path, payload)
+    return path
+
+
+def promote_attempt(run_dir: Path, job: dict, source: Path | None = None) -> bool:
+    """Copy this attempt's bytes to the delivered artifact ONLY while the attempt is current.
+
+    An older attempt that finishes late is recorded historically and never replaces the
+    artifact or the current pointer. The currency check, the copy and the pointer advance
+    are ONE critical section: a check made before a newer attempt advanced the pointer must
+    not licence a copy afterwards, or the artifact and the pointer would disagree.
+    """
+    ident = job["identity"]
+    final = Path(job.get("final") or job["out"])
+    source = Path(source or job["out"])
+    if final.resolve() == source.resolve():
+        advance_current(run_dir, ident, {"file": str(final.relative_to(run_dir)),
+                                         "sha256": sha256(final)})
+        return True
+    with _jobs_lock(run_dir):
+        if not attempt_is_current(run_dir, ident):
+            return False
+        final.parent.mkdir(parents=True, exist_ok=True)
+        tmp = final.with_name(f"{final.name}.a{int(ident['attempt']):03d}.part")
+        shutil.copyfile(source, tmp)
+        os.replace(tmp, final)
+        atomic_write_json(current_pointer_path(run_dir, ident),
+                          {"attempt": int(ident["attempt"]), "key": ident["key"],
+                           "at": now_iso(),
+                           "record": {"file": str(final.relative_to(run_dir)),
+                                      "sha256": sha256(final)}})
+    return True
+
+
+def reusable_record(run_dir: Path, ident: dict, out: Path) -> dict | None:
+    """The newest settled attempt for THIS identity (same run, plan revision, page, viewport,
+    stage and slot) whose delivered file still hashes — resume without a paid call."""
+    target = Path(run_dir) / IMAGE_JOBS / _target_slug(ident)
+    if not target.is_dir():
+        return None
+    best = None
+    for path in sorted(target.glob("attempt-*.json")):
+        rec = read_json_file(path)
+        got = rec.get("identity") or {}
+        if rec.get("state") not in (None, "settled"):
+            continue
+        if any(got.get(field) != ident.get(field) for field in
+               ("run", "plan_revision", "page_instance", "viewport", "stage", "slot")):
+            continue
+        rel = rec.get("file")
+        if not rel or not (Path(run_dir) / rel).is_file():
+            continue
+        if sha256(Path(run_dir) / rel) != rec.get("sha256"):
+            continue
+        if best is None or int(got.get("attempt") or 0) > int((best.get("identity") or {}).get("attempt") or 0):
+            best = rec
+    return best
+
+
+def stale_output(run_dir: Path, stage: str, out: Path) -> Path | None:
+    """Move a superseded output aside (never delete) so a re-render cannot be mistaken for it."""
+    out = Path(out)
+    if not out.is_file():
+        return None
+    digest = sha256(out)[:8]
+    dest = Path(run_dir) / stage / STALE_DIR / f"{out.stem}.{digest}{out.suffix}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(out), str(dest))
+    return dest
+
+
+def _stage_record_edit(run_dir: Path, stage: str, edit):
+    """Read-modify-write of one stage record under an exclusive lock and an atomic replace:
+    concurrent desktop/mobile/page jobs can no longer lose each other's entries."""
+    path = Path(run_dir) / stage / RECORD
+    # LND-002: the lock lives under image-jobs/, NEVER beside the record and NEVER under
+    # private/. A zero-byte lock file inside the stage folder is scanned as an artifact and
+    # fails the package with AF-LAUNCH-PKG-ARTIFACT-EMPTY; private/ belongs to the gate, and the
+    # executor must never create it (test_stub_writes_four_stages_and_no_receipts).
+    lock = Path(run_dir) / IMAGE_JOBS / ".locks" / f"{stage}.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock, "a+", encoding="utf-8") as fh:
+        if fcntl:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        data = read_json_file(path)
+        if not data:
+            data = {"stage": stage, "note": "this record is not a gate receipt and cannot close a stage"}
+        data.setdefault("stage", stage)
+        edit(data)
+        data["generated_at"] = now_iso()
+        atomic_write_json(path, data)
+        return data
+
+
+def _kie74_receipt():
+    """Skill 49's kie74_receipt.py, the one writer and checker of transport receipts (a sibling skill).
+
+    Resolved by SLUG through sibling_skill.skill_dir_for, so the same code runs in the
+    onboarding repository (`49-signature-funnel/`) and in a 999 package
+    (`.claude/skills/signature-funnel/`). Nothing spells the number and nothing looks in
+    the operator's home: an installation carries its own skills.
+    """
+    path = sibling_skill.skill_file("signature-funnel", "scripts", "kie74_receipt.py",
+                                    skill_root=SKILL_ROOT)
+    if path is None or not path.is_file():
+        raise ExecutorError(
+            "Skill 49's scripts/kie74_receipt.py was not found beside this skill "
+            f"(searched {', '.join(str(b) for b in sibling_skill.search_bases(SKILL_ROOT))} "
+            "for signature-funnel/SKILL.md): transport receipts cannot be written or "
+            "checked without it")
+    saved = list(sys.path)
+    try:
+        spec = importlib.util.spec_from_file_location("kie74_receipt_skill49", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    finally:
+        sys.path[:] = saved
+    return mod
+
+
+def _json_out(text: str) -> dict:
+    """The adapter prints one JSON object (indented); fall back to its last line."""
+    for candidate in (text.strip(), (text.strip().splitlines() or [""])[-1]):
+        try:
+            value = json.loads(candidate)
+        except ValueError:
+            continue
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def receipt_gate_problems(run_dir: Path) -> list:
+    """The production gate: every image the executor delivered must be bound to a provider task by a
+    transport receipt whose PNG bytes re-hash; an absent receipt store fails."""
+    delivered, claims_provider = [], False
+    for rec in sorted(run_dir.glob(f"*/{RECORD}")):
+        try:
+            data = json.loads(rec.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return [f"{rec.relative_to(run_dir)} is unreadable"]
+        entries = [e for e in (data.get("images") or []) + (data.get("items") or [])
+                   if isinstance(e, dict) and e.get("file")]
+        delivered += [e["file"] for e in entries]
+        claims_provider |= any((x.get("provider"), x.get("mode")) != ("stub", "stub") for x in [data] + entries)
+    if delivered and not claims_provider and not (run_dir / LEDGER).exists() \
+            and not (run_dir / "receipts" / "kie74").exists():
+        return []  # stub placeholders only: nothing claims a provider, nothing was spent, nothing to bind
+    problems =_kie74_receipt().store_problems(run_dir, delivered)
+    try:  # the ledger can never show more paid renders than the approved ceiling
+        calls = json.loads((run_dir / LEDGER).read_text(encoding="utf-8"))["calls"]
+        used = sum(1 for c in calls if isinstance(c, dict) and counts_against_cap(c))
+        cap = image_ceiling(run_dir)
+        if used > cap:
+            problems.append(f"{LEDGER} shows {used} paid renders, over the approved image_cap {cap}")
+    except (OSError, ValueError, KeyError, TypeError, ExecutorError):
+        pass  # no ledger: nothing was spent here; a missing receipt store is already a problem above
+    return problems
+
+
+class _AdapterTransport:
+    """Skill 74 as the ONE paid transport, driven one subcommand at a time.
+
+    Nothing here re-implements submit/wait/save: the executor calls the adapter's own
+    `submit`, `wait` and `save` so the provider job id can be persisted BETWEEN submit and
+    wait. `transport=` on KieProvider is a seam for the module's own runnable check only;
+    production leaves it None.
+    """
+
+    def __init__(self, adapter: Path):
+        self.adapter = adapter
+
+    def _call(self, *args) -> dict:
+        proc = subprocess.run([sys.executable, str(self.adapter), *args],
+                              capture_output=True, text=True)
+        out = _json_out(proc.stdout)
+        if not out:
+            raise ExecutorError(
+                f"Skill 74 returned no JSON for {args[0]}: "
+                f"{(proc.stderr or proc.stdout or '')[:300]}")
+        return out
+
+    def credits(self) -> float:
+        value = (self._call("credits", "--mode", "active").get("data") or {}).get("credits")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ExecutorError("Skill 74 returned no numeric credit balance; a receipt cannot bind the "
+                                "spend, so the render is refused (no paid render was made)")
+        return value
+
+    def submit(self, req_path: Path) -> dict:
+        return self._call("submit", "--request", str(req_path), "--mode", "active")
+
+    def wait(self, task_id, timeout=None) -> dict:
+        args = ["wait", "--task-id", str(task_id)]
+        if timeout:
+            args += ["--timeout", str(timeout)]
+        return self._call(*args)
+
+    def save(self, task_id, out_dir, info=None) -> dict:
+        args = ["save", "--task-id", str(task_id), "--save-dir", str(out_dir)]
+        if info is not None:
+            args += ["--info", json.dumps(info, sort_keys=True)]
+        return self._call(*args)
+
+
+def drive_paid_job(run_dir: Path, job: dict, request: dict, transport, *,
+                   cap: int, label: str) -> dict:
+    """One paid render with the provider job id persisted BEFORE the wait (F21 steps 2-4).
+
+    reserved -> accepted -> settled | uncertain | refunded | released. The reservation is
+    released only when the provider provably never accepted a job; a wait failure, a local
+    save failure or a crash leaves it accepted/uncertain and HELD.
+    """
+    model = request.get("model")
+    require_text_capable(model)
+    ident = job["identity"]
+    target = Path(run_dir) / IMAGE_JOBS / _target_slug(ident)
+    req_dir = target / "requests"
+    req_dir.mkdir(parents=True, exist_ok=True)
+    req_path = req_dir / f"request-a{int(ident['attempt']):03d}.json"
+    req = {"model": model, "input": build_input(job, request)}
+    # F18 (kept from main): freeze the FINAL prompt and bind the payload that will actually be
+    # sent. A payload whose prompt is not the frozen one never reaches the paid call.
+    pol = _prompt_policy()
+    if pol is None:
+        raise ExecutorError(
+            "shared-utils/prompt_policy.py is missing: the paid prompt band cannot be "
+            "enforced, so the render is refused (no API call was made)")
+    budget = prompt_budget(model) or {}
+    frozen = pol.freeze(job["prompt"], model=model,
+                        max_chars=budget.get("max_chars"),
+                        max_source=budget.get("source"), job_id=ident["key"][:16])
+    gate = pol.assert_payload(req, frozen=frozen)
+    if not gate["ok"]:
+        raise ExecutorError(
+            "prompt policy refused the payload before any paid call: %s"
+            % "; ".join(gate["problems"]))
+    # FREEZE: what is written and sent is the counted, hashed string. Otherwise the provider
+    # received the raw text (fence, surrounding whitespace, NFD) while the receipt and the
+    # review named a hash of the normalized text.
+    req["input"]["prompt"] = gate["prompt"]
+    # The gate above measured the COMPOSED payload, so its payload_sha256 names the pre-freeze
+    # request. The receipt must name the payload the transport receives, so the frozen payload
+    # is asserted again AFTER the freeze and THAT hash is recorded.
+    gate = pol.assert_payload(req, frozen=frozen)
+    if not gate["ok"]:
+        raise ExecutorError(
+            "prompt policy refused the frozen payload before any paid call: %s"
+            % "; ".join(gate["problems"]))
+    payload = json.dumps(req, indent=2, sort_keys=True) + "\n"
+    req_path.write_text(payload, encoding="utf-8")
+    (req_dir / f"{req_path.stem}.policy.json").write_text(
+        json.dumps({"prompt_policy": frozen,
+                    "payload": {"status": gate["status"],
+                                "payload_sha256": gate["payload_sha256"]}},
+                   indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    request_sha256 = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    before = transport.credits()
+    rid = reserve_render(run_dir, cap, label, identity=ident,
+                         attempt=ident["attempt"], request_sha256=request_sha256)
+
+    try:
+        submitted = transport.submit(req_path)
+    except ExecutorError as exc:
+        mark_uncertain(run_dir, rid, f"submit outcome unknown: {exc}"[:400])
+        raise
+    state = str(submitted.get("state") or "")
+    code = str((submitted.get("error") or {}).get("code") or "")
+    if state in ("skipped", "validated"):
+        mark_released(run_dir, rid, f"adapter did not dispatch (state {state!r}); nothing was spent")
+        raise ExecutorError(f"Skill 74 did not dispatch the job for {label} (state {state!r})")
+    if state in ("fail", "running"):
+        if code in DEFINITIVE_REJECT:
+            mark_released(run_dir, rid, f"provider rejected the request before accepting it ({code})")
+        else:
+            mark_uncertain(run_dir, rid, f"submit ended in {state!r} ({code or 'no code'}): an "
+                                         "uncertain submission is not proof nothing was charged",
+                           submit_error=(submitted.get("error") or {}))
+        raise ExecutorError(
+            f"Skill 74 did not accept {label}: state={state!r} "
+            f"error={(submitted.get('error') or {}).get('msg', '')[:200]}")
+    if state not in ("queued", "success"):
+        mark_uncertain(run_dir, rid, f"submit returned an unexpected state {state!r}")
+        raise ExecutorError(f"Skill 74 returned state {state!r} for {label}; the submission is uncertain")
+
+    task_id = str(submitted.get("task_id") or "")
+    if state == "success":  # a SYNC result: there is no task to poll, the payload is the result
+        task_id = task_id or ("sync-" + hashlib.sha256(request_sha256.encode()).hexdigest()[:16])
+        mark_accepted(run_dir, rid, task_id, request_sha256)   # BEFORE any wait/save
+        saved = transport.save(task_id, target / "saved", info=submitted)
+        waited = submitted
+    else:  # queued
+        if not task_id:
+            # taskId null: the provider may have accepted a job we cannot name. Never free.
+            mark_uncertain(run_dir, rid, "submit returned no provider task id (taskId null): an "
+                                         "UNCERTAIN submission, not a free retry")
+            raise ExecutorError(
+                f"Skill 74 returned no task id for {label}: the submission is uncertain, so the "
+                "reservation stays held and no second paid job may be issued for this identity")
+        mark_accepted(run_dir, rid, task_id, request_sha256)   # ← persisted BEFORE the wait
+        waited = transport.wait(task_id)
+        if str(waited.get("state") or "") != "success":
+            used = waited.get("credits_consumed")
+            zero = isinstance(used, (int, float)) and not isinstance(used, bool) and used == 0
+            if str(waited.get("state")) == "fail" and zero:
+                mark_refunded(run_dir, rid, "provider reported a failed job with zero credits consumed",
+                              task_id=task_id)
+            else:
+                mark_uncertain(run_dir, rid,
+                               f"wait ended in state {waited.get('state')!r}: accepted or ambiguous "
+                               "paid work stays reserved", task_id=task_id)
+            raise ExecutorError(
+                f"Skill 74 did not finish {label}: state={waited.get('state')!r} "
+                f"error={(waited.get('error') or {}).get('msg', '')[:200]}")
+        saved = transport.save(task_id, target / "saved")
+
+    paths = [p for p in saved.get("saved_paths") or [] if isinstance(p, str)]
+    if str(saved.get("state") or "") != "success" or not paths:
+        mark_uncertain(run_dir, rid, "the provider accepted the job but the local save did not "
+                                     "complete", task_id=task_id)
+        raise ExecutorError(
+            f"Skill 74 accepted {label} (task {task_id}) but did not save it: the reservation "
+            "stays held until the saved bytes are reconciled")
+    source = Path(paths[0])
+    if not source.is_file():
+        mark_uncertain(run_dir, rid, "save reported a path that is not on disk", task_id=task_id)
+        raise ExecutorError(f"Skill 74 reported {source} for {label} but it is not on disk")
+    try:
+        require_png(source)
+    except ExecutorError as exc:
+        mark_uncertain(run_dir, rid, str(exc)[:400], task_id=task_id)
+        raise
+
+    after = transport.credits()
+    final = Path(job.get("final") or job["out"])
+    delivered = promote_attempt(run_dir, job, source)
+    rel_source = str(source.relative_to(run_dir)) if run_dir in source.parents else str(source)
+    if not delivered:
+        _transition(run_dir, rid, "settled", task_id=task_id, historical=True,
+                    attempt_file=rel_source, sha256=sha256(source),
+                    credits_before=before, credits_after=after,
+                    reason="a later attempt already owns the artifact")
+        write_attempt_result(run_dir, ident, {
+            "stage": ident["stage"], "slot": ident["slot"], "attempt": ident["attempt"],
+            "state": "historical", "historical": True, "file": rel_source,
+            "sha256": sha256(source), "task_id": task_id, "provider": "kie", "mode": "active",
+            "reason": "a later attempt already owns this artifact"})
+        return {"provider": "kie", "mode": "active", "model": model, "task_id": task_id,
+                "saved_paths": [rel_source], "historical": True, "delivered": False}
+    rel = str(final.relative_to(run_dir))
+    result = dict(saved)
+    result["saved_paths"] = [str(source)]
+    result["task_id"] = task_id
+    receipt = _kie74_receipt().write_bound_receipt(run_dir, result, rel, before, after)
+    _transition(run_dir, rid, "settled", task_id=task_id, file=rel, sha256=sha256(final),
+                credits_before=before, credits_after=after)
+    write_attempt_result(run_dir, ident, {
+        "stage": ident["stage"], "slot": ident["slot"], "attempt": ident["attempt"],
+        "state": "settled", "file": rel, "sha256": sha256(final), "task_id": task_id,
+        "provider": "kie", "mode": "active", "request_sha256": request_sha256,
+        "credits_before": before, "credits_after": after})
+    return {"provider": "kie", "mode": "active", "model": model, "receipt": str(receipt),
+            "task_id": task_id, "saved_paths": [str(final)], "delivered": True}
+
+
+def reconcile_uncertain(run_dir: Path, transport=None) -> list:
+    """Resolve accepted/uncertain rows BEFORE any new paid job for the run.
+
+    A job the provider reports successful is saved and settled (no second charge); one it
+    reports failed with zero credits consumed is refunded; a row with no task id, and any
+    answer that proves nothing, stays uncertain and held.
+    """
+    outcomes = []
+    for row in held_rows(run_dir):
+        if row_state(row) not in ("accepted", "uncertain"):
+            continue
+        task_id = str(row.get("task_id") or "")
+        if not task_id:
+            outcomes.append({"id": row["id"], "state": "uncertain",
+                             "reason": "no provider task id: an UNKNOWN submission, never assumed free"})
+            continue
+        if transport is None:
+            outcomes.append({"id": row["id"], "state": row_state(row), "task_id": task_id,
+                             "reason": "no transport probe available"})
+            continue
+        try:
+            info = transport.wait(task_id)
+        except ExecutorError as exc:
+            outcomes.append({"id": row["id"], "state": "uncertain",
+                             "reason": f"probe failed: {exc}"[:200], "task_id": task_id})
+            continue
+        state = str(info.get("state") or "")
+        if state == "success":
+            out_dir = Path(run_dir) / IMAGE_JOBS / "reconciled" / re.sub(r"[^A-Za-z0-9_-]", "", task_id)[:60]
+            saved = transport.save(task_id, out_dir)
+            paths = [p for p in saved.get("saved_paths") or [] if isinstance(p, str)]
+            final = Path(run_dir) / str(row.get("label") or "")
+            if (str(saved.get("state") or "") == "success" and paths and Path(paths[0]).is_file()
+                    and str(row.get("label") or "")):
+                final.parent.mkdir(parents=True, exist_ok=True)
+                tmp = final.with_name(final.name + ".reconciled.part")
+                shutil.copyfile(Path(paths[0]), tmp)
+                os.replace(tmp, final)
+                _transition(run_dir, row["id"], "settled", task_id=task_id,
+                            file=str(row["label"]), sha256=sha256(final),
+                            reconciled_at=now_iso(), credits_consumed=info.get("credits_consumed"))
+                outcomes.append({"id": row["id"], "state": "settled", "task_id": task_id,
+                                 "file": str(row["label"])})
+                continue
+            outcomes.append({"id": row["id"], "state": "uncertain", "task_id": task_id,
+                             "reason": "provider reports success but the bytes were not saved"})
+            continue
+        if state == "fail":
+            used = info.get("credits_consumed")
+            if isinstance(used, (int, float)) and not isinstance(used, bool) and used == 0:
+                mark_refunded(run_dir, row["id"],
+                              "reconciled: provider reported fail with zero credits consumed",
+                              task_id=task_id)
+                outcomes.append({"id": row["id"], "state": "refunded", "task_id": task_id})
+            else:
+                outcomes.append({"id": row["id"], "state": "uncertain", "task_id": task_id,
+                                 "reason": "provider fail without a proven zero charge"})
+            continue
+        outcomes.append({"id": row["id"], "state": "uncertain", "task_id": task_id,
+                         "reason": f"provider still reports {state!r}"})
+    return outcomes
+
+
 class KieProvider:
     name = "kie"
     mode = "active"
 
-    def __init__(self, adapter: Path, run_dir: Path):
+    def __init__(self, adapter: Path, run_dir: Path, transport=None):
         self.adapter = adapter
         self.run_dir = run_dir
-        self.receipts = run_dir / "receipts" / "kie74"
+        self.transport = transport or _AdapterTransport(adapter)
+
+    def credits(self) -> float:
+        return self.transport.credits()
 
     def generate(self, job: dict, request: dict) -> dict:
         model = request.get("model")
         if not model:
             raise ExecutorError("--provider kie needs 'model' in the production request")
-        require_text_capable(model)
-        slug = f"{job['stage']}-{job['index']:02d}-{len(job['out'].parts)}"
-        req_dir = self.run_dir / "generation-requests" / job["stage"]
-        req_dir.mkdir(parents=True, exist_ok=True)
-        req_path = req_dir / f"{slug}.json"
-        out_dir = req_dir / "saved" / slug
-        out_dir.mkdir(parents=True, exist_ok=True)
-        req = {"model": model, "input": build_input(job, request)}
-        req_path.write_text(json.dumps(req, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        proc = subprocess.run(
-            [sys.executable, str(self.adapter), "run", "--request", str(req_path),
-             "--save-dir", str(out_dir), "--mode", "active"],
-            capture_output=True, text=True)
-        raw = (proc.stdout or "").strip().splitlines()
-        try:
-            result = json.loads(raw[-1]) if raw else {}
-        except ValueError:
-            raise ExecutorError(
-                f"Skill 74 returned no JSON for {job['out']}: {(proc.stderr or '')[:300]}")
-        if result.get("state") != "success" or not result.get("saved_paths"):
-            raise ExecutorError(
-                f"Skill 74 did not save {job['out']}: state={result.get('state')!r} "
-                f"error={(result.get('error') or {}).get('msg', '')[:200]}")
-        source = Path(result["saved_paths"][0])
-        if not source.is_file():
-            raise ExecutorError(f"Skill 74 reported {source} but it is not on disk")
-        require_png(source)
-        job["out"].parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, job["out"])
-        self.receipts.mkdir(parents=True, exist_ok=True)
-        receipt = {"adapter": "74-kie-live-adapter", "mode": "active", "model": model,
-                   "task_id": result.get("task_id"), "saved_paths": [str(job["out"])],
-                   "file": str(job["out"].relative_to(self.run_dir)),
-                   "at": now_iso(), "adapter_result": result}
-        (self.receipts / f"{slug}.json").write_text(
-            json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        return {"provider": "kie", "mode": "active", "model": model,
-                "task_id": result.get("task_id"), "saved_paths": [str(job["out"])]}
+        return drive_paid_job(self.run_dir, job, request, self.transport,
+                              cap=image_ceiling(self.run_dir),
+                              label=str(Path(job.get("final") or job["out"]).relative_to(self.run_dir)))
 
 
 def find_adapter(explicit: str | None) -> Path:
+    """The Skill 74 transport: an explicit path, the env override, then the sibling tree.
+
+    The sibling is resolved by SLUG (sibling_skill), so a 999 package named
+    `.claude/skills/kie-live-adapter` and an onboarding checkout named
+    `74-kie-live-adapter` both resolve. The old fallback to a second repository under
+    the operator's home is gone: an installation that needs Skill 74 carries it.
+    """
     candidates = [explicit, os.environ.get("SKILL71_KIE_ADAPTER")]
-    candidates += [
-        str(SKILL_ROOT.parent / "74-kie-live-adapter" / "scripts" / "kie_live_adapter.py"),
-        str(Path.home() / "openclaw-onboarding" / "74-kie-live-adapter" / "scripts" / "kie_live_adapter.py"),
-    ]
+    sibling = sibling_skill.skill_file("kie-live-adapter", "scripts", "kie_live_adapter.py",
+                                       skill_root=SKILL_ROOT)
+    if sibling is not None:
+        candidates.append(str(sibling))
     for c in candidates:
         if c and Path(c).is_file():
             return Path(c)
     raise ExecutorError(
-        "Skill 74 adapter not found; pass --kie-adapter PATH or set SKILL71_KIE_ADAPTER")
+        "Skill 74 adapter not found beside this skill; pass --kie-adapter PATH or set "
+        "SKILL71_KIE_ADAPTER (searched "
+        f"{', '.join(str(b) for b in sibling_skill.search_bases(SKILL_ROOT))})")
 
 
 def make_provider(args, run_dir: Path):
@@ -1201,6 +2207,7 @@ def make_provider(args, run_dir: Path):
         raise ExecutorError(
             "refusing the paid route: KIE_API_KEY is not set in this environment "
             "(no API call was made)")
+    image_ceiling(run_dir)  # no ceiling, no paid run: refused before anything is written
     return KieProvider(find_adapter(args.kie_adapter), run_dir)
 
 
@@ -1293,15 +2300,17 @@ def overview_boards(stage: str, run_dir: Path, provider, request_name: str,
 
 
 def run_stage(stage: str, run_dir: Path, request: dict, provider,
-              request_name: str = DEFAULT_REQUEST) -> dict:
+              request_name: str = DEFAULT_REQUEST, overwrite: bool = False) -> dict:
     if stage not in LAYOUT:
         raise ExecutorError(f"unknown stage {stage!r}; expected one of {list(STAGES)}")
+    start = require_stage_start(run_dir, stage, provider.name)  # the gate's verdict, before any call
     sections = request["sections"]
     targets = LAYOUT[stage]
     records = []
     for index, section in enumerate(sections, start=1):
         for template, width, height in targets:
-            out = run_dir / stage / template.format(n=index)
+            slot = template.format(n=index)
+            out = run_dir / stage / slot
             ratio = target_ratio(stage, template, section, run_dir, index)
             style = style_refs(stage, request, provider.name == "kie")
             refs = prior_slices(stage, run_dir, index, template)
@@ -1313,9 +2322,22 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
                 strict_floor=provider.name == "kie", typed_refs=typed)
             if provider.name == "kie":
                 require_brand_line(stage, prompt)
+            base = base_identity(run_dir, request, stage=stage, slot=slot,
+                                 viewport=f"{width}x{height}")
+            if not overwrite:
+                existing = reusable_record(run_dir, base, out)
+                if existing is not None:
+                    entry = dict(existing, reused=True, provider=provider.name, mode=provider.mode)
+                    records.append(entry)
+                    print(f"REUSED {stage} {entry.get('file')} sha256={entry.get('sha256')} "
+                          f"attempt={entry.get('attempt')} (inputs unchanged)")
+                    continue
+            ident = allocate_attempt(run_dir, base)
+            staged = run_dir / stage / ATTEMPT_DIR / _target_slug(ident) / slot
             job = {
                 "stage": stage, "index": index, "section": section,
-                "out": out, "width": width, "height": height,
+                "out": staged, "final": out, "run_dir": run_dir,
+                "width": width, "height": height, "slot": slot, "identity": ident,
                 "label": f"{stage} section {index:02d} {width}px",
                 "ratio": ratio,
                 "references": [str(p) for p in refs] + [r["url"] for r in typed],
@@ -1325,11 +2347,30 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
                 "prompt": prompt, "prompt_sizes": prompt_sizes,
             }
             result = provider.generate(job, request)
+            if result.get("delivered") is None and Path(job["out"]).is_file():
+                result["delivered"] = promote_attempt(run_dir, job)  # a provider that does not promote itself
+            if result.get("delivered", True) is False:
+                entry = {"stage": stage, "section_id": section["section_id"],
+                         "section_number": index, "slot": slot, "attempt": ident["attempt"],
+                         "identity": ident, "historical": True,
+                         "file": (result.get("saved_paths") or [None])[0],
+                         "provider": result.get("provider"), "mode": result.get("mode"),
+                         "task_id": result.get("task_id"),
+                         "reason": "a later attempt already owns this artifact"}
+                write_attempt_result(run_dir, ident, entry)
+                print(f"HISTORICAL {stage} {slot} attempt={ident['attempt']} "
+                      "did not replace the current artifact")
+                continue
+            if not out.is_file():
+                raise ExecutorError(f"{out} was not delivered; the attempt cannot be recorded")
             actual = png_size(out)
             entry = {
                 "section_id": section["section_id"],
                 "section_number": index,
                 "file": str(out.relative_to(run_dir)),
+                "slot": slot,
+                "attempt": ident["attempt"],
+                "identity": ident,
                 "width": width,
                 "requested_ratio": ratio,
                 "actual_pixels": list(actual) if actual else None,
@@ -1355,6 +2396,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
                         f"requested {ratio}, delivered {actual[0]}x{actual[1]}")
                     print(f"WARN geometry_mismatch {stage} {out.name}: "
                           f"{entry['geometry_mismatch']}")
+            write_attempt_result(run_dir, ident, dict(entry, state="settled"))
             records.append(entry)
     composition = compose(stage, run_dir, provider, len(sections))
     composition["overview_boards"] = overview_boards(
@@ -1365,14 +2407,25 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
         "mode": provider.mode,
         "model": request.get("model") or ("stub-model" if provider.name == "stub" else None),
         "generated_at": now_iso(),
+        "start_check": start,
         "note": "this record is not a gate receipt and cannot close a stage",
         "images": records,
         "composition": composition,
     }
-    path = run_dir / stage / RECORD
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return record
+
+    def merge(data):
+        # Both sides' record keys survive: main's generated_at and S1's start_check are as much
+        # part of the stage record as F21's provider/mode/model/composition.
+        data.update({k: record[k] for k in ("provider", "mode", "model", "generated_at",
+                                            "start_check", "note", "composition")})
+        merged = {e.get("file"): e for e in (data.get("images") or [])
+                  if isinstance(e, dict) and e.get("file")}
+        for entry in records:
+            if entry.get("file"):
+                merged[entry["file"]] = entry
+        data["images"] = [merged[k] for k in sorted(merged)]
+
+    return _stage_record_edit(run_dir, stage, merge)
 
 
 def load_board_request(run_dir: Path, name: str) -> dict:
@@ -1427,6 +2480,16 @@ def run_board(run_dir: Path, request: dict, provider, overwrite: bool) -> dict:
     if job["out"].exists() and not overwrite:
         raise ExecutorError(f"{job['out']} exists; pass --overwrite to remake the board "
                             "(a remade board needs a fresh client approval)")
+    base = base_identity(run_dir, request, stage=BOARD_STAGE, slot="board",
+                         viewport=f"{job['width']}x{job['height']}")
+    if not overwrite:
+        existing = reusable_record(run_dir, base, job["out"])
+        if existing is not None:
+            print(f"REUSED {BOARD_STAGE} {existing.get('file')} "
+                  f"sha256={existing.get('sha256')} (inputs unchanged)")
+            return board.load_record(run_dir)
+    job.update(identity=allocate_attempt(run_dir, base), run_dir=run_dir, final=job["out"],
+               slot="board")
     board.build_overflow_sheet(plan, run_dir)  # real images that do not fit the attachments
     result = provider.generate(job, request)
     try:
@@ -1434,6 +2497,11 @@ def run_board(run_dir: Path, request: dict, provider, overwrite: bool) -> dict:
     except board.BoardError:
         revision = 1
     record = board.write_record(run_dir, plan, job["prompt"], result, revision)
+    write_attempt_result(run_dir, job["identity"],
+                         {"stage": BOARD_STAGE, "slot": "board", "state": "settled",
+                          "file": str(job["out"].relative_to(run_dir)),
+                          "sha256": sha256(job["out"]), "task_id": result.get("task_id"),
+                          "provider": result.get("provider"), "mode": result.get("mode")})
     print(f"GENERATED {BOARD_STAGE} {board.BOARD_FILE} sha256={record['board']['sha256']}")
     return record
 
@@ -1507,6 +2575,7 @@ def with_photo_rules(prompt: str, item: str, request: dict) -> str:
 
 def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
              overwrite: bool) -> dict:
+    start = require_stage_start(run_dir, stage, provider.name, item)  # the item gate, before any read
     prompt_path = run_dir / "image-inventory-prompts" / f"{item}.txt"
     try:
         prompt = prompt_path.read_text(encoding="utf-8").strip()
@@ -1540,10 +2609,24 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
     if not digits:
         raise ExecutorError(f"item id {item!r} carries no number; cannot derive the delivered name")
     out = run_dir / stage / f"Image-{int(digits):02d}.png"
-    if out.exists() and not overwrite:
-        raise ExecutorError(f"{out} exists; pass --overwrite to replace it")
     slot = inventory_slot(run_dir, item)
     circle = circle_image.entry_shape(slot) == "circle"
+    width, height = (1024, 1024) if circle else (1440, 760)
+    base = base_identity(run_dir, request, stage=stage, slot=item,
+                         viewport=f"{width}x{height}")
+    if not overwrite:
+        existing = reusable_record(run_dir, base, out)
+        if existing is not None:
+            print(f"REUSED {stage} {item} {existing.get('file')} "
+                  f"sha256={existing.get('sha256')} attempt={existing.get('attempt')} "
+                  "(inputs unchanged)")
+            return existing
+    if out.exists() and not overwrite:
+        moved = stale_output(run_dir, stage, out)
+        print(f"STALE {stage} {item} moved to {moved.relative_to(run_dir)} "
+              "(no verified output for the current plan revision)")
+    ident = allocate_attempt(run_dir, base)
+    staged = run_dir / stage / ATTEMPT_DIR / _target_slug(ident) / out.name
     # The inventory, not the request, decides which slots are circles, so the style is
     # checked against the whole inventory here (the request path never sees these slots).
     style_id = style_id_for(run_dir, request)
@@ -1561,35 +2644,55 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
             f"(design_style.circle_clause(): 'CIRCLE CROP SAFE FRAME ...'); author it into the prompt "
             "within the model's band, never as a silent edit here")
     job = {"stage": stage, "index": int(digits), "section": {"section_id": item},
-           "out": out, "width": 1024 if circle else 1440, "height": 1024 if circle else 760,
+           "out": staged, "final": out, "run_dir": run_dir, "slot": item, "identity": ident,
+           "width": width, "height": height,
            "label": f"{item} {stage}",
            "ratio": "1:1" if circle else request.get("item_ratio"), "references": [],
            "prompt": prompt}
     result = provider.generate(job, request)
+    if result.get("delivered") is None and Path(job["out"]).is_file():
+        result["delivered"] = promote_attempt(run_dir, job)  # a provider that does not promote itself
+    entry = {"stage": stage, "item": item, "slot": item, "attempt": ident["attempt"],
+             "identity": ident, "file": str(out.relative_to(run_dir)),
+             "provider": result.get("provider"), "mode": result.get("mode"),
+             "model": result.get("model"), "task_id": result.get("task_id"), "at": now_iso(),
+             "start_check": start}
+    if result.get("delivered", True) is False:
+        entry.update(historical=True, status="historical",
+                     file=(result.get("saved_paths") or [None])[0],
+                     reason="a later attempt already owns this artifact")
+        write_attempt_result(run_dir, ident, entry)
+        print(f"HISTORICAL {stage} {item} attempt={ident['attempt']} "
+              "did not replace the current artifact")
+        return entry
     circle_record = mask_circle_slot(out, run_dir, stage, slot) if circle else None
-    entry = {"stage": stage, "item": item, "file": str(out.relative_to(run_dir)),
-             "sha256": sha256(out), "provider": result.get("provider"),
-             "mode": result.get("mode"), "model": result.get("model"),
-             "task_id": result.get("task_id"), "at": now_iso()}
+    if circle_record and result.get("receipt"):  # the receipt keeps the provider's bytes; the mask is derived
+        try:
+            _kie74_receipt().rebind_derived(Path(result["receipt"]), run_dir, circle_record["raw_file"],
+                                            str(out.relative_to(run_dir)))
+        except ValueError as exc:
+            raise ExecutorError(f"transport receipt cannot follow the circle mask of {out.name}: {exc}")
+    entry["sha256"] = sha256(out)
+    entry["start_check"] = start  # S1's gate verdict travels on every item record
     record_bleed(entry, out, request, provider, stage)
     if circle_record:
         entry["circle"] = circle_record
-    record_path = run_dir / stage / RECORD
-    record = {"stage": stage, "provider": provider.name, "mode": provider.mode,
-              "model": request.get("model") or ("stub-model" if provider.name == "stub" else None),
-              "note": "this record is not a gate receipt and cannot close a stage",
-              "items": []}
-    if record_path.is_file():
-        try:
-            record = json.loads(record_path.read_text(encoding="utf-8"))
-        except ValueError:
-            pass
-    record.setdefault("items", [])
-    record["items"] = [e for e in record["items"] if e.get("item") != item] + [entry]
-    record["generated_at"] = now_iso()
-    record_path.parent.mkdir(parents=True, exist_ok=True)
-    record_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n",
-                           encoding="utf-8")
+    write_attempt_result(run_dir, ident, dict(entry, state="settled"))
+
+    def merge(data):
+        data["provider"] = provider.name
+        data["mode"] = provider.mode
+        data["model"] = request.get("model") or ("stub-model" if provider.name == "stub" else None)
+        # main's record shape survives the F21 merge: the note and the timestamp it always wrote.
+        data["note"] = "this record is not a gate receipt and cannot close a stage"
+        data["generated_at"] = now_iso()
+        data.setdefault("items", [])
+        data.setdefault("history", [])
+        data["items"] = [e for e in data["items"]
+                         if isinstance(e, dict) and e.get("item") != item] + [entry]
+        data["items"].sort(key=lambda e: str(e.get("item") or ""))
+
+    _stage_record_edit(run_dir, stage, merge)
     print(f"GENERATED {stage} {entry['file']} sha256={entry['sha256']}")
     return entry
 
@@ -1719,6 +2822,11 @@ def main(argv=None) -> int:
                                   f"{wireframe_spec.describe_refs(refs)}")
             return 1 if refused else 0
         provider = make_provider(args, run_dir)
+        if provider.name == "kie":
+            # F21 step 2: an unresolved submit is reconciled BEFORE a new paid job is issued.
+            for outcome in reconcile_uncertain(run_dir, provider.transport):
+                print(f"RECONCILE {outcome.get('id')} state={outcome.get('state')} "
+                      f"task={outcome.get('task_id') or '-'} {outcome.get('reason') or ''}".rstrip())
         if args.item:
             request = (load_request(run_dir, args.request, paid=args.provider == "kie")
                        if (run_dir / args.request).is_file() else {})
@@ -1730,7 +2838,7 @@ def main(argv=None) -> int:
         request = load_request(run_dir, args.request, paid=args.provider == "kie")
         request["_brand_block"] = brand_block
         for stage in stages:
-            record = run_stage(stage, run_dir, request, provider, args.request)
+            record = run_stage(stage, run_dir, request, provider, args.request, args.overwrite)
             files = len(record["images"])
             print(f"STAGE {stage} images={files} provider={record['provider']} "
                   f"mode={record['mode']} record={stage}/{RECORD}")
@@ -1757,5 +2865,187 @@ def main(argv=None) -> int:
         return 1
 
 
+def _self_check() -> int:
+    """The F21 lifecycle's own runnable check: identity, accepted-before-wait, held
+    reservations, historical late attempts and resume. No network, no paid call."""
+    fails = []
+    png = PNG_MAGIC + b"\x00" * 48
+    ADAPTER_NAME = "74-kie-live-adapter"
+
+    class FakeTransport:
+        """A stand-in for Skill 74 in this check only; production always shells the adapter."""
+
+        def __init__(self, task_id="sbw-selftask-1", balances=(100.0, 99.0), wait=None, save=None):
+            self.task_id, self.balances, self.i = task_id, list(balances), 0
+            self.calls, self._wait, self._save = [], wait, save
+
+        def credits(self):
+            value = self.balances[min(self.i, len(self.balances) - 1)]
+            self.i += 1
+            return value
+
+        def submit(self, req_path):
+            self.calls.append("submit")
+            return {"state": "queued", "task_id": self.task_id, "adapter_mode": "active"}
+
+        def wait(self, task_id, timeout=None):
+            self.calls.append("wait")
+            if self._wait:
+                return self._wait(task_id)
+            return {"state": "success", "task_id": task_id}
+
+        def save(self, task_id, out_dir, info=None):
+            self.calls.append("save")
+            if self._save:
+                return self._save(task_id, out_dir)
+            Path(out_dir).mkdir(parents=True, exist_ok=True)
+            dest = Path(out_dir) / f"{task_id}.png"
+            dest.write_bytes(png + str(task_id).encode("utf-8"))
+            return {"state": "success", "task_id": task_id, "saved_paths": [str(dest)],
+                    "adapter": ADAPTER_NAME, "adapter_mode": "active", "backend": "native-live",
+                    "provider": "kie", "model_id": "selftest-model", "result_urls": []}
+
+    def fresh(root, name="run-selfcheck"):
+        d = Path(root) / name
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "intake.json").write_text(json.dumps({"run_id": name, "image_cap": 6}))
+        return d
+
+    def ledger(run):
+        return json.loads((run / LEDGER).read_text(encoding="utf-8"))["calls"]
+
+    def job_for(run, request, stage, slot, width, height):
+        base = base_identity(run, request, stage=stage, slot=slot, viewport=f"{width}x{height}")
+        ident = allocate_attempt(run, base)
+        # F18 (kept from main): the paid boundary freezes and re-checks the prompt against the
+        # model's recorded band, so this fixture uses an in-band prompt. The check then measures
+        # the F21 lifecycle, not the prompt band.
+        return {"stage": stage, "slot": slot, "index": 1, "width": width, "height": height,
+                "out": run / stage / ATTEMPT_DIR / _target_slug(ident) / Path(slot).name,
+                "final": run / stage / slot, "run_dir": run, "identity": ident,
+                "label": slot, "prompt": "x" * 19500, "references": []}
+
+    request = {"model": "gpt-image-2-5-sunburst-text-to-image", "sections": []}
+
+    # A — the identity carries all seven fields and two viewports never collide.
+    with tempfile.TemporaryDirectory() as t:
+        run = fresh(t)
+        desk = job_for(run, request, "desktop-wireframe", "section-01.png", 1440, 760)
+        mob = job_for(run, request, "mobile-tablet", "section-01.png", 390, 1080)
+        for field in ("run", "plan_revision", "page_instance", "viewport", "stage", "slot", "attempt"):
+            if field not in desk["identity"]:
+                fails.append(f"A identity: {field} is missing from the request identity")
+        if desk["identity"]["key"] == mob["identity"]["key"]:
+            fails.append("A identity: two viewports produced the same request key")
+        if _target_slug(desk["identity"]) == _target_slug(mob["identity"]):
+            fails.append("A identity: two viewports produced the same request folder")
+
+        # B — the job id is persisted BEFORE the wait; a failed wait KEEPS the reservation.
+        seen = {}
+
+        def wait_probe(task_id):
+            rows = ledger(run)
+            seen["states"] = [row_state(r) for r in rows
+                              if r.get("identity", {}).get("key") == desk["identity"]["key"]]
+            return {"state": "fail", "task_id": task_id, "credits_consumed": 3}
+
+        probe = FakeTransport(wait=wait_probe)
+        try:
+            drive_paid_job(run, desk, request, probe, cap=6, label="section-01.png")
+            fails.append("B accepted: a failed wait did not stop the job")
+        except ExecutorError:
+            pass
+        if seen.get("states") != ["accepted"]:
+            fails.append(f"B accepted: at wait time the reservation was {seen.get('states')}, "
+                         "not ['accepted'] (the job id must be persisted before the wait)")
+        row = [r for r in ledger(run) if r["identity"]["key"] == desk["identity"]["key"]][0]
+        if row_state(row) != "uncertain":
+            fails.append(f"B held: a paid failure became {row_state(row)!r}, not 'uncertain'")
+        if not row.get("task_id") or not row.get("request_sha256"):
+            fails.append("B held: the row carries no task_id/request_sha256")
+        try:
+            reserve_render(run, 6, "again", identity=desk["identity"], attempt=1)
+            fails.append("B second job: another paid job was allowed while the first is held")
+        except ExecutorError:
+            pass
+
+        # C — an interrupted local save also keeps the reservation.
+        other = job_for(run, request, "mobile-tablet", "section-01.png", 390, 1080)
+        broke = FakeTransport(task_id="sbw-selftask-2",
+                              save=lambda tid, out: {"state": "fail", "task_id": tid,
+                                                     "error": {"code": "network"}})
+        try:
+            drive_paid_job(run, other, request, broke, cap=6, label="section-01.png")
+            fails.append("C save: a failed save did not stop the job")
+        except ExecutorError:
+            pass
+        row = [r for r in ledger(run) if r["identity"]["key"] == other["identity"]["key"]][0]
+        if row_state(row) != "uncertain":
+            fails.append(f"C save: an interrupted save became {row_state(row)!r}, not 'uncertain'")
+
+    # D — a definitive rejection is the ONLY release; a late old attempt never overwrites.
+    with tempfile.TemporaryDirectory() as t:
+        run = fresh(t)
+        first = job_for(run, request, "desktop-wireframe", "section-01.png", 1440, 760)
+        rejected = FakeTransport()
+        rejected.submit = lambda p: (rejected.calls.append("submit"),
+                                     {"state": "fail", "error": {"code": "validation_failed"}})[1]
+        try:
+            drive_paid_job(run, first, request, rejected, cap=6, label="section-01.png")
+            fails.append("D release: a rejected request was not stopped")
+        except ExecutorError:
+            pass
+        row = [r for r in ledger(run) if r["identity"]["key"] == first["identity"]["key"]][0]
+        if row_state(row) != "released":
+            fails.append(f"D release: a pre-acceptance rejection became {row_state(row)!r}")
+
+        newer = job_for(run, request, "desktop-wireframe", "section-01.png", 1440, 760)
+        drive_paid_job(run, newer, request, FakeTransport(task_id="sbw-selftask-new"),
+                       cap=6, label="section-01.png")
+        current = sha256(newer["final"])
+        drive_paid_job(run, first, request, FakeTransport(task_id="sbw-selftask-old"),
+                       cap=6, label="section-01.png")
+        if sha256(first["final"]) != current:
+            fails.append("D late attempt: the older attempt overwrote the current artifact")
+        if read_json_file(current_pointer_path(run, first["identity"]))["attempt"] != newer["identity"]["attempt"]:
+            fails.append("D late attempt: the older attempt took the current pointer back")
+
+    # E — resume reuses a verified output; a changed dependency invalidates it.
+    with tempfile.TemporaryDirectory() as t:
+        run = fresh(t)
+        (run / "copy").mkdir()
+        (run / "copy" / "copy-manifest.json").write_text(json.dumps({"sections": ["1"]}))
+        one = job_for(run, request, "desktop-wireframe", "section-01.png", 1440, 760)
+        drive_paid_job(run, one, request, FakeTransport(task_id="sbw-selftask-r1"),
+                       cap=6, label="section-01.png")
+        again = base_identity(run, request, stage="desktop-wireframe", slot="section-01.png",
+                              viewport="1440x760")
+        if reusable_record(run, again, one["final"]) is None:
+            fails.append("E resume: a verified intact output was not offered for reuse")
+        (run / "copy" / "copy-manifest.json").write_text(json.dumps({"sections": ["1", "2"]}))
+        changed = base_identity(run, request, stage="desktop-wireframe", slot="section-01.png",
+                                viewport="1440x760")
+        if changed["plan_revision"] == again["plan_revision"]:
+            fails.append("E stale: a changed copy source did not change the plan revision")
+        if reusable_record(run, changed, one["final"]) is not None:
+            fails.append("E stale: an output was reused after its copy source changed")
+        moved = stale_output(run, "desktop-wireframe", one["final"])
+        if not moved or not moved.is_file() or one["final"].exists():
+            fails.append("E stale: the superseded output was not moved aside")
+
+    if fails:
+        print("stage_executor F21 lifecycle self-check -> FAIL")
+        for f in fails:
+            print("  -", f)
+        return 1
+    print("stage_executor F21 lifecycle self-check -> PASS (identity 7 fields + viewport split, "
+          "job id persisted before wait, failed wait/save keep the reservation, second paid job "
+          "refused while held, release only on pre-acceptance rejection, late old attempt "
+          "historical, resume reuses verified output and invalidates on a changed dependency)")
+    return 0
+
+
 if __name__ == "__main__":
+    if "--self-check" in sys.argv:
+        sys.exit(_self_check())
     sys.exit(main())

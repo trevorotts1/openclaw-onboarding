@@ -23,7 +23,7 @@ from pathlib import Path
 SKILL_NUMBER = "83"
 SKILL_DIR_NAME = SKILL_NUMBER + "-black-friday-launcher"
 SKILL_NAME = "black-friday-launcher"
-SKILL_VERSION = "0.2.9"
+SKILL_VERSION = "0.2.19"
 
 # The Launcher's own tree, derived from this file's location and never from a
 # directory name, so the skill works under either naming convention.
@@ -61,6 +61,11 @@ ROUTE_ROLES = (
     "thank_you",
 )
 OFFER_ROLES = ("main", "bump", "upsell_1", "downsell_1", "upsell_2")
+# Roles the interview can name but this release has no priced record slot for. Refused by name,
+# never silently dropped and never built without a price of their own (PRD-30).
+UNSUPPORTED_OFFER_ROLES = {
+    "downsell_2": "a second downsell is not supported in this release",
+}
 PAGE_STATUSES = (
     "authored",
     "locally_verified",
@@ -92,6 +97,14 @@ ENTITLEMENT_BASES = (
 
 COUNCIL_SKILL_SLUG = "council-of-wise-elders"
 COUNCIL_ENTRY_POINT = "scripts/doctor.mjs"
+# What a client is told when no Council session ran. The default step is a package check, not advice.
+COUNCIL_NO_ADVICE_SUMMARY = (
+    "No Council advice was obtained. The Council step only confirmed the Skill 77 package is "
+    "installed and intact; no Council session was held and no elder saw the offer, price or "
+    "calendar. This is not a Council review.")
+COUNCIL_ADVICE_SUMMARY = (
+    "Council advice was obtained from a live Council session and is recorded in "
+    "council-advice.json. It is advice, never permission.")
 
 CHECKOUT_SKILL_SLUG = "signature-order-form"
 CHECKOUT_CONTRACT_REF = "references/checkout.schema.json"
@@ -112,6 +125,8 @@ SKILL_SLUGS = (
     "signature-upsell",
     "signature-downsell",
     "signature-thank-you",
+    "convert-and-flow-operator",
+    "email-engine",
     "black-friday-launcher",
 )
 
@@ -198,9 +213,12 @@ DECIDED = (
     },
     {
         "id": "council_included_in_launch_planning",
-        "decision": "Council advice is included in launch planning through the "
-                    "Skill 77 entry point; a not-ready result is recorded and "
-                    "never blocks the build; advice is never permission",
+        "decision": "the Council planning step runs through the Skill 77 entry "
+                    "point and is labelled honestly: without a live session it is "
+                    "a package check (council_session_held false, no advice "
+                    "obtained); an optional council_required mode refuses without "
+                    "a session; a not-ready result never blocks by default; "
+                    "advice is never permission",
         "coded_in": "launcher_core/council.py",
     },
     {

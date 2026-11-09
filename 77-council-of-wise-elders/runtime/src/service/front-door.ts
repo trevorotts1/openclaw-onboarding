@@ -26,15 +26,20 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { pathToFileURL } from 'node:url';
 
 import { openCouncilUrl, type BrowserOpenResult } from '../bridges/browser-open.js';
+import type { CouncilCard, DecisionBrief, Verdict } from '../contracts/index.js';
 import { SEAT_IDS, SESSION_MODES, SESSION_VISIBILITIES } from '../contracts/enums.js';
+import { buildReaderProjection } from '../reports/model.js';
+import type { CouncilReportDownloadPort } from '../reports/report-download.js';
 import type { ConveneInput } from './driver.js';
 import {
   formatCouncilEventFrame,
   type CouncilEventCursor,
   type CouncilEventStreamAdapter,
   type CouncilSessionReader,
+  type CouncilSessionRecord,
 } from './events.js';
 import {
   classifyListener,
@@ -73,6 +78,45 @@ export interface OpenSessionResult {
   browser: BrowserOpenResult | null;
 }
 
+/**
+ * CTR-156: the read-only reader projection attached to a saved session read.
+ * It is built with the SAME function the report export uses, from the SAME
+ * bound owner record (brief, cards, verdict) the reader already returned. No
+ * provider call, no re-scoring, no new inference. When the record is missing a
+ * piece, or the projection refuses the saved data, the field is omitted and
+ * the chamber falls back to its historical verdict-only rendering instead of
+ * inventing readiness.
+ */
+function sessionReaderProjection(
+  record: CouncilSessionRecord,
+): Record<string, unknown> | null {
+  const brief = record.brief as DecisionBrief | undefined;
+  const verdict = record.verdict as Verdict | null | undefined;
+  if (
+    brief === null ||
+    brief === undefined ||
+    typeof brief !== 'object' ||
+    verdict === null ||
+    verdict === undefined ||
+    typeof verdict !== 'object'
+  ) {
+    return null;
+  }
+  const cards = Array.isArray(record.cards)
+    ? (record.cards as CouncilCard[])
+    : [];
+  try {
+    return buildReaderProjection({
+      verdict,
+      brief,
+      final_cards: cards,
+      context: null,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export type FrontDoorReadinessDeps = Omit<ServiceReadinessDeps, 'origin'>;
 
 export interface FrontDoorOptions {
@@ -98,11 +142,25 @@ export interface FrontDoorOptions {
    */
   sessionReader?: CouncilSessionReader;
   /**
+   * Saved-session PDF download (composition root supplies it over the
+   * canonical repositories, the export journal and the host renderer).
+   * Unbound answers 501; the door never fabricates a report document.
+   */
+  reportDownload?: CouncilReportDownloadPort;
+  /**
    * Route listing and convening (composition root supplies it over the
    * composed driver). Unbound answers 501; the door never convenes itself.
    */
   convening?: CouncilConveningPort;
   readiness?: FrontDoorReadinessDeps;
+  /**
+   * Override the packaged chamber asset directory (absolute path). Unset
+   * keeps the packaged `public/chamber` roots. Tests use this to simulate
+   * a missing-assets build in an isolated temp dir instead of renaming
+   * the shared `public/chamber` path, which races sibling tests running
+   * in the same `npm test` process.
+   */
+  chamberAssetDir?: string;
 }
 
 const MAX_BODY_BYTES = 1_048_576;
@@ -130,9 +188,11 @@ const CHAMBER_ROOT_FILES: ReadonlyMap<string, string> = new Map([
   ['chamber-theme.css', 'text/css; charset=utf-8'],
   ['chamber-shell.css', 'text/css; charset=utf-8'],
   ['chamber-decision.css', 'text/css; charset=utf-8'],
+  ['chamber-advisory.css', 'text/css; charset=utf-8'],
   ['chamber-room.css', 'text/css; charset=utf-8'],
   ['chamber-keypoints.css', 'text/css; charset=utf-8'],
   ['chamber-seatcard.css', 'text/css; charset=utf-8'],
+  ['chamber-cue.css', 'text/css; charset=utf-8'],
   ['chamber-seats.js', 'text/javascript; charset=utf-8'],
   ['chamber-state.js', 'text/javascript; charset=utf-8'],
   ['chamber-live.js', 'text/javascript; charset=utf-8'],
@@ -141,12 +201,17 @@ const CHAMBER_ROOT_FILES: ReadonlyMap<string, string> = new Map([
   ['chamber-room.js', 'text/javascript; charset=utf-8'],
   ['chamber-keypoints.js', 'text/javascript; charset=utf-8'],
   ['chamber-seatcard.js', 'text/javascript; charset=utf-8'],
+  ['chamber-advisory.js', 'text/javascript; charset=utf-8'],
+  ['chamber-cue.js', 'text/javascript; charset=utf-8'],
   ['demo-replay.json', 'application/json; charset=utf-8'],
   ['blackceo-logo.png', 'image/png'],
   ['RECEIPT.md', 'text/markdown; charset=utf-8'],
 ]);
 
-function chamberAssetRoot(): URL | null {
+function chamberAssetRoot(overrideDir?: string): URL | null {
+  if (overrideDir !== undefined) {
+    return pathToFileURL(overrideDir.endsWith('/') ? overrideDir : `${overrideDir}/`);
+  }
   for (const root of CHAMBER_ASSET_ROOTS) {
     if (existsSync(root)) return root;
   }
@@ -154,8 +219,8 @@ function chamberAssetRoot(): URL | null {
 }
 
 /** The chamber is only a landing target when its own entry page exists. */
-function chamberLandingReady(): boolean {
-  const root = chamberAssetRoot();
+function chamberLandingReady(overrideDir?: string): boolean {
+  const root = chamberAssetRoot(overrideDir);
   return root !== null && existsSync(new URL('index.html', root));
 }
 
@@ -501,7 +566,7 @@ export class CouncilFrontDoor {
     // cannot reach). Without the assets the root keeps the honest status
     // page, and the diagnostics always remain reachable at `/status`.
     if (method === 'GET' && path === '/') {
-      if (chamberLandingReady()) {
+      if (chamberLandingReady(this.options.chamberAssetDir)) {
         res.writeHead(302, {
           location: '/chamber/',
           'content-length': 0,
@@ -583,6 +648,54 @@ export class CouncilFrontDoor {
       return;
     }
 
+    // Saved-session PDF report. Same origin, same session reader and the
+    // same owner boundary the session read already uses: the composition
+    // renders from the stored record only and returns real PDF bytes.
+    const reportMatch = /^\/council\/([^/]+)\/report\.pdf$/.exec(path);
+    if (method === 'GET' && reportMatch) {
+      let sessionId: string;
+      try {
+        sessionId = decodeURIComponent(reportMatch[1]);
+      } catch {
+        sendJson(res, 400, { code: 'SERVICE_BAD_SESSION_ID', detail: 'Malformed session id.' });
+        return;
+      }
+      const port = this.options.reportDownload;
+      if (!port) {
+        sendJson(res, 501, {
+          code: 'REPORT_DOWNLOAD_NOT_BOUND',
+          session_id: sessionId,
+          detail:
+            'No saved-session report download is bound; this service never fabricates a report document.',
+          recovery:
+            'Bind the report download composition (saved records + export journal + host PDF renderer) and re-run service-readiness.',
+        });
+        return;
+      }
+      const result = await port.readPdf({ session_id: sessionId });
+      if (!result.ok) {
+        sendJson(res, result.status, {
+          code: result.code,
+          session_id: sessionId,
+          detail: result.detail,
+          recovery: result.recovery,
+        });
+        return;
+      }
+      const body = Buffer.from(result.bytes);
+      res.writeHead(200, {
+        'content-type': 'application/pdf',
+        'content-length': body.length,
+        'content-disposition': `attachment; filename="${result.filename}"`,
+        'cache-control': 'private, no-store',
+        'x-content-type-options': 'nosniff',
+        'x-council-export-sha256': result.sha256,
+        'x-council-verdict-sha256': result.verdict_content_sha256,
+      });
+      res.end(body);
+      return;
+    }
+
     const sessionMatch = /^\/council\/([^/]+)$/.exec(path);
     if (method === 'GET' && sessionMatch) {
       let sessionId: string;
@@ -621,11 +734,20 @@ export class CouncilFrontDoor {
           sendJson(res, 503, known);
           return;
         }
+        // The service, not the caller, names the report address; it is
+        // offered only for a completed sitting that carries a verdict.
+        const reportUrl = this.reportUrlFor(record, sessionId);
+        // CTR-156: the one shared reader projection, built from this same
+        // bound record. The chamber reads it; the PDF export builds the
+        // identical fields from buildReportModel.
+        const readerProjection = sessionReaderProjection(record);
         sendJson(res, 200, {
           session_id: sessionId,
           authority,
           url: known.url,
           ...(record.blocked_reason ? { blocked_reason: record.blocked_reason } : {}),
+          ...(reportUrl === null ? {} : { report_url: reportUrl }),
+          ...(readerProjection === null ? {} : { reader_projection: readerProjection }),
           session: record,
           api: {
             session: known.url,
@@ -850,12 +972,30 @@ export class CouncilFrontDoor {
   }
 
   /**
+   * The service-provided report address for one session record. Only a
+   * COMPLETED, non-blocked session that carries a verdict gets one, and
+   * only when the download port and a bound origin exist. A caller never
+   * has to build the address itself, and an unfinished sitting never
+   * advertises a report it cannot serve.
+   */
+  private reportUrlFor(record: CouncilSessionRecord, sessionId: string): string | null {
+    if (!this.options.reportDownload) return null;
+    const origin = this.origin;
+    if (!origin) return null;
+    if (record.blocked_reason !== undefined && record.blocked_reason !== null) return null;
+    const state = (record.state as { state?: unknown } | undefined)?.state;
+    if (state !== 'COMPLETED') return null;
+    if (record.verdict === null || record.verdict === undefined) return null;
+    return `${origin}/council/${encodeURIComponent(sessionId)}/report.pdf`;
+  }
+
+  /**
    * Serve one packaged chamber asset. Returns false for anything outside the
    * fixed file set (so the caller falls through to the unchanged catch-all).
    * No directory listing, no traversal, no external asset.
    */
   private serveChamberAsset(path: string, res: ServerResponse): boolean {
-    const root = chamberAssetRoot();
+    const root = chamberAssetRoot(this.options.chamberAssetDir);
     if (!root) return false;
 
     let relative: string;
@@ -947,7 +1087,7 @@ export class CouncilFrontDoor {
     // reader/adapter means the old unbound wording would be false.
     // The UI notice follows the packaged assets: when the chamber is
     // packaged the page points at it instead of reporting it missing.
-    const uiReady = chamberLandingReady();
+    const uiReady = chamberLandingReady(this.options.chamberAssetDir);
     const uiNotice = uiReady
       ? `<div class="notice"><strong>Council room ready</strong> — the full Council room is open at <a href="${escapeHtml(`${origin}/chamber/`)}"><code>/chamber/</code></a>.</div>`
       : '<div class="notice"><strong>UI_NOT_BUNDLED</strong> — the full Council chamber UI is not packaged in this build, so <code>/chamber/</code> is not served. Install the packaged Council runtime assets, then re-run service-readiness.</div>';

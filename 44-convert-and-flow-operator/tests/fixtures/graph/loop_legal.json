@@ -1,0 +1,27 @@
+{
+  "workflowData": {
+    "templates": [
+      {
+        "id": "l1",
+        "type": "tag",
+        "name": "Root",
+        "parentKey": null,
+        "next": "l2"
+      },
+      {
+        "id": "l2",
+        "type": "drip",
+        "name": "Drip Loop",
+        "parentKey": "l1",
+        "next": "l3"
+      },
+      {
+        "id": "l3",
+        "type": "wait",
+        "name": "Wait",
+        "parentKey": "l2",
+        "next": "l2"
+      }
+    ]
+  }
+}

@@ -71,7 +71,8 @@
   },
   "files": [
     "dist",
-    "public/chamber"
+    "public/chamber",
+    "public/report"
   ],
   "license": "UNLICENSED",
   "main": "dist/index.js",
@@ -81,7 +82,8 @@
     "build": "tsc -p tsconfig.json && npm run bundle",
     "bundle": "esbuild src/cli/main.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/blackceo-council.mjs && esbuild src/cli/export-skill22.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/export-skill22.mjs && node scripts/copy-runtime-assets.mjs",
     "council:build": "npm run build",
-    "test": "node --import tsx --test tests/*.test.ts tests/scenarios/*.test.ts",
+    "test": "node --import tsx --test tests/*.test.ts tests/scenarios/*.test.ts src/*/*.test.ts",
+    "test:src": "node --import tsx --test src/*/*.test.ts",
     "test:skill-root": "node --import tsx --test src/cli/skill-root.test.ts",
     "test:contracts": "node --import tsx --test src/contracts/contracts.test.ts",
     "test:council:unit": "npm test",

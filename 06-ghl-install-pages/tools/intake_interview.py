@@ -52,9 +52,8 @@ fallback path is retained for defensive compatibility only.
 
 Model sovereignty
 -----------------
-This module never names or selects an Anthropic model.  The executor that drives
-the "think for me" proposal is provided by the caller (typically model_router,
-which enforces the Anthropic hard-block itself).
+This module never names or selects a model.  The executor that drives
+the "think for me" proposal is provided by the caller (typically model_router).
 
 Wired into v2_dispatcher as Step 1 (_run_intake) — run_interview() is called
 at the start of every v2_dispatcher build run.
@@ -674,7 +673,7 @@ def run_interview(
       inferred from the task and collected answers.
     - Never raises — on unexpected errors an incomplete IntakeResult with
       ``interview_complete=False`` is returned.
-    - Never names or selects an Anthropic model anywhere in this function.
+    - Never names or selects a model anywhere in this function.
     """
     env = env if env is not None else os.environ
     answers: Dict[str, str] = {}
@@ -1022,14 +1021,6 @@ def _selftest() -> int:
     assert _match_option("Opt-In page", opts) == "opt-in", "option match case-insensitive"
     assert _match_option("sales page please", opts) == "sales", "option match substring"
     assert _match_option("something else", opts) is None, "option match no-hit"
-
-    # 8. No Anthropic anywhere in answers or scaffolds
-    for bt in KNOWN_BUILD_TYPES:
-        scaffold = _scaffold_structure(bt, {})
-        scaffold_str = json.dumps(scaffold).lower()
-        for marker in ("anthropic", "claude", "opus", "sonnet", "haiku"):
-            if marker in scaffold_str:
-                failures.append(f"scaffold({bt}) contains Anthropic marker '{marker}'")
 
     # 9. U055: required field empty -> re-ask with field-specific message.
     _reask_log: list[tuple[str, str]] = []

@@ -21,7 +21,13 @@ Doctrine, enforced in code:
     interrupted interview resumes at the same unanswered question with no
     data loss and no repeated questions;
   * the asset registry records only what the client reports having. It never
-    creates, invents, or writes an asset; preparing assets is T-07's job.
+    creates, invents, or writes an asset; preparing assets is T-07's job;
+  * a brief is not plannable merely because it is complete. It must bind one
+    accountable owner, that owner's approval with its scope, the stated
+    delivery capacity, and every marketing claim with its substantiation. A
+    brief with no owner, with more than one owner, with an owner from another
+    tenant, or with a binding signed by somebody other than the owner is
+    refused, never guessed at.
 
 Python 3 standard library only.
 """
@@ -70,6 +76,41 @@ ASSET_REQUIRED_FOR_CAMPAIGN = frozenset(
     {"logo", "photos", "offer_documents", "links"}
 )
 
+# --------------------------------------------------------------- binding keys
+# The fifth T-06 acceptance clause: approval, capacity, claims and owner
+# identity are part of the brief, not an afterthought outside it.
+BINDING_OWNER = "owner"
+BINDING_APPROVAL = "approval"
+BINDING_CAPACITY = "capacity"
+BINDING_CLAIMS = "claims"
+BINDING_KEYS: Tuple[str, ...] = (
+    BINDING_OWNER,
+    BINDING_APPROVAL,
+    BINDING_CAPACITY,
+    BINDING_CLAIMS,
+)
+BINDING_QUESTIONS: Dict[str, Tuple[str, int]] = {
+    BINDING_OWNER: (
+        "Who is the single accountable owner of this engagement?",
+        1000,
+    ),
+    BINDING_APPROVAL: (
+        "Who approved this brief for campaign use, and what does that "
+        "approval cover?",
+        1010,
+    ),
+    BINDING_CAPACITY: (
+        "How many new customers can the business serve per month, and what "
+        "is the fulfilment lead time?",
+        1020,
+    ),
+    BINDING_CLAIMS: (
+        "Which marketing claims may be made, and what evidence substantiates "
+        "each one?",
+        1030,
+    ),
+}
+
 
 class BriefError(Exception):
     """Base class for acquisition brief failures."""
@@ -93,6 +134,14 @@ class MissingFactError(BriefError):
 
 class BriefCorruptError(BriefError):
     """The brief file exists but cannot be read as a valid brief."""
+
+
+class BindingError(BriefError):
+    """An owner, approval, capacity or claims binding failed validation."""
+
+
+class OwnerConflictError(BindingError):
+    """The brief has no accountable owner, or more than one."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -295,6 +344,30 @@ class Fact:
         return dataclasses.asdict(self)
 
 
+@dataclasses.dataclass(frozen=True)
+class Owner:
+    """The single accountable owner a brief must name."""
+
+    owner_id: str
+    name: str
+    email: Optional[str]
+    role: str
+    tenant_id: Optional[str]
+    recorded_at: str
+
+    def as_dict(self) -> Dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+def _empty_binding() -> Dict[str, Any]:
+    return {
+        "owners": {},
+        "approval": None,
+        "capacity": None,
+        "claims": None,
+    }
+
+
 def _utc_now() -> _datetime.datetime:
     return _datetime.datetime.now(_datetime.timezone.utc)
 
@@ -320,9 +393,13 @@ class AcquisitionBrief:
         path: str,
         *,
         clock: Optional[Callable[[], _datetime.datetime]] = None,
+        tenant_id: Optional[str] = None,
     ) -> None:
         self.path = os.path.abspath(path)
         self._clock = clock or _utc_now
+        if tenant_id is not None:
+            tenant_id = self._required_text(tenant_id, "tenant_id")
+        self._tenant_id = tenant_id
         self._state: Dict[str, Any] = self._empty_state()
         self.load()
 
@@ -344,6 +421,7 @@ class AcquisitionBrief:
                 "events": [],
             },
             "assets": {},
+            "binding": _empty_binding(),
         }
 
     def _now(self) -> str:
@@ -373,6 +451,39 @@ class AcquisitionBrief:
                 raise BriefCorruptError(
                     "acquisition brief at %s is missing %r" % (self.path, key)
                 )
+        binding = document.get("binding")
+        if binding is None:
+            # A brief written before the binding clause existed is upgraded in
+            # memory only; it stays unattributed and therefore unplannable.
+            document["binding"] = _empty_binding()
+        elif not isinstance(binding, dict):
+            raise BriefCorruptError(
+                "acquisition brief at %s has a non-object 'binding'" % self.path
+            )
+        else:
+            for key, default in _empty_binding().items():
+                binding.setdefault(key, default)
+            if not isinstance(binding["owners"], dict):
+                raise BriefCorruptError(
+                    "acquisition brief at %s has a non-object 'owners'" % self.path
+                )
+            for owner_id, record in binding["owners"].items():
+                if not isinstance(record, dict):
+                    raise BriefCorruptError(
+                        "acquisition brief at %s has a malformed owner %r"
+                        % (self.path, owner_id)
+                    )
+                # A brief is a persistent document, so the owner checks cannot
+                # live on the write path alone: a hand-edited record reaches
+                # this constructor exactly like one this module wrote. The
+                # same validator runs here, and refusal is a load-time refusal.
+                try:
+                    self._validated_owner_record(record)
+                except BindingError as exc:
+                    raise BriefCorruptError(
+                        "acquisition brief at %s has an invalid owner %r: %s"
+                        % (self.path, owner_id, exc)
+                    ) from exc
         self._state = document
         return self
 
@@ -773,10 +884,19 @@ class AcquisitionBrief:
         *,
         provenance: str = PROVENANCE_CLIENT_STATED,
         source: Optional[str] = None,
-    ) -> Fact:
-        """Answer the pending (or named) question and persist immediately."""
+    ) -> Any:
+        """Answer the pending (or named) question and persist immediately.
+
+        A binding question (``binding.owner``, ``binding.approval``,
+        ``binding.capacity``, ``binding.claims``) is answered through the bind
+        API it names, never recorded as a fact: the answer is a structured
+        record and ``bind_owner`` / ``bind_approval`` / ``bind_capacity`` /
+        ``bind_claims`` already refuse a wrong one.
+        """
         if self._state["interview"].get("session_id") is None:
             self.start_interview()
+        if isinstance(fact_id, str) and fact_id.startswith("binding."):
+            return self._answer_binding(fact_id, value)
         before = self.get(fact_id)
         fact = self.record_fact(
             fact_id, value, provenance=provenance, source=source, save=False
@@ -834,7 +954,16 @@ class AcquisitionBrief:
             "unresolved_count": len(self.unresolved_fact_ids()),
             "assumption_count": len(self.assumptions()),
             "next_question_count": len(self.next_questions()),
+            "is_bound": self.is_bound(),
+            "owner_id": self._owner_id_or_none(),
+            "binding_question_count": len(self.next_binding_questions()),
         }
+
+    def _owner_id_or_none(self) -> Optional[str]:
+        owners = self._binding()["owners"]
+        if len(owners) != 1:
+            return None
+        return next(iter(owners))
 
     # ---------------------------------------------------------------- assets
 
@@ -919,6 +1048,447 @@ class AcquisitionBrief:
                     report["optional_missing"].append(entry)
         return report
 
+    # ---------------------------------------------------------------- binding
+
+    @staticmethod
+    def _required_text(value: Any, field: str) -> str:
+        if not isinstance(value, str):
+            raise BindingError("%s must be a string" % field)
+        cleaned = value.strip()
+        if not cleaned:
+            raise BindingError("%s must not be empty" % field)
+        return cleaned
+
+    def _binding(self) -> Dict[str, Any]:
+        return self._state["binding"]
+
+    def _validated_owner_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Check one owner record's shape and tenant, on write and on load.
+
+        Both paths call this, so the guarantee cannot drift back to being a
+        write-path-only guard. Raises BindingError; the loader converts that
+        into a BriefCorruptError at the point of use.
+        """
+        owner_id = self._required_text(record.get("owner_id"), "owner_id")
+        name = self._required_text(record.get("name"), "name")
+        role = self._required_text(record.get("role"), "role")
+        email = record.get("email")
+        if email is not None:
+            email = self._required_text(email, "email")
+            if "@" not in email:
+                raise BindingError("email %r is not an email address" % email)
+        tenant_id = record.get("tenant_id")
+        if tenant_id is not None:
+            tenant_id = self._required_text(tenant_id, "tenant_id")
+        if self._tenant_id is not None:
+            if tenant_id is None:
+                raise BindingError(
+                    "owner %r must name tenant %r; an owner with no tenant "
+                    "cannot be bound to a tenant-scoped brief"
+                    % (owner_id, self._tenant_id)
+                )
+            if tenant_id != self._tenant_id:
+                raise BindingError(
+                    "owner %r belongs to tenant %r but this brief is tenant %r"
+                    % (owner_id, tenant_id, self._tenant_id)
+                )
+        return {
+            "owner_id": owner_id,
+            "name": name,
+            "email": email,
+            "role": role,
+            "tenant_id": tenant_id,
+            "recorded_at": record.get("recorded_at"),
+        }
+
+    @staticmethod
+    def _as_owner(record: Dict[str, Any]) -> Owner:
+        return Owner(
+            owner_id=record.get("owner_id"),
+            name=record.get("name"),
+            email=record.get("email"),
+            role=record.get("role"),
+            tenant_id=record.get("tenant_id"),
+            recorded_at=record.get("recorded_at"),
+        )
+
+    def owners(self) -> List[Owner]:
+        return [self._as_owner(record) for record in self._binding()["owners"].values()]
+
+    def single_owner(self) -> Optional[Owner]:
+        """The one accountable owner, or None only when nobody is named.
+
+        More than one owner is not a preference to be resolved later; it is an
+        ambiguous brief and it raises.
+        """
+        owners = self._binding()["owners"]
+        if not owners:
+            return None
+        if len(owners) > 1:
+            raise OwnerConflictError(
+                "brief names %d owners (%s); exactly one accountable owner is "
+                "required"
+                % (len(owners), ", ".join(sorted(owners)))
+            )
+        return self._as_owner(next(iter(owners.values())))
+
+    def require_owner(self) -> Owner:
+        """Return the accountable owner or refuse the brief."""
+        owners = self._binding()["owners"]
+        if not owners:
+            raise OwnerConflictError(
+                "brief has no accountable owner; an unattributed brief cannot "
+                "be planned"
+            )
+        return self.single_owner()
+
+    def bind_owner(
+        self,
+        owner_id: Any,
+        name: Any,
+        *,
+        email: Any = None,
+        role: Any = "owner",
+        tenant_id: Any = None,
+        save: bool = True,
+    ) -> Owner:
+        """Bind the single accountable owner.
+
+        A second distinct owner is refused, never merged or silently preferred.
+        When the brief is tenant-scoped, an owner that does not name the same
+        tenant is refused: an owner from another tenant is not this client's
+        owner.
+        """
+        candidate = self._validated_owner_record(
+            {
+                "owner_id": owner_id,
+                "name": name,
+                "email": email,
+                "role": role,
+                "tenant_id": tenant_id,
+                "recorded_at": None,
+            }
+        )
+        owner_id = candidate["owner_id"]
+        name = candidate["name"]
+        email = candidate["email"]
+        role = candidate["role"]
+        tenant_id = candidate["tenant_id"]
+
+        owners = self._binding()["owners"]
+        for existing_id in owners:
+            if existing_id != owner_id:
+                raise OwnerConflictError(
+                    "brief already has accountable owner %r; refusing second "
+                    "owner %r" % (existing_id, owner_id)
+                )
+
+        existing = owners.get(owner_id)
+        if (
+            existing is not None
+            and existing.get("name") == name
+            and existing.get("email") == email
+            and existing.get("role") == role
+            and existing.get("tenant_id") == tenant_id
+        ):
+            return self._as_owner(existing)
+
+        candidate["recorded_at"] = self._now()
+        owners[owner_id] = candidate
+        self._append_event(
+            {
+                "event": "owner_bound" if existing is None else "owner_updated",
+                "owner_id": owner_id,
+            }
+        )
+        if save:
+            self.save()
+        return self._as_owner(owners[owner_id])
+
+    def _require_owner_signer(self, signer: Any, field: str) -> Owner:
+        owner = self.require_owner()
+        signer = self._required_text(signer, field)
+        if signer != owner.owner_id:
+            raise BindingError(
+                "%s must be the accountable owner %r, got %r"
+                % (field, owner.owner_id, signer)
+            )
+        return owner
+
+    def bind_approval(
+        self,
+        approved_by: Any,
+        *,
+        scope: Any,
+        approved_at: Optional[str] = None,
+        save: bool = True,
+    ) -> Dict[str, Any]:
+        """Bind the owner's approval and exactly what it covers."""
+        owner = self._require_owner_signer(approved_by, "approved_by")
+        scope = self._required_text(scope, "scope")
+        if approved_at is not None:
+            approved_at = self._required_text(approved_at, "approved_at")
+
+        existing = self._binding().get(BINDING_APPROVAL)
+        if (
+            isinstance(existing, dict)
+            and existing.get("bound_by") == owner.owner_id
+            and existing.get("scope") == scope
+            and existing.get("approved_at") == approved_at
+        ):
+            return dict(existing)
+
+        record = {
+            "bound_by": owner.owner_id,
+            "scope": scope,
+            "approved_at": approved_at or self._now(),
+            "provenance": PROVENANCE_CLIENT_STATED,
+            "recorded_at": self._now(),
+        }
+        self._binding()[BINDING_APPROVAL] = record
+        self._append_event(
+            {"event": "approval_bound", "owner_id": owner.owner_id, "scope": scope}
+        )
+        if save:
+            self.save()
+        return dict(record)
+
+    def bind_capacity(
+        self,
+        declared_by: Any,
+        *,
+        monthly_new_customers: Any,
+        fulfilment_lead_days: Any,
+        notes: Any = None,
+        save: bool = True,
+    ) -> Dict[str, Any]:
+        """Bind the delivery capacity the owner commits to."""
+        owner = self._require_owner_signer(declared_by, "declared_by")
+        for field, value in (
+            ("monthly_new_customers", monthly_new_customers),
+            ("fulfilment_lead_days", fulfilment_lead_days),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise BindingError("%s must be an integer" % field)
+            if value < 0:
+                raise BindingError("%s must not be negative" % field)
+        if notes is not None:
+            notes = self._required_text(notes, "notes")
+
+        existing = self._binding().get(BINDING_CAPACITY)
+        if (
+            isinstance(existing, dict)
+            and existing.get("bound_by") == owner.owner_id
+            and existing.get("monthly_new_customers") == monthly_new_customers
+            and existing.get("fulfilment_lead_days") == fulfilment_lead_days
+            and existing.get("notes") == notes
+        ):
+            return dict(existing)
+
+        record = {
+            "bound_by": owner.owner_id,
+            "monthly_new_customers": monthly_new_customers,
+            "fulfilment_lead_days": fulfilment_lead_days,
+            "notes": notes,
+            "provenance": PROVENANCE_CLIENT_STATED,
+            "recorded_at": self._now(),
+        }
+        self._binding()[BINDING_CAPACITY] = record
+        self._append_event(
+            {
+                "event": "capacity_bound",
+                "owner_id": owner.owner_id,
+                "monthly_new_customers": monthly_new_customers,
+            }
+        )
+        if save:
+            self.save()
+        return dict(record)
+
+    def bind_claims(
+        self,
+        approved_by: Any,
+        claims: Any,
+        *,
+        save: bool = True,
+    ) -> Dict[str, Any]:
+        """Bind every marketing claim with the evidence that substantiates it.
+
+        A claim with no substantiation is refused; so is a claim list that is
+        not a list. An explicitly empty list is a real answer ("this client
+        makes no claims") and is recorded as such, not treated as missing.
+        """
+        owner = self._require_owner_signer(approved_by, "approved_by")
+        if not isinstance(claims, (list, tuple)):
+            raise BindingError("claims must be a list of claim objects")
+        cleaned: List[Dict[str, str]] = []
+        for index, claim in enumerate(claims):
+            if not isinstance(claim, dict):
+                raise BindingError("claims[%d] must be an object" % index)
+            cleaned.append(
+                {
+                    "text": self._required_text(
+                        claim.get("text"), "claims[%d].text" % index
+                    ),
+                    "substantiation": self._required_text(
+                        claim.get("substantiation"),
+                        "claims[%d].substantiation" % index,
+                    ),
+                }
+            )
+
+        existing = self._binding().get(BINDING_CLAIMS)
+        if (
+            isinstance(existing, dict)
+            and existing.get("bound_by") == owner.owner_id
+            and existing.get("claims") == cleaned
+        ):
+            return dict(existing)
+
+        record = {
+            "bound_by": owner.owner_id,
+            "claims": cleaned,
+            "provenance": PROVENANCE_CLIENT_STATED,
+            "recorded_at": self._now(),
+        }
+        self._binding()[BINDING_CLAIMS] = record
+        self._append_event(
+            {
+                "event": "claims_bound",
+                "owner_id": owner.owner_id,
+                "claim_count": len(cleaned),
+            }
+        )
+        if save:
+            self.save()
+        return dict(record)
+
+    def _answer_binding(self, fact_id: str, value: Any) -> Any:
+        """Record one answered binding question, through the bind API it names.
+
+        The interview asks these questions (``next_binding_questions``) exactly
+        like fact questions, so the answer path must be able to take them. A
+        value that is not an object of named fields is refused here; every
+        field is validated by the bind call itself, so nothing is invented.
+        """
+        key = fact_id[len("binding."):]
+        if key not in BINDING_KEYS:
+            raise UnknownFactError(
+                "%r is not a fact in the acquisition brief" % (fact_id,)
+            )
+        if not isinstance(value, dict):
+            raise BindingError("a binding answer must be an object of named fields")
+        if key == BINDING_OWNER:
+            return self.bind_owner(
+                value.get("owner_id"),
+                value.get("name"),
+                email=value.get("email"),
+                role=value.get("role", "owner"),
+                tenant_id=value.get("tenant_id"),
+            )
+        if key == BINDING_APPROVAL:
+            return self.bind_approval(
+                value.get("approved_by"),
+                scope=value.get("scope"),
+                approved_at=value.get("approved_at"),
+            )
+        if key == BINDING_CAPACITY:
+            return self.bind_capacity(
+                value.get("declared_by"),
+                monthly_new_customers=value.get("monthly_new_customers"),
+                fulfilment_lead_days=value.get("fulfilment_lead_days"),
+                notes=value.get("notes"),
+            )
+        return self.bind_claims(value.get("approved_by"), value.get("claims"))
+
+    def _binding_question(self, key: str) -> Question:
+        text, priority = BINDING_QUESTIONS[key]
+        return Question(
+            fact_id="binding." + key,
+            section="binding",
+            key=key,
+            text=text,
+            required=True,
+            priority=priority,
+            kind="missing_binding",
+        )
+
+    def next_binding_questions(self) -> List[Question]:
+        """Only the bindings still missing, owner first.
+
+        A bound item is never asked again. Approval, capacity and claims are
+        only asked once exactly one owner exists, because none of them can be
+        signed by an owner the brief cannot name.
+        """
+        binding = self._binding()
+        owners = binding["owners"]
+        if not owners or len(owners) > 1:
+            return [self._binding_question(BINDING_OWNER)]
+        owner_id = next(iter(owners))
+        questions: List[Question] = []
+        for key in (BINDING_APPROVAL, BINDING_CAPACITY, BINDING_CLAIMS):
+            record = binding.get(key)
+            if record is None or record.get("bound_by") != owner_id:
+                questions.append(self._binding_question(key))
+        return questions
+
+    def binding_blockers(self) -> List[Dict[str, str]]:
+        """Everything that stops the brief from being bound, named exactly."""
+        binding = self._binding()
+        owners = binding["owners"]
+        if not owners:
+            return [
+                {
+                    "kind": "binding_owner_unattributed",
+                    "fact_id": "binding.owner",
+                    "reason": "no accountable owner named",
+                }
+            ]
+        if len(owners) > 1:
+            return [
+                {
+                    "kind": "binding_owner_multiple",
+                    "fact_id": "binding.owner",
+                    "reason": "%d owners named; exactly one accountable owner is allowed"
+                    % len(owners),
+                }
+            ]
+        owner_id = next(iter(owners))
+        blockers: List[Dict[str, str]] = []
+        for key in (BINDING_APPROVAL, BINDING_CAPACITY, BINDING_CLAIMS):
+            record = binding.get(key)
+            if record is None:
+                blockers.append(
+                    {"kind": "binding_missing", "fact_id": "binding." + key, "reason": ""}
+                )
+            elif record.get("bound_by") != owner_id:
+                blockers.append(
+                    {
+                        "kind": "binding_owner_mismatch",
+                        "fact_id": "binding." + key,
+                        "reason": "bound by %r, owner is %r"
+                        % (record.get("bound_by"), owner_id),
+                    }
+                )
+        capacity = binding.get(BINDING_CAPACITY)
+        if (
+            isinstance(capacity, dict)
+            and capacity.get("bound_by") == owner_id
+            and capacity.get("monthly_new_customers") == 0
+        ):
+            blockers.append(
+                {
+                    "kind": "binding_capacity_zero",
+                    "fact_id": "binding.capacity",
+                    "reason": "owner committed to zero new customers per month",
+                }
+            )
+        return blockers
+
+    def is_bound(self) -> bool:
+        """True only when owner, approval, capacity and claims are all bound."""
+        return not self.binding_blockers()
+
     # ------------------------------------------------------------- readiness
 
     def planning_blockers(self) -> List[Dict[str, str]]:
@@ -961,6 +1531,7 @@ class AcquisitionBrief:
                 blockers.append(
                     {"kind": "asset_unassessed", "fact_id": kind, "reason": ""}
                 )
+        blockers.extend(self.binding_blockers())
         return blockers
 
     def is_campaign_ready(self) -> bool:
@@ -986,6 +1557,21 @@ class AcquisitionBrief:
             ],
             "unresolved": dict(self._state["unresolved"]),
             "assumptions": [fact.as_dict() for fact in self.assumptions()],
+            "binding": {
+                "owners": [owner.as_dict() for owner in self.owners()],
+                "owner": (
+                    self.owners()[0].as_dict() if len(self.owners()) == 1 else None
+                ),
+                "owner_ambiguous": len(self.owners()) > 1,
+                "approval": self._binding().get(BINDING_APPROVAL),
+                "capacity": self._binding().get(BINDING_CAPACITY),
+                "claims": self._binding().get(BINDING_CLAIMS),
+                "is_bound": self.is_bound(),
+                "blockers": self.binding_blockers(),
+                "next_questions": [
+                    question.as_dict() for question in self.next_binding_questions()
+                ],
+            },
             "assets": self.asset_report(),
             "next_questions": [
                 question.as_dict() for question in self.next_questions()

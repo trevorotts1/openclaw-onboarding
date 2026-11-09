@@ -171,7 +171,7 @@ STANZAS="$(cat <<'STANZA_PAYLOAD'
 @@STANZA SKILL38_RUNTIME_INVARIANTS
 
 ## Skill 38 — runtime INVARIANTS (stated ONCE; binding on EVERY Skill 38 step)
-Every SKILL38 stanza below inherits these five rules and only ever ADDS to them. None
+Every SKILL38 stanza below inherits these six rules and only ever ADDS to them. None
 may be relaxed or outranked by any feature, segment, A/B arm, tier, tenant or persona.
 1. **OPERATOR-ONLY allow-list.** Anything that spends money, reaches outside, or changes
    configuration happens ONLY on the operator's standing approval — creating tags or CRM
@@ -195,6 +195,13 @@ may be relaxed or outranked by any feature, segment, A/B arm, tier, tenant or pe
    counts ONLY; never a name, email, phone, address, message body, transcript or rendered
    reply. Agent-created tags carry `ZHC-`, agent-created CRM fields `ZHC_`; neither is
    ever applied retroactively.
+6. **A Purple collection contact's follow-up belongs to the SHARED REMINDER MACHINE —
+   never to a parallel sequence.** Never enter the Intelligent Follow-up Protocol's
+   10-touchpoint cadence for a contact with a Purple collection sequence that is open OR
+   closed (`collection_sequence_id` present, always). The shared reminder machine owns
+   follow-up exclusively: ONE initial invitation plus three escalating reminders, ONE
+   shared count, no reset, no catch-up burst. A blocked-second sequence is the whole
+   point — no touch, channel switch or discount may be added beside it.
 - **Full text of every stanza below:** @REF@ · **deep specs:** @PROTO@ — read it BEFORE
   building, editing, routing or QC-ing any Skill 38 playbook, workflow or automation, and
   before changing tags, tools, calendars, pipelines, personas or a default-OFF toggle.
@@ -214,16 +221,24 @@ may be relaxed or outranked by any feature, segment, A/B arm, tier, tenant or pe
 @@STANZA GHL_SEND_MANDATORY
 
 ## GHL inbound — SENDING the reply is MANDATORY (base rule)
-For ANY GHL inbound hook, SENDING via the GHL Conversations API is MANDATORY — a
-drafted-but-unsent reply is a FAILURE. Make the send call and confirm a
-messageId/conversationId before ending the turn. Do NOT post to the GHL API yourself; use
-the installed GHL skill (it handles auth, rate limits and retries).
+For ANY GHL inbound hook, SENDING is MANDATORY — a drafted-but-unsent reply is a FAILURE.
+There is exactly ONE way to send: `python3 tools/pb_send.py admit …` first (exit code 3 =
+duplicate delivery, END THE TURN), then `python3 tools/pb_send.py reply …`. The tool
+composes consent, the human-handoff fence and the answer-duty gate, and sends through the
+GHL Conversations sender (the Skill 44 public adapter — it handles auth, rate limits and
+retries). `SUPPRESSED`, `QUARANTINED` or `WAIT_UNTIL` means DO NOT SEND. Do NOT POST to the
+GHL Conversations API yourself, and do not end the turn until `pb_send.py reply` returns a
+messageId.
 
 @@STANZA SKILL38_RUNTIME_GHL_TIER_LADDER
 
-## GHL runtime access — TIER LADDER (caf first, raw REST last)
-- For sending, reading threads, calendars, booking, invoicing, contact-field writes and
-  tagging, degrade DOWN one tier on failure — **never end the turn silently.**
+## GHL runtime access — TIER LADDER (pb_send first, caf next, raw REST last)
+- For **sending**, there is no tier choice: `python3 tools/pb_send.py reply` is the only
+  door (it is built on the Skill 44 public adapter, so it is the same transport as `caf`).
+  Do NOT hand-roll a `POST conversations/messages` — a raw send bypasses the common
+  dispatch gate and the durable inbox, and a webhook retry then double-messages the person.
+- For reading threads, calendars, booking, invoicing, contact-field writes and tagging,
+  degrade DOWN one tier on failure — **never end the turn silently.**
   **Tier 0 `caf`** (Skill 44) PRIMARY: a subprocess, so it works in sub-agents too (MCP
   does not); groups conversations · calendars · contacts · payments · locations; run
   `caf --help` / `caf <group> --help` — **do NOT guess flag names.** **Tier 1** official
@@ -232,7 +247,7 @@ the installed GHL skill (it handles auth, rate limits and retries).
   official MCP → Tier 3 · **Tier 3** raw REST to `services.leadconnectorhq.com`
   (shapes in TOOLS.md `SKILL38: GHL_API_QUICK_REFERENCE`). **Media upload stays Tier 3.**
 - The inbound entry is UNCHANGED regardless of tier (Custom Webhook → OpenClaw hook, FLAT
-  23-key raw body, `hooks.mappings` template, `deliver:false`).
+  24-key raw body including `message_id` for dedupe, `hooks.mappings` template, `deliver:false`).
 - **HONESTY FLOOR — 401/403/any non-2xx means you have NOT delivered. NEVER report it as
   "sent".** Escalate to the OPERATOR with the failing op + status, and tell the CLIENT
   plainly that their GoHighLevel / Convert and Flow connection needs a refresh, naming the

@@ -9,7 +9,7 @@
     "directory": "83-black-friday-launcher",
     "directory_source": "launcher_core/constants.py:SKILL_DIR_NAME",
     "entry": "SKILL.md",
-    "version": "0.2.9",
+    "version": "0.2.19",
     "status": "enabled-in-999"
   },
   "number_assignment": {
@@ -17,15 +17,15 @@
     "task": "LAUNCH-04",
     "evidence": [
       {
-        "claim": "onboarding uses 01 through 83 with no gaps",
+        "claim": "onboarding numbered skill directories run 01 through 83 with five known gaps (11, 13, 21, 33, 34)",
         "check": "numbered skill directories in the repository root (python3 os.listdir + regex ^[0-9]{2}-, isdir)",
-        "result": "83 numbered directories, minimum 01, maximum 83, zero gaps",
+        "result": "regenerated 2026-11-02 from the live tree: 78 numbered directories, minimum 01, maximum 83, gaps at 11, 13, 21, 33 and 34; number 83 is held only by 83-black-friday-launcher",
         "status": "confirmed"
       },
       {
-        "claim": "the department map holds 83 entries",
+        "claim": "the department map holds 78 entries, one per numbered directory",
         "check": "23-ai-workforce-blueprint/skill-department-map.json skills array",
-        "result": "83 entries, skill 01 through 83, zero gaps, zero duplicate skill numbers; skill 83 is slug black-friday-launcher",
+        "result": "regenerated 2026-11-02 from the live tree: 78 entries, skill 01 through 83, the same five gaps (11, 13, 21, 33, 34), zero duplicate skill numbers, the entry set equals the numbered-directory set; skill 83 is slug black-friday-launcher",
         "status": "confirmed"
       },
       {
@@ -37,13 +37,13 @@
       {
         "claim": "registry line 18 in 999 CONTROL/bundled-skills.txt names 83-black-friday-launcher",
         "check": "cat -n ~/999-setup/CONTROL/bundled-skills.txt and grep black-friday-launcher CONTROL installer-registration",
-        "result": "confirmed on a live re-read 2026-10-22 (operator 999-setup tree): the file now has 18 lines and line 18 is exactly 'black-friday-launcher'. The earlier read ('15 lines, no match') was accurate when taken and the file changed since; both reads are kept, the later one settles the claim. The same re-read found the INSTALLED launcher copy at 0.2.4 (skill-version.txt in ~/.claude/skills/black-friday-launcher and ~/.claude-nine/skills/black-friday-launcher) while this source tree is 0.2.7: a registry line proves registration intent only, and the deployed copy is separately behind (evidence/s06-WF-E-P9-999-parity.md in the v3-2026-10-22T02Z run).",
+        "result": "confirmed on a live re-read 2026-10-22 (operator 999-setup tree): the file now has 18 lines and line 18 is exactly 'black-friday-launcher'. The earlier read ('15 lines, no match') was accurate when taken and the file changed since; both reads are kept, the later one settles the claim. The same re-read found the INSTALLED launcher copy at 0.2.4 (skill-version.txt in ~/.claude/skills/black-friday-launcher and ~/.claude-nine/skills/black-friday-launcher) while this source tree was 0.2.7; a further re-read on 2026-11-02 found both installed copies at 0.2.9 against this source tree at 0.2.12 and line 18 of bundled-skills.txt still exactly black-friday-launcher, with no ~/999-setup/83-* directory (exit 1): a registry line proves registration intent only, and the deployed copy is separately behind (evidence/s06-WF-E-P9-999-parity.md in the v3-2026-10-22T02Z run).",
         "status": "confirmed"
       }
     ],
     "blocking_evidence": [
-      "onboarding 01..83 no gaps",
-      "department map 83 entries no gaps",
+      "onboarding 78 numbered directories 01..83, gaps 11 13 21 33 34, 83 held once",
+      "department map 78 entries, same set as the numbered directories, zero duplicates",
       "999 no 83-* directory"
     ],
     "non_blocking_evidence": [
@@ -57,15 +57,11 @@
     "branch": "recovery/launcher-portability"
   },
   "depends_on": {
-    "49-signature-funnel": "intake validation, route substrate, delegation receipt collection",
-    "71-blackceo-signature-page": "landing page producer (separate skill, not edited here)",
-    "77-council-of-wise-elders": "Council planning-step invocation through the documented offline entry point",
-    "shared-utils/signature_launch": "schemas and domain utilities",
-    "78-signature-product-selection": "product_selection page producer",
-    "79-signature-order-form": "native checkout contract and cross-field validator",
-    "80-signature-upsell": "upsell_1 and upsell_2 page producer",
-    "81-signature-downsell": "downsell_1 validators",
-    "82-signature-thank-you": "thank_you result and run manifest"
+    "authoritative_manifest": "launcher_core/dependencies.json",
+    "requirements_digest": "ebea953916de58ea5acfa4d165fe4c5aa9c3c93da5946d6cee906b9acd0c82c6",
+    "manifest_entry_count": 19,
+    "required_entry_count": 19,
+    "note": "NON-AUTHORITATIVE POINTER. This record does not list requirements. launcher_core/dependencies.json is the single executable source of truth (schema blackceo.launcher.dependencies/1), read by launcher_core/dependencies.py:load_manifest; launcher_core/dependencies.py:metadata_spine compares this pointer's target, digest and counts against that manifest and reports any mismatch as a finding in `python3 -m launcher_core.cli dependencies`. The hand-kept list this replaced had drifted from the executable requirement set: it named shared-utils/signature_launch, which the manifest replaced with shared-utils/signature_launch_contract, and it omitted shared-utils/client_intake. Re-stamp the digest and counts with the manifest whenever a requirement entry changes."
   },
   "entitlements": {
     "status": "decided",
@@ -112,7 +108,11 @@
   },
   "journey_modes": {
     "status": "decided",
-    "modes": ["single_simple", "multiple_options", "folded_levels"],
+    "modes": [
+      "single_simple",
+      "multiple_options",
+      "folded_levels"
+    ],
     "folded_levels": "N >= 2 distinct main offers folded into the signature page, no product_selection node, never relabelled a single offer"
   },
   "open_decisions": [

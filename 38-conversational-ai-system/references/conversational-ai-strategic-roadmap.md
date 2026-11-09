@@ -339,18 +339,23 @@ by a gate wired into `scripts/11-run-qc-checklist.sh` + CI:
 
 ---
 
-# Remaining Round 2 Features (lower priority — DEFERRED, NOT in the v6.0 playbook)
+# Round 2 Features — All Six Shipped in Skill 38 (v1.5.7–v1.5.12)
 
-## 📋 Feature 14 — Voice/Phone Integration
-## 📋 Feature 15 — Proactive Outreach Campaigns
-## 📋 Feature 16 — A/B Testing of Reply Variants
-## 📋 Feature 17 — Customer Segmentation Awareness
-## 📋 Feature 18 — Webhook Chaining (downstream triggers)
-## 📋 Feature 21 — Multi-Tenant Agent Isolation
+## ✅ Feature 14 — Voice/Phone Integration (shipped v1.5.11)
+## ✅ Feature 15 — Proactive Outreach Campaigns (shipped v1.5.9)
+## ✅ Feature 16 — A/B Testing of Reply Variants (shipped v1.5.10)
+## ✅ Feature 17 — Customer Segmentation Awareness (shipped v1.5.8)
+## ✅ Feature 18 — Webhook Chaining (downstream triggers) (shipped v1.5.12)
+## ✅ Feature 21 — Multi-Tenant Agent Isolation (shipped v1.5.7)
 
-These six are explicitly NOT implemented in the v6.0 playbook and NOT in skill 38. The skill's structure
-(numbered scripts, protocols/ folder, references/) leaves room for them to be added later
-without restructuring.
+All six Round-2 backlog features shipped in skill 38 between v1.5.7 and v1.5.12.
+F14 ships its protocol, setup wizard, inbound hook scaffolding, call-state machine,
+cost/latency design, and PII-free log. Live telephony is NOT faked: it requires
+operator-provisioned Twilio/STT/TTS credentials; the Twilio Media Streams-to-STT-to-TTS
+bridge is provisioned at setup by the wizard, not pre-baked in the repo.
+F15, F16, F17, F18, and F21 ship OFF by default; F18's installer never writes enabled:true.
+F21 provides per-tenant namespacing and config resolution as an architecture/protocol
+feature, NOT a runtime database migration.
 
 ---
 
@@ -374,7 +379,7 @@ files (humanizer-protocol.md intentionally NOT shipped — skill 19 owns it). Th
 ship as separate top-level folders: Skill 39 (Real Estate Playbook) and Skill 40 (ZHC Public Records
 Scraper).
 
-**Pending (NOT in skill 38):** F14, F15, F16, F17, F18, F21.
+**Round-2 backlog status:** No features pending; all six shipped (F21 v1.5.7, F17 v1.5.8, F15 v1.5.9, F16 v1.5.10, F14 v1.5.11, F18 v1.5.12). Remaining scope gaps: F14 live telephony requires operator-provisioned credentials and setup-time bridge provisioning; F21 provides architecture/protocol isolation, not a runtime database migration.
 
 ---
 

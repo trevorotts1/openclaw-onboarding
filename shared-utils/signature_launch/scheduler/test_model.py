@@ -15,6 +15,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 LAUNCH = HERE.parent
 ROOT = HERE.parents[2]
+
+def _skill(name):  # onboarding: 49-signature-funnel; 999: .claude/skills/signature-funnel
+    p = ROOT / name
+    return p if p.is_dir() else ROOT / ".claude/skills" / name.split("-", 1)[1]
+
 SHARED = ROOT / "shared-utils"
 CONTRACT = ROOT / "shared-utils" / "signature_launch_contract"
 CONTRACT_FIXTURES = CONTRACT / "fixtures"
@@ -41,6 +46,29 @@ def _load_package():
     """package.py uses a relative import; import it as its real package."""
     import signature_launch.package as package
     return package
+
+
+ADMISSION = _load("l03_admission", LAUNCH / "admission.py")
+PH = "sha256:" + "a" * 64
+
+
+def ok_evidence(unit, path=None, plan_hash_value=None):
+    """The S1 completion evidence: one artifact hash plus the current inputs.
+
+    A plain return value or a declared status is deliberately NOT evidence.
+    ``plan_hash_value`` binds the evidence to a record's own plan hash; evidence
+    built for a different plan is refused by the record.
+    """
+    ph = plan_hash_value or PH
+    return ADMISSION.evidence(
+        unit, ph,
+        [ADMISSION.artifact(path or "artifacts/%s.html" % unit, sha256="c" * 64)],
+        inputs={"plan": ph})
+
+
+def ok_result(unit, plan_hash_value=None):
+    return model.envelope(model.VERIFIED_SUCCESS,
+                          evidence=ok_evidence(unit, plan_hash_value=plan_hash_value))
 
 
 def local(name):
@@ -123,7 +151,7 @@ class EnvelopeTests(unittest.TestCase):
         self.assertFalse(model.satisfies_dependency(result))
 
     def test_only_success_and_drop_satisfy_a_dependency(self):
-        success = model.envelope(model.VERIFIED_SUCCESS)
+        success = ok_result("page_landing")
         self.assertTrue(model.satisfies_dependency(success))
         self.assertTrue(model.satisfies_dependency({"status": "dropped"}))
         for status in (model.FAILED, model.BLOCKED, model.AWAITING_FACTS):
@@ -131,7 +159,14 @@ class EnvelopeTests(unittest.TestCase):
         self.assertFalse(model.satisfies_dependency({"ok": False, "error": "no"}))
         self.assertFalse(model.satisfies_dependency({"status": "verified_success",
                                                      "verified": False}))
-        self.assertTrue(model.satisfies_dependency("plain legacy return"))
+        # A normal return value is not completion evidence (it used to be).
+        self.assertFalse(model.satisfies_dependency("plain legacy return"))
+        self.assertFalse(model.satisfies_dependency(None))
+        self.assertFalse(model.satisfies_dependency({"status": "verified_success",
+                                                     "verified": True}))
+        self.assertTrue(model.satisfies_dependency({"status": "verified_success",
+                                                    "verified": True,
+                                                    "evidence": ok_evidence("x")}))
 
     def test_awaiting_facts_carries_the_missing_facts(self):
         result = model.normalize_result({
@@ -233,9 +268,9 @@ class ProgressTests(unittest.TestCase):
 
     def test_restart_preserves_paid_success_without_duplicate_generation(self):
         progress.claim(self.record, "page_landing", "owner-a")
-        progress.complete(self.record, "page_landing", model.envelope(
-            model.VERIFIED_SUCCESS, detail="paid build", artifacts=["artifacts/landing.html"]),
-            owner="owner-a")
+        progress.complete(self.record, "page_landing",
+                          ok_result("page_landing", self.record["plan_hash"]),
+                          owner="owner-a")
         self.record["units"]["page_landing"]["charged"] = True
         progress.save(self.record, self.path)
         restored = progress.load(self.path)
@@ -252,7 +287,7 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(restored["units"]["page_landing"]["attempts"], attempts)
         self.assertFalse(progress.claim(restored, "page_landing", "owner-b")["claimed"])
 
-    def test_recovery_requires_non_empty_verified_artifacts(self):
+    def test_recovery_requires_current_admission_evidence(self):
         artifact = self.dir / "artifact.html"
         progress.claim(self.record, "page_landing", "owner-a")
         progress.mark(self.record, "page_landing", "failed", owner="owner-a")
@@ -273,9 +308,27 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(report["rejected"][0]["unit"], "page_landing")
         self.assertEqual(self.record["units"]["page_landing"]["state"], "failed")
 
+        # A nonempty file alone no longer completes the unit (the old rule).
         report = progress.recover_report(self.record)
+        self.assertEqual(report["recovered"], [])
+        self.assertEqual(self.record["units"]["page_landing"]["reason"]["kind"],
+                         "no_evidence")
+        self.assertEqual(self.record["units"]["page_landing"]["state"], "failed")
+
+        # A byte verifier that says yes is still not completion evidence.
+        report = progress.recover_report(
+            self.record, verify=lambda path, uid: (True, "bytes read"))
+        self.assertEqual(report["recovered"], [])
+        self.assertEqual(self.record["units"]["page_landing"]["state"], "failed")
+
+        # Current admission evidence DOES recover it.
+        report = progress.recover_report(
+            self.record, evidence={"page_landing": ok_evidence(
+                "page_landing", plan_hash_value=self.record["plan_hash"])})
         self.assertEqual(report["recovered"], ["page_landing"])
-        self.assertEqual(self.record["units"]["page_landing"]["state"], "done")
+        unit = self.record["units"]["page_landing"]
+        self.assertEqual(unit["state"], "done")
+        self.assertTrue(unit["verified"])
 
     def test_live_lease_is_never_recovered(self):
         artifact = self.dir / "live.html"
@@ -340,7 +393,7 @@ class SurfaceAgreementTests(unittest.TestCase):
         plan = local("plan_ai_off.json")
         units = {uid: {} for uid in scheduler.unit_index(plan)}
         clean = package.build_package(
-            units, lambda uid, payload: {"status": "verified_success", "verified": True})
+            units, lambda uid, payload: ok_result(uid))
         self.assertEqual(clean["status"], "done")
         self.assertEqual(clean["counts"]["total"], len(units))
 
@@ -399,7 +452,7 @@ class ContractConsumptionTests(unittest.TestCase):
     """Read L01/L02/L04 contracts read-only; never edit them."""
 
     def test_l02_planner_output_drives_this_lane(self):
-        scripts = ROOT / "49-signature-funnel" / "scripts"
+        scripts = _skill("49-signature-funnel") / "scripts"
         self.assertTrue((scripts / "launch_plan.py").is_file())
         sys.path.insert(0, str(scripts))
         try:
@@ -440,7 +493,13 @@ class ContractConsumptionTests(unittest.TestCase):
         self.assertEqual(launch_id, plan["launch_id"])
         self.assertEqual(sorted(u["id"] for u in units), sorted(scheduler.unit_index(plan)))
         report = scheduler.run_all(
-            plan, lambda uid, entry: {"status": "verified_success", "verified": True})
+            plan, lambda uid, entry: model.envelope(
+                model.VERIFIED_SUCCESS,
+                evidence=ADMISSION.evidence(
+                    uid, progress.plan_hash(plan),
+                    [ADMISSION.artifact("artifacts/%s.html" % uid,
+                                        sha256="d" * 64)],
+                    inputs={"plan": progress.plan_hash(plan)})))
         self.assertTrue(report["complete"])
         self.assertIn("auto_ai_reply", report["completed"])
 
@@ -461,7 +520,7 @@ class ContractConsumptionTests(unittest.TestCase):
         self.assertTrue(answers["conversation_ai"]["never_default"] is False)
 
     def test_l04_receipt_contract_is_consumed_read_only(self):
-        receipt = ROOT / "83-black-friday-launcher" / "receipt.schema.json"
+        receipt = _skill("83-black-friday-launcher") / "receipt.schema.json"
         if not receipt.is_file():
             self.skipTest("L04 receipt schema not merged into this branch yet")
         schema = json.loads(receipt.read_text(encoding="utf-8"))

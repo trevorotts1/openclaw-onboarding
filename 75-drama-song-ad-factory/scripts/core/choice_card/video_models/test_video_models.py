@@ -151,7 +151,10 @@ class Fake74:
         if sub == "wait":
             return 0, {"state": "success", "task_id": "t-1", "credits_consumed": 10}
         if sub == "save":
-            return 0, {"state": "success", "task_id": "t-1", "saved_paths": ["/x.mp4"]}
+            out = os.path.join(tempfile.mkdtemp(prefix="vm-save-"), "x.mp4")
+            with open(out, "wb") as fh:  # F12 hold: a reported path must exist and be non-empty
+                fh.write(b"vm-bytes")
+            return 0, {"state": "success", "task_id": "t-1", "saved_paths": [out]}
         if sub == "health":
             return 0, {"adapter_mode": "active", "state": "success"}
         if sub == "preflight":

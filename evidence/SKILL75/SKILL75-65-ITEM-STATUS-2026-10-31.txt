@@ -1,0 +1,412 @@
+Skill 75 — 65 Item Status
+Audit-based status snapshot, dated 2026-10-31
+
+Scope: this document covers the 65 product and proof requirements C01-C11, F1-F17, ST1-ST9, ST10A, ST10B, ST11A, ST11B, XR1-XR5, X01-X11 and E01-E08. It excludes newly created control tools and the live ledger, which are reported separately at the end.
+Basis: retrospective audit of existing source and retained evidence, not a fresh 65-item behavioral retest. Main has 12 retained candidate patches, hash-verified; many bounded passes exist but remain unapplied and not integrated. A printed technical audit contained a faulty overclaim that a reverse --check absence means all roots are none; that broad claim is not repeated here. The read-only controller low-level transition was not treated as a security boundary by itself, and no exploit is asserted as proved. Where the audit did not establish a fact, this document preserves the unknown instead of reporting a false zero.
+Counts: 1 COMPLETE (E07), 22 PARTIAL, 23 FAILED, 19 NOT_ESTABLISHED. Verified functional repairs: none recorded. These 65 rows overlap; the counts are not an engineering-effort fraction and no row claims absolutely no work.
+Category wording is exact: COMPLETE = historical evidence-gap documentation only, NOT a software fix. PARTIAL = NOT FINISHED, partial implementation/candidate work exists. FAILED = NOT FIXED, defect confirmed in audited source. NOT_ESTABLISHED = NOT VERIFIED, audit did not establish completion, and this is not proof no work exists.
+
+01. C01 — Required production order: research, full reusable cast/history/world, causal narrative scenes, actual script and lyrics, elected approval, music, measured timed storyboard, visual references, storyboard approval, video/checks/delivery.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: factory.py:2242-2253 _production_admission before enqueue; registry factory.py:1787-1877; no end-to-end order proof
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: factory.py:2242-2253 _production_admission before enqueue; registry factory.py:1787-1877; no end-to-end order proof | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[0] (id=C01, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[0] (audit_id=C01, category=creative)
+
+02. C02 — Every narrative scene carries actual scene content, escalation, consequences, offer mechanism and ending, not twelve beat labels; timed storyboard follows selected audio and late timing-bound continuity cannot be required before music exists.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: story_planner.py:1-53 causal pre-song plan (timing provisional); W61 candidate unapplied
+   WHAT REMAINS: The requirement is not finished. apply/integrate the named candidate and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: story_planner.py:1-53 causal pre-song plan (timing provisional); W61 candidate unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[1] (id=C02, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[1] (audit_id=C02, category=creative)
+
+03. C03 — Three genuinely different opening candidates, each with exact spoken line, headline, first physical action, singular dramatic question, audience stake and causal offer mechanism.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: opening_gate.py absent canonical; W63 build-report.json gate_dependency.authority=BLOCKED (W60 review FAIL: lyric_problems accepts foreign payload/placeholder)
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: opening_gate.py absent canonical; W63 build-report.json gate_dependency.authority=BLOCKED (W60 review FAIL: lyric_problems accepts foreign payload/placeholder) | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[2] (id=C03, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[2] (audit_id=C03, category=creative)
+
+04. C04 — Selected opening binds actual first spoken line, physical action, scene revision, presented package and later first timed shot; consequence underway before the fourth second; biography, brand and scenery-only openings rejected.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: no opening binding implementation present in canonical roots
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: no opening binding implementation present in canonical roots | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[3] (id=C04, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[3] (audit_id=C04, category=creative)
+
+05. C05 — Eighteen-song-choice chain: frozen catalog renders eighteen choices, original first-three labels preserved, legacy three-choice answers resumed against original snapshots, missing legacy identifier derived only from verified original label and never reinterpreted through new catalog order.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: catalog.py:73-92 18 STYLE_IDS, :103-110 legacy bytes, :936 delivery_map; recipes/ only 5 JSON; actual999 song_choices 71928B vs canonical 88282B
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: catalog.py:73-92 18 STYLE_IDS, :103-110 legacy bytes, :936 delivery_map; recipes/ only 5 JSON; actual999 song_choices 71928B vs canonical 88282B | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[4] (id=C05, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[4] (audit_id=C05, category=creative)
+
+06. C06 — Full reusable character record: stable identity, relationships, history, motivations, appearance descriptions, voice intentions and world rules, usable as upstream text foundation.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: character_library/ dir present; contents/consumption not inspected
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: character_library/ dir present; contents/consumption not inspected | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[5] (id=C06, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[5] (audit_id=C06, category=creative)
+
+07. C07 — Visual references and keyframes reuse existing approved references and generate new visual assets only at the permitted stage through existing spend authority; per-character identity/image packaging prevents crossed pictures and placeholders.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: character_bible.py:817-823 one imgs dict across refs -> crossed pictures
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: character_bible.py:817-823 one imgs dict across refs -> crossed pictures | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[6] (id=C07, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[6] (audit_id=C07, category=creative)
+
+08. C08 — Ensemble agency: a consequential reply changes a decision while an ornamental reply leaves the scene unchanged; scenes with the same cast size are distinguished by consequential exchange versus decorative praise.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: not inspected within bound
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: not inspected within bound | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[7] (id=C08, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[7] (audit_id=C08, category=creative)
+
+09. C09 — No premature singing or unearned solution hook; a spoken-sheet change must not replay as an unchanged current package (speech, song and silence must stay distinguishable).
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: W62/SILENT-R3 PATCH.diff targets script_validation.py + silent-scene test; unapplied
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: W62/SILENT-R3 PATCH.diff targets script_validation.py + silent-scene test; unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[8] (id=C09, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[8] (audit_id=C09, category=creative)
+
+10. C10 — Preserve existing durations, model and provider route, artist-reference protections and documented duration-overshoot warnings with client choice, not a new hard duration stop; delivered Resilia study requirements remain unintegrated.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: RESILIA study doc delivered sha256 4e34798e...; not integrated into skill
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: RESILIA study doc delivered sha256 4e34798e...; not integrated into skill | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[9] (id=C10, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[9] (audit_id=C10, category=creative)
+
+11. C11 — Preserve opted-out approvals, existing elected approval behavior, provider/model sovereignty, paid task identifiers and charges, song failure client choice with no automatic paid redo, and the measured-FAIL accepted-risk route.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: factory.py:2371-2415 persisted bindings admission; catalog PRESERVE_* :117-127; integrated opt-out preservation unproven
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: factory.py:2371-2415 persisted bindings admission; catalog PRESERVE_* :117-127; integrated opt-out preservation unproven | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[10] (id=C11, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[10] (audit_id=C11, category=creative)
+
+12. F1 — weak lyric-only or mismatched presented content fails, including approval opt-out and cached approval.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: lyric_writer.py only validate_lyrics:654 / validate_campaign:815; no strict authoring API
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: lyric_writer.py only validate_lyrics:654 / validate_campaign:815; no strict authoring API | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[11] (id=F1, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[11] (audit_id=F1, category=technical)
+
+13. F2 — beat-label-only record fails production acceptance.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: story_arc.validate_story:64-136 still beat-only; story_planner.py causal plan exists but is not the published gate
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: story_arc.validate_story:64-136 still beat-only; story_planner.py causal plan exists but is not the published gate | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[12] (id=F2, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[12] (audit_id=F2, category=technical)
+
+14. F3 — unrelated-file receipt, missing output or changed brief rejected.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: factory.py:1788-1794 registry requires research/receipt.json; research.render:183-215 writes none; W52 research.py hunk unapplied
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: factory.py:1788-1794 registry requires research/receipt.json; research.render:183-215 writes none; W52 research.py hunk unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[13] (id=F3, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[13] (audit_id=F3, category=technical)
+
+15. F4 — placeholder verb or missing contract fails named validation.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: factory.py:1837,1871 literal ellipsis entrypoints; validate_registry:1880-1910 checks non-empty only
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: factory.py:1837,1871 literal ellipsis entrypoints; validate_registry:1880-1910 checks non-empty only | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[14] (id=F4, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[14] (audit_id=F4, category=technical)
+
+16. F5 — late bible cannot masquerade as early identity or complete before audio.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: not inspected within bound
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: not inspected within bound | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[15] (id=F5, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[15] (audit_id=F5, category=technical)
+
+17. F6 — unsent, stale, changed or authorless presentation refused.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: character_approval.approve:677-707 binds current revision without comparing presentation; sent flag unenforced; empty approved_by allowed :706
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: character_approval.approve:677-707 binds current revision without comparing presentation; sent flag unenforced; empty approved_by allowed :706 | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[16] (id=F6, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[16] (audit_id=F6, category=technical)
+
+18. F7 — duplicate identities, crossed pictures and placeholder-only final completeness fail. Existing deliberate preview remains available.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: defect confirmed character_bible.py:817-823; FIX-CAST-operator/candidate-v2.patch unapplied
+   WHAT REMAINS: The requirement is not finished. apply/integrate the named candidate and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: defect confirmed character_bible.py:817-823; FIX-CAST-operator/candidate-v2.patch unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[17] (id=F7, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[17] (audit_id=F7, category=technical)
+
+19. F8 — forged client provenance, stale question or missing authority cannot gain production authority.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: intake_session not inspected
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: intake_session not inspected | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[18] (id=F8, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[18] (audit_id=F8, category=technical)
+
+20. F9 — quality record alone or stale reviewer digest fails.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: stage.py:60 REQUIRED_CHECKS=('continuity',); advance:270-276 completes without bible.json; W52 stage.py hunk unapplied
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: stage.py:60 REQUIRED_CHECKS=('continuity',); advance:270-276 completes without bible.json; W52 stage.py hunk unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[19] (id=F9, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[19] (audit_id=F9, category=technical)
+
+21. F10 — untrusted direct state write or forged completion denied at actual boundary.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: state_store.transition:259-295 enforces legal edge+lease+CAS only, no production evidence
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: state_store.transition:259-295 enforces legal edge+lease+CAS only, no production evidence | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[20] (id=F10, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[20] (audit_id=F10, category=technical)
+
+22. F11 — exception, malformed paths or zero-byte output cannot report accepted production. Wrapper must retain paid context too.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: kie_dispatch.py:2143-2144 SAVE_FAILED warning only, then :2158-2161 KIE_DISPATCH_OK 'files saved'; SAVE-R3 scoped-PASS candidate unapplied
+   WHAT REMAINS: The requirement is not finished. apply/integrate the named candidate and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: kie_dispatch.py:2143-2144 SAVE_FAILED warning only, then :2158-2161 KIE_DISPATCH_OK 'files saved'; SAVE-R3 scoped-PASS candidate unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[21] (id=F11, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[21] (audit_id=F11, category=technical)
+
+23. F12 — missing, unavailable, failed, stale receipt or omitted job rejected. Do not pretend H3 policy already covers Suno.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: H3 receipt/quality-gate path not inspected
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: H3 receipt/quality-gate path not inspected | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[22] (id=F12, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[22] (audit_id=F12, category=technical)
+
+24. F13 — caller `_gathered` self-quotation and source identifier alone insufficient.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: gather/claims binding not inspected
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: gather/claims binding not inspected | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[23] (id=F13, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[23] (audit_id=F13, category=technical)
+
+25. F14 — directory-name fallback cannot target different run.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: factory.py:2214-2215 run_id defaults to dir name; cmd_event:2301-2313 passes possibly-empty a.run_id
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: factory.py:2214-2215 run_id defaults to dir name; cmd_event:2301-2313 passes possibly-empty a.run_id | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[24] (id=F14, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[24] (audit_id=F14, category=technical)
+
+26. F15 — corrupt persistence or failed write cannot acknowledge accepted work.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: factory.py:2260-2275 overwrite/corrupt-reset/swallow-OSError; state_store.py:401-460 transactional continuations exist; W53/W67 unapplied
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: factory.py:2260-2275 overwrite/corrupt-reset/swallow-OSError; state_store.py:401-460 transactional continuations exist; W53/W67 unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[25] (id=F15, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[25] (audit_id=F15, category=technical)
+
+27. F16 — wrong Clip/Trailer family, stale context or missing owed item fails.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: W57/PACKAGE-R5 candidate (delivery_checklist + welcome_sheet + tests) unapplied
+   WHAT REMAINS: The requirement is not finished. apply/integrate the named candidate and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: W57/PACKAGE-R5 candidate (delivery_checklist + welcome_sheet + tests) unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[26] (id=F16, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[26] (audit_id=F16, category=technical)
+
+28. F17 — hardcoded Claude/OpenRouter or admission-only “execution” rejected.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: factory.py:282 lane_size.size('claude-code','openrouter') hardcoded
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: factory.py:282 lane_size.size('claude-code','openrouter') hardcoded | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[27] (id=F17, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[27] (audit_id=F17, category=technical)
+
+29. ST1 — claimed but unfinished order cannot disappear permanently.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: studio_bridge.py:1217-1241 remote checkin/claim precedes any local unfinished-recovery scan
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: studio_bridge.py:1217-1241 remote checkin/claim precedes any local unfinished-recovery scan | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[28] (id=ST1, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[28] (audit_id=ST1, category=technical)
+
+30. ST2 — machine self-approval and machine-created human capability cannot certify human identity.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: approvals-api.js:170 machine may publish, :249 machine may answer; W59 APPROVAL-R5 unapplied
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: approvals-api.js:170 machine may publish, :249 machine may answer; W59 APPROVAL-R5 unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[29] (id=ST2, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[29] (audit_id=ST2, category=technical)
+
+31. ST3 — overlapping conflicting answers cannot both win. Native service concurrency proof remains separate.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: approvals-api.js:262-274 read/check/write, non-atomic; W59 unapplied
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: approvals-api.js:262-274 read/check/write, non-atomic; W59 unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[30] (id=ST3, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[30] (audit_id=ST3, category=technical)
+
+32. ST4 — identical basename across revisions cannot alias.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: approvals-api.js:277-297 revisionless file route, first matching listing item; W59 unapplied
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: approvals-api.js:277-297 revisionless file route, first matching listing item; W59 unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[31] (id=ST4, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[31] (audit_id=ST4, category=technical)
+
+33. ST5 — unauthenticated, undecodable, policy-blocked or detached media keeps answer disabled and cleans up.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: approvals-view.js:129 audio src, :151 img src (no auth header possible); W59 targets approvals-view.js, unapplied
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: approvals-view.js:129 audio src, :151 img src (no auth header possible); W59 targets approvals-view.js, unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[32] (id=ST5, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[32] (audit_id=ST5, category=technical)
+
+34. ST6 — scalar, wrong revision or admission-before-application fails.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: factory.py:403-421 _studio_apply returns deferred command envelope; decision not applied before admission
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: factory.py:403-421 _studio_apply returns deferred command envelope; decision not applied before admission | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[33] (id=ST6, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[33] (audit_id=ST6, category=technical)
+
+35. ST7 — unsupported video/document type receives truthful named refusal, not false publication success.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: studio_bridge.py:81-91 accepts video; approvals-api.js:100 requires audio|image
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: studio_bridge.py:81-91 accepts video; approvals-api.js:100 requires audio|image | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[34] (id=ST7, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[34] (audit_id=ST7, category=technical)
+
+36. ST8 — disabled capability remains disabled; no 999 timer assumption ported.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: no studio.py plugin under inspected roots (adapters/ empty, .openclaw/plugins has no studio plugin)
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: no studio.py plugin under inspected roots (adapters/ empty, .openclaw/plugins has no studio plugin) | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[35] (id=ST8, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[35] (audit_id=ST8, category=technical)
+
+37. ST9 — re-publish or prior upload capability cannot overwrite approved bytes.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: approvals-api.js:214-216 existing item returns fresh upload links; W59 unapplied
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: approvals-api.js:214-216 existing item returns fresh upload links; W59 unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[36] (id=ST9, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[36] (audit_id=ST9, category=technical)
+
+38. ST10A — simultaneous same-owner materialization and stale acknowledgement refused.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: studio_bridge.py:65 BRIDGE_OWNER='studio-bridge' constant; same-owner claim overlap unexcluded
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: studio_bridge.py:65 BRIDGE_OWNER='studio-bridge' constant; same-owner claim overlap unexcluded | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[37] (id=ST10A, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[37] (audit_id=ST10A, category=technical)
+
+39. ST10B — `["GO"]` malformed shape rejected.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: factory.py:446 choices=['GO'] vs approvals-api.js:88 requires {n:number,label:string}
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: factory.py:446 choices=['GO'] vs approvals-api.js:88 requires {n:number,label:string} | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[38] (id=ST10B, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[38] (audit_id=ST10B, category=technical)
+
+40. ST11A — chat send or text return cannot set Studio sent status.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: script_approval/stage.py:117-120 _send only deliver()+mark_sent; no Studio publication
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: script_approval/stage.py:117-120 _send only deliver()+mark_sent; no Studio publication | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[39] (id=ST11A, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[39] (audit_id=ST11A, category=technical)
+
+41. ST11B — malformed lengths, uppercase/non-hex and newline reject without credential logging.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: keys.js:25 KEY_BYTES=32 mints 64 hex; service-client.js:42 accepts /^[0-9a-f]{32}$/; FIX-LINK candidate+test unapplied
+   WHAT REMAINS: The requirement is not finished. apply/integrate the named candidate and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: keys.js:25 KEY_BYTES=32 mints 64 hex; service-client.js:42 accepts /^[0-9a-f]{32}$/; FIX-LINK candidate+test unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[40] (id=ST11B, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[40] (audit_id=ST11B, category=technical)
+
+42. XR1 — denied intermediate symlink must preserve-unreadable, never authorize relink.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: bundle_adapter.py:478-483 decide refuses downgrade but install_plan:557-586 never calls decide; W30/INSTALL-R4 unapplied
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: bundle_adapter.py:478-483 decide refuses downgrade but install_plan:557-586 never calls decide; W30/INSTALL-R4 unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[41] (id=XR1, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[41] (audit_id=XR1, category=technical)
+
+43. XR2 — omission from canonical inventory cannot delete destination-only files.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: package_core.py:118-126 unlinks every destination-only file
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: package_core.py:118-126 unlinks every destination-only file | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[42] (id=XR2, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[42] (audit_id=XR2, category=technical)
+
+44. XR3 — absent checkout, stale counts or `PARITY UNDETERMINED` fails release gate. Diagnostic unknown may remain readable.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: cited actual999 tests/test_parity_layout.py absent; no other parity gate inspected
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: cited actual999 tests/test_parity_layout.py absent; no other parity gate inspected | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[43] (id=XR3, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[43] (audit_id=XR3, category=technical)
+
+45. XR4 — `:memory:` loss or cross-workspace mapping rejected.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: cited actual999 scripts/core/cc_sync.py absent; canonical cc_sync.py 39041B not inspected
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: cited actual999 scripts/core/cc_sync.py absent; canonical cc_sync.py 39041B not inspected | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[44] (id=XR4, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[44] (audit_id=XR4, category=technical)
+
+46. XR5 — overlapping caller refused; disabled option remains disabled.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: option3_runner.py:205-218 check-then-os.replace lock, no exclusive create
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: option3_runner.py:205-218 check-then-os.replace lock, no exclusive create | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[45] (id=XR5, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[45] (audit_id=XR5, category=technical)
+
+47. X01 — P11 mediated execution: named full reads and changing-state polling are legitimate; truncated-read completion and interpreter pattern scan are rejected.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: runtime read-coverage policy not inspected
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: runtime read-coverage policy not inspected | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[46] (id=X01, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[46] (audit_id=X01, category=crosscutting)
+
+48. X02 — No-progress detection: unchanged deterministic failure loops stop while legitimate changing-state polling continues; a planner or dispatcher existing is not proof the runtime invokes it.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: no-progress/loop stop not inspected
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: no-progress/loop stop not inspected | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[47] (id=X02, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[47] (audit_id=X02, category=crosscutting)
+
+49. X03 — P12 native workforce: the selected native worker route starts and refills ready work with real capacity; hardcoded Claude/OpenRouter routing or admission-only execution is rejected and duplicate completion cannot collide.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: W64 MANIFEST.json blockers: no native launch performed, gateway.tools absent, sessions_spawn default-deny, no qc-specialist-video binding; patch.applied=false
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: W64 MANIFEST.json blockers: no native launch performed, gateway.tools absent, sessions_spawn default-deny, no qc-specialist-video binding; patch.applied=false | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[48] (id=X03, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[48] (audit_id=X03, category=crosscutting)
+
+50. X04 — P13 timely control delivery: correction or cancel reaches the proper run during a long task; authority mismatch stays denied and duplicate follow-up deduplicates.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: steering ingress owner not located
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: steering ingress owner not located | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[49] (id=X04, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[49] (audit_id=X04, category=crosscutting)
+
+51. X05 — Hold failed materialization while preserving the successful charge, task identity and full recovery envelope; save-only recovery produces a retained response with zero new submissions.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: kie_dispatch.py:2135-2148 keeps task_id+credits but saved=[] only warns; SAVE-R3 unapplied
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: kie_dispatch.py:2135-2148 keeps task_id+credits but saved=[] only warns; SAVE-R3 unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[50] (id=X05, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[50] (audit_id=X05, category=crosscutting)
+
+52. X06 — Per-callback admission: real public dispatch, migrated spend ledger, actual plan or reservation and real admission; a package mutated during governor acquisition, retry or wait must yield zero external submissions.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: retry/callback admission paths not fully inspected
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: retry/callback admission paths not fully inspected | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[51] (id=X06, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[51] (audit_id=X06, category=crosscutting)
+
+53. X07 — Exactly one song mode per run: one umbrella runner generating three variants OR three orchestrated units each generating one variant; selecting both modes in one run is rejected.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: factory.py:570-613 _song_choices_next selects exactly one mode; paid-path candidates unapplied; not demonstrated
+   WHAT REMAINS: The requirement is not finished. apply/integrate the named candidate and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: factory.py:570-613 _song_choices_next selects exactly one mode; paid-path candidates unapplied; not demonstrated | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[52] (id=X07, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[52] (audit_id=X07, category=crosscutting)
+
+54. X08 — Minute-lane planning: under 120 seconds no visual minute split; at or above 120 seconds split on actual shot boundaries, share upstream work once, run per-lane work in parallel, one fan-in and one governor, reuse known task or file.
+   DIRECT ANSWER: Not finished. Partial implementation or candidate work exists, but the requirement is not complete. [NOT FINISHED — partial implementation/candidate work exists]
+   WHAT EXISTS / ACTUAL WORK: lane_planner.py:54,85-168 >=120s shot-boundary lanes + fan-in; runtime invocation unproven
+   WHAT REMAINS: The requirement is not finished. finish the unimplemented or unintegrated portion and prove the requirement end to end. This audit records bounded work, not a completed end-to-end proof.
+   EVIDENCE: audit evidence: lane_planner.py:54,85-168 >=120s shot-boundary lanes + fan-in; runtime invocation unproven | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[53] (id=X08, s=PARTIAL) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[53] (audit_id=X08, category=crosscutting)
+
+55. X09 — P14 durable host-correct tenant and run outbox with optional remote projection: board outage or restart retains intent, wrong workspace mapping and in-memory loss are rejected, and disabled optional capabilities stay disabled.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: cc_sync/Command Center mapping not inspected
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: cc_sync/Command Center mapping not inspected | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[54] (id=X09, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[54] (audit_id=X09, category=crosscutting)
+
+56. X10 — P16 whole-process proof: exact public entrypoint fixtures per supported runtime, full causal pipeline and second resume with zero duplicate submissions, compared on the same deterministic workload, including native Windows and offline regression.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: no complete public path; W68 RECEIPT not_proven 'no live provider, no full paid generation'; P16 unrun
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: no complete public path; W68 RECEIPT not_proven 'no live provider, no full paid generation'; P16 unrun | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[55] (id=X10, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[55] (audit_id=X10, category=crosscutting)
+
+57. X11 — Application and release require applicable backup authorization and independent applied-tree verification: targeted tar of only the files to be changed, per-file SHA against the reviewed manifest, and original work never deleted.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: no application anywhere; W68 scope canonical_writes=0 actual999_writes=0 commits=0 installs=0
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: no application anywhere; W68 scope canonical_writes=0 actual999_writes=0 commits=0 installs=0 | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[56] (id=X11, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[56] (audit_id=X11, category=crosscutting)
+
+58. E01 — missing, unavailable, failed, stale receipt or omitted job rejected. Do not pretend H3 policy already covers Suno.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: no performed-audio evidence; W68 not_proven 'no audio is produced'
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: no performed-audio evidence; W68 not_proven 'no audio is produced' | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[57] (id=E01, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[57] (audit_id=E01, category=proof)
+
+59. E02 — Two scenes with same cast size: one consequential exchange, one decorative praise. Semantic review distinguishes them. Never pass merely because two names or enough words exist.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: no external character-library probe found
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: no external character-library probe found | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[58] (id=E02, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[58] (audit_id=E02, category=proof)
+
+60. E03 — hardcoded Claude/OpenRouter or admission-only “execution” rejected.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: W64 blockers: no native launch performed, no approved native surface
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: W64 blockers: no native launch performed, no approved native surface | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[59] (id=E03, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[59] (audit_id=E03, category=proof)
+
+61. E04 — untrusted direct state write or forged completion denied at actual boundary.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: no isolation test performed; W68 secrets_touched=0
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: no isolation test performed; W68 secrets_touched=0 | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[60] (id=E04, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[60] (audit_id=E04, category=proof)
+
+62. E05 — chat send or text return cannot set Studio sent status.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: live Studio deployment/browser not measured (W59 residual)
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: live Studio deployment/browser not measured (W59 residual) | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[61] (id=E05, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[61] (audit_id=E05, category=proof)
+
+63. E06 — untrusted direct state write or forged completion denied at actual boundary.
+   DIRECT ANSWER: Not verified. The audit did not establish completion one way or the other; this is not proof no work exists. [NOT VERIFIED — audit did not establish completion; this is not proof no work exists.]
+   WHAT EXISTS / ACTUAL WORK: Unknown from this audit. Audit note: alternate search/execution/egress surfaces not probed
+   WHAT REMAINS: Verification is missing: inspect the named area and re-audit. Work status for this row is unknown; this is not a zero-work finding.
+   EVIDENCE: audit evidence: alternate search/execution/egress surfaces not probed | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[62] (id=E06, s=NOT_ESTABLISHED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[62] (audit_id=E06, category=proof)
+
+64. E07 — cover each required boundary. Compare same deterministic workload before/after. No static test may stand for live artistic quality or billing.
+   DIRECT ANSWER: Complete for its actual scope — historical evidence-gap documentation only; this was NOT a software fix. [COMPLETE — historical evidence-gap documentation only; NOT a software fix]
+   WHAT EXISTS / ACTUAL WORK: honest gaps recorded: enforced-plan sec.6 proof-area 7; W64 MANIFEST blockers; W68 RECEIPT not_proven[]
+   WHAT REMAINS: No software repair is required by this row. Its actual completion is historical evidence-gap documentation only; this row does not prove any functional fix.
+   EVIDENCE: audit evidence: honest gaps recorded: enforced-plan sec.6 proof-area 7; W64 MANIFEST blockers; W68 RECEIPT not_proven[] | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[63] (id=E07, s=COMPLETE) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[63] (audit_id=E07, category=proof)
+
+65. E08 — cover each required boundary. Compare same deterministic workload before/after. No static test may stand for live artistic quality or billing.
+   DIRECT ANSWER: Not fixed. The defect is confirmed in the audited source. [NOT FIXED — defect confirmed in audited source]
+   WHAT EXISTS / ACTUAL WORK: no native Windows or full supported-runtime run; W30 windows script hunk unapplied
+   WHAT REMAINS: The defect remains in the audited source. Repair it at the named site and re-audit. A candidate remedy for this row is not established by this audit; that is unknown, not proof that no work exists.
+   EVIDENCE: audit evidence: no native Windows or full supported-runtime run; W30 windows script hunk unapplied | audit row pointer: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output result.rows[64] (id=E08, s=FAILED) | coverage row pointer: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json rows[64] (audit_id=E08, category=proof)
+
+CONTROL UPDATE (outside the 65-item product/proof scope)
+- A real append-only ledger was created and main verified all 65 IDs: <ROOT:OPERATOR-HOME>/clawd/live-ledger/skill75-enforcement-repair-bbdb4a28/events.jsonl
+- Census plus initial owner/producer installed and hash-verified.
+- The real producer has NEVER run.
+- Small adapter wf_e1b065a0-134 build/review/conditional install is pending latest main; no active claim beyond launch.
+- Scope 25 null auth is unchanged.
+- Accepted 27 proposal content PASS only.
+This control work does not upgrade any of the 65 rows above.
+
+SOURCES
+- Audit result JSON: <ROOT:SESSION-TMP>/bbdb4a28-a258-4372-a101-41422d1cb24f/tasks/wxixteoh7.output
+- Coverage and requirement text: <ROOT:VOLUMES>/mac mini m4/Downloads/git trees and automations/skill75-enforcement-repair-bbdb4a28/scratch/lanes/W70-LEDGER-R03-operator/a8/COVERAGE-65-v2.json
+- Live append-only ledger: <ROOT:OPERATOR-HOME>/clawd/live-ledger/skill75-enforcement-repair-bbdb4a28/events.jsonl
+- Repair workspace environment: <ROOT:OPERATOR-HOME>/loop-control/skill75-enforcement-repair-bbdb4a28/env.sh

@@ -3,6 +3,9 @@
 # Mutation targets: update-skills.sh:1608 (flock -n) and :1683 (retirement grep -E).
 # FIXER PASS: fixer-transcript-004 hollow test + behavioral probes.
 set -uo pipefail
+# The weekly pre-flight (shared-utils/fleet_preflight.py) reads this machine's memory pressure; a
+# loaded machine must not decide this test, which is covered by tests/unit/fleet-preflight.test.py.
+export FLEET_PREFLIGHT_BYPASS=1
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TARGET="$REPO_ROOT/update-skills.sh"

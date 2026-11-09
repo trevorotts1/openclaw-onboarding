@@ -1,0 +1,36 @@
+{
+  "unit": "S75-T01",
+  "acceptance_row": "S75-A01",
+  "acceptance_row_text": "Read-only source/owner census resolves both flavors; exact factory/approval handoff is explicit, or those files remain held while unrelated units proceed.",
+  "acceptance_row_source": "<HOME>/Downloads/Skill 75 - Story, Character Bible and Music Upgrade/ACCEPTANCE-MATRIX.md",
+  "head": "d32e71a2f10f81f54b3b29464312ecc0415acac5",
+  "base": "96559ab1b531570534316d856006867606afd4e2",
+  "checks": [
+    {
+      "command": "git merge-base --is-ancestor d32e71a2f10f81f54b3b29464312ecc0415acac5 origin/main",
+      "rc": 0,
+      "last_line": "ancestor confirmed (no output, rc 0)"
+    },
+    {
+      "command": "git merge-base --is-ancestor 96559ab1b531570534316d856006867606afd4e2 origin/main",
+      "rc": 0,
+      "last_line": "ancestor confirmed (no output, rc 0)"
+    },
+    {
+      "command": "git log -1 --format='%H %s' d32e71a2f10f81f54b3b29464312ecc0415acac5",
+      "rc": 0,
+      "last_line": "d32e71a2f10f81f54b3b29464312ecc0415acac5 evidence(S75-T01): mergeable evidence branch for acceptance row S75-A01"
+    }
+  ],
+  "literal_binding": [],
+  "clauses": [],
+  "unproven_clauses": [
+    "Read-only source/owner census resolves both flavors; exact factory/approval handoff is explicit, or those files remain held while unrelated units proceed."
+  ],
+  "verdict": "FAIL",
+  "no_verifiable_check": true,
+  "author_checker_lineage": "builder: evidence lane commit d32e71a2f10f81f54b3b29464312ecc0415acac5 (Claude Code, branch s75x/t01-evidence); independent checker: QC pass commit c5b9ce1cbc34c8b69f32ecf0b00dded02f2965c4 (claude-nine), verdict clean, zero fixes, recorded in evidence/units/S75-T01/qc.json",
+  "minted_at": "2026-10-28T07:41:52Z",
+  "tree_digest": "7aba325a34d84f46243e6c35a578f3bb07fd1bd1",
+  "honesty_note": "The three checks prove landedness only: d32e71a is the commit whose subject names S75-T01, it is an ancestor of origin/main (rc 0), and its build base 96559ab1b is also an ancestor (rc 0). The later QC commit c5b9ce1, which also names S75-T01, is an ancestor too (rc 0); head here is the unit deliverable commit, not the QC record commit. The checks do not exercise the row clause. Two candidate test files were inspected, found by directory listing only: tests/story_first_acceptance/test_cross_flavor_acceptance.py is S75-T32 fixture self-checking, claims only row S75-A32 and exercises cross-flavor cells, not a source/owner census; 75-drama-song-ad-factory/scripts/core/intake_preflight/test_init_handoff_contract.py exercises factory dispatch handoff behaviour, not a census and not the held-files condition. Neither runs a read-only source/owner census that resolves both flavors, and neither proves the factory/approval handoff is explicit or that those files remain held while unrelated units proceed. What the unit does carry is documentary only: evidence/units/S75-T01/attempt-1.json and digest-manifest.json record the census and owner handoff, which is validation of a document, not exercise of the clause. Per the bounded proof rule, no third search was made."
+}

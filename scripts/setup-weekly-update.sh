@@ -13,7 +13,29 @@
 #   a snapshot before, a health gate after, and automatic rollback on regression
 # - It does not restart the OpenClaw gateway or auto-notify a client chat
 
-REPO_RAW="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/weekly-full-update.sh"
+REPO_RAW_MAIN="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/weekly-full-update.sh"
+# RELEASE-PIN (display only): the restart script this installer writes resolves
+# and enforces the approved release itself at run time (the RELEASE-PIN block
+# inside RESTART_EOF). This installer only needs the ref for the URLs it PRINTS,
+# so it reads the same pin file best-effort and never refuses here.
+# Re-authored from W1 patch 05: that block would have added a second, divergent
+# pin protocol (approved-release text file, off|prefer|require) and assigned
+# REPO_RAW from _OC_REL_REF ten lines before that variable was defined.
+_otw_root="${OPENCLAW_ROOT:-}"
+[ -n "$_otw_root" ] || { [ -d /data/.openclaw ] && _otw_root=/data/.openclaw; }
+[ -n "$_otw_root" ] || _otw_root="$HOME/.openclaw"
+_otw_pin_file="${OPENCLAW_RELEASE_PIN_FILE:-$_otw_root/fleet-refresh/release-pin.json}"
+_otw_ref="${OPENCLAW_APPROVED_RELEASE:-}"
+if [ -z "$_otw_ref" ] && [ -r "$_otw_pin_file" ] && command -v python3 >/dev/null 2>&1; then
+    _otw_ref="$(python3 -I -c 'import json,sys
+try:
+    v=json.load(open(sys.argv[1])).get("approved_ref")
+except Exception:
+    v=None
+print(v if isinstance(v,str) else "")' "$_otw_pin_file" 2>/dev/null || true)"
+fi
+case "$_otw_ref" in ""|main|master|HEAD|origin/*|refs/*) _otw_ref="main" ;; esac
+REPO_RAW="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${_otw_ref}/scripts/weekly-full-update.sh"
 LOG_FILE="$HOME/.openclaw/skills/.update-log"
 
 # ----------------------------------------------------------------------------
@@ -75,7 +97,103 @@ cat > "$RESTART_SCRIPT" << 'RESTART_EOF'
 #!/bin/bash
 # Run the update script — fetch to temp file first so partial downloads do not
 # execute half a script (the classic curl|bash truncation hazard).
+# >>> RELEASE-PIN BEGIN (approved immutable release identity) >>>
+# One approved, immutable release identity governs the whole update path.
+# Resolution order: OPENCLAW_APPROVED_RELEASE env, then the pin file's
+# approved_ref. Mode: OPENCLAW_RELEASE_PIN_MODE env, then the pin file's mode,
+# then "enforce" if a pin is configured, else "off" (follow latest main).
+#   enforce  -> no valid pin => REFUSE with a named reason code (exit 78)
+#   advisory -> no valid pin => follow main with a loud warning
+#   off      -> legacy behaviour (follow main)
+# A pin is a 40-hex commit id or a tag name. Branch names that move
+# (main/master/HEAD/origin/*) are refused as pins.
+RELEASE_REF=""
+OC_RELEASE_PIN_REASON=""
+_release_pin_root() {
+  if [ -n "${OPENCLAW_ROOT:-}" ]; then printf '%s' "$OPENCLAW_ROOT"
+  elif [ -d /data/.openclaw ]; then printf '%s' /data/.openclaw
+  else printf '%s/.openclaw' "$HOME"; fi
+}
+_release_pin_file() {
+  printf '%s' "${OPENCLAW_RELEASE_PIN_FILE:-$(_release_pin_root)/fleet-refresh/release-pin.json}"
+}
+_release_pin_read() {
+  local f; f="$(_release_pin_file)"
+  [ -f "$f" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -I -c 'import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+v=d.get(sys.argv[2])
+if v is None:
+    sys.exit(1)
+print(v)' "$f" "$1" 2>/dev/null
+}
+_release_pin_mode() {
+  local m="${OPENCLAW_RELEASE_PIN_MODE:-}"
+  [ -n "$m" ] || m="$(_release_pin_read mode 2>/dev/null || true)"
+  # No mode set anywhere: enforce only when a pin was actually configured;
+  # otherwise follow the latest release (main) exactly as before the gate.
+  # Same rule as oc-atomic-upgrade.sh _npm_pin_mode. Defaulting to enforce
+  # with no pin on any box froze every Sunday update (RELEASE_PIN_UNCONFIGURED).
+  [ -n "$m" ] || { if [ -n "$(_release_pin_ref)" ]; then m="enforce"; else m="off"; fi; }
+  printf '%s' "$m"
+}
+_release_pin_ref() {
+  local r="${OPENCLAW_APPROVED_RELEASE:-}"
+  [ -n "$r" ] || r="$(_release_pin_read approved_ref 2>/dev/null || true)"
+  printf '%s' "$r"
+}
+_release_is_sha() { case "${1:-}" in ""|*[!0-9a-f]*) return 1 ;; esac; [ "${#1}" -eq 40 ]; }
+_release_pin_validate() {
+  local r="$1" m
+  m="$(_release_pin_mode)"
+  case "$m" in enforce|advisory|off) ;; *) OC_RELEASE_PIN_REASON="RELEASE_PIN_MODE_INVALID"; return 1 ;; esac
+  [ -n "$r" ] || { OC_RELEASE_PIN_REASON="RELEASE_PIN_UNCONFIGURED"; return 1; }
+  case "$r" in main|master|HEAD|origin/*|refs/*) OC_RELEASE_PIN_REASON="RELEASE_PIN_INVALID"; return 1 ;; esac
+  case "$r" in *[!A-Za-z0-9._/-]*) OC_RELEASE_PIN_REASON="RELEASE_PIN_INVALID"; return 1 ;; esac
+  return 0
+}
+# 0 = proceed. 78 = refuse (enforce + no usable pin). Sets RELEASE_REF.
+_release_pin_require() {
+  local m r
+  m="$(_release_pin_mode)"; r="$(_release_pin_ref)"
+  RELEASE_REF=""
+  if _release_pin_validate "$r"; then RELEASE_REF="$r"; return 0; fi
+  if [ "$m" = "enforce" ] || [ "$OC_RELEASE_PIN_REASON" = "RELEASE_PIN_MODE_INVALID" ]; then
+    printf '%s\n' "$OC_RELEASE_PIN_REASON"
+    return 78
+  fi
+  RELEASE_REF="main"
+  if [ "$m" = "advisory" ]; then
+    printf '[release-pin] %s (advisory: following moving main)\n' "$OC_RELEASE_PIN_REASON" >&2
+  fi
+  return 0
+}
+_release_clone_source() {
+  local dest="$1" url="${2:-https://github.com/trevorotts1/openclaw-onboarding.git}"
+  if _release_is_sha "$RELEASE_REF"; then
+    git clone --depth 1 "$url" "$dest" || return 1
+    git -C "$dest" fetch --depth 1 origin "$RELEASE_REF" || return 1
+    git -C "$dest" checkout --detach "$RELEASE_REF" || return 1
+  else
+    git clone --depth 1 --branch "$RELEASE_REF" "$url" "$dest" || return 1
+  fi
+}
+# <<< RELEASE-PIN END <<<
+_release_pin_require
+_PIN_RC=$?
+if [ "$_PIN_RC" -ne 0 ]; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] REFUSED: ${OC_RELEASE_PIN_REASON} — no approved immutable release identity is configured; this run did NOT follow main. Nothing was changed." >> "$HOME/.openclaw/skills/.update-log"
+  exit 78
+fi
+if [ "$RELEASE_REF" != "main" ]; then export OPENCLAW_APPROVED_RELEASE="$RELEASE_REF"; fi
 UPDATE_SCRIPT_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/weekly-full-update.sh"
+if [ "$RELEASE_REF" != "main" ]; then
+  UPDATE_SCRIPT_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${RELEASE_REF}/scripts/weekly-full-update.sh"
+fi
 _UPDATE_TMP="$(mktemp /tmp/openclaw-update-XXXXXX)"
 trap 'rm -f "$_UPDATE_TMP"' EXIT
 if ! curl -fsSL --max-time 60 "$UPDATE_SCRIPT_URL" -o "$_UPDATE_TMP" 2>>"$HOME/.openclaw/skills/.update-log"; then
@@ -124,6 +242,85 @@ cat > "$OPENCLAW_UPDATE_SCRIPT" << 'OCUPDATE_EOF'
 OC_LOG="$HOME/.openclaw/skills/.update-log"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Saturday OpenClaw update check starting" >> "$OC_LOG"
 
+# ---------------------------------------------------------------------------
+# SHARED INSTALLATION LEASE (mac.MAC-1 / mac.MAC-2)
+# ---------------------------------------------------------------------------
+# This unattended Saturday upgrade is an update WRITER: it holds the SAME lease
+# as update-skills.sh, self-update.sh, oc-atomic-upgrade.sh and the weekly
+# content update — one regular file, one owner record (pid, process start
+# identity, run id, role, install path, UTC). Liveness and staleness come from
+# the RECORD only: never from the file's existence, never from its age
+# (mac.MAC-13). A LIVE foreign owner means STAND DOWN — no wait loop, no retry,
+# no displacement, nothing changed on this box.
+# scripts/box-update-lock.sh is preferred when the box has it; the inline below
+# is the same contract for a box that predates it.
+OC_LEASE="${OPENCLAW_UPDATE_LEASE:-/tmp/openclaw-update.lock}"
+_ocl_start() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//' || true; }
+_ocl_ppid()  { ps -o ppid= -p "$1" 2>/dev/null | tr -d ' ' || true; }
+_ocl_rpid()  { sed -n 's/^pid=\([0-9][0-9]*\).*/\1/p' "$OC_LEASE" 2>/dev/null | head -1 || true; }
+_ocl_rstart(){ sed -n 's/^start=//p' "$OC_LEASE" 2>/dev/null | head -1 || true; }
+_ocl_owner_live() {
+  [ -f "$OC_LEASE" ] || return 1
+  _ocl_p="$(_ocl_rpid)"; [ -n "$_ocl_p" ] || return 1
+  kill -0 "$_ocl_p" 2>/dev/null || return 1
+  _ocl_s="$(_ocl_rstart)"
+  [ -z "$_ocl_s" ] || [ "$_ocl_s" = "none" ] || [ "$(_ocl_start "$_ocl_p")" = "$_ocl_s" ] || return 1
+  return 0
+}
+_ocl_in_tree() {
+  _ocl_owner_live || return 1
+  _ocl_p="$(_ocl_rpid)"; _ocl_cur="$$"; _ocl_n=0
+  while [ -n "$_ocl_cur" ] && [ "$_ocl_cur" -gt 1 ] 2>/dev/null && [ "$_ocl_n" -lt 64 ]; do
+    [ "$_ocl_cur" = "$_ocl_p" ] && return 0
+    _ocl_cur="$(_ocl_ppid "$_ocl_cur")"; _ocl_n=$((_ocl_n + 1))
+  done
+  return 1
+}
+_ocl_release() {
+  [ -f "$OC_LEASE" ] || return 0
+  [ "$(_ocl_rpid)" = "$$" ] || return 0
+  _ocl_s="$(_ocl_rstart)"
+  if [ -z "$_ocl_s" ] || [ "$_ocl_s" = "none" ] || [ "$(_ocl_start "$$")" = "$_ocl_s" ]; then
+    rm -f "$OC_LEASE" 2>/dev/null || true
+  fi
+}
+_ocl_take() {
+  _ocl_h="$HOME/.openclaw/scripts/box-update-lock.sh"
+  if [ -f "$_ocl_h" ]; then
+    . "$_ocl_h"
+    if command -v box_update_lock_acquire >/dev/null 2>&1; then
+      box_update_lock_acquire "$OC_LEASE" "sat-cron-$$" "saturday-cron" "$HOME/.openclaw"
+      case "$?" in
+        0) trap 'box_update_lock_release' EXIT; return 0 ;;
+        3) return 3 ;;
+        *) return 1 ;;
+      esac
+    fi
+  fi
+  _ocl_in_tree && return 0
+  if [ -e "$OC_LEASE" ] && [ ! -f "$OC_LEASE" ]; then
+    _ocl_owner_live && return 3
+    rm -rf "$OC_LEASE" 2>/dev/null || return 1
+  fi
+  _ocl_owner_live && return 3
+  [ -e "$OC_LEASE" ] && { rm -f "$OC_LEASE" 2>/dev/null || return 1; }
+  ( set -o noclobber; : > "$OC_LEASE" ) 2>/dev/null || return 3
+  printf 'pid=%s\nstart=%s\nrun_id=%s\nrole=%s\ninstall_path=%s\nutc=%s\n' \
+    "$$" "$(_ocl_start "$$")" "sat-cron-$$" "saturday-cron" "$HOME/.openclaw" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$OC_LEASE" 2>/dev/null || return 1
+  trap '_ocl_release' EXIT
+  return 0
+}
+_ocl_take
+_ocl_rc=$?
+if [ "$_ocl_rc" -eq 3 ]; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] another updater owns this box (shared installation lease $OC_LEASE held by pid $(_ocl_rpid)) — STANDING DOWN, nothing changed" >> "$OC_LOG"
+  exit 0
+elif [ "$_ocl_rc" -ne 0 ]; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] REFUSED: could not take the shared installation lease at $OC_LEASE — nothing changed" >> "$OC_LOG"
+  exit 1
+fi
+
 # Check if gateway is busy (agent is active)
 # Skip if a user session was active in the last 30 minutes
 # This prevents interrupting active work
@@ -135,9 +332,10 @@ fi
 # ---------------------------------------------------------------------------
 # PRE-UPGRADE GATE: legacy `agents.list` schema
 # ---------------------------------------------------------------------------
-# THIS IS THE MOST DANGEROUS LINE IN THE FLEET. `npm update -g openclaw` runs
-# here UNATTENDED, every Saturday at 23:59, and it is the thing that actually
-# moves a box onto a new OpenClaw build.
+# THIS IS THE MOST DANGEROUS STEP IN THE FLEET. An OpenClaw upgrade runs here
+# UNATTENDED, every Saturday at 23:59, and it is the thing that actually moves
+# a box onto a new OpenClaw build. (It used to be a bare `npm update -g
+# openclaw`; since BFR error #21 it is ONLY the atomic procedure, below.)
 #
 # The 2026.7.2-beta line REJECTS the legacy `agents.list` key:
 #     Gateway failed to start: Invalid config at ~/.openclaw/openclaw.json:
@@ -181,9 +379,15 @@ fi
 #   1. the atomic tool is on this box  -> it performs the ENTIRE upgrade
 #      (quiesce and prove it, install, migrate, verify, restart, prove stable,
 #      roll back binary AND config on any failure).
-#   2. the tool is absent BUT the config is PROVEN CLEAN -> the plain
-#      `npm update -g openclaw` still runs. A clean box cannot hit this
-#      landmine, so blocking it would be a regression for no safety gain.
+#   2. the tool is absent (config clean, or no config to inspect) -> NO
+#      UPGRADE THIS RUN. The bare `npm update -g openclaw` is gone: a clean
+#      config does not make it safe. Big Fleet Roll error #21 -- npm rewrites
+#      the package tree under a gateway that launchd KeepAlive keeps
+#      respawning, the respawn imports a half-written tree ("Cannot find module
+#      .../openclaw/dist/index.js"), dies, respawns, and the box never settles
+#      (Sonatta: rolled back, then dark). The Sunday content update delivers
+#      the atomic tool (update-skills.sh); the next Saturday then upgrades
+#      through it. A box left one build stale is recoverable.
 #   3. anything else -- legacy key present, unreadable config, no python3,
 #      detector error -> BLOCK. An absence that cannot be proven is not an
 #      absence, and a box left one build stale is recoverable.
@@ -334,7 +538,7 @@ if [ "$OC_REG_RC" -ne 0 ] && [ -n "$OC_GATE_BLOCK" ]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] ############################################################"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] OPENCLAW UPGRADE BLOCKED (registry-parity, pre) on $(hostname 2>/dev/null || uname -n)"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   Reason: $OC_GATE_BLOCK"
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   'npm update -g openclaw' was NOT run. \`openclaw config validate\`"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   The OpenClaw upgrade was NOT run. \`openclaw config validate\`"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   would PASS on this box right now -- validity is not health."
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] ############################################################"
     } >> "$OC_LOG"
@@ -392,7 +596,7 @@ PYDETECT
                         *)  OC_GATE_BLOCK="the atomic upgrade exited $OC_ATOMIC_RC (undetermined) on a CLEAN box." ;;
                     esac
                 else
-                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] atomic tool not on this box; a clean config cannot hit the landmine, so the plain npm upgrade may proceed" >> "$OC_LOG"
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [agents-list] clean config, but the atomic tool is not on this box (looked for $OC_ATOMIC) -- NOT upgrading with a bare npm update (BFR error #21); the Sunday content update delivers the tool" >> "$OC_LOG"
                 fi
                 ;;
             PRESENT)
@@ -437,7 +641,7 @@ if [ -n "$OC_GATE_BLOCK" ]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] OPENCLAW UPGRADE BLOCKED on $(hostname 2>/dev/null || uname -n)"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   Reason: $OC_GATE_BLOCK"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   Config: $OC_CFG"
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   'npm update -g openclaw' was NOT run. This box stays on its"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')]   The OpenClaw upgrade was NOT run. This box stays on its"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   current build ON PURPOSE: upgrading it with a legacy"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   'agents.list' config makes the gateway exit 78 every ~11s"
         echo "[$(date '+%Y-%m-%d %H:%M:%S')]   until the crash-loop breaker latches channels OFF and the"
@@ -459,19 +663,20 @@ fi
 rm -f "$HOME/.openclaw/skills/.openclaw-upgrade-blocked" 2>/dev/null
 
 
-# Update OpenClaw CLI.
-# SKIPPED when the atomic procedure already performed the upgrade: it installs
-# the binary itself (`npm install -g openclaw@<target>`) with the gateway down,
-# so running `npm update -g openclaw` again here would swap the binary a second
-# time UNDER THE RUNNING GATEWAY it just proved stable -- undoing the one
-# property that makes the atomic path worth taking.
+# The OpenClaw CLI is upgraded ONLY by the atomic procedure above
+# (<oc-root>/scripts/oc-atomic-upgrade.sh --upgrade): it boots the gateway job
+# out of launchd and proves it stopped (so KeepAlive cannot respawn it into a
+# half-written tree), installs the binary, proves the gateway came back and
+# STAYED up, and rolls the binary back otherwise. A bare `npm update -g openclaw` does none of that
+# and is never run from here (BFR error #21). When the atomic procedure did not
+# run (tool absent, or no config to inspect) nothing is installed this run.
 if [ "$OC_UPGRADE_DONE" = "1" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] OpenClaw already upgraded by the atomic procedure -- skipping 'npm update -g openclaw'" >> "$OC_LOG"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] OpenClaw upgraded by the atomic procedure" >> "$OC_LOG"
 else
-    npm update -g openclaw >> "$OC_LOG" 2>&1
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] No OpenClaw upgrade this run: the atomic procedure did not run (tool absent or no config), and a bare npm update is never used" >> "$OC_LOG"
 fi
 OC_VERSION=$(openclaw --version 2>/dev/null)
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] OpenClaw updated to: $OC_VERSION" >> "$OC_LOG"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] OpenClaw is at: $OC_VERSION" >> "$OC_LOG"
 
 # R0 REGISTRY-PARITY GATE -- 'post' snapshot, after the binary has changed and
 # the gateway has had a chance to touch the config. A violation here fires
@@ -504,7 +709,7 @@ chmod +x "$OPENCLAW_UPDATE_SCRIPT"
 echo "[OK] Weekly update crons installed."
 echo ""
 echo "Schedule 1: Every Saturday at 11:59 PM"
-echo "  -> Updates OpenClaw CLI to latest version"
+echo "  -> Upgrades the OpenClaw CLI through the atomic procedure"
 echo ""
 echo "Schedule 2: Every Sunday at 3:00 AM"
 echo "  -> Runs the complete content-aware fleet update without restarting the gateway"
@@ -520,13 +725,13 @@ echo "         the box -> it performs the WHOLE upgrade: stop the gateway and pr
 echo "         it stopped, install the new build, migrate the config to"
 echo "         'agents.entries', verify the rewrite is lossless, restart, and prove"
 echo "         the gateway STAYS up -- rolling back binary AND config on any failure"
-echo "       - the tool is absent but the config is PROVEN CLEAN -> plain npm upgrade"
+echo "       - the tool is absent -> NO upgrade this run (never a bare npm update);"
+echo "         the Sunday content update delivers the tool, the next Saturday uses it"
 echo "       - anything else (legacy key, unreadable config, no python3) -> BLOCKED:"
 echo "         exit 78 and ~/.openclaw/skills/.openclaw-upgrade-blocked is written."
 echo "         A box left one build stale is recoverable; a dark box is not."
 echo "       NOTE: 'openclaw doctor --fix' does NOT perform this migration."
-echo "    2. Updates OpenClaw CLI (npm update -g openclaw) unless step 1 already did"
-echo "    3. Logs the new version"
+echo "    2. Logs the version the box is on (the CLI is only ever upgraded by step 1)"
 echo ""
 echo "  Sunday 3:00 AM (same steps as the operator's fleet roll):"
 echo "    1. Downloads the latest weekly-full-update.sh from GitHub"

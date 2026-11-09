@@ -32,8 +32,27 @@ bumped=0
 for s in $skills; do
   vf="$s/skill-version.txt"
   [ -f "$vf" ] || continue
-  # already bumped vs base (or brand-new file): nothing to do
+  # already bumped vs base (or brand-new file): the frontmatter may still be
+  # stale (manual bump edits skill-version.txt alone), so sync SKILL.md to
+  # skill-version.txt before skipping the auto-bump.
   if ! git diff --quiet "$MB" -- "$vf" 2>/dev/null || git ls-files -o --exclude-standard -- "$vf" | grep -q .; then
+    if [ -f "$s/SKILL.md" ]; then
+      cur="$(head -1 "$vf" | tr -d '[:space:]')"
+      python3 - "$s/SKILL.md" "$cur" <<'PY'
+import re, sys
+p, new = sys.argv[1], sys.argv[2].lstrip('vV')
+t = open(p, newline='').read()
+m = re.match(r'---\r?\n', t)
+if m:
+    end = re.search(r'\r?\n---[ \t]*(\r?\n|$)', t[m.end():])
+    fm_end = m.end() + (end.start() if end else 0)
+    head = t[:fm_end]
+    # keep the existing v-prefix / quote style, swap only the number
+    head2 = re.sub(r'(?m)^(version:[ \t]*)(["\']?[vV]?)(\d+\.\d+\.\d+)(["\']?)', lambda mm: mm[1] + mm[2] + new + mm[4], head, count=1)
+    if head2 != head:
+        open(p, 'w', newline='').write(head2 + t[fm_end:])
+PY
+    fi
     continue
   fi
   old="$(head -1 "$vf" | tr -d '[:space:]')"

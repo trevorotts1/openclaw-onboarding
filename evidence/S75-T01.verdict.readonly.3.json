@@ -1,0 +1,201 @@
+{
+  "schema": "blackceo.s75.verdict.readonly/v1",
+  "unit_id": "S75-T01",
+  "row": "S75-A01",
+  "acceptance_id": "S75-A01",
+  "verdict": "PASS",
+  "verifier_distinct": true,
+  "verifier_role": "INDEPENDENT VERIFIER (did not write the census; performed no fix)",
+  "observed_at": "2026-10-24T21:15:00Z",
+  "append_only": true,
+  "authority_root": "/Volumes/mac mini m4/Downloads/git trees and automations/S75_Story_First_Full_Cast_Build_20261024",
+  "key_question": "Is the census an honest POINT-IN-TIME observation rather than a permanent-truth claim?",
+  "key_question_answer": "Yes. Every flavor head carries its command, its command output, its read_at timestamp and its reflog evidence, and each recorded value was demonstrably the live origin/main at 2026-10-24T20:50:17Z (16:50:17 -0400). The ONB head has since advanced, which the point-in-time semantics explicitly anticipate and which is NOT a failure.",
+
+  "criteria_checked": [
+    {
+      "criterion": "Each flavor head carries command, read_at timestamp and reflog evidence",
+      "status": "MET",
+      "detail": "ONB, N999 and CC each carry: command, command_output, log_command, log_command_output, reflog_command, reflog_latest_entry, read_at=2026-10-24T20:50:17Z, reverified_this_session=true, reverified_at=2026-10-24T20:50:17Z. No value is stamped without a command and a timestamp behind it."
+    },
+    {
+      "criterion": "source-reconciliation.json sha256 = e45d2f30... and 75754 bytes",
+      "status": "MET",
+      "detail": "Recomputed e45d2f30cb5ec150a735c42fe0a0fb83e20df42e146117cdf8330c9852a27d4f, 75754 bytes. Exact match to claim."
+    },
+    {
+      "criterion": "attempt-1.json sha256 = 6f4602b5... and 3095 bytes",
+      "status": "MET",
+      "detail": "File located at evidence/units/S75-T01/attempt-1.json (the claim named only the basename). Recomputed 6f4602b53f6fc84e64d019a0afb9ea272380826bc15deac8567434a4a83233aa, 3095 bytes. Exact match to claim."
+    },
+    {
+      "criterion": "Recorded heads plausible AT 2026-10-24T20:50:17Z per reflog / commit dates",
+      "status": "MET",
+      "detail": "All three corroborated. See corroboration_per_flavor. NO head shows a reflog change landing before the read_at that would make the recorded value stale at read time."
+    },
+    {
+      "criterion": "Handoff names held factory/approval files and keeps owner 01a16e50 UNKNOWN",
+      "status": "MET",
+      "detail": "holding_party.owner = \"UNKNOWN\", not_guessed = true, reason names exactly the four sources searched (DEPENDENCIES-AND-OWNERSHIP.md, DECISIONS.md, task-ledger.json, evidence/). Five held files named: factory.py, lyric_writer.py, character_approval.py, registry.json, method_plan.py. receiving_owner.person also UNKNOWN (role only: S75-T13 / FACTORY-GATE-OWNER). No owner invented."
+    },
+    {
+      "criterion": "No product code, branch or worktree modified by this repair",
+      "status": "MET",
+      "detail": "attempt-1.json declares product_code_changed=false, branch_worktree_repo_touched=false; source-reconciliation.json declares mode=READ_ONLY_RECONCILIATION, product_files_edited=false, branch_or_worktree_mutated=false. Independently corroborated by mtime: attempt-1.json and source-reconciliation.json written 16:51:04, while emergency-owner-handoff.json mtime is 16:36:27 and its byte content matches the sha256 that attempt-1.json records (9a4965e2f3d3a8ccf767f7918349ff62e433522a92b63b0f4dd1d17bb553d96e, 3270 bytes) -- proving the repair did NOT rewrite the handoff it claimed to leave unchanged. All work written under evidence/ only."
+    }
+  ],
+
+  "corroboration_per_flavor": [
+    {
+      "flavor": "ONB",
+      "repo": "<PATH>/openclaw-onboarding",
+      "recorded_head": "f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b",
+      "recorded_command": "git -C <PATH>/openclaw-onboarding rev-parse origin/main",
+      "read_at": "2026-10-24T20:50:17Z",
+      "live_head_now": "144ec54507695371b0eaea1e06a561d7cd76273b",
+      "moved_since_read_at": true,
+      "corroborated": true,
+      "reflog_evidence": "f0a9c80e0 became origin/main at 2026-10-24 16:29:15 -0400 (fetch: fast-forward) and 144ec5450 superseded it at 2026-10-24 16:50:55 -0400. read_at 16:50:17 falls strictly between those two, so f0a9c80e0 WAS origin/main at read_at.",
+      "commit_identity_verified": "f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b|2026-10-24T16:29:09-04:00|Merge pull request #2543 from trevorotts1/batch/council-route-1055 -- exact match to recorded log_command_output",
+      "note": "Point-in-time drift AFTER read_at. Not a failure; the census declares point-in-time semantics."
+    },
+    {
+      "flavor": "N999",
+      "repo": "<PATH>/.openclaw/persist-home/999-setup",
+      "recorded_head": "6e9d69def27dd4adfffbe7a03ccf0e47d871f03b",
+      "recorded_command": "git -C <PATH>/.openclaw/persist-home/999-setup rev-parse origin/main",
+      "read_at": "2026-10-24T20:50:17Z",
+      "live_head_now": "6e9d69def27dd4adfffbe7a03ccf0e47d871f03b",
+      "moved_since_read_at": false,
+      "corroborated": true,
+      "reflog_evidence": "6e9d69def became origin/main at 2026-10-24 16:29:27 -0400 and has not moved since. read_at 16:50:17 is after that, so the value was live at read_at and is still live now.",
+      "commit_identity_verified": "6e9d69def27dd4adfffbe7a03ccf0e47d871f03b|2026-10-24T16:28:47-04:00|Merge pull request #321 from trevorotts1/batch/pbb-183-t44 -- exact match to recorded log_command_output"
+    },
+    {
+      "flavor": "CC",
+      "repo": "<PATH>/blackceo-command-center",
+      "recorded_head": "7816a3c560ff2c50126e38b139ad644c472b99ac",
+      "recorded_command": "git -C <PATH>/blackceo-command-center rev-parse origin/main",
+      "read_at": "2026-10-24T20:50:17Z",
+      "live_head_now": "7816a3c560ff2c50126e38b139ad644c472b99ac",
+      "moved_since_read_at": false,
+      "corroborated": true,
+      "reflog_evidence": "a3b4331894 was origin/main from 2026-10-24 13:21:11 -0400 until 7816a3c560 landed at 2026-10-24 16:32:20 -0400 and has not moved since. read_at 16:50:17 is after 16:32:20, so 7816a3c560 was live at read_at.",
+      "commit_identity_verified": "7816a3c560ff2c50126e38b139ad644c472b99ac|2026-10-24T16:28:00-04:00|Merge pull request #597 from trevorotts1/pb/PBB-094/t03-inventory -- exact match to recorded log_command_output",
+      "prior_failure_corrected": "The earlier false claim (a3b4331894 stamped head_reverified=true) is now contradicted by the census itself: source-reconciliation.json records head_moved_since_prior_census = 'a3b43318944132f0847f33f395dcb0ea38ba30a7 -> 7816a3c560ff2c50126e38b139ad644c472b99ac', and the reflog independently confirms a3b4331894 was superseded at 16:32:20, before the failed census mtime 16:36:27. The correction is honest about the prior error rather than silently overwriting it."
+    }
+  ],
+
+  "commands_run": [
+    "shasum -a 256 evidence/source-reconciliation.json",
+    "shasum -a 256 evidence/units/S75-T01/attempt-1.json",
+    "shasum -a 256 evidence/emergency-owner-handoff.json",
+    "wc -c evidence/source-reconciliation.json evidence/units/S75-T01/attempt-1.json evidence/emergency-owner-handoff.json",
+    "git -C <PATH>/openclaw-onboarding rev-parse origin/main",
+    "git -C <PATH>/.openclaw/persist-home/999-setup rev-parse origin/main",
+    "git -C <PATH>/blackceo-command-center rev-parse origin/main",
+    "git -C <repo> reflog show origin/main --date=iso (all three flavors)",
+    "git -C <repo> log -1 --format='%H|%cI|%s' origin/main (all three flavors)",
+    "git -C <PATH>/openclaw-onboarding log -1 --format='%H|%cI|%s' f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b",
+    "git -C <PATH>/openclaw-onboarding status --porcelain=v1 --untracked-files=all",
+    "git -C <PATH>/.openclaw/persist-home/999-setup status --porcelain=v1 --untracked-files=all",
+    "git -C <PATH>/blackceo-command-center status --porcelain=v1 --untracked-files=all",
+    "git -C <PATH>/openclaw-onboarding worktree list",
+    "git -C <PATH>/openclaw-onboarding reflog -5",
+    "stat -f '%N %z %Sm' attempt-1.json source-reconciliation.json emergency-owner-handoff.json"
+  ],
+
+  "digest_recomputed": [
+    {
+      "path": "evidence/source-reconciliation.json",
+      "claimed_sha256": "e45d2f30cb5ec150a735c42fe0a0fb83e20df42e146117cdf8330c9852a27d4f",
+      "recomputed_sha256": "e45d2f30cb5ec150a735c42fe0a0fb83e20df42e146117cdf8330c9852a27d4f",
+      "claimed_bytes": 75754,
+      "recomputed_bytes": 75754,
+      "match": true
+    },
+    {
+      "path": "evidence/units/S75-T01/attempt-1.json",
+      "claimed_sha256": "6f4602b53f6fc84e64d019a0afb9ea272380826bc15deac8567434a4a83233aa",
+      "recomputed_sha256": "6f4602b53f6fc84e64d019a0afb9ea272380826bc15deac8567434a4a83233aa",
+      "claimed_bytes": 3095,
+      "recomputed_bytes": 3095,
+      "match": true
+    },
+    {
+      "path": "evidence/emergency-owner-handoff.json",
+      "claimed_sha256": "9a4965e2f3d3a8ccf767f7918349ff62e433522a92b63b0f4dd1d17bb553d96e",
+      "recomputed_sha256": "9a4965e2f3d3a8ccf767f7918349ff62e433522a92b63b0f4dd1d17bb553d96e",
+      "claimed_bytes": 3270,
+      "recomputed_bytes": 3270,
+      "match": true,
+      "note": "Confirms the repair left the handoff byte-identical, as it claimed."
+    }
+  ],
+
+  "product_code_branch_worktree_check": {
+    "product_code_changed": false,
+    "branch_or_worktree_mutated": false,
+    "evidence": [
+      "attempt-1.json: product_code_changed=false, branch_worktree_repo_touched=false",
+      "source-reconciliation.json: mode=READ_ONLY_RECONCILIATION, product_files_edited=false, branch_or_worktree_mutated=false",
+      "mtime: emergency-owner-handoff.json 16:36:27 is PRE-change and its bytes hash exactly to the value attempt-1.json records -- repair wrote only the two census files",
+      "All repair output under evidence/ only; no commit created"
+    ],
+    "pre_existing_dirty_state_not_owned_by_repair": {
+      "note": "Observed, NOT caused by this repair, and consistent with what the census itself records as UNATTRIBUTED.",
+      "openclaw-onboarding": [
+        " M 75-drama-song-ad-factory/scripts/core/choice_card/intake_card/ai_models.json",
+        " M 75-drama-song-ad-factory/scripts/core/spend_ledger.py",
+        "?? 75-drama-song-ad-factory/evidence/S75X-W5/S75X-W5-U1.verdict.json"
+      ],
+      "blackceo-command-center": [
+        "?? evidence/W13/command-center-reconciliation.md"
+      ],
+      "999-setup": [
+        "untracked *.orig backups and 999.git/ artifacts (pre-existing; unrelated to S75-T01)"
+      ],
+      "openclaw-onboarding_HEAD_branch": "fix/h3-and-2min at dd2240c54 -- pre-existing session work in the shared checkout, untouched by this repair (no HEAD reflog entry attributable to S75-T01)"
+    }
+  },
+
+  "handoff_check": {
+    "owner_01a16e50": "UNKNOWN",
+    "owner_invented": false,
+    "sources_searched_per_handoff": [
+      "DEPENDENCIES-AND-OWNERSHIP.md",
+      "DECISIONS.md",
+      "task-ledger.json",
+      "evidence/ under the authority root"
+    ],
+    "held_files_named": [
+      "factory.py",
+      "lyric_writer.py",
+      "character_approval.py",
+      "registry.json",
+      "method_plan.py"
+    ],
+    "lease_conflict_carried_not_dropped": "batch/s75-b5-prep @ dd3881cff1c917e604385f03fe85ebf0a32cbd9d names 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py -- recorded as a lease conflict against the hold, not resolved away",
+    "verdict": "MET"
+  },
+
+  "reasons": [
+    "STRONGEST: the point-in-time claim is corroborated for all three heads. ONB f0a9c80e0 held origin/main from 16:29:15 to 16:50:55 -0400 and the census read_at is 16:50:17 -0400, so the recorded value was live at the instant it was read; it advanced 38 seconds LATER, which is exactly the drift a point-in-time observation is allowed to have and is not staleness. N999 6e9d69def and CC 7816a3c560 are still live now, so they hold trivially.",
+    "Both sha256 digests and both byte counts recomputed exact: source-reconciliation.json e45d2f30.../75754, attempt-1.json 6f4602b5.../3095. Handoff also recomputed exact at 9a4965e2.../3270, and its mtime of 16:36:27 predates the repair, proving the repair did not rewrite it.",
+    "Every head is backed by a command, a verbatim command output, a read_at timestamp and a per-flavor reflog command plus latest reflog entry. No value is asserted bare.",
+    "The census is honest about the prior failure rather than papering over it: it records head_moved_since_prior_census = a3b4331894 -> 7816a3c560 and names the prior false head_reverified stamp. The reflog independently confirms a3b4331894 was superseded at 16:32:20, before the failed census mtime 16:36:27 -- which is precisely the dishonesty the first attempt was rejected for, and it is gone.",
+    "Owner 01a16e50 stays UNKNOWN with not_guessed=true and the searched-source list spelled out; the five held factory/approval files are named and the factory.py lease conflict on batch/s75-b5-prep is carried forward instead of dropped.",
+    "No product code, branch or worktree was modified: the repair declared READ_ONLY_RECONCILIATION, wrote only the two census files under evidence/, and the handoff hash proves it left that file byte-identical."
+  ],
+
+  "unmet_conjuncts": [],
+
+  "caveats_not_failures": [
+    "attempt-1.json is located at evidence/units/S75-T01/attempt-1.json; the correction claim named only the basename. Digest and size match, so identity is unambiguous.",
+    "ONB origin/main has advanced past the read_at (144ec5450 now). Expected under point-in-time semantics; re-run of the same command later will keep diverging and that is not a defect.",
+    "source-reconciliation.json not_checked records that no fetch was performed and that client boxes, Contabo/VPS hosts and remote branches outside the three named repos were not examined. Scope limits are declared, not hidden.",
+    "CC repository identity remains UNVERIFIED_T01_CONDITIONAL per task-ledger.json; the census records the clone as observed, not ledger-adopted. Carried as declared uncertainty, outside the S75-A01 conjuncts."
+  ],
+
+  "strongest_reason": "All three recorded heads were provably the live origin/main at 2026-10-24T20:50:17Z -- ONB f0a9c80e0 held origin/main 16:29:15 to 16:50:55 -0400, and 20:50:17Z is 16:50:17 -0400, inside that window; N999 6e9d69def and CC 7816a3c560 remain live. ONB advancing 38 seconds after the read is point-in-time drift the census explicitly allows, not staleness. Both digests and byte counts recomputed exact."
+}

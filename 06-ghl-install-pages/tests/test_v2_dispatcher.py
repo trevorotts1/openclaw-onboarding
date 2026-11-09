@@ -155,17 +155,18 @@ class TestVerifiedHonestVerdict:
 
     def test_overall_fail_recorded_not_massaged(self, tmp_path):
         # The build ran and verified, but the canonical verifier says FAIL (e.g.
-        # markers didn't land). The dispatcher records verified-state WITH a False
-        # overall_pass — it does NOT massage it to pass.
+        # markers didn't land). S06-01: the dispatcher records STATE_FAILED with
+        # the honest counts - it never records verified and never massages it to pass.
         res = disp.dispatch_one(
             FAKE_TASK, str(tmp_path), builder=_builder_ok(),
             verifier=_fake_verifier(False, passed=1, total=6))
-        assert res.state == disp.STATE_VERIFIED
+        assert res.state == disp.STATE_FAILED
         assert bool(res) is False              # truthiness requires overall_pass
         assert res.verify["overall_pass"] is False
         rec = json.load(open(os.path.join(tmp_path, "routing", "task-record.json")))
         assert rec["verify_overall_pass"] is False
         assert rec["verify_passed"] == 1 and rec["verify_total"] == 6
+        assert rec["state"] == disp.STATE_FAILED
 
 
 # ── integration with the REAL ghl_verify (injected fetcher, no network) ───────
@@ -188,7 +189,7 @@ class TestWithRealVerifier:
         res = disp.dispatch_one(
             FAKE_TASK, str(tmp_path), builder=_builder_ok(pages=pages),
             verifier=_real_verifier)
-        assert res.state == disp.STATE_VERIFIED
+        assert res.state == disp.STATE_FAILED
         # 1/2 truth -> overall FAIL, reported honestly.
         assert res.verify["passed"] == 1 and res.verify["total"] == 2
         assert res.verify["overall_pass"] is False
@@ -833,8 +834,12 @@ class TestCopyDependency:
         assert dep["owning_department"] == "marketing"
         assert dep["mini_epic"] == ["p1-spec", "p2-copy", "p4-build"]
 
-    def test_write_it_for_me_page_proceeds_when_copy_approved(self, tmp_path):
+    def test_write_it_for_me_page_proceeds_when_copy_approved(self, tmp_path, monkeypatch):
         calls = []
+        # S06-15: approval is a record from the approval store, not a header. The seam
+        # is consulted once the dispatcher reads the store; until then it is unused.
+        monkeypatch.setattr(disp, "_verify_copy_approval",
+                            lambda task, path: True, raising=False)
         # An APPROVED copy.md present under the run dir clears the dependency.
         os.makedirs(os.path.join(str(tmp_path), "working", "copy"), exist_ok=True)
         with open(os.path.join(str(tmp_path), "working", "copy", "copy.md"), "w") as f:
@@ -842,7 +847,8 @@ class TestCopyDependency:
         task = {"id": "pageAPPROVED", "brand": "Fictional Soap Co",
                 "location_id": "LOCATIONfake0000",
                 "brief": "build me a landing page for a webinar",
-                "has_copy": "write it for me"}
+                "has_copy": "write it for me",
+                "copy_approval_id": "appr-test"}
         res = disp.dispatch_one(
             task, str(tmp_path), builder=self._tracking_builder(calls),
             verifier=_fake_verifier(True), live=False,

@@ -12,12 +12,22 @@ refuses that class, for every commit it is pointed at:
   2. a commit that changes skill-version.txt must name the new version in its
      message (a silent bump is the same defect from the other side);
   3. the first `## [x.y.z]` heading in 38-conversational-ai-system/CHANGELOG.md
-     must equal that version;
+     must equal that version when the commit edits that CHANGELOG — a heading
+     the commit never touched is inherited history, not its claim;
   4. a "bumps Skill 38 to vX.Y.Z" claim in the NEWEST root CHANGELOG.md entry
      (the text before the second `^## [` heading) must equal that version, and
      an entry with no such claim makes no claim to check.
 
 Merge commits are skipped: their message is GitHub's, not a task record.
+
+Scope (PBB-905 D2): a base..head range is narrowed to the batch's own bump
+commits. Two filters: the guard's own adoption commit and its descendants only
+(a batch range also carries pre-existing unit history written BEFORE this rule
+existed — judging it is a false failure that no batch could ever pass), and
+commits that write a version record (a version file touched, or a version claim
+in the message). Code and docs commits are not blamed for the tree they
+inherited from main. When the guard is already on the range base, every commit
+in the range is checked, exactly as before.
 
 Usage:
   python3 scripts/qc-assert-commit-version-claim.py --commit REV
@@ -39,6 +49,7 @@ import subprocess
 import sys
 import tempfile
 
+GUARD_PATH = "scripts/qc-assert-commit-version-claim.py"
 VERSION_FILE = "38-conversational-ai-system/skill-version.txt"
 SKILL_CHANGELOG = "38-conversational-ai-system/CHANGELOG.md"
 ROOT_CHANGELOG = "CHANGELOG.md"
@@ -96,6 +107,59 @@ def changed_paths(rev):
     return [p for p in git("diff-tree", "--root", "--no-commit-id", "--name-only", "-r", rev).split("\n") if p]
 
 
+def git_ok(*args):
+    return subprocess.run(["git"] + list(args), capture_output=True, text=True).returncode == 0
+
+
+def bump_commit(rev):
+    """True when the commit writes a version record of its own: it touches a
+    version file, or its message claims a Skill 38 version.
+
+    A code- or docs-only commit inherits the tree it was handed; it makes no
+    version claim, so a stale number inherited from history is not its lie.
+    """
+    if any(p in (VERSION_FILE, SKILL_CHANGELOG, ROOT_CHANGELOG) for p in changed_paths(rev)):
+        return True
+    body = git("log", "-1", "--format=%B", rev)
+    return bool(CLAIM_RE.search(body) or ROOT_CLAIM_RE.search(body))
+
+
+def scope(revs, base):
+    """Split a range into (in_scope, out_of_scope) — the batch's own bumps.
+
+    Two filters, both from PBB-905 D2:
+
+      * adoption — the first commit in base..head that contains this file. Only
+        it and its descendants are the batch's own commits; everything older
+        was written before this rule existed and is never judged by it;
+      * relevance — only commits that write a version record (bump_commit), so
+        the batch's code and docs commits are not blamed for the tree they
+        inherited from main.
+
+    With no range base, or with the guard already on the base, nothing is out of
+    scope and the pre-PBB-905 behaviour is kept.
+    ponytail: scope needs a range base; upgrade path is to record the adoption
+    sha in a committed marker file so a bare push event can scope too.
+    """
+    if not revs or not base:
+        return revs, []
+    try:
+        if show(base, GUARD_PATH) is not None:
+            return revs, []
+        history = git("rev-list", "--reverse", "%s..%s" % (base, revs[-1])).split()
+    except EnvError:
+        return revs, []
+    adoption = next((r for r in history if show(r, GUARD_PATH) is not None), None)
+    if adoption is None:
+        return revs, []
+    kept = [
+        r
+        for r in revs
+        if git_ok("merge-base", "--is-ancestor", adoption, r) and bump_commit(r)
+    ]
+    return kept, [r for r in revs if r not in kept]
+
+
 def check_commit(rev):
     """Return (violations, skipped_reason). Empty violations means pass."""
     if len(parents(rev)) > 1:
@@ -125,7 +189,7 @@ def check_commit(rev):
         )
 
     skill_log = show(rev, SKILL_CHANGELOG)
-    if skill_log is not None:
+    if skill_log is not None and SKILL_CHANGELOG in changed_paths(rev):
         m = HEADING_RE.search(skill_log)
         if m and norm(m.group(1)) != norm(actual):
             v.append(
@@ -162,17 +226,28 @@ def commits_for_ci():
         base = ""
     if base and head:
         try:
-            return git("rev-list", "--reverse", "%s..%s" % (base, head)).split()
+            return git("rev-list", "--reverse", "%s..%s" % (base, head)).split(), base
         except EnvError:
             pass  # shallow or garbage range -> fall back to HEAD, loudly
         print(
             "NOTE: range %s..%s not available in this clone; checking %s only"
             % (base[:12], head[:12], head[:12])
         )
-    return [head]
+    return [head], base
 
 
-def report(revs):
+def report(revs, base=None):
+    revs, out_of_scope = scope(revs, base)
+    for rev in out_of_scope:
+        print(
+            "SKIP %s (outside the batch's own bump commits: pre-adoption history "
+            "or not a version record)" % rev[:12]
+        )
+    if out_of_scope and not revs:
+        print(
+            "NOTE: no commit in range is both at or after this guard's adoption "
+            "commit and a version record."
+        )
     bad = 0
     checked = 0
     for rev in revs:
@@ -247,7 +322,12 @@ def self_test():
         results.append(("non-bump commit with no claim", [commit("chore: docs only")], 0))
 
         book("2.0.5", "2.0.4", "2.0.5")
-        results.append(("stale skill CHANGELOG heading", [commit("Bumps Skill 38 to v2.0.5")], 1))
+        with open(SKILL_CHANGELOG, "a") as f:
+            f.write("- a note written under the stale heading\n")
+        results.append((
+            "stale skill CHANGELOG heading edited by the commit",
+            [commit("Bumps Skill 38 to v2.0.5")], 1,
+        ))
 
         book("2.0.6", "2.0.6", "2.0.5")
         results.append(("stale root CHANGELOG claim", [commit("Bumps Skill 38 to v2.0.6")], 1))
@@ -307,6 +387,36 @@ def self_test():
         merge = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
         results.append(("merge commit skipped", [merge], 0))
 
+        # PBB-905 D2: history written before this guard existed is out of scope,
+        # while the batch's own bump commit stays checked.
+        subprocess.run(["git", "checkout", "-q", "-b", "legacy", base], check=True)
+        book("2.0.20", "2.0.20", "2.0.20")
+        legacy = commit("chore: renumber skill 38 (pre-guard unit history)")
+        subprocess.run(["git", "checkout", "-q", trunk], check=True)
+        os.makedirs(os.path.dirname(GUARD_PATH), exist_ok=True)
+        write(GUARD_PATH, "# version-claim guard adopted here\n")
+        commit("chore: adopt the version-claim guard")
+        subprocess.run(
+            ["git", "merge", "-q", "--no-ff", "-s", "ours", "-m", "Merge legacy", "legacy"],
+            check=True,
+        )
+        book("2.0.21", "2.0.21", "2.0.21")
+        batch_bump = commit("Bumps Skill 38 to v2.0.21")
+        docs_only = commit("chore: docs only")
+        scoped_kept, scoped_out = scope([legacy, batch_bump, docs_only], base)
+        scope_results = [
+            (
+                "pre-adoption and non-record commits are out of scope, batch bump stays in",
+                [scoped_kept, scoped_out],
+                [[batch_bump], [legacy, docs_only]],
+            ),
+            (
+                "no range base leaves every commit in scope",
+                [scope([legacy, batch_bump], "")[0]],
+                [[legacy, batch_bump]],
+            ),
+        ]
+
         failures = 0
         for label, revs, want in results:
             print("  -- " + label)
@@ -314,10 +424,18 @@ def self_test():
             if got != want:
                 failures += 1
                 print("SELF-TEST FAIL — wanted rc %d, got rc %d" % (want, got))
+        for label, got, want in scope_results:
+            print("  -- " + label)
+            if got != want:
+                failures += 1
+                print("SELF-TEST FAIL — wanted %r, got %r" % (want, got))
         if failures:
             print("SELF-TEST FAIL — %d fixture(s) behaved wrongly" % failures)
             return 1
-        print("SELF-TEST PASS — %d fixtures: wrong records fail, right records pass" % len(results))
+        print(
+            "SELF-TEST PASS — %d fixtures: wrong records fail, right records pass"
+            % (len(results) + len(scope_results))
+        )
         return 0
     finally:
         os.chdir(saved)
@@ -329,7 +447,8 @@ def main(argv):
         if "--self-test" in argv:
             return self_test()
         if "--ci" in argv:
-            return report(commits_for_ci())
+            revs, base = commits_for_ci()
+            return report(revs, base)
         if "--commit" in argv:
             return report([argv[argv.index("--commit") + 1]])
         if "--range" in argv:
@@ -337,7 +456,9 @@ def main(argv):
             if ".." not in spec:
                 raise EnvError("--range needs BASE..HEAD, got %r" % spec)
             base, head = spec.split("..", 1)
-            return report(git("rev-list", "--reverse", "%s..%s" % (base, head or "HEAD")).split())
+            return report(
+                git("rev-list", "--reverse", "%s..%s" % (base, head or "HEAD")).split(), base
+            )
         return report(["HEAD"])
     except (EnvError, IndexError, KeyError, ValueError) as e:
         print("CANNOT RESOLVE — %s" % e, file=sys.stderr)

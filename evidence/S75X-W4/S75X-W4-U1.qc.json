@@ -1,0 +1,91 @@
+{
+  "schema": "s75x-unit-qc-v1",
+  "program": "S75X",
+  "workflow_id": "S75X-W4",
+  "unit_id": "S75X-W4-U1",
+  "role": "qc-fixer",
+  "verdict": "PASS",
+  "status": "clean",
+  "repo": "trevorotts1/openclaw-onboarding",
+  "branch": "s75x/verdicts-S75X-W4",
+  "lane": "<PATH>/git trees and automations/s75/worktrees/S75X-W4-U1-qc",
+  "base_sha": "96559ab1b531570534316d856006867606afd4e2",
+  "commit_checked": "d2409b13b1b86479c135d9c046e62df64ab931e6",
+  "unit_commit": "ca0a5b3de91ea5d440b8de1377ae8a3f369dfacf",
+  "verified_at": "2026-10-26",
+  "builder_claim_audit": {
+    "remote_branch_head_matches_builder_commit": true,
+    "diff_claim": "git diff --stat 953004bfc..d2409b13b = 1 file changed, 94 insertions(+) — evidence/S75X-W4/S75X-W4-U1.verdict.json only; confirmed independently",
+    "verdict_file": "valid JSON, 94 lines, verdict=PASS, 3 acceptance results (all PASS), 4 not_verified entries, findings=[]; confirmed independently",
+    "unit_commit_ancestry": "git merge-base --is-ancestor ca0a5b3de origin/main = true; confirmed independently",
+    "unit_commit_numstat": "git diff --numstat ca0a5b3de^..ca0a5b3de -- shot_planner/ matches builder verbatim: __init__.py 13/0, face_speaks.py 28/18, opening_scene.py 320/0, test_face_speaks_h4.py 42/37, test_opening_scene_w4.py 203/0",
+    "deleted_files_in_unit_commit": "git diff --diff-filter=D ca0a5b3de^..ca0a5b3de = 0 files; confirmed independently",
+    "unit_code_unchanged_by_builder": true
+  },
+  "test_results": {
+    "summary": "232 ok checks, 0 FAIL, rc=0 on all 8 shot_planner test files (independently re-run in QC lane)",
+    "suites": [
+      {"file": "test_face_speaks_h4.py", "runner": "python3 -I", "pass": 30, "fail": 0, "rc": 0},
+      {"file": "test_motion_d3_spatial.py", "runner": "python3 -I", "pass": 80, "fail": 0, "rc": 0},
+      {"file": "test_motion_d3_wraparound.py", "runner": "python3 -I", "pass": 9, "fail": 0, "rc": 0},
+      {"file": "test_motion_f12.py", "runner": "python3 -I", "pass": 40, "fail": 0, "rc": 0},
+      {"file": "test_no_reuse_e4.py", "runner": "python3 -I", "pass": 20, "fail": 0, "rc": 0},
+      {"file": "test_opening_scene_w4.py", "runner": "python3 -I", "pass": 25, "fail": 0, "rc": 0},
+      {"file": "test_shot_beats_e2.py", "runner": "python3 -I", "pass": 14, "fail": 0, "rc": 0},
+      {"file": "test_timestamp_plan_h5.py", "runner": "python3 -I", "pass": 14, "fail": 0, "rc": 0}
+    ],
+    "adjacent_consumers": [
+      {"file": "final_assembler/test_shot_floor_e3.py", "pass": 28, "fail": 0, "rc": 0},
+      {"file": "final_assembler/test_lipsync_atomic_e5.py", "pass": 10, "fail": 0, "rc": 0},
+      {"file": "prompt_templates/test_prompt_templates_u15b.py", "pass": 49, "fail": 0, "rc": 0},
+      {"file": "intake_preflight/test_storyboard_planning_artifacts.py", "tests": 1, "result": "OK", "rc": 0, "runner": "python3 -I (unittest)"},
+      {"file": "master_length/test_master_length_i4.py", "tests": 9, "result": "OK", "rc": 0, "runner": "python3 -I (unittest)"}
+    ],
+    "py_compile": "ok for opening_scene.py, __init__.py, shot_planner.py"
+  },
+  "probe_results": {
+    "summary": "17/17 builder acceptance probe re-run against QC lane root; 12/12 QC-owned independent probe; both rc=0",
+    "probe.py": {"checks": 17, "pass": 17, "fail": 0, "rc": 0, "note": "A1-A8 carry/refusal/drift, B1-B8 ambiguity and prompt-spec reach, C1 ungated control"},
+    "probe2.py": {"checks": 12, "pass": 12, "fail": 0, "rc": 0, "note": "QC-owned: second cue pair (smile+funeral -> relief or denial), declared-ambiguity positive path (source=declared, 'no triumph' negative reaches spec['negatives_extra'], context reaches spec['continuity']), OPENING_CONFLICT on pre-filled conflicting contract, contract-side and shot-side drift caught OPENING_LOST, package re-export surface, scene-opening/0 identity"},
+    "probe_scripts": "<PATH>/git trees and automations/s75/scratch/w4u1-qc/",
+    "probe_target_root": "<PATH>/git trees and automations/s75/worktrees/S75X-W4-U1-qc"
+  },
+  "mutation_controls": {
+    "refusal_removed": "QC-owned replica in scratch/w4u1-qc/m-refusal: deleting the OPENING_AMBIGUOUS refusal in build_opening_scene turns exactly 3 checks red, exit=1 — 'award-night tears with no context refuse OPENING_AMBIGUOUS', 'the refusal names the opposite reading', 'declared ambiguity without context refuses OPENING_AMBIGUOUS' (matches builder's named three)",
+    "lyric_carry_removed": "QC-owned replica in scratch/w4u1-qc/m-carry: deleting the contract lyric_text carry in apply_opening dies with PlanError \"OPENING_LOST: contract lyric_text is '', approved 'I won everything and felt nothing.'\", exit=1 (matches builder's control text)"
+  },
+  "code_fact_checks": [
+    "opening_scene.py:38-47 OPPOSITE_READINGS cue pairs (tears+wins/awards -> joy; smile+funeral/loss -> relief or denial); confirmed",
+    "opening_scene.py:102-139 opening_from_script reads elements first, then top-level, then first spoken sheet line; action never invented; confirmed",
+    "opening_scene.py:142-190 build_opening_scene refuses OPENING_LINE_MISSING / OPENING_ACTION_MISSING / OPENING_AMBIGUOUS instead of inventing; confirmed",
+    "opening_scene.py:175-186 refusal + negative_constraint from the opposite reading; confirmed",
+    "opening_scene.py:207-258 apply_opening writes shot['opening'] on the head shot in song order and 14.3 contract lyric_text/character_action; list order untouched (sorted copy); confirmed",
+    "opening_scene.py:231-238 reading_context -> continuity_constraints, negative -> negative_constraints; confirmed",
+    "shot_planner.py prompt_spec_for copies continuity_constraints -> spec['continuity'] and negative_constraints -> spec['negatives_extra']; confirmed",
+    "__init__.py re-exports OPENING_KEYS/OPPOSITE_READINGS/opening_from_script/build_opening_scene/apply_opening/validate_opening/plan_opening/infer_opposite_reading (+13 lines incl. __all__); confirmed",
+    "test_opening_scene_w4.py:98-106 asserts receipt['shot_order'] == ['s1','s2','s3'] while shot list stays ['s2','s1','s3']; confirmed"
+  ],
+  "probe_behavior_checks": [
+    "approved line + visible action land on scene record, head shot in song order, and 14.3 contract",
+    "shot list order preserved; shot_order receipt derived from song_start",
+    "no named visible action refuses OPENING_ACTION_MISSING (never invents)",
+    "drifted opening line, drifted shot action, and drifted contract action each caught OPENING_LOST",
+    "detected cue pair (tears+award) refuses OPENING_AMBIGUOUS naming 'joy' without context",
+    "second cue pair (smile+funeral) detects 'relief or denial' and refuses without context",
+    "declared ambiguity refuses without context; with context stays explicit (source=declared) and the 'no triumph' negative plus reading context reach prompt_spec_for spec['negatives_extra'] / spec['continuity']",
+    "pre-filled conflicting contract refuses OPENING_CONFLICT",
+    "control C1 confirmed: valid shot plan with no shot['opening'] passes validate_shot/validate_contract — the carry binds only when plan_opening is invoked"
+  ],
+  "findings": [],
+  "fixes": [],
+  "verdict_correct": true,
+  "not_verified_carried_forward": [
+    "No production caller invokes plan_opening (QC re-grep of 75-drama-song-ad-factory/scripts confirms only shot_planner/__init__.py re-exports plus the unit's own test reference the opening functions; SKILL.md item 5 and CHANGELOG document it). The carry is agent-invoked per SKILL.md item 5, not enforced by a code gate at generation or assembly time; probe C1 shows a plan with no opening record passes the existing gates.",
+    "story_planner.build_scene_plan is a different artifact and does not carry the approved opening visible action; only the shot-planner scene record and shot sequence do.",
+    "No end-to-end launcher run (no live run, no paid calls, no media); verification is code + test + probe only at origin/main 96559ab1b.",
+    "Plan-of-record binding pinned_canonical_main 4b48ce34775b78afd55abfcd52fa85c8efc3c271 is stale; judged at current origin/main 96559ab1b, as the builder did.",
+    "float(shots[i]['song_start']) raises TypeError (not PlanError) on a non-numeric song_start — matches existing shot_planner.py house style; left as-is, not a new defect of this unit."
+  ],
+  "ledger_touched": false,
+  "main_written": false
+}

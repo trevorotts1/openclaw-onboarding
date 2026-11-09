@@ -26,6 +26,7 @@ import sys
 import tempfile
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch, call
 
@@ -88,6 +89,48 @@ def _make_adapter(location_id: str = "LOC123", transport=None):
     return InternalAdapter(location_id=location_id, transport=transport)
 
 
+_APPROVAL_ENV = ("CAF_APPROVAL_ID", "CAF_WRITE_ACTION", "CAF_PLAN_SHA256", "CAF_OBJECT_KEY",
+                 "MISSION_CONTROL_URL", "MC_API_TOKEN")
+
+
+class _Resp:
+    """Minimal urlopen() response: a context manager whose read() returns JSON bytes."""
+
+    def __init__(self, body):
+        self._b = json.dumps(body).encode()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return self._b
+
+
+def _approve_writes(tc, location_id="LOC123"):
+    """S44-16: approve writes with a verified record served by a faked Command Center.
+
+    Patches the shared transport (urllib.request.urlopen), not safety_gate._fetch_record,
+    because other test modules re-import safety_gate and change module identity.
+    """
+    os.environ.update(
+        MISSION_CONTROL_URL="https://cc.example.test", MC_API_TOKEN="test-mc-token",
+        CAF_APPROVAL_ID="appr_12345678", CAF_WRITE_ACTION="workflows.build",
+        CAF_PLAN_SHA256="a" * 64, CAF_OBJECT_KEY="probe-plan")
+    rec = {
+        "kind": "automation_write", "location_id": location_id, "action": "workflows.build",
+        "object_key": "probe-plan", "plan_sha256": "a" * 64, "approver": "owner@client",
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+        "revoked": False, "verification_class": "authenticated_platform_record",
+    }
+    p = patch("urllib.request.urlopen",
+              side_effect=lambda req, timeout=None: _Resp({"approval": rec}))
+    p.start()
+    tc.addCleanup(p.stop)
+
+
 # ── Test: AdapterResult normalization ─────────────────────────────────────────
 
 class TestNormalizeResult(unittest.TestCase):
@@ -129,12 +172,11 @@ class TestInternalAdapter(unittest.TestCase):
     def setUp(self):
         # Safety gate: allow writes for these tests
         os.environ["CAF_ALLOWED_LOCATION_IDS"] = "LOC123"
-        os.environ["CAF_APPROVAL_TOKEN"] = "test-token"
         os.environ["CAF_INTERNAL_STEP_BACKOFF_MS"] = "0"  # no sleep in tests
+        _approve_writes(self)
 
     def tearDown(self):
-        for k in ("CAF_ALLOWED_LOCATION_IDS", "CAF_APPROVAL_TOKEN",
-                  "CAF_INTERNAL_STEP_BACKOFF_MS"):
+        for k in ("CAF_ALLOWED_LOCATION_IDS", "CAF_INTERNAL_STEP_BACKOFF_MS") + _APPROVAL_ENV:
             os.environ.pop(k, None)
 
     def _adapter(self, responses=None):
@@ -516,12 +558,11 @@ class TestShimCompat(unittest.TestCase):
 
     def setUp(self):
         os.environ["CAF_ALLOWED_LOCATION_IDS"] = "LOC123"
-        os.environ["CAF_APPROVAL_TOKEN"] = "test-token"
         os.environ["CAF_INTERNAL_STEP_BACKOFF_MS"] = "0"
+        _approve_writes(self)
 
     def tearDown(self):
-        for k in ("CAF_ALLOWED_LOCATION_IDS", "CAF_APPROVAL_TOKEN",
-                  "CAF_INTERNAL_STEP_BACKOFF_MS"):
+        for k in ("CAF_ALLOWED_LOCATION_IDS", "CAF_INTERNAL_STEP_BACKOFF_MS") + _APPROVAL_ENV:
             os.environ.pop(k, None)
 
     def _shim_client(self):

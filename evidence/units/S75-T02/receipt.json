@@ -1,0 +1,73 @@
+{
+  "unit": "S75-T02",
+  "acceptance_row": "S75-A02",
+  "acceptance_row_text": "Wrong/missing UUID prevents affected writes with no fallback. Prebuilder receipt proves actual recurring jobID, supported interval, nextRun, immediate tick acknowledgement and one control owner. Unsupported scheduling holds product-builder admission with exact blocker; read-only T01 continues. Pending/uncertain identities remain counted. The startup receipt retains the registered prompt body or exact portable reference+version/digest. The immediate tick proves an executed decision/action and actual-result acknowledgement through the single existing owner; a heartbeat-only prompt fails. Every unfinished assignment is classified and ready QC/repair/integration/cleanup work is serviced by that full cycle. If no safe task is admissible, record an evidence-backed admission/hold decision with actual classification, cause, owner and acknowledged outcome; never fabricate a dispatch. Prefer a supported safe read-only assignment when admissible. Keep ticks bounded; long builds/tests belong to workers.",
+  "acceptance_row_source": "<HOME>/Downloads/Skill 75 - Story, Character Bible and Music Upgrade/ACCEPTANCE-MATRIX.md",
+  "head": "6837e4b2f22a9a67f025d2e3c610dec98dc1d3a7",
+  "base": "7a206be199853840ebf4b8da570ee71eb6bdba0f",
+  "tree_digest": "0f319583006dec928fb738f0922b2706908e322d",
+  "head_subject": "Batch 20261027-2050: S75-T02 and S75-T15 from the merge room. Skill 75 to v2.9.128. The Skill 38 stamp is unchanged from main.",
+  "head_ancestor_of_origin_main": {
+    "command": "git -C <worktree> merge-base --is-ancestor 6837e4b2f22a9a67f025d2e3c610dec98dc1d3a7 origin/main",
+    "rc": 0
+  },
+  "checks": [
+    {
+      "command": "cd <worktree> && python3 -I tests/unit/job-uuid-gate.test.py",
+      "rc": 0,
+      "last_line": "OK"
+    },
+    {
+      "command": "cd <scratch>/s75t02-liveness && python3 -I tests/unit/job-uuid-gate.test.py",
+      "rc": 1,
+      "last_line": "FAILED (failures=4, errors=1)"
+    }
+  ],
+  "literal_binding": [
+    {
+      "clause": "Wrong/missing UUID prevents affected writes with no fallback.",
+      "command": "cd <worktree> && python3 -I tests/unit/job-uuid-gate.test.py",
+      "rc": 0,
+      "last_line": "OK"
+    }
+  ],
+  "liveness": {
+    "mutation": "throwaway copy of tests/unit/job-uuid-gate.test.py + scripts/lib/job_uuid_gate.py under the lane scratch; prove_recurring_job_id no-match branch changed to 'matches = jobs[:1]' (silent first-match fallback)",
+    "intact_rc": 0,
+    "mutated_rc": 1,
+    "mutated_last_line": "FAILED (failures=4, errors=1)",
+    "note": "the check is live: removing the refusal makes it fail"
+  },
+  "clauses": [
+    "Wrong/missing UUID prevents affected writes with no fallback.",
+    "Prebuilder receipt proves actual recurring jobID, supported interval, nextRun, immediate tick acknowledgement and one control owner.",
+    "Unsupported scheduling holds product-builder admission with exact blocker; read-only T01 continues.",
+    "Pending/uncertain identities remain counted.",
+    "The startup receipt retains the registered prompt body or exact portable reference+version/digest.",
+    "The immediate tick proves an executed decision/action and actual-result acknowledgement through the single existing owner; a heartbeat-only prompt fails.",
+    "Every unfinished assignment is classified and ready QC/repair/integration/cleanup work is serviced by that full cycle.",
+    "If no safe task is admissible, record an evidence-backed admission/hold decision with actual classification, cause, owner and acknowledged outcome; never fabricate a dispatch.",
+    "Prefer a supported safe read-only assignment when admissible.",
+    "Keep ticks bounded; long builds/tests belong to workers."
+  ],
+  "unproven_clauses": [
+    "Prebuilder receipt proves actual recurring jobID, supported interval, nextRun, immediate tick acknowledgement and one control owner.",
+    "Unsupported scheduling holds product-builder admission with exact blocker; read-only T01 continues.",
+    "Pending/uncertain identities remain counted.",
+    "The startup receipt retains the registered prompt body or exact portable reference+version/digest.",
+    "The immediate tick proves an executed decision/action and actual-result acknowledgement through the single existing owner; a heartbeat-only prompt fails.",
+    "Every unfinished assignment is classified and ready QC/repair/integration/cleanup work is serviced by that full cycle.",
+    "If no safe task is admissible, record an evidence-backed admission/hold decision with actual classification, cause, owner and acknowledged outcome; never fabricate a dispatch.",
+    "Prefer a supported safe read-only assignment when admissible.",
+    "Keep ticks bounded; long builds/tests belong to workers."
+  ],
+  "candidate_test_files": [
+    "tests/unit/job-uuid-gate.test.py",
+    "75-drama-song-ad-factory/scripts/core/heartbeat/test_run_watch.py"
+  ],
+  "no_verifiable_check": false,
+  "author_checker_lineage": "mint: receipt lane receipt-S75-T02 (deepseek-chain[1m]); checker: the same lane's bounded proof only -- no independent second-model lane reviewed this receipt",
+  "verdict": "FAIL",
+  "honesty_note": "Only clause 1 is exercised: tests/unit/job-uuid-gate.test.py drives the real scripts/lib/job_uuid_gate.py and asserts refusal with no file created, no bytes overwritten, and a live mutation (silent first-match fallback in the no-match branch) flips it to FAILED. Everything else is unproven by this lane. The receipt test in that file hashes a prompt_body the test itself supplies and records the job id from a listing the test itself supplies; it never reads a real scheduler, so the actual recurring jobID, supported interval, nextRun, tick acknowledgement, single control owner and retained registered-prompt-body clauses are untouched. Candidate 2, 75-drama-song-ad-factory/scripts/core/heartbeat/test_run_watch.py, covers heartbeat stalls, decision surfacing and recovery fencing on synthetic runs only and was not run because it exercises none of this row's clauses. The two-candidate budget was spent, so the lane stopped looking and reported FAIL rather than chase a proof.",
+  "minted_at": "2026-10-28T07:42:01Z"
+}

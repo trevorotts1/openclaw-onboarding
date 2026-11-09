@@ -4,7 +4,13 @@
   "page_role": "checkout",
   "owning_skill": 79,
   "form": "standard",
-  "status": "PROPOSAL for Trevor's approval. No Trevor example exists for the order form or checkout page (references/qc-contract.md, examples section), so this structure is built from Skill 79's own spec (79-signature-order-form/SKILL.md modes, references/components/QC-STATES.md reading order). Structure only: the client's brand colours, design style, hypersaturated grade and Trevor's wireframe rules govern every look decision.",
+  "status": "RATIFIED as built on 2026-11-02 (five-section checkout structure; see structure_approval). No Trevor example exists for the order form or checkout page (references/qc-contract.md, examples section), so this structure is built from Skill 79's own spec (79-signature-order-form/SKILL.md modes, references/components/QC-STATES.md reading order). Structure only: the client's brand colours, design style, hypersaturated grade and Trevor's wireframe rules govern every look decision.",
+  "structure_approval": {
+    "decision": "ratified_as_built",
+    "date": "2026-11-02",
+    "structure": "checkout, 5 sections",
+    "basis": "Decision taken as recommended on 2026-11-02 (repair project bfl-s49-repair-20261102, decision STR-17): ratify as built, because the structure already matches Skill 49 page_types, Skill 71 copy specs and funnel_structure.json. A later change to its sections is a new decision with its own date."
+  },
   "purpose": "The section sequence the Skill 71 image pipeline accepts for a checkout page (the order form). It replaces the 12-section landing sequence for a run whose page_role is checkout; copy_version stays a form label (standard or long-form) that only selects the style reference sheet.",
   "sequence": [
     "1",

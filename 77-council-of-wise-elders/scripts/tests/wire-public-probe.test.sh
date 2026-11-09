@@ -50,4 +50,32 @@ printf '{"commandCenterUrl":"https://cy.zerohumanworkforce.com"}' >"$TEST_OC/.wo
 src "build-state commandCenterUrl last resort" "https://cy-council.zerohumanworkforce.com"
 src "IP literal never a candidate" "" CC_PUBLIC_URL=http://203.0.113.9:3000
 src "localhost never a candidate" "" CC_PUBLIC_URL=http://localhost:3000
+# COUNCIL_PUBLIC_ORIGIN is the operator's direct answer, and an origin no client
+# can open is refused instead of baked (the operator box carried
+# https://fixed.example.com in service.json on 2026-10-29).
+named() { # <name> <expected PUBLIC> <expected CANDIDATE> <none|rejected|unverified> [env...]
+  local n="$1" wpub="$2" wcand="$3" wline="$4" line=no okline=0; shift 4
+  local out; out="$(env PATH="$T/bin:$PATH" CC_PUBLIC_URL="https://trevor.zerohumanworkforce.com" FAKE_CURL_OUT="302 https://x.cloudflareaccess.com/login" FAKE_CURL_RC=0 "$@" bash "$T/sec6.sh" 2>&1)"
+  case "$out" in *PUBLIC_ORIGIN_UNVERIFIED*) line=unverified ;; *PUBLIC_ORIGIN_REJECTED*) line=rejected ;; esac
+  if [ "$wline" = none ]; then [ "$line" = no ] && okline=1; else [ "$line" = "$wline" ] && okline=1; fi
+  if case "$out" in *"PUBLIC=[$wpub] CANDIDATE=[$wcand]"*) true ;; *) false ;; esac && [ "$okline" = 1 ]; then
+    echo "PASS $n"
+  else
+    echo "FAIL $n: $out"; FAILS=$((FAILS+1))
+  fi
+}
+named "COUNCIL_PUBLIC_ORIGIN wins over the command center host" "https://named.zerohumanworkforce.com" "https://named.zerohumanworkforce.com" none COUNCIL_PUBLIC_ORIGIN=https://named.zerohumanworkforce.com
+named "a documentation host is rejected, never baked" "" "" rejected COUNCIL_PUBLIC_ORIGIN=https://fixed.example.com
+named "a loopback origin is rejected, never baked" "" "" rejected COUNCIL_PUBLIC_ORIGIN=http://127.0.0.1:8787
+named "a documentation host is rejected even with the probe skipped" "" "" rejected COUNCIL_PUBLIC_ORIGIN=https://fixed.example.com COUNCIL_PUBLIC_ORIGIN_SKIP_PROBE=1
+# APEX documentation hosts: the reserved TLDs are fixtures at the apex too, and
+# the probe does not always catch them (probe skipped, or a host that answers).
+named "apex example.com is rejected" "" "" rejected COUNCIL_PUBLIC_ORIGIN=https://example.com
+named "apex example.net is rejected" "" "" rejected COUNCIL_PUBLIC_ORIGIN=https://example.net
+named "apex example.org is rejected" "" "" rejected COUNCIL_PUBLIC_ORIGIN=https://example.org
+named "apex example is rejected" "" "" rejected COUNCIL_PUBLIC_ORIGIN=https://example
+named "apex test is rejected" "" "" rejected COUNCIL_PUBLIC_ORIGIN=https://test
+named "apex invalid is rejected" "" "" rejected COUNCIL_PUBLIC_ORIGIN=https://invalid
+named "apex example.com is rejected even with the probe skipped" "" "" rejected COUNCIL_PUBLIC_ORIGIN=https://example.com COUNCIL_PUBLIC_ORIGIN_SKIP_PROBE=1
+named "a .invalid subdomain is rejected" "" "" rejected COUNCIL_PUBLIC_ORIGIN=https://council.invalid
 echo "wire-public-probe: $FAILS failed"; [ "$FAILS" = 0 ]

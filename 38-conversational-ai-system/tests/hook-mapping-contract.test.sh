@@ -52,7 +52,7 @@ bad()  { printf 'FAIL %s\n' "$*"; FAIL=1; }
 # The directive text is the twelve needles the writer's guard enforces. They are
 # SOURCED from lib-hook-mapping-contract.sh by the writer — nothing asserts an
 # equality between two copies any more.
-MT='MANDATORY SEND GHL Conversations API drafting NOT sending messageId SAME channel do NOT hardcode SMS conversations/search conversational-logs read append'
+MT='MANDATORY SEND pb_send.py admit reply drafting NOT sending messageId SAME channel do NOT hardcode SMS conversations/search conversational-logs read append'
 
 # base_mapping <body-override> -> the full hooks.mappings element
 base_mapping() {

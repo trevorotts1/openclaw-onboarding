@@ -4,10 +4,9 @@
 # Reads assets/model-map.template.json and writes a resolved model-map.json into
 # the run dir (or the skill dir if no --run-dir), mapping each capability TIER
 # (HEAVY-WRITER / MID-WRITER / RESEARCHER / IMAGE) to the CLIENT's OWN strongest
-# NON-Anthropic model. This stub emits the scaffold and asserts the template
-# carries no Anthropic id; the real per-box resolution is wired to the client's
-# configured providers by the fleet installer. Idempotent. NEVER writes an
-# Anthropic id and NEVER an operator key.
+# model. This stub emits the scaffold; the real per-box resolution is wired to the
+# client's configured providers by the fleet installer. Idempotent. NEVER writes
+# an operator key.
 #
 # MODES:
 #   (default) RESOLVE — write a resolved model-map.json scaffold into OUT_DIR.
@@ -16,7 +15,7 @@
 #   --non-interactive — force non-interactive mode (emit placeholders, exit 0).
 #   --check           — PRE-GATE: read an existing OUT_DIR/model-map.json and
 #                       fail-closed if it still carries <CLIENT_*> placeholders
-#                       (AF-AW-UNRESOLVED-MODELMAP) or a banned Anthropic id. A
+#                       (AF-AW-UNRESOLVED-MODELMAP). A
 #                       missing map is a clean pass (the installer resolves per
 #                       box). This wires preflight.sh as an entry pre-gate so a
 #                       placeholder-laden resolved map can never reach a run.
@@ -43,7 +42,7 @@ command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 required" >&2; exit
 
 if [ "$MODE" = "check" ]; then
     # PRE-GATE: assert a resolved run-dir model-map carries no residual
-    # <CLIENT_*> placeholder and no banned Anthropic id. Missing map = clean pass.
+    # <CLIENT_*> placeholder. Missing map = clean pass.
     OUT_DIR="$OUT_DIR" python3 - <<'PY'
 import json, os, re, sys
 mp = os.path.join(os.environ["OUT_DIR"], "model-map.json")
@@ -61,15 +60,7 @@ if residual:
     print("AF-AW-UNRESOLVED-MODELMAP: model-map.json still carries placeholder(s): %s"
           % ", ".join(residual), file=sys.stderr)
     sys.exit(2)
-banned = re.compile(r"claude-|anthropic/|us\.anthropic\.")
-for name, t in (data.get("tiers", {}) or {}).items():
-    for k in ("provider", "model"):
-        v = str((t or {}).get(k, ""))
-        if banned.search(v):
-            print("AF-AW-ANTHROPIC: resolved tier %s.%s carries a banned id %r" % (name, k, v),
-                  file=sys.stderr)
-            sys.exit(2)
-print("  [PASS] preflight --check: resolved model-map.json (no residual placeholder, no Anthropic id)")
+print("  [PASS] preflight --check: resolved model-map.json (no residual placeholder)")
 sys.exit(0)
 PY
     exit $?
@@ -90,23 +81,16 @@ fi
 INTERACTIVE_MODE="$INTERACTIVE_MODE" TEMPLATE="$TEMPLATE" OUT_DIR="$OUT_DIR" python3 - <<'PY'
 import json, os, re, sys
 tmpl = json.load(open(os.environ["TEMPLATE"]))
-banned = re.compile(r"claude-|anthropic/|us\.anthropic\.")
 tiers = tmpl.get("tiers", {})
-for name, t in tiers.items():
-    for k in ("provider", "model"):
-        v = str(t.get(k, ""))
-        if banned.search(v):
-            print("AF-AW-ANTHROPIC: template tier %s.%s carries a banned id %r" % (name, k, v), file=sys.stderr)
-            sys.exit(2)
 # Non-interactive: emit placeholders requiring manual resolution or fleet-installer fill.
 resolved_tiers = {name: {"role": t.get("role", ""),
                           "provider": t.get("provider", "<CLIENT_PROVIDER_ID>"),
                           "model": t.get("model", "<CLIENT_MODEL>"),
                           "maxTokens": t.get("maxTokens")} for name, t in tiers.items()}
 if os.environ.get("INTERACTIVE_MODE", "") == "false":
-    note_text = "Placeholder scaffold — CI/automation run. Run 'preflight.sh --resolve --interactive' to fill provider/model values, or hand-edit model-map.json. NEVER Anthropic, NEVER operator keys."
+    note_text = "Placeholder scaffold — CI/automation run. Run 'preflight.sh --resolve --interactive' to fill provider/model values, or hand-edit model-map.json. NEVER operator keys."
 else:
-    note_text = "Scaffold — fleet installer fills provider/model from the CLIENT's own config. NEVER Anthropic, NEVER operator keys."
+    note_text = "Scaffold — fleet installer fills provider/model from the CLIENT's own config. NEVER operator keys."
 resolved = {
     "skill": "anthology-writer",
     "resolved_per_box": True,
@@ -134,7 +118,7 @@ if [ "$IS_TTY" = "true" ]; then
     exit "$rc"
 fi
 
-echo "preflight: PASS (placeholder scaffold written; no Anthropic id)"
+echo "preflight: PASS (placeholder scaffold written)"
 echo "  Next: run 'preflight.sh --resolve --interactive' to interactively configure provider keys,"
 echo "  or hand-edit model-map.json to replace <CLIENT_PROVIDER_ID>/<CLIENT_MODEL> placeholders."
 exit 0

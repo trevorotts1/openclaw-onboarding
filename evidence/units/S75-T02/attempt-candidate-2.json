@@ -1,0 +1,117 @@
+{
+  "schema_version": "blackceo.evidence.unit-attempt/v1",
+  "unit": "S75-T02",
+  "acceptance_row": "S75-A02",
+  "role": "candidate-repair",
+  "attempt": "candidate-2",
+  "branch": "s75/S75-T02-r1",
+  "base_ref": "origin/main",
+  "base_sha": "5a54ddd7f8171ea7e3608cc1d508b06e82077d9e",
+  "prior_candidate_head_sha": "cf73408bbd591da3677b3a0ff955a8470705cde0",
+  "head_sha": "bce10946f2acadf2ec3c65807d50e349935923e7",
+  "head_note": "head_sha is the code+test repair commit; this receipt is committed as the next commit on the same branch because a receipt cannot contain its own commit sha.",
+  "written_at": "2026-10-26",
+  "scope": "Repair of exactly the two defects named by the independent verifier. No other change was made: no wiring into a production caller, no new module, no test weakened or removed.",
+  "repairs": [
+    {
+      "id": "R1",
+      "defect": "scripts/lib/job_uuid_gate.py _recurring() returned True whenever a non-empty schedule string was present, even when the job record explicitly said recurring: False. The named probe {\"id\": \"a8a8ad74\", \"recurring\": false, \"schedule\": \"*/5 * * * *\"} returned WRITE_LANDS instead of refusing.",
+      "before": "_recurring(): if recurring is True -> True; else schedule non-empty string -> True. Explicit false never consulted.",
+      "after": "_recurring() checks explicit boolean False BEFORE the schedule branch and returns False, so the record's own denial beats a leftover schedule string.",
+      "changed_file": "scripts/lib/job_uuid_gate.py",
+      "diff_shape": "+8 -1 (docstring plus two lines: `if job.get('recurring') is False: return False` before the schedule branch)",
+      "test_added": "tests/unit/job-uuid-gate.test.py::GateTest::test_explicit_false_beats_nonempty_schedule -- asserts g._recurring(job) is False, guarded_write refuses with JOB_NOT_RECURRING and creates no file or parent directory, and write_prebuilder_receipt refuses and writes no receipt file, for the exact record shape {\"id\": JOB, \"recurring\": False, \"schedule\": \"*/5 * * * *\"}.",
+      "probe_before": "PROBE_RESULT=WRITE_LANDS {\"id\": \"a8a8ad74\", \"recurring\": false, \"schedule\": \"*/5 * * * *\"}",
+      "probe_after": "{\"id\": \"a8a8ad74\", \"recurring\": false, \"schedule\": \"*/5 * * * *\"} -> REFUSED(JOB_NOT_RECURRING)"
+    },
+    {
+      "id": "R2",
+      "defect": "The candidate-1 receipt narrative (evidence/units/S75-T02/attempt-candidate-1.json, not_claimed[3] and shape_statement) claimed the authority-root artefacts were absent, on the strength of a search rooted only at $HOME. That search could not see another volume.",
+      "before": "\"...an authority-root-only evidence artefact (those artefacts are absent from disk now: find <OPERATOR_HOME> -name 'prebuilder*' returned nothing)\" and \"No claim about the authority-root T02 artefacts (state/prebuilder-loop-prompt.txt, storage-profile, supported-controls): they are absent on disk now...\"",
+      "after": "Corrected in this receipt: the artefacts EXIST at the authority root <AUTHORITY_ROOT>/. Exact paths, byte sizes and SHA-256 digests are recorded under authority_root_artefacts below. candidate-1.json is left unedited in substance because a receipt is a historical record, not a mutable document; this receipt supersedes its absence claim. The one exception, applied to BOTH receipts at the r1 rebuild: the banned operator-home absolute path (an always-on token in scripts/qc-assert-no-client-names.sh) was redacted to the placeholders <OPERATOR_HOME> / <REPO_ROOT> / <REPO_PARENT>; no technical content changed.",
+      "changed_file": "evidence/units/S75-T02/attempt-candidate-2.json"
+    }
+  ],
+  "authority_root": "<AUTHORITY_ROOT>",
+  "authority_root_artefacts": {
+    "state/": {
+      "kind": "directory",
+      "exists": true
+    },
+    "state/storage-profile.json": {
+      "bytes": 1966,
+      "sha256": "72045a19a816c40be41c92bbd023e5a038c685e2df12382fd93cbdd0eb1a4923"
+    },
+    "state/supported-controls.json": {
+      "bytes": 1259,
+      "sha256": "40a46ff0e14b2f54a09a43c1a6efba54004ed6835e6710505f1fc51103fa5fb5"
+    },
+    "state/native-census.json": {
+      "bytes": 1733,
+      "sha256": "8f1de06bb834fd7d5365e2edc444ce622576d84b64e9b620ac6cd462ba8b9f86"
+    },
+    "state/prebuilder-loop-prompt.txt": {
+      "bytes": 2667,
+      "sha256": "324c0edc65dac011dabaaa311bbd514eaeb736698cd4118ba2515d9df0318744"
+    },
+    "evidence/prebuilder-recurring-loop.json": {
+      "bytes": 3186,
+      "sha256": "622e9086d51609c056f07503191173d81d9f78e26cab066e93366f7f9e6a5500"
+    },
+    "evidence/units/S75-T02/attempt-1.json": {
+      "bytes": 4073,
+      "sha256": "5a28970d36c31b8066b9f13f75fa51ae84539f3901d46c92915168f701ce54d2"
+    },
+    "evidence/units/S75-T02/attest-1.json": {
+      "bytes": 10340,
+      "sha256": "12e69fa169d40a0d825ff857c03d4d58aa5c72ec1de42c2d92dfa90ecc7bfb26"
+    }
+  },
+  "authority_root_probe": "python3 -I os.path.isfile/os.path.getsize plus hashlib.sha256 over each named path on the mounted volume. state/ lists exactly 4 files: native-census.json, prebuilder-loop-prompt.txt, storage-profile.json, supported-controls.json. The three files the verifier listed beside state/ live INSIDE state/; there is no copy at the authority-root top level, and this receipt does not claim one.",
+  "files_changed": [
+    "scripts/lib/job_uuid_gate.py",
+    "tests/unit/job-uuid-gate.test.py",
+    "evidence/units/S75-T02/attempt-candidate-2.json"
+  ],
+  "tests_run": {
+    "owned_test_file": {
+      "command": "python3 -I tests/unit/job-uuid-gate.test.py",
+      "result": "Ran 11 tests in 0.016s -- OK",
+      "counts": {
+        "ran": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "delta_from_candidate_1": "10 -> 11 tests; the added test is test_explicit_false_beats_nonempty_schedule. No existing test was edited, relaxed or removed.",
+      "verbatim": "test_ambiguous_observation_refuses ok; test_empty_observation_refuses ok; test_explicit_false_beats_nonempty_schedule ok; test_missing_expected_uuid_refuses ok; test_no_case_or_whitespace_normalisation ok; test_proven_write_lands ok; test_receipt_records_actual_job_id_and_prompt_digest ok; test_receipt_refuses_unproven_uuid_and_writes_no_file ok; test_refusal_preserves_existing_bytes ok; test_unknown_recurrence_refuses ok; test_wrong_uuid_refuses_and_writes_nothing ok"
+    },
+    "compile": "python3 -I -m py_compile scripts/lib/job_uuid_gate.py tests/unit/job-uuid-gate.test.py -> COMPILE_OK",
+    "surrounding_suite": {
+      "command": "python3 -I import sweep of scripts/lib siblings + compile_dir force",
+      "result": "batch_state IMPORT_OK; cleanup_transaction IMPORT_OK; rescue_admission IMPORT_OK; swarm_controls IMPORT_OK; job_uuid_gate IMPORT_OK (5/5); compile_dir scripts/lib -> LIB_COMPILE_OK"
+    },
+    "recurrence_matrix_probe": "id=a8a8ad74 recurring=false schedule=*/5 * * * * -> REFUSED(JOB_NOT_RECURRING); recurring=true schedule=*/5 * * * * -> WRITE_LANDS; schedule only (recurring absent) schedule=*/5 * * * * -> WRITE_LANDS; recurring=false no schedule -> REFUSED(JOB_NOT_RECURRING). Only the explicit-denial shape changed behaviour."
+  },
+  "claims": [
+    "A job record that explicitly states recurring: False is refused with JOB_NOT_RECURRING regardless of any schedule string it also carries, proved on the verifier's exact record shape.",
+    "The refusal happens before any filesystem mutation: no target file, no parent directory, no temp file, and no prebuilder receipt file is created.",
+    "Jobs with recurring: True are unchanged, and jobs that state no recurrence field but do carry a non-empty schedule keep their previous behaviour (schedule-only records still land), so the repair is narrow and does not silently break the pre-existing accepted path.",
+    "The authority-root T02 artefacts exist at the named volume path; each is recorded with byte size and SHA-256 so the owner can re-verify in one command."
+  ],
+  "not_claimed": [
+    "No unit acceptance: S75-T02 stays with the owner (Trevor). This receipt is candidate repair evidence only.",
+    "loop-control/s75/ledger.json was not read for state and was NOT written; TODO.md and RESUME.md were not edited.",
+    "No live scheduler call and no cron job created, modified or proved against a real scheduler listing; the gate still takes an observed-jobs listing as a parameter.",
+    "No wiring into a production caller: no existing write path was modified, so the invariant remains library-level plus tests.",
+    "No claim that the authority-root attempt-1/attest-1 verdicts are correct or that they accept this unit; their bytes are recorded, not endorsed.",
+    "No claim about the storage-volume UUID half beyond what scripts/lib/cleanup_transaction.py already implements (S16 gate, untouched).",
+    "No cross-restart liveness claim; no nextRun claim."
+  ],
+  "checks": {
+    "worktree": "git -C <REPO_ROOT> fetch origin; git worktree add --force <REPO_PARENT>/skill75-repair/lanes/S75-T02-repair-lane s75/S75-T02-r1 (HEAD cf73408bb at start)",
+    "main_untouched": true,
+    "main_sha_observed": "5a54ddd7f8171ea7e3608cc1d508b06e82077d9e",
+    "push": "git push origin s75/S75-T02-r1 (fast-forward from cf73408bb; no force, no main)"
+  }
+}

@@ -9,7 +9,13 @@ Input brief: {"offer", "audience", "action"/"cta", "claims": [...],
 lands UNAVAILABLE in evidence.json. Claims without source never pass.
 Sub-avatar brief is JSON: avatar, emotional_wound, desired_transformation.
 Outputs render to a run dir: research/{market,audience,competitors}.md +
-evidence.json, brief/sub_avatar.json.
+evidence.json, brief/sub_avatar.json, plus research/bundle.json (the authored,
+provenance-tagged bundle) and research/premise.md when fiction is present.
+
+Authoring is claims.py: every claim is tagged owner-fact, public-fact or
+fiction, and each research section is written from the claims that support it.
+A section with no supporting claim is refused before render, so a header that
+echoes the brief can never pass as research.
 
 A BARE brief carries no sources[] — the client never had search URLs. The stage
 therefore runs the keyless gatherer (gather.py) first: when evaluate() reports
@@ -32,8 +38,10 @@ from pathlib import Path
 
 if __package__:
     from . import gather as gatherer
+    from . import claims as claimmap
 else:                            # run as a script: sibling module on sys.path
     import gather as gatherer
+    import claims as claimmap
 
 SCHEMA_VERSION = "blackceo.research/v1"
 TOOL_VERSION = "1.0.0"
@@ -87,8 +95,9 @@ def validate_sources(sources):
 
 
 def validate_claims(claims, source_ids):
-    """Claims: [{id?, text, source}]. Every claim carries a source id or
-    it goes UNAVAILABLE in evidence.json."""
+    """Claims: [{id?, text, provenance?, source?, owner_ref?, sections?}].
+    A claim carries a source id or its raw owner-answer identity, or it is
+    explicitly fiction; anything else goes UNAVAILABLE in evidence.json."""
     if not isinstance(claims, list) or not claims:
         raise ResearchError("CLAIMS_MISSING", "claims must be a non-empty list")
     ok, unavailable, seen = [], [], set()
@@ -104,11 +113,34 @@ def validate_claims(claims, source_ids):
         if not _nonempty(text):
             unavailable.append({"id": cid, "text": text, "status": "UNAVAILABLE",
                                 "reason": "claim-text-missing"})
+        elif claimmap.is_fiction_claim(c):
+            rec = {"id": cid, "text": text.strip(), "provenance": "fiction",
+                   "status": "PASS"}
+            if isinstance(c, dict) and c.get("sections"):
+                rec["sections"] = c["sections"]
+            ok.append(rec)
+        elif (isinstance(c, dict) and c.get("provenance") == "owner-fact"
+              and _nonempty(c.get("owner_ref"))):
+            # An owner statement is supported by the raw answer it came from,
+            # not by a URL. It is filed unverified, never as public fact.
+            rec = {"id": cid, "text": text.strip(), "provenance": "owner-fact",
+                   "owner_ref": c["owner_ref"].strip(), "status": "PASS"}
+            for field in ("sections", "about"):
+                if c.get(field):
+                    rec[field] = c[field]
+            ok.append(rec)
         elif not _nonempty(src) or src.strip() not in source_ids:
             unavailable.append({"id": cid, "text": text.strip() if _nonempty(text) else text,
                                 "status": "UNAVAILABLE", "reason": "claim-without-source"})
         else:
-            ok.append({"id": cid, "text": text.strip(), "source": src.strip(), "status": "PASS"})
+            rec = {"id": cid, "text": text.strip(), "source": src.strip(), "status": "PASS"}
+            if _nonempty(c.get("provenance")):
+                rec["provenance"] = c["provenance"].strip()
+            for field in ("owner_ref", "sections", "locator", "capture_date",
+                          "about", "class", "support", "claim_type"):
+                if c.get(field):
+                    rec[field] = c[field]
+            ok.append(rec)
     return ok, unavailable
 
 
@@ -127,8 +159,19 @@ def validate_sub_avatar(sub):
     return errors
 
 
+def _fiction_only(brief):
+    """True when the brief's claims are all labelled fiction, or it supplies
+    only an explicitly fictional premise. A fiction-only bundle needs no
+    citation — it must never be dressed up as sourced fact either."""
+    claims = [c for c in (brief.get("claims") or []) if isinstance(c, dict)]
+    if claims:
+        return all(claimmap.is_fiction_claim(c) for c in claims)
+    return bool(brief.get("premise"))
+
+
 def evaluate(brief, today=None):
-    """Validate brief, classify claims, gate sub-avatar completeness.
+    """Validate brief, classify claims, gate sub-avatar completeness, then
+    author and validate the provenance-tagged research bundle.
 
     Returns outcome/reason_code/evidence bundle. No filesystem writes.
     """
@@ -145,10 +188,22 @@ def evaluate(brief, today=None):
     try:
         sources, src_errors = validate_sources(brief.get("sources"))
     except ResearchError as e:
-        return {"outcome": "rejected", "reason_code": e.code, "errors": [str(e)],
-                "next_action": "Supply at least one source with url."}
+        if e.code == "SOURCES_MISSING" and _fiction_only(brief):
+            sources, src_errors = [], []
+        else:
+            return {"outcome": "rejected", "reason_code": e.code, "errors": [str(e)],
+                    "next_action": "Supply at least one source with url."}
+    brief_claims = brief.get("claims")
+    premise = brief.get("premise")
+    if not brief_claims and _nonempty(premise if isinstance(premise, str) else
+                                      (premise or {}).get("text")):
+        # An explicitly fictional premise is research row 1's second half and
+        # needs no citation — but it is filed as fiction, never as fact.
+        brief_claims = [{"id": "premise-1",
+                         "text": premise if isinstance(premise, str) else premise["text"],
+                         "provenance": "fiction"}]
     try:
-        passed, unavailable = validate_claims(brief.get("claims"), {s["id"] for s in sources})
+        passed, unavailable = validate_claims(brief_claims, {s["id"] for s in sources})
     except ResearchError as e:
         return {"outcome": "rejected", "reason_code": e.code, "errors": [str(e)],
                 "next_action": "Supply at least one claim."}
@@ -170,48 +225,98 @@ def evaluate(brief, today=None):
                 "errors": ["%s: %s" % (c["id"], c["reason"]) for c in unavailable],
                 "evidence": evidence,
                 "next_action": "Cite a source for each listed claim or drop it."}
+    scoped = dict(brief, claims=brief_claims)
+    bundle = claimmap.author_bundle(scoped, evidence)
+    bundle_errors = claimmap.validate_bundle(bundle)
+    if bundle_errors:
+        return {"outcome": "rejected", "reason_code": "research-bundle-invalid",
+                "errors": bundle_errors, "evidence": evidence, "bundle": bundle,
+                "next_action": "Tag every claim owner-fact, public-fact or fiction, "
+                               "and give each research section at least one supporting "
+                               "claim. Do not pad the file."}
     return {"outcome": "ok", "reason_code": "research-complete", "errors": [],
-            "evidence": evidence, "next_action": "Render outputs, then proceed to creative."}
+            "evidence": evidence, "bundle": bundle,
+            "next_action": "Render outputs, then proceed to creative."}
 
 
-def _md(title, offer, lines):
+def _claim_line(claim, by_src):
+    """One authored research line: the claim, its provenance, its support."""
+    prov = claim.get("provenance") or "UNTAGGED"
+    text = claim.get("text", "")
+    if prov == "public-fact":
+        src = by_src.get(claim.get("source"), {})
+        support = "[%s](%s) (captured %s)" % (
+            claim.get("source", "?"), src.get("url", "?"),
+            claim.get("capture_date") or src.get("retrieved", "?"))
+        if claim.get("locator"):
+            support += " — %s" % claim["locator"]
+    elif prov == "owner-fact":
+        support = "owner answer %s" % claim.get("owner_ref", "?")
+    elif prov == "fiction":
+        support = "proposed fiction — not a verified fact"
+    else:
+        support = "NO PROVENANCE"
+    return "**[%s]** %s (%s)" % (prov, text, support)
+
+
+def _section_md(title, offer, context, bundle, section):
+    """A research section built from claims that support it. No TBD body:
+    an unsupported section is refused before render, never padded."""
     body = ["# %s" % title, "", "Offer: %s" % offer.strip(), ""]
-    body += ["- %s" % l for l in lines] if lines else ["- TBD (no claims filed under this heading)."]
+    body += ["- **[owner-fact]** %s (owner brief)" % c for c in context]
+    by_src = {s["id"]: s for s in bundle.get("sources") or []}
+    for claim in claimmap.section_claims(bundle, section):
+        body.append("- %s" % _claim_line(claim, by_src))
     return "\n".join(body) + "\n"
 
 
-def render(brief, evidence, outdir):
-    """Write research/{market,audience,competitors}.md + evidence.json and
-    brief/sub_avatar.json. Returns written paths."""
+def render(brief, evidence, outdir, bundle=None):
+    """Write research/{market,audience,competitors}.md + evidence.json,
+    research/premise.md when fiction is present, and brief/sub_avatar.json.
+    Returns written paths."""
     out = Path(outdir)
+    bundle = bundle or claimmap.author_bundle(brief, evidence)
     (out / "research").mkdir(parents=True, exist_ok=True)
     (out / "brief").mkdir(parents=True, exist_ok=True)
     offer = brief.get("offer", "").strip()
-    by_src = {s["id"]: s for s in evidence["sources"]}
-    claim_lines = ["%s [%s](%s) (retrieved %s)" % (
-        c["text"], c.get("source", "?"),
-        by_src.get(c.get("source"), {}).get("url", "?"),
-        by_src.get(c.get("source"), {}).get("retrieved", "?"))
-        for c in evidence["claims"]]
-    aud = [brief.get("audience", "").strip(), "CTA: %s" % (
-        brief.get("action") or brief.get("cta") or "").strip()]
-    comp = ["Competitor scan filed against %d source(s)." % len(evidence["sources"])]
-    files = {"research/market.md": _md("Market", offer, claim_lines),
-             "research/audience.md": _md("Audience", offer, aud),
-             "research/competitors.md": _md("Competitors", offer, comp),
-             "research/evidence.json": json.dumps(evidence, indent=2, sort_keys=True) + "\n",
-             "brief/sub_avatar.json": json.dumps(
-                 {"schema_version": SCHEMA_VERSION, **brief.get("sub_avatar", {})},
-                 indent=2, sort_keys=True) + "\n"}
+    act = (brief.get("action") or brief.get("cta") or "").strip()
+    files = {
+        "research/market.md": _section_md("Market", offer,
+                                          [offer] + ([act] if act else []),
+                                          bundle, "market"),
+        "research/audience.md": _section_md("Audience", offer,
+                                            [brief.get("audience", "").strip()],
+                                            bundle, "audience"),
+        "research/competitors.md": _section_md("Competitors", offer, [],
+                                               bundle, "competitors"),
+        "research/evidence.json": json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+        "brief/sub_avatar.json": json.dumps(
+            {"schema_version": SCHEMA_VERSION, **brief.get("sub_avatar", {})},
+            indent=2, sort_keys=True) + "\n",
+    }
+    fiction = claimmap.section_claims(bundle, claimmap.PREMISE)
+    if fiction:
+        lines = ["# Proposed story premise", "",
+                 "Label: fiction. This is proposed story content, not a verified",
+                 "business fact and not an owner assertion.", ""]
+        by_src = {s["id"]: s for s in bundle.get("sources") or []}
+        lines += ["- %s" % _claim_line(c, by_src) for c in fiction]
+        files["research/premise.md"] = "\n".join(lines) + "\n"
     written = []
     for rel, text in files.items():
         (out / rel).write_text(text, encoding="utf-8")
         written.append(rel)
     manifest = {"schema_version": SCHEMA_VERSION, "tool_version": TOOL_VERSION,
                 "files": written,
+                "bundle_schema_version": bundle.get("schema_version"),
+                "provenance": {p: sum(1 for c in bundle.get("claims") or []
+                                      if c.get("provenance") == p)
+                               for p in claimmap.PROVENANCE},
                 "digest": _sha("".join(files[r] for r in sorted(files)))}
     (out / "research" / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (out / "research" / "bundle.json").write_text(
+        json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return written
 
 
@@ -266,6 +371,9 @@ def _gather_or_reason(brief, transport, gather_opts, run_id):
     merged = dict(brief)
     merged["sources"] = g["sources"]
     merged["claims"] = g["claims"]
+    # marker: these claims were matched verbatim against fetched page bodies
+    # (claim_validation records the match as each claim's citation quote).
+    merged["_gathered"] = {"urls": len(g["urls"]), "fetched": g["fetched"]}
     return merged, None
 
 
@@ -287,12 +395,17 @@ def run_stage(brief, outdir, run_id="research-1", transport=None, gather=True,
         return (envelope("research", run_id, r["outcome"], r["reason_code"],
                          r["next_action"], data={"errors": r["errors"]}), EXIT[r["outcome"]])
     try:
-        written = render(brief, r["evidence"], outdir)
+        written = render(brief, r["evidence"], outdir, bundle=r.get("bundle"))
     except (OSError, ValueError) as e:
         return (envelope("research", run_id, "error", "render-failed", str(e)[:200]),
                 EXIT["error"])
     return (envelope("research", run_id, "ok", "research-complete", r["next_action"],
-                     data={"files": written}, evidence_refs=written), EXIT["ok"])
+                     data={"files": written,
+                           "provenance": {p: sum(
+                               1 for c in (r.get("bundle") or {}).get("claims") or []
+                               if c.get("provenance") == p)
+                               for p in claimmap.PROVENANCE}},
+                     evidence_refs=written), EXIT["ok"])
 
 
 def main(argv=None):
@@ -313,7 +426,31 @@ def main(argv=None):
                     help="Cap on gathered sources (default: %(default)s).")
     ap.add_argument("--max-urls", type=int, default=gatherer.DEFAULT_MAX_FETCHES,
                     help="Cap on candidate pages fetched (default: %(default)s).")
+    ap.add_argument("--validate-bundle", default=None, metavar="PATH",
+                    help="Validate an authored research bundle instead of "
+                         "running the stage: refuses untagged claims (exit 4).")
     a = ap.parse_args(argv)
+    if a.validate_bundle:
+        try:
+            with open(a.validate_bundle, encoding="utf-8") as f:
+                bundle = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            env = envelope("research-validate", "bundle", "error",
+                           "bundle-unreadable", str(e)[:200])
+            json.dump(env, sys.stdout, indent=2, sort_keys=True)
+            sys.stdout.write("\n")
+            return EXIT["error"]
+        errors = claimmap.validate_bundle(bundle)
+        outcome = "rejected" if errors else "ok"
+        env = envelope("research-validate", "bundle", outcome,
+                       "research-bundle-invalid" if errors else "research-bundle-valid",
+                       "Fix the listed provenance/content errors." if errors
+                       else "Bundle accepted.",
+                       data={"errors": errors,
+                             "claims": len(bundle.get("claims") or [])})
+        json.dump(env, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return EXIT[outcome]
     if not a.brief or not a.outdir:
         ap.error("--brief and --outdir are required")
     try:

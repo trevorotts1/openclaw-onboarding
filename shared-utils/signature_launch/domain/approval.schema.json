@@ -1,4 +1,5 @@
 {
+  "$comment": "RETIRED: superseded by shared-utils/signature_launch_contract/approval-record.schema.json (kind, plan_hash, client_identity, expires_at). Kept for history; no gate reads it.",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,

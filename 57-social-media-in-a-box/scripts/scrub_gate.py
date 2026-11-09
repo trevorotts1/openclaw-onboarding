@@ -3,11 +3,10 @@
 # SKILL 57 — SOCIAL MEDIA IN A BOX :: SCRUB GATE (build + runtime output screen)
 # -----------------------------------------------------------------------------
 # DETERMINISTIC, NO-AI, FAIL-CLOSED. Runs at BUILD time over every shipped file
-# AND at RUNTIME over generated content. Screens for four classes of leak:
+# AND at RUNTIME over generated content. Screens for three classes of leak:
 #   * client-name tokens   -> AF-SM-CLIENT-NAME  (list is env-supplied, NEVER shipped)
 #   * secret patterns      -> AF-SM-SECRET       (sk-or-v1-/pit-/JWT/sk-ant-/Google/Slack/accessToken)
 #   * n8n pinData blocks   -> AF-SM-PINDATA
-#   * Anthropic model ids  -> AF-SM-NOANTHROPIC  (G-NOANTHROPIC: client runtime NEVER uses Anthropic)
 #
 # ⚠️ SECURITY DISCIPLINE (fleet rule): this screen CONFIRMS a hit and names the
 # file + line + which pattern class matched. It NEVER prints the matched value
@@ -15,18 +14,13 @@
 # echoed. The client-name list is read from the environment and is never written
 # into a shipped file.
 #
-# The Anthropic screen matches concrete model-id shapes (claude-opus-4...,
-# anthropic/claude-3..., sk-ant-, us.anthropic.claude, ANTHROPIC_API_KEY), NOT
-# the bare word "Anthropic" — so a doc that STATES the never-Anthropic rule is
-# clean while a real client-path model id is caught.
-#
 # EXIT: 0 PASS / 2 AUTOFAIL / 3 USAGE-IO.
 # USAGE:
 #   python3 scrub_gate.py <file|dir> [<file|dir> ...] [--json]
 #   python3 scrub_gate.py --self-test
 # Env: SMIB_SCRUB_NAMES_FILE=/path (newline list) or SMIB_SCRUB_NAMES="a,b,c"
 # =============================================================================
-"""Fail-closed client-name/secret/pinData/Anthropic scrub gate for Skill 57."""
+"""Fail-closed client-name/secret/pinData scrub gate for Skill 57."""
 
 import argparse
 import json
@@ -42,7 +36,6 @@ EXIT_USAGE = 3
 AF_NAME = "AF-SM-CLIENT-NAME"
 AF_SECRET = "AF-SM-SECRET"
 AF_PINDATA = "AF-SM-PINDATA"
-AF_NOANTHROPIC = "AF-SM-NOANTHROPIC"
 
 _SELF = Path(__file__).resolve()
 # The two enforcement DETECTORS carry the forbidden literals (the Anthropic/secret
@@ -64,15 +57,6 @@ _SECRET_PATTERNS = [
     ("google-api-key", re.compile(r"AIza[A-Za-z0-9_\-]{20,}")),
     ("slack-token", re.compile(r"xox[baprs]-[A-Za-z0-9\-]{10,}")),
     ("access-token-value", re.compile(r"accessToken\"?\s*[:=]\s*\"?[A-Za-z0-9._\-]{20,}")),
-]
-
-# --- Anthropic model-id shapes (concrete ids only, NOT the bare word) ---
-_ANTHROPIC_PATTERNS = [
-    ("claude-model-id", re.compile(r"claude-(?:opus|sonnet|haiku|instant|fable|[0-9])", re.I)),
-    ("anthropic-slash-model", re.compile(r"anthropic/claude-(?:[0-9]|opus|sonnet|haiku|instant)", re.I)),
-    ("bedrock-anthropic", re.compile(r"us\.anthropic\.claude", re.I)),
-    ("anthropic-npm", re.compile(r"@anthropic-ai/")),
-    ("anthropic-env", re.compile(r"ANTHROPIC_API_KEY")),
 ]
 
 _PINDATA_RE = re.compile(r"\"pinData\"\s*:")
@@ -100,10 +84,6 @@ def scan_pindata(text):
     return [(AF_PINDATA, "n8n-pinData-block")] if _PINDATA_RE.search(text) else []
 
 
-def scan_anthropic(text):
-    return [(AF_NOANTHROPIC, name) for name, rx in _ANTHROPIC_PATTERNS if rx.search(text)]
-
-
 def scan_client_names(text, names=None):
     names = names if names is not None else _client_names()
     hits = []
@@ -115,7 +95,7 @@ def scan_client_names(text, names=None):
 
 
 def scan_text(text, names=None):
-    return scan_secrets(text) + scan_pindata(text) + scan_anthropic(text) + scan_client_names(text, names)
+    return scan_secrets(text) + scan_pindata(text) + scan_client_names(text, names)
 
 
 def _scan_file(path, names):
@@ -167,7 +147,7 @@ def _emit(report, as_json, name_list_len):
     print("== Social Media in a Box :: scrub gate ==")
     print("client-name list size: %d (env-supplied; never shipped)" % name_list_len)
     if not report:
-        print("RESULT: PASS — no client-name / secret / pinData / Anthropic leak found.")
+        print("RESULT: PASS — no client-name / secret / pinData leak found.")
     else:
         print("RESULT: FAIL (fail-closed) — %d finding(s) [value never printed]:" % len(report))
         for r in report:
@@ -215,7 +195,8 @@ def self_test():
               "" if good else codes))
 
     print("== self-test: CLEAN fixtures (must find NOTHING) ==")
-    cp("plain-doc", "This skill NEVER uses Anthropic; client providers only. pit- prefix, claude-* rule.")
+    cp("plain-doc", "Client providers only. pit- prefix rule.")
+    cp("anthropic-model-id", "model: claude-opus-4-8 via anthropic/claude-3.5-sonnet")
     cp("openrouter-model", "openrouterModel: google/gemini-2.0-flash-001")
     cp("schema-pit-anchor", '"pattern": "^pit-"')
     cp("no-names-configured", "Brand A ships weekly content", [])
@@ -226,10 +207,7 @@ def self_test():
     cf("jwt", "auth eyJabc12345.eyJdef67890.sig12345", AF_SECRET)
     cf("access-token", 'body {"accessToken": "' + "c" * 30 + '"}', AF_SECRET)
     cf("pindata", '{"pinData": {"Webhook": []}}', AF_PINDATA)
-    cf("claude-id", "model: claude-opus-4-8", AF_NOANTHROPIC)
-    cf("anthropic-slash", "route to anthropic/claude-3.5-sonnet", AF_NOANTHROPIC)
     cf("sk-ant", "ANTHROPIC key sk-ant-" + "d" * 30, AF_SECRET)
-    cf("anthropic-env", "export ANTHROPIC_API_KEY=x", AF_NOANTHROPIC)
     cf("client-name", "The ACME Parenting Co brand", AF_NAME, ["Acme Parenting Co"])
 
     print("== self-test: require-names fail-closed (SK2-13) ==")

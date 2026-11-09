@@ -52,29 +52,21 @@ EXPECTED_PHASES = (
 
 # ── FIX-XC-09e — model-content receipt (the client's OWN strongest model wrote copy) ──
 AF_MODEL_TIER = "AF-SP56-MODEL-TIER"
-AF_MODEL_NOANTHROPIC = "AF-SP56-MODEL-NOANTHROPIC"
 EXECUTION_TIERS = {"content", "execution", "exec", "strong", "strongest",
                    "authoring", "primary", "tier-a", "tier_a", "a"}
-_ANTHROPIC_PROVIDERS = {"anthropic", "claude"}
 
 
 def evaluate_model_receipt(receipt: Any) -> List[Tuple[str, str]]:
     """Fail-closed: the run must record that the CLIENT's own execution-tier model wrote the
-    copy (routing/model-content-receipt.json). Anthropic is hard-banned by provider FIELD."""
+    copy (routing/model-content-receipt.json)."""
     fails: List[Tuple[str, str]] = []
     if not isinstance(receipt, dict):
         return [(AF_MODEL_TIER, "model-content-receipt is missing/not a JSON object — "
                  "the authoring model was never resolved/recorded (fail-closed)")]
     model = str(receipt.get("model") or receipt.get("model_id") or "").strip()
-    provider = str(receipt.get("provider") or "").strip().lower()
     tier = str(receipt.get("tier") or receipt.get("role") or "").strip().lower()
     if not model:
         fails.append((AF_MODEL_TIER, "model-content-receipt names no resolved model id"))
-    if provider in _ANTHROPIC_PROVIDERS or model.lower().startswith(("claude", "anthropic")) \
-            or "anthropic" in model.lower():
-        fails.append((AF_MODEL_NOANTHROPIC,
-                      f"authoring model is Anthropic (provider={provider!r}, model={model!r}) — "
-                      "client skills never use Anthropic models"))
     if tier not in EXECUTION_TIERS:
         fails.append((AF_MODEL_TIER,
                       f"authoring tier {tier!r} is not an execution/content tier {sorted(EXECUTION_TIERS)} — "
@@ -231,13 +223,13 @@ def self_test() -> int:
         {"role": "content", "model": "deepseek-v3-chat", "provider": "deepseek", "tier": "content"})
     mr_absent = evaluate_model_receipt(None)
     mr_anthropic = evaluate_model_receipt(
-        {"role": "content", "model": "claude-opus-4", "provider": "anthropic", "tier": "content"})
+        {"role": "content", "model": "claude-opus-4", "provider": "anthropic", "tier": "content"})  # NOT a failure: no vendor rule
     mr_cheaptier = evaluate_model_receipt(
         {"role": "content", "model": "some-mini", "provider": "openrouter", "tier": "simple"})
     if not mr_ok and any(c == AF_MODEL_TIER for c, _ in mr_absent) \
-            and any(c == AF_MODEL_NOANTHROPIC for c, _ in mr_anthropic) \
+            and not mr_anthropic \
             and any(c == AF_MODEL_TIER for c, _ in mr_cheaptier):
-        print("SELF-TEST ok: model-tier receipt (valid pass; absent/anthropic/cheap fail).")
+        print("SELF-TEST ok: model-tier receipt (valid pass incl. Anthropic-family; absent/cheap fail).")
     else:
         ok = False
         print(f"SELF-TEST FAIL: model receipt -> {mr_ok}/{mr_absent}/{mr_anthropic}/{mr_cheaptier}")
@@ -289,7 +281,7 @@ def main(argv: List[str]) -> int:
                 print(f"  [{c}] {m}")
             code = EXIT_VIOLATION
         else:
-            print("PASS: model-content receipt valid — client execution-tier model, no Anthropic.")
+            print("PASS: model-content receipt valid — client execution-tier model.")
     return code
 
 

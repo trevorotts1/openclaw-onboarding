@@ -110,6 +110,14 @@ _MUSIC_SENTENCE = {
     "soul-ballad": "slow, heartfelt singing; builds to a big emotional chorus.",
     "rnb-flow": "rhythmic rap verses, then a smooth sung hook you remember.",
     "soul-rise": "starts slow and sad, then lifts into an upbeat, hopeful groove.",
+    # The card's own short line (4-12 words) for the five styles whose owner
+    # catalog description is longer than the card allows. The catalog text is
+    # unchanged and still feeds help; every other style shows it as-is.
+    "trap-rap": "punchy rap over deep bass and rolling hi-hats.",
+    "cinematic-orchestral-song": "sweeping strings and a powerful, film-style chorus.",
+    "contemporary-gospel": "faith-centered singing with piano, organ, and a powerful choir.",
+    "urban-gospel": "faith-centered singing with R&B and hip-hop grooves, plus choir.",
+    "country-rap": "country storytelling meets rock power and hip-hop rhythm.",
 }
 
 
@@ -138,9 +146,10 @@ def _look_links():
 
 
 def _musics():
-    from music_styles import music_styles as MS
-    return _menu(list(_MUSIC_SENTENCE), {k: MS.STYLES[k]["label"] for k in _MUSIC_SENTENCE},
-                 _MUSIC_SENTENCE)
+    """The eighteen canonical styles, from the catalog owner of record."""
+    from music_styles import catalog as CAT
+    return [(row["label"], _MUSIC_SENTENCE.get(row["style_id"], row["description"]))
+            for row in CAT.choice_rows()]
 
 
 def _usd(x):
@@ -949,7 +958,8 @@ def _parse(reply, q):
 
 
 def conversation(replies, questions=None, state_store=None, run_id=None,
-                 run_dir=None, target=None, client_dir=None, purpose_flow=None):
+                 run_dir=None, target=None, client_dir=None, purpose_flow=None,
+                 run_state_file=None):
     """Replay the client's replies from the start; return the state and the ONE
     message to send next. Stateless, so claude-nine and OpenClaw can both call
     it with the replies so far. state: answers, done, message, video_model.
@@ -972,12 +982,13 @@ def conversation(replies, questions=None, state_store=None, run_id=None,
     replayed with the SAME list it used -- purpose flow when it recorded
     control/method.json or a studio order, the old list otherwise -- so a
     resumed project and its approved artifacts are preserved exactly and are
-    never migrated or rewritten. True/False still force either list.
+    never migrated or rewritten. ``run_state_file`` is the same run state the
+    launcher reads: a chat run already past its intro is a resume and keeps the
+    card it started with. The decision itself lives in ``new_run_flow`` so the
+    API and the launcher can never disagree. True/False still force either list.
     """
     if purpose_flow is None:
-        history = _run_history(run_dir)
-        purpose_flow = history is True or (history is None and bool(run_dir)
-                                           and os.path.isdir(run_dir))
+        purpose_flow = new_run_flow(run_dir, run_state_file)
     qs = questions or QUESTIONS
     #: The list every rebuild starts from. Shaping a SHAPED list again would
     #: lose LENGTH's own slot on a campaign (EPISODE LENGTH took it), so the
@@ -1113,16 +1124,22 @@ def format_questions(texts):
 
 
 def _split_long(block, limit):
-    """A block over the limit splits on line boundaries, never mid-line."""
-    out, cur = [], ""
-    for line in block.split("\n"):
-        cand = cur + "\n" + line if cur else line
-        if len(cand) > limit and cur:
-            out.append(cur)
-            cur = line
+    """A block over the limit splits on line boundaries, never mid-line.
+
+    A question that does not fit one message (the eighteen-style MUSIC STYLE
+    menu) continues in the next message under its own header plus
+    "(continued)", so no message opens with option lines and no context.
+    """
+    lines = block.split("\n")
+    cont = lines[0] + " (continued)" if lines[0].startswith("Question ") else None
+    out, cur = [], []
+    for line in lines:
+        if cur and len("\n".join(cur + [line])) > limit:
+            out.append("\n".join(cur))
+            cur = ([cont] if cont else []) + [line]
         else:
-            cur = cand
-    return out + ([cur] if cur else [])
+            cur.append(line)
+    return out + (["\n".join(cur)] if cur else [])
 
 
 def render_messages(questions=None, limit=TELEGRAM_LIMIT, book_plan=None,

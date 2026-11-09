@@ -44,7 +44,14 @@ concurrency:
 jobs:
   fast-gate:
     name: Skill 72 fast gate
-    runs-on: ubuntu-latest
+    # Pinned: run-typography.ts asserts the sha256 of the installed Liberation
+    # Sans files against the MG-006/MG-026 render-font evidence. Those bytes
+    # are the Ubuntu 24.04 package fonts-liberation 1:2.1.5-3; the ubuntu-26.04
+    # image that ubuntu-latest now resolves to ships 1:2.1.5-3build1, a
+    # rebuild of the same 2.1.5 upstream with different file bytes, so the
+    # font sha256 case failed there (main run 41892582499). 24.04 is the image
+    # this job last went green on (main run 41118378440).
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -71,7 +78,8 @@ jobs:
 
   clean-install:
     name: Skill 72 clean install (T03)
-    runs-on: ubuntu-latest
+    # Pinned to the same image as the fast gate.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4

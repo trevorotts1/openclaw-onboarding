@@ -1,0 +1,14 @@
+{
+  "weekOf": "2026-07-06",
+  "producerId": "producer-content-1",
+  "platforms": [
+    "twitter"
+  ],
+  "plannedItems": [
+    {
+      "artifact_id": "twitter-thread",
+      "revision": 1,
+      "path": "working/content/bands/twitter-thread.json"
+    }
+  ]
+}

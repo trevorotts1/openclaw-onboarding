@@ -1,0 +1,27 @@
+{
+  "workflowData": {
+    "templates": [
+      {
+        "id": "u1",
+        "type": "tag",
+        "name": "Root",
+        "parentKey": null,
+        "next": "u2"
+      },
+      {
+        "id": "u2",
+        "type": "sms",
+        "name": "Send SMS",
+        "parentKey": "u1",
+        "next": "u3"
+      },
+      {
+        "id": "u3",
+        "type": "wait",
+        "name": "Wait without successor",
+        "parentKey": "u2",
+        "next": null
+      }
+    ]
+  }
+}

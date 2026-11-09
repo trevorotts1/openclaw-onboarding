@@ -201,7 +201,7 @@ def resolve_model(skill, purpose_tier="heavy", input_chars=None):
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         mid = r.stdout.strip()
-        if mid and "anthropic/" not in mid.lower() and "claude-" not in mid.lower():
+        if mid:
             return mid
         if r.returncode == 2:
             return None  # Tier 5 — owner input required

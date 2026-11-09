@@ -16,8 +16,8 @@ They reply "help". Run the engine's help path: colours from their logo file, or 
 
 ## Progress and delivery
 
-- While pages build, send one short message per FINISHED page: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/progress_report.py --rows-file <rows.json> --harness openclaw --announced <keys already sent>`. Keep the printed `announced` keys so no page is announced twice. No walls of text.
-- At the end, send `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/delivery_report.py --rows-file <rows.json> --answers-file <answers.json> --ledger-file <ledger.json> --harness openclaw` as plain lines (no tables).
+- When the package check passes, generate the rows from the package manifest (never hand-write them): `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/progress_report.py --manifest <package-manifest.json> --emit-rows <rows.json>`. Then send one short message per FINISHED page: `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/progress_report.py --manifest <package-manifest.json> --rows-file <rows.json> --harness openclaw --announced <keys already sent>`. Keep the printed `announced` keys so no page is announced twice. No walls of text.
+- At the end, send `python3 <REPO_ROOT>/shared-utils/signature_launch/experience/delivery_report.py --manifest <package-manifest.json> --rows-file <rows.json> --answers-file <answers.json> --ledger-file <ledger.json> --harness openclaw` as plain lines (no tables). A rows file that was not generated from that same package-manifest.json is refused (REFUSED, non-zero exit). With no package-manifest.json for the run there is no client report; say so plainly, never hand-write rows.
 
 ## Speed
 

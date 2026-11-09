@@ -1,0 +1,33 @@
+{
+  "targetActionId": "n1",
+  "workflowData": {
+    "templates": [
+      {
+        "id": "n1",
+        "type": "if_else",
+        "name": "Suppressed?",
+        "parentKey": null,
+        "next": "n2",
+        "branches": []
+      },
+      {
+        "id": "n2",
+        "type": "sms",
+        "name": "Send",
+        "parentKey": "n1",
+        "next": null,
+        "attributes": {
+          "body": "Test message",
+          "fromNumber": "+15555550100"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "wait",
+        "name": "Orphaned wait",
+        "parentKey": "n1",
+        "next": null
+      }
+    ]
+  }
+}

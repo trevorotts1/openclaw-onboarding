@@ -7,11 +7,16 @@ phase's fail-closed prover, and — only when EVERY phase passes — emits a sig
 PROCESS-CERTIFICATE.json. A failing gate aborts the run (fail-closed) and NO certificate
 is written, so an incomplete or non-compliant funnel can never reach Complete.
 
-FRONT-DOOR NONCE (required): the canonical entry shell (signature-funnel-entry.sh) writes
-a run-scoped 0600 nonce file and passes its value with --nonce. The orchestrator refuses
-to run unless the supplied nonce matches the file — a direct `python3 run_signature_funnel.py`
-without the front-door nonce dies with AF-FUN-FRONT-DOOR. The same nonce keys the
-certificate HMAC, so a certificate can only be minted by a real front-door run.
+FRONT DOOR = THE OPERATOR KEY (ENF-16). The orchestrator takes NO caller-supplied secret:
+--nonce, --nonce-file and the SF_RUN_NONCE environment variable are all refused with
+AF-FUN-FRONT-DOOR (a nonce the caller chose, or a file the caller wrote, proves nothing).
+It runs only when the operator key (a >=32-char secret file named by SF_OPERATOR_KEY_FILE,
+outside the run dir, mode 0600 — see prove_sf_cert.load_operator_key) is available to the
+launching process, and that key — never anything beside the run — keys the certificate HMAC.
+A certificate therefore verifies only with the operator key. The content-authoring model is
+taken from the harness routing record (routing/model-content-receipt.json, minted and signed
+by prove_sf_cert.py --mint-model-receipt), never from SF_CONTENT_* environment variables, and
+the delegated image/media phases require harness-signed provider receipts (ENF-17).
 
 DELEGATION SEAMS (never forked here): image generation is delegated to Skill 66 (model
 policy) and Skill 74 (the one KIE transport, kie_live_adapter.py); GHL media folder + upload and the funnel/page build are delegated to
@@ -136,11 +141,14 @@ def _receipt_seam(run_dir: Path, phase: str, keys: List[str], label: str,
     except ImportError as exc:  # noqa: BLE001 — a missing contract module is fail-closed
         return False, (f"AF-FUN-DELEG-RECEIPT: delegation_receipt.py is not importable "
                        f"({exc}) — the delegated seam {phase} cannot be attested")
-    ok, detail, state = delegation_receipt.validate_if_present(
+    # ENF-17: a client delivery never attests on an absent or hand-written store. Only
+    # harness-signed provider receipts (signed by the adapter process under the operator
+    # key) count; 'absent' is a failure, not a state to record.
+    ok, detail = delegation_receipt.require_signed(
         run_dir, phase, must_cover=keys, af="AF-FUN-DELEG-RECEIPT")
     if not ok:
         return False, detail
-    return True, f"delegated: {label} :: {content_detail} :: receipts {state} ({detail})"
+    return True, f"delegated: {label} :: {content_detail} :: receipts verified ({detail})"
 
 
 def _gate_p3_images(run_dir: Path) -> Tuple[bool, str]:
@@ -458,17 +466,34 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
     ]
 
 
-def _check_front_door(run_dir: Path, nonce: Optional[str], nonce_file: Optional[Path]) -> Tuple[bool, str]:
-    nf = nonce_file or (run_dir / ".sf_run_nonce")
-    if not nf.exists():
-        return False, f"AF-FUN-FRONT-DOOR: no run-scoped nonce file at {nf} — run must start via signature-funnel-entry.sh"
-    supplied = nonce if nonce is not None else os.environ.get("SF_RUN_NONCE")
-    if not supplied:
-        return False, "AF-FUN-FRONT-DOOR: no --nonce / SF_RUN_NONCE supplied (front-door nonce required)"
-    on_disk = nf.read_text(encoding="utf-8").strip()
-    if not on_disk or supplied.strip() != on_disk:
-        return False, "AF-FUN-FRONT-DOOR: supplied nonce does not match the run-scoped nonce file"
-    return True, supplied.strip()
+def _check_front_door(run_dir: Path, nonce: Optional[str] = None,
+                      nonce_file: Optional[Path] = None) -> Tuple[bool, str]:
+    """ENF-16 front door. Returns (True, operator_key) or (False, 'AF-FUN-FRONT-DOOR: ...').
+    nonce / nonce_file / SF_RUN_NONCE are parameters only so they can be REFUSED."""
+    if nonce is not None or nonce_file is not None:
+        return False, ("AF-FUN-FRONT-DOOR: a caller-supplied --nonce / --nonce-file is not accepted — "
+                       "the certificate is keyed by the operator key, not by anything the caller wrote")
+    if os.environ.get("SF_RUN_NONCE") is not None:
+        return False, ("AF-FUN-FRONT-DOOR: SF_RUN_NONCE is not accepted as an input — "
+                       "the certificate is keyed by the operator key only")
+    key, why = prove_sf_cert.load_operator_key(run_dir)
+    if key is None:
+        return False, f"AF-FUN-FRONT-DOOR: no operator key for this launch ({why}) — run via the entry shell"
+    return True, key
+
+
+def _check_model_receipt(run_dir: Path, key: str) -> Tuple[bool, str]:
+    """The content-authoring model must come from the harness routing record: a receipt minted
+    + signed with the operator key for THIS run. Env-named / unsigned receipts fail."""
+    p = run_dir / prove_sf_cert.MODEL_RECEIPT_REL
+    try:
+        receipt = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        receipt = None
+    fails = prove_sf_cert.evaluate_model_receipt(receipt, key, run_dir.resolve().name)
+    if fails:
+        return False, " | ".join(f"{c}: {m}" for c, m in fails)
+    return True, f"{receipt.get('model')} ({receipt.get('provider')}, tier {receipt.get('tier')})"
 
 
 def _resolve_persona(run_dir: Path) -> None:
@@ -486,7 +511,17 @@ def _resolve_persona(run_dir: Path) -> None:
         print(f"  [persona] best-effort skip ({exc})")
 
 
-def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
+def _model_block(run_dir: Path) -> Dict:
+    """The authoring model as the harness routing record names it (already verified at the
+    front door); covered by the certificate HMAC."""
+    try:
+        r = json.loads((run_dir / prove_sf_cert.MODEL_RECEIPT_REL).read_text(encoding="utf-8"))
+        return {k: r.get(k) for k in ("model", "provider", "tier", "resolved_from", "routing_record_sha256")}
+    except (OSError, ValueError):
+        return {}
+
+
+def orchestrate(run_dir: Path, key: str) -> Tuple[int, Dict]:
     phases_attested: List[Dict] = []
     # FIX-COPY-02: echo the engine copy_ledger into build/fab-artifact.json (the FAB
     # scorecard the QC>=8.5 seam requires at P7). Best-effort here; P7 fails closed if
@@ -526,7 +561,8 @@ def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
         "skill_version": (_SCRIPT_DIR / "skill-version.txt").read_text(encoding="utf-8").strip()
         if (_SCRIPT_DIR / "skill-version.txt").exists() else "1.0.0",
         "issued_at": _now(),
-        "nonce_fingerprint": hashlib.sha256(nonce.encode()).hexdigest()[:16],
+        "operator_key_fingerprint": hashlib.sha256(key.encode()).hexdigest()[:16],
+        "model_receipt": _model_block(run_dir),
         "ledger_hashes": {
             "brief.json": _sha256_file(run_dir / "brief.json"),
             "copy_ledger.json": _sha256_file(run_dir / "copy_ledger.json"),
@@ -555,10 +591,10 @@ def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
             cert["persona"] = _pcb
     except Exception:  # noqa: BLE001 — never block certification on persona surfacing
         pass
-    cert["signature"] = prove_sf_cert.sign(prove_sf_cert.canonical_payload(cert), nonce)
+    cert["signature"] = prove_sf_cert.sign(prove_sf_cert.canonical_payload(cert), key)
     (run_dir / "PROCESS-CERTIFICATE.json").write_text(json.dumps(cert, indent=2), encoding="utf-8")
 
-    code, fails = prove_sf_cert.evaluate_cert(cert, nonce)
+    code, fails = prove_sf_cert.evaluate_cert(cert, key)
     if code != prove_sf_cert.EXIT_OK:
         print(f"ABORT: minted certificate failed self-verification: {fails}")
         return EXIT_GATE_FAIL, cert
@@ -587,7 +623,10 @@ def _full_coverage_images(size: int) -> List[Dict]:
     return images
 
 
-def _write_valid_run(rd: Path, nonce: str, size: int = 3) -> None:
+def _write_valid_run(rd: Path, key: str, size: int = 3, receipts: bool = True) -> None:
+    """A run dir every phase accepts. `key` is the operator key the process holds (the model
+    receipt is minted from a harness routing record with it; provider receipts are emitted by
+    the stub adapter, which signs with the same env key). receipts=False leaves the store absent."""
     import prove_sf_intake, prove_sf_copy, prove_sf_prompt_floor, prove_sf_no_pitch  # noqa: E402
     (rd / "brief.json").write_text(json.dumps(prove_sf_intake._valid_runtime(size)), encoding="utf-8")
     # FIX-XC-02a — the P0 intake gate is fail-closed on persona grounding; the run dir must
@@ -595,7 +634,7 @@ def _write_valid_run(rd: Path, nonce: str, size: int = 3) -> None:
     (rd / "persona-selection-log.md").write_text(
         "# persona-selection-log\nselector_ran: true\n- selected_persona: hormozi-100m-offers\n",
         encoding="utf-8")
-    (rd / "copy_ledger.json").write_text(json.dumps(prove_sf_copy._valid_ledger()), encoding="utf-8")
+    (rd / "copy_ledger.json").write_text(json.dumps(prove_sf_copy._valid_ledger(size)), encoding="utf-8")
     # FIX-IMG-07: the prompt ledger must cover every required (page_type, section)
     # slot for this size (each prompt still clears the two-floor gate) or P2 fails-closed.
     (rd / "prompt_ledger.json").write_text(
@@ -605,19 +644,21 @@ def _write_valid_run(rd: Path, nonce: str, size: int = 3) -> None:
     media = prove_sf_no_pitch._valid_ledger()
     media["images"] = _full_coverage_images(size)
     (rd / "media_ledger.json").write_text(json.dumps(media), encoding="utf-8")
-    # P5-HTML — a non-empty fragment per matrix page; P6 graph; P7 build receipt; P8 derived ledger.
-    pages = prove_sf_graph.funnel_pages(size)
-    (rd / "pages").mkdir(exist_ok=True)
-    for profile in pages:
-        (rd / "pages" / f"{profile}.fragment.html").write_text(
-            f"<section data-page=\"{profile}\"><h1>{profile} fragment</h1></section>\n", encoding="utf-8")
+    # P6 graph; P8 derived ledger.
     (rd / "funnel_graph.json").write_text(json.dumps(prove_sf_graph._valid_graph(size)), encoding="utf-8")
-    (rd / "build_receipt.json").write_text(json.dumps(prove_sf_build._valid_receipt(size)), encoding="utf-8")
     (rd / "derived_pages.json").write_text(
         json.dumps(prove_sf_graph._valid_derived_ledger(size)), encoding="utf-8")
-    nf = rd / ".sf_run_nonce"
-    nf.write_text(nonce, encoding="utf-8")
-    os.chmod(nf, 0o600)
+    # P5-HTML + P7-BUILD read what the TOOLS wrote, not the receipt (STR-18 / S06-08 / IMG-16): parsed
+    # page fragments, a sealed Skill 6 verify run (ghl_gate.require_pass) and the wireframe + mockup set.
+    prove_sf_build.write_valid_run_evidence(rd, size)
+    # ENF-16 — the authoring model comes from the HARNESS routing record, signed by the operator key.
+    prove_sf_cert.mint_model_receipt(
+        rd, {"model": "selftest-strong-model", "provider": "selftest", "tier": "content"}, key)
+    # ENF-17 — delegated phases are backed by harness-signed provider receipts (stub adapter).
+    if receipts:
+        keys = [_image_key(i) for i in media["images"]]
+        _stub_provider_emit(rd, "P3-IMAGES", keys)
+        _stub_provider_emit(rd, "P4-MEDIA", keys)
 
 
 def _stub_provider_emit(run_dir: Path, phase: str, remote_ids: List[str]) -> None:
@@ -630,52 +671,87 @@ def _stub_provider_emit(run_dir: Path, phase: str, remote_ids: List[str]) -> Non
 
 def self_test() -> int:
     ok = True
-    nonce = "orch-selftest-nonce-777"
+    key = "orch-selftest-operator-key-0123456789abcdef"
     tmp = Path(tempfile.mkdtemp(prefix="sf_orch_selftest_"))
+    saved_env = {k: os.environ.get(k) for k in ("SF_OPERATOR_KEY_FILE", "SF_RUN_NONCE", "SF_CONTENT_MODEL")}
+    key_file = tmp / "operator.key"          # outside every run dir, as the real key must be
+    key_file.write_text(key + "\n", encoding="utf-8")
+    os.chmod(key_file, 0o600)
+    os.environ["SF_OPERATOR_KEY_FILE"] = str(key_file)
+    os.environ.pop("SF_RUN_NONCE", None)
     try:
         rd = tmp / "run-good"
         rd.mkdir()
-        _write_valid_run(rd, nonce)
+        _write_valid_run(rd, key)
 
-        # (a) front-door refusal — no nonce
+        # (a) ENF-16 front-door refusals — every caller-supplied secret, and a missing operator key.
+        for label, args, env in (
+                ("--nonce", (key, None), {}),
+                ("--nonce-file (a self-made file)", (None, rd / ".sf_run_nonce"), {}),
+                ("SF_RUN_NONCE", (None, None), {"SF_RUN_NONCE": key})):
+            (rd / ".sf_run_nonce").write_text(key, encoding="utf-8")   # the self-made nonce file
+            os.environ.update(env)
+            good, msg = _check_front_door(rd, *args)
+            os.environ.pop("SF_RUN_NONCE", None)
+            if not good and "AF-FUN-FRONT-DOOR" in msg:
+                print(f"SELF-TEST ok: {label} -> AF-FUN-FRONT-DOOR.")
+            else:
+                ok = False; print(f"SELF-TEST FAIL: {label} not refused: {good} {msg}")
+        os.environ.pop("SF_OPERATOR_KEY_FILE")
         good, msg = _check_front_door(rd, None, None)
+        os.environ["SF_OPERATOR_KEY_FILE"] = str(key_file)
         if not good and "AF-FUN-FRONT-DOOR" in msg:
-            print("SELF-TEST ok: missing nonce -> front-door refusal.")
+            print("SELF-TEST ok: no operator key -> AF-FUN-FRONT-DOOR (a self-made nonce file is not a front door).")
         else:
-            ok = False; print(f"SELF-TEST FAIL: missing nonce not refused: {good} {msg}")
+            ok = False; print(f"SELF-TEST FAIL: missing operator key not refused: {good} {msg}")
 
-        # (b) front-door refusal — wrong nonce
-        good, msg = _check_front_door(rd, "wrong", None)
-        if not good and "AF-FUN-FRONT-DOOR" in msg:
-            print("SELF-TEST ok: wrong nonce -> front-door refusal.")
+        # (b) model receipt: the SF_CONTENT_MODEL env var is never a source; an unsigned
+        #     env-style receipt (the old shell's shape) is refused.
+        os.environ["SF_CONTENT_MODEL"] = "deepseek-v3-chat"
+        rdb = tmp / "run-envmodel"
+        rdb.mkdir()
+        _write_valid_run(rdb, key)
+        (rdb / "routing" / "model-content-receipt.json").write_text(json.dumps(
+            {"role": "content", "resolved_from": "client-provider-chain", "model": "deepseek-v3-chat",
+             "provider": "deepseek", "tier": "content"}), encoding="utf-8")
+        good, msg = _check_model_receipt(rdb, key)
+        os.environ.pop("SF_CONTENT_MODEL", None)
+        good2, msg2 = _check_model_receipt(tmp / "run-no-routing-dir", key)
+        if not good and not good2 and "AF-FUN-MODEL-TIER" in msg:
+            print("SELF-TEST ok: env-named / absent model receipt -> AF-FUN-MODEL-TIER.")
         else:
-            ok = False; print(f"SELF-TEST FAIL: wrong nonce not refused: {good} {msg}")
+            ok = False; print(f"SELF-TEST FAIL: self-reported model receipt accepted: {good} {msg} / {good2}")
 
-        # (c) full happy path -> certified + cert validates
-        good, resolved = _check_front_door(rd, nonce, None)
-        if not good:
-            ok = False; print(f"SELF-TEST FAIL: valid nonce refused: {resolved}")
+        # (c) full happy path -> certified + cert validates ONLY with the operator key
+        good, resolved = _check_front_door(rd, None, None)
+        mgood, mmsg = _check_model_receipt(rd, key)
+        if not good or not mgood:
+            ok = False; print(f"SELF-TEST FAIL: valid front door refused: {resolved} / {mmsg}")
         else:
             code, cert = orchestrate(rd, resolved)
             if code == EXIT_OK and (rd / "PROCESS-CERTIFICATE.json").exists():
-                vcode, vfails = prove_sf_cert.evaluate_cert(
-                    json.loads((rd / "PROCESS-CERTIFICATE.json").read_text()), nonce)
-                if vcode == prove_sf_cert.EXIT_OK:
-                    print("SELF-TEST ok: happy path -> signed certificate minted + validates.")
+                minted = json.loads((rd / "PROCESS-CERTIFICATE.json").read_text())
+                vcode, vfails = prove_sf_cert.evaluate_cert(minted, key)
+                wcode, _ = prove_sf_cert.evaluate_cert(minted, "the-key-the-ai-chose-0123456789abcdef")
+                ncode, _ = prove_sf_cert.evaluate_cert(minted, None)
+                if vcode == prove_sf_cert.EXIT_OK and wcode != prove_sf_cert.EXIT_OK \
+                        and ncode != prove_sf_cert.EXIT_OK:
+                    print("SELF-TEST ok: happy path -> certificate minted; it verifies with the operator "
+                          "key and FAILS with any other key or none.")
                 else:
-                    ok = False; print(f"SELF-TEST FAIL: minted cert invalid: {vfails}")
+                    ok = False; print(f"SELF-TEST FAIL: minted cert invalid / verifies without the key: {vfails}")
             else:
                 ok = False; print(f"SELF-TEST FAIL: happy path did not certify (code={code}).")
 
         # (d) no-skip / fail-closed abort — break the copy ledger, expect NO cert
         rd2 = tmp / "run-bad"
         rd2.mkdir()
-        _write_valid_run(rd2, nonce)
+        _write_valid_run(rd2, key)
         import prove_sf_copy  # noqa: E402
         bad = prove_sf_copy._valid_ledger()
         bad["pages"][0]["sections"] = [s for s in bad["pages"][0]["sections"] if s.get("section") != 3]
         (rd2 / "copy_ledger.json").write_text(json.dumps(bad), encoding="utf-8")
-        code, manifest = orchestrate(rd2, nonce)
+        code, manifest = orchestrate(rd2, key)
         if code == EXIT_GATE_FAIL and not (rd2 / "PROCESS-CERTIFICATE.json").exists():
             print("SELF-TEST ok: failing P1 gate aborts with NO certificate (fail-closed, no phase skip).")
         else:
@@ -684,9 +760,9 @@ def self_test() -> int:
         # (e) FIX-XC-03a — the once-no-op P5-HTML now fails closed: drop a page fragment.
         rd3 = tmp / "run-nohtml"
         rd3.mkdir()
-        _write_valid_run(rd3, nonce)
+        _write_valid_run(rd3, key)
         (rd3 / "pages" / "thank-you.fragment.html").unlink()
-        code, _ = orchestrate(rd3, nonce)
+        code, _ = orchestrate(rd3, key)
         if code == EXIT_GATE_FAIL and not (rd3 / "PROCESS-CERTIFICATE.json").exists():
             print("SELF-TEST ok: missing HTML fragment aborts at P5 with NO certificate (was a no-op).")
         else:
@@ -695,9 +771,9 @@ def self_test() -> int:
         # (f) FIX-XC-03a — the once-no-op P6-COMPOSE now fails closed: remove funnel_graph.json.
         rd4 = tmp / "run-nograph"
         rd4.mkdir()
-        _write_valid_run(rd4, nonce)
+        _write_valid_run(rd4, key)
         (rd4 / "funnel_graph.json").unlink()
-        code, _ = orchestrate(rd4, nonce)
+        code, _ = orchestrate(rd4, key)
         if code == EXIT_GATE_FAIL and not (rd4 / "PROCESS-CERTIFICATE.json").exists():
             print("SELF-TEST ok: missing funnel_graph aborts at P6 with NO certificate (was a no-op).")
         else:
@@ -707,10 +783,10 @@ def self_test() -> int:
         # P2 with AF-FUN-PROMPT-COVERAGE and NO certificate (the floor gate still clears).
         rd0 = tmp / "run-shortprompts"
         rd0.mkdir()
-        _write_valid_run(rd0, nonce)
+        _write_valid_run(rd0, key)
         import prove_sf_prompt_floor as _pf  # noqa: E402
         (rd0 / "prompt_ledger.json").write_text(json.dumps(_pf._valid_ledger()), encoding="utf-8")
-        code, manifest0 = orchestrate(rd0, nonce)
+        code, manifest0 = orchestrate(rd0, key)
         aborted_p2 = isinstance(manifest0, dict) and manifest0.get("aborted_at") == "P2-PROMPTS"
         if code == EXIT_GATE_FAIL and not (rd0 / "PROCESS-CERTIFICATE.json").exists() and aborted_p2:
             print("SELF-TEST ok: partial prompt ledger aborts at P2 (AF-FUN-PROMPT-COVERAGE), NO certificate.")
@@ -723,11 +799,11 @@ def self_test() -> int:
         # P9 with AF-FUN-IMG-COVERAGE and NO certificate.
         rd5 = tmp / "run-undercovered"
         rd5.mkdir()
-        _write_valid_run(rd5, nonce)
+        _write_valid_run(rd5, key)
         media = json.loads((rd5 / "media_ledger.json").read_text(encoding="utf-8"))
         media["images"] = media["images"][:2]  # keep provenance valid, drop coverage
         (rd5 / "media_ledger.json").write_text(json.dumps(media), encoding="utf-8")
-        code, manifest5 = orchestrate(rd5, nonce)
+        code, manifest5 = orchestrate(rd5, key)
         aborted_p9 = isinstance(manifest5, dict) and manifest5.get("aborted_at") == "P9-CERTIFY"
         if code == EXIT_GATE_FAIL and not (rd5 / "PROCESS-CERTIFICATE.json").exists() and aborted_p9:
             print("SELF-TEST ok: partial image set aborts at P9 (AF-FUN-IMG-COVERAGE), NO certificate.")
@@ -771,7 +847,7 @@ def self_test() -> int:
         #     with NO provider task ids is not a delegated image generation.
         rdj = tmp / "run-noprovenance"
         rdj.mkdir()
-        _write_valid_run(rdj, nonce)
+        _write_valid_run(rdj, key)
         led = json.loads((rdj / "media_ledger.json").read_text(encoding="utf-8"))
         for im in led["images"]:
             im["kie_task_id"] = ""
@@ -787,7 +863,7 @@ def self_test() -> int:
         # (k) P4-MEDIA no longer attests on file existence: an off-host URL is not an upload.
         rdk = tmp / "run-offhost"
         rdk.mkdir()
-        _write_valid_run(rdk, nonce)
+        _write_valid_run(rdk, key)
         led = json.loads((rdk / "media_ledger.json").read_text(encoding="utf-8"))
         led["images"][0]["media_url"] = "https://cdn.somewhere-else.test/hero.png"
         (rdk / "media_ledger.json").write_text(json.dumps(led), encoding="utf-8")
@@ -804,7 +880,7 @@ def self_test() -> int:
         #     absent case, which is the whole shape of the A10 defect).
         rdl = tmp / "run-selfauthored-receipt"
         rdl.mkdir()
-        _write_valid_run(rdl, nonce)
+        _write_valid_run(rdl, key, receipts=False)
         import delegation_receipt as _dr  # noqa: E402
         led = json.loads((rdl / "media_ledger.json").read_text(encoding="utf-8"))
         for im in led["images"]:
@@ -825,7 +901,7 @@ def self_test() -> int:
         #     under test — is accepted, and the certificate records it as present.
         rdm = tmp / "run-stub-receipt"
         rdm.mkdir()
-        _write_valid_run(rdm, nonce)
+        _write_valid_run(rdm, key, receipts=False)
         led = json.loads((rdm / "media_ledger.json").read_text(encoding="utf-8"))
         _stub_provider_emit(rdm, "P3-IMAGES", [_image_key(i) for i in led["images"]])
         _stub_provider_emit(rdm, "P4-MEDIA", [_image_key(i) for i in led["images"]])
@@ -838,19 +914,51 @@ def self_test() -> int:
             ok = False
             print(f"SELF-TEST FAIL: stub-provider receipts not verified: "
                   f"P3={g_ok}/{g_detail} P4={g_ok4}/{g_detail4}")
-        if _delegation_receipt_state(rdm) == "present" and _delegation_receipt_state(rd) == "absent":
+        rdabs = tmp / "run-no-receipt-store"
+        rdabs.mkdir()
+        _write_valid_run(rdabs, key, receipts=False)
+        if _delegation_receipt_state(rdm) == "present" and _delegation_receipt_state(rdabs) == "absent":
             print("SELF-TEST ok: the certificate records delegation_receipts present/absent "
                   "(a certificate cannot imply provider evidence it does not carry).")
         else:
             ok = False
             print("SELF-TEST FAIL: delegation_receipts certificate state is wrong "
-                  f"(stub={_delegation_receipt_state(rdm)}, plain={_delegation_receipt_state(rd)}).")
+                  f"(stub={_delegation_receipt_state(rdm)}, plain={_delegation_receipt_state(rdabs)}).")
+
+        # (m2) ENF-17 — an ABSENT receipt store is a FAILURE for a client delivery (was: attest +
+        #      record "absent"), and the whole run aborts at P3 with NO certificate.
+        g_ok, g_detail = _gate_p3_images(rdabs)
+        code, manifestabs = orchestrate(rdabs, key)
+        if not g_ok and "ABSENT" in g_detail and code == EXIT_GATE_FAIL \
+                and manifestabs.get("aborted_at") == "P3-IMAGES" \
+                and not (rdabs / "PROCESS-CERTIFICATE.json").exists():
+            print("SELF-TEST ok: an absent delegation receipt store fails P3 (AF-FUN-DELEG-RECEIPT-ABSENT), NO certificate.")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: run certified/attested with the receipt store absent: {g_ok} {g_detail}")
+
+        # (m3) ENF-17 — a store the AI wrote by hand (honest-looking, unsigned) is refused.
+        rdh = tmp / "run-handwritten-store"
+        rdh.mkdir()
+        _write_valid_run(rdh, key, receipts=False)
+        led = json.loads((rdh / "media_ledger.json").read_text(encoding="utf-8"))
+        with (rdh / "delegation_receipts.jsonl").open("w", encoding="utf-8") as fh:
+            for im in led["images"]:
+                fh.write(json.dumps({"phase": "P3-IMAGES", "provider": "kie", "operation": "createTask",
+                                     "provider_response_id": "kie-resp-" + _image_key(im), "http_status": 200,
+                                     "remote_id": _image_key(im), "covers": [_image_key(im)],
+                                     "recorded_by": "kie_image_adapter", "at": _now()}) + "\n")
+        g_ok, g_detail = _gate_p3_images(rdh)
+        if not g_ok and "UNSIGNED" in g_detail:
+            print("SELF-TEST ok: a hand-written (unsigned) receipt store is refused (AF-FUN-DELEG-RECEIPT-UNSIGNED).")
+        else:
+            ok = False; print(f"SELF-TEST FAIL: hand-written receipt store attested: {g_ok} {g_detail}")
 
         # (n) A receipt that covers only SOME of the ledger's rows does not attest the
         #     rest — omission inside a receipt store is still omission.
         rdn = tmp / "run-partial-receipt"
         rdn.mkdir()
-        _write_valid_run(rdn, nonce)
+        _write_valid_run(rdn, key, receipts=False)
         led = json.loads((rdn / "media_ledger.json").read_text(encoding="utf-8"))
         _stub_provider_emit(rdn, "P3-IMAGES", [_image_key(led["images"][0])])
         g_ok, g_detail = _gate_p3_images(rdn)
@@ -865,12 +973,12 @@ def self_test() -> int:
         #     shape the finding proved returned zero violations.
         rdo = tmp / "run-undersized-build"
         rdo.mkdir()
-        _write_valid_run(rdo, nonce, size=7)
+        _write_valid_run(rdo, key, size=7)
         rcpt = json.loads((rdo / "build_receipt.json").read_text(encoding="utf-8"))
         rcpt["pages"] = [p for p in rcpt["pages"]
                          if p.get("page_type") in ("main", "upsell", "thank-you")]
         (rdo / "build_receipt.json").write_text(json.dumps(rcpt), encoding="utf-8")
-        code, manifesto = orchestrate(rdo, nonce)
+        code, manifesto = orchestrate(rdo, key)
         aborted_p7 = isinstance(manifesto, dict) and manifesto.get("aborted_at") == "P7-BUILD"
         if code == EXIT_GATE_FAIL and not (rdo / "PROCESS-CERTIFICATE.json").exists() and aborted_p7:
             print("SELF-TEST ok: a 7-step funnel with a 3-page build receipt aborts at P7 "
@@ -884,6 +992,11 @@ def self_test() -> int:
         return 0 if ok else 1
     finally:
         import shutil
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
         shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -953,11 +1066,12 @@ def _mc_board_done(run_dir: Path, task_id: Optional[str]) -> None:
 
 def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser(
-        description="Deterministic no-skip Signature Funnel orchestrator. Requires the "
-                    "front-door nonce; emits a signed PROCESS-CERTIFICATE only on all-phases-pass.")
+        description="Deterministic no-skip Signature Funnel orchestrator. Needs the operator key "
+                    "(SF_OPERATOR_KEY_FILE); emits a signed PROCESS-CERTIFICATE only on all-phases-pass.")
     ap.add_argument("--run-dir", help="the run directory (brief/copy/prompt/media ledgers)")
-    ap.add_argument("--nonce", help="the run-scoped front-door nonce (or SF_RUN_NONCE)")
-    ap.add_argument("--nonce-file", help="path to the nonce file (default <run-dir>/.sf_run_nonce)")
+    # ENF-16: declared ONLY so they can be refused with AF-FUN-FRONT-DOOR (not an argparse usage error).
+    ap.add_argument("--nonce", help="REMOVED: refused (AF-FUN-FRONT-DOOR)")
+    ap.add_argument("--nonce-file", help="REMOVED: refused (AF-FUN-FRONT-DOOR)")
     ap.add_argument("--self-test", action="store_true", help="run the built-in end-to-end fixtures")
     args = ap.parse_args(argv)
 
@@ -976,6 +1090,10 @@ def main(argv: List[str]) -> int:
     good, resolved = _check_front_door(run_dir, args.nonce, nonce_file)
     if not good:
         print(resolved)
+        return EXIT_FRONT_DOOR
+    mgood, mmsg = _check_model_receipt(run_dir, resolved)
+    if not mgood:
+        print(f"AF-FUN-FRONT-DOOR: content-authoring model receipt refused :: {mmsg}")
         return EXIT_FRONT_DOOR
 
     _mc_task = _mc_board_begin(run_dir)

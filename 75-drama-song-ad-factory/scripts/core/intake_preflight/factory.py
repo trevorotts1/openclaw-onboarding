@@ -202,6 +202,40 @@ def cmd_preflight(a):
                     state_version={"expected": a.summary_digest, "current": run_id})
 
 
+def _admit_stage(run_dir, stage, run_id=None, got=None):
+    """C01: governed authority AND the required production order. Both paths --
+    ``next`` and the continuation controller -- admit through this one call, so
+    a run can never reach a later stage with an earlier required stage missing
+    and the two paths can never disagree about it.
+
+    Ordering option B: governed authority is still consulted first. The shadow
+    is narrowed only for the exact overlap -- governed refuses because a
+    COMPLETE predecessor has no current evidence -- where the order gate names
+    the same contradiction. In that one case VIOLATION wins; every other
+    governed refusal keeps its precedence."""
+    result = _production_admission(run_dir, stage, run_id=run_id)
+    ok, code, detail, missing = production_order_gate(run_dir, stage, got=got)
+    if not result.get("ok"):
+        if (result.get("reason_code") ==
+                "PRODUCTION_PREDECESSOR_EVIDENCE_MISSING"
+                and not ok and code == "PRODUCTION_ORDER_VIOLATION"):
+            return {"ok": False, "reason_code": code, "detail": detail,
+                    "next_action": "Produce the named predecessor artifacts first: %s."
+                                   % (", ".join(missing) or detail),
+                    "run_dir": str(run_dir), "run_id": run_id, "stage": stage,
+                    "missing_artifacts": list(missing),
+                    "governed_admission": result}
+        return result
+    if ok:
+        return result
+    return {"ok": False, "reason_code": code, "detail": detail,
+            "next_action": "Produce the named predecessor artifacts first: %s."
+                           % (", ".join(missing) or detail),
+            "run_dir": str(run_dir), "run_id": run_id, "stage": stage,
+            "missing_artifacts": list(missing),
+            "governed_admission": result}
+
+
 def _production_admission(run_dir, stage=None, run_id=None):
     """Read governed authority; operator JSON and dependency checks cannot grant it."""
     try:
@@ -373,6 +407,10 @@ def _studio_bump_version(run_dir, stage):
     return v[stage]
 
 
+# The approvals service stores choices as {n: whole number, label: string}.
+STUDIO_CHOICES = {"storyboard": ({"n": 1, "label": "GO"},)}
+
+
 def _studio_publish(run_dir, order, stage, text, files, choices=()):
     """One approval item on the studio page (approvals_bridge.publish). Returns
     the item dict, or None when the bridge module is not on this box."""
@@ -443,7 +481,7 @@ def cmd_storyboard(a):
         if studio:
             delivered = _studio_publish(run_dir, studio, "storyboard", message,
                                         [p for _n, p in images],
-                                        choices=["GO"]) is not None or delivered
+                                        choices=list(STUDIO_CHOICES["storyboard"])) is not None or delivered
         if target:
             ar.openclaw_sender(target)(message, images)
             delivered = True
@@ -513,6 +551,20 @@ def _script_gate(run_dir, a, reply):
     from script_approval import script_approval as _approval  # noqa: PLC0415
     from script_approval import approval_events as _events  # noqa: PLC0415
     out = []
+    publisher = None
+    order = _studio_order(str(run_dir))
+    if order is not None:
+        # ST11A: a studio-configured run publishes the script presentation
+        # through the same approvals seam the storyboard step uses, with the
+        # same protections (fail closed, no gate opened on outage).
+        def publisher(run_d, msgs, _order=order):
+            text = "\n\n".join(str(m) for m in msgs)
+            try:
+                return _studio_publish(str(run_d), _order, "script", text,
+                                       [], choices=[{"n": 1,
+                                                     "label": "Approve both"}])
+            except Exception:  # noqa: BLE001 - outage keeps waiting, no false sent
+                return None
     context = _script_reply_context(a) if reply is not None else {}
     if reply is not None:
         try:
@@ -533,7 +585,8 @@ def _script_gate(run_dir, a, reply):
         if admission.get("ok") and admission.get("run_id"):
             context["run_id"] = admission["run_id"]
     try:
-        r = _stage.run_stage(str(run_dir), _deliverer(a, out), reply=reply, context=context)
+        r = _stage.run_stage(str(run_dir), _deliverer(a, out), reply=reply,
+                             context=context, studio_publish=publisher)
     except Exception as e:  # noqa: BLE001 - delivery failed: stay paused, resume re-sends
         return {"outcome": "error", "problems": [str(e)[:200]], "messages": out}
     r["delivered"] = out
@@ -596,6 +649,14 @@ def _song_choices_next(run_dir, orchestrated=False):
         u["command"] = base + " --unit-id %s" % u["unit_id"]
         u["selected"] = bool(orchestrated)
     mode = "orchestrated" if orchestrated else "umbrella"
+    why = _sc.mode_refusal(rd, "unit:" if orchestrated else "umbrella")
+    if why:
+        # X07: the run already chose the OTHER mode family (or its record is
+        # unreadable): emit no command at all. Read-only; the executor persists.
+        return {"mode": mode, "orchestrated": bool(orchestrated),
+                "umbrella_command": "", "command": "", "units": units,
+                "selected_command": "", "refused": True,
+                "reason_code": "MODE_CONFLICT", "note": why}
     return {
         "mode": mode,
         "orchestrated": bool(orchestrated),
@@ -998,6 +1059,46 @@ def cmd_production_go(a):
                     "The operator Go is recorded for recap %s; `next` may hand out "
                     "the video stage." % out["recap_digest"][:12],
                     data={"path": fr.go_path(str(run_dir)), "go": out})
+
+def cmd_owner(a):
+    """owner: resolve THIS INSTALL's emergency owner (S75-T13 / S75-A13).
+
+    Per-install, never a hard-coded name (D-9/D-10): a value recorded as
+    ``onCallOperator`` in the install's own config wins; an operator-box install
+    with no value defaults to ``Trevor``; a client install with no value REFUSES
+    (EMERGENCY_OWNER_UNCONFIGURED) and, when ``--run-dir`` is named, records the
+    refusal in ``control/emergency-owner-refusal.json``. The full wiring this
+    unit's deliverable gates on stays closed until this command answers ok.
+    """
+    mod = _core_mod("emergency_owner")
+    if mod is None:
+        return envelope("owner", "install", "error",
+                        "EMERGENCY_OWNER_MODULE_MISSING",
+                        "emergency_owner.py is not on this box; the owner gate "
+                        "stays closed.")
+    run_dir = None
+    if getattr(a, "run_dir", None):
+        run_dir = Path(a.run_dir).expanduser().resolve()
+    sid = run_dir.name if run_dir is not None else "install"
+    res = mod.resolve(getattr(a, "install_home", None),
+                      getattr(a, "config", None))
+    data = dict(res)
+    if res["outcome"] != "ok":
+        if run_dir is not None:
+            record = mod.refusal_record(res)
+            path = run_dir / "control" / "emergency-owner-refusal.json"
+            _write_json(str(path), record)
+            data["refusal_record"] = str(path)
+        return envelope("owner", str(sid), "rejected", res["reason_code"],
+                        "Refusing to proceed: %s. Record the client's own "
+                        "on-call operator as %s in %s; never default to Trevor "
+                        "and never invent a name." % (
+                            res["detail"], mod.CONFIG_KEY, res["config_path"]),
+                        data=data)
+    return envelope("owner", str(sid), "ok", res["reason_code"],
+                    "Emergency owner for this install: %s (source: %s)." % (
+                        res["owner"], res["source"]),
+                    data=data)
 
 # ── W2-wiring-U1: purpose routing, method gates, Agnes routing ──────────────
 #
@@ -1629,28 +1730,52 @@ def _method_plan_block(run_dir, method):
         except Exception as exc:                  # noqa: BLE001
             out["blueprint_check"] = {"status": "UNDETERMINED",
                                       "detail": str(exc)[:200]}
+        # The blueprint's own projections ride the stage record with it: the
+        # shot seeds and storyboard cards the storyboard stages consume and
+        # the production receipt. One try each -- a projection that cannot
+        # run reports UNDETERMINED beside the check, never hides it.
+        try:
+            out["shot_seeds"] = mp.shot_seeds(blueprint, method)
+        except Exception as exc:                  # noqa: BLE001
+            out["shot_seeds"] = {"status": "UNDETERMINED", "detail": str(exc)[:200]}
+        try:
+            out["storyboard_input"] = mp.storyboard_input(blueprint, method)
+        except Exception as exc:                  # noqa: BLE001
+            out["storyboard_input"] = {"status": "UNDETERMINED", "detail": str(exc)[:200]}
+        try:
+            out["production_map"] = mp.production_map(blueprint, method)
+        except Exception as exc:                  # noqa: BLE001
+            out["production_map"] = {"status": "UNDETERMINED", "detail": str(exc)[:200]}
     return out
 
 def _pace_into_music(run_dir, method):
-    """method_plan.pace_order + true_at_beat into the music request (F17).
+    """method_plan.music_request_input into the music request (F17).
 
-    The request builder reads both keys, so they are written into
-    $RUN/music/req.json when that file already exists and are always returned
-    for whoever builds it. No blueprint means no seam is ever invented (the
-    rule pace_order itself keeps), so the request is left alone.
+    pace_order + true_at_beat AND the four turns with their recorded reason
+    and audible change are written into $RUN/music/req.json when that file
+    already exists and are always returned for whoever builds it. No blueprint
+    means no seam is ever invented (the rule pace_order itself keeps), so the
+    request is left alone.
+
+    S75X-W2-U2 QC: the music command (song_choices._load_request) reads the
+    order ONLY as ``pace_plan`` and the hook plan ONLY as ``hook_plan``, so the
+    blueprint order and hook seed are also filled under those two keys --
+    fill-only: a pace_plan / hook_plan the request already carries is kept.
     """
     blueprint = _read_json(Path(run_dir) / "creative" / "blueprint.json")
     mp = _core_mod("method_plan")
     if mp is None or not isinstance(method, dict) or not blueprint:
         return {"available": False}
     try:
-        order = mp.pace_order(blueprint) or {}
+        mi = mp.music_request_input(blueprint, method) or {}
     except Exception as exc:                      # noqa: BLE001
         return {"available": False, "detail": str(exc)[:200]}
+    order = mi.get("pace_order") or {}
     if not order:
         return {"available": False}
     out = {"available": True, "pace_order": order,
-           "true_at_beat": order.get("true_at_beat")}
+           "true_at_beat": order.get("true_at_beat"),
+           "turns": mi.get("turns")}
     req = Path(run_dir) / "music" / "req.json"
     doc = _read_json(req)
     if isinstance(doc, dict):
@@ -1658,11 +1783,45 @@ def _pace_into_music(run_dir, method):
         merged["pace_order"] = order
         if out["true_at_beat"]:
             merged["true_at_beat"] = out["true_at_beat"]
+        if out["turns"]:
+            merged["turns"] = out["turns"]
+        if not (merged.get("pace_plan") or merged.get("_pace_plan")):
+            merged["pace_plan"] = order
+        seed = mi.get("hook_plan_seed")
+        if seed and not (merged.get("hook_plan") or merged.get("_hook_plan")):
+            merged["hook_plan"] = seed
         try:
             _write_json(req, merged)
             out["written_into_request"] = True
         except OSError:
             out["written_into_request"] = False
+    return out
+
+def _seeds_into_storyboard(run_dir, method):
+    """method_plan.shot_seeds into the storyboard stage's planner input.
+
+    One seed per story beat, in shot_planner's own field names, is written to
+    $RUN/storyboard/shot-seeds.json beside shot-list.json -- the storyboard
+    artist authors the shot list FROM the blueprint's resolved fields, and
+    each seed's ``unresolved`` list names exactly what is still added by hand.
+    No blueprint means nothing is written and nothing is invented.
+    """
+    blueprint = _read_json(Path(run_dir) / "creative" / "blueprint.json")
+    mp = _core_mod("method_plan")
+    if mp is None or not isinstance(method, dict) or not blueprint:
+        return {"available": False}
+    try:
+        seeds = mp.shot_seeds(blueprint, method)
+    except Exception as exc:                      # noqa: BLE001
+        return {"available": False, "detail": str(exc)[:200]}
+    path = Path(run_dir) / "storyboard" / "shot-seeds.json"
+    out = {"available": True, "seeds": len(seeds)}
+    try:
+        _write_json(path, {"seeds": seeds,
+                           "source": "method_plan.shot_seeds"})
+        out["written"] = True
+    except OSError:
+        out["written"] = False
     return out
 
 def _agnes_segment_total(run_dir, method, prog):
@@ -1779,109 +1938,450 @@ def _stage(prereqs, worker, entrypoint, idem, out_prod, qc_prod, evidence,
     }
 
 
-#: The full 12-stage registry (SPEC 8.6). Published + validated by
-#: ``validate_registry``. Specialized runners are preserved (an entrypoint may
-#: name a dedicated script); no stage is forced into a reconciler just to fill
-#: the table. No entry returns only an instruction string -- each ``entrypoint``
-#: is a concrete invocation.
-STAGE_REGISTRY = {
-    "research": _stage(
-        [], "research-analyst", "scripts/core/research_engine/research.py gather",
-        "research/<request-digest>", "research/receipt.json",
-        "research/qc-record.json", ["research/receipt.json"],
-        "none", "research brief + sources on disk",
-        "scripts/core/research_engine/research.py resume",
-        "research-complete", artifacts=["research/receipt.json"]),
-    "creative-strategy": _stage(
-        ["research"], "creative-strategist",
-        "scripts/core/method_plan/method_plan.py build",
-        "creative/<plan-revision>", "creative/blueprint.json",
-        "creative/qc-record.json", ["creative/blueprint.json"],
-        "operator", "approved Story Beat Blueprint",
-        "scripts/core/method_plan/method_plan.py resume",
-        "creative-approved", artifacts=["creative/blueprint.json"]),
-    "script-lyrics": _stage(
-        ["creative-strategy"], "lyricist",
-        "scripts/core/script_approval/… generate", "script/<plan-revision>",
-        "script/lyrics.json", "script/qc-record.json", ["script/lyrics.json"],
-        "delivered-approval", "approved lyric sheet",
-        "scripts/core/script_approval/… resume", "script-approved",
-        artifacts=["script/lyrics.json"]),
-    "music": _stage(
-        ["script-lyrics"], "music-producer",
-        "scripts/core/intake_preflight/factory.py music --action start",
-        "music/<run-id>/<attempt-id>", "music/picked-song.mp3",
-        "music/qc-records.json", ["music/picked-song.mp3", "song-choices/pick.json"],
-        "delivered-approval", "picked song + independent QC PASS",
-        "scripts/core/intake_preflight/factory.py music --action resume",
-        "provider-completion", artifacts=["music/picked-song.mp3"]),
-    "continuity-bible": _stage(
-        ["music"], "continuity-editor",
-        "scripts/core/method_plan/method_plan.py continuity",
-        "continuity/<plan-revision>", "continuity/bible.json",
-        "continuity/qc-record.json", ["continuity/bible.json"],
-        "none", "continuity bible on disk",
-        "scripts/core/method_plan/method_plan.py continuity --resume",
-        "continuity-complete", artifacts=["continuity/bible.json"]),
-    "storyboard": _stage(
-        ["continuity-bible"], "storyboard-artist",
-        "scripts/core/intake_preflight/factory.py storyboard",
-        "storyboard/<plan-revision>", "storyboard/gate.json",
-        "storyboard/qc-record.json",
-        ["storyboard/gate.json", "storyboard/approval.json"],
-        "delivered-approval", "approved shots + stills present",
-        "scripts/core/intake_preflight/factory.py storyboard --resume",
-        "approval", artifacts=["storyboard/shot-list.json", "storyboard/contracts.json"]),
-    "image-keyframes": _stage(
-        ["storyboard"], "keyframe-artist",
-        "scripts/core/… image-keyframes", "keyframes/<shot-set-digest>",
-        "keyframes/manifest.json", "keyframes/qc-record.json",
-        ["keyframes/manifest.json"], "none", "keyframes per approved shot",
-        "scripts/core/… image-keyframes --resume", "provider-completion",
-        artifacts=["keyframes/manifest.json"]),
-    "video-generation": _stage(
-        ["image-keyframes"], "video-generator",
-        "scripts/core/… video-generation", "video/<segment-set-digest>",
-        "video/clips.json", "video/qc-record.json", ["video/clips.json"],
-        "none", "all clips materialized",
-        "scripts/core/… video-generation --resume", "provider-completion",
-        artifacts=["video/clips.json"]),
-    "qc-retakes": _stage(
-        ["video-generation"], "qc-reviewer",
-        "scripts/core/qc_gate.py evaluate", "qc/<clip-set-digest>",
-        "qc/retakes.json", "qc/qc-record.json", ["qc/retakes.json"],
-        "operator", "QC verdict recorded (retakes or accept)",
-        "scripts/core/qc_gate.py resume", "qc-complete",
-        required=False, artifacts=["qc/retakes.json"]),
-    "assembly": _stage(
-        ["qc-retakes"], "editor", "scripts/core/… assembly",
-        "assembly/<timeline-digest>", "assembly/timeline.json",
-        "assembly/qc-record.json", ["assembly/timeline.json"],
-        "none", "assembled timeline on disk",
-        "scripts/core/… assembly --resume", "assembly-complete",
-        artifacts=["assembly/timeline.json"]),
-    "final-qc": _stage(
-        ["assembly"], "final-qc-reviewer", "scripts/core/qc_gate.py final",
-        "final-qc/<assembly-digest>", "final-qc/record.json",
-        "final-qc/record.json", ["final-qc/record.json"],
-        "operator", "independent final QC PASS",
-        "scripts/core/qc_gate.py final --resume", "final-qc-complete",
-        artifacts=["final-qc/record.json"]),
-    "delivery": _stage(
-        ["final-qc"], "delivery-agent", "scripts/core/… deliver",
-        "delivery/<run-id>", "delivery/receipts.json",
-        "delivery/qc-record.json", ["delivery/receipts.json"],
-        "none", "successful destination delivery receipts",
-        "scripts/core/… deliver --resume", "delivery-complete",
-        artifacts=["delivery/receipts.json"]),
+#: C01/F4: a published descriptor is a CONTRACT, not prose. These tokens mean
+#: "someone must invent this at run time" and are refused by name.
+PLACEHOLDER_TOKENS = ("…", "...", "<", ">")
+
+#: C01/F4: the real, executable contracts behind each stage. ``script`` is
+#: skill-root-relative and must resolve on disk; ``verbs`` are the tokens the
+#: parser actually accepts ("" = option-only CLI, which is a real contract);
+#: ``artifacts`` is the emitted output inventory the successor depends on and
+#: the SAME tuple the registry publishes (no second copy to drift).
+#: ``alt_scripts`` are additional real executables the runbook row may name.
+STAGE_DESCRIPTORS = {
+    "research": {
+        "script": "scripts/core/research_engine/research.py",
+        "verbs": ("",),
+        "command": 'scripts/core/research_engine/research.py --governed '
+                   '--brief "$RUN/brief.json" --outdir "$RUN"',
+        "recovery": 'scripts/core/research_engine/research.py --governed '
+                    '--brief "$RUN/brief.json" --outdir "$RUN"',
+        "artifacts": ("research/receipt.json", "research/claims.json",
+                      "research/captures.json"),
+    },
+    "creative-strategy": {
+        "script": "scripts/core/story_arc/story_arc.py",
+        "verbs": ("",),
+        "command": 'scripts/core/story_arc/story_arc.py '
+                   '--story "$RUN/creative/story.json"',
+        "recovery": 'scripts/core/story_arc/story_arc.py '
+                    '--story "$RUN/creative/story.json"',
+        "artifacts": ("creative/story.json", "creative/blueprint.json"),
+    },
+    "script-lyrics": {
+        "script": "scripts/core/lyric_writer/lyric_writer.py",
+        "verbs": ("",),
+        "command": 'scripts/core/lyric_writer/lyric_writer.py '
+                   '--lyrics "$RUN/creative/lyrics.json" '
+                   '--brief "$RUN/brief.json"',
+        "recovery": 'scripts/core/lyric_writer/lyric_writer.py '
+                    '--lyrics "$RUN/creative/lyrics.json" '
+                    '--brief "$RUN/brief.json"',
+        "artifacts": ("script/lyrics.json",),
+    },
+    "music": {
+        "script": "scripts/core/intake_preflight/factory.py",
+        "verbs": ("music",),
+        "command": 'scripts/core/intake_preflight/factory.py music '
+                   '--run-dir "$RUN" --owner "$OWNER" --action start',
+        "recovery": 'scripts/core/intake_preflight/factory.py music '
+                    '--run-dir "$RUN" --owner "$OWNER" --action resume',
+        "artifacts": ("music/picked-song.mp3", "song-choices/pick.json"),
+        "alt_scripts": ("scripts/core/song_choices/song_choices.py",),
+    },
+    "continuity-bible": {
+        "script": "scripts/core/character_continuity/stage.py",
+        "verbs": ("check", "advance", "proven", "downstream"),
+        "command": 'scripts/core/character_continuity/stage.py advance '
+                   '--run-dir "$RUN" --run-id "$RUN_ID"',
+        "recovery": 'scripts/core/character_continuity/stage.py advance '
+                    '--run-dir "$RUN" --run-id "$RUN_ID"',
+        "artifacts": ("continuity/qc-records.json", "continuity/makers.json"),
+    },
+    "storyboard": {
+        "script": "scripts/core/intake_preflight/factory.py",
+        "verbs": ("storyboard",),
+        "command": 'scripts/core/intake_preflight/factory.py storyboard '
+                   '--run-dir "$RUN"',
+        "recovery": 'scripts/core/intake_preflight/factory.py storyboard '
+                    '--run-dir "$RUN" --reply "$REPLY"',
+        "artifacts": ("storyboard/shot-list.json", "storyboard/contracts.json"),
+        "alt_scripts": ("scripts/core/shot_planner/speaker_check/speaker_check.py",),
+    },
+    "image-keyframes": {
+        "script": "scripts/core/kie_dispatch/kie_dispatch.py",
+        "verbs": ("dispatch",),
+        "command": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
+                   '--model <image-model-id> --request "$RUN/generation/req.json" '
+                   '--prompt-file "$RUN/generation/req.prompt.txt" '
+                   '--save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" '
+                   '--run-id "$RUN_ID" --logical-key keyframes '
+                   '--attempt-id "$ATTEMPT" --cost "$COST"',
+        "recovery": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
+                    '--model <image-model-id> --request "$RUN/generation/req.json" '
+                    '--prompt-file "$RUN/generation/req.prompt.txt" '
+                    '--save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" '
+                    '--run-id "$RUN_ID" --logical-key keyframes '
+                    '--attempt-id "$ATTEMPT" --cost "$COST"',
+        "artifacts": ("keyframes/manifest.json",),
+    },
+    "video-generation": {
+        "script": "scripts/core/kie_dispatch/kie_dispatch.py",
+        "verbs": ("dispatch",),
+        "command": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
+                   '--model <video-model-id> --request "$RUN/generation/req.json" '
+                   '--prompt-file "$RUN/generation/req.prompt.txt" '
+                   '--save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" '
+                   '--run-id "$RUN_ID" --logical-key video '
+                   '--attempt-id "$ATTEMPT" --cost "$COST"',
+        "recovery": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
+                    '--model <video-model-id> --request "$RUN/generation/req.json" '
+                    '--prompt-file "$RUN/generation/req.prompt.txt" '
+                    '--save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" '
+                    '--run-id "$RUN_ID" --logical-key video '
+                    '--attempt-id "$ATTEMPT" --cost "$COST"',
+        "artifacts": ("video/clips.json",),
+    },
+    "qc-retakes": {
+        "script": "scripts/core/retake_manager/retake_manager.py",
+        "verbs": ("",),
+        "command": 'scripts/core/retake_manager/retake_manager.py '
+                   '--request "$RUN/qc/retake-request.json"',
+        "recovery": 'scripts/core/retake_manager/retake_manager.py '
+                    '--request "$RUN/qc/retake-request.json"',
+        "artifacts": ("qc/retakes.json",),
+    },
+    "assembly": {
+        "script": "scripts/core/final_assembler/assembler.py",
+        "verbs": ("",),
+        "command": 'scripts/core/final_assembler/assembler.py '
+                   '"$RUN/edit/timeline.json" "$RUN/edit/ad.mp4"',
+        "recovery": 'scripts/core/final_assembler/assembler.py '
+                    '"$RUN/edit/timeline.json" "$RUN/edit/ad.mp4"',
+        "artifacts": ("edit/timeline.json", "edit/ad.mp4"),
+    },
+    "final-qc": {
+        "script": "scripts/core/qc_gate.py",
+        "verbs": ("evaluate",),
+        "command": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
+                   '--stage final-qc --records "$RUN/qc/records.json" '
+                   '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
+        "recovery": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
+                    '--stage final-qc --records "$RUN/qc/records.json" '
+                    '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
+        "artifacts": ("final-qc/record.json",),
+    },
+    "delivery": {
+        "script": "scripts/core/qc_gate.py",
+        "verbs": ("evaluate",),
+        "command": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
+                   '--stage delivery --records "$RUN/qc/records.json" '
+                   '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
+        "recovery": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
+                    '--stage delivery --records "$RUN/qc/records.json" '
+                    '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
+        "artifacts": ("delivery/receipts.json",),
+    },
 }
 
 
-def validate_registry(registry=None):
+def _skill_root():
+    """This file's skill root: core/intake_preflight/factory.py -> skill/."""
+    return Path(__file__).resolve().parents[3]
+
+
+def _command_verb(command):
+    """The declared verb token of a descriptor command: the first token after
+    the script, and only when it really is a bare verb (never an option, never
+    a path). ``""`` means the CLI is option/positional-only -- a real contract,
+    not a missing one."""
+    tokens = str(command or "").split()
+    if len(tokens) < 2:
+        return ""
+    tok = tokens[1]
+    return tok if re.fullmatch(r"[a-z][a-z0-9-]*", tok) else ""
+
+
+#: Command prefixes that are an interpreter, not the script under contract.
+_INTERPRETERS = ("python3", "python", "/opt/homebrew/bin/python3")
+
+
+def _command_script(command):
+    """The script path a published command actually runs. Strips one leading
+    interpreter token; a command that runs no script (``python3 -c``) returns
+    ``""`` -- which the runbook checks report as unresolvable, never as valid."""
+    tokens = str(command or "").split()
+    if not tokens:
+        return ""
+    if tokens[0] in _INTERPRETERS:
+        if len(tokens) < 2 or tokens[1].startswith("-"):
+            return ""
+        return tokens[1]
+    return tokens[0]
+
+
+def _descriptor_problems(skill_root=None):
+    """F4 named checks over the descriptors themselves. Each problem names the
+    stage, the field and the reason -- never a bare False."""
+    root = _skill_root() if skill_root is None else Path(skill_root)
+    problems = []
+    for stage in CANONICAL_STAGES:
+        d = STAGE_DESCRIPTORS.get(stage)
+        if not isinstance(d, dict):
+            problems.append("stage %r has no descriptor contract" % stage)
+            continue
+        for field in ("script", "command", "recovery", "artifacts"):
+            if not d.get(field):
+                problems.append("stage %r descriptor missing %r" % (stage, field))
+        for field in ("command", "recovery"):
+            text = str(d.get(field) or "")
+            # ``<...>`` is only allowed as a RUNTIME INPUT slot (ids, costs);
+            # the script path itself never carries one.
+            head = text.split()[0] if text.split() else ""
+            if any(t in head for t in PLACEHOLDER_TOKENS):
+                problems.append("stage %r %s script is a placeholder: %r"
+                                % (stage, field, head))
+        for field in ("script",):
+            head = str(d.get(field) or "")
+            if any(t in head for t in PLACEHOLDER_TOKENS):
+                problems.append("stage %r script is a placeholder: %r"
+                                % (stage, head))
+            elif not (root / head).is_file():
+                problems.append("stage %r script does not resolve on disk: %r"
+                                % (stage, head))
+        for field in ("command", "recovery"):
+            verb = _command_verb(d.get(field))
+            if verb not in tuple(d.get("verbs") or ()):
+                problems.append("stage %r %s verb %r is not declared (supported: %s)"
+                                % (stage, field, verb,
+                                   ", ".join(repr(v) for v in (d.get("verbs") or ()))
+                                   or "none"))
+        arts = tuple(d.get("artifacts") or ())
+        if not arts:
+            problems.append("stage %r declares no emitted output inventory" % stage)
+        elif len(set(arts)) != len(arts):
+            problems.append("stage %r output inventory has duplicates" % stage)
+    return problems
+
+
+def _evidence_contract_problems(stage, entry, descriptor):
+    """C01F4-evidence: the published evidence fields are one contract with
+    the descriptor artifacts -- a row naming evidence the descriptors do
+    not emit is refused by name, never left to drift silently."""
+    problems = []
+    want = tuple((descriptor or {}).get("artifacts") or ())
+    if entry.get("output_producer") and entry.get("output_producer") not in want:
+        problems.append("stage %r output_producer %r is not a declared "
+                        "artifact (descriptor: %s)"
+                        % (stage, entry.get("output_producer"),
+                           ", ".join(want)))
+    for ev in (entry.get("required_evidence") or []):
+        if ev not in want:
+            problems.append("stage %r required_evidence %r is not a declared "
+                            "artifact (descriptor: %s)"
+                            % (stage, ev, ", ".join(want)))
+    idem = str(entry.get("idempotency") or "")
+    if idem and "/" in idem:
+        idem_dir = idem.split("/")[0]
+        want_dirs = {a.split("/")[0] for a in want if "/" in a}
+        if want_dirs and idem_dir not in want_dirs:
+            problems.append("stage %r idempotency %r names a directory the "
+                            "descriptor never emits (descriptor: %s)"
+                            % (stage, idem, ", ".join(want)))
+    return problems
+
+
+def _stage_contract_problems(stage, entry):
+    """F4: named reasons ONE published stage entry cannot be executed. Empty
+    list == executable. Never a bare False."""
+    d = STAGE_DESCRIPTORS.get(stage)
+    if not isinstance(d, dict):
+        return ["stage %r has no descriptor contract" % stage]
+    if not isinstance(entry, dict):
+        return ["stage %r has no registry entry" % stage]
+    problems = []
+    for field in ("entrypoint", "recovery_entrypoint"):
+        text = str(entry.get(field) or "")
+        head = text.split()[0] if text.split() else ""
+        if not head:
+            problems.append("stage %r field %r is empty" % (stage, field))
+        elif any(t in head for t in PLACEHOLDER_TOKENS):
+            problems.append("stage %r field %r names a placeholder script: %r"
+                            % (stage, field, head))
+    if entry.get("entrypoint") and \
+            str(entry.get("entrypoint")) != str(d.get("command") or ""):
+        problems.append("stage %r entrypoint drifted from its descriptor"
+                        % stage)
+    if entry.get("recovery_entrypoint") and \
+            str(entry.get("recovery_entrypoint")) != str(d.get("recovery") or ""):
+        problems.append("stage %r recovery_entrypoint drifted from its "
+                        "descriptor" % stage)
+    problems.extend(_evidence_contract_problems(stage, entry, d))
+    if not tuple(entry.get("required_artifacts") or ()):
+        problems.append("stage %r declares no emitted output inventory" % stage)
+    return problems
+
+
+#: C01: the required production order, over the EXISTING stage identities. A
+#: stage is admitted only when every required predecessor ahead of it has its
+#: declared artifacts on disk -- deleting a predecessor fails by name.
+PRODUCTION_ORDER = CANONICAL_STAGES
+
+
+def production_order_gate(run_dir, stage, registry=None, got=None):
+    """(ok, reason_code, detail, missing) for C01's required production order.
+
+    Names the FIRST predecessor whose declared artifacts are absent. An unknown
+    stage is refused, never assumed. When ``got`` (stage -> raw state) is
+    supplied, only predecessors the store already reports COMPLETE are checked
+    -- a COMPLETE row whose artifacts are gone is the contradiction this
+    refuses; a predecessor that has not run yet is already blocking upstream."""
+    reg = STAGE_REGISTRY if registry is None else registry
+    if stage not in PRODUCTION_ORDER:
+        return (False, "PRODUCTION_ORDER_UNKNOWN_STAGE",
+                "stage %r is not in the required production order" % (stage,),
+                [])
+    rd = Path(run_dir)
+    for pred in PRODUCTION_ORDER[:PRODUCTION_ORDER.index(stage)]:
+        entry = reg.get(pred) or {}
+        if not entry.get("required", True):
+            continue
+        if got is not None and str((got or {}).get(pred)) != "COMPLETE":
+            continue
+        missing = [a for a in (entry.get("required_artifacts") or [])
+                   if not (rd / a).exists()]
+        if missing:
+            return (False, "PRODUCTION_ORDER_VIOLATION",
+                    "stage %r requires predecessor %r first; missing: %s"
+                    % (stage, pred, ", ".join(missing)), missing)
+    return True, "PRODUCTION_ORDER_OK", "", []
+
+
+#: The full 12-stage registry (SPEC 8.6). Published + validated by
+#: ``validate_registry``. Specialized runners are preserved (an entrypoint may
+#: name a dedicated script); no stage is forced into a reconciler just to fill
+#: the table. Every entrypoint/recovery command and every artifact tuple is
+#: DERIVED from ``STAGE_DESCRIPTORS`` -- one contract, no second copy.
+STAGE_REGISTRY = {
+    # C01/F4: every entrypoint, recovery command and artifact tuple below is
+    # DERIVED from STAGE_DESCRIPTORS -- one contract, nothing to drift.
+    "research": _stage(
+        [], "research-analyst",
+        STAGE_DESCRIPTORS["research"]["command"],
+        "research/<request-digest>", "research/receipt.json",
+        "research/receipt.json",
+        ["research/receipt.json", "research/claims.json",
+         "research/captures.json"],
+        "none", "research brief + sources on disk + independent semantic review",
+        STAGE_DESCRIPTORS["research"]["recovery"],
+        "research-complete",
+        artifacts=STAGE_DESCRIPTORS["research"]["artifacts"]),
+    "creative-strategy": _stage(
+        ["research"], "creative-strategist",
+        STAGE_DESCRIPTORS["creative-strategy"]["command"],
+        "creative/<plan-revision>", "creative/blueprint.json",
+        "creative/qc-record.json",
+        ["creative/story.json", "creative/blueprint.json"],
+        "operator", "approved Story Beat Blueprint",
+        STAGE_DESCRIPTORS["creative-strategy"]["recovery"],
+        "creative-approved",
+        artifacts=STAGE_DESCRIPTORS["creative-strategy"]["artifacts"]),
+    "script-lyrics": _stage(
+        ["creative-strategy"], "lyricist",
+        STAGE_DESCRIPTORS["script-lyrics"]["command"], "script/<plan-revision>",
+        "script/lyrics.json", "script/qc-record.json", ["script/lyrics.json"],
+        "delivered-approval", "approved lyric sheet",
+        STAGE_DESCRIPTORS["script-lyrics"]["recovery"], "script-approved",
+        artifacts=STAGE_DESCRIPTORS["script-lyrics"]["artifacts"]),
+    "music": _stage(
+        ["script-lyrics"], "music-producer",
+        STAGE_DESCRIPTORS["music"]["command"],
+        "music/<run-id>/<attempt-id>", "music/picked-song.mp3",
+        "music/qc-records.json", ["music/picked-song.mp3", "song-choices/pick.json"],
+        "delivered-approval", "picked song + independent QC PASS",
+        STAGE_DESCRIPTORS["music"]["recovery"],
+        "provider-completion",
+        artifacts=STAGE_DESCRIPTORS["music"]["artifacts"]),
+    "continuity-bible": _stage(
+        ["music"], "continuity-editor",
+        STAGE_DESCRIPTORS["continuity-bible"]["command"],
+        "continuity/<plan-revision>", "continuity/qc-records.json",
+        "continuity/qc-records.json",
+        ["continuity/qc-records.json", "continuity/makers.json"],
+        "none", "continuity gate PASS on declared required evidence",
+        STAGE_DESCRIPTORS["continuity-bible"]["recovery"],
+        "continuity-complete",
+        artifacts=STAGE_DESCRIPTORS["continuity-bible"]["artifacts"]),
+    "storyboard": _stage(
+        ["continuity-bible"], "storyboard-artist",
+        STAGE_DESCRIPTORS["storyboard"]["command"],
+        "storyboard/<plan-revision>", "storyboard/shot-list.json",
+        "storyboard/qc-record.json",
+        ["storyboard/shot-list.json", "storyboard/contracts.json"],
+        "delivered-approval", "approved shots + stills present",
+        STAGE_DESCRIPTORS["storyboard"]["recovery"],
+        "approval", artifacts=STAGE_DESCRIPTORS["storyboard"]["artifacts"]),
+    "image-keyframes": _stage(
+        ["storyboard"], "keyframe-artist",
+        STAGE_DESCRIPTORS["image-keyframes"]["command"],
+        "keyframes/<shot-set-digest>", "keyframes/manifest.json",
+        "keyframes/qc-record.json", ["keyframes/manifest.json"],
+        "none", "keyframes per approved shot",
+        STAGE_DESCRIPTORS["image-keyframes"]["recovery"], "provider-completion",
+        artifacts=STAGE_DESCRIPTORS["image-keyframes"]["artifacts"]),
+    "video-generation": _stage(
+        ["image-keyframes"], "video-generator",
+        STAGE_DESCRIPTORS["video-generation"]["command"],
+        "video/<segment-set-digest>", "video/clips.json",
+        "video/qc-record.json", ["video/clips.json"],
+        "none", "all clips materialized",
+        STAGE_DESCRIPTORS["video-generation"]["recovery"], "provider-completion",
+        artifacts=STAGE_DESCRIPTORS["video-generation"]["artifacts"]),
+    "qc-retakes": _stage(
+        ["video-generation"], "qc-reviewer",
+        STAGE_DESCRIPTORS["qc-retakes"]["command"], "qc/<clip-set-digest>",
+        "qc/retakes.json", "qc/qc-record.json", ["qc/retakes.json"],
+        "operator", "QC verdict recorded (retakes or accept)",
+        STAGE_DESCRIPTORS["qc-retakes"]["recovery"], "qc-complete",
+        required=False, artifacts=STAGE_DESCRIPTORS["qc-retakes"]["artifacts"]),
+    "assembly": _stage(
+        ["qc-retakes"], "editor",
+        STAGE_DESCRIPTORS["assembly"]["command"],
+        "edit/<timeline-digest>", "edit/timeline.json",
+        "assembly/qc-record.json", ["edit/timeline.json", "edit/ad.mp4"],
+        "none", "assembled timeline on disk",
+        STAGE_DESCRIPTORS["assembly"]["recovery"], "assembly-complete",
+        artifacts=STAGE_DESCRIPTORS["assembly"]["artifacts"]),
+    "final-qc": _stage(
+        ["assembly"], "final-qc-reviewer",
+        STAGE_DESCRIPTORS["final-qc"]["command"],
+        "final-qc/<assembly-digest>", "final-qc/record.json",
+        "final-qc/record.json", ["final-qc/record.json"],
+        "operator", "independent final QC PASS",
+        STAGE_DESCRIPTORS["final-qc"]["recovery"], "final-qc-complete",
+        artifacts=STAGE_DESCRIPTORS["final-qc"]["artifacts"]),
+    "delivery": _stage(
+        ["final-qc"], "delivery-agent",
+        STAGE_DESCRIPTORS["delivery"]["command"],
+        "delivery/<run-id>", "delivery/receipts.json",
+        "delivery/qc-record.json", ["delivery/receipts.json"],
+        "none", "successful destination delivery receipts",
+        STAGE_DESCRIPTORS["delivery"]["recovery"], "delivery-complete",
+        artifacts=STAGE_DESCRIPTORS["delivery"]["artifacts"]),
+}
+
+
+def validate_registry(registry=None, skill_root=None, runbook_rows=None):
     """Validate the published 12-stage registry (SPEC 8.6). Returns a list of
     problems; empty list == valid. Checks: all 12 canonical stages present,
-    no extras, and every required stage carries every required field non-empty."""
+    no extras, every required stage carries every required field non-empty,
+    and -- C01/F4 -- every stage's descriptor names a REAL script on disk with
+    a DECLARED verb and a non-empty output inventory that matches the entry it
+    publishes. When ``runbook_rows`` is supplied, the normal ``next`` row and
+    the continuation registry must name the same executable, so the two paths
+    cannot disagree. Every problem names the stage and the field."""
     reg = STAGE_REGISTRY if registry is None else registry
+    root = _skill_root() if skill_root is None else Path(skill_root)
     problems = []
     for s in CANONICAL_STAGES:
         if s not in reg:
@@ -1907,6 +2407,60 @@ def validate_registry(registry=None):
                 continue
             if not entry[field]:
                 problems.append("stage %r empty field %r" % (s, field))
+        # F4: the descriptor contract -- a placeholder verb or a missing
+        # contract fails HERE, by name, never silently at run time.
+        d = STAGE_DESCRIPTORS.get(s) or {}
+        if not d:
+            problems.append("stage %r has no descriptor contract" % s)
+            continue
+        for field in ("entrypoint", "recovery_entrypoint"):
+            text = str(entry.get(field) or "")
+            head = text.split()[0] if text.split() else ""
+            if any(t in head for t in PLACEHOLDER_TOKENS):
+                problems.append("stage %r field %r names a placeholder "
+                                "script: %r" % (s, field, head))
+        if entry.get("entrypoint") and \
+                str(entry.get("entrypoint")) != str(d.get("command") or ""):
+            problems.append("stage %r entrypoint drifted from its descriptor"
+                            % s)
+        if entry.get("recovery_entrypoint") and \
+                str(entry.get("recovery_entrypoint")) != str(d.get("recovery") or ""):
+            problems.append("stage %r recovery_entrypoint drifted from its "
+                            "descriptor" % s)
+        arts = tuple(entry.get("required_artifacts") or ())
+        want = tuple(d.get("artifacts") or ())
+        if not arts:
+            problems.append("stage %r declares no emitted output inventory" % s)
+        elif arts != want:
+            problems.append("stage %r output inventory %r != descriptor %r"
+                            % (s, arts, want))
+        problems.extend(_evidence_contract_problems(s, entry, d))
+    problems.extend(_descriptor_problems(root))
+    if runbook_rows:
+        for s, row in sorted(runbook_rows.items()):
+            cmd = str((row or {}).get("command") or "")
+            head = _command_script(cmd)
+            if not head:
+                # An addition row may legitimately be an inline `python3 -c`
+                # probe; a CANONICAL stage row never may.
+                if s not in STAGE_DESCRIPTORS:
+                    continue
+                problems.append("runbook row %r has no resolvable script" % s)
+                continue
+            if any(t in head for t in PLACEHOLDER_TOKENS):
+                problems.append("runbook row %r names a placeholder script: %r"
+                                % (s, head))
+                continue
+            if not (root / head).is_file():
+                problems.append("runbook row %r script does not resolve on "
+                                "disk: %r" % (s, head))
+            d = STAGE_DESCRIPTORS.get(s)
+            if not d:
+                continue      # clips/trailers/platform-fit/agnes rows: additions
+            allowed = {str(d.get("script") or "")} | set(d.get("alt_scripts") or ())
+            if head not in allowed:
+                problems.append("runbook row %r names %r, not the registry "
+                                "contract %r" % (s, head, d.get("script")))
     return problems
 
 
@@ -2201,6 +2755,38 @@ EVENT_KINDS = ("approval", "provider-completion", "qc", "recovery",
                "restart", "user-revision")
 
 
+def resolved_run_id(run_dir, run_id=None):
+    """(run_id, problem): the store's recorded identity wins over the folder name.
+
+    A directory is a LOCATOR, never an identity (F14): a renamed run folder must
+    still target the run the store recorded, and a folder name that matches a
+    different run must never retarget it. An explicit id must be one the store
+    knows. Returns ``(None, reason)`` when identity cannot be resolved
+    unambiguously; the caller refuses rather than inventing a name.
+    """
+    ids = []
+    db = Path(run_dir) / "control" / "state.sqlite3"
+    if db.exists():
+        try:
+            con = _ro_connect(db, timeout=10)
+            try:
+                ids = sorted({str(r[0]) for r in con.execute(
+                    "SELECT DISTINCT run_id FROM stages")})
+            finally:
+                con.close()
+        except sqlite3.DatabaseError:
+            return None, "state-unreadable"
+    if run_id is not None and str(run_id):
+        if ids and str(run_id) not in ids:
+            return None, "run-id-unknown"
+        return str(run_id), None
+    if len(ids) == 1:
+        return ids[0], None
+    if not ids:
+        return None, "run-id-empty"
+    return None, "run-id-ambiguous"
+
+
 def continuation_enqueue(run_dir, event, run_id=None, stages=None,
                          registry=None, evidence=None, got=None):
     """Event-driven continuation (SPEC 8.1 / D02): compute THIS run's next
@@ -2208,11 +2794,14 @@ def continuation_enqueue(run_dir, event, run_id=None, stages=None,
 
     Called on approval / provider-completion / QC / recovery / restart, it
     records the next action durably so a successful event auto-continues the
-    correct run. Returns the enqueued action record (never a bare instruction
-    string for a runnable stage)."""
+    correct run. The run id comes from the store, never the folder name; an
+    unresolved identity RAISES instead of targeting an arbitrary run. Returns
+    the enqueued action record (never a bare instruction string for a runnable
+    stage)."""
     rd = Path(run_dir)
-    if run_id is None:
-        run_id = rd.name or "run"
+    run_id, problem = resolved_run_id(rd, run_id)
+    if problem is not None:
+        raise ValueError("%s: %s" % (problem, rd))
     if got is None:
         got = {}
         db = rd / "control" / "state.sqlite3"
@@ -2239,13 +2828,25 @@ def continuation_enqueue(run_dir, event, run_id=None, stages=None,
         "at": time.time(),
     }
     if decision["verdict"] == "runnable" and decision["next_stage"]:
-        admission = _production_admission(rd, decision["next_stage"], run_id=run_id)
+        admission = _admit_stage(rd, decision["next_stage"], run_id=run_id,
+                                 got=got)
         action["production_process"] = admission
         action["production_admitted"] = admission["ok"]
         if admission["ok"]:
             entry = (registry or STAGE_REGISTRY).get(decision["next_stage"], {})
-            action["entrypoint"] = entry.get("entrypoint")
-            action["idempotency"] = entry.get("idempotency")
+            contract = _stage_contract_problems(decision["next_stage"], entry)
+            if contract:
+                # F4: a descriptor that is not executable is not an entrypoint.
+                # The continuation path refuses by name instead of handing out
+                # a command no parser accepts.
+                action["verdict"] = "waiting"
+                action["reason_code"] = "REGISTRY_CONTRACT_INVALID"
+                action["contract_problems"] = contract
+                action["entrypoint"] = None
+                action["wake_event"] = "governed-stage-ready"
+            else:
+                action["entrypoint"] = entry.get("entrypoint")
+                action["idempotency"] = entry.get("idempotency")
         else:
             action["verdict"] = "waiting"
             action["reason_code"] = admission["reason_code"]
@@ -2298,19 +2899,27 @@ def cmd_event(a):
     run_dir = Path(a.run_dir).expanduser().resolve()
     db = run_dir / "control" / "state.sqlite3"
     if not db.exists():
-        return envelope("event", str(getattr(a, "run_id", "") or run_dir.name),
+        return envelope("event", str(getattr(a, "run_id", "") or ""),
                         "error", "state-file-missing",
                         "Create the run first; missing state file: %s" % db)
-    event = str(a.event)
-    if event not in EVENT_KINDS:
-        return envelope("event", str(getattr(a, "run_id", "") or run_dir.name),
-                        "rejected", "unknown-event",
-                        "event must be one of %s" % (", ".join(EVENT_KINDS),))
+    # Admission first: a store that holds no governed authority is refused
+    # before it is opened to resolve identity (opening a WAL store read-only
+    # creates a -shm sidecar, which would mutate a refused run).
     authority = _production_admission(run_dir, run_id=getattr(a, "run_id", None))
     if not authority["ok"]:
         return _production_refusal("event", run_dir, authority)
-    action = continuation_enqueue(run_dir, event,
-                                  run_id=getattr(a, "run_id", None))
+    run_id, problem = resolved_run_id(run_dir, getattr(a, "run_id", None))
+    if problem is not None:
+        return envelope("event", "", "rejected", problem,
+                        "Refuse to continue: the run identity is %s. Pass "
+                        "--run-id when the store holds more than one run."
+                        % problem)
+    event = str(a.event)
+    if event not in EVENT_KINDS:
+        return envelope("event", run_id,
+                        "rejected", "unknown-event",
+                        "event must be one of %s" % (", ".join(EVENT_KINDS),))
+    action = continuation_enqueue(run_dir, event, run_id=run_id)
     sid = action["run_id"]
     if action["verdict"] == "runnable":
         return envelope("event", sid, "ok", "continuation-enqueued",
@@ -2586,6 +3195,17 @@ def _next_stage(a, *, boot_snapshot=None):
                                                      for n in decision["not_runnable"]}))),
                         data=data)
     if decision["verdict"] == "waiting":
+        # ST6: a verified studio answer is a decision to APPLY, not a stage to
+        # wait for. Route it before reporting the wait, or a WAITING_APPROVAL
+        # video-generation row never sees the client's reply (the storyboard
+        # branch below is unreachable from this return).
+        if decision["next_stage"] == "video-generation":
+            _ar = _approval_runner()
+            if _ar is not None and not _ar.gate_open(str(run_dir)):
+                _ans = _studio_answer(run_dir, "storyboard")
+                if _ans:
+                    return _studio_apply("next", str(sid), run_dir,
+                                         decision["next_stage"], "storyboard", _ans)
         return envelope("next", str(sid), "waiting", "awaiting-" + str(decision["wake_event"]),
                         "Stage %r is %s; it advances on the %r event, not by "
                         "calling next again."
@@ -2809,6 +3429,8 @@ def _next_stage(a, *, boot_snapshot=None):
             "produces": pfrow["produces"]}
     music_request = (_pace_into_music(run_dir, method)
                      if method is not None and next_stage == "music" else None)
+    shot_seeds = (_seeds_into_storyboard(run_dir, method)
+                  if method is not None and next_stage == "storyboard" else None)
     sa = None
     if next_stage == "music":
         sa = _script_gate(run_dir, a, reply=None)
@@ -2822,6 +3444,9 @@ def _next_stage(a, *, boot_snapshot=None):
         # D2 item 1: SONG APPROVAL = Yes routes HERE, to the three-version
         # music runner, not the single dispatch runbook row.
         sc = _song_choices_next(run_dir, orchestrated=bool(getattr(a, "orchestrated", False)))
+        if sc is not None and sc.get("refused"):
+            return envelope("next", str(sid), "rejected", sc["reason_code"],
+                            sc["note"], data={"stage": next_stage, "song_choices": sc})
         if sc is not None:
             lane = lane_size_payload()
             data = {"stage": next_stage, "command": sc["command"],
@@ -2838,6 +3463,32 @@ def _next_stage(a, *, boot_snapshot=None):
                 "one submission pass, overlap receipt, no paid redo for a missing overlap."
                 % sc["mode"],
                 data=data, evidence=["%s" % db, runbook_path])
+    # F4: the normal `next` path and the continuation controller must hand out
+    # the SAME executable contract. A placeholder descriptor, a drifted entry
+    # or a runbook row naming a different script is refused here, by name --
+    # neither path may invent a command the parser does not accept.
+    contract = _stage_contract_problems(next_stage, STAGE_REGISTRY.get(next_stage) or {})
+    contract.extend(p for p in validate_registry(runbook_rows=rows)
+                    if p.startswith("runbook row %r" % next_stage)
+                    or p.startswith("stage %r" % next_stage))
+    if contract:
+        return envelope("next", str(sid), "error", "REGISTRY_CONTRACT_INVALID",
+                        "Stage %r cannot be handed out: %s"
+                        % (next_stage, "; ".join(contract)),
+                        data={"stage": next_stage,
+                              "contract_problems": contract})
+    # C01: required production order -- a later stage never runs on a
+    # predecessor whose declared artifacts are gone.
+    order = _admit_stage(run_dir, next_stage, run_id=str(sid), got=got)
+    if not order.get("ok"):
+        # Same refusal shape as every other admission refusal on main
+        # (production_admitted False, blocked_stage, production_process),
+        # plus the C01 fields that name the stage and the missing artifacts.
+        refusal = _production_refusal("next", run_dir, dict(order, run_id=str(sid)))
+        refusal["reason_code"] = order.get("reason_code") or "PRODUCTION_ORDER_VIOLATION"
+        refusal["data"].update(stage=next_stage,
+                               missing_artifacts=order.get("missing_artifacts", []))
+        return refusal
     lane = lane_size_payload()
     nxt = {"stage": present_id, "production_stage": next_stage, "command": row["command"],
            "produces": row.get("produces", ""), "lane_size": lane,
@@ -2852,6 +3503,8 @@ def _next_stage(a, *, boot_snapshot=None):
         nxt["platform_fit"] = platform_fit
     if music_request is not None:
         nxt["music_request"] = music_request
+    if shot_seeds is not None:
+        nxt["shot_seeds"] = shot_seeds
     if next_stage == "music":
         nxt["lifecycle"] = _music_lifecycle()
         # L4.5: the SONG PICK / next paid step is a cost fork. Record the
@@ -3072,6 +3725,17 @@ def main(argv=None):
                     help="Go JSON: {schema, decision: GO, operator, at_utc, "
                          "recap_digest}. A digest that does not match the recap on "
                          "disk is refused and nothing is written.")
+    ow = sub.add_parser("owner", help="Resolve this INSTALL's emergency owner "
+                        "(S75-T13): install config, operator-box default, or a "
+                        "fail-closed refusal on a client install with none.")
+    ow.add_argument("--run-dir", default=None,
+                    help="Run dir; a refusal is recorded in "
+                         "control/emergency-owner-refusal.json when named.")
+    ow.add_argument("--install-home", default=None,
+                    help="Install config root; default $OPENCLAW_HOME or ~/.openclaw.")
+    ow.add_argument("--config", default=None,
+                    help="Exact install config JSON (default "
+                         "<install-home>/onboarding-identity.json).")
     c = sub.add_parser("card", help=_card_help())
     c.add_argument("--format", default="text",
                    choices=("text", "openclaw-json", "telegram-json", "studio-json", "session-json"),
@@ -3187,6 +3851,8 @@ def main(argv=None):
         env = cmd_final_recap(a)
     elif a.cmd == "production-go":
         env = cmd_production_go(a)
+    elif a.cmd == "owner":
+        env = cmd_owner(a)
     elif a.cmd == "event":
         env = cmd_event(a)
     else:

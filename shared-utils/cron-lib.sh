@@ -264,3 +264,119 @@ oc_cron_minute_jitter() {
   hash=$(printf '%s' "$seed" | cksum | awk '{print $1}')
   echo $(( hash % max ))
 }
+
+# ── Scheduled box update: Tuesday, Friday, Sunday 2:00 AM Eastern ─────────────
+# The box's own update runs as a COMMAND cron job: OpenClaw runs the full
+# updater (scripts/weekly-full-update.sh from main: onboarding skills, 999 where
+# installed, Command Center, with snapshot + rollback) directly. No model turn is
+# involved, so a dead model key or empty provider balance can never stop an
+# update (2026-11-02: a box whose provider balance ran out timed out the old agent-prompt
+# job), and nothing is ever sent to the client's chat (delivery none).
+OC_BOX_UPDATE_CRON_NAME="weekly-onboarding-update"   # name kept: tombstones + presence checks key on it
+OC_BOX_UPDATE_SCHEDULE="0 2 * * 0,2,5"               # Sun, Tue, Fri at 02:00
+OC_BOX_UPDATE_TZ="America/New_York"                  # Eastern wall clock (follows daylight saving)
+OC_BOX_UPDATE_COMMAND='f=$(mktemp) && curl -fsSL --max-time 120 https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/weekly-full-update.sh -o "$f" && bash "$f" >> "$HOME/.openclaw/skills/.update-log" 2>&1; rc=$?; rm -f "$f"; exit $rc'
+
+# oc_box_update_cron_ensure
+# 0 = the job is a current command job (already, or converted now)
+# 1 = this OpenClaw has no command cron jobs -> caller keeps its agent-prompt path
+# 2 = could not read the cron list or create the job -> caller keeps its agent-prompt path
+# Old same-name jobs (the old agent-prompt job, duplicates) are removed by id
+# (`openclaw cron delete --name` does not exist; `cron rm <id>` only), with
+# retries: on a busy box `cron rm` can fail with a SQLite admission timeout.
+# A job that still will not go away is reported loudly by id, and the next run
+# keeps the current command job and removes only the leftovers (it never
+# creates a second command job).
+OC_BOX_UPDATE_RM_TRIES="${OC_BOX_UPDATE_RM_TRIES:-6}"
+OC_BOX_UPDATE_RM_DELAY="${OC_BOX_UPDATE_RM_DELAY:-10}"
+
+# _oc_box_update_job_ids: ids of jobs named $OC_BOX_UPDATE_CRON_NAME, one per line (non-zero if the list cannot be read)
+_oc_box_update_job_ids() {
+  local raw
+  raw="$(openclaw cron list --json 2>/dev/null)" || return 1
+  OC_CRON_JSON="$raw" python3 - "$OC_BOX_UPDATE_CRON_NAME" <<'PYEOF' 2>/dev/null
+import json, os, sys
+raw = os.environ.get("OC_CRON_JSON", "")
+data = json.loads(raw[min([i for i in (raw.find("{"), raw.find("[")) if i >= 0] or [0]):])
+for j in (data if isinstance(data, list) else data.get("jobs", [])):
+    if j.get("name") == sys.argv[1] and j.get("id"):
+        print(j["id"])
+PYEOF
+}
+
+# _oc_box_update_rm_ids <id>...: remove each id, retrying until the list no longer shows it.
+# Prints a loud warning naming every id that is still present; returns 1 if any remain.
+_oc_box_update_rm_ids() {
+  local left="$*" try=0 id present still
+  while [ -n "${left// /}" ] && [ "$try" -lt "$OC_BOX_UPDATE_RM_TRIES" ]; do
+    try=$((try + 1))
+    for id in $left; do openclaw cron rm "$id" >/dev/null 2>&1 || true; done
+    present="$(_oc_box_update_job_ids)" || present="__unreadable__"
+    still=""
+    for id in $left; do
+      case "$present" in *"$id"*) still="$still $id" ;; esac
+    done
+    left="$still"
+    [ -n "${left// /}" ] && [ "$try" -lt "$OC_BOX_UPDATE_RM_TRIES" ] && sleep "$OC_BOX_UPDATE_RM_DELAY"
+  done
+  if [ -n "${left// /}" ]; then
+    echo "  ⚠ box update cron: could NOT remove old job(s)${left} after ${try} tries (box busy?) — the next update run removes them; or run: openclaw cron rm <id>"
+    return 1
+  fi
+  return 0
+}
+
+oc_box_update_cron_ensure() {
+  command -v openclaw >/dev/null 2>&1 || return 2
+  command -v python3 >/dev/null 2>&1 || return 2
+  openclaw cron add --help 2>&1 | grep -qE '^[[:space:]]*--command[[:space:]<]' || return 1
+  local raw state keep old
+  raw="$(openclaw cron list --json 2>/dev/null)" || return 2
+  state="$(OC_CRON_JSON="$raw" python3 - "$OC_BOX_UPDATE_CRON_NAME" "$OC_BOX_UPDATE_SCHEDULE" "$OC_BOX_UPDATE_TZ" "$OC_BOX_UPDATE_COMMAND" <<'PYEOF' 2>/dev/null
+import json, os, sys
+name, expr, tz, cmd = sys.argv[1:5]
+raw = os.environ.get("OC_CRON_JSON", "")
+try:
+    data = json.loads(raw[min([i for i in (raw.find("{"), raw.find("[")) if i >= 0] or [0]):])
+except Exception:
+    print("error"); sys.exit(0)
+jobs = [j for j in (data if isinstance(data, list) else data.get("jobs", [])) if j.get("name") == name and j.get("id")]
+def current(j):
+    s, p = j.get("schedule") or {}, j.get("payload") or {}
+    return (p.get("kind") == "command" and p.get("argv") == ["sh", "-lc", cmd]
+            and s.get("expr") == expr and s.get("tz") == tz and j.get("enabled", True) is not False)
+good = [j for j in jobs if current(j)]
+if good:
+    # keep <id> [old ids to remove...]
+    print(" ".join(["keep", good[0]["id"]] + [j["id"] for j in jobs if j is not good[0]]))
+else:
+    print(" ".join(["create"] + [j["id"] for j in jobs]))
+PYEOF
+)"
+  case "$state" in
+    keep\ *)
+      keep="$(echo "$state" | awk '{print $2}')"; old="$(echo "$state" | cut -d' ' -f3-)"
+      [ "$old" = "$state" ] && old=""
+      if [ -z "${old// /}" ]; then
+        echo "  ✓ box update cron current (Tue/Fri/Sun 2:00 AM Eastern, command job, silent)"
+        return 0
+      fi
+      echo "  ↻ box update cron current ($keep); removing leftover old job(s): $old"
+      _oc_box_update_rm_ids $old || true
+      return 0 ;;
+    create*) old="${state#create}" ;;
+    *) return 2 ;;
+  esac
+  if ! openclaw cron add --name "$OC_BOX_UPDATE_CRON_NAME" --cron "$OC_BOX_UPDATE_SCHEDULE" --tz "$OC_BOX_UPDATE_TZ" --exact \
+       --description "Box update Tue/Fri/Sun 2:00 AM Eastern: runs scripts/weekly-full-update.sh from main (onboarding, 999 if installed, Command Center). Silent." \
+       --command "$OC_BOX_UPDATE_COMMAND" --timeout-seconds 7200 --no-output-timeout-seconds 3600 --no-deliver >/dev/null 2>&1; then
+    echo "  ⚠ box update cron: command-job create failed — existing job left in place"
+    return 2
+  fi
+  # New job is in; only now remove the old ones (never leave a box with no update job).
+  if [ -n "${old// /}" ]; then
+    _oc_box_update_rm_ids $old || true
+  fi
+  echo "  ✓ box update cron installed: Tue/Fri/Sun 2:00 AM Eastern, command job, silent (replaced:${old:- none})"
+  return 0
+}

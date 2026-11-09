@@ -55,13 +55,22 @@ class SchemaCompletenessTests(unittest.TestCase):
     def test_production_request_requires_native_ids(self):
         req = valid_request()
         req["test_only"] = False
-        with self.assertRaises(CheckoutValidationError):
-            validate_request(req)
+        # A production-bound request needs a tz-aware `now` for the mapping-expiry check;
+        # with it, the refusal below is the missing native ids (not the missing clock).
+        now = "2026-11-02T00:00:00Z"
+        # production prices must also be approved (approval_status), so the native ids are the only gap
+        req["main_price"]["approval_status"] = "approved"
+        if req.get("bump"):
+            req["bump"]["price"]["approval_status"] = "approved"
+        with self.assertRaisesRegex(CheckoutValidationError, "native product and price IDs"):
+            validate_request(req, now)
         req["main_price"]["native_product_id"] = "PROD-1"
         req["main_price"]["native_price_id"] = "PRICE-1"
+        req["bump"]["price"]["native_product_id"] = "PROD-B"
+        req["bump"]["price"]["native_price_id"] = "PRICE-B"
         req["bump"]["native_product_id"] = "PROD-B"
         req["bump"]["native_price_id"] = "PRICE-B"
-        validate_request(req)
+        validate_request(req, now)
 
 
 class StateMachineReviewFixTests(unittest.TestCase):

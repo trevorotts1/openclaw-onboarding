@@ -26,8 +26,18 @@
 # --onboarding-only: run ONLY the onboarding stage (the rare narrow case);
 # passed through to both the fleet-refresh path and the fallback updater.
 #
-# Never restarts the gateway, never sends a chat message.
-# Exit: fleet-refresh.sh's exit code (0 ok, 2 rolled back / partial, 3 unknown).
+# PRE-FLIGHT (docs/FLEET-ROLL-RUNBOOK.md section 11): before any install step the updater
+# checks account standing, provider standing, free storage and memory pressure. An enforced
+# failure ends the run with the documented status "paused-preflight" (the updater prints
+# "FLEET-PREFLIGHT-PAUSED: <reasons>"; this script's exit code is fleet-refresh.sh's, and the
+# roll records outcome SKIPPED). Nothing is changed on a paused box. At most one plain note per
+# issue per week goes to the client through their own Telegram agent.
+#
+# Never restarts the gateway, never sends a chat message. (The pre-flight note above is the one
+# deliberate exception, sent by shared-utils/fleet_preflight.py, capped and recorded weekly.)
+# Exit: fleet-refresh.sh's exit code (0 ok, 2 rolled back / partial, 3 unknown),
+#       75 DEFERRED — another updater legitimately owns this box, nothing was
+#       changed (critic.C13). 75 is never reported as success.
 # =============================================================================
 set -uo pipefail
 
@@ -49,6 +59,122 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
+# >>> RELEASE-PIN BEGIN (approved immutable release identity) >>>
+# One approved, immutable release identity governs the whole update path.
+# Resolution order: OPENCLAW_APPROVED_RELEASE env, then the pin file's
+# approved_ref. Mode: OPENCLAW_RELEASE_PIN_MODE env, then the pin file's mode,
+# then "enforce" if a pin is configured, else "off" (follow latest main).
+#   enforce  -> no valid pin => REFUSE with a named reason code (exit 78)
+#   advisory -> no valid pin => follow main with a loud warning
+#   off      -> legacy behaviour (follow main)
+# A pin is a 40-hex commit id or a tag name. Branch names that move
+# (main/master/HEAD/origin/*) are refused as pins.
+RELEASE_REF=""
+OC_RELEASE_PIN_REASON=""
+_release_pin_root() {
+  if [ -n "${OPENCLAW_ROOT:-}" ]; then printf '%s' "$OPENCLAW_ROOT"
+  elif [ -d /data/.openclaw ]; then printf '%s' /data/.openclaw
+  else printf '%s/.openclaw' "$HOME"; fi
+}
+_release_pin_file() {
+  printf '%s' "${OPENCLAW_RELEASE_PIN_FILE:-$(_release_pin_root)/fleet-refresh/release-pin.json}"
+}
+_release_pin_read() {
+  local f; f="$(_release_pin_file)"
+  [ -f "$f" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -I -c 'import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+v=d.get(sys.argv[2])
+if v is None:
+    sys.exit(1)
+print(v)' "$f" "$1" 2>/dev/null
+}
+_release_pin_mode() {
+  local m="${OPENCLAW_RELEASE_PIN_MODE:-}"
+  [ -n "$m" ] || m="$(_release_pin_read mode 2>/dev/null || true)"
+  # No mode set anywhere: enforce only when a pin was actually configured;
+  # otherwise follow the latest release (main) exactly as before the gate.
+  # Same rule as oc-atomic-upgrade.sh _npm_pin_mode. Defaulting to enforce
+  # with no pin on any box froze every Sunday update (RELEASE_PIN_UNCONFIGURED).
+  [ -n "$m" ] || { if [ -n "$(_release_pin_ref)" ]; then m="enforce"; else m="off"; fi; }
+  printf '%s' "$m"
+}
+_release_pin_ref() {
+  local r="${OPENCLAW_APPROVED_RELEASE:-}"
+  [ -n "$r" ] || r="$(_release_pin_read approved_ref 2>/dev/null || true)"
+  printf '%s' "$r"
+}
+_release_is_sha() { case "${1:-}" in ""|*[!0-9a-f]*) return 1 ;; esac; [ "${#1}" -eq 40 ]; }
+_release_pin_validate() {
+  local r="$1" m
+  m="$(_release_pin_mode)"
+  case "$m" in enforce|advisory|off) ;; *) OC_RELEASE_PIN_REASON="RELEASE_PIN_MODE_INVALID"; return 1 ;; esac
+  [ -n "$r" ] || { OC_RELEASE_PIN_REASON="RELEASE_PIN_UNCONFIGURED"; return 1; }
+  case "$r" in main|master|HEAD|origin/*|refs/*) OC_RELEASE_PIN_REASON="RELEASE_PIN_INVALID"; return 1 ;; esac
+  case "$r" in *[!A-Za-z0-9._/-]*) OC_RELEASE_PIN_REASON="RELEASE_PIN_INVALID"; return 1 ;; esac
+  return 0
+}
+# 0 = proceed. 78 = refuse (enforce + no usable pin). Sets RELEASE_REF.
+_release_pin_require() {
+  local m r
+  m="$(_release_pin_mode)"; r="$(_release_pin_ref)"
+  RELEASE_REF=""
+  if _release_pin_validate "$r"; then RELEASE_REF="$r"; return 0; fi
+  if [ "$m" = "enforce" ] || [ "$OC_RELEASE_PIN_REASON" = "RELEASE_PIN_MODE_INVALID" ]; then
+    printf '%s\n' "$OC_RELEASE_PIN_REASON"
+    return 78
+  fi
+  RELEASE_REF="main"
+  if [ "$m" = "advisory" ]; then
+    printf '[release-pin] %s (advisory: following moving main)\n' "$OC_RELEASE_PIN_REASON" >&2
+  fi
+  return 0
+}
+_release_clone_source() {
+  local dest="$1" url="${2:-https://github.com/trevorotts1/openclaw-onboarding.git}"
+  if _release_is_sha "$RELEASE_REF"; then
+    git clone --depth 1 "$url" "$dest" || return 1
+    git -C "$dest" fetch --depth 1 origin "$RELEASE_REF" || return 1
+    git -C "$dest" checkout --detach "$RELEASE_REF" || return 1
+  else
+    git clone --depth 1 --branch "$RELEASE_REF" "$url" "$dest" || return 1
+  fi
+}
+# <<< RELEASE-PIN END <<<
+
+_release_pin_require
+_PIN_RC=$?
+if [ "$_PIN_RC" -ne 0 ]; then
+  echo "weekly-full-update.sh: REFUSED — ${OC_RELEASE_PIN_REASON}: no approved immutable release identity is configured; refusing to follow the moving default branch. Nothing was changed." >&2
+  exit 78
+fi
+if [ "$RELEASE_REF" != "main" ]; then
+  UPDATER_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/${RELEASE_REF}/update-skills.sh"
+fi
+
+_wfu_sync_to_release() {
+  local R="$1"
+  if [ "$RELEASE_REF" = "main" ]; then
+    git -C "$R" fetch -q --depth 1 origin +refs/heads/main:refs/remotes/origin/main || return 1
+    git -C "$R" checkout -q -B main origin/main || return 1
+    git -C "$R" reset -q --hard origin/main || return 1
+  elif _release_is_sha "$RELEASE_REF"; then
+    git -C "$R" fetch -q --depth 1 origin "$RELEASE_REF" || return 1
+    git -C "$R" checkout -q --detach "$RELEASE_REF" || return 1
+    git -C "$R" reset -q --hard "$RELEASE_REF" || return 1
+    [ "$(git -C "$R" rev-parse HEAD)" = "$RELEASE_REF" ] || return 1
+  else
+    git -C "$R" fetch -q --depth 1 origin "refs/tags/$RELEASE_REF:refs/tags/$RELEASE_REF" || return 1
+    git -C "$R" checkout -q -B "release-$RELEASE_REF" "refs/tags/$RELEASE_REF" || return 1
+    git -C "$R" reset -q --hard "refs/tags/$RELEASE_REF" || return 1
+    [ "$(git -C "$R" rev-parse HEAD)" = "$(git -C "$R" rev-parse "refs/tags/$RELEASE_REF")" ] || return 1
+  fi
+}
+
 # cron runs with PATH=/usr/bin:/bin; openclaw, node, npm and pm2 live elsewhere.
 # Without them sessions.reset and atomic-deploy.sh cannot run at all.
 for d in "${OPENCLAW_ROOT:-/nonexistent}/npm-global/bin" /data/.openclaw/npm-global/bin \
@@ -60,32 +186,211 @@ export PATH
 
 log() { echo "[weekly-full-update $(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
+# ── SHARED INSTALLATION LEASE (mac.MAC-1 / consistency.C1) ───────────────────
+# The box's own content update is an update WRITER, so it takes the same lease
+# as update-skills.sh, self-update.sh, oc-atomic-upgrade.sh and the Saturday
+# cron: /tmp/openclaw-update.lock, one record (pid + process start identity +
+# run id). Liveness is decided by the RECORD — never by age, never by the
+# file's mere existence (mac.MAC-13). A nested run (self-update → this script)
+# INHERITS the lease from its ancestor and must not be refused: refusing our
+# own children is the defect that closed PR #2612.
+#
+# A busy box is DEFERRED: exit 75, never "exit 0, nothing changed" (critic.C13).
+EX_BUSY=75
+WFU_LEASE="${OPENCLAW_UPDATE_LEASE:-/tmp/openclaw-update.lock}"
+WFU_STATE=""      # "" | owned | inherited
+WFU_IMPL=""
+
+_wfu_start() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' | sed 's/^ *//;s/ *$//' || true; }
+_wfu_ppid()  { ps -o ppid= -p "$1" 2>/dev/null | tr -d ' ' || true; }
+_wfu_rpid() {
+  if [ -d "$WFU_LEASE" ]; then head -1 "$WFU_LEASE/pid" 2>/dev/null || true
+  else sed -n 's/^pid=\([0-9][0-9]*\).*/\1/p' "$WFU_LEASE" 2>/dev/null | head -1 || true
+  fi
+  return 0
+}
+_wfu_rstart() { sed -n 's/^start=//p' "$WFU_LEASE" 2>/dev/null | head -1 || true; return 0; }
+
+_wfu_owner_live() {
+  local _p _s
+  if [ -d "$WFU_LEASE" ]; then
+    _p="$(_wfu_rpid)"; [ -n "$_p" ] || return 1
+    kill -0 "$_p" 2>/dev/null || return 1
+    return 0
+  fi
+  [ -f "$WFU_LEASE" ] || return 1
+  _p="$(_wfu_rpid)"; [ -n "$_p" ] || return 1
+  kill -0 "$_p" 2>/dev/null || return 1
+  _s="$(_wfu_rstart)"
+  if [ -n "$_s" ]; then [ "$(_wfu_start "$_p")" = "$_s" ] || return 1; fi
+  return 0
+}
+
+_wfu_in_owner_tree() {
+  [ -d "$WFU_LEASE" ] && return 1
+  _wfu_owner_live || return 1
+  local _p _cur _n
+  _p="$(_wfu_rpid)"; _cur="$$"; _n=0
+  while [ -n "$_cur" ] && [ "$_cur" -gt 1 ] 2>/dev/null && [ "$_n" -lt 64 ]; do
+    [ "$_cur" = "$_p" ] && return 0
+    _cur="$(_wfu_ppid "$_cur")"
+    _n=$((_n + 1))
+  done
+  return 1
+}
+
+_wfu_write_own() {
+  printf 'pid=%s\nstart=%s\nrun_id=%s\nrole=%s\ninstall_path=%s\nutc=%s\n' \
+    "$$" "$(_wfu_start "$$")" "${RUN_ID:-weekly-full-update-$$}" "weekly-full-update" "${B:-}" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$WFU_LEASE" 2>/dev/null
+}
+
+_wfu_load_helper() {
+  local _h _d
+  _d="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
+  for _h in "$_d/box-update-lock.sh" \
+            "${B:-$HOME/.openclaw}/scripts/box-update-lock.sh" \
+            "${B:-$HOME/.openclaw}/fleet-refresh/onboarding/scripts/box-update-lock.sh"; do
+    if [ -f "$_h" ]; then
+      # shellcheck source=/dev/null
+      . "$_h" || continue
+      command -v box_update_lock_acquire >/dev/null 2>&1 && return 0
+    fi
+  done
+  return 1
+}
+
+# 0 held · 3 a live foreign writer owns it · 1 unrecoverable.
+_wfu_lease_acquire() {
+  WFU_IMPL="inline"
+  if _wfu_load_helper; then WFU_IMPL="helper"; fi
+
+  if [ "$WFU_IMPL" = "helper" ]; then
+    box_update_lock_acquire "$WFU_LEASE" "${RUN_ID:-weekly-full-update-$$}" "weekly-full-update" "${B:-}"
+    case "$?" in
+      0) WFU_STATE="owned"; log "lock: $WFU_LEASE held (shared lease)"; return 0 ;;
+      3) return 3 ;;
+      *) return 1 ;;
+    esac
+  fi
+
+  if _wfu_in_owner_tree; then
+    WFU_STATE="inherited"
+    BFX_LOCK_RUN_ID="$(sed -n 's/^run_id=//p' "$WFU_LEASE" 2>/dev/null | head -1 || true)"
+    BFX_LOCK_OWNER_PID="$(_wfu_rpid)"
+    export BFX_LOCK_RUN_ID BFX_LOCK_OWNER_PID
+    log "lock: inherited $WFU_LEASE from pid $(_wfu_rpid) (nested writer)"
+    return 0
+  fi
+
+  if [ -e "$WFU_LEASE" ] && [ ! -f "$WFU_LEASE" ]; then
+    _wfu_owner_live && return 3
+    rm -rf "$WFU_LEASE" 2>/dev/null || return 1
+  fi
+
+  if command -v flock >/dev/null 2>&1; then
+    exec 9<>"$WFU_LEASE" 2>/dev/null || return 1
+    if ! flock -n 9 2>/dev/null; then
+      exec 9>&- 2>/dev/null || true
+      return 3
+    fi
+    if _wfu_owner_live; then
+      flock -u 9 2>/dev/null || true
+      exec 9>&- 2>/dev/null || true
+      return 3
+    fi
+    _wfu_write_own || return 1
+    WFU_STATE="owned"
+    log "lock: acquired $WFU_LEASE (flock + record, pid $$)"
+    return 0
+  fi
+
+  _wfu_owner_live && return 3
+  if [ -e "$WFU_LEASE" ]; then rm -f "$WFU_LEASE" 2>/dev/null || return 1; fi
+  ( set -o noclobber; : > "$WFU_LEASE" ) 2>/dev/null || return 3
+  _wfu_write_own || return 1
+  WFU_STATE="owned"
+  log "lock: acquired $WFU_LEASE (exclusive create, pid $$)"
+  return 0
+}
+
+_wfu_lease_release() {
+  if [ "$WFU_STATE" = "owned" ]; then
+    if [ "$WFU_IMPL" = "helper" ]; then
+      command -v box_update_lock_release >/dev/null 2>&1 && box_update_lock_release
+    elif _wfu_owner_live && [ "$(_wfu_rpid)" = "$$" ]; then
+      rm -rf "$WFU_LEASE" 2>/dev/null || true
+    fi
+  fi
+  WFU_STATE=""
+  return 0
+}
+
+# ── the lease, before anything touches the onboarding copy ───────────────────
+B="${OPENCLAW_ROOT:-}"
+[ -n "$B" ] || { if [ -d /data/.openclaw ]; then B=/data/.openclaw; else B="$HOME/.openclaw"; fi; }
+_wfu_lease_acquire
+_WFU_RC=$?
+case "$_WFU_RC" in
+  0) trap '_wfu_lease_release' EXIT ;;
+  3) log "another updater owns this box — the shared installation lease ($WFU_LEASE) is held by pid $(_wfu_rpid). DEFERRED (exit 75): nothing changed"
+     exit "$EX_BUSY" ;;
+  *) log "REFUSED: could not take the shared installation lease at $WFU_LEASE — nothing changed"
+     exit 1 ;;
+esac
+
 # Never move the copy under a run that is already in progress (e.g. the
-# operator's roll): its lock lives in the OpenClaw root.
+# operator's roll): its lock lives in the OpenClaw root. Legacy marker, still
+# honoured for a roll that predates the shared lease; judged by a LIVE pid,
+# never by the lock's age. A busy box is DEFERRED (exit 75), never "exit 0".
 for L in "${OPENCLAW_ROOT:-/nonexistent}" /data/.openclaw "$HOME/.openclaw"; do
   P="$(cat "$L/.fleet-refresh.lock/pid" 2>/dev/null)" && kill -0 "$P" 2>/dev/null && {
-    log "another fleet-refresh (pid $P) is running on this box — nothing changed"; exit 0; }
+    log "another fleet-refresh (pid $P) is running on this box — DEFERRED (exit 75), nothing changed"; exit "$EX_BUSY"; }
 done
 
 # The roll's OWN copy of the onboarding repo, the same one the operator's roll
 # keeps (scripts/fleet-roll-copy.sh, same steps): <OpenClaw root>/fleet-refresh/onboarding,
 # refreshed to origin/main. The box's other clones are never used or changed.
 # ONBOARDING_CLONE, when set, names an explicit clone to run from instead.
-B="${OPENCLAW_ROOT:-}"
-[ -n "$B" ] || { if [ -d /data/.openclaw ]; then B=/data/.openclaw; else B="$HOME/.openclaw"; fi; }
 R="${ONBOARDING_CLONE:-$B/fleet-refresh/onboarding}"
 if [ -z "${ONBOARDING_CLONE:-}" ] && [ -e "$R" ] && [ "$(git -C "$R" remote get-url origin 2>/dev/null)" != "$REPO_URL" ]; then
   rm -rf "$R"
 fi
 PREV="$(git -C "$R" rev-parse HEAD 2>/dev/null || true)"
 if [ -d "$R/.git" ]; then
-  if ! { git -C "$R" fetch -q --depth 1 origin +refs/heads/main:refs/remotes/origin/main \
-         && git -C "$R" checkout -q -B main origin/main && git -C "$R" reset -q --hard origin/main; }; then
-    log "ERROR: could not sync $R to origin/main — nothing was changed on this box"
+  # Tool-owned copy, but an old scrub (or anyone) can leave edits in it, and
+  # `checkout -B` aborts on them ("local changes ... would be overwritten") so the
+  # whole update exited 1. Save them first in a stash that is kept in the copy and
+  # never dropped, then hard-sync. If the stash cannot be written, stop: nothing
+  # is ever discarded unsaved. Only this copy is touched, never another checkout.
+  _n="$(git -C "$R" status --porcelain --untracked-files=all 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "${_n:-0}" -gt 0 ]; then
+    _s0="$(git -C "$R" rev-parse -q --verify refs/stash 2>/dev/null || true)"
+    if ! git -C "$R" -c user.name=fleet-refresh -c user.email=fleet-refresh@localhost \
+           stash push -q --include-untracked -m "fleet-refresh auto-stash $(date -u +%Y%m%dT%H%M%SZ)"; then
+      log "ERROR: could not save the $_n local change(s) in $R before syncing — nothing was changed on this box"
+      exit 1
+    fi
+    _s1="$(git -C "$R" rev-parse -q --verify refs/stash 2>/dev/null || true)"
+    if [ -n "$_s1" ] && [ "$_s1" != "$_s0" ]; then
+      log "onboarding copy $R had $_n locally changed file(s): saved as stash ${_s1:0:12} (stash@{0}; kept in the copy, never dropped)"
+    else
+      log "WARNING: onboarding copy $R reported $_n local change(s) but git stashed nothing (e.g. a nested repository); syncing anyway"
+    fi
+  fi
+  if ! _wfu_sync_to_release "$R"; then
+    log "ERROR: could not sync $R to approved release $RELEASE_REF — nothing was changed on this box"
     exit 1
   fi
-elif ! { mkdir -p "$(dirname "$R")" && git clone -q --depth 1 --single-branch --branch main "$REPO_URL" "$R"; }; then
-  log "WARNING: no usable onboarding copy (could not create $R) — falling back to the root updater fetched from main (same FULL path per OCT4 #10; narrower transport only, no snapshot/rollback machinery around it)"
+elif ! { mkdir -p "$(dirname "$R")" && _release_clone_source "$R" "$REPO_URL"; }; then
+  # critic.C11 (code side): under self-update the content step is NEVER handed
+  # to the bare updater — it has no snapshot and no rollback, so a bad release
+  # would be unrecoverable on that box. Exit non-zero and say nothing changed.
+  if [ "${SELF_UPDATE_RUN:-0}" = "1" ]; then
+    log "REFUSED: no usable onboarding copy (could not create $R) and this run is under self-update — the bare updater has no snapshot/rollback, so it is never used here. Nothing was changed on this box."
+    exit 1
+  fi
+  log "WARNING: no usable onboarding copy (could not create $R) — falling back to the root updater fetched from ${RELEASE_REF} (same FULL path per OCT4 #10; narrower transport only, no snapshot/rollback machinery around it)"
   tmp="$(mktemp "${TMPDIR:-/tmp}/openclaw-update-XXXXXX")"
   trap 'rm -f "$tmp"' EXIT
   curl -fsSL --max-time 60 "$UPDATER_URL" -o "$tmp" || { log "ERROR: could not download update-skills.sh"; exit 1; }

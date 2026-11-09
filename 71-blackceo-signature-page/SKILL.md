@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, signature sales page, opt-in, registration, challenge, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system. The signature sales page and the signature landing (opt-in) page are the two page kinds of this skill's landing role (`--page-kind sales|opt_in`). Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
-version: 1.3.7
+version: 1.3.20
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -81,7 +81,7 @@ Do not load all three style libraries at once. Load only the selected family/sty
 
 ### Design / wireframes / mockups
 
-Fonts, colors, logo, and page look come only from the brand file. An agent never proposes page tokens. Brand colors are resolved before any wireframe, mockup or image: `scripts/brand_colors.py check <run_dir>` looks up the client's colors in the run's brand file (`private/brand.json`, then `intake.json` -> `brand_file`) and, when none are known, prints the client ask; the operator flow asks the client, then records the answer with `scripts/brand_colors.py record`. No default or other client's palette is ever used, and no image stage starts (`stage_gate.py check`, `stage_executor.py`) without resolved client colors.
+Fonts, colors, logo, and page look come only from the brand file. An agent never proposes page tokens. Brand colors are resolved before any wireframe, mockup or image: `scripts/brand_colors.py check <run_dir>` looks up the client's colors in the run's brand file (`private/brand.json`, then `intake.json` -> `brand_file`) and, when none are known, prints the client ask; the operator flow asks the client, then records the answer with `scripts/brand_colors.py record`. No other client's palette is ever used. An unconfirmed default is permitted and is always labelled a proposal: `palette_status: default_to_confirm` (or `suggested`) is a proposal for the client to confirm, never an accepted palette, it may carry the internal design work, and it may not ship until the client confirms it. No image stage starts (`stage_gate.py check`, `stage_executor.py`) without resolved client colors, proposal or not; on a production run a proposal palette also refuses the paid stages (`image-generation-qc`, `final-mockups`) until the client confirms it, and `write_intake.py` records the status as `palette_status`.
 
 ## Page kinds: signature sales page and signature landing (opt-in) page
 
@@ -93,6 +93,10 @@ Both are page role `landing`; intake records which one with `write_intake.py --p
 | `opt_in` (signature landing page) | Long-Form only | 15 | open the client's registration form | registration strip, no form fields |
 
 The section sequence is never copied: it is the copy spec's own `sequence` for the form. `stage_executor.py` refuses a kind that does not allow the declared `copy_version`, prints `PREFLIGHT_PAGE` (role, kind, canonical sequence length), and both wireframe stages, the mockup stages and the Design Board carry the kind. Everything else (wireframes, mockups, desktop and mobile, PDFs, overview boards, Design Board, style A/B/C, hypersaturation) is the one pipeline below, never a second one.
+
+### Intake: the page-only profile, never the whole-funnel bank
+
+This skill runs the shared bank's page-only profile, `profiles.page` in `shared-utils/client_intake/question-bank.json`, which is the page mode (`--mode page`, with the page kind recorded as `--page-kind sales|opt_in`). The profile's question list is the ask list: the engine offers exactly those questions and nothing else. It covers the offer, audience, proof, story, brand, image and length questions a single page needs (including the one offer-shape question that decides price versus packages); it never asks the funnel length, page set, bump, upsell or downsell extras, account setup, launch-automation or plan-approval work, which belongs to Skill 49. Never walk the shared bank's full queue on a page run: it can still offer Skill 49's launch-operation questions (business outcome, difficulty, launch calendar, channels, conversation AI, access delivery, sender name, reply-to email, texting readiness), and none of them is ever put to a page client. Confirmed answers are never re-asked: open the client's existing answers file with `--mode page`, so every launch answer already confirmed is reused and only the profile questions still open are asked. A never_default answer (price, offer name, offer description) stays open and is asked; it is never inferred from the earlier run. Ask the page kind (`--page-kind sales|opt_in`) before length: an opt-in landing page is Long-Form only, and a sales page is Standard or Long-Form. Images are not optional on a page - every image stage renders one image per canonical copy section, so the intake offers no no-images choice; supplied logos and photos are placed as files, generated photography is planned per section, and paid renders need the separate approval.
 
 ## Governing production order
 
@@ -131,7 +135,7 @@ Track stage status as `blocked`, `working`, `qc_failed`, or `ready` in the priva
 
 ### Design / wireframes / mockups
 
-- Establish font intelligence and visitor-action plan before full wireframes. Fonts, colors, logo, and page look come only from the brand file; an agent never proposes page tokens. Brand colors are resolved before any wireframe, mockup or image: `scripts/brand_colors.py check <run_dir>` looks up the client's colors in the run's brand file (`private/brand.json`, then `intake.json` -> `brand_file`) and, when none are known, prints the client ask; the operator flow asks the client, then records the answer with `scripts/brand_colors.py record`. No default or other client's palette is ever used, and no image stage starts (`stage_gate.py check`, `stage_executor.py`) without resolved client colors.
+- Establish font intelligence and visitor-action plan before full wireframes. Fonts, colors, logo, and page look come only from the brand file; an agent never proposes page tokens. Brand colors are resolved before any wireframe, mockup or image: `scripts/brand_colors.py check <run_dir>` looks up the client's colors in the run's brand file (`private/brand.json`, then `intake.json` -> `brand_file`) and, when none are known, prints the client ask; the operator flow asks the client, then records the answer with `scripts/brand_colors.py record`. No other client's palette is ever used. An unconfirmed default is permitted and is always labelled a proposal: `palette_status: default_to_confirm` (or `suggested`) is a proposal for the client to confirm, never an accepted palette, it may carry the internal design work, and it may not ship until the client confirms it. No image stage starts (`stage_gate.py check`, `stage_executor.py`) without resolved client colors, proposal or not.
 - The `desktop-wireframe` and `mobile-tablet` stages must produce `section-plan.json` as a required output.
 - Every image slot in `section-plan.json` declares a composition `treatment` (`references/composition-treatments.json`; read `references/composition-patterns.md`): words over images, shaped crops (circle, arch, pill, angled cut) and a very light full-width field are first-class, and a photo column beside a text column is only one of the allowed treatments. The wireframe draws the treatment, the prompts ask for it, the mockup keeps it, the HTML builds it in CSS with `data-treatment`, and the per-page budget gates it. Typed hosted reference images are in `assets/visual-standards/reference-catalog.json`.
 - The `visual-mockup` stage produces the page visual bible and an internal layout proof only. The layout proof is never presented to the client as the mockup and is never client-judged.
@@ -146,7 +150,7 @@ The client never receives loose section images: every image stage ends with `scr
 ## Design style: A Block, B Circle, C Hybrid
 
 At intake the client chooses one page design style after seeing an example link for each: ask with
-`python3 scripts/design_style.py question`, record with `scripts/write_intake.py ... --design-style A|B|C`.
+`python3 scripts/design_style.py question`, record with `scripts/write_intake.py ... --design-style A|B|C`; `--design-style-source` records how it was chosen (`client_choice`, `recommended_accepted`, or `default_to_confirm` for an unconfirmed default, which a production run refuses at intake).
 A production run cannot close `intake` without the choice (`gate:intake_design_style`). The choice drives the
 wireframe and mockup prompts (`scripts/stage_executor.py` adds the style block), each image slot's `shape`
 (`rect` or `circle`), and the shape QC check. Circle slots are generated SQUARE (subject centered, safe margins),
@@ -163,7 +167,7 @@ A page may use exactly one external Creative Direction family/style, or Secret-S
 - one Visual-Artist Direction; or
 - no external direction, with the BlackCEO Secret Super Sauce primary.
 
-If the intake does not name an external Creative Direction, the page is `SECRET_SAUCE_ONLY`. "No direction supplied" never means "choice delegated to the agent". An external style is used only when the owner names it at intake. `scripts/validate_visual_direction.py` enforces this at the visual-mockup gate.
+If the intake does not name an external Creative Direction, the page is `SECRET_SAUCE_ONLY`. "No direction supplied" never means "choice delegated to the agent". An external style is used only when the owner names it at intake. Ask the client at intake: their own look reference, an external direction, or the house look (the explicit default the client accepts); `write_intake.py --creative-direction` records the direction and `creative_direction_source` records who chose it (`client_choice`, `house_look_accepted`, or `not_asked`). `scripts/validate_visual_direction.py` enforces this at the visual-mockup gate.
 
 Never mix external families on one page. The Secret Super Sauce is the adaptive BlackCEO house layer, not a second external style. Where a Sauce dimension conflicts with a defining trait of the selected style, the selected style wins for that dimension and compatible BlackCEO qualities remain active.
 
@@ -190,7 +194,7 @@ Run `scripts/validate_prompt.py` on final prompts (with `--sauce-only` on `SECRE
 Ask whether the owner/client has an explicit image-engine preference when generation is in scope. Record the answer in the intake stage with `scripts/write_intake.py <run_dir> ... --image-engine kie|agnes` (default kie); `stage_gate.py` reads it, and the intake stage will not close without `image_engine` in `intake.json`.
 
 - If **Kie.ai** is selected or no preference is given and Kie is available, every image request follows `references/kie-generation-route.md`: **Skill 66 `kie-image`** (policy: model selection, ratio rules, image QC), then **Skill 74 `kie-live-adapter`** (transport: validate, preflight at price x 1.30, prompt-budget check, `submit --mode active`, wait, save immediately). Video requests use **Skill 67 `kie-video`** the same way. Never hardcode a model id, price, endpoint or rate figure in this skill; those come from the policy owner, `price`, and `kie-common-rules.md`.
-- The default GPT Image model is the newest generation in KIE's live catalog, resolved by `latest-family` (rule 13; GPT Image 2.5 Sunburst today). The N43 ratio rules apply: 3:1, 1:3, 9:21 use the legacy route only; on the default route 5:4 becomes 4:3, 4:5 becomes 3:4, 2:1 becomes 16:9, 1:2 becomes 9:16. An explicit client model request or a department pin overrides the default.
+- The default GPT Image model is the newest generation in KIE's live catalog, resolved by `latest-family` (rule 13) through Skill 66 at run time; this skill never names the model id. The N43 ratio rules apply: 3:1, 1:3, 9:21 use the legacy route only; on the default route 5:4 becomes 4:3, 4:5 becomes 3:4, 2:1 becomes 16:9, 1:2 becomes 9:16. An explicit client model request or a department pin overrides the default.
 - If **Agnes** is explicitly selected/available, use **Skill 63 `agnes-image`**.
 - If another configured provider is explicitly selected, honor it if the current client environment supports it.
 - `stage_gate.py close image-generation-qc` requires the receipt's `transport` block, with a per-provider branch (A23): on the KIE route, Skill 74, mode active, the real KIE task ids, model ids, preflight and budget results, N43 ratios; on the Agnes route (Skill 63, only when intake records `image_engine: "agnes"`), the synchronous shape: `task_id` null or omitted, `request_id` only if Agnes returned one, mode `sync`, no polling artefacts, and never a KIE task ID (Agnes issues none; attaching one fails the gate). A hand-rolled createTask has no such receipt and cannot close the stage.
@@ -230,10 +234,21 @@ Read `references/qc-contract.md`.
 
 ## Reporting
 
-Report to the owner by pasting `REPORT.md`'s overall line, stage table, and cost line — `REPORT.md` is written only by `scripts/stage_gate.py report`. REPORT.md carries the review-mode stamp line (INDEPENDENT / SELF-REVIEWED / UNKNOWN) computed by the gate from the run's Review Receipt v2 records. Do not write your own summary of stage status. Nothing marked "pending confirmation" may ship; pending means BLOCKED — except derived fonts: brand fonts missing are derived-and-documented per `font_policy` and reviewed, never blocked (the reviewer's approval of `fonts_source`/`font_rationale`/`font_reviewer` in the bible is the confirmation, and an unapproved derived-font bible still ships nothing).
+Report to the owner by pasting `REPORT.md`'s overall line, stage table, and cost line — `REPORT.md` is written only by `scripts/stage_gate.py report`. REPORT.md carries the review-mode stamp line (INDEPENDENT / SELF-REVIEWED / UNKNOWN) computed by the gate from the run's Review Receipt v2 records. Do not write your own summary of stage status. Nothing marked "pending confirmation" may ship; pending means BLOCKED — except derived fonts: brand fonts missing are derived-and-documented per `font_policy` and reviewed, never blocked (the reviewer's approval of `fonts_source`/`font_rationale`/`font_reviewer` in the bible is the confirmation, and an unapproved derived-font bible still ships nothing) — and except an unconfirmed default palette, which is a permitted proposal that may drive internal work and may not ship until the client confirms it. The proposal, not the absence of a palette, is what has to be confirmed.
 
 ## Installation / maintenance boundary
 
 `verify.sh` is an **install/update maintenance check**, not a normal page-build step. Do not run the complete skill verification every time this skill is invoked.
 
 For onboarding-repo integration, read `REPO-INTEGRATION.md`. The repo's native-skill binding lives in `23-ai-workforce-blueprint/skill-department-map.json`; generated role blocks must be refreshed with the repo's stamper rather than hand-edited.
+
+## Python dependency: jsonschema (operator note, never for the client)
+
+`scripts/stage_gate.py` (the style-selection schema check) imports `jsonschema`. On a Homebrew or Debian Python (externally managed, PEP 668) pip refuses a plain or
+`--user` install, so the package lives in the shared pydeps folder `<root>/pydeps/py<major>.<minor>/`
+(`$OC_PYDEPS_DIR` as-is, else `$OPENCLAW_ROOT`, else `/data/.openclaw` when it exists, else `$HOME/.openclaw`;
+`$HOME/.claude/pydeps/py<X.Y>/` is also looked up), installed with `pip install --target`. The file puts that folder on
+`sys.path` itself before it imports, so plain `python3` works: no venv, no activation step. Never use
+`--break-system-packages`, never create a venv, never tell the client. If the import fails, check with
+`bash update-skills.sh --check` and run the one sanctioned fix from `83-black-friday-launcher`:
+`python3 -m launcher_core.cli dependencies --install`.

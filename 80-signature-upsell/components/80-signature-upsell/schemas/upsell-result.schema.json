@@ -260,7 +260,8 @@
      "enum": [
       "eligible",
       "not_eligible",
-      "blocked_unverified"
+      "blocked_unverified",
+      "design_only/unverified_at_build"
      ]
     }
    },

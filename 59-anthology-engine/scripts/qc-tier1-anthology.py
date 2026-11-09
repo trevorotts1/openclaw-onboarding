@@ -34,8 +34,7 @@ THE TWELVE TIER-1 CHECKS (QC-PROTOCOL Instrument 1; binary, any one fails the pi
                          search-pass output (the semantic biography nuance is check 13).
   11 NAMING              client-visible surfaces say Convert and Flow; no internal tool
                          names, no model names, no plumbing.
-  12 RUN LEDGER CLEAN    zero Anthropic-family model identifiers in the run ledger; the
-                         model used is recorded (honestly; substitutions named).
+  12 RUN LEDGER CLEAN    the model used is recorded (honestly; substitutions named).
 
 ASSEMBLY MODE (--mode assembly; the S9 manuscript only) additionally proves: every approved
 chapter present exactly once and byte-identical (sha256) to its frozen approved version;
@@ -155,19 +154,9 @@ def story_phrases(intake: dict) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# Deny/leak patterns. Anthropic-family assembled from FRAGMENTS so this shipped
-# runtime file carries no contiguous banned literal (guard-no-anthropic-runtime.py
-# scans .py source; mirrors model_router.py). The platform name that must be
-# Convert and Flow is likewise fragment-assembled.
+# Deny/leak patterns. The platform name that must be Convert and Flow is
+# fragment-assembled.
 # ---------------------------------------------------------------------------
-_A = "anthro" + "pic"
-_C = "clau" + "de"
-_ANTHROPIC_RE = re.compile(
-    r"(?i)(^|[^a-z0-9])(" + _C + r"|" + _A + r")([^a-z0-9]|$)"
-    r"|" + _A + r"/"
-    r"|" + _C + r"-"
-    r"|us\." + _A + r"\.")
-
 # The platform must be named "Convert and Flow" on every client surface. The
 # forbidden alternates are assembled from fragments (never a contiguous literal).
 _PLATFORM_BANNED = (
@@ -224,10 +213,6 @@ _URL_RE = re.compile(r"https?://[^\s)\]\}>\"']+", re.I)
 _FORM_MECHANIC_RE = re.compile(
     r"(?i)(utm_[a-z]+|hidden[_\-\s]?field|customdata|contact_id\s*[:=]|"
     r"anthology_id\s*[:=]|form_?id|field_?key)")
-
-
-def is_anthropic_shaped(text: str) -> bool:
-    return bool(text) and bool(_ANTHROPIC_RE.search(str(text)))
 
 
 # ---------------------------------------------------------------------------
@@ -696,8 +681,6 @@ def check_11_naming(env: dict, text: str) -> CheckOutcome:
     m = _MODEL_ID_RE.search(text)
     if m:
         hits.append("model-id shape %r" % m.group(0))
-    if is_anthropic_shaped(text):
-        hits.append("Anthropic-family identifier")
     if hits:
         return CheckOutcome(cid, CHECK_NAMES[cid], FAIL,
                             "naming leak on a client surface: " + "; ".join(sorted(set(hits))),
@@ -706,35 +689,12 @@ def check_11_naming(env: dict, text: str) -> CheckOutcome:
                         "no tool, model, plumbing, or platform-name leaks")
 
 
-def _collect_model_values(node, out: List[str]) -> None:
-    """Every string recorded under a MODEL-identifier field (a key whose name
-    contains 'model'), anywhere in the ledger. Descriptive prose (a 'note' field)
-    is deliberately NOT scanned -- check 12 is about recorded model identifiers,
-    not free text that may legitimately describe the deny rule."""
-    if isinstance(node, dict):
-        for k, v in node.items():
-            if "model" in str(k).lower() and isinstance(v, str):
-                out.append(v)
-            _collect_model_values(v, out)
-    elif isinstance(node, list):
-        for v in node:
-            _collect_model_values(v, out)
-
-
 def check_12_run_ledger(env: dict, text: str) -> CheckOutcome:
     cid = 12
     ledger = _load_json_ref(env, "run_ledger", "run_ledger_path")
     if ledger is None:
         return CheckOutcome(cid, CHECK_NAMES[cid], SKIP,
-                            "no run ledger supplied to this invocation; cleanliness also proven "
-                            "by model_router deny + guard-no-anthropic-runtime.py")
-    model_values: List[str] = []
-    _collect_model_values(ledger, model_values)
-    dirty = [m for m in model_values if is_anthropic_shaped(m)]
-    if dirty:
-        return CheckOutcome(cid, CHECK_NAMES[cid], FAIL,
-                            "run ledger records an Anthropic-family model identifier: %r"
-                            % dirty[0], _code(cid))
+                            "no run ledger supplied to this invocation")
     # Honesty proxy: every recorded stage names a non-empty model.
     stages = ledger.get("stages") if isinstance(ledger, dict) else None
     if isinstance(stages, list):
@@ -745,7 +705,7 @@ def check_12_run_ledger(env: dict, text: str) -> CheckOutcome:
                                 "run ledger stage(s) record no model (not recorded honestly): %s"
                                 % ", ".join(map(str, blank[:6])), _code(cid))
     return CheckOutcome(cid, CHECK_NAMES[cid], PASS,
-                        "run ledger clean; no Anthropic ids; models recorded")
+                        "run ledger clean; models recorded")
 
 
 CHECK_FUNCS: Dict[int, Callable[[dict, Optional[str]], CheckOutcome]] = {
@@ -1188,11 +1148,11 @@ def self_test() -> int:
         vv = run_tier1(_clean_envelope(artifact_text=_CLEAN_CHAPTER + "\n" + injected, checks=[11]))
         checks.append(("naming leak (%s) FAILs check 11" % label, _has_fail(vv, 11)))
 
-    # 12 RUN LEDGER: an Anthropic-shaped id in the ledger fails (assembled by fragment).
-    poisoned = _clean_envelope(
+    # 12 RUN LEDGER: an Anthropic-family id in the ledger is NOT a failure (no vendor rule).
+    named = _clean_envelope(
         run_ledger={"stages": [{"stage_id": "aw-09", "model": "cl" + "aude-" + "opus-4"}]},
         checks=[12])
-    checks.append(("Anthropic id in ledger FAILs check 12", _has_fail(run_tier1(poisoned), 12)))
+    checks.append(("Anthropic id in ledger passes check 12", _passes(run_tier1(named), 12)))
     blankmodel = _clean_envelope(
         run_ledger={"stages": [{"stage_id": "aw-09", "model": ""}]}, checks=[12])
     checks.append(("blank model in ledger FAILs check 12", _has_fail(run_tier1(blankmodel), 12)))

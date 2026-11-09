@@ -61,6 +61,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -194,6 +195,172 @@ def _sha256_file(path: str) -> str:
 
 def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+# ── ONE marker contract with Skill 71 (S06-22) ───────────────────────────────
+# A Skill 71 page carries its build marker as a DATA ATTRIBUTE on the root
+# element, e.g. <html data-skill71-build="run_id=L1;page=P1;rev=1;input=ab12...">.
+# render_check strips HTML comments before it looks for the marker, so the old
+# comment marker (<!-- skill71-build ... -->) could never be found by verify and
+# agents injected a visible marker by hand. The attribute survives the strip.
+# Skill 71's validate_install.py reads the SAME attribute; the value is the
+# page-result's own identity (launch_id / page_id / revision / input_hash), so
+# the marker is taken from the page-result and never typed by an agent.
+ROOT_MARKER_ATTR = "data-skill71-build"
+_MARKER_VALUE_OK = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:-"
+)
+
+
+def root_marker_value(page_result: dict | None) -> str:
+    """The attribute VALUE for a page-result, or '' when it cannot be built
+    (missing identity field or a character that HTML would escape)."""
+    if not isinstance(page_result, dict):
+        return ""
+    parts = (
+        ("run_id", page_result.get("launch_id")),
+        ("page", page_result.get("page_id")),
+        ("rev", page_result.get("revision")),
+        ("input", page_result.get("input_hash")),
+    )
+    out = []
+    for key, val in parts:
+        val = "" if val is None else str(val)
+        if not val or any(c not in _MARKER_VALUE_OK for c in val):
+            return ""
+        out.append(f"{key}={val}")
+    return ";".join(out)
+
+
+def marker_from_page_result(page_result: dict | str | None) -> str:
+    """The full root-attribute marker string verify_page asserts in the rendered
+    DOM: ``data-skill71-build="<value>"``. ``page_result`` is the dict or the
+    path of a page-result.json. '' when unavailable (verify then fails closed)."""
+    if isinstance(page_result, str) and page_result:
+        try:
+            with open(page_result, encoding="utf-8") as f:
+                page_result = json.load(f)
+        except (OSError, ValueError):
+            return ""
+    value = root_marker_value(page_result if isinstance(page_result, dict) else None)
+    return f'{ROOT_MARKER_ATTR}="{value}"' if value else ""
+
+
+# ── Run-nonce file: the verdict's provenance lives OUTSIDE the evidence tree ──
+# (S06-04). The evidence tree is plain JSON an agent can write by hand; a
+# writer string and a UUID inside it prove nothing. verify_all (LIVE only)
+# also writes a 0600 file named after the nonce into a box-local directory
+# that is NOT under the evidence root, holding the sha256 of the raw log and
+# the render manifest it just wrote. ghl_gate refuses a verdict whose nonce
+# has no such file, or whose bytes no longer hash to it.
+NONCE_DIR_ENV = "GHL_VERIFY_NONCE_DIR"
+
+
+def nonce_dir() -> str:
+    return os.environ.get(NONCE_DIR_ENV) or os.path.join(
+        os.path.expanduser("~"), ".openclaw", "state", "ghl-verify-nonces")
+
+
+def _inside(path: str, root: str) -> bool:
+    p, r = os.path.realpath(path), os.path.realpath(root)
+    return p == r or p.startswith(r.rstrip(os.sep) + os.sep)
+
+
+def _nonce_path(run_nonce: str) -> str:
+    # uuid-parse first: the nonce becomes a filename, so no traversal is possible.
+    return os.path.join(nonce_dir(), f"{uuid.UUID(str(run_nonce))}.nonce")
+
+
+def _nonce_binding(raw_path: str, manifest_path: str) -> str:
+    return json.dumps(
+        {"raw_sha256": _sha256_file(raw_path),
+         "manifest_sha256": _sha256_file(manifest_path)}, sort_keys=True)
+
+
+def write_run_nonce(run_dir: str, run_nonce: str, raw_path: str,
+                    manifest_path: str) -> str:
+    """Write the 0600 nonce file for a LIVE verify_all pass; refuse a nonce
+    directory inside the evidence tree (it would not be out of reach)."""
+    d = nonce_dir()
+    if _inside(d, run_dir):
+        raise VerifyContradiction(
+            f"nonce directory {d!r} is inside the evidence tree {run_dir!r}; "
+            f"set {NONCE_DIR_ENV} to a box-local path outside it")
+    return ghl_evidence.write_text_private(
+        _nonce_path(run_nonce), _nonce_binding(raw_path, manifest_path))
+
+
+def assert_run_nonce(run_dir: str, run_nonce: str, raw_path: str,
+                     manifest_path: str) -> None:
+    """Raise VerifyContradiction unless ``run_nonce`` has a genuine nonce file:
+    present, outside the evidence tree, owned by this user, mode 0600, and
+    bound to the CURRENT bytes of the raw log and render manifest."""
+    try:
+        path = _nonce_path(run_nonce)
+    except (ValueError, AttributeError, TypeError):
+        raise VerifyContradiction(f"run_nonce {run_nonce!r} is not a UUID")
+    if _inside(path, run_dir):
+        raise VerifyContradiction("nonce file lives inside the evidence tree")
+    try:
+        st = os.stat(path)
+        with open(path, encoding="utf-8") as f:
+            held = f.read()
+    except OSError:
+        raise VerifyContradiction(
+            f"no nonce file for run_nonce {run_nonce!r} outside the evidence "
+            "tree: this verdict was not written by verify_all on this box")
+    if (st.st_mode & 0o777) != 0o600 or st.st_uid != os.getuid():
+        raise VerifyContradiction(
+            "nonce file is not 0600 and owned by the verifying user")
+    if held != _nonce_binding(raw_path, manifest_path):
+        raise VerifyContradiction(
+            "raw log or render manifest changed after verify_all wrote the "
+            "nonce (hash no longer matches the nonce file)")
+
+
+def assert_artifacts_rendered(raw: list[dict], render_manifest: dict) -> None:
+    """Re-prove, from disk, that every PASS row was actually rendered.
+
+    For each PASS row the render manifest MUST name its dom, png and console
+    artifacts with sha256; each file must exist, be non-empty and re-hash to
+    the manifest (and to the raw row); and the DOM must carry the row's marker
+    outside script/style/comment. A hand-forged tree has none of this."""
+    if not isinstance(render_manifest, dict) or not render_manifest:
+        raise VerifyContradiction("render-manifest.json is empty: no page was rendered")
+    for idx, r in enumerate(raw):
+        if r.get("PASS") is not True:
+            continue
+        step = r.get("step") or "?"
+        entry = render_manifest.get(step)
+        if not isinstance(entry, dict):
+            raise VerifyContradiction(
+                f"PASS row {idx} (step={step!r}) has no render-manifest entry")
+        dom_text = ""
+        for path_key, sha_key in (("dom_path", "dom_sha256"),
+                                  ("png_path", "png_sha256"),
+                                  ("console_path", "console_sha256")):
+            path, want = entry.get(path_key), entry.get(sha_key)
+            if not path or not want:
+                raise VerifyContradiction(
+                    f"PASS row {idx} (step={step!r}): manifest names no "
+                    f"{path_key}/{sha_key}")
+            if not os.path.isfile(path) or os.path.getsize(path) == 0:
+                raise VerifyContradiction(
+                    f"PASS row {idx} (step={step!r}): {path_key} {path!r} is "
+                    "missing or empty")
+            if _sha256_file(path) != want or (
+                    r.get(sha_key) and r.get(sha_key) != want):
+                raise VerifyContradiction(
+                    f"PASS row {idx} (step={step!r}): {path_key} does not "
+                    "re-hash to the manifest / raw row")
+            if path_key == "dom_path":
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    dom_text = f.read()
+        marker = r.get("marker") or ""
+        if not marker or marker not in ghl_builder.strip_non_visible_html(dom_text):
+            raise VerifyContradiction(
+                f"PASS row {idx} (step={step!r}): the rendered DOM does not "
+                "contain the page marker")
 
 
 # ── Copy-fidelity gate (P1-4): approved copy.md tokens MUST render in the DOM ──
@@ -562,20 +729,47 @@ def _missing_manifest_images(page: dict, res: dict, run_dir: str) -> list[str]:
     return missing
 
 
+_IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.I | re.S)
+_IMG_SRC_ATTR_RE = re.compile(
+    r"""\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""", re.I)
+
+
+def _unmanifested_images(page: dict, res: dict, run_dir: str) -> list[str]:
+    """S06-11 (DOM -> manifest): every <img> src on a funnel page must be a
+    cdn_url of images/manifest.json or GHL media storage. Returns the others
+    (relative paths, external/temp URLs, data:/file:, empty src)."""
+    if str(page.get("surface") or "funnel") == "website":
+        return []
+    import ghl_rest_canvas  # lazy: ghl_rest_canvas does not import ghl_verify
+    allowed = {str(r.get("cdn_url", "")).strip() for r in _load_image_manifest(run_dir)}
+    bad: list[str] = []
+    for tag in _IMG_TAG_RE.findall(_resolve_rendered_dom(res)):
+        m = _IMG_SRC_ATTR_RE.search(tag)
+        src = next((g for g in m.groups() if g is not None), "") if m else ""
+        src = src.strip()
+        if src in allowed and src:
+            continue
+        if ghl_rest_canvas.is_ghl_media_url(src):
+            continue
+        bad.append(src or "<empty src>")
+    return bad
+
+
 def _image_gate_errors(page: dict, res: dict, run_dir: str) -> tuple[list[str], list[str]]:
     """Return ``(render_error_strings, missing_cdn_urls)`` for the rendered-<img>
     gate. Empty when the gate is off or all images rendered."""
+    errors: list[str] = []
     missing = _missing_manifest_images(page, res, run_dir)
-    if not missing:
-        return [], []
-    sample = "; ".join(missing[:5])
-    return (
-        [
+    if missing:
+        errors.append(
             f"missing_images: {len(missing)} manifest cdn_url(s) for page "
-            f"{page.get('page_id')!r} not found in the rendered DOM: {sample}"
-        ],
-        missing,
-    )
+            f"{page.get('page_id')!r} not found in the rendered DOM: {'; '.join(missing[:5])}")
+    bad = _unmanifested_images(page, res, run_dir)
+    if bad:
+        errors.append(
+            f"unmanifested_image: {len(bad)} <img> src(s) on page {page.get('page_id')!r} "
+            f"are neither in images/manifest.json nor GHL media storage: {'; '.join(bad[:5])}")
+    return errors, missing
 
 
 # ── The single real check (one page → one raw record) ────────────────────────
@@ -826,7 +1020,10 @@ def verify_page(
 
     step = page.get("step") or page.get("name") or page.get("slug") or "?"
     preview_url = page.get("preview_url") or ""
-    marker = page.get("marker") or ""
+    # S06-22: an explicit marker wins; otherwise the root-attribute marker is
+    # taken from the page's Skill 71 page-result (dict or page-result.json path).
+    marker = page.get("marker") or marker_from_page_result(
+        page.get("page_result") or page.get("page_result_path"))
     _run_dir = run_dir or "/tmp/ghl-verify-no-rundir"
 
     if not preview_url or not marker:
@@ -967,7 +1164,9 @@ def verify_page(
                         step=f"{step}-repair", timeout=45,
                     )
                     _re2 = list(_res2.get("render_errors") or [])
-                    _re2 += _copy_fidelity_errors(page, _res2)
+                    # S06-05: pass _run_dir so the default-on copy-fidelity
+                    # fallback (routing/copy.md etc.) still gates the repair.
+                    _re2 += _copy_fidelity_errors(page, _res2, _run_dir)
                     # Re-fold the rendered-<img> gate against the REPAIRED DOM — a
                     # clean preview repair must never mask a still-missing image.
                     _img_errs2, _missing_imgs2 = _image_gate_errors(page, _res2, _run_dir)
@@ -1594,6 +1793,12 @@ def verify_all(
 
     # Re-run the consistency guard including artifact hash binding.
     assert_consistent(summary, raw_on_disk, render_manifest=render_manifest)
+
+    # S06-04: a LIVE pass leaves its provenance OUTSIDE the evidence tree
+    # (0600 nonce file bound to the raw log + manifest bytes). Written last so
+    # it hashes the final bytes. ghl_gate refuses a verdict without it.
+    if live:
+        write_run_nonce(run_dir, run_nonce, raw_path, render_manifest_path)
 
     # ── MOCK SENTINEL ──────────────────────────────────────────────────────────
     sentinel_path = os.path.join(run_dir, MOCK_SENTINEL_REL)

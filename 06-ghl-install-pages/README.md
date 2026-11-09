@@ -35,7 +35,43 @@ ladder carries what the API officially carries, and CUA is the last resort.
 
 Fail closed: if no lane verifies, the run stops and reports. It never
 improvises a path.
+## Maintenance crons (scheduled, every box)
 
+Four maintenance-window jobs keep this skill honest between builds. The ONE
+entry point is the aggregate installer; update-skills.sh runs it, so a box
+registers all four on its next update:
+
+    bash scripts/install-skill6-maintenance-crons.sh [--idempotent] [--check-only]
+
+It names all four installers explicitly (the old first-match glob ran only
+the archive-reconcile one), consumes `--idempotent` without forwarding it,
+and reports REGISTERED / ABSENT / UNKNOWN per job from
+`openclaw cron list --all --json`. The four jobs:
+
+- `install-github-archive-reconcile-cron.sh` - nightly sweep that proves
+  every Vercel page's source is archived to GitHub, and re-runs missing
+  archives (`--retry`).
+- `install-page-inventory-lifecycle-cron.sh` - retention sweep over
+  generated page evidence (compress-only, zero live GHL calls), one operator
+  card per unresolved candidate set.
+- `install-routing-drift-check-cron.sh` - routing drift check.
+- `install-selector-drift-probe-cron.sh` - selector drift probe
+  (`run-selector-drift-probe.sh`).
+
+`scripts/lib-cron-presence.sh` is the shared helper the installers source:
+presence is judged on `--all` listings, a disabled job is a TOMBSTONE
+(reported, never re-enabled or duplicated), new jobs get `--no-deliver` (a
+maintenance tick must never announce into client chat), and an existing job
+that announces is repaired in place. A failed or unparsable listing is
+UNKNOWN, never "absent".
+
+The reaper backstop is checked, never registered, here:
+
+    bash scripts/check-agent-browser-reaper-schedule.sh
+
+Exit 0 = registered AND enabled; 1 = absent; 2 = UNKNOWN; 3 = registered but
+DISABLED (loud failure - a reaper that never runs is the false-done pattern).
+Reactivation is an operator decision.
 ## Extension preflight (standing, every run)
 
 Before an install run, verify the extension is installed and current:
@@ -57,9 +93,12 @@ form to fill. See SKILL.md (decision D7) for the full rule.
 ## Layout of this folder
 
 - tools/ - builders, the capability probe, and lane adapters.
-- scripts/ - the extension preflight and local helpers.
+- scripts/ - the extension preflight, the maintenance-cron installers
+  (lib-cron-presence.sh, the four install-* installers, the aggregate
+  install-skill6-maintenance-crons.sh), the reaper-schedule and
+  extension-version checks, and local helpers.
 - references/ - capability notes, including iframe drag capability.
-- tests/ - the probe and doctrine test suites.
+- tests/ - the probe, doctrine and maintenance-schedule test suites.
 - PREREQS.json - declared prerequisites, including the extension
   (tool-openclaw-chrome-extension) and both browser runtimes.
 - ENV-MATRIX.md - which capabilities each environment shape carries.

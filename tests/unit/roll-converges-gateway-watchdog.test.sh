@@ -274,6 +274,11 @@ run_watchdog() {
   #   WD_GWLOG_MARKER=1      write the 2026.9.x refusal into the gateway log
   #   WD_NO_OPENCLAW=1       no openclaw CLI on PATH
   #   WD_LOCK=1              hold a fresh maintenance lock
+  #   WD_CURL_UP=https|http  the gateway answers ONLY on that scheme (https also
+  #                          needs curl -k: the cert is self-signed). Unset = down.
+  #   WD_CFG                 text written to ~/.openclaw/openclaw.json
+  #   WD_NO_PORT=1           do not pass GATEWAY_WATCHDOG_PORT (config/default decide)
+  #   WD_TLS_ENV=0|1         pass GATEWAY_WATCHDOG_TLS (the VPS-host override)
   local name="$1"
   W_DIR="$SANDBOX/$name"
   W_HOME="$W_DIR/home"
@@ -303,8 +308,35 @@ exit 0
 LCEOF
   chmod +x "$W_BIN/launchctl"
 
-  # curl always fails => the gateway is unhealthy on every probe.
-  printf '#!/bin/sh\nexit 7\n' > "$W_BIN/curl"; chmod +x "$W_BIN/curl"
+  W_CURL_CALLS="$W_DIR/curl.calls"; : > "$W_CURL_CALLS"
+  if [ -z "${WD_CURL_UP:-}" ]; then
+    # curl always fails => the gateway is unhealthy on every probe.
+    printf '#!/bin/sh\necho "curl $*" >> "%s"\nexit 7\n' "$W_CURL_CALLS" > "$W_BIN/curl"
+  else
+    # A gateway that answers on ONE scheme. The root body is not {"ok":true}, so
+    # the /healthz 200 (signal B) is what proves it up. https without -k fails
+    # the way a self-signed cert does (curl rc 60); the wrong scheme gets an
+    # empty reply (rc 52), which is what http:// against a TLS gateway returns.
+    cat > "$W_BIN/curl" <<CURLEOF
+#!/bin/sh
+echo "curl \$*" >> "$W_CURL_CALLS"
+url=""; k=0; w=0
+for a in "\$@"; do case "\$a" in -k) k=1 ;; -w) w=1 ;; http://*|https://*) url="\$a" ;; esac; done
+rc=52
+case "\$url" in
+  https://*) [ "$WD_CURL_UP" = "https" ] && { [ "\$k" = "1" ] && rc=0 || rc=60; } ;;
+  http://*)  [ "$WD_CURL_UP" = "http" ] && rc=0 ;;
+esac
+if [ "\$rc" = "0" ]; then
+  case "\$url" in */healthz) [ "\$w" = "1" ] && printf 200 || printf '{"ok":true}' ;; *) printf '<html></html>' ;; esac
+  exit 0
+fi
+[ "\$w" = "1" ] && printf 000
+exit \$rc
+CURLEOF
+  fi
+  chmod +x "$W_BIN/curl"
+  [ -n "${WD_CFG:-}" ] && printf '%s' "$WD_CFG" > "$W_HOME/.openclaw/openclaw.json"
   # docker must be absent so box detection lands on "mac".
   if [ "${WD_NO_OPENCLAW:-0}" != "1" ]; then
     cat > "$W_BIN/openclaw" <<OCEOF
@@ -317,12 +349,15 @@ OCEOF
   fi
 
   # Threshold 1 so one cycle is enough; cooldown 0 so nothing is suppressed.
+  local wd_extra=(WD_X=1)
+  [ "${WD_NO_PORT:-0}" = "1" ] || wd_extra+=(GATEWAY_WATCHDOG_PORT=18789)
+  [ -n "${WD_TLS_ENV:-}" ] && wd_extra+=(GATEWAY_WATCHDOG_TLS="$WD_TLS_ENV")
   env -i \
     HOME="$W_HOME" \
     PATH="$W_BIN:/usr/bin:/bin:/usr/sbin:/sbin" \
     GATEWAY_WATCHDOG_FAILS=1 \
     GATEWAY_WATCHDOG_COOLDOWN=0 \
-    GATEWAY_WATCHDOG_PORT=18789 \
+    "${wd_extra[@]}" \
     WD_LOADED="${WD_LOADED:-0}" \
     WD_LIST="${WD_LIST:-}" \
     "$WD_SH" "$WATCHDOG" > "$W_DIR/stdout" 2>&1
@@ -330,6 +365,7 @@ OCEOF
   WLOG="$(cat "$W_HOME/Library/Logs/openclaw/gateway-watchdog.log" 2>/dev/null || true)"
   WCALLS="$(cat "$W_LC")"
   WOC="$(cat "$W_OCCALLS" 2>/dev/null || true)"
+  WCURL="$(cat "$W_CURL_CALLS" 2>/dev/null || true)"
   return 0
 }
 
@@ -468,6 +504,95 @@ esac
 case "$WLOG" in
   *"MAINTENANCE LOCK HELD"*) ok "T12: the stand-down is logged" ;;
   *) bad "T12: the stand-down is silent" ;;
+esac
+
+# ---------------------------------------------------------------------------
+# T14..T21 - a TLS gateway (gateway.tls.enabled=true) is probed over https
+#
+# THE DEFECT. With TLS on, the gateway answers https ONLY and an http:// probe
+# gets an empty reply. The watchdog probed http:// only, read a healthy gateway
+# as dead, and kickstarted it every cooldown (one Mac fleet box: 2234 failed
+# probes, 1116 kickstarts), dropping live sessions.
+# ---------------------------------------------------------------------------
+TLS_ON='{"gateway":{"port":18789,"tls":{"enabled":true}}}'
+TLS_OFF='{"gateway":{"port":18789,"tls":{"enabled":false}}}'
+NO_TLS='{"gateway":{"port":18789}}'
+LIST_UP="1234 0 ai.openclaw.gateway"
+
+hdr "T14 - a healthy TLS gateway is NOT kickstarted"
+WD_CURL_UP=https WD_CFG="$TLS_ON" WD_LOADED=1 WD_PLIST=1 WD_LIST="$LIST_UP" run_watchdog t14
+[ "$WRC" -eq 0 ] && ok "T14: exited 0 (healthy)" || bad "T14: exited $WRC; log: $(printf '%s' "$WLOG" | tail -3)"
+case "$WCALLS" in
+  *"kickstart"*|*"bootstrap"*) bad "T14: a healthy TLS gateway was restarted. calls: $WCALLS" ;;
+  *) ok "T14: no kickstart and no bootstrap on a healthy TLS gateway" ;;
+esac
+case "$WCURL" in
+  *"-k "*"https://127.0.0.1:18789/healthz"*) ok "T14: probed https://127.0.0.1:18789/healthz with curl -k" ;;
+  *) bad "T14: no https -k probe. curl calls: $WCURL" ;;
+esac
+case "$WCURL" in
+  *" http://"*) bad "T14: a plain http:// probe was still issued against a TLS gateway. curl calls: $WCURL" ;;
+  *) ok "T14: no http:// probe against a TLS gateway" ;;
+esac
+case "$WLOG" in *"OK: gateway healthy"*) ok "T14: logged OK" ;; *) bad "T14: no OK line in the log" ;; esac
+
+hdr "T15 - a TLS gateway that is truly down IS still kickstarted"
+WD_CFG="$TLS_ON" WD_LOADED=1 WD_PLIST=1 WD_LIST="$LIST_UP" run_watchdog t15
+case "$WCALLS" in
+  *"kickstart -k gui/"*"ai.openclaw.gateway"*) ok "T15: a dead TLS gateway is kickstarted" ;;
+  *) bad "T15: a dead TLS gateway was NOT healed. calls: $WCALLS" ;;
+esac
+case "$WLOG" in
+  *"BAD: gateway probe failed"*"via https"*) ok "T15: the BAD line names the scheme that was probed" ;;
+  *) bad "T15: the BAD line does not name the scheme. log: $(printf '%s' "$WLOG" | grep BAD)" ;;
+esac
+
+hdr "T16 - a plain-http gateway (no tls key) is probed over http, no -k"
+WD_CURL_UP=http WD_CFG="$NO_TLS" WD_LOADED=1 WD_PLIST=1 WD_LIST="$LIST_UP" run_watchdog t16
+case "$WCALLS" in *"kickstart"*) bad "T16: a healthy http gateway was restarted" ;; *) ok "T16: healthy http gateway left alone" ;; esac
+case "$WCURL" in
+  *"https://"*|*" -k "*) bad "T16: https or -k used without gateway.tls.enabled. curl calls: $WCURL" ;;
+  *) ok "T16: only http:// probes, no -k" ;;
+esac
+
+hdr "T17 - gateway.tls.enabled=false stays on http"
+WD_CURL_UP=http WD_CFG="$TLS_OFF" WD_LOADED=1 WD_PLIST=1 WD_LIST="$LIST_UP" run_watchdog t17
+case "$WCALLS" in *"kickstart"*) bad "T17: restarted although http answers" ;; *) ok "T17: tls.enabled=false probes http and is healthy" ;; esac
+
+hdr "T18 - with no port override the config's gateway.port is probed"
+WD_NO_PORT=1 WD_CURL_UP=https WD_CFG='{"gateway":{"port":19001,"tls":{"enabled":true}}}' \
+  WD_LOADED=1 WD_PLIST=1 WD_LIST="$LIST_UP" run_watchdog t18
+case "$WCURL" in
+  *"https://127.0.0.1:19001/healthz"*) ok "T18: probed the configured port 19001, not the 18789 default" ;;
+  *) bad "T18: configured port not used. curl calls: $WCURL" ;;
+esac
+case "$WCALLS" in *"kickstart"*) bad "T18: restarted a healthy gateway" ;; *) ok "T18: healthy, not restarted" ;; esac
+
+hdr "T19 - GATEWAY_WATCHDOG_TLS=1 (VPS-host form, no config to read) probes https"
+WD_CURL_UP=https WD_TLS_ENV=1 WD_LOADED=1 WD_PLIST=1 WD_LIST="$LIST_UP" run_watchdog t19
+case "$WCALLS" in *"kickstart"*) bad "T19: restarted a healthy TLS gateway" ;; *) ok "T19: the env override probes https and is healthy" ;; esac
+WD_CURL_UP=http WD_TLS_ENV=0 WD_CFG="$TLS_ON" WD_LOADED=1 WD_PLIST=1 WD_LIST="$LIST_UP" run_watchdog t19b
+case "$WCALLS" in *"kickstart"*) bad "T19b: GATEWAY_WATCHDOG_TLS=0 did not override the config" ;; *) ok "T19b: GATEWAY_WATCHDOG_TLS=0 beats the config" ;; esac
+
+hdr "T20 - an unreadable config falls back to http (fail-soft, as before)"
+WD_CURL_UP=http WD_CFG='{not json' WD_LOADED=1 WD_PLIST=1 WD_LIST="$LIST_UP" run_watchdog t20
+case "$WCALLS" in *"kickstart"*) bad "T20: a malformed config broke the http probe" ;; *) ok "T20: malformed config probes http and is healthy" ;; esac
+
+hdr "T21 - MUTATION: with the TLS read neutered the same TLS box IS kickstarted"
+MUT="$SANDBOX/watchdog.notls.sh"
+python3 - "$WATCHDOG" "$MUT" <<'MUTPY'
+import sys
+s = open(sys.argv[1], encoding="utf-8").read()
+needle = 'if [ "$CFG_TLS" = "1" ]; then'
+assert s.count(needle) == 1, "TLS branch not found - update this mutation"
+open(sys.argv[2], "w", encoding="utf-8").write(s.replace(needle, "if false; then", 1))
+MUTPY
+WATCHDOG_REAL="$WATCHDOG"; WATCHDOG="$MUT"
+WD_CURL_UP=https WD_CFG="$TLS_ON" WD_LOADED=1 WD_PLIST=1 WD_LIST="$LIST_UP" run_watchdog t21
+WATCHDOG="$WATCHDOG_REAL"
+case "$WCALLS" in
+  *"kickstart -k"*) ok "T21: the old http-only probe kickstarts a healthy TLS gateway, so T14 measures the fix" ;;
+  *) bad "T21: the mutant did not reproduce the kickstart loop; T14 proves nothing" ;;
 esac
 
 # ---------------------------------------------------------------------------

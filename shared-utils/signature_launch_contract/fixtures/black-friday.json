@@ -3,13 +3,96 @@
   "launch_id": "black-friday-2026",
   "offer": {
     "name": "Black Friday Power Bundle",
-    "price_usd": 197,
+    "price_usd": 197.0,
     "currency": "USD",
     "payment_plans": false,
+    "packages": [
+      {
+        "offer_id": null,
+        "slot": "main",
+        "display_name": "Black Friday Power Bundle",
+        "price_id": null,
+        "amount_minor": 19700,
+        "amount_raw": 19700,
+        "currency": "USD",
+        "billing_type": null,
+        "billing_schedule": [],
+        "billing_schedule_raw": null,
+        "terms_source": null,
+        "native_product_id": null,
+        "entitlements": [],
+        "prerequisites": [],
+        "provenance": {
+          "source": "launch.offers",
+          "offer_index": 0,
+          "source_kind": null,
+          "source_ref": null,
+          "test_only": false,
+          "price_approval_status": null,
+          "amount_state": "provided"
+        }
+      },
+      {
+        "offer_id": null,
+        "slot": "upsell_1",
+        "display_name": "Fast Start Upgrade",
+        "price_id": null,
+        "amount_minor": 9700,
+        "amount_raw": 9700,
+        "currency": "USD",
+        "billing_type": null,
+        "billing_schedule": [],
+        "billing_schedule_raw": null,
+        "terms_source": null,
+        "native_product_id": null,
+        "entitlements": [],
+        "prerequisites": [],
+        "provenance": {
+          "source": "launch.offers",
+          "offer_index": 1,
+          "source_kind": null,
+          "source_ref": null,
+          "test_only": false,
+          "price_approval_status": null,
+          "amount_state": "provided"
+        }
+      },
+      {
+        "offer_id": null,
+        "slot": "downsell_1",
+        "display_name": "Small Start",
+        "price_id": null,
+        "amount_minor": 4700,
+        "amount_raw": 4700,
+        "currency": "USD",
+        "billing_type": null,
+        "billing_schedule": [],
+        "billing_schedule_raw": null,
+        "terms_source": null,
+        "native_product_id": null,
+        "entitlements": [],
+        "prerequisites": [],
+        "provenance": {
+          "source": "launch.offers",
+          "offer_index": 2,
+          "source_kind": null,
+          "source_ref": null,
+          "test_only": false,
+          "price_approval_status": null,
+          "amount_state": "provided"
+        }
+      }
+    ],
     "landing_url": "https://example.com/black-friday",
     "sales_page_url": "https://example.com/black-friday/offer",
     "checkout_url": "https://example.com/black-friday/order",
-    "thank_you_url": "https://example.com/black-friday/access"
+    "thank_you_url": "https://example.com/black-friday/access",
+    "billing_conversion": {
+      "owner": "launch_bridge",
+      "lane": "L14",
+      "requested": true,
+      "reason": "billing/route conversion belongs to the bridge; the planner keeps the approved minor units, currency and schedule verbatim"
+    }
   },
   "launch_calendar": {
     "launch_at": "2026-11-27T00:00:00-05:00",
@@ -23,18 +106,42 @@
       "last_call_at": "2026-11-30T20:00:00-05:00"
     }
   },
+  "event": {
+    "eligible": false,
+    "type": null,
+    "starts_at": null,
+    "sale_opens_at": "2026-11-27T00:00:00-05:00",
+    "sale_closes_at": "2026-12-01T00:00:00-05:00",
+    "reminders_planned": false,
+    "facts": {
+      "product_type": null,
+      "event_type": null
+    },
+    "reason": "no approved event facts: webinar, reminder, replay and no-show units are not planned"
+  },
+  "access": {
+    "resolved": true,
+    "destination": "https://example.com/black-friday/access",
+    "destination_source": "launch.thank_you_url",
+    "login_url": null,
+    "entitlements": [],
+    "base_entitlements": [],
+    "upsell_entitlements": {},
+    "prerequisites": [],
+    "deliver_access": true,
+    "delivery_choice": null,
+    "delivery": "access_link_email_and_text"
+  },
+  "warnings": [
+    "A2P 10DLC is not approved: texts stay drafts and cannot send",
+    "event units are not planned \u2014 no approved event facts: webinar, reminder, replay and no-show units are not planned"
+  ],
   "a2p_ready": false,
   "conversation_ai": {
     "requested": false,
     "mode": "none"
   },
   "pages": [
-    {
-      "id": "page_landing",
-      "kind": "landing",
-      "url": "https://example.com/black-friday",
-      "waits_for": []
-    },
     {
       "id": "page_sales",
       "kind": "sales",
@@ -45,25 +152,33 @@
       "id": "page_checkout",
       "kind": "checkout",
       "url": "https://example.com/black-friday/order",
-      "waits_for": ["page_sales"]
+      "waits_for": [
+        "page_sales"
+      ]
     },
     {
-      "id": "page_upsell_fast",
+      "id": "page_upsell_1",
       "kind": "upsell",
-      "url": "https://example.com/black-friday/upsell-fast",
-      "waits_for": ["page_checkout"]
+      "url": null,
+      "waits_for": [
+        "page_checkout"
+      ]
     },
     {
-      "id": "page_downsell_small",
+      "id": "page_downsell_1",
       "kind": "downsell",
-      "url": "https://example.com/black-friday/downsell-small",
-      "waits_for": ["page_upsell_fast"]
+      "url": null,
+      "waits_for": [
+        "page_upsell_1"
+      ]
     },
     {
       "id": "page_thank_you",
       "kind": "thank_you",
       "url": "https://example.com/black-friday/access",
-      "waits_for": ["page_downsell_small"]
+      "waits_for": [
+        "page_downsell_1"
+      ]
     }
   ],
   "email_sequences": [
@@ -73,7 +188,9 @@
       "provider": "skill50",
       "email_count": 5,
       "draft_only": true,
-      "waits_for": ["page_landing"]
+      "waits_for": [
+        "page_sales"
+      ]
     },
     {
       "id": "email_main_launch",
@@ -81,7 +198,9 @@
       "provider": "skill50",
       "email_count": 10,
       "draft_only": true,
-      "waits_for": ["page_sales"]
+      "waits_for": [
+        "page_sales"
+      ]
     },
     {
       "id": "email_doors_closing",
@@ -89,23 +208,31 @@
       "provider": "skill50",
       "email_count": 3,
       "draft_only": true,
-      "waits_for": ["email_main_launch"]
+      "waits_for": [
+        "email_main_launch"
+      ]
     },
     {
-      "id": "email_upsell_fast",
+      "id": "email_upsell_1",
       "kind": "upsell_followup",
       "provider": "skill50",
       "email_count": 2,
       "draft_only": true,
-      "waits_for": ["page_upsell_fast"]
+      "waits_for": [
+        "page_upsell_1"
+      ],
+      "entitlements": []
     },
     {
-      "id": "email_downsell_small",
+      "id": "email_downsell_1",
       "kind": "downsell_followup",
       "provider": "skill50",
       "email_count": 2,
       "draft_only": true,
-      "waits_for": ["page_downsell_small"]
+      "waits_for": [
+        "page_downsell_1"
+      ],
+      "entitlements": []
     },
     {
       "id": "email_abandoned_checkout",
@@ -113,7 +240,9 @@
       "provider": "skill50",
       "email_count": 3,
       "draft_only": true,
-      "waits_for": ["page_checkout"]
+      "waits_for": [
+        "page_checkout"
+      ]
     },
     {
       "id": "email_welcome_access",
@@ -121,13 +250,18 @@
       "provider": "skill50",
       "email_count": 2,
       "draft_only": true,
-      "waits_for": ["page_thank_you"]
+      "waits_for": [
+        "page_thank_you"
+      ],
+      "access_destination": "https://example.com/black-friday/access",
+      "entitlements": [],
+      "prerequisites": []
     }
   ],
   "text_sets": [
     {
-      "id": "text_keyword_opt_in",
-      "kind": "keyword_opt_in",
+      "id": "text_opt_in_confirmation",
+      "kind": "opt_in_confirmation",
       "messages": 1,
       "promotional": false,
       "draft_only": true,
@@ -138,7 +272,9 @@
         "end": "21:00",
         "timezone": "recipient_local"
       },
-      "waits_for": ["page_landing"]
+      "waits_for": [
+        "page_sales"
+      ]
     },
     {
       "id": "text_doors_open",
@@ -153,7 +289,9 @@
         "end": "21:00",
         "timezone": "recipient_local"
       },
-      "waits_for": ["page_sales"]
+      "waits_for": [
+        "page_sales"
+      ]
     },
     {
       "id": "text_last_call",
@@ -168,7 +306,9 @@
         "end": "21:00",
         "timezone": "recipient_local"
       },
-      "waits_for": ["page_sales"]
+      "waits_for": [
+        "email_doors_closing"
+      ]
     },
     {
       "id": "text_abandoned_checkout",
@@ -183,7 +323,9 @@
         "end": "21:00",
         "timezone": "recipient_local"
       },
-      "waits_for": ["page_checkout"]
+      "waits_for": [
+        "page_checkout"
+      ]
     },
     {
       "id": "text_access_link",
@@ -198,93 +340,138 @@
         "end": "21:00",
         "timezone": "recipient_local"
       },
-      "waits_for": ["page_thank_you"]
+      "waits_for": [
+        "page_thank_you"
+      ],
+      "access_destination": "https://example.com/black-friday/access",
+      "entitlements": [],
+      "prerequisites": []
     }
   ],
   "automations": [
     {
       "id": "auto_pre_launch",
       "family": "pre_launch",
-      "template": "cart-open-cart-close-launch-sequence",
-      "build_rail": "unknown",
+      "template": "launch-a/launch-a-prelaunch-window",
+      "build_rail": "skill44_engine",
       "draft_only": true,
       "trigger": {
         "type": "launch_calendar",
-        "detail": "teaser, countdown, doors open, Cyber Monday and last call switches"
+        "detail": "teaser, countdown, doors open and doors close switches drive tags and the email/text schedule (Black Friday: teaser, countdown, Cyber Monday, last call)"
       },
-      "waits_for": ["email_pre_launch", "email_main_launch", "text_doors_open"]
+      "waits_for": [
+        "email_pre_launch",
+        "email_main_launch",
+        "email_doors_closing",
+        "text_doors_open"
+      ]
     },
     {
       "id": "auto_opt_in",
       "family": "opt_in",
-      "template": "post-optin-multichannel-stack",
-      "build_rail": "unknown",
+      "template": "launch-a/launch-optin-register-login",
+      "build_rail": "skill44_engine",
       "draft_only": true,
       "trigger": {
         "type": "form_submitted",
-        "detail": "waitlist opt-in tags the contact and starts the promo calendar"
+        "detail": "waitlist / registration opt-in tags the contact and starts nurture"
       },
-      "waits_for": ["text_keyword_opt_in", "email_pre_launch"]
+      "waits_for": [
+        "text_opt_in_confirmation",
+        "email_pre_launch"
+      ]
     },
     {
       "id": "auto_post_sale",
       "family": "post_sale",
-      "template": "new",
-      "build_rail": "unknown",
+      "template": "launch-b/launch-post-sale-purchase",
+      "build_rail": "skill44_engine",
       "draft_only": true,
       "trigger": {
         "type": "payment_succeeded",
-        "detail": "access delivery and promotional sends stop"
+        "detail": "access + welcome, promotional sends stop, next follow-up starts"
       },
-      "waits_for": ["email_welcome_access", "text_access_link"]
+      "waits_for": [
+        "email_welcome_access",
+        "page_thank_you",
+        "text_access_link"
+      ],
+      "access_destination": "https://example.com/black-friday/access",
+      "entitlements": [],
+      "prerequisites": []
     },
     {
       "id": "auto_upsell_branch",
       "family": "upsell_downsell",
-      "template": "new",
-      "build_rail": "unknown",
+      "template": "launch-b/upsell-downsell-branch",
+      "build_rail": "skill44_engine",
       "draft_only": true,
       "trigger": {
         "type": "upsell_decision",
-        "detail": "bought routes to the upsell follow-up, declined routes to the downsell"
+        "detail": "bought or declined routes to the matching follow-up"
       },
-      "waits_for": ["email_upsell_fast", "email_downsell_small"]
+      "waits_for": [
+        "email_upsell_1",
+        "email_downsell_1"
+      ]
     },
     {
       "id": "auto_abandoned_checkout",
       "family": "abandoned_checkout",
-      "template": "abandoned-cart-multichannel-recovery",
-      "build_rail": "unknown",
+      "template": "launch-b/abandoned-checkout-recovery",
+      "build_rail": "skill44_engine",
       "draft_only": true,
       "trigger": {
         "type": "checkout_started_unpaid",
         "detail": "recovery stops on purchase"
       },
-      "waits_for": ["email_abandoned_checkout", "text_abandoned_checkout"]
+      "waits_for": [
+        "email_abandoned_checkout",
+        "text_abandoned_checkout"
+      ]
     },
     {
       "id": "auto_page_retargeting",
       "family": "page_retargeting",
-      "template": "behavioral-retargeting-page-visit-fire",
-      "build_rail": "unknown",
+      "template": "launch-b/launch-b-retarget-visited-sales-no-checkout",
+      "build_rail": "skill44_engine",
       "draft_only": true,
       "trigger": {
         "type": "page_visit_no_checkout",
         "detail": "sales page visit without checkout gets one nudge"
       },
-      "waits_for": ["page_sales"]
+      "waits_for": [
+        "page_sales"
+      ]
+    },
+    {
+      "id": "auto_onboarding_review",
+      "family": "onboarding_review",
+      "template": "launch-c/launch-c-onboarding-first-hour-day-week",
+      "build_rail": "skill44_engine",
+      "draft_only": true,
+      "trigger": {
+        "type": "purchase",
+        "detail": "first hour / day / week, then a review and referral ask"
+      },
+      "waits_for": [
+        "auto_post_sale"
+      ]
     },
     {
       "id": "auto_win_back",
       "family": "win_back",
-      "template": "re-engagement-winback-broadcast",
-      "build_rail": "unknown",
+      "template": "launch-c/launch-win-back-closed-no-purchase",
+      "build_rail": "skill44_engine",
       "draft_only": true,
       "trigger": {
         "type": "launch_closed_no_purchase",
         "detail": "re-engagement for the next offer"
       },
-      "waits_for": ["auto_post_sale", "text_last_call"]
+      "waits_for": [
+        "auto_post_sale",
+        "text_last_call"
+      ]
     }
   ]
 }

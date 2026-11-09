@@ -24,6 +24,7 @@ This craft cluster (`universal-sops/social-media-craft/`) is the execution playb
 |---|---|
 | **35** social-media-planner | "post my content this week" · "run my social" · "schedule posts" · "plan my social calendar" |
 | **57** social-media-in-a-box | "run my social week end-to-end" · "a week of content" · "a full week of posts across all platforms" |
+| **84** purple-billboard-blueprint | "run my purple billboard" · "a giveaway post with a keyword" · "prepare my 30 days of billboard posts" · "turn my post comments into conversations" |
 
 Dept-scoped: only the task department's craft is offered. Operate the owning skill per the SOPs in this cluster **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
 <!-- END CRAFT_INTENT_TRIGGERS_V1 -->

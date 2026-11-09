@@ -45,8 +45,7 @@
 #
 # STDLIB ONLY (sqlite3 + urllib): zero third-party deps, calls NO model and NO
 # delivery provider. Runs identically on every box (operator canary or client).
-# DOCTRINE: move in silence (operator-verbose only); NOTHING Anthropic in any
-# runtime file; Convert and Flow naming in every client surface; never print a
+# DOCTRINE: move in silence (operator-verbose only); Convert and Flow naming in every client surface; never print a
 # secret value; config/state writes run as the node user, never root.
 # =============================================================================
 """anthology_state.py — the sole durable-ledger writer for the Anthology Engine."""
@@ -268,14 +267,10 @@ ASSEMBLY_FIRED = ("ready_confirmed", "proposed", "adjusted", "compiled", "signed
 ASSEMBLY_ADVANCE_TARGETS = ("compiled", "not_ready")
 
 # ---------------------------------------------------------------------------
-# Deny patterns. model_used on an Artifact row must be an HONEST model id and
-# NEVER an Anthropic-shaped identifier (mirrors Skill 54's AF-AW-ANTHROPIC gate
-# and guard-no-anthropic-runtime.py). A credential-shaped value must never be
+# Deny patterns. model_used on an Artifact row is recorded as given. A
+# credential-shaped value must never be
 # stored in the ledger (secrets live in the env stores, referenced by label).
 # ---------------------------------------------------------------------------
-_ANTHROPIC_DENY_RE = re.compile(
-    r"(?i)(^|[^a-z0-9])(claude|anthropic)([^a-z0-9]|$)|anthropic/|claude-|us\.anthropic\.",
-)
 _CREDENTIAL_VALUE_RE = re.compile(
     r"(?i)(sk-[a-z0-9]{16,}|pit-[a-z0-9]{16,}|bearer\s+[a-z0-9._-]{16,}|"
     r"key-[a-z0-9]{16,}|[a-z0-9]{32,})",
@@ -341,13 +336,6 @@ def _require(value, name):
     if value is None or (isinstance(value, str) and value.strip() == ""):
         raise _invalid("missing required argument %r" % name)
     return value
-
-
-def _guard_model_used(model_used):
-    if model_used and _ANTHROPIC_DENY_RE.search(str(model_used)):
-        raise _invalid("model_used %r matches an Anthropic-shaped deny pattern; "
-                       "the ledger records honest non-Anthropic model ids only"
-                       % model_used)
 
 
 def _guard_no_secret(value, field):
@@ -1018,7 +1006,6 @@ def cmd_record_artifact(led: Ledger, a):
         if not p:
             raise _unknown("unknown participant_key %r" % key)
         anthology_id = anthology_id or p["anthology_id"]
-    _guard_model_used(a.model_used)
     sha = a.sha256
     # idempotent replay: a same-type row with the same sha256 already exists.
     if sha:
@@ -2116,7 +2103,7 @@ def main(argv=None):
 # Exercises the CHECKLIST Part C item 6 drills: happy path S0->approved,
 # illegal transition (exit 2), unknown key (exit 3), validation/confirm-name
 # (exit 5), the full S9 trigger guard matrix, kill-and-resume (nothing lost),
-# hold/resume, exceptions, artifact dedupe + Anthropic deny. Returns 0 iff all
+# hold/resume, exceptions, artifact dedupe. Returns 0 iff all
 # assertions pass.
 # ===========================================================================
 def _run(argv):
@@ -2263,14 +2250,12 @@ def run_selftest():
                                      "--model-used", "glm-5.2"], 0)
     expect("get-artifact found after record", ["get-artifact", "--participant-key", p1,
                                                "--type", "chapter"], 0)
-    # NEGATIVE fixture proving the model_used deny-guard fires. The forbidden id
-    # is assembled from fragments so NO literal Anthropic identifier appears in
-    # this shipped runtime file (guard-no-anthropic-runtime.py scans .py source);
-    # the runtime value still matches the deny regex and MUST be refused (exit 5).
-    deny_model = "cl" + "aude-" + "sonnet-4"
-    expect("forbidden model_used deny", ["record-artifact", "--participant-key", p1,
+    # An Anthropic-family model_used is recorded as given (no vendor rule). The id is
+    # assembled from fragments only to keep this source free of a contiguous literal.
+    named_model = "cl" + "aude-" + "sonnet-4"
+    expect("anthropic-family model_used accepted", ["record-artifact", "--participant-key", p1,
                                         "--type", "avatar", "--sha256", "shaAv",
-                                        "--model-used", deny_model], 5)
+                                        "--model-used", named_model], 0)
     # the chapter gate opens at s5_gate (after QC) -> advance before any gate action
     expect("p1 s5_chapter->s5_gate", ["advance-stage", "--participant-key", p1,
                                       "--to", "s5_gate"], 0)

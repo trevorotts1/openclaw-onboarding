@@ -3,12 +3,14 @@
   "classification_doc": "docs/E10-SHARED-SCRIPT-DRIFT-CLASSIFICATION.md",
   "files": {
     "58-podcast/alert-dedup.py": {
-      "line_count": 844,
+      "line_count": 1173,
       "present": true,
-      "sha256": "f810f0c451a388f93ac38e5ddef5cf52c4b8ea6bb8d3633acecdf61df622483a",
+      "sha256": "32681cf212fca77e4cc263f4a1645455f43539af4194d6de13f3bf759ae209ec",
       "top_level_names": [
         "_StateLock",
         "_affected_count",
+        "_backoff_delay",
+        "_box_escalation_chat_id",
         "_build_parser",
         "_build_send_argv",
         "_daily",
@@ -16,10 +18,13 @@
         "_default_state_dir",
         "_emit",
         "_emit_error",
+        "_empty_retry",
         "_empty_state",
         "_finalize_status_send",
         "_founder_account",
         "_gateway_send",
+        "_get_retry",
+        "_is_chat_id",
         "_iso",
         "_load_config",
         "_load_state",
@@ -32,6 +37,9 @@
         "_msg_recovery",
         "_msg_still_down",
         "_now",
+        "_park_lock_path",
+        "_park_message",
+        "_park_path",
         "_parse_iso",
         "_perform_send",
         "_queue_digest",
@@ -41,9 +49,11 @@
         "_resolve_founder_target",
         "_root_warn",
         "_save_state",
+        "_send_with_retry_policy",
         "_state_path",
         "_track_episode",
         "_which",
+        "classify_failure",
         "cmd_flush_digest",
         "cmd_raise",
         "cmd_recover",
@@ -54,7 +64,7 @@
     "58-podcast/delivery_report.py": {
       "line_count": 487,
       "present": true,
-      "sha256": "9ac2b4e4e00aa4ede205ba39d1d29ad5afa38718d3ea48d6c822004863c35e54",
+      "sha256": "9b494a50d716ab980a25338a0e9a05267000ae76afa2381d8a8bec4cc0f0700e",
       "top_level_names": [
         "_checkbox",
         "_fmt",
@@ -74,9 +84,9 @@
       ]
     },
     "58-podcast/guard-cron-inventory.py": {
-      "line_count": 755,
+      "line_count": 807,
       "present": true,
-      "sha256": "541110d51125ccb581465eb0021f7990289742c00361fabe5e0ea1768397b2ea",
+      "sha256": "dcc4a4fed9b96375bacfc6d3fb7beb8c3bb8a1e42d51b154564952a91f19ce3c",
       "top_level_names": [
         "_emit",
         "_field_count",
@@ -90,40 +100,15 @@
         "audit_static",
         "entry_announces",
         "entry_client",
-        "entry_is_box_scheduler",
         "entry_is_heartbeat",
         "entry_is_poller",
         "entry_name",
+        "entry_names_dead_daemon",
         "entry_schedule",
         "fires_per_day_bound",
         "in_namespace",
         "main",
         "normalize_inventory",
-        "self_test"
-      ]
-    },
-    "58-podcast/guard-no-anthropic-runtime.py": {
-      "line_count": 730,
-      "present": true,
-      "sha256": "ea53410e5d7c8f18fd1527db3a347f4674f460138008f316220c5f2d00a84261",
-      "top_level_names": [
-        "_entry_provider_tier",
-        "_entry_thinking",
-        "_extract_models_block",
-        "_find_routing_config",
-        "_identity_blob",
-        "_iter_files",
-        "_load_allowlist",
-        "_load_config",
-        "_model_id",
-        "_provider_tier",
-        "_scan_one",
-        "assert_routing",
-        "main",
-        "run",
-        "scan_anthropic",
-        "scan_dashboard",
-        "scan_targets",
         "self_test"
       ]
     },
@@ -164,23 +149,20 @@
       ]
     },
     "59-anthology/delivery_report.py": {
-      "line_count": 874,
+      "line_count": 744,
       "present": true,
-      "sha256": "31c71ac562e51bc09f078501f51fa752ef91a4165eb63f637fbfbf4c0f253627",
+      "sha256": "8b77fb8ce6dfd649dad045d15c189ce7ef63a226647f434b30c00d9e5c2564c0",
       "top_level_names": [
-        "AnthropicIdentifierError",
         "_Args",
         "_BadInput",
         "_cert_core",
         "_dispatch_rc",
         "_env_first",
-        "_iter_caller_values",
         "_load_input",
         "_mask",
         "_require",
         "_safe_key",
         "_write_json",
-        "assert_no_anthropic_values",
         "build_delivery_report",
         "build_parser",
         "build_process_certificate",
@@ -228,24 +210,6 @@
         "main",
         "self_test",
         "sweep"
-      ]
-    },
-    "59-anthology/guard-no-anthropic-runtime.py": {
-      "line_count": 524,
-      "present": true,
-      "sha256": "8b9edc8401c23afee8cc9bc59f9841c22a0eb70a097b107de94e8da6b14859e8",
-      "top_level_names": [
-        "_is_enforcement_context",
-        "_strip_line",
-        "_value_hit",
-        "collect_files",
-        "default_engine_root",
-        "deny",
-        "evaluate",
-        "main",
-        "scan_file",
-        "scan_paths",
-        "self_test"
       ]
     }
   }

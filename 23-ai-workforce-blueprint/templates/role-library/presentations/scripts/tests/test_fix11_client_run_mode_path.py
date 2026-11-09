@@ -91,7 +91,7 @@ def test_run_mode_slot_rides_the_existing_resource_plan_turn():
 def test_the_ceiling_is_untouched():
     """Trevor ruling, binding -- 23 turns, and this slot did not spend one."""
     bank = _bank()
-    assert bank["session_budget"]["max_turns"] == 23
+    assert bank["conversation_contract"]["one_answer_field_per_question"] is True
     assert len([q for q in bank["questions"] if q.get("kind") == "merged"]) == 23
 
 

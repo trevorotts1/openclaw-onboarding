@@ -1,0 +1,1397 @@
+{
+  "schema": "blackceo.s75.source-reconciliation/v1",
+  "unit": "S75-T01",
+  "generated_at": "2026-10-24T20:50:17Z",
+  "mode": "READ_ONLY_RECONCILIATION",
+  "product_files_edited": false,
+  "branch_or_worktree_mutated": false,
+  "derivation": "Reuses evidence/S75-T01-reconciliation.json content; all three flavor heads re-read live at 2026-10-24T20:50:17Z with git rev-parse origin/main plus log -1 and reflog validation, recorded per flavor. Prior attempt's CC head (a3b43318944132f0847f33f395dcb0ea38ba30a7) was corrected to the live value.",
+  "flavors": {
+    "ONB": {
+      "repository": "trevorotts1/openclaw-onboarding",
+      "clone": "<PATH>/openclaw-onboarding",
+      "skill_root": "75-drama-song-ad-factory",
+      "head_reverified": true,
+      "origin_main_head": "f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b",
+      "origin_main_subject": "Merge pull request #2543 from trevorotts1/batch/council-route-1055",
+      "origin_main_committed": "2026-10-24T16:29:09-04:00",
+      "head_moved_since_prior_census": "569eee7a79397d34275b0bb0da22a6349bd47f2d -> f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b",
+      "command": "git -C <PATH>/openclaw-onboarding rev-parse origin/main",
+      "command_output": "f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b",
+      "log_command": "git -C <PATH>/openclaw-onboarding log -1 --format='%H|%cI|%s' origin/main",
+      "log_command_output": "f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b|2026-10-24T16:29:09-04:00|Merge pull request #2543 from trevorotts1/batch/council-route-1055",
+      "reflog_command": "git -C <PATH>/openclaw-onboarding reflog show origin/main --date=iso",
+      "reflog_latest_entry": "f0a9c80e0 refs/remotes/origin/main@{2026-10-24 16:29:15 -0400}: fetch origin main --quiet: fast-forward",
+      "read_at": "2026-10-24T20:50:17Z",
+      "observed_at": "2026-10-24T20:50:17Z",
+      "reverified_this_session": true,
+      "reverified_at": "2026-10-24T20:50:17Z",
+      "validation_evidence": "rev-parse origin/main run at 2026-10-24T20:50:17Z returned f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b; reflog latest entry is \"f0a9c80e0 refs/remotes/origin/main@{2026-10-24 16:29:15 -0400}: fetch origin main --quiet: fast-forward\", which predates 2026-10-24T20:50:17Z, so the value was current at the instant of this read. Previous reflog entry: \"569eee7a7 refs/remotes/origin/main@{2026-10-24 16:09:42 -0400}: fetch origin --quiet: fast-forward\".",
+      "observation_semantics": "POINT-IN-TIME OBSERVATION, not a permanent truth. origin/main advances whenever any session fetches or pushes; this value is valid only at read_at and must be re-read before being relied on again.",
+      "head_unchanged_since_prior_census": true
+    },
+    "N999": {
+      "repository": "trevorotts1/999-setup",
+      "clone": "<PATH>/.openclaw/persist-home/999-setup",
+      "skill_root": ".claude/skills/drama-song-ad-factory",
+      "head_reverified": true,
+      "origin_main_head": "6e9d69def27dd4adfffbe7a03ccf0e47d871f03b",
+      "origin_main_subject": "Merge pull request #321 from trevorotts1/batch/pbb-183-t44",
+      "origin_main_committed": "2026-10-24T16:28:47-04:00",
+      "head_moved_since_prior_census": "65b8b484a034e615cd98d5ebccb61524058c9e43 -> 6e9d69def27dd4adfffbe7a03ccf0e47d871f03b",
+      "command": "git -C <PATH>/.openclaw/persist-home/999-setup rev-parse origin/main",
+      "command_output": "6e9d69def27dd4adfffbe7a03ccf0e47d871f03b",
+      "log_command": "git -C <PATH>/.openclaw/persist-home/999-setup log -1 --format='%H|%cI|%s' origin/main",
+      "log_command_output": "6e9d69def27dd4adfffbe7a03ccf0e47d871f03b|2026-10-24T16:28:47-04:00|Merge pull request #321 from trevorotts1/batch/pbb-183-t44",
+      "reflog_command": "git -C <PATH>/.openclaw/persist-home/999-setup reflog show origin/main --date=iso",
+      "reflog_latest_entry": "6e9d69def refs/remotes/origin/main@{2026-10-24 16:29:27 -0400}: fetch origin main --quiet: fast-forward",
+      "read_at": "2026-10-24T20:50:17Z",
+      "observed_at": "2026-10-24T20:50:17Z",
+      "reverified_this_session": true,
+      "reverified_at": "2026-10-24T20:50:17Z",
+      "validation_evidence": "rev-parse origin/main run at 2026-10-24T20:50:17Z returned 6e9d69def27dd4adfffbe7a03ccf0e47d871f03b; reflog latest entry is \"6e9d69def refs/remotes/origin/main@{2026-10-24 16:29:27 -0400}: fetch origin main --quiet: fast-forward\", which predates 2026-10-24T20:50:17Z, so the value was current at the instant of this read. Previous reflog entry: \"317bb2417 refs/remotes/origin/main@{2026-10-24 16:18:59 -0400}: fetch origin main: fast-forward\".",
+      "observation_semantics": "POINT-IN-TIME OBSERVATION, not a permanent truth. origin/main advances whenever any session fetches or pushes; this value is valid only at read_at and must be re-read before being relied on again.",
+      "head_unchanged_since_prior_census": true
+    },
+    "CC": {
+      "repository": "trevorotts1/blackceo-command-center",
+      "clone": "<PATH>/blackceo-command-center",
+      "head_reverified": true,
+      "origin_main_head": "7816a3c560ff2c50126e38b139ad644c472b99ac",
+      "origin_main_subject": "Merge pull request #597 from trevorotts1/pb/PBB-094/t03-inventory",
+      "origin_main_committed": "2026-10-24T16:28:00-04:00",
+      "ledger_state": "canonical_targets.CC = UNVERIFIED_T01_CONDITIONAL; observed, not ledger-adopted",
+      "command": "git -C <PATH>/blackceo-command-center rev-parse origin/main",
+      "command_output": "7816a3c560ff2c50126e38b139ad644c472b99ac",
+      "log_command": "git -C <PATH>/blackceo-command-center log -1 --format='%H|%cI|%s' origin/main",
+      "log_command_output": "7816a3c560ff2c50126e38b139ad644c472b99ac|2026-10-24T16:28:00-04:00|Merge pull request #597 from trevorotts1/pb/PBB-094/t03-inventory",
+      "reflog_command": "git -C <PATH>/blackceo-command-center reflog show origin/main --date=iso",
+      "reflog_latest_entry": "7816a3c560 refs/remotes/origin/main@{2026-10-24 16:32:20 -0400}: fetch origin --quiet: fast-forward",
+      "read_at": "2026-10-24T20:50:17Z",
+      "observed_at": "2026-10-24T20:50:17Z",
+      "reverified_this_session": true,
+      "reverified_at": "2026-10-24T20:50:17Z",
+      "validation_evidence": "rev-parse origin/main run at 2026-10-24T20:50:17Z returned 7816a3c560ff2c50126e38b139ad644c472b99ac; reflog latest entry is \"7816a3c560 refs/remotes/origin/main@{2026-10-24 16:32:20 -0400}: fetch origin --quiet: fast-forward\", which predates 2026-10-24T20:50:17Z, so the value was current at the instant of this read. Previous reflog entry: \"a3b4331894 refs/remotes/origin/main@{2026-10-24 13:21:11 -0400}: fetch origin --quiet: fast-forward\".",
+      "observation_semantics": "POINT-IN-TIME OBSERVATION, not a permanent truth. origin/main advances whenever any session fetches or pushes; this value is valid only at read_at and must be re-read before being relied on again.",
+      "head_moved_since_prior_census": "a3b43318944132f0847f33f395dcb0ea38ba30a7 -> 7816a3c560ff2c50126e38b139ad644c472b99ac",
+      "prior_census_correction": "Prior census recorded a3b43318944132f0847f33f395dcb0ea38ba30a7 with head_reverified=true. reflog proves the fast-forward to 7816a3c560ff2c50126e38b139ad644c472b99ac landed 2026-10-24 16:32:20 -0400, BEFORE that file was written, so the prior value was already stale when stamped re-verified. Corrected here: 7816a3c560ff2c50126e38b139ad644c472b99ac read live at 2026-10-24T20:50:17Z."
+    }
+  },
+  "active_s75_branches": {
+    "repo": "ONB",
+    "count_total_refs_matching_s75": 99,
+    "count_unmerged_active": 47,
+    "count_merged_into_origin_main": 52,
+    "merge_test": "git merge-base --is-ancestor <branch-head> f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b",
+    "branches": [
+      {
+        "ref": "batch/s75-b1-finish",
+        "head": "7bd36b01cf03c741e1dd9581523fa89fcc180df1",
+        "subject": "Merge S75-T25 (5635e47fd5831136588c0a12e33795704c18c429) into batch/s75-b1",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/character_bible/identity.py",
+          "75-drama-song-ad-factory/scripts/core/character_bible/test_identity_s75_t05.py",
+          "75-drama-song-ad-factory/scripts/core/character_library/notion_adapter.py",
+          "75-drama-song-ad-factory/scripts/core/character_library/test_notion_discovery.py",
+          "75-drama-song-ad-factory/scripts/core/music/__init__.py",
+          "75-drama-song-ad-factory/scripts/core/music/constraints.py",
+          "75-drama-song-ad-factory/scripts/core/music/word_fit.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/__init__.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/catalog.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/acoustic-pop.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/afro-soul.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/alternative-rnb.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/country-pop.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/folk-storytelling.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes_s75_t22.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_catalog_s75t18.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_rap_recipes_t20.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_recipes_s75_t19.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_recipes_s75_t22.py",
+          "75-drama-song-ad-factory/tests/fixtures/duration_and_lipsync.json",
+          "75-drama-song-ad-factory/tests/fixtures/notion_discovery.json",
+          "75-drama-song-ad-factory/tests/test_music_constraints_t25.py"
+        ],
+        "changed_file_count": 24
+      },
+      {
+        "ref": "batch/s75-b1",
+        "head": "7bd36b01cf03c741e1dd9581523fa89fcc180df1",
+        "subject": "Merge S75-T25 (5635e47fd5831136588c0a12e33795704c18c429) into batch/s75-b1",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/character_bible/identity.py",
+          "75-drama-song-ad-factory/scripts/core/character_bible/test_identity_s75_t05.py",
+          "75-drama-song-ad-factory/scripts/core/character_library/notion_adapter.py",
+          "75-drama-song-ad-factory/scripts/core/character_library/test_notion_discovery.py",
+          "75-drama-song-ad-factory/scripts/core/music/__init__.py",
+          "75-drama-song-ad-factory/scripts/core/music/constraints.py",
+          "75-drama-song-ad-factory/scripts/core/music/word_fit.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/__init__.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/catalog.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/acoustic-pop.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/afro-soul.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/alternative-rnb.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/country-pop.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/folk-storytelling.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes_s75_t22.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_catalog_s75t18.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_rap_recipes_t20.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_recipes_s75_t19.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_recipes_s75_t22.py",
+          "75-drama-song-ad-factory/tests/fixtures/duration_and_lipsync.json",
+          "75-drama-song-ad-factory/tests/fixtures/notion_discovery.json",
+          "75-drama-song-ad-factory/tests/test_music_constraints_t25.py"
+        ],
+        "changed_file_count": 24
+      },
+      {
+        "ref": "batch/s75-b5-prep",
+        "head": "dd3881cff1c917e604385f03fe85ebf0a32cbd9d",
+        "subject": "Merge branch 'unit/S75-B5-R10' into batch/s75-b5-prep",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/references/price-menu.md",
+          "75-drama-song-ad-factory/references/stage-runbook.md",
+          "75-drama-song-ad-factory/scripts/core/heartbeat/run_watch.py",
+          "75-drama-song-ad-factory/scripts/core/heartbeat/test_run_watch.py",
+          "75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py",
+          "75-drama-song-ad-factory/scripts/core/intake_preflight/test_continuity_reconciler_b5.py",
+          "75-drama-song-ad-factory/scripts/core/intake_preflight/test_next_decision_hold_b5.py",
+          "75-drama-song-ad-factory/scripts/core/intake_preflight/test_stage_machine_w02u1.py",
+          "75-drama-song-ad-factory/scripts/core/kie_dispatch/kie_dispatch.py",
+          "75-drama-song-ad-factory/scripts/core/kie_dispatch/model_lock.py",
+          "75-drama-song-ad-factory/scripts/core/kie_dispatch/test_attempt_identity_b5.py",
+          "75-drama-song-ad-factory/scripts/core/kie_dispatch/test_kie_cli_state_store_b5.py",
+          "75-drama-song-ad-factory/scripts/core/kie_dispatch/test_model_identity_h3.py",
+          "75-drama-song-ad-factory/scripts/core/prompt_templates/make_h3_request.py",
+          "75-drama-song-ad-factory/scripts/core/prompt_templates/test_make_h3_request.py",
+          "75-drama-song-ad-factory/scripts/core/song_choices/song_choices.py",
+          "75-drama-song-ad-factory/scripts/core/song_transports.py",
+          "75-drama-song-ad-factory/scripts/core/state_store.py",
+          "75-drama-song-ad-factory/scripts/qc_no_blur/detect.py",
+          "75-drama-song-ad-factory/scripts/qc_no_blur/test_smooth_content_not_fill.py"
+        ],
+        "changed_file_count": 20
+      },
+      {
+        "ref": "ds/s75-a04-a07-broader-selftest",
+        "head": "ff95cbf97aabf839a746ec3b99d7efe8601c7d5c",
+        "subject": "test(w10-canary): SC08 product-owned assertion, SC38 scope note, a04/a07 selftests",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "tests/w10-canary/scenarios/a04_versioned_visibility.py",
+          "tests/w10-canary/scenarios/a07_opening_sync_duration.py",
+          "tests/w10-canary/scenarios/sc08_crash_conductor.py",
+          "tests/w10-canary/scenarios/sc38_user_cancellation.py"
+        ],
+        "changed_file_count": 4
+      },
+      {
+        "ref": "ds/s75-a04-a07-wider-selftest",
+        "head": "a08fa68b966be20dd387527ce97e240a53a029d9",
+        "subject": "test(w10-canary): widen a04/a07 mutation inventories to 11/18 product-owned defects",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "tests/w10-canary/scenarios/a04_versioned_visibility.py",
+          "tests/w10-canary/scenarios/a07_opening_sync_duration.py"
+        ],
+        "changed_file_count": 2
+      },
+      {
+        "ref": "fix/s75-restore-minimax-h3",
+        "head": "3fcfee80b1139a9778981bc57299a45fd9ec8452",
+        "subject": "Merge remote-tracking branch 'origin/main' into fix/s75-restore-minimax-h3",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-8m",
+        "head": "06cd36d615296fc4c48257e8597d79442fb0d7f3",
+        "subject": "docs(w10-canary): rewrite vector provenance as an ordered, coherent account",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-8n",
+        "head": "418ae8c043e046247b1832b60d8f7fe7ef4c98a5",
+        "subject": "Merge branch 'main' into batch/s75-8n",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-b6-prep",
+        "head": "93e0ce1221195a63b7cf2bb464f83df279a89893",
+        "subject": "tools: restore testsweep.sh verbatim (instrument restored from transcript)",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-b7-prep",
+        "head": "ff1923b6c9f64458a43138e5d6296f9a4c27239d",
+        "subject": "batch-7 prep: wire capability_control into dispatch admission (D30)",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-b8-prep",
+        "head": "4ea837e21ad342e0ad135a2aafe2c742086c1b2a",
+        "subject": "batch-prep: G3 skill-version bump for 75-drama-song-ad-factory (batch 8a)",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-b8b-prep",
+        "head": "5f65ae0726267cdf1a4be7bb63a0df1effb8c358",
+        "subject": "batch-prep: G3 skill-version bump for 75-drama-song-ad-factory (batch 8b)",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-b8c-prep",
+        "head": "81d033f5ad5036d574ae313f6d854e0ca5e4c187",
+        "subject": "Merge unit/S75-B7-final-recap e2ec9b4ac (seed Gate-4 sources in the two storyboard_director tests) into batch/s75-b8c-prep",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-b8d-prep",
+        "head": "498c715aa66533f409fc50648fe0fd3fe0e35335",
+        "subject": "Merge origin/main 21b17060 (batch 8e: A-row runner, A12 runtime proof, root version roll v27.1.64) into batch/s75-b8d-prep",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-b8e-prep",
+        "head": "5c1d97905b00f9aeb53c89afa922d73fcbd2c1e0",
+        "subject": "batch-prep: G3 version bump v27.1.63 -> v27.1.64 + CHANGELOG for batch 8e",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-b8f-prep",
+        "head": "91b56556026a16cc06e79aea72fb22b4e5026a91",
+        "subject": "batch-8f: land the pin-ancestry acceptance gate",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-b8g-prep",
+        "head": "939da27df52f2665ab5ff087eb41c0d3234bf2ae",
+        "subject": "batch-8g: make the A08 row runnable and its progress visible",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-b8h-prep",
+        "head": "d59596e31620a40ff51b0e04e83005b23669d4f7",
+        "subject": "A12: prove the loaded module, not just the on-disk bytes",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-b8j-prep",
+        "head": "ff6fd607506ce0cba990ec4d6be59544ca802c6f",
+        "subject": "batch-8j: make A12 runnable, and stop it crediting its own failure message",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-b8k-prep",
+        "head": "3917aec7c4226e3fab3a6773c79e12a0051861f6",
+        "subject": "skill75: bump to v2.9.94 in BOTH skill-version.txt and SKILL.md",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-b8l-prep",
+        "head": "827f2ac5c651ee65f8b0066cb47050c88ce29919",
+        "subject": "batch-8l: keep A08's install trees so A12 can prove what loaded",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-intake-contract",
+        "head": "7bc61454ab13a8d9d89c8a4684c97af387af7974",
+        "subject": "test(75): confirm preference fixtures through rendered intake turns",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-product-fixes",
+        "head": "d04b6f0575800e0717dd273a6730f8ea69de5419",
+        "subject": "fix(skill75): sc08 reads the product's receipts verdict, sc38 scopes its claim, a04/a07 gain selftests",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-w10-guard-harnesses",
+        "head": "2d0fc53da57b6631e4deae0a509fe94b6f3498bd",
+        "subject": "test(w10): make the root ENV vars as authoritative as the flags; state the HOME bypass",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75-w10-harnesses",
+        "head": "f427cc53eea0e15daddb92cf5ddf5504c111c6b2",
+        "subject": "Merge branch 'fix/s75-w10-sc08-sc32' into batch/s75-w10-harnesses",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/batch/s75x-w6-units",
+        "head": "64a60ced3367548753162aabb649d2bfd6937501",
+        "subject": "Merge branch 'main' into batch/s75x-w6-units",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/fix/s75-a01-nine-root-msg",
+        "head": "49b7f0de879cb8ed67d15eee490e61e517f95f59",
+        "subject": "A01: name the missing 999 root instead of \"head None\"",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "tests/w10-canary/run_a_rows.py"
+        ],
+        "changed_file_count": 1
+      },
+      {
+        "ref": "origin/fix/s75-alias-bootstrap",
+        "head": "66d0abc4777708d65da003f8f5db582f6cee7cf4",
+        "subject": "docs(skill75): describe client-selected routes without example pins",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/fix/s75-capability-before-credentials",
+        "head": "52f07c635fb66a6f464200689926200d5c55350e",
+        "subject": "skill 75: parse capability.json as JSON, not as a line regex (v2.9.106)",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/fix/s75-governed-production",
+        "head": "79432759e29f882de0dca70e479274e4523a7e83",
+        "subject": "test(75): prove stage completion with current artifact decisions",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/fix/s75-lane1-approval-context",
+        "head": "27961d4ba8d74935265defbd64fe4dfff07d77c8",
+        "subject": "chore(75): bump skill version v2.9.100 -> v2.9.101 for G3",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/fix/s75-lane2-recovery-classification",
+        "head": "e86606230503bcf08be0307cfd5fa225adc615d9",
+        "subject": "chore(75): bump skill version v2.9.99 -> v2.9.100 for G3",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/fix/s75-lane3-recovery-wiring",
+        "head": "fe48db5ab48055918f336e9e6feae102425c37e4",
+        "subject": "chore(skill75): bump skill version to v2.9.102",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/fix/s75-motion-residual-shift",
+        "head": "7446684b26583127b7359da740308094699c9dd0",
+        "subject": "chore(75): bump skill version v2.9.98 -> v2.9.99 for G3",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/fix/s75-pin-refresh-3",
+        "head": "7189d205e52ef5d1756c581f1201c13bb853f7d5",
+        "subject": "chore(75): refresh source vector pin to post-batch-8l main 1d5e7611",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/fix/s75-restore-minimax-h3",
+        "head": "3fcfee80b1139a9778981bc57299a45fd9ec8452",
+        "subject": "Merge remote-tracking branch 'origin/main' into fix/s75-restore-minimax-h3",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/fix/s75-w10-sc01-harness",
+        "head": "e9b63458a5a339ea201b114dfd0aa33e7cfdd8ca",
+        "subject": "Merge branch 'main' into fix/s75-w10-sc01-harness",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/s75/batch-wm-u1-b3",
+        "head": "5c4614d6019176ce0c3858248bb77cb482a5c06f",
+        "subject": "batch-prep: G3 skill-version bump for 75-drama-song-ad-factory (batch 3 content change)",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/s75/batch-wm-u1-b4",
+        "head": "9d20edb8bb15d66d7dcda511bcebabebca804894",
+        "subject": "batch-prep: G3 skill-version bump for 75-drama-song-ad-factory (batch 4 content change)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/SKILL.md",
+          "75-drama-song-ad-factory/scripts/core/intake_preflight/preflight.py",
+          "75-drama-song-ad-factory/scripts/core/intake_preflight/test_intake_preflight.py",
+          "75-drama-song-ad-factory/scripts/core/intake_preflight/test_preflight_capability_derivation.py",
+          "75-drama-song-ad-factory/skill-version.txt"
+        ],
+        "changed_file_count": 5
+      },
+      {
+        "ref": "origin/s75/batch-wm-u1-b4b",
+        "head": "2b1ba0230762578a65c8c747b4d5fed9a4ce5033",
+        "subject": "batch-prep: G3 skill-version bump for 75-drama-song-ad-factory (batch 4b content change: W07-U3 only)",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/s75/batch-wm-u1",
+        "head": "67eef97be6dcfe468210f678fc4076fa9eba7a0f",
+        "subject": "carried fix (batch-2 discipline): test_expired_lease_fenced_reclaim must not wait on a wall clock",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/s75/batch5",
+        "head": "f598387236e066c028d69ebe9e65a62c6188c338",
+        "subject": "BATCH-5: merge main 482882c6 (PR #2444 fold) and enforce the #2414 disposition",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-A01-mapping-integrity",
+        "head": "7f64c9e196395fb77f8e2ff7fcf076134024df90",
+        "subject": "Merge main 7b9aaa88 into unit/S75-A01-mapping-integrity (binding-preserving base update; mapping content unchanged)",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-A04-scenario-runners",
+        "head": "aaeef9ab8c80e82942fe43e6edab1664a93caea9",
+        "subject": "Add runnable harnesses for acceptance rows A04-A07, A09 and extend A02/A03",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-A08-combined",
+        "head": "e50bbce3efa9f1a351f953617ef9254e4052f7f2",
+        "subject": "tests/w10-canary: root-scoped installer-stamp allow-list, optional stamp",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-A08-real-canaries",
+        "head": "59e893d674f8ab95390429a383c1792d67888be7",
+        "subject": "S75-A08: close two fail-open holes in the canary manifest checks",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "tests/w10-canary/canary_common.py",
+          "tests/w10-canary/clean_install_canary.py",
+          "tests/w10-canary/upgrade_canary.py"
+        ],
+        "changed_file_count": 3
+      },
+      {
+        "ref": "origin/unit/S75-A08b-real-upgrade",
+        "head": "adb6a71a6c95b961e8e4233570f2cdfc31cae212",
+        "subject": "S75-A08b: resolve the install root the installer really writes",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "tests/w10-canary/upgrade_canary.py"
+        ],
+        "changed_file_count": 1
+      },
+      {
+        "ref": "origin/unit/S75-a12-keep-trees-fix",
+        "head": "636992889957f631d39ee27bdbc1faf966eef175",
+        "subject": "A12: keep A08's trees, and refuse by name before the harness ever runs",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-a12-keep-trees",
+        "head": "83f98f7501d3a8bc13cd5bcb2c323864ce5683eb",
+        "subject": "S75 A12: keep A08 install trees and refuse dangling manifests",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "tests/w10-canary/run_a_rows.py"
+        ],
+        "changed_file_count": 1
+      },
+      {
+        "ref": "origin/unit/S75-A12-loaded-source",
+        "head": "3236e136458c4d960d56e1030e23236f5407240c",
+        "subject": "A12: prove the loaded module, not just the on-disk bytes",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "tests/w10-canary/scenarios/a12_runtime_proof.py"
+        ],
+        "changed_file_count": 1
+      },
+      {
+        "ref": "origin/unit/S75-a12-runner-plan",
+        "head": "3caa5670fc942d6f0c7b75680607f95736dfcb5e",
+        "subject": "S75: point A12 at the landed runtime-proof harness",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-a12-runtime-proof",
+        "head": "250d31ad2807f7ca9247cfa2eeaef4155b5117c1",
+        "subject": "test(A12): record exit 0 is a collection result, not creditability",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-B7-final-recap",
+        "head": "e2ec9b4acde3416b84c3014cd85910c8f4c1474b",
+        "subject": "S75-B7: seed Gate 4 sources in the two storyboard tests",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-C1-matrix-3x3-v2",
+        "head": "f142ee8a31cff97ae7a36355db38fb0f40d84544",
+        "subject": "S75-C1: add 3x3 candidate matrix core (concepts x treatments)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/song_choices/candidate_matrix.py",
+          "75-drama-song-ad-factory/scripts/core/song_choices/test_candidate_matrix.py"
+        ],
+        "changed_file_count": 2
+      },
+      {
+        "ref": "origin/unit/S75-C1-matrix-3x3-v3",
+        "head": "c88e7195eb8a546303110d7ae6371a957b259408",
+        "subject": "S75-C1: add 3x3 candidate matrix core (concepts x treatments)",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-C1-matrix-3x3",
+        "head": "e565f445de08eff20807ce9cf3f0a4a5ceb32e3f",
+        "subject": "S75-C1: add 3x3 candidate matrix core (concepts x treatments)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/song_choices/candidate_matrix.py",
+          "75-drama-song-ad-factory/scripts/core/song_choices/test_candidate_matrix.py"
+        ],
+        "changed_file_count": 2
+      },
+      {
+        "ref": "origin/unit/S75-C2-treatment-b-vocal",
+        "head": "a07add3109be495411ce596d7d01582e05f459d4",
+        "subject": "C2: keep the base dry/upfront lead when a variant re-voices it",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-D3-calibration",
+        "head": "63520b19991059799d32356037e53c2255d4677e",
+        "subject": "S75-D3: keep the stable subject term exact, band only the encoder-bound legacy term",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-D3-spatial-motion",
+        "head": "ec5a41f40698be0c5927096a2e194dad883054e0",
+        "subject": "S75-D3 fix: degenerate exposure frames and grain can no longer pass as motion",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-D3-wraparound",
+        "head": "a1d5386047ac0948091137c1ceec513621e74e71",
+        "subject": "D3: clamp residual map to the samplable window; refuse unsamplable shifts",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/shot_planner/motion_score.py",
+          "75-drama-song-ad-factory/scripts/core/shot_planner/test_motion_d3_wraparound.py"
+        ],
+        "changed_file_count": 2
+      },
+      {
+        "ref": "origin/unit/S75-F1-contingency-50",
+        "head": "02b21e34188464a1fa712d4f459b7ec9a9df5bac",
+        "subject": "skill 75 F1/F2: measured 50% contingency from the shot/cue manifest",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-installer-box-state",
+        "head": "299bedd6483798184e21f794a21f9835bcef4094",
+        "subject": "tests: assert Skill 75 preservation is not blanket",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-tools-selftest-and-clamp",
+        "head": "ce3d69662e1da5fdd6f69abcd66e50e88bc075cc",
+        "subject": "S75-D3: boundary-shift residual map refuses with a typed reason, not IndexError",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/shot_planner/motion_score.py",
+          "75-drama-song-ad-factory/scripts/core/shot_planner/test_motion_d3_spatial.py"
+        ],
+        "changed_file_count": 2
+      },
+      {
+        "ref": "origin/unit/S75-vector-refresh-8i",
+        "head": "acf324e379b568b4d8cde155bf87f7944a8b9b35",
+        "subject": "S75: re-pin the accepted vector after batch-8g and batch-8h",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-vector-refresh",
+        "head": "c86b62c606ca54ca9b297c56075155efda2d3a44",
+        "subject": "S75: refresh accepted source vector to live four-repo mains",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-W04-U1",
+        "head": "56f9c401e2c9950f12a9a4608f8e5513c41a1d90",
+        "subject": "skill75 (D01): live model binding — MiMo 2.6 Pro catalog, Sonnet excluded everywhere, dispatch admission binds persisted roles",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-W07-U1",
+        "head": "94040744d6a38fdd57aad458fd35e3c08d76c634",
+        "subject": "W07-U1: capability-derived dependency preflight -- derive requirements from mode/media/durations/channel via PREREQS.json (D05), six-length canonical profiles (D12)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/intake_preflight/preflight.py",
+          "75-drama-song-ad-factory/scripts/core/intake_preflight/test_intake_preflight.py",
+          "75-drama-song-ad-factory/scripts/core/intake_preflight/test_preflight_capability_derivation.py"
+        ],
+        "changed_file_count": 3
+      },
+      {
+        "ref": "origin/unit/S75-w10-a-row-runner",
+        "head": "830fd1e0fd2f9b77fb7c535484c2fecb2424a659",
+        "subject": "A-row runner: A01 on a disposable 999 copy; ENV/CONTENT control",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "origin/unit/S75-WM-VECTOR-PIN",
+        "head": "2f052b6406bed47d04409db7ed6c043ad8b4b41c",
+        "subject": "tests/w10-canary: pin accepted source vector at post-batch-6 main",
+        "merged_into_origin_main": true,
+        "changed_files_vs_origin_main": [],
+        "changed_file_count": 0
+      },
+      {
+        "ref": "s75/S75-T06",
+        "head": "fdcabc79d250f2e7f26f6c8b5c557f94ad3545be",
+        "subject": "feat(75): author a complete episode cast through the injected dispatcher (S75-T06)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/character_bible/cast_writer.py",
+          "75-drama-song-ad-factory/scripts/core/character_bible/test_cast_writer_s75_t06.py",
+          "75-drama-song-ad-factory/scripts/core/story_first_contracts.py",
+          "75-drama-song-ad-factory/scripts/core/test_story_first_contracts.py",
+          "75-drama-song-ad-factory/tests/fixtures/complete_cast.json"
+        ],
+        "changed_file_count": 5
+      },
+      {
+        "ref": "s75/S75-T07",
+        "head": "091bbc2e3c12a4cffd87b32e37e45efbbb70a957",
+        "subject": "feat(75): validate crowd rules, singled-out people and undeclared speakers (S75-T07)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/character_bible/cast_validation.py",
+          "75-drama-song-ad-factory/scripts/core/character_bible/test_cast_validation_s75_t07.py",
+          "75-drama-song-ad-factory/scripts/core/story_first_contracts.py",
+          "75-drama-song-ad-factory/scripts/core/test_story_first_contracts.py",
+          "75-drama-song-ad-factory/tests/fixtures/cast_rejections.json"
+        ],
+        "changed_file_count": 5
+      },
+      {
+        "ref": "s75/S75-T08-r2",
+        "head": "de41d94f541c452db42bb0d4abe5a159c7b98948",
+        "subject": "feat(75): author episode world with locations, light and never-list (S75-T08)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/world_bible/__init__.py",
+          "75-drama-song-ad-factory/scripts/core/world_bible/test_world_writer_s75_t08.py",
+          "75-drama-song-ad-factory/scripts/core/world_bible/world.schema.json",
+          "75-drama-song-ad-factory/scripts/core/world_bible/world_writer.py"
+        ],
+        "changed_file_count": 4
+      },
+      {
+        "ref": "s75/S75-T10",
+        "head": "dea0486ceac888dd2b86cfacb4c5def864130d04",
+        "subject": "feat(75): dispatch actual full-script and lyric writing (S75-T10)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/fixtures/rich_script.json",
+          "75-drama-song-ad-factory/scripts/core/script_writer.py",
+          "75-drama-song-ad-factory/scripts/core/story_first_contracts.py",
+          "75-drama-song-ad-factory/scripts/core/test_script_writer.py",
+          "75-drama-song-ad-factory/scripts/core/test_story_first_contracts.py"
+        ],
+        "changed_file_count": 5
+      },
+      {
+        "ref": "s75/S75-T11",
+        "head": "ba2b0c95abdd9f0606ee0cf7c5d1b2faa584d29f",
+        "subject": "feat(75): validate rich scene scripts and legacy compatibility (S75-T11)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/script_validation.py",
+          "75-drama-song-ad-factory/scripts/core/story_first_contracts.py",
+          "75-drama-song-ad-factory/scripts/core/test_script_validation.py",
+          "75-drama-song-ad-factory/scripts/core/test_story_first_contracts.py",
+          "75-drama-song-ad-factory/scripts/core/tests/fixtures/legacy_scene_migration.json",
+          "75-drama-song-ad-factory/scripts/core/tests/fixtures/rich_causal_script.json"
+        ],
+        "changed_file_count": 6
+      },
+      {
+        "ref": "s75/S75-T12",
+        "head": "d07ceb39073666aa013e74929a578eee83e17ef7",
+        "subject": "feat(75): bind the whole creative package to one approval (S75-T12)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/approval_bindings.py",
+          "75-drama-song-ad-factory/scripts/core/story_first_contracts.py",
+          "75-drama-song-ad-factory/scripts/core/test_approval_bindings.py",
+          "75-drama-song-ad-factory/scripts/core/test_story_first_contracts.py",
+          "75-drama-song-ad-factory/tests/fixtures/artifact_binding_changes.json"
+        ],
+        "changed_file_count": 5
+      },
+      {
+        "ref": "s75/S75-T14",
+        "head": "3fabcc5eb11e84a70264171739c8bd69528424d9",
+        "subject": "feat(75): S75-T14 Notion library discovery and new/existing/mixed cast",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/character_library/notion_adapter.py",
+          "75-drama-song-ad-factory/scripts/core/character_library/test_notion_discovery.py",
+          "75-drama-song-ad-factory/tests/fixtures/notion_discovery.json"
+        ],
+        "changed_file_count": 3
+      },
+      {
+        "ref": "s75/S75-T18",
+        "head": "afb07e76e76f18845401d0fbab13555d8cbb0da2",
+        "subject": "S75-T18: eighteen-style music catalog with executable trait recipes",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/music_styles/catalog.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_catalog_s75t18.py"
+        ],
+        "changed_file_count": 2
+      },
+      {
+        "ref": "s75/S75-T19",
+        "head": "110640126a46e1350537806a8bfb71c093e002aa",
+        "subject": "feat(75): executable acoustic/folk/country/alt-R&B/Afro-Soul recipes (S75-T19)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/acoustic-pop.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/afro-soul.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/alternative-rnb.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/country-pop.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/folk-storytelling.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_recipes_s75_t19.py"
+        ],
+        "changed_file_count": 7
+      },
+      {
+        "ref": "s75/S75-T20",
+        "head": "4d6fb18e31af727fc6e4ce61a08b5571aebf1df6",
+        "subject": "S75-T20: executable melodic-rap, trap-rap and pop-rap recipes",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/music_styles/__init__.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_rap_recipes_t20.py"
+        ],
+        "changed_file_count": 3
+      },
+      {
+        "ref": "s75/S75-T21",
+        "head": "a83c1ef973b01f325772abdcd591e102a296534b",
+        "subject": "feat(75): add pop rock, reggaeton and country rap recipes (S75-T21)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/music_styles/__init__.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/country-rap.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/pop-rock.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes/reggaeton.json",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_recipes_t21.py",
+          "75-drama-song-ad-factory/scripts/core/suno_recipe/suno_recipe.py"
+        ],
+        "changed_file_count": 7
+      },
+      {
+        "ref": "s75/S75-T22",
+        "head": "f896077f98734acf8c5c2fa3ab3ad8a02db8158c",
+        "subject": "feat(75): S75-T22 orchestral, theater and gospel recipes",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/music_styles/recipes_s75_t22.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_recipes_s75_t22.py"
+        ],
+        "changed_file_count": 2
+      },
+      {
+        "ref": "s75/S75-T23",
+        "head": "a729df217a81b00e4effcd52eefa6cb93fc5fbd3",
+        "subject": "feat(75): one-question intake help, reasoned suggestion, answer reuse (S75-T23)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/choice_card/intake_card/answer_reuse.py",
+          "75-drama-song-ad-factory/scripts/core/choice_card/intake_card/intake_card.py",
+          "75-drama-song-ad-factory/scripts/core/choice_card/intake_card/intake_session.py",
+          "75-drama-song-ad-factory/scripts/core/choice_card/intake_card/style_help.py",
+          "75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_help_and_reuse.py",
+          "75-drama-song-ad-factory/tests/fixtures/intake_resume.json"
+        ],
+        "changed_file_count": 6
+      },
+      {
+        "ref": "s75/S75-T24",
+        "head": "fe8f047982b4da299f53d34497850448ff0bf136",
+        "subject": "feat(75): S75-T24 name the missing Canvas to Life sample and store sample provenance",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/choice_card/intake_card/intake_card.py",
+          "75-drama-song-ad-factory/scripts/core/choice_card/intake_card/style_samples_provenance.json",
+          "75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_intake_card_h9.py",
+          "75-drama-song-ad-factory/scripts/core/choice_card/intake_card/test_visual_identity_help_s75t24.py"
+        ],
+        "changed_file_count": 4
+      },
+      {
+        "ref": "s75/S75-T25",
+        "head": "5635e47fd5831136588c0a12e33795704c18c429",
+        "subject": "feat(75): T25 duration, word-fit, lip-sync and route constraints",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/music/__init__.py",
+          "75-drama-song-ad-factory/scripts/core/music/constraints.py",
+          "75-drama-song-ad-factory/scripts/core/music/word_fit.py",
+          "75-drama-song-ad-factory/tests/fixtures/duration_and_lipsync.json",
+          "75-drama-song-ad-factory/tests/test_music_constraints_t25.py"
+        ],
+        "changed_file_count": 5
+      },
+      {
+        "ref": "s75/S75-T41-r2",
+        "head": "75c2a09a03402751058eb7f81637e433af730f9d",
+        "subject": "feat(75): S75-T41 outgoing Suno artist/alias guard and traits-only compiler",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/music_styles/prompt_compiler.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/suno_prompt_guard.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py",
+          "75-drama-song-ad-factory/tests/fixtures/suno_artist_reference_guard.json"
+        ],
+        "changed_file_count": 4
+      },
+      {
+        "ref": "s75/S75-T41",
+        "head": "75c2a09a03402751058eb7f81637e433af730f9d",
+        "subject": "feat(75): S75-T41 outgoing Suno artist/alias guard and traits-only compiler",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/music_styles/prompt_compiler.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/suno_prompt_guard.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/test_suno_prompt_guard.py",
+          "75-drama-song-ad-factory/tests/fixtures/suno_artist_reference_guard.json"
+        ],
+        "changed_file_count": 4
+      },
+      {
+        "ref": "s75/T03",
+        "head": "29819886a7ffce52abb988bf58eb1e42c85d7b51",
+        "subject": "feat(75): package-flavor adapter with single seam over shared core (S75-T03)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/contracts/flavor-999.json",
+          "75-drama-song-ad-factory/scripts/core/package_flavor_adapter.py",
+          "75-drama-song-ad-factory/scripts/core/story_first_contracts.py",
+          "75-drama-song-ad-factory/scripts/core/test_package_flavor_adapter.py",
+          "75-drama-song-ad-factory/scripts/core/test_story_first_contracts.py"
+        ],
+        "changed_file_count": 5
+      },
+      {
+        "ref": "s75/T04",
+        "head": "e0a9ee0d922644b78ddad29fe79e8255ce5615a8",
+        "subject": "S75-T04: authored research with owner/source/fiction provenance",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/research_engine/claims.py",
+          "75-drama-song-ad-factory/scripts/core/research_engine/fixtures/research_claims.json",
+          "75-drama-song-ad-factory/scripts/core/research_engine/research.py",
+          "75-drama-song-ad-factory/scripts/core/research_engine/test_research_claims.py"
+        ],
+        "changed_file_count": 4
+      },
+      {
+        "ref": "s75/T05",
+        "head": "87e87fef7b3d04ff0a7bfd7a44fd8a2ab2bca6d2",
+        "subject": "feat(75): reusable character identity schema and full-cast refusals",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/character_bible/identity.py",
+          "75-drama-song-ad-factory/scripts/core/character_bible/test_identity_s75_t05.py"
+        ],
+        "changed_file_count": 2
+      },
+      {
+        "ref": "s75/T08",
+        "head": "143130bdaf4f0677288316c00061948c5c57b922",
+        "subject": "fix(75): semantic world refusals and proven authoring dispatch (S75-T08 repair)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/world_bible/__init__.py",
+          "75-drama-song-ad-factory/scripts/core/world_bible/test_world_writer_s75_t08.py",
+          "75-drama-song-ad-factory/scripts/core/world_bible/world.schema.json",
+          "75-drama-song-ad-factory/scripts/core/world_bible/world_writer.py"
+        ],
+        "changed_file_count": 4
+      },
+      {
+        "ref": "s75/T09",
+        "head": "4d31d25f45992a2c07f221dd47b2eb93084f1f01",
+        "subject": "feat(75): causal beat plan and complete pre-song scene plan (S75-T09)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/contracts/scene-plan.schema.json",
+          "75-drama-song-ad-factory/scripts/core/story_planner.py",
+          "75-drama-song-ad-factory/scripts/core/story_planner_fixtures/causal_plan.json",
+          "75-drama-song-ad-factory/scripts/core/test_story_planner_s75t09.py"
+        ],
+        "changed_file_count": 4
+      },
+      {
+        "ref": "unit/S75-a12-keep-trees",
+        "head": "83f98f7501d3a8bc13cd5bcb2c323864ce5683eb",
+        "subject": "S75 A12: keep A08 install trees and refuse dangling manifests",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "tests/w10-canary/run_a_rows.py"
+        ],
+        "changed_file_count": 1
+      },
+      {
+        "ref": "unit/S75-tools-selftest-and-clamp",
+        "head": "ce3d69662e1da5fdd6f69abcd66e50e88bc075cc",
+        "subject": "S75-D3: boundary-shift residual map refuses with a typed reason, not IndexError",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/shot_planner/motion_score.py",
+          "75-drama-song-ad-factory/scripts/core/shot_planner/test_motion_d3_spatial.py"
+        ],
+        "changed_file_count": 2
+      },
+      {
+        "ref": "unit/S75-W00-U5",
+        "head": "e9d726109a482047988ff21353d0c273c720a047",
+        "subject": "skill75 keepalive: restore registrar contract + prompt duties (U5 gate regression)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/timer-artifacts/install-keepalive-cron.sh",
+          "75-drama-song-ad-factory/timer-artifacts/keepalive-cron-prompt.txt"
+        ],
+        "changed_file_count": 2
+      },
+      {
+        "ref": "unit/S75-W02-U2",
+        "head": "0f71a3f8d18e415bc7b1d5ed26dce5ef99b2c98c",
+        "subject": "SFR-002 fix: batch.py passes integer cents to spend_ledger.init_run",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/batch_mode/batch.py",
+          "75-drama-song-ad-factory/scripts/core/spend_ledger.py",
+          "75-drama-song-ad-factory/scripts/core/test_spend_attempts_w02u2.py"
+        ],
+        "changed_file_count": 3
+      },
+      {
+        "ref": "unit/S75-W05-U3",
+        "head": "16f6cff717dfba2171f7aa183938693375e63561",
+        "subject": "S75-W05-U3: canonical duration registry + one constraint policy in suno_recipe",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/batch_mode/batch.py",
+          "75-drama-song-ad-factory/scripts/core/intake_preflight/intake.py",
+          "75-drama-song-ad-factory/scripts/core/music_styles/music_styles.py",
+          "75-drama-song-ad-factory/scripts/core/prompt_templates/prompt_templates.py",
+          "75-drama-song-ad-factory/scripts/core/style_defaults/defaults.py",
+          "75-drama-song-ad-factory/scripts/core/suno_recipe/__init__.py",
+          "75-drama-song-ad-factory/scripts/core/suno_recipe/duration_registry.py",
+          "75-drama-song-ad-factory/scripts/core/suno_recipe/suno_recipe.py",
+          "75-drama-song-ad-factory/scripts/core/suno_recipe/test_duration_policy_u3.py",
+          "75-drama-song-ad-factory/scripts/core/suno_recipe/test_suno_recipe.py"
+        ],
+        "changed_file_count": 10
+      },
+      {
+        "ref": "unit/S75-W05-U5",
+        "head": "1cad61a074ad00f98b4a461ad01dd33874f5296e",
+        "subject": "Song dispatch (Skill 75): bounded lexical normalization + confidence-aware evaluation (S75-W05-U5, D29)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/song_dispatch/song_dispatch.py",
+          "75-drama-song-ad-factory/scripts/core/song_dispatch/test_song_dispatch_w05u5.py",
+          "75-drama-song-ad-factory/scripts/core/song_transports.py",
+          "75-drama-song-ad-factory/scripts/core/sung_hook/hook_placement.py"
+        ],
+        "changed_file_count": 4
+      },
+      {
+        "ref": "unit/S75-W07-U1",
+        "head": "96f4658f4072309239786d1373482b283524c21c",
+        "subject": "SFR-004 fix: derive faster-whisper module name from the constant (F17 scan)",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "75-drama-song-ad-factory/scripts/core/intake_preflight/preflight.py",
+          "75-drama-song-ad-factory/scripts/core/intake_preflight/test_intake_preflight.py",
+          "75-drama-song-ad-factory/scripts/core/intake_preflight/test_preflight_capability_derivation.py"
+        ],
+        "changed_file_count": 3
+      },
+      {
+        "ref": "unit/S75-W10-PREP",
+        "head": "2fbec1e55fbf60c54e5cee54d9f86c9e6e479109",
+        "subject": "W10 prep (SFR-007): clean-install/upgrade/multi-run canary harnesses + receipt mapping",
+        "merged_into_origin_main": false,
+        "changed_files_vs_origin_main": [
+          "tests/w10-canary/canary_common.py",
+          "tests/w10-canary/clean_install_canary.py",
+          "tests/w10-canary/multi_run_canary.py",
+          "tests/w10-canary/privacy_scan.py",
+          "tests/w10-canary/receipt-mapping.json",
+          "tests/w10-canary/receipt_mapping_check.py",
+          "tests/w10-canary/source-vector.json",
+          "tests/w10-canary/upgrade_canary.py",
+          "tests/w10-canary/vector_check.py"
+        ],
+        "changed_file_count": 9
+      }
+    ],
+    "merge_test_note": "The 99 s75 refs / 47 active census and its per-branch changed-file lists are point-in-time observations recorded when they were computed; the merge_test sha names the ONB origin/main head used at that time (f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b). ONB origin/main re-read live at 2026-10-24T20:50:17Z = f0a9c80e076e5a6cf8e293acdcaad9f2f72ea82b; if these differ, the census predates the current head and must be recomputed before use."
+  },
+  "file_leases": {
+    "held_files": [
+      "factory.py",
+      "lyric_writer.py",
+      "character_approval.py",
+      "registry.json",
+      "method_plan.py"
+    ],
+    "active_branches_touching_held_files": [
+      {
+        "branch": "batch/s75-b5-prep",
+        "head": "dd3881cff1c917e604385f03fe85ebf0a32cbd9d",
+        "path": "75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py"
+      }
+    ],
+    "conclusion": "Only 1 of 47 active branches names any held file (batch/s75-b5-prep -> intake_preflight/factory.py). No active branch names lyric_writer.py, character_bible/character_approval.py, registry.json or method_plan.py."
+  },
+  "dirty_state": {
+    "checkout": "<PATH>/openclaw-onboarding",
+    "shared": true,
+    "command": "git -C <PATH>/openclaw-onboarding status --porcelain=v1 --untracked-files=all",
+    "entries": [
+      {
+        "path": "75-drama-song-ad-factory/scripts/core/choice_card/intake_card/ai_models.json",
+        "LSTATUS": "M (staged/working-tree modified)",
+        "owner": "UNATTRIBUTED",
+        "note": "No unit receipt names this edit; recorded as observed."
+      },
+      {
+        "path": "75-drama-song-ad-factory/scripts/core/spend_ledger.py",
+        "LSTATUS": "M (staged/working-tree modified)",
+        "owner": "UNATTRIBUTED",
+        "note": "The unattributed spend_ledger.py edit named in the independent verdict. No lease, receipt or commit attributes it to any unit."
+      },
+      {
+        "path": "75-drama-song-ad-factory/evidence/S75X-W5/S75X-W5-U1.verdict.json",
+        "LSTATUS": "?? (untracked)",
+        "owner": "UNATTRIBUTED",
+        "note": "Untracked verdict file; content mirrors the S75X-W5-U1 verdict recorded in the prior census."
+      }
+    ],
+    "lease_effect": "Dirty shared ONB checkout breaks exclusive-lease claims for spend_ledger.py and ai_models.json until attributed or reverted."
+  },
+  "carried_forward_substance": {
+    "flavors_resolve_to_recorded_heads": "ONB, N999 and CC all resolve; ONB and N999 moved since the prior census, CC did not.",
+    "sampled_findings_map_to_current_source_exactly_once": "Carried forward from evidence/S75-T01-reconciliation.json method section; not re-derived.",
+    "factory_and_character_approval_held_and_untouched": false,
+    "factory_and_character_approval_note": "Contradicted by re-verification: batch/s75-b5-prep (dd3881cff1c917e604385f03fe85ebf0a32cbd9d) names 75-drama-song-ad-factory/scripts/core/intake_preflight/factory.py vs origin/main. No other held file touched by any active branch.",
+    "no_unit_mutated_shared_state": false,
+    "no_unit_mutated_shared_state_note": "Contradicted: shared ONB checkout carries 2 modified tracked files and 1 untracked evidence file, all UNATTRIBUTED."
+  },
+  "accepted_fixes_present_on_remote_main": [
+    {
+      "fix": "SFR-001 / S75-W00-U5 keepalive registrar contract + prompt duties",
+      "repo": "ONB",
+      "fix_commit": "e9d726109a482047988ff21353d0c273c720a047",
+      "commit_is_ancestor_of_origin_main": false,
+      "content_present": true,
+      "evidence": "0/47 added lines absent from origin/main at 569eee7a",
+      "files": [
+        "75-drama-song-ad-factory/timer-artifacts/install-keepalive-cron.sh",
+        "75-drama-song-ad-factory/timer-artifacts/keepalive-cron-prompt.txt"
+      ],
+      "receipt": "<PATH>/skill75-repair/evidence/S75-REPAIR-W00-U5/RECEIPT.md"
+    },
+    {
+      "fix": "SFR-002 / S75-W02-U2 batch.py passes integer cents to spend_ledger.init_run",
+      "repo": "ONB",
+      "fix_commit": "0f71a3f8d18e415bc7b1d5ed26dce5ef99b2c98c",
+      "commit_is_ancestor_of_origin_main": false,
+      "content_present": true,
+      "evidence": "0/2 added lines absent",
+      "files": [
+        "75-drama-song-ad-factory/scripts/core/batch_mode/batch.py"
+      ],
+      "receipt": "<PATH>/skill75-repair/evidence/S75-REPAIR-W02-U2/RECEIPT.md"
+    },
+    {
+      "fix": "SFR-003 / S75-W05-U3 load duration_registry leaf by file path",
+      "repo": "ONB",
+      "fix_commit": "bd222543f85d3e316b7ac053110f89981079d69d",
+      "commit_is_ancestor_of_origin_main": false,
+      "content_present": true,
+      "evidence": "0/16 added lines absent",
+      "files": [
+        "75-drama-song-ad-factory/scripts/core/music_styles/music_styles.py"
+      ],
+      "receipt": "<PATH>/skill75-repair/evidence/S75-REPAIR-W05/RECEIPT-U3.md"
+    },
+    {
+      "fix": "SFR-003 / S75-W05-U5 trust sorted hook timing, reject only overlap corruption",
+      "repo": "ONB",
+      "fix_commit": "d40ca4984de627f8e38223d77593310cc48bc4a4",
+      "commit_is_ancestor_of_origin_main": false,
+      "content_present": true,
+      "evidence": "0/21 added lines absent",
+      "files": [
+        "75-drama-song-ad-factory/scripts/core/sung_hook/hook_placement.py"
+      ],
+      "receipt": "<PATH>/skill75-repair/evidence/S75-REPAIR-W05/RECEIPT-U5.md"
+    },
+    {
+      "fix": "SFR-004 / S75-W07-U1 faster-whisper module name derived from constant (F17 scan)",
+      "repo": "ONB",
+      "fix_commit": "96f4658f4072309239786d1373482b283524c21c",
+      "commit_is_ancestor_of_origin_main": false,
+      "content_present": true,
+      "evidence": "0/6 added lines absent",
+      "files": [
+        "75-drama-song-ad-factory/scripts/core/intake_preflight/preflight.py"
+      ],
+      "receipt": "<PATH>/skill75-repair/evidence/S75-REPAIR-W07/RECEIPT-U1.md"
+    },
+    {
+      "fix": "SFR-004 / S75-W07-U3 run-timer.sh union of W07-U2 seams and W07-U3 capability gate / wake propagation",
+      "repo": "ONB",
+      "fix_commit": "1693d528bd947cb0dd96dbb04f394269270072fd",
+      "commit_is_ancestor_of_origin_main": true,
+      "content_present": true,
+      "evidence": "86/88 added lines present; the 2 absent lines are header comment continuations, not executable code ('# ... exits 0 without polling and without repeating any line. Unpaired notices are'). Functional markers verified present: DS_CAPABILITY_DISABLED (2 hits), 'the handoff is not complete and stays queued' (line 322), capability gate wired",
+      "files": [
+        "75-drama-song-ad-factory/timer-artifacts/run-timer.sh"
+      ],
+      "receipt": "<PATH>/skill75-repair/evidence/S75-REPAIR-W07/RECEIPT-U3-CONFLICT.md"
+    },
+    {
+      "fix": "SFR-005 / S75-REPAIR-CC-W08-U1 replay-safe reopen ordinal in CC media campaign adapter",
+      "repo": "CC",
+      "fix_commit": "edefeb207b1e5eb4ad5af20c50eb4734e464ab03",
+      "commit_is_ancestor_of_origin_main": false,
+      "content_present": true,
+      "evidence": "0/66 added lines absent from CC origin/main at a3b43318; distinctive _reopen_ordinal / reason.startswith('reopen:') implementation present",
+      "files": [
+        "adapters/drama-song-factory/media_campaign_adapter.py",
+        "adapters/drama-song-factory/test_media_campaign_adapter.py"
+      ],
+      "receipt": "<PATH>/skill75-repair/evidence/S75-REPAIR-CC-W08-U1/RECEIPT.md",
+      "note": "Receipt states 'never merged, never pushed'; content nonetheless matches CC origin/main, so landing path is not the recorded commit lineage"
+    },
+    {
+      "fix": "S75X-W5-U1 item_1 script_approval port into 999",
+      "repo": "N999",
+      "content_present": true,
+      "evidence": "all five files exist on 999 origin/main; card_answers.py sha256_16=6e421fcbcb110c75 and stage.py sha256_16=556be8fe605dda80 are byte-identical to the verdict's recorded hashes; approval_events.py and script_approval.py are present but advanced beyond the recorded hashes (642 vs 559 lines, 515 vs 440 lines)",
+      "verdict": "<PATH>/openclaw-onboarding/75-drama-song-ad-factory/evidence/S75X-W5/S75X-W5-U1.verdict.json"
+    },
+    {
+      "fix": "S75X-W5-U1 item_2 suno recipe syllable band (preferred 4-12, hard_max none)",
+      "repo": "N999",
+      "content_present": true,
+      "evidence": "suno_recipe.py on 999 origin/main defines constraint_policy, evaluate_sheet_constraints, check_lyric_sheet(warnings_out=...), prepare(..., warnings=...); DEFAULT_CONSTRAINT_POLICY.sung_line = preferred_min_syllables 4 / preferred_max_syllables 12 / hard_max_syllables None",
+      "verdict": "<PATH>/openclaw-onboarding/75-drama-song-ad-factory/evidence/S75X-W5/S75X-W5-U1.verdict.json"
+    },
+    {
+      "fix": "S75X-W5-U1 item_3 D10 rendered-opening gate port into 999",
+      "repo": "N999",
+      "content_present": true,
+      "evidence": "rendered_opening_gate, classify_wordless_lead, opening_hooks_gate, opening_repair_plan present in .claude/skills/drama-song-ad-factory/scripts/core/story_coverage/story_coverage.py; test_story_opening_media_zero.py present",
+      "verdict": "<PATH>/openclaw-onboarding/75-drama-song-ad-factory/evidence/S75X-W5/S75X-W5-U1.verdict.json"
+    },
+    {
+      "fix": "S75-999-provider-lookup (PROVIDER_LOOKUP_REQUIRED instead of silent fallback)",
+      "repo": "N999 and ONB",
+      "content_present": true,
+      "evidence": "PROVIDER_LOOKUP_REQUIRED present in spend_ledger.py on 999 origin/main and on ONB origin/main",
+      "verdict": "<PATH>/skill75-repair/evidence/S75-QC/S75-999-provider-lookup.verdict.json",
+      "before_after_evidence": "<PATH>/skill75-repair/evidence/S75-999-PROVIDER-BEFORE/ (BEFORE.json, AFTER.json, exact-966939b6, exact-eca6a9e2)"
+    }
+  ],
+  "accepted_fixes_absent_or_unverified": [
+    {
+      "item": "Emergency task 01a16e50-177f-7476-8bf1-dbd252a75030 owner-handoff evidence artifact",
+      "state": "ABSENT_FROM_NAMED_SOURCES",
+      "sources_searched": [
+        "<PATH>/skill75-repair (recursive, incl. evidence/)",
+        "<PATH>/drama-song-factory-build",
+        "<PATH>/Downloads/Skill 75 - Story, Character Bible and Music Upgrade"
+      ],
+      "result": "No artifact carries that task UUID. The UUID appears only inside the package documents (10 files: DEPENDENCIES-AND-OWNERSHIP.md, TERMINAL-KICKOFF.md, task-ledger.json, SPEC.md, DECISIONS.md, DISCOVERIES.md, MIGRATION-AND-COMPATIBILITY.md, SWARM-MANAGEMENT.md, README.md, BATCH-MERGE.md), as a retained-overlap ownership statement (DEC-19).",
+      "consequence": "T13's external_ownership_gates.state for that source_task stays UNVERIFIED. Exact file-by-file handoff is not evidenced on disk.",
+      "not_checked": "Client boxes, Contabo/VPS hosts, and remote branches outside trevorotts1/openclaw-onboarding, trevorotts1/999-setup, trevorotts1/blackceo-command-center were not searched."
+    },
+    {
+      "item": "S75X-* verdict files under <PATH>/skill75-repair/evidence/",
+      "state": "ABSENT_FROM_NAMED_SOURCES",
+      "sources_searched": [
+        "find <PATH>/skill75-repair -iname '*S75X*' -> 0 results",
+        "grep -rl 'S75X' <PATH>/skill75-repair -> 2 hits, both plan files (SWARM-PLAN-V2.json, SWARM-PLAN-DRAFT.json), no verdicts",
+        "find over <PATH>/openclaw-onboarding and <PATH>/drama-song-factory-build for 'S75X-*' files -> 1 hit"
+      ],
+      "only_s75x_verdict_found": "<PATH>/openclaw-onboarding/75-drama-song-ad-factory/evidence/S75X-W5/S75X-W5-U1.verdict.json",
+      "consequence": "S75X-W5-U1 is the only S75X unit with a recovered verdict. No verdict was recovered for S75X-W1-U1/U2, W2-U1/U2, W3-U1/U2, W4-U1/U2/U3, W5-U2, W6-U1/U2 (12 planned units in SWARM-PLAN-V2.json)."
+    },
+    {
+      "item": "Acceptance status of the 11 S75X units without a recovered verdict",
+      "state": "UNDETERMINED",
+      "note": "Their absence of a verdict file is not failure and not acceptance. SWARM-PLAN-V2.json carries no per-unit state field for S75X units."
+    },
+    {
+      "item": "CC half of S75-W08-U1 (candidate head 1d19dfa677bd0ca4b7103ec6e807811f668e2d90)",
+      "state": "NOT_ANCESTOR_OF_CC_ORIGIN_MAIN",
+      "note": "The accepted fix content is on CC origin/main via the edefeb2 lineage, but the candidate head itself is not an ancestor and is absent from the CC clone's object store check by ancestry only; exact landing commit not identified."
+    },
+    {
+      "item": "ONB half merge 5d4acf8e (named in SFR-005 receipt)",
+      "state": "UNRESOLVED_SHORT_SHA",
+      "note": "5d4acf8e and 164c45a5 do not resolve in the ONB clone object store; 7dc0c591 does resolve and is an ancestor of ONB origin/main. The short SHAs are 8-char prefixes and were not expanded further."
+    },
+    {
+      "item": "S75-D3-spatial-motion",
+      "state": "MIXED_VERDICTS",
+      "note": "S75-D3-spatial-motion.verdict.json = FAIL, while r3 and r3.REJECTED-placeholders variants = PASS. Not an emergency-repair item; recorded so the FAIL is not silently dropped."
+    }
+  ],
+  "uncertainty": [
+    "ONB origin/main advanced by 5 commits during this task (dccd6811 -> 569eee7a); another session pushed T-39 work. All presence re-checks were re-run against 569eee7a and returned identical results.",
+    "CC repository identity is still UNVERIFIED_T01_CONDITIONAL in task-ledger.json. The clone at <PATH>/blackceo-command-center is observed, not ledger-adopted.",
+    "The emergency task 01a16e50 handoff remains unproven; no handoff artifact exists in the searched locations. This is a search result over named sources, not proof the handoff never happened on a client box or an unsearched remote branch.",
+    "S75X units other than W5-U1 are undetermined, not failed.",
+    "SFR-005's receipt says the fix was never merged or pushed, yet its content is on CC origin/main. Landing lineage is unexplained; the content claim is the strong one.",
+    "approval_events.py and script_approval.py on 999 origin/main are longer than the verdict's recorded line counts and hash differently, consistent with later work on top of the port; exact-repair preservation is inferred, not hash-proven.",
+    "Two run-timer.sh comment lines from the SFR-004/U3 fix are absent on main; code lines all match.",
+    "CC origin/main advanced between the prior census and this one: a3b43318944132f0847f33f395dcb0ea38ba30a7 -> 7816a3c560ff2c50126e38b139ad644c472b99ac (reflog: 7816a3c560 refs/remotes/origin/main@{2026-10-24 16:32:20 -0400}: fetch origin --quiet: fast-forward). The prior census value was stale when stamped head_reverified=true. Corrected here; the value is again only valid at 2026-10-24T20:50:17Z."
+  ],
+  "does_not_establish": [
+    "That T13 may proceed: the external ownership gate for 01a16e50 is still UNVERIFIED and requires the exact file-by-file handoff.",
+    "That any S75X unit besides W5-U1 is accepted, or that the 999 adapter tree is at whole-tree parity (the verdict itself disclaims parity).",
+    "Any merge, push, or write authority for this reconciliation."
+  ],
+  "commands_used": [
+    "git -C <repo> rev-parse origin/main",
+    "git -C <repo> log -1 --format=%H%n%cI%n%s origin/main",
+    "git -C <PATH>/openclaw-onboarding for-each-ref --format='%(refname:short)|%(objectname)' refs/heads refs/remotes",
+    "git -C <PATH>/openclaw-onboarding merge-base --is-ancestor <sha> origin/main",
+    "git -C <PATH>/openclaw-onboarding diff --name-only origin/main...<sha>",
+    "git -C <PATH>/openclaw-onboarding status --porcelain=v1 --untracked-files=all"
+  ],
+  "not_checked": [
+    "Client boxes, Contabo/VPS hosts and remote branches outside the three named repositories.",
+    "No fetch was performed; heads are as recorded in each clone's remote-tracking refs at write time."
+  ],
+  "flavor_heads_note": "Every flavor head here is a point-in-time observation valid only at its read_at. head_reverified=true means the value was read by a live git command in THIS session at read_at, with reflog evidence recorded per flavor. No value is stamped re-verified from any prior file."
+}

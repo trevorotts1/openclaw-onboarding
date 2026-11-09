@@ -4,7 +4,7 @@
 # THE INDEPENDENT, FAILABLE DRILL BATTERY (spec 5.3 / Section 9).
 # -----------------------------------------------------------------------------
 # READ-ONLY and idempotent. Proves the whole system end to end against SCRATCH
-# fixtures (never the live config): every script self-test, the four merge-gate
+# fixtures (never the live config): every script self-test, the three merge-gate
 # scanners clean over the tree, and one drill per signal class (D-S1/S2, D-S3,
 # D-S4, D-S6, D-S8, D-REVERT, D-DEADMAN). The live-pipeline D-ALERT drill fires a
 # clearly-marked [DRILL] through the REAL gateway to the operator account ONLY
@@ -35,9 +35,8 @@ else
 fi
 rm -f /tmp/ews-verify-selftest.$$ 2>/dev/null || true
 
-# ---- 2. four merge-gate scanners CLEAN over the tree ------------------------
-step "2/4 four merge-gate scanners CLEAN over the skill tree"
-python3 "$SCRIPTS/guard-no-anthropic-runtime.py" >/dev/null 2>&1 && ok "guard-no-anthropic (0)" || bad "guard-no-anthropic"
+# ---- 2. three merge-gate scanners CLEAN over the tree ------------------------
+step "2/4 three merge-gate scanners CLEAN over the skill tree"
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-secrets.sh" --root "$SELF_DIR" --strict >/dev/null 2>&1 && ok "scan-no-secrets (0)" || bad "scan-no-secrets"
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-client-identifiers.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-client-identifiers (0)" || bad "scan-no-client-identifiers"
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-json-exports.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-json-exports (0)" || bad "scan-no-json-exports"

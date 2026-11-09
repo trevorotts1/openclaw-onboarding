@@ -56,7 +56,11 @@ class FakeTransport:
 def make(tmp, routes=(), mode="active", extra_env=None, clock=None):
     clock = clock or Clock()
     env = {"KIE_API_KEY": KEY, "KIE_LIVE_ADAPTER_MODE": mode, "HOME": tmp,
-           "KIE_LIVE_CACHE_DIR": os.path.join(tmp, "cache"), "KIE_LIVE_POLL_INITIAL": "3"}
+           "KIE_LIVE_CACHE_DIR": os.path.join(tmp, "cache"), "KIE_LIVE_POLL_INITIAL": "3",
+           # Hermetic TRANSPORT tests use placeholder prompts; the strict prompt band is
+           # exercised by test_prompt_band_u15c and by the real run path (which never sets
+           # this hook). Without it every transport test would need a 19,200-char prompt.
+           "KIE_PROMPT_POLICY_TEST_OFF": "1"}
     env.update(extra_env or {})
     tr = FakeTransport(routes)
     return K.Adapter(env=env, transport=tr, sleep=clock.sleep, now=clock.now), tr, clock

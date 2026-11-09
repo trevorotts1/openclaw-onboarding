@@ -205,6 +205,63 @@ turn." A narrator describing the audience instead of a person living in it.
 
 ---
 
+## Set E — tax relief (audience: taxpayer with unopened envelopes)
+
+The crises in this set are invented on purpose: a composite character may lose
+the year, the account and the pay stub (`FICTIONAL_PLOT_EVENT`, `COMPOSITE`,
+§7.1 of `sensational-openings.md`). What is never invented is a claim about the
+real offer — that boundary is §7.2 and it does not move.
+
+### E1 — reversal on the speaker phone
+
+- **opening_line:** "I paid them four hundred a month for a year, and the woman on the phone just told me my case was never filed."
+- **headline:** A YEAR OF PAYMENTS. NO CASE FILED.
+- **first_action:** A shoebox of stamped receipts is emptied onto a kitchen table; the phone lies on speaker between them.
+- **question:** If nothing was filed, what was I paying for?
+- **why_this_audience:** This audience has already paid one company to fix it and is now being asked to trust another. The fear is being fooled twice, in the same way, by the same kind of promise.
+- **offer_link:** The offer is the filing itself — forms submitted to the agency, with copies the client keeps. The crisis is the missing filing; the offer sells exactly the artifact that was missing, not a promise around it.
+
+### E2 — catastrophe at the register
+
+- **opening_line:** "Forty-three dollars of groceries, and the card declined — the levy had taken the account before breakfast."
+- **headline:** THE ACCOUNT WAS EMPTY BEFORE BREAKFAST
+- **first_action:** A debit card taps twice at a register; the cashier stops bagging and looks up at her.
+- **question:** How does this family eat this week?
+- **why_this_audience:** This audience does the balance arithmetic before every small purchase. The fear is not the big loss — it is the ordinary purchase failing in public.
+- **offer_link:** A levy lifts when the case is resolved or a hold is filed, and both are the offer's actual work. The frozen account is the enforcement arriving; the offer is the paperwork that stops it.
+
+### E3 — humiliation at the pay counter
+
+- **opening_line:** "A third of my check was gone before I ever touched it, and the foreman read the new line out loud before I could fold the stub."
+- **headline:** GARNISHED BEFORE IT REACHED ME
+- **first_action:** A pay stub slides across a shop counter; a coworker's finger lands on the new deduction line.
+- **question:** What did the crew just learn about me?
+- **why_this_audience:** This audience fears the debt becoming public at work more than the debt itself. The pay stub is the one document they cannot hide from the people who see them every day.
+- **offer_link:** Ending a garnishment is filings and negotiations, which is what the offer does. The deduction line is where the case stands today; the offer's outcome is that line gone on the next stub.
+
+**Scores (shock / curiosity / relevance)**
+
+| Candidate | Shock | Curiosity | Relevance | Total |
+|---|---:|---:|---:|---:|
+| E1 | 5 | 5 | 5 | 15 |
+| E2 | 5 | 4 | 5 | 14 |
+| E3 | 4 | 4 | 4 | 12 |
+
+**Recommended: E1.** The only candidate of the three where the offer is the
+missing artifact itself: "never filed" erases a paid year (shock), the money's
+whereabouts is a question nobody answers (curiosity), and the service is the
+filing the client has been paying for and not receiving (relevance). E2 is the
+pick where the client wants a family scene and the differentiator is how fast a
+levy releases; E3 where the audience is hourly and the fear is public.
+
+**Rejected tame versions of this set:** "I owed some taxes and it kept me up at
+night" / "Tax debt can happen to anyone" / "Don't let tax problems stress your
+family." One tame worry in three costumes: no moment, no object, no consequence,
+no question. A set like this is not three candidates; it is §8 row 7 of
+`sensational-openings.md` wearing different clothes.
+
+---
+
 ## How to use these sets
 
 1. Score your own three candidates with the same numbers before reading the

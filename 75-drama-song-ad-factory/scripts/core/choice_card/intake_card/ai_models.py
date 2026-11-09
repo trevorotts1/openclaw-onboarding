@@ -8,10 +8,9 @@ the resolved provider model, the actual response model, the reasoning request
 and the route, and record correlated request/router/response evidence. A label
 or alias string is never proof of the model actually called.
 
-Claude Sonnet is excluded from Skill 75 selectable, recommended and fallback
-routes in both distributions (claude-nine/Claude Code and OpenClaw) and is
-refused at catalog, alias, cache and fallback paths with an actionable
-model-selection result. Other verified builder/QC choices stay configurable.
+No model family is excluded: a model is selectable when the catalog lists it, and
+a name the catalog does not list is refused as MODEL_UNKNOWN with an actionable
+model-selection result. Builder/QC choices stay configurable.
 In OpenClaw the identifiers are the verified openrouter/ prefix ids
 (``openclaw_id``); the direct OpenRouter request id is ``request_id`` (spec
 7.1). A reasoning effort is only ever sent where the live catalog proves an
@@ -33,7 +32,6 @@ with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai_models.js
 MODELS = {m["id"]: m for m in _T["models"]}
 REC_BUILD, REC_CHECK = _T["recommended"]["build"], _T["recommended"]["check"]
 REC_RATIONALE = _T.get("recommended_rationale") or ""
-EXCLUDED = tuple(_T.get("excluded_families") or ())
 #: The run-configuration file bind_roles() writes and every dispatch reads.
 STORE_NAME = "model-bindings.json"
 STORE_SCHEMA = "blackceo.skill75.model-bindings/v1"
@@ -56,7 +54,6 @@ ACCOUNT_FAILED = "ACCOUNT_FAILED"
 ACCOUNT_BREAKER = AccountBreaker()
 _PAT = re.compile(r"^\s*(.+?)\s+builds?\s*[,;]?\s*(?:and\s+)?(.+?)\s+checks?\s*\.?\s*$", re.I)
 _BY_NAME = {}
-_BANNED_WORDS = tuple(w for f in EXCLUDED for w in (f,))
 
 
 def _key(s):
@@ -75,16 +72,6 @@ for _m in _T["models"]:
 
 def _entry(mid):
     return MODELS[mid]
-
-
-def banned_hits(text):
-    """Excluded model-family names found in any string (catalog id, alias, cached
-    entry, fallback member, response metadata). Sonnet-shaped tokens anywhere
-    are refused at every path."""
-    if not text:
-        return []
-    toks = set(re.split(r"[^a-z0-9]+", str(text).lower()))
-    return [f for f in _BANNED_WORDS if any(t == f or t.startswith(f) for t in toks)]
 
 
 def label(mid):
@@ -130,8 +117,6 @@ def selectable(access=None, needs=None, price_policy=None, availability=None):
     or inaccessible model is never shown as selectable."""
     out = []
     for m in _T["models"]:
-        if banned_hits(m["id"]) or banned_hits(m["label"]) or any(banned_hits(a) for a in m["aliases"]):
-            continue
         caps = set(m.get("capabilities") or []) | set(m.get("modalities") or [])
         if needs and not set(needs) <= caps:
             continue
@@ -181,25 +166,12 @@ def _message(res, who):
 
 
 def resolve(name, who="build", **filters):
-    """A name/id/alias -> (model_id, None), or (None, actionable refusal).
-    Excluded families are refused before any catalog lookup so they cannot
-    arrive through an alias, a cache or a fallback name."""
-    hits = banned_hits(name)
-    if hits:
-        return None, _selection_result(
-            name, "MODEL_NOT_PERMITTED",
-            "Claude Sonnet is excluded from Skill 75 model selection (selectable, recommended "
-            "and fallback routes) in both distributions.", who, **filters)
+    """A name/id/alias -> (model_id, None), or (None, actionable refusal)."""
     mid = _BY_NAME.get(_key(name)) if name else None
     if not mid:
         return None, _selection_result(
             name, "MODEL_UNKNOWN",
             "That model is not in the Skill 75 catalog.", who, **filters)
-    if banned_hits(mid):
-        return None, _selection_result(
-            name, "MODEL_NOT_PERMITTED",
-            "Claude Sonnet is excluded from Skill 75 model selection (selectable, recommended "
-            "and fallback routes) in both distributions.", who, **filters)
     return mid, None
 
 
@@ -490,14 +462,6 @@ def admit_dispatch(run_dir, role, requested_model=None, *, route=None, reasoning
                                  'Unknown role "%s"; the roles are build, check and repair.' % role, ROLE_BUILD)
     # Repair is the existing QC choice, never a third model or intake question.
     binding_role = ROLE_CHECK if role == ROLE_REPAIR else role
-    scan = [requested_model, cached_model, doc.get("bindings", {}).get(binding_role, {}).get("model_id")]
-    scan += [str(f) for f in (fallbacks or [])]
-    for s in scan:
-        if banned_hits(s):
-            return _selection_result(
-                s, "MODEL_NOT_PERMITTED",
-                "Claude Sonnet is excluded from Skill 75 selectable, recommended and fallback "
-                "routes in both distributions.", role)
     binding = doc.get("bindings", {}).get(binding_role)
     if not binding:
         return _selection_result(requested_model, "NO_ROLE_BINDING",
@@ -561,10 +525,6 @@ def record_attempt(run_dir, role, attempt_id, *, requested_model, resolved_provi
     mid = adm["binding"]["model_id"]
     m = _entry(mid)
     canon = {_key(v) for v in (mid, m.get("request_id"), m.get("openclaw_id")) if v}
-    if banned_hits(resolved_provider_model) or banned_hits(response_model):
-        return _selection_result(response_model or resolved_provider_model, "MODEL_NOT_PERMITTED",
-                                 "Claude Sonnet is excluded from Skill 75 routes in both "
-                                 "distributions.", role)
     if m["route"] == "router-alias":
         return _selection_result(
             mid, "CHAIN_RESOLUTION_UNVERIFIED",

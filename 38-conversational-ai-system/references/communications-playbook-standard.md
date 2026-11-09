@@ -26,9 +26,7 @@ and the order in which a human-readable copy is placed in the client's account.
 > channel (**SMS, Email, FB Messenger, FB comments, IG DM, LinkedIn, Live Chat, All-in-One / Chat
 > Widget**), EVERY run, the STARTER channel playbook and EVERY scenario playbook alike — MUST contain
 > ALL of the lettered items below. A playbook missing ANY of these is INCOMPLETE: do NOT register it, do
-> NOT declare it live. This list is **machine-enforced** by `scripts/qc-communications-playbook-standard.sh`
-> (wired into `scripts/11-run-qc-checklist.sh` + CI `.github/workflows/qc-static.yml`) — removing any
-> mandatory item FAILS the build. Universal: zero personal/client data.
+> NOT declare it live. This contract is **machine-enforced**: `scripts/qc-communications-playbook-standard.sh` asserts this STANDARD carries the mandatory checklist and items (a)-(i); `scripts/qc-playbook-craft.sh` checks EVERY PLAYBOOK for items (l)-(q), `scripts/qc-playbook-declares.sh` checks (k), the hook-level gates `scripts/qc-send-directive.sh` and `scripts/qc-conversation-memory.sh` verify that items (d) and (e) are carried by the GHL inbound hook's SERVER `messageTemplate`, and `scripts/qc-playbook-doc.sh` checks the human-facing doc. Content quality is checked by `tools/playbook_engine.py conversation_lint`. Wired into `scripts/11-run-qc-checklist.sh` + CI `.github/workflows/qc-static.yml`. Universal: zero personal/client data.
 
 - [ ] **(a) Channel + persona / voice identity.** Name the channel (one of the 8) and the agent's
       persona/voice on it — formality, personality, on-brand phrases to USE, phrases to NEVER use.
@@ -60,8 +58,9 @@ and the order in which a human-readable copy is placed in the client's account.
 - [ ] **(h) ZHC- tag-prefix for any programmatic tags.** Any tag the playbook tells the agent to create
       PROGRAMMATICALLY carries the `ZHC-` prefix (e.g. `ZHC-discovery-scheduled`) per MEMORY Rule 20 /
       `protocols/zhc-tag-prefix-protocol.md`. NOT retroactive; operator-owned tags keep their names.
-- [ ] **(i) Per-channel formatting constraints.** The channel's hard formatting rules — SMS ≤160 chars
-      where possible; Email 2-4 short paragraphs + subject mirroring; FB/IG 1-3 conversational sentences +
+- [ ] **(i) Per-channel formatting constraints.** The channel's hard formatting rules — SMS: aim for
+      160 characters where possible and treat 320 characters / 2 segments as the hard ceiling per item (m);
+      Email 2-4 short paragraphs + subject mirroring; FB/IG 1-3 conversational sentences +
       the 24-hour reply window; LinkedIn professional concise; Live Chat / Chat Widget short real-time turns.
 - [ ] **(j) Persona reference (U-5) — OPTIONAL, with a default.** A playbook MAY carry a `persona:` header
       line naming a reusable persona id from the persona registry (`protocols/persona-registry-protocol.md`).
@@ -70,6 +69,26 @@ and the order in which a human-readable copy is placed in the client's account.
       is **OPTIONAL-with-default**: the QC gate **WARNS (never FAILS)** when a persona line is absent, so
       existing installs are not broken. Scaffolded channel playbooks get `persona: house-standard` seeded by
       `scripts/12-scaffold-channel-playbooks.sh`.
+- [ ] **(k) Machine-readable declares block.** Every playbook MUST contain one `declares` block near the top with `tools-used`, `exits-used`, `fields-used`, `tags-used`, `calendars`, `pipeline`, and `stage-map`.
+      `tags-used` entries MUST follow `<tag> (applies|reads)`, comma-separated: `applies` means the playbook sets the tag; `reads` means the playbook branches on a tag set elsewhere.
+      `tools/playbook_engine.py` parses the block; `scripts/qc-playbook-declares.sh` cross-validates it.
+      A new-style playbook containing `### Phase N` blocks or a `model-tier:` line without a `declares` block FAILS the build.
+      Any declared reference that dangles FAILS the build.
+      Missing caf calendars or caf tags exports are hard `REQUIRES_OPERATOR` failures, never skips.
+- [ ] **(l) Objection library.** Include at least five objections specific to THIS scenario, each with the objection as the customer would say it, the approved response, and a never-say note.
+      Include at least one price objection and one deferral objection, such as "need to think about it" or "talk to my spouse".
+- [ ] **(m) Turn discipline.** Ask at most one qualifying question per reply; never send two consecutive agent messages without a customer reply unless the stall cadence applies.
+      Enforce per-channel reply ceilings: SMS 320 characters / 2 segments hard ceiling (160 characters target), FB and IG 3 sentences, email 4 short paragraphs.
+      Never repeat a value proposition already sent in this conversation.
+- [ ] **(n) Ambiguity and multi-intent protocol.** Define explicit behavior for a bare acknowledgement (`ok`, `sure`, thumbs up, `k`), a price probe, and a turn containing two questions.
+      The disambiguation move is to restate the offer in one line, then ask the single most valuable clarifying question.
+      When commercial and logistical questions coexist, answer the commercial question first and park the logistical question with an explicit "then I will come back to".
+- [ ] **(o) Stall recovery.** Specify three follow-up touches, each with its day, channel, and angle.
+      After touch three, apply `ZHC-<playbook-id>-stalled` and hand off to the follow-up campaign. No fourth message.
+- [ ] **(p) Golden transcript.** Include at least one worked good exchange per playbook, with 6-10 turns showing the flow, a handled objection, and the win, plus a bad exchange showing the anti-pattern.
+      Every phase MUST contain at least one `example: "..."` line with the exact phrasing the agent would send in that phase.
+- [ ] **(q) Conversational KPIs.** Define measurable targets for median reply length, questions per turn after qualification, turns to win, and escalation-rate ceiling.
+      `protocols/weekly-tune-up-protocol.md` reports performance against these targets.
 
 > **Plus (the full per-item detail still required):** the must-appear checklist in Section 2 (slug/id,
 > owner agent, trigger phrases, step-by-step flow, cross-playbook transitions, edge cases, on-success
@@ -83,8 +102,10 @@ and the order in which a human-readable copy is placed in the client's account.
 
 Every communications playbook uses the canonical Layer-2 template in
 `protocols/conversation-workflows-protocol.md` Section E (`# Conversation Workflow: <Name>`).
-Do not invent a new shape per client — fill that template. The sections below are the
-**must-appear checklist** that template satisfies.
+Do not invent a new shape per client — fill that template. The canonical starting point is
+`templates/appointment-booking-playbook-template.md`. Filling the Section E template is necessary but
+NOT sufficient: it MUST be EXTENDED with items (a), (b), (d), (e), (g), (h), (i) and the craft items
+(l)-(q). The Section E template alone is INCOMPLETE and MUST NOT be registered as a finished playbook.
 
 ## 2. MUST-APPEAR checklist — every communications playbook
 
@@ -104,6 +125,17 @@ A playbook is INCOMPLETE (do not register it, do not declare it live) until ALL 
 - [ ] **Tone** — the specific tone for THIS scenario, layered on top of the channel communication playbook's baseline voice.
 - [ ] **Honesty floor** — the agent never invents discount codes, never promises refunds/exceptions without operator approval, never bluffs below the confidence threshold, escalates instead.
 - [ ] **HUMAN-FACING DOC created in the CLIENT's account + URL recorded (MANDATORY, machine-enforced)** — a human-readable copy of this playbook MUST be created in the client's OWN account in the fallback order **Notion → Google Docs → plain-text** (Section 4), and its URL/path MUST be recorded in the playbook's `registry.md` row (the `Doc (Notion/Docs/text)` column) and the run manifest. A playbook with no recorded human-facing doc is INCOMPLETE — the customer is left with no shareable reference of what was set up. **This item is MACHINE-ENFORCED by `scripts/qc-playbook-doc.sh`** (wired into `scripts/11-run-qc-checklist.sh` + CI `.github/workflows/qc-static.yml`): the gate FAILs (exit 1) any registered playbook whose doc cell is empty / `n/a` / placeholder, and exits 2 (never a blind PASS) if no playbooks exist. The installer `scripts/09-install-conversation-workflows.sh` creates + records this doc automatically for every on-disk playbook (Notion → Google Docs → text). It is no longer optional prose.
+
+- [ ] **Machine-readable declares block (see Section 0 item (k)).** Include `tools-used`, `exits-used`, `fields-used`, `tags-used`, `calendars`, `pipeline`, and `stage-map` in one machine-readable block near the top. `tags-used` grammar: `<tag> (applies|reads)`, comma-separated; `applies` means the playbook sets the tag; `reads` means it branches on a tag set elsewhere.
+- [ ] **(l) Objection library.** Include at least five objections specific to THIS scenario. For each, provide the objection in the customer's own words, the approved response, and a `never-say` note. Include at least one price objection and one deferral objection, such as "need to think about it" or "talk to my spouse".
+- [ ] **(m) Turn discipline.** Ask at most one qualifying question per reply. Never send two consecutive agent messages without a customer reply, except for the defined stall cadence. Enforce per-channel maximums: SMS 320 characters / 2 segments; FB and IG 3 sentences; email 4 short paragraphs. Never repeat a value proposition already sent in this conversation.
+- [ ] **(n) Ambiguity and multi-intent protocol.** Define explicit behavior for bare acknowledgements (`ok`, `sure`, thumbs up, `k`), price probes, and turns containing two questions. When intent is ambiguous, restate the offer in one line and ask the single most valuable clarifying question. When commercial and logistical questions coexist, answer the commercial question first; park the logistical question with an explicit "then I will come back to".
+- [ ] **(o) Stall recovery.** Specify three follow-up touches, each with its day, channel, and angle. After touch three, apply `ZHC-<playbook-id>-stalled` and hand off to the follow-up campaign. No fourth message.
+- [ ] **(p) Golden transcript.** Include at least one worked good transcript per playbook: 6–10 turns showing the flow, a handled objection, and the win. Also include a bad exchange showing the anti-pattern. Every phase MUST contain at least one `example: "..."` line with the exact phrasing the agent would send in that phase.
+- [ ] **(q) Conversational KPIs.** Define measurable targets for median reply length, questions per turn after qualification, turns to win, and escalation-rate ceiling. `protocols/weekly-tune-up-protocol.md` reports performance against these targets.
+- [ ] **Machine enforcement.** `scripts/qc-communications-playbook-standard.sh` asserts this STANDARD's required checklist and items (a)-(i). Every playbook is checked by `scripts/qc-playbook-craft.sh` for items (l)-(q) and `scripts/qc-playbook-declares.sh` for (k); the hook-level gates `scripts/qc-send-directive.sh` and `scripts/qc-conversation-memory.sh` verify items (d) and (e) in the GHL inbound hook's SERVER `messageTemplate`; `scripts/qc-playbook-doc.sh` checks the human-facing doc. `tools/playbook_engine.py conversation_lint` checks content quality. Fewer than five objections, a phase without an `example:` line, missing KPI targets, a missing golden transcript, or a `never-say` phrase repeated in the copy are defects.
+- [ ] **Phase structure is mandatory.** A playbook without `### Phase N` blocks is INVALID and rejected by `tools/playbook_engine.py`.
+- [ ] **Canonical starting point.** Build new playbooks from `templates/appointment-booking-playbook-template.md`. The template is a starting point, not a complete playbook; extend it with every applicable mandatory item in Section 0.
 
 ## 3. STORAGE — where the playbook FILE lives (master-files folder)
 
@@ -166,9 +198,14 @@ conversation-memory enforcement:
 
 These are complementary, not redundant:
 
-- **Channel communication playbook** = baseline tone/voice for ONE channel (one per channel), in
-  `<MASTER_FILES_DIR>/communication-playbooks/` (template: `templates/channel-playbook-template.md`).
-  Applies to EVERY reply on that channel.
+- **Channel communication playbook** = baseline tone/voice for ONE channel (one per channel), stored at
+  `<MASTER_FILES_DIR>/communication-playbooks/<channel>-communication.md`. Canonical filenames:
+  `sms-communication.md`, `email-communication.md`, `facebook-messenger-communication.md`,
+  `facebook-comments-communication.md`, `instagram-dm-communication.md`,
+  `linkedin-communication.md`, `live-chat-communication.md`, `all-in-one-chat-communication.md`
+  (template: `templates/channel-playbook-template.md`). Applies to EVERY reply on that channel.
+  Inbound messages on WhatsApp, GMB, or GBP use `all-in-one-chat-communication.md` as the baseline;
+  no dedicated WhatsApp/GMB/GBP files are specified by this standard.
 - **Communications playbook (this standard)** = a specific SCENARIO override (many per client), in
   `<MASTER_FILES_DIR>/conversation-workflows/`. Applies only when its trigger fires.
 

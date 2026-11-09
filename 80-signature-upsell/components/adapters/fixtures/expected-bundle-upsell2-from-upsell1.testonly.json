@@ -226,7 +226,7 @@
       },
       {
         "condition": "from_upsell_1",
-        "text": "Your first upgrade is confirmed (TEST ONLY Deep Work Library). The Implementation Studio builds on it with guided implementation - a different step from the content upgrade you just added."
+        "text": "Your first upgrade is confirmed (TEST ONLY Deep Work Library). TEST ONLY Implementation Studio is a separate optional step that builds on it; your first upgrade stays yours either way."
       }
     ]
   },

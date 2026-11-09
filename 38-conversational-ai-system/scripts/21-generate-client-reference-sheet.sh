@@ -504,7 +504,8 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf '  "channel": "sms",\n'
   printf '  "to": "{{contact.phone}}",\n'
   printf '  "thinking": "medium",\n'
-  printf '  "contact_id": "{{contact.id}}",\n'
+  printf '  "contact_id": "{{contact.id}}",
+  "message_id": "{{message.id}}",\n'
   printf '  "first_name": "{{contact.first_name}}",\n'
   printf '  "last_name": "{{contact.last_name}}",\n'
   printf '  "email": "{{contact.email}}",\n'
@@ -569,7 +570,8 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf '  "channel": "sms",\n'
   printf '  "to": "{{contact.phone}}",\n'
   printf '  "thinking": "medium",\n'
-  printf '  "contact_id": "{{contact.id}}",\n'
+  printf '  "contact_id": "{{contact.id}}",
+  "message_id": "{{message.id}}",\n'
   printf '  "first_name": "{{contact.first_name}}",\n'
   printf '  "last_name": "{{contact.last_name}}",\n'
   printf '  "email": "{{contact.email}}",\n'

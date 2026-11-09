@@ -1,0 +1,35 @@
+{
+  "_fixture": "UNEXECUTED SAMPLE — shape only. Every value is a placeholder. Never copy this onto a box.",
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "defaultAccount": "example-account",
+      "accounts": {
+        "example-account": {
+          "enabled": true,
+          "dmPolicy": "allowlist",
+          "allowFrom": ["0000000001"]
+        }
+      }
+    }
+  },
+  "agents": {
+    "entries": {
+      "example-agent": {
+        "name": "Example Agent",
+        "workspace": "/abs/path/to/agent-workspace"
+      }
+    }
+  },
+  "bindings": [
+    {
+      "type": "route",
+      "agentId": "example-agent",
+      "match": { "channel": "telegram", "accountId": "example-account" }
+    },
+    {
+      "agentId": "example-agent",
+      "match": { "channel": "telegram", "accountId": "example-account", "peer": "0000000001" }
+    }
+  ]
+}

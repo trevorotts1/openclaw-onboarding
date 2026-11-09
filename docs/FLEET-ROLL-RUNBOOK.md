@@ -288,5 +288,76 @@ blast radius of any single bad box is that one box, and the revert is mechanical
 - The snapshot-and-revert path (Section 4) is proven on the first proving box.
 - **The operator has said GO** (Section 9, D-1). The roll never self-starts.
 
+## 11. WEEKLY-UPDATE PRE-FLIGHT (before any install step)
+
+`shared-utils/fleet_preflight.py` runs inside the weekly path (`update-skills.sh`, right after the
+account standing gate; the roll runner also runs its storage and memory part before taking its
+snapshot). Any enforced failure means **no install on that box this run**. The box ends with the
+documented status **`paused-preflight`**: `update-skills.sh` prints `FLEET-PREFLIGHT-PAUSED: <reasons>`
+and exits 0 (the same shape as the standing hold), the roll runner records outcome `SKIPPED` with the
+detail `paused-preflight: <reasons>; nothing was changed`, and `<OpenClaw root>/fleet-preflight/status.json`
+holds every check's result. Nothing is changed, nothing is left half-done, and the next scheduled run
+tries again. A missing helper, missing python3 or any internal error proceeds (fail open).
+
+| Order | Check | Enforced | Rule |
+|---|---|---|---|
+| a | Account standing (the existing gate) | from `FLEET_PREFLIGHT_ENFORCE_FROM` = 2026-11-05 (UTC); before that, warn and notify only | a `blocked` verdict holds the update, as before |
+| b | Provider standing: OpenRouter, Ollama, Agnes AI, kie.ai, Gemini API key | same date as (a) | only an explicit `fail` pauses |
+| c | Storage | immediately | free space on the volume holding the OpenClaw root below `STORAGE_MIN_FREE_BYTES` = 4 GiB |
+| d | Memory pressure | immediately | heavy pressure skips the install this run; retried on the next scheduled run, at most `MEMORY_MAX_DEFERRALS` = 3 runs in a row, then the run proceeds |
+
+**Storage minimum (4 GiB).** 2 GiB for the snapshot and doctor captures (the 20261029 roll saw 1 to 2 GB
+per box, so the worst case is used), plus 1 GiB for the package installs (the OpenClaw npm package, the
+private Node runtime, the npm cache; an estimate, not a measurement), plus 1 GiB safety margin. The
+skills snapshot keeps its own, separate check in `take_snapshot` (twice the skills tree plus 512 MB).
+
+**Memory pressure.** Heavy when any one holds. Mac: `memory_pressure` system-wide free percentage below
+10, or `kern.memorystatus_vm_pressure_level` 2 (warn) or 4 (critical). Linux and Docker: `/proc/meminfo`
+`MemAvailable` below 10 percent of `MemTotal`, or `/proc/pressure/memory` `some avg60` above 25, or `full avg60`
+above 5.
+
+**Provider checks.** Wired to the repo's own checks: Gemini (`embedding_health` smoke embed) and OpenRouter
+(`embedding_health` smoke embed, only when the box has a key). Only an authentication, billing or quota
+failure counts as `fail`; a timeout is `warn` and never pauses. Ollama, Agnes AI and kie.ai have no check in
+this repo, so each reads its result from the ONE external read point,
+`<OpenClaw root>/provider-standing.json` (override: `FLEET_PROVIDER_STANDING_FILE`), shape
+`{"<provider>": {"status": "ok" | "fail", "checked_at": "<UTC ISO>", "detail": "..."}}`, ignored when older than
+8 days. With no check and no entry the provider is recorded as `external-check-not-wired`: never blocking, no
+API is invented. The same read point is also consulted for Gemini and OpenRouter when the repo check is
+inconclusive.
+
+**Notices.** One note per issue per ISO week through the client's own Telegram agent (`openclaw message send`,
+to the owner chat in `.workforce-build-state.json`), signed "Steph, BlackCEO Fleet Manager", recorded in
+`<OpenClaw root>/fleet-preflight/notices.json` so it is not repeated that week. Silence rules respected: never an
+operator chat id, never while `ownerSendsHold` is set, at most 2 pre-flight notes per box per week, and a send that
+the gateway did not acknowledge is not recorded (the next run tries again). Convert and Flow is the only product
+name used.
+
+**Client skills are never touched.** A numbered folder in the live skills directory that the repo does not ship is
+the client's own. No weekly step deletes, moves, wires, verifies or stamps it. They are counted apart as
+`skills_client_extra` (in the roll's box result and the updater's output) and do not count against installed versus
+expected. Updater-made backup copies (`.bak-roll-*`, `.pre-*`, `.rollback`, `.orig`) and the recovery copies the
+updater makes keep their existing handling. The old hand-installed `70-diagnose-explain-fix` removal is now
+report-only.
+
+## 12. DOWNTIME AUDIT (20261029 roll; documentation only, no behaviour change)
+
+Which weekly-update steps stop or restart the gateway or the Command Center, or recreate a container, and what
+each took in the 20261029 roll (durations read from the roll ledger; "about" marks a figure rounded from ledger
+timestamps; each is one measured box, not a fleet average):
+
+| Step | What restarts | Measured in the 20261029 roll |
+|---|---|---|
+| `update-skills.sh` (skills content, wiring, verification) | nothing restarts | no gateway downtime; the long part is hashing and copying skill folders (budgeted at up to 90 minutes on a Docker box) |
+| Command Center pull, build, restart (`atomic-deploy.sh`, pm2 app `blackceo-command-center`) | the Command Center web app only | about 5.75 minutes on one Docker box (11:58 to 12:03:45Z). One Mac needed an extra Command Center restart because its gateway socket had given up reconnecting after the gateway outage |
+| OpenClaw package upgrade on a Mac (`oc-atomic-upgrade.sh`, launchd) | the gateway: the LaunchAgent is booted out, the package is replaced, the gateway is started again | gateway out for about 4 minutes on two Macs (09:48:02 to 09:51:55Z and about 10:08:40 to 10:12:30Z); the LaunchAgent unloaded in about 15 s; the `npm install` itself took 11 to 13 s |
+| `openclaw doctor --fix` inside that window | the gateway stays down for the duration | about 21 minutes on one Mac with 105 agent databases (the longest measured window) |
+| OpenClaw package upgrade in Docker (`docker stop`, `npm install` into the persistent root, doctor, start) | the container is stopped, then started | not timed as one window in the ledger; clients were told to expect 15 to 20 quiet minutes before the final recreate |
+| Container recreate (`docker compose up -d --force-recreate`, Hostinger boxes; Contabo uses `docker restart`) | the whole container: gateway, Command Center and everything in it | gateway `/healthz` 200 after about 1.5 minutes (recreate 11:08:40Z, healthz 11:10:18Z) and about 2.6 minutes (11:11:25Z to 11:14:00Z) on two boxes |
+| 999-setup refresh, 9Router upgrade | the local 9Router service only | no per-box duration recorded in the ledger (each upgrade row records only the result: guards 20 of 20, health 200) |
+| Roll heal step (`restart-gateway`) when a post-update check fails | the gateway (Mac `launchctl kickstart -k`; Hostinger recreate; Contabo `docker restart`) | only on a failed check; not separately timed in the ledger |
+
+Nothing in this batch changes any of the above. Shortening or moving them is a separate decision.
+
 **Version note:** this runbook does not bump the repo version. The version bump
 is the merge step's job, per the two-repo version discipline (Section 2.6).

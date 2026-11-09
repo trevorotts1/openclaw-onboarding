@@ -21,7 +21,7 @@ import {
   DEFAULT_DIAGNOSTIC_RETENTION_POLICY,
   DIAGNOSTIC_LIMITS,
   type DiagnosticRetentionPolicy,
-} from './schemas';
+} from './schemas.js';
 
 export { DEFAULT_DIAGNOSTIC_RETENTION_POLICY, DIAGNOSTIC_LIMITS };
 export type { DiagnosticRetentionPolicy };

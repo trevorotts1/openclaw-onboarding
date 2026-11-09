@@ -11,7 +11,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v27.1.74"
+  version: "v27.1.85"
   priority: HIGH
 ---
 
@@ -633,6 +633,17 @@ preflight script. Capability-class mapping and lane detail live in
   the exact 18-entry shape (and `apply_palette_to_page_styles` keeps the
   `:root{--primary:…}` CSS vars in sync). A 201 autosave status does NOT prove a
   page renders; it only proves bytes were stored.
+- **Splice guards (`ghl_rest_canvas.html_fragment` / `new_page_blob` / `lint_ghl_fragment`).**
+  Head assets are carried into the fragment, never dropped: `<style>`, inline and
+  remote `<script>`, remote `<link>` (stylesheet, fonts, preconnect) and the
+  viewport `<meta>` are hoisted; local stylesheets/scripts are inlined from
+  `base_dir` (the source file's folder); a head `<link>` that cannot be carried
+  raises naming the tag. A raw card input (`cc-number`, `cc-csc`, `cc-exp`,
+  `cardnumber`, `cvv`/`cvc` names) is refused: only the processor's native order
+  form takes card data. Funnel builds require every `<img>` to be a GHL media
+  link (`require_ghl_media` defaults ON for `surface="funnel"` and in the lint);
+  a relative path or external/temporary URL raises naming the file.
+  `tools/test_rest_canvas_safety.py` proves all three.
 - **Sealed un-fakeable verification.** A page PASS requires ONLY: `ghl_verify.render_check`
   returns HTTP 200, marker present in the RENDERED (JavaScript-hydrated) DOM, and
   zero render errors — captured as real DOM snapshot + PNG + console artifacts.

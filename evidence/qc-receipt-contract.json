@@ -1,0 +1,121 @@
+{
+  "schema": "s75.qc-receipt-contract/1",
+  "unit": "S75-T35",
+  "acceptance_id": "S75-A35",
+  "adapter": "CONTROL/qc_receipt_adapter.py",
+  "purpose": "Machine-readable contract the adapter enforces. The unit test asserts parity with the adapter's own constants so the document cannot drift from the code.",
+  "resolution_note": "The ledger proposed 'control/qc_receipt_adapter.py'. No lowercase 'control' directory exists in this repository; the established equivalent is the uppercase CONTROL/ directory at the repository root (pre-existing, contains CHANGELOG.md and heartbeats/). This unit writes into CONTROL/ rather than inventing a competing structure.",
+  "confirmable_verdicts": [
+    "PASS"
+  ],
+  "required_claim_fields": [
+    "unit",
+    "head_tested",
+    "verdict",
+    "author",
+    "approver",
+    "checks"
+  ],
+  "head_rule": {
+    "format": "full 40-hex lowercase commit SHA",
+    "match": "receipt.head_tested must equal the candidate head exactly",
+    "abbreviated_head": "rejected as head_not_full_sha; a short SHA is not an exact-head receipt"
+  },
+  "independence_rule": {
+    "author_vs_approver": "identity must differ AND lineage must differ",
+    "comparison": "both halves are trimmed and case-folded: 'builder-lane-7' and 'Builder-Lane-7' are the same party, and so are two spellings of one lineage",
+    "repair_kind": "a receipt with kind=repair must also name repair_author, and the verifier must differ from repair_author on identity and lineage",
+    "rationale": "a repair author and its verifier must differ; same identity is self-approval, same lineage is not an independent check, and relabelling a lane does not manufacture independence (QC-AND-REPAIR.md:11)"
+  },
+  "rejection_codes": {
+    "unstructured_stdout": "receipt is captured console output (str/bytes), not a structured claim",
+    "missing_structured_claim": "claim object missing one or more required fields",
+    "head_not_full_sha": "head_tested or candidate head is not a full 40-hex SHA",
+    "wrong_head": "head_tested is a full SHA but not the candidate head",
+    "verdict_not_confirmable": "verdict is not in confirmable_verdicts",
+    "identity_or_lineage_missing": "author or approver lacks a non-empty identity or lineage",
+    "self_approved": "approver shares identity or lineage with the author",
+    "repair_author_not_independent": "verifier shares identity or lineage with repair_author, or repair_author is absent",
+    "no_checks_recorded": "checks is empty or not a list",
+    "wrong_unit": "the record names a unit that is not this ledger's unit"
+  },
+  "ledger_states": [
+    "QC_CONFIRMED",
+    "QC_UNCONFIRMED",
+    "QC_CONFLICT"
+  ],
+  "duplicate_policy": {
+    "definition": "same unit, same head_tested, same (result, code), same author and same approver, all identities trimmed and case-folded",
+    "not_part_of_identity": "reason text: formatting drift in a message is never a new fact and never a conflict",
+    "effect": "no-op: state object returned unchanged, no new entry, no counter bump",
+    "why": "idempotent verdict handling; a retry must not double-count or duplicate a ledger row",
+    "second_distinct_approver": "a DIFFERENT approver (or author) is not a duplicate: its row is appended with its own identity, the first verdict stays the verdict, and the receipt embeds the ledger's own approver list so the two files cannot name different approvers"
+  },
+  "conflict_policy": {
+    "definition": "same unit, same head_tested, a DIFFERENT (result, code): two records that disagree",
+    "effect": "first verdict retained and never overwritten; unit becomes QC_CONFLICT; every conflicting record is kept with its own identity and its parties are recorded",
+    "repeat_of_a_recorded_conflict": "no-op (idempotent)",
+    "required_resolution": "distinct third authority",
+    "resolution_route": "the 'adjudication' event only; ordinary verdicts never overwrite and never resolve"
+  },
+  "adjudication_policy": {
+    "event": "adjudication",
+    "required_fields": [
+      "adjudicator (identity + lineage)",
+      "authorisation (a separate, non-empty authority statement)",
+      "resolution (result: QC_CONFIRMED or QC_UNCONFIRMED)"
+    ],
+    "gates": [
+      "the adjudicator must differ on identity AND lineage from every party recorded in the conflict (the first verdict's author and approver and every later conflicting record's parties)",
+      "the authorisation must not be the adjudicator's own identity: self-authorisation is not a separate authority",
+      "there must be a recorded conflict to adjudicate"
+    ],
+    "effect": "writes a resolution record (state.resolution, code 'adjudicated') and moves the unit's status to the adjudicated result; the first verdict is never mutated",
+    "idempotency": "the same adjudicator, authorisation and resolution repeated is a no-op (state unchanged, byte-identical)",
+    "first_resolution_wins": "once a resolution is recorded, a different adjudication is refused with nothing written",
+    "why": "first-writer-wins stays the safety property for ordinary lanes; a wrong first verdict needs exactly one separately authorised way out, or QC_CONFLICT strands the unit"
+  },
+  "outcome_derivation": {
+    "rule": "apply_verdict and apply_event derive the outcome; a record's self-declared result and code are never believed",
+    "full_claim": "a record carrying every required claim field is re-evaluated from scratch against the ledger's head",
+    "named_rejection_code": "a record carrying a named rejection code is that rejection, whatever result it asserts",
+    "anything_else": "missing_structured_claim; only a re-evaluated claim can ever produce QC_CONFIRMED"
+  },
+  "ledger_rejections": {
+    "what": "a record that does not belong to this ledger: wrong_head, head_not_full_sha or wrong_unit",
+    "where": "state.rejections, appended with the derived code and the record's own claimed result and code kept as evidence",
+    "acknowledgement": "every rejection returns an acknowledgement carrying result and code; it is never raised past",
+    "idempotency": "an identical repeat is a no-op (state unchanged)"
+  },
+  "supported_events": [
+    "verdict",
+    "repair_request",
+    "lease_renewal",
+    "adjudication"
+  ],
+  "unsupported_event_handling": "raise UnsupportedEvent; never silently ignored, state is not modified",
+  "durability_order": [
+    "evaluate receipt",
+    "derive the ledger transition",
+    "atomic write of the durable receipt (temp file, fsync, os.replace, directory fsync), carrying the ledger's own view of the transition",
+    "atomic write of the ledger transition",
+    "return acknowledgement"
+  ],
+  "durability_failure": "any write failure raises DurabilityError and returns no acknowledgement; no rejection is ever expressed as an exception",
+  "binding_instrument": {
+    "narrowing": "S75-T35 was narrowed by the D7 arbiter outcome REJECT_AND_NARROW (S75-T35-ARBITER.md section 5). Clause 3's binding-VALUE assertion left the row. What replaces it is the provable-at-all claim and only that claim.",
+    "claim": "The role-to-chain binding is instrumented and resolvable fail-closed from harness-written agent-*.meta.json records, resolved and persisted at start().",
+    "resolution_chain": "workflow_of(session_ref) -> _meta_index(workflow_id) -> served_route(agent_id, workflow_id) -> route_binding(requested, served)",
+    "verdicts": [
+      "match",
+      "substitution",
+      "unverified_no_binding_record"
+    ],
+    "fail_closed": "an absent, out-of-scope or unreadable binding record yields unverified_no_binding_record, never match; a record filed under a different harness workflow is never borrowed",
+    "fail_open_at_base": "the pre-change served_route(agent_id) is unscoped: a record filed under a different workflow answers for that agent id, so a fabricated workflow id silently returns somebody else's route",
+    "persisted_at_start": "requested route, served route, binding verdict and route_checked are written in the same start() transition, because the meta records are ephemeral",
+    "explicitly_not_asserted": "which chain any role rides. The measured runs contradicted the builder half of the original claim (2 of 150 literal deepseek-chain) and the repository's own ROUTES default is a default, not a permitted set. This contract asserts instrumentation and fail-closed resolution only.",
+    "control": "tests/unit/test_workflow_slots.py::MetaWitnessTests binds neutral chain names on purpose, so the proof grades the instrument and never restates a doctrine about who rides what"
+  },
+  "receipt_path_pattern": "evidence/units/S75-T35/attempt-<verified-generation>.json"
+}

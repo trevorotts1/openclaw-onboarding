@@ -6,6 +6,10 @@ Black Friday timing Skill 83 owns, lists every planned unit (pages, email
 sequences, text sets, automations and the optional Conversation AI) and fails when
 a planned unit was not delivered. It never restates the schema, never invents a
 date and never invents a unit.
+
+``record()`` also carries the shared-semantics boundaries this unit owns (brand/asset,
+page installation, automation, publication, execution stage, resume) exactly as the
+plan states them; a boundary the plan does not state is ABSENT, never defaulted.
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ from __future__ import annotations
 import datetime
 import functools
 import importlib.util
+import re
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -21,6 +26,19 @@ from .constants import REPO_ROOT
 PLAN_CONTRACT_REF = "shared-utils/signature_launch_contract/launch-plan.schema.json"
 PLAN_VALIDATOR_REF = "shared-utils/signature_launch_contract/validate_launch_plan.py"
 PLAN_SCHEMA_VERSION = "1.0.0"
+CALENDAR_LAW_REF = "shared-utils/signature_launch_contract/calendar_law.py"
+
+# The identity a plan must share with the approved launch it was dispatched from.
+BIND_KEYS = ("launch_id", "tenant_id", "location_id", "revision")
+# A Black Friday plan promises at least one email sequence and one automation unless the
+# client's recorded intake (``client_choices``) says otherwise. choice -> unit sections waived.
+SCOPE_SECTIONS = (("email_sequences", "email"), ("automations", "automation"))
+SCOPE_WAIVERS = {
+    "no_email_sequences": {"email"},
+    "no_automations": {"automation"},
+    "email_only": {"automation"},
+    "pages_only": {"email", "automation"},
+}
 
 CALENDAR_KEYS = ("launch_at", "doors_open_at", "doors_close_at", "timezone")
 BLACK_FRIDAY_KEYS = ("teaser_at", "countdown_at", "cyber_monday_at", "last_call_at")
@@ -54,6 +72,20 @@ def _contract_module():
     if not path.is_file():
         return None
     spec = importlib.util.spec_from_file_location("s_launch_plan_contract", path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@functools.lru_cache(maxsize=1)
+def _calendar_law():
+    """The shared calendar law module (U-CONTRACT). None when not installed."""
+    path = REPO_ROOT / CALENDAR_LAW_REF
+    if not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("s_launch_calendar_law", path)
     if spec is None or spec.loader is None:
         return None
     module = importlib.util.module_from_spec(spec)
@@ -96,6 +128,26 @@ def contract_violations(plan: Any) -> List[str]:
         return list(module.validate_plan(plan, module.load_json(module.SCHEMA_PATH)))
     except (OSError, ValueError, KeyError, TypeError) as exc:
         return [f"the shared launch-plan validator is unusable ({exc})"]
+
+
+def launch_id_violation(launch_id: Any) -> Optional[str]:
+    """Why the launch-plan schema would refuse this launch_id, or None.
+
+    Reads the schema's own ``launch_id`` pattern and minLength, so intake refuses at the door exactly
+    what the plan would refuse after the pages are built. None when the contract is not installed:
+    ``validate_plan`` then refuses the plan by name."""
+    module = _contract_module()
+    if module is None:
+        return None
+    try:
+        rule = module.load_json(module.SCHEMA_PATH)["properties"]["launch_id"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(launch_id, str) or len(launch_id) < rule.get("minLength", 0) \
+            or not re.search(rule.get("pattern", ""), launch_id):
+        return (f"{launch_id!r} does not match the launch plan's launch_id rule "
+                f"(pattern {rule.get('pattern')}, at least {rule.get('minLength', 0)} characters)")
+    return None
 
 
 def validate_plan(plan: Any) -> None:
@@ -190,23 +242,33 @@ def black_friday_calendar(plan: Mapping[str, Any]) -> Dict[str, Any]:
     last_call = _time(black_friday["last_call_at"], "black_friday.last_call_at", zone)
     doors_close = _time(calendar["doors_close_at"], "doors_close_at", zone)
 
-    order = (
-        ("teaser", teaser, "countdown", countdown),
-        ("countdown", countdown, "doors open", doors_open),
-        ("doors open", doors_open, "launch", launch_at),
-        ("launch", launch_at, "Cyber Monday", cyber_monday),
-        ("Cyber Monday", cyber_monday, "last call", last_call),
-        ("last call", last_call, "doors close", doors_close),
-    )
-    for earlier_name, earlier, later_name, later in order:
-        if earlier > later:
-            raise LaunchPlanError(
-                "AF-LAUNCH-CALENDAR-ORDER",
-                f"{earlier_name} ({earlier.isoformat()}) is after {later_name} "
-                f"({later.isoformat()}); a deadline may not move backwards")
-    if doors_open >= doors_close:
-        raise LaunchPlanError("AF-LAUNCH-CALENDAR-ORDER",
-                              "doors open at or after doors close; the open window is never empty")
+    law = _calendar_law()
+    if law is not None:
+        # The ONE calendar law (shared with Skill 44's reader and the plan validator).
+        broken = law.violations({**calendar, "black_friday": dict(black_friday)},
+                                black_friday_required=True)
+        if broken:
+            raise LaunchPlanError("AF-LAUNCH-CALENDAR-ORDER", "; ".join(broken))
+    else:
+        # ponytail: private order only until shared-utils/.../calendar_law.py is on the
+        # branch (U-skill44-01); delete this arm once it always is.
+        order = (
+            ("teaser", teaser, "countdown", countdown),
+            ("countdown", countdown, "doors open", doors_open),
+            ("doors open", doors_open, "launch", launch_at),
+            ("launch", launch_at, "Cyber Monday", cyber_monday),
+            ("Cyber Monday", cyber_monday, "last call", last_call),
+            ("last call", last_call, "doors close", doors_close),
+        )
+        for earlier_name, earlier, later_name, later in order:
+            if earlier > later:
+                raise LaunchPlanError(
+                    "AF-LAUNCH-CALENDAR-ORDER",
+                    f"{earlier_name} ({earlier.isoformat()}) is after {later_name} "
+                    f"({later.isoformat()}); a deadline may not move backwards")
+        if doors_open >= doors_close:
+            raise LaunchPlanError("AF-LAUNCH-CALENDAR-ORDER",
+                                  "doors open at or after doors close; the open window is never empty")
 
     phases = [
         {"phase": "teaser", "at": black_friday["teaser_at"]},
@@ -381,9 +443,112 @@ def assert_complete(result: Mapping[str, Any]) -> None:
             f"({counts.get('delivered', 0)}/{counts.get('planned', 0)} complete)")
 
 
+def scope_violations(plan: Any, client_choices: Any = None) -> List[str]:
+    """A Black Friday plan with no email sequence or no automation, absent a recorded choice.
+
+    ``client_choices`` is the list the CLIENT's intake records (``email_only``,
+    ``pages_only`` ...). The plan's own text never waives anything: a plan that
+    drops its emails and automations would otherwise report 100% complete.
+    """
+    if not isinstance(plan, Mapping):
+        return []
+    calendar = plan.get("launch_calendar")
+    if not (isinstance(calendar, Mapping) and "black_friday" in calendar):
+        return []
+    chosen = client_choices if isinstance(client_choices, (list, tuple)) else []
+    waived = set()
+    for choice in chosen:
+        waived |= SCOPE_WAIVERS.get(choice, set()) if isinstance(choice, str) else set()
+    return [
+        f"{section}: a Black Friday launch plans at least one {kind} unit and the intake "
+        f"records no client choice (one of {sorted(SCOPE_WAIVERS)}) that waives it"
+        for section, kind in SCOPE_SECTIONS
+        if kind not in waived and not (isinstance(plan.get(section), list) and plan[section])
+    ]
+
+
+def bind_violations(plan: Any, launch: Mapping[str, Any]) -> List[str]:
+    """Where the plan differs from the approved launch record it was dispatched from.
+
+    ``launch`` is the intake (``approval.hash``) or a manifest (``approved_plan_hash``).
+    Hash values are never echoed, only which field disagrees.
+    """
+    if not isinstance(plan, Mapping):
+        return ["the launch plan must be an object"]
+    out = [f"{key}: the plan says {plan.get(key)!r}, the approved launch says {launch.get(key)!r}"
+           for key in BIND_KEYS if plan.get(key) != launch.get(key) or plan.get(key) is None]
+    approved = launch.get("approved_plan_hash") or (launch.get("approval") or {}).get("hash")
+    if not _nonempty_str(approved):
+        out.append("approved_plan_hash: the approved launch records no approval hash")
+    elif plan.get("approved_plan_hash") != approved:
+        out.append("approved_plan_hash: the plan's hash is not the approved launch's approval hash")
+    return out
+
+
+# The six shared-semantics boundaries Skill 83 carries on the shared launch plan (BFL-000). Each is
+# copied from the plan unchanged. A boundary the plan does not state stays ABSENT: absence is the one
+# encoding of "not recorded yet", so no lane can read a default as a fact.
+BOUNDARY_PLAN_KEY = {
+    "brand_asset": "asset_map",
+    "publication": "publication",
+    "execution_stage": "execution_stage",
+    "resume": "resume",
+}
+_PAGE_BOUNDARY_KEYS = ("sections", "native_checkout_family", "native_purchase_bindings",
+                       "installation", "execution_stage")
+_AUTOMATION_BOUNDARY_KEYS = ("trigger", "filters", "actions", "settings", "browser_work",
+                             "execution", "execution_stage")
+
+
+def shared_semantics(plan: Mapping[str, Any]) -> Dict[str, Any]:
+    """The shared-semantics boundaries this launch actually states, and nothing else.
+
+    brand/asset, page installation, automation, publication, execution stage and resume. Brand/asset,
+    publication, execution stage and resume are top-level documents copied unchanged; page
+    installation and automation are read per unit so the record names which page or automation each
+    belongs to. A unit that states none of them is omitted rather than filled with defaults.
+    """
+    if not isinstance(plan, Mapping):
+        return {}
+    out: Dict[str, Any] = {}
+    for boundary, key in BOUNDARY_PLAN_KEY.items():
+        value = plan.get(key)
+        if isinstance(value, Mapping) and value:
+            out[boundary] = dict(value)
+
+    installed = [
+        {"id": page.get("id"), **{k: page[k] for k in _PAGE_BOUNDARY_KEYS if k in page}}
+        for page in plan.get("pages") or []
+        if isinstance(page, Mapping) and any(k in page for k in _PAGE_BOUNDARY_KEYS)
+    ]
+    if installed:
+        out["page_installation"] = installed
+
+    automations = [
+        {"id": unit.get("id"), **{k: unit[k] for k in _AUTOMATION_BOUNDARY_KEYS if k in unit}}
+        for unit in plan.get("automations") or []
+        if isinstance(unit, Mapping) and any(k in unit for k in _AUTOMATION_BOUNDARY_KEYS)
+    ]
+    if automations:
+        out["automation"] = automations
+    return out
+
+
 def record(plan: Mapping[str, Any],
-           delivered: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
-    """The record the manifest and receipt carry: calendar + planned-unit completeness."""
+           delivered: Optional[Mapping[str, Any]] = None,
+           intake: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    """The record the manifest and receipt carry: calendar + planned-unit completeness.
+
+    The plan is bound to the approved launch (``intake``, when given) and must promise
+    the units a Black Friday launch is: both refuse by name, before any percentage.
+    """
+    if intake is not None:
+        bound = bind_violations(plan, intake)
+        if bound:
+            raise LaunchPlanError("AF-LAUNCH-PLAN-BIND", "; ".join(bound))
+    thin = scope_violations(plan, (intake or {}).get("client_choices"))
+    if thin:
+        raise LaunchPlanError("AF-LAUNCH-PLAN-SCOPE", "; ".join(thin))
     calendar = black_friday_calendar(plan)
     result = completeness(plan, delivered)
     return {
@@ -396,4 +561,5 @@ def record(plan: Mapping[str, Any],
             "mode": (plan.get("conversation_ai") or {}).get("mode"),
             "state": result["conversation_ai"],
         },
+        "shared_semantics": shared_semantics(plan),
     }

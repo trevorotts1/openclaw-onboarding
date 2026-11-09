@@ -38,7 +38,9 @@ set, the review is STILL written, with reviewer_session "UNKNOWN" and
 independent_review: false, and a warning printed to stderr: the SOP rule
 for an environment that cannot name its reviewing session is to report
 the limitation, never to simulate independence. The gate stamps such runs
-SELF-REVIEWED or UNKNOWN; they can never claim INDEPENDENT status.
+SELF-REVIEWED or UNKNOWN; they can never claim INDEPENDENT status, and
+stage_gate.py refuses to close a production stage on an UNKNOWN reviewer
+(IMG-11): only a run whose intake.json sets test_run may close on one.
 
 The artifact's SHA-256 is computed here from the file on disk, never taken
 from the caller. author_session is taken from --author-session when given,
@@ -337,7 +339,9 @@ def main():
         print("WARNING: no reviewer session id in the environment (looked "
               "for " + ", ".join(SESSION_ENV_VARS) + "); writing the review "
               "with reviewer_session UNKNOWN and independent_review false. "
-              "The limitation is recorded, not simulated.", file=sys.stderr)
+              "The limitation is recorded, not simulated. A production stage "
+              "will not close on this review (only a test_run may); re-run it "
+              "from a session that can name itself.", file=sys.stderr)
 
     criteria, errors = validate_scores(args.scores)
     if errors:

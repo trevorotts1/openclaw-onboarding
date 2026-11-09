@@ -11,7 +11,9 @@
  * - B15 portable half: `export` runs through CWE-038's
  *   ReportExportService: the markdown is the validated decision
  *   report carrying the exact verdict hash, JSON mode returns the
- *   registered deliverable, and PDF refuses as not ready (CWE-044).
+ *   registered deliverable, and a bare PDF export refuses without --out
+ *   (COUNCIL_USAGE / exit 2 where a renderer exists, COUNCIL_FEATURE_NOT_READY
+ *   / exit 3 where none does).
  */
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -164,12 +166,22 @@ test('cli composition: create mirrors into the authorization store; preview and 
   assert.ok(markdown.includes(verdict.content_sha256));
 
   c = capture();
-  assert.equal(
-    await runCli(['export', 'sess-fixture-1', '--format', 'pdf', '--json', '--data-dir', sampleDir], c.io),
-    3,
+  const pdfCode = await runCli(
+    ['export', 'sess-fixture-1', '--format', 'pdf', '--json', '--data-dir', sampleDir],
+    c.io,
   );
+  // Same v1.0.74 contract as cli.test.ts: the pdf bytes are a real binary
+  // deliverable and a bare `--format pdf` refuses, printing no bytes, with
+  // a host-dependent code pinned to its own exit status.
+  assert.equal(c.out(), '', 'a refusing pdf export prints no bytes to stdout');
+  const pdfRefusal = JSON.parse(c.err()) as { error: { code: string } };
+  const refusalExitCode: Record<string, number> = {
+    COUNCIL_USAGE: 2,
+    COUNCIL_FEATURE_NOT_READY: 3,
+  };
   assert.equal(
-    (JSON.parse(c.err()) as { error: { code: string } }).error.code,
-    'COUNCIL_FEATURE_NOT_READY',
+    refusalExitCode[pdfRefusal.error.code],
+    pdfCode,
+    `exit code must match the pdf refusal code ${pdfRefusal.error.code}`,
   );
 });

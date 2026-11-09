@@ -955,11 +955,23 @@
       "why": "A parent_order_ref string and an absent field produce identical snapshots."
     },
     {
-      "case_id": "eq-1.0-vs-1.2-separate-extra-order",
-      "kind": "equivalence",
-      "left": "extra_separate_order_10",
-      "right": "extra_separate_order_12_parent_string",
-      "why": "parent_order_ref pointing at order 0001 does not merge order 0002 into it."
+      "case_id": "snapshot-1.2-parent-groups-separate-extra-order",
+      "kind": "snapshot",
+      "stream": "extra_separate_order_12_parent_string",
+      "orders": ["TEST-ORDER-0001"],
+      "expect": {
+        "line_count": {"TEST-ORDER-0001": 2},
+        "line_event_id": {"TEST-ORDER-0001": ["TEST-EVT-A1::TEST-LINE-MAIN-A", "TEST-EVT-C2::TEST-LINE-U1"]}
+      }
+    },
+    {
+      "case_id": "snapshot-1.0-unlinked-orders-stay-separate",
+      "kind": "snapshot",
+      "stream": "extra_separate_order_10",
+      "orders": ["TEST-ORDER-0001", "TEST-ORDER-0002"],
+      "expect": {
+        "line_count": {"TEST-ORDER-0001": 1, "TEST-ORDER-0002": 1}
+      }
     },
     {
       "case_id": "eq-1.0-vs-1.2-refund",

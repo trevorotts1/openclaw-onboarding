@@ -194,8 +194,7 @@ def _load_qc_semantic(run_dir: Path, run_id: str, key: bytes) -> Tuple[Optional[
     (aa_qc_cert.py --semantic), produced by an independent verifier sub-agent
     (!= any author) on the client's TIER-A model applying the 10-category
     OpenClaw QC Protocol. Its own HMAC signature must verify against the run
-    key, it must be bound to THIS run_id, the verifier model must be
-    non-Anthropic, and the aggregate semantic score must clear the 8.5 floor."""
+    key, it must be bound to THIS run_id, and the aggregate semantic score must clear the 8.5 floor."""
     p = run_dir / "QC-SEMANTIC.json"
     if not p.is_file():
         return None, [("AF-AV-CERT-SEMANTIC",
@@ -212,10 +211,6 @@ def _load_qc_semantic(run_dir: Path, run_id: str, key: bytes) -> Tuple[Optional[
     if cert.get("run_id") != run_id:
         return None, [("AF-AV-CERT-SEMANTIC",
                         f"QC-SEMANTIC.json run_id {cert.get('run_id')!r} != this run {run_id!r}")]
-    if qc.semantic_verifier_is_anthropic(cert):
-        return cert, [("AF-AV-CERT-SEMANTIC",
-                        f"semantic verifier model {cert.get('verifier_model')!r} is an Anthropic id "
-                        f"(G-NOANTHROPIC — the verifier must run on the client's own TIER-A model)")]
     score = cert.get("semantic_score")
     if score is None or float(score) < SEMANTIC_FLOOR:
         return cert, [("AF-AV-CERT-SEMANTIC",
@@ -547,13 +542,6 @@ def run_self_test(manifest: Dict[str, Any]) -> int:
                                           qc.synth_semantic_judgment(manifest, fx["run_dir"], base=6.0))
         (fx["run_dir"] / "QC-SEMANTIC.json").write_text(json.dumps(c, indent=2), encoding="utf-8")
     cases.append(("qc_semantic_below_floor", "AF-AV-CERT-SEMANTIC", low_semantic_score))
-
-    def anthropic_verifier(tmp, fx):
-        c = qc.build_semantic_certificate(manifest, fx["run_dir"], fx["run_id"], fx["key"],
-                                          qc.synth_semantic_judgment(manifest, fx["run_dir"],
-                                                                     verifier_model="anthropic/claude-3-5-sonnet"))
-        (fx["run_dir"] / "QC-SEMANTIC.json").write_text(json.dumps(c, indent=2), encoding="utf-8")
-    cases.append(("qc_semantic_anthropic_verifier", "AF-AV-CERT-SEMANTIC", anthropic_verifier))
 
     def forged_nonce(tmp, fx):
         # (repro) the exact QC reproduction: hand-write a 16-char nonce file

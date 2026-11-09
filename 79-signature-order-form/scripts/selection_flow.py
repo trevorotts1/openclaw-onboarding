@@ -22,6 +22,7 @@ S78/S49 supply, and is named here rather than silently absent.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, Mapping
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,36 @@ class SelectionDecision:
     action: str  # proceed | recovery_choice | reconfirm_changed_offer | change_package
     reason: str
     offer_id: str | None
+
+
+def selection_from_intent(intent: Mapping[str, Any], *, expires_at: str | None = None,
+                          offer_revision: int | None = None) -> Selection:
+    """The one adapter from Skill 78's selection.json intent to this module's
+    Selection (the two shapes name the same facts differently: 78 carries
+    amount_minor_snapshot and one revision, 79 wants amount_minor plus a
+    launch and an offer revision). Refuses anything that is not a 78 intent
+    or that carries no read-back native price id, so a launch-mode selection
+    with null ids never becomes a checkout request. 78 versions the catalog
+    once, so the offer revision defaults to the launch revision."""
+    if intent.get("kind") != "selection_intent_not_payment_evidence":
+        raise ValueError("not a Skill 78 selection intent")
+    price_id = intent.get("native_price_id")
+    if not isinstance(price_id, str) or not price_id.strip():
+        raise ValueError("selection intent has no native_price_id; native product/price must be read back first")
+    revision = int(intent["revision"])
+    return Selection(
+        offer_id=intent["offer_id"],
+        native_price_id=price_id,
+        amount_minor=int(intent["amount_minor_snapshot"]),
+        currency=intent["currency"],
+        quantity=int(intent.get("quantity", 1)),
+        launch_revision=revision,
+        offer_revision=revision if offer_revision is None else int(offer_revision),
+        expires_at=expires_at,
+        tenant_id=intent["tenant_id"],
+        location_id=intent["location_id"],
+        launch_id=intent["launch_id"],
+    )
 
 
 def resolve_selection(selection: Selection | None, *, current_launch_revision: int,

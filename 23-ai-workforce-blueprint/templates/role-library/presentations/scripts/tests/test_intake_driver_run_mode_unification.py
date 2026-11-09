@@ -29,6 +29,7 @@ directory that exposes the answer-recording CLI is collected and must pass.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -82,10 +83,21 @@ _IDS = [str(p.relative_to(_SKILL23.parent)) for p in _DRIVERS]
 
 def _record(driver: Path, run_dir: Path, answer: str):
     """Run one driver's --answer for the run-mode turn; return (rc, ledger)."""
+    # Never use the operator's live profile for an offline regression.
+    cfg = run_dir / "test-profile"
+    cfg.mkdir(exist_ok=True)
+    (cfg / "resource_profile.json").write_text(json.dumps({
+        ".schema_version": 1,
+        "providers": {"deepseek-direct": {"provider": "deepseek-direct",
+                     "presence": True, "wired_models": ["deepseek-flash"]}},
+        "creative_prefs": {}, "consent": {}, "interview": {}
+    }))
+    env = dict(os.environ, PRESENTATION_RESOURCE_PROFILE_DIR=str(cfg),
+               PRESENTATION_CAPACITY_CONFIG_DIR=str(cfg), PRESENTATION_PROVIDER_PROBES="0")
     proc = subprocess.run(
         [sys.executable, str(driver), "--run-dir", str(run_dir),
          "--answer", _RUN_MODE_TURN, answer],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, timeout=120, env=env,
     )
     ledger_path = run_dir / "working" / "interview" / "intake_ledger.json"
     ledger = {}

@@ -222,10 +222,23 @@ STATE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("st
 # Routing acceptance: the REAL resolver, per operator identity, on the config
 # that is now live. Field presence is not evidence — this resolves the route.
 # ---------------------------------------------------------------------------
+# The package that owns the openclaw binary on PATH is THE installed OpenClaw.
+# `npm root -g` is not: it answers for whichever node is first on PATH, and on a
+# Mac running a private floor-meeting node that is not the node (or prefix) that
+# holds the openclaw package, so it names a global root with no openclaw in it
+# (measured 2026.10.8: routing.js present under the Homebrew prefix, search
+# missed it). Follow the binary's symlink to its package dir first.
+OC_PKG_DIR=""
+if [ -n "$OPENCLAW_BIN" ]; then
+  OC_PKG_DIR="$(python3 -c 'import os,sys; print(os.path.dirname(os.path.realpath(sys.argv[1])))' "$OPENCLAW_BIN" 2>/dev/null || true)"
+fi
 RESOLVER=""
 for cand in \
   "${OPENCLAW_ROUTING_MODULE:-}" \
+  "${OC_PKG_DIR:+$OC_PKG_DIR/dist/plugin-sdk/routing.js}" \
+  "${OC_PKG_DIR:+$OC_PKG_DIR/../dist/plugin-sdk/routing.js}" \
   "$(npm root -g 2>/dev/null || true)/openclaw/dist/plugin-sdk/routing.js" \
+  "/opt/homebrew/lib/node_modules/openclaw/dist/plugin-sdk/routing.js" \
   "$HOME/.npm-global/lib/node_modules/openclaw/dist/plugin-sdk/routing.js" \
   "/usr/lib/node_modules/openclaw/dist/plugin-sdk/routing.js" \
   "/usr/local/lib/node_modules/openclaw/dist/plugin-sdk/routing.js"; do

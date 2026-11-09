@@ -25,8 +25,6 @@ Pipeline (model doctrine updated 2026-10-13):
               _validate_appendix + APPENDIX_* constants); fail-loud on the
               structure/honesty gate, one stricter retry on richness shortfall.
 
-Anthropic models are FORBIDDEN by policy (N1). Filter applied at every step.
-
 Runs up to 4 books in parallel per phase. Manages queue automatically.
 
 v6.6.0 additions:
@@ -181,8 +179,6 @@ LOG_FILE = BASE / "pipeline-log.txt"
 # Recommendation (guidance only, never a default): a large-context model
 # on a subscription-billed route, because extraction passes whole books
 # at once and subscription billing keeps per-book cost flat.
-#
-# Anthropic models are FORBIDDEN (N1). Filter applied at every step.
 
 
 class ModelNotConfiguredError(RuntimeError):
@@ -206,7 +202,7 @@ def _client_configured_default_model():
     pipeline already uses for configuration (~/clawd, ~/.openclaw,
     /data/.openclaw). The value may be a bare string or the object form
     {"primary": ..., "fallbacks": [...]}; the primary wins, then the
-    first fallback. Anthropic models are filtered out (N1).
+    first fallback.
     """
     for root in (Path.home() / "clawd", Path.home() / ".openclaw", Path("/data/.openclaw")):
         cfg_path = root / "openclaw.json"
@@ -225,7 +221,7 @@ def _client_configured_default_model():
                 candidates.append(model["primary"])
             candidates.extend(model.get("fallbacks") or [])
         for cand in candidates:
-            if cand and "anthropic/" not in cand.lower() and "claude-" not in cand.lower():
+            if cand:
                 return cand
     return None
 def _resolve_model(skill: str, purpose: str, purpose_tier: str,
@@ -257,7 +253,7 @@ def _resolve_model(skill: str, purpose: str, purpose_tier: str,
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         model_id = result.stdout.strip()
-        if model_id and "anthropic/" not in model_id.lower() and "claude-" not in model_id.lower():
+        if model_id:
             return model_id
     except Exception:
         pass
@@ -328,7 +324,7 @@ def resolve_phase_model(phase: str, input_chars: int = None) -> tuple:
       3. neither exists: raise ModelNotConfiguredError so the run stops
          with a clear ask-the-client message.
 
-    No named model is ever substituted. Anthropic is filtered at every step.
+    No named model is ever substituted.
     """
     purpose_map = {
         "phase1": "Phase 1 extraction",

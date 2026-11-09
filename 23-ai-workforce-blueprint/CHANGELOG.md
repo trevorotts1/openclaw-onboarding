@@ -2,6 +2,10 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
+## [Unreleased] - 2026-10-28 - fix(interview): finishing the interview through the script path now sets the Command Center's interview flag
+
+`update-interview-state.sh --complete` now calls `shared-utils/ensure_cc_interview_flag.py` right after it writes `interviewComplete=true`, so `clients.interview_complete` (is_self=1) in the Command Center database follows the build state. Before this only the Command Center interview web page set it, and task ingest read the flag as "not provisioned" and parked every task in General Task. The call is idempotent, never fatal, and never sets the flag when the build state is not exactly true (a refused completion, exit 87, never reaches it). Pinned by R8a/R8b in `scripts/test-interview-completion-evidence-gate.sh`.
+
 ## [Unreleased] - 2026-10-13 - refactor(models): named-model prescriptions replaced with client choice, configured defaults, and recommendations
 
 Skill 23 no longer prescribes specific models by name in its doctrine, role library, or builders. Everywhere the old text pinned a named model, the pattern is now: the client selects their model, or their configured default model is used, and the system may recommend with the reason stated, as overridable guidance. A recommendation is never a prescription, a hidden default, or a fallback value in code or config.

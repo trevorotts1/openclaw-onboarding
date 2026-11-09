@@ -32,7 +32,6 @@
 #   * External probes are time-bounded (default 5s) so an unresponsive daemon
 #     can never hang the box.
 #   * Re-running preserves operator-filled fields and re-probes in place.
-#   * No Anthropic / claude ids anywhere (AF-BW-MA-ANTHROPIC hard-fails).
 #   * No client secrets on the edge: the probe records NAMES and reachability
 #     booleans only, never a PIT, token, or API key value.
 #
@@ -63,7 +62,6 @@ import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
-_ANTHROPIC_RE = None  # not imported here; the poller + textractor enforce it
 
 # Default Worker route host (wrangler.toml). A staging box overrides --base-url.
 DEFAULT_WORKER_BASE = os.environ.get("BW_WORKER_BASE", "https://bookwriter.zerohumanworkforce.com")

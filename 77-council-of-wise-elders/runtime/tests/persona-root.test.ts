@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   BOOK_TO_PERSONA_FOLDER,
   inventoryLivePersonas,
@@ -162,7 +163,7 @@ test('workspace categories fallback reads in place and writes nothing', () => {
   const ws = join(home, '.openclaw', 'workspace', 'data', 'coaching-personas');
   mkdirSync(ws, { recursive: true });
   writeFileSync(join(ws, 'persona-categories.json'), JSON.stringify({ personas: REGISTRY }));
-  const script = new URL('../../scripts/inventory-live-personas.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../../scripts/inventory-live-personas.mjs', import.meta.url));
   const env = { PATH: process.env.PATH ?? '', HOME: home, USERPROFILE: home, TMPDIR: scratch, TEMP: scratch, TMP: scratch };
   const before = snapshot(home);
   for (const args of [[], ['--json']]) {
@@ -189,7 +190,7 @@ test('a resolved store that cannot be read is reported as unreadable, not as not
   assert.equal(inv.seats.length, 9);
   assert.ok(inv.seats.every((s) => s.layer === 'shipped_brief_fallback'));
   assert.ok(!JSON.stringify(inv).includes(home));
-  const script = new URL('../../scripts/inventory-live-personas.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../../scripts/inventory-live-personas.mjs', import.meta.url));
   const r = spawnSync(process.execPath, [script], { env: { PATH: process.env.PATH ?? '', HOME: home, USERPROFILE: home }, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /UNREADABLE/);
@@ -201,7 +202,7 @@ test('script prints and --json both omit absolute paths and write nothing', () =
   const home = temp();
   const scratch = temp();
   makeStore(join(home, '.openclaw', 'skills', BOOK_TO_PERSONA_FOLDER));
-  const script = new URL('../../scripts/inventory-live-personas.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../../scripts/inventory-live-personas.mjs', import.meta.url));
   const env = { PATH: process.env.PATH ?? '', HOME: home, USERPROFILE: home, TMPDIR: scratch, TEMP: scratch, TMP: scratch };
   const before = snapshot(home);
   for (const args of [[], ['--json']]) {

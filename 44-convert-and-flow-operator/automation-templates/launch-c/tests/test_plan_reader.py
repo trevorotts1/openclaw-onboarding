@@ -24,7 +24,29 @@ ABANDONED = FIXTURES / "build-plan-abandoned-checkout.json"
 WELCOME = FIXTURES / "build-plan-welcome-access.json"
 
 
-def run_reader(build_plans, plan_path=PLAN_FIXTURE, sequence_map=None):
+# Buildable template per family (Skill 49 TEMPLATE_BY_FAMILY; keys of _matcher/buildable-templates.json).
+FAMILY_TEMPLATE = {
+    "pre_launch": "launch-a/launch-a-prelaunch-window",
+    "post_sale": "launch-b/launch-post-sale-purchase",
+    "abandoned_checkout": "launch-b/abandoned-checkout-recovery",
+}
+
+
+def buildable_plan(source=PLAN_FIXTURE):
+    """A temp copy of the contract fixture whose automation templates are manifest keys
+    (its own ids predate the buildable manifest; the reader refuses those)."""
+    plan = json.loads(Path(source).read_text())
+    for item in plan["automations"]:
+        item["template"] = FAMILY_TEMPLATE[item["family"]]
+    path = Path(tempfile.mkdtemp()) / "plan.json"
+    path.write_text(json.dumps(plan))
+    return path
+
+
+BUILDABLE_PLAN = buildable_plan()
+
+
+def run_reader(build_plans, plan_path=BUILDABLE_PLAN, sequence_map=None):
     out = Path(tempfile.mkdtemp()) / "automation-builds.json"
     argv = ["--launch-plan", str(plan_path), "--out", str(out)]
     for path in build_plans:
@@ -43,7 +65,7 @@ def by_id(doc):
 class PlanReaderTests(unittest.TestCase):
     def test_partial_builds_block_exactly_the_missing_sequences(self):
         rc, doc = run_reader([PRE, MAIN, DOORS])
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)   # blocked builds exit 4 (output is still written)
         builds = by_id(doc)
         self.assertEqual(sorted(builds), ["auto_abandoned_checkout", "auto_post_sale", "auto_pre_launch"])
         # L07: an email-count mismatch is a REQUIRED-OUTPUT failure, so a build
@@ -67,7 +89,7 @@ class PlanReaderTests(unittest.TestCase):
 
     def test_complete_builds_block_on_count_mismatch(self):
         rc, doc = run_reader([PRE, MAIN, DOORS, ABANDONED, WELCOME])
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)
         builds = by_id(doc)
         self.assertEqual({b["state"] for b in builds.values()}, {"blocked"})
         self.assertEqual(doc["unused_build_plan_workflows"], [])
@@ -77,7 +99,7 @@ class PlanReaderTests(unittest.TestCase):
                                 for reason in build["blocked_by"]), build["blocked_by"])
 
     def test_complete_and_count_matching_builds_are_ready(self):
-        plan = json.loads(PLAN_FIXTURE.read_text())
+        plan = json.loads(BUILDABLE_PLAN.read_text())
         counts = {seq["id"]: seq["email_count"] for seq in plan["email_sequences"]}
         temp = Path(tempfile.mkdtemp())
         paths = []
@@ -100,7 +122,7 @@ class PlanReaderTests(unittest.TestCase):
 
     def test_steps_pass_through_verbatim(self):
         rc, doc = run_reader([PRE])
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)
         workflow = by_id(doc)["auto_pre_launch"]["workflows"][0]
         source = json.loads(PRE.read_text())["sequence-email-pre-launch"]["templates"]
         self.assertEqual(workflow["steps"], source)
@@ -113,14 +135,14 @@ class PlanReaderTests(unittest.TestCase):
         doc.pop("_meta")
         detached.write_text(json.dumps(doc))
         rc, result = run_reader([detached])
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)
         self.assertEqual(len(result["unused_build_plan_workflows"]), 1)
         self.assertEqual(result["unused_build_plan_workflows"][0]["build_plan"], str(detached))
 
         mapping = temp / "map.json"
         mapping.write_text(json.dumps({"email_pre_launch": str(detached)}))
         rc, result = run_reader([detached], sequence_map=mapping)
-        self.assertEqual(rc, 0)
+        self.assertEqual(rc, 4)
         self.assertEqual(result["unused_build_plan_workflows"], [])
         self.assertEqual(by_id(result)["auto_pre_launch"]["state"], "blocked")
         self.assertEqual(by_id(result)["auto_pre_launch"]["workflows"][0]["key"],
@@ -148,7 +170,7 @@ class PlanReaderTests(unittest.TestCase):
 
     def test_cycle_is_refused(self):
         temp = Path(tempfile.mkdtemp())
-        plan = json.loads(PLAN_FIXTURE.read_text())
+        plan = json.loads(BUILDABLE_PLAN.read_text())
         plan["automations"][0]["waits_for"] = ["auto_post_sale"]
         plan["automations"][1]["waits_for"] = ["auto_pre_launch"]
         cyclic = temp / "cyclic.json"

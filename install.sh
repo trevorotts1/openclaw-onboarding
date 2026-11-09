@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v27.1.66"
+ONBOARDING_VERSION="v27.1.71"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -100,6 +100,18 @@ fi
 command -v oc_state_seed          >/dev/null 2>&1 || oc_state_seed()          { return 1; }
 command -v oc_onboarding_complete >/dev/null 2>&1 || oc_onboarding_complete() { return 1; }
 command -v oc_state_summary       >/dev/null 2>&1 || oc_state_summary()       { OC_VERIFIED=0; OC_TOTAL=0; OC_FAILED_LIST=""; OC_PENDING_LIST=""; OC_INTERVIEW_LIST=""; }
+
+# CON-13: `install.sh --check` (alias --prereqs-check) is a STANDALONE, read-only
+# prerequisite inspection: it reports whether python3 can import jsonschema
+# (needed by Skills 49, 71, 78-83, 44, 38) and exits WITHOUT installing anything.
+# Exit 0 = present, 2 = flagged missing/too old, 1 = cannot check.
+case " ${*:-} " in
+    *" --check "*|*" --prereqs-check "*)
+        if command -v oc_ensure_jsonschema >/dev/null 2>&1; then
+            _oc_pc_rc=0; oc_ensure_jsonschema --check || _oc_pc_rc=$?; exit "$_oc_pc_rc"
+        fi
+        echo "install.sh --check: lib-onboarding-state.sh was not available; prerequisites NOT checked" >&2; exit 1 ;;
+esac
 
 # ----------------------------------------------------------
 # Shared onboarding-resume cron installer (v17.0.21). SINGLE canonical
@@ -875,7 +887,7 @@ PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
 Before each wave, send __OWNER_NAME__ a Telegram message in PLAIN ENGLISH (no jargon): Starting Wave 2 of 6 — about to set up X skills, ~Y minutes.
 After each wave: Wave 2 done. X skills working. Now starting Wave 3.
 Gate each wave: bash ~/.openclaw/scripts/check-wave-concurrency.sh --proposed N --reason wave-N
-Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/83-... (78 active + 5 archived).
+Skill folders live at ~/.openclaw/skills/01-... through ~/.openclaw/skills/84-... (79 skills; numbers 11, 13, 21, 33 and 34 were retired and are not installed).
 Per skill: read all .md + scripts, execute INSTALL.md in order, score >= 8.5/10, up to 5 retry loops.
 
 PHASE 3 — Verify:
@@ -2389,12 +2401,23 @@ discover_skills() {
 # NESTED WORKFLOW AGENT EXEMPTION: any workspace path matching */workflows/*/agents/*
 # (internal workflow micro-agents) is NEVER touched.
 #
-# Idempotent: a file that already byte-matches canonical is a no-op; an absent
-# file stays absent (one exception, RRS001: a REGISTERED agents.entries /
-# agents.list workspace with no TOOLS.md at all gets the box's TOOLS.md created);
-# a second run produces no new backups and no churn. A
+# Idempotent: a file that already byte-matches canonical is a no-op; a second
+# run produces no new backups and no churn. A
 # pre-existing SYMLINK (relic of the pre-amendment behavior) is MIGRATED to a
 # real copy, unconditionally. Every action logs with the [link-shared] prefix.
+#
+# ONE RULEBOOK (owner-approved 2026-10-29): every REGISTERED agent workspace --
+# agents.entries{} (current config shape), agents.list[] (legacy shape) and
+# agents.defaults.workspace -- is refreshed exactly alike, and a REGISTERED
+# workspace whose AGENTS.md / TOOLS.md / USER.md is missing gets the master copy
+# created. An unregistered folder found only by the scan keeps "absent stays
+# absent". A department ROLE folder (departments/<dept>/<role>) never gets an
+# AGENTS.md (U053 disposition); it still gets TOOLS.md + USER.md. The scan skips
+# backup trees (*.bak*, *.backup*, .floor-backups, every hidden dir,
+# departments-archive), node_modules, and vendored skill / onboarding /
+# template trees, so no copy of a file that belongs to something else is ever
+# rewritten. Department-specific content belongs in that department's
+# IDENTITY.md, never in AGENTS/TOOLS/USER (it is preserved there on first sync).
 # A divergent real file is BACKED UP (never deleted) to <file>.bak-unify-<ts>,
 # and any of its content not already in the canonical file is APPENDED
 # (additive only) to the agent's OWN IDENTITY.md under a guarded marker before
@@ -2579,13 +2602,16 @@ link_shared_core_files() {
 import json, os
 try:
     cfg = json.load(open(os.environ["OC_JSON"]))
-    for ag in cfg.get("agents", {}).get("list", []) or []:
-        if isinstance(ag, dict) and ag.get("id") == "main" and ag.get("workspace"):
-            print(os.path.expanduser(ag["workspace"])); break
-    else:
-        ws = cfg.get("agents", {}).get("defaults", {}).get("workspace")
-        if ws:
-            print(os.path.expanduser(ws))
+    ag = cfg.get("agents") or {}
+    # current shape: agents.entries.main; legacy shape: agents.list[id=main]
+    main = (ag.get("entries") or {}).get("main") if isinstance(ag.get("entries"), dict) else None
+    ws = main.get("workspace") if isinstance(main, dict) else None
+    for a in ag.get("list", []) or []:
+        if not ws and isinstance(a, dict) and a.get("id") == "main" and a.get("workspace"):
+            ws = a["workspace"]
+    ws = ws or (ag.get("defaults") or {}).get("workspace")
+    if ws:
+        print(os.path.expanduser(ws))
 except Exception:
     pass
 PYEOF
@@ -2723,64 +2749,154 @@ except Exception:
     esac
   done
 
-  # Enumerate agent workspaces: openclaw.json agents[].workspace + scan dirs.
-  local WS_LIST_FILE
-  WS_LIST_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-ws-$$.txt")"
-  : > "$WS_LIST_FILE"
-  # RRS001: registered workspaces (entries{} map AND legacy list[]), used ONLY by
-  # the create-only TOOLS.md pass below. Kept apart from WS_LIST_FILE so that
-  # registering a workspace never widens which files the unify loop rewrites.
-  local REG_LIST_FILE
-  REG_LIST_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-reg-$$.txt")"
-  : > "$REG_LIST_FILE"
-  if [ -f "$_OCJSON" ] && command -v python3 >/dev/null 2>&1; then
-    OC_JSON="$_OCJSON" python3 - >> "$REG_LIST_FILE" 2>/dev/null <<'PYEOF' || true
-import json, os
-try:
-    cfg = json.load(open(os.environ["OC_JSON"]))
-    ag = cfg.get("agents", {}) or {}
-    ent = ag.get("entries") if isinstance(ag.get("entries"), dict) else {}
-    lst = ag.get("list") if isinstance(ag.get("list"), list) else []
-    for e in list(ent.values()) + lst:
-        if isinstance(e, dict) and e.get("workspace"):
-            print(os.path.expanduser(e["workspace"]))
-except Exception:
-    pass
-PYEOF
-  fi
-
-  if [ -f "$_OCJSON" ] && command -v python3 >/dev/null 2>&1; then
-    OC_JSON="$_OCJSON" python3 - >> "$WS_LIST_FILE" 2>/dev/null <<'PYEOF' || true
-import json, os
-try:
-    cfg = json.load(open(os.environ["OC_JSON"]))
-    for ag in cfg.get("agents", {}).get("list", []) or []:
-        if isinstance(ag, dict):
-            ws = ag.get("workspace")
-            if ws:
-                print(os.path.expanduser(ws))
-except Exception:
-    pass
-PYEOF
-  fi
-
+  # OC_ROOT: where $OC_ROOT/workspaces (command-center/<dept> ...) lives.
   local OC_ROOT="$HOME/.openclaw"
   [ -d "/data/.openclaw" ] && OC_ROOT="/data/.openclaw"
-  local _scan
-  for _scan in \
-      "$OC_ROOT/workspaces" \
-      "$CANON_REAL/agents" \
-      "$CANON_REAL/departments"; do
-    [ -d "$_scan" ] || continue
-    find "$_scan" -type d -print 2>/dev/null \
-      | while IFS= read -r d; do
-          if [ -e "$d/AGENTS.md" ] || [ -e "$d/IDENTITY.md" ] || [ -e "$d/SOUL.md" ]; then
-            echo "$d"
-          fi
-        done >> "$WS_LIST_FILE" 2>/dev/null || true
-  done
+  local _LSC_OCJSON="$_OCJSON"
+  # >>> LSC-CANDIDATES-BEGIN (byte-identical in install.sh and update-skills.sh;
+  # tests/unit/shared-core-entries-sync.test.sh compares the two copies, and the
+  # python function inside against QC check 9.9)
+  # Candidate workspaces = (a) every REGISTERED workspace: agents.entries{}
+  # (current config shape, keyed by agent id), agents.list[] (legacy shape) and
+  # agents.defaults.workspace, plus (b) a scan for agent-shaped folders under
+  # <oc-root>/workspaces, <workspace>/agents, <workspace>/departments and THIS
+  # box's own company tree. A registered workspace is a real agent: it is
+  # refreshed like any other AND a missing core file is created for it. A folder
+  # found only by the scan is refreshed when it already holds a core file; it
+  # never gains one. The scan is python (os.walk), so a symlinked scan root is
+  # walked and the skip rules can look at the parent folder; QC check 9.9 runs
+  # the identical function.
+  local WS_LIST_FILE REG_LIST_FILE REG_REAL_FILE
+  WS_LIST_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-ws-$$.txt")"
+  : > "$WS_LIST_FILE"
+  REG_LIST_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-reg-$$.txt")"
+  : > "$REG_LIST_FILE"
+  REG_REAL_FILE="$(mktemp 2>/dev/null || echo "/tmp/link-shared-regreal-$$.txt")"
+  : > "$REG_REAL_FILE"
+  if command -v python3 >/dev/null 2>&1; then
+    OC_JSON="$_LSC_OCJSON" LSC_CANON="$CANON_REAL" LSC_OC_ROOT="$OC_ROOT" \
+      LSC_REG_OUT="$REG_LIST_FILE" LSC_WS_OUT="$WS_LIST_FILE" \
+      python3 -I - <<'PYEOF' || echo "  WARN: [link-shared] the candidate scan failed (python error above); no workspace is synced this run" >&2
+import fnmatch, json, os, re
+# >>> LSC-PY-BEGIN (identical in install.sh, update-skills.sh and QC check 9.9;
+# tests/unit/shared-core-entries-sync.test.sh compares the three copies)
+# Skipped while scanning, at any depth: backup trees, hidden dirs, archives, vendored packages.
+SKIP_ANY = (".*", "*.bak*", "*.backup*", "node_modules", "departments-archive")
+# Skipped only INSIDE an agent workspace (the parent holds IDENTITY.md or SOUL.md):
+# its own vendored skills, templates and tool checkouts. A real department that is
+# merely NAMED like one of these (workspaces/command-center/templates) is kept.
+SKIP_IN_AGENT = ("skills", "templates", "onboarding", "fleet-refresh", "codex-home")
+# Skipped at depth 1 of <oc-root>/workspaces, where the roll keeps its own trees.
+SKIP_TOP = ("onboarding", "fleet-refresh", "codex-home")
 
-  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0 PRUNED=0 CREATED_TOOLS=0
+
+def _lsc_match(name, globs):
+    return any(fnmatch.fnmatchcase(name, g) for g in globs)
+
+
+def _lsc_is_agent(d):
+    return os.path.exists(os.path.join(d, "IDENTITY.md")) or os.path.exists(os.path.join(d, "SOUL.md"))
+
+
+def lsc_scan(root, workspaces_root=False):
+    """Agent-shaped folders (they hold AGENTS.md, IDENTITY.md or SOUL.md) under root.
+    os.walk starts from root even when root is itself a symlink."""
+    found = []
+    if not os.path.isdir(root):
+        return found
+    for cur, dirs, files in os.walk(root):
+        agent = _lsc_is_agent(cur)
+        keep = []
+        for d in dirs:
+            if _lsc_match(d, SKIP_ANY):
+                continue
+            if agent and _lsc_match(d, SKIP_IN_AGENT):
+                continue
+            if workspaces_root and cur == root and _lsc_match(d, SKIP_TOP):
+                continue
+            keep.append(d)
+        dirs[:] = keep
+        if not os.path.islink(cur) and any(os.path.exists(os.path.join(cur, f)) for f in ("AGENTS.md", "IDENTITY.md", "SOUL.md")):
+            found.append(cur)
+    return found
+
+
+def lsc_candidates(cfg, canon_real, oc_root, env):
+    """-> (registered workspaces, scan-found folders) for THIS box only.
+    Registered = agents.entries{} (current shape), agents.list[] (legacy), agents.defaults.workspace.
+    Scanned = <oc-root>/workspaces (incl. command-center/<dept>), <canon>/agents, <canon>/departments,
+    and THIS box's own company tree(s) <company>/departments/<dept>/<role>, found the way
+    materialize-dept-agents.sh finds them: the build state's companyRoot, then
+    <master-files>/zero-human-company/<this box's slug>/departments. A company tree is scanned only
+    when the box's own slug is known; another company's tree is never read (co-mingling guard)."""
+    ag = cfg.get("agents") if isinstance(cfg.get("agents"), dict) else {}
+    ent = ag.get("entries") if isinstance(ag.get("entries"), dict) else {}
+    lst = ag.get("list") if isinstance(ag.get("list"), list) else []
+    dfl = ag.get("defaults") if isinstance(ag.get("defaults"), dict) else {}
+    reg = []
+    for e in list(ent.values()) + lst + [dfl]:
+        ws = e.get("workspace") if isinstance(e, dict) else None
+        if isinstance(ws, str) and ws.strip():
+            reg.append(os.path.expanduser(ws.strip()))
+    state = {}
+    for d in (canon_real, env.get("OPENCLAW_WORKSPACE_PATH", ""), os.path.join(oc_root, "workspace"),
+              os.path.expanduser("~/.openclaw/workspace"), "/data/.openclaw/workspace"):
+        p = os.path.join(d, ".workforce-build-state.json") if d else ""
+        if p and os.path.isfile(p):
+            try:
+                state = json.load(open(p))
+            except (OSError, ValueError):
+                state = {}
+            break
+    if not isinstance(state, dict):
+        state = {}
+    slug = env.get("COMPANY_SLUG") or state.get("companySlug") or state.get("clientSlug") or ""
+    slug = slug.strip() if isinstance(slug, str) else ""
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
+        slug = ""
+    roots = [(os.path.join(oc_root, "workspaces"), True),
+             (os.path.join(canon_real, "agents"), False),
+             (os.path.join(canon_real, "departments"), False)]
+    croot = state.get("companyRoot")
+    if isinstance(croot, str) and os.path.isabs(croot) and (not slug or os.path.basename(croot.rstrip("/")) == slug):
+        roots.append((os.path.join(croot, "departments"), False))
+    if slug:
+        for mf in (env.get("MASTER_FILES_DIR", ""), env.get("OPENCLAW_MASTER_FILES_DIR", ""),
+                   os.path.expanduser("~/Downloads/openclaw-master-files"), "/data/openclaw-master-files",
+                   os.path.join(oc_root, "workspace"), canon_real):
+            if mf:
+                roots.append((os.path.join(mf, "zero-human-company", slug, "departments"), False))
+    found, seen = [], set()
+    for root, top in roots:
+        key = os.path.realpath(root)
+        if key not in seen:
+            seen.add(key)
+            found.extend(lsc_scan(root, top))
+    return reg, found
+# <<< LSC-PY-END
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+except Exception:
+    cfg = {}
+reg, found = lsc_candidates(cfg if isinstance(cfg, dict) else {}, os.environ["LSC_CANON"],
+                            os.environ["LSC_OC_ROOT"], os.environ)
+with open(os.environ["LSC_REG_OUT"], "a") as fh:
+    fh.write("".join(p + "\n" for p in reg))
+with open(os.environ["LSC_WS_OUT"], "a") as fh:
+    fh.write("".join(p + "\n" for p in reg + found))
+PYEOF
+  fi
+  # The registered set as real paths: the loop below tests membership against it.
+  local _rw
+  while IFS= read -r _rw; do
+    _rw="$(printf '%s' "$_rw" | sed 's:/*$::')"
+    if [ -n "$_rw" ] && [ -d "$_rw" ]; then
+      (cd "$_rw" 2>/dev/null && pwd -P) >> "$REG_REAL_FILE" || true
+    fi
+  done < "$REG_LIST_FILE"
+  # <<< LSC-CANDIDATES-END
+
+  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0 PRUNED=0 CREATED=0 CREATE_FAILED=0
 
   local W
   while IFS= read -r W; do
@@ -2802,6 +2918,14 @@ PYEOF
         continue
         ;;
     esac
+
+    # Registered (agents.entries / agents.list / agents.defaults) workspaces are
+    # the box's real agents. A department ROLE folder (departments/<dept>/<role>)
+    # follows the U053 disposition: no AGENTS.md there, ever.
+    local W_IS_REG="no" W_IS_ROLE="no"
+    if grep -Fxq -- "$W_REAL" "$REG_REAL_FILE" 2>/dev/null; then W_IS_REG="yes"; fi
+    case "$W" in */departments/*/*) W_IS_ROLE="yes" ;; esac
+    case "$W_REAL" in */departments/*/*) W_IS_ROLE="yes" ;; esac
 
     for f in AGENTS.md TOOLS.md USER.md; do
       local TARGET="$CANON_REAL/$f"
@@ -2885,19 +3009,24 @@ PYEOF
           continue
         fi
 
+        # Best-effort PRESERVE: append any content NOT already in CANON/<f> to
+        # this agent's OWN IDENTITY.md (only ADD; create IDENTITY.md if absent).
+        # Each unique block is keyed by its own hash, recorded in the marker
+        # line, so a LATER and different drift is appended too while a block
+        # already preserved (by hash, or by its text) is never appended twice.
         local AGENT_NAME
         AGENT_NAME="$(basename "$W_REAL")"
         local IDFILE="$W_REAL/IDENTITY.md"
-        local PMARK="<!-- PRESERVED FROM ${AGENT_NAME} ${f} (unification ${TS}) -->"
-        local PMARK_PREFIX="<!-- PRESERVED FROM ${AGENT_NAME} ${f} (unification "
-        if ! grep -qF "$PMARK_PREFIX" "$IDFILE" 2>/dev/null; then
-          AGENT_F="$LINKPATH" CANON_F="$TARGET" ID_F="$IDFILE" PMARK="$PMARK" \
-            python3 - <<'PYEOF' 2>/dev/null || true
-import os
+        local PMARK="PRESERVED FROM ${AGENT_NAME} ${f} (unification ${TS}) blocks="
+        AGENT_F="$LINKPATH" CANON_F="$TARGET" ID_F="$IDFILE" AGENT_NAME="$AGENT_NAME" FNAME="$f" TS="$TS" \
+          python3 -I - <<'PYEOF' 2>/dev/null || true
+import hashlib, os, re
 src   = os.environ["AGENT_F"]
 canon = os.environ["CANON_F"]
 idf   = os.environ["ID_F"]
-mark  = os.environ["PMARK"]
+agent = os.environ["AGENT_NAME"]
+fname = os.environ["FNAME"]
+ts    = os.environ["TS"]
 try:
     src_text = open(src, encoding="utf-8", errors="replace").read()
 except Exception:
@@ -2906,6 +3035,12 @@ try:
     canon_text = open(canon, encoding="utf-8", errors="replace").read()
 except Exception:
     canon_text = ""
+try:
+    id_text = open(idf, encoding="utf-8", errors="replace").read()
+except Exception:
+    id_text = ""
+# Split the agent's file into blank-line-delimited blocks; keep only blocks
+# whose stripped text is non-empty AND not already present in the canonical file.
 blocks, cur = [], []
 for line in src_text.splitlines():
     if line.strip() == "":
@@ -2921,17 +3056,29 @@ unique = [b for b in blocks if b.strip() and b.strip() not in canon_text]
 # the identity text that is already there.
 if "rr-operator-support:v1" in src_text:
     unique = []
-if unique:
+# Hashes of the blocks this agent's earlier syncs already preserved from this file.
+done = set()
+for m in re.finditer(r"<!-- PRESERVED FROM " + re.escape(agent) + " " + re.escape(fname)
+                     + r" \(unification [^)]*\)(?: blocks=([0-9a-f,]+))? -->", id_text):
+    if m.group(1):
+        done.update(m.group(1).split(","))
+fresh = []
+for b in unique:
+    h = hashlib.sha256(b.strip().encode("utf-8")).hexdigest()[:16]
+    if h in done or b in id_text:
+        continue
+    fresh.append((h, b))
+if fresh:
     with open(idf, "a", encoding="utf-8") as fh:
-        fh.write("\n\n" + mark + "\n")
-        fh.write("\n\n".join(unique))
+        fh.write("\n\n<!-- PRESERVED FROM %s %s (unification %s) blocks=%s -->\n"
+                 % (agent, fname, ts, ",".join(h for h, _ in fresh)))
+        fh.write("\n\n".join(b for _, b in fresh))
         fh.write("\n")
     print("PRESERVED")
 PYEOF
-          if grep -qF "$PMARK" "$IDFILE" 2>/dev/null; then
-            note "[link-shared] PRESERVE unique $f content -> $IDFILE"
-            PRESERVED=$((PRESERVED + 1))
-          fi
+        if grep -qF "$PMARK" "$IDFILE" 2>/dev/null; then
+          note "[link-shared] PRESERVE unique $f content -> $IDFILE"
+          PRESERVED=$((PRESERVED + 1))
         fi
 
         # Overwrite with a verified real copy of canonical content, preserving
@@ -2948,45 +3095,29 @@ PYEOF
         fi
 
       else
-        :  # absent → leave absent (no churn)
+        # ABSENT. A REGISTERED agent workspace gets the master copy (one rulebook
+        # for every agent). A folder found only by the scan stays absent (no
+        # churn). A department ROLE folder never gets an AGENTS.md (U053).
+        if [ "$W_IS_REG" = "yes" ] && [ ! -e "$LINKPATH" ] \
+           && { [ "$f" != "AGENTS.md" ] || [ "$W_IS_ROLE" != "yes" ]; }; then
+          local CMO CM_MODE CM_OWNER
+          CMO="$(_lsc_mode_owner "$TARGET")"
+          CM_MODE="${CMO%%|*}"; CM_OWNER="${CMO#*|}"
+          if [ "$(_lsc_write_copy "$TARGET" "$LINKPATH" "$CM_MODE" "$CM_OWNER")" = "OK" ]; then
+            note "[link-shared] CREATE $LINKPATH <- $TARGET (registered agent had none)"
+            CREATED=$((CREATED + 1))
+          else
+            echo "  ⚠️  [link-shared] WARN: verified create FAILED for $LINKPATH (this workspace never had the file, so the install is not blocked; fix its permissions and re-run)" >&2
+            CREATE_FAILED=$((CREATE_FAILED + 1))
+          fi
+        fi
       fi
     done
   done < <(sort -u "$WS_LIST_FILE")
 
-  # RRS001: a REGISTERED agent workspace (agents.entries{} or legacy agents.list[])
-  # that has NO TOOLS.md at all gets the box's TOOLS.md. OpenClaw 2026.10.x no
-  # longer seeds TOOLS.md, so an agent created after that change (remote-rescue
-  # was the first to show it) never had the box's tool notes and could not know
-  # a send path existed. This is CREATE-ONLY: an existing TOOLS.md (file, empty
-  # file or symlink) is handled by the loop above and never touched here, and
-  # AGENTS.md / USER.md stay "absent stays absent". Fail-open like the loop
-  # above: an empty canonical TOOLS.md creates nothing.
-  if [ -n "$CANON_HASH_TOOLS" ] && [ -f "$REG_LIST_FILE" ]; then
-    local RW RW_REAL
-    while IFS= read -r RW; do
-      [ -n "$RW" ] || continue
-      RW="$(printf '%s' "$RW" | sed 's:/*$::')"
-      [ -d "$RW" ] || continue
-      RW_REAL="$(cd "$RW" 2>/dev/null && pwd -P || echo "$RW")"
-      [ "$RW_REAL" = "$CANON_REAL" ] && continue
-      case "$RW_REAL/" in */workflows/*/agents/*) continue ;; esac
-      if [ -e "$RW_REAL/TOOLS.md" ] || [ -L "$RW_REAL/TOOLS.md" ]; then continue; fi
-      local RMO RM_MODE RM_OWNER
-      RMO="$(_lsc_mode_owner "$CANON_REAL/TOOLS.md")"
-      RM_MODE="${RMO%%|*}"; RM_OWNER="${RMO#*|}"
-      if [ "$(_lsc_write_copy "$CANON_REAL/TOOLS.md" "$RW_REAL/TOOLS.md" "$RM_MODE" "$RM_OWNER")" = "OK" ]; then
-        note "[link-shared] CREATE $RW_REAL/TOOLS.md <- $CANON_REAL/TOOLS.md (registered agent had none)"
-        CREATED_TOOLS=$((CREATED_TOOLS + 1))
-      else
-        echo "  WARN: [link-shared] verified create FAILED for $RW_REAL/TOOLS.md" >&2
-        FAILED=$((FAILED + 1))
-      fi
-    done < <(sort -u "$REG_LIST_FILE")
-  fi
+  rm -f "$WS_LIST_FILE" "$REG_LIST_FILE" "$REG_REAL_FILE" 2>/dev/null || true
 
-  rm -f "$WS_LIST_FILE" "$REG_LIST_FILE" 2>/dev/null || true
-
-  note "[link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT pruned=$PRUNED tools-created=$CREATED_TOOLS already-ok=$NOOP failed=$FAILED"
+  note "[link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT pruned=$PRUNED created=$CREATED create-failed=$CREATE_FAILED already-ok=$NOOP failed=$FAILED"
   note "[link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
 
   if [ "$FAILED" -gt 0 ]; then
@@ -3971,6 +4102,14 @@ step "Step 5: Installing Skills"
 
 mkdir -p "$SKILLS_DIR"
 
+# Retired NN-name-ARCHIVED skill folders are never installed (the repo no longer ships
+# them). A re-install over an older box also moves any copy an earlier roll left behind to
+# <root>/retired-skills/, because OpenClaw logs an error on every skills rescan for each folder it cannot load.
+if [ -f "$ONBOARDING_DIR/scripts/remove-archived-skills.sh" ]; then
+    bash "$ONBOARDING_DIR/scripts/remove-archived-skills.sh" "$SKILLS_DIR" \
+        || warn "Could not move every retired skill folder out of $SKILLS_DIR (non-fatal; update-skills.sh retries on each roll)"
+fi
+
 for SKILL_DIR in "$ONBOARDING_DIR"/[0-9]*/; do
     [ -d "$SKILL_DIR" ] || continue
     
@@ -3981,8 +4120,23 @@ for SKILL_DIR in "$ONBOARDING_DIR"/[0-9]*/; do
         *ARCHIVED*) note "Skipped (archived): $SKILL_NAME"; continue ;;
     esac
     
+    # >>> X11-GATE-BEGIN (S75-X11 release gate; tests/test_x11_install_gate.py)
+    # Skill 75 only. Default is warn-and-preserve: this copy only overlays and
+    # never deletes, so a missing backup-authorization record just logs. Only
+    # refuse mode (record present or S75_X11_GATE_MODE=refuse) can skip the skill.
+    if [ "$SKILL_NAME" = "75-drama-song-ad-factory" ]; then
+        _x11_rc=0
+        _x11_out="$(bash "$SKILL_DIR/scripts/core/x11_install_gate.sh" 2>&1)" || _x11_rc=$?
+        echo "$_x11_out" | tee -a "$LOG_FILE" || true
+        if [ "$_x11_rc" = "20" ]; then
+            warn "X11 gate REFUSED skill 75 install (refuse mode); $SKILLS_DIR/$SKILL_NAME left untouched"
+            continue
+        fi
+    fi
+    # <<< X11-GATE-END
+
     mkdir -p "$SKILLS_DIR/$SKILL_NAME"
-    
+
     for ITEM in "$SKILL_DIR"/*; do
         ITEM_NAME=$(basename "$ITEM")
         case "$ITEM_NAME" in
@@ -4468,7 +4622,7 @@ fi
 # to ~/.openclaw/scripts (or /data/.openclaw/scripts) so ensure-pipeline-crons.sh
 # can resolve them on EVERY box, and so the registered crons survive a temp-clone
 # cleanup. ensure-pipeline-crons.sh wires them into cron fleet-wide (end of run).
-for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh ensure-pipeline-crons.sh agent-browser-reaper.sh guard-toolsearch-directory.sh; do
+for SCRIPT in index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh ensure-pipeline-crons.sh agent-browser-reaper.sh guard-toolsearch-directory.sh memory-guard.sh memory-guard.py; do
     if [ -f "$ONBOARDING_DIR/scripts/$SCRIPT" ]; then
         cp -f "$ONBOARDING_DIR/scripts/$SCRIPT" "$SCRIPTS_DIR/"
         chmod +x "$SCRIPTS_DIR/$SCRIPT"
@@ -4900,6 +5054,39 @@ if [ "$_LIPSYNC_DEPS_RC" -ne 0 ]; then
     warn "Step 6.5b: skill 75 lip-sync prerequisites INCOMPLETE (rc=$_LIPSYNC_DEPS_RC) — the lip-sync picture gate and the measured clip gate will REFUSE lip-sync jobs on this box until it is repaired. Install continues; update-skills.sh retries this step on every roll. Manual: bash <(curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/shared-utils/lipsync-deps.sh)"
 fi
 unset _LIPSYNC_DEPS_RC
+
+# ----------------------------------------------------------
+# Step 6.5c: `jsonschema` for the page / launch skills (CON-13). Skills 49, 71,
+# 78-83, 44 and 38 import it (Skill 79's checkout validator at module load) and
+# nothing provisioned it, so Skill 83 found out at `check`, after the launch had
+# spent images. oc_ensure_jsonschema (lib-onboarding-state.sh, ONE copy shared
+# with update-skills.sh) pip-installs the requirement declared in
+# 83-black-friday-launcher/PREREQS.json and VERIFIES it with a real import.
+# NOT FATAL: a transient network failure must not abort the bootstrap; it is
+# stated loudly (a warn() line, so print_install_summary never calls the install
+# clean), oc_ensure_jsonschema writes the NOT_READY receipt
+# (<root>/logs/launch-skills-readiness.json), and update-skills.sh retries it on
+# every roll. On a Docker VPS this installer already runs INSIDE the client
+# container (platform/vps/bootstrap.sh re-exec), so python3 here is the agent's.
+# The package goes into <root>/pydeps/py<X.Y>/ with pip --target (PEP 668 safe,
+# survives a container recreate under /data/.openclaw); see lib-onboarding-state.sh.
+# Inspect only: bash install.sh --check
+# ----------------------------------------------------------
+_JSONSCHEMA_RC=0
+if command -v oc_ensure_jsonschema >/dev/null 2>&1; then
+    oc_ensure_jsonschema --apply || _JSONSCHEMA_RC=$?
+else
+    warn "Step 6.5c: lib-onboarding-state.sh was not available — jsonschema (needed by Skills 49, 71, 78-83, 44, 38) was NOT verified. Manual: cd to the 83-black-friday-launcher folder and run python3 -m launcher_core.cli dependencies --install (it installs into the pydeps folder with pip --target; never --break-system-packages, never a venv)"
+    _JSONSCHEMA_RC=2
+fi
+if [ "$_JSONSCHEMA_RC" -ne 0 ]; then
+    warn "Step 6.5c: LAUNCH SKILLS NOT READY — jsonschema is NOT importable (rc=$_JSONSCHEMA_RC); the Skill 79 checkout validator and every wrapper that loads it (Skills 49, 71, 78-83, 44, 38) will fail until it is. Receipt: ${OC_CONFIG:-<root>}/logs/launch-skills-readiness.json. Install continues; update-skills.sh retries this step on every roll."
+elif [ -x "$SKILLS_DIR/shared-utils/check-skill-prereqs.sh" ] && [ -d "$SKILLS_DIR/83-black-friday-launcher" ]; then
+    # Step 5b checked 83's prerequisites BEFORE this install; re-record so the state
+    # file does not keep a now-stale missingPrereqs entry. Read-only.
+    bash "$SKILLS_DIR/shared-utils/check-skill-prereqs.sh" "$SKILLS_DIR/83-black-friday-launcher" >/dev/null 2>&1 || true
+fi
+unset _JSONSCHEMA_RC
 
 if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
     # ── VPS ARM ──────────────────────────────────────────────────────────────
@@ -6456,7 +6643,7 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 78 active skills install in 6 dependency-aware waves, not by number order.
+The 79 active skills install in 6 dependency-aware waves, not by number order.
 The canonical wave rosters are OC_WAVE1_SKILLS..OC_WAVE6_SKILLS in lib-onboarding-state.sh (6 waves
 gating 51 of the 72 active skills; the remaining 21 are copied to every box by the installer's
 [0-9]*/ scan but are deliberately NOT gated, because they are held, operator-only, or skeleton units
@@ -7230,7 +7417,14 @@ print(f'{account}|{agent_id}')
     # $TG_TARGET is still resolved + operator-guarded above so the agent knows
     # the owner chat to send to WHEN it decides to — we just never wire it as
     # the cron's auto-delivery sink.
-    local CRON_AGENT="${DEFAULT_AGENT:-main}"
+    # Runtime answer first: the config parse above reads only agents.list and
+    # misses boxes whose agents live in agents.entries, falling back to "main",
+    # which the runtime rejects when main is not the default agent.
+    local CRON_AGENT="$(openclaw agents list --json 2>/dev/null | python3 -c 'import json,sys
+r=sys.stdin.read(); i=min([x for x in (r.find("{"),r.find("[")) if x>=0] or [0]); d=json.loads(r[i:])
+a=d if isinstance(d,list) else d.get("agents",[])
+print(([x.get("id") for x in a if isinstance(x,dict) and (x.get("default") or x.get("isDefault"))] or [""])[0])' 2>/dev/null || true)"
+    [ -n "$CRON_AGENT" ] || CRON_AGENT="${DEFAULT_AGENT:-main}"
 
     # Runtime-compatible SILENT main-session cron (fix/cron-flag-skew). The old
     # ladder only emitted `--session-target main` forms, ALL of which the 2026.6.11
@@ -7238,7 +7432,14 @@ print(f'{account}|{agent_id}')
     # require --system-event") — so a fresh install on 6.11 registered NO weekly
     # cron. _oc_cron_silent_main probes `openclaw cron add --help` and emits the
     # accepted form (`--session main --system-event` on 6.11+), degrading gracefully.
-    if _oc_cron_silent_main "weekly-onboarding-update" "$CRON_AGENT" "0 3 * * 0" "America/New_York" "$PROMPT_CONTENT" --light-context; then
+    # Box update schedule (2026-11-02): Tue/Fri/Sun 2:00 AM Eastern command job
+    # (shared-utils/cron-lib.sh oc_box_update_cron_ensure); agent prompt below
+    # only when this OpenClaw has no command jobs or the create failed.
+    if command -v oc_box_update_cron_ensure >/dev/null 2>&1 && oc_box_update_cron_ensure; then
+        success "Box update cron installed — Tue/Fri/Sun 2:00 AM Eastern, silent command job"
+        return 0
+    fi
+    if _oc_cron_silent_main "weekly-onboarding-update" "$CRON_AGENT" "${OC_BOX_UPDATE_SCHEDULE:-0 2 * * 0,2,5}" "America/New_York" "$PROMPT_CONTENT" --light-context; then
         success "Sunday update-check cron installed — Sundays 3am ET, SILENT main-session (no client auto-announce)"
         return 0
     fi
@@ -7247,7 +7448,7 @@ print(f'{account}|{agent_id}')
     # --channel/--to/--announce in the manual command either).
     warn "Cron creation failed. Manual install command (SILENT — no client auto-announce):"
     warn "  openclaw cron create --name weekly-onboarding-update --agent $CRON_AGENT \\"
-    warn "    --cron '0 3 * * 0' --tz America/New_York \\"
+    warn "    --cron '0 2 * * 0,2,5' --tz America/New_York \\"
     warn "    --session main --system-event \"\$(cat $PROMPT_FILE)\"   # older CLIs: --session-target main --message"
     warn ""
     warn "If that fails too, send Trevor the EXACT error message (see $LOG_FILE)."
@@ -8741,7 +8942,7 @@ install_skill_48_facebook_ad_generator
 # REST call. A "signature funnel" request routes here through the shared STEP-0
 # funnel-engine selector in Skill 6 (06-ghl-install-pages/funnel-engines/registry.json
 # — this is the first registered engine). On a client box it uses the CLIENT's own
-# configured providers/keys — never the operator's, never Anthropic model ids. Skill
+# configured providers/keys — never the operator's. Skill
 # 6, Skill 47, and Skill 07 (Kie.ai setup) are prerequisites.
 install_skill_49_signature_funnel() {
     local SKILL_SRC="$ONBOARDING_DIR/49-signature-funnel"
@@ -8780,7 +8981,7 @@ install_skill_49_signature_funnel
 # and hands a DRAFT-ONLY deploy plan to the Convert & Flow (GoHighLevel) operator
 # (Skill 44) — nothing is ever sent without explicit human approval. It never forks
 # the sender. On a client box it uses the CLIENT's own configured providers/keys —
-# never the operator's, never Anthropic model ids. Skill 44 is the deploy prerequisite.
+# never the operator's. Skill 44 is the deploy prerequisite.
 install_skill_50_email_engine() {
     local SKILL_SRC="$ONBOARDING_DIR/50-email-engine"
     local SKILL_DEST="$SKILLS_DIR/50-email-engine"
@@ -8854,7 +9055,7 @@ install_skill_51_signature_presentation
 # a 13-set Facebook Ad system, Booking Bots, Landing/Hero) → 16 named deliverables
 # (37 documents), replacing the retired 233-node n8n / Airtable / Google Drive / Slack /
 # Gmail workflow with a LOCAL-ONLY pipeline on the CLIENT's own model providers — never
-# the operator's, never Anthropic model ids. A Book/Brand version selector runs FIRST
+# the operator's. A Book/Brand version selector runs FIRST
 # (version=brand runs the 40-stage pipeline; version=book routes to Skill 53 or parks
 # fail-closed "book-skill-not-available"). Every SACRED count/floor is MEASURED by a
 # model-free prover (self-reported counts are ignored). Delivery is a labeled ~/Downloads
@@ -8882,7 +9083,7 @@ install_skill_52_avatar_intelligence() {
 
     success "Skill 52 (Avatar Alchemist) installed -> $SKILL_DEST"
     note "Skill 52 is the methodology + enforcement layer for the Trevor fixture-client-e Avatar Alchemist brand-intelligence package: it turns ONE completed brand-intake interview into 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone, a 13-set Facebook Ad system, Booking Bots, Landing/Hero) -> 16 named deliverables (37 documents). A Book/Brand version selector runs FIRST (version=brand runs the 40-stage pipeline; version=book routes to Skill 53 or parks fail-closed 'book-skill-not-available', never the brand pipeline). Every SACRED count/floor is MEASURED by fail-closed, model-free provers (self-reported counts are ignored)."
-    note "It runs through the ONE sanctioned front door (entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then the foreman scripts/aa_director.py, which schedules the 40 stages in dependency waves on the CLIENT's own model providers — never the operator's, never Anthropic model ids (G-NOANTHROPIC hard-fails any run whose resolved model id matches /anthropic|claude/i). Delivery is a labeled ~/Downloads bundle with a signed provenance certificate on a full 40/40 pass; it replaces the retired 233-node n8n / Airtable / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline (no n8n / Airtable / Drive / Slack / Gmail at runtime). Cross-linked with (never merged into) Skill 55 Product Bio. Standalone — no prerequisite skill."
+    note "It runs through the ONE sanctioned front door (entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then the foreman scripts/aa_director.py, which schedules the 40 stages in dependency waves on the CLIENT's own model providers — never the operator's — there is no vendor rule on model ids (Trevor order 2026-10-29). Delivery is a labeled ~/Downloads bundle with a signed provenance certificate on a full 40/40 pass; it replaces the retired 233-node n8n / Airtable / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline (no n8n / Airtable / Drive / Slack / Gmail at runtime). Cross-linked with (never merged into) Skill 55 Product Bio. Standalone — no prerequisite skill."
     return 0
 }
 
@@ -8908,7 +9109,7 @@ install_skill_52_avatar_intelligence
 # extras handed to Skill 51), replacing the retired 8-workflow n8n ghostwriting
 # factory (the 153-node "Book Writer" + the 121-node "4x3x3 w Book Writer") with
 # a LOCAL-ONLY pipeline on the CLIENT's own model providers — never the
-# operator's, never Anthropic model ids. Every SACRED count/floor is MEASURED by
+# operator's. Every SACRED count/floor is MEASURED by
 # a model-free prover (self-reported counts are ignored); a run cannot claim
 # "done" without a signed PROCESS-CERTIFICATE. Cross-linked with (never merged
 # into) Skill 54 Anthology Writer; both bake a lockstep copy of the shared
@@ -8936,7 +9137,7 @@ install_skill_53_book_writer() {
 
     success "Skill 53 (Book Writer) installed -> $SKILL_DEST"
     note "Skill 53 is the BOOK version of the Avatar Alchemist (Skill 52 is the BRAND version): it turns ONE completed book-intake interview into a tone-matched 12-chapter nonfiction book plus companion assets — avatar dossier, the blended 'The {First} {Last} Tone', locked title/subtitle + approved outline, print-ready manuscript, a 30-Day Challenge, and an AI cover prompt — delivered as labeled files in ~/Downloads. Modes full (flagship 12-chapter book) and 4x3x3 (offer book: 30 titles / 4 Transformational Outcomes / KP doc / 433_Deck_Data.json handed to Skill 51). The shared Book/Brand selector (Q0) routes version=book here and version=brand to Skill 52 — an explicit, receipted hand-off, never a silent cross-version fallback."
-    note "It runs through the ONE sanctioned front door (book-writer-entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then run_book_writer.py, the deterministic assembler/certifier, which walks phases P0->P8 in order with NO skips (intake -> avatar -> tone -> titles-gate -> outline-gate -> four STRICTLY-SEQUENTIAL chapter batches with proven continuity -> package -> QC -> deliver), with in-chat checkpoint approvals (GATE-1 titles / GATE-2 outline / GATE-3 approval / GATE-4 second revision). Twelve fail-closed provers MEASURE the stripped text (12 chapters exactly, 2000-3500 stripped words each, batch continuity, blended tone >= 3000 stripped words, 30-Day Challenge exactly 30 days, 4x3x3 counts, title lock byte-exact everywhere, no placeholders, no Anthropic model ids, anonymization); a full pass mints a signed PROCESS-CERTIFICATE ('done' is claimed only with the certificate path). Runs on the CLIENT's own model providers — never the operator's, never Anthropic model ids. Cross-linked with (never merged into) Skill 54 Anthology Writer; both share a lockstep copy of shared-utils/tone-writing-core/. Standalone — no prerequisite skill."
+    note "It runs through the ONE sanctioned front door (book-writer-entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then run_book_writer.py, the deterministic assembler/certifier, which walks phases P0->P8 in order with NO skips (intake -> avatar -> tone -> titles-gate -> outline-gate -> four STRICTLY-SEQUENTIAL chapter batches with proven continuity -> package -> QC -> deliver), with in-chat checkpoint approvals (GATE-1 titles / GATE-2 outline / GATE-3 approval / GATE-4 second revision). Twelve fail-closed provers MEASURE the stripped text (12 chapters exactly, 2000-3500 stripped words each, batch continuity, blended tone >= 3000 stripped words, 30-Day Challenge exactly 30 days, 4x3x3 counts, title lock byte-exact everywhere, no placeholders, anonymization); a full pass mints a signed PROCESS-CERTIFICATE ('done' is claimed only with the certificate path). Runs on the CLIENT's own model providers — never the operator's. Cross-linked with (never merged into) Skill 54 Anthology Writer; both share a lockstep copy of shared-utils/tone-writing-core/. Standalone — no prerequisite skill."
     return 0
 }
 
@@ -8987,7 +9188,7 @@ install_skill_54_anthology_writer() {
 
     success "Skill 54 (Anthology Writer) installed -> $SKILL_DEST"
     note "Skill 54 is the methodology + enforcement layer for a multi-contributor anthology: one finished chapter per contributor, authored in that contributor's blended signature voice, gated so nothing ships that missed a SACRED floor. It turns ONE contributor intake (anthology title, contributor name, chapter premise, real personal stories) into a gated 2,000-3,500-word chapter plus its supporting tone doc, locked title/subtitle, blurb, and outline — delivered as a labeled LOCAL bundle in ~/Downloads. Skill 54 (Anthology Writer) and Skill 53 (Book Writer) are SEPARATE skills (Trevor's standing decision, never consolidated) that share the ONE shared-utils/tone-writing-core: the anthology is many contributors, one chapter each; the book is one author, many chapters."
-    note "It runs through the ONE sanctioned front door (anthology-entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then run_anthology.py, the deterministic state machine, which walks phases P0 INTAKE -> P1 FIDELITY -> P2 TONE -> P3 TONE-QC -> P4 TITLE-LOCK -> P5 CHAPTER -> P6 CHAPTER-QC -> P7 DELIVER with NO phase skips, one contributor at a time. Fail-closed model-free provers MEASURE the stripped text (intake completeness + no credential-shaped fields, prompt-fidelity sha256 pins, tone-core lockstep, exactly 4 blended tone influences, tone floor >= 3,000 stripped words, chapter band 2,000-3,500 stripped words, completion-verification block, no placeholders, title lock + story placement byte-exact, no Anthropic model ids, a 2-rewrite budget per contributor); a full pass mints a signed PROCESS-CERTIFICATE ('done' is claimed only with the certificate path). Runs on the CLIENT's own model providers — never the operator's, never Anthropic model ids (aw_build_check.py / G-NOANTHROPIC hard-fails any run whose ledger shows an /anthropic|claude/i id). Cross-linked with (never merged into) Skill 53 Book Writer. Standalone — no prerequisite skill."
+    note "It runs through the ONE sanctioned front door (anthology-entry.sh: deps -> bypass-scan -> hash-pin -> nonce) then run_anthology.py, the deterministic state machine, which walks phases P0 INTAKE -> P1 FIDELITY -> P2 TONE -> P3 TONE-QC -> P4 TITLE-LOCK -> P5 CHAPTER -> P6 CHAPTER-QC -> P7 DELIVER with NO phase skips, one contributor at a time. Fail-closed model-free provers MEASURE the stripped text (intake completeness + no credential-shaped fields, prompt-fidelity sha256 pins, tone-core lockstep, exactly 4 blended tone influences, tone floor >= 3,000 stripped words, chapter band 2,000-3,500 stripped words, completion-verification block, no placeholders, title lock + story placement byte-exact, a 2-rewrite budget per contributor); a full pass mints a signed PROCESS-CERTIFICATE ('done' is claimed only with the certificate path). Runs on the CLIENT's own model providers — never the operator's — there is no vendor rule on model ids (Trevor order 2026-10-29). Cross-linked with (never merged into) Skill 53 Book Writer. Standalone — no prerequisite skill."
     return 0
 }
 
@@ -9004,7 +9205,7 @@ install_skill_54_anthology_writer
 # the 6,000-7,000-word, 10-section master-brain product bio + its Google-Docs-
 # importable HTML, replacing the retired 25-node n8n / Google Drive / Slack / Gmail
 # workflow with a LOCAL-ONLY pipeline on the CLIENT's own model providers — never
-# the operator's, never Anthropic model ids. Every SACRED count is MEASURED by a
+# the operator's. Every SACRED count is MEASURED by a
 # model-free prover (self-reported counts are ignored). Delivery is a labeled
 # ~/Downloads bundle; it touches no n8n / Drive / Slack / Gmail / Airtable at
 # runtime. Standalone — no prerequisite skill. Cross-linked with (never merged
@@ -9029,7 +9230,7 @@ install_skill_55_product_bio() {
 
     success "Skill 55 (Product Bio Engine) installed -> $SKILL_DEST"
     note "Skill 55 is the methodology + enforcement layer for the Trevor fixture-client-e master-brain product bio: a 6,000-7,000-word, 10-section sales knowledge base (10 intros, 15-20 power adjectives, ICP, description, positioning, 8-10 objections, 10-12 FAQs, 8-10 social proof, StoryBrand 2.0, 24 named signature closes + a completion-verification block) AND its Google-Docs-importable HTML, from a 4-field intake. It bakes two verbatim sha256-pinned IP prompts and gates every SACRED count with five fail-closed model-free provers that MEASURE the stripped text (self-reported counts are ignored)."
-    note "It runs P0 INTAKE -> P1 FIDELITY -> P2 BIO -> P3 BIO-QC -> P4 HTML -> P5 HTML-QC -> P6 DELIVER through one canonical entry (product-bio-entry.sh) with a deps/bypass-scan/hash-pin/nonce fail-closed gate, then delivers a labeled ~/Downloads bundle + a signed PROCESS-CERTIFICATE. It replaces the retired 25-node n8n / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline on the CLIENT's own model providers — never the operator's, never Anthropic model ids; no n8n / Drive / Slack / Gmail / Airtable at runtime. Standalone — no prerequisite skill."
+    note "It runs P0 INTAKE -> P1 FIDELITY -> P2 BIO -> P3 BIO-QC -> P4 HTML -> P5 HTML-QC -> P6 DELIVER through one canonical entry (product-bio-entry.sh) with a deps/bypass-scan/hash-pin/nonce fail-closed gate, then delivers a labeled ~/Downloads bundle + a signed PROCESS-CERTIFICATE. It replaces the retired 25-node n8n / Google Drive / Slack / Gmail workflow with a LOCAL-ONLY pipeline on the CLIENT's own model providers — never the operator's; no n8n / Drive / Slack / Gmail / Airtable at runtime. Standalone — no prerequisite skill."
     return 0
 }
 
@@ -9054,7 +9255,7 @@ install_skill_55_product_bio
 # media + funnel/page build to Skill 6 (the ONE GHL delivery rail); the order-bump
 # routes to Skill 44. It OWNS the <client>__<funnel>__<stage>__<type>__vNN labeling
 # grammar (reciprocal with Skill 49). On a client box it uses the CLIENT's own model
-# providers — never the operator's, never Anthropic model ids. Skill 6, Skill 47,
+# providers — never the operator's. Skill 6, Skill 47,
 # and Skill 44 are prerequisites.
 install_skill_56_sales_page_assets() {
     local SKILL_SRC="$ONBOARDING_DIR/56-sales-page-assets"
@@ -9076,7 +9277,7 @@ install_skill_56_sales_page_assets() {
 
     success "Skill 56 (Sales Page Assets) installed -> $SKILL_DEST"
     note "Skill 56 is the methodology + enforcement layer for the Trevor fixture-client-e Direct-Response sales-page asset stack (the DR sibling of Skill 49): the 8-section main sales page (A/B + countdown timer), the Trevor fixture-client-e 9-section upsell (A/B personas), a downsell recovery page, the Sovereign Architect 6,500-7,100-word high-ticket long-form page, 40-80-word order-bump copy with a checkbox close, and a slice-covered image plan, from one 'Ultimate AI Sales Page Writer' survey. It bakes provider-agnostic copy/image prompts and gates every SACRED count/band with eight fail-closed model-free provers (prove_sp_intake / image_plan / main_structure / upsell_structure / highticket_band / bump_band / bundle / cert) that MEASURE the stripped text (self-reported counts are ignored)."
-    note "It runs P0 INTAKE -> P1 IMAGE-PLAN -> P2 IMAGES -> P3 COPY x7 -> P4 MEDIA -> P5 FRAGMENTS -> P6 DOCS -> P7 BUNDLE -> P8 DELIVER -> P9 HANDOFF through one canonical entry (sales-page-assets-entry.sh) with a deps/version/hash-pin/bypass-scan/0600-nonce fail-closed gate, then issues a signed PROCESS-CERTIFICATE only on all-phases-pass. It registers as the SECOND STEP-0 funnel engine in Skill 6's registry, delegates image generation to Skill 47 (or the client's OWN image provider) and ALL GHL media + funnel/page build to Skill 6 (the ONE GHL delivery rail), and routes the order-bump to Skill 44. It OWNS the <client>__<funnel>__<stage>__<type>__vNN labeling grammar (reciprocal with Skill 49). Client runtime uses the CLIENT's own model providers — never the operator's, never Anthropic model ids. Skill 6, Skill 47, and Skill 44 are prerequisites."
+    note "It runs P0 INTAKE -> P1 IMAGE-PLAN -> P2 IMAGES -> P3 COPY x7 -> P4 MEDIA -> P5 FRAGMENTS -> P6 DOCS -> P7 BUNDLE -> P8 DELIVER -> P9 HANDOFF through one canonical entry (sales-page-assets-entry.sh) with a deps/version/hash-pin/bypass-scan/0600-nonce fail-closed gate, then issues a signed PROCESS-CERTIFICATE only on all-phases-pass. It registers as the SECOND STEP-0 funnel engine in Skill 6's registry, delegates image generation to Skill 47 (or the client's OWN image provider) and ALL GHL media + funnel/page build to Skill 6 (the ONE GHL delivery rail), and routes the order-bump to Skill 44. It OWNS the <client>__<funnel>__<stage>__<type>__vNN labeling grammar (reciprocal with Skill 49). Client runtime uses the CLIENT's own model providers — never the operator's. Skill 6, Skill 47, and Skill 44 are prerequisites."
     return 0
 }
 

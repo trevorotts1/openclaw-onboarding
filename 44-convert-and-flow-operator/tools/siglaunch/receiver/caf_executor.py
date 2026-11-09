@@ -39,7 +39,11 @@ caf-cli-surface-raw-2026-10-17.txt):
 
 Dependency prechecks do NOT invent a CLI surface: they consult the
 Phase-A provisioning ledger (the receipts Phase A wrote), which is the
-input contract the two-stage handoff defines.
+input contract the two-stage handoff defines. The ledger is a plain file
+anyone can write, so a product dependency is never satisfied by the ledger
+alone (S44-20): the recorded native product and price ids are re-read
+through the injected `product_reader` (a live GET) and must match, or the
+product is reported missing.
 
 Fail-closed throughout: unparseable output is a failure with the raw
 evidence preserved in errors, never a success.
@@ -55,6 +59,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 Runner = Callable[[list[str], int], tuple[int, str, str]]
+ProductReader = Callable[[str, str], Optional[dict]]
 
 
 def _subprocess_runner(argv: list[str], timeout: int) -> tuple[int, str, str]:
@@ -109,6 +114,20 @@ _TRIGGER_STEP_TYPES = {"tagadded", "contact_tag", "tag_added",
 _REENTRY_KEYS = ("allowMultiple", "reEntry", "allow_multiple", "re_entry")
 
 
+def is_automation_build_document(value) -> bool:
+    """True when ``value`` is a launch-c automation-build document.
+
+    The launch document is the ONLY carrier of the expanded compiler's
+    evidence (guard conditions, schedule suppression, unit keys, browser
+    ledger).  It is recognised by its own shape — a ``builds`` list plus
+    ``draft_only: true`` — and it is never mistaken for a plan: a plan's
+    top-level keys are workflow definitions, never ``builds``.
+    """
+    return (isinstance(value, dict)
+            and value.get("draft_only") is True
+            and isinstance(value.get("builds"), list))
+
+
 def _export_steps(obj: dict, workflow_data: dict) -> list:
     for candidate in (obj.get("steps"), obj.get("actions"),
                       obj.get("nodes"), workflow_data.get("templates")):
@@ -159,13 +178,18 @@ def _canonical_trigger(step: dict, raw_type: str) -> dict:
     return {"type": raw_type}
 
 
-def _export_allow_multiple(obj: dict, workflow_data: dict) -> bool:
+def _export_allow_multiple(obj: dict, workflow_data: dict):
+    """The native Allow Reentry value, or None when the export does not report it.
+
+    F05: an absent value is an UNOBSERVED setting, not False.  Normalising it
+    to False would let the receiver claim a reentry state it never read.
+    """
     for key in _REENTRY_KEYS:
         for source in (obj, workflow_data):
             value = source.get(key)
             if isinstance(value, bool):
                 return value
-    return False
+    return None
 
 
 def _normalize_export(obj: dict, workflow_id: str) -> dict:
@@ -268,14 +292,23 @@ class CafExecutor:
                  provisioning_ledger: Optional[str] = None,
                  snapshot_dir: Optional[str] = None,
                  timeout: int = 300,
-                 qc_script: Optional[str] = None):
+                 qc_script: Optional[str] = None,
+                 product_reader: Optional[ProductReader] = None,
+                 journal_path: Optional[str] = None):
         self.caf_path = caf_path
+        # live GET of one native product: (location_id, native_product_id) ->
+        # {"native_product_id","location_id","name","prices":[{"native_price_id",
+        # "amount_minor","currency"}]} or None. None here = products unverifiable.
+        self.product_reader = product_reader
         self.runner = runner
         self.provisioning_ledger = provisioning_ledger
         self.snapshot_dir = snapshot_dir or tempfile.mkdtemp(
             prefix="s44-snapshots-")
         self.timeout = timeout
         self.qc_script = qc_script
+        # --from-automation-build REQUIRES --journal: the receipts that make a
+        # re-run safe.  Default is a per-run path beside the snapshots.
+        self.journal_path = journal_path
 
     # ── capability probe: fresh `caf doctor` process ─────────────────────
     def probe(self) -> dict:
@@ -317,12 +350,48 @@ class CafExecutor:
             return [f"provisioning ledger unreadable: {e}"]
         provisioned = ledger.get(location_id, {})
         missing = []
-        for kind in ("tags", "fields", "products"):
+        for kind in ("tags", "fields"):
             have = set(provisioned.get(kind, []))
             for want in requires.get(kind, []):
                 if want not in have:
                     missing.append(f"{kind[:-1]}:{want}")
+        for want in requires.get("products", []):
+            why = self._product_unverified(location_id, want, provisioned,
+                                           requires)
+            if why:
+                missing.append(f"product:{want} ({why})")
         return missing
+
+    def _product_unverified(self, location_id: str, want: str,
+                            provisioned: dict, requires: dict) -> str:
+        """Why a required product cannot be trusted, or "" when a live read
+        of its native object matches (location, ids, name, price). Plan
+        terms in requires["product_terms"][want] outrank the ledger's."""
+        entry = (provisioned.get("product_native") or {}).get(want)
+        if not isinstance(entry, dict) or not entry.get("native_product_id") \
+                or not entry.get("native_price_id"):
+            return "no native product/price id in the ledger"
+        if self.product_reader is None:
+            return "no live product reader; the ledger alone is not trusted"
+        try:
+            live = self.product_reader(location_id,
+                                       entry["native_product_id"])
+        except Exception as e:  # unreadable = unverifiable = missing
+            return f"live read failed: {e}"
+        if not isinstance(live, dict) \
+                or live.get("native_product_id") != entry["native_product_id"] \
+                or live.get("location_id") != location_id \
+                or live.get("name") != entry.get("name"):
+            return "live product does not match the ledger"
+        terms = (requires.get("product_terms") or {}).get(want) or entry
+        price = next((p for p in live.get("prices") or []
+                      if p.get("native_price_id")
+                      == entry["native_price_id"]), None)
+        if price is None \
+                or price.get("amount_minor") != terms.get("amount_minor") \
+                or price.get("currency") != terms.get("currency"):
+            return "live price does not match"
+        return ""
 
     # ── AC20 snapshot-or-abort: capture current location state first ─────
     def snapshot(self, location_id: str, workflow_slug: str) -> bool:
@@ -415,7 +484,116 @@ class CafExecutor:
     #                               completion: the REQUIRES_HUMAN_REVIEW
     #                               items are graded by the Step-9 QC agent,
     #                               outside the executor contract. None.
+    def _readback_and_qc(self, workflow_id: str, result: dict) -> None:
+        """Export one workflow and run the QC gate onto ``result``.
+
+        Shared by the single-plan build and the launch-document build so both
+        read the SAVED graph back through the same surface — a saved workflow
+        is not "built" until the provider returns the graph and QC ran.
+        """
+        with tempfile.NamedTemporaryFile(
+                "w", suffix=".json", delete=False) as efh:
+            export_path = efh.name
+        ecode, _eout, _eerr = self.runner(
+            [self.caf_path, "workflows", "export",
+             "--workflow-id", workflow_id, "--out", export_path], 120)
+        raw_export = None
+        if ecode == 0:
+            try:
+                parsed = json.loads(Path(export_path).read_text())
+                if isinstance(parsed, dict):
+                    raw_export = parsed
+            except (OSError, ValueError):
+                raw_export = None
+        if ecode != 0 or raw_export is None:
+            result["errors"].append("post-build export read-back failed")
+            return
+        result["export_raw"] = raw_export
+        result["export"] = _normalize_export(raw_export, workflow_id)
+        # QC gate (read-only): skill-root script, exit code + rubric
+        self._run_qc(workflow_id, result)
+
+    def build_document(self, document: dict,
+                       journal: Optional[str] = None) -> dict:
+        """Build a whole launch-c automation-build document, ONCE.
+
+        This is the production entry the expanded compiler is reached from:
+        ``caf --json --experimental workflows build --from-automation-build
+        <doc> --journal <path>``.  ``--from-plan`` is deliberately NOT used —
+        it would drop the document's guard conditions, schedule suppression,
+        unit keys and browser ledger, and it refuses a launch-profile plan
+        outright.
+
+        One CLI invocation builds every compiled unit, so per-unit results are
+        read from the CLI's own ``workflow_ids`` map (key ``<build id>__<key>``)
+        and each workflow is exported and QC'd individually.  Units the
+        compiler refused are carried verbatim in ``refusals``; they are never
+        folded into a clean result.
+        """
+        result = {"exit_code": 1, "workflow_id": None, "errors": [],
+                  "notes": [], "export": None, "export_raw": None,
+                  "qc_exit_code": None, "rubric": None, "wf_items": None,
+                  "stats": None, "document": True, "workflow_ids": {},
+                  "refusals": [], "unit_results": {}}
+        journal_path = journal or self.journal_path
+        if not journal_path:
+            Path(self.snapshot_dir).mkdir(parents=True, exist_ok=True)
+            journal_path = str(Path(self.snapshot_dir) / "build-journal.jsonl")
+        with tempfile.NamedTemporaryFile(
+                "w", suffix=".json", delete=False) as fh:
+            json.dump(document, fh)
+            doc_path = fh.name
+        code, out, err = self.runner(
+            [self.caf_path, "--json", "--experimental", "workflows",
+             "build", "--from-automation-build", doc_path,
+             "--journal", journal_path], self.timeout)
+        stats = _extract_json(out) or _extract_json(err)
+        result["exit_code"] = code
+        result["stats"] = stats
+        result["journal_path"] = journal_path
+        if stats is None:
+            result["errors"].append(
+                "build output unparseable; raw tail: "
+                + (err or out).strip()[-300:])
+            return result
+        errors = list(stats.get("errors") or [])
+        result["errors"] = errors
+        result["notes"] = list(stats.get("notes") or [])
+        # Per-unit refusals, verbatim: the builder reports them as
+        # "build <id> refused at compile (<code>): <reason>".
+        result["refusals"] = [e for e in errors if "refused at compile" in e]
+        ids_map = stats.get("workflow_ids")
+        if isinstance(ids_map, dict):
+            result["workflow_ids"] = {
+                str(slug): str(wid) for slug, wid in ids_map.items()
+                if isinstance(wid, str) and wid}
+        if code != 0:
+            return result
+        for slug, workflow_id in result["workflow_ids"].items():
+            unit = {"workflow_id": workflow_id, "export": None, "export_raw": None,
+                    "qc_exit_code": None, "rubric": None, "wf_items": None,
+                    "notes": [], "errors": []}
+            self._readback_and_qc(workflow_id, unit)
+            result["unit_results"][slug] = unit
+            if unit["notes"]:
+                result["notes"].extend(unit["notes"])
+            if unit["export"] is not None:
+                # A single-workflow document keeps the flat contract the
+                # receiver's per-operation checks read.
+                result["export"] = unit["export"]
+                result["export_raw"] = unit["export_raw"]
+                result["qc_exit_code"] = unit["qc_exit_code"]
+                result["rubric"] = unit["rubric"]
+                result["wf_items"] = unit["wf_items"]
+        if len(result["workflow_ids"]) == 1:
+            result["workflow_id"] = next(iter(result["workflow_ids"].values()))
+        return result
+
     def build(self, builder_plan: dict) -> dict:
+        # A launch document IS a production build request: route it to the one
+        # canonical entry instead of the plain plan rail.
+        if is_automation_build_document(builder_plan):
+            return self.build_document(builder_plan)
         result = {"exit_code": 1, "workflow_id": None, "errors": [],
                   "notes": [], "export": None, "export_raw": None,
                   "qc_exit_code": None, "rubric": None, "wf_items": None,
@@ -479,26 +657,6 @@ class CafExecutor:
         result["workflow_id"] = workflow_id
         if code != 0 or not workflow_id:
             return result
-        # read-back: export writes the evidence JSON to the --out file
-        with tempfile.NamedTemporaryFile(
-                "w", suffix=".json", delete=False) as efh:
-            export_path = efh.name
-        ecode, _eout, _eerr = self.runner(
-            [self.caf_path, "workflows", "export",
-             "--workflow-id", workflow_id, "--out", export_path], 120)
-        raw_export = None
-        if ecode == 0:
-            try:
-                parsed = json.loads(Path(export_path).read_text())
-                if isinstance(parsed, dict):
-                    raw_export = parsed
-            except (OSError, ValueError):
-                raw_export = None
-        if ecode != 0 or raw_export is None:
-            result["errors"].append("post-build export read-back failed")
-            return result
-        result["export_raw"] = raw_export
-        result["export"] = _normalize_export(raw_export, workflow_id)
-        # QC gate (read-only): skill-root script, exit code + rubric
-        self._run_qc(workflow_id, result)
+        # read-back + QC: export writes the evidence JSON to the --out file
+        self._readback_and_qc(workflow_id, result)
         return result

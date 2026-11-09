@@ -218,6 +218,8 @@ class BoxResult:
         self.update_999: dict = {}
         self.nine_router_guard_failed: str = ""   # set when the checksum guard saw a 9Router file change
         self.heal: dict = {}
+        self.preflight: dict = {}                 # fleet_preflight status.json, when it ran
+        self.skills_client_extra: Optional[list] = None   # client-made skill folders (not shipped by the repo)
         # One-word verdict for the fleet summary:
         # UPDATED | ROLLED_BACK | FAILED | SKIPPED  (+ outcome_detail).
         self.outcome: str = "SKIPPED" if dry_run else "FAILED"
@@ -255,6 +257,8 @@ class BoxResult:
             "rollback":            self.rollback,
             "update_999":          self.update_999,
             "heal":                self.heal,
+            "preflight":           self.preflight,
+            "skills_client_extra": self.skills_client_extra,
             "outcome":             self.outcome,
             "outcome_detail":      self.outcome_detail,
         }
@@ -1102,6 +1106,49 @@ UPDATE_SKILLS_TIMEOUT = 5400
 # update-skills.sh's fleet standing gate: "Update held -- account not current".
 UPDATE_HELD_MARK = "Update held -- account not current"
 UPDATE_HELD = "update held -- account not current on payments (fleet standing gate); nothing changed"
+# The weekly pre-flight (shared-utils/fleet_preflight.py) paused the update: documented status
+# "paused-preflight", outcome SKIPPED, nothing changed. update-skills.sh prints
+# "FLEET-PREFLIGHT-PAUSED: <reasons>" and exits 0 (same shape as the standing hold).
+PREFLIGHT_PAUSED_MARK = "FLEET-PREFLIGHT-PAUSED"
+PREFLIGHT_PAUSED = "paused-preflight"
+_SKILL_BACKUP_RE = re.compile(r"\.(bak|pre|rollback|orig)([-_.]|$)", re.I)
+
+
+def _preflight_reasons(text: str) -> str:
+    m = re.search(rf"^{PREFLIGHT_PAUSED_MARK}:\s*(.+)$", text or "", re.M)
+    return m.group(1).strip()[:200] if m else ""
+
+
+def step_preflight_early(paths: dict, shared_utils: Path, res: "BoxResult") -> str:
+    """Storage and memory pressure, BEFORE the snapshot (the snapshot and the doctor
+    captures are what fill a disk). Returns the pause reasons, or "" to go on.
+    Fail open: a missing helper or any error never stops a box."""
+    helper = shared_utils / "fleet_preflight.py"
+    if os.environ.get("FLEET_PREFLIGHT_BYPASS") == "1" or not helper.is_file():   # BYPASS: operator / hermetic tests
+        return ""
+    os.environ.setdefault("FLEET_PREFLIGHT_RUN_ID", f"roll-{os.getpid()}-{int(time.time())}")
+    try:
+        r = subprocess.run([sys.executable, str(helper), "--phase", "early", "--root", str(paths["root"])],
+                           capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    try:
+        res.preflight = json.loads((Path(paths["root"]) / "fleet-preflight" / "status.json").read_text())
+    except (OSError, ValueError):
+        pass
+    return _preflight_reasons(r.stdout) if r.returncode == 10 else ""
+
+
+def _client_extra_skills(skills_dir: Path, repo_root: Path) -> list[str]:
+    """Numbered skill folders the repo does not ship (the client's own). Counted apart
+    as skills_client_extra; never touched by any update step."""
+    try:
+        shipped = {p.name for p in repo_root.iterdir()}
+        return sorted(p.name for p in skills_dir.iterdir()
+                      if p.is_dir() and p.name[:1].isdigit() and p.name not in shipped
+                      and p.name + "-ARCHIVED" not in shipped and not _SKILL_BACKUP_RE.search(p.name))
+    except OSError:
+        return []
 
 
 def _run_tree(cmd: list[str], timeout: int, **kw) -> subprocess.CompletedProcess:
@@ -1187,7 +1234,11 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
             pinned_tag = load_cc_compat(repo_root).get("onboardingVersion", pinned_tag)
         except Exception:
             pass
-        if result.returncode == 0 and UPDATE_HELD_MARK in result.stdout:
+        if result.returncode == 0 and PREFLIGHT_PAUSED_MARK in result.stdout:
+            # The pre-flight paused this box (provider standing, storage or memory
+            # pressure): nothing was changed, by design. Not a failure to fix.
+            res.step_skip("pull-onboarding", f"{PREFLIGHT_PAUSED}: {_preflight_reasons(result.stdout)}")
+        elif result.returncode == 0 and UPDATE_HELD_MARK in result.stdout:
             # The fleet standing gate held this box (account not current on
             # payments): nothing was changed, by design. Not a failure to fix.
             res.step_skip("pull-onboarding", UPDATE_HELD)
@@ -2612,6 +2663,11 @@ R="$1"; S="$R/.claude/skills/nine-router-setup/scripts/setup-macos.sh"
 [ "$(tail -n 1 "$S")" = 'main "$@"' ] || { echo "installer entrypoint changed: last line of $S is not main \"\$@\"" >&2; exit 3; }
 T="$(mktemp)"; trap 'rm -f "$T"' EXIT
 sed '$d' "$S" > "$T"
+# The installer derives SKILL_DIR/COMMON from NINE_SETUP_SCRIPT_DIR, else from the path of the file being
+# sourced. Sourced from this mktemp copy that path is the temp dir, SKILL_DIR lands one level above it, and the
+# installer's own `. "$COMMON/settings-lock.sh"` fails (update-999 exit 1). Name the real scripts dir
+# (shared-utils/lib-frontdoor.sh does the same for its per-skill link).
+export NINE_SETUP_SCRIPT_DIR="$R/.claude/skills/nine-router-setup/scripts"
 . "$T"
 declare -F link_skills_into_root >/dev/null || { echo "installer has no link_skills_into_root" >&2; exit 3; }
 REPO_ROOT="$R"; REPO_SKILL_DIR="$R/.claude/skills/nine-router-setup"
@@ -3441,6 +3497,187 @@ def _save_local_changes(repo: Path, dest_dir: Path) -> Optional[str]:
     return str(out)
 
 
+# ── the shared installation lease + process identity ─────────────────────────
+# mac.MAC-1 / consistency.C1: this runner is an update WRITER, so it takes the
+# SAME lease as update-skills.sh, self-update.sh, oc-atomic-upgrade.sh and the
+# weekly cron: one regular file, one owner record (pid, process start identity,
+# run id, role, install path, UTC).
+# mac.MAC-13: a lease or lock is stale only when its RECORDED OWNER is provably
+# gone — pid dead, or the pid now belongs to a different process (the start
+# identity no longer matches). Age is NEVER the test: a slow live run must not
+# be displaced by a timer.
+# scripts/box-update-lock.sh is the shell helper; this is the same contract, so
+# a Python writer and a shell writer see each other.
+
+def _lease_path() -> Path:
+    return Path(os.environ.get("OPENCLAW_UPDATE_LEASE") or "/tmp/openclaw-update.lock")
+
+
+def _proc_start_identity(pid: int) -> str:
+    """Process start identity; '' when the platform cannot report it."""
+    try:
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)],
+                             capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return " ".join(out.split())
+
+
+def _proc_ppid(pid: int) -> Optional[int]:
+    try:
+        out = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)],
+                             capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return int(out) if out.isdigit() else None
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError as e:
+        import errno as _errno
+        return e.errno == _errno.EPERM      # exists, just not ours
+    return True
+
+
+def _lease_read(path: Path) -> dict:
+    rec: dict = {}
+    try:
+        text = path.read_text()
+    except OSError:
+        return rec
+    for line in text.splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            rec[k.strip()] = v.strip()
+    return rec
+
+
+def _lease_owner_live(path: Path) -> bool:
+    """True only while the RECORDED owner is that same live process."""
+    if path.is_dir():                       # legacy mkdir lease: pid only
+        try:
+            pid = int((path / "pid").read_text().strip())
+        except (OSError, ValueError):
+            return False
+        return _pid_alive(pid)
+    if not path.is_file():
+        return False
+    rec = _lease_read(path)
+    pid = rec.get("pid", "")
+    if not pid.isdigit() or not _pid_alive(int(pid)):
+        return False
+    start = rec.get("start", "")
+    if not start:
+        return False                        # partial write, not proof of life
+    if start == "none":
+        return True
+    now = _proc_start_identity(int(pid))
+    return bool(now) and now == start
+
+
+def _is_ancestor_or_self(pid: int) -> bool:
+    cur: Optional[int] = os.getpid()
+    for _ in range(64):
+        if cur is None or cur <= 0:
+            return False
+        if cur == pid:
+            return True
+        cur = _proc_ppid(cur)
+    return False
+
+
+def _lease_acquire(path: Path, run_id: str, role: str, install_path: str):
+    """(state, reason). state is 'owned', 'inherited' or None (refused)."""
+    # 1. A DESCENDANT of the owner rides its lease (never re-acquires). The
+    #    exported identity keys are the proof, plus a live ancestor: refusing a
+    #    box's own update chain is the defect that closed PR #2612.
+    run_env = os.environ.get("BFX_LOCK_RUN_ID", "")
+    pid_env = os.environ.get("BFX_LOCK_OWNER_PID", "")
+    if path.is_file():
+        rec = _lease_read(path)
+        rec_pid, rec_run = rec.get("pid", ""), rec.get("run_id", "")
+        if rec_pid.isdigit() and _lease_owner_live(path):
+            same_run = (run_env and run_env == rec_run) or (pid_env and pid_env == rec_pid)
+            if same_run and _is_ancestor_or_self(int(rec_pid)):
+                os.environ["BFX_LOCK_RUN_ID"] = rec_run
+                os.environ["BFX_LOCK_OWNER_PID"] = rec_pid
+                return "inherited", ""
+        if rec_pid.isdigit() and rec_run and run_env and run_env == rec_run and not _lease_owner_live(path):
+            # Same run, owner gone: ADOPT the record so the lease does not go
+            # dead while we work (self-update's detached launcher exits).
+            _lease_write(path, run_id or rec_run, rec.get("role", role), rec.get("install_path", install_path))
+            os.environ["BFX_LOCK_RUN_ID"] = run_id or rec_run
+            os.environ["BFX_LOCK_OWNER_PID"] = str(os.getpid())
+            return "owned", ""
+
+    # 2. A non-regular object at the path is a crashed run, never a lease.
+    if path.exists() and not path.is_file():
+        if _lease_owner_live(path):
+            return None, f"the shared installation lease {path} is a directory lease with a live owner"
+        try:
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        except OSError as e:
+            return None, f"cannot clear the crashed lease {path}: {e}"
+
+    # 3. flock (when present) is a second guard on a fixed fd; the RECORD is the
+    #    authority, so an inline shell writer that holds no flock still wins.
+    try:
+        import fcntl
+    except ImportError:                      # pragma: no cover - Windows
+        fcntl = None
+    fd = None
+    try:
+        if fcntl is not None:
+            fd = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o644)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return None, f"another updater owns {path}"
+        if _lease_owner_live(path):
+            rec = _lease_read(path)
+            return None, f"another updater owns {path} (pid {rec.get('pid')}, role {rec.get('role', 'unknown')})"
+        _lease_write(path, run_id, role, install_path)
+        os.environ["BFX_LOCK_RUN_ID"] = run_id
+        os.environ["BFX_LOCK_OWNER_PID"] = str(os.getpid())
+        return "owned", ""
+    except OSError as e:
+        return None, f"cannot acquire the shared lease {path}: {e}"
+    finally:
+        if fd is not None:
+            try:
+                if fcntl is not None:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                os.close(fd)
+            except OSError:
+                pass
+
+
+def _lease_write(path: Path, run_id: str, role: str, install_path: str) -> None:
+    sid = _proc_start_identity(os.getpid()) or "none"
+    path.write_text(
+        "pid=%d\nstart=%s\nrun_id=%s\nrole=%s\ninstall_path=%s\nutc=%s\n"
+        % (os.getpid(), sid, run_id, role, install_path,
+           time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
+
+
+def _lease_release(path: Path) -> None:
+    """Delete only when THIS process is the recorded owner."""
+    if not path.is_file():
+        return
+    rec = _lease_read(path)
+    if rec.get("pid") != str(os.getpid()):
+        return
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
 class _BoxLock:
     """One fleet-refresh per box at a time (the operator roll and the box's own
     Sunday run must never interleave)."""
@@ -3448,37 +3685,88 @@ class _BoxLock:
     def __init__(self, root: Path):
         self.path = Path(root) / ".fleet-refresh.lock"
         self.held = False
+        self.lease_owned = False
+
+    def _marker_state(self) -> str:
+        """'missing' | 'live' | 'dead' | 'unreadable'.
+
+        'live' needs a live pid AND, when the marker carries one, the same
+        process start identity. There is no age test anywhere here.
+        """
+        try:
+            pid = int((self.path / "pid").read_text().strip())
+        except (OSError, ValueError):
+            return "missing" if not self.path.exists() else "unreadable"
+        if not _pid_alive(pid):
+            return "dead"
+        try:
+            rec_start = (self.path / "start").read_text().strip()
+        except OSError:
+            rec_start = ""
+        if not rec_start:
+            return "live"                   # legacy marker: a live pid is the proof
+        now = _proc_start_identity(pid)
+        return "live" if (now and now == rec_start) else "dead"
 
     def acquire(self) -> Optional[str]:
+        # 1. The shared installation lease comes FIRST: it is what every other
+        #    writer honours, so taking it before touching anything else is what
+        #    makes the box single-writer (mac.MAC-1).
+        state, why = _lease_acquire(_lease_path(), f"fleet-refresh-{os.getpid()}",
+                                    "fleet-refresh", str(self.path.parent))
+        if state is None:
+            return why
+        self.lease_owned = state == "owned"
+
+        # 2. The per-box marker, kept because fleet-refresh.sh and
+        #    weekly-full-update.sh read <root>/.fleet-refresh.lock/pid directly.
         for _ in range(2):
             try:
                 self.path.mkdir()
                 (self.path / "pid").write_text(str(os.getpid()))
+                (self.path / "start").write_text(_proc_start_identity(os.getpid()) or "none")
                 self.held = True
                 return None
             except FileExistsError:
-                try:
-                    age = time.time() - self.path.stat().st_mtime
-                    try:
-                        pid = int((self.path / "pid").read_text().strip())
-                    except (OSError, ValueError):
-                        if age < 60:   # the other run is between mkdir and writing its pid
-                            return "another fleet-refresh is starting on this box"
-                        raise
-                    os.kill(pid, 0)
-                    if age < 4 * 3600:
-                        return f"another fleet-refresh (pid {pid}) is running on this box"
-                except (OSError, ValueError):
-                    pass
-                shutil.rmtree(self.path, ignore_errors=True)   # stale
+                state = self._marker_state()
+                if state == "live":
+                    self._release_lease()
+                    return f"another fleet-refresh is running on this box (marker {self.path})"
+                if state == "unreadable":
+                    # Between mkdir and the pid write. Wait for the record to
+                    # appear instead of guessing from the directory's age.
+                    for _ in range(10):
+                        time.sleep(0.2)
+                        if self._marker_state() != "unreadable":
+                            break
+                    state = self._marker_state()
+                    if state == "live":
+                        self._release_lease()
+                        return f"another fleet-refresh is starting on this box (marker {self.path})"
+                # 'dead' (or an owner that never wrote a record): the recorded
+                # owner is provably gone, so reclaim — not because of age.
+                shutil.rmtree(self.path, ignore_errors=True)
             except OSError as e:
+                self._release_lease()
                 return f"cannot create lock {self.path}: {e}"
+        self._release_lease()
         return f"cannot acquire {self.path}"
+
+    def _release_lease(self) -> None:
+        if self.lease_owned:
+            _lease_release(_lease_path())
+            self.lease_owned = False
 
     def release(self) -> None:
         if self.held:
-            shutil.rmtree(self.path, ignore_errors=True)
+            try:
+                pid = int((self.path / "pid").read_text().strip())
+            except (OSError, ValueError):
+                pid = 0
+            if pid == os.getpid():
+                shutil.rmtree(self.path, ignore_errors=True)
             self.held = False
+        self._release_lease()
 
 
 # ── Content integrity (post-update) ───────────────────────────────────────────
@@ -4127,7 +4415,16 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
     # alerted, never blamed on -- or rolled back by -- this update.
     res.health["integrity_baseline"] = probe_integrity(paths, repo_root, 0, res.onboarding_version)
 
+    res.skills_client_extra = _client_extra_skills(_skills_dir(paths), repo_root)
+
     if not verify_only:
+        # Pre-flight (storage, memory pressure) before anything is captured or changed.
+        if not dry_run:
+            _why = step_preflight_early(paths, shared_utils, res)
+            if _why:
+                res.result, res.outcome = "skipped", "SKIPPED"
+                res.outcome_detail = f"{PREFLIGHT_PAUSED}: {_why}; nothing was changed"
+                return res
         # The Wave-5 gate would otherwise sys.exit() from inside build-cc, AFTER
         # onboarding was already applied (a half-updated box, no result JSON).
         # Check it before the first change instead: blocked = box untouched.
@@ -4162,6 +4459,12 @@ def _run_box_body(res: BoxResult, compat: dict, pinned_onboarding_tag: str, path
             for step in ("update-999", "pull-cc", "build-cc", "restart-cc", "sessions-reset-CEO"):
                 res.step_skip(step, "update held")
             res.result, res.outcome, res.outcome_detail = "skipped", "SKIPPED", UPDATE_HELD
+            return res
+        if str(res.steps.get("pull-onboarding", "")).startswith(f"skip:{PREFLIGHT_PAUSED}"):
+            for step in ("update-999", "pull-cc", "build-cc", "restart-cc", "sessions-reset-CEO"):
+                res.step_skip(step, PREFLIGHT_PAUSED)
+            res.result, res.outcome = "skipped", "SKIPPED"
+            res.outcome_detail = f"{PREFLIGHT_PAUSED}: {res.steps['pull-onboarding'].split(': ', 1)[-1]}; nothing was changed"
             return res
 
         # The updater's own front door also runs a 999 step; a 9Router checksum

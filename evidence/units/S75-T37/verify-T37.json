@@ -1,0 +1,61 @@
+{
+  "checker_present_at_head": true,
+  "clause_coverage_matches": true,
+  "clause_verdicts": [
+    {
+      "checker_claim": "proven by check 1",
+      "clause": "Correct-target incorporation is proven",
+      "match": true,
+      "mine": "proven by check 1"
+    },
+    {
+      "checker_claim": "proven by check 2",
+      "clause": "uncertain merge/ack reconciles once without duplicate landing",
+      "match": true,
+      "mine": "proven by check 2"
+    },
+    {
+      "checker_claim": "proven by check 3",
+      "clause": "N999 need not wait for ONB fixture facets",
+      "match": true,
+      "mine": "proven by check 3"
+    }
+  ],
+  "head_matches_origin_tip": true,
+  "hygiene": {
+    "merge_tree_rc": 0,
+    "users_lines": 0,
+    "volumes_lines": 0
+  },
+  "mutation_proof": {
+    "check_breaks": true,
+    "file": "CONTROL/correct_target.py line ~353",
+    "last_line": "FAILED (failures=2)",
+    "mutation": "flipped is_ancestor to not is_ancestor in local-only guard",
+    "rc": 1,
+    "where": "scratch copy only; worktree untouched"
+  },
+  "origin_tip": "a979b77f01d32383e56ef62b64f338fe54d94f54",
+  "overall": "CONFIRMED",
+  "per_check": {
+    "check1": {
+      "claimed_last_line": "OK",
+      "claimed_rc": 0,
+      "observed_last_line": "OK",
+      "observed_rc": 0
+    },
+    "check2": {
+      "claimed_last_line": "OK",
+      "claimed_rc": 0,
+      "observed_last_line": "OK",
+      "observed_rc": 0
+    },
+    "check3": {
+      "claimed_last_line": "OK",
+      "claimed_rc": 0,
+      "observed_last_line": "OK",
+      "observed_rc": 0
+    }
+  },
+  "receipt_checker_field_points_at_checker_json": true
+}

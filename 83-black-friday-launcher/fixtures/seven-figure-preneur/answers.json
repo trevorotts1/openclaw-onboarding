@@ -1,0 +1,123 @@
+{
+  "schema": "client-intake-answers/v1",
+  "answers": {
+    "billing": {
+      "value": "one_time",
+      "status": "provided",
+      "source": "client"
+    },
+    "bump": {
+      "value": {
+        "offer_id": "BUMP",
+        "display_name": "TEST ONLY Bump",
+        "price": {
+          "amount_minor": 2700,
+          "currency": "USD"
+        },
+        "deliverables": []
+      },
+      "status": "provided",
+      "source": "client"
+    },
+    "downsell_1": {
+      "value": {
+        "offer_id": "D1",
+        "display_name": "TEST ONLY D1",
+        "price": {
+          "amount_minor": 3700,
+          "currency": "USD"
+        },
+        "deliverables": [
+          "TEST ONLY D1 deliverable 1"
+        ]
+      },
+      "status": "provided",
+      "source": "client"
+    },
+    "funnel_shape": {
+      "value": "folded_levels",
+      "status": "provided",
+      "source": "client"
+    },
+    "image_provider": {
+      "value": "none",
+      "status": "provided",
+      "source": "client"
+    },
+    "packages": {
+      "value": [
+        {
+          "offer_id": "MAIN-A",
+          "display_name": "TEST ONLY Level A",
+          "price": {
+            "amount_minor": 9700,
+            "currency": "USD"
+          },
+          "deliverables": [
+            "TEST ONLY Level A deliverable 1",
+            "TEST ONLY Level A deliverable 2"
+          ]
+        },
+        {
+          "offer_id": "MAIN-B",
+          "display_name": "TEST ONLY Level B",
+          "price": {
+            "amount_minor": 19700,
+            "currency": "USD"
+          },
+          "deliverables": [
+            "TEST ONLY Level B deliverable 1",
+            "TEST ONLY Level B deliverable 2",
+            "TEST ONLY Level B deliverable 3"
+          ]
+        },
+        {
+          "offer_id": "MAIN-C",
+          "display_name": "TEST ONLY Level C",
+          "price": {
+            "amount_minor": 29700,
+            "currency": "USD"
+          },
+          "deliverables": [
+            "TEST ONLY Level C deliverable 1",
+            "TEST ONLY Level C deliverable 2",
+            "TEST ONLY Level C deliverable 3",
+            "TEST ONLY Level C deliverable 4"
+          ]
+        }
+      ],
+      "status": "provided",
+      "source": "client"
+    },
+    "upsell_1": {
+      "value": {
+        "offer_id": "U1",
+        "display_name": "TEST ONLY U1",
+        "price": {
+          "amount_minor": 6700,
+          "currency": "USD"
+        },
+        "deliverables": [
+          "TEST ONLY U1 deliverable 1"
+        ]
+      },
+      "status": "provided",
+      "source": "client"
+    },
+    "upsell_2": {
+      "value": {
+        "offer_id": "U2",
+        "display_name": "TEST ONLY U2",
+        "price": {
+          "amount_minor": 4700,
+          "currency": "USD"
+        },
+        "deliverables": [
+          "TEST ONLY U2 deliverable 1"
+        ]
+      },
+      "status": "provided",
+      "source": "client"
+    }
+  }
+}

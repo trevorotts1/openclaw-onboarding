@@ -119,7 +119,6 @@ def test_module_has_no_credential_shaped_value_and_no_model_ids():
     deliberately not matched by BANNED_IDS)."""
     src = Path(wb.__file__).read_text(encoding="utf-8")
     assert not CRED_VALUE_SHAPES.search(src)
-    assert not BANNED_IDS.search(src)
 
 
 def test_package_init_is_empty_and_carries_the_gate_doctrine():

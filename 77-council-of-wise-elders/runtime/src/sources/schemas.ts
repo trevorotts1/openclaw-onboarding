@@ -16,7 +16,7 @@
  */
 
 import { z } from 'zod';
-import { idSchema, seatIdSchema, sha256Schema } from '../contracts/schemas';
+import { idSchema, seatIdSchema, sha256Schema } from '../contracts/schemas.js';
 
 /** Claim-level locator (Section 8.3): page, timestamp, or section. */
 export const sourceLocatorSchema = z.strictObject({

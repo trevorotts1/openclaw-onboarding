@@ -7,17 +7,28 @@ Environment variables (all set by the 'caf'/'convertandflow'/'ghl' wrappers):
     CAF_ALLOWED_LOCATION_IDS  Comma-separated whitelist.  Empty = REFUSE ALL writes.
     CAF_DRAFT_ONLY            "true" (default) = triggers created as inactive (active:false).
     CAF_DRY_RUN               "true" = print payload only, never send.
-    CAF_APPROVAL_TOKEN        Non-empty = explicit write approval token.
-                              ZHC-/ZHC_ prefixed names are standing-approved per Section 5.
+    CAF_APPROVAL_ID           Id of the owner approval record (fetched live from Command
+                              Center; the id alone approves nothing). Writes need an
+                              'automation_write' record, draft-off a 'publish' record, each
+                              bound to {location_id, action, object_key, plan_sha256,
+                              approver, expires_at}. CAF_WRITE_ACTION / CAF_PLAN_SHA256 /
+                              CAF_OBJECT_KEY name the current action, plan and object.
+                              An env token or a ZHC- name is NOT approval (S44-16).
 
 All safety values are read at call time so that env vars set after import
 (e.g. by --dry-run flag callbacks) are always honoured.
 """
 from __future__ import annotations
 
-import os
-import sys
+import hmac
 import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 
@@ -38,15 +49,80 @@ def _env_set(name: str) -> frozenset[str]:
     return frozenset(s.strip() for s in raw.split(",") if s.strip())
 
 
-# ── Approval check ────────────────────────────────────────────────────────────
+# ── Approval check (S44-16) ───────────────────────────────────────────────────
+# The owner's yes is a record minted by Command Center from the client's own reply;
+# the AI session cannot write that service, so an env var, a ZHC- name or a file the
+# session wrote is never approval. Same endpoint approval_record.py (shared-utils) reads.
 
-def _is_approved(name: str = "") -> bool:
-    """Return True if the write is standing-approved (ZHC prefix) or explicit token present."""
-    if os.environ.get("CAF_APPROVAL_TOKEN", "").strip():
-        return True
-    if name and (name.startswith("ZHC-") or name.startswith("ZHC_")):
-        return True
-    return False
+_APPROVAL_PATH = "/api/launch-approvals/{approval_id}"
+_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
+_LOOPBACK = ("localhost", "127.0.0.1", "::1")
+_NEEDED = ("kind", "location_id", "action", "object_key", "plan_sha256", "approver",
+           "expires_at", "revoked", "verification_class")
+
+
+def _fetch_record(approval_id: str) -> dict:
+    """GET the approval record from Command Center. Any failure raises SafetyRefused."""
+    base = os.environ.get("MISSION_CONTROL_URL", "").strip().rstrip("/")
+    token = os.environ.get("MC_API_TOKEN", "").strip()
+    if not _ID_RE.match(approval_id or ""):
+        raise SafetyRefused("WRITE REFUSED: CAF_APPROVAL_ID is missing or malformed.")
+    parts = urllib.parse.urlsplit(base)
+    if not (base and token and parts.hostname and (
+            parts.scheme == "https" or (parts.scheme == "http" and parts.hostname in _LOOPBACK))):
+        raise SafetyRefused("WRITE REFUSED: Command Center is not configured "
+                            "(MISSION_CONTROL_URL / MC_API_TOKEN); cannot verify approval.")
+    req = urllib.request.Request(
+        base + _APPROVAL_PATH.format(approval_id=urllib.parse.quote(approval_id, safe="")),
+        headers={"Authorization": "Bearer " + token, "Accept": "application/json"}, method="GET")
+    try:
+        timeout = int(os.environ.get("CC_BOARD_TIMEOUT") or 8)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            rec = json.loads(resp.read().decode("utf-8", "replace"))
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise SafetyRefused("WRITE REFUSED: approval record could not be fetched from "
+                            f"Command Center ({type(exc).__name__}); fail-closed.")
+    return rec["approval"] if isinstance(rec, dict) and isinstance(rec.get("approval"), dict) else rec
+
+
+def _require_approval(kind: str, location_id: str, action: str, object_key: str,
+                      plan_sha256: str) -> dict:
+    """Return the verified record or raise SafetyRefused naming the mismatched field."""
+    if not (action and plan_sha256):
+        raise SafetyRefused("WRITE REFUSED: the current action and plan sha256 are unknown "
+                            "(set CAF_WRITE_ACTION and CAF_PLAN_SHA256); nothing to approve against.")
+    rec = _fetch_record(os.environ.get("CAF_APPROVAL_ID", "").strip())
+    if not isinstance(rec, dict) or any(k not in rec for k in _NEEDED):
+        raise SafetyRefused("WRITE REFUSED: approval record is malformed.")
+    bad = [name for name, ok in (
+        ("kind", rec["kind"] == kind),
+        ("location_id", rec["location_id"] == location_id),
+        ("action", rec["action"] == action),
+        ("object_key", rec["object_key"] == object_key),
+        ("plan_sha256", isinstance(rec["plan_sha256"], str)
+         and hmac.compare_digest(rec["plan_sha256"], plan_sha256)),
+        ("approver", isinstance(rec["approver"], str) and bool(rec["approver"].strip())),
+        ("revoked", rec["revoked"] is False),
+        ("verification_class", rec["verification_class"] == "authenticated_platform_record"),
+    ) if not ok]
+    try:
+        exp = datetime.fromisoformat(str(rec["expires_at"]).replace("Z", "+00:00"))
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp <= datetime.now(timezone.utc):
+            bad.append("expires_at")
+    except ValueError:
+        bad.append("expires_at")
+    if bad:
+        raise SafetyRefused("WRITE REFUSED: approval record does not match this write "
+                            f"(kind {kind!r}); mismatched: {', '.join(bad)}.")
+    return rec
+
+
+def _current(action: str, object_key: str, plan_sha256: str) -> tuple:
+    return (action or os.environ.get("CAF_WRITE_ACTION", "").strip(),
+            object_key or os.environ.get("CAF_OBJECT_KEY", "").strip(),
+            plan_sha256 or os.environ.get("CAF_PLAN_SHA256", "").strip())
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -61,6 +137,9 @@ def check_write(
     payload: Any = None,
     location_id: Optional[str] = None,
     workflow_name: str = "",
+    action: str = "",
+    object_key: str = "",
+    plan_sha256: str = "",
 ) -> None:
     """Assert all safety rules are satisfied before sending a write request.
 
@@ -74,7 +153,9 @@ def check_write(
                        For a WRITE this MUST resolve to a real, whitelisted id — None
                        (unresolved target) is refused fail-closed. GET callers return
                        before the whitelist check, so None is only meaningful on writes.
-        workflow_name: Workflow/folder name for ZHC standing-approval check.
+        workflow_name: Workflow/folder name; the default object_key.
+        action / object_key / plan_sha256: what the owner approved; default to the
+                       CAF_WRITE_ACTION / CAF_OBJECT_KEY (else workflow_name) / CAF_PLAN_SHA256 env.
 
     Raises:
         SafetyRefused: if any rule blocks the write.
@@ -116,23 +197,31 @@ def check_write(
             "Add it to GOHIGHLEVEL_ALLOWED_LOCATION_IDS if this is your sub-account."
         )
 
-    # Rule 3 — APPROVAL GATE: internal-API writes require approval.
-    if not _is_approved(workflow_name):
-        raise SafetyRefused(
-            "WRITE REFUSED: no approval token present.\n"
-            "Set CAF_APPROVAL_TOKEN=<token> to approve this write, OR\n"
-            "prefix the workflow/folder name with 'ZHC-' or 'ZHC_' for standing approval."
-        )
+    # Rule 3 — APPROVAL GATE: a verified automation_write record bound to this
+    # location, action, object and plan (S44-16). No env token or name opens it.
+    # ponytail: one Command Center GET per write; cache per process if a build is too slow.
+    act, obj, plan = _current(action, object_key, plan_sha256)
+    _require_approval("automation_write", location_id, act, obj or workflow_name, plan)
 
 
-def draft_only_active_flag() -> bool:
+def draft_only_active_flag(location_id: Optional[str] = None, object_key: str = "",
+                           plan_sha256: str = "") -> bool:
     """Return the correct 'active' value for trigger bodies.
 
-    When CAF_DRAFT_ONLY=true (the default), triggers must be created INACTIVE
-    so the workflow fires only when the operator explicitly activates it.
-    Returns False when draft_only, True only when operator explicitly opts out.
+    Triggers are created INACTIVE (False) unless CAF_DRAFT_ONLY is off AND a verified
+    'publish' approval record (action 'publish') binds this location, object and plan.
+    The env toggle alone never goes live (S44-16); a missing/bad record stays draft.
     """
-    return not _env_bool("CAF_DRAFT_ONLY", default=True)  # active=False when draft_only, active=True when opted out
+    if _env_bool("CAF_DRAFT_ONLY", default=True):
+        return False
+    _, obj, plan = _current("", object_key, plan_sha256)
+    loc = location_id or os.environ.get("GHL_LOCATION_ID", "").strip()
+    try:
+        _require_approval("publish", loc, "publish", obj, plan)
+    except SafetyRefused as exc:
+        print(f"[caf] draft-off ignored, staying inactive: {exc}", file=sys.stderr)
+        return False
+    return True
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────

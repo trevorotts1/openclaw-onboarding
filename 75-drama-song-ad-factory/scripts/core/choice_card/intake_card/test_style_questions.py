@@ -34,7 +34,12 @@ def test_every_option_has_a_short_explanation():
 
 
 def test_option_order_labels_and_recommended_unchanged():
-    assert [o for o, _ in MUSIC["options"]] == ["Soul Ballad", "R&B Flow", "Soul Rise"]
+    assert [o for o, _ in MUSIC["options"]] == [
+        "Soul Ballad", "R&B Flow", "Soul Rise", "Acoustic Pop",
+        "Folk Storytelling", "Country Pop", "Melodic Rap", "Trap Rap",
+        "Pop Rap", "Pop Rock", "Reggaeton", "Cinematic Orchestral Song",
+        "Musical Theater", "Contemporary Gospel", "Urban Gospel",
+        "Alternative R&B", "Afro-Soul", "Country Rap"]
     assert [o for o, _ in LOOK["options"]] == [
         "Lifelike 3D", "2D Hand-Painted", "Sketch to Life (Hybrid)",
         "Canvas to Life", "Canvas to 3D"]

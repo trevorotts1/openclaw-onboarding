@@ -227,15 +227,20 @@ Do not add any watermark, caption, or badge.
 
 
 class TestPartCBudget(unittest.TestCase):
-    """Amendment 6 Part C as superseded by owner Decision 1
-    (2026-10-15): the KIE rule 12 band (95 to 100 percent target,
-    80 percent floor) is the skill's native authoring target and
-    governs length; element completeness still governs acceptance;
-    cap_status survives as provenance only; the 2,000-character
-    tripwire is retained for models with no recorded maximum. (The
-    Part C no-floor tests this class used to carry encoded the
-    withdrawn length position and are re-pinned to the band at equal
-    or greater strength.)"""
+    """The ONE canonical policy (shared-utils/prompt_policy.py) governs length: 95-100
+    percent PASSES; 80 to below 95 percent PASSES with a warn-and-expand warning naming
+    the chars to ADD; below 80 percent FAILS (particularly clear hard failure); above the
+    maximum FAILS; an UNKNOWN maximum refuses a pass.
+
+    The 80-to-95 warning band is the OWNER RULE of 2026-10-05 (kie-common-rules section
+    12: "Hard floor: 80 percent. Hard ceiling: 100 percent. 80 to 95 percent: warn and
+    expand"), restored in the policy on 2026-11-08. The earlier F18 code that made 94
+    percent FAIL was superseded - but a warn is never a silent pass, so the validator
+    must still surface the warning and its exact ADD count.
+
+    Element completeness still governs acceptance; cap_status survives as provenance
+    only; the 2,000-character tripwire is retained as a recorded short-prompt flag (it
+    never turns a band failure into a pass)."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="partc-test-"))
@@ -251,7 +256,7 @@ class TestPartCBudget(unittest.TestCase):
         path = self._write("p75.txt", grow_to(self.base, 15000))
         proc = run(PROMPT_SCRIPT, path)
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
-        self.assertIn("ADD at least 1000 chars", proc.stdout)
+        self.assertIn("ADD at least 4000 chars", proc.stdout)
         self.assertIn("budget exit 3", proc.stdout)
 
     def test_above_max_fails_with_cut_count(self):
@@ -267,11 +272,30 @@ class TestPartCBudget(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("in band, budget exit 0", proc.stdout)
 
-    def test_below_target_warns_but_passes(self):
+    def test_below_target_warns_and_expands(self):
+        # 85 percent: the owner rule's warn-and-expand band. It passes, and the warning
+        # with the exact ADD count must reach the operator (never a silent pass).
         path = self._write("p85.txt", grow_to(self.base, 17000))
         proc = run(PROMPT_SCRIPT, path)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertIn("below the 95 percent target", proc.stdout)
+        self.assertIn("in band, budget exit 0", proc.stdout)
+        self.assertIn("WARNING:", proc.stdout)
+        self.assertIn("ADD 2000 chars", proc.stdout)
+        self.assertIn("warn and expand", proc.stdout)
+
+    def test_94_percent_warns_and_expands(self):
+        # 94 percent of 20,000 = 18,800: the warn band names the remaining 200 chars, and
+        # the telemetry records BELOW_TARGET at budget exit 0.
+        path = self._write("p94.txt", grow_to(self.base, 18800))
+        proc = run(PROMPT_SCRIPT, "--json", path)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        data = json.loads(proc.stdout)
+        self.assertTrue(any("ADD 200 chars" in w and "warn and expand" in w
+                            for w in data["warnings"]), data["warnings"])
+        budget = data["telemetry"]["budget"]
+        self.assertEqual(budget["status"], "BELOW_TARGET")
+        self.assertEqual(budget["budget_exit"], 0)
+        self.assertEqual(budget["add_chars"], 200)
 
     def test_verified_cap_fails_closed(self):
         policy = {"models": [{"match": "gpt-image-2-5", "max_chars": 5000,
@@ -282,12 +306,11 @@ class TestPartCBudget(unittest.TestCase):
         policy_path = self._write("policy.json", json.dumps(policy))
         proc = run(PROMPT_SCRIPT, "--policy", policy_path, GOOD_PROMPT)
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
-        self.assertIn("VERIFIED", proc.stdout)
+        self.assertIn("ABOVE the documented maximum", proc.stdout)
 
-    def test_tripwire_flags_short_complete_prompt_without_failing(self):
-        # Re-pinned under Decision 1: the tripwire is the operative
-        # short-prompt flag only where NO maximum is recorded, so
-        # this runs against an explicit UNKNOWN-maximum policy.
+    def test_tripwire_flags_short_complete_prompt_and_band_fails(self):
+        # The tripwire is retained as a recorded flag. It never converts a strict-band
+        # failure into a pass: an unverified maximum refuses, and a short prompt fails.
         policy = {"models": [],
                   "default": {"max_chars": None, "cap_status": "UNKNOWN",
                               "unit": "chars"},
@@ -295,7 +318,7 @@ class TestPartCBudget(unittest.TestCase):
         policy_path = self._write("policy_unknown.json", json.dumps(policy))
         path = self._write("small.txt", SMALL_COMPLETE)
         proc = run(PROMPT_SCRIPT, "--policy", policy_path, path)
-        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("TRIPWIRE", proc.stdout)
 
     def test_9500_char_complete_prompt_fails_below_floor_with_telemetry(self):
@@ -310,9 +333,24 @@ class TestPartCBudget(unittest.TestCase):
         budget = data["telemetry"]["budget"]
         self.assertEqual(budget["status"], "BELOW_FLOOR")
         self.assertEqual(budget["budget_exit"], 3)
-        self.assertEqual(budget["floor"], 16000)
+        self.assertEqual(budget["floor"], 19000)   # ceil(0.95 x 20,000)
         self.assertEqual(budget["target_min"], 19000)
-        self.assertEqual(budget["add_chars"], 6500)
+        self.assertEqual(budget["add_chars"], 9500)
+        # the frozen receipt records the SAME string that is submitted
+        receipt = data["telemetry"]["prompt_policy"]
+        self.assertEqual(receipt["count"], 9500)
+        self.assertEqual(receipt["final_prompt_sha256"],
+                         data["telemetry"]["sha256"])
+        self.assertEqual(data["telemetry"]["payload_sha256"],
+                         self.vp_payload_sha(receipt["prompt"]))
+
+    def vp_payload_sha(self, prompt):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("vp_sha", PROMPT_SCRIPT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.POLICY.payload_sha256({"model": mod.IMAGE_MODEL_DEFAULT,
+                                          "input": {"prompt": prompt}})
 
     def test_padded_prompt_fails_on_padding_not_length(self):
         anchor = "\nDo not produce flat"
@@ -373,7 +411,10 @@ class TestRatioConfirmation(unittest.TestCase):
             ctx=self._ctx({"requested_ratio": "21:9"}))
         record = result["telemetry"]["ratio_confirmation"]
         self.assertEqual(record["status"], "unverified")
-        self.assertEqual(result["errors"], [], result["errors"])
+        # An unknown maximum can never pass; the only errors are that refusal.
+        self.assertTrue(result["errors"], result["errors"])
+        self.assertTrue(all("UNKNOWN" in e or "maximum" in e for e in result["errors"]),
+                        result["errors"])
 LOGO_SHA = "a" * 64
 PHOTO_SHA = "b" * 64
 

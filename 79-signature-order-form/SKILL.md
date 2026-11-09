@@ -1,7 +1,7 @@
 ---
 name: signature-order-form
 description: "Skill 79: Signature Order Form, Checkout and Signature Bump Sale. Builds the reusable native Convert and Flow checkout in two modes (combined explanation-plus-checkout for one simple offer, and post-selection checkout after Skill 78 Product Selection), owns the order bump on the original checkout, the offer details and price display, and the guarantee/terms block. Status: landed in this repository; this file makes no installation, distribution-discovery or live-payment claim."
-version: 0.1.6
+version: 0.1.8
 ---
 
 # Skill 79: Signature Order Form, Checkout and Signature Bump Sale
@@ -63,6 +63,9 @@ offered on that original checkout.
   interface contract for the native binding.
 - `references/components/`: component drafts (order bump, offer details,
   guarantee/terms, both page assemblies) with their binding README.
+  REVIEW-ONLY: these drafts are design references and are not installable;
+  never paste them into a Skill 06 custom-code block. Order bump and consent
+  are native order-form settings, never custom inputs.
 - `scripts/`: the fixture-level reference models: bump model, quote display
   and billing audit, purchase state machine, selection resolver, purchase
   event handoff, the cross-field checkout validator, the native-binding
@@ -92,3 +95,14 @@ drawn as card fields and is never built or bound by those stages: it stays Skill
 L2, L3 and L4 require owner-authorized test locations and sandbox permission.
 They are named facts, not completion gates for this skill. Nothing in this
 skill activates a live page or a live payment.
+
+## Python dependency: jsonschema (operator note, never for the client)
+
+`scripts/validate_checkout.py` imports `jsonschema`. On a Homebrew or Debian Python (externally managed, PEP 668)
+pip refuses a plain or `--user` install, so the package lives in the shared pydeps folder
+`<root>/pydeps/py<major>.<minor>/` (`$OC_PYDEPS_DIR` as-is, else `$OPENCLAW_ROOT`, else `/data/.openclaw` when it
+exists, else `$HOME/.openclaw`; `$HOME/.claude/pydeps/py<X.Y>/` is also looked up), installed with
+`pip install --target`. The validator puts that folder on `sys.path` itself before it imports, so plain `python3`
+works: no venv, no activation step. Never use `--break-system-packages`, never create a venv, never tell the client.
+If the import fails, check with `bash update-skills.sh --check` and run the one sanctioned fix from
+`83-black-friday-launcher`: `python3 -m launcher_core.cli dependencies --install`.

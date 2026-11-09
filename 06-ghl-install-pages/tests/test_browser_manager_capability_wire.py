@@ -12,7 +12,7 @@ NO network:
     receipt lands at an injected path via BM_CAPABILITY_RECEIPT_OVERRIDE),
   * v2_dispatcher.dispatch_one capability-freshness gate: fresh receipt ->
     proceeds (NOT waiting), stale -> STATE_WAITING hold, missing -> hold,
-    ``task['reprobe']`` truthy -> skips the freshness refusal. HOLD records
+    ``task['reprobe']`` with an in-process probe that ran clean -> clears the hold. HOLD records
     mirror the FIX-COPY-01 precedent shape.
 
 No real client/operator names, ids, emails, or location-ids appear.
@@ -207,8 +207,14 @@ def test_missing_capability_holds_in_waiting(tmp_path):
     assert rec["capability"]["age_hours"] is None
 
 
-def test_reprobe_task_flag_skips_freshness_refusal(tmp_path):
+def test_reprobe_with_inprocess_probe_clears_hold(tmp_path, monkeypatch):
     cap = _cap_path(tmp_path, age_s=(disp.DEFAULT_CAPABILITY_MAX_AGE_H + 1) * 3600)
+    # S06-15: the flag alone never clears the hold; only a probe that ran in-process
+    # with no blockers does (seam unused until the dispatcher consults it).
+    monkeypatch.setattr(
+        disp, "_run_capability_probe",
+        lambda path: (os.utime(cap, None), {"ran": True, "blockers": []})[1],
+        raising=False)
     task = dict(FAKE_TASK, reprobe=True)
     r = disp.dispatch_one(task, str(tmp_path / "ev"), builder=_stub_builder,
                           verifier=_stub_verifier, live=False,

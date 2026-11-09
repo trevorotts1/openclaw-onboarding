@@ -42,6 +42,12 @@ COMPLETE_PHASE=""
 MARK_REVIEW=0
 STATUS_ONLY=0
 OVERDUE_AFTER="${SKILL35_OVERDUE_AFTER:-900}"
+# C3 (PBB-917 / T-54) — Purple approval gate. When an approval manifest is
+# supplied, nothing is staged or published until shared-utils/manifest's
+# `check` refuses nothing. Absent: a non-Purple cycle is unchanged.
+APPROVAL_MANIFEST=""
+APPROVAL_PLACEMENTS=""
+CHECK_APPROVAL_ONLY=0
 
 print_help() {
   cat <<EOF
@@ -64,6 +70,14 @@ OPTIONAL
                               spawning agents. Useful from cron.
   --workdir <path>            Override the per-cycle workdir
                               (default: \$HOME/.openclaw/data/skill-35/runs/<run-id>).
+  --approval-manifest <path>  Purple approval gate (review C3): refuse with exit 7
+                              unless the joined monthly approval manifest covers
+                              this placement at its current terms and revision.
+                              Run before anything is staged or published.
+  --placement <id>            Placement to check (repeatable). Omitted: every
+                              placement in the manifest must be APPROVED.
+  --check-approval-only       Run the approval gate alone and exit 0 on a pass.
+                              Useful from CI or a pre-publish preflight.
   --verify-receipts <path>    Post-cycle QC gate (deterministic). Reads
                               publish-receipts.json (file or workdir) and HARD-FAILS
                               (exit 6) when accounts are connected but 0 posts were
@@ -200,6 +214,9 @@ while [ $# -gt 0 ]; do
     --mark-review) MARK_REVIEW=1; shift;;
     --status)     STATUS_ONLY=1; shift;;
     --overdue-after) OVERDUE_AFTER="${2:-900}"; shift 2;;
+    --approval-manifest) APPROVAL_MANIFEST="${2:-}"; shift 2;;
+    --placement)  APPROVAL_PLACEMENTS="${APPROVAL_PLACEMENTS} ${2:-}"; shift 2;;
+    --check-approval-only) CHECK_APPROVAL_ONLY=1; shift;;
     --help|-h)    SHOW_HELP=1; shift;;
     *)
       echo "ERROR: unknown argument: $1" >&2
@@ -218,9 +235,47 @@ fi
 # (--verify-receipts / --status are standalone modes and must not be swallowed here.)
 if [ -z "$TOPIC" ] && [ -z "$PLATFORMS" ] && [ "$DRY_RUN" -eq 0 ] && [ -z "$VERIFY_RECEIPTS" ] \
    && [ "$STATUS_ONLY" -eq 0 ] && [ "$ACK_EXECUTION" -eq 0 ] && [ "$MARK_REVIEW" -eq 0 ] \
-   && [ -z "$COMPLETE_PHASE" ]; then
+   && [ -z "$COMPLETE_PHASE" ] && [ -z "$APPROVAL_MANIFEST" ] && [ "$CHECK_APPROVAL_ONLY" -eq 0 ]; then
   print_help
   exit 0
+fi
+
+# ---------- C3 (PBB-917 / T-54): Purple approval gate ----------
+# Review C3 step 7: before each Purple placement publish, prove the joined
+# monthly approval covers THIS placement at its current terms and revision.
+# The gate is the accepted module's own `check` command-line entry point —
+# never a second copy of the approval contract. A refusal exits NON-ZERO (7)
+# with the module's named errors, so the cycle stops instead of publishing.
+purple_approval_gate() {
+  local module="$SKILL_DIR/../shared-utils/manifest/monthly_manifest.py"
+  if [ ! -f "$module" ]; then
+    printf '[%s] [Skill35][ERR ] approval manifest module not found: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$module" >&2
+    return 2
+  fi
+  local -a gate_args=(check --manifest "$APPROVAL_MANIFEST")
+  local placement
+  for placement in $APPROVAL_PLACEMENTS; do
+    gate_args+=(--placement "$placement")
+  done
+  python3 -I "$module" "${gate_args[@]}"
+}
+
+if [ -n "$APPROVAL_MANIFEST" ] || [ "$CHECK_APPROVAL_ONLY" -eq 1 ]; then
+  if [ -z "$APPROVAL_MANIFEST" ]; then
+    printf '[%s] [Skill35][ERR ] --check-approval-only requires --approval-manifest\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >&2
+    exit 2
+  fi
+  gate_rc=0
+  purple_approval_gate || gate_rc=$?
+  if [ "$gate_rc" -ne 0 ]; then
+    printf '[%s] [Skill35][ERR ] Purple approval gate REFUSED: %s is not approved for publication (rc=%s). Nothing was staged or published.\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$APPROVAL_MANIFEST" "$gate_rc" >&2
+    exit 7
+  fi
+  printf '[%s] [Skill35] Purple approval gate passed: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$APPROVAL_MANIFEST"
+  if [ "$CHECK_APPROVAL_ONLY" -eq 1 ]; then
+    exit 0
+  fi
 fi
 
 # ---------- F04: durable dispatch record (working/dispatch.json) ----------

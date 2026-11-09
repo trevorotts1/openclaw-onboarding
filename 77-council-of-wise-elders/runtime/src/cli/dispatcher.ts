@@ -53,9 +53,9 @@ import {
   handleAuthorizationCommand,
   mirrorSession,
 } from './authorization.js';
-import { runConvene, runRoutes } from './convene.js';
+import { chamberUrlFor, durablePublicOrigin, runConvene, runRoutes } from './convene.js';
 import { exportVerdictReport } from './report-export.js';
-import { resolveDataDir } from './paths.js';
+import { resolveDataDir, skillFolderForAssets } from './paths.js';
 
 export interface CliIo {
   out(text: string): void;
@@ -68,7 +68,17 @@ const defaultIo: CliIo = {
 };
 
 export interface CliDeps {
-  createHost?: (options: { dataDir?: string; skillRoot?: string }) => LocalHost;
+  createHost?: (options: {
+    dataDir?: string;
+    skillRoot?: string;
+    env?: NodeJS.ProcessEnv;
+  }) => LocalHost;
+  /**
+   * The environment the session-read commands resolve durable values
+   * from (data directory, the service's own public origin). Default
+   * process.env; tests inject it so no real box state is read.
+   */
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -104,39 +114,8 @@ export function skillRootFromModule(): string {
 }
 
 /**
- * Is `dir` a skill folder, named positively?
- *
- * A SKILL.md alone is too weak a signature: any ordinary ancestor (a
- * repository root, a home directory) may carry an unrelated SKILL.md,
- * and the guard would then refuse data directories far outside the
- * skill. A council skill folder carries all three of SKILL.md,
- * advisors/ and manifest.json.
- */
-function isSkillFolder(dir: string): boolean {
-  return (
-    existsSync(join(dir, 'SKILL.md')) &&
-    existsSync(join(dir, 'advisors')) &&
-    existsSync(join(dir, 'manifest.json'))
-  );
-}
-
-/**
- * The ACTUAL skill folder. Two mechanisms, in order:
- *
- * 1. The install record, read from `../../install-record.json` beside
- *    the running module. Neither installed layout has a SKILL.md,
- *    advisors/ or manifest.json above it, so the record is the
- *    install's own statement of which folder it was built from. Two
- *    installers write it, one per layout:
- *    - this repo's scripts/install-runtime.mjs (INSTALL.md Step 4)
- *      installs <prefix>/releases/<id>/dist/blackceo-council.mjs and
- *      writes <prefix>/releases/install-record.json;
- *    - the 999-setup vendoring's scripts/council-runtime-install.sh
- *      (that repo only, not this tree) installs
- *      <prefix>/runtime/dist/council-entry.mjs and writes
- *      <prefix>/install-record.json.
- * 2. A layout-independent walk to the nearest ancestor carrying the
- *    skill signature (SKILL.md beside advisors/ and manifest.json).
+ * The ACTUAL skill folder (see paths.ts skillFolderForAssets): the install
+ * record's skill_dir when one is installed, else a positive-signature walk.
  *
  * null when neither applies: the guard then has no root, and every
  * command that must keep state out of the skill tree refuses rather
@@ -145,28 +124,7 @@ function isSkillFolder(dir: string): boolean {
  * sample and the host-backed commands throw invalidInput).
  */
 export function skillRootForAssets(): string | null {
-  // From <prefix>/releases/<id>/dist/<entry> this URL is
-  // <prefix>/releases/install-record.json; from the 999 bundle
-  // <prefix>/runtime/dist/<entry> it is <prefix>/install-record.json;
-  // from runtime/{src,dist}/cli/ it is runtime/install-record.json.
-  try {
-    const record = JSON.parse(
-      readFileSync(new URL('../../install-record.json', import.meta.url), 'utf8'),
-    ) as { skill_dir?: unknown };
-    if (typeof record.skill_dir === 'string' && record.skill_dir.length > 0) {
-      return resolve(record.skill_dir);
-    }
-  } catch {
-    // No install record: a source or development layout.
-  }
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (let depth = 0; depth < 8; depth += 1) {
-    if (isSkillFolder(dir)) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
+  return skillFolderForAssets();
 }
 
 interface ParsedArgs {
@@ -328,24 +286,41 @@ const USAGE = [
   'blackceo-council: Council of Wise Elders portable core (foundation build)',
   '',
   'Commands:',
-  '  doctor [--json]                     Offline readiness checks (no paid work)',
+  '  doctor [--json]                     Offline readiness checks (no provider calls)',
   '  models [--json]                     Composed routes and model policy notes',
   '  probe                               Live route probe (not ready in this build)',
   '  create --spec FILE --brief FILE     Create a session from frozen spec and brief JSON',
   '  create --sample                     Create the labeled synthetic sample session',
-  '  sample run [--json]                 Run the labeled sample end to end (fixture transport, spends nothing)',
+  '  sample run [--json]                 Run the labeled sample end to end (fixture transport, offline, no provider calls)',
   '  status SESSION [--json]             Session state summary',
   '  pause SESSION                       Pause an active session',
   '  cancel SESSION                      Cancel a session (late results are fenced out)',
   '  verdict SESSION [--json]           The validated verdict, when one exists',
-  '  replay SESSION [--json]             Committed event history (read only, spends nothing)',
+  '  replay SESSION [--json]             Committed event history (read only, no provider calls)',
   '  export SESSION --format md|json|pdf [--out FILE]',
   '  routes [--origin URL] [--json]      Model routes and harness defaults from the council service',
-  '  convene (--sample | --brief FILE) [--route ID] [--model ID] [--harness H] [--fresh-facts FILE] [--mode M] [--origin URL]',
+  '  convene (--sample | --brief FILE) [--mode light|medium|heavy] [--seat-ids a,b,c] [--route ID] [--model ID] [--no-open]',
+  '          [--harness H] [--ollama-plan 20|100] [--fallback-model ID] [--fresh-facts FILE] [--origin URL]',
   '                                      Convene a council on the running service (starts it now)',
+  '                                      --mode defaults to medium; the four older modes (full, selected,',
+  '                                      quick, consult) still convene exactly as before; --seat-ids names',
+  '                                      the panel (every mode seats all nine by default);',
+  '                                      --ollama-plan is asked once and remembered; --fallback-model is',
+  '                                      the OpenRouter model used when an Ollama route fails;',
+  '                                      --no-open skips the desktop chamber pop (headless boxes open nothing anyway)',
   '',
   'Global flags: --json, --data-dir DIR (default: per-user council data directory)',
 ].join('\n');
+
+/**
+ * The durable chamber URL for an existing session, resolved from what the
+ * box already recorded. Reads never probe, never open a browser and never
+ * start a new request.
+ */
+function durableChamberUrl(env: NodeJS.ProcessEnv, sessionId: string): string | null {
+  const origin = durablePublicOrigin(env);
+  return origin === null ? null : chamberUrlFor(origin, sessionId);
+}
 
 export async function runCli(
   argv: string[],
@@ -353,6 +328,7 @@ export async function runCli(
   deps: CliDeps = {},
 ): Promise<number> {
   const json = argv.includes('--json');
+  const env = deps.env ?? process.env;
   try {
     const { positionals, flags } = parseArgs(argv);
     const [command, sub, third] = positionals;
@@ -379,11 +355,11 @@ export async function runCli(
     };
     const dataDirFor = (): string => {
       refuseWithoutRoot();
-      return resolveDataDir({ override: dataDir ?? null, skillRoot });
+      return resolveDataDir({ override: dataDir ?? null, skillRoot, env });
     };
     const hostFor = (): LocalHost => {
       refuseWithoutRoot();
-      return makeHost({ dataDir, skillRoot });
+      return makeHost({ dataDir, skillRoot, env });
     };
     const engineFor = (host: CouncilHost) => new CouncilEngine(host);
 
@@ -471,7 +447,7 @@ export async function runCli(
           'installed advisor-source qualification has not been verified',
           'a supervised durable Council worker has not been verified',
           'the authenticated Council browser UI has not been verified',
-          'a full paid Council session has not been independently verified',
+          'a full live Council session has not been independently verified',
         ];
         const data = {
           ok: checks.every((c) => c.ok || c.name === 'live_routes_composed' || c.name === 'run_authorization_service'),
@@ -498,7 +474,7 @@ export async function runCli(
           io,
           json,
           [
-            `Council core doctor (offline, no paid work)`,
+            `Council core doctor (offline, no provider calls)`,
             `Contracts: ${CONTRACT_PACKAGE_VERSION}`,
             `Data directory: ${dir ?? 'unresolved'}`,
             ...checks.map((c) => `  [${c.ok ? 'ok' : 'not ready'}] ${c.name}: ${c.detail}`),
@@ -738,6 +714,9 @@ export async function runCli(
         const engine = engineFor(host);
         const session = await engine.getSession(sessionId);
         const budget = host.budget.snapshot(sessionId);
+        // A read, not a new request: the durable chamber URL rides the
+        // result when the box has one, with no probe and no question.
+        const chamber = durableChamberUrl(env, sessionId);
         printResult(
           io,
           json,
@@ -747,6 +726,7 @@ export async function runCli(
             `  state: ${session.state.state} (version ${session.state.state_version})`,
             `  brief revision: ${session.state.brief_revision}`,
             `  provider requests consumed: ${budget.consumed.provider_requests} of ${budget.ceilings.max_provider_requests}`,
+            ...(chamber === null ? [] : [`  chamber_url: ${chamber}`]),
           ].join('\n'),
           {
             ok: true,
@@ -757,6 +737,7 @@ export async function runCli(
             brief_revision: session.state.brief_revision,
             sample: session.sample,
             budget,
+            ...(chamber === null ? {} : { chamber_url: chamber }),
           },
         );
         return 0;
@@ -799,10 +780,12 @@ export async function runCli(
             },
           );
         }
+        const chamber = durableChamberUrl(env, sessionId);
         printResult(io, json, verdictHuman(verdict, session.sample), {
           ok: true,
           sample: session.sample,
           verdict,
+          ...(chamber === null ? {} : { chamber_url: chamber }),
         });
         return 0;
       }
@@ -846,6 +829,15 @@ export async function runCli(
             { retryable: false, exitCode: 3 },
           );
         }
+        const outPath = flagString(flags, 'out');
+        if (!outPath && format === 'pdf') {
+          // Binary deliverable: never print PDF bytes as text. This contract
+          // check runs BEFORE the renderer: a bare `--format pdf` is a usage
+          // error on every host, never a host-dependent render failure.
+          throw usageError(
+            'export --format pdf requires --out FILE so the real PDF bytes are written to a file.',
+          );
+        }
         // CWE-050 composition (B15 portable half): exports run through
         // CWE-038's validated ReportExportService: publication
         // validation, journaling, and deliverable registration on the
@@ -859,9 +851,12 @@ export async function runCli(
           requestId: host.ids.newId(),
           exportedAt: host.clock.nowUtc(),
         });
-        const outPath = flagString(flags, 'out');
         if (outPath) {
-          writeFileSync(outPath, artifact.bytes, 'utf8');
+          // base64 only for the binary PDF artifact; text formats stay utf8.
+          writeFileSync(
+            outPath,
+            artifact.encoding === 'base64' ? Buffer.from(artifact.bytes, 'base64') : artifact.bytes,
+          );
           printResult(
             io,
             json,
@@ -872,6 +867,7 @@ export async function runCli(
               format,
               deliverable_id: artifact.deliverable_id,
               sha256: artifact.sha256,
+              encoding: artifact.encoding,
               verdict_content_sha256: artifact.verdict_content_sha256,
             },
           );
@@ -884,6 +880,7 @@ export async function runCli(
             sha256: artifact.sha256,
             verdict_content_sha256: artifact.verdict_content_sha256,
             content: artifact.bytes,
+            content_encoding: artifact.encoding,
           });
         } else {
           io.out(artifact.bytes);

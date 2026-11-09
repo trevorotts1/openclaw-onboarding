@@ -4,7 +4,7 @@
 #
 # WHAT IT FIXES (idempotent):
 #   - openclaw.json agents whose primary model is null / a bare string-with-no-
-#     fallbacks / the free sentinel / a forbidden (Anthropic) model -> re-resolves
+#     fallbacks / the free sentinel / a `-preview` model -> re-resolves
 #     a real, modality-correct, cascade-ordered dept-default model.
 #   - Emits a CC-side repair payload (model-sweep receipt) listing every
 #     agent_settings dept-default + tasks.model_id offender the CC repair driver
@@ -116,7 +116,8 @@ FREE = set(sm.FREE_SENTINELS)
 def _should_strip(slug):
     """The SOLE sovereignty-strip predicate. A slug is stripped iff it is:
       - a free sentinel (openrouter/free / free / openrouter/auto:free), OR
-      - forbidden (Anthropic — FORBIDDEN_PREFIXES), OR
+      - forbidden (FORBIDDEN_PREFIXES — empty; Anthropic / Claude models are NOT
+        stripped, a client's own Anthropic model, provider and plugin entry are kept), OR
       - any `-preview` slug.
     It NEVER matches a legitimate OpenAI / OpenRouter / Gemini (non-preview)
     model, so a client's own providers/chains are preserved untouched.
@@ -321,49 +322,9 @@ def _process_model_field(holder, key, location, dept_hint,
     changed += 1
 
 
-def _strip_provider_and_plugins():
-    """(a) Strip the Anthropic provider/plugin BLOCK: models.providers.anthropic,
-    any anthropic plugins.entries.* entry, and "anthropic" in plugins.allow[]."""
-    global changed
-    mb = cfg.get("models")
-    if isinstance(mb, dict):
-        provs = mb.get("providers")
-        if isinstance(provs, dict) and "anthropic" in provs:
-            strip_actions["providers_removed"].append("anthropic")
-            if APPLY:
-                del provs["anthropic"]
-                changed += 1
-    pb = cfg.get("plugins")
-    if isinstance(pb, dict):
-        entries = pb.get("entries")
-        if isinstance(entries, dict):
-            for name in list(entries.keys()):
-                ent = entries[name]
-                is_anthropic = (str(name).strip().lower() == "anthropic")
-                if not is_anthropic and isinstance(ent, dict):
-                    for k in ("provider", "type", "name", "module", "package", "id"):
-                        v = ent.get(k)
-                        if isinstance(v, str) and "anthropic" in v.strip().lower():
-                            is_anthropic = True
-                            break
-                if is_anthropic:
-                    strip_actions["plugin_entries_removed"].append(name)
-                    if APPLY:
-                        del entries[name]
-                        changed += 1
-        allow = pb.get("allow")
-        if isinstance(allow, list):
-            new_allow = [x for x in allow
-                         if not (isinstance(x, str) and x.strip().lower() == "anthropic")]
-            if len(new_allow) != len(allow):
-                strip_actions["plugins_allow_removed"].append("anthropic")
-                if APPLY:
-                    pb["allow"] = new_allow
-                    changed += 1
-
-
-# ── (a) provider/plugin block strip ──
-_strip_provider_and_plugins()
+# (No provider/plugin block strip: a client's own Anthropic provider, plugin entry
+# and plugins.allow entry are never removed. strip_actions stays in the receipt
+# schema, always empty, so the receipt shape consumers read is unchanged.)
 
 # ── (b)/(c)/(d) primary re-resolve + fallback scrub across
 #     agents.defaults.model, agents.defaults.subagents.model, every

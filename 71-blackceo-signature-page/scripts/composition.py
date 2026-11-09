@@ -387,9 +387,10 @@ def block(stage: str, resolved: dict, typed_refs: list | None = None) -> str:
              f"{resolved.get('role') or 'unclassified'}. Compose each image slot with its declared "
              "treatment; a photo column beside a text column is only one of the allowed treatments."]
     needs_negative = False
-    # Three or more slots that draw the same way (one package image per card) share ONE drawing
-    # sentence naming every slot, instead of repeating the sentence per slot.
-    group = len(entries) >= 3
+    # Two or more slots that draw the same way (one package image per card) share ONE drawing
+    # sentence naming every slot, instead of repeating the sentence per slot (a sentence repeated per
+    # slot is padding to the prompt validator, so each slot's own line names its own label).
+    group = len(entries) >= 2
     pending = []  # [labels, tid, text] runs of identical drawings, in slot order
     for entry in entries:
         slot, tid = entry["slot"], entry["treatment"]
@@ -404,8 +405,7 @@ def block(stage: str, resolved: dict, typed_refs: list | None = None) -> str:
                 else:
                     pending.append([[label], tid, text])
             else:
-                lines.append(f"SLOT {label}: {text} Print the slot label with its pixel size, ratio and "
-                             f"treatment ({tid}).")
+                lines.append(f'SLOT {label}: {text} Print "{label}" as this slot\'s label.')
         else:
             text = _fill(t["section_prompt"], words)
             label = str(slot.get("slot_id") or "section backdrop")
@@ -417,13 +417,14 @@ def block(stage: str, resolved: dict, typed_refs: list | None = None) -> str:
             else:
                 lines.append(f"SLOT {label} (treatment {tid}): {text}")
             if slot.get("mobile_role") and stage == "final-mockups":
-                lines.append(f"Mobile role: {slot['mobile_role']}")
+                lines.append(f"Mobile role of {label}: {slot['mobile_role']}")
         # words over the photo, behind it or overlapping it: never an image column
         # beside a text column. Masks and plain splits keep a column by design.
         needs_negative = needs_negative or t["text_relation"] in ("over", "overlap-card", "behind")
     for labels, tid, text in pending:
         lines.append(f"SLOTS {', '.join(labels)} (treatment {tid}): {text}"
-                     + (f" Print each slot label with its pixel size, ratio and treatment ({tid})." if wire else ""))
+                     + ((f' Print "{labels[0]}" as this slot\'s label.' if len(labels) == 1
+                         else f" Print {', '.join(labels)} as the labels of these slots.") if wire else ""))
     if needs_negative:
         lines.append(library()["universal_section_negative"])
     if wire:

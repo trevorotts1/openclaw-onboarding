@@ -1,0 +1,143 @@
+{
+  "schema": "s75/acceptance-evidence-attempt-receipt.v1",
+  "schema_note": "CANDIDATE build record under owner decision D-19 (path B). It approves nothing and it is NOT a verdict: the builder carried the code forward and cannot clear it. Only the unit owner (Trevor) accepts.",
+  "unit": "S75-T04",
+  "acceptance_row": "S75-A04",
+  "acceptance_row_verbatim": "Empty research, irrelevant keyword stuffing and unsupported business claims fail",
+  "acceptance_row_source": "task statement supplied by the workflow harness, 2026-10-26; this receipt does not quote the ACCEPTANCE-MATRIX row body because that file was not read in this lane",
+  "round": 10,
+  "attempt": "r10-candidate",
+  "lane": "S75-T04-r10-lane",
+  "lane_path": "<PATH>",
+  "written_at": "2026-10-26T13:37:33Z",
+  "role": "CANDIDATE BUILDER (path B rebuild). Built the branch and the tests; wrote no verdict and did not author rounds 1-9.",
+
+  "decision_context": {
+    "decision": "D-19",
+    "state": "open between path A (merge r6 then patch forward) and path B (rebuild directly on origin/main carrying the r9 package forward)",
+    "recorded_recommendation": "B",
+    "what_this_receipt_is": "the path-B candidate only. Choosing between A and B stays with the owner.",
+    "draft_pr_note": "Draft PR #2601 carries only ungraded r6 and was not touched, not merged, not cherry-picked."
+  },
+
+  "candidate": {
+    "branch": "s75/S75-T04-r10",
+    "head_sha": "692ddf5f70bbac69522ecd1f0e4fa1d63e83bb39",
+    "head_note": "head_sha names the commit carrying the candidate code and tests. This receipt is committed after it on the same branch, so the pushed branch tip is one receipt-only commit later; the receipt describes the code commit, not itself.",
+    "cut_from": "5a54ddd7f8171ea7e3608cc1d508b06e82077d9e",
+    "pushed": "branch only; no commit or push to main or master"
+  },
+
+  "base": {
+    "sha": "5a54ddd7f8171ea7e3608cc1d508b06e82077d9e",
+    "subject": "Merge pull request #2596 from trevorotts1/s75/T08-r7",
+    "committed": "2026-10-26T08:48:20-04:00",
+    "resolved_from_origin": true,
+    "how": "git fetch origin --prune; git worktree add <PATH> -b s75/S75-T04-r10 origin/main; git rev-parse --short HEAD => 5a54ddd7f"
+  },
+
+  "source_package": {
+    "branch": "s75/S75-T04-r9",
+    "head_sha": "21009a9ee4228d6dd90796eba346236795b24de2",
+    "subject": "S75-T04 r9: read a hyphen or an apostrophe as word work or clause work by its place in the gap",
+    "committed": "2026-10-25T14:13:29-04:00",
+    "status": "the accepted head named by the task statement",
+    "how_carried": "git checkout origin/s75/S75-T04-r9 -- <the six paths>. No file was retyped, reformatted or edited in transit."
+  },
+
+  "r9_vs_r10_differences": {
+    "headline": "The research_engine package is byte-identical between r9 and r10. What differs is ancestry, and therefore mergeability and the surrounding tree.",
+    "package_difference": "NONE. All 12 files of 75-drama-song-ad-factory/scripts/core/research_engine were hash-compared, r10 worktree vs the r9 tree: 12 checked, 0 mismatched. The six carried files are identical by blob id: claims.py, fixtures/research_claims.json, research.py, test_claim_grounding.py, test_claim_semantics.py, test_research_claims.py. The six files r10 already had on main (__init__.py, gather.py, test_research_gather.py, fixtures/article.html, fixtures/ddg_html.html, fixtures/ddg_lite.html) are byte-identical to r9's copies too. No r9 fix was re-litigated, softened, or re-derived.",
+    "ancestry_difference": "MATERIAL. r9 sits on an orphan history: git merge-base origin/main origin/s75/S75-T04-r9 prints nothing, and both ancestry tests return rc=1 (r9 is not an ancestor of main; main is not an ancestor of r9). r10 is cut from origin/main 5a54ddd7f, so main is its direct parent and the branch is an ordinary fast-forward-able candidate.",
+    "repo_wide_tree_difference": "r9's tree is 13638 paths; origin/main's is 13924. git diff --raw origin/main -> r9 reports 498 changed paths: 6 added in r9 (the five package files plus evidence/units/S75-T04/attempt-4.json), 292 paths present on main and absent from r9's tree, and 200 common paths whose content differs (199 of them main-side advances plus research.py). r10 carries all of origin/main, so none of that drift is inherited from r9.",
+    "deliberate_omission": "evidence/units/S75-T04/attempt-4.json exists on r9 (the round-8 repair receipt for d680b0989) and was NOT carried onto r10. It is a historical receipt for the r8 branch, not part of the graded package, and the task named only the six package files. Its content remains readable on origin/s75/S75-T04-r9 and this receipt records where it is. Nothing about it is contradicted here.",
+    "not_carried_forward_because_absent": "Nothing in the six-file package was dropped for any reason. The package is complete."
+  },
+
+  "files_changed": [
+    "75-drama-song-ad-factory/scripts/core/research_engine/claims.py",
+    "75-drama-song-ad-factory/scripts/core/research_engine/fixtures/research_claims.json",
+    "75-drama-song-ad-factory/scripts/core/research_engine/research.py",
+    "75-drama-song-ad-factory/scripts/core/research_engine/test_claim_grounding.py",
+    "75-drama-song-ad-factory/scripts/core/research_engine/test_claim_semantics.py",
+    "75-drama-song-ad-factory/scripts/core/research_engine/test_research_claims.py",
+    "evidence/units/S75-T04/attempt-r10-candidate.json"
+  ],
+
+  "diff_vs_origin_main": {
+    "command": "git diff --stat origin/main HEAD  (HEAD = 692ddf5f7, before this receipt)",
+    "files": 6,
+    "insertions": 3710,
+    "deletions": 34,
+    "per_file": {
+      "claims.py": "1461 insertions (new)",
+      "fixtures/research_claims.json": "779 insertions (new)",
+      "research.py": "205 insertions, 34 deletions (modified in place)",
+      "test_claim_grounding.py": "748 insertions (new)",
+      "test_claim_semantics.py": "216 insertions (new)",
+      "test_research_claims.py": "335 insertions (new)"
+    }
+  },
+
+  "dependencies": {
+    "runtime": "python3 standard library at import time; the test files additionally use pytest as the runner the previous rounds already used",
+    "interpreter_recorded": "3.14.7",
+    "new_third_party": "none added by this branch",
+    "same_dir_files_untouched": "gather.py, __init__.py, test_research_gather.py, fixtures/article.html, fixtures/ddg_html.html, fixtures/ddg_lite.html are identical to both origin/main and r9 — no file edited beyond the six"
+  },
+
+  "tests_run": [
+    {
+      "cmd": "cd <PATH>/75-drama-song-ad-factory/scripts/core/research_engine && python3 -I -m pytest -q",
+      "exit": 0,
+      "result": "87 passed, 1 skipped in 0.31s",
+      "note": "the whole research_engine suite: all four test files in that directory"
+    },
+    {
+      "cmd": "python3 -I test_claim_grounding.py",
+      "exit": 0,
+      "result": "30 checks, 0 failed"
+    },
+    {
+      "cmd": "python3 -I test_claim_semantics.py",
+      "exit": 0,
+      "result": "13 checks, 0 failed"
+    },
+    {
+      "cmd": "python3 -I test_research_claims.py",
+      "exit": 0,
+      "result": "19 passed in 0.03s"
+    },
+    {
+      "cmd": "python3 -I test_research_gather.py",
+      "exit": 0,
+      "result": "25 passed, 1 skipped in 0.24s",
+      "note": "pre-existing main-side suite for the keyless gatherer; it exercises the carried research.py, so it is the regression check that the claims package did not break the SWI-005 gatherer path"
+    }
+  ],
+
+  "count_comparison_to_prior_round": {
+    "r8_receipt_recorded": "84 passed, 1 skipped (pytest -q, research_engine at d680b0989)",
+    "r10_measured": "87 passed, 1 skipped (same command, same directory, r10 head)",
+    "delta": "+3 collected tests, matching the tests r9 added on top of r8. No test was removed, skipped, or weakened."
+  },
+
+  "not_weakened": {
+    "assertion": "No test was edited, skipped, xfailed or deleted by this branch.",
+    "how_checkable": "every carried file is byte-identical to origin/s75/S75-T04-r9 by blob id — see r9_vs_r10_differences.package_difference — so no test text differs from the graded head at all."
+  },
+
+  "not_claimed": [
+    "No acceptance. S75-A04 stays with the owner (Trevor). No verdict file is written by this lane and the builder cannot clear its own work.",
+    "No D-19 decision. This receipt is the path-B candidate; A versus B is the owner's call.",
+    "No ledger write. <PATH> was not read for mutation and not written.",
+    "No merge and no push to main or master. The branch is the only carrier.",
+    "No review of PR #2601 and no interaction with ungraded r6; r6's history was not read as authority and was not merged.",
+    "No claim that r9's grading transfers. This branch reproduces r9's bytes, which is a statement about content, not a statement that the r9 verdict applies to a rebuilt branch.",
+    "Pre-existing failures elsewhere in the repository were not surveyed. Only the research_engine directory was run."
+  ],
+
+  "shape_statement": "Five new files plus one modified file plus this receipt. Additive except research.py, whose 34 deleted lines are exactly the pre-claims validate_claims/render/_md bodies that the r9 package replaces; the SWI-005 gatherer integration is present on both sides and is exercised by test_research_gather.py (25 passed, 1 skipped). Reversible: deleting the branch restores origin/main for these paths.",
+
+  "reversibility": "The branch is the only carrier. git revert 692ddf5f70bbac69522ecd1f0e4fa1d63e83bb39 on top of origin/main restores the base tree for the six package paths."
+}

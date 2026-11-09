@@ -221,7 +221,7 @@ def plan(run_dir, *, mode="final", bible=None, approval=None,
     }
 
 
-def write(plan_doc, images_dir):
+def write(plan_doc, images_dir, manifest_name="ensemble-package.json"):
     """Package the ALREADY APPROVED files per character. No new generation.
 
     Layout: ``<images_dir>/<character id>/<view>.<ext>`` so two characters
@@ -243,7 +243,7 @@ def write(plan_doc, images_dir):
                     "%s %s changed between plan and write" % (rec.get("name"), view))
             ext = os.path.splitext(src)[1].lower() or ".png"
             shutil.copy2(src, os.path.join(dest_dir, view + ext))
-    manifest = os.path.join(images_dir, "ensemble-package.json")
+    manifest = os.path.join(images_dir, manifest_name)
     tmp = manifest + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(plan_doc, fh, indent=2, sort_keys=True)

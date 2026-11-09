@@ -40,7 +40,10 @@
 #
 # RECEIPTS in the state dir: last-run.json (overwritten) and runs.log (append-only,
 # one line per run) with the time, mode, counts, and every refusal as host:REASON
-# (skipped hosts are counted on the line and named in last-run.json).
+# (skipped hosts are counted on the line and named in last-run.json). "provisioned"
+# names every host whose Council address this run proved exists - created now,
+# already provisioned by an earlier run, or login-synced - so a client provisioned
+# before is never missing from the address list.
 #
 # STEP 1 each run is ensure-cc-access.sh (same mode, so --apply only when this job
 # has --apply): it gives every new client's Command Center host its login-gated
@@ -167,7 +170,7 @@ if jq -e 'type == "array"' "$OUT" >/dev/null 2>&1; then
        counts:$c, cc_access:$cc,
        refused:   [$r[] | select(.status | IN($refusals[])) | {host:.cc_host, reason:.status, detail:.detail}],
        skipped:   [$r[] | select(.status | IN("SKIPPED_NOT_CC","SKIPPED_ORPHAN")) | {host:.cc_host, reason:.status, detail:.detail}],
-       provisioned:[$r[] | select(.status == "PROVISIONED") | .cc_host],
+       provisioned:[$r[] | select(.status | IN("PROVISIONED","ALREADY_PROVISIONED","SYNCED")) | .cc_host],
        synced:    [$r[] | select(.status == "SYNCED") | .cc_host]}' "$OUT")"
   EXIT="$(jq -r .exit <<<"$RECEIPT")"
   LINE="$(jq -r '"\(.timestamp) mode=\(.mode) exit=\(.exit) total=\(.total) provisioned=\(.counts.PROVISIONED) already=\(.counts.ALREADY_PROVISIONED) synced=\(.counts.SYNCED) planned=\(.counts.PLANNED) skipped=\(.counts.SKIPPED_NOT_CC) orphans=\(.counts.SKIPPED_ORPHAN) refused=\([.refused[]] | length)" + ([.refused[] | " \(.host):\(.reason)"] | join(""))' <<<"$RECEIPT")$CC_LINE"

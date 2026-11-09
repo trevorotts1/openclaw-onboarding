@@ -1,0 +1,85 @@
+{
+  "unit": "S75-T32",
+  "generation": 1,
+  "generation_note": "evidence/units/S75-T32/ held attempt-candidate-1.json, attempt-candidate-2.json, attempt-candidate-3.json and receipt.json. Those three carry attempt values \"candidate-1\", \"candidate-2\", \"candidate-3\" and are a separate non-conforming family, so no numeric attempt-<N> existed. This is generation 1 of the conforming attempt-<N> sequence.",
+  "independent_checker": {
+    "checker_id": "fresh-qc-opus-chain-lane-T32",
+    "checker_model": "route=opus-chain; served=not observed by the lane",
+    "receipt_path": "loop-control/s75/qc/S75-T32.15c10ec00de47b51e49b7f70a9341d658204adb8.json",
+    "caveat": "Recorded from an earlier checker lane's observed runs after that lane ended before writing its receipt; the counts and the broken check name are that lane's measurements, not re-derived here.",
+    "caveat_carried_forward": "The 389-check clean-head run and the broken-check name '1g validate_catalog' are that earlier lane's measurements. This artefact copies them and does not present them as freshly derived."
+  },
+  "repository_gate": {
+    "workflow": ".github/workflows/qc-static.yml",
+    "ref": "origin/main",
+    "applies_to_unit_paths": true,
+    "reason": "Two steps read every tracked file through git ls-files, so both reach evidence/units/S75-T32/*.json. Step 87 runs scripts/scrub-operator-chat-id.py, whose list_files() calls git ls-files -z over the whole repo root. Step 138 runs scripts/qc-assert-no-client-names.sh, whose _list_files() calls git ls-files over the whole repo root. scripts/guard-taskapi-auth-docs.sh is limited to the '*.md' '*.sh' '*.py' pathspecs, so it does not reach a .json unit path.",
+    "steps": [
+      {
+        "index": 87,
+        "name": "Operator personal chat id must not reach agent-facing files (scrub-operator-chat-id)",
+        "pathscope": "git ls-files -z over the repo root (indirect, whole tree)",
+        "reads_unit_paths": true
+      },
+      {
+        "index": 138,
+        "name": "CRITICAL-1 — No real client names in tracked files",
+        "pathscope": "git ls-files over the repo root (indirect, whole tree)",
+        "reads_unit_paths": true
+      },
+      {
+        "index": 145,
+        "name": "Command Center task-API write-back auth doctrine (401 fix)",
+        "pathscope": "git ls-files -- '*.md' '*.sh' '*.py'",
+        "reads_unit_paths": false
+      },
+      {
+        "index": 146,
+        "name": "Command Center write-back auth guard negative test (fixture)",
+        "pathscope": "git ls-files -- '*.md' '*.sh' '*.py'",
+        "reads_unit_paths": false
+      }
+    ]
+  },
+  "dependencies": {
+    "base_sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "unit_merge_sha": "not computable: git merge-tree --write-tree origin/main <unit head> returned rc 128 and reported 'refusing to merge unrelated histories'; git merge-base returned rc 1, so the two histories share no merge base",
+    "base_resolution": "git rev-parse origin/main after git fetch origin, resolved in the worktree on origin/s75x/receipt-S75-T32"
+  },
+  "base": {
+    "sha": "b37010c6a001bb5a51913d6e567911258f9ac2e0",
+    "merge_tree_rc": 128,
+    "merge_tree_note": "git merge-tree --write-tree origin/main 15c10ec00de47b51e49b7f70a9341d658204adb8 printed 'fatal: refusing to merge unrelated histories'. Recorded as observed, not claimed as a clean merge."
+  },
+  "head_sha": "15c10ec00de47b51e49b7f70a9341d658204adb8",
+  "candidate": {
+    "branch": "s75x/receipt-S75-T32",
+    "head": "15c10ec00de47b51e49b7f70a9341d658204adb8",
+    "diff_base_note": "Three-dot diff is unavailable because there is no merge base; changed_files comes from git diff --name-only origin/main 15c10ec00de47b51e49b7f70a9341d658204adb8 (two-dot tree comparison).",
+    "changed_file_count": 22,
+    "changed_files": [
+      "38-conversational-ai-system/CHANGELOG.md",
+      "38-conversational-ai-system/SKILL.md",
+      "38-conversational-ai-system/skill-version.txt",
+      "38-conversational-ai-system/tests/contract_traces_runner.py",
+      "38-conversational-ai-system/tests/f03_f12_contract_traces_runner.py",
+      "44-convert-and-flow-operator/CHANGELOG.md",
+      "44-convert-and-flow-operator/SKILL.md",
+      "44-convert-and-flow-operator/skill-version.txt",
+      "75-drama-song-ad-factory/CHANGELOG.md",
+      "75-drama-song-ad-factory/SKILL.md",
+      "75-drama-song-ad-factory/skill-version.txt",
+      "77-council-of-wise-elders/CHANGELOG.md",
+      "77-council-of-wise-elders/SKILL.md",
+      "77-council-of-wise-elders/skill-version.txt",
+      "77-council-of-wise-elders/version",
+      "evidence/PBB-648/T-16-WIRE.md",
+      "evidence/closeout/T-50-CLOSEOUT.PBB-960.md",
+      "evidence/closeout/T-50-CLOSEOUT.md",
+      "evidence/engineering-loop-registration.json",
+      "evidence/units/S75-T32/receipt.json",
+      "shared-utils/nudge-incomplete-interviews.py",
+      "shared-utils/reminders/reminder_state_machine.py"
+    ]
+  }
+}

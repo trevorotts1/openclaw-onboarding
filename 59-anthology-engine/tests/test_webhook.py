@@ -227,14 +227,6 @@ def test_fixtures_use_synthetic_emails_only(fn):
             "fixture %s carries a non-synthetic email %r" % (fn, addr)
 
 
-def test_no_anthropic_identifier_in_owned_webhook_files():
-    files = [ROUTE_TPL, EXPECTED, VERIFIER, FIX / "README.md",
-             FIX / "t3-malformed-notjson.txt"] + [FIX / f for f in JSON_FIXTURES]
-    for p in files:
-        txt = p.read_text(encoding="utf-8", errors="replace")
-        assert not BANNED.search(txt), "Anthropic-family id shape in %s" % p.name
-
-
 def test_verifier_never_echoes_the_secret_value():
     """The script may READ the secret (as a Bearer header) but must never print
     it. No echo/printf of the secret variable, and it must report SET/NOT SET."""

@@ -30,12 +30,18 @@ name: legacy-agents-list-gate
 #   • update-skills.sh's agents_list_gate() migrates with a backup, RE-VALIDATES,
 #     and ROLLS BACK a migration that lies (exits 0, changes nothing) or that
 #     moves the resolved workspace
-#   • the generated weekly-cron script does NOT run `npm update -g openclaw` on a
-#     box carrying the legacy key -- observed by a stub npm that records its own
-#     invocation, not by reading the source
-#   • the CONTROL: a CLEAN box still upgrades through the same harness
-#   • the MUTATION PROOF: with detection neutered, the same legacy box IS
-#     upgraded -- so the block is caused by the detector and not by luck
+#   • the generated weekly-cron script NEVER runs a bare `npm update -g
+#     openclaw` (Big Fleet Roll error #21: npm rewrites the package under a
+#     KeepAlive-respawned gateway) -- observed by a stub npm that records its
+#     own invocation, not by reading the source. A legacy box is blocked
+#     (exit 78); a box without the atomic tool defers (exit 0); a box with it
+#     upgrades through it
+#   • the CONTROL: a CLEAN box with the atomic tool still upgrades through the
+#     same harness
+#   • the MUTATION PROOF: with detection neutered, the same legacy box is no
+#     longer blocked -- so the block is caused by the detector and not by luck
+#   • update-skills.sh's safe_json_edit validates an isolated copy and never
+#     takes the sqlite maintenance lease in the live state dir (error #25)
 #
 # ⚠️ INTERPRETER. Every shell file here is syntax-checked under BOTH bash 5
 # (ubuntu default) and, where available, bash 3.2 semantics. The fleet's Macs run
@@ -61,6 +67,7 @@ on:
       - platform/mac/service-selfheal/gateway-health-watchdog.sh
       - update-skills.sh
       - tests/unit/legacy-agents-list-gate.test.sh
+      - tests/unit/safe-json-edit-isolated-validate.test.sh
       - tests/unit/oc-atomic-upgrade.test.sh
       - .github/workflows/legacy-agents-list-gate.yml
   pull_request:
@@ -76,6 +83,7 @@ on:
       - platform/mac/service-selfheal/gateway-health-watchdog.sh
       - update-skills.sh
       - tests/unit/legacy-agents-list-gate.test.sh
+      - tests/unit/safe-json-edit-isolated-validate.test.sh
       - tests/unit/oc-atomic-upgrade.test.sh
       - .github/workflows/legacy-agents-list-gate.yml
 
@@ -112,6 +120,7 @@ jobs:
           bash -n scripts/u126-remediate.sh
           bash -n update-skills.sh
           bash -n tests/unit/legacy-agents-list-gate.test.sh
+          bash -n tests/unit/safe-json-edit-isolated-validate.test.sh
 
       - name: The GENERATED weekly-cron script must also parse
         # The script that actually performs the version change on every box is
@@ -129,7 +138,11 @@ jobs:
                   break
           assert start is not None and end is not None, "OCUPDATE_EOF heredoc not found"
           body = "\n".join(src[start:end])
-          assert 'npm update -g openclaw' in body, "the generated script no longer upgrades openclaw"
+          for ln in body.splitlines():
+              t = ln.strip()
+              assert not t.startswith(("npm update", "npm install", "npm i ", "sudo npm")), (
+                  "the generated script RUNS a bare npm command (BFR error #21: it rewrites the "
+                  "package under a KeepAlive-respawned gateway; only the atomic procedure may upgrade): " + ln)
           assert 'OC_GATE_BLOCK' in body, "the generated script no longer carries the pre-upgrade gate"
           assert 'oc-atomic-upgrade.sh' in body, "the generated script no longer delegates to the atomic procedure"
           for ln in body.splitlines():
@@ -145,6 +158,18 @@ jobs:
         run: |
           chmod +x tests/unit/legacy-agents-list-gate.test.sh
           bash tests/unit/legacy-agents-list-gate.test.sh
+
+      - name: ACCEPTANCE — safe_json_edit must validate in isolation (never the live state dir)
+        # Big Fleet Roll error #25: `openclaw config validate` takes the sqlite
+        # maintenance lease on 2026.10.x, so running it against a serving
+        # gateway's state dir stops the gateway answering. Runs the real
+        # extracted functions against a stub CLI that takes the lease in
+        # whatever state dir it is given, and asserts none lands in the live
+        # one; a mutation case restores the old bare call and requires the
+        # lease to come back.
+        run: |
+          chmod +x tests/unit/safe-json-edit-isolated-validate.test.sh
+          bash tests/unit/safe-json-edit-isolated-validate.test.sh
 
       - name: ACCEPTANCE — the ATOMIC UPGRADE must enforce, mutate-prove and roll back
         # Runs the real scripts/oc-atomic-upgrade.sh against fixture boxes with

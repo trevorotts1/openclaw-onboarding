@@ -1008,6 +1008,38 @@ def resolve_adapter(explicit=None):
 GENERATION_CMDS = frozenset({"submit", "create", "generate", "extend"})
 
 
+def _bind_verified_request(args, request, request_digest, save_dir):
+    """X06: bind the VERIFIED request bytes to the subprocess invocation.
+
+    The digest check proves the caller's file has not changed since admission,
+    but the subprocess used to re-read that same mutable caller path, leaving a
+    window where the submitted content differed from the validated content.
+    Write the exact validated snapshot once (atomic replace) and point the
+    subprocess at THAT file: the submitted bytes are the admitted bytes.
+    """
+    try:
+        index = args.index("--request") + 1
+        args[index]
+    except (ValueError, IndexError) as exc:
+        raise DispatchError("PRODUCTION_REQUEST_UNREADABLE: no --request path") from exc
+    blob = json.dumps(request, sort_keys=True, default=str).encode("utf-8")
+    snap = os.path.join(save_dir, ".kie-verified-%s.json" % str(request_digest)[:16])
+    partial = snap + ".partial"
+    try:
+        os.makedirs(save_dir, exist_ok=True)
+        with open(partial, "wb") as f:
+            f.write(blob)
+        os.replace(partial, snap)
+    except OSError as exc:
+        try:
+            os.unlink(partial)
+        except OSError:
+            pass
+        raise DispatchError("PRODUCTION_REQUEST_NOT_BINDABLE: %s" % exc) from exc
+    args[index] = snap
+    return args
+
+
 def make_runner(timeout=300, *, process_context=None):
     """Real Skill 74 subprocess; paid commands require current run authority.
 
@@ -1017,10 +1049,10 @@ def make_runner(timeout=300, *, process_context=None):
     """
     def _run(argv):
         cmd = str(argv[1]) if len(argv) > 1 else ""
+        args = list(argv)
         if cmd in GENERATION_CMDS:
             if not isinstance(process_context, dict):
                 raise DispatchError("PRODUCTION_CONTEXT_REQUIRED: use governed dispatch")
-            args = list(argv)
             try:
                 req_path = args[args.index("--request") + 1]
                 with open(req_path, encoding="utf-8") as f:
@@ -1034,15 +1066,21 @@ def make_runner(timeout=300, *, process_context=None):
             if not receipt.get("ok"):
                 raise DispatchError("%s: %s" % (
                     receipt.get("reason_code"), receipt.get("detail")))
+            # X06: the admitted snapshot is the submitted snapshot. Bind the
+            # validated bytes to this invocation instead of re-reading a path
+            # a concurrent writer can still change.
+            args = _bind_verified_request(
+                args, current_request, process_context["request_digest"],
+                process_context["arguments"].get("save_dir") or ".")
         def once():
-            r = subprocess.run([sys.executable] + list(argv),
+            r = subprocess.run([sys.executable] + list(args),
                                capture_output=True, text=True, timeout=timeout,
                                env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
             return r.returncode, r.stdout
         # Load governor: only NEW generation requests (submit) draw from the
         # 20-per-10-s bucket; health/preflight/wait/save use the gentle poll
         # limiter. A 429 means the job did not run: back off and resubmit.
-        return _LG.kie_request(once, label=" ".join(str(a) for a in argv[1:4]),
+        return _LG.kie_request(once, label=" ".join(str(a) for a in args[1:4]),
                                generation=cmd in GENERATION_CMDS)
     _run._s75_live_runner = True
     _run._s75_bind = lambda context: make_runner(timeout, process_context=context)
@@ -1244,8 +1282,110 @@ def check_script_approval_gate(model, request, save_dir=None):
     if rec is None:
         rec = _SA.record_near(req.get("run_dir"), save_dir)
     return _SA.check_script_approval(rec,
-                                     req.get("lyrics") or inp.get("lyrics") or "")
+                                     req.get("lyrics") or inp.get("lyrics") or "",
+                                     _SA.script_sha_near(req.get("run_dir"), save_dir))
 
+
+def _retain_sync_info(save_dir, task_id, payload):
+    """Keep a synchronous submit answer where a later save can still read it.
+
+    A sync createTask answer IS the result and KIE has no such task to query,
+    so this envelope is the only copy. It is written under the save dir - which
+    outlives this call and its temp dir - in the supported Skill 74
+    ``save --info`` shape: the adapter's own submit answer, never a credential.
+    Returns the path, or None when nothing could be retained.
+    """
+    safe = "".join(c for c in str(task_id) if c.isalnum() or c in "-_")[:60]
+    path = os.path.join(save_dir, ".kie-sync-info-%s.json" % (safe or "task"))
+    partial = path + ".partial"
+    try:
+        os.makedirs(save_dir, exist_ok=True)
+        with open(partial, "w", encoding="utf-8") as f:
+            json.dump(payload, f, sort_keys=True)
+        os.replace(partial, path)
+    except (OSError, TypeError, ValueError):
+        try:
+            os.unlink(partial)
+        except OSError:
+            pass
+        return None
+    return path
+
+
+def _materialization_hold(saved, save_error="", adapter_state="", error=None):
+    """F11/P09: -> None when every listed output really landed, else a hold.
+
+    A provider task that succeeded and charged must still settle (dispatch
+    does that). What it may NOT do is report files saved when the save step
+    raised, reported no path, reported a container that is not a list, or
+    listed bytes that are not on disk. ``saved_paths`` is the one supported
+    output schema (Skill 74 ``save --json``; a sync payload lands as a .json
+    document), so it must be a LIST and every entry must be a readable regular
+    file with at least one byte. A scalar or mapping is a malformed payload:
+    iterating it used to raise into the outer handler, which settled a charged
+    success as a failed zero-cost job. The hold names the damage; the caller
+    resumes ONLY the save for this existing task id.
+    """
+    if error or adapter_state == RUN_FAILED:
+        bits = [str(error.get(k)) for k in ("code", "msg")
+                if isinstance(error, dict) and error.get(k)]
+        return {"reason_code": "KIE_SAVE_FAILED",
+                "detail": "the save command failed: %s"
+                          % ("; ".join(bits + ([save_error] if save_error else [])
+                                      ) or adapter_state),
+                "error": error, "outputs": []}
+    if save_error:
+        return {"reason_code": "KIE_SAVE_FAILED",
+                "detail": "the save command raised: %s" % save_error,
+                "error": None, "outputs": []}
+    if saved is None:
+        paths = []
+    elif isinstance(saved, list):
+        paths = list(saved)
+    else:
+        return {"reason_code": "KIE_SAVE_PATHS_UNSUPPORTED",
+                "detail": "saved_paths answered %s, not a list of output "
+                          "paths; the save payload is malformed and no file is "
+                          "claimed saved" % type(saved).__name__,
+                "error": None, "outputs": []}
+    if not paths:
+        return {"reason_code": "KIE_SAVE_EMPTY",
+                "detail": "the save command listed no output file",
+                "error": None, "outputs": []}
+    outputs, missing, empty, unverified = [], [], [], []
+    for p in paths:
+        if not isinstance(p, (str, os.PathLike)) or not str(p).strip():
+            unverified.append(repr(p)[:80])
+            outputs.append({"path": None, "bytes": None,
+                            "status": "UNVERIFIED", "listed": repr(p)[:80]})
+            continue
+        path = str(p)
+        try:
+            if not os.path.isfile(path):
+                raise OSError("not a regular file")
+            size = os.path.getsize(path)
+        except OSError:
+            missing.append(path)
+            outputs.append({"path": path, "bytes": None, "status": "MISSING"})
+            continue
+        if size <= 0:
+            empty.append(path)
+            outputs.append({"path": path, "bytes": size, "status": "EMPTY"})
+        else:
+            outputs.append({"path": path, "bytes": size, "status": "OK"})
+    if not (missing or empty or unverified):
+        return None
+    detail = []
+    if missing:
+        detail.append("missing on disk: %s" % ", ".join(missing[:5]))
+    if empty:
+        detail.append("zero-byte: %s" % ", ".join(empty[:5]))
+    if unverified:
+        detail.append("not a file path: %s" % ", ".join(unverified[:5]))
+    return {"reason_code": ("KIE_SAVE_OUTPUT_MISSING" if missing else
+                            "KIE_SAVE_OUTPUT_EMPTY" if empty else
+                            "KIE_SAVE_OUTPUT_UNVERIFIED"),
+            "detail": "; ".join(detail), "error": None, "outputs": outputs}
 
 def _saved_hashes(paths):
     """Receipt-time file identity; missing/unreadable saves never gain evidence."""
@@ -2047,12 +2187,12 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
             # files (which the word-timing stage then read as "no words").
             task_id = "sync-" + L.digest_request(request)[:12]
         if s_state == RUN_OK and task_id.startswith("sync-"):
-            sync_info_path = os.path.join(tmp, "sync-info.json")
-            try:
-                with open(sync_info_path, "w", encoding="utf-8") as f:
-                    json.dump(s, f, sort_keys=True)
-            except (OSError, TypeError):
-                sync_info_path = None
+            # F11: the submit envelope is the ONLY copy of a synchronous
+            # result (KIE has no such task to re-query), so it is kept
+            # under the save dir, which outlives this call and its temp
+            # dir. A save hold can then resume through the supported
+            # --info path with no resubmit and no provider lookup.
+            sync_info_path = _retain_sync_info(save_dir, task_id, s)
 
         if task_id:
             sub = L.mark_submitted(ledger_db, run_id, logical_key, attempt_id,
@@ -2132,7 +2272,7 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
             v_rc, v, v_raw = _call(run, adapter, save_argv)
         except Exception as e:                              # pragma: no cover
             v, v_raw, v_rc = None, str(e), -1
-        saved = (v.get("saved_paths") or []) if isinstance(v, dict) else []
+        saved_raw = v.get("saved_paths") if isinstance(v, dict) else None
         credits = src.get("credits_consumed")
         if isinstance(credits, (int, float)) and not isinstance(credits, bool):
             actual = int(credits)
@@ -2140,8 +2280,27 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
         else:
             actual = int(estimated_cost)
             warn = ["ACTUAL_COST_UNREPORTED"]
-        if not saved:
+        if not saved_raw:
             warn.append("SAVE_FAILED")
+        # F11: a save that raised, answered no path, answered a container that
+        # is not a list, or listed bytes that are missing or zero-byte did NOT
+        # materialize a deliverable. The provider task still succeeded and
+        # charged, so the ledger settles exactly as before -- but the envelope
+        # is a HOLD, never "files saved".
+        if isinstance(v, dict):
+            save_error = ""
+            save_state = v.get("state") if isinstance(v.get("state"), str) else ""
+            save_err_block = (v.get("error")
+                              if isinstance(v.get("error"), dict) else None)
+        else:
+            save_error = str(v_raw or "")[-240:] or "save did not answer JSON"
+            save_state, save_err_block = "", None
+        hold = _materialization_hold(saved_raw, save_error, save_state,
+                                     save_err_block)
+        verified = ([o["path"] for o in hold["outputs"]
+                     if o["status"] == "OK"] if hold else list(saved_raw))
+        if hold:
+            warn.append(hold["reason_code"])
 
         rec = _settle(ledger_db, run_id, logical_key, attempt_id, owner,
                       job_state, "succeeded", actual, task_id=task_id,
@@ -2153,19 +2312,51 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
                             run_id=run_id, logical_key=logical_key,
                             attempt_id=attempt_id,
                             evidence={"task_id": task_id,
-                                      "saved_paths": saved},
+                                      "saved_paths": verified,
+                                      "materialized": hold is None},
                             state_version=rec.get("state_version", 0))
+        if hold:
+            resume = {"command": "save", "task_id": task_id,
+                      "save_dir": save_dir}
+            if sync_info_path:
+                resume["info"] = sync_info_path
+            return envelope(
+                "dispatch", "waiting", hold["reason_code"],
+                "the provider task %s succeeded and its charge is settled, but "
+                "no output file was materialized (%s). Resume ONLY the save "
+                "step for this existing task id - never resubmit and never "
+                "generate again." % (task_id, hold["detail"]),
+                run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
+                evidence={"adapter_mode": mode, "stage": "save",
+                          "generated": True, "materialized": False,
+                          "task_id": task_id, "save_exit_code": v_rc,
+                          "save_adapter_state": save_state,
+                          "save_error": save_err_block,
+                          "saved_paths": verified,
+                          "save_outputs": hold["outputs"],
+                          "lipsync_binding": lipsync_binding,
+                          "lipsync_inputs": lipsync_inputs,
+                          "lipsync_model": model if lipsync_binding else None,
+                          "credits_consumed": credits,
+                          "actual_cost": actual, "warnings": warn,
+                          "wait_timeout_s": wait_s, "retries": 0,
+                          "resume": resume,
+                          "accepted_submit_at": stamps["accepted_submit_at"],
+                          "terminal_at": utc_now(),
+                          "prompt_caps": prompt_caps},
+                state_version=rec.get("state_version", 0))
         return envelope(
             "dispatch", "ok", "KIE_DISPATCH_OK",
             "files saved before the links expire; record the receipt",
             run_id=run_id, logical_key=logical_key, attempt_id=attempt_id,
             evidence={"adapter_mode": mode, "generated": True,
                       "task_id": task_id,
-                      "saved_paths": saved,
+                      "saved_paths": verified,
+                      "materialized": True,
                       "lipsync_binding": lipsync_binding,
                       "lipsync_inputs": lipsync_inputs,
                       "lipsync_model": model if lipsync_binding else None,
-                      "saved_sha256": _saved_hashes(saved) if lipsync_binding else {},
+                      "saved_sha256": _saved_hashes(verified) if lipsync_binding else {},
                       "credits_consumed": credits,
                       "actual_cost": actual, "warnings": warn,
                       "wait_timeout_s": wait_s, "retries": 0,

@@ -35,6 +35,11 @@ QC_STATES = ROOT.parent / "79-signature-order-form" / "references" / "components
 REAL_MODEL = "gpt-image-2-5-sunburst-image-to-image"
 CHECKOUT = ["1", "2", "3", "4", "5"]
 STANDARD = [str(i) for i in range(1, 13)]
+NO_BUMP = ["1", "2", "4", "5"]  # section 3 (order bump) exists exactly when the funnel has a bump
+
+
+def without_bump(text):
+    return re.sub(r"## Section 3:.*?(?=## Section 4:)", "", text, flags=re.S)
 
 
 def load(name):
@@ -78,10 +83,10 @@ class RunCase(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def build(self, stage="visual-mockup", text=None, slots=None, prose=None):
+    def build(self, stage="visual-mockup", text=None, slots=None, prose=None, **kw):
         text = FIXTURE.read_text(encoding="utf-8") if text is None else text
         return builder.build(stage, None, text, slots or {}, design_prose() if prose is None else prose,
-                             [], REAL_MODEL, "", self.run, "checkout")
+                             [], REAL_MODEL, "", self.run, "checkout", **kw)
 
 
 class SectionCountTests(RunCase):
@@ -109,6 +114,23 @@ class SectionCountTests(RunCase):
         with self.assertRaises(exe.ExecutorError) as ctx:
             self.check("checkout", CHECKOUT[:4])
         self.assertIn("missing ['5']", str(ctx.exception))
+
+    def test_section_three_is_required_with_a_bump_and_absent_without_one(self):
+        for bump in (True, None):  # a bump, or a request silent about it: the five-section default
+            request = {"sections": sections(NO_BUMP), "page_role": "checkout", "order_bump": bump}
+            with self.assertRaises(exe.ExecutorError) as ctx:
+                exe.check_section_count(self.run, request, paid=True)
+            self.assertIn("missing ['3']", str(ctx.exception))
+        request = {"sections": sections(NO_BUMP), "page_role": "checkout", "order_bump": False}
+        self.assertEqual(exe.check_section_count(self.run, request, paid=True)[1], NO_BUMP)
+        request = {"sections": sections(CHECKOUT), "page_role": "checkout", "order_bump": True}
+        self.assertEqual(exe.check_section_count(self.run, request, paid=True)[1], CHECKOUT)
+
+    def test_a_stray_section_three_without_a_bump_is_refused(self):
+        request = {"sections": sections(CHECKOUT), "page_role": "checkout", "order_bump": False}
+        with self.assertRaises(exe.ExecutorError) as ctx:
+            exe.check_section_count(self.run, request, paid=True)
+        self.assertIn("unexpected ['3']", str(ctx.exception))
 
     def test_landing_is_unchanged(self):
         self.assertEqual(self.check("landing", STANDARD, "standard")[1], STANDARD)
@@ -159,6 +181,49 @@ class BuilderTests(RunCase):
         self.assertEqual({s["ground"] for s in request["sections"]} - {"light", "hero"}, set())
         self.assertIn("DESKTOP LAYOUT", by_id["1"]["layout"])
         self.assertIn("MOBILE LAYOUT", by_id["1"]["layout"])
+
+    def test_builder_makes_the_four_section_request_for_a_checkout_without_a_bump(self):
+        text = without_bump(FIXTURE.read_text(encoding="utf-8"))
+        for stage in exe.STAGES:
+            request = self.build(stage, text=text, order_bump=False)
+            self.assertEqual([s["section_id"] for s in request["sections"]], NO_BUMP, stage)
+            self.assertIs(request["order_bump"], False)
+            self.assertEqual(request["metadata"]["section_count"], 4)
+            budget = request["metadata"]["char_budget"]
+            self.assertGreaterEqual(budget["min_seen"], budget["target"], stage)
+            self.assertLessEqual(budget["max_seen"], budget["max"], stage)
+        by_id = {s["section_id"]: s for s in request["sections"]}
+        self.assertEqual(by_id["5"]["cta"], "Complete my order")
+        self.assertTrue(all("bump" not in s["section_name"].lower() for s in request["sections"]))
+
+    def test_the_builder_keeps_section_three_required_when_there_is_a_bump(self):
+        text = without_bump(FIXTURE.read_text(encoding="utf-8"))
+        for kw in ({}, {"order_bump": True}):
+            with self.assertRaises(builder.BuildError) as ctx:
+                self.build(text=text, **kw)
+            self.assertIn("missing ['3']", str(ctx.exception))
+        self.assertEqual(len(self.build(order_bump=True)["sections"]), 5)
+        self.assertNotIn("order_bump", self.build())  # a request that never said stays as it was
+
+    def test_the_builder_refuses_a_stray_section_three_when_there_is_no_bump(self):
+        with self.assertRaises(builder.BuildError) as ctx:
+            self.build(order_bump=False)  # the fixture still carries its order bump section
+        self.assertIn("unexpected ['3']", str(ctx.exception))
+
+    def test_the_cli_flag_no_bump_builds_the_four_section_request(self):
+        ms = self.run / "copy" / "internal-manuscript.md"
+        ms.parent.mkdir()
+        ms.write_text(without_bump(FIXTURE.read_text(encoding="utf-8")), encoding="utf-8")
+        prose = self.run / "prose.json"
+        prose.write_text(json.dumps(design_prose()))
+        out = self.run / "production-request.json"
+        argv = ["--page-role", "checkout", "--manuscript", str(ms), "--stage", "visual-mockup", "--out", str(out),
+                "--design-prose", str(prose), "--model", REAL_MODEL, "--run-dir", str(self.run)]
+        self.assertEqual(builder.main(argv + ["--no-bump"]), 0)
+        request = json.loads(out.read_text())
+        self.assertEqual([s["section_id"] for s in request["sections"]], NO_BUMP)
+        self.assertIs(request["order_bump"], False)
+        self.assertEqual(builder.main(argv), 1)  # without the flag the manuscript is short of section 3
 
     def test_caller_slots_replace_the_roles_default_slots(self):
         slot = {"slot_id": "X-1", "aspect_ratio": "1:1", "art_direction": "a custom plate"}
@@ -275,6 +340,12 @@ class PromptTests(RunCase):
                 self.assertNotIn(landing_only, prompt, stage)
             self.assertIn("Complete my order", prompt)
 
+    def test_the_bump_decision_is_refused_on_a_page_that_has_no_bump_section(self):
+        text = (ROOT / "tests" / "fixtures" / "copy_examples" / "standard-path-b.md").read_text(encoding="utf-8")
+        with self.assertRaises(builder.BuildError):
+            builder.build("visual-mockup", "standard", text, {}, {}, [], "STUB-NO-MODEL", "", self.run,
+                          order_bump=False)
+
     def test_the_form_is_never_drawn_as_card_fields(self):
         prompt = self.prompt("visual-mockup", 5, 1440)
         self.assertIn("no card, expiry or security-code fields", prompt)
@@ -295,6 +366,19 @@ class PreflightTests(RunCase):
             self.assertIn("sections=5 canonical_ids=1,2,3,4,5", proc.stdout)
             platforms = 2 if stage == "visual-mockup" else 1
             self.assertEqual(len(re.findall(r"^PREFLIGHT \S+ \S+ ratio=", proc.stdout, re.M)), 5 * platforms)
+            self.assertNotIn("REFUSED", proc.stdout)
+
+    def test_preflight_composes_a_checkout_without_a_bump_on_four_sections(self):
+        (self.run / "page-request.json").write_text(json.dumps({"page_role": "checkout"}))
+        text = without_bump(FIXTURE.read_text(encoding="utf-8"))
+        for stage in ("desktop-wireframe", "mobile-tablet", "visual-mockup"):
+            name = f"production-request-{stage}.json"
+            (self.run / name).write_text(json.dumps(self.build(stage, text=text, order_bump=False)))
+            proc = subprocess.run([sys.executable, str(SCRIPTS / "stage_executor.py"), str(self.run),
+                                   "--stages", stage, "--request", name, "--preflight"],
+                                  capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertIn("sections=4 canonical_ids=1,2,4,5", proc.stdout)
             self.assertNotIn("REFUSED", proc.stdout)
 
 

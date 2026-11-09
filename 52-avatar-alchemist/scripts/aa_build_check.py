@@ -36,10 +36,9 @@ Gates (all offline Python; a single violation is fail-closed sys.exit(2)):
                                                             -> AF-AV-SECTION-RELEVANCE
   G-PLACEHOLDER no unresolved {{...}} / $('...') tokens leaked into an artifact
                 (whitelist: {{contact.*}} in bot docs).          -> AF-AV-PLACEHOLDER
-  G-NOANTHROPIC EVERY manifest stage must carry a resolved model id (a stage
+  G-MODEL-RECORDED EVERY manifest stage must carry a resolved model id (a stage
                 simply absent from the models map fails closed, it cannot pass
-                by omission); every resolved id fails /anthropic|claude/i.
-                                                                   -> AF-AV-NOANTHROPIC
+                by omission).                                    -> AF-AV-MODEL-UNRECORDED
 
 Self-reported counts are IGNORED — every measurement is on markdown/whitespace-
 STRIPPED text so padding can't fake a floor. stdlib only.
@@ -52,18 +51,6 @@ import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-
-# SK2-16 — the ONE canonical Anthropic model-id detector (shared-utils).
-# Fail-closed vendored fallback (same canonical pattern) if unresolvable.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "shared-utils"))
-try:
-    from assert_model_sovereignty import is_anthropic_model  # type: ignore  # noqa: E402
-except Exception:  # noqa: BLE001
-    _AA_ANTHROPIC_RE = re.compile(r"anthropic|claude|\b(?:opus|sonnet|haiku)\b", re.IGNORECASE)
-
-    def is_anthropic_model(model_id) -> bool:  # type: ignore
-        return bool(_AA_ANTHROPIC_RE.search(str(model_id or "")))
-
 
 def _manifest_path() -> Path:
     return Path(__file__).resolve().parent.parent / "AA-PIPELINE-MANIFEST.json"
@@ -332,8 +319,8 @@ def verify(manifest: Dict[str, Any], state: Dict[str, Any],
 
     # Repairs R1-R6 are OFF BY DEFAULT (faithful to the live workflow); they are
     # applied only when the run was started with --apply-repairs. The only content
-    # invariant tied to a repair is G-ADSET-CAT (R4). R7 (the Anthropic ban) is
-    # ALWAYS enforced below (G-NOANTHROPIC) and is never gated.
+    # invariant tied to a repair is G-ADSET-CAT (R4). G-MODEL-RECORDED is
+    # enforced below and is never gated.
     if apply_repairs is None:
         apply_repairs = bool(state.get("apply_repairs", False))
     notes.append(f"repairs mode: {'ON (--apply-repairs)' if apply_repairs else 'OFF (faithful-to-live default)'}")
@@ -443,26 +430,22 @@ def verify(manifest: Dict[str, Any], state: Dict[str, Any],
             fail("AF-AV-PLACEHOLDER",
                  f"stage '{sid}': {len(leaked)} unresolved token(s) leaked, e.g. {leaked[:3]}")
 
-    # === G-NOANTHROPIC (fail-closed: EVERY manifest stage, not just the ones
+    # === G-MODEL-RECORDED (fail-closed: EVERY manifest stage, not just the ones
     # the caller happened to populate — a stage missing from `models` used to
     # pass by silent omission; it now fails just like G-STAGE does) ==========
     for sid in stages:
         mid = models.get(sid)
         if not mid or not str(mid).strip():
-            fail("AF-AV-NOANTHROPIC",
-                 f"stage '{sid}': no resolved model id recorded (cannot prove client-path-only "
-                 f"by omission — a ledger/receipt lacking a model id fails, it does not pass vacuously)")
-            continue
-        if is_anthropic_model(mid):
-            fail("AF-AV-NOANTHROPIC",
-                 f"stage '{sid}': resolved model id {mid!r} is an Anthropic/Claude model (client-path ban)")
-    # operator/anthropic credential-NAME ban (defense in depth only — the LIVE
+            fail("AF-AV-MODEL-UNRECORDED",
+                 f"stage '{sid}': no resolved model id recorded (a ledger/receipt lacking a model id "
+                 f"fails, it does not pass vacuously)")
+    # operator credential-NAME ban (defense in depth only — the LIVE
     # enforcement of this half is entry.sh's env-credential-name bypass-scan
     # leg, which actually sees the process env; this loop only sees whatever
     # env_names the caller chose to report, so it can never be the sole guard).
     for k in state.get("env_names", []):
-        if re.search(r"operator|blackceo|anthropic", str(k), re.IGNORECASE):
-            fail("AF-AV-NOANTHROPIC", f"operator/anthropic credential name {k!r} present in run env")
+        if re.search(r"operator|blackceo", str(k), re.IGNORECASE):
+            fail("AF-AV-MODEL-UNRECORDED", f"operator credential name {k!r} present in run env")
 
     return violations, notes
 
@@ -546,11 +529,11 @@ def load_run(run_dir: str) -> Dict[str, Any]:
         for p in rec_dir.glob("G-STAGE-*.json"):
             sid = p.stem.replace("G-STAGE-", "")
             receipts.append(sid)
-            # G-NOANTHROPIC defense-in-depth: the on-disk receipt already carries
+            # G-MODEL-RECORDED defense-in-depth: the on-disk receipt already carries
             # a 'model' field written at generation time (build_golden.write_run,
             # the real foreman path) — read it directly rather than relying
             # SOLELY on RUN-LEDGER.json, so a ledger stripped of model ids still
-            # gets caught (a stage cannot pass G-NOANTHROPIC purely by which file
+            # gets caught (a stage cannot pass G-MODEL-RECORDED purely by which file
             # happens to be missing a field).
             try:
                 rec = json.loads(p.read_text(encoding="utf-8", errors="replace"))
@@ -744,9 +727,7 @@ def _violation_cases(manifest):
         st["artifacts"]["39-hero-page"] = "\n".join(l for l in lines if not l.startswith("## Section 1"))[:200] + "\n" + _lorem(50)
     def placeholder(st):
         st["artifacts"]["16-brand-bio"] += "\n\nUnresolved {{intake.offer_name}} leaked here.\n"
-    def anthropic(st):
-        st["models"]["39-hero-page"] = "anthropic/claude-sonnet-4"
-    def anthropic_by_omission(st):
+    def model_omitted(st):
         # the exact QC-reproduced forgery: a ledger that simply OMITS a
         # stage's model id must fail closed, not pass vacuously by absence.
         del st["models"]["39-hero-page"]
@@ -790,8 +771,7 @@ def _violation_cases(manifest):
         ("avatar_question_ignores_header", "AF-AV-SECTION-RELEVANCE", avatar_relevance),
         ("five_list_under_5_named_items", "AF-AV-SECTION-RELEVANCE", five_list_short),
         ("placeholder_leak", "AF-AV-PLACEHOLDER", placeholder),
-        ("anthropic_model_id", "AF-AV-NOANTHROPIC", anthropic),
-        ("anthropic_model_id_omitted_by_ledger", "AF-AV-NOANTHROPIC", anthropic_by_omission),
+        ("model_id_omitted_by_ledger", "AF-AV-MODEL-UNRECORDED", model_omitted),
     ]
 
 

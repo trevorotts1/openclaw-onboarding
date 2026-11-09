@@ -87,6 +87,67 @@ EOF
   printf '{"schema":"council-service/v1","port":%s,"origin":"http://127.0.0.1:%s","public_origin":%s,"manager":"%s","name":"council-svc","release_id":"rel1"}\n' "$port" "$port" "$pubjson" "$mgr" > "$d/root/council-runtime/service.json"
   printf '#!/bin/sh\nexit 0\n' > "$d/root/council-runtime/bin/blackceo-council"
   chmod +x "$d/root/council-runtime/bin/blackceo-council"
+  # The declared interceptor package, exactly as wire.sh installs it.
+  mkdir -p "$d/root/extensions"
+  cp -R "$HERE/../../extensions/council-before-dispatch" "$d/root/extensions/council-before-dispatch"
+  # An activated release with the declared runtime closure files.
+  mkdir -p "$d/rel1/dist/brief" "$d/rel1/dist/contracts" "$d/rel1/node_modules/zod"
+  : > "$d/rel1/dist/brief/permitted-brief.js"
+  : > "$d/rel1/dist/contracts/index.js"
+  : > "$d/rel1/dist/index.js"
+  : > "$d/rel1/dist/contracts/schemas.js"
+  printf '{"name":"zod","version":"3.24.1"}\n' > "$d/rel1/node_modules/zod/package.json"
+  printf '{"dependencies":{}}\n' > "$d/rel1/package.json"
+  printf '{}\n' > "$d/rel1/package-lock.json"
+  printf '#!/bin/sh\nexit 0\n' > "$d/root/council-runtime/bin/council-ask"
+  chmod +x "$d/root/council-runtime/bin/council-ask"
+  mkdir -p "$d/workspace"
+  # A valid per-box binding: one account, one direct DM already in allowFrom,
+  # one agent whose workspace matches, and a registry entry the shared
+  # validator accepts. The loaded-registry probe is a deterministic stub.
+  cat > "$d/root/openclaw.json" <<EOF
+{
+  "channels": {"telegram": {"accounts": {"default": {"allowFrom": ["424242"]}}}},
+  "agents": {"entries": {"council": {"workspace": "$d/workspace"}}},
+  "bindings": [{"agentId": "council", "match": {"channel": "telegram", "peer": {"kind": "direct", "id": "424242"}}}],
+  "plugins": {
+    "entries": {
+      "council-before-dispatch": {
+        "enabled": true,
+        "config": {
+          "channel": "telegram",
+          "accountId": "default",
+          "conversationId": "424242",
+          "senderIds": ["424242"],
+          "agentId": "council",
+          "agentWorkspace": "$d/workspace",
+          "councilAskPath": "$d/root/council-runtime/bin/council-ask",
+          "stateDir": "$d/root/council-before-dispatch"
+        }
+      }
+    },
+    "load": {"paths": ["$d/root/extensions"]},
+    "allow": ["council-before-dispatch"]
+  }
+}
+EOF
+  cat > "$d/bin/openclaw" <<'EOF'
+#!/bin/sh
+case "$1 $2" in
+  "--version "*) echo "2026.10.8" ;;
+  "plugins list") echo '{"plugins":[{"id":"council-before-dispatch","enabled":true,"status":"loaded","version":"1.2.3"}]}' ;;
+  "config validate") exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF
+  chmod +x "$d/bin/openclaw"
+  # The managed process for this fixture execs the active release, so the
+  # release/process reconciliation check can pass without a real service.
+  cat > "$d/bin/ps" <<EOF
+#!/bin/sh
+echo "node $d/rel1/scripts/service-launch.mjs --prefix $d/root/council-runtime"
+EOF
+  chmod +x "$d/bin/ps"
   echo "$d"
 }
 
@@ -224,6 +285,14 @@ expect "launchd service and council-tunnel running -> READY" "COUNCIL_BOX: READY
 rm -rf "$F10/root/secrets"
 run "$F10"
 case "$OUT" in *"SKIP council-connector"*) pass "absent token file -> council-connector SKIP" ;; *) fail "absent token file -> council-connector SKIP"; echo "$OUT" ;; esac
+
+# 16. a genuinely missing plugin package is still NOT_READY (a fixture that
+# cannot fail would prove nothing about the plugin verification).
+F12="$(mkfix c12 external "$OPORT" "http://127.0.0.1:$P302")"
+rm -rf "$F12/root/extensions/council-before-dispatch"
+run "$F12"
+expect "missing plugin package -> NOT_READY PLUGIN_NOT_INSTALLED" "COUNCIL_BOX: NOT_READY PLUGIN_NOT_INSTALLED" 1
+case "$OUT" in *"FAIL plugin:"*) pass "missing plugin names the plugin check" ;; *) fail "missing plugin names the plugin check"; echo "$OUT" ;; esac
 
 if [ "$FAILS" -eq 0 ]; then echo "verify-council-box tests: PASS"; exit 0; fi
 echo "verify-council-box tests: $FAILS FAILED"; exit 1

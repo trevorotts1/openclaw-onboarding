@@ -1,11 +1,11 @@
 ---
-name: 80-signature-upsell
+name: signature-upsell
 assigned_skill: 80
-description: Builds BOTH Signature upsell page instances of a Signature Launch from one reusable skill — Upsell 1 (U1, offered after a verified original purchase) and Upsell 2 (U2, one canonical page offered after a verified accepted U1 or Downsell 1 purchase) — as two distinct, separately built and separately tested deliverables. Owns the derived eight-section upsell copy profile (owner 12-section format minus sections 8–11, section 12 replaced by the "7 Reasons To Commit To Your ____ Future" section renumbered as section 8, a CTA in EVERY section), the deterministic copy validator and substantive review rubric, the U1/U2 production adapters and route state machine, and the local page renderer. Eligibility is proven purchase only: a bump alone never qualifies for U2 and a client-side claim such as acceptedU1=true is never purchase proof. Every CTA invokes the same guarded native product-bound one-click action with the exact amount and terms disclosed adjacent; S80's side of that binding is built and independently reviewed at interface level (S80-06), while the native install itself is provisioned through Skill 6 and still pending (see Status).
-version: 0.2.4
+description: Builds BOTH Signature upsell page instances of a Signature Launch from one reusable skill — Upsell 1 (U1, offered after a verified original purchase) and Upsell 2 (U2, one canonical page offered after a verified accepted U1 or Downsell 1 purchase) — as two distinct, separately built and separately tested deliverables. Owns the derived eight-section upsell copy profile (owner 12-section format minus sections 8–11, section 12 replaced by the "7 Reasons To Commit To Your ____ Future" section renumbered as section 8, a CTA in EVERY section), the deterministic copy validator and substantive review rubric, the U1/U2 production adapters and route state machine, and a TEST ONLY local page renderer (U1 and U2 are design deliverables: there is no production HTML builder). Eligibility is proven purchase only: a bump alone never qualifies for U2 and a client-side claim such as acceptedU1=true is never purchase proof. Every CTA invokes the same guarded native product-bound one-click action with the exact amount and terms disclosed adjacent; S80's side of that binding is built and independently reviewed at interface level (S80-06), while the native install itself is provisioned through Skill 6 and still pending (see Status).
+version: 0.2.7
 ---
 
-# Signature Upsell 1 + Upsell 2 (Skill 80)
+# Signature Upsell 1 + Upsell 2 (Skill 80, slug signature-upsell)
 
 One reusable skill that produces **two distinct page instances** — Signature
 Upsell Page 1 and Signature Upsell Page 2 — each with its own page ID, offer,
@@ -16,9 +16,33 @@ Skill 49 owns the sacred 12-section main-page system and its derived chain;
 Skill 80 is the standalone Signature Launch upsell skill with
 verified-purchase eligibility, exact disclosure, and native one-click binding.
 
-> **STATUS — READ THIS FIRST.** This is a **packaging candidate (v0.2.0)** for
-> owner batch approval. It is merged to main, but it is **NOT
-> production-ready.** What is proven is local only:
+> **STATUS — READ THIS FIRST.** This is a **packaging candidate** (version in
+> the frontmatter above and in `skill-version.txt`) for owner batch approval.
+> It is merged to main, but it is **NOT production-ready.**
+>
+> **U1 and U2 are DESIGN DELIVERABLES, and the production page builder is
+> now separate from the TEST ONLY renderer.** This skill produces approved
+> copy, adapter bundles, wireframes and mockups, and it ships ONE production
+> constructor: `components/pages/build_production_pages.py`. It builds the
+> U1, D1 and U2 pages as full publishable documents from the approved route
+> graph, the approved launch record's verified native product/price ids, the
+> copy documents and the brand tokens. It refuses - writing nothing - when
+> the route graph is missing or diverges from the launch record's
+> `route_graph_hash`, when the checkout family is not identified, when an
+> enabled slot has no native product/price, when any CTA ref diverges, or
+> when a purchase control navigates instead of carrying the native one-click
+> action. Every purchase CTA is a `<button>` bound to the slot's native
+> product/price inside the native payment session with NO href; the only
+> navigation on a page is the explicit-decline control
+> (`data-charges="false"`), and each page carries its own slot identity so
+> two upsells can never share a key.
+>
+> `components/pages/render_pages.py` is UNCHANGED: it remains the TEST ONLY
+> local renderer (three fixed fixture bundles, neutral styling, no brand, no
+> native ids) and still refuses without `--test-only` (exit 2, message
+> points here). Nothing here claims a page has been installed or published.
+>
+> What is proven is local only:
 > L0 schema/static checks, L1 deterministic tests, and L2 local rendered
 > pages. What is **NOT** yet proven, stated plainly:
 >
@@ -37,9 +61,10 @@ verified-purchase eligibility, exact disclosure, and native one-click binding.
 >   association, the successful-purchase redirect, and the native
 >   configuration screenshot are provisioned and verified through Skill 6;
 >   that install is gated on S06 answers to open questions Q1–Q6, formally
->   requested in `CR-S80-001` (S80 → S06, cc S79, 2026-10-16). Until then
->   every rendered CTA binds the interface-conformant binding ref and
->   cannot charge anything.
+>   requested in `CR-S80-001` (S80 → S06, cc S79, 2026-10-16). The
+>   production builder carries `action_id: null` for the same reason: it
+>   binds the verified product/price from the launch record, not a live
+>   action id.
 > - **L3 (installed GHL test location) and L4 (native sandbox payment) are
 >   `not_run`.** S80-09 installed purchase tests have not run; they require
 >   the S06 native install and an approved test location.
@@ -47,13 +72,14 @@ verified-purchase eligibility, exact disclosure, and native one-click binding.
 >   exist in the build environment, but neither produced a screenshot file
 >   when invoked headlessly; no screenshot was fabricated. The spec §8
 >   mockup-vs-render screenshot comparison remains open.
-> - **Brand tokens and final imagery are not in the rendered pages here.**
->   Wireframes and mockups (desktop and mobile, review PDFs, overview boards,
->   Design Board for the page role) come from Skill 71's page-type runner
+> - **Brand tokens and final imagery.** The production builder accepts brand
+>   tokens (`--brand`) and applies the primary/text/background/tint colors;
+>   wireframes and mockups still come from Skill 71's page-type runner
 >   (`71-blackceo-signature-page/scripts/run_page_type.py`, spec
->   `references/copy-specs/upsell-v6.json`), called by Skill 49's
->   `upsell_wrapper.py --bridge-config`. The HTML pages in this skill use
->   neutral TEST ONLY styling; no brand was invented.
+>   `71-blackceo-signature-page/references/copy-specs/upsell-v6.json`),
+>   called by Skill 49's `49-signature-funnel/scripts/upsell_wrapper.py
+>   --bridge-config`. The TEST ONLY pages carry no images; no brand was
+>   invented.
 > - All shipped fixtures are **TEST ONLY**. No production copy may be trusted
 >   on a validator PASS alone: deterministic checks enforce evidence
 >   *structure*; the *truth* of a referenced record is proven at S49 /
@@ -154,8 +180,9 @@ verified components are kept in their exact sibling layout under
   `produce.py` (deterministic bundle production), journey fixtures, expected
   bundles, tests (including `tests/test_binding_wiring.py`, the S80-06
   wiring + binding-module reconciliation tests), `BUILD-NOTES-ADAPTERS.md`.
-- `components/pages/` — `render_pages.py` (deterministic renderer: bundles
-  in, HTML out; refuses to run if a copy fixture disagrees with its bundle),
+- `components/pages/` — `render_pages.py` (TEST ONLY deterministic renderer:
+  bundles in, HTML out; requires `--test-only`, refuses non-test_only bundles
+  and refuses to run if a copy fixture disagrees with its bundle),
   `check_pages.py` (L2 assertions), the 24 rendered state HTML files
   (3 instances × 8 states), `index.html`, `manifest.json`,
   `BUILD-NOTES-PAGES.md`.
@@ -169,6 +196,48 @@ verified components are kept in their exact sibling layout under
 - `examples/` — the example result bundles (U1; U2 from U1; U2 from D1) and
   one example request per instance, byte-identical to the verified fixtures.
 - `verify.py` — the package verification entry point (below).
+
+## Pipeline (end to end, design deliverables)
+
+Run once per instance (`upsell_1`, then `upsell_2`; separate invocations).
+Skill 49 dispatch normally drives these steps; the commands are shown so an
+agent can follow the chain by hand. Commands are run from the repo root; file paths named in prose are relative to the skill folder (`80-signature-upsell/`).
+
+1. **Copy.** Author the eight-section copy document for the instance from the
+   derived profile above (`components/80-signature-upsell/profiles/upsell-profile.json`).
+   U2 copy must be a different incremental outcome from U1.
+2. **Validator.** Run the deterministic validator on the copy. It must exit 0;
+   exit 2 is a violation and 3 is fail-closed, and neither may be waived. U2 is
+   also run with `--compare` against the U1 copy, and every run takes
+   `--binding-manifest` (see How to run).
+   `python3 80-signature-upsell/components/80-signature-upsell/scripts/validate_upsell_copy.py <copy.json> --binding-manifest <manifest.json>`
+3. **Wrapper.** Skill 49's `49-signature-funnel/scripts/upsell_wrapper.py`
+   (`--slot upsell_1|upsell_2`)
+   enriches the S49 page-request, calls this skill's
+   `components/adapters/produce.py`, and projects the page-result. It takes
+   `--request`, `--result`, `--launch`, `--copy`, `--journey`, `--produce`, and
+   optionally `--route-graph`, `--enrichment`, `--bridge-config`.
+   `python3 49-signature-funnel/scripts/upsell_wrapper.py --slot upsell_1 --request <request.json> --result <result.json> --launch <launch.json> --copy <copy.json> --journey <journey.json> --produce 80-signature-upsell/components/adapters/produce.py`
+4. **Journey source.** The `--journey` file is the verified journey state
+   (trusted-adapter purchase records with an adapter-enum
+   `verification_source`). It comes from the native purchase ledger, provider
+   event read-back or the S44 event adapter, never from a client claim and never
+   typed in by hand. At design time the real guard is not evaluated: record
+   that fact, do not assert a verified purchase.
+5. **Wireframes and mockups.** With `--bridge-config`, the wrapper hands the
+   page to Skill 71's page-type runner
+   (`71-blackceo-signature-page/scripts/run_page_type.py`, spec
+   `71-blackceo-signature-page/references/copy-specs/upsell-v6.json`) for
+   desktop and mobile wireframes and mockups. Without it none are made and the
+   wrapper says so on stderr; the result must not read as a finished design.
+6. **Review.** An independent session (not the author) scores the copy against
+   the substantive rubric in `components/80-signature-upsell/references/`
+   (R1–R10), and `python3 80-signature-upsell/verify.py` runs the package
+   checks. A validator PASS is never a substitute for the review.
+
+The chain ends at an approved design and a result bundle. Publishing is a
+separate, approved step handled by Skill 6 (native install) and the page build
+that consumes these designs; this skill does not do it.
 
 ## How to run
 
@@ -212,9 +281,30 @@ python3 -m unittest discover -s components/binding   # 50 L1 tests vs the TEST-O
 Pages (run from the skill root):
 
 ```bash
-python3 components/pages/render_pages.py   # regenerates the HTML deterministically
+python3 components/pages/render_pages.py --test-only   # TEST ONLY: regenerates the fixture HTML deterministically; exits 2 without --test-only
 python3 components/pages/check_pages.py    # L2 assertions over 3 instances x 8 states
+python3 components/pages/build_production_pages.py --selftest --out-dir <dir>   # PRODUCTION: builds U1/D1/U2 from the real Skill 49 compiler output
 ```
+
+Production pages (one route graph, one checkout family, verified native ids):
+
+```bash
+python3 components/pages/build_production_pages.py \
+    --launch  <approved-launch-record.json> \
+    --route-graph <approved-route-graph.json> \
+    --checkout-family order_upsell_v2_funnel \
+    --copy upsell_1=components/80-signature-upsell/fixtures/copy-upsell1-public.valid.json \
+    --copy upsell_2=components/80-signature-upsell/fixtures/copy-upsell2-public.valid.json \
+    --downsell-page ../81-signature-downsell/fixtures/valid-downsell-page.json \
+    --brand <brand-tokens.json> \
+    --out-dir <output-directory>
+```
+
+It writes one page per enabled slot plus `manifest.json`, and exits 2 having
+written nothing on any refusal. The `--selftest` form drives the REAL Skill 49
+compiler, so the pages are proven against the compiler's own graph (hash
+`622e345b…` equals the launch record's `route_graph_hash`), not a hand-written
+one.
 
 Whole package:
 
@@ -227,24 +317,41 @@ python3 verify.py         # all suites (validator, adapters incl. wiring,
 
 ## Result handoff (spec §7)
 
-Each production run returns an `upsell-result.json` conforming to
+Each production run returns an upsell result document conforming to
 `components/80-signature-upsell/schemas/upsell-result.schema.json`:
 instance, page ID, source hash, approved offer mapping, native action
 ID/settings, CTA map, disclosure audit, eligibility check, copy validation,
 asset/copy/UI hashes, test outcomes by proof level, and independent review.
 S49 creates the page request and approved route graph; S06 provisions the
 page and native action; S44 maps native purchase events back to the
-`upsell_1` / `upsell_2` slots. See `PACKAGE-NOTES.md` — it sits beside this
-skill folder, in the `package/` directory that contains the
-`80-signature-upsell/` folder — for the assembled example, the file
-inventory with SHA-256, the independent-review summary, and the open-items
-list. (Pointer wording corrected per review defect PKG-D01, 2026-10-15.)
+`upsell_1` / `upsell_2` slots. Worked examples live in `examples/` (example
+result bundles and requests, byte-identical to the verified fixtures).
+
+The production builder's `manifest.json` is the machine handoff to Skill 6:
+one entry per built slot carrying the page id, the file and its sha256, the
+native product/price, the payment session, the exact disclosure text, the
+paid and explicit-decline targets from the approved graph, the
+pending/failed behaviour, and the disabled CTA states.
 
 ## Proof levels (doc 18)
 
 L0 schema/static · L1 deterministic tests · L2 local rendered browser ·
 L3 installed GHL test location · L4 native sandbox payment · L5 approved
-production. This candidate stands at **L0–L2 local only**. A mocked or local
-result never closes a higher-level unit: A10/A12 native and installed
-outcomes remain `not_run` until the S06 native install (S80-06 at L3) and
-S80-09 produce real evidence.
+production. This candidate stands at **L0–L2 local only**. The L2 renders are
+TEST ONLY fixtures; the production builder produces real publishable pages
+from an approved launch record and graph, but none has been installed on a
+location or charged anything (L3/L4 `not_run`). A mocked or local result never
+closes a higher-level unit: A10/A12 native and installed outcomes remain
+`not_run` until the S06 native install (S80-06 at L3) and S80-09 produce real
+evidence.
+
+## Python dependency: jsonschema (operator note, never for the client)
+
+`verify.py` (its example schema validation step) imports `jsonschema`. On a Homebrew or Debian Python (externally managed, PEP 668) pip refuses a plain or
+`--user` install, so the package lives in the shared pydeps folder `<root>/pydeps/py<major>.<minor>/`
+(`$OC_PYDEPS_DIR` as-is, else `$OPENCLAW_ROOT`, else `/data/.openclaw` when it exists, else `$HOME/.openclaw`;
+`$HOME/.claude/pydeps/py<X.Y>/` is also looked up), installed with `pip install --target`. The file puts that folder on
+`sys.path` itself before it imports, so plain `python3` works: no venv, no activation step. Never use
+`--break-system-packages`, never create a venv, never tell the client. If the import fails, check with
+`bash update-skills.sh --check` and run the one sanctioned fix from `83-black-friday-launcher`:
+`python3 -m launcher_core.cli dependencies --install`.

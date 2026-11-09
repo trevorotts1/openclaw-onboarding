@@ -23,6 +23,8 @@ helper and its one explicit User-Agent (Cloudflare refuses Python's default).
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import mimetypes
 import os
 import pathlib
@@ -70,6 +72,27 @@ def _version(value):
     return v
 
 
+def _choices(choices):
+    """Choices as the service stores them: {n: whole number, label: string}.
+
+    A bare label list (``["GO"]``) or a partial object is refused HERE, with a
+    named error and no request, so the shipped caller can never publish a shape
+    the service will reject after the key was used (ST10B).
+    """
+    out = []
+    for c in choices or ():
+        if not isinstance(c, dict):
+            raise LedgerError("BAD_CHOICE",
+                              "every choice is {n, label}, not %r" % (c,))
+        n, label = c.get("n"), c.get("label")
+        if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+            raise LedgerError("BAD_CHOICE", "choice %r needs a whole n >= 1" % (c,))
+        if not isinstance(label, str) or not label.strip():
+            raise LedgerError("BAD_CHOICE", "choice %r needs a label" % (c,))
+        out.append({"n": n, "label": label})
+    return out
+
+
 def _file_spec(entry):
     """One file to publish: a path on disk, or {path, name, content_type}.
 
@@ -106,7 +129,7 @@ def publish(base_url, key, order_id, stage, version, text, choices, files):
         "stage": stage,
         "version": _version(version),
         "text": text,
-        "choices": list(choices or ()),
+        "choices": _choices(choices),
         "files": [{"name": s["name"], "content_type": s["content_type"],
                    "bytes": s["bytes"]} for s in specs],
     }
@@ -132,6 +155,58 @@ def publish(base_url, key, order_id, stage, version, text, choices, files):
             raise LedgerError("APPROVAL_PUT_REFUSED",
                               "storage refused %s (HTTP %d)" % (s["name"], put_status))
     return resp.get("item") or {}
+
+
+def _item_digest(item):
+    """sha256 over the exact presentation the page stored (stage, version,
+    question, choices). The decision is bound to these bytes (ST6)."""
+    canonical = {"stage": item.get("stage"), "version": item.get("version"),
+                 "text": item.get("text"), "choices": item.get("choices") or []}
+    raw = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def answer_item(base_url, key, order_id, stage, version):
+    """The recorded answer as the FULL verified envelope, or None.
+
+    ``answer`` above keeps its legacy scalar return. This is the ST6 contract:
+    the caller receives the question, revision, exact presentation digest, the
+    client's choice and who/when the service recorded it, so a scalar can never
+    stand in for provenance. A tap is only returned when the stored item is at
+    the requested stage AND version.
+    """
+    _require_key(key)
+    status, resp = _http("GET", _url(base_url, order_id), key=key)
+    if status == 0:
+        raise LedgerError("TRANSPORT_UNKNOWN",
+                          resp.get("message") or "approval read outcome is unknown")
+    if status // 100 != 2 or not resp.get("ok"):
+        raise LedgerError("APPROVAL_READ_REFUSED",
+                          resp.get("message") or "approval read refused (HTTP %d)" % status)
+    wanted = _version(version)
+    for item in resp.get("items") or ():
+        if item.get("stage") != stage:
+            continue
+        try:
+            stored = int(item.get("version"))
+        except (TypeError, ValueError):
+            continue
+        if stored != wanted:
+            continue
+        recorded = item.get("answer")
+        if not isinstance(recorded, dict):
+            return None
+        by = recorded.get("by")
+        at = recorded.get("at")
+        if by not in ("link", "machine") or isinstance(at, bool) or not isinstance(at, int):
+            raise LedgerError("BAD_ANSWER",
+                              "stored answer carries no verified author/time")
+        return {"stage": item.get("stage"), "version": stored,
+                "question": item.get("text"), "choices": item.get("choices") or [],
+                "value": recorded.get("value"), "by": by, "at": at,
+                "created_at": item.get("created_at"),
+                "digest": _item_digest(item)}
+    return None
 
 
 def answer(base_url, key, order_id, stage, version):

@@ -95,7 +95,11 @@ def _has_send(t):
     return "send" in t
 
 def _has_api(t):
-    return ("ghl conversations api" in t) or ("conversations/messages" in t)
+    # The chokepoint (pb_send.py) is the ONLY send door as of review C1; the
+    # raw-API reference stays accepted so legacy templates are not laundered
+    # into passing by a rename alone.
+    return ("ghl conversations api" in t) or ("conversations/messages" in t) \
+        or ("pb_send.py" in t)
 
 def _has_draft_clause(t):
     # "drafting/composing ... is NOT sending"

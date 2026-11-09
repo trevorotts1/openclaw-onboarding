@@ -24,7 +24,7 @@
 
 ## SHARED INVARIANTS — stated ONCE, binding on EVERY Skill 38 feature
 
-These five rules used to be restated inside almost every block. They are stated here
+These six rules used to be restated inside almost every block. They are stated here
 once and apply to every Skill 38 runtime step without exception. A per-feature section
 below only ever ADDS to them; nothing below ever relaxes one.
 
@@ -54,6 +54,14 @@ below only ever ADDS to them; nothing below ever relaxes one.
    NEVER a customer name, email, phone, address, message body, transcript or rendered
    reply. Agent-created tags carry the `ZHC-` prefix and agent-created CRM fields the
    `ZHC_` prefix; neither is ever applied retroactively.
+6. **A Purple collection contact's follow-up belongs to the SHARED REMINDER MACHINE —
+   never to a parallel sequence.** Never enter the Intelligent Follow-up Protocol's
+   10-touchpoint cadence for a contact with a Purple collection sequence that is open OR
+   closed (`collection_sequence_id` present, always). The shared reminder machine owns
+   follow-up exclusively: ONE initial invitation plus three escalating reminders, ONE
+   shared count, no reset, no catch-up burst. No touch, channel switch or discount may
+   be added beside it, and no second cadence may be scheduled. Full text:
+   `protocols/intelligent-followup-protocol.md` §"Purple collection sequence exclusion".
 
 ---
 
@@ -118,32 +126,43 @@ Use these signals when deciding the category:
 ### Step 2 — If REPLY: choose the channel-specific communication playbook
 
 The webhook payload tells you which channel the inbound came in on:
-SMS, Email, FB Messenger, Instagram DM, GMB chat, GBP chat, WhatsApp,
-or a generic "Conversations" inbound. Match the channel to the
-corresponding communication playbook in `<MASTER_FILES_DIR>/communication-playbooks/`:
+SMS, Email, Facebook Messenger, Facebook comments, Instagram DM, LinkedIn,
+Live Chat, or the All-in-One / Chat Widget. Match the channel to the
+corresponding communication playbook in `<MASTER_FILES_DIR>/communication-playbooks/`.
+An inbound on a channel with no dedicated playbook file (WhatsApp, GMB/GBP
+chat, a generic Conversations event) uses the all-in-one-chat playbook as
+its baseline.
 
 - `<MASTER_FILES_DIR>/communication-playbooks/sms-communication.md`
 - `<MASTER_FILES_DIR>/communication-playbooks/email-communication.md`
 - `<MASTER_FILES_DIR>/communication-playbooks/facebook-messenger-communication.md`
 - `<MASTER_FILES_DIR>/communication-playbooks/instagram-dm-communication.md`
-- `<MASTER_FILES_DIR>/communication-playbooks/gmb-chat-communication.md`
-- `<MASTER_FILES_DIR>/communication-playbooks/gbp-chat-communication.md`
-- `<MASTER_FILES_DIR>/communication-playbooks/whatsapp-communication.md`
-- `<MASTER_FILES_DIR>/communication-playbooks/conversations-communication.md`
+- `<MASTER_FILES_DIR>/communication-playbooks/facebook-comments-communication.md`
+- `<MASTER_FILES_DIR>/communication-playbooks/linkedin-communication.md`
+- `<MASTER_FILES_DIR>/communication-playbooks/live-chat-communication.md`
+- `<MASTER_FILES_DIR>/communication-playbooks/all-in-one-chat-communication.md`
 
 Read the matching playbook before drafting your reply. It contains the
 tone, signature, escalation triggers, and brand voice for that channel.
 
-### Step 3 — Send the reply via the GHL skill (SENDING IS MANDATORY)
+### Step 3 — Send the reply through `pb_send.py` (SENDING IS MANDATORY)
 
-Use the installed GHL skill (`openclaw skills | grep ghl`) to send the
-reply back on the same channel. Do NOT post directly to the GHL API
-yourself — the skill handles auth, rate limits, and retries.
+Every inbound turn starts with `python3 tools/pb_send.py admit --tenant <location_id>
+--message-id <message_id> --contact <contact_id>`. **Exit code 3 means the provider event
+was already admitted: a duplicate delivery. END THE TURN with no reply.** Exit 0 means this
+turn owns the event.
 
-SENDING is mandatory. Composing or drafting a reply is NOT sending — the
-customer receives nothing unless you actually call the GHL Conversations
-API. Do NOT end your turn until the send call returns a
-messageId/conversationId. A drafted-but-unsent reply is a FAILURE.
+Send only with `python3 tools/pb_send.py reply --tenant <location_id> --contact
+<contact_id> --inbound-message-id <message_id> --channel <mirrored inbound channel> --text
+"<your reply>"`. Do NOT post directly to the GHL Conversations API — that bypasses the
+common dispatch gate and the durable inbox. The tool composes consent, the human-handoff
+fence and the answer-duty gate and sends through the GHL Conversations sender built on the
+Skill 44 public adapter (same auth, rate limits and retries as `caf`).
+
+SENDING is mandatory. Composing or drafting a reply is NOT sending — the customer receives
+nothing unless `pb_send.py reply` returns a messageId. A `SUPPRESSED`, `QUARANTINED` or
+`WAIT_UNTIL` answer means DO NOT SEND and never work around it. Do NOT end your turn until
+`pb_send.py reply` returns a messageId. A drafted-but-unsent reply is a FAILURE.
 
 ### Pointers (always-read references)
 
@@ -163,10 +182,12 @@ messageId/conversationId. A drafted-but-unsent reply is a FAILURE.
 
 ## GHL inbound — SENDING the reply is MANDATORY (base rule)
 
-For ANY GHL inbound hook, SENDING the reply via the GHL Conversations API
-is MANDATORY — a drafted-but-unsent reply is a failure. Always make the
-send call and confirm a messageId/conversationId before ending the turn.
-(See Step 7C "Send the reply" + the hook's own messageTemplate send-directive.)
+For ANY GHL inbound hook, SENDING is MANDATORY — a drafted-but-unsent reply is a failure.
+`python3 tools/pb_send.py admit …` first (exit code 3 = duplicate, END THE TURN), then
+`python3 tools/pb_send.py reply …`; that one tool composes the gates and owns the transport.
+Do NOT call `POST conversations/messages` yourself, and do not end the turn until
+`pb_send.py reply` returns a messageId.
+(See Step 3 "Send the reply" + the hook's own messageTemplate send-directive.)
 
 ---
 

@@ -250,76 +250,21 @@ class TestResolutionFallback:
         assert out["chosen"]["thinking"] == "high"
 
 
-# ── Model sovereignty (shared-utils gate, stubbed when absent) ──────────────
+# ── No vendor rule ──────────────────────────────────────────────────────────
 
 
-class TestModelSovereignty:
+class TestNoVendorRule:
 
-    def _patch_sovereignty(self, monkeypatch, fn):
-        # model_router binds the shared-utils gate as ``_ams``; the router's
-        # _sovereignty_check raises AnthropicModelError on a FORBIDDEN verdict.
-        monkeypatch.setattr(mr, "_ams", fn, raising=False)
+    def test_configured_anthropic_family_default_is_routed(self):
+        ladder = mr.build_ladder({"MODEL_ROUTER_DEFAULT": "anthropic/claude-x"}, role="content")
+        assert [m["slug"] for r in ladder for m in r["models"]] == ["anthropic/claude-x"]
 
-    def test_sovereignty_called_per_slug(self, monkeypatch):
-        seen = []
-
-        def fake(slug, **kw):
-            seen.append(slug)
-            return {"code": "OK"}
-
-        self._patch_sovereignty(monkeypatch, fake)
+    def test_anthropic_family_slug_is_selected_not_blocked(self):
         ladder = mr.build_ladder(DEFAULT_ENV, role="content")
-        mr.select(mr.make_stub_executor(), role="content",
-                  env=DEFAULT_ENV, ladder=ladder, sleep=_no_sleep)
-        assert "client-default:cloud" in seen
-
-    def test_sovereignty_blocks_anthropic(self, monkeypatch):
-        def blocker(slug, **kw):
-            if "claude" in slug.lower():
-                return {"code": "FORBIDDEN", "reason": "Anthropic blocked"}
-            return {"code": "OK"}
-
-        self._patch_sovereignty(monkeypatch, blocker)
-        ladder = mr.build_ladder(DEFAULT_ENV, role="content")
-        ladder[0]["models"][0]["slug"] = "BANNED-claude-sentinel"
-        with pytest.raises(mr.AnthropicModelError):
-            mr.select(mr.make_stub_executor(), role="content",
-                      env=DEFAULT_ENV, ladder=ladder, sleep=_no_sleep)
-
-    def test_sovereignty_blocks_free_literal(self, monkeypatch):
-        def blocker(slug, **kw):
-            if slug.strip().lower() == "openrouter/free":
-                return {"code": "FORBIDDEN", "reason": "free literal blocked"}
-            return {"code": "OK"}
-
-        self._patch_sovereignty(monkeypatch, blocker)
-        ladder = mr.build_ladder(DEFAULT_ENV, role="content")
-        # Make rung 1 a well-formed OpenRouter rung carrying the free literal,
-        # so the walk reaches the sovereignty gate instead of skipping the
-        # rung on the Ollama Cloud invariants.
-        ladder[0]["provider"] = "openrouter"
-        ladder[0]["base_url"] = mr.OPENROUTER_BASE_URL
-        ladder[0].pop("max_tokens", None)
-        ladder[0]["models"][0]["slug"] = "openrouter/free"
-        with pytest.raises(mr.AnthropicModelError):
-            mr.select(mr.make_stub_executor(), role="content",
-                      env=DEFAULT_ENV, ladder=ladder, sleep=_no_sleep)
-
-
-# ── Anthropic guard ─────────────────────────────────────────────────────────
-
-
-class TestAnthropicGuard:
-
-    def test_injected_anthropic_slug_rejected(self):
-        ladder = mr.build_ladder(DEFAULT_ENV, role="execution")
-        ladder[0]["models"][0]["slug"] = "BANNED-claude-sentinel"
-        with pytest.raises(mr.AnthropicModelError):
-            mr.assert_no_anthropic(ladder)
-
-    def test_configured_anthropic_default_rejected(self):
-        with pytest.raises(mr.AnthropicModelError):
-            mr.build_ladder({"MODEL_ROUTER_DEFAULT": "anthropic/claude-x"}, role="content")
+        ladder[0]["models"][0]["slug"] = "claude-sentinel:cloud"
+        out = mr.select(mr.make_stub_executor(), role="content",
+                        env=DEFAULT_ENV, ladder=ladder, sleep=_no_sleep)
+        assert out["chosen"]["model"] == "claude-sentinel:cloud"
 
 
 # ── Ollama Cloud invariants ─────────────────────────────────────────────────

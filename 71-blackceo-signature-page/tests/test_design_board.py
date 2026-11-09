@@ -42,6 +42,12 @@ class Base(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.td, ignore_errors=True)
 
+    def client_message(self, by="Test Client"):
+        """The platform record of the client's own message: the only evidence approve() takes."""
+        path = self.td / "client-message.json"
+        path.write_text(json.dumps({"message_id": "msg-1", "sender_ref": by}), encoding="utf-8")
+        return path
+
     def request(self):
         return json.loads((self.run_dir / "production-request.json").read_text(encoding="utf-8"))
 
@@ -515,7 +521,7 @@ class RealReaderTests(Base):
         self.assertEqual(run([ROOT / "scripts" / "design_board.py", "validate", self.run_dir]).returncode, 0)
         self.assertEqual(run([ROOT / "scripts" / "design_board.py", "gate", self.run_dir]).returncode, 1)
         ok = run([ROOT / "scripts" / "design_board.py", "approve", self.run_dir,
-                  "--by", "Test Client", "--evidence", "msg-1"])
+                  "--by", "Test Client", "--evidence", self.client_message()])
         self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
         self.assertEqual(run([ROOT / "scripts" / "design_board.py", "gate", self.run_dir]).returncode, 0)
 
@@ -589,7 +595,7 @@ class ExecutorTests(Base):
         refused = run([EXEC, self.run_dir, "--stages", "final-mockups", "--preflight"])
         self.assertEqual(refused.returncode, 1)
         self.assertIn("no client approval recorded", refused.stdout)
-        db.approve(self.run_dir, "Test Client", "msg-1")
+        db.approve(self.run_dir, "Test Client", self.client_message())
         allowed = run([EXEC, self.run_dir, "--stages", "final-mockups", "--preflight"])
         self.assertEqual(allowed.returncode, 0, allowed.stdout + allowed.stderr)
         self.assertIn("PREFLIGHT final-mockups", allowed.stdout)
@@ -694,7 +700,7 @@ class StageGateTests(Base):
         self.assertIn("no client approval recorded", out.stdout + out.stderr)
         self.assertEqual(self.gate("check", self.run_dir, "final-mockups").returncode, 1)
         # 3. client approval recorded: the board closes and final-mockups may start
-        db.approve(self.run_dir, "Test Client", "msg-1")
+        db.approve(self.run_dir, "Test Client", self.client_message())
         out = self.gate("close", self.run_dir, "design-board")
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
         out = self.gate("check", self.run_dir, "final-mockups")

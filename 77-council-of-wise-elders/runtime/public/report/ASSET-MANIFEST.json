@@ -1,0 +1,78 @@
+{
+  "schema_version": "wise-elders.report-assets/v1",
+  "purpose": "Offline display derivatives embedded in the council report print document. The print renderer never fetches a network asset and the HTML carries only base64 data URIs, never a local path.",
+  "generated_at": "2026-10-30",
+  "tool": "cwebp 1.6.0 (libsharpyuv 0.4.2)",
+  "originals_unchanged": {
+    "note": "The derived images are display copies. Every original stays byte-identical on disk; no source was re-encoded in place.",
+    "hero": {
+      "path": "assets/seats/cover.png",
+      "sha256": "700a4263f9cf06fee50b6f1c9cacd5a0c7165aaadd52d8d9b6215b3a6f205197",
+      "width_px": 2736,
+      "height_px": 1536
+    },
+    "page_frame": {
+      "path": "assets/report/council-page-frame-a4.png",
+      "sha256": "54e9363c8752edf0bc2184a97ea90ca89a2317301717bcb9a9da1cb3a4fd335f",
+      "width_px": 1776,
+      "height_px": 2368
+    },
+    "section_divider": {
+      "path": "assets/report/council-section-divider-wide.png",
+      "sha256": "531386524dee12d82c5172e6995a3ef3159836ee2bdcde32bafc99755e30e0bb",
+      "width_px": 3136,
+      "height_px": 1344
+    }
+  },
+  "derivatives": [
+    {
+      "id": "cover-report",
+      "role": "cover hero band",
+      "path": "public/report/cover-report.webp",
+      "mime": "image/webp",
+      "sha256": "83fb18df43661d6f4ec23407434eb888771e0ba2f58ace55332ee3389de5cb1d",
+      "bytes": 126006,
+      "data_uri_chars": 168008,
+      "width_px": 1600,
+      "height_px": 899,
+      "source": "assets/seats/cover.png",
+      "transform": "resize width 1600, WebP quality 78, method 6"
+    },
+    {
+      "id": "page-frame",
+      "role": "interior reading-page plate",
+      "path": "public/report/council-page-frame-a4.webp",
+      "mime": "image/webp",
+      "sha256": "7b5976a9a9455718390f608224da0cf4c1e65ac87835eabbca45d0ad843e1dca",
+      "bytes": 17784,
+      "data_uri_chars": 23712,
+      "width_px": 1100,
+      "height_px": 1467,
+      "source": "assets/report/council-page-frame-a4.png",
+      "transform": "resize width 1100, WebP quality 62, method 6"
+    },
+    {
+      "id": "section-divider",
+      "role": "section ornament",
+      "path": "public/report/council-section-divider-wide.webp",
+      "mime": "image/webp",
+      "sha256": "811b832dc2534cfd8685d1fcebd0b58d58776f6fdb15005cc9c7ffc47a5aab95",
+      "bytes": 6562,
+      "data_uri_chars": 8752,
+      "width_px": 1000,
+      "height_px": 429,
+      "source": "assets/report/council-section-divider-wide.png",
+      "transform": "resize width 1000, WebP quality 68, method 6"
+    }
+  ],
+  "embed_limits": {
+    "cover_data_uri_max_chars": 900000,
+    "cover_data_uri_chars": 168008,
+    "all_derivatives_under_limit": true
+  },
+  "renderer_notes": [
+    "The print document embeds the derivatives as data: URIs in one style block; there is no <img src=\"file:...\"> and no remote URL.",
+    "Chrome's headless print-to-pdf does not paint CSS backgrounds unless print-color-adjust: exact is set; the print stylesheet sets it.",
+    "All text remains live text. No word, name, or label is baked into any generated image."
+  ]
+}

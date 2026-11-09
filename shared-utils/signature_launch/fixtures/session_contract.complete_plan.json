@@ -476,7 +476,7 @@
       {
         "id": "auto_pre_launch",
         "family": "pre_launch",
-        "template": "cart-open-cart-close-launch-sequence",
+        "template": "launch-a/launch-a-prelaunch-window",
         "build_rail": "skill44_engine",
         "draft_only": true,
         "trigger": {
@@ -492,7 +492,7 @@
       {
         "id": "auto_opt_in",
         "family": "opt_in",
-        "template": "post-optin-multichannel-stack",
+        "template": "launch-a/launch-optin-register-login",
         "build_rail": "skill44_engine",
         "draft_only": true,
         "trigger": {
@@ -506,7 +506,7 @@
       {
         "id": "auto_post_sale",
         "family": "post_sale",
-        "template": "new",
+        "template": "launch-b/launch-post-sale-purchase",
         "build_rail": "skill44_engine",
         "draft_only": true,
         "trigger": {
@@ -527,7 +527,7 @@
       {
         "id": "auto_upsell_branch",
         "family": "upsell_downsell",
-        "template": "new",
+        "template": "launch-b/upsell-downsell-branch",
         "build_rail": "skill44_engine",
         "draft_only": true,
         "trigger": {
@@ -542,7 +542,7 @@
       {
         "id": "auto_abandoned_checkout",
         "family": "abandoned_checkout",
-        "template": "abandoned-cart-multichannel-recovery",
+        "template": "launch-b/abandoned-checkout-recovery",
         "build_rail": "skill44_engine",
         "draft_only": true,
         "trigger": {
@@ -556,7 +556,7 @@
       {
         "id": "auto_page_retargeting",
         "family": "page_retargeting",
-        "template": "behavioral-retargeting-page-visit-fire",
+        "template": "launch-b/launch-b-retarget-visited-sales-no-checkout",
         "build_rail": "skill44_engine",
         "draft_only": true,
         "trigger": {
@@ -570,7 +570,7 @@
       {
         "id": "auto_onboarding_review",
         "family": "onboarding_review",
-        "template": "membership-stick-retention",
+        "template": "launch-c/launch-c-onboarding-first-hour-day-week",
         "build_rail": "skill44_engine",
         "draft_only": true,
         "trigger": {
@@ -584,7 +584,7 @@
       {
         "id": "auto_win_back",
         "family": "win_back",
-        "template": "re-engagement-winback-broadcast",
+        "template": "launch-c/launch-win-back-closed-no-purchase",
         "build_rail": "skill44_engine",
         "draft_only": true,
         "trigger": {
@@ -736,7 +736,7 @@
   "plan_digest": {
     "algorithm": "sha256",
     "canonicalization": "json.dumps(plan, sort_keys=True, separators=(',',':'), ensure_ascii=False).encode('utf-8')",
-    "value": "c9a629fecd401200c50608fa690de20c4a5f4a19c6d926cd7771bb2a150b13d1"
+    "value": "307bc2383cf00d192065897c3cf9918e5f925c7ca9c51804f4289abf11151938"
   },
   "required_behavior": [
     "channels is an array; text work only when 'text' is present",

@@ -20,12 +20,12 @@ Sources of the shape (read in full during the S50-04 build, 2026-10-16):
     49-signature-funnel/intake/launch-questions.json,
     49-signature-funnel/scripts/launch_intake.py, and
     49-signature-funnel/scripts/validate_launch_plan.py.
-  - The approval discipline replicates doc 03 section 9 as S49 implemented
-    it in validate_launch_plan.py (_check_approval_record), with ONE
-    deliberate difference: no default 72 hour expiry. The adapter is a
-    downstream consumer verifying the approval binding (hash, identity,
-    scope, revocation); freshness at build time is the S49 gate's own check,
-    made when the approval was recorded. Future-dated records are refused.
+  - The approval gate is the SAME one S49 uses (ENF-01): the record is
+    checked by shared-utils/signature_launch_contract/approval_record.verify
+    (Command Center record for a live plan; a local record only when the
+    launch itself is test_only). Kind, scope, plan hash, client identity,
+    revocation and expiry are the verifier's checks; this module adds only
+    the worker self-approval refusal.
 
 Deterministic, stdlib only. Nothing in this module approves anything: it
 verifies records that already exist.
@@ -34,14 +34,19 @@ verifies records that already exist.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
-from datetime import datetime, timezone
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 # ---------------------------------------------------------------------------
 # Vocabulary (S49 launch.schema.json + doc 03 field states)
 # ---------------------------------------------------------------------------
-LAUNCH_SCHEMA_VERSION = "1.0"
+# S49 validate_launch accepts 1.0, 1.1 (prompt_policy_id) and 1.2
+# (delivery_bindings; what Skill 83 emits). The plan hash binds every field
+# but the two lifecycle fields, so all three versions hash identically.
+ACCEPTED_LAUNCH_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2")
 SESSION_SCHEMA = "signature-launch-intake/v1"
 APPROVAL_SCHEMA_VERSION = "1.0"
 PLAN_BUILD_APPROVAL_TYPE = "launch_plan_build"
@@ -92,83 +97,55 @@ def plan_document_hash(launch: Dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Approval gate (replicates S49 _check_approval_record for the plan gate)
+# Approval gate (the one verifier S49 uses: shared-utils approval_record.py)
 # ---------------------------------------------------------------------------
+_APPROVAL_RECORD = (Path(__file__).resolve().parents[2] / "shared-utils" /
+                    "signature_launch_contract" / "approval_record.py")
+
+
+def _approval_verifier():
+    """Load approval_record.py by path. Missing = fail closed."""
+    if not _APPROVAL_RECORD.is_file():
+        raise ShapeError("approval not verified against platform record: the "
+                         "approval verifier (approval_record.py) is not installed")
+    spec = importlib.util.spec_from_file_location("approval_record_s50",
+                                                  _APPROVAL_RECORD)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def check_plan_build_approval(launch: Dict[str, Any], approval: Any, *,
                               client_identity_ref: str,
                               worker_identity_ref: str = "",
                               now: Optional[datetime] = None) -> Dict[str, Any]:
-    """Verify the launch_plan_build approval binding for THIS launch record.
-
-    Checks, in order: record shape; schema version; type is
-    launch_plan_build; the scope list actually contains launch_plan_build
-    (a narrowed or emptied scope authorizes nothing); not revoked;
-    verification class recognized; subject_hash equals the recomputed plan
-    document hash; the approver is the launch's client identity; the
-    approver is not the worker operating the run; the record carries the
-    platform reference of the client's own response; recorded_at parses and
-    is not in the future. Raises ShapeError on any failure.
-    """
+    """Verify the launch_plan_build approval for THIS launch record through
+    approval_record.verify (same gate as S49 assert_plan_build_approved). A
+    live launch needs the Command Center record (only approval_id is used);
+    a test_only launch may use the local record. Raises ShapeError."""
     if not isinstance(approval, dict):
         raise ShapeError("approval record is not an object")
-    for f in ("schema_version", "approval_id", "subject_type", "subject_hash",
-              "owner_identity_ref", "source_message_ref", "recorded_at",
-              "scope", "revoked", "verification_class"):
-        if f not in approval:
-            raise ShapeError(f"approval record is missing field {f!r}")
-    if approval["schema_version"] != APPROVAL_SCHEMA_VERSION:
-        raise ShapeError("approval schema_version is not 1.0")
-    if approval["subject_type"] != PLAN_BUILD_APPROVAL_TYPE:
-        raise ShapeError(
-            f"approval type {approval['subject_type']!r} does not authorize "
-            f"{PLAN_BUILD_APPROVAL_TYPE!r} (approval types are separate)")
-    scope = approval["scope"]
-    if not isinstance(scope, list) or not scope \
-            or not all(isinstance(s, str) and s.strip() for s in scope) \
-            or PLAN_BUILD_APPROVAL_TYPE not in scope:
-        raise ShapeError(
-            f"approval scope {scope!r} does not cover "
-            f"{PLAN_BUILD_APPROVAL_TYPE!r}: a narrowed, emptied, or foreign "
-            "scope authorizes nothing")
-    if approval["revoked"] is not False:
-        raise ShapeError("approval has been revoked")
-    if approval["verification_class"] not in VERIFICATION_CLASSES:
-        raise ShapeError("approval verification_class is not recognized")
-    expected_hash = plan_document_hash(launch)
-    if approval["subject_hash"] != expected_hash:
-        raise ShapeError(
-            "approval subject_hash does not match the current plan: the "
-            "plan changed after approval (or this approval belongs to "
-            "another plan)")
-    owner = approval["owner_identity_ref"]
-    if not isinstance(owner, str) or not owner.strip():
-        raise ShapeError("approval names no owner identity")
-    if owner != client_identity_ref:
-        raise ShapeError(
-            "the approver is not this launch's client identity: an "
-            "unrelated identity cannot approve another launch")
-    if worker_identity_ref and owner == worker_identity_ref:
+    if not isinstance(client_identity_ref, str) or not client_identity_ref.strip():
+        raise ShapeError("approval names no client identity")
+    if worker_identity_ref and client_identity_ref == worker_identity_ref:
         raise ShapeError(
             "the worker operating the run cannot approve its own work "
             "(self-approval is refused)")
-    if not isinstance(approval["source_message_ref"], str) \
-            or not approval["source_message_ref"].strip():
-        raise ShapeError(
-            "approval carries no platform reference to the client's own "
-            "response: recorded consent requires the owner's actual message")
+    test_only = isinstance(launch, dict) and launch.get("test_only") is True
+    expected_hash = plan_document_hash(launch)
+    ver = _approval_verifier()
     try:
-        recorded = datetime.fromisoformat(
-            str(approval["recorded_at"]).replace("Z", "+00:00"))
-    except ValueError:
-        raise ShapeError("approval recorded_at is not a valid timestamp")
-    if recorded.tzinfo is None:
-        recorded = recorded.replace(tzinfo=timezone.utc)
-    now = now or datetime.now(timezone.utc)
-    if recorded > now:
-        raise ShapeError("approval recorded_at is in the future")
-    return {"ok": True, "approval_id": approval["approval_id"],
+        out = ver.verify(approval.get("approval_id"), PLAN_BUILD_APPROVAL_TYPE,
+                         expected_hash, [PLAN_BUILD_APPROVAL_TYPE],
+                         client_identity=client_identity_ref, test_only=test_only,
+                         record=approval if test_only else None, now=now)
+    except (ver.ApprovalRefused, ver.ApprovalUnavailable) as exc:
+        raise ShapeError(
+            f"approval not verified against platform record: {exc}") from exc
+    return {"ok": True, "approval_id": out["approval_id"],
             "subject_hash": expected_hash,
-            "verification_class": approval["verification_class"]}
+            "verification_class": "authenticated_platform_record"
+            if out["authority"] == "command-center" else "local_test_record"}
 
 
 # ---------------------------------------------------------------------------

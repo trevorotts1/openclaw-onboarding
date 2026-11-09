@@ -380,7 +380,8 @@ class TestScopedRefusal(_Base):
         self.consent.refuse(TENANT, self.contact, scope_kind=SCOPE_TOPIC,
                             scope_value="pricing")
         self.consent.grant(TENANT, self.contact, scope_kind=SCOPE_CHANNEL,
-                           scope_value="sms")
+                           scope_value="sms", actor="jill",
+                           reason="customer asked us to text again")
         self.assertTrue(self.consent.decide(TENANT, self.contact, channel="sms")["allowed"])
         self.assertFalse(self.consent.decide(
             TENANT, self.contact, channel="sms", topic="pricing")["allowed"])
@@ -668,7 +669,8 @@ class TestFreshGateAtDispatch(_Base):
                                       expect_sent=False)
         self.assertEqual(blocked.status, ST_BLOCKED)
         self.assertEqual(row["state"], STATE_SUPPRESSED)
-        self.consent.lift_global_stop(TENANT, self.contact)
+        self.consent.lift_global_stop(TENANT, self.contact, actor="jill",
+                                      reason="customer asked to resume")
         again, row2 = self._dispatch(action_id, context={"channel": "sms"},
                                      expect_sent=False)
         self.assertNotEqual(again.status, ST_SENT)

@@ -1,10 +1,13 @@
 """Entitlement declaration + fail-closed attestation gate.
 
 The skill CARRIES the access rules as a declaration file; the run must carry an
-attestation that names which rule applies. Nothing here charges, creates an
-entitlement, reads a purchase from a platform, or calls a billing API. Unknown
-entitlement state fails closed: a missing, unknown or unqualified basis never
-builds.
+attestation that names which rule applies, and the attestation is VERIFIED against
+a source the worker cannot write: the client's own GHL contact record (tags) and,
+for a purchase, the GHL order, both read through a GET-only transport
+(shared-utils/ghl/contact_membership.py). evidence_ref is the contact id,
+purchase_reference is the order id; a free-text string that does not resolve
+there is refused. Nothing here charges, creates an entitlement or calls a billing
+API. Unknown entitlement state, or no way to read the record, fails closed.
 
 The owner's rules, exactly:
 
@@ -15,20 +18,23 @@ The owner's rules, exactly:
   ZHC with Brand Management            qualifies, no new $497 purchase
 
 A membership is not a purchase event, so a membership attestation never needs a
-purchase reference. The declared price is the owner's stated fact, not a
+purchase reference. A purchase attestation must state the amount. The declared price is the owner's stated fact, not a
 default: a purchase attestation that declares a different amount is refused.
 """
 
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
 from .constants import (
     ENTITLEMENT_BASES,
     ENTITLEMENT_DECLARATION,
+    REPO_ROOT,
 )
 
 # basis -> (qualifies, requires_purchase). A silent edit to the declaration is
@@ -44,6 +50,44 @@ EXPECTED_RULES = {
 ATTESTATION_KEYS = ("basis", "evidence_ref", "attested_by",
                     "purchase_reference", "amount_minor", "currency")
 REQUIRED_ATTESTATION_KEYS = ("basis", "evidence_ref", "attested_by")
+
+# What every result says about its own evidence: read back from the client's GHL
+# contact record through a GET-only transport, never a string the caller wrote.
+EVIDENCE_KIND = "ghl_contact_readback"
+ATTESTATION_BOUNDARY = (
+    "Verified by read-only GHL lookup: evidence_ref resolved to the client's contact "
+    "record and its tags carry the declared membership tag(s); a purchase basis also "
+    "resolved purchase_reference to a paid order on that contact at the declared "
+    "price. attested_by is recorded, never trusted. No billing API is called."
+)
+
+# The only interview answer that counts as 'included'. Exact match, no prefix.
+INCLUDED_CHOICE = "Yes, it is included"
+
+_CM_NAME = "ghl_contact_membership"
+# Test/orchestrator seam: a transport set here is used instead of the live env one.
+_transport: Any = None
+
+
+def set_transport(transport: Any) -> None:
+    """Use this read-only transport for lookups (None restores the live default)."""
+    global _transport
+    _transport = transport
+
+
+def _membership_module():
+    """Load shared-utils/ghl/contact_membership.py once (stdlib only, by path)."""
+    mod = sys.modules.get(_CM_NAME)
+    if mod is None:
+        path = REPO_ROOT / "shared-utils" / "ghl" / "contact_membership.py"
+        if not path.is_file():
+            _fail("AF-LAUNCH-ENTITLEMENT-UNVERIFIED", "contact_membership",
+                  "the read-only GHL lookup is not present; entitlement cannot be verified")
+        spec = importlib.util.spec_from_file_location(_CM_NAME, path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[_CM_NAME] = mod
+        spec.loader.exec_module(mod)
+    return mod
 
 
 class EntitlementError(Exception):
@@ -119,6 +163,24 @@ def load_declaration() -> Dict[str, Any]:
             _fail("AF-LAUNCH-ENTITLEMENT-DECLARATION", f"rules.{basis}",
                   f"declared {flags}, the owner decided {EXPECTED_RULES[basis]}")
         seen[basis] = rule
+    tags = declaration.get("membership_tags")
+    if not isinstance(tags, dict):
+        _fail("AF-LAUNCH-ENTITLEMENT-DECLARATION", "membership_tags",
+              "the GHL tag(s) that prove each membership basis must be declared")
+    for basis, (qualifies, requires_purchase) in EXPECTED_RULES.items():
+        if qualifies and not requires_purchase:
+            names = tags.get(basis)
+            if (not isinstance(names, list) or not names
+                    or not all(_nonempty(n) for n in names)):
+                _fail("AF-LAUNCH-ENTITLEMENT-DECLARATION", f"membership_tags.{basis}",
+                      "must be a non-empty list of tag names")
+    verification = declaration.get("verification")
+    if (not isinstance(verification, dict) or verification.get("read_only") is not True
+            or verification.get("interview_choice") != INCLUDED_CHOICE
+            or not isinstance(verification.get("order_paid_statuses"), list)
+            or not verification["order_paid_statuses"]):
+        _fail("AF-LAUNCH-ENTITLEMENT-DECLARATION", "verification",
+              "must declare a read-only lookup, the exact interview choice and paid order statuses")
     missing = set(EXPECTED_RULES) - set(seen)
     if missing:
         _fail("AF-LAUNCH-ENTITLEMENT-DECLARATION", "rules",
@@ -137,8 +199,51 @@ def _nonempty(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def attest(attestation: Any) -> Dict[str, Any]:
-    """Verify one attestation against the carried declaration. Fail-closed."""
+def _verify(declaration: Dict[str, Any], rule: Dict[str, Any], basis: str,
+            evidence_ref: str, purchase_ref: Any, transport: Any) -> None:
+    """Resolve the attestation in the client's GHL record. Raises on any miss."""
+    cm = _membership_module()
+    if transport is None:
+        transport = _transport
+    if transport is None:
+        try:
+            transport = cm.LiveReadTransport.from_env()
+        except cm.LookupFailed as exc:
+            _fail("AF-LAUNCH-ENTITLEMENT-UNVERIFIED", "entitlement_attestation",
+                  f"no way to read the contact record: {exc.detail}")
+    try:
+        tags = cm.contact_tags(transport, evidence_ref)
+        order = (cm.order_record(transport, purchase_ref.strip())
+                 if rule["requires_purchase"] else None)
+    except cm.LookupFailed as exc:
+        code = ("AF-LAUNCH-ENTITLEMENT-EVIDENCE-UNRESOLVED" if exc.kind == "unresolved"
+                else "AF-LAUNCH-ENTITLEMENT-UNVERIFIED")
+        _fail(code, "entitlement_attestation.evidence_ref", exc.detail)
+    if not rule["requires_purchase"]:
+        needed = [n.strip().lower() for n in declaration["membership_tags"][basis]]
+        absent = [n for n in needed if n not in tags]
+        if absent:
+            _fail("AF-LAUNCH-ENTITLEMENT-NOT-MEMBER", "entitlement_attestation.evidence_ref",
+                  f"the contact record does not carry the declared tag(s) {absent!r}")
+        return
+    declared = declaration["purchase_price"]
+    if order["contact_id"] != evidence_ref:
+        _fail("AF-LAUNCH-ENTITLEMENT-PURCHASE-UNVERIFIED",
+              "entitlement_attestation.purchase_reference",
+              "the order does not belong to the evidence_ref contact")
+    if order["status"] not in declaration["verification"]["order_paid_statuses"]:
+        _fail("AF-LAUNCH-ENTITLEMENT-PURCHASE-UNVERIFIED",
+              "entitlement_attestation.purchase_reference",
+              f"order status {order['status']!r} is not a paid status")
+    if (order["amount_minor"] != declared["amount_minor"]
+            or order["currency"] != declared["currency"]):
+        _fail("AF-LAUNCH-ENTITLEMENT-PRICE-CONTRADICTION",
+              "entitlement_attestation.purchase_reference",
+              "the order amount/currency does not match the owner-stated price")
+
+
+def attest(attestation: Any, transport: Any = None) -> Dict[str, Any]:
+    """Verify one attestation against the declaration AND the client's GHL record."""
     declaration = load_declaration()
     if not isinstance(attestation, dict):
         _fail("AF-LAUNCH-ENTITLEMENT-ATTESTATION", "entitlement_attestation",
@@ -170,26 +275,27 @@ def attest(attestation: Any) -> Dict[str, Any]:
                   "entitlement_attestation.purchase_reference",
                   f"{basis!r} requires a purchase reference")
         declared = declaration["purchase_price"]
-        if amount is not None:
-            if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
-                _fail("AF-LAUNCH-ENTITLEMENT-ATTESTATION",
-                      "entitlement_attestation.amount_minor",
-                      "must be a positive integer in minor units")
-            if amount != declared["amount_minor"]:
-                _fail("AF-LAUNCH-ENTITLEMENT-PRICE-CONTRADICTION",
-                      "entitlement_attestation.amount_minor",
-                      f"{amount} contradicts the owner-stated "
-                      f"{declared['amount_minor']}")
-            if currency is not None and currency != declared["currency"]:
-                _fail("AF-LAUNCH-ENTITLEMENT-PRICE-CONTRADICTION",
-                      "entitlement_attestation.currency",
-                      f"{currency!r} contradicts the owner-stated "
-                      f"{declared['currency']!r}")
+        if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
+            _fail("AF-LAUNCH-ENTITLEMENT-ATTESTATION",
+                  "entitlement_attestation.amount_minor",
+                  f"{basis!r} requires the amount as a positive integer in minor units")
+        if amount != declared["amount_minor"]:
+            _fail("AF-LAUNCH-ENTITLEMENT-PRICE-CONTRADICTION",
+                  "entitlement_attestation.amount_minor",
+                  f"{amount} contradicts the owner-stated "
+                  f"{declared['amount_minor']}")
+        if currency is not None and currency != declared["currency"]:
+            _fail("AF-LAUNCH-ENTITLEMENT-PRICE-CONTRADICTION",
+                  "entitlement_attestation.currency",
+                  f"{currency!r} contradicts the owner-stated "
+                  f"{declared['currency']!r}")
     elif purchase_ref is not None:
         _fail("AF-LAUNCH-ENTITLEMENT-ATTESTATION",
               "entitlement_attestation.purchase_reference",
               f"{basis!r} qualifies without a purchase; a membership is not a "
               "purchase event")
+    _verify(declaration, rule, basis, attestation["evidence_ref"].strip(),
+            purchase_ref, transport)
     return {
         "basis": basis,
         "qualifies": True,
@@ -200,10 +306,25 @@ def attest(attestation: Any) -> Dict[str, Any]:
         "amount_minor": amount,
         "currency": currency,
         "billing": "none",
+        "evidence_kind": EVIDENCE_KIND,
+        "proves_purchase": bool(rule["requires_purchase"]),
+        "attestation_boundary": ATTESTATION_BOUNDARY,
         "declaration": declaration_record(),
     }
 
 
-def gate(attestation: Any) -> Dict[str, Any]:
-    """The single build gate. Refuses every state the declaration cannot prove."""
-    return attest(attestation)
+def gate(attestation: Any, transport: Any = None) -> Dict[str, Any]:
+    """The single build gate. Refuses every state the GHL record cannot prove."""
+    return attest(attestation, transport)
+
+
+def attest_from_interview(answer: Any, attestation: Any,
+                          transport: Any = None) -> Dict[str, Any]:
+    """Interview path: only the exact choice counts, and it still needs the lookup.
+
+    'yes whatever', 'Yes', a prefix or a case change is never recorded as attested.
+    """
+    if answer != INCLUDED_CHOICE:
+        _fail("AF-LAUNCH-ENTITLEMENT-INTERVIEW-CHOICE", "entitlement_interview",
+              f"the only accepted answer is exactly {INCLUDED_CHOICE!r}")
+    return gate(attestation, transport)

@@ -1,4 +1,6 @@
 {
+  "schema_version": "2.0.0",
+  "kind": "sequence_stack",
   "id": "application-homework-booking-nurture",
   "name": "Application → Homework / Bonding → Booking → Show-Up Nurture",
   "aliases": [
@@ -27,7 +29,10 @@
       "Showed up vs no-show / cancelled"
     ]
   },
-  "channels": ["Email", "SMS"],
+  "channels": [
+    "Email",
+    "SMS"
+  ],
   "sequence": [
     {
       "phase": "A. Homework / bonding (thank-you page + emails)",
@@ -102,14 +107,30 @@
       "C2. Wait 1 day -> second rebook nudge; after N misses -> tag `app-persistent-noshow` -> downsell/nurture"
     ],
     "goal_event": "Call completed / sale -> exit nurture; route to onboarding or post-call close.",
-    "wait_steps": ["4 hr", "1 day", "1 day", "until 1-day-before", "until 1-hour-before", "1-2 hr post-miss", "1 day"],
+    "wait_steps": [
+      "4 hr",
+      "1 day",
+      "1 day",
+      "until 1-day-before",
+      "until 1-hour-before",
+      "1-2 hr post-miss",
+      "1 day"
+    ],
     "if_else_branches": [
       "qualified vs disqualified (application fields)",
       "booked vs unbooked (Appointment Status)",
       "showed vs no-show/cancelled",
       "persistent no-show -> downsell"
     ],
-    "tags_used": ["application-submitted", "app-qualified", "app-disqualified", "call-booked", "call-showed", "call-noshow", "app-persistent-noshow"],
+    "tags_used": [
+      "application-submitted",
+      "app-qualified",
+      "app-disqualified",
+      "call-booked",
+      "call-showed",
+      "call-noshow",
+      "app-persistent-noshow"
+    ],
     "notes": "Cleanest as 3 linked GHL workflows: (1) application -> homework + booking push, (2) Appointment Booked -> show-up nurture, (3) Appointment No-Show/Cancelled -> rebook. caf builds each; the GHL native calendar provides Booked/No-Show/Cancelled triggers (no custom webhook needed)."
   },
   "source": {

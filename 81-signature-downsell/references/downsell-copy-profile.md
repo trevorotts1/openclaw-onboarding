@@ -1,6 +1,6 @@
 # Downsell Copy Profile - Skill 81 (Signature Downsell, D1)
 
-Status: build candidate, S81 room. Not installed, not merged.
+Status: design package reference. Design only; not installed: no native D1 install exists until the scheduled Skill 06 work items (S06-02, UPS-08) ship and record a read-back.
 Governing sources: packet 11_SKILL_81_DOWNSELL_SPEC.md sections 2 and 5; packet 20_OWNER_SOURCE_MATERIAL.md (owner corpus, preserved verbatim, never edited); packet 02 section 4 route law; packet 16 section 3 (page-specific copy contracts).
 
 ## Derivation (owner method, preserved exactly)

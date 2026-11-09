@@ -294,6 +294,7 @@ class TestExpiredAuthHonestFailure:
                                  "detail": "browser auth expired"},
              "api": lambda: {"ok": False, "code": "AUTH-STOP",
                              "detail": "refresh token rejected"}},
+            operation="surveys.authoring",
             receipt_path=receipt_path, expected_location_id=LOC_A)
         assert result.ok is False
         assert result.decision == "PARKED"

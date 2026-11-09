@@ -50,8 +50,8 @@ via `anthology-chapter-author`, invoked as a local subprocess through
   chapter count refused; confirm-name mismatch refused; double-fire a no-op).
 - The compiled manuscript is byte-identical per chapter to the FROZEN, approved
   source; the editor's introduction draws ONLY from producer-supplied inputs.
-- Every resolved model id (S7 cover prompt, S9 editor voice) is NON-Anthropic —
-  the client's own configured providers only.
+- Every resolved model id (S7 cover prompt, S9 editor voice) is from the client's
+  own configured providers only.
 
 ## Provider rule (binding)
 Client box → the client's OWN configured providers and keys, resolved per box
@@ -60,7 +60,4 @@ client selected for each tier, in the order the client configured them, or the
 client's configured default model where a tier has no selection. If a tier has
 no selected or default model, stop and ask the client which model to use. (The
 client's own Kie.ai key serves S7.)
-Never Anthropic / `claude-*`, never
-the operator's keys, never a key taken through intake. `model_router.py` deny
-patterns refuse Anthropic-family identifiers at call time; `guard-no-anthropic-
-runtime.py` refuses them statically over every shipped file this role touches.
+Never the operator's keys, never a key taken through intake.

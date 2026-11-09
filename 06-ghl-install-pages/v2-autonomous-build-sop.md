@@ -187,11 +187,37 @@ backlog -> dispatched -> building -> verified | FAILED
   `website/ledger.json`, `images/manifest.json`, `ecosystem/*.json`, and
   `logs/{funnel,website}-preview.log` **as it goes** (so even a crash leaves
   evidence).
-- `verified`: the canonical verifier (§7) ran and `overall_pass` is recorded
-  (true OR false — a false is reported honestly, never massaged).
-- `FAILED`: the wall-clock cap hit, or a step refused (e.g. sub-account
-  MISMATCH); the partial evidence + the failure reason are written. **Never**
-  leave a task hung — a hang is a `FAILED` with `reason="dispatch timeout"`.
+- `verified`: the canonical verifier (§7) ran live (`verify_all(live=True,
+  expected_location_id=<the task's location_id>)`), `ghl_gate.require_pass` re-read the
+  written scorecard and returned 0, and `overall_pass` is **True**. `dispatch_one` then
+  writes `build_receipt.json` (see "Return receipt" below) and, for a funnel job, emits the
+  P4→P5 board handoff event.
+- `FAILED`: the wall-clock cap hit, a step refused (e.g. sub-account MISMATCH), **or the
+  verdict is not an explicit `overall_pass: true`** (a failing page, a missing marker, a wrong
+  tenant). The record is `FAILED` and the board card goes to `blocked`, never `review`. The
+  partial evidence + the failure reason are written, and the failing verdict itself stays in
+  `scorecard/verify-summary.json` (reported honestly, never massaged). **Never** leave a task
+  hung — a hang is a `FAILED` with `reason="dispatch timeout"`.
+- `waiting_on_dependency`: a held gate — the capability receipt is stale, copy is not APPROVED,
+  the persona bundle is unconfirmed, or a funnel job has no `routing/p2-gate.json` approval
+  record (see "P2 gate receipt" under P2). The builder never runs while held.
+
+**STEP 0a — engine selector (`tools/funnel_engine_selector.py`).** `dispatch_one` runs
+`step0_select_engine` BEFORE the template matcher (skipped for declared `survey`/`quiz`/`form`
+jobs). It scores the request (and a declared `launch_mode`) against `funnel-engines/registry.json`:
+a Black Friday / launch request routes to **Skill 83 `black-friday-launcher`** (priority 12, above
+Skill 56 and Skill 49); `signature funnel` still routes to 49 and a direct-response / order-bump-copy
+request to 56. A `ROUTE_TO_ENGINE` result writes `routing/match-decision.json` (+
+`routing/funnel-engine-match.json`), stamps `task['funnel_engine*']`, and the template matcher is
+skipped so it cannot overwrite that receipt. `NO_ENGINE_MATCH` falls through to the template matcher.
+
+**Return receipt (`build_receipt.json`).** On `verified`, `dispatch_one` writes
+`<evidence_root>/build_receipt.json` — the return contract Skill 49 / 83 consume: `funnel_type`,
+`qc_score` (from the FAB-QC score; `null` when FAB-QC did not run), and `pages[{page_type,
+preview_url, verified}]` (page_type from the build's route node, preview_url from the verify raw
+record), plus the `verify_summary_path` and `run_nonce`. It is a pointer, not the verdict: a
+consumer must re-run `ghl_gate.require_pass(<evidence_root>)`; an agent-written receipt with no
+passing on-disk scorecard does not count.
 
 **Raise the gateway build-turn timeout** for the dept agent (the prior V2 timed
 out at tool-discovery). The build turn needs headroom for: seed+activate, GHL
@@ -327,6 +353,18 @@ APPROVED). The dept agent MUST:
 4. **Proceed to S2 (the canonical build recipe below).** All three pre-flight
    gates (P0, P1, P2) must show `true` in their gate receipts before the first
    GHL autosave call.
+
+**P2 gate receipt (enforced, not prose).** For a board job whose declared `job_type` is a funnel
+type (`funnel`, `sales-funnel`, `opt-in`, `multistep`) and whose copy is not client-supplied
+(`has_copy` is not an affirmative / "I have copy" answer), `dispatch_one` requires
+`routing/p2-gate.json` BEFORE any builder runs. It must be an approval record:
+`{"approved": true, "approval_ref": "<non-empty approval reference>"}` (`copy_status:
+"APPROVED"` also satisfies the approved flag). Missing, unreadable, unapproved, or no
+`approval_ref` returns `waiting_on_dependency` and the builder is never invoked — funnel copy is
+never improvised at build time. On `verified`, `dispatch_one` also emits the P4→P5 board handoff
+event (`{from_dept: "web-development", to_dept: "crm", artifact, job_id}`) through
+`cc_board.post_handoff_event` and records it in `routing/board-handoff.json` (delivery is
+fail-soft; the receipt is always written).
 
 ---
 

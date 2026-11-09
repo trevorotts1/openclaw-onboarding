@@ -22,7 +22,7 @@
 #                         ENGINE-PIN.sha256 is present the hash MUST match
 #                         (exit 7, AF-BK-HASH-PIN). SKIPPED under --plan.
 #   4. PREFLIGHT        — when preflight.sh exists it probes the client's OWN
-#                         providers (never Anthropic) and resolves every REQUIRED
+#                         providers and resolves every REQUIRED
 #                         tier; any failure exits 7 (BW_PREFLIGHT_UNCONFIGURED).
 #
 # THE ONLY PATH:  bash book-writer-entry.sh --run-dir DIR [--plan]
@@ -128,14 +128,14 @@ fi
 # ===========================================================================
 PREFLIGHT="$SELF_DIR/preflight.sh"
 if [ -f "$PREFLIGHT" ]; then
-    note "GATE 4/4 — PREFLIGHT (client provider tiers; never Anthropic)"
+    note "GATE 4/4 — PREFLIGHT (client provider tiers)"
     bash "$PREFLIGHT" --run-dir "$RUN_DIR"
     PREF_RC=$?
     if [ "$PREF_RC" -ne 0 ]; then
-        echo "PREFLIGHT FAILED (rc=$PREF_RC) — a REQUIRED tier is unresolved or resolves to an Anthropic id." >&2
+        echo "PREFLIGHT FAILED (rc=$PREF_RC) — a REQUIRED tier is unresolved." >&2
         exit 7
     fi
-    echo "  OK: every REQUIRED tier resolved to a non-Anthropic client model"
+    echo "  OK: every REQUIRED tier resolved to a client model"
 fi
 
 note "ALL GATES PASSED — dispatching run_book_writer.py"

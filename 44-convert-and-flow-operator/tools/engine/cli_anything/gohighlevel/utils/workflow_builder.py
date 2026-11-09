@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import threading
 import time
 import uuid
@@ -23,6 +24,7 @@ from cli_anything.gohighlevel.utils.ghl_internal_client import InternalGHLClient
 from cli_anything.gohighlevel.utils.safety_gate import draft_only_active_flag
 from cli_anything.gohighlevel.utils.write_lock import WriteLock
 from cli_anything.gohighlevel.utils.workflow_timing import plan_timing
+from cli_anything.gohighlevel.utils.workflow_identity import plan_identity_refusals
 
 # ── Parallel-build worker cap ────────────────────────────────────────────────
 # Lowered from the original hard-coded 10 to reduce burst pressure on the shared
@@ -477,17 +479,197 @@ def normalize_action_ids(templates: list[dict], location_id: str) -> list[dict]:
 
 # ── Step Linker ───────────────────────────────────────────────────────────
 
-def link_steps(steps: list[dict]) -> list[dict]:
-    """Auto-link steps with next/parentKey and set order."""
-    linked = []
-    for i, step in enumerate(steps):
-        step = {**step}
+BRANCH_TYPES = frozenset({"if_else", "workflow_split", "goto", "transition"})
+
+
+def link_steps(steps: list[dict]) -> tuple[list[dict], list[str]]:
+    """Link steps without chaining sibling branch bodies together.
+
+    Returns (linked_steps, unlinked_branch_node_ids).
+    """
+    linked, unlinked = [], []
+
+    # Pass 1: preserve input order and existing parentKey inference rules.
+    for i, raw in enumerate(steps):
+        step = {**raw}
         step["order"] = i
-        step["parentKey"] = linked[i - 1]["id"] if i > 0 else None
-        if i < len(steps) - 1:
-            step["next"] = steps[i + 1]["id"]
+        authored_next = raw.get("next")
+        authored_branches = raw.get("branches")
+
+        if raw.get("type") in BRANCH_TYPES:
+            step["parentKey"] = raw.get("parentKey")
+            if authored_next or authored_branches:
+                step["next"] = authored_next
+                if authored_branches:
+                    step["branches"] = authored_branches
+            else:
+                unlinked.append(step["id"])
+                step.pop("next", None)
+                step.pop("branches", None)
+            linked.append(step)
+            continue
+
+        step["parentKey"] = raw.get(
+            "parentKey", linked[i - 1]["id"] if i > 0 else None
+        )
+        # Authored next is handled in pass 2; inferred next must respect
+        # branch membership before it can be assigned.
+        step.pop("next", None)
         linked.append(step)
-    return linked
+
+    # Pass 2: determine each node's enclosing branch body.
+    parent_map = {step.get("id"): step.get("parentKey") for step in linked}
+    branch_members = {
+        step.get("id"): step["branches"]
+        for step in linked
+        if step.get("type") in BRANCH_TYPES
+        and isinstance(step.get("branches"), dict)
+        and step["branches"]
+    }
+    by_id = {step.get("id"): step for step in linked}
+
+    def membership(node_id):
+        path = []
+        seen = set()
+        current = node_id
+
+        while current is not None and current not in seen:
+            seen.add(current)
+            path.append(current)
+            current = parent_map.get(current)
+
+        for branch_id in path[1:]:
+            if branch_id not in branch_members:
+                continue
+
+            branch = branch_members[branch_id]
+            branch_index = path.index(branch_id)
+            for path_node in path[:branch_index]:
+                for branch_key, target_id in branch.items():
+                    if target_id == path_node:
+                        return branch_id, branch_key
+
+            # Nearest branch ancestor is malformed for this path.
+            return None
+
+        return None
+
+    memberships = {step.get("id"): membership(step.get("id")) for step in linked}
+
+    for i, (raw, step) in enumerate(zip(steps, linked)):
+        if raw.get("type") in BRANCH_TYPES:
+            # Branch nodes keep authored links only; never infer next.
+            if raw.get("next"):
+                step["next"] = raw.get("next")
+            else:
+                step.pop("next", None)
+            continue
+
+        if raw.get("next"):
+            # Authored joins always win.
+            step["next"] = raw.get("next")
+            continue
+
+        candidate = steps[i + 1].get("id") if i < len(steps) - 1 else None
+        if candidate is not None and memberships.get(step.get("id")) == memberships.get(candidate):
+            step["next"] = candidate
+        else:
+            step["next"] = None
+
+    return linked, unlinked
+
+
+DEPENDENCY_KINDS = (
+    "tags", "custom_fields", "custom_values", "calendars", "pipelines"
+)
+
+
+def collect_plan_dependencies(wf_def: dict) -> dict:
+    """Explicitly declared dependencies only; never inferred from step attributes.
+
+    Reads wf_def["dependencies"] (kind -> list). The workflow's trigger tag is
+    excluded because the build creates it.
+    """
+    deps = {kind: [] for kind in DEPENDENCY_KINDS}
+    declared = wf_def.get("dependencies") if isinstance(wf_def, dict) else None
+    if isinstance(declared, dict):
+        for kind in DEPENDENCY_KINDS:
+            values = declared.get(kind) or []
+            if isinstance(values, str):
+                values = [values]
+            for value in values:
+                if isinstance(value, str) and value.strip():
+                    name = value.strip()
+                    if name not in deps[kind]:
+                        deps[kind].append(name)
+    # The trigger tag is NOT a prerequisite: _create_workflow creates it with
+    # create_location_tag() before the trigger POST, so demanding it here would
+    # refuse every first-time tagged build. Only explicitly declared
+    # dependencies are pre-checked.
+    return deps
+
+
+DEPENDENCY_ENDPOINTS = {
+    "tags": "/workflow/{loc}/tags",
+    "custom_fields": "/workflow/{loc}/custom-fields",
+    "custom_values": "/workflow/{loc}/custom-values",
+    "calendars": "/workflow/{loc}/calendars",
+    "pipelines": "/workflow/{loc}/pipelines",
+}
+
+
+def precheck_dependencies(client, location_id: str, wf_def: dict) -> dict:
+    """GET-verify explicitly declared dependencies; never write or raise.
+
+    Only a positive existence read authorises a build. A failed or
+    unrecognisable GET is unverified, never treated as present, and always
+    refuses the build. There is deliberately no bypass flag: a bypass the plan
+    JSON could set is not an approval, it is the gated thing unlocking itself.
+    ponytail: no create-missing rail yet; if one is added it must take an
+    operator flag threaded from the CLI, never a key inside the plan.
+    """
+    present, missing, unverified = [], [], []
+
+    def collect_names(value, names):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key in ("name", "id", "title", "key") and isinstance(item, str):
+                    names.add(item)
+                collect_names(item, names)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                collect_names(item, names)
+
+    for kind, declared_names in collect_plan_dependencies(wf_def).items():
+        if not declared_names:
+            continue
+        try:
+            response = client.request(
+                "GET", DEPENDENCY_ENDPOINTS[kind].format(loc=location_id)
+            )
+        except Exception:
+            response = None
+
+        if not response or (
+            isinstance(response, dict) and response.get("_error")
+        ):
+            unverified.extend(
+                {"kind": kind, "name": name} for name in declared_names
+            )
+            continue
+
+        names = set()
+        collect_names(response, names)
+        for name in declared_names:
+            item = {"kind": kind, "name": name}
+            (present if name in names else missing).append(item)
+
+    return {
+        "present": present,
+        "missing": missing,
+        "unverified": unverified,
+        "refused": list(unverified) + list(missing),
+    }
 
 
 # ── Validation ────────────────────────────────────────────────────────────
@@ -582,8 +764,14 @@ def _sha256(value: Any) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
 
 
-def _graph_projection(templates: list) -> list:
-    """Identity-bearing projection of a step graph (layout/meta excluded)."""
+def _graph_projection(templates: list, trigger_target: str = None) -> list:
+    """Identity-bearing projection of a step graph (layout/meta excluded).
+
+    Includes branch edges, and - only when a trigger target is supplied -
+    the trigger entrance, so a hash can detect an unwired conditional or a
+    dropped trigger link. Callers that do not read the trigger back pass
+    nothing and keep the historical hash.
+    """
     projection = []
     for step in templates or []:
         if not isinstance(step, dict):
@@ -596,14 +784,17 @@ def _graph_projection(templates: list) -> list:
             "order": step.get("order"),
             "parentKey": step.get("parentKey"),
             "next": step.get("next"),
+            "branches": step.get("branches"),
             "attributes": step.get("attributes"),
         })
+    if trigger_target is not None:
+        projection.append({"__trigger__": {"targetActionId": trigger_target}})
     return projection
 
 
-def graph_hash(templates: list) -> str:
+def graph_hash(templates: list, trigger_target: str = None) -> str:
     """Deterministic hash of the saved execution graph."""
-    return _sha256(_graph_projection(templates))
+    return _sha256(_graph_projection(templates, trigger_target))
 
 
 def _rule_names(lifecycle: Mapping[str, Any], key: str) -> set:
@@ -670,10 +861,13 @@ def compile_guard_conditions(*, promotional: bool, close_at: Optional[str] = Non
 
 def compile_settings(*, sender: Mapping[str, Any], lifecycle: Mapping[str, Any],
                      phase: Optional[str], close_at: Optional[str],
-                     promotional: bool) -> dict:
+                     promotional: bool,
+                     allow_reentry: Optional[bool] = None) -> dict:
     settings: dict[str, Any] = {
         "phase": phase,
-        "marketing": not promotional,
+        # F05: the marketing flag is the promotional flag itself, never its
+        # negation (999 carried `not promotional`, which inverted every send).
+        "marketing": bool(promotional),
         "suppression": {
             "stopOnUnsubscribe": True,
             "stopOnVerifiedPurchase": bool(promotional),
@@ -690,6 +884,15 @@ def compile_settings(*, sender: Mapping[str, Any], lifecycle: Mapping[str, Any],
         settings["replyToRef"] = reply_to
     if close_at:
         settings["closeAt"] = close_at
+    if isinstance(allow_reentry, bool):
+        # F05: the requested native Allow Reentry setting is APPLIED on the
+        # workflow settings object and read back after the save.  GHL's
+        # restriction (no reentry while the contact is still active) is the
+        # provider's; it is not modelled here.
+        # ponytail: the internal settings key is `allowReentry`; the readback
+        # accepts allowMultiple/reEntry/allow_reentry too, and an absent value
+        # stays unknown rather than being read as False.
+        settings["allowReentry"] = allow_reentry
     return settings
 
 
@@ -756,8 +959,18 @@ def _guarded_templates(templates: list, *, promotional: bool,
 
 
 def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optional[list] = None,
-                             depends_on: Optional[list] = None) -> dict:
-    """Compile ONE launch-c build entry into one or more provider workflow defs."""
+                             depends_on: Optional[list] = None,
+                             purchase_tag_set: bool = False,
+                             bindings: Optional[Mapping[str, Any]] = None) -> dict:
+    """Compile ONE launch-c build entry into one or more provider workflow defs.
+
+    Step compilation is delegated to ``launch_step_compiler.compile_installable``
+    — the one launch compiler — so the expanded template graph (tags, branches,
+    waits, SMS, goals, the short purchase handler and its browser ledger) is
+    reachable from the production command instead of being bypassed here.
+    """
+    from cli_anything.gohighlevel.utils.launch_step_compiler import compile_installable
+
     if not isinstance(build, Mapping):
         raise WorkflowCompileError("BUILD-SHAPE", "build entry is not an object")
     if build.get("draft_only") is not True:
@@ -772,8 +985,10 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
 
     workflows = build.get("workflows") or []
     if not workflows:
-        raise WorkflowCompileError("BUILD-NO-WORKFLOWS",
-                                   "build %r carries no workflows" % build.get("id"))
+        raise WorkflowCompileError(
+            NO_BUILDABLE_WORKFLOW,
+            "build %r is marked ready but carries no workflows" % build.get("id"),
+            detail={"unit_key": build.get("unit_key")})
     schedule = build.get("schedule") or {}
     sequences = schedule.get("sequences") or {}
     lifecycle = build.get("lifecycle") or {}
@@ -814,21 +1029,63 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
                 % (build.get("id"), workflow.get("key"), ", ".join(missing)),
                 detail={"unit_key": unit_key, "missing": missing})
 
-        templates = _guarded_templates(
-            workflow.get("steps") or [], promotional=promotional,
-            close_at=close_at,
-            schedule_by_id={node.get("step_id"): node
-                            for node in seq_schedule.get("nodes", [])
-                            if isinstance(node, Mapping) and node.get("step_id")})
+        installable = compile_installable(
+            workflow, build, seq_schedule=seq_schedule,
+            promotional=promotional, close_at=close_at,
+            bindings={**(bindings or {}), **(build.get("bindings") or {})},
+            purchase_tag_set=purchase_tag_set)
+        if installable["blocked_by"]:
+            raise WorkflowCompileError(
+                "BUILD-UNCOMPILABLE",
+                "build %r workflow %r cannot be compiled without guessing: %s"
+                % (build.get("id"), workflow.get("key"),
+                   ", ".join(installable["blocked_by"])),
+                detail={"unit_key": unit_key,
+                        "blocked_by": installable["blocked_by"]})
+        allow_reentry = build.get("allow_reentry")
+        if not isinstance(allow_reentry, bool):
+            allow_reentry = workflow.get("allow_multiple")
+        allow_enrollment = build.get("allow_enrollment")
+        if allow_enrollment not in ("single", "successive"):
+            allow_enrollment = None
+        # F05: an UNDECLARED setting is recorded insufficient, never defaulted.
+        # Applying a guessed reentry to a real workflow is the failure this
+        # record exists to prevent; a declared one is applied by
+        # CampaignBuilder and read back (stats["reentry"]).
+        reentry_record = {
+            "declared": allow_reentry if isinstance(allow_reentry, bool) else None,
+            "state": "declared" if isinstance(allow_reentry, bool) else "insufficient",
+            "reason": None if isinstance(allow_reentry, bool) else
+            "insufficient: the launch plan declares no automations[].settings.reentry",
+        }
+        enrollment_record = {
+            "declared": allow_enrollment,
+            "state": "declared" if allow_enrollment else "insufficient",
+            "applied": None,
+            "reason": None if allow_enrollment else
+            "insufficient: the launch plan declares no automations[].settings.enrollment",
+        }
+        if allow_enrollment:
+            # Recorded only: this rail has no verified native enrolment payload,
+            # so claiming it applied would be a guess.
+            enrollment_record["reason"] = (
+                "recorded from the launch plan; this rail has no verified native "
+                "enrolment payload, so it is not applied here")
         wf_key = "%s__%s" % (build.get("id"), workflow.get("key"))
+        # The trigger is the automation's approved one.  A contact-tag trigger
+        # carries the tag the builder creates; any other approved trigger has
+        # no verified payload and stays an owed native step (the builder then
+        # creates NO tag trigger rather than silently substituting one).
+        trigger = installable["trigger"]
+        trigger_tag = trigger.get("tag") if trigger.get("type") == "contact_tag" else None
         required = ["workflow_id", "steps_saved", "readback_verified"]
-        if workflow.get("tag"):
+        if trigger_tag:
             required.append("trigger_created")
         compiled[wf_key] = {
             "name": workflow.get("name"),
-            "tag": workflow.get("tag"),
+            "tag": trigger_tag,
             "status": "draft",
-            "templates": templates,
+            "templates": installable["steps"],
             "unit_key": "%s/%s" % (unit_key, workflow.get("key")),
             "source_unit": build.get("id"),
             "phase": seq_id or phase,
@@ -839,24 +1096,72 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
             "sender": dict(sender),
             "settings": compile_settings(
                 sender=sender, lifecycle=lifecycle, phase=seq_id or phase,
-                close_at=close_at, promotional=promotional),
-            "trigger_conditions": compile_trigger_conditions(
-                workflow.get("tag"), list(eligibility)),
+                close_at=close_at, promotional=promotional,
+                allow_reentry=allow_reentry if isinstance(allow_reentry, bool) else None),
+            # The requested reentry setting, applied above and read back after
+            # the save.  None (not declared, not observed) stays unknown.
+            "allow_reentry": allow_reentry if isinstance(allow_reentry, bool) else None,
+            "allow_enrollment": allow_enrollment,
+            "reentry": reentry_record,
+            "enrollment": enrollment_record,
+            "trigger": trigger,
+            "trigger_conditions": trigger.get("conditions") or [],
             "expected_source_hash": build.get("expected_graph_hash"),
             "depends_on": list(depends_on or []) + list(previous_keys),
             "external_depends_on": list(external_deps or []),
             "requires": required,
+            # F04/F05 result surfaces, read by CampaignBuilder.build and the
+            # CLI dry run: which compiler shape ran, what the browser ledger
+            # still owes, and which channel actions are not complete.
+            "compile_mode": installable["compile_mode"],
+            "template": installable.get("template"),
+            "browser_steps": installable["browser_steps"],
+            "channel_actions": installable["channel_actions"],
+            "incomplete_actions": installable["incomplete_actions"],
+            "purchase_identity": installable["purchase_identity"],
+            "compile_notes": installable["notes"],
         }
         previous_keys.append(wf_key)
     return compiled
 
 
-def compile_launch_builds(document: Mapping[str, Any], *, require_ready: bool = True) -> dict:
+NO_BUILDABLE_WORKFLOW = "no_buildable_workflow"
+
+
+class CompiledLaunch(dict):
+    """Campaign dict of the builds that compiled, plus ``refusals`` for the rest.
+
+    Each refusal is ``{"id", "unit_key", "state": "blocked", "code", "reason",
+    "detail"}``. ``CampaignBuilder.build`` reports every refusal as a build
+    error, so a partial campaign can never look like a clean one.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.refusals: list = []
+
+
+def _refusal(build: Any, exc: WorkflowCompileError) -> dict:
+    build = build if isinstance(build, Mapping) else {}
+    return {
+        "id": build.get("id"),
+        "unit_key": build.get("unit_key"),
+        "state": "blocked",
+        "code": exc.code,
+        "reason": exc.code if exc.code == NO_BUILDABLE_WORKFLOW else exc.message,
+        "detail": exc.detail,
+    }
+
+
+def compile_launch_builds(document: Mapping[str, Any], *, require_ready: bool = True) -> CompiledLaunch:
     """Compile a whole launch-c automation-build document into a campaign dict.
 
-    Refuses (WorkflowCompileError) on a blocked/invalid build, a missing
-    required output, or a missing suppression guard. Never sends and never
-    publishes.
+    Compiles PER BUILD: a blocked build, a zero-workflow build, a missing
+    required output or a missing suppression guard is recorded in
+    ``result.refusals`` and the remaining builds still compile; a build that
+    waits on a refused build is refused too. Only a document-level defect
+    (not an object, not draft_only, no builds list) raises. Never sends and
+    never publishes.
     """
     if not isinstance(document, Mapping):
         raise WorkflowCompileError("DOCUMENT-SHAPE", "automation-build document is not an object")
@@ -867,44 +1172,88 @@ def compile_launch_builds(document: Mapping[str, Any], *, require_ready: bool = 
     if not isinstance(builds, list):
         raise WorkflowCompileError("DOCUMENT-SHAPE", "builds must be a list")
 
-    campaign: dict[str, Any] = {}
+    campaign = CompiledLaunch()
+    refused_ids: set = set()
+    # The short post-sale handler is what sets the launch buyer tag the
+    # promotional purchase gate reads, so a ready post-sale build in this
+    # document is the precondition for installing that real gate.
+    purchase_tag_set = any(
+        isinstance(build, Mapping)
+        and build.get("family") == "post_sale"
+        and build.get("state") == "ready"
+        and not build.get("blocked_by")
+        for build in builds)
+    # Approved names only: the promotional tags this document actually carries
+    # are the ones a purchase handler may remove.  No name is invented here.
+    from cli_anything.gohighlevel.utils.launch_step_compiler import (
+        PROMO_FAMILIES,
+        VARIANT_BINDING,
+    )
+    document_bindings: dict = {}
+    promo_tags = sorted({
+        workflow.get("tag")
+        for build in builds if isinstance(build, Mapping)
+        and build.get("family") in PROMO_FAMILIES
+        for workflow in build.get("workflows") or []
+        if isinstance(workflow, Mapping) and workflow.get("tag")})
+    if promo_tags:
+        document_bindings["every launch promotional tag on the buyer"] = promo_tags
     for build in builds:
-        if not isinstance(build, Mapping):
-            raise WorkflowCompileError("BUILD-SHAPE", "build entry is not an object")
-        if require_ready and (build.get("state") != "ready" or build.get("blocked_by")):
-            raise WorkflowCompileError(
-                "BUILD-BLOCKED",
-                "build %r is blocked: %s" % (build.get("id"), build.get("blocked_by")),
-                detail={"unit_key": build.get("unit_key"),
-                        "blocked_by": build.get("blocked_by")})
-        required_outputs = build.get("required_outputs") or []
-        for output in required_outputs:
-            if output == "workflows" and not build.get("workflows"):
-                raise WorkflowCompileError("REQUIRED-OUTPUT-MISSING",
-                                           "build %r has no workflows" % build.get("id"))
-            if output == "schedule" and not (build.get("schedule") or {}).get("nodes"):
-                raise WorkflowCompileError("REQUIRED-OUTPUT-MISSING",
-                                           "build %r has no schedule nodes" % build.get("id"))
-            if output == "guards" and build.get("lifecycle") is None:
-                raise WorkflowCompileError("REQUIRED-OUTPUT-MISSING",
-                                           "build %r has no lifecycle guards" % build.get("id"))
+        try:
+            if not isinstance(build, Mapping):
+                raise WorkflowCompileError("BUILD-SHAPE", "build entry is not an object")
+            if require_ready and (build.get("state") != "ready" or build.get("blocked_by")):
+                raise WorkflowCompileError(
+                    "BUILD-BLOCKED",
+                    "build %r is blocked: %s" % (build.get("id"), build.get("blocked_by")),
+                    detail={"unit_key": build.get("unit_key"),
+                            "blocked_by": build.get("blocked_by")})
+            upstream = [dep for dep in build.get("depends_on") or [] if dep in refused_ids]
+            if upstream:
+                raise WorkflowCompileError(
+                    "BUILD-UPSTREAM-REFUSED",
+                    "build %r waits on refused build(s): %s" % (build.get("id"), upstream),
+                    detail={"unit_key": build.get("unit_key"), "upstream": upstream})
+            if not build.get("workflows"):
+                raise WorkflowCompileError(
+                    NO_BUILDABLE_WORKFLOW,
+                    "build %r carries no workflows" % build.get("id"),
+                    detail={"unit_key": build.get("unit_key")})
+            for output in build.get("required_outputs") or []:
+                if output == "schedule" and not (build.get("schedule") or {}).get("nodes"):
+                    raise WorkflowCompileError("REQUIRED-OUTPUT-MISSING",
+                                               "build %r has no schedule nodes" % build.get("id"))
+                if output == "guards" and build.get("lifecycle") is None:
+                    raise WorkflowCompileError("REQUIRED-OUTPUT-MISSING",
+                                               "build %r has no lifecycle guards" % build.get("id"))
 
-        # Provider-visible dependencies: the workflows bound to dependency
-        # email sequences. External unit dependencies were enforced by the
-        # plan reader (a missing page URL / text set / count blocks the build).
-        dependency_keys = []
-        for dep in build.get("depends_on") or []:
-            for candidate_key, wf_def in campaign.items():
-                if wf_def.get("source_unit") == dep:
-                    dependency_keys.append(candidate_key)
-        external = [dep for dep in (build.get("depends_on") or [])
-                    if not any(wf.get("source_unit") == dep for wf in campaign.values())]
-        compiled = compile_automation_build(
-            build, external_deps=external, depends_on=dependency_keys)
-        for key, wf_def in compiled.items():
-            if key in campaign:
-                raise WorkflowCompileError("DUPLICATE-WORKFLOW-KEY", key)
-            campaign[key] = wf_def
+            # Provider-visible dependencies: the workflows bound to dependency
+            # email sequences. External unit dependencies were enforced by the
+            # plan reader (a missing page URL / text set / count blocks the build).
+            dependency_keys = []
+            for dep in build.get("depends_on") or []:
+                for candidate_key, wf_def in campaign.items():
+                    if wf_def.get("source_unit") == dep:
+                        dependency_keys.append(candidate_key)
+            external = [dep for dep in (build.get("depends_on") or [])
+                        if not any(wf.get("source_unit") == dep for wf in campaign.values())]
+            build_bindings = dict(document_bindings)
+            if isinstance(build.get("variant_tag"), str) and build["variant_tag"].strip():
+                # Only an approved variant binding unlocks the short handler's
+                # variant tag; without it the handler stays on its sequence.
+                build_bindings[VARIANT_BINDING] = [build["variant_tag"].strip()]
+            compiled = compile_automation_build(
+                build, external_deps=external, depends_on=dependency_keys,
+                purchase_tag_set=purchase_tag_set, bindings=build_bindings)
+            clash = next((key for key in compiled if key in campaign), None)
+            if clash is not None:
+                raise WorkflowCompileError("DUPLICATE-WORKFLOW-KEY", clash)
+        except WorkflowCompileError as exc:
+            campaign.refusals.append(_refusal(build, exc))
+            if isinstance(build, Mapping):
+                refused_ids.add(build.get("id"))
+            continue
+        campaign.update(compiled)
     return campaign
 
 
@@ -985,6 +1334,36 @@ def _readback_templates(client: Any, location_id: str,
         return workflow_data["templates"]
     if isinstance(data.get("templates"), list):
         return data["templates"]
+    return None
+
+
+def _readback_settings(client: Any, location_id: str,
+                       workflow_id: str) -> Optional[dict]:
+    """The saved workflow's settings as the provider reports them, or None."""
+    try:
+        data = client.request("GET", "/workflow/%s/%s" % (location_id, workflow_id))
+    except Exception:  # noqa: BLE001 - an unreadable readback is an explicit unknown
+        return None
+    if not isinstance(data, dict) or data.get("_error"):
+        return None
+    settings = data.get("settings")
+    if isinstance(settings, dict):
+        return settings
+    workflow_data = data.get("workflowData")
+    if isinstance(workflow_data, dict) and isinstance(workflow_data.get("settings"), dict):
+        return workflow_data["settings"]
+    return None
+
+
+def _observed_reentry(settings: Optional[dict], source: Optional[dict] = None):
+    """Allow Reentry as observed, or None when the provider did not report it."""
+    for container in (settings, source):
+        if not isinstance(container, dict):
+            continue
+        for key in ("allowReentry", "allowMultiple", "reEntry", "allow_reentry"):
+            value = container.get(key)
+            if isinstance(value, bool):
+                return value
     return None
 
 
@@ -1184,6 +1563,134 @@ def _index_existing(
     return workflow_ids, folder_ids, workflow_parents
 
 
+# ── Browser-required work: capability selection (F04/F11 seam) ─────────────
+#
+# The launch compiler emits a ledger row for editor work no verified API
+# payload covers: a non-contact_tag trigger, an if_else condition it could
+# not parse, an absolute "wait until date" step.  Those rows are executed
+# through the SELECTED capability — Skill 6's managed browser lane, whose
+# attempt order is declared once in tools/fallback-ladder.json.  Selection
+# reads that declaration; it never assumes a browser is available, and it
+# never fabricates a rung.  With no executable rung the rows stay pending
+# with the exact reason on the record, because naming an action is not
+# performing it.
+BROWSER_LADDER_SURFACE = "page"
+_BROWSER_RUNG_CALLABLE = "run_workflow_step"
+
+
+def _skill6_tool(name: str):
+    """Load a Skill 6 tool module by file path, or None when it is absent.
+
+    Searched in order: $CAF_SKILL6_DIR, the repo/installed skills tree next to
+    this skill (both share the NN-<skill>/tools layout).
+    """
+    import importlib.util
+
+    module_name = "_caf_skill6_" + name
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    leaf = name + ".py"
+    candidates = []
+    override = os.environ.get("CAF_SKILL6_DIR", "").strip()
+    if override:
+        candidates.append(os.path.join(override, leaf))
+    here = os.path.abspath(__file__)
+    # <skills>/44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils
+    #   -> seven levels up is the skills root (numbered in onboarding, canonical
+    #      unnumbered in 999; both layouts are checked).
+    skill_roots = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(here)))))))
+    for folder in ("06-ghl-install-pages", "ghl-install-pages"):
+        candidates.append(os.path.join(skill_roots, folder, "tools", leaf))
+    for path in candidates:
+        path = os.path.normpath(path)
+        if not os.path.isfile(path):
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, path)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+            return module
+        except Exception:  # noqa: BLE001 - an unloadable tool is a named absence
+            sys.modules.pop(module_name, None)
+            continue
+    return None
+
+
+def resolve_browser_executor(*, reasons: Optional[list] = None):
+    """The selected capability for browser-required rows, or None.
+
+    ``None`` is a real answer: it means no executable rung is selected for
+    workflow-editor steps, and the caller records the rows as pending.  Every
+    reason lands in ``reasons`` so the record names what was checked.
+    """
+    reasons = reasons if reasons is not None else []
+    ladder = _skill6_tool("ghl_fallback_ladder")
+    if ladder is None:
+        reasons.append(
+            "Skill 6 ghl_fallback_ladder is not installed on this host; no "
+            "declared attempt order to select from")
+        return None
+    try:
+        order = ladder.get_ladder(BROWSER_LADDER_SURFACE)
+    except Exception as exc:  # noqa: BLE001 - an unreadable declaration is an absence
+        reasons.append("Skill 6 fallback ladder unreadable (%s: %s)"
+                       % (type(exc).__name__, exc))
+        return None
+    reasons.append(
+        "declared attempt order for surface %r: %s"
+        % (BROWSER_LADDER_SURFACE, " -> ".join(order) or "(none)"))
+    for transport in order:
+        rung = _skill6_tool(transport)
+        if rung is None:
+            reasons.append("rung %r: no Skill 6 module named %s.py"
+                           % (transport, transport))
+            continue
+        step_runner = getattr(rung, _BROWSER_RUNG_CALLABLE, None)
+        if callable(step_runner):
+            reasons.append("rung %r selected (%s.%s)"
+                           % (transport, transport, _BROWSER_RUNG_CALLABLE))
+            return step_runner
+        reasons.append("rung %r declares no callable %s"
+                       % (transport, _BROWSER_RUNG_CALLABLE))
+    reasons.append(
+        "no declared rung supplies %s(rows, location); browser-required rows "
+        "stay pending" % _BROWSER_RUNG_CALLABLE)
+    return None
+
+
+def merged_browser_result(rows: list, observed: Any) -> tuple:
+    """Split an executor's observed result into (completed, still_pending).
+
+    A row counts as executed only when the observation names THAT ledger row
+    and reports it done.  Anything else — a missing entry, a failure, an
+    unrecognised shape — keeps the row pending: an unmerged observation is
+    not a performed action.
+    """
+    entries = {}
+    if isinstance(observed, dict):
+        for key in ("steps", "results", "rows", "observed"):
+            value = observed.get(key)
+            if isinstance(value, list):
+                entries = {e.get("ledger_id") or e.get("step_id"): e
+                           for e in value if isinstance(e, dict)}
+                break
+        if not entries:
+            entries = {k: v for k, v in observed.items() if isinstance(v, dict)}
+    done, pending = [], []
+    for row in rows:
+        entry = entries.get(row.get("ledger_id")) or entries.get(row.get("step_id"))
+        status = str((entry or {}).get("status") or "").lower()
+        if isinstance(entry, dict) and status in ("ok", "done", "complete",
+                                                  "completed", "pass", "verified"):
+            done.append(dict(row, observed=entry))
+        else:
+            pending.append(row)
+    return done, pending
+
+
 # ── Campaign Builder ──────────────────────────────────────────────────────
 
 class CampaignBuilder:
@@ -1223,6 +1730,36 @@ class CampaignBuilder:
         route = workflow_route(self.public_v4, operation, tenant=self.loc)
         self.stats.setdefault("route", {})[operation] = route.as_evidence()
         return route
+
+    def precheck(self, location_id: str, wf_def: dict) -> dict:
+        """Declared-dependency pre-check for one workflow definition."""
+        result = precheck_dependencies(self.client, location_id, wf_def)
+        self.stats.setdefault("precheck", {})[wf_def.get("name")] = result
+        return result
+
+    def _dependency_refusal(self, wf_name: Optional[str], dep_state: dict) -> Optional[str]:
+        """Refusal reason for a failed dependency pre-check, else None."""
+        missing = dep_state.get("missing") or []
+        unverified = dep_state.get("unverified") or []
+        if not (missing or unverified):
+            return None
+        sections = []
+        if missing:
+            sections.append(
+                "missing in GHL: "
+                + ", ".join(f"{item['kind']}:{item['name']}" for item in missing)
+            )
+        if unverified:
+            sections.append(
+                "could not be verified (read failed): "
+                + ", ".join(f"{item['kind']}:{item['name']}" for item in unverified)
+            )
+        return (
+            f"{wf_name}: dependency pre-check failed - "
+            + "; ".join(sections)
+            + (". Create the missing dependencies in GHL first;" if missing else "")
+            + " no workflow create was issued."
+        )
 
     def _v4_create_blocker(
         self,
@@ -1317,6 +1854,7 @@ class CampaignBuilder:
         folder_id: Optional[str] = None,
         *,
         journal: Any = None,
+        browser_executor: Any = None,
     ) -> dict:
         """Build an entire campaign. Returns stats dict.
 
@@ -1326,6 +1864,12 @@ class CampaignBuilder:
         `journal` (path or ``BuildJournal``) opts a compiled launch build into
         the receipt journal + readback verification; plans without a compiled
         unit key keep the unchanged private-rail behaviour.
+
+        `browser_executor` is the selected capability for browser-required
+        ledger steps (F11). It is called as ``browser_executor(rows, location)``
+        and returns the observed result, which is merged into the stats. With
+        none wired the rows are recorded as pending — a task description alone
+        never counts as an executed action.
 
         Idempotent: a repeated call reuses an existing folder with the same
         name instead of creating a duplicate, and refuses (via stats["errors"])
@@ -1340,7 +1884,7 @@ class CampaignBuilder:
         with WriteLock(self.loc):
             return self._build_locked(
                 campaign, folder_name=folder_name, folder_id=folder_id,
-                journal=_journal_for(journal),
+                journal=_journal_for(journal), browser_executor=browser_executor,
             )
 
     def _build_locked(
@@ -1350,6 +1894,7 @@ class CampaignBuilder:
         folder_id: Optional[str] = None,
         *,
         journal: Optional[BuildJournal] = None,
+        browser_executor: Any = None,
     ) -> dict:
         """Internal build implementation (called under WriteLock)."""
         self.stats["start_time"] = time.time()
@@ -1357,12 +1902,38 @@ class CampaignBuilder:
         self.stats.setdefault("readback", {})
         self.stats.setdefault("adopted", [])
         self.stats.setdefault("needs_reconcile", [])
+        # Actions that were compiled but not completed (unresolved copy,
+        # browser-required work with no selected capability).
+        self.stats.setdefault("incomplete_actions", [])
         if journal is not None:
             self.stats["journal_path"] = str(journal.path)
         # Remember whether the caller pinned an explicit folder id: the V4
         # create contract has no folder-id field, so that request keeps the
         # named private fallback (a name-based folder can be passed instead).
         requested_folder_id = folder_id
+
+        # Builds the compiler refused must never vanish from a partial campaign.
+        refusals = list(getattr(campaign, "refusals", None) or [])
+        for refusal in refusals:
+            self.stats["errors"].append(
+                "build %s refused at compile (%s): %s" % (
+                    refusal.get("id"), refusal.get("code"), refusal.get("reason")))
+        if refusals:
+            # Per-unit refusal/continuation: the units that DID compile are
+            # named, so a partial campaign is never mistaken for either a clean
+            # build or a total refusal.
+            self.stats.setdefault("notes", []).append(
+                "per-unit refusal: %d build(s) refused at compile (%s); %d "
+                "workflow(s) from the remaining units continue."
+                % (len(refusals),
+                   ", ".join(str(r.get("id")) for r in refusals) or "unknown",
+                   len(campaign)))
+        if refusals and not campaign:
+            # Nothing compiled.  Refuse BEFORE any write: a folder created on a
+            # document that then refuses is a write on a path that should have
+            # refused outright (the same rule the dependency gate follows).
+            self.stats["end_time"] = time.time()
+            return self.stats
 
         # Pre-flight validation
         errors = validate_campaign(campaign)
@@ -1373,6 +1944,15 @@ class CampaignBuilder:
             self.stats["errors"].extend(errors)
             self.stats["end_time"] = time.time()
             return self.stats  # Invalid timing/steps must never reach GET/POST.
+
+        identity_refusals = plan_identity_refusals(campaign)
+        if identity_refusals:
+            # Pre-write identity gate: duplicate ids, dangling authored targets,
+            # malformed if_else branches, ambiguous roots and invalid/cyclic
+            # parent links abort here, before the first HTTP call.
+            self.stats["errors"].extend(refusal[5] for refusal in identity_refusals)
+            self.stats["end_time"] = time.time()
+            return self.stats
 
         # Idempotency pre-check — fetch the location's existing workflow/folder
         # listing ONCE per build() call (not once per workflow, to avoid N extra
@@ -1393,6 +1973,40 @@ class CampaignBuilder:
             self.stats["end_time"] = time.time()
             return self.stats
         existing_workflow_ids, existing_folder_ids, existing_workflow_parents = existing
+
+        # Dependency gate — BEFORE the folder POST.  A folder created on a
+        # build that then refuses is a write on a path that should have
+        # refused.  Candidates are the units this build would actually write:
+        # name not already present, and no journalled prior to reconcile
+        # instead.  A partial build still needs its folder, so this aborts
+        # only when EVERY candidate refuses; the per-unit gate below stays as
+        # the authority for the rest.
+        dep_states: dict[str, dict] = {}
+        gate_refusals: dict[str, str] = {}
+        candidates: list[tuple] = []
+        for key, wf_def in campaign.items():
+            if not isinstance(wf_def, Mapping):
+                continue
+            wf_name = wf_def.get("name")
+            if wf_name and wf_name in existing_workflow_ids:
+                continue
+            unit_key = wf_def.get("unit_key")
+            prior = journal.latest(unit_key) if (journal and unit_key) else None
+            if prior and prior.get("remote_id"):
+                continue
+            candidates.append((key, wf_def))
+            if not any(collect_plan_dependencies(wf_def).values()):
+                continue
+            dep_states[key] = self.precheck(self.loc, wf_def)
+            reason = self._dependency_refusal(wf_name, dep_states[key])
+            if reason:
+                gate_refusals[key] = reason
+        if candidates and len(gate_refusals) == len(candidates):
+            self.stats["errors"].extend(
+                gate_refusals[key] for key, _ in candidates
+            )
+            self.stats["end_time"] = time.time()
+            return self.stats  # Nothing to build — refuse before any write.
 
         # Resolve folder: reuse existing if folder_id given, else look up by
         # name and reuse it, else create.  Reuse is the safe default for a
@@ -1556,7 +2170,19 @@ class CampaignBuilder:
             # canonical linker already used by the legacy create-step path; we
             # run it inside the builder so all installed boxes get the fix
             # without re-authoring plan JSON.
-            templates = link_steps(wf_def.get("templates", []))
+            declared_deps = collect_plan_dependencies(wf_def)
+            if any(declared_deps.values()):
+                dep_state = dep_states.get(key) or self.precheck(self.loc, wf_def)
+                reason = self._dependency_refusal(wf_name, dep_state)
+                if reason:
+                    return (key, None, False, False, None, reason)
+
+            templates, unlinked = link_steps(wf_def.get("templates", []))
+            if unlinked:
+                return (key, None, False, False, None,
+                        f"{wf_name}: branch node(s) {', '.join(unlinked)} have no authored "
+                        "branch targets - refusing to build a graph whose conditions cannot "
+                        "be wired. Author next/branches on each branch node in the plan.")
 
             # A16 layer-7: the step-save backend validates action ids as
             # UUIDs; plan-supplied slug ids are rejected ("Invalid uuid").
@@ -1700,13 +2326,17 @@ class CampaignBuilder:
                     trigger_id = tr["id"]
                     trigger_data = {**trigger_body, "id": trigger_id}
 
-                    # Link trigger to first step
+                    # Link trigger to first step. Preserve link in trigger_data
+                    # because step 4 re-sends this object through newTriggers.
                     first_step_id = templates[0]["id"] if templates else None
                     if first_step_id:
+                        trigger_data["targetActionId"] = first_step_id
+                        trigger_data["advanceCanvasMeta"] = {
+                            "position": {"x": 57.5, "y": -73}
+                        }
                         self.client.request(
                             "PUT", f"/workflow/{self.loc}/trigger/{trigger_id}",
-                            {**trigger_body, "targetActionId": first_step_id,
-                             "advanceCanvasMeta": {"position": {"x": 57.5, "y": -73}}},
+                            dict(trigger_data),
                             workflow_name=wf_name,
                         )
                 if journal and unit_key:
@@ -1836,6 +2466,35 @@ class CampaignBuilder:
                                    status="ok", expected_hash=expected_hash,
                                    readback_hash=observed)
 
+            # F05: the requested Allow Reentry setting is APPLIED on the
+            # settings object (create_body/PUT above) and READ BACK here. An
+            # absent native value stays unknown; it is never normalised to
+            # False, and an unproven setting is never reported as applied.
+            declared_reentry = wf_def.get("allow_reentry")
+            if isinstance(declared_reentry, bool):
+                observed_reentry = _observed_reentry(
+                    _readback_settings(self.client, self.loc, str(wf_id)))
+                applied = observed_reentry == declared_reentry
+                self.stats.setdefault("reentry", {})[key] = {
+                    "declared": declared_reentry,
+                    "observed": observed_reentry,
+                    "applied": applied,
+                }
+                if journal and unit_key:
+                    journal.append(
+                        unit_key=unit_key, name=wf_name, remote_id=str(wf_id),
+                        phase="reentry",
+                        status=("ok" if applied else
+                                "unknown" if observed_reentry is None else "mismatch"),
+                        expected_hash=expected_hash)
+                if not applied:
+                    step_err = (
+                        f"{wf_name}: Allow Reentry was requested "
+                        f"{declared_reentry} but read back "
+                        + ("an unreadable/absent value" if observed_reentry is None
+                           else str(observed_reentry))
+                        + " — the setting is NOT proven applied.")
+
             return key, wf_id, steps_ok, trigger_ok, step_err, readback_ok
 
         # Run all (non-colliding) workflows in parallel (burst-capped;
@@ -1867,7 +2526,22 @@ class CampaignBuilder:
                     if trigger_ok:
                         self.stats["triggers_created"] += 1
                 else:
-                    self.stats["errors"].append(f"Failed: {campaign[key]['name']}")
+                    # An early refusal returns its reason as the 6th tuple
+                    # element (branch node with no targets, missing declared
+                    # dependency, unreadable prior attempt). Surface the
+                    # reason verbatim: a bare "Failed: <name>" hides the one
+                    # fact the operator needs to fix the plan.
+                    # An early refusal puts its reason in the LAST tuple slot
+                    # (the readback position) with wf_id None and step_err
+                    # None; a save/readback failure puts it in step_err.
+                    # Surface whichever slot carries the string: a bare
+                    # "Failed: <name>" hides the one fact the operator needs.
+                    reason = next(
+                        (r for r in (step_err, readback_ok)
+                         if isinstance(r, str) and r),
+                        f"Failed: {campaign[key]['name']}",
+                    )
+                    self.stats["errors"].append(reason)
 
         # Every declared dependency and required output is enforced after the
         # build: a workflow that was skipped/blocked cannot satisfy a dependent.
@@ -1898,6 +2572,54 @@ class CampaignBuilder:
                 self.stats["errors"].append(
                     f"{wf_def.get('name') or key}: required output "
                     "'readback_verified' missing")
+
+        # ── browser-required work through the selected capability (F04/F11) ──
+        # The compiler emits ledger rows for work no verified payload covers.
+        # They are executed through the selected capability when one is wired;
+        # otherwise they are recorded as pending, because naming an action is
+        # not performing it.
+        browser_rows = []
+        for key, wf_def in campaign.items():
+            if not isinstance(wf_def, Mapping):
+                continue
+            for row in wf_def.get("browser_steps") or []:
+                if isinstance(row, Mapping):
+                    browser_rows.append(dict(row, workflow=wf_def.get("name"),
+                                             workflow_key=key))
+        if browser_rows:
+            route = self.route_for("browser_step")
+            observed = None
+            if browser_executor is not None:
+                try:
+                    observed = browser_executor(browser_rows, self.loc)
+                except Exception as exc:  # noqa: BLE001 - a failed capability is recorded
+                    observed = {"error": "%s: %s" % (type(exc).__name__, exc)}
+            done, still_pending = merged_browser_result(browser_rows, observed)
+            self.stats["browser_steps"] = {
+                "route": route.as_evidence(),
+                "requested": browser_rows,
+                "completed": [row.get("ledger_id") for row in done],
+                "executed": bool(done),
+                "observed": observed,
+            }
+            if still_pending:
+                reason = (
+                    "no selected capability executor is wired for this run"
+                    if observed is None else
+                    "the selected capability did not report these rows done")
+                self.stats.setdefault("notes", []).append(
+                    "browser-required work is recorded, not executed for %d of "
+                    "%d step(s): %s." % (len(still_pending), len(browser_rows), reason))
+                self.stats.setdefault("incomplete_actions", []).extend(
+                    "browser:%s" % row.get("ledger_id") for row in still_pending)
+
+        # Channel actions the compiler could not complete (unresolved copy).
+        for key, wf_def in campaign.items():
+            if not isinstance(wf_def, Mapping):
+                continue
+            for action in wf_def.get("incomplete_actions") or []:
+                self.stats.setdefault("incomplete_actions", []).append(
+                    "%s:%s" % (wf_def.get("name") or key, action))
 
         self.stats["workflows_reused"] = len(adopted_ids)
         self.stats["end_time"] = time.time()

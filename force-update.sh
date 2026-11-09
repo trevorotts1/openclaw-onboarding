@@ -27,6 +27,117 @@
 set -u
 SCRIPT_VERSION="1.1.0"
 
+#=== BEGIN APPROVED-RELEASE-TARGET-V1 ===
+# ----------------------------------------------------------
+#  APPROVED IMMUTABLE RELEASE TARGET -- selectable, OFF by default.
+#
+#  Every fetch in this file used to take whatever `main` happened to be at
+#  run time. This block lets a box honour ONE explicitly approved release
+#  identity instead: a release tag (`v27.1.66`) or a full 40-hex commit.
+#
+#  Trevor has not decided whether an approved pinned release should reach
+#  clients automatically, so this is SELECTABLE and inert until turned on:
+#
+#    OPENCLAW_RELEASE_PIN_MODE=off      (default) exactly the old behaviour
+#    OPENCLAW_RELEASE_PIN_MODE=prefer   use the target when one is configured,
+#                                       else continue on the moving branch
+#                                       after printing the reason code
+#    OPENCLAW_RELEASE_PIN_MODE=require  refuse the update (exit 78) with a
+#                                       named reason code when no usable
+#                                       approved target is configured
+#
+#  Target source, first one that answers:
+#    1. $OPENCLAW_APPROVED_RELEASE
+#    2. <openclaw root>/approved-release -- line 1 = tag or full 40-hex
+#       commit, optional line 2 = off|prefer|require. This file is what a
+#       cron-run update can see; cron does not inherit an operator's env.
+#
+#  Reason codes (stable, greppable): RELEASE_TARGET_UNSET,
+#  RELEASE_TARGET_INVALID, RELEASE_TARGET_MISSING.
+# ----------------------------------------------------------
+_OC_REL_MODE="${OPENCLAW_RELEASE_PIN_MODE:-}"
+_OC_REL_TARGET="${OPENCLAW_APPROVED_RELEASE:-}"
+# ONE pin surface: read the SAME fleet-refresh/release-pin.json that
+# update-skills.sh, fleet-refresh.sh, weekly-full-update.sh and
+# oc-atomic-upgrade.sh read. This script used to read only a divergent
+# legacy text file nothing else wrote, so a canonical pin was invisible here.
+if [ -z "$_OC_REL_MODE" ] || [ -z "$_OC_REL_TARGET" ]; then
+  _oc_rel_pin_file="${OPENCLAW_RELEASE_PIN_FILE:-}"
+  if [ -z "$_oc_rel_pin_file" ]; then
+    _oc_rel_root="${OPENCLAW_ROOT:-}"
+    [ -n "$_oc_rel_root" ] || { [ -d /data/.openclaw ] && _oc_rel_root=/data/.openclaw; }
+    [ -n "$_oc_rel_root" ] || _oc_rel_root="$HOME/.openclaw"
+    _oc_rel_pin_file="$_oc_rel_root/fleet-refresh/release-pin.json"
+  fi
+  if [ -r "$_oc_rel_pin_file" ] && command -v python3 >/dev/null 2>&1; then
+    if [ -z "$_OC_REL_TARGET" ]; then
+      _OC_REL_TARGET="$(python3 -I -c 'import json,sys
+try: v=json.load(open(sys.argv[1])).get("approved_ref")
+except Exception: v=None
+print(v if isinstance(v,str) else "")' "$_oc_rel_pin_file" 2>/dev/null | tr -d '[:space:]' || true)"
+    fi
+    if [ -z "$_OC_REL_MODE" ]; then
+      _OC_REL_MODE="$(python3 -I -c 'import json,sys
+try: v=json.load(open(sys.argv[1])).get("mode")
+except Exception: v=None
+print(v if isinstance(v,str) else "")' "$_oc_rel_pin_file" 2>/dev/null | tr -d '[:space:]' || true)"
+    fi
+  fi
+fi
+# Legacy plaintext fallback (approved-release), kept for boxes that predate
+# release-pin.json. The canonical json above wins when both are present.
+if [ -z "$_OC_REL_MODE" ] || [ -z "$_OC_REL_TARGET" ]; then
+  for _oc_rel_f in /data/.openclaw/approved-release "$HOME/.openclaw/approved-release"; do
+    [ -f "$_oc_rel_f" ] || continue
+    { IFS= read -r _oc_rel_l1 || true; IFS= read -r _oc_rel_l2 || true; } < "$_oc_rel_f"
+    if [ -z "$_OC_REL_TARGET" ]; then _OC_REL_TARGET="$(printf '%s' "${_oc_rel_l1:-}" | tr -d '[:space:]')"; fi
+    if [ -z "$_OC_REL_MODE" ];   then _OC_REL_MODE="$(printf '%s' "${_oc_rel_l2:-}" | tr -d '[:space:]')"; fi
+    break
+  done
+fi
+_OC_REL_MODE="${_OC_REL_MODE:-off}"
+# Vocabulary bridge: the canonical modes are enforce|advisory|off. This
+# resolver speaks require|prefer|off under the SAME env var, so a box pinned
+# with canonical "enforce"/"advisory" used to abort here with exit 78.
+case "$_OC_REL_MODE" in
+  enforce)  _OC_REL_MODE="require" ;;
+  advisory) _OC_REL_MODE="prefer" ;;
+esac
+_OC_REL_REF="main"     # the moving default branch: unchanged behaviour
+case "$_OC_REL_MODE" in
+  off|prefer|require) : ;;
+  *) echo "ERROR (release-pin): OPENCLAW_RELEASE_PIN_MODE='$_OC_REL_MODE' is not one of off|prefer|require." >&2
+     echo "RELEASE_TARGET_INVALID" >&2; exit 78 ;;
+esac
+if [ "$_OC_REL_MODE" != "off" ]; then
+  if [ -z "$_OC_REL_TARGET" ]; then
+    echo "RELEASE_TARGET_UNSET: no approved release target configured (OPENCLAW_RELEASE_PIN_MODE=$_OC_REL_MODE)" >&2
+    [ "$_OC_REL_MODE" = "require" ] && exit 78
+  else
+    case "$_OC_REL_TARGET" in
+      *[!0-9A-Za-z._-]*)
+        echo "RELEASE_TARGET_INVALID: '$_OC_REL_TARGET' carries characters a ref cannot" >&2
+        [ "$_OC_REL_MODE" = "require" ] && exit 78 ;;
+      [0-9a-f][0-9a-f]*)
+        # A commit target must be the FULL 40-hex id: a short sha is ambiguous.
+        if [ "${#_OC_REL_TARGET}" -eq 40 ]; then
+          _OC_REL_REF="$_OC_REL_TARGET"
+        else
+          echo "RELEASE_TARGET_INVALID: '$_OC_REL_TARGET' is not a full 40-hex commit" >&2
+          [ "$_OC_REL_MODE" = "require" ] && exit 78
+        fi ;;
+      v[0-9]*)
+        _OC_REL_REF="$_OC_REL_TARGET" ;;
+      *)
+        echo "RELEASE_TARGET_INVALID: '$_OC_REL_TARGET' is neither a v<digit> release tag nor a full 40-hex commit" >&2
+        [ "$_OC_REL_MODE" = "require" ] && exit 78 ;;
+    esac
+  fi
+fi
+# RELEASE_TARGET_MISSING is raised where the target is resolved against the
+# remote (a failed git fetch, or an HTTP 404 below).
+#=== END APPROVED-RELEASE-TARGET-V1 ===
+
 # ----------------------------------------------------------
 # CLI: --apply / --onboarding-only (OCT4 issue #10 one front door)
 # ----------------------------------------------------------
@@ -67,7 +178,7 @@ else
   AGENTS_MD="$HOME/.openclaw/AGENTS.md"
 fi
 
-GH_RAW="https://raw.githubusercontent.com/trevorotts1/${REPO_NAME}/main"
+GH_RAW="https://raw.githubusercontent.com/trevorotts1/${REPO_NAME}/${_OC_REL_REF}"
 ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 echo "[force-update] platform=$PLATFORM repo=$REPO_NAME at $(ts)" >&2

@@ -394,14 +394,25 @@ detect_gateway_port() {
   printf '%s' "$p"
 }
 
+# A TLS gateway (gateway.tls.enabled=true) answers https ONLY: an http:// probe
+# gets an empty reply, reads the live poller as down, and this script would run
+# getUpdates against a bot token the gateway is already polling. Loopback, so -k.
 gateway_is_up() {
-  local port body code st
+  local port body code st base="http" k=""
   port=$(detect_gateway_port)
-  body=$(curl -fsS --max-time 5 "http://127.0.0.1:${port}/" 2>/dev/null)
+  if [[ "$(OC_CFG="$CONFIG_FILE" python3 -c 'import json,os
+try:
+    t=((json.load(open(os.environ["OC_CFG"])).get("gateway") or {}).get("tls") or {}).get("enabled")
+    print(1 if str(t).lower()=="true" else 0)
+except Exception:
+    print(0)' 2>/dev/null)" == "1" ]]; then base="https"; k="-k"; fi
+  # shellcheck disable=SC2086  # k is empty or the single word -k
+  body=$(curl -fsS $k --max-time 5 "${base}://127.0.0.1:${port}/" 2>/dev/null)
   case "$body" in
     *'"ok":true'*|*'"ok": true'*) return 0 ;;
   esac
-  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:${port}/healthz" 2>/dev/null)
+  # shellcheck disable=SC2086
+  code=$(curl -s $k -o /dev/null -w '%{http_code}' --max-time 5 "${base}://127.0.0.1:${port}/healthz" 2>/dev/null)
   [[ "$code" == "200" ]] && return 0
   if command -v openclaw >/dev/null 2>&1; then
     st=$(openclaw gateway status 2>/dev/null)

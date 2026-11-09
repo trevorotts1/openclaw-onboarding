@@ -1,7 +1,8 @@
 """Load the real funnel/page skill modules by their real file paths.
 
 The skill folders are not importable package names (leading digits, hyphens),
-so the launcher binds them with importlib from the exact tree. No substrate
+so the launcher binds them with importlib from the exact tree. Every Skill 49 load first passes the
+shared front door (49-signature-funnel/scripts/front_door.py). No substrate
 module is copied, forked or reimplemented; every import below is a real entry
 point named in the received contracts.
 
@@ -24,7 +25,7 @@ REPO_ROOT = SKILL_DIR.parent
 if str(SKILL_DIR) not in sys.path:
     sys.path.insert(0, str(SKILL_DIR))
 
-from launcher_core.constants import resolve_ref  # noqa: E402
+from launcher_core.constants import resolve_ref, skill_slug  # noqa: E402
 
 
 def source(rel_path: str) -> Path:
@@ -54,10 +55,32 @@ def _sibling_imports(directory: Path | None):
 
 
 _cache: dict[tuple[str, str], object] = {}
+_front_door_module = None
+
+
+def front_door_check() -> None:
+    """Run Skill 49's ONE front door (version, hash-pin, bypass scan) before any Skill 49 code loads.
+
+    The same module backs signature-funnel-entry.sh, so the launcher path cannot skip the gates the shell
+    entry enforces. A tripped gate raises front_door.FrontDoorError (a SystemExit): `cli dispatch` ends
+    non-zero with ABORT [HASH-PIN] and no page is built. It runs on every call, never cached.
+    """
+    global _front_door_module
+    path = source("49-signature-funnel/scripts/front_door.py")
+    if _front_door_module is None:
+        if not path.is_file():
+            raise SystemExit(f"ABORT [HASH-PIN]: Skill 49 front door missing: {path}")
+        spec = importlib.util.spec_from_file_location("launcher_s49_front_door", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _front_door_module = module
+    _front_door_module.check(skill_dir=path.parents[1])
 
 
 def load(rel_path: str, module_name: str, sibling_dir: str | None = None):
     """Load a real module from its file path, with optional sibling imports."""
+    if skill_slug(rel_path.partition("/")[0]) == "signature-funnel":
+        front_door_check()  # every Skill 49 script the launcher runs passes the same gates as the shell entry
     key = (rel_path, module_name)
     if key in _cache:
         return _cache[key]

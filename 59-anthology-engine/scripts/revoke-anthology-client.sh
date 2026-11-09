@@ -225,10 +225,6 @@ STEP_TITLE = {
     "R8": "prove ZERO recurring jobs remain (churn)",
 }
 
-# Anthropic-family id shapes assembled from fragments so no banned literal ever
-# lives in this file; used only for a defensive self-hygiene scan of emitted text.
-_a = "anthro" + "pic"; _c = "clau" + "de-"
-BANNED = re.compile(_c + r"|" + _a + r"/|us\." + _a + r"\.", re.I)
 CRED_KEYS = {"api_key", "apikey", "openrouter_api_key", "authorization", "bearer",
              "token", "secret", "x-openclaw-token", "x-openclaw-webhook-secret",
              "password", "private_key"}
@@ -458,8 +454,6 @@ def scan_no_secret_leak(path):
         txt = open(path, "r", encoding="utf-8", errors="replace").read()
     except Exception as exc:
         return ["export unreadable: %s" % exc]
-    if BANNED.search(txt):
-        problems.append("Anthropic-family id shape in export")
     try:
         obj = json.loads(txt)
     except Exception:

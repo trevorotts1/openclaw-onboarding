@@ -660,6 +660,6 @@
     "schema_version",
     "request"
   ],
-  "title": "Skill 79 checkout input and result - DRAFT v0.1 (S79-01, fixture level, not installed)",
+  "title": "Skill 79 checkout input and result - draft 0.2 (S79-01, fixture level)",
   "type": "object"
 }

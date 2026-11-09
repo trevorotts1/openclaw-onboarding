@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Shared Purple Billboard contract validator.
 
+This is the OUTBOUND / PUBLICATION contract layer: collection state, outbound
+envelopes, revisioned approval manifest, readiness evidence, control-action lifecycle, and reconciliation. It contains NO playbook schema; that contract lives in tools/playbook_engine.py, NOT here.
+
 Enforces the typed contract layer only: collection state, strict outbound
 envelopes, the revisioned approval manifest, shared readiness evidence and the
 control-action lifecycle. It never talks to a provider and never sends anything.
@@ -15,6 +18,17 @@ Commands
               [--max-gate-age-seconds N]
   receipt     --ledger L --key K --status S [--provider-object-id X]
               [--evidence-id E] [--now T]
+  fulfill     --outbox F --fulfillment-ledger F --journal F --item F --basis F
+              [--worker-id ID]
+  fulfill-basis   --fulfillment-ledger F --basis F
+  fulfill-access  --fulfillment-ledger F --item F --evidence E --accessible|--inaccessible
+  fulfill-resume  (same paths) [--retry]
+  fulfill-proof   (same paths) --proof F
+  fulfill-continue (same paths)
+
+The fulfill-* commands drive the T-13 direct original fulfillment module
+(tools/direct_fulfillment.py) over the caller's append-only journal. They hand
+it files and print its outcome, so this CLI still calls no provider itself.
 
 Exit codes: 0 = accepted/dispatched/collapsed, 1 = contract violation or
 refusal, 2 = usage/IO error. Every command prints one JSON object.
@@ -35,6 +49,13 @@ import tempfile
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Direct-script execution (python3 -I pb_contracts.py) does not put this
+# directory on sys.path; the sibling module must still resolve.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import compat_guard  # noqa: E402
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = SKILL_ROOT / "schemas"
@@ -70,6 +91,10 @@ PLACEMENT_BOUND_FIELDS = [
     "bonus_asset_versions",
     "conversation_policy_version",
     "allowed_spare_ids",
+    # C5: the DM door is approved byte for byte, not typed at posting time.
+    "messenger_page_id",
+    "messenger_ref",
+    "messenger_link",
 ]
 LIFECYCLE_LADDER = ["NOT_INSTALLED", "ADOPTING", "RUNNING", "PAUSED_RESUMABLE", "CLOSING", "CLOSED"]
 LIFECYCLE_EDGES = {
@@ -89,6 +114,13 @@ NEVER_ROLLED_BACK = [
     "unknown_send_reconciliation",
 ]
 DM_CHANNELS = {"FB_DM", "IG_DM"}
+# C5: the DM door is an OPTIONAL approved term. A placement that approves no door
+# is not a divergence from an action that carries none, and a placement/action
+# pair that disagrees on whether a door exists is a divergence that names the
+# field. Reading the three fields unconditionally raised KeyError on every
+# placement approved before the door existed (PBB-919 blocked item 1).
+DM_DOOR_FIELDS = ("messenger_page_id", "messenger_ref", "messenger_link")
+_ABSENT = object()
 
 READINESS_KEYS = ["installed", "configured", "running", "replied", "fulfilled"]
 TERMINAL_COLLECTION = {
@@ -629,16 +661,81 @@ def check_document(kind, doc):
 # --------------------------------------------------------------------------
 
 
-def idempotency_key(doc):
+LEDGER_VERSION = 2
+
+# What makes two public placements the SAME placement. A new approved cycle, a
+# new account binding or a new content revision is a DIFFERENT placement and must
+# stay dispatchable; the same one retried must collapse. ``approval_revision`` is
+# deliberately absent: re-approving unchanged content is freshness (enforced by
+# the gate), not a new placement, so it must not mint a second post.
+PLACEMENT_IDENTITY_FIELDS = (
+    "campaign_cycle_id",
+    "placement_id",
+    "account_id",
+    "account_binding_revision",
+    "content_revision",
+)
+
+
+def _legacy_idempotency_key(doc):
     return "%s::%s" % (doc["tenant_id"], doc["logical_intent_key"])
+
+
+def idempotency_key(doc):
+    """Identity of the logical intent. Two dispatches sharing it are one action.
+
+    A public placement is identified by its placement identity, not by a free-text
+    key the caller happens to reuse: two placements in different cycles, or bound
+    to a different account or content revision, never share an identity. The
+    caller's ``logical_intent_key`` is still part of the key, so two different
+    intents on ONE placement (a scheduled post and its reveal) stay distinct.
+    """
+    if doc.get("scope") != "public_placement":
+        return _legacy_idempotency_key(doc)
+    parts = [doc["tenant_id"]]
+    parts.extend(doc[field] for field in PLACEMENT_IDENTITY_FIELDS)
+    parts.append(doc["logical_intent_key"])
+    return "::".join(parts)
+
+
+def _migrate_v1(ledger):
+    """One migration: version 1 keys were tenant::logical_intent_key.
+
+    A version 1 entry never recorded which placement it belonged to, so its key
+    cannot be recomputed without guessing. Rewriting it would silently un-collapse
+    an in-flight action and could send it twice. The entries move to
+    ``legacy_actions`` untouched and are still consulted by dispatch, so a retry
+    against a version 1 ledger keeps deduping.
+    """
+    return {
+        "version": LEDGER_VERSION,
+        "actions": {},
+        "legacy_actions": ledger["actions"],
+    }
 
 
 def load_ledger(path):
     if not os.path.exists(path):
-        return {"version": 1, "actions": {}}
+        return {"version": LEDGER_VERSION, "actions": {}, "legacy_actions": {}}
     ledger = load_json(path)
-    if ledger.get("version") != 1 or not isinstance(ledger.get("actions"), dict):
-        raise UsageError("ledger %s is not version 1 with an actions map" % path)
+    version = ledger.get("version")
+    if not isinstance(ledger.get("actions"), dict):
+        raise UsageError("ledger %s has no actions map" % path)
+    # T-39 compat_guard: a ledger written by a newer build is refused by name
+    # (no silent downgrade), the same gate every versioned on-disk record gets.
+    try:
+        compat_guard.assert_compatible(ledger, known_version=LEDGER_VERSION)
+    except compat_guard.CompatError as exc:
+        raise UsageError(
+            "ledger %s is version %r; this build reads version 1 or %d"
+            % (path, version, LEDGER_VERSION)) from exc
+    if version == 1:
+        return _migrate_v1(ledger)
+    if version != LEDGER_VERSION:
+        raise UsageError(
+            "ledger %s is version %r; this build reads version 1 or %d"
+            % (path, version, LEDGER_VERSION))
+    ledger.setdefault("legacy_actions", {})
     return ledger
 
 
@@ -667,9 +764,35 @@ def emit(payload):
     return 0 if payload.get("ok") else 1
 
 
+def _approval_terms_errors(doc):
+    """T-23 approval terms, owned by shared-utils/manifest/monthly_manifest.py.
+
+    The lifecycle module owns what one client approval must carry: every bound
+    term present and informative, and the scheduled slot inside the joined
+    30-day window (DATA-CONTRACTS section 10). Vetting here is what keeps a thin
+    manifest away from the dispatch guard, which binds approved fields but never
+    authors them.
+
+    Imported at call time, not at module scope: monthly_manifest imports THIS
+    module to read PLACEMENT_BOUND_FIELDS, so a top-level import would be a
+    cycle for every caller that never sees a manifest. A checkout without the
+    module refuses the manifest rather than validating past the check.
+    """
+    module_dir = SKILL_ROOT.parent / "shared-utils" / "manifest"
+    if str(module_dir) not in sys.path:
+        sys.path.insert(0, str(module_dir))
+    try:
+        import monthly_manifest
+    except (ImportError, RuntimeError) as exc:
+        return ["$.: approval terms check unavailable (%s)" % exc]
+    return list(monthly_manifest.terms_errors(doc))
+
+
 def cmd_validate(args):
     doc = load_json(args.file)
     errs = check_document(args.kind, doc)
+    if not errs and args.kind == "approval":
+        errs = _approval_terms_errors(doc)
     result = {"ok": not errs, "command": "validate", "kind": args.kind, "file": args.file, "errors": errs}
 
     if not errs and args.kind == "outbound" and args.manifest:
@@ -864,7 +987,18 @@ def cmd_dispatch(args):
     gate_checked = parse_ts(gate["checked_at"], "gate.checked_at")
     key = idempotency_key(action)
     ledger = load_ledger(args.ledger)
-    existing = ledger["actions"].get(key)
+    # A version 1 entry predates placement identity. It is still the same action,
+    # so a retry must find it and collapse; it is written back where it lives.
+    bucket = ledger["actions"]
+    existing = bucket.get(key)
+    # Every scope, not only public placements: for a person_directed action the
+    # old key is still the live key, so a fallback guarded on scope would look up
+    # nothing and release a second send of an action already recorded as sent.
+    if existing is None:
+        legacy = ledger.get("legacy_actions") or {}
+        legacy_key = _legacy_idempotency_key(action)
+        if legacy_key in legacy:
+            bucket, key, existing = legacy, legacy_key, legacy[legacy_key]
 
     def refuse(decision, reason, ok=False):
         return emit(
@@ -1014,7 +1148,7 @@ def cmd_dispatch(args):
     entry["attempts"].append(attempt)
     entry["status"] = "dispatching"
     entry["updated_at"] = args.now or now_utc()
-    ledger["actions"][key] = entry
+    bucket[key] = entry
     save_ledger(args.ledger, ledger)
 
     return emit(
@@ -1086,8 +1220,16 @@ def approval_errors(action, manifest_path):
             if placement["content_revision"] != action["content_revision"]:
                 problems.append("$.content_revision: placement approved %r" % placement["content_revision"])
             for field in PLACEMENT_BOUND_FIELDS:
-                approved = placement[field]
-                attempted = action[field]
+                approved = placement.get(field, _ABSENT)
+                attempted = action.get(field, _ABSENT)
+                if approved is _ABSENT or attempted is _ABSENT:
+                    if field in DM_DOOR_FIELDS and approved is _ABSENT and attempted is _ABSENT:
+                        continue  # neither side approves a door: not a divergence
+                    problems.append(
+                        "$.%s: %s carries no value for an approved term"
+                        % (field, "the placement" if approved is _ABSENT else "the action")
+                    )
+                    continue
                 if isinstance(approved, list):
                     approved, attempted = sorted(approved), sorted(attempted or [])
                 if approved != attempted:
@@ -1103,6 +1245,8 @@ def cmd_receipt(args):
         raise UsageError("status must be one of %s" % RECEIPT_STATUSES)
     ledger = load_ledger(args.ledger)
     entry = ledger["actions"].get(args.key)
+    if entry is None:
+        entry = (ledger.get("legacy_actions") or {}).get(args.key)
     if entry is None:
         raise UsageError("no ledger entry for key %r" % args.key)
     stamp = args.now or now_utc()
@@ -1127,6 +1271,166 @@ def cmd_receipt(args):
             "errors": [],
         }
     )
+
+
+# --------------------------------------------------------------------------
+# T-13 direct original fulfillment (R-10, R-12; C-13, C-F04, C-F07, C-F09)
+# --------------------------------------------------------------------------
+#
+# The direct original gift is the same outbound-action lifecycle this file
+# already fronts (dispatch -> attempt -> receipt) with one immutable promised
+# item behind it. The module (tools/direct_fulfillment.py) owns every guarantee
+# -- immutable identity, at-most-once, truthful receipt, crash resume -- so
+# these commands only hand it the caller's files and print its outcome.
+
+FULFILLMENT_OK = {"sent", "already_satisfied", "resumed", "nothing_to_do"}
+
+
+def _fulfillment_module():
+    """Load the T-13 module that sits beside this file.
+
+    Imported at call time on purpose: a pb_contracts caller that never fulfills
+    should not pay for the T-12 store package, and a checkout without the module
+    refuses the command instead of failing the whole contract CLI.
+    """
+    tools_dir = Path(__file__).resolve().parent
+    if str(tools_dir) not in sys.path:
+        sys.path.insert(0, str(tools_dir))
+    import direct_fulfillment  # late import on purpose, see docstring
+    return direct_fulfillment
+
+
+def _outcome_record(outcome):
+    return {
+        "status": outcome.status,
+        "reason": outcome.reason,
+        "action_id": outcome.action_id,
+        "state": outcome.state,
+        "item_id": outcome.item_id,
+        "version": outcome.version,
+        "destination": outcome.destination,
+        "transport_receipt": outcome.transport_receipt,
+        "delivery_status": outcome.delivery_status,
+        "continuation_allowed": outcome.continuation_allowed,
+        "continuation_reason": outcome.continuation_reason,
+    }
+
+
+def _ghl_transport(df, tenant_id):
+    """Build the real GHL Conversations sender for this tenant.
+
+    The adapter is the frozen Skill 44 public adapter; nothing here invents an
+    HTTP client. The PIT is read from the environment and never printed.
+    """
+    repo = Path(__file__).resolve().parents[2]
+    for extra in (repo / "44-convert-and-flow-operator" / "tools" / "engine",
+                  repo / "06-ghl-install-pages" / "tools"):
+        if str(extra) not in sys.path:
+            sys.path.insert(0, str(extra))
+    import ghl_public_client  # noqa: E402  (late: only for --transport ghl)
+    from cli_anything.gohighlevel.public.auth import TenantBinding  # noqa: E402
+    from cli_anything.gohighlevel.public.outbound_sender import make_sender  # noqa: E402
+
+    env_name = "GHL_LOCATION_PIT"
+    pit = os.environ.get(env_name, "")
+    if not pit:
+        raise df.FulfillmentError(
+            f"transport_unavailable: {env_name} is not set (value never printed)")
+    adapter, wire = ghl_public_client.make_adapter(str(tenant_id), pit)
+    return make_sender(adapter, TenantBinding(location_id=str(tenant_id),
+                                              source="pb_contracts"),
+                       transport=wire, sent_index_path=None)
+
+
+def _run_fulfillment(args, run):
+    """Open the durable store, ledger and transport, run, close."""
+    df = _fulfillment_module()
+    store = df.DurableStore(args.outbox)
+    ledger = df.FulfillmentLedger(args.fulfillment_ledger)
+    try:
+        item = df.PromisedItem(**load_json(args.item))
+        basis = df.DeliveryBasis(**load_json(args.basis))
+        if getattr(args, "transport", "journal") == "ghl":
+            transport = _ghl_transport(df, basis.tenant_id)
+        else:
+            if not args.journal:
+                raise df.FulfillmentError("bad_input: --journal is required"
+                                          " with --transport journal")
+            transport = df.JournalTransport(args.journal)
+        outcome = run(df, store, ledger, transport, item, basis)
+    except df.FulfillmentError as exc:
+        return emit({"ok": False, "command": args.command, "reason": str(exc),
+                     "errors": [str(exc)]})
+    finally:
+        ledger.close()
+        store.close()
+    payload = {"ok": outcome.status in FULFILLMENT_OK, "command": args.command}
+    payload.update(_outcome_record(outcome))
+    return emit(payload)
+
+
+def cmd_fulfill(args):
+    return _run_fulfillment(
+        args,
+        lambda df, store, ledger, transport, item, basis:
+        df.fulfill(store, ledger, transport, item, basis, worker_id=args.worker_id),
+    )
+
+
+def cmd_fulfill_resume(args):
+    return _run_fulfillment(
+        args,
+        lambda df, store, ledger, transport, item, basis:
+        df.resume(store, ledger, transport, item, basis,
+                  worker_id=args.worker_id, retry=args.retry),
+    )
+
+
+def cmd_fulfill_proof(args):
+    return _run_fulfillment(
+        args,
+        lambda df, store, ledger, transport, item, basis:
+        df.record_delivery_proof(store, item, basis, load_json(args.proof)),
+    )
+
+
+def cmd_fulfill_continue(args):
+    return _run_fulfillment(
+        args,
+        lambda df, store, ledger, transport, item, basis:
+        df.can_continue(store, ledger, item, basis),
+    )
+
+
+def cmd_fulfill_basis(args):
+    """Record the durable delivery basis once; a repeat is a no-op."""
+    df = _fulfillment_module()
+    ledger = df.FulfillmentLedger(args.fulfillment_ledger)
+    try:
+        basis = df.DeliveryBasis(**load_json(args.basis))
+        row = ledger.record_basis(basis)
+    except df.FulfillmentError as exc:
+        return emit({"ok": False, "command": args.command, "errors": [str(exc)]})
+    finally:
+        ledger.close()
+    return emit({"ok": True, "command": "fulfill-basis", "basis": row})
+
+
+def cmd_fulfill_access(args):
+    """Record observed intended-reader accessibility; never inferred."""
+    df = _fulfillment_module()
+    ledger = df.FulfillmentLedger(args.fulfillment_ledger)
+    try:
+        item = df.PromisedItem(**load_json(args.item))
+        basis = df.DeliveryBasis(**load_json(args.basis))
+        row = ledger.record_reader_access(
+            basis.tenant_id, item.item_id, item.version,
+            accessible=args.accessible, evidence=args.evidence)
+    except df.FulfillmentError as exc:
+        return emit({"ok": False, "command": args.command, "errors": [str(exc)]})
+    finally:
+        ledger.close()
+    return emit({"ok": True, "command": "fulfill-access", "reader_access": row})
 
 
 # --------------------------------------------------------------------------
@@ -1167,6 +1471,65 @@ def build_parser():
     receipt.add_argument("--evidence-id", default=None)
     receipt.add_argument("--now")
     receipt.set_defaults(func=cmd_receipt)
+
+    def fulfillment_paths(parser):
+        parser.add_argument("--outbox", required=True, help="T-12 durable store (sqlite)")
+        parser.add_argument("--fulfillment-ledger", required=True,
+                            help="T-13 fulfillment ledger (sqlite)")
+        parser.add_argument("--journal", default=None,
+                            help="append-only transport journal (jsonl); required"
+                                 " with --transport journal")
+        parser.add_argument("--transport", choices=["journal", "ghl"],
+                            default="journal",
+                            help="journal (offline, default) or ghl (real"
+                                 " Conversations sender)")
+        parser.add_argument("--item", required=True, help="promised item JSON")
+        parser.add_argument("--basis", required=True, help="delivery basis JSON")
+
+    fulfill = sub.add_parser("fulfill", help="send the original promised item once")
+    fulfillment_paths(fulfill)
+    fulfill.add_argument("--worker-id", default="fulfillment-worker")
+    fulfill.set_defaults(func=cmd_fulfill)
+
+    fulfill_basis = sub.add_parser("fulfill-basis",
+                                   help="record the durable delivery basis once")
+    fulfill_basis.add_argument("--fulfillment-ledger", required=True,
+                               help="T-13 fulfillment ledger (sqlite)")
+    fulfill_basis.add_argument("--basis", required=True, help="delivery basis JSON")
+    fulfill_basis.set_defaults(func=cmd_fulfill_basis)
+
+    fulfill_access = sub.add_parser("fulfill-access",
+                                    help="record observed intended-reader accessibility")
+    fulfill_access.add_argument("--fulfillment-ledger", required=True,
+                                help="T-13 fulfillment ledger (sqlite)")
+    fulfill_access.add_argument("--item", required=True, help="promised item JSON")
+    fulfill_access.add_argument("--basis", required=True, help="delivery basis JSON")
+    fulfill_access.add_argument("--evidence", required=True,
+                                help="who observed the reader reach the item, and how")
+    access = fulfill_access.add_mutually_exclusive_group(required=True)
+    access.add_argument("--accessible", dest="accessible", action="store_true")
+    access.add_argument("--inaccessible", dest="accessible", action="store_false")
+    fulfill_access.set_defaults(func=cmd_fulfill_access)
+
+    fulfill_resume = sub.add_parser("fulfill-resume",
+                                    help="reconcile a possibly-sent item without a second send")
+    fulfillment_paths(fulfill_resume)
+    fulfill_resume.add_argument("--worker-id", default="fulfillment-worker")
+    fulfill_resume.add_argument("--retry", action="store_true",
+                                help="retry under the same action identity after reconciliation "
+                                     "proves the effect does not exist")
+    fulfill_resume.set_defaults(func=cmd_fulfill_resume)
+
+    fulfill_proof = sub.add_parser("fulfill-proof",
+                                   help="promote accepted -> delivered from a real receipt")
+    fulfillment_paths(fulfill_proof)
+    fulfill_proof.add_argument("--proof", required=True, help="delivery proof JSON")
+    fulfill_proof.set_defaults(func=cmd_fulfill_proof)
+
+    fulfill_continue = sub.add_parser("fulfill-continue",
+                                      help="may optional collection continue for this item?")
+    fulfillment_paths(fulfill_continue)
+    fulfill_continue.set_defaults(func=cmd_fulfill_continue)
 
     return parser
 
