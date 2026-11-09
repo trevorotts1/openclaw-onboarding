@@ -1,20 +1,34 @@
 # Changelog - kie-image
 
-## [2.2.6] - 2026-11-08 - G3 lockstep roll (PR 2868)
+## [2.2.6] - 2026-11-08 - rule-12 band on the regenerated enforcer + G3 lockstep roll (PR 2868)
 
+- `scripts/validate_prompt.py` carries the merged rule-12 band arithmetic beside the GPT Image 2.6
+  slash ids and the owner cap of 20,000 characters (`owner_prompt_cap_chars` outranks the vendor
+  schema at limit resolution).
+- Version bumped to v2.2.6: main's W19 fold already reached v2.2.5.
+- Risk: LOW. Band arithmetic and model ids only; no route or credential changed.
 - `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.5 -> 2.2.6 so this skill's changelog entry carries the version bump G3 requires above main. No behavior change; main's one prompt-band rule (owner rule 12) is carried unchanged.
 
 ## [2.2.5] - 2026-11-08 - G3 lockstep roll (PR 2868)
 
 - `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.4 -> 2.2.5 so the changelog entries added to this skill carry the required version bump. No behavior change; the prompt gate is unchanged.
 
-## [2.2.4] - 2026-11-08 - G3 lockstep rolls (F18 touch, CI clear)
+
+## [2.2.4] - 2026-11-08 - GPT Image 2.5 -> 2.6 Sunburst default route + G3 lockstep rolls (F18 touch, CI clear)
+
+- Every 2.5 reference in this skill now names `gpt-image-2-6/sunburst-text-to-image` (T2I) and
+  `gpt-image-2-6/sunburst-image-to-image` (I2I). Skill 88 explicitly calls models.json for
+  capability data, the adapter for dispatch.
+- `models.json` 2.6 rows carry the real 16-value `aspect_ratio` enum and the owner prompt cap.
+- No credential, endpoint or payload shape changed.
 
 - `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.2 -> 2.2.4 by the F18 version bump (2026-11-07) and the PR 2864 CI-clear roll (2026-11-08): prompt-gate prompt-budget enforcement carries forward, no new behavior in this entry. Entry added so the Skill 07 docs-port changelog gate pins the shipped version.
+
 
 ## [2.2.3] - 2026-11-07 - G3 lockstep roll (F18 touch)
 
 - `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.2 -> 2.2.3 by the F18 version bump: prompt-gate prompt-budget enforcement carries forward, no new behavior in this entry. Entry added so the Skill 07 docs-port changelog gate pins the shipped version.
+
 
 ## [2.2.2] - 2026-10-09 - fix: key-variable sentence names KIE_API_KEY from the official docs
 

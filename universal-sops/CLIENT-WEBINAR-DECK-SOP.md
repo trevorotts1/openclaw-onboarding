@@ -192,8 +192,8 @@ assembler, and it is the script.
   build failure to report — never something the builder patches around.
 - The deliverable registered + reported is the EXACT `.pptx` `build_deck.py` produced, and
   ONLY when the script exited 0.
-- 16:9, 2K, and the Kie model per call (`gpt-image-2-5-sunburst-image-to-image` when a logo, portrait or
-  style-reference URL is supplied for the slide, `gpt-image-2-5-sunburst-text-to-image` only when no
+- 16:9, 2K, and the Kie model per call (`gpt-image-2-6/sunburst-image-to-image` when a logo, portrait or
+  style-reference URL is supplied for the slide, `gpt-image-2-6/sunburst-text-to-image` only when no
   reference exists), all enforced INSIDE the script (section 9.0); the builder does not choose or pass
   any of them.
 - Client's OWN `KIE_API_KEY` — the script reads it from the client/dept env stores itself;
@@ -212,7 +212,7 @@ source material  ──▶  STEP 1: builder writes slides.json
                               │   (the script does ALL of this — the builder does none of it:)
                               │     • renders the authored rich KIE prompt per slide
                               │       (scene + verbatim copy + logo + layout + English pin)
-                              │     • POST /api/v1/jobs/createTask  (gpt-image-2-5-sunburst-image-to-image by default,
+                              │     • POST /api/v1/jobs/createTask  (gpt-image-2-6/sunburst-image-to-image by default,
                               │         -text-to-image when no reference exists; 16:9, 2K)
                               │     • GET  /api/v1/jobs/recordInfo?taskId=…  until state=success
                               │     • parse data.resultJson → resultUrls[0] → download PNG (authenticated GET)
@@ -420,8 +420,8 @@ exists at `outputPath` before reporting.
 
 **9.0 Model manifest (the only place this pipeline names a model).** The script, never the builder,
 applies it, and `presentation_job/model_catalog.py` is the machine copy:
-- Default: `gpt-image-2-5-sunburst-image-to-image` (a logo, portrait or style reference is supplied in
-  `input_urls`) or `gpt-image-2-5-sunburst-text-to-image` (no reference), 16:9, 2K.
+- Default: `gpt-image-2-6/sunburst-image-to-image` (a logo, portrait or style reference is supplied in
+  `input_urls`) or `gpt-image-2-6/sunburst-text-to-image` (no reference), 16:9, 2K.
 - The legacy `gpt-image-2-*` route is used only for 3:1, 1:3 and 9:21; the `flare` variant is not
   registered (AGENTS.md N43; call mechanics in `presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md`
   section 2A).

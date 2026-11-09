@@ -214,7 +214,7 @@
       "status": "APPROVED"
     },
     {
-      "id": "gpt-image-2-5-sunburst",
+      "id": "gpt-image-2-6/sunburst",
       "task": "image",
       "family": "gpt-image",
       "status": "APPROVED"
