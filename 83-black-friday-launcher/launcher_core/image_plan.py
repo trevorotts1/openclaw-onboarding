@@ -42,7 +42,7 @@ DEFAULT_STUB_IMAGE_CAP = 400
 
 # Spend is money, not a picture count (ENF-05). The ceiling in pictures is DERIVED: cap_minor // price.
 # Per-picture price in minor units by provider and currency. 8 US cents is the highest per-image tier in
-# Skill 74's real KIE pricing samples (GPT Image 2.5 at 4K, 74-kie-live-adapter/tests/real_pricing.py), so the
+# Skill 74's real KIE pricing samples (GPT Image 2.6 at 4K, 74-kie-live-adapter/tests/real_pricing.py), so the
 # derived picture ceiling errs low. Skill 74's `price` command is the live authority; a currency with no row
 # here is refused rather than guessed.
 # ponytail: static table; swap for a live Skill 74 price lookup if per-model budgets are needed.

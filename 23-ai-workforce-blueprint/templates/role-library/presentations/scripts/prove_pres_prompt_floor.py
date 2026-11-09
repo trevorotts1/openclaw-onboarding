@@ -59,7 +59,7 @@ GPT_MAX = prompt_gate.length_budget()["max"]  # the image model maxLength, from 
 
 def _rich_pass_prompt(chars: int = GPT_MAX * 97 // 100) -> str:
     """Build a prompt that clears the whole gate at exactly `chars` stripped characters (default 97 percent
-    of the 20,000 GPT Image 2.5 max): distinct content, the [ARCHETYPE] block, an 8-class DO-NOT BLOCK,
+    of the 20,000 GPT Image 2.6 max): distinct content, the [ARCHETYPE] block, an 8-class DO-NOT BLOCK,
     a spelling-lock, hex palette, type size, a composition token, the verbatim copy baked in, and the
     mandatory English pin (so the pin adds nothing at submit)."""
     copy_line = "Stop Guessing. Start Closing."

@@ -27,7 +27,7 @@ A deck is built by **ONE pipeline with TWO layers**, always in this order:
   `run_signature_deck.py`, fronted by `presentation-canonical-entry.sh`). It reads the
   Layer-A rich prompts **VERBATIM** — it does **not** compose them, does **not** have an
   image tool of its own, and does **not** turn a bare `scene`/`copy` pair into a prompt.
-  It submits each rich prompt to `gpt-image-2-5-sunburst-text-to-image` / `-image-to-image` (16:9,
+  It submits each rich prompt to `gpt-image-2-6/sunburst-text-to-image` / `-image-to-image` (16:9,
   2K, the mandatory English/Latin-only pin appended), polls, downloads, verifies every
   PNG, assembles the full-bleed `.pptx`, and then runs **two distinct gates over two
   distinct bundles**: the **postflight completeness gate** enforces the **ten-file

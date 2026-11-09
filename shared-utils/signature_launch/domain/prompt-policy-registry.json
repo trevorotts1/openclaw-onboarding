@@ -6,7 +6,7 @@
       "policy_id": "kie-rule-12-band",
       "entry_status": "active",
       "supersedes": "kie-rule-12-band-r1",
-      "entry_hash": "0981c8f0e6e754d6f473fffbb385e92655be70808356cc0d3c3761c07dbb741c",
+      "entry_hash": "d90d7f6f42ed622f7c5979bbdc9f3c7eaff74d42139ae1c252d0d28b6a11691e",
       "provenance": {
         "content_owners": [
           "Skill 71",
@@ -48,7 +48,7 @@
       },
       "model_maxima": [
         {
-          "model_id": "gpt-image-2-5",
+          "model_id": "gpt-image-2-6",
           "provider": "KIE",
           "maximum": {
             "value": 20000,
@@ -58,7 +58,7 @@
           "cap_status": "NOT_PUBLISHED",
           "cap_status_source_value": "NOT_PUBLISHED",
           "source_citation": {
-            "source_ref": "Skill 71 prompt-budget-policy.json (band branch), models[0]: match 'gpt-image-2-5', max_chars 20000, unit chars, cap_status NOT_PUBLISHED; source text: 'GPT Image 2.5 cap 20,000 per KIE docs 2026-09-09 as recorded by Skill 66; NOT owner-confirmed (FIX-PLAN Part C-rule 5)'. The validator's default model id for this record is 'gpt-image-2-5-sunburst-text-to-image' (the Skill 66 registry id). Live-field cross-check: the model's live schema sets the field maximum at 20,000 characters (update plan Item 4 part (b)).",
+            "source_ref": "Skill 71 prompt-budget-policy.json (band branch), models[0]: match 'gpt-image-2-6', max_chars 20000, unit chars, cap_status NOT_PUBLISHED; source text: 'GPT Image 2.6 cap 20,000 per KIE docs 2026-09-09 as recorded by Skill 66; NOT owner-confirmed (FIX-PLAN Part C-rule 5)'. The validator's default model id for this record is 'gpt-image-2-6/sunburst-text-to-image' (the Skill 66 registry id). Live-field cross-check: the model's live schema sets the field maximum at 20,000 characters (update plan Item 4 part (b)).",
             "recorded_by": "Skill 66 (recorded in Skill 71's prompt-budget-policy.json)",
             "recorded_at": "2026-09-09",
             "authority": "vendor_published"
@@ -171,7 +171,7 @@
         },
         {
           "provider": "KIE",
-          "enum_source_ref": "The per-model input_fields.aspect_ratio.enum array in the KIE adapter's own model registry: 74-kie-live-adapter/references/kie-model-registry.json (Skill 74, trevorotts1/openclaw-onboarding), read from the models[] entry matching the run's selected model id. For the launch GPT Image 2.5 models (gpt-image-2-5-sunburst-text-to-image, gpt-image-2-5-flare-text-to-image, and the image-to-image variants) the enum is: auto, 1:1, 3:2, 2:3, 4:3, 3:4, 16:9, 9:16, 21:9, 27:16, 16:27, 9:8, 8:9. Named as the KIE ratio authority record by the Leg 2 naming act of 2026-10-18 (rooms/S71/A24-LEG2-KIE-RATIO-NAMING-ACT-2026-10-18.md).",
+          "enum_source_ref": "The per-model input_fields.aspect_ratio.enum array in the KIE adapter's own model registry: 74-kie-live-adapter/references/kie-model-registry.json (Skill 74, trevorotts1/openclaw-onboarding), read from the models[] entry matching the run's selected model id. For the launch GPT Image 2.6 models (gpt-image-2-6/sunburst-text-to-image, gpt-image-2-6/flare-text-to-image, and the image-to-image variants) the enum is: auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3. OWNER RULING 2026-11-08 supersedes the 2.5-era ratio list named by the Leg 2 naming act: the retired 2.5-era extra ratios are NOT GPT Image 2.6 enum members at any resolution and a request that names any of them returns HTTP 422. Named as the KIE ratio authority record by the Leg 2 naming act of 2026-10-18 (rooms/S71/A24-LEG2-KIE-RATIO-NAMING-ACT-2026-10-18.md).",
           "confirmation_point": "provider_adapter",
           "authority_rule": "Term 2 (S71 Q8 position note, 2026-10-16) governs: the ratio set for a KIE-selected launch run comes from the KIE adapter's own authority record named in enum_source_ref, and the adapter governs the actual call. The Skill 74 shared snapshot carried inside Skill 71 is a cache, not an authority; where cache and adapter record disagree, the adapter governs and the disagreement fails closed by name. The N43 routing and transport mappings are not the authority record. No layer substitutes a ratio silently (Term 3), except under the one named exception that follows. NAMED EXCEPTION TO TERM 3 (Leg 3 disposition (c), recorded 2026-10-18 in rooms/S71/review-scratch/A24-LEG3-EXECUTION-2026-10-18.md): the N43 operator-approved ratio substitutions on the KIE route (5:4 to 4:3, 4:5 to 3:4, 2:1 to 16:9, 1:2 to 9:16; operator ruling 2026-09-09) are kept as an explicit named exception to Term 3. The exception is not silent: each substitution is recorded at selection and on the run's receipt (requested_ratio and generated_ratio per task) and is verified at the Skill 71 stage gate on every task; the legacy-route ratios (3:1, 1:3, 9:21) are never substituted. Every other requested ratio outside the governing enum refuses by name."
         }
@@ -468,7 +468,7 @@
       },
       "model_maxima": [
         {
-          "model_id": "gpt-image-2-5",
+          "model_id": "gpt-image-2-6",
           "provider": "KIE",
           "maximum": {
             "value": 20000,
@@ -478,7 +478,7 @@
           "cap_status": "NOT_PUBLISHED",
           "cap_status_source_value": "NOT_PUBLISHED",
           "source_citation": {
-            "source_ref": "Skill 71 prompt-budget-policy.json (band branch), models[0]: match 'gpt-image-2-5', max_chars 20000, unit chars, cap_status NOT_PUBLISHED; source text: 'GPT Image 2.5 cap 20,000 per KIE docs 2026-09-09 as recorded by Skill 66; NOT owner-confirmed (FIX-PLAN Part C-rule 5)'. The validator's default model id for this record is 'gpt-image-2-5-sunburst-text-to-image' (the Skill 66 registry id). Live-field cross-check: the model's live schema sets the field maximum at 20,000 characters (update plan Item 4 part (b)).",
+            "source_ref": "Skill 71 prompt-budget-policy.json (band branch), models[0]: match 'gpt-image-2-6', max_chars 20000, unit chars, cap_status NOT_PUBLISHED; source text: 'GPT Image 2.6 cap 20,000 per KIE docs 2026-09-09 as recorded by Skill 66; NOT owner-confirmed (FIX-PLAN Part C-rule 5)'. The validator's default model id for this record is 'gpt-image-2-6/sunburst-text-to-image' (the Skill 66 registry id). Live-field cross-check: the model's live schema sets the field maximum at 20,000 characters (update plan Item 4 part (b)).",
             "recorded_by": "Skill 66 (recorded in Skill 71's prompt-budget-policy.json)",
             "recorded_at": "2026-09-09",
             "authority": "vendor_published"

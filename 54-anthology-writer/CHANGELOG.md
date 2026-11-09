@@ -1,5 +1,16 @@
 # Changelog — Anthology Writer (Skill 54)
 
+## v2.0.7 - 2026-11-08 - cover prompt names GPT Image 2.6; manifest pin and version reconciled
+
+- `assets/prompts/11-cover-image-prompt.md`: the render-target paragraph names the current
+  model, `gpt-image-2-6/sunburst-text-to-image` (slash form; the hyphen form returns HTTP 422),
+  instead of the retired GPT-image-2.5 id. Prompt body, four cover styles and the 2:3 portrait
+  geometry are unchanged.
+- `ANTHOLOGY-MANIFEST.json`: `source_prompt_pins["assets/prompts/11-cover-image-prompt.md"]`
+  re-pinned to the edited bytes (sha256 `ccda57cb…`) so `prove_aw_fidelity.py` stays green, and
+  `skill_version` reconciled from the stale v2.0.5 to v2.0.7 so all four version surfaces agree.
+- Risk: LOW. One prose paragraph and its own pin; no phase, gate, band or runtime path changes.
+
 ## v2.0.5 - 2026-10-14 - stamp-pin subcommand + pin/version reconciliation
 
 - verify.sh gained a `stamp-pin` subcommand that recomputes ENGINE-PIN.sha256 over

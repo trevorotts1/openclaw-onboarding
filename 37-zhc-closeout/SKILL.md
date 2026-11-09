@@ -82,7 +82,7 @@ By the end of Skill 37 execution, the client has received **all of the following
 |---|---------|--------|
 | 1 | "🎉 Your zero-human company is built!" + summary stats | Composed from state file |
 | 2 | Workforce Structure infographic (Telegram sendPhoto) | HTML + Playwright Chromium screenshot (local, deterministic text) |
-| 3 | How Work Flows infographic (Telegram sendPhoto) | KIE.AI GPT Image 2.5 sunburst (`gpt-image-2-5-sunburst-text-to-image`; fallback `nano-banana-2`) |
+| 3 | How Work Flows infographic (Telegram sendPhoto) | KIE.AI GPT Image 2.6 sunburst (`gpt-image-2-6/sunburst-text-to-image`; fallback `nano-banana-2`) |
 | 4 | 4–8 sec celebration video (Telegram sendVideo, bytes uploaded) | KIE.AI Gemini Omni Video (fallback: Veo 3.1) |
 | 5 | "Your full Notion closeout doc → [link]" | Notion API |
 | 6 | "Your BlackCEO Command Center → [URL]" | Skill 32 output |
@@ -155,7 +155,7 @@ Same reason Skill 23's build-resume layer is a separate component:
 | Item | Model | Approx Cost | Cap |
 |------|-------|-------------|-----|
 | Infographic #1 | Local HTML + Playwright Chromium (no model call) | $0 | 0 retries needed (deterministic) |
-| Infographic #2 | `gpt-image-2-5-sunburst-text-to-image` (fallback `nano-banana-2`) | price: see price authority below | 3 retries |
+| Infographic #2 | `gpt-image-2-6/sunburst-text-to-image` (fallback `nano-banana-2`) | price: see price authority below | 3 retries |
 | Celebration video | `gemini-omni-video` (fallback `veo3_fast`) | price: see price authority below | 3 retries (with model fallback) |
 | Notion pages | Notion API (free per workspace) | $0 | 3 retries per page |
 | Telegram sends | openclaw message send | $0 | 3 retries per send |
@@ -188,9 +188,9 @@ The script also auto-falls-back from `gemini-omni-video` to `veo3_fast` on its t
 
 **Infographic #1** is rendered locally via HTML + CSS + a headless Chromium screenshot (Playwright). It is NOT a diffusion-model call.
 
-Why: diffusion models (GPT Image 2.5, Nano Banana, Imagen) cannot reliably render small text labels. Early fleet closeout attempts came back with garbled department names and missing role counts. HTML + CSS gives perfect text every time, is free per render, and is fully deterministic.
+Why: diffusion models (GPT Image 2.6, Nano Banana, Imagen) cannot reliably render small text labels. Early fleet closeout attempts came back with garbled department names and missing role counts. HTML + CSS gives perfect text every time, is free per render, and is fully deterministic.
 
-The renderer lives in `templates/workforce-org-chart/`. See its README for details. Infographic #2 (How Work Flows) is stylized enough that AI image gen is still appropriate, and it uses GPT Image 2.5 sunburst (`gpt-image-2-5-sunburst-text-to-image`) first, as pinned fleet-wide by AGENTS.md N43, with Nano Banana 2 (KIE slug `nano-banana-2`; the marketing-name `gemini-3-1-flash-image` slug returns HTTP 422 on KIE and is NOT used) as the fallback. Skill 66 (`66-kie-image`) is the authoritative model registry; canonical KIE rules: `07-kie-setup/references/kie-common-rules.md`.
+The renderer lives in `templates/workforce-org-chart/`. See its README for details. Infographic #2 (How Work Flows) is stylized enough that AI image gen is still appropriate, and it uses GPT Image 2.6 sunburst (`gpt-image-2-6/sunburst-text-to-image`) first, as pinned fleet-wide by AGENTS.md N43, with Nano Banana 2 (KIE slug `nano-banana-2`; the marketing-name `gemini-3-1-flash-image` slug returns HTTP 422 on KIE and is NOT used) as the fallback. Skill 66 (`66-kie-image`) is the authoritative model registry; canonical KIE rules: `07-kie-setup/references/kie-common-rules.md`.
 
 ## Files in This Folder
 
