@@ -37,6 +37,7 @@ on:
   pull_request:
     paths:
       - "49-signature-funnel/**"
+      - "71-blackceo-signature-page/**"
       - "83-black-friday-launcher/**"
       - "shared-utils/signature_launch/**"
       - "shared-utils/signature_launch_contract/**"
@@ -46,6 +47,7 @@ on:
     tags: ["v*"]
     paths:
       - "49-signature-funnel/**"
+      - "71-blackceo-signature-page/**"
       - "83-black-friday-launcher/**"
       - "shared-utils/signature_launch/**"
       - "shared-utils/signature_launch_contract/**"
