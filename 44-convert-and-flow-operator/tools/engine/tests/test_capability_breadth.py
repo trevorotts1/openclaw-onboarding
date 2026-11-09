@@ -104,7 +104,7 @@ PRE_GATE_RULES = frozenset({"unknown_tenant_binding", "tenant_path_missing"})
 #: Pinned registry shape.  A change here means operations.py grew or shrank:
 #: update this count and the breadth expectations in the same change.  Failing
 #: loudly is the point.
-EXPECTED_OPERATION_COUNT = 140
+EXPECTED_OPERATION_COUNT = 141
 
 _COMPLETE = dict(
     contract_verified=True,
@@ -554,6 +554,22 @@ class TenantMismatchBreadthTest(unittest.TestCase):
 
 
 class RegistryEnumerationTest(unittest.TestCase):
+    def test_meeting_calendar_update_contract_remains_default_deny(self) -> None:
+        row = OPERATIONS['calendars.update']
+        self.assertEqual((row.method, row.path_template, row.version),
+                         ('PUT', '/calendars/{calendarId}', 'v3'))
+        self.assertEqual(row.tenant_binding, 'path.calendarId')
+        self.assertEqual(row.scopes_candidate, ('calendars.write',))
+        self.assertEqual(row.readback_plan, 'calendars.get')
+        self.assertTrue(row.write)
+        self.assertEqual(row.doc_fetch_date, '2026-11-08')
+        self.assertEqual(row.doc_url,
+            'https://marketplace.gohighlevel.com/docs/ghl/calendars/update-calendar')
+        result, transport = _invoke(row, LIVE_TENANT, record=capability_record_path())
+        self.assertIs(result.status, Status.denied)
+        self.assertEqual((result.error or {}).get('rule'), 'capability_disabled')
+        self.assertEqual(transport.call_count, 0)
+
     def test_registry_is_enumerated_dynamically_and_count_is_pinned(self) -> None:
         actual = len(OPERATIONS)
         self.assertEqual(
