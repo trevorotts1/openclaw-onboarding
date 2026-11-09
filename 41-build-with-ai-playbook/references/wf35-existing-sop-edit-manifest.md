@@ -64,6 +64,6 @@ Enablement stays with the per-`(operation_id, tenant)` capability evidence.
 
 | ID | What this lane proves | Fixture |
 |---|---|---|
-| B22 | Existing SOPs and Skill 41 match the new routing doctrine; no second cluster; source and bundle/retrieval copies stay coherent within this lane's scope | `41-build-with-ai-playbook/scripts/wf35-sop-reconciliation.test.sh` |
+| B22 | Existing SOPs and Skill 41 match the new routing doctrine; no second cluster; source and bundle/retrieval copies stay coherent within this lane's scope | `41-build-with-ai-playbook/scripts/wf35-sop-reconciliation.test.py` |
 | IG-RELEASE-01 (source side) | Source documents and the changed-source manifest agree; distribution/regeneration is handed to WF21 | the changed-source list in the builder checkpoint |
 | IG-PAGE-01 (doc side) | Design/intake/copy/full-width/SEO gates remain explicitly enforced in the form/funnel/website SOPs | the same fixture's design-gate assertions |

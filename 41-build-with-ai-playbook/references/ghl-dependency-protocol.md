@@ -25,6 +25,15 @@
 - Used in: templates, workflows via {{custom_values.<name>}} syntax
 - The Workflow AI Builder inserts placeholder custom value syntax but does NOT create them
 
+## Creation route: verified public operations first
+
+The endpoints below are the public contract. Issue them through the shared adapter and its registry
+rows (`custom_fields.list/create`, `tags.list/create`, `custom_values.list/create`) only when the
+per-`(operation_id, tenant)` capability record allows this location. A catalog entry or a docs page is
+not enablement. If a public row is not enabled for the location, the approved private or managed path
+applies and the actual route is recorded; never hand-roll HTTP and never let the browser mint an
+un-prefixed field.
+
 ## Creation Order (Critical)
 
 1. Create Custom Fields (define schema)
@@ -39,6 +48,7 @@
 - Tags referenced in Add Tag actions must exist or the action fails
 - Custom fields referenced in Update Contact Field must exist
 - The playbook must instruct: CREATE ALL DEPENDENCIES FIRST, THEN BUILD THE WORKFLOW
+- Record the observed id/key of every created or reused object, plus the route that produced it
 
 ## ZHC Prefix Rules
 

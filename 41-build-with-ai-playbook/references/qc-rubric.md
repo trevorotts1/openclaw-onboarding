@@ -22,7 +22,7 @@ Were all dependencies (tags, fields, values) created BEFORE the workflow prompt 
 - Evidence: dependency_created events in build-with-ai-events.jsonl
 - Evidence: GET verification calls after each POST
 
-Scoring: 1.0 = all dependencies created and verified first; 0.5 = some created but not all verified; 0.0 = dependencies missing or created after prompt
+Scoring: 1.0 = all dependencies created and verified first, each through a registry row whose per-location capability allowed it; 0.5 = some created but not all verified; 0.0 = dependencies missing or created after prompt
 
 ### 3. ZHC Prefix Discipline (1.0 point)
 Do all agent-created tags and fields carry the correct prefix?
@@ -32,12 +32,14 @@ Do all agent-created tags and fields carry the correct prefix?
 
 Scoring: 1.0 = all correct; 0.5 = most correct, one or two missed; 0.0 = multiple missing or wrong prefixes
 
-### 4. No Fabrication (1.0 point)
-Did the agent invent any GHL trigger, action, or capability that does not exist?
+### 4. No Fabrication and Route/Contract Evidence (1.0 point)
+Did the agent invent any GHL trigger, action, or capability that does not exist, or claim a route it did not prove?
 - Cross-reference against references/ghl-triggers-catalog.md and references/ghl-actions-catalog.md
-- Honest gaps reported with operator manual path
+- Every governed operation names its registry row and the capability evidence that allowed it
+- A successful read or discovery is not treated as create support
+- Honest gaps reported with the operator manual path
 
-Scoring: 1.0 = zero fabrication; 0.0 = any fabricated capability
+Scoring: 1.0 = zero fabrication and every route evidenced; 0.5 = zero fabrication but a route claimed without evidence; 0.0 = any fabricated capability
 
 ### 5. Webhook Configuration Accuracy (1.0 point)
 If webhooks are present, is the configuration correct?
@@ -68,11 +70,12 @@ Do workflow settings match the operator's intent?
 Scoring: 1.0 = all match; 0.5 = one mismatch; 0.0 = multiple mismatches
 
 ### 8. Verification Checklist Run (1.0 point)
-Was the 12-point verification checklist actually run after build?
+Was the 12-point verification checklist actually run after build, with the proof tiers kept separate?
 - Evidence: build_completed event with verification_score
 - Or verification_failed event with failed_items
+- Definition and read-back evidence recorded; runtime recorded as proved or `not_run` with the reason
 
-Scoring: 1.0 = checklist run and score recorded; 0.5 = checklist run but not logged; 0.0 = no verification
+Scoring: 1.0 = checklist run, score recorded, tiers separated; 0.5 = checklist run but not logged or tiers conflated; 0.0 = no verification
 
 ### 9. Event Logging (1.0 point)
 Was the build session properly logged?
@@ -91,5 +94,5 @@ Scoring: 1.0 = confirmed; 0.5 = partially confirmed; 0.0 = built on guess
 ## Scoring
 
 - Sum all 10 categories (max 10.0)
-- Threshold: 8.5 to pass
+- Threshold: 8.5 to pass (unchanged; no new category and no new threshold is introduced)
 - Below 8.5: fix the weakest categories and re-run QC

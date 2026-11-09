@@ -82,14 +82,25 @@ Record the verification score in build-with-ai-events.jsonl:
 
 ---
 
-## Cross-reference: Skill 44 WF-1..WF-21 Checklist (caf-built workflows)
+## Route and contract evidence (applies to every build, every rail)
+
+Before scoring the 12 points, record the route used for each governed operation: the registry
+operation id, its class (`public_direct`, `official_mcp`, `skill44_private`, `skill06_authoring`,
+`capability_gap`), and the capability evidence that allowed it. A route claim without evidence fails
+point 8 (verification actually run) rather than counting as done.
+
+Separate the three proof tiers: **definition** (the saved graph), **read-back** (an independent read
+after the write), and **runtime** (a controlled test plus the provider log). Point 12 is runtime proof;
+if no controlled test ran, record `runtime: not_run` with the reason — never a pass.
+
+## Cross-reference: Skill 44 WF-1..WF-28 Checklist (caf-built workflows)
 
 For workflows built via Skill 44's Convert and Flow CLI (`caf workflows build`), use the
-**Skill 44 WF-1..WF-21 checklist** at
+**Skill 44 WF-1..WF-28 checklist** at
 `44-convert-and-flow-operator/references/workflow-build-checklist-template.md` instead.
 
 That checklist is a SUPERSET of this 12-point checklist, extended with Skill 44-specific
-gates that are not applicable to Build-with-AI (browser/manual) builds:
+gates that are not applicable to every Build-with-AI (browser/manual) build:
 - **WF-4** — trigger active flag vs publish-intent (the "trigger-active trap": CAF_DRAFT_ONLY=true
   ships triggers inactive by default; a workflow built as LIVE needs active:true or it
   silently never fires).
@@ -99,5 +110,7 @@ gates that are not applicable to Build-with-AI (browser/manual) builds:
 - **WF-21** — pre-build snapshot exists for rollback.
 - Gating questions recorded on the checklist (publish decision, re-entry decision).
 
-This Skill 41 checklist applies to **Build-with-AI (manual browser)** builds only.
-For caf-built workflows, the Skill 44 WF-1..WF-21 checklist is authoritative.
+This Skill 41 checklist is the floor for **Build-with-AI (manual browser)** builds.
+For caf-built workflows, the Skill 44 WF-1..WF-28 checklist is authoritative. Both paths carry the
+same functional contract: the same dependency-first rule, the same verification, and the same proof
+tiers.

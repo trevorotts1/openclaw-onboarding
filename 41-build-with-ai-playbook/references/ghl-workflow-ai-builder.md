@@ -1,5 +1,13 @@
 # GHL Workflow AI Builder Reference -- Skill 41
 
+## Compile-time, not runtime
+
+The Workflow AI Builder turns a prompt into a workflow DEFINITION. It does not configure a native
+Conversation AI responder, a voice agent, or knowledge retrieval, and it does not prove runtime
+behavior. Those are separate operations with their own activation evidence (active responder,
+channel/phone assignment, agent version) and their own controlled test. Treat a generated workflow
+as definition proof only; read-back and runtime proof remain separate tiers.
+
 ## What It Is
 
 Converts natural-language prompts into end-to-end workflows. Generates triggers, actions, and structure from plain English.
@@ -69,3 +77,7 @@ Converts natural-language prompts into end-to-end workflows. Generates triggers,
 - AI-generated workflows can land in Recent list rather than chosen folder
 - The feature is free for all HighLevel users
 - Not available for marketplace triggers/actions
+- A trigger/action catalog entry, a docs page, or an MCP discovery result is NOT capability
+  evidence; enablement is per `(operation_id, tenant)`
+- The builder is an authoring surface (`skill06_authoring` for form/survey/page authoring rows); it
+  is not a public create API
