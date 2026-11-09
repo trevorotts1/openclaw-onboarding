@@ -188,9 +188,16 @@ await section('Worker: /cb signature verify, replay, validator (fixes D/E/F)', a
 // =============================================================================
 function tmpWorkspace() { return fs.mkdtempSync(path.join(os.tmpdir(), 'kie-test-')); }
 
+// F21 item 11: paid-job state lives under the DURABLE root the shared resolver returns
+// (<root>/data/kie-jobs/<scope>/{registry,index,done}), never under an arbitrary working
+// folder. Each test passes its temp dir as the explicit `dataRoot` pin and derives the
+// expected location from the SAME shape the resolver prints -- no `.kie` path is asserted
+// any more, because that transient layout is exactly what the fix removed.
+const kieState = (root) => path.join(root, 'data', 'kie-jobs', SLUG);
+
 await section('box-kv-poller: _validatePerTaskSecret is exact submitId match (fix 34)', async () => {
   const ws = tmpWorkspace();
-  const p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', workspaceDir: ws, kvReadToken: 'tk' });
+  const p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', dataRoot: ws, kvReadToken: 'tk' });
   ok(p._validatePerTaskSecret({ submitId: 'want-this' }, 'want-this') === true, 'matching submitId -> true');
   ok(p._validatePerTaskSecret({ submitId: 'other-task' }, 'want-this') === false, 'different submitId -> false (confused-deputy blocked)');
   ok(p._validatePerTaskSecret({ submitId: '' }, 'want-this') === false, 'empty submitId -> false');
@@ -198,7 +205,7 @@ await section('box-kv-poller: _validatePerTaskSecret is exact submitId match (fi
 
 await section('box-kv-poller: code 200 + no allowlisted URLs -> failed (fix 35)', async () => {
   const ws = tmpWorkspace();
-  const p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', workspaceDir: ws, kvReadToken: 'tk', pollIntervalMs: 5 });
+  const p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', dataRoot: ws, kvReadToken: 'tk', pollIntervalMs: 5 });
   p._pollKv = async () => ({ submitId: 'sub-1', code: 200, resultUrls: ['https://evil.example.com/x.png'], receivedAt: 'now' });
   const marker = await p.waitForTask('sub-1', 'task-x', 'secret', { timeoutMs: 200 });
   ok(marker.status === 'failed', `code 200 w/ only non-allowlisted URLs -> failed (got ${marker.status})`);
@@ -210,7 +217,7 @@ await section('box-kv-poller: code 200 + no allowlisted URLs -> failed (fix 35)'
 // Helper: a poller whose callback never lands, so waitForTask always reaches the
 // Phase-2 Kie recordInfo fallback, with both waits collapsed to ~1ms.
 function fallbackPoller(ws, recordInfoBody) {
-  const p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', workspaceDir: ws,
+  const p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', dataRoot: ws,
                               kvReadToken: 'tk', pollIntervalMs: 1 });
   p._pollKv = async () => null;                                   // callback never arrives
   p._sleep  = (ms) => new Promise(r => setTimeout(r, Math.min(ms, 1)));
@@ -227,7 +234,7 @@ await section('box-kv-poller: fallback "success" with ZERO urls -> failed, NO do
   ok(marker.status === 'failed', `zero downloadable URLs -> failed, never 'done' (got ${marker.status})`);
   ok(Array.isArray(marker.resultUrls) && marker.resultUrls.length === 0, 'no URLs on the marker');
   ok(marker.rawUrlCount === 0, 'rawUrlCount records that the provider carried nothing');
-  const onDisk = JSON.parse(fs.readFileSync(path.join(ws, '.kie', 'done', 'task-empty.json'), 'utf8'));
+  const onDisk = JSON.parse(fs.readFileSync(path.join(kieState(ws), 'done', 'task-empty.json'), 'utf8'));
   ok(onDisk.status !== 'done', `the DURABLE marker on disk is not 'done' (got ${onDisk.status})`);
 });
 
@@ -250,13 +257,13 @@ await section('box-kv-poller: fallback success WITH a real url still -> done (no
                                      { timeoutMs: 5, kieApiKey: 'k', fallbackPollIntervalMs: 1 });
   ok(marker.status === 'done', `a real allowlisted URL still resolves 'done' (got ${marker.status})`);
   ok(marker.resultUrls.length === 1, 'the downloadable URL survives onto the marker');
-  const onDisk = JSON.parse(fs.readFileSync(path.join(ws, '.kie', 'done', 'task-ok.json'), 'utf8'));
+  const onDisk = JSON.parse(fs.readFileSync(path.join(kieState(ws), 'done', 'task-ok.json'), 'utf8'));
   ok(onDisk.status === 'done', 'done marker written as before for a real result');
 });
 
 await section('box-kv-poller: KV path still resolves a real url as done (no regression)', async () => {
   const ws = tmpWorkspace();
-  const p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', workspaceDir: ws,
+  const p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', dataRoot: ws,
                               kvReadToken: 'tk', pollIntervalMs: 1 });
   p._pollKv = async () => ({ submitId: 'sub-kv', code: 200,
                              resultUrls: ['https://tempfile.aiquickdraw.com/kv.png'], receivedAt: 'now' });
@@ -333,7 +340,7 @@ await section('box-kv-poller: Suno shape (response.data[].audio_url) -> done', a
 });
 
 await section('box-kv-poller: KV path recovers Market URLs from rawData when an old Worker sent resultUrls: []', async () => {
-  const p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', workspaceDir: tmpWorkspace(),
+  const p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', dataRoot: tmpWorkspace(),
                               kvReadToken: 'tk', pollIntervalMs: 1 });
   p._pollKv = async () => ({ submitId: 'sub-kv2', code: 200, resultUrls: [], rawData: marketData(), receivedAt: 'now' });
   const marker = await p.waitForTask('sub-kv2', 'task-kv2', 'secret', { timeoutMs: 200 });
@@ -341,7 +348,7 @@ await section('box-kv-poller: KV path recovers Market URLs from rawData when an 
 });
 
 await section('box-kv-poller: result-host allowlist stays strict', async () => {
-  const p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', workspaceDir: tmpWorkspace(), kvReadToken: 'tk' });
+  const p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', dataRoot: tmpWorkspace(), kvReadToken: 'tk' });
   const r = (u) => p._resolveOutcome([u], 200, 't', 'kie-poll').status;
   ok(r('https://tempfile.redpandaai.co/a.png') === 'done', 'tempfile.redpandaai.co allowed');
   ok(r('https://tempfile.aiquickdraw.com/a.png') === 'done', 'tempfile.aiquickdraw.com allowed');
@@ -376,7 +383,7 @@ await section('Worker: /cb stores REAL Market + Suno result URLs (extractResultU
 
 await section('box-kv-poller: BOTH paths share ONE outcome rule (_resolveOutcome)', async () => {
   const ws = tmpWorkspace();
-  const p  = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', workspaceDir: ws, kvReadToken: 'tk' });
+  const p  = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', dataRoot: ws, kvReadToken: 'tk' });
   ok(typeof p._resolveOutcome === 'function', '_resolveOutcome exists (the single shared check)');
   ok(p._resolveOutcome([], 200, 't', 'kie-poll').status === 'failed', 'empty + code 200 -> failed');
   ok(p._resolveOutcome(undefined, 200, 't', 'kie-poll').status === 'failed', 'missing urls -> failed (never skipped)');
@@ -408,7 +415,7 @@ await section('box-kv-poller: callbacksEnabled=false skips KV (fix 33)', async (
   // No kvReadToken supplied -> must NOT throw when callbacks disabled.
   let threw = false;
   let p;
-  try { p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: '', workspaceDir: ws, callbacksEnabled: false }); }
+  try { p = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: '', dataRoot: ws, callbacksEnabled: false }); }
   catch (_) { threw = true; }
   ok(!threw, 'constructor does not require kvReadToken when callbacks disabled');
   let kvCalled = false;
@@ -422,14 +429,14 @@ await section('box-kv-poller: callbacksEnabled=false skips KV (fix 33)', async (
 await section('kie-slide-submitter: constructor works without Worker secrets (fix 33)', async () => {
   const ws = tmpWorkspace();
   let threw = false;
-  try { new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', workspaceDir: ws }); }
+  try { new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', dataRoot: ws }); }
   catch (_) { threw = true; }
   ok(!threw, 'no callbackHmacKey/kvReadToken required at construction time');
 });
 
 await section('kie-slide-submitter: resume dedup prefers taskId, supersedes orphan (fix 37i)', async () => {
   const ws = tmpWorkspace();
-  const regDir = path.join(ws, '.kie', 'registry');
+  const regDir = path.join(kieState(ws), 'registry');
   fs.mkdirSync(regDir, { recursive: true });
   const label = 'deck1_slide1';
   // orphan (crash before Kie returned): taskId null, older
@@ -439,7 +446,7 @@ await section('kie-slide-submitter: resume dedup prefers taskId, supersedes orph
   fs.writeFileSync(path.join(regDir, 'orphan-id.json'), JSON.stringify(orphan));
   fs.writeFileSync(path.join(regDir, 'real-id.json'),   JSON.stringify(real));
 
-  const s = new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', workspaceDir: ws });
+  const s = new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', dataRoot: ws });
   const byLabel = s._loadRegistryByLabel();
   ok(byLabel[label] && byLabel[label].taskId === 'kie-task-99', 'winner is the row WITH a taskId (no double-submit)');
   const orphanAfter = JSON.parse(fs.readFileSync(path.join(regDir, 'orphan-id.json'), 'utf8'));
@@ -449,7 +456,7 @@ await section('kie-slide-submitter: resume dedup prefers taskId, supersedes orph
 
 await section('kie-slide-submitter: a durable "done" marker with no file is reconciled to failed (ONB-46-001)', async () => {
   const ws = tmpWorkspace();
-  const s  = new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', workspaceDir: ws });
+  const s  = new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', dataRoot: ws });
   ok(typeof s._reconcileDoneStatus === 'function', '_reconcileDoneStatus exists (the single shared rule)');
 
   const missing = path.join(ws, 'no-such-slide.png');
@@ -484,18 +491,18 @@ await section('kie-slide-submitter: a RESUMED slide is reconciled against disk (
   const seedResume = (doneMarker, { writeFile }) => {
     const ws = tmpWorkspace();
     const target = path.join(ws, 'out', 'slide1.png');
-    fs.mkdirSync(path.join(ws, '.kie', 'registry'), { recursive: true });
-    fs.mkdirSync(path.join(ws, '.kie', 'done'), { recursive: true });
-    fs.writeFileSync(path.join(ws, '.kie', 'registry', 'sub-1.json'), JSON.stringify({
+    fs.mkdirSync(path.join(kieState(ws), 'registry'), { recursive: true });
+    fs.mkdirSync(path.join(kieState(ws), 'done'), { recursive: true });
+    fs.writeFileSync(path.join(kieState(ws), 'registry', 'sub-1.json'), JSON.stringify({
       submitId: 'sub-1', label: 'deck1_slide1', deckId: 'deck1', slideId: 'slide1',
       taskId: 'task-1', targetPath: target, submittedAt: '2026-07-05T00:00:00.000Z'
     }));
-    fs.writeFileSync(path.join(ws, '.kie', 'done', 'task-1.json'), JSON.stringify(doneMarker));
+    fs.writeFileSync(path.join(kieState(ws), 'done', 'task-1.json'), JSON.stringify(doneMarker));
     if (writeFile) {
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.writeFileSync(target, 'png-bytes');
     }
-    const s = new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', workspaceDir: ws });
+    const s = new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', dataRoot: ws });
     return { s, ws, target,
              slides: [{ deckId: 'deck1', slideId: 'slide1', prompt: 'p', targetPath: target }] };
   };
@@ -575,7 +582,7 @@ await section('kie-slide-submitter: a RESUMED slide is reconciled against disk (
 await section('kie-slide-submitter: Skill 74 normalized task handoff', async () => {
   const mk = () => {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'kie74-'));
-    return { ws, s: new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', workspaceDir: ws,
+    return { ws, s: new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', dataRoot: ws,
       kvWorkerUrl: 'https://relay.invalid', callbackHmacKey: hmacHex(SLUG, MASTER_CB), kvReadToken: hmacHex(SLUG, MASTER_KVR) }) };
   };
 
@@ -630,10 +637,157 @@ await section('kie-slide-submitter: Skill 74 normalized task handoff', async () 
   }
 
   // Callback mode needs the Worker secrets.
-  const bare = new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', workspaceDir: fs.mkdtempSync(path.join(os.tmpdir(), 'kie74b-')) });
+  const bare = new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', dataRoot: fs.mkdtempSync(path.join(os.tmpdir(), 'kie74b-')) });
   let threw = false;
   try { bare.prepareCallback({ deckId: 'd', slideId: 's', targetPath: '/x' }); } catch (_) { threw = true; }
   ok(threw, 'prepareCallback without callbackHmacKey/kvReadToken throws');
+});
+
+// =============================================================================
+// F21 ITEM 10 — A CALLBACK MUST REUSE THE EXISTING JOB IDENTITY.
+//
+// The defect: prepareCallback() minted a fresh 128-bit submitId on EVERY call, so a retry
+// after a crash or an uncertain submit produced a second job identity for one slide -- a
+// second paid job -- while adoptAdapterTask() would happily REBIND an already-recorded
+// provider task id to whatever the adapter result carried. Both are asserted here by
+// driving the real functions; every id this section proves identical is printed.
+// =============================================================================
+await section('F21 item 10: prepareCallback reuses the job identity (never re-mints)', async () => {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'kie-id-'));
+  const s = new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', dataRoot: ws,
+    kvWorkerUrl: 'https://relay.invalid', callbackHmacKey: hmacHex(SLUG, MASTER_CB), kvReadToken: hmacHex(SLUG, MASTER_KVR) });
+  const job = { deckId: 'deck-id', slideId: 'slide-id', targetPath: path.join(ws, 'out', 'a.png'), model: 'm1' };
+
+  const first = s.prepareCallback(job);
+  ok(first.state === 'new' && first.resubmit === true && first.reused === false,
+     `first preparation mints a new identity (state=${first.state}, resubmit=${first.resubmit})`);
+  ok(first.taskId === null, 'a fresh identity carries no provider task id yet');
+
+  // The crash/retry case: the SAME logical job is prepared again.
+  const second = s.prepareCallback(job);
+  const secondId = new URL(second.callBackUrl).searchParams.get('j');
+  console.log(`  ids - first submitId=${first.submitId}  second submitId=${second.submitId}  j= in second URL=${secondId}`);
+  ok(second.submitId === first.submitId,
+     `the SECOND preparation returns the SAME submitId (${first.submitId} == ${second.submitId})`);
+  ok(second.callBackUrl === first.callBackUrl, 'the callback URL is byte-identical (same j=, s= and h=)');
+  ok(secondId === first.submitId, 'the j= inside the callback URL is the same job identity');
+  ok(second.reused === true && second.resubmit === false,
+     'the reuse is explicit: reused=true, resubmit=false');
+  ok(second.state === 'uncertain',
+     `a prepared-but-unresolved row is UNCERTAIN, not free to resubmit (state=${second.state})`);
+
+  // Only ONE registry row exists for the label: the retry did not fork the job.
+  const rows = fs.readdirSync(s.registryDir).filter(f => f.endsWith('.json'));
+  ok(rows.length === 1, `exactly one registry row after two preparations (found ${rows.length}: ${rows.join(', ')})`);
+
+  // A DIFFERENT slide is a different job: the reuse must not collapse it.
+  const other = s.prepareCallback({ ...job, slideId: 'slide-2' });
+  ok(other.submitId !== first.submitId && other.state === 'new',
+     'a different slide keeps its own new identity (reuse does not collapse distinct jobs)');
+  ok(fs.readdirSync(s.registryDir).filter(f => f.endsWith('.json')).length === 2,
+     'two distinct jobs -> two registry rows');
+});
+
+await section('F21 item 10: the recorded task id is the identity, and it is never rebound', async () => {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'kie-id2-'));
+  const s = new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', dataRoot: ws,
+    kvWorkerUrl: 'https://relay.invalid', callbackHmacKey: hmacHex(SLUG, MASTER_CB), kvReadToken: hmacHex(SLUG, MASTER_KVR) });
+  const job = { deckId: 'deck-r', slideId: 'slide-r', targetPath: path.join(ws, 'out', 'r.png'), model: 'm1' };
+  const prepared = s.prepareCallback(job);
+
+  const origWait = KieKvPoller.prototype.waitForTask;
+  KieKvPoller.prototype.waitForTask = async (sid, tid, secret) => ({ status: 'done', resultUrls: [], code: 200 });
+  try {
+    s._downloadFirst = async () => null;
+    const adopted = await s.adoptAdapterTask({ state: 'queued', task_id: 'task-A', model_id: 'm1',
+                                               data: { callback_url: prepared.callBackUrl } });
+    const afterAdopt = s._readRegistry(prepared.submitId);
+    console.log(`  ids - submitId=${prepared.submitId}  adapter task_id=task-A  registry task_id=${afterAdopt.taskId}`);
+    ok(adopted.taskId === 'task-A' && afterAdopt.taskId === 'task-A',
+       'the adapter task id and the registry task id are IDENTICAL (task-A)');
+
+    // Re-preparing after adoption must return the ACCEPTED identity, not a new one.
+    const again = s.prepareCallback(job);
+    ok(again.submitId === prepared.submitId && again.taskId === 'task-A' && again.state === 'accepted',
+       `re-preparation returns the accepted identity (submitId=${again.submitId}, taskId=${again.taskId}, state=${again.state})`);
+    ok(again.resubmit === false, 'an accepted job is never marked resubmittable');
+
+    // A different provider task answering for this identity is a different job: refuse.
+    let rebound = null;
+    try { await s.adoptAdapterTask({ state: 'queued', task_id: 'task-B', model_id: 'm1',
+                                     data: { callback_url: prepared.callBackUrl } }); }
+    catch (e) { rebound = e.message; }
+    console.log(`  ids - registry still task-A after a task-B result: ${s._readRegistry(prepared.submitId).taskId}`);
+    ok(rebound && /not the job identity recorded/.test(rebound),
+       'a result carrying a DIFFERENT task id is refused, not bound over the recorded one');
+    ok(s._readRegistry(prepared.submitId).taskId === 'task-A',
+       'the recorded job identity is unchanged after the refused rebind');
+
+    // No task id at all for a job that already has one is unresolved, not "failed and free".
+    const missing = await s.adoptAdapterTask({ state: 'queued', task_id: null,
+                                               data: { callback_url: prepared.callBackUrl } });
+    const afterMissing = s._readRegistry(prepared.submitId);
+    ok(missing.status === 'failed' && missing.code === 'identity-missing',
+       'a taskId-less answer for a recorded job reports identity-missing, never a silent success');
+    ok(afterMissing.taskId === 'task-A' && afterMissing.status === 'uncertain',
+       'the recorded task id survives, and the row is marked uncertain for reconciliation');
+  } finally {
+    KieKvPoller.prototype.waitForTask = origWait;
+  }
+
+  // A changed model is a DIFFERENT job: new identity, old row retired by name.
+  const changed = s.prepareCallback({ ...job, model: 'm2' });
+  const old = s._readRegistry(prepared.submitId);
+  ok(changed.submitId !== prepared.submitId && changed.state === 'new',
+     'a changed model yields a new identity (it is a different job)');
+  ok(old.status === 'superseded' && /model changed/.test(String(old.supersededReason)),
+     'the earlier row is SUPERSEDED with the reason recorded, never silently orphaned');
+});
+
+// =============================================================================
+// F21 ITEM 11 — THE DURABLE DATA ROOT, resolved once and used everywhere.
+//
+// The defect: registry/index/done were built from `path.join(workspaceDir, '.kie', ...)`
+// in TWO files, so paid-job evidence lived wherever a caller's working folder pointed --
+// including inside replaceable skill trees. The fix routes every one of those paths through
+// shared-utils/durable-data-root.sh (Skill 74 executes the same file), so there is one
+// computation and one answer.
+// =============================================================================
+await section('F21 item 11: state lives under the ONE durable root, never in the skill tree', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kie-root-'));
+  const prev = process.env.OPENCLAW_DATA_ROOT;
+  process.env.OPENCLAW_DATA_ROOT = root;
+  let s;
+  try {
+    // No dataRoot option: the constructor must resolve the durable root itself.
+    s = new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k' });
+  } finally {
+    if (prev === undefined) delete process.env.OPENCLAW_DATA_ROOT; else process.env.OPENCLAW_DATA_ROOT = prev;
+  }
+  const expected = path.join(root, 'data', 'kie-jobs', SLUG);
+  console.log(`  root - resolved registry dir=${s.registryDir}`);
+  ok(s.registryDir === path.join(expected, 'registry'), 'registry lives under <root>/data/kie-jobs/<slug>/registry');
+  ok(s.indexDir === path.join(expected, 'index') && s.doneDir === path.join(expected, 'done'),
+     'index and done derive from the SAME resolved root');
+  ok(s.layout.root === root, `the layout records the resolved root (${s.layout.root})`);
+  ok(!s.registryDir.startsWith(skillDir), 'no state path sits inside the skill directory');
+  ok(!s.registryDir.includes(path.join('', '.kie', '')), 'the transient .kie layout is gone');
+
+  // Resolved ONCE and used everywhere: the poller the submitter builds inherits its layout.
+  const poller = new KieKvPoller({ clientSlug: SLUG, kvWorkerUrl: 'https://w', layout: s.layout,
+                                   kvReadToken: 'tk', callbacksEnabled: false });
+  ok(poller.registryDir === s.registryDir && poller.doneDir === s.doneDir,
+     'a poller given the submitter\'s layout writes to the identical directories (one computation)');
+
+  // The resolver refuses an unnameable root instead of guessing a location.
+  const prevEnv = process.env.OPENCLAW_DATA_ROOT;
+  process.env.OPENCLAW_DATA_ROOT = path.join(root, 'definitely-not-here');
+  let refused = null;
+  try { new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k' }); }
+  catch (e) { refused = e.message; }
+  finally { if (prevEnv === undefined) delete process.env.OPENCLAW_DATA_ROOT; else process.env.OPENCLAW_DATA_ROOT = prevEnv; }
+  ok(refused && /durable data root did not resolve/.test(refused),
+     'a non-existent root pin is REFUSED by name instead of silently writing elsewhere');
 });
 
 console.log(`\n${'='.repeat(60)}`);
