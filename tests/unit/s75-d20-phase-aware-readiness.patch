@@ -1,0 +1,100 @@
+--- a/swarmctl.py
++++ b/swarmctl.py
+@@ -38,6 +38,8 @@
+           "BLOCKED", "WAITING_DECISION", "WAITING_TEST", "REPAIR"]
+ ACCEPTED = {"ACCEPTED", "IN_BATCH", "MERGED", "DELIVERED", "CLEANED"}
+ LANDED = {"MERGED", "DELIVERED", "CLEANED"}
++BATCHED = {"IN_BATCH", "WITH_BATCH"}          # D-20: a unit that belongs to its batch
++NOT_READY = BATCHED | LANDED                  # D-20: never fresh build/qc/repair/merge work
+ DONE_FOR_COMPLETION = LANDED | {"NOT_TESTED"}          # §7: Trevor's live testing never blocks closing
+ WAITING = {"WAITING_DECISION", "NOT_TESTED", "WAITING_TEST"}   # v6 §6 waiting units
+ QC_FIELDS = ("unit", "attempt", "digest", "head", "base", "checker", "author", "model",
+@@ -516,6 +518,13 @@
+     never a unit awaiting a first build. repair_ready is a REPAIR phase or a recorded FAIL.
+     A retired owner — one a COMPLETE census no longer shows — never blocks a QC candidate: it
+     is cleared here and reported through `notes`, never removed silently.
++
++    D-20: the phase decides before any receipt lineage does. A unit inside a batch (IN_BATCH,
++    or WITH_BATCH when a ledger spells it that way) belongs to its batch and is reported under
++    batch_due, never offered as fresh build/qc/repair/merge work; a LANDED unit is terminal.
++    Without this gate a historical FAIL receipt on an already-batched unit put it back into
++    repair_ready, so ready_units kept naming work that was already batched and any tick that
++    obeyed readiness dispatched duplicate lanes.
+     """
+     build_ready = [str(u.get("id")) for u in units
+                    if u.get("phase") == "READY" and not u.get("owner")]
+@@ -525,6 +534,8 @@
+     for u in units:
+         uid = str(u.get("id"))
+         owner = u.get("owner")
++        if str(u.get("phase") or "") in NOT_READY:
++            continue                      # D-20: phase decides before any receipt lineage does
+         if u.get("phase") == "REPAIR" or uid in failed:
+             if not owner:
+                 repair_ready.append(uid)
+@@ -541,20 +552,27 @@
+         qc_ready.append(uid)
+     if merge_ids is None:
+         merge_ids = [str(u.get("id")) for u in units
+-                     if u.get("phase") in ("ACCEPTED", "IN_BATCH") and qc_pass(c, u)
++                     if u.get("phase") == "ACCEPTED" and qc_pass(c, u)
+                      and parse_ts(u.get("accepted_at")) and not u.get("defect_packet")
+                      and not u.get("repair_pending") and not u.get("merge_uncertain")]
+-    merge_due = [str(x) for x in merge_ids]
++    # D-20: gate by the unit's own phase, never by its id. batch_due is the landing queue,
++    # not a dispatch list.
++    phase_by = {str(u.get("id")): str(u.get("phase") or "") for u in units}
++    merge_due = [str(x) for x in merge_ids if phase_by.get(str(x), "") not in NOT_READY]
++    batch_due = [str(u.get("id")) for u in units
++                 if str(u.get("phase") or "") in BATCHED and qc_pass(c, u)
++                 and parse_ts(u.get("accepted_at")) and not u.get("defect_packet")
++                 and not u.get("repair_pending") and not u.get("merge_uncertain")]
+     frontier, seen = [], set()
+     for uid in build_ready + qc_ready + repair_ready + merge_due:
+         if uid not in seen:
+             seen.add(uid)
+             frontier.append(uid)
+     return {"build_ready": build_ready, "qc_ready": qc_ready, "repair_ready": repair_ready,
+-            "merge_due": merge_due, "ready_units": frontier,
++            "merge_due": merge_due, "batch_due": batch_due, "ready_units": frontier,
+             "build_ready_n": len(build_ready), "qc_ready_n": len(qc_ready),
+             "repair_ready_n": len(repair_ready), "merge_due_n": len(merge_due),
+-            "ready_units_n": len(frontier)}
++            "batch_due_n": len(batch_due), "ready_units_n": len(frontier)}
+ 
+ 
+ def locked_entries(c):
+@@ -3231,7 +3249,9 @@
+         b = batches.get(rp) or {}
+         batch_active = bool(b.get("id") and not b.get("merge_commit"))
+         members = [u for u in merge_cands if unit_repo_path(proj, u) == rp]
+-        qualified = [u for u in members if not merge_blockers(u)]
++        # D-20: a batched unit is a batch member, never a fresh merge-claim candidate.
++        qualified = [u for u in members
++                     if str(u.get("phase") or "") not in NOT_READY and not merge_blockers(u)]
+         ages = [int((now - parse_ts(u.get("accepted_at"))) // 60) for u in qualified]
+         merge_due.append({"repo": rp, "target": r.get("target"), "mechanism": r.get("mechanism") or "",
+                           "candidates": [u.get("id") for u in qualified],
+@@ -3242,7 +3262,8 @@
+                           "oldest_min": max(ages) if ages else None})
+     loose = [u for u in merge_cands if unit_repo_path(proj, u) is None]
+     if loose:
+-        q = [u for u in loose if not merge_blockers(u)]
++        q = [u for u in loose
++             if str(u.get("phase") or "") not in NOT_READY and not merge_blockers(u)]
+         merge_due.append({"repo": None, "target": None, "mechanism": "",
+                           "candidates": [u.get("id") for u in q],
+                           "excluded": [{"unit": u.get("id"), "blockers": merge_blockers(u)} for u in loose if merge_blockers(u)],
+@@ -3334,7 +3355,11 @@
+     proof_refresh = sorted(proof_refresh)
+     # (R) the merge frontier is the same qualified set the merge rows offer; the four action
+     # classes are counted separately and ready_units is their de-duplicated union.
+-    ready_classes["merge_due"] = [uid for row in merge_due for uid in (row.get("candidates") or [])]
++    # D-20: plan_tick rebuilds ready_units, so the merge frontier is phase-gated here too.
++    phase_by = {str(u.get("id")): str(u.get("phase") or "") for u in units}
++    ready_classes["merge_due"] = [uid for row in merge_due
++                                  for uid in (row.get("candidates") or [])
++                                  if phase_by.get(str(uid), "") not in NOT_READY]
+     ready_classes["merge_due_n"] = len(ready_classes["merge_due"])
+     frontier, seen = [], set()
+     for uid in (ready_classes["build_ready"] + ready_classes["qc_ready"]

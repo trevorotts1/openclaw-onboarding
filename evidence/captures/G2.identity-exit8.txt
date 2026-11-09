@@ -1,0 +1,7 @@
+# search: G2.identity-exit8
+# command: git grep -nF collect_onboarding_identity || exit 8 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- install.sh
+# scope: install.sh
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+# rc: 0  count: 1  verdict: present
+# --- stdout ---
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:install.sh:3106:collect_onboarding_identity || exit 8

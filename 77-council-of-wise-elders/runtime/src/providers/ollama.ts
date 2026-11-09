@@ -39,6 +39,18 @@ import { TransportError } from './errors.js';
 /** The documented local Ollama compatible base URL, when configuration names none. */
 export const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434/v1';
 
+/**
+ * The configured Ollama endpoint as the OpenAI-compatible surface:
+ * `/v1` is appended when the configuration does not already carry it
+ * (`http://127.0.0.1:11434` and `http://127.0.0.1:11434/` both become
+ * `.../v1`). Trailing slashes are dropped so no caller composes `//`.
+ */
+export function ollamaCompatibleBaseUrl(baseUrl?: string | null): string {
+  const raw = (baseUrl ?? DEFAULT_OLLAMA_BASE_URL).trim().replace(/\/+$/, '');
+  if (raw.length === 0) return DEFAULT_OLLAMA_BASE_URL;
+  return /\/v1$/i.test(raw) ? raw : `${raw}/v1`;
+}
+
 export interface OllamaTransportBinding
   extends Omit<CompatibleTransportBinding, 'baseUrl'> {
   /** Configured local compatible base URL. Default: the local daemon surface. */
@@ -55,7 +67,7 @@ export interface OllamaTransportBinding
 export function createOllamaTransport(
   binding: OllamaTransportBinding,
 ): CompatibleHttpTransport {
-  const baseUrl = binding.baseUrl ?? DEFAULT_OLLAMA_BASE_URL;
+  const baseUrl = ollamaCompatibleBaseUrl(binding.baseUrl);
   let parsed: URL;
   try {
     parsed = new URL(baseUrl);
@@ -71,13 +83,18 @@ export function createOllamaTransport(
     host === '::1' ||
     host === '[::1]' ||
     /^127\./.test(host);
-  if (!isLocal && binding.allowInsecureRemoteHttp !== true) {
-    // A remote Ollama Cloud endpoint is a legitimate route, but it is
-    // not a LOCAL transport: it goes through the generic compatible
-    // profile so its locality is never mislabeled in attempt records.
+  // A remote endpoint over TLS (Ollama Cloud) is served by this same
+  // OpenAI-compatible profile; plain http to a remote host still needs
+  // the explicit opt-in because it exposes the credential in flight.
+  const isTls = parsed.protocol === 'https:';
+  if (!isLocal && !isTls && binding.allowInsecureRemoteHttp !== true) {
+    // A remote plain-http Ollama endpoint is a legitimate route, but it
+    // is not a LOCAL transport: it goes through the generic compatible
+    // profile with the explicit opt-in so its locality is never
+    // mislabeled in attempt records.
     throw new TransportError(
       'TRANSPORT_CONFIG_INVALID',
-      'The Ollama local profile serves loopback daemon endpoints only. For a remote Ollama endpoint, compose the generic compatible transport so the route locality is recorded honestly.',
+      'The Ollama local profile serves loopback daemon endpoints and TLS Ollama Cloud endpoints. For a plain-http remote Ollama endpoint, compose the generic compatible transport with the explicit insecure-http opt-in so the route locality is recorded honestly.',
     );
   }
   return new CompatibleHttpTransport({ ...binding, baseUrl });

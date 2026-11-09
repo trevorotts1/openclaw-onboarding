@@ -102,7 +102,7 @@ export const DEFAULT_CAPACITY_CONFIG: CapacityConfig = {
 let fallbackTokenCounter = 0;
 
 export class RuntimeCapacity {
-  private readonly totalSlots: number;
+  private totalSlots: number;
   private readonly privateReservedSlots: number;
   private readonly slotTtlMs: number;
   private readonly nowMs: () => number;
@@ -143,6 +143,19 @@ export class RuntimeCapacity {
     this.newTokenId =
       deps.newTokenId ??
       (() => `capacity-token-${(fallbackTokenCounter += 1)}`);
+  }
+
+  /**
+   * Wave admission (W77S-MODES): guarantee that `limit` operations of
+   * one class can be in flight at once, because a claimed wave runs to
+   * completion as a unit. Slots are only ever raised, never lowered, and
+   * the private reserve keeps its size, so no held token is invalidated
+   * and the fairness rule still leaves room for company work.
+   */
+  ensureConcurrentCapacity(limit: number): void {
+    if (!Number.isSafeInteger(limit) || limit < 1) return;
+    const needed = limit + this.privateReservedSlots;
+    if (needed > this.totalSlots) this.totalSlots = needed;
   }
 
   /** The admission ceiling for a class (Section 15.7 fairness rule). */

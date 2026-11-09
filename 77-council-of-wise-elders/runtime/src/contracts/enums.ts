@@ -50,7 +50,15 @@ export function advisorProfileLabel(displayName: string): string {
   return `AI perspective inspired by the published work of ${displayName}. Not the individual and not an endorsement.`;
 }
 
-export const SESSION_MODES = ['full', 'selected', 'quick', 'consult'] as const;
+export const SESSION_MODES = [
+  'full',
+  'selected',
+  'quick',
+  'consult',
+  'light',
+  'medium',
+  'heavy',
+] as const;
 export type SessionMode = (typeof SESSION_MODES)[number];
 
 export const SESSION_VISIBILITIES = ['private', 'company'] as const;

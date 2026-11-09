@@ -1,0 +1,239 @@
+{
+  "schema": "s75.n999-entrypoints.v2",
+  "flavor": "999",
+  "unit": "S75-T30",
+  "acceptance": "S75-A30",
+  "skill_root_anchor": ".claude/skills/drama-song-ad-factory",
+  "contract": "Every step below is advertised by the 999 normal entrypoint and is EXERCISED with its required arguments by package/999_adapter.py check. A recorded exit code is a measurement, not a claim: the advertised check re-runs each step and compares the real code. An advertised_in citation names a file and a line in this tree; the check opens that line and fails when the quoted text is not on it. A step that cannot run sits in excluded_steps and its claim is re-run on every check, so a command that really runs fails.",
+
+  "invocation_rules": [
+    "The token {python} is substituted with the interpreter running the consumer.",
+    "The token {work} is substituted with a fresh temporary directory, seeded from workdir_files, so every argv is complete as written and repeatable.",
+    "The factory CLI is invoked with the default sys.path (python3 script.py), which is the form its own relative-import fallback needs.",
+    "Every argv is complete: no ellipsis, no optional-step shorthand, no unrun --help probe standing in for a real invocation."
+  ],
+
+  "observer": {
+    "repository": "https://github.com/trevorotts1/999-setup.git",
+    "branch": "batch/s75-story-first",
+    "sha": "9013117d902c0bc0342ee45e182ae0ebb8b11db3",
+    "observed_at": "2026-10-25",
+    "environment": {
+      "interpreter": "CPython 3.14.7",
+      "cwd": "skill root",
+      "network": "none used by any advertised step",
+      "paid_generation": "none used"
+    }
+  },
+
+  "workdir_files": {
+    "brief.json": {"client_id": "probe", "product": "drama-song-ad"},
+    "run-state.json": {},
+    "client/.keep": "",
+    "run/.keep": "",
+    "storage/.keep": ""
+  },
+
+  "entrypoints": [
+    {
+      "id": "intake-brief-file",
+      "kind": "run",
+      "argv": ["{python}", "scripts/core/intake_preflight/factory.py", "intake",
+               "--brief-file", "{work}/brief.json"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["SKILL.md:312 'intake   --brief-file brief.json'"],
+      "expect": {"exit_code": 2, "outcome": "waiting", "stderr_empty": true},
+      "observed": {"exit_code": 2, "outcome": "waiting", "stderr_bytes": 0},
+      "note": "rc 2 is EXIT['waiting']: the brief is normalized and the next essential is asked, which is the documented first command."
+    },
+    {
+      "id": "preflight-storage-root",
+      "kind": "run",
+      "argv": ["{python}", "scripts/core/intake_preflight/factory.py",
+               "preflight", "--root", "{work}/storage"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["SKILL.md:313 'preflight --root \"$STORAGE\"'"],
+      "expect": {"exit_code": 2, "stderr_empty": true},
+      "observed": {"exit_code": 2, "stderr_bytes": 0},
+      "note": "An empty root is waiting, not ok; the envelope is produced either way."
+    },
+    {
+      "id": "next-run-dir",
+      "kind": "run",
+      "argv": ["{python}", "scripts/core/intake_preflight/factory.py", "next",
+               "--run-dir", "{work}/run"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["SKILL.md:202 'factory.py next --run-dir $RUN'"],
+      "expect": {"exit_code": 1, "stderr_empty": true},
+      "observed": {"exit_code": 1, "stderr_bytes": 0},
+      "note": "A run directory with no control/state.sqlite3 is refused with the missing path, never invented."
+    },
+    {
+      "id": "event-run-dir",
+      "kind": "run",
+      "argv": ["{python}", "scripts/core/intake_preflight/factory.py", "event",
+               "--run-dir", "{work}/run", "--event", "intake_complete"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["scripts/core/intake_preflight/factory.py"],
+      "expect": {"exit_code": 1, "stderr_empty": true},
+      "observed": {"exit_code": 1, "stderr_bytes": 0},
+      "note": "The event kind is accepted by the parser; the missing run state is the refusal."
+    },
+    {
+      "id": "storyboard-run-dir",
+      "kind": "run",
+      "argv": ["{python}", "scripts/core/intake_preflight/factory.py",
+               "storyboard", "--run-dir", "{work}/run"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["scripts/core/intake_preflight/factory.py"],
+      "expect": {"exit_code": 1, "stderr_empty": true},
+      "observed": {"exit_code": 1, "stderr_bytes": 0}
+    },
+    {
+      "id": "music-start",
+      "kind": "run",
+      "argv": ["{python}", "scripts/core/intake_preflight/factory.py", "music",
+               "--run-dir", "{work}/run", "--owner", "probe", "--action",
+               "start"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["scripts/core/intake_preflight/factory.py"],
+      "expect": {"exit_code": 2, "stderr_empty": true},
+      "observed": {"exit_code": 2, "stderr_bytes": 0},
+      "note": "Music is blocked by production admission on an empty run, with the blocking stage named."
+    },
+    {
+      "id": "script-reply-run-dir",
+      "kind": "run",
+      "argv": ["{python}", "scripts/core/intake_preflight/factory.py",
+               "script-reply", "--run-dir", "{work}/run", "--reply",
+               "approved"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["SKILL.md:249 'factory.py script-reply --run-dir $RUN --reply'"],
+      "expect": {"exit_code": 4, "stderr_empty": true},
+      "observed": {"exit_code": 4, "stderr_bytes": 0},
+      "note": "rc 4 is EXIT['rejected']: no creative/script.json exists, so the reply is blocked rather than accepted."
+    },
+    {
+      "id": "card-step-run-state",
+      "kind": "run",
+      "argv": ["{python}", "scripts/core/intake_preflight/factory.py", "card",
+               "--step", "--run-state-file", "{work}/run-state.json"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["SKILL.md:634 'factory.py card --step --run-state-file'"],
+      "expect": {"exit_code": 0, "stderr_empty": true},
+      "observed": {"exit_code": 0, "stderr_bytes": 0}
+    },
+    {
+      "id": "card-client-dir",
+      "kind": "run",
+      "argv": ["{python}", "scripts/core/intake_preflight/factory.py", "card",
+               "--client-dir", "{work}/client"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["SKILL.md:1031 'factory.py card --client-dir <dir>'"],
+      "expect": {"exit_code": 0, "stderr_empty": true},
+      "observed": {"exit_code": 0, "stderr_bytes": 0}
+    },
+    {
+      "id": "character-client-dir-list",
+      "kind": "run",
+      "argv": ["{python}", "scripts/core/intake_preflight/factory.py",
+               "character", "--client-dir", "{work}/client", "list"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["SKILL.md:1026 'factory.py character --client-dir'"],
+      "expect": {"exit_code": 0, "stderr_empty": true},
+      "observed": {"exit_code": 0, "stderr_bytes": 0}
+    },
+    {
+      "id": "n999-entrypoint-carriers",
+      "kind": "run",
+      "argv": ["{python}", "package/999_entrypoint.py", "carriers"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["package/999_entrypoint.py"],
+      "expect": {"exit_code": 0, "stderr_empty": true},
+      "observed": {"exit_code": 0, "stderr_bytes": 0},
+      "note": "The 999 normal entrypoint itself. Its output is the loaded-carrier list the reachability clause reads in a separate process."
+    },
+    {
+      "id": "n999-entrypoint-status",
+      "kind": "run",
+      "argv": ["{python}", "package/999_entrypoint.py", "status"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["package/999_entrypoint.py"],
+      "expect": {"exit_code": 0, "stderr_empty": true},
+      "observed": {"exit_code": 0, "stderr_bytes": 0}
+    },
+    {
+      "id": "package-check",
+      "kind": "run",
+      "argv": ["{python}", "package/999_adapter.py", "check"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["package/999-manifest.json"],
+      "expect": {"exit_code": 0, "stderr_empty": true},
+      "observed": {"exit_code": 0, "stderr_bytes": 0},
+      "note": "The advertised check. Nested runs are marked with S75_999_NESTED so this row cannot recurse; the outer check still executes every other row."
+    },
+    {
+      "id": "package-entrypoints",
+      "kind": "run",
+      "argv": ["{python}", "package/999_adapter.py", "entrypoints"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["package/999_adapter.py"],
+      "expect": {"exit_code": 0, "stderr_empty": true},
+      "observed": {"exit_code": 0, "stderr_bytes": 0}
+    }
+  ],
+
+  "checks": [
+    {
+      "id": "flavor-seam",
+      "argv": ["{python}", "scripts/core/test_package_flavor_adapter.py"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["scripts/core/test_package_flavor_adapter.py"],
+      "expect": {"exit_code": 0},
+      "observed": {"exit_code": 0, "summary": "5 passed, 0 failed, 5 total"}
+    },
+    {
+      "id": "story-first-contracts",
+      "argv": ["{python}", "scripts/core/test_story_first_contracts.py"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["scripts/core/test_story_first_contracts.py"],
+      "expect": {"exit_code": 0},
+      "observed": {"exit_code": 0, "summary": "9 passed, 0 failed, 9 total"}
+    },
+    {
+      "id": "eighteen-style-catalog",
+      "argv": ["{python}", "scripts/core/music_styles/test_catalog_s75t18.py"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["scripts/core/music_styles/test_catalog_s75t18.py"],
+      "expect": {"exit_code": 0},
+      "observed": {"exit_code": 0, "summary": "ALL PASS (389 checks)"}
+    },
+    {
+      "id": "identity-record-validation",
+      "argv": ["{python}", "scripts/core/character_bible/test_identity_s75_t05.py"],
+      "cwd": "{skill_root}",
+      "advertised_in": ["scripts/core/character_bible/test_identity_s75_t05.py"],
+      "expect": {"exit_code": 0},
+      "observed": {"exit_code": 0, "summary": "Ran 26 tests; OK"}
+    }
+  ],
+
+  "excluded_steps": [
+    {
+      "id": "isolated-interpreter-form",
+      "argv": ["{python}", "-I", "scripts/core/intake_preflight/factory.py",
+               "preflight"],
+      "reason": "python3 -I drops the script directory from sys.path so factory.py's relative-import fallback cannot resolve its sibling intake module. The claim is re-run on every check: this argv must fail with the recorded error or the exclusion is false.",
+      "observed": {"exit_code": 1, "error": "No module named 'intake'"}
+    }
+  ],
+
+  "flavour_delta": {
+    "note": "The source tree implements final-recap and production-go, so they are NOT claimed unsupported here. The 999 head recorded in the manifest does not implement them; that delta belongs to the observed 999 tree, not to a claim about this one."
+  },
+
+  "unverified": [
+    "No step was executed against a live 999 box; every observation was made in this repository tree.",
+    "The 999 tree at the recorded sha does not carry S75-T15/T16/T17/T28, so no Notion store or paid-compatibility step is advertised here."
+  ]
+}

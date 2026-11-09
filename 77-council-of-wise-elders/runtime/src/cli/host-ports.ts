@@ -97,7 +97,7 @@ export interface TransportRequest {
   purpose: 'advisor' | 'ratification' | 'consult';
   session_id: string;
   seat_id: SeatId;
-  round: 1 | 2 | 3 | null;
+  round: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | null;
   route_id: string;
   model_policy: ModelPolicy;
   /** Logical prompt contract text (Section 14); never contains secrets. */

@@ -122,6 +122,134 @@ class AnswersFeedSkill71(unittest.TestCase):
         _, intake = self.intake("answers.elevation.json", "--image-cap", "6", "--design-style", "A")
         self.assertEqual((intake["image_cap"], intake["design_style"]), (6, "A"))
 
+    def test_documented_answers_command_fills_both_copy_selectors(self):
+        # Finding 17: INTAKE.md documents `write_intake.py RUN --answers-file A`
+        # with no --copy-version; the copy stage reads copy_version, so a run
+        # that records only page_version cannot close copy.
+        r = run("write_intake.py", self.run_dir, "--answers-file", FIX / "answers.elevation.json")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        intake = json.loads((self.run_dir / "intake.json").read_text())
+        self.assertEqual((intake["page_version"], intake["copy_version"]), ("standard", "standard"))
+
+    def test_page_kind_is_collected_before_the_length(self):
+        # Finding 17: an answers file that records the page kind imports it,
+        # and the length is read against that kind.
+        d = doc("answers.7fig.json")  # copy_profile long_form, provided
+        d["answers"]["page_kind"] = {"value": "opt_in", "status": "provided", "source": "client"}
+        f = self.run_dir / "kind.json"
+        f.write_text(json.dumps(d))
+        r = run("write_intake.py", self.run_dir, "--answers-file", f)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        intake = json.loads((self.run_dir / "intake.json").read_text())
+        self.assertEqual((intake["page_kind"], intake["page_version"], intake["copy_version"]),
+                         ("opt_in", "long-form", "long-form"))
+
+    def test_a_recorded_kind_refuses_a_length_it_cannot_use_with_a_recovery_action(self):
+        d = doc("answers.elevation.json")  # copy_profile standard, provided
+        d["answers"]["page_kind"] = {"value": "opt_in", "status": "provided", "source": "client"}
+        f = self.run_dir / "kind-standard.json"
+        f.write_text(json.dumps(d))
+        r = run("write_intake.py", self.run_dir, "--answers-file", f)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("REFUSED", r.stdout)
+        self.assertIn("NEXT (operator, role:", r.stdout)
+        self.assertIn("long-form", r.stdout)
+        self.assertFalse((self.run_dir / "intake.json").exists())
+
+    def two_registers(self, r):
+        """The refusal's two lines: the client-safe REFUSED summary and the
+        operator NEXT line on its own line right after it, never fused."""
+        lines = r.stdout.splitlines()
+        refusals = [i for i, l in enumerate(lines) if l.startswith("REFUSED:")]
+        self.assertEqual(len(refusals), 1, r.stdout)
+        summary = lines[refusals[0]]
+        self.assertNotIn("NEXT", summary, r.stdout)
+        self.assertTrue(lines[refusals[0] + 1].startswith("NEXT (operator"), r.stdout)
+        return summary, lines[refusals[0] + 1]
+
+    def test_a_credential_refusal_names_the_operator_recovery_and_no_internals(self):
+        # Finding 24: the operator gets the exact recovery action and role; the
+        # summary is plain. Provisioning topology and tier backstops never print.
+        r = run("write_intake.py", self.run_dir, "--page-version", "standard",
+                "--brand-owner", "Fixture", "--image-cap", "1",
+                "--publish-target", "ghl", "--automation-scope", "workflows",
+                "--ghl-pit-absent", "--ghl-location-absent")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        summary, nxt = self.two_registers(r)
+        self.assertIn("NEXT (operator, role: account access)", nxt)
+        self.assertIn("GHL_PRIVATE_INTEGRATION_TOKEN", nxt)
+        self.assertNotIn("GHL_PRIVATE_INTEGRATION_TOKEN", summary)
+        for internal in ("fleet-contabo", "per-container", "Tier 4", "publish_target"):
+            self.assertNotIn(internal, r.stdout)
+        r = run("write_intake.py", self.run_dir, "--page-version", "standard",
+                "--brand-owner", "Fixture", "--image-cap", "1",
+                "--publish-target", "ghl", "--automation-scope", "workflows",
+                "--ghl-pit-present", "--ghl-location-present", "--ghl-firebase-absent")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        summary, nxt = self.two_registers(r)
+        self.assertIn("firebase-choice", nxt)
+        self.assertIn("NEXT (operator, role: account access)", nxt)
+        for internal in ("fleet-contabo", "per-container", "Tier 4", "publish_target"):
+            self.assertNotIn(internal, r.stdout)
+
+    def test_a_page_kind_answer_that_is_no_kind_is_refused_by_name(self):
+        # The import refuses an unrecordable kind cleanly - by name, with the
+        # operator action - and never with a traceback.
+        for bad in ("webinar", 42):
+            d = doc("answers.elevation.json")
+            d["answers"]["page_kind"] = {"value": bad, "status": "provided", "source": "client"}
+            f = self.run_dir / "bad-kind.json"
+            f.write_text(json.dumps(d))
+            r = run("write_intake.py", self.run_dir, "--answers-file", f)
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+            self.assertNotIn("Traceback", r.stderr)
+            summary, nxt = self.two_registers(r)
+            self.assertIn("sales", summary)
+            self.assertIn("opt_in", summary)
+            self.assertIn("NEXT (operator, role: intake)", nxt)
+            self.assertFalse((self.run_dir / "intake.json").exists())
+
+    def test_neither_copy_selector_refuses_with_the_operator_action(self):
+        r = run("write_intake.py", self.run_dir, "--brand-owner", "Fixture", "--image-cap", "1")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        summary, nxt = self.two_registers(r)
+        self.assertIn("NEXT (operator, role: intake)", nxt)
+        self.assertIn("--page-version", nxt)
+        self.assertFalse((self.run_dir / "intake.json").exists())
+
+    def test_one_selector_on_the_command_line_fills_the_other_and_beats_the_answers_file(self):
+        # One copy selection, two selectors (finding 17): whichever selector the
+        # command line names fills the other, and a flag always wins over the
+        # answers file's copy_profile.
+        r = run("write_intake.py", self.run_dir, "--brand-owner", "Fixture",
+                "--image-cap", "1", "--copy-version", "long-form")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        intake = json.loads((self.run_dir / "intake.json").read_text())
+        self.assertEqual((intake["page_version"], intake["copy_version"]), ("long-form", "long-form"))
+        (self.run_dir / "intake.json").unlink()
+        r = run("write_intake.py", self.run_dir, "--answers-file", FIX / "answers.elevation.json",
+                "--page-version", "long-form")  # the answers file records copy_profile standard
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        intake = json.loads((self.run_dir / "intake.json").read_text())
+        self.assertEqual((intake["page_version"], intake["copy_version"]), ("long-form", "long-form"))
+
+    def test_a_page_type_run_keeps_its_own_form_over_the_answers_file_and_records_no_kind(self):
+        # The answers file feeds this run too; its copy_profile and page_kind
+        # are the signature page's decisions, and a page type's own form is
+        # both its page_version and its copy_version (SPF030: the page type
+        # has no kind, so the kind is never recorded on it).
+        d = doc("answers.elevation.json")
+        d["answers"]["page_kind"] = {"value": "sales", "status": "provided", "source": "client"}
+        f = self.run_dir / "answers-thankyou.json"
+        f.write_text(json.dumps(d))
+        r = run("write_intake.py", self.run_dir, "--answers-file", f, "--page-version", "thank-you")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        intake = json.loads((self.run_dir / "intake.json").read_text())
+        self.assertEqual((intake["page_role"], intake["page_version"], intake["copy_version"]),
+                         ("thank_you", "thank-you", "thank-you"))
+        self.assertNotIn("page_kind", intake)
+        self.assertIn("NOTE page_kind", r.stdout)
+
     def test_answers_file_of_another_schema_is_refused(self):
         f = self.run_dir / "bad.json"
         f.write_text(json.dumps({"schema": "nope"}))

@@ -63,6 +63,7 @@
 import {
   canonicalHash,
   computeOptionScore,
+  isCouncilSize,
   labelForScore,
   validateCard,
   validateCardAgainstBrief,
@@ -208,6 +209,20 @@ const systemEngineTimers: EngineTimers = {
   },
 };
 
+/**
+ * Light/medium/heavy run through the convening service (service/driver.ts
+ * + protocol/composition.ts), which owns the round loop, the stop rule and
+ * the per-mode ceilings. This local create/sample engine is deliberately
+ * not extended for them, so a council size here is a typed refusal that
+ * names the command that does work.
+ */
+function refuseCouncilSize(mode: string): void {
+  if (!isCouncilSize(mode)) return;
+  throw invalidInput(
+    `The ${mode} council size convenes through the council service, not this local engine: run \`blackceo-council convene --mode ${mode}\` (or convene from the Council room and choose ${mode}). The local create/sample engine keeps the four older modes unchanged.`,
+  );
+}
+
 export class CouncilEngine {
   private readonly host: CouncilHost;
   private readonly settings: CouncilSettings;
@@ -241,6 +256,7 @@ export class CouncilEngine {
     scope: ScopeFields;
     sample?: boolean;
   }): Promise<StoredSession> {
+    refuseCouncilSize(input.spec.mode);
     const specResult = validateSessionSpec(input.spec);
     if (!specResult.ok) {
       throw invalidInput(
@@ -342,6 +358,7 @@ export class CouncilEngine {
 
   async startSession(sessionId: string, grantRef: string): Promise<StoredSession> {
     let session = await this.getSession(sessionId);
+    refuseCouncilSize(session.spec.mode);
     if (session.state.state !== 'DRAFT') {
       throw new CouncilError(
         'COUNCIL_STATE_CONFLICT',
@@ -358,6 +375,11 @@ export class CouncilEngine {
 
   async resumeSession(sessionId: string, grantRef: string): Promise<StoredSession> {
     let session = await this.getSession(sessionId);
+    // The local engine runs only the four older modes' pipeline. A council
+    // size has no resumable pipeline here, so resuming one would walk the
+    // legacy round-2 path and die on an illegal transition; refuse it with
+    // the same typed message create/start use (W77S-MODES review).
+    refuseCouncilSize(session.spec.mode);
     const from = session.state.state;
     if (from !== 'PAUSED' && from !== 'BLOCKED') {
       throw new CouncilError(

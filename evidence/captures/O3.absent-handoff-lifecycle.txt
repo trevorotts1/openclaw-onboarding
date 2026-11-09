@@ -1,0 +1,29 @@
+# search: O3.absent-handoff-lifecycle
+# command: git grep -niE handoff_accept|handoff_due|handoff-lifecycle|backup_owner|backup-owner 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865 -- .
+# scope: all tracked paths
+# pin: 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+# rc: 0  count: 23  verdict: present
+# --- stdout ---
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/handoff.py:90:    backup_owner_id      TEXT NOT NULL,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/handoff.py:274:        backup_owner_id: str,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/handoff.py:289:        backup_owner_id = _text(backup_owner_id, "backup_owner_id")
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/handoff.py:293:        if owner_id == backup_owner_id:
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/handoff.py:294:            raise HandoffError("bad_input: backup_owner_id must differ from owner_id")
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/handoff.py:320:                    " reason, owner_id, backup_owner_id, due_action, due_at,"
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/handoff.py:325:                     context_summary, reason or "", owner_id, backup_owner_id,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/handoff.py:332:                             "backup_owner_id": backup_owner_id,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/handoff.py:409:                        {"backup_owner_id": row["backup_owner_id"],
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/handoff.py:434:            if actor != row["backup_owner_id"]:
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/handoff.py:436:            if row["actual_owner_id"] == row["backup_owner_id"]:
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/handoff.py:529:            "backup_owner_id": data["backup_owner_id"],
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/handoff.py:659:            owner_id="owner-a", backup_owner_id="owner-b",
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/tests/test_handoff.py:55:            backup_owner_id=BACKUP,
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/tests/test_handoff.py:113:    def test_create_requires_a_distinct_backup_owner(self):
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/tests/test_handoff.py:115:            self.open(backup_owner_id=OWNER)
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/tests/test_handoff.py:118:            self.open(backup_owner_id="  ")
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/tests/test_handoff.py:131:        self.assertEqual(row["backup_owner_id"], BACKUP)
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/tests/test_handoff.py:142:                owner_id=OWNER, backup_owner_id=BACKUP, due_action="a",
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/tests/test_handoff.py:150:                backup_owner_id=BACKUP, due_action="a",
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/tests/test_handoff.py:168:                owner_id=OWNER, backup_owner_id=BACKUP, due_action="a",
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/tests/test_handoff.py:662:                owner_id=OWNER, backup_owner_id=BACKUP, due_action="a",
+9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865:shared-utils/handoff/tests/test_handoff.py:674:            owner_id=OWNER, backup_owner_id=BACKUP, due_action="a",
