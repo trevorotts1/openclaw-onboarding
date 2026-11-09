@@ -332,7 +332,7 @@ def validate(payload, model_id_override=None):
         if ratio == "1:1" and res == "4K":
             errors.append("GPT Image 2 (legacy): 1:1 aspect ratio cannot be converted to 4K images")
 
-    # GPT Image 2.5 Sunburst (operator default, ruling 2026-09-09) per-resolution
+    # GPT Image 2.5 Sunburst (retained legacy, ruling 2026-09-09) per-resolution
     # exclusions -- a NEW, separate rule set. The legacy 'auto -> 1K only' and
     # '1:1 cannot convert to 4K' rules are RETIRED here; not restated in the
     # 2.5 docs (Ruling 3).
