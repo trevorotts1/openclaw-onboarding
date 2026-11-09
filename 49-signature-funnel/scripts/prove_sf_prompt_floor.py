@@ -312,6 +312,25 @@ def evaluate_prompt(record: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], Opti
             fails.append((code, f"{who}: Skill 74 prompt-budget --check refused it "
                                 f"({msg}, exit {exit_code}); NOT sent to Kie"))
 
+    # FLOOR 1c (G-9) — WARN-AND-EXPAND IS NOT A PASS. The 80-to-below-95 band emits a warning
+    # naming the characters to ADD. If that warning is still on the verdict, the prompt was never
+    # expanded, so certifying it would ship a short prompt as if it were compliant. Fail closed.
+    # Only a length warning counts: the resolved limit carries informational provenance notes
+    # (e.g. "owner cap governs over the vendor schema"), and refusing those would be noise.
+    verdict_warnings = list(((receipt or {}).get("verdict") or {}).get("warnings") or [])
+    unexpanded = [w for w in verdict_warnings
+                  if "warn and expand" in str(w).lower()
+                  or ("add " in str(w).lower() and "percent band" in str(w).lower())]
+    if not unexpanded and adapter is not None and int(adapter.get("exit_code") or 0) == 5:
+        # Exit 5 is the transport's own warn-and-expand / out-of-band answer. It is not a
+        # refusal by itself, but it is never an expansion either: fail closed here.
+        unexpanded = [str(adapter.get("status") or "warn-and-expand")]
+    if unexpanded:
+        fails.append(("AF-FUN-PROMPT-UNEXPANDED",
+                      f"{who}: the length verdict carries {len(unexpanded)} unexpanded "
+                      f"warn-and-expand warning(s) — expand the prompt to the target band before "
+                      f"submit; first: {unexpanded[0]}"))
+
     # FLOOR 2 — density
     distinct = _distinct_words(stripped)
     if distinct < PROMPT_MIN_DISTINCT_WORDS:
