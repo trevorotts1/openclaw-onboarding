@@ -202,8 +202,7 @@ def configure(page,step):
     for field in data['dropdown_fields']:
         _,tile,checkbox=_object_row(dialog,search,field)
         if tile.get_attribute('aria-disabled')=='true':
-            if known.get(field['native_query_key'])!=_expected(field):
-                raise Stop('Disabled API dropdown row does not match one exact native dropdown binding')
+            raise Stop('DROPDOWN_REUSE_IDENTITY_UNVERIFIED: disabled API picker row has no captured canvas API-ID link; use the original completed insertion journal or reconcile before any write')
         else:
             if (checkbox.get_attribute('aria-checked')!='false'
                     or field['native_query_key'] in known or field['expected_label']!=field['name']):
@@ -253,9 +252,22 @@ def configure(page,step):
     after_dropdowns=_inventory(frame,scope)
     if (after_dropdowns!=final_dropdowns or _stable_canvas(scope)!=final_canvas):
         raise Stop('Native dropdown definitions or other field identities did not persist after independent reopen')
-    added_ids={field['id'] for field in pending}
     return {'status':'DROPDOWN_FIELDS_SAVED_AND_REOPENED','editor_url':page.url,
         'fields':[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
-            'placement':'added' if field['id'] in added_ids else 'reused'} for field in data['dropdown_fields']],
+            'placement':'added'} for field in data['dropdown_fields']],
         'configuration_sha256':configuration_hash(plan),'independent_readback':'VERIFIED',
         'behavior_verified':False,'submission_verified':False}
+
+
+def validate_receipt(result,step):
+    """Known completed insertions may replay; unproven legacy reuse may not."""
+    plan=validate(step);data=plan['payload']
+    expected_fields=[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
+                      'placement':'added'} for field in data['dropdown_fields']]
+    if (not isinstance(result,dict) or result.get('status')!='DROPDOWN_FIELDS_SAVED_AND_REOPENED'
+            or result.get('editor_url')!=data['start_url'] or result.get('fields')!=expected_fields
+            or result.get('configuration_sha256')!=configuration_hash(plan)
+            or result.get('independent_readback')!='VERIFIED'
+            or result.get('behavior_verified') is not False or result.get('submission_verified') is not False):
+        raise Stop('Native dropdown insertion receipt is malformed or lacks exact new-insertion provenance')
+    return {'fields':expected_fields,'configuration_sha256':configuration_hash(plan)}

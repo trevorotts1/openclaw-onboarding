@@ -704,9 +704,12 @@ def _read_object_binding(frame, scope, field):
     click(gear)
     frame.get_by_text('General Settings', exact=True).wait_for(state='visible', timeout=45000)
     click(frame.get_by_text('General Settings', exact=True))
-    if _query_key(frame) != field['field_key'][len('contact.'):]:
-        raise Stop('Native object field is bound to a different contact Query Key')
+    # Exact opaque input[name=API_ID], native type and ordered choices were
+    # proved by _object_wrapper. Query Key is separate form URL-prefill metadata
+    # and legacy UI values need not equal the API fieldKey suffix.
+    query=_query_key(frame)
     _close_properties(frame)
+    return query
 
 
 def configure_object_fields(page, step, *, kind='form', frame=None, canvas_scope=None, reopen=None):
@@ -752,15 +755,16 @@ def configure_object_fields(page, step, *, kind='form', frame=None, canvas_scope
             if frame.locator('input[name="' + field['id'] + '"]').count():
                 raise Stop('Object field exists on another canvas or native placement state conflicts')
             pending.append(field)
-    # Existing widgets must prove their Query Key before any different field
-    # is inserted. Merely matching Radio values/ID is not proof of its binding.
+    # Capture each existing API-bound widget's actual Query Key before any
+    # different field is inserted, then preserve that observed UI metadata.
     # Close the drawer before opening a field property panel, then reopen the
     # same captured picker when there is actual insertion work left to do.
+    native_queries={}
     if existing:
         fill(search, '')
         _close_object_drawer(frame, kind)
         for field in existing:
-            _read_object_binding(frame, canvas_scope, field)
+            native_queries[field['id']]=_read_object_binding(frame, canvas_scope, field)
         if _canvas_identity(canvas_scope) != before:
             raise Stop('Native object-field identities changed during binding preflight')
         if pending:
@@ -795,7 +799,10 @@ def configure_object_fields(page, step, *, kind='form', frame=None, canvas_scope
         fill(search, '')
         _close_object_drawer(frame, kind)
     for field in fields:
-        _read_object_binding(frame, canvas_scope, field)
+        query=_read_object_binding(frame, canvas_scope, field)
+        if field['id'] in native_queries and native_queries[field['id']]!=query:
+            raise Stop('Existing native object-field Query Key changed during placement')
+        native_queries[field['id']]=query
     after = _canvas_identity(canvas_scope)
     new_ids = {field['id'] for field in pending}
     preserved = [row for row in after if not any(name[2] in new_ids for name in row['names'])]
@@ -817,7 +824,8 @@ def configure_object_fields(page, step, *, kind='form', frame=None, canvas_scope
     if _canvas_identity(canvas_scope) != after:
         raise Stop('Native object-field canvas identities did not persist')
     for field in fields:
-        _read_object_binding(frame, canvas_scope, field)
+        if _read_object_binding(frame, canvas_scope, field)!=native_queries[field['id']]:
+            raise Stop('Native object-field Query Key did not persist after independent reopen')
     return {'status':'OBJECT_FIELDS_SAVED_AND_REOPENED', 'editor_url':page.url,
         'fields':[{'id':field['id'], 'field_key':field['field_key'], 'data_type':field['data_type'],
                    'placement':'added' if field['id'] in new_ids else 'reused'} for field in fields],

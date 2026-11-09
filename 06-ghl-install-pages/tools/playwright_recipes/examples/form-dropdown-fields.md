@@ -23,9 +23,12 @@ stamp native UI values into an API receipt.
 The native dropdown has no API field ID on its canvas wrapper. The handler
 selects the exact API-ID picker row, then checks the actual native Query Key,
 label and complete ordered option text. Generated option timestamps are ignored.
-Existing dropdowns are activated one at a time for inventory. A disabled picker
-row is reused only when one exact native binding exists. An enabled row cannot
-adopt another widget merely because its caption resembles the requested field.
+Existing dropdowns are activated one at a time for preservation inventory. An
+initially disabled API picker row is refused: its name/query/options do not
+independently link the opaque API ID to a canvas widget. Resume a known
+successful insertion through its original completed journal. An enabled row
+cannot adopt another widget merely because its caption resembles the requested
+field. Unknown legacy reuse needs explicit identity reconciliation.
 
 Every requested row and existing dropdown definition is read before selection.
 Only one exact field is selected and inserted at a time. The observed new

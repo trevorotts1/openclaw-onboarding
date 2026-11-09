@@ -132,7 +132,7 @@ def validate_job(job, base):
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_course_theme", "native_course_blocks", "native_course_theme_media", "native_course_block_media", "native_fields", "native_field_placement", "native_address_fields", "native_form_consent", "native_object_fields", "native_dropdown_fields", "native_large_text_fields", "quiz_short_answers", "native_survey_object_fields", "native_condition", "native_condition_group", "native_condition_stack", "quiz_configuration", "quiz_results", "survey_configuration", "survey_rule_stack", "form", "form_css", "native_form_css", "native_form_schedule", "native_form_tracking", "native_form_embed", "native_order_confirmation", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "community_access", "community_courses", "community_event_room", "community_branding", "assessment", "meeting", "meeting_cohosts", "native_dynamic_meeting_location", "options"}
+    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_course_theme", "native_course_blocks", "native_course_theme_media", "native_course_block_media", "native_fields", "native_field_placement", "native_address_fields", "native_form_consent", "native_object_fields", "native_dropdown_fields", "native_large_text_fields", "quiz_short_answers", "quiz_multiple_choices", "quiz_written_answers", "native_survey_object_fields", "native_condition", "native_condition_group", "native_condition_stack", "native_condition_outcomes", "quiz_configuration", "quiz_results", "survey_configuration", "survey_rule_stack", "form", "form_css", "native_form_css", "native_form_schedule", "native_form_tracking", "native_form_embed", "native_order_confirmation", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "community_access", "community_courses", "community_event_room", "community_branding", "assessment", "meeting", "meeting_cohosts", "native_dynamic_meeting_location", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -163,11 +163,15 @@ def validate_job(job, base):
             payload = s['payload']
             if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
                 raise Stop('Native object fields belong to a different location or editor')
-        if s['action'] in ('native_dropdown_fields','native_large_text_fields','quiz_short_answers'):
+        if s['action'] in ('native_dropdown_fields','native_large_text_fields','quiz_short_answers','quiz_multiple_choices','quiz_written_answers'):
             if s['action']=='native_dropdown_fields':
                 from playwright_recipes.dropdown_fields import validate
             elif s['action']=='native_large_text_fields':
                 from playwright_recipes.large_text_fields import validate
+            elif s['action']=='quiz_multiple_choices':
+                from playwright_recipes.quiz_choice_questions import validate
+            elif s['action']=='quiz_written_answers':
+                from playwright_recipes.quiz_written_questions import validate
             else:
                 from playwright_recipes.quiz_text_questions import validate
             validate(s)
@@ -195,6 +199,9 @@ def validate_job(job, base):
             payload = validate(s)
             if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
                 raise Stop('Course block image payload belongs to another location or manager')
+        if s['action']=='native_condition_outcomes':
+            from playwright_recipes.form_condition_outcomes import validate
+            validate(s)
         if s['action']=='native_condition_stack':
             from playwright_recipes.form_condition_stack import validate
             validate(s)
@@ -1280,6 +1287,14 @@ def quiz_short_answers(page, step):
     from playwright_recipes.quiz_text_questions import configure
     return configure(page,step)
 
+def quiz_multiple_choices(page, step):
+    from playwright_recipes.quiz_choice_questions import configure
+    return configure(page,step)
+
+def quiz_written_answers(page, step):
+    from playwright_recipes.quiz_written_questions import configure
+    return configure(page,step)
+
 def native_object_fields(page, step):
     from playwright_recipes.forms_advanced import configure_object_fields
     return configure_object_fields(page, step)
@@ -1324,6 +1339,10 @@ def native_course_block_media(page, step):
     from playwright_recipes.course_block_media import configure
     return configure(page, step)
 
+
+def native_condition_outcomes(page, step):
+    from playwright_recipes.form_condition_outcomes import configure
+    return configure(page,step)
 
 def native_condition_stack(page, step):
     from playwright_recipes.form_condition_stack import configure
@@ -1643,7 +1662,7 @@ def _run_on_page(page, job, evidence_root):
     results = []
     fresh_container = None
     state = {"fingerprint":fingerprint, "location_id":job["location_id"], "status":"RUNNING", "results":results}
-    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_course_theme":native_course_theme, "native_course_blocks":native_course_blocks, "native_course_theme_media":native_course_theme_media, "native_course_block_media":native_course_block_media, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_address_fields":native_address_fields, "native_form_consent":native_form_consent, "native_object_fields":native_object_fields, "native_dropdown_fields":native_dropdown_fields, "native_large_text_fields":native_large_text_fields, "quiz_short_answers":quiz_short_answers, "native_survey_object_fields":native_survey_object_fields, "native_condition":native_condition, "native_condition_group":native_condition_group, "native_condition_stack":native_condition_stack, "quiz_configuration":quiz_configuration, "quiz_results":quiz_results, "survey_configuration":survey_configuration, "survey_rule_stack":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "native_form_schedule":native_form_schedule, "native_form_tracking":native_form_tracking, "native_form_embed":native_form_embed, "native_order_confirmation":native_order_confirmation, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"meeting_cohosts":meeting_cohosts,"native_dynamic_meeting_location":native_dynamic_meeting_location,"options":options}
+    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_course_theme":native_course_theme, "native_course_blocks":native_course_blocks, "native_course_theme_media":native_course_theme_media, "native_course_block_media":native_course_block_media, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_address_fields":native_address_fields, "native_form_consent":native_form_consent, "native_object_fields":native_object_fields, "native_dropdown_fields":native_dropdown_fields, "native_large_text_fields":native_large_text_fields, "quiz_short_answers":quiz_short_answers, "quiz_multiple_choices":quiz_multiple_choices, "quiz_written_answers":quiz_written_answers, "native_survey_object_fields":native_survey_object_fields, "native_condition":native_condition, "native_condition_group":native_condition_group, "native_condition_stack":native_condition_stack, "native_condition_outcomes":native_condition_outcomes, "quiz_configuration":quiz_configuration, "quiz_results":quiz_results, "survey_configuration":survey_configuration, "survey_rule_stack":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "native_form_schedule":native_form_schedule, "native_form_tracking":native_form_tracking, "native_form_embed":native_form_embed, "native_order_confirmation":native_order_confirmation, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"meeting_cohosts":meeting_cohosts,"native_dynamic_meeting_location":native_dynamic_meeting_location,"options":options}
     for step in job["steps"]:
         assert_tenant(page, job)
         state["current_step"] = step["id"]
@@ -1670,6 +1689,16 @@ def _run_on_page(page, job, evidence_root):
                     else None)
             if not isinstance(result, dict):
                 raise Stop('Handler returned no structured outcome')
+            if step['action'] in ('native_dropdown_fields','native_large_text_fields',
+                    'quiz_short_answers','quiz_multiple_choices','quiz_written_answers',
+                    'native_condition_stack','native_condition_outcomes',
+                    'native_order_confirmation','native_course_block_media') or (
+                    step['action'] == 'community' and result.get('status') in (
+                        'GROUP_CREATED_SLUG_IDENTIFIED','GROUP_REUSED_IDENTITY_CONFIRMED')):
+                # Fresh execution and replay require the same complete, bound
+                # proof. A familiar status alone cannot mark a write finished.
+                from playwright_recipes.editor_replay import _result
+                result = _result(step, result, job)
             status = result.get('status')
             completed = {
                 'RENDERED', 'SEO_RENDERED', 'COMPONENT_SAVED', 'SAVED_AND_REOPENED',
@@ -1678,7 +1707,7 @@ def _run_on_page(page, job, evidence_root):
                 'ADDRESS_FIELDS_SAVED_AND_REOPENED', 'CONSENT_SAVED_AND_REOPENED',
                 'OBJECT_FIELDS_SAVED_AND_REOPENED', 'SURVEY_OBJECT_FIELDS_SAVED_AND_REOPENED', 'ASSESSMENT_REUSED',
                 'ASSESSMENT_SAVE_SUBMITTED', 'ROOM_SAVE_SUBMITTED',
-                'DROPDOWN_FIELDS_SAVED_AND_REOPENED', 'LARGETEXT_FIELDS_SAVED_AND_REOPENED', 'QUIZ_SHORT_ANSWERS_SAVED_AND_REOPENED', 'RECORDED_OPTIONS_EXECUTED', 'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED', 'GROUP_CREATED_PENDING_IDENTITY', 'GROUP_CREATED_SLUG_IDENTIFIED', 'GROUP_REUSED_IDENTITY_CONFIRMED',
+                'DROPDOWN_FIELDS_SAVED_AND_REOPENED', 'LARGETEXT_FIELDS_SAVED_AND_REOPENED', 'QUIZ_SHORT_ANSWERS_SAVED_AND_REOPENED', 'QUIZ_MULTIPLE_CHOICES_SAVED_AND_REOPENED', 'QUIZ_WRITTEN_ANSWERS_SAVED_AND_REOPENED', 'RECORDED_OPTIONS_EXECUTED', 'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED', 'GROUP_CREATED_PENDING_IDENTITY', 'GROUP_CREATED_SLUG_IDENTIFIED', 'GROUP_REUSED_IDENTITY_CONFIRMED',
                 'FIELD_PROPERTIES_SAVED_AND_REOPENED', 'BUILTIN_FIELDS_SAVED_AND_REOPENED',
                 'BUILTIN_FIELDS_REUSED_AND_REOPENED', 'CONDITION_SAVE_SUBMITTED', 'CONDITION_SAVED_AND_REOPENED',
                 'QUIZ_CONFIGURATION_SAVED_AND_REOPENED', 'QUIZ_RESULTS_SAVED_AND_REOPENED', 'CONDITION_ALREADY_PRESENT',
@@ -1691,7 +1720,7 @@ def _run_on_page(page, job, evidence_root):
                 'CONDITION_GROUP_SAVED_AND_REOPENED', 'CONDITION_GROUP_REUSED_AND_REOPENED',
                 'COURSE_BLOCKS_SAVED_AND_REOPENED', 'FORM_TRACKING_SAVED_AND_REOPENED',
                 'COURSE_THEME_MEDIA_SAVED_AND_REOPENED', 'COURSE_BLOCK_MEDIA_SAVED_AND_REOPENED',
-                'CONDITION_STACK_SAVED_AND_REOPENED', 'CONDITION_STACK_REUSED_AND_REOPENED', 'FORM_EMBED_EXPORTED_AND_REREAD',
+                'CONDITION_STACK_SAVED_AND_REOPENED', 'CONDITION_STACK_REUSED_AND_REOPENED', 'CONDITION_OUTCOMES_SAVED_AND_REOPENED', 'CONDITION_OUTCOMES_REUSED_AND_REOPENED', 'FORM_EMBED_EXPORTED_AND_REREAD',
                 'ORDER_CONFIRMATION_SAVED_AND_REOPENED', 'ORDER_CONFIRMATION_REUSED_AND_REOPENED',
                 'DYNAMIC_MEETING_LOCATION_SAVED_AND_REOPENED', 'DYNAMIC_MEETING_LOCATION_REUSED_AND_REOPENED',
             }

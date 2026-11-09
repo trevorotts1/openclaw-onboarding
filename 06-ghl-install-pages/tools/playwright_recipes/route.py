@@ -8,6 +8,12 @@ OpenClaw/Agent Browser tools, never by a guessed shell command.
 import json
 from pathlib import Path
 import time
+from collections.abc import Mapping
+
+if __package__:
+    from .intake import captured_script_mode
+else:
+    from intake import captured_script_mode
 
 
 API_OPERATIONS = {
@@ -48,7 +54,8 @@ def decide(operation, location_id, probes, catalog=None, failed_lanes=(), inputs
         return {'lane':'STOP_UNKNOWN_OPERATION','operation':operation}
     if not isinstance(probes, dict) or not isinstance(probes.get('api_capabilities', {}), dict):
         return {'lane':'STOP_INVALID_PROBE','operation':operation}
-    context = inputs if isinstance(inputs, dict) else {}
+    context = inputs if isinstance(inputs, Mapping) else {}
+    captured_mode = captured_script_mode(operation, context)
     calendar_mode = operation == 'meetings.integrate' and context.get('integration_mode') == 'permanent_calendar_link'
     if operation == 'meetings.integrate':
         mode = context.get('integration_mode')
@@ -68,7 +75,7 @@ def decide(operation, location_id, probes, catalog=None, failed_lanes=(), inputs
     if bound and cap.get('http_status') in (401,403):
         return {'lane':'STOP_AUTH','reason':'Credential/scope refusal; do not treat it as an unsupported API or try another identity'}
     portal_course_mode = operation == 'communities.configure' and bool(set(context).intersection({'course_associations', 'branding'}))
-    api_eligible = (operation != 'meetings.integrate' or calendar_mode) and not portal_course_mode
+    api_eligible = (operation in API_OPERATIONS or calendar_mode) and not portal_course_mode and not captured_mode
     if api_eligible and bound and cap.get('supported') is True and cap.get('provider') in ('public_api','official_mcp','skill44') and cap.get('scope_ok') is True and cap.get('version'):
         return {'lane':cap['provider'],'operation':operation,'version':cap['version'],'location_id':location_id}
     if (operation in API_OPERATIONS or calendar_mode) and not (bound and cap.get('supported') is False and cap.get('reason') in ('unsupported_endpoint','location_feature_unavailable')):

@@ -21,6 +21,24 @@ def plan():
 
 
 class DefinitionTests(unittest.TestCase):
+    def test_disabled_legacy_api_row_is_not_claimed_as_known_native_reuse(self):
+        data=plan();field=data['payload']['large_text_fields'][0]
+        page,frame,title,scope,dialog,search,tile,checkbox=[Mock() for _ in range(8)]
+        page.url=data['payload']['start_url'];title.count.return_value=1
+        title.input_value.return_value='Existing form';scope.count.return_value=1
+        frame.get_by_role.return_value=title;frame.locator.return_value=scope
+        dialog.get_by_text.return_value.count.return_value=0
+        tile.get_attribute.return_value='true'
+        with patch.object(native,'form_builder',return_value=frame),patch.object(native,'assert_tenant'), \
+             patch.object(native,'_close_object_drawer'),patch.object(native,'click') as click, \
+             patch.object(native,'_inventory',return_value=[(0,native._expected(field))]), \
+             patch.object(native,'_stable_canvas',return_value=[{'types':['LARGE_TEXT'],'names':[['TEXTAREA',None,None]]}]), \
+             patch.object(native,'_object_dialog',return_value=(dialog,search)), \
+             patch.object(native,'_object_row',return_value=(Mock(),tile,checkbox)), \
+             self.assertRaisesRegex(Stop,'LARGE_TEXT_REUSE_IDENTITY_UNVERIFIED'):
+            native.configure(page,data)
+        self.assertNotIn(checkbox,[call.args[0] for call in click.call_args_list])
+
     def test_api_definition_has_no_options_and_native_key_punctuation_is_opaque(self):
         data=plan();self.assertEqual(native.validate(data),data)
         field=data['payload']['large_text_fields'][0]

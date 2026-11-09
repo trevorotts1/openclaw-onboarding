@@ -20,12 +20,14 @@ if __package__:
     from .evidence_lease import evidence_lease, journal_present, read_journal
     from .receipt_validation import minimal_objects, pending_proof
     from .route import decide, recovery
+    from .intake import captured_script_mode
     from .skill6_playwright import Stop, execute, run_on_page, secure_json, validate_job
 else:
     from recipe_cli import compile_recipe
     from evidence_lease import evidence_lease, journal_present, read_journal
     from receipt_validation import minimal_objects, pending_proof
     from route import decide, recovery
+    from intake import captured_script_mode
     from skill6_playwright import Stop, execute, run_on_page, secure_json, validate_job
 
 
@@ -166,7 +168,8 @@ def _recipe_readiness(operation, inputs, probes, input_dir):
           or operation == 'meetings.integrate' and inputs.get('integration_mode') == 'dynamic_calendar_room')
     event = operation == 'meetings.integrate' and inputs.get('integration_mode') == 'community_event_room'
     portal = operation == 'communities.configure' and bool(set(inputs).intersection({'channels', 'details', 'access', 'course_associations', 'branding'}))
-    if not native and not recorded and not ui and not portal and not event:
+    captured = captured_script_mode(operation, inputs)
+    if not native and not recorded and not ui and not portal and not event and not captured:
         return observed, None
     # A receipt for another input/profile cannot bless this specific capture.
     profiles = observed.get('recorded_profiles', [])
@@ -202,6 +205,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
     course_association_mode = operation == 'communities.configure' and 'course_associations' in inputs
     branding_mode = operation == 'communities.configure' and 'branding' in inputs
     event_mode = operation == 'meetings.integrate' and inputs.get('integration_mode') == 'community_event_room'
+    captured_mode = captured_script_mode(operation, inputs)
     if event_mode and 'auth_activation' in inputs:
         return {'status':'STOP_INVALID_INPUT','browser_used':False,
                 'reason':'Event room integrations require the caller-owned authenticated portal session; no fresh app seed is permitted'}
@@ -223,25 +227,34 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
         return {'status': 'STOP_INVALID_INPUT', 'browser_used': False,
                 'reason': 'Installed executors must be a provider mapping'}
     observed, capture_error = _recipe_readiness(operation, inputs, probes, input_dir)
+    if capture_error and 'auth_activation' in inputs:
+        return _terminal_auth_stop(operation, inputs, Path(evidence_root).resolve(), capture_error, contract=True)
     route = decide(operation, inputs['location_id'], observed, inputs=inputs)
-    if event_mode and route['lane'] != 'playwright':
+    script_lane = (route['lane'] == 'playwright' or
+        route['lane'] in BROWSER_PROVIDERS and page is not None)
+    if event_mode and not script_lane:
         status = 'STOP_INVALID_INPUT' if capture_error else route['lane'] if route['lane'].startswith('STOP_AUTH') else 'EVENT_SCRIPT_ROUTE_REQUIRED'
         return {'status':status,'route':route,'browser_used':False,
                 'reason':'Community event room creation requires its captured script, own journal, and live same-session portal context; another provider cannot authorize it'}
-    if branding_mode and route['lane'] != 'playwright':
+    if branding_mode and not script_lane:
         return {'status':'STOP_INVALID_INPUT' if capture_error else 'BRANDING_SCRIPT_ROUTE_REQUIRED',
                 'route':route, 'browser_used':False,
                 'reason':'Community Branding requires the captured native script and live same-session portal context'}
-    if course_association_mode and route['lane'] != 'playwright':
+    if course_association_mode and not script_lane:
         return {'status':'STOP_INVALID_INPUT' if capture_error else 'COURSE_ASSOCIATION_SCRIPT_ROUTE_REQUIRED',
                 'route':route, 'browser_used':False,
                 'reason':'Community course associations require the captured script and live same-session portal context; a generic capability or provider cannot authorize this native operation'}
-    if access_mode and route['lane'] != 'playwright':
+    if access_mode and not script_lane:
         return {'status':'STOP_INVALID_INPUT' if capture_error else 'ACCESS_SCRIPT_ROUTE_REQUIRED',
                 'route':route, 'browser_used':False,
                 'reason':'Invalid community access configuration' if capture_error else
                     'Community access requires its captured native script and live same-session host context; an authorization cannot be delegated to another lane',
                 **({'error_type':capture_error} if capture_error else {})}
+    if captured_mode and not script_lane:
+        status = ('STOP_INVALID_INPUT' if capture_error else route['lane']
+            if route['lane'].startswith('STOP_AUTH') else 'CAPTURED_SCRIPT_ROUTE_REQUIRED')
+        return {'status':status,'route':route,'browser_used':False,
+                'reason':'Native editor jobs require the maintained compiled leaf and owned receipt journal. Supply a compatible caller-owned Page for a measured browser transport; generic provider callback statuses are not native proof'}
     if 'auth_activation' in inputs and route['lane'] != 'playwright':
         return {'status':'STOP_FRESH_ACTIVATION_REQUIRED', 'route':route,
                 'browser_used':False,
@@ -252,7 +265,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
     journals = ('state.json', 'provider-state.json', 'community-portal-state.json', 'community-details-state.json', 'community-access-state.json', 'community-event-state.json', 'handoff.json', 'auth-stop.json')
     if not any(journal_present(root / name) for name in journals):
         secure_json(root / 'route.json', route)
-    if route['lane'] != 'playwright':
+    if route['lane'] != 'playwright' and not (captured_mode and script_lane):
         provider = (executors or {}).get(route['lane'])
         if provider is None and operation == 'courses.lessons' and route['lane'] in ('public_api','skill44') and inputs.get('api_capability'):
             if __package__:

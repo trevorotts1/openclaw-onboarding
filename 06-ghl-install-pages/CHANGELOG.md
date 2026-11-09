@@ -1,3 +1,32 @@
+## [v27.1.95] - 2026-11-09
+
+- Build ordered native Redirect to URL, Display custom message and Disqualify
+  lead condition outcomes with complete prior-card and rich-markup preservation.
+  Edit existing Show/Hide stacks against an explicit complete previous inventory;
+  retain card count and refuse uncaptured clause removal.
+- Create captured quiz Short Answer, Long Answer, Number, Multiple Choice,
+  Single Choice and Yes/No questions on exact inventoried pages. Preserve prior
+  question properties, Radio IDs/options/categories/scores and sibling bindings.
+  Bind populated-canvas insertion to the measured pointer rail and reselect the
+  exact newly appended widget after the native drawer clears activation.
+- Preserve measured Radio Query Keys independently of API field keys. Refuse
+  preexisting Dropdown/Large Text adoption without a native API-ID link; replay
+  exact completed new insertions from their original durable journal.
+- Require the same exact receipt validation before first-run completion and
+  completed replay for the new question and condition paths. A familiar status,
+  missing proof flags, foreign owner or changed plan cannot bless a write.
+- Classify every registered editor schema as native by default. Broad API
+  operation capabilities and generic browser callback statuses cannot replace
+  its compiled leaf and native journal. Canonical API operations retain their
+  existing adapters. A caller-owned compatible Page can run the same leaf over
+  a measured OpenClaw, Agent Browser or computer-use transport; native acceptance
+  remains pending. Keep this Skill6 version independent of repository-wide
+  release metadata and manifests.
+- Keep functional, submission, payment, notification and generated-room proof
+  pending. Uncaptured controls, unsupported schema mutations, answer routing,
+  course Live Sessions availability and remaining split allocation are separate
+  open requirements; this checkpoint does not replace the complete audit count.
+
 ## [v27.1.94] - 2026-11-09
 
 - Continue guarded native controls: community Branding and existing Event Live Room association, exact active-group reuse and scoped newly-created inactive groups; inactive course Custom Block image uploads; ordered form condition stacks; single-price payment-owned Order Confirmation; existing API Dropdown/Large Text placement; new quiz Short Answers and Header name/layout controls.

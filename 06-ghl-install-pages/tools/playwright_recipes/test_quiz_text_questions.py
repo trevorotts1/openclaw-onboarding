@@ -29,10 +29,15 @@ class TextValidation(unittest.TestCase):
     def test_complete_existing_and_authored_short_answer_inventory_is_retained(self):
         self.assertEqual(text.validate(step()),step()['payload'])
     def test_query_label_collision_reserved_default_and_unseen_type_refuse(self):
-        for change in ({'query_key':'radio'},{'query_key':'single_line'},{'question':'Existing choice'},
+        for change in ({'query_key':'radio'},{'question':'Existing choice'},
                        {'field_type':'LARGE_TEXT'},{'field_type':[]},{'required':'true'}):
             value=step();value['payload']['questions'][0].update(change)
             with self.subTest(change=change),self.assertRaises(runner.Stop):text.validate(value)
+    def test_native_default_query_key_is_not_an_artificial_reservation(self):
+        value=step();value['payload']['pages'][0]['questions'][0].update(field_type='TEXT',query_key='single_line')
+        self.assertEqual(text.validate(value),value['payload'])
+        value=step();value['payload']['questions'][0]['query_key']='single_line'
+        self.assertEqual(text.validate(value),value['payload'])
     def test_full_page_count_owner_and_field_schema_are_required(self):
         for change in ({'target_page':2},{'target_page':True},{'pages':[]},{'expected_quiz_name':''}):
             value=step();value['payload'].update(change)
@@ -73,7 +78,7 @@ class TextExecution(unittest.TestCase):
             state['reopened']=True
             if lost:state['inventory']=inventory()
         return page,state,authored,reopen
-    def execute(self,page,state,authored,reopen):
+    def execute(self,page,state,authored,reopen,plan=None):
         from contextlib import ExitStack
         with ExitStack() as stack:
             stack.enter_context(patch.object(text,'assert_tenant'))
@@ -83,7 +88,7 @@ class TextExecution(unittest.TestCase):
             append=stack.enter_context(patch.object(text,'_append',return_value=object()))
             stack.enter_context(patch.object(text,'_write_question',side_effect=authored))
             stack.enter_context(patch.object(text,'reopen_editor',side_effect=reopen))
-            receipt=text.configure(page,step())
+            receipt=text.configure(page,plan or step())
         return receipt,append
     def test_one_append_no_global_field_schema_and_independent_complete_readback(self):
         page,state,authored,reopen=self.surface()
@@ -100,6 +105,14 @@ class TextExecution(unittest.TestCase):
         page,state,authored,reopen=self.surface(lost=True)
         with self.assertRaisesRegex(runner.Stop,'did not persist'):self.execute(page,state,authored,reopen)
         self.assertTrue(state['reopened'])
+    def test_existing_default_text_key_is_preserved_while_new_index_gets_distinct_authored_key(self):
+        page,state,authored,reopen=self.surface();plan=step()
+        state['inventory'][0][0].update(field_type='TEXT',query_key='single_line')
+        plan['payload']['pages'][0]['questions'][0].update(field_type='TEXT',query_key='single_line')
+        receipt,_=self.execute(page,state,authored,reopen,plan)
+        self.assertEqual(receipt['status'],'QUIZ_SHORT_ANSWERS_SAVED_AND_REOPENED')
+        self.assertEqual(state['inventory'][0][0]['query_key'],'single_line')
+        self.assertEqual(state['inventory'][0][1]['query_key'],'context')
     def test_collateral_radio_choice_or_score_change_is_detected_before_save(self):
         for key,value in (('label','Changed option'),('category','Changed category'),
                           ('score','99'),('score_enabled',False)):
@@ -119,12 +132,13 @@ class NativeAppend(unittest.TestCase):
         dialog.count.return_value=1;dialog.get_by_text.return_value.count.return_value=1
         dialog.get_by_text.return_value.is_visible.return_value=True
         frame.get_by_role.return_value=dialog
+        frame.locator.return_value.count.return_value=1
         collection=MagicMock();dialog.locator.return_value=collection;collection.filter.return_value=tile
         tile.count.return_value=1;tile.is_visible.return_value=True;tile.get_attribute.return_value='Short Answer3';tile.locator.return_value=handle
         handle.count.return_value=1;handle.is_visible.return_value=True;handle.get_attribute.return_value='false'
         canvas.locator.return_value=items;canvas.bounding_box.return_value={'x':0,'y':100,'width':400,'height':200}
         state={'count':1,'drags':0};items.count.side_effect=lambda:state['count']
-        old,new=MagicMock(),MagicMock();old.bounding_box.return_value={'x':0,'y':100,'width':400,'height':150 if safe else 200}
+        old,new=MagicMock(),MagicMock();old.bounding_box.return_value={'x':0,'y':100,'width':400,'height':150 if safe else 208}
         label=MagicMock();label.count.return_value=1;label.is_visible.return_value=True
         label.get_attribute.return_value='TEXT';label.inner_text.return_value='Short Answer a1b2c3'
         new.get_by_role.return_value=label;new.get_attribute.return_value='true'
@@ -135,14 +149,30 @@ class NativeAppend(unittest.TestCase):
             if insert:state['count']=2
         handle.drag_to.side_effect=drag
         return frame,canvas,state,handle
-    def test_drag_is_bound_inside_the_exact_owner_canvas_below_existing_question(self):
+    def test_drag_is_bound_seven_pixels_inside_the_exact_final_question_edge(self):
         frame,canvas,state,handle=self.surface()
         with patch.object(text,'_close_properties'),patch.object(text,'_close_drawer'), \
                 patch.object(text,'_owners',return_value=[(object(),canvas)]), \
                 patch.object(text,'click'),patch.object(text,'wait_until',side_effect=lambda pred,reason:self.assertTrue(pred())):
             text._append(frame,step()['payload'])
         self.assertEqual(state['drags'],1)
-        self.assertEqual(handle.drag_to.call_args.kwargs['target_position'],{'x':200,'y':175})
+        self.assertEqual(handle.drag_to.call_args.kwargs['target_position'],{'x':200,'y':143})
+    def test_real_populated_canvas_has_no_blank_tail_and_uses_one_native_pointer_drag(self):
+        frame,canvas,state,handle=self.surface();page=MagicMock()
+        canvas.bounding_box.return_value={'x':500,'y':190.234,'width':400,'height':145.195}
+        canvas.locator.return_value.nth(0).bounding_box.return_value=dict(canvas.bounding_box.return_value)
+        handle.bounding_box.return_value={'x':50,'y':362,'width':20,'height':20}
+        page.mouse.up.side_effect=lambda:state.__setitem__('count',2)
+        with patch.object(text,'_close_properties'),patch.object(text,'_close_drawer'), \
+                patch.object(text,'_owners',return_value=[(object(),canvas)]), \
+                patch.object(text,'click'),patch.object(text,'wait_until',side_effect=lambda pred,reason:self.assertTrue(pred())):
+            text._append(frame,step()['payload'],page=page)
+        handle.drag_to.assert_not_called();page.mouse.down.assert_called_once();page.mouse.up.assert_called_once()
+        destination=page.mouse.move.call_args_list[1]
+        self.assertEqual(destination.kwargs,{'steps':15})
+        self.assertAlmostEqual(destination.args[0],700)
+        self.assertAlmostEqual(destination.args[1],328.429)
+        self.assertEqual([call.args for call in page.mouse.move.call_args_list[2:]],[(700,328.429)]*3)
     def test_outside_footer_or_uncertain_insertion_never_retries_drag(self):
         for params in ({'safe':False},{'insert':False}):
             frame,canvas,state,handle=self.surface(**params)
@@ -153,6 +183,16 @@ class NativeAppend(unittest.TestCase):
                     patch.object(text,'click'),patch.object(text,'wait_until',side_effect=wait),self.assertRaises(runner.Stop):
                 text._append(frame,step()['payload'])
             self.assertEqual(state['drags'],0 if params.get('safe') is False else 1)
+    def test_closing_drawer_may_deselect_all_widgets_and_new_bound_label_is_explicitly_reselected(self):
+        frame,canvas,state,_=self.surface();item=canvas.locator.return_value.nth(1)
+        selection={'active':False};item.get_attribute.side_effect=lambda key:'true' if selection['active'] else 'false'
+        item.get_by_role.return_value.click.side_effect=lambda:selection.__setitem__('active',True)
+        with patch.object(text,'_close_properties'),patch.object(text,'_close_drawer'), \
+                patch.object(text,'_owners',return_value=[(object(),canvas)]), \
+                patch.object(text,'click',side_effect=lambda locator:locator.click()), \
+                patch.object(text,'wait_until',side_effect=lambda pred,reason:self.assertTrue(pred())):
+            text._append(frame,step()['payload'])
+        self.assertTrue(selection['active']);item.get_by_role.return_value.click.assert_called_once()
 
 
 class NativeQuestionProperties(unittest.TestCase):

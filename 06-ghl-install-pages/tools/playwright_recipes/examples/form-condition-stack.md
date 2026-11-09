@@ -18,6 +18,22 @@ the observed Show/Hide Fields tile. It never deletes, edits or reorders existing
 cards to force a match. Supply the full intended stack rather than an arbitrary
 append request.
 
+For editing existing Show/Hide cards, also supply `condition.expected_rules`
+with the entire inventoried previous rule list. It must have the same number
+of cards as desired `rules`. Every actual card must match the complete previous
+stack before the first edit. Only changed cards are opened through their scoped
+Edit control. The existing native modal's full predicate, connectors, effect and
+target are independently checked before any authored edit. The complete changed
+predicate/effect/target is then checked, and every untouched card must remain
+unchanged after each modal Save. The hash binds both previous and desired lists.
+
+Changing existing AND/OR connectors does not append a row. Clauses can retain
+their count or grow through the captured native append controls. Removing a
+clause or changing the number/order of cards requires a separate captured flow
+and is refused before writing. A conflicting previous Show/Hide pair may be
+explicitly inventoried and corrected; conflicting desired predicates for one
+target remain refused. See `form-condition-stack-edit.json`.
+
 Each new card is checked immediately against the complete expected prefix.
 The drawer Save-close and outer form Save follow; Save traffic must settle
 before navigating away. Independent Forms-list reopen must return the exact

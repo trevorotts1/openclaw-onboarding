@@ -12,9 +12,9 @@ else:
 
 def compile_recipe(operation, data):
     if __package__:
-        from .intake import validate_intake
+        from .intake import validate_intake, condition_request, quiz_creation
     else:
-        from intake import validate_intake
+        from intake import validate_intake, condition_request, quiz_creation
     validate_intake(operation, data)
     base={k:data[k] for k in ('location_id','location_name','start_url')}
     if 'auth_activation' in data:
@@ -100,21 +100,11 @@ def compile_recipe(operation, data):
         if 'consent' in data:
             add('native_form_consent', consent=data['consent'])
     elif operation=='forms.conditions':
-        if not isinstance(data.get('condition'), dict):
-            raise Stop('Native form condition must be a configuration object')
-        condition = dict(data['condition'])
-        # `action` belongs to the executor step. Normalize the legacy semantic
-        # condition action before add() so it cannot collide with that argument.
-        if 'action' in condition:
-            effect = condition.pop('action')
-            if effect not in ('Hide Field', 'Show Field') or condition.get('effect', effect) != effect:
-                raise Stop('Conflicting or uncaptured native condition effect')
-            condition['effect'] = effect
-        if condition.get('effect', 'Hide Field') not in ('Hide Field', 'Show Field'):
-            raise Stop('Only the captured Hide Field/Show Field condition effects are implemented')
-        add('native_condition_stack' if 'rules' in condition else 'native_condition_group' if 'clauses' in condition else 'native_condition', **condition)
-    elif operation=='quizzes.configure' and 'short_answer_questions' in data['configuration']:
-        add('quiz_short_answers',payload={**{key:data[key] for key in ('location_id','location_name','start_url')},**data['configuration']['short_answer_questions']})
+        action, condition = condition_request(data['condition'])
+        add(action, **condition)
+    elif operation=='quizzes.configure' and quiz_creation(data) is not None:
+        action, payload = quiz_creation(data)
+        add(action, payload=payload)
     elif operation=='quizzes.configure':
         config = dict(data['configuration'])
         has_results = 'result_page' in config

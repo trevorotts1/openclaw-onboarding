@@ -207,8 +207,9 @@ Each inventoried page carries its exact label and every existing question's
 and `hidden`. Current supported existing widgets are `TEXT` and `RADIO`; new
 questions use `TEXT` from the captured Short Answer tile. Authored question labels
 and Query Keys must be globally unique and disjoint from the complete existing
-inventory. The captured default key `single_line` must be unoccupied before
-insertion and cannot be a requested final key.
+inventory. An existing default key `single_line` does not prevent insertion:
+the one-widget delta and exact new ordered index bind the selected new widget,
+whose captured default key is checked before authoring its final distinct key.
 
 The canvas's Short Answer input exposes no stable field ID, name or explicit
 type. The handler does not fabricate one. It selects each actual canvas widget
@@ -218,8 +219,10 @@ input binding is retained before the first drag. Empty pages require the capture
 inside-canvas drop placeholder, never an inferred zero field count.
 
 One real native pointer drag appends a Short Answer inside the exact requested
-page canvas below the last question, using fresh element-relative bounds. An
-unsafe tail or uncertain insertion stops without a second drag. The new widget
+page canvas seven pixels inside the last question's lower edge, using fresh
+element-relative bounds and the captured repeated final pointer events. Normal
+populated canvases end at that wrapper and need no blank tail. An unsafe edge
+or uncertain insertion stops without a second drag. The new widget
 must match the captured active TEXT/default-query shape before authoring its
 properties. Later inventory must prove one exact new question on the intended
 page and unchanged existing questions; Save and independent reopening must
@@ -233,6 +236,32 @@ question types and answer routing remain separate implementation requirements.
 
 ## Integrated checkpoint boundaries
 
-The native condition stack implements ordered Show/Hide rules, homogeneous AND/OR clauses within each rule, and one explicit rule per target. Nested mixed predicates are not claimed as a captured native capability. Other native effects remain separate. API-backed existing Single Dropdown and Large Text fields use independent native Query Key bindings; no canvas API ID is fabricated. Their actual native acceptance remains pending.
+The native condition stack implements ordered Show/Hide rules, homogeneous
+AND/OR clauses within each rule, and one explicit rule per target. An explicit
+complete `expected_rules` list enables same-count edits; clause removal remains
+uncaptured. A dedicated outcome stack also appends Redirect to URL, Display
+custom message and Disqualify lead effects while preserving prior card HTML.
+See `form-condition-stack-edit.json` and `form-condition-outcomes.md`. Nested
+mixed predicates remain a separate requirement.
+
+Dedicated `configuration.multiple_choice_questions` jobs create captured
+CHECKBOX Multiple Choice and RADIO Single Choice/Yes-No questions. Dedicated
+`configuration.written_answer_questions` jobs create TEXT Short Answer,
+LARGE_TEXT Long Answer and NUMERICAL Number questions. Their complete existing
+question inventories, exact target page, authored final keys and shared-option
+acknowledgment are required as described in `quiz-multiple-choice-creation.md`
+and `quiz-written-answer-creation.md`. New keys must be distinct from existing
+keys, but a prior native default key does not block index-bound insertion.
+Answer routing and uncaptured question types remain separate requirements.
+
+API-backed existing Single Dropdown and Large Text schema placement uses
+independent native Query Key values; no canvas API ID is fabricated. Initial
+adoption of a disabled API-picker row is refused because that observed state
+does not link the API ID to one canvas widget. An exact new insertion can replay
+from its original completed journal. Radio placement instead binds the actual
+opaque input name to the API ID and preserves its measured native Query Key.
+The new question and condition handlers require complete exact receipts on both
+fresh completion and replay. Their native functional/submission acceptance
+remains pending.
 
 The payment-owned Order Confirmation handler supports the captured uniquely priced product contract only. Catalog GET identity, native selected product and reopened mode are verified by code; charges, payment behavior and submitted journeys remain pending. See `form-order-confirmation.md`.

@@ -140,11 +140,10 @@ class ExistingBindingTests(unittest.TestCase):
             except Stop as error:result=error
         return result,checkbox,clicks
 
-    def test_disabled_api_row_and_unique_native_binding_are_reused_and_independently_read(self):
+    def test_disabled_api_row_cannot_adopt_a_native_widget_without_api_id_provenance(self):
         result,checkbox,_=self.exercise()
-        self.assertEqual(result['fields'][0]['placement'],'reused')
-        self.assertEqual(result['fields'][0]['native_query_key'],'select_your_t-shirt_size')
-        self.assertIs(result['submission_verified'],False)
+        self.assertIsInstance(result,Stop)
+        self.assertIn('DROPDOWN_REUSE_IDENTITY_UNVERIFIED',str(result))
         checkbox.click.assert_not_called()
 
     def test_enabled_api_row_does_not_adopt_a_conflicting_existing_native_query(self):
@@ -152,10 +151,10 @@ class ExistingBindingTests(unittest.TestCase):
         self.assertIsInstance(result,Stop)
         self.assertIn('conflicts',str(result));checkbox.click.assert_not_called()
 
-    def test_lost_native_options_after_reopen_never_return_verified(self):
+    def test_even_matching_caption_and_options_cannot_upgrade_unknown_legacy_reuse(self):
         result,_,_=self.exercise(corrupt_reopen=True)
         self.assertIsInstance(result,Stop)
-        self.assertIn('did not persist',str(result))
+        self.assertIn('REUSE_IDENTITY_UNVERIFIED',str(result))
 
 
 if __name__=='__main__':unittest.main()

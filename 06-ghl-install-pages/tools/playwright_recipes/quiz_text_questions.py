@@ -35,10 +35,10 @@ def _text(value,*,empty=False):
             and not any(ord(c)<32 for c in value))
 
 
-def _question(value,*,new=False):
+def _question(value,*,new=False,field_types=None):
     if not isinstance(value,dict) or set(value)!=PROPERTIES:
         raise Stop('Every quiz question needs its complete exact type/text/key/flags inventory')
-    if not isinstance(value['field_type'],str) or value['field_type'] not in ({'TEXT'} if new else {'TEXT','RADIO'}):
+    if not isinstance(value['field_type'],str) or value['field_type'] not in (field_types if field_types is not None else {'TEXT'} if new else {'TEXT','RADIO'}):
         raise Stop('Short Answer creation supports captured TEXT with existing TEXT/RADIO inventory only')
     if (not _text(value['question']) or not _text(value['placeholder'],empty=True)
             or not _text(value['short_label'],empty=True)
@@ -48,7 +48,7 @@ def _question(value,*,new=False):
     return deepcopy(value)
 
 
-def validate(step):
+def validate(step,*,field_types=('TEXT','RADIO'),new_types=('TEXT',),reserved_key=None):
     if (not isinstance(step,dict) or set(step)-{'id','action','payload'}
             or step.get('action','quiz_short_answers')!='quiz_short_answers'):
         raise Stop('Unsupported quiz Short Answer runner metadata')
@@ -74,15 +74,15 @@ def validate(step):
     for page in pages:
         if not isinstance(page,dict) or set(page)!={'label','questions'} or not _text(page['label']) or not isinstance(page['questions'],list):
             raise Stop('Quiz pages require their exact ordered labels and question inventories')
-        labels.append(page['label']);old.extend(_question(q) for q in page['questions'])
-    desired=[_question(q,new=True) for q in new]
+        labels.append(page['label']);old.extend(_question(q,field_types=field_types) for q in page['questions'])
+    desired=[_question(q,new=True,field_types=new_types) for q in new]
     if len(labels)!=len(set(labels)):raise Stop('Quiz page labels must be unique')
     for key in ('question','query_key'):
         before=[q[key].casefold() for q in old];after=[q[key].casefold() for q in desired]
         if len(before)!=len(set(before)) or len(after)!=len(set(after)) or set(before).intersection(after):
             raise Stop('Quiz existing/new question labels and Query Keys must be unambiguous and disjoint')
-    if any(q['query_key'].casefold()=='single_line' for q in old+desired):
-        raise Stop('Reserved Short Answer default Query Key must be unoccupied before native insertion')
+    if reserved_key is not None and any(q['query_key'].casefold()==reserved_key.casefold() for q in old+desired):
+        raise Stop('Reserved native question default Query Key must be unoccupied before insertion')
     return deepcopy(payload)
 
 
@@ -135,11 +135,18 @@ def _items(canvas):
     return items
 
 
-def _item_kind(item):
+def _item_kind(item,*,field_types=('TEXT','RADIO')):
     label=_one(item.get_by_role('textbox',name='Label',exact=True),'Native quiz question Label is missing or ambiguous')
     kind=label.get_attribute('data-field-type')
-    if kind not in ('TEXT','RADIO'):raise Stop('An existing quiz widget needs a separate type capture')
+    if kind not in field_types:raise Stop('An existing quiz widget needs a separate type capture')
     return label,kind
+
+
+def _activate_item(frame,item,label):
+    click(label)
+    active=frame.locator('.form-builder--item[data-active="true"]')
+    wait_until(lambda:active.count()==1 and item.get_attribute('data-active')=='true',
+               'Native quiz question selection is ambiguous')
 
 
 def _radio_options(frame):
@@ -169,12 +176,9 @@ def _radio_options(frame):
     return result
 
 
-def _read_question(frame,item):
+def _read_question(frame,item,*,field_types=('TEXT','RADIO'),metadata_reader=None):
     _close_properties(frame)
-    label,kind=_item_kind(item);click(label)
-    active=frame.locator('.form-builder--item[data-active="true"]')
-    wait_until(lambda:active.count()==1 and item.get_attribute('data-active')=='true',
-        'Native quiz question selection is ambiguous')
+    label,kind=_item_kind(item,field_types=field_types);_activate_item(frame,item,label)
     click(_one(frame.get_by_role('button',name='Open settings',exact=True),'Native quiz Open settings control changed'))
     result={'field_type':kind}
     for key,selector in FIELD_INPUTS.items():
@@ -184,7 +188,7 @@ def _read_question(frame,item):
         value=flag.get_attribute('aria-checked')
         if value not in ('true','false'):raise Stop('Native quiz Boolean property state is unavailable')
         result[key]=value=='true'
-    _question(result)
+    _question(result,field_types=field_types)
     text=label.inner_text().strip()
     if text not in (result['question'],result['question']+'*' if result['required'] else result['question'],
                     result['question']+' *' if result['required'] else result['question']):
@@ -193,11 +197,12 @@ def _read_question(frame,item):
         name:n.getAttribute('name'),type:n.getAttribute('type'),value:n.value,placeholder:n.getAttribute('placeholder')}))''')
     if not isinstance(result['_widget_inputs'],list):raise Stop('Native quiz widget input identity is unavailable')
     if kind=='RADIO':result['_radio_options']=_radio_options(frame)
+    if metadata_reader is not None:result.update(metadata_reader(frame,kind))
     _close_properties(frame,required=True)
     return result
 
 
-def _inventory(frame,plan):
+def _inventory(frame,plan,*,field_types=('TEXT','RADIO'),metadata_reader=None):
     _close_drawer(frame);click(frame.get_by_role('tab',name='Edit',exact=True))
     result=[]
     for _,canvas in _owners(frame,plan):
@@ -207,7 +212,7 @@ def _inventory(frame,plan):
             _one(empty,'Empty native quiz page is not confirmed by its captured drop placeholder')
         for index in range(count):
             if items.count()!=count:raise Stop('Quiz questions changed during inventory')
-            questions.append(_read_question(frame,items.nth(index)))
+            questions.append(_read_question(frame,items.nth(index),field_types=field_types,metadata_reader=metadata_reader))
         result.append(questions)
     return result
 
@@ -216,7 +221,7 @@ def _properties_only(inventory):
     return [[{key:q[key] for key in PROPERTIES} for q in page] for page in inventory]
 
 
-def _append(frame,plan):
+def _append_tile(frame,plan,tile_label,*,page=None):
     _close_properties(frame)
     dialog=frame.get_by_role('dialog')
     if not dialog.count():
@@ -225,9 +230,9 @@ def _append(frame,plan):
     if dialog.count()!=1 or dialog.get_by_text('Quiz Element',exact=True).count()!=1:
         raise Stop('Native Quiz Element drawer changed')
     click(_one(dialog.get_by_text('Quick Add',exact=True),'Native quiz Quick Add tab changed'))
-    tile=dialog.locator('.gui__builder-card').filter(has=dialog.get_by_text('Short Answer',exact=True))
+    tile=dialog.locator('.gui__builder-card').filter(has=dialog.get_by_text(tile_label,exact=True))
     _one(tile,'Native Short Answer tile is absent or ambiguous')
-    if not re.fullmatch(r'Short Answer[0-9]+',tile.get_attribute('id') or ''):
+    if not re.fullmatch(re.escape(tile_label)+r'[0-9]+',tile.get_attribute('id') or ''):
         raise Stop('Native Short Answer tile identity changed')
     handle=_one(tile.locator('img.gui__builder-card--handler'),'Native Short Answer drag handle changed')
     if handle.get_attribute('draggable')!='false':raise Stop('Native Short Answer drag-handle shape changed')
@@ -238,35 +243,59 @@ def _append(frame,plan):
     last=items.nth(before-1).bounding_box() if before else None
     if (not box or box['width']<8 or box['height']<8 or before and not last):
         raise Stop('Native quiz append destination is not measurable')
-    tail=(last['y']+last['height']-box['y']) if last else 0
-    if not 0<=tail<=box['height']-8:
+    if last:
+        # Live capture appended successfully seven pixels inside the lower
+        # edge of the last wrapper. Native canvases normally end exactly at
+        # that wrapper; a requirement for a blank tail prevents real writes.
+        x=last['x']+last['width']/2-box['x'];y=last['y']+last['height']-7-box['y']
+        if last['width']<8 or last['height']<14:
+            raise Stop('Native final question has no captured inside-edge drop area')
+    else:x,y=box['width']/2,box['height']/2
+    if not 1<=x<=box['width']-1 or not 1<=y<=box['height']-1:
         raise Stop('Native quiz page has no captured safe inside-canvas append area')
-    # One native pointer drag into the measured owner canvas below its last
-    # question. Never drop beyond the footer and never repeat an uncertain drag.
-    handle.drag_to(canvas,target_position={'x':box['width']/2,'y':(tail+box['height'])/2},timeout=45000)
+    if page is None:
+        handle.drag_to(canvas,target_position={'x':x,'y':y},timeout=45000)
+    else:
+        source=handle.bounding_box()
+        if not source or source['width']<=0 or source['height']<=0:
+            raise Stop('Native quiz drag handle is not measurable')
+        destination=(box['x']+x,box['y']+y)
+        page.mouse.move(source['x']+source['width']/2,source['y']+source['height']/2)
+        page.mouse.down()
+        try:
+            page.mouse.move(*destination,steps=15)
+            # Smooth DnD's captured successful pointer path held the final
+            # inside-edge point three times before releasing. One drag only.
+            for _ in range(3):page.mouse.move(*destination)
+        finally:page.mouse.up()
     wait_until(lambda:items.count()==before+1,'Short Answer insertion did not append exactly one widget')
-    _close_drawer(frame)
-    item=items.nth(before);label,kind=_item_kind(item)
-    if (kind!='TEXT' or not re.fullmatch(r'Short Answer [a-z0-9]{6}',label.inner_text().strip())
-            or item.get_attribute('data-active')!='true'):
+    _owners(frame,plan);_close_drawer(frame)
+    return items.nth(before)
+
+
+def _append(frame,plan,*,page=None):
+    item=_append_tile(frame,plan,'Short Answer',page=page);label,kind=_item_kind(item)
+    if kind!='TEXT' or not re.fullmatch(r'Short Answer [a-z0-9]{6}',label.inner_text().strip()):
         raise Stop('New Short Answer differs from its captured active native TEXT shape')
     field=item.locator('input.form-placeholder.form-control')
     if (field.count()!=1 or any(field.get_attribute(key) is not None for key in ('id','name','type'))
             or field.input_value()!=''):
         raise Stop('Native Short Answer input shape changed; no field identity is inferred')
+    _activate_item(frame,item,label)
     return item
 
 
-def _write_question(frame,item,question):
-    before=_read_question(frame,item)
-    if (before['field_type']!='TEXT' or before['query_key']!='single_line'
+def _write_question(frame,item,question,*,field_types=('TEXT','RADIO'),new_kind='TEXT',default_key='single_line',metadata_reader=None):
+    before=_read_question(frame,item,field_types=field_types,metadata_reader=metadata_reader)
+    if (before['field_type']!=new_kind or before['query_key']!=default_key
             or before['placeholder'] or before['short_label'] or before['required'] or before['hidden']):
         raise Stop('New Short Answer default properties differ from capture')
-    label,_=_item_kind(item);click(label)
+    label,_=_item_kind(item,field_types=field_types);click(label)
     click(_one(frame.get_by_role('button',name='Open settings',exact=True),'Native new question settings changed'))
     for key,selector in FIELD_INPUTS.items():
         control=_one(frame.locator(selector),'Native Short Answer property changed')
-        fill(control,question[key]);control.press('Tab')
+        if control.input_value()!=question[key]:
+            fill(control,question[key]);control.press('Tab')
         if control.input_value()!=question[key]:raise Stop('Native Short Answer ignored an authored property')
     for key,selector in FLAGS.items():
         flag=_one(frame.locator(selector),'Native Short Answer checkbox changed')
@@ -277,9 +306,12 @@ def _write_question(frame,item,question):
             wait_until(lambda:flag.get_attribute('aria-checked')==str(question[key]).lower(),
                        'Native Short Answer checkbox did not accept the requested state')
     _close_properties(frame,required=True)
-    after=_read_question(frame,item)
+    after=_read_question(frame,item,field_types=field_types,metadata_reader=metadata_reader)
     if {key:after[key] for key in PROPERTIES}!=question:
         raise Stop('New Short Answer properties differ before Save')
+    for key in ('_radio_options','_choice_controls','_choice_switches'):
+        if before.get(key)!=after.get(key):
+            raise Stop('Authoring question properties changed preserved native choice metadata')
     return after
 
 
@@ -298,7 +330,7 @@ def configure(page,step):
     for question in plan['questions']:
         identity()
         if _inventory(frame,plan)!=desired:raise Stop('Quiz questions changed before the next insertion')
-        item=_append(frame,plan);authored=_write_question(frame,item,question)
+        item=_append(frame,plan,page=page);authored=_write_question(frame,item,question)
         desired[owner].append(authored)
         if _inventory(frame,plan)!=desired:
             raise Stop('Short Answer insertion changed existing questions or a different page')

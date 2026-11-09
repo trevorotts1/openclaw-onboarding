@@ -99,13 +99,12 @@ class NativePageHeadingDomTests(unittest.TestCase):
             with self.subTest(fixture=fixture),self.assertRaises(Stop):
                 text._owners(Dom([ElementTree.fromstring(fixture)]),step()['payload'])
 
-    def test_reserved_default_query_token_is_case_insensitively_occupied(self):
+    def test_native_default_query_token_is_allowed_when_final_keys_are_disjoint(self):
         for target in ('existing','new'):
             value=step()
             question=value['payload']['pages'][0]['questions'][0] if target=='existing' else value['payload']['questions'][0]
             question['query_key']='Single_Line'
-            with self.subTest(target=target),self.assertRaisesRegex(Stop,'Reserved'):
-                text.validate(value)
+            with self.subTest(target=target):self.assertEqual(text.validate(value),value['payload'])
 
 
 if __name__=='__main__':unittest.main()

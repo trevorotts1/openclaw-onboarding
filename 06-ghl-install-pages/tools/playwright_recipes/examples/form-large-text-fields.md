@@ -23,8 +23,12 @@ The native textarea has no API ID or name attribute. The handler binds the
 exact API picker row to the unique native Query Key, Label property, and exact
 textarea aria-label / Placeholder property. It requires the captured empty
 builder value rather than adopting unexpected content. Every existing Large
-Text widget is independently inventoried before selection. Unknown, duplicate,
-changed or conflicting identities stop before insertion.
+Text widget is independently inventoried before selection. An initially
+disabled API picker row is refused because no captured canvas API-ID attribute
+independently proves legacy reuse. Known successful insertion resumes through
+its original completed journal; matching native text alone never upgrades an
+unknown legacy binding. Unknown, duplicate, changed or conflicting identities
+stop before insertion.
 
 Only one exact field is inserted at a time. The observed wrapper position is
 used to check all remaining field identities and existing Large Text bindings;

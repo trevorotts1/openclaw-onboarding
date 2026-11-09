@@ -1,4 +1,5 @@
 """Reject unimplemented or discarded recipe requests before browser acquisition."""
+from collections.abc import Mapping
 
 if __package__:
     from .skill6_playwright import Stop
@@ -50,6 +51,74 @@ REQUIRED = {
     'surveys.configure': {'configuration'}, 'quizzes.configure': {'configuration'},
     'communities.create': {'community'}, 'meetings.setup': {'meeting'}, 'meetings.update': {'meeting'},
 }
+
+
+QUIZ_CREATION = {
+    'short_answer_questions': ('quiz_short_answers', 'quiz_text_questions'),
+    'multiple_choice_questions': ('quiz_multiple_choices', 'quiz_choice_questions'),
+    'written_answer_questions': ('quiz_written_answers', 'quiz_written_questions'),
+}
+
+
+def captured_script_mode(operation, inputs):
+    """Every registered editor schema owns native proof by default.
+
+    API-owned course/media/outline operations are outside FIELDS. The one mixed
+    schema has an explicit permanent-link API mode; no broad capability can
+    silently convert any other editor recipe into an API/provider completion.
+    """
+    return operation in FIELDS and not (
+        operation == 'meetings.integrate' and isinstance(inputs, Mapping)
+        and inputs.get('integration_mode') == 'permanent_calendar_link')
+
+
+def condition_request(value):
+    if not isinstance(value, dict):
+        raise Stop('Native form condition must be a configuration object')
+    condition = dict(value)
+    if 'action' in condition:
+        effect = condition.pop('action')
+        if effect not in ('Hide Field','Show Field') or condition.get('effect',effect) != effect:
+            raise Stop('Conflicting or uncaptured native condition effect')
+        condition['effect'] = effect
+    if 'rules' in condition:
+        rules = condition['rules']
+        if not isinstance(rules,list) or not rules or any(not isinstance(rule,dict) for rule in rules):
+            raise Stop('Native conditions require a complete nonempty ordered rule list')
+        outcomes = any(rule.get('effect') not in ('Hide Field','Show Field') for rule in rules)
+        if outcomes:
+            from playwright_recipes.form_condition_outcomes import validate
+            action = 'native_condition_outcomes'
+        else:
+            from playwright_recipes.form_condition_stack import validate
+            action = 'native_condition_stack'
+    elif 'clauses' in condition:
+        from playwright_recipes.form_conditions import validate
+        action = 'native_condition_group'
+    else:
+        from playwright_recipes.assessments import validate_condition as validate
+        action = 'native_condition'
+    validate({'action':action, **condition})
+    return action, condition
+
+
+def quiz_creation(data):
+    """Bind an exclusive native creation request to its exact parent owner."""
+    config = data['configuration']
+    keys = set(config).intersection(QUIZ_CREATION)
+    if not keys:
+        return None
+    if len(keys) != 1 or set(config) != keys or 'options' in data:
+        raise Stop('Native quiz question creation requires its own independently journaled job')
+    key = next(iter(keys))
+    value = config[key]
+    if not isinstance(value, dict) or set(value).intersection({'location_id', 'location_name', 'start_url'}):
+        raise Stop('Quiz question owner identity belongs to parent inputs')
+    action, module = QUIZ_CREATION[key]
+    payload = {**{name:data[name] for name in ('location_id','location_name','start_url')}, **value}
+    native = __import__('playwright_recipes.' + module, fromlist=['validate'])
+    native.validate({'action':action, 'payload':payload})
+    return action, payload
 
 
 def validate_intake(operation, data):
@@ -145,15 +214,12 @@ def validate_intake(operation, data):
             validate({'address_fields':data['address_fields']})
     if operation == 'forms.style' and 'custom_css' not in data and set(data).intersection({'css_key', 'expect_styles'}):
         raise Stop('CSS identity and render checks require custom_css')
-    if operation == 'quizzes.configure' and 'short_answer_questions' in data['configuration']:
-        config=data['configuration']
-        if set(config)!={'short_answer_questions'} or 'options' in data:
-            raise Stop('Native quiz Short Answer creation requires its own independently journaled job')
-        value=config['short_answer_questions']
-        if not isinstance(value,dict) or set(value).intersection({'location_id','location_name','start_url'}):
-            raise Stop('Quiz question owner identity belongs to parent inputs')
-        from playwright_recipes.quiz_text_questions import validate
-        validate({'payload':{**{key:data[key] for key in ('location_id','location_name','start_url')},**value}})
+    if operation == 'forms.conditions':
+        action, _ = condition_request(data['condition'])
+        if action == 'native_condition_outcomes' and 'options' in data:
+            raise Stop('Native conditional outcomes require their own independently journaled job')
+    if operation == 'quizzes.configure':
+        quiz_creation(data)
     if operation == 'surveys.configure' and isinstance(data.get('configuration'), dict):
         config = data['configuration']
         if set(config).intersection({'object_fields', 'field_dependencies'}):
