@@ -1,3 +1,8 @@
+## [v2.1.50] - 2026-11-09 - VERSION stamp re-joined to skill-version.txt after the v2.1.49 G3 bump (no Skill 49 behaviour change)
+
+- `VERSION` still read `v2.1.48` while `skill-version.txt` and the SKILL.md frontmatter read `v2.1.49`: commit d0855b696 ("bump 49 v2.1.48 -> v2.1.49 for train 3011") rolled `skill-version.txt` and `SKILL.md` by hand and skipped `VERSION`. This is the second occurrence (the v2.1.48 entry above repaired the same split at v2.1.47 -> v2.1.48). `scripts/batch-prep.sh` rolled all three stamps to v2.1.50, so `VERSION` == `skill-version.txt` == SKILL.md frontmatter again.
+- `scripts/qc-assert-skill-frontmatter-version.sh` now also compares a sibling `VERSION` file, so this split fails CI instead of shipping silently. Not a pinned file; the SF prover pin is unchanged.
+
 ## [v2.1.48] - 2026-11-09 - VERSION file brought level with skill-version.txt (no behaviour change)
 
 - `VERSION` still read v2.1.41 while `skill-version.txt` and `SKILL.md` read v2.1.47. All three now read v2.1.48. Not a pinned file; the SF prover pin is unchanged.
