@@ -5,7 +5,7 @@
 # -----------------------------------------------------------------------------
 # Runs ONCE per box, caches the result to the client state directory, and
 # re-detects on preflight. It answers ONE question for stage S1: "which enabled
-# OpenClaw web-search tool does this box have, and do we PREFER Perplexity?"
+# OpenClaw web-search tool does this box have, and which providers are preferred?"
 #
 # THE LADDER (SPEC 9, verbatim intent):
 #   (1) enumerate the ENABLED OpenClaw web-search tools on the INSTALLED gateway
@@ -17,7 +17,8 @@
 #       _probe_gateway() and the pure ladder consumes a NORMALIZED signals dict
 #       (also injectable via --signals-file for tests and a cleaner integrator
 #       probe). Detection = AVAILABILITY, not config-key presence.
-#   (2) PREFER Perplexity when it is enabled AND available.
+#   (2) PREFER the configured providers ($SEARCH_PREFER_PROVIDERS) when enabled AND
+#       available; nothing is preferred unless configured.
 #   (3) else the best available enabled search tool (Ollama Cloud web search and
 #       the client's other enabled options rank by quota state then recency).
 #   (4) else NO TOOL: emit an HONEST limitation note for the operator run report,
@@ -139,10 +140,22 @@ DEFAULT_KEY_LABELS = {
     "duckduckgo": [],    # keyless
 }
 
-# The ONLY hard preference in the ladder is Perplexity (SPEC 9 step 2). Every
-# other enabled provider is ranked by quota then recency then name. engine-config
-# may EXTEND this list (web_search.prefer) but Perplexity stays first by default.
-DEFAULT_PREFER = ["perplexity"]
+# The preference list is CONFIGURATION-DRIVEN: NO provider is preferred unless the
+# operator explicitly configures one. Sources, in order: engine-config
+# `web_search.prefer`, then $SEARCH_PREFER_PROVIDERS (comma separated), then
+# DEFAULT_PREFER, which is EMPTY by design. With no preference configured every
+# enabled provider ranks by the ladder's own order (quota, then recency, then
+# name) -- no vendor gets a hard-coded win.
+DEFAULT_PREFER: list = []
+
+
+def env_prefer():
+    """Preferred providers from $SEARCH_PREFER_PROVIDERS (comma separated).
+
+    Empty when the variable is unset or blank, so nothing is preferred by default.
+    """
+    raw = os.environ.get("SEARCH_PREFER_PROVIDERS", "")
+    return [canon_provider(p) for p in raw.split(",") if p.strip()]
 
 # The gateway tool the Layer 2 search step invokes once a provider is selected.
 GATEWAY_SEARCH_TOOL = "web_search"
@@ -301,7 +314,7 @@ def load_web_search_config(config_path):
             ws = {}
     prefer = ws.get("prefer")
     if not isinstance(prefer, list) or not prefer:
-        prefer = list(DEFAULT_PREFER)
+        prefer = env_prefer() or list(DEFAULT_PREFER)
     prefer = [canon_provider(p) for p in prefer if p]
     key_labels = dict(DEFAULT_KEY_LABELS)
     extra = ws.get("provider_key_labels")
@@ -543,7 +556,9 @@ def probe_gateway(bin_path, cfg, deep=False):
 # fully unit-testable. This is the SPEC Section 9 selection policy.
 # ---------------------------------------------------------------------------
 def run_ladder(signals, cfg):
-    prefer = cfg.get("prefer") or list(DEFAULT_PREFER)
+    prefer = cfg.get("prefer")
+    if prefer is None:
+        prefer = env_prefer() or list(DEFAULT_PREFER)
     available = list(dict.fromkeys(canon_provider(p) for p in signals.get("available") or []))
     unavailable = set(signals.get("unavailable") or [])
     key_present = signals.get("key_present") or {}
@@ -842,7 +857,7 @@ def fire_founder_flag(cfg, anthology_id, decision, prior_cache, suppress=False):
                 "reason": "alert-dedup.py not present yet; flag is best-effort (fail-soft)"}
     body = ("Anthology Engine: web search unavailable on this box. Avatar Questions "
             "31 and 32 will run without live research (no links fabricated). Install "
-            "or enable a search provider (Perplexity preferred) to restore research.")
+            "or enable a search provider to restore research.")
     argv = [sys.executable, str(script),
             "--dedup-key", key,
             "--subject", "Anthology Engine: web search unavailable",
@@ -1046,7 +1061,7 @@ def cmd_plan(args):
         "script": "search_detect.py",
         "ladder": [
             "1. enumerate ENABLED search tools on the INSTALLED gateway (live availability, not config presence)",
-            "2. PREFER Perplexity when enabled and available",
+            "2. PREFER configured providers ($SEARCH_PREFER_PROVIDERS) when enabled and available",
             "3. else best available (quota, then recency, then name)",
             "4. else NO TOOL: honest note + ONE deduped founder flag + CONTINUE (exit 3)",
         ],
@@ -1077,6 +1092,16 @@ def _emit(args, obj):
 # signals in a temp dir. No gateway, no network, no credentials, no spend.
 # ---------------------------------------------------------------------------
 def self_test():
+    # No configured preference -> NOTHING is preferred; the ladder's own order
+    # (quota, then recency, then name) decides and Perplexity earns no auto-win.
+    assert DEFAULT_PREFER == [], DEFAULT_PREFER
+    no_pref_cfg = {"prefer": [], "key_labels": DEFAULT_KEY_LABELS,
+                   "allow_config_inferred": True, "flag_dedup_scope": "box"}
+    d = run_ladder({"probe_ok": True, "available": ["ollama-cloud", "perplexity", "tavily"],
+                    "key_present": {"perplexity": True, "ollama-cloud": True, "tavily": True}},
+                   no_pref_cfg)
+    assert d["tool"] == "ollama-cloud" and d["preferred"] is False, d
+
     base_cfg = {"prefer": ["perplexity"], "key_labels": DEFAULT_KEY_LABELS,
                 "allow_config_inferred": True, "flag_dedup_scope": "box"}
 
@@ -1085,7 +1110,7 @@ def self_test():
     assert canon_provider("brave_search") == "brave-search"
     assert canon_provider("Ollama-Cloud") == "ollama-cloud"
 
-    # 1. perplexity available among others -> perplexity wins (SPEC step 2)
+    # 1. EXPLICITLY configured preference: perplexity available among others -> wins
     d = run_ladder({"probe_ok": True, "available": ["ollama-cloud", "perplexity", "tavily"],
                     "key_present": {"perplexity": True, "ollama-cloud": True, "tavily": True}},
                    base_cfg)
