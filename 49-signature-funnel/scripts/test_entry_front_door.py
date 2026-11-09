@@ -32,9 +32,21 @@ def main() -> int:
         tmp = Path(td)
         key_file = tmp / "operator.key"
         key_file.write_text(KEY, encoding="utf-8")
+        key_file.chmod(0o600)  # the operator-key loader refuses group/other-accessible files
         rd = tmp / "run"
         rd.mkdir()
-        runner._write_valid_run(rd, KEY)
+        # The stub provider signs its delegation receipts with the operator key from the
+        # environment, so the fixture must be built with that key present, exactly as the
+        # entry shell runs it.
+        prior = os.environ.get("SF_OPERATOR_KEY_FILE")
+        os.environ["SF_OPERATOR_KEY_FILE"] = str(key_file)
+        try:
+            runner._write_valid_run(rd, KEY)
+        finally:
+            if prior is None:
+                os.environ.pop("SF_OPERATOR_KEY_FILE", None)
+            else:
+                os.environ["SF_OPERATOR_KEY_FILE"] = prior
         env = dict(os.environ)
         env.pop("SF_RUN_NONCE", None)
         env.update({
