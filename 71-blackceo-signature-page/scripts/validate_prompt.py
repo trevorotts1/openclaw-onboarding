@@ -327,6 +327,34 @@ def load_policy(path=None):
                 "tripwire_chars": 2000}
 
 
+def _owner_cap_from(spec):
+    """Read a cap from the owner catalog row named by a policy `max_chars_from` block.
+
+    Same source as stage_executor._owner_cap_from: the owner catalog
+    (66-kie-image/models.json) is the one source; returns None when the row or
+    the field is absent, so the caller refuses instead of inventing a maximum.
+    """
+    if not isinstance(spec, dict):
+        return None
+    rel, field = spec.get("file"), spec.get("field")
+    sel_field, sel = spec.get("selector_field"), spec.get("selector")
+    if not (isinstance(rel, str) and isinstance(field, str) and isinstance(sel_field, str)
+            and isinstance(sel, str)):
+        return None
+    path = (SKILL_ROOT.parent / rel).resolve()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    for row in data.get("models") or data.get("entries") or []:
+        if isinstance(row, dict) and row.get(sel_field) == sel:
+            cap = row.get(field)
+            if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
+                return cap
+            return None
+    return None
+
+
 def cap_for_model(model, policy):
     """Resolve the policy entry for a model id (longest prefix wins)."""
     best = None
@@ -336,12 +364,26 @@ def cap_for_model(model, policy):
             if best is None or len(match) > len(best.get("match", "")):
                 best = entry
     if best is not None:
+        if isinstance(best.get("max_chars_from"), dict):
+            cap = _owner_cap_from(best["max_chars_from"])
+            if cap is not None:
+                return dict(best, max_chars=cap, unit="chars")
+            # The named owner source did not resolve: refuse, never invent one.
+            return dict(best, max_chars=None, unit=best.get("unit", "chars"))
         return best
     if model and "gpt-image-2-6" in model:
         # Fail to the law, never to 32,000: owner ruling 2026-11-08 caps every
-        # 2.6 route at 20,000 even if the policy file lookup misses.
-        return {"max_chars": 20000, "cap_status": "OWNER_RULED", "unit": "chars",
-                "source": "Owner ruling 2026-11-08 fallback: 20,000 (66-kie-image/models.json owner_prompt_cap_chars)."}
+        # 2.6 route at the 66-kie-image/models.json owner_prompt_cap_chars value.
+        cap = _owner_cap_from({"file": "66-kie-image/models.json",
+                               "selector_field": "canonical_model_id",
+                               "selector": "gpt-image-2-6/sunburst-text-to-image",
+                               "field": "owner_prompt_cap_chars"})
+        if cap is None:
+            return {"max_chars": None, "cap_status": "UNKNOWN", "unit": "chars",
+                    "source": "Owner ruling 2026-11-08: no owner cap recorded; refusing."}
+        return {"max_chars": cap, "cap_status": "OWNER_RULED", "unit": "chars",
+                "source": "Owner ruling 2026-11-08: %d read from 66-kie-image/models.json "
+                          "owner_prompt_cap_chars." % cap}
     return policy.get("default", {"max_chars": None, "cap_status": "UNKNOWN",
                                    "unit": "chars"})
 
