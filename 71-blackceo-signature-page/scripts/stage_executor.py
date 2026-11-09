@@ -249,13 +249,63 @@ def _platform(stage: str, template: str) -> str:
     return "mobile" if template.startswith("mobile") else "desktop"
 
 
+GENERATED_IMAGES_DIR = "image-generation-qc"
+GENERATED_IMAGE_RE = re.compile(r"^Image-(\d+)\.png$")
+
+def planned_slot_ids(run_dir: Path, index: int):
+    """The slot ids the wireframe section plan assigns to section ``index`` (1-based).
+
+    ``None`` when no section plan is on record: the caller then cannot know which
+    generated file belongs to this section.
+    """
+    path = run_dir / "desktop-wireframe" / "section-plan.json"
+    try:
+        plan = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(plan, list) or not 0 < index <= len(plan):
+        return None
+    section = plan[index - 1]
+    if not isinstance(section, dict):
+        return None
+    ids = [s for s in section.get("image_slot_ids") or [] if isinstance(s, str) and s.strip()]
+    return ids or None
+
+def generated_image_refs(run_dir: Path, index: int):
+    """The image-generation-qc files this section's planned slots name.
+
+    The stage contract promises real photography composited into every slot
+    (references/stage-contract.json). The generated, QC'd images are that
+    photography: before this they were never handed to final-mockups, so a job
+    could only draw the pictures its prompt prose happened to describe and the
+    client got a mockup with two images in a twelve-slot page.
+    """
+    directory = run_dir / GENERATED_IMAGES_DIR
+    if not directory.is_dir():
+        return []
+    files = sorted(p for p in directory.iterdir()
+                   if p.is_file() and GENERATED_IMAGE_RE.match(p.name))
+    if not files:
+        return []
+    planned = planned_slot_ids(run_dir, index)
+    if planned is None:  # no plan on record: every generated photo is this page's raw material
+        return files
+    wanted = set()
+    for slot_id in planned:
+        m = re.search(r"(\d+)\s*$", slot_id)
+        if m:
+            wanted.add(int(m.group(1)))
+    return [p for p in files if int(GENERATED_IMAGE_RE.match(p.name).group(1)) in wanted]
+
 def prior_slices(stage: str, run_dir: Path, index: int, template: str):
     """The matching slice of each earlier stage for THIS section only.
 
     The executor used to attach every earlier slice to every job. A model
     handed all twelve slices draws a whole page and leaves the rest blank;
     it must see the same-index wireframe (and, at final mockups, the
-    same-index visual mockup) and nothing else.
+    same-index visual mockup) and nothing else. final-mockups also receives
+    this section's generated images (image-generation-qc), which are the
+    real photography the mockup composites into its slots.
     """
     earlier = STAGES[:STAGES.index(stage)]
     want = _platform(stage, template)
@@ -268,6 +318,10 @@ def prior_slices(stage: str, run_dir: Path, index: int, template: str):
                 candidate = run_dir / name / pattern.format(n=index)
                 if candidate.is_file() and candidate not in picks:
                     picks.append(candidate)
+    if stage == "final-mockups":
+        for candidate in generated_image_refs(run_dir, index):
+            if candidate not in picks:
+                picks.append(candidate)
     return picks
 
 
