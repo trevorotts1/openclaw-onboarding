@@ -279,26 +279,6 @@
       "required": false,
       "class": "unselected_optional",
       "why": "the Command Center contract version the release is bound to; the launch-event emitter never fails a launch, so its absence is reported and never blocks"
-    },
-    {
-      "id": "sop-gip-02-image-qc",
-      "kind": "sop",
-      "ref": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md",
-      "receipt": "receipts/sop-read/SOP-GIP-02-IMAGE-QC.json",
-      "required": false,
-      "class": "selected_conditional",
-      "modes": ["assemble"],
-      "why": "the image QC request and report the launcher writes at assemble"
-    },
-    {
-      "id": "sop-gip-03-ghl-media-delivery",
-      "kind": "sop",
-      "ref": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md",
-      "receipt": "receipts/sop-read/SOP-GIP-03-GHL-MEDIA-DELIVERY.json",
-      "required": false,
-      "class": "selected_conditional",
-      "modes": ["assemble"],
-      "why": "the delivery record the launcher writes at assemble"
     }
   ]
 }
