@@ -1,10 +1,10 @@
 """Shared path-comparison helpers for the launcher suite (FIX-06).
 
-Two spellings of one filesystem object must compare equal: on macOS ``/var`` and
-``/tmp`` are symlinks to ``/private/var`` and ``/private/tmp``, so a test that
-compares recorded strings rejects the same file written two ways. Every path
-comparison in this suite goes through these helpers so the defect cannot recur
-test by test.
+Two spellings of one filesystem object must compare equal: macOS resolves its
+temporary roots through symlinks, so the same file can be recorded under a
+linked spelling and a resolved one. A test that compares the recorded strings
+rejects the same file written two ways. Every path comparison in this suite goes
+through these helpers so the defect cannot recur test by test.
 
 This is the test side. The production side of the same comparison is FIX-13 in
 ``83-black-friday-launcher/launcher_core/launch_bridge.py``.
@@ -29,8 +29,9 @@ def same_path(left: Any, right: Any) -> bool:
 def artifact_identity(rows: Iterable[Any]) -> Set[Tuple[str, str]]:
     """The identity set of artifact rows: (canonical path, sha256).
 
-    Compares what a row names, so an absolute row recorded under ``/tmp`` and
-    the same file re-listed under ``/private/tmp`` are one entry, not two.
+    Compares what a row names, so an absolute row recorded under one linked
+    spelling and the same file re-listed under its resolved spelling are one
+    entry, not two.
     """
     out: Set[Tuple[str, str]] = set()
     for row in rows:
