@@ -1,3 +1,7 @@
+## [v27.1.90] - 2026-11-09
+
+- G3 lockstep roll: Skill 06 content touched by the ENT-001 gate-removal recut. No behaviour change.
+
 ## [v27.1.89] - 2026-11-09
 
 - Add captured native form scheduling with time-zone/date validation, before/after
