@@ -239,7 +239,7 @@ FLOOR_PCT, TARGET_PCT, PREFLIGHT_MULT = 95, 95, 1.30
 # percent of a model's verified max passes; 80 to below 95 percent warns and expands (it PASSES
 # and names the characters to add); below 80 percent is the hard reject; above the max is the
 # ceiling reject. The arithmetic itself lives in shared-utils/prompt_policy.py only.
-KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-5-sunburst-text-to-image"}  # last-resort default (N43 today)
+KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-6/sunburst-text-to-image"}  # last-resort default (N43 today)
 DEFAULT_CAPS = {"gpt-image": ["Text to Image", "Image to Image"]}
 LATEST_TTL = CATALOG_TTL
 REGISTRY_STALE_DAYS = 30
@@ -528,6 +528,20 @@ def policy_limit(model_id, here=None):
                 return caps[k], owner, False, None
         return None, None, False, None
     return None, None, False, None
+
+def policy_owner_cap(model_id, here=None):
+    """Owner-declared prompt cap from the policy rows -> (cap|None, owner|None).
+
+    Owner ruling 2026-11-08: a declared ``owner_prompt_cap_chars`` is the HIGHEST precedence
+    for a prompt-length limit. The vendor's published schema figure is a fact and stays on
+    record, but it never grants permission the owner withheld.
+    """
+    for owner, e in _policy_rows(model_id, here):
+        cap = e.get("owner_prompt_cap_chars")
+        if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
+            return cap, owner
+        return None, None
+    return None, None
 
 def policy_band(model_id, here=None):
     """Owner prompt band from the policy rows (U15c) -> (band|None, owner|None).
@@ -1434,7 +1448,9 @@ class Adapter:
 
     # -- prompt budget (owner order 2026-10-05: 95-100 percent of max, never below 80 percent)
     def _limits(self, model):
-        """Live schema first, registry fallback, policy owner (66/67/68) for what the schema does not state."""
+        """Limit resolution order: (1) an owner-declared cap, (2) the live schema, (3) the registry
+        snapshot, (4) the policy owner's vendor-confirmed figure. The owner cap outranks the
+        vendor schema; the vendor number remains recorded and is named in the warning."""
         notes, pf = [], {"name": None, "maxLength": None, "verbatim": False, "max_source": None, "limits_listed": []}
         src = "none"
         try:
@@ -1450,7 +1466,17 @@ class Adapter:
                 notes += self._reg_note()
         mx, how = pf.get("maxLength"), pf.get("max_source")
         pol, owner, confirmed, n43 = policy_limit(model)
-        if pf.get("name") is not None and pol:
+        # OWNER CAP PRECEDENCE (Trevor 2026-11-08): an owner-declared cap outranks the live
+        # vendor schema for prompt length. The vendor figure is kept in the note for provenance
+        # and in models.json; it is never rewritten or deleted.
+        ocap, oowner = policy_owner_cap(model)
+        if ocap is not None:
+            if mx is not None and mx != ocap:
+                notes.append("OWNER RULING (2026-11-08): %s declares owner_prompt_cap_chars %d; %s publishes %d; "
+                             "the owner cap governs and the vendor figure is retained for provenance" % (
+                                 oowner, ocap, src, mx))
+            mx, src = ocap, "owner-ruling:%s" % oowner
+        elif pf.get("name") is not None and pol:
             if confirmed and how != "schema":
                 notes.append("owner-confirmed limit %s from %s used over %s" % (pol, owner, how or "no stated limit"))
                 mx, src = pol, "policy-owner:%s (owner-confirmed)" % owner
@@ -1458,7 +1484,7 @@ class Adapter:
                 mx, src = pol, "policy-owner:%s" % owner
             elif pol != mx:
                 notes.append("policy owner %s records %s; %s says %s; using %s" % (owner, pol, src, mx, mx))
-        if n43 and mx is not None and n43 != mx:
+        if ocap is None and n43 and mx is not None and n43 != mx:
             notes.append("N43's recorded %s (owner-confirmed 2026-08-27) is superseded by KIE's live schema as of 2026-10-05: "
                          "%s is the hard limit (KIE rejects longer prompts)" % (n43, mx))
         if how == "description" and src.startswith(("live", "registry")):

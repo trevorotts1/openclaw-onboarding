@@ -103,7 +103,7 @@ sys.dont_write_bytecode = True  # requirement 6: never write bytecode into anyth
 STAGE = "visual-mockup"
 # stage_executor.LAYOUT[STAGE] -- one output template per platform slice.
 TEMPLATE_COUNT = 2
-MODEL = "gpt-image-2-5-sunburst-image-to-image"  # the recorded band: floor 16000, target 19000, max 20000
+MODEL = "gpt-image-2-6/sunburst-image-to-image"  # the recorded band: floor 16000, target 19000, max 20000
 SEQUENCE = [str(i) for i in range(1, 13)]       # references/copy-specs/standard-v6.json `sequence`
 
 # The two refusal literals the skill treats as a legitimate fail-closed stop on missing

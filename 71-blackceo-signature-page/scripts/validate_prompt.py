@@ -126,7 +126,7 @@ GRADE_BLOCK_FILE = SKILL_ROOT / "assets" / "brand" / "signature-grade-block.txt"
 POLICY_FILE = SKILL_ROOT / "references" / "prompt-budget-policy.json"
 TRAITS_DIR = SKILL_ROOT / "references" / "style-traits"
 
-IMAGE_MODEL_DEFAULT = "gpt-image-2-5-sunburst-text-to-image"  # Skill 66 registry id; override with --model
+IMAGE_MODEL_DEFAULT = "gpt-image-2-6/sunburst-text-to-image"  # Skill 66 registry id; override with --model
 
 # Verbatim texts mandated by Image Guide v5 (see full-read notes R1):
 NO_TEXT_SENTENCE = "No text, no letters, no words anywhere in the image."
