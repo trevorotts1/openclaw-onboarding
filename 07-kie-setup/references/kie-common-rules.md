@@ -181,3 +181,12 @@ automatically.
 - If either forbidden setup is found on a machine, report it. Never remove or edit it without an
   operator order.
 - Digest of the official agent docs: `references/kie-official-agent-docs-digest.md`.
+
+15. **Course media is delivered through the WF12 asset manifest, not through a task id.** A
+    course-bound asset carries stable logical keys (`course_key:module_key:lesson_key:role`),
+    a completion state that is only `completed` after the bytes are persisted, and a sha256 /
+    MIME / byte size computed from the actual saved file. A temporary KIE result URL is never
+    the durable course resource, and a queued/running task is never completed. Duplicate
+    callbacks update one asset record; a different second result for the same key is recorded
+    as a conflict, never a re-upload. The normalizer is `shared-utils/ghl/course_assets.py`;
+    KIE generation engines keep their own model, prompt, budget and polling policy.

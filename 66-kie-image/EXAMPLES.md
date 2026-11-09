@@ -196,3 +196,19 @@ MISTAKE 7: Requesting 4K on Wan Pro image-to-image.
 
 MISTAKE 8: Passing a private input URL.
   Reference URLs must be publicly reachable (no login/cookies).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COURSE ASSET EXAMPLE (WF12) — IMAGE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # after `save` produced a real local file:
+  from adapter_bridge import course_manifest, course_completion
+
+  manifest = course_manifest("launch-101", "welcome", "intro", "lesson_image",
+                             model_id="gpt-image-2-5-sunburst-text-to-image", task_id=task_id)
+  manifest = course_completion(manifest, local_path=saved_path)   # None = refused
+  # then hand the completed manifest to the course binding step (WF08)
+
+A task id or a result URL is not a course asset. `course_completion` returns None when
+the bytes are missing, empty, mislabeled, or (for video/audio) the duration is absent --
+report that instead of binding a broken lesson.

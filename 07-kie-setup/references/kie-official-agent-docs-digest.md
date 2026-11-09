@@ -120,3 +120,11 @@ report it. This is not a how-to for client boxes.
 - Those writes are exactly what the "Never on client machines" section above
   forbids. Skill 74 never touches settings files (proved by
   `74-kie-live-adapter/tests/test_no_chat_agent_mutation.py`).
+
+## BLACKCEO addition (not vendor text): course delivery boundary
+
+This section is ours, not KIE's. A KIE task that finished proves the provider returned
+bytes; it does not prove the bytes were downloaded, typed, hashed or persisted. Course
+media must therefore carry the WF12 manifest from `shared-utils/ghl/course_assets.py`
+(logical lesson keys, real-file hash/MIME/size, durable copy) before Skill 6 binds it to
+a lesson. Vendor text above is unchanged by this note.

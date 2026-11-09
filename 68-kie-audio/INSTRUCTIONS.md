@@ -196,3 +196,29 @@ clipping/distortion, speaker ordering (TTS); playable file, duration/model
 behavior, genre/style, vocals/instrumental intent, lyrics fidelity, no
 truncation/clipping, callback complete stage (music). Retry only per the
 controlled ladder in references/qc.md.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COURSE DELIVERY HANDOFF (WF12)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+When the audio is course media for a Skill 6 lesson, the finished task is not yet a
+delivered asset. Build the shared manifest with `shared-utils/ghl/course_assets.py`, or
+with `scripts/adapter_bridge.py:course_manifest` (returns None when shared-utils is
+absent, exactly like the adapter bridge):
+
+  manifest = course_manifest(course_key, module_key, lesson_key, "lesson_audio",
+                             model_id=<selected model>, task_id=<task id>)
+  manifest = course_completion(manifest, local_path=<saved file>)
+
+Rules:
+- Identity is the logical path course/module/lesson/role. Never a lesson title, and
+  never the provider task id.
+- `generation_state` is `completed` only after the file is saved locally; the hash, byte
+  size and MIME are computed from those bytes and the declared type must agree.
+- A result URL alone never completes an asset (KIE result hosts are temporary).
+- A queued/running task is never completed; duplicate callbacks update one record, and a
+  second different result for the same key is a conflict, never a re-upload.
+- This skill keeps its model and prompt policy. The manifest never overrides them.
+- `course_completion(..., duration_seconds=<seconds>)` is REQUIRED for audio.
+- Capacity stays distinct: TTS/music produce bytes (dispatching, as above); STT has no
+  route and therefore never produces a course audio asset -- do not invent one.

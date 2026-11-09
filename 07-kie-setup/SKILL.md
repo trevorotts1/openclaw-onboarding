@@ -98,3 +98,22 @@ Skill 46 (`46-kie-callback-relay`) provides centralized callback handling:
 - Secure HMAC validation with public HTTPS callback worker.
 
 Scope: this companion serves the modality-skill production route (Skills 66, 67, 68 dispatching through Skill 74). It does not apply to Presentations deck runs, which poll (see the exception in Critical Things to Know above).
+
+## Course Delivery Handoff (WF12)
+
+A finished KIE task is not a delivered course asset. When the output is bound to a
+course module/lesson (Skill 6 delivery), the producer also builds a course-asset
+manifest through `shared-utils/ghl/course_assets.py`:
+
+- identity is the stable logical path `course_key:module_key:lesson_key:role`, never a
+  display title and never a provider task id;
+- `generation_state` is `completed` only after the bytes are downloaded and persisted
+  locally, then hashed from the actual file with the MIME and byte size verified;
+- a temporary KIE result URL is never the durable course resource, and a `queued`,
+  `running` or `validated` task never counts as completed;
+- duplicate callbacks update ONE asset record; a second, different result for the same
+  key is a conflict, never a re-upload or a second lesson.
+
+The generation-vs-delivery boundary: KIE produces media, this skill routes and
+validates it, and only the course delivery reducer sets `business_delivery_verified`.
+See `references/kie-common-rules.md` rule 15.

@@ -127,3 +127,19 @@ Notes: field names per docs.kie.ai/market/pixverse/transition (verified 2026-08-
 first_frame_image_url + last_frame_image_url (both required, <=20MB each); resolution
 field is `quality` (360p/540p/720p/1080p, default 720p) — the docs schema has no
 aspect_ratio field. Prompt cap 5,000 chars VERIFIED; durations 1–15s (default 5).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COURSE ASSET EXAMPLE (WF12) — VIDEO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # after `save` produced a real local file:
+  from adapter_bridge import course_manifest, course_completion
+
+  manifest = course_manifest("launch-101", "welcome", "intro", "lesson_video",
+                             model_id="kling-3.0/text-to-video", task_id=task_id)
+  manifest = course_completion(manifest, local_path=saved_path, duration_seconds=5.0)   # None = refused
+  # then hand the completed manifest to the course binding step (WF08)
+
+A task id or a result URL is not a course asset. `course_completion` returns None when
+the bytes are missing, empty, mislabeled, or (for video/audio) the duration is absent --
+report that instead of binding a broken lesson.

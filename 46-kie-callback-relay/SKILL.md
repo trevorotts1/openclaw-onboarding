@@ -197,3 +197,24 @@ Then verify with `caf doctor` (Skill 44) before any workflow write.
   callback and override via the KIE_RESULT_HOSTS env var if a host is rejected
 - Replay window: Kie does not document one; 300s is our policy
 - Kie retry interval/backoff between the ~3 callback retries: not documented
+
+## Course Asset Seam (WF12)
+
+A verified callback proves a KIE task finished and listed result URLs. It does NOT prove
+the bytes are on disk, correctly typed, hashed or persisted, so a callback record never
+completes a course asset by itself:
+
+- `done` + zero allowlisted result URLs is a failure (existing rule) and also a failed
+  course asset;
+- `done` + URLs still needs the caller to download and persist the file; the WF12
+  normalizer (`shared-utils/ghl/course_assets.py`) then recomputes sha256 / byte size /
+  MIME from those bytes;
+- a duplicate callback for the same logical asset key updates ONE record; a second,
+  different result for that key is recorded as a conflict, never a re-upload or a second
+  lesson;
+- `timeout` and `failed` never complete an asset.
+
+This relay stays image/deck oriented. Its payload is not a general audio/video completion
+contract: audio and video use the Skill 74 bounded-polling path
+(`course_assets.bounded_poll`) until a real audio/video payload test exists. Signing,
+isolation and the "done means a file on disk" rule are unchanged.

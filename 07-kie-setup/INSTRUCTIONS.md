@@ -388,3 +388,26 @@ every endpoint, refer to the master reference file:
 That file contains the full 176K+ character API documentation covering
 all models: Kling 3.0, Kling 2.6, Sora 2, VEO 3.1, Flux, Nano Banana,
 GPT Image, Wan, Hailuo, Pika, and more.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COURSE DELIVERY HANDOFF (WF12)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If the generated file is course media (a Skill 6 lesson image/video/audio), do not stop
+at "state success". Download the bytes, persist them, and build the shared manifest with
+`shared-utils/ghl/course_assets.py`:
+
+1. Identity: course_key / module_key / lesson_key / role. Pass the logical keys from the
+   course plan; never use a lesson title or a task id as the key.
+2. Create the manifest with `new_manifest(...)` at submit time (it starts `queued`).
+3. Complete it with `normalize_completion(manifest, local_path=<saved file>,
+   duration_seconds=<video/audio only>)`. The hash, byte size and MIME are recomputed
+   from that file, so a mislabeled or empty download is refused.
+4. Require a durable copy before setting `durable_url` / `storage_access`. A temporary KIE
+   result host is never durable.
+5. Hand a completed manifest to the course binding step only; `to_wf08_handoff()` refuses
+   anything still queued or invalid.
+
+A `queued`/`running` task, a 200 on createTask, or a bare URL is NOT completion. KIE
+generation keeps its own model, prompt, budget and polling policy; this seam only
+validates the delivery artifact.

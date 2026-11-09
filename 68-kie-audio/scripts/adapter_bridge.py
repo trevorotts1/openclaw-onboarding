@@ -5,6 +5,7 @@ The adapter is optional: absent, unreachable, slow or broken -> every function r
 falls back to models.json (the curated policy registry). Never raises. Never prints or handles a key (the adapter resolves it itself).
 Env: KIE_LIVE_ADAPTER_PATH overrides the adapter location; set it to the empty string to disable the bridge.
 """
+import importlib.util
 import json
 import os
 import re
@@ -39,6 +40,61 @@ def run(args, stdin=None, timeout=TIMEOUT):
                            timeout=timeout, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
         return p.returncode, json.loads(p.stdout)
     except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def _course_assets():
+    """The shared WF12 course-asset normalizer, or None when this box has no shared-utils.
+
+    Absent, unreadable or broken -> None, exactly like the adapter bridge itself: the
+    caller falls back to its own assets and nothing raises.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    roots = [os.path.abspath(os.path.join(here, "..", "..")),
+             os.path.join(os.path.expanduser("~"), ".openclaw")]
+    for r in roots:
+        p = os.path.join(r, "shared-utils", "ghl", "course_assets.py")
+        if os.path.isfile(p):
+            try:
+                import importlib.util
+                spec = importlib.util.spec_from_file_location("ghl_course_assets", p)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+            except Exception:
+                return None
+    return None
+
+
+def course_manifest(course_key, module_key, lesson_key, role, provider="kie", model_id=None, task_id=None):
+    """Stable course-asset manifest (WF12) for one lesson asset -> dict, or None.
+
+    Identity is the LOGICAL path course/module/lesson/role, never a display title and
+    never a provider task id. The manifest starts queued: nothing here claims completion.
+    """
+    ca = _course_assets()
+    if ca is None:
+        return None
+    try:
+        return ca.new_manifest(course_key, module_key, lesson_key, role,
+                               provider=provider, model_id=model_id, provider_task_id=task_id)
+    except ca.AssetError:
+        return None
+
+
+def course_completion(manifest, local_path=None, duration_seconds=None):
+    """Complete a course manifest from REAL saved bytes -> dict, or None.
+
+    A result URL alone never completes an asset; bytes that fail hash/MIME/size checks
+    return None so the caller reports the defect instead of shipping a broken lesson.
+    """
+    ca = _course_assets()
+    if ca is None or not isinstance(manifest, dict):
+        return None
+    try:
+        return ca.normalize_completion(manifest, local_path=local_path,
+                                       duration_seconds=duration_seconds)
+    except ca.AssetError:
         return None
 
 

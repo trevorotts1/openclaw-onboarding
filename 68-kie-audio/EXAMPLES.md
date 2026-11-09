@@ -322,3 +322,19 @@ MISTAKE 6: Skipping audio QC.
   language, voice identity, pronunciation, pace, style, no clipping, speaker
   ordering; music: duration, genre/style, vocals intent, lyrics fidelity,
   callback complete stage).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COURSE ASSET EXAMPLE (WF12) — AUDIO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # after `save` produced a real local file:
+  from adapter_bridge import course_manifest, course_completion
+
+  manifest = course_manifest("launch-101", "welcome", "intro", "lesson_audio",
+                             model_id="google/gemini-3-1-flash-tts", task_id=task_id)
+  manifest = course_completion(manifest, local_path=saved_path, duration_seconds=32.0)   # None = refused
+  # then hand the completed manifest to the course binding step (WF08)
+
+A task id or a result URL is not a course asset. `course_completion` returns None when
+the bytes are missing, empty, mislabeled, or (for video/audio) the duration is absent --
+report that instead of binding a broken lesson.

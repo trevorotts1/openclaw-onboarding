@@ -54,3 +54,26 @@ Auth is `Authorization: Bearer` only. A header named apikey returns 401. Dead (4
 ## Registry file
 
 `references/kie-model-registry.json`: `schema_version`, `generated_at`, `source` (live-api or public-docs), `counts`, `models[]`. Model row: `id`, `provider`, `title`, `taskType`, `family`, `version`, `variant`, `schema` (`readable`, `kind`, `submit_path`, or `error`), `schema_paths`, `callback_supported`, `required`, `input_fields`, `branches`, `prompt_field` (`name`, `maxLength`, `max_source`, `verbatim`, `limits_listed`), `verbatim_fields`, `pricing` (`raw`, `status`, `credits_min`, `credits_max`, `unit`, `credits_estimate`).
+
+## Course asset seam (WF12)
+
+Course delivery needs more than a finished task. `shared-utils/ghl/course_assets.py`
+(the WF12 normalizer) turns this envelope into a validated course-asset manifest; the
+adapter itself is unchanged and keeps every model, balance, prompt and provider rule.
+
+Mapping, no new wire fields invented:
+
+| Manifest field | Source |
+|---|---|
+| `provider` / `model_id` / `provider_task_id` | adapter `provider`, `model_id`, `task_id` |
+| `generation_state` | `queued`/`running` while the adapter says so; `completed` ONLY from `success` **plus** a real saved file |
+| `local_path` `sha256` `byte_size` `mime_type` | recomputed from the file in `saved_paths` by the normalizer, never copied from the envelope |
+| `duration_seconds` | the caller's requested duration (the adapter does not probe media) |
+| `durable_url` | only after the bytes are persisted; `result_urls` expire and are never durable |
+
+`completion_from_adapter_result()` accepts `success` only when `saved_paths` is
+non-empty; a `success` with only `result_urls` raises `no_persisted_bytes`. `skipped`
+and `fail` are failures for the course seam (nothing was generated). A `validated`
+envelope is pre-dispatch and stays incomplete. Bounded polling for modalities the
+Skill 46 callback payload does not carry uses `bounded_poll()`; it returns `running`
+at the deadline and never fabricates a completion.

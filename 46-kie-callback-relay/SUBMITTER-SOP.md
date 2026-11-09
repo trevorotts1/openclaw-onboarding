@@ -329,3 +329,22 @@ X-Kie-Preimage: <perTaskSecret>
 - Exact Kie CDN hosts: update `KIE_RESULT_HOSTS` in box-kv-poller.js after
   observing a real callback.
 - Kie retry interval/backoff between the ~3 callback retries: not documented.
+
+---
+
+## Course asset seam (WF12)
+
+When a completed deck/image is course media, the done marker is not the end of the job.
+After the download:
+
+1. Build the manifest with `shared-utils/ghl/course_assets.py` using the logical keys
+   `course_key / module_key / lesson_key / role` -- never a slide title, never a taskId.
+2. Complete it with `completion_from_callback_record(record, manifest,
+   local_path=<downloaded file>)`. It refuses `status != done`, a `done` with zero result
+   URLs, and a call with no local file.
+3. Hand off only a completed, valid manifest (`to_wf08_handoff`).
+
+Duplicate callbacks: the done marker keeps one record per task; the asset store keeps one
+record per asset key and treats a different second result as a conflict. Audio and video
+are NOT carried by this relay's payload -- use the Skill 74 bounded-polling hook
+(`course_assets.bounded_poll`) so the audio/video path keeps its own completion evidence.
