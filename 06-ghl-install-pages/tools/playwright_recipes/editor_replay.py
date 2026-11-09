@@ -23,9 +23,13 @@ STATUSES = {
     'native_address_fields': {'ADDRESS_FIELDS_SAVED_AND_REOPENED'},
     'native_form_consent': {'CONSENT_SAVED_AND_REOPENED'},
     'native_object_fields': {'OBJECT_FIELDS_SAVED_AND_REOPENED'},
+    'native_dropdown_fields': {'DROPDOWN_FIELDS_SAVED_AND_REOPENED'},
+    'native_large_text_fields': {'LARGETEXT_FIELDS_SAVED_AND_REOPENED'},
+    'quiz_short_answers': {'QUIZ_SHORT_ANSWERS_SAVED_AND_REOPENED'},
     'native_survey_object_fields': {'SURVEY_OBJECT_FIELDS_SAVED_AND_REOPENED'},
     'native_condition': {'CONDITION_ALREADY_PRESENT', 'CONDITION_SAVED_AND_REOPENED', 'CONDITION_SAVE_SUBMITTED'},
     'native_condition_group': {'CONDITION_GROUP_SAVED_AND_REOPENED', 'CONDITION_GROUP_REUSED_AND_REOPENED'},
+    'native_condition_stack': {'CONDITION_STACK_SAVED_AND_REOPENED', 'CONDITION_STACK_REUSED_AND_REOPENED'},
     'quiz_configuration': {'QUIZ_CONFIGURATION_SAVED_AND_REOPENED'},
     'quiz_results': {'QUIZ_RESULTS_SAVED_AND_REOPENED'},
     'survey_configuration': {'SURVEY_RULE_ALREADY_PRESENT', 'SURVEY_RULE_SAVED_AND_REOPENED'},
@@ -35,13 +39,15 @@ STATUSES = {
     'native_form_schedule': {'FORM_SCHEDULE_SAVED_AND_REOPENED'},
     'native_form_tracking': {'FORM_TRACKING_SAVED_AND_REOPENED'},
     'native_form_embed': {'FORM_EMBED_EXPORTED_AND_REREAD'},
+    'native_order_confirmation': {'ORDER_CONFIRMATION_SAVED_AND_REOPENED', 'ORDER_CONFIRMATION_REUSED_AND_REOPENED'},
     'native_course_theme': {'COURSE_THEME_SAVED_AND_REOPENED'},
     'native_course_blocks': {'COURSE_BLOCKS_SAVED_AND_REOPENED'},
     'native_course_theme_media': {'COURSE_THEME_MEDIA_SAVED_AND_REOPENED'},
+    'native_course_block_media': {'COURSE_BLOCK_MEDIA_SAVED_AND_REOPENED'},
     'form_submission': {'FORM_SUBMISSION_SAVED_AND_REOPENED'},
     'form_notifications': {'NOTIFICATION_SETTINGS_SAVED_AND_REOPENED'},
     'options': {'RECORDED_OPTIONS_EXECUTED'},
-    'community': {'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED', 'GROUP_CREATED_PENDING_IDENTITY', 'GROUP_CREATED_SLUG_IDENTIFIED'},
+    'community': {'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED', 'GROUP_CREATED_PENDING_IDENTITY', 'GROUP_CREATED_SLUG_IDENTIFIED', 'GROUP_REUSED_IDENTITY_CONFIRMED'},
     'meeting': {'ROOM_CREATED_VERIFIED', 'ROOM_REUSED_VERIFIED', 'ROOM_UPDATED_VERIFIED'},
     'meeting_cohosts': {'COHOSTS_SAVED_AND_REOPENED', 'COHOSTS_REUSED_AND_REOPENED'},
     'native_dynamic_meeting_location': {'DYNAMIC_MEETING_LOCATION_SAVED_AND_REOPENED', 'DYNAMIC_MEETING_LOCATION_REUSED_AND_REOPENED'},
@@ -58,6 +64,9 @@ REQUIRED = {
     'native_address_fields': ('editor_url', 'fields', 'configuration_sha256', 'independent_readback', 'submission_verified'),
     'native_form_consent': ('editor_url', 'configuration_sha256', 'independent_readback', 'submission_verified', 'behavior_verified'),
     'native_object_fields': ('editor_url', 'fields', 'configuration_sha256', 'independent_readback', 'submission_verified'),
+    'native_dropdown_fields': ('editor_url','fields','configuration_sha256','independent_readback','submission_verified','behavior_verified'),
+    'native_large_text_fields': ('editor_url','fields','configuration_sha256','independent_readback','submission_verified','behavior_verified'),
+    'quiz_short_answers': ('kind','editor_url','configuration_sha256','question_count','target_page','independent_readback','behavior_verified','submission_verified','dependency_api_used'),
     'native_survey_object_fields': ('kind', 'editor_url', 'target_slide', 'field_count', 'configuration_sha256', 'independent_readback', 'submission_verified', 'behavior_verified'),
     'native_condition': ('kind', 'effect', 'if_field', 'operator', 'target', 'independent_readback', 'submission_verified', 'behavior_verified'),
     'native_condition_group': ('kind', 'editor_url', 'configuration_sha256', 'clause_count', 'independent_readback', 'submission_verified', 'behavior_verified'),
@@ -71,6 +80,9 @@ REQUIRED = {
     'native_course_theme': ('editor_url', 'course_id', 'template_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed'),
     'native_course_blocks': ('editor_url', 'course_id', 'template_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed', 'added_block_ids', 'block_ids'),
     'native_course_theme_media': ('editor_url', 'course_id', 'template_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed', 'source_sha256', 'background_url_sha256'),
+    'native_course_block_media': ('editor_url', 'course_id', 'template_id', 'block_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed', 'source_sha256', 'image_url_sha256'),
+    'native_condition_stack': ('kind', 'editor_url', 'configuration_sha256', 'rule_count', 'independent_readback', 'behavior_verified', 'submission_verified'),
+    'native_order_confirmation': ('editor_url', 'form_id', 'product_id', 'price_id', 'price_identity', 'configuration_sha256', 'independent_readback', 'conditional_precedence_present', 'conditional_precedence_acknowledged', 'payment_verified', 'behavior_verified', 'submission_verified'),
     'native_form_tracking': ('editor_url', 'configuration_sha256', 'independent_readback', 'behavior_verified', 'submission_verified'),
     'native_form_embed': ('kind', 'editor_url', 'form_id', 'configuration_sha256', 'embed_sha256', 'embed_code', 'export_settings', 'independent_readback', 'settings_persisted', 'installation_verified', 'behavior_verified', 'submission_verified'),
     'form_submission': ('mode', 'editor_url', 'value_sha256', 'independent_readback', 'behavior_verified', 'submission_verified'),
@@ -86,10 +98,10 @@ BOOLEANS = frozenset(('behavior_verified', 'submission_verified', 'payment_verif
     'functional_verified', 'checkout_ready', 'meeting_started', 'discovery', 'deleted',
     'products_missing', 'form_submitted', 'notifications_sent', 'legal_copy_saved', 'legal_acceptance',
     'conditional_precedence_present', 'conditional_precedence_acknowledged', 'activation_performed',
-    'settings_persisted', 'installation_verified', 'appointment_created', 'dynamic_room_generation_verified', 'notification_behavior_verified', 'native_name_seen_after_reload', 'slug_identity_verified', 'portal_identity_verified', 'discovery_verified', 'group_activation_attempted'))
-COUNTS = frozenset(('count', 'radius', 'render_checks', 'recipient_count', 'questions', 'source_slide', 'target_slide', 'rule_count', 'field_count', 'cohost_count', 'addition_count', 'removal_count', 'clause_count'))
-IDS = frozenset(('element_id', 'section_id', 'component_id', 'page_id', 'calendar_id', 'course_id', 'template_id', 'slug', 'staff_id', 'form_id'))
-HASHES = frozenset(('html_sha256', 'css_sha256', 'value_sha256', 'configuration_sha256', 'requested_slug_sha256', 'source_sha256', 'background_url_sha256', 'observed_slug_sha256', 'embed_sha256'))
+    'settings_persisted', 'installation_verified', 'appointment_created', 'dynamic_room_generation_verified', 'notification_behavior_verified', 'native_name_seen_after_reload', 'slug_identity_verified', 'portal_identity_verified', 'description_verified', 'reused', 'discovery_verified', 'group_activation_attempted', 'dependency_api_used', 'native_deactivation_attempted', 'inactive_verified'))
+COUNTS = frozenset(('count', 'radius', 'render_checks', 'recipient_count', 'questions', 'source_slide', 'target_slide', 'rule_count', 'field_count', 'cohost_count', 'addition_count', 'removal_count', 'clause_count', 'question_count', 'target_page'))
+IDS = frozenset(('element_id', 'section_id', 'component_id', 'page_id', 'calendar_id', 'course_id', 'template_id', 'slug', 'staff_id', 'form_id', 'block_id', 'product_id', 'price_id'))
+HASHES = frozenset(('html_sha256', 'css_sha256', 'value_sha256', 'configuration_sha256', 'requested_slug_sha256', 'source_sha256', 'background_url_sha256', 'observed_slug_sha256', 'embed_sha256', 'image_url_sha256'))
 ID_PATTERN = re.compile(r'[A-Za-z0-9_-]{1,256}')
 
 
@@ -170,7 +182,7 @@ def _result(step, value, job):
     extra = {
         'html': {'element_id', 'section_id'}, 'native_form_css': {'render_checks'},
         'meeting': {'previous_room_identity'},
-        'community': {'requested_slug_sha256', 'observed_slug_sha256', 'identity_source', 'group_status'},
+        'community': {'requested_slug_sha256', 'observed_slug_sha256', 'identity_source', 'group_status', 'portal_url'},
     }.get(action, set())
     # A familiar field on an unrelated handler is still an arbitrary extra.
     allowed = set(REQUIRED[action]) | extra | BOOLEANS | {
@@ -198,7 +210,7 @@ def _result(step, value, job):
         safe[key] = value[key]
     for key in ('editor_url', 'container_url', 'form_url'):
         if key in value:
-            if action in ('native_course_theme', 'native_course_blocks', 'native_course_theme_media') and key == 'editor_url':
+            if action in ('native_course_theme', 'native_course_blocks', 'native_course_theme_media', 'native_course_block_media') and key == 'editor_url':
                 from playwright_recipes.course_theme import editor_url
                 expected_url = editor_url(step['payload'])
                 if value[key] != expected_url:
@@ -208,7 +220,7 @@ def _result(step, value, job):
             safe[key] = _url(value[key], job)
             if key != 'container_url':
                 family = ('page-builder' if action in ('page', 'html', 'native_checkout_ui')
-                    else 'quiz-builder-v2' if action in ('quiz_configuration', 'quiz_results') or (action == 'assessment' and step.get('kind') == 'quiz')
+                    else 'quiz-builder-v2' if action in ('quiz_configuration', 'quiz_results', 'quiz_short_answers') or (action == 'assessment' and step.get('kind') == 'quiz')
                     else 'survey-builder-v2' if action in ('survey_configuration', 'survey_rule_stack', 'native_survey_object_fields') or action == 'assessment'
                     else 'form-builder-v2')
                 if '/' + family + '/' not in urlsplit(safe[key]).path:
@@ -223,7 +235,7 @@ def _result(step, value, job):
                 _fail()
             safe[key] = value[key]
     if 'kind' in value:
-        if value['kind'] not in ('quiz', 'quiz_results', 'survey', 'form_condition', 'survey_condition', 'survey_condition_stack', 'survey_object_fields', 'form_condition_group', 'form_embed'):
+        if value['kind'] not in ('quiz', 'quiz_results', 'survey', 'form_condition', 'survey_condition', 'survey_condition_stack', 'survey_object_fields', 'form_condition_group', 'form_condition_stack', 'form_embed', 'quiz_short_answers'):
             _fail()
         safe['kind'] = value['kind']
     if 'mode' in value and value['mode'] is not None:
@@ -245,6 +257,13 @@ def _result(step, value, job):
     if action in ('native_condition', 'survey_configuration') and value['kind'] != (
             'form_condition' if action == 'native_condition' else 'survey_condition'):
         _fail()
+    if action == 'native_condition_stack':
+        from playwright_recipes.form_condition_stack import configuration_hash
+        if (value['kind'] != 'form_condition_stack' or value['rule_count'] != len(step['rules'])
+                or value['configuration_sha256'] != configuration_hash(step)
+                or value['independent_readback'] != 'VERIFIED'
+                or value['submission_verified'] is not False or value['behavior_verified'] is not False):
+            _fail()
     if action == 'native_condition_group':
         from playwright_recipes.form_conditions import configuration_hash
         if (value['kind'] != 'form_condition_group'
@@ -293,6 +312,17 @@ def _result(step, value, job):
                 or value['functional_verified'] is not False
                 or value['activation_performed'] is not False):
             _fail()
+    if action == 'native_course_block_media':
+        from playwright_recipes.course_block_media import configuration_hash
+        plan = step['payload']
+        if (value['course_id'] != plan['course_id'] or value['template_id'] != plan['template_id']
+                or value['block_id'] != plan['custom_block_image']['block_id']
+                or value['configuration_sha256'] != configuration_hash(plan)
+                or value['source_sha256'] != plan['custom_block_image']['sha256']
+                or value['image_url_sha256'] == hashlib.sha256(plan['custom_block_image']['expected_url'].encode()).hexdigest()
+                or value['independent_readback'] != 'VERIFIED'
+                or value['functional_verified'] is not False or value['activation_performed'] is not False):
+            _fail()
     if action == 'native_course_theme_media':
         from playwright_recipes.course_theme_media import configuration_hash
         plan = step['payload']
@@ -331,6 +361,10 @@ def _result(step, value, job):
                 or value['independent_readback'] != 'VERIFIED' or value['submission_verified'] is not False):
             _fail()
         safe['fields'] = fields
+    if action == 'native_order_confirmation':
+        from playwright_recipes.form_order_confirmation import validate_receipt
+        validate_receipt(dict(value), step)
+        safe['price_identity'] = 'UNIQUE_CATALOG_PRICE'
     if action == 'native_form_embed':
         if value['form_id'] != step['integration']['form_id']:
             _fail()
@@ -347,6 +381,37 @@ def _result(step, value, job):
                 or value['independent_readback'] != 'VERIFIED'
                 or value['submission_verified'] is not False or value['behavior_verified'] is not False):
             _fail()
+    if action == 'quiz_short_answers':
+        from playwright_recipes.quiz_text_questions import configuration_hash
+        plan=step['payload']
+        if (value['kind']!='quiz_short_answers' or value['question_count']!=len(plan['questions'])
+                or value['target_page']!=plan['target_page']
+                or value['configuration_sha256']!=configuration_hash(step)
+                or value['independent_readback']!='VERIFIED' or value['dependency_api_used'] is not False
+                or value['behavior_verified'] is not False or value['submission_verified'] is not False):
+            _fail()
+    if action in ('native_dropdown_fields','native_large_text_fields'):
+        if action=='native_dropdown_fields':
+            from playwright_recipes.dropdown_fields import configuration_hash
+            key='dropdown_fields'
+        else:
+            from playwright_recipes.large_text_fields import configuration_hash
+            key='large_text_fields'
+        fields=value['fields'];requested=step['payload'][key]
+        if (not isinstance(fields,list) or len(fields)!=len(requested)
+                or value['configuration_sha256']!=configuration_hash(step)
+                or value['independent_readback']!='VERIFIED'
+                or value['behavior_verified'] is not False or value['submission_verified'] is not False):
+            _fail()
+        clean=[]
+        for field,intended in zip(fields,requested):
+            keys=('id','field_key','data_type','native_query_key')
+            if (not isinstance(field,Mapping) or set(field)!=set(keys)|{'placement'}
+                    or field['placement'] not in ('added','reused')
+                    or any(field[key]!=intended[key] for key in keys)):
+                _fail()
+            clean.append({**{key:intended[key] for key in keys},'placement':field['placement']})
+        safe['fields']=clean
     if action == 'native_object_fields':
         from playwright_recipes.forms_advanced import object_fields_configuration_hash
         fields, requested = value['fields'], step['payload']['object_fields']
@@ -400,20 +465,42 @@ def _result(step, value, job):
                 or value.get('discovery') is not False or value.get('deleted') is not False):
             _fail()
         safe['name'] = step['name']
+        if value['status'] == 'GROUP_REUSED_IDENTITY_CONFIRMED':
+            from playwright_recipes.community_portal import _portal
+            portal_url = value.get('portal_url')
+            _, slug = _portal(portal_url)
+            digest = hashlib.sha256(step['slug'].encode()).hexdigest()
+            if (slug != step['slug'] or not urlsplit(portal_url).path.rstrip('/').endswith('/home')
+                    or step.get('inactive', True) is not False
+                    or value.get('requested_slug_sha256') != digest or value.get('observed_slug_sha256') != digest
+                    or value.get('identity_source') != 'native_app_card_login_popup'
+                    or value.get('native_name_seen_after_reload') is not True or value.get('group_status') != 'Active'
+                    or value.get('slug_identity_verified') is not True or value.get('portal_identity_verified') is not True
+                    or value.get('description_verified') is not False or value.get('discovery_verified') is not False
+                    or value.get('functional_verified') is not False or value.get('group_activation_attempted') is not False
+                    or value.get('reused') is not True or value.get('independent_readback') != 'VERIFIED'):
+                _fail()
+            safe['portal_url'] = portal_url
+            safe['group_status'] = 'Active'
+            safe['identity_source'] = 'native_app_card_login_popup'
         if value['status'] == 'GROUP_CREATED_SLUG_IDENTIFIED':
             digest = hashlib.sha256(step['slug'].encode()).hexdigest()
-            if (step.get('allow_creation') is not True or step.get('inactive', True) is not False
+            inactive=step.get('inactive',True)
+            expected_status='Inactive' if inactive else 'Active'
+            if (step.get('allow_creation') is not True
+                    or value.get('native_deactivation_attempted') is not inactive
+                    or value.get('inactive_verified') is not inactive
                     or value.get('requested_slug_sha256') != digest or value.get('observed_slug_sha256') != digest
                     or value.get('identity_source') != 'native_creation_redirect'
                     or value.get('native_name_seen_after_reload') is not True
-                    or value.get('group_status') != 'Active'
+                    or value.get('group_status') != expected_status
                     or value.get('slug_identity_verified') is not True
                     or value.get('portal_identity_verified') is not False
                     or value.get('discovery_verified') is not False or value.get('functional_verified') is not False
                     or value.get('group_activation_attempted') is not False
                     or value.get('independent_readback') != 'VERIFIED'):
                 _fail()
-            safe['group_status'] = 'Active'
+            safe['group_status'] = expected_status
             safe['identity_source'] = 'native_creation_redirect'
         if value['status'] == 'GROUP_CREATED_PENDING_IDENTITY':
             if (step.get('allow_creation') is not True or step.get('inactive', True) is not False

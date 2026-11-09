@@ -138,7 +138,8 @@ class CreatedCommunityIntegrationTests(unittest.TestCase):
             'observed_slug_sha256':digest,'native_name_seen_after_reload':True,'group_status':'Active',
             'identity_source':'native_creation_redirect','slug_identity_verified':True,
             'portal_identity_verified':False,'discovery_verified':False,'independent_readback':'VERIFIED',
-            'functional_verified':False,'group_activation_attempted':False}
+            'functional_verified':False,'group_activation_attempted':False,
+            'native_deactivation_attempted':False,'inactive_verified':False}
 
     def test_created_slug_native_result_is_bound_and_completion_keeps_portal_proof_pending(self):
         from playwright_recipes import community_creation

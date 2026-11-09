@@ -28,7 +28,7 @@ CARD = 'div.flex.w-\\[32rem\\].flex-col'
 OUTCOME = '.flex.text-xs.leading-5.text-gray-600'
 
 
-def validate(step):
+def validate(step, *, minimum_clauses=2):
     if (not isinstance(step,dict)
             or set(step) - {'id','action','clauses','match','effect','target'}
             or step.get('action','native_condition_group') != 'native_condition_group'):
@@ -40,8 +40,9 @@ def validate(step):
     if not isinstance(step.get('target'),str) or step['target'] not in TARGETS:
         raise Stop('Condition target must use a captured native field label')
     clauses = step.get('clauses')
-    if not isinstance(clauses,list) or not 2 <= len(clauses) <= 20:
-        raise Stop('A compound condition requires 2 to 20 explicit clauses')
+    if (type(minimum_clauses) is not int or minimum_clauses not in (1,2)
+            or not isinstance(clauses,list) or not minimum_clauses <= len(clauses) <= 20):
+        raise Stop('A native condition requires '+str(minimum_clauses)+' to 20 explicit clauses')
     seen = set()
     for clause in clauses:
         if (not isinstance(clause,dict)
@@ -172,6 +173,21 @@ def _modal_state(modal,plan):
         raise Stop('Native compound outcome differs from its authored effect/target')
 
 
+def _wait_for_form_save(page,save):
+    """Allow native Save traffic to settle before an independent navigation.
+
+    Enabled controls alone can precede an asynchronous Save request. A native
+    network-idle wait does not establish success; exact fresh readback still
+    decides persistence. Unsettled traffic is an uncertain write, not a retry.
+    """
+    wait_until(lambda:save.count()==1 and save.is_enabled(),'Native form Save remains busy')
+    try:
+        page.wait_for_load_state('networkidle',timeout=45000)
+    except Exception:
+        raise Stop('Native form Save traffic did not settle; reconcile before another write') from None
+    wait_until(lambda:save.count()==1 and save.is_enabled(),'Native form Save became busy again')
+
+
 def configure(page,step):
     plan = validate(step)
     frame = form_builder(page)
@@ -258,7 +274,7 @@ def configure(page,step):
         save = _one(frame.get_by_role('button',name='Save',exact=True),
                     'Native outer form Save changed')
         click(save)
-        wait_until(lambda:save.is_enabled(),'Native form Save did not finish')
+        _wait_for_form_save(page,save)
     reopen_editor(page,'form',name,editor_url)
     frame = form_builder(page)
     dialog = open_conditions()

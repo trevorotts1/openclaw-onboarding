@@ -95,9 +95,15 @@ def _protected(page,plan):
 
 
 def _upload(page,plan,path,content_size):
-    replace,before=_background(page,plan)
-    if before['url']!=plan['background_image']['expected_url']:
-        raise Stop('Background Image changed immediately before native upload')
+    return upload_captured_image(page,plan,path,content_size,inspect=_background,
+        expected_url=plan['background_image']['expected_url'])
+
+
+def upload_captured_image(page,plan,path,content_size,*,inspect,expected_url):
+    """One observed course Upload File dialog, owned by an exact native target."""
+    replace,before=inspect(page,plan)
+    if before['url']!=expected_url:
+        raise Stop('Course image changed immediately before native upload')
     theme._identity(page,plan);assert_tenant(page,plan);click(replace)
     dialog=_one(page.get_by_role('dialog'),'Native Upload File dialog is ambiguous')
     if dialog.get_by_role('heading',name='Upload File',exact=True).count()!=1:
@@ -122,13 +128,13 @@ def _upload(page,plan,path,content_size):
     dialog.wait_for(state='hidden',timeout=45000)
     observed={}
     def image_ready():
-        _,actual=_background(page,plan)
+        _,actual=inspect(page,plan)
         if actual['url']==before['url']:
             return False
         observed.update(actual);return True
-    wait_until(image_ready,'Native upload did not produce a new HTTPS background preview')
-    if observed['transparency']!=before['transparency']:
-        raise Stop('Native background upload changed protected Transparency')
+    wait_until(image_ready,'Native upload did not produce a new HTTPS course image preview')
+    if {key:value for key,value in observed.items() if key!='url'}!={key:value for key,value in before.items() if key!='url'}:
+        raise Stop('Native course image upload changed protected editor state')
     return dict(observed)
 
 

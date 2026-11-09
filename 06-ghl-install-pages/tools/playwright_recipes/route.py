@@ -52,7 +52,7 @@ def decide(operation, location_id, probes, catalog=None, failed_lanes=(), inputs
     calendar_mode = operation == 'meetings.integrate' and context.get('integration_mode') == 'permanent_calendar_link'
     if operation == 'meetings.integrate':
         mode = context.get('integration_mode')
-        if mode is not None and mode not in ('permanent_calendar_link', 'dynamic_calendar_room'):
+        if mode is not None and mode not in ('permanent_calendar_link', 'dynamic_calendar_room', 'community_event_room'):
             return {'lane':'STOP_UNSUPPORTED_INTEGRATION_MODE','operation':operation,
                     'reason':'Dynamic appointment rooms and other integrations require a separately captured implementation'}
         if mode is None and not context.get('options'):
@@ -67,7 +67,7 @@ def decide(operation, location_id, probes, catalog=None, failed_lanes=(), inputs
     bound = cap.get('location_id') == location_id and fresh
     if bound and cap.get('http_status') in (401,403):
         return {'lane':'STOP_AUTH','reason':'Credential/scope refusal; do not treat it as an unsupported API or try another identity'}
-    portal_course_mode = operation == 'communities.configure' and 'course_associations' in context
+    portal_course_mode = operation == 'communities.configure' and bool(set(context).intersection({'course_associations', 'branding'}))
     api_eligible = (operation != 'meetings.integrate' or calendar_mode) and not portal_course_mode
     if api_eligible and bound and cap.get('supported') is True and cap.get('provider') in ('public_api','official_mcp','skill44') and cap.get('scope_ok') is True and cap.get('version'):
         return {'lane':cap['provider'],'operation':operation,'version':cap['version'],'location_id':location_id}
@@ -95,7 +95,7 @@ def decide(operation, location_id, probes, catalog=None, failed_lanes=(), inputs
             native_theme = (entry.get('action') == 'native_course_theme_or_options'
                             and 'template_id' in context and 'options' not in context)
             native_dynamic = (operation == 'meetings.integrate'
-                              and context.get('integration_mode') == 'dynamic_calendar_room'
+                              and context.get('integration_mode') in ('dynamic_calendar_room', 'community_event_room')
                               and 'options' not in context)
             if (entry.get('action') in ('options', 'native_course_theme_or_options')
                     and not native_theme and not native_dynamic and operation not in probes.get('recorded_profiles', [])):

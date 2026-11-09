@@ -82,8 +82,8 @@ source. The handler never changes those settings. It selects only the editing
 tier view, preflights every requested variant before writing, checks all authored
 variants again before Save, then saves the native modal and the outer quiz once.
 Independent reopening verifies every requested score/tier-specific value. Static
-CTA mode has one variant without a tier and must already be static. Header
-business-name copy must already be visible.
+CTA mode has one variant without a tier and must already be static. The captured
+Header business-name editor remains visible when its preview text is disabled.
 
 The score-source reader uses its captured label and smallest unique native-select
 container, explicitly excluding the tier picker and rejecting ambiguous shapes.
@@ -158,3 +158,81 @@ managed-Page function above or the existing `surveys.configure` host operation.
 This implements text Radio questions on existing survey slides. Other widget
 types, new survey creation, quiz widgets, and native submission proof remain
 separate requirements. No live field creation was performed in this build.
+
+## Business-name display in quiz results
+
+`configuration.result_page.expected` and `changes` also accept the exact
+Boolean key `business_name_enabled`. The native Header switch is specifically
+labeled **Business name**. It hides/shows that name in the result header; the
+logo, Header layout and other sections remain independent. This does not mean
+the whole Header is hidden. See `quiz-business-name-visibility.json`.
+
+Both previous and desired values must be real Booleans. The current state and
+captured label are checked before authoring. The business-name RTE remains
+visible with the switch off. A switch-only change preserves its complete stored
+HTML formatting and plain text before Save and after independent reopening.
+Existing business-name text edits also preserve the current enabled state unless
+a matching explicit old/new Boolean pair is requested. These settings can share
+a job with tier-specific CTA copy while each old-value guard remains required.
+
+The switch/visible-RTE behavior was inspected in the native result modal on
+November 9, 2026 and cancelled without saving. The Python handler has focused
+control/guard/replay coverage; it has not performed a native submission or result
+acceptance run. Both behavior and submission proof remain pending.
+
+## Quiz result Header layout
+
+`configuration.result_page.expected/changes.header_layout` accepts the exact
+existing native choices `Default` and `Reverse`. The handler binds the two
+captured non-button cards and their selected-class state, requires exactly one
+selected layout, and preserves the business-name enabled flag and stored text.
+A layout-only edit also preserves stored business-name HTML formatting and the
+Header logo URL, width and height through Save and independent reopening.
+No logo URL is fetched and no uploader is opened. See `quiz-header-layout.json`.
+
+The native card selection was observed and cancelled on November 9, 2026.
+Python control/identity/collateral-state checks are covered offline; submitted
+result behavior remains pending. Other Header media changes are separate work.
+
+## Native Short Answer question creation
+
+`quizzes.configure.configuration.short_answer_questions` is a dedicated native
+creation job. Supply the exact existing quiz name, complete ordered `pages`
+inventory, `target_page`, and authored `questions`. Do not combine this job with
+scoring/result edits. See `quiz-short-answer-creation.json`; every existing
+question property must come from the native inventory.
+
+Each inventoried page carries its exact label and every existing question's
+`field_type`, `question`, `placeholder`, `short_label`, `query_key`, `required`,
+and `hidden`. Current supported existing widgets are `TEXT` and `RADIO`; new
+questions use `TEXT` from the captured Short Answer tile. Authored question labels
+and Query Keys must be globally unique and disjoint from the complete existing
+inventory. The captured default key `single_line` must be unoccupied before
+insertion and cannot be a requested final key.
+
+The canvas's Short Answer input exposes no stable field ID, name or explicit
+type. The handler does not fabricate one. It selects each actual canvas widget
+and independently reads its native Question/Placeholder/Short Label/Query Key
+properties plus Required/Hidden checkboxes. Every existing property and rendered
+input binding is retained before the first drag. Empty pages require the captured
+inside-canvas drop placeholder, never an inferred zero field count.
+
+One real native pointer drag appends a Short Answer inside the exact requested
+page canvas below the last question, using fresh element-relative bounds. An
+unsafe tail or uncertain insertion stops without a second drag. The new widget
+must match the captured active TEXT/default-query shape before authoring its
+properties. Later inventory must prove one exact new question on the intended
+page and unchanged existing questions; Save and independent reopening must
+preserve the complete desired inventory.
+
+The native type/drag/property controls were inspected November 9, 2026, and the
+unsaved capture was discarded. This handler performs no separate dependency API
+call (`dependency_api_used:false`); backend effects and submitted answer behavior
+remain unverified. Optional/live acceptance is deferred. New survey shells, other
+question types and answer routing remain separate implementation requirements.
+
+## Integrated checkpoint boundaries
+
+The native condition stack implements ordered Show/Hide rules, homogeneous AND/OR clauses within each rule, and one explicit rule per target. Nested mixed predicates are not claimed as a captured native capability. Other native effects remain separate. API-backed existing Single Dropdown and Large Text fields use independent native Query Key bindings; no canvas API ID is fabricated. Their actual native acceptance remains pending.
+
+The payment-owned Order Confirmation handler supports the captured uniquely priced product contract only. Catalog GET identity, native selected product and reopened mode are verified by code; charges, payment behavior and submitted journeys remain pending. See `form-order-confirmation.md`.

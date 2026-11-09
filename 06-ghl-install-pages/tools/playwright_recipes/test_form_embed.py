@@ -29,7 +29,7 @@ def state(**changes):
     return result
 
 
-def exported(current=None, **attrs):
+def exported(current=None, appearance=None, **attrs):
     current = current or state()
     layout = {'id':'STICKY_SIDEBAR', 'minimizedTitle':current['button_label'],
         'isLeftAligned':current['position']=='Left', 'isRightAligned':current['position']=='Right',
@@ -43,6 +43,9 @@ def exported(current=None, **attrs):
         for key in ('isLeftAligned','isRightAligned','allowMinimize'):layout.pop(key)
     elif current['layout'] == 'Standard':
         layout = {'id':'INLINE'}
+    if appearance is not None:
+        layout.update(cornerRadius=appearance['corner_radii'],fontSize=appearance['font_size'],
+                      buttonType=appearance['button_type'],buttonSize=appearance['button_size'])
     if current['layout'] in ('Popup','Standard') and current['width'] != 800:
         layout['formWidth'] = current['width']
     prefix = {'Sidebar':'sticky-sidebar-' + str(current['position']).lower(),
@@ -273,6 +276,113 @@ class LifecycleTests(unittest.TestCase):
         self.assertIsInstance(result,Stop)
         self.assertIn('Standard ignores height',str(result))
         fill.assert_not_called();general.assert_not_called();export.assert_not_called()
+
+
+def appearance(**changes):
+    value={'corner_radii':{'tl':8,'tr':8,'bl':8,'br':8},'font_size':16,'linked':True,
+           'button_type':'text','button_size':'medium'}
+    value.update(changes)
+    return value
+
+
+class AppearanceTests(unittest.TestCase):
+    def test_schema_binds_only_captured_properties_and_states(self):
+        item=plan(appearance={'expected':{'font_size':16},'changes':{'font_size':18}})
+        self.assertEqual(native.validate(item),item)
+        self.assertNotEqual(native.configuration_hash(item),native.configuration_hash(plan()))
+        invalid=[{'font_size':0},{'font_size':True},{'font_size':257},
+                 {'linked':'false'},{'button_type':'invented'},{'button_size':'tiny'},
+                 {'button_color':'#fff'},{'corner_radii':{'tl':10}},
+                 {'corner_radii':{'tl':-1,'tr':8,'bl':8,'br':8}}]
+        for props in invalid:
+            with self.subTest(props=props),self.assertRaises(Stop):
+                native.validate(plan(appearance={'expected':props,'changes':props}))
+
+    def test_exact_native_button_metadata_is_checked_without_changing_iframe_border_radius(self):
+        desired=appearance(corner_radii={'tl':10,'tr':12,'bl':14,'br':16},font_size=18,
+                           linked=False,button_type='textIcon',button_size='large')
+        code=exported(appearance=desired)
+        config=plan()['integration']
+        native.verify_export_configuration(code,config,state(),desired)
+        self.assertIn('border-radius:8px',code)
+        for change in ({'font_size':17},{'button_size':'small'},{'button_type':'icon'},
+                       {'corner_radii':{'tl':10,'tr':12,'bl':14,'br':15}}):
+            with self.subTest(change=change),self.assertRaises(Stop):
+                native.verify_export_configuration(code,config,state(),{**desired,**change})
+
+    def exercise(self, before, desired):
+        import playwright_recipes.skill6_playwright as core
+        current=deepcopy(before);events=[]
+        controls={key:Mock() for key in (*native.CORNERS,'font_size','linked','button_type','button_size')}
+        controls['linked'].get_attribute.side_effect=lambda _:str(current['linked']).lower()
+        options={label:Mock() for label in (*native.BUTTON_TYPES.values(),*native.BUTTON_SIZES.values())}
+        frame=Mock();frame.locator.return_value.get_by_text.side_effect=lambda label,exact:options[label]
+        for option in options.values():
+            option.count.return_value=1;option.is_visible.return_value=True
+        def click(control):
+            if control is controls['linked']:
+                current['linked']=not current['linked'];events.append(('linked',current['linked']))
+            elif control in options.values():
+                label=next(label for label,node in options.items() if node is control)
+                for key,labels in (('button_type',native.BUTTON_TYPES),('button_size',native.BUTTON_SIZES)):
+                    if label in labels.values():current[key]=next(key_ for key_,text in labels.items() if text==label)
+                events.append(('option',label))
+        def fill(control,value):
+            key=next(key for key,node in controls.items() if node is control)
+            if key in native.CORNERS:
+                self.assertFalse(current['linked'],'Explicit per-corner edits must unlink propagation first')
+                current['corner_radii'][key]=int(value)
+            else:current[key]=int(value)
+            events.append(('fill',key,value))
+        def wait(fn,message):
+            if not fn():raise Stop(message)
+        with patch.object(native,'_appearance',side_effect=lambda _:(deepcopy(current),controls)), \
+             patch.object(native,'_appearance_select',side_effect=lambda _,key,values:(current[key],controls[key])), \
+             patch.object(core,'click',side_effect=click),patch.object(core,'fill',side_effect=fill), \
+             patch.object(core,'wait_until',side_effect=wait):
+            try:result=native._write_appearance(frame,before,desired,lambda:None)
+            except Stop as error:result=error
+        return result,current,events
+
+    def test_unlinks_before_each_explicit_corner_then_checks_font_and_exact_select_choices(self):
+        before=appearance();desired=appearance(corner_radii={'tl':10,'tr':12,'bl':14,'br':16},font_size=18,
+                                             linked=False,button_type='textIcon',button_size='large')
+        result,current,events=self.exercise(before,desired)
+        self.assertIsNone(result);self.assertEqual(current,desired)
+        self.assertEqual(events[0],('linked',False))
+        self.assertIn(('option','Icon + text'),events)
+        self.assertIn(('option','Large'),events)
+        self.assertFalse(any('Save' in str(event) for event in events))
+
+    def test_linked_uniform_corners_restore_link_state_after_explicit_values(self):
+        result,current,events=self.exercise(appearance(),appearance(corner_radii=dict.fromkeys(native.CORNERS,12)))
+        self.assertIsNone(result)
+        self.assertTrue(current['linked']);self.assertEqual(events[-1],('linked',True))
+
+    def test_nonuniform_linked_plan_stops_before_any_value_write(self):
+        result,_,events=self.exercise(appearance(),appearance(corner_radii={'tl':10,'tr':12,'bl':14,'br':16}))
+        self.assertIsInstance(result,Stop);self.assertEqual(events,[])
+
+    def test_native_export_preserves_unrequested_button_color_icon_and_other_layout_keys(self):
+        before=exported();desired=appearance(font_size=18)
+        after=exported(appearance=desired)
+        native._preserved_layout(before,after,state(),state())
+        altered=after.replace('#101828','#ffffff')
+        with self.assertRaisesRegex(Stop,'unrequested'):
+            native._preserved_layout(before,altered,state(),state())
+
+    def test_replay_revalidates_and_retains_the_appearance_artifact(self):
+        desired=appearance(font_size=18)
+        item=plan(appearance={'expected':{'font_size':16},'changes':{'font_size':18}})
+        code=exported(appearance=desired)
+        result={'status':'FORM_EMBED_EXPORTED_AND_REREAD','kind':'form_embed','form_id':'FORM',
+            'configuration_sha256':native.configuration_hash(item),'embed_code':code,
+            'embed_sha256':hashlib.sha256(code.encode()).hexdigest(),'export_settings':state(),
+            'appearance_settings':desired,'independent_readback':'VERIFIED','settings_persisted':False,
+            'installation_verified':False,'behavior_verified':False,'submission_verified':False}
+        self.assertEqual(native.validate_receipt(result,item)['appearance_settings'],desired)
+        with self.assertRaises(Stop):
+            native.validate_receipt({**result,'appearance_settings':appearance(font_size=17)},item)
 
 
 if __name__=='__main__':unittest.main()

@@ -73,7 +73,18 @@ def compile_recipe(operation, data):
     elif operation=='forms.submission':
         if not isinstance(data.get('submission'), dict) or 'action' in data['submission']:
             raise Stop('Native form submission must be a configuration object without an executor action override')
-        add('form_submission', **data['submission'])
+        if data['submission'].get('mode') == 'Order Confirmation':
+            if set(data['submission']).intersection({'id', 'action', '_context', 'payload'}):
+                raise Stop('Order Confirmation inputs must not override runner metadata')
+            add('native_order_confirmation', payload={
+                **{key:base[key] for key in ('location_id', 'location_name', 'start_url')},
+                **{key:value for key,value in data['submission'].items() if key != 'mode'}})
+        else:
+            add('form_submission', **data['submission'])
+    elif operation=='forms.configure' and 'large_text_fields' in data:
+        add('native_large_text_fields',payload={key:data[key] for key in ('location_id','location_name','start_url','large_text_fields','field_dependencies')})
+    elif operation=='forms.configure' and 'dropdown_fields' in data:
+        add('native_dropdown_fields',payload={key:data[key] for key in ('location_id','location_name','start_url','dropdown_fields','field_dependencies')})
     elif operation=='forms.configure' and 'integration' in data:
         add('native_form_embed', integration=data['integration'])
     elif operation=='forms.configure' and set(data).intersection({'add_fields', 'address_fields', 'fields', 'consent', 'object_fields'}):
@@ -101,7 +112,9 @@ def compile_recipe(operation, data):
             condition['effect'] = effect
         if condition.get('effect', 'Hide Field') not in ('Hide Field', 'Show Field'):
             raise Stop('Only the captured Hide Field/Show Field condition effects are implemented')
-        add('native_condition_group' if 'clauses' in condition else 'native_condition', **condition)
+        add('native_condition_stack' if 'rules' in condition else 'native_condition_group' if 'clauses' in condition else 'native_condition', **condition)
+    elif operation=='quizzes.configure' and 'short_answer_questions' in data['configuration']:
+        add('quiz_short_answers',payload={**{key:data[key] for key in ('location_id','location_name','start_url')},**data['configuration']['short_answer_questions']})
     elif operation=='quizzes.configure':
         config = dict(data['configuration'])
         has_results = 'result_page' in config
@@ -127,6 +140,8 @@ def compile_recipe(operation, data):
             raise Stop('A production marketing quiz needs a captured scoring/result/options profile')
     elif operation=='communities.create':
         add('community',**data['community'])
+    elif operation=='communities.configure' and 'branding' in data:
+        add('community_branding', payload=data)
     elif operation=='communities.configure' and 'course_associations' in data:
         add('community_courses', payload=data)
     elif operation=='communities.configure' and 'details' in data:
@@ -149,11 +164,13 @@ def compile_recipe(operation, data):
             add('meeting_cohosts', payload={**{key:base[key] for key in ('location_id', 'location_name', 'start_url')}, **details})
         else:
             add('meeting',**details)
+    elif operation == 'meetings.integrate' and data.get('integration_mode') == 'community_event_room':
+        add('community_event_room', payload={key:value for key,value in data.items() if key != 'integration_mode'})
     elif operation == 'meetings.integrate' and data.get('integration_mode') == 'dynamic_calendar_room':
         add('native_dynamic_meeting_location', payload={key:value for key,value in data.items()
             if key not in ('integration_mode', 'publish', 'auth_activation')})
     elif operation == 'courses.configure_ui' and 'template_id' in data:
-        add('native_course_blocks' if 'custom_blocks' in data else 'native_course_theme_media' if 'background_image' in data else 'native_course_theme', payload=data)
+        add('native_course_blocks' if 'custom_blocks' in data else 'native_course_theme_media' if 'background_image' in data else 'native_course_block_media' if 'custom_block_image' in data else 'native_course_theme', payload=data)
     elif operation in ('forms.configure','checkout.one_click_upsell','funnels.split_variant','communities.configure','courses.configure_ui','meetings.integrate'):
         if operation=='checkout.one_click_upsell':
             receipt=data.get('checkout_contract',{})

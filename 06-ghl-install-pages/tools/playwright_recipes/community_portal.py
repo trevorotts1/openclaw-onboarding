@@ -123,6 +123,12 @@ def validate_details_inputs(inputs):
 
 
 def _context_inputs(inputs):
+    if isinstance(inputs, Mapping) and 'branding' in inputs:
+        if __package__:
+            from .community_branding import validate_inputs as validate_branding_inputs
+        else:
+            from community_branding import validate_inputs as validate_branding_inputs
+        return validate_branding_inputs(inputs)
     if isinstance(inputs, Mapping) and 'course_associations' in inputs:
         if __package__:
             from .community_courses import validate_inputs as validate_courses_inputs
@@ -160,12 +166,13 @@ def _facts(page, inputs, reader, *, verify_control=True):
     # the single authenticated identity read, then recheck the route: hydration
     # must not bless a redirect or user change that happened during the wait.
     if verify_control:
-        if 'course_associations' in inputs:
+        if 'branding' in inputs or 'course_associations' in inputs:
             _,slug=_portal(inputs['portal_url'])
-            control=page.locator('a[href="/communities/groups/'+slug+'/learning"]')
+            subpath='settings/details' if 'branding' in inputs else 'learning'
+            control=page.locator('a[href="/communities/groups/'+slug+'/'+subpath+'"]')
             control.wait_for(state='visible',timeout=45000)
             if control.count()!=1 or not control.is_visible():
-                raise Stop('Captured modern community Learning link unavailable or ambiguous')
+                raise Stop('Captured modern community navigation control unavailable or ambiguous')
         elif 'details' in inputs or 'access' in inputs:
             settings = page.get_by_role('button', name='SETTINGS', exact=True)
             settings.wait_for(state='visible', timeout=45000)
@@ -242,6 +249,33 @@ def _check_context(page, inputs, context, *, clock=time.time, verify_control=Tru
         raise Stop('Community authenticated user changed; no write attempted')
 
 
+def check_subroute(page,inputs,context,subpath,*,clock=time.time):
+    """Revalidate an opaque home context on one captured modern group subroute."""
+    if subpath not in ('learning','settings/branding'):
+        raise Stop('Community subroute was not captured for this executor')
+    expected=inputs['portal_url'].rstrip('/').rsplit('/',1)[0]+'/'+subpath
+    if (not isinstance(context,PortalContext) or context._proof is not _PROOF
+            or context.page is not page or context.location_id!=inputs['location_id']
+            or context.portal_url.rstrip('/')!=inputs['portal_url'].rstrip('/')
+            or context.group_name!=inputs['group_name']
+            or not 0<=clock()-context.observed_at<=_CONTEXT_TTL or page.url.rstrip('/')!=expected):
+        raise Stop('Fresh exact same-session community subroute context required')
+    if page.get_by_placeholder('Password',exact=True).count():
+        raise Stop('Community portal authentication required')
+    origin,slug=_portal(inputs['portal_url'])
+    try:actual=context.identity_reader(page)
+    except Exception:raise Stop('Community subroute authenticated identity read failed') from None
+    if (not isinstance(actual,Mapping) or actual.get('authenticated') is not True
+            or actual.get('location_id')!=inputs['location_id'] or actual.get('portal_origin')!=origin
+            or actual.get('group_slug')!=slug or actual.get('group_name')!=inputs['group_name']
+            or not isinstance(actual.get('user_id'),str) or not actual['user_id']
+            or hashlib.sha256(actual['user_id'].encode()).hexdigest()!=context.user_hash
+            or actual.get('source_kind')!='same_session_authenticated_read'
+            or not 0<=clock()-context.observed_at<=_CONTEXT_TTL or page.url.rstrip('/')!=expected):
+        raise Stop('Community subroute account/user/location/group identity changed')
+    return dict(actual)
+
+
 def run_channels(page, inputs, evidence_root, *, portal_context, clock=time.time):
     """Execute the captured native sequence with protected per-run intent."""
     data = validate_inputs(inputs)
@@ -276,7 +310,7 @@ def run_channels(page, inputs, evidence_root, *, portal_context, clock=time.time
         if any(_has_evidence(root / name) for name in
                ('state.json', 'handoff.json', 'provider-state.json', 'auth-stop.json',
                 'delivery-state.json', 'calendar-delivery-state.json',
-                'community-details-state.json', 'community-access-state.json')):
+                'community-details-state.json', 'community-access-state.json', 'community-event-state.json')):
             raise Stop('Another execution lane has evidence here; reconcile before a portal write')
         existing = root / 'community-portal-state.json'
         if _has_evidence(existing):

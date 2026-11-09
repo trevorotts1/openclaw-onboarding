@@ -1,3 +1,11 @@
+## [v27.1.94] - 2026-11-09
+
+- Continue guarded native controls: community Branding and existing Event Live Room association, exact active-group reuse and scoped newly-created inactive groups; inactive course Custom Block image uploads; ordered form condition stacks; single-price payment-owned Order Confirmation; existing API Dropdown/Large Text placement; new quiz Short Answers and Header name/layout controls.
+- Bind every new native action through intake, compiler, exact parent identity, durable write intent and retained completion validation. Portal handlers refuse ordinary app execution before session seeding. Catalog 401/403 is terminal. Question jobs are separate to prevent discarded requests or writes before later preflight.
+- Preserve pending functional/submission/payment/notification proof. Native empty community-course inventories, other payment contracts, uncaptured question types/effects, course Live Sessions and split allocation remain open. Broad catalog counts remain provisional pending a complete capability audit.
+- Fix the existing Mac auth guard process storm while preserving all14 forbidden patterns, read-only allowances, sentinels and the60-second test deadline. New regression counts actual processes and keeps mutation refusals.
+- Draft source checkpoint: reviewed-ready controls are integrated; new question inventory preservation continues peer review. No live Python acceptance, client deployment, submission, payment, event publication or meeting start is claimed.
+
 ## [v27.1.93] - 2026-11-09
 
 - Add native per-appointment Meeting Room calendar location controls, bound to

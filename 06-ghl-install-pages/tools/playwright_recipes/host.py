@@ -164,8 +164,9 @@ def _recipe_readiness(operation, inputs, probes, input_dir):
     recorded = bool(inputs.get('options'))
     ui = (operation in ('checkout.configure_ui', 'courses.configure_ui')
           or operation == 'meetings.integrate' and inputs.get('integration_mode') == 'dynamic_calendar_room')
-    portal = operation == 'communities.configure' and bool(set(inputs).intersection({'channels', 'details', 'access', 'course_associations'}))
-    if not native and not recorded and not ui and not portal:
+    event = operation == 'meetings.integrate' and inputs.get('integration_mode') == 'community_event_room'
+    portal = operation == 'communities.configure' and bool(set(inputs).intersection({'channels', 'details', 'access', 'course_associations', 'branding'}))
+    if not native and not recorded and not ui and not portal and not event:
         return observed, None
     # A receipt for another input/profile cannot bless this specific capture.
     profiles = observed.get('recorded_profiles', [])
@@ -199,6 +200,11 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
                 'reason': 'A location-bound input mapping is required'}
     access_mode = operation == 'communities.configure' and 'access' in inputs
     course_association_mode = operation == 'communities.configure' and 'course_associations' in inputs
+    branding_mode = operation == 'communities.configure' and 'branding' in inputs
+    event_mode = operation == 'meetings.integrate' and inputs.get('integration_mode') == 'community_event_room'
+    if event_mode and 'auth_activation' in inputs:
+        return {'status':'STOP_INVALID_INPUT','browser_used':False,
+                'reason':'Event room integrations require the caller-owned authenticated portal session; no fresh app seed is permitted'}
     if access_authorization is not None and not access_mode:
         return {'status':'STOP_INVALID_INPUT', 'browser_used':False,
                 'reason':'A live access authorization applies only to its exact community access operation'}
@@ -218,6 +224,14 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
                 'reason': 'Installed executors must be a provider mapping'}
     observed, capture_error = _recipe_readiness(operation, inputs, probes, input_dir)
     route = decide(operation, inputs['location_id'], observed, inputs=inputs)
+    if event_mode and route['lane'] != 'playwright':
+        status = 'STOP_INVALID_INPUT' if capture_error else route['lane'] if route['lane'].startswith('STOP_AUTH') else 'EVENT_SCRIPT_ROUTE_REQUIRED'
+        return {'status':status,'route':route,'browser_used':False,
+                'reason':'Community event room creation requires its captured script, own journal, and live same-session portal context; another provider cannot authorize it'}
+    if branding_mode and route['lane'] != 'playwright':
+        return {'status':'STOP_INVALID_INPUT' if capture_error else 'BRANDING_SCRIPT_ROUTE_REQUIRED',
+                'route':route, 'browser_used':False,
+                'reason':'Community Branding requires the captured native script and live same-session portal context'}
     if course_association_mode and route['lane'] != 'playwright':
         return {'status':'STOP_INVALID_INPUT' if capture_error else 'COURSE_ASSOCIATION_SCRIPT_ROUTE_REQUIRED',
                 'route':route, 'browser_used':False,
@@ -235,7 +249,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
     root = Path(evidence_root).resolve()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(root, 0o700)
-    journals = ('state.json', 'provider-state.json', 'community-portal-state.json', 'community-details-state.json', 'community-access-state.json', 'handoff.json', 'auth-stop.json')
+    journals = ('state.json', 'provider-state.json', 'community-portal-state.json', 'community-details-state.json', 'community-access-state.json', 'community-event-state.json', 'handoff.json', 'auth-stop.json')
     if not any(journal_present(root / name) for name in journals):
         secure_json(root / 'route.json', route)
     if route['lane'] != 'playwright':
@@ -281,7 +295,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
                 blocked_state = root / 'state.json'
                 if not journal_present(blocked_state):
                     blocked_state = next((root / name for name in (
-                        'handoff.json', 'community-portal-state.json', 'community-details-state.json', 'community-access-state.json', 'provider-state.json',
+                        'handoff.json', 'community-portal-state.json', 'community-details-state.json', 'community-access-state.json', 'community-event-state.json', 'provider-state.json',
                         'delivery-state.json', 'calendar-delivery-state.json')
                         if journal_present(root / name)), root / 'provider-state.json')
                 return {'status': 'PROVIDER_RECONCILIATION_REQUIRED', 'route': route,
@@ -296,16 +310,27 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
             if 'auth_activation' in inputs:
                 return _terminal_auth_stop(operation, inputs, root, type(exc).__name__, contract=True)
             raise
-        if operation == 'communities.configure' and set(inputs).intersection({'channels', 'details', 'access', 'course_associations'}):
+        if event_mode:
+            if page is None or portal_context is None:
+                return {'status':'PORTAL_CONTEXT_REQUIRED','route':route,'browser_used':False,
+                        'reason':'Supply the authenticated caller-owned event portal Page and opaque same-session context; no app/browser seeding attempted'}
+            if __package__:
+                from .skill6_playwright import community_event_room
+            else:
+                from skill6_playwright import community_event_room
+            result = community_event_room(page, job['steps'][0],
+                portal_context=portal_context, evidence_root=root)
+            return {'status':result['status'],'route':route,'browser_used':True,'result':result}
+        if operation == 'communities.configure' and set(inputs).intersection({'channels', 'details', 'access', 'course_associations', 'branding'}):
             if page is None or portal_context is None:
                 return {'status': 'PORTAL_CONTEXT_REQUIRED', 'route': route,
                         'browser_used': False,
                         'reason': 'Supply an authenticated caller-owned portal Page and same-session identity context; no login or token seed attempted'}
             if __package__:
-                from .skill6_playwright import community_channels, community_details, community_access, community_courses
+                from .skill6_playwright import community_channels, community_details, community_access, community_courses, community_branding
             else:
-                from skill6_playwright import community_channels, community_details, community_access, community_courses
-            handler = community_access if access_mode else community_courses if 'course_associations' in inputs else community_details if 'details' in inputs else community_channels
+                from skill6_playwright import community_channels, community_details, community_access, community_courses, community_branding
+            handler = community_access if access_mode else community_branding if branding_mode else community_courses if 'course_associations' in inputs else community_details if 'details' in inputs else community_channels
             arguments = {'portal_context':portal_context, 'evidence_root':root}
             if access_mode:
                 arguments['access_authorization'] = access_authorization
@@ -319,6 +344,16 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
         from ghl_auth import AuthBridgeError
         if isinstance(exc, AuthBridgeError):
             return _terminal_auth_stop(operation, inputs, root, type(exc).__name__)
+        if event_mode:
+            blocked = next((root / name for name in (
+                'community-event-state.json','state.json','provider-state.json',
+                'community-portal-state.json','community-details-state.json','community-access-state.json',
+                'delivery-state.json','calendar-delivery-state.json','handoff.json','auth-stop.json')
+                if journal_present(root / name)),None)
+            return {'status':'EVENT_RECONCILIATION_REQUIRED' if blocked is not None else 'EVENT_PREFLIGHT_REFUSED',
+                'route':route,'browser_used':page is not None,'error_type':type(exc).__name__,
+                **({'state_file':str(blocked)} if blocked is not None else {}),
+                'instruction':'Preserve evidence and read the same event/room before another attempt; do not rerun room creation or switch execution lanes.'}
         if access_mode and isinstance(exc, Stop) and str(exc).startswith('ACCESS_CONFIRMATION_REQUIRED:'):
             result = {'status':'ACCESS_CONFIRMATION_REQUIRED', 'route':route, 'browser_used':True,
                       'reason':'Fresh same-session authorization for this exact access expansion is required; no alternative execution lane is authorized'}
@@ -326,9 +361,9 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
                 result['state_file'] = str(root / 'community-access-state.json')
                 result['instruction'] = 'Reconcile the retained access intent before another write.'
             return result
-        expected_state = root / ('community-access-state.json' if access_mode else 'community-details-state.json' if operation == 'communities.configure' and ('details' in inputs or 'course_associations' in inputs) else 'community-portal-state.json' if operation == 'communities.configure' and 'channels' in inputs else 'state.json')
+        expected_state = root / ('community-access-state.json' if access_mode else 'community-details-state.json' if operation == 'communities.configure' and bool(set(inputs).intersection({'details', 'course_associations', 'branding'})) else 'community-portal-state.json' if operation == 'communities.configure' and 'channels' in inputs else 'state.json')
         blocked_state = next((root / name for name in (
-            'state.json', 'provider-state.json', 'community-portal-state.json', 'community-details-state.json', 'community-access-state.json')
+            'state.json', 'provider-state.json', 'community-portal-state.json', 'community-details-state.json', 'community-access-state.json', 'community-event-state.json')
             if journal_present(root / name)), expected_state)
         handoff = {
             'status': 'NEEDS_BROWSER_RECOVERY', 'operation': operation,
@@ -369,7 +404,7 @@ def main(argv=None):
             status = 'ROUTE_VALIDATED_ONLY'
             if selected['lane'] == 'playwright':
                 validate_job(compile_recipe(args.operation, inputs), args.inputs.resolve().parent)
-                status = 'PORTAL_CONTEXT_REQUIRED' if args.operation == 'communities.configure' and ('channels' in inputs or 'details' in inputs) else 'VALIDATED_ONLY'
+                status = 'PORTAL_CONTEXT_REQUIRED' if (args.operation == 'communities.configure' and ('channels' in inputs or 'details' in inputs) or args.operation == 'meetings.integrate' and inputs.get('integration_mode') == 'community_event_room') else 'VALIDATED_ONLY'
             elif selected['lane'] in ('public_api','skill44','official_mcp') and args.operation in ('courses.create','courses.update','courses.lesson_quiz.create'):
                 if args.operation == 'courses.update' and 'media_assets' in inputs:
                     if __package__:

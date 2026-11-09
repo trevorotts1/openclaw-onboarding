@@ -5,11 +5,13 @@ non-paginated .grid-custom/.group-card list, and no group slug/id/link on cards.
 It has no All filter or group search. Create Group opens a full page with one
 Discovery switch; privacy is not a control on that page.
 
-Never turn a name-only card into a verified slug identity. Existing matches stop
-for reconciliation. Inactive creation also stops before writes because safely
-deactivating a newly named row requires stronger native identity. The active
-creation path is available only with explicit inactive=False and Discovery off.
-No Login, invitation, ownership transfer or status dropdown is ever clicked here.
+Never turn a name-only card into a verified slug identity. An exact unique active
+match can use the captured card Login popup to inspect its native portal slug;
+duplicate, differently cased and inactive matches stop for reconciliation.
+New groups are bound to the native create redirect before a scoped default
+Inactive transition. Explicit inactive=False retains the new native Active row.
+Discovery is always off; an existing group is never deactivated implicitly.
+No credentials, invitation, join, ownership transfer or status write is authored.
 """
 from copy import deepcopy
 import hashlib
@@ -209,19 +211,122 @@ def _created_identity(page, context, data):
     return {'name':observed['groupCreated'],'slug':observed['groupSlug']}
 
 
+def _popup_identity(popup,data):
+    """Accept only the exact authenticated group home opened by native Login."""
+    try:
+        current=urlsplit(popup.url);port=current.port
+    except ValueError:
+        raise Stop('Native group Login opened a malformed portal route') from None
+    if (current.scheme!='https' or not current.hostname or current.username is not None
+            or current.password is not None or port not in (None,443)
+            or current.query or current.fragment
+            or current.path.rstrip('/')!='/communities/groups/'+data['slug']+'/home'):
+        return None
+    if popup.get_by_placeholder('Password',exact=True).count():
+        raise Stop('Native group Login did not establish an authenticated portal session')
+    title=popup.title()
+    if (not isinstance(title,str) or not title.startswith(data['name']+' |')
+            or not title[len(data['name'])+2:].strip()):
+        return None
+    if popup.get_by_text(data['name'],exact=True).count()<1:
+        return None
+    for suffix in ('learning','settings/details'):
+        link=popup.locator('a[href="/communities/groups/'+data['slug']+'/'+suffix+'"]')
+        if link.count()!=1 or not link.is_visible():
+            return None
+    return 'https://'+current.netloc+current.path.rstrip('/')
+
+
+def _reuse_active(page,data,context):
+    if data.get('inactive',True) is not False:
+        raise Stop('EXISTING_GROUP_STATE_UNVERIFIED: active reuse requires explicit inactive:false; no status write attempted')
+    _read_filter(page,context,'Active');_assert_list(page,context)
+    label=page.locator(_TITLE).filter(has_text=re.compile(r'^\s*'+re.escape(data['name'])+r'\s*$'))
+    cards=page.locator('.grid-custom .group-card').filter(has=label)
+    if cards.count()!=1:
+        raise Stop('Existing native group card identity changed before Login inspection')
+    status=cards.locator('#status_button')
+    login=cards.get_by_text('Login',exact=True)
+    if (status.count()!=1 or status.inner_text().strip()!='Active'
+            or login.count()!=1 or not login.is_visible()):
+        raise Stop('Existing active group Login control changed or is ambiguous')
+    assert_tenant(page,context)
+    # The fresh popup is causally bound to this exact location-owned card.
+    # No credentials are typed; no invite, join, ownership or status controls
+    # are clicked. The vendor's native Login owns its SSO session handoff.
+    with page.expect_popup(timeout=45000) as pending:
+        click(login)
+    popup=pending.value
+    observed={}
+    try:
+        popup.wait_for_load_state('domcontentloaded',timeout=45000)
+        def ready():
+            url=_popup_identity(popup,data)
+            if url is None:return False
+            observed['portal_url']=url;return True
+        wait_until(ready,'Native group Login did not confirm the exact authenticated name/slug home')
+        assert_tenant(page,context)
+    finally:
+        if not popup.is_closed():popup.close()
+    return {'status':'GROUP_REUSED_IDENTITY_CONFIRMED','name':data['name'],'slug':data['slug'],
+        'portal_url':observed['portal_url'],'group_status':'Active','discovery':False,'deleted':False,
+        'requested_slug_sha256':hashlib.sha256(data['slug'].encode()).hexdigest(),
+        'observed_slug_sha256':hashlib.sha256(data['slug'].encode()).hexdigest(),
+        'identity_source':'native_app_card_login_popup','slug_identity_verified':True,
+        'portal_identity_verified':True,'native_name_seen_after_reload':True,
+        'description_verified':False,'discovery_verified':False,'independent_readback':'VERIFIED',
+        'functional_verified':False,'group_activation_attempted':False,'reused':True}
+
+
+def _deactivate_created(page,data,context):
+    """Deactivate only this operation's newly created, slug-bound unique card.
+
+    Callers reach here only after the fresh native create redirect and complete
+    post-create inventory. Existing groups never enter this writer implicitly.
+    """
+    _read_filter(page,context,'Active');_assert_list(page,context)
+    label=page.locator(_TITLE).filter(has_text=re.compile(r'^\s*'+re.escape(data['name'])+r'\s*$'))
+    cards=page.locator('.grid-custom .group-card').filter(has=label)
+    if cards.count()!=1:
+        raise Stop('Newly created native group card is missing or ambiguous before deactivation')
+    status=cards.locator('#status_button')
+    if status.count()!=1 or not status.is_visible() or status.inner_text().strip()!='Active':
+        raise Stop('Newly created group status changed before scoped deactivation')
+    assert_tenant(page,context);click(status)
+    option=page.get_by_text('Inactive',exact=True)
+    if option.count()!=1 or not option.is_visible():
+        raise Stop('Captured native Inactive status option changed or is ambiguous')
+    click(option)
+    dialog=page.get_by_role('dialog')
+    dialog.wait_for(state='visible',timeout=45000)
+    if (dialog.count()!=1 or not dialog.is_visible()
+            or not {'n-card','n-modal','hl-modal','communitiesApp'}.issubset(set((dialog.get_attribute('class') or '').split()))):
+        raise Stop('Native Deactivate Group confirmation owner changed')
+    title=dialog.locator('.title');description=dialog.locator('.description')
+    confirm=dialog.locator('#modal-footer-btn-positive-action')
+    cancel=dialog.locator('#modal-footer-btn-negative-action')
+    if (title.count()!=1 or title.inner_text().strip()!='Deactivate Group'
+            or description.count()!=1 or description.inner_text().strip()!='Are you sure you want to deactivate this group?'
+            or confirm.count()!=1 or confirm.inner_text().strip()!='Confirm' or not confirm.is_enabled()
+            or cancel.count()!=1 or cancel.inner_text().strip()!='Cancel'):
+        raise Stop('Native group deactivation confirmation text/controls changed')
+    if cards.count()!=1 or status.inner_text().strip()!='Active':
+        raise Stop('Scoped native group changed while its deactivation dialog was open')
+    assert_tenant(page,context);click(confirm)
+    dialog.wait_for(state='hidden',timeout=45000)
+
+
 def configure(page, step):
     data = validate(step)
     context = data['_context']
     before = inventory(page, context)
     matches = [row for row in before if row['name'].casefold() == data['name'].casefold()]
     if matches:
-        # App cards expose no slug/id/portal link. Never Login into another
-        # portal or accept caller-authored slug claims to upgrade this proof.
-        raise Stop('EXISTING_GROUP_IDENTITY_UNVERIFIED: same-name native group requires exact slug reconciliation; no write attempted')
+        if len(matches)!=1 or matches[0]['name']!=data['name'] or matches[0]['status']!='Active':
+            raise Stop('EXISTING_GROUP_IDENTITY_UNVERIFIED: duplicate, differently cased or inactive native group requires reconciliation; no write attempted')
+        return _reuse_active(page,data,context)
     if data.get('allow_creation') is not True:
         raise Stop('GROUP_ABSENT: explicit creation input is required; no write attempted')
-    if data.get('inactive', True) is not False:
-        raise Stop('GROUP_SLUG_IDENTITY_REQUIRED: inactive creation needs exact post-create identity before safe deactivation; no write attempted')
     _read_filter(page, context, 'Active')
     create = page.get_by_role('button', name='Create Group', exact=True)
     if create.count() != 1 or not create.is_visible():
@@ -264,14 +369,25 @@ def configure(page, step):
     actual = [row for row in after if row['name'] == data['name']]
     if len(actual) != 1 or actual[0]['status'] != 'Active':
         raise Stop('Created community is not uniquely present in the native Active inventory')
+    expected_after=before+[{'name':data['name'],'status':'Active'}]
+    order=lambda rows:sorted((row['name'],row['status']) for row in rows)
+    if order(after)!=order(expected_after):
+        raise Stop('Native group creation changed unrelated group inventory')
+    inactive=data.get('inactive',True)
+    if inactive:
+        _deactivate_created(page,data,context)
+        retained=inventory(page,context)
+        if order(retained)!=order(before+[{'name':data['name'],'status':'Inactive'}]):
+            raise Stop('New group inactive status did not persist or unrelated native groups changed')
     # The native post-create redirect binds this authored name/slug; separate
     # portal authentication, privacy/discovery and member behavior remain owed.
     return {'status': 'GROUP_CREATED_SLUG_IDENTIFIED', 'name': data['name'],
         'slug': data['slug'], 'discovery': False, 'deleted': False,
         'requested_slug_sha256': hashlib.sha256(data['slug'].encode()).hexdigest(),
-        'native_name_seen_after_reload': True, 'group_status': 'Active',
+        'native_name_seen_after_reload': True, 'group_status': 'Inactive' if inactive else 'Active',
         'observed_slug_sha256': hashlib.sha256(created['slug'].encode()).hexdigest(),
         'identity_source':'native_creation_redirect',
         'slug_identity_verified': True, 'portal_identity_verified':False,
         'discovery_verified': False, 'independent_readback': 'VERIFIED',
+        'native_deactivation_attempted':inactive,'inactive_verified':inactive,
         'functional_verified': False, 'group_activation_attempted': False}

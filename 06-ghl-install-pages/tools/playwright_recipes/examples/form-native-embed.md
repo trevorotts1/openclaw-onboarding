@@ -10,8 +10,8 @@ Supported captured layouts are Sidebar, Popover, Popup and Standard. Layout
 changes require all five General keys (`layout`, `position`, `width`, `height`,
 `button_label`) in both the expected and changes objects. Popup has no position
 (`null`); Standard has neither position nor button label (both `null`). Sidebar
-and Popover require Left/Right and authored button text. Other appearance
-settings are preserved, not authored by this handler.
+and Popover require Left/Right and authored button text. The optional button appearance object below authors captured button properties;
+color and icon identity are preserved.
 
 Nondefault width authoring is proven in the native export for Popup and Standard
 through `data-layout.formWidth`. Explicit height authoring is supported for
@@ -42,3 +42,34 @@ form Save, claim that integration settings persist, install code on a website,
 publish a form/page or send a submission. Its receipt keeps
 `settings_persisted`, `installation_verified`, `behavior_verified` and
 `submission_verified` false. Native functional execution remains separate.
+
+
+## Button corners, font, type and size
+
+`integration.appearance` has nonempty `expected` and `changes` objects with the
+same property keys. The separate example `form-embed-button-appearance.json`
+uses the exact captured defaults; replace them with actual current inventory.
+
+Supported properties are `corner_radii` (all four integer `tl`, `tr`, `bl`, `br`
+values), integer `font_size`, boolean `linked`, `button_type` (`text`, `textIcon`,
+`icon`) and `button_size` (`small`, `medium`, `large`). The type choices map to
+native Text, Icon + text and Icon only. The captured Chat icon must remain
+`buttonIcon: chat`; no other icon is selected. Standard embeds have no button
+appearance controls, and layout changes require a separate inventoried job.
+
+The script bounds radii to 0–1000 and font size to 1–256 as conservative script
+limits. The captured native inputs expose no min/max; these are not claims of
+platform limits. Different per-corner values require `linked: false`. The
+writer temporarily detaches corner linking while filling explicit values, then
+restores the desired local link state; linked corners must all be equal.
+
+A native export is read before the appearance edits to protect every unrequested
+layout property, including button color and icon. The two final native exports
+must contain the exact authored `data-layout.cornerRadius`, `fontSize`,
+`buttonType` and `buttonSize`. Button corner metadata is distinct from the
+iframe's unchanged `style` border radius. The local link affordance is read back
+in the editor; it is not claimed as a serialized embed property.
+
+The receipt retains validated `appearance_settings` on initial execution and
+replay. No global color-palette Add/Save operation is used. The same pending
+installation, publication and behavior boundaries remain in force.

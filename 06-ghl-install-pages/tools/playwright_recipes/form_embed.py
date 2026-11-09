@@ -76,7 +76,8 @@ def validate(step):
         raise Stop('Unsupported native form embed action')
     config = step.get('integration')
     if (not isinstance(config, dict)
-            or set(config) != {'expected', 'changes', 'embed_origin', 'script_origin', 'form_id', 'expected_form_name'}
+            or not {'expected', 'changes', 'embed_origin', 'script_origin', 'form_id', 'expected_form_name'}.issubset(config)
+            or set(config)-{'expected', 'changes', 'embed_origin', 'script_origin', 'form_id', 'expected_form_name', 'appearance'}
             or not isinstance(config.get('expected'), dict)
             or not isinstance(config.get('changes'), dict)
             or set(config['expected']) != set(config['changes'])):
@@ -89,6 +90,13 @@ def validate(step):
     _properties(config['changes'])
     _origin(config['embed_origin'])
     _origin(config['script_origin'])
+    if 'appearance' in config:
+        appearance=config['appearance']
+        if (not isinstance(appearance,dict) or set(appearance)!={'expected','changes'}
+                or not isinstance(appearance['expected'],dict) or not isinstance(appearance['changes'],dict)
+                or not appearance['changes'] or set(appearance['expected'])!=set(appearance['changes'])):
+            raise Stop('Embed appearance requires matching nonempty previous/desired property keys')
+        _appearance_values(appearance['expected']);_appearance_values(appearance['changes'])
     return deepcopy(step)
 
 
@@ -292,7 +300,7 @@ def _layout_data(value):
     return result
 
 
-def verify_export_configuration(code, config, desired):
+def verify_export_configuration(code, config, desired, appearance=None):
     """Check native code metadata as well as the visible builder controls."""
     validated = validate_export(code, form_id=config['form_id'],
         embed_origin=config['embed_origin'], script_origin=config['script_origin'],
@@ -336,10 +344,18 @@ def verify_export_configuration(code, config, desired):
     if (iframe.get('data-cookie-consent') != str(desired['respect_cookie_consent']).lower()
             or iframe.get('data-cookie-consent-provider') not in providers):
         raise Stop('Native embed exported cookie consent differs from its inventoried settings')
+    if appearance is not None:
+        _appearance_values(appearance,complete=True)
+        if (mode=='Standard' or layout.get('cornerRadius')!=appearance['corner_radii']
+                or layout.get('fontSize')!=appearance['font_size']
+                or layout.get('buttonType')!=appearance['button_type']
+                or layout.get('buttonSize')!=appearance['button_size']
+                or layout.get('buttonIcon')!='chat'):
+            raise Stop('Native embed button appearance differs from its authored values or captured Chat icon')
     return validated
 
 
-def _export(frame, config, desired):
+def _export(frame, config, desired, appearance=None):
     from playwright_recipes.skill6_playwright import click
     click(_one(frame.get_by_role('button', name='Embed code', exact=True), 'Native Embed code button changed'))
     dialog = _one(frame.get_by_role('dialog').filter(
@@ -350,7 +366,7 @@ def _export(frame, config, desired):
     if not 2 <= lines.count() <= 100:
         raise Stop('Native embed displayed code-line inventory changed')
     code = lines.evaluate_all(r'nodes => nodes.map(node => node.textContent).join("\n")')
-    result = verify_export_configuration(code, config, desired)
+    result = verify_export_configuration(code, config, desired, appearance)
     click(_one(dialog.locator('#embed-code-modal-modal-close-btn'), 'Native embed dialog close changed'))
     dialog.wait_for(state='hidden', timeout=45000)
     return result
@@ -378,6 +394,119 @@ def _supported_desired(config, desired, *, layout_changed):
                                 ('deactivation_views','deactivation','deactivateAfter')):
         if number in config['changes'] and desired[kind] != active:
             raise Stop('Requested embed numeric value belongs to an inactive choice: ' + number)
+
+
+APPEARANCE_FIELDS=frozenset(('corner_radii','font_size','linked','button_type','button_size'))
+BUTTON_TYPES={'text':'Text','textIcon':'Icon + text','icon':'Icon only'}
+BUTTON_SIZES={'small':'Small','medium':'Medium','large':'Large'}
+CORNERS=('tl','tr','bl','br')
+
+
+def _appearance_values(value, *, complete=False):
+    if (not isinstance(value,dict) or not value or set(value)-APPEARANCE_FIELDS
+            or complete and set(value)!=APPEARANCE_FIELDS):
+        raise Stop('Embed appearance must use captured button properties')
+    if 'corner_radii' in value:
+        radii=value['corner_radii']
+        if (not isinstance(radii,dict) or set(radii)!=set(CORNERS)
+                or any(type(number) is not int or not 0<=number<=1000 for number in radii.values())):
+            raise Stop('Button corners require four explicit nonnegative integers within the script limit of 1000')
+    if 'font_size' in value and (type(value['font_size']) is not int or not 1<=value['font_size']<=256):
+        raise Stop('Button font size must be an integer within the script limit of 1 to 256')
+    if 'linked' in value and type(value['linked']) is not bool:
+        raise Stop('Corner linking requires a real boolean')
+    for key,values in (('button_type',BUTTON_TYPES),('button_size',BUTTON_SIZES)):
+        if key in value and (not isinstance(value[key],str) or value[key] not in values):
+            raise Stop('Uncaptured native button appearance choice: '+key)
+
+
+def _appearance_select(frame,key,values):
+    wrapper=_one(frame.locator('#integrate-'+key.replace('_','-')),
+                 'Native embed appearance select changed: '+key)
+    selected=_one(wrapper.locator('.n-base-selection-input'),
+                  'Native embed appearance selected identity changed: '+key)
+    text=_one(selected.locator('.n-base-selection-input__content'),
+              'Native embed appearance selected text changed: '+key).inner_text().strip()
+    if selected.get_attribute('title')!=text or text not in values.values():
+        raise Stop('Native embed button appearance choice is unknown or inconsistent')
+    return next(value for value,label in values.items() if label==text),selected
+
+
+def _appearance(frame):
+    general,_=_general(frame)
+    if general['layout']=='Standard':
+        raise Stop('Standard embeds have no native button appearance controls')
+    controls={};radii={}
+    for corner in CORNERS:
+        control=_one(frame.locator('#integrate-corner-'+corner+' input'),
+                     'Native button corner input changed: '+corner)
+        controls[corner]=control;radii[corner]=_number(control,'corner '+corner)
+    font=_one(frame.locator('#integrate-button-font-size input'),'Native button font size input changed')
+    linked=_one(frame.locator('#embed-corner-link'),'Native corner link button changed')
+    if (linked.get_attribute('data-testid')!='embed-corner-link'
+            or linked.get_attribute('aria-label')!='Link corner radius values'
+            or linked.get_attribute('aria-pressed') not in ('true','false')):
+        raise Stop('Native corner link button identity/state changed')
+    type_value,type_control=_appearance_select(frame,'button_type',BUTTON_TYPES)
+    size_value,size_control=_appearance_select(frame,'button_size',BUTTON_SIZES)
+    state={'corner_radii':radii,'font_size':_number(font,'button font size'),
+           'linked':linked.get_attribute('aria-pressed')=='true',
+           'button_type':type_value,'button_size':size_value}
+    _appearance_values(state,complete=True)
+    return state,{**controls,'font_size':font,'linked':linked,
+                  'button_type':type_control,'button_size':size_control}
+
+
+def _write_appearance(frame,before,desired,identity):
+    from playwright_recipes.skill6_playwright import click,fill,wait_until
+    current,controls=_appearance(frame)
+    if current!=before:
+        raise Stop('Native button appearance changed after full preflight')
+    if desired['linked'] and len(set(desired['corner_radii'].values()))!=1:
+        raise Stop('Linked button corners require four equal authored radii')
+    # Detach propagation while authoring explicit per-corner values, then
+    # restore the requested local editing affordance. No global palette Save.
+    corners_changed=before['corner_radii']!=desired['corner_radii']
+    if before['linked'] and (corners_changed or not desired['linked']):
+        identity();click(controls['linked'])
+        wait_until(lambda:controls['linked'].get_attribute('aria-pressed')=='false',
+                   'Native button corners did not unlink')
+    for corner in CORNERS:
+        if desired['corner_radii'][corner]!=before['corner_radii'][corner]:
+            identity();fill(controls[corner],str(desired['corner_radii'][corner]))
+    if desired['font_size']!=before['font_size']:
+        identity();fill(controls['font_size'],str(desired['font_size']))
+    for key,values in (('button_type',BUTTON_TYPES),('button_size',BUTTON_SIZES)):
+        if desired[key]==before[key]:continue
+        identity();click(controls[key])
+        option=frame.locator('.n-base-select-option:visible').get_by_text(values[desired[key]],exact=True)
+        click(_one(option,'Native button appearance option changed: '+key))
+        wait_until(lambda:_appearance_select(frame,key,values)[0]==desired[key],
+                   'Native button appearance option did not stick: '+key)
+    now_linked=controls['linked'].get_attribute('aria-pressed')=='true'
+    if now_linked!=desired['linked']:
+        identity();click(controls['linked'])
+        wait_until(lambda:controls['linked'].get_attribute('aria-pressed')==str(desired['linked']).lower(),
+                   'Native button corner link state did not stick')
+    if _appearance(frame)[0]!=desired:
+        raise Stop('Native button appearance did not match the complete desired and protected state')
+
+
+def _layout_from_code(code):
+    parser=_ExportParser();parser.feed(code);parser.close()
+    return _layout_data(parser.tags[0][1].get('data-layout'))
+
+
+def _preserved_layout(before,after,general_before,general_desired):
+    previous,current=_layout_from_code(before),_layout_from_code(after)
+    allowed={'cornerRadius','fontSize','buttonType','buttonSize'}
+    if general_before['button_label']!=general_desired['button_label']:allowed.add('minimizedTitle')
+    if general_before['position']!=general_desired['position']:allowed.update(('isLeftAligned','isRightAligned'))
+    if general_before['width']!=general_desired['width']:allowed.add('formWidth')
+    missing=object()
+    if any(previous.get(key,missing)!=current.get(key,missing) for key in set(previous)|set(current) if key not in allowed):
+        raise Stop('Button appearance export changed an unrequested native layout property')
+
 
 def configure(page, step):
     """Configure local embed options, export twice, retain exact native code.
@@ -412,6 +541,19 @@ def configure(page, step):
     desired = {**before, **config['changes']}
     layout_changed = desired['layout'] != before['layout']
     _supported_desired(config, desired, layout_changed=layout_changed)
+    appearance_before=appearance_desired=appearance_export=None
+    if 'appearance' in config:
+        if layout_changed:
+            raise Stop('Layout changes and button appearance require separate fully inventoried export jobs')
+        appearance_before,_=_appearance(frame)
+        authored=config['appearance']
+        if any(appearance_before[key]!=value for key,value in authored['expected'].items()):
+            raise Stop('Native button appearance differs from its inventoried previous values')
+        appearance_desired={**deepcopy(appearance_before),**authored['changes']}
+        _appearance_values(appearance_desired,complete=True)
+        if appearance_desired['linked'] and len(set(appearance_desired['corner_radii'].values()))!=1:
+            raise Stop('Linked button corners require four equal authored radii')
+        appearance_export=_export(frame,config,before,appearance_before)
     if _read(frame) != before:
         raise Stop('Native embed settings changed after complete preflight')
     general, controls = _general(frame)
@@ -440,15 +582,20 @@ def configure(page, step):
     if desired['respect_cookie_consent'] != advanced['respect_cookie_consent']:
         identity(); click(controls['respect_cookie_consent'])
     wait_until(lambda: _read(frame) == desired, 'Native embed options did not settle to the complete expected state')
+    if appearance_desired is not None:
+        _write_appearance(frame,appearance_before,appearance_desired,identity)
     identity()
-    first = _export(frame, config, desired)
+    first = _export(frame, config, desired,appearance_desired) if appearance_desired is not None else _export(frame,config,desired)
     identity()
-    second = _export(frame, config, desired)
-    if first != second or _read(frame) != desired:
+    second = _export(frame, config, desired,appearance_desired) if appearance_desired is not None else _export(frame,config,desired)
+    if first != second or _read(frame) != desired or (appearance_desired is not None and _appearance(frame)[0]!=appearance_desired):
         raise Stop('Native embed export changed during independent second code-dialog readback')
+    if appearance_export is not None:
+        _preserved_layout(appearance_export['embed_code'],first['embed_code'],before,desired)
     return {'status':'FORM_EMBED_EXPORTED_AND_REREAD', 'kind':'form_embed',
         'editor_url':editor_url, 'form_id':config['form_id'],
         'configuration_sha256':configuration_hash(plan), 'export_settings':desired, **first,
+        **({'appearance_settings':appearance_desired} if appearance_desired is not None else {}),
         'independent_readback':'VERIFIED', 'settings_persisted':False,
         'installation_verified':False, 'behavior_verified':False, 'submission_verified':False}
 
@@ -470,7 +617,17 @@ def validate_receipt(result, step):
     _properties(settings)
     _supported_desired(config, settings, layout_changed=(
         'layout' in config['changes'] and config['expected']['layout'] != config['changes']['layout']))
-    verified = verify_export_configuration(result.get('embed_code'), config, settings)
+    appearance=result.get('appearance_settings')
+    if 'appearance' in config:
+        _appearance_values(appearance,complete=True)
+        if (settings['layout']=='Standard'
+                or any(appearance[key]!=value for key,value in config['appearance']['changes'].items())
+                or appearance['linked'] and len(set(appearance['corner_radii'].values()))!=1):
+            raise Stop('Native embed appearance receipt differs from its authored configuration')
+    elif appearance is not None:
+        raise Stop('Unrequested button appearance receipt cannot be retained')
+    verified = verify_export_configuration(result.get('embed_code'), config, settings, appearance)
     if result.get('embed_sha256') != verified['embed_sha256']:
         raise Stop('Native embed receipt code hash differs from its exact native bytes')
-    return {**verified, 'export_settings':deepcopy(settings)}
+    return {**verified, 'export_settings':deepcopy(settings),
+            **({'appearance_settings':deepcopy(appearance)} if appearance is not None else {})}

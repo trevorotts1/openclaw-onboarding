@@ -656,12 +656,24 @@ def _object_row(dialog, search, field):
     return row, tile, checkbox
 
 
+def _field_wrappers(scope):
+    # Native Forms capture proves wrappers are direct canvas children. Survey
+    # owner slides use a separately captured descendant layout; do not change
+    # that layout by inferring it from the form canvas.
+    direct=scope.get_attribute('id')=='form-builder-container'
+    return scope.locator(':scope > .form-field-wrapper' if direct else '.form-field-wrapper')
+
+
 def _canvas_identity(scope):
     # Name/type identities survive native reopen; generated framework IDs do not.
-    return scope.locator('.form-field-wrapper').evaluate_all('''items => items.map(item => {
+    return _field_wrappers(scope).evaluate_all('''items => items.map(item => {
         const labels = item.querySelectorAll('[data-field-type]');
-        return {types:Array.from(labels).map(e => e.getAttribute('data-field-type')),
-            names:Array.from(item.querySelectorAll('input,textarea,select')).map(e =>
+        const types = Array.from(labels).map(e => e.getAttribute('data-field-type'));
+        return {types,
+            names:Array.from(item.querySelectorAll('input,textarea,select')).filter(e =>
+                !(types.length === 1 && types[0] === 'SINGLE_OPTIONS'
+                    && e.matches('input.dropdown-input.form-placeholder')
+                    && !e.hasAttribute('id') && !e.hasAttribute('name'))).map(e =>
                 [e.tagName, e.getAttribute('type'), e.getAttribute('name')])};
     })''')
 
@@ -671,7 +683,7 @@ def _object_wrapper(frame, scope, field):
     scoped = scope.locator('input[name="' + field['id'] + '"]')
     if scoped.count() != len(field['options']) or inputs.count() != scoped.count():
         raise Stop('Native object-field inputs are missing, duplicated or outside the requested canvas')
-    item = scope.locator('.form-field-wrapper').filter(has=inputs)
+    item = _field_wrappers(scope).filter(has=inputs)
     if item.count() != 1:
         raise Stop('Native API field does not belong to one requested canvas wrapper')
     label = item.locator('[data-field-type="RADIO"]')
