@@ -77,7 +77,7 @@ def read_fragment(path):
 def validate_job(job, base):
     if not isinstance(job,dict):
         raise Stop('Job must be a JSON object')
-    if job.get("publish"):
+    if 'publish' in job and job['publish'] is not False:
         raise Stop("This runner only saves drafts; publishing stays with the existing approval gate")
     loc = job.get("location_id", "")
     if not isinstance(loc,str) or not re.fullmatch(r"[A-Za-z0-9_-]+", loc):
@@ -106,7 +106,7 @@ def validate_job(job, base):
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_fields", "native_field_placement", "native_condition", "quiz_configuration", "survey_configuration", "form", "form_css", "native_form_css", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "assessment", "meeting", "options"}
+    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_fields", "native_field_placement", "native_condition", "quiz_configuration", "survey_configuration", "form", "form_css", "native_form_css", "native_form_schedule", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "assessment", "meeting", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -116,8 +116,14 @@ def validate_job(job, base):
         keys.add(s["id"])
         if not isinstance(s.get('action'),str) or s.get("action") not in allowed:
             raise Stop("Unknown or uncaptured action: " + str(s.get("action")))
+        for flag in ('allow_creation', 'append', 'inactive', 'discovery'):
+            if flag in s and type(s[flag]) is not bool:
+                raise Stop(flag + ' requires a real boolean')
         if s['action']=='native_field_placement':
             from playwright_recipes.field_placement import validate
+            validate(s)
+        if s['action']=='native_form_schedule':
+            from playwright_recipes.form_schedule import validate
             validate(s)
         if s['action'] in ('native_fields','native_condition'):
             from playwright_recipes.assessments import validate_fields, validate_condition
@@ -172,6 +178,8 @@ def validate_job(job, base):
             s['_input_dir'] = str(base.resolve())
         if s['action']=='meeting':
             s['_context'] = {k:job[k] for k in ('location_id','location_name','start_url')}
+            from playwright_recipes.meetings import validate_room
+            validate_room({**s, **s['_context']})
         if s["action"] == "navigate" and s.get("area") not in ("Funnels", "Websites", "Forms", "Surveys", "Quizzes", "Communities", "Meeting Room", "Courses"):
             raise Stop("Unsupported navigation area")
         if s["action"] in ("container", "page") and s.get("surface") not in ("funnel", "website"):
@@ -277,6 +285,9 @@ def validate_job(job, base):
                 raise Stop('Unrecognized recorded builder frame')
             if not any(o['action'].startswith('expect_') for o in s['steps']):
                 raise Stop("Recorded options require an explicit read-back assertion")
+            mutations = [i for i, option in enumerate(s['steps']) if not option['action'].startswith('expect_')]
+            if mutations and not any(option['action'].startswith('expect_') for option in s['steps'][mutations[-1]+1:]):
+                raise Stop('Recorded options require read-back after their last mutation')
         if s["action"] == "community":
             if s.get("channels") or s.get("privacy") or s.get("branding"):
                 raise Stop("Community portal settings require a captured options profile in its authenticated portal context")
@@ -338,6 +349,8 @@ def assert_tenant(page, job):
     """
     requested = urlparse(job['start_url'])
     location = re.compile(r'/(?:v2/)?location/' + re.escape(job['location_id']) + r'(?:/|$)')
+    requested_family = location.split(requested.path, maxsplit=1)[-1].strip('/').split('/', 1)[0]
+    bound_editor = requested_family in ('form-builder-v2', 'survey-builder-v2', 'quiz-builder-v2', 'page-builder')
 
     def identity():
         current = urlparse(page.url)
@@ -345,6 +358,8 @@ def assert_tenant(page, job):
             raise Stop('Unexpected app origin')
         if not location.search(current.path):
             raise Stop('Wrong tenant or authentication expired')
+        if bound_editor and current.path.rstrip('/') != requested.path.rstrip('/'):
+            raise Stop('Current editor belongs to a different requested object')
         return current.path
 
     path = identity()
@@ -1055,6 +1070,11 @@ def native_form_css(page, step):
     return configure_css(page, step)
 
 
+def native_form_schedule(page, step):
+    from playwright_recipes.form_schedule import configure
+    return configure(page, step)
+
+
 def native_fields(page, step):
     from playwright_recipes.assessments import configure_fields
     return configure_fields(page, step)
@@ -1128,7 +1148,11 @@ def option_locator(page, desc, frame_name=None):
 
 
 def options(page, step):
+    context = step.get('_context')
+    if not isinstance(context, dict) or set(context) != {'location_id', 'location_name', 'start_url'}:
+        raise Stop('Recorded options require the parent runner identity context')
     for action in step['steps']:
+        assert_tenant(page, context)
         loc=option_locator(page,action['target'],step.get('frame'))
         kind=action['action']
         if not kind.startswith('expect_'):
@@ -1160,7 +1184,9 @@ def options(page, step):
         elif kind=='expect_value':
             if loc.input_value()!=str(action['value']):
                 raise Stop("Option value readback failed")
-    return {'status':'RECORDED_OPTIONS_EXECUTED','count':len(step['steps']),'capture_source':step['capture_source']}
+        assert_tenant(page, context)
+    return {'status':'RECORDED_OPTIONS_EXECUTED','count':len(step['steps']),
+            'capture_source':step['capture_source'], 'independent_readback':'REQUIRED'}
 
 
 def community(page, step):
@@ -1281,7 +1307,7 @@ def _run_on_page(page, job, evidence_root):
     results = []
     fresh_container = None
     state = {"fingerprint":fingerprint, "location_id":job["location_id"], "status":"RUNNING", "results":results}
-    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_condition":native_condition, "quiz_configuration":quiz_configuration, "survey_configuration":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
+    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_condition":native_condition, "quiz_configuration":quiz_configuration, "survey_configuration":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "native_form_schedule":native_form_schedule, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
     for step in job["steps"]:
         assert_tenant(page, job)
         state["current_step"] = step["id"]
@@ -1295,6 +1321,12 @@ def _run_on_page(page, job, evidence_root):
             elif step["action"] == "page":
                 result = ensure_page(page, step, fresh_container=fresh_container)
                 fresh_container = None
+            elif step['action'] == 'options':
+                context = {key:job[key] for key in ('location_id', 'location_name', 'start_url')}
+                if '_context' in step and step['_context'] != context:
+                    raise Stop('Recorded options identity differs from its parent job')
+                result = options(page, {**step, '_context':context})
+                fresh_container = None
             else:
                 result = handlers[step["action"]](page, step)
                 fresh_container = (result.fresh_container
@@ -1305,7 +1337,8 @@ def _run_on_page(page, job, evidence_root):
             status = result.get('status')
             completed = {
                 'RENDERED', 'SEO_RENDERED', 'COMPONENT_SAVED', 'SAVED_AND_REOPENED',
-                'FORM_CSS_RENDERED', 'NATIVE_FORM_CSS_SAVED_AND_REOPENED', 'FORM_SETTINGS_PERSISTED', 'ASSESSMENT_REUSED',
+                'FORM_CSS_RENDERED', 'NATIVE_FORM_CSS_SAVED_AND_REOPENED', 'FORM_SETTINGS_PERSISTED',
+                'FORM_SCHEDULE_SAVED_AND_REOPENED', 'ASSESSMENT_REUSED',
                 'ASSESSMENT_SAVE_SUBMITTED', 'ROOM_SAVE_SUBMITTED',
                 'RECORDED_OPTIONS_EXECUTED', 'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED',
                 'FIELD_PROPERTIES_SAVED_AND_REOPENED', 'BUILTIN_FIELDS_SAVED_AND_REOPENED',

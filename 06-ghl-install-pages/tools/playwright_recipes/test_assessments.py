@@ -153,10 +153,11 @@ class NativeFieldExecution(unittest.TestCase):
         group.nth.side_effect = lambda i: inputs[i]
         title = MagicMock()
         title.input_value.return_value = 'ZHC Native Fixture'
+        title.count.return_value = 1
         back = MagicMock()
         back.count.side_effect = lambda: 2 if state['panel'] else 1
         close_panel = MagicMock()
-        close_panel.click.side_effect = lambda: state.__setitem__('panel', False)
+        close_panel.click.side_effect = lambda **_: state.__setitem__('panel', False)
         back.nth.return_value = close_panel
 
         def leave():
@@ -174,6 +175,7 @@ class NativeFieldExecution(unittest.TestCase):
         checks = {}
         for key in ('required', 'hidden'):
             check = MagicMock()
+            check.count.return_value = 1
             check.is_checked.side_effect = lambda k=key: state[k]
             def check_value(value, k=key):
                 state[k] = value
@@ -185,6 +187,7 @@ class NativeFieldExecution(unittest.TestCase):
             check.set_checked.side_effect = check_value
             checks[key.title()] = check
         empty = MagicMock()
+        empty.count.return_value = 0
 
         def role(role, *, name=None, exact=None):
             if role == 'textbox':
@@ -199,12 +202,23 @@ class NativeFieldExecution(unittest.TestCase):
         frame.get_by_role.side_effect = role
         frame.get_by_text.return_value = empty
         open_settings = MagicMock()
-        open_settings.click.side_effect = lambda: state.__setitem__('panel', True)
+        open_settings.count.return_value = 1
+        open_settings.click.side_effect = lambda **_: state.__setitem__('panel', True)
         frame.get_by_label.return_value = open_settings
+
+        wrapper, kind, canvas_input, items = MagicMock(), MagicMock(), MagicMock(), MagicMock()
+        wrapper.count.return_value = kind.count.return_value = canvas_input.count.return_value = items.count.return_value = 1
+        kind.get_attribute.return_value = 'text'
+        wrapper.locator.side_effect = lambda selector: {
+            '[data-field-type]':kind, 'input':canvas_input,
+            '[aria-label="Open settings"]':open_settings}[selector]
+        items.nth.return_value = wrapper
+        frame.locator.side_effect = lambda selector: items if selector == '#form-builder-container > .form-field-wrapper' else None
 
         def placeholder(value, *, exact):
             target = MagicMock()
             target.count.return_value = int(state['values'][1] == value)
+            target.locator.side_effect = lambda selector: wrapper if selector == a.FIELD_WRAPPER else None
             return target
         frame.get_by_placeholder.side_effect = placeholder
         return page, frame, state

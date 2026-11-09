@@ -24,6 +24,7 @@ STATUSES = {
     'survey_configuration': {'SURVEY_RULE_ALREADY_PRESENT', 'SURVEY_RULE_SAVED_AND_REOPENED'},
     'assessment': {'ASSESSMENT_REUSED', 'ASSESSMENT_SAVE_SUBMITTED'},
     'form_settings': {'FORM_SETTINGS_PERSISTED'},
+    'native_form_schedule': {'FORM_SCHEDULE_SAVED_AND_REOPENED'},
     'form_submission': {'FORM_SUBMISSION_SAVED_AND_REOPENED'},
     'form_notifications': {'NOTIFICATION_SETTINGS_SAVED_AND_REOPENED'},
     'options': {'RECORDED_OPTIONS_EXECUTED'},
@@ -44,6 +45,7 @@ REQUIRED = {
     'survey_configuration': ('kind', 'editor_url', 'source_slide', 'target_slide', 'independent_readback', 'submission_verified', 'behavior_verified'),
     'assessment': ('kind', 'editor_url', 'independent_readback'),
     'form_settings': ('settings', 'editor_url'),
+    'native_form_schedule': ('editor_url', 'enabled', 'configuration_sha256', 'independent_readback', 'behavior_verified', 'submission_verified'),
     'form_submission': ('mode', 'editor_url', 'value_sha256', 'independent_readback', 'behavior_verified', 'submission_verified'),
     'form_notifications': ('enabled', 'configuration_sha256', 'recipient_count', 'independent_readback', 'behavior_verification'),
     'options': ('count', 'capture_source'), 'community': ('name', 'slug', 'discovery', 'deleted'),
@@ -205,6 +207,16 @@ def _result(step, value, job):
         if value['settings'] != step.get('settings') or not isinstance(value['settings'], dict) or any(type(x) is not bool for x in value['settings'].values()):
             _fail()
         safe['settings'] = dict(value['settings'])
+    if action == 'native_form_schedule':
+        from playwright_recipes.form_schedule import configuration_hash
+        if (type(value['enabled']) is not bool
+                or value['enabled'] != step['schedule']['enabled']
+                or value['configuration_sha256'] != configuration_hash(step['schedule'])
+                or value['independent_readback'] != 'VERIFIED'
+                or value['behavior_verified'] is not False
+                or value['submission_verified'] is not False):
+            _fail()
+        safe['enabled'] = value['enabled']
     if action == 'native_fields':
         fields = [field['field'] for field in step.get('fields', [])]
         if value['fields'] != fields:

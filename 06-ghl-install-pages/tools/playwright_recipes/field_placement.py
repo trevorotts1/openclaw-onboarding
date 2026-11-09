@@ -144,8 +144,13 @@ def _address_keys(frame):
     return tuple(observed)
 
 
-def _inventory(frame):
-    """Read each selectable canvas field's actual visible Query Key."""
+def _inventory(frame, *, allow_unknown_queries=False):
+    """Read captured native shapes; optionally retain arbitrary existing keys.
+
+    Placement keeps unknown keys refused, because they can be renamed built-ins.
+    Property updates may read those keys to prove a new query key is unoccupied;
+    this option never relaxes type, shape or duplicate-key validation.
+    """
     # Native property Back restores a previously open Quick Add drawer. Close
     # that known drawer before inventory so a later Add action cannot toggle it.
     _close_initial(frame)
@@ -186,7 +191,7 @@ def _inventory(frame):
         known = {'first_name', 'last_name', 'phone', 'email'} | {
             key for spec in CAPTURED_FIELDS.values() for key in spec['query_keys']}
         for key in keys:
-            if key not in known:
+            if not allow_unknown_queries and key not in known:
                 _stop('Uncaptured existing native field query requires inventory capture')
             if key in inventory:
                 _stop('Duplicate native field query identities require reconciliation')
