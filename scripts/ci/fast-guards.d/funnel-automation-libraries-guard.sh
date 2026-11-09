@@ -4,7 +4,7 @@ set -e
 cd "$GITHUB_WORKSPACE"
 ( # step: Install pytest
 set -e
-pip install pytest
+python3 -m pip install pytest
 )
 ( # step: Library drift gate (disk <-> index <-> link map; persona crosswalk; portable indexes)
 set -e
