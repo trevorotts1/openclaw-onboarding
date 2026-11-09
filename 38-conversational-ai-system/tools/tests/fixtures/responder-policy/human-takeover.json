@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "record_id": "responders/loc_synthetic_human_takeover",
+  "location_id": "loc_synthetic_human_takeover",
+  "channels": {
+    "ig": {
+      "native_channel": "IG",
+      "primary_responder": "native_ghl",
+      "native_mode": "auto-pilot",
+      "handoff": {
+        "trigger": "customer_requests_human",
+        "pauses_automation": true,
+        "resumes_on": "operator_release"
+      },
+      "workflow_sends": {
+        "allowed": false,
+        "deduplicates_with_primary": true,
+        "reason": "primary owns sends"
+      },
+      "identity": {
+        "contact_identity": "canonical_contact_id",
+        "thread_identity": "conversation_id"
+      },
+      "allowed_actions": [
+        "reply",
+        "escalate_to_human"
+      ],
+      "limits": {
+        "opt_out": true,
+        "quiet_hours": true,
+        "client_test_mode": true
+      }
+    }
+  },
+  "production_primary": {
+    "agent_id": "native_agent_synthetic_takeover",
+    "snapshot_ref": "snapshots/native_agent_synthetic_takeover.before.json",
+    "approved_switch_ref": "approval_synthetic_takeover",
+    "switched": true
+  },
+  "native_prompt": {
+    "effective_prompt_field": "fullPrompt"
+  },
+  "quiet_hours": {
+    "start": "21:00",
+    "end": "08:00",
+    "offset_minutes": -300
+  }
+}

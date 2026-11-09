@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "record_id": "responders/loc_synthetic_native_off",
+  "location_id": "loc_synthetic_native_off",
+  "channels": {
+    "sms": {
+      "native_channel": "SMS",
+      "primary_responder": "openclaw_inbound",
+      "native_mode": "off",
+      "handoff": {"trigger": "customer_requests_human", "pauses_automation": true, "resumes_on": "operator_release"},
+      "workflow_sends": {"allowed": false, "deduplicates_with_primary": true, "reason": "primary owns sends"},
+      "identity": {"contact_identity": "canonical_contact_id", "thread_identity": "conversation_id"},
+      "allowed_actions": ["reply", "book_appointment", "escalate_to_human"],
+      "limits": {"opt_out": true, "quiet_hours": true, "client_test_mode": true}
+    }
+  },
+  "production_primary": {
+    "agent_id": "native_agent_synthetic_off",
+    "snapshot_ref": "snapshots/native_agent_synthetic_off.before.json",
+    "approved_switch_ref": null,
+    "switched": false
+  },
+  "native_prompt": {"effective_prompt_field": "fullPrompt"}
+}

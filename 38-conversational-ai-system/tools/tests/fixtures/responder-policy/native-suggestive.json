@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "record_id": "responders/loc_synthetic_native_suggestive",
+  "location_id": "loc_synthetic_native_suggestive",
+  "channels": {
+    "fb": {
+      "native_channel": "FB",
+      "primary_responder": "native_ghl",
+      "native_mode": "suggestive",
+      "handoff": {"trigger": "human_review_before_send", "pauses_automation": true, "resumes_on": "operator_release"},
+      "workflow_sends": {"allowed": true, "deduplicates_with_primary": true, "reason": "workflow sends yield to the suggestive draft"},
+      "identity": {"contact_identity": "canonical_contact_id", "thread_identity": "conversation_id"},
+      "allowed_actions": ["draft_reply", "escalate_to_human"],
+      "limits": {"opt_out": true, "quiet_hours": true, "client_test_mode": true}
+    }
+  },
+  "production_primary": {
+    "agent_id": "native_agent_synthetic_suggestive",
+    "snapshot_ref": "snapshots/native_agent_synthetic_suggestive.before.json",
+    "approved_switch_ref": "approval_synthetic_suggestive",
+    "switched": true
+  },
+  "native_prompt": {"effective_prompt_field": "fullPrompt"}
+}
