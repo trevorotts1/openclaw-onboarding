@@ -25,7 +25,7 @@ Contract:
   - token budget so limits cannot silently truncate: over-budget compiles are
     condensed to fit, never truncated mid-content, never silently sent.
   - the band is rule 12 (percentages of the model maxLength), not a fixed house number
-    (Kie GPT Image 2.5 maxLength 20000; Agnes publishes no cap, NOT_PUBLISHED).
+    (Kie GPT Image 2.6 maxLength 20000 by owner ruling 2026-11-08; Agnes publishes no cap, NOT_PUBLISHED).
 
 Scoped override: social planner ONLY. Unrelated skills keep their own bands.
 Policy data lives in social_prompt_policy.json (same directory).
@@ -47,7 +47,7 @@ from typing import Optional
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kie_prompt_enforcer  # noqa: E402  (the one rule 12 enforcer; sits beside this file)
 
-_DEFAULT_MODEL = "gpt-image-2-5-sunburst-text-to-image"
+_DEFAULT_MODEL = "gpt-image-2-6/sunburst-text-to-image"
 
 _EXIT_OK = 0
 _EXIT_FAIL = 2
@@ -726,7 +726,7 @@ def compile_prompt(brief: dict, provider: str, model: str,
     """
     policy = load_policy(policy_path)
     prov = policy.get("providers", {}).get(f"{provider}-{model.split('/')[-1]}") or \
-        policy.get("providers", {}).get(f"{provider}-gpt-image-2-5") or \
+        policy.get("providers", {}).get(f"{provider}-gpt-image-2-6") or \
         policy.get("providers", {}).get("agnes-image-2.1-flash")
     vendor_cap = (prov or {}).get("vendor_cap_chars")
     vendor_cap_source = (prov or {}).get("vendor_cap_source")
@@ -794,7 +794,7 @@ def validate_final(final_prompt: str, provider: str = "", model: str = "",
     against rule 12 (shared enforcer), padding and hash-recording rules. Returns the
     same receipt shape as compile_prompt (without brief-derived fields)."""
     policy = load_policy(policy_path)
-    kie = policy.get("providers", {}).get("kie-gpt-image-2-5", {})
+    kie = policy.get("providers", {}).get("kie-gpt-image-2-6", {})
     model = model or kie.get("model_id") or _DEFAULT_MODEL
     count = count_chars(final_prompt)
     v = _band(model, unicodedata.normalize("NFC", final_prompt).strip(), kie.get("vendor_cap_chars"))
@@ -838,7 +838,7 @@ if __name__ == "__main__":  # pragma: no cover — small CLI for manual runs
         ok = 0
         r = compile_prompt({"audience": "test"}, "kie", _DEFAULT_MODEL)
         ok += 0 if r["ok"] and 19000 <= r["count"] <= 20000 else 1
-        for n, want in ((15800, False), (19000, True), (20000, True), (20200, False)):
+        for n, want in ((15800, False), (19000, True), (20000, True), (20001, False)):
             ok += 0 if validate_final("x" * n)["ok"] == want else 1
         print("self-test:", "PASS" if ok == 0 else f"FAIL({ok})")
         sys.exit(0 if ok == 0 else 2)

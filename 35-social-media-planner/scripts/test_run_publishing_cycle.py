@@ -120,8 +120,8 @@ class StagingTests(unittest.TestCase):
         p = _run(self.ht, self.wt)
         self.assertEqual(p.returncode, 0, f"STDERR: {p.stderr}")
         media = json.loads((Path(self.wt) / "cycle-manifest.json").read_text())["media"]
-        self.assertEqual(media["image"]["text_to_image"], "gpt-image-2-5-sunburst-text-to-image")
-        self.assertEqual(media["image"]["image_to_image"], "gpt-image-2-5-sunburst-image-to-image")
+        self.assertEqual(media["image"]["text_to_image"], "gpt-image-2-6/sunburst-text-to-image")
+        self.assertEqual(media["image"]["image_to_image"], "gpt-image-2-6/sunburst-image-to-image")
         files = sorted(v["file"] for v in media["violations"])
         self.assertEqual(files, ["image-model.json", "video-specs.json"])
         self.assertEqual(media["video"]["owner"], "67-kie-video")

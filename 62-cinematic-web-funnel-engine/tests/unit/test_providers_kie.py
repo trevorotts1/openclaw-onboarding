@@ -182,7 +182,7 @@ class _ProviderCase(unittest.TestCase):
 class Skill74TransportTests(_ProviderCase):
     def test_submit_runs_through_skill74_active_mode_and_logs_the_path(self) -> None:
         self.provider.generate_image(
-            base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="a red barn")
+            base.ImageGenerationRequest(model_id="kie-gpt-image-2-6/sunburst-text-to-image", prompt="a red barn")
         )
         self.assertEqual(self.provider.client_path, "skill74")
         self.assertIn("path=skill74 mode=active", self.stderr.getvalue())
@@ -192,13 +192,13 @@ class Skill74TransportTests(_ProviderCase):
         self.assertNotIn("FIXTURE-KEY", self.stderr.getvalue())
 
     def test_out_of_schema_body_is_refused_by_skill74_before_createtask(self) -> None:
-        self.transport.input_overrides["gpt-image-2-5-sunburst-text-to-image"] = {
+        self.transport.input_overrides["gpt-image-2-6/sunburst-text-to-image"] = {
             "aspect_ratio": {"type": "string", "enum": ["16:9"]}
         }
         with self.assertRaises(base.ProviderTaskError) as ctx:
             self.provider.generate_image(
                 base.ImageGenerationRequest(
-                    model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="a barn", aspect_ratio="1:1"
+                    model_id="kie-gpt-image-2-6/sunburst-text-to-image", prompt="a barn", aspect_ratio="1:1"
                 )
             )
         self.assertIn("validation_failed", str(ctx.exception))
@@ -208,14 +208,14 @@ class Skill74TransportTests(_ProviderCase):
         self.transport.prompt_max = 50
         with self.assertRaises(base.ProviderTaskError) as ctx:
             self.provider.generate_image(
-                base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="x" * 80)
+                base.ImageGenerationRequest(model_id="kie-gpt-image-2-6/sunburst-text-to-image", prompt="x" * 80)
             )
         self.assertIn("exceeds the model limit", str(ctx.exception))
         self.assertIn("CUT exactly 30", str(ctx.exception))
         self.assertEqual(len(self.transport.post_calls), 0)
 
     def _img(self, n: int) -> base.ImageGenerationRequest:
-        return base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="x" * n)
+        return base.ImageGenerationRequest(model_id="kie-gpt-image-2-6/sunburst-text-to-image", prompt="x" * n)
 
     def test_prompt_at_79_percent_is_a_hard_reject_with_the_chars_to_add(self) -> None:
         self.transport.prompt_max = 1000  # floor 800, target 950
@@ -245,11 +245,11 @@ class Skill74TransportTests(_ProviderCase):
 
     def test_prompt_budget_method_returns_skill74_numbers(self) -> None:
         self.transport.prompt_max = 1000
-        b = self.provider.prompt_budget("kie-gpt-image-2-5-sunburst-text-to-image")
+        b = self.provider.prompt_budget("kie-gpt-image-2-6/sunburst-text-to-image")
         self.assertEqual((b["max"], b["floor"], b["target_min"]), (1000, 800, 950))
 
     def test_prompt_budget_is_none_without_a_known_limit(self) -> None:
-        self.assertIsNone(self.provider.prompt_budget("kie-gpt-image-2-5-sunburst-text-to-image"))
+        self.assertIsNone(self.provider.prompt_budget("kie-gpt-image-2-6/sunburst-text-to-image"))
 
     def test_upload_asset_goes_through_skill74_upload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -267,13 +267,13 @@ class Skill74TransportTests(_ProviderCase):
         with patch.dict("os.environ", {"CWFE_SKILL74_DIR": ""}):
             provider = kie.KieProvider(transport=self.transport)
             handle = provider.generate_image(
-                base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="a red barn")
+                base.ImageGenerationRequest(model_id="kie-gpt-image-2-6/sunburst-text-to-image", prompt="a red barn")
             )
         self.assertEqual(provider.client_path, "legacy")
         self.assertIn("path=legacy", self.stderr.getvalue())
         self.assertEqual(handle.status, "queued")
         self.assertEqual(self.transport.discovery_paths, [])  # no schema/catalog reads on the fallback
-        self.assertEqual(self.transport.post_calls[0]["body"]["model"], "gpt-image-2-5-sunburst-text-to-image")
+        self.assertEqual(self.transport.post_calls[0]["body"]["model"], "gpt-image-2-6/sunburst-text-to-image")
 
     def test_fallback_download_and_status_use_the_legacy_client(self) -> None:
         with patch.dict("os.environ", {"CWFE_SKILL74_DIR": ""}):
@@ -289,18 +289,18 @@ class Skill74TransportTests(_ProviderCase):
 class GenerateImageTests(_ProviderCase):
     def test_generate_image_resolves_slug_from_registry_not_hardcoded(self) -> None:
         handle = self.provider.generate_image(
-            base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="a red barn")
+            base.ImageGenerationRequest(model_id="kie-gpt-image-2-6/sunburst-text-to-image", prompt="a red barn")
         )
         body = self.transport.post_calls[0]["body"]
-        self.assertEqual(body["model"], "gpt-image-2-5-sunburst-text-to-image")  # the registry slug, not the model_id
+        self.assertEqual(body["model"], "gpt-image-2-6/sunburst-text-to-image")  # the registry slug, not the model_id
         self.assertEqual(handle.status, "queued")
         self.assertEqual(handle.provider, "kie")
-        self.assertEqual(handle.model_id, "kie-gpt-image-2-5-sunburst-text-to-image")
+        self.assertEqual(handle.model_id, "kie-gpt-image-2-6/sunburst-text-to-image")
 
     def test_generate_image_sends_only_declared_fields_with_input_urls_for_references(self) -> None:
         self.provider.generate_image(
             base.ImageGenerationRequest(
-                model_id="kie-gpt-image-2-5-sunburst-image-to-image",
+                model_id="kie-gpt-image-2-6/sunburst-image-to-image",
                 prompt="edit this",
                 reference_image_urls=("https://fixtures.example/ref1.png", "https://fixtures.example/ref2.png"),
             )
@@ -313,7 +313,7 @@ class GenerateImageTests(_ProviderCase):
     def test_generate_image_appends_negative_prompt_clause(self) -> None:
         self.provider.generate_image(
             base.ImageGenerationRequest(
-                model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="a barn", negative_prompt="clouds"
+                model_id="kie-gpt-image-2-6/sunburst-text-to-image", prompt="a barn", negative_prompt="clouds"
             )
         )
         self.assertIn("Do not include: clouds", self.transport.post_calls[0]["body"]["input"]["prompt"])
@@ -323,7 +323,7 @@ class GenerateImageTests(_ProviderCase):
             provider = kie.KieProvider(transport=self.transport)
             with self.assertRaises(base.ProviderTaskError) as ctx:
                 provider.generate_image(
-                    base.ImageGenerationRequest(model_id="kie-gpt-image-2-5-sunburst-text-to-image", prompt="x")
+                    base.ImageGenerationRequest(model_id="kie-gpt-image-2-6/sunburst-text-to-image", prompt="x")
                 )
             self.assertIn("KIE_API_KEY", str(ctx.exception))
             self.assertEqual(len(self.transport.post_calls), 0)  # refused before any HTTP call

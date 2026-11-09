@@ -45,10 +45,10 @@
 2. Assemble the Identity Lock Block per PHOTO-SHOOT-SOP §4: exact physical descriptors drawn from the IDENTITY.md profile, framed as hard constraints. The block must be present verbatim in every generation prompt for this shoot. Do NOT summarize or paraphrase.
 3. Add the universal Identity Lock Block clause: `"Do not render any other recognizable real person in the scene."` This clause is mandatory on every block, regardless of mode.
 4. Select the Mode-appropriate workflow per PHOTO-SHOOT-SOP §5:
-   - Mode A (Location): Identity Lock Block + setting/background descriptors (a studio headshot is a Mode A setting), NB2 or GPT-Image-2.5 I2I per the PHOTO-SHOOT-SOP §5 table and the MODEL-SPECS routing table.
+   - Mode A (Location): Identity Lock Block + setting/background descriptors (a studio headshot is a Mode A setting), NB2 or GPT-Image 2.6 I2I per the PHOTO-SHOOT-SOP §5 table and the MODEL-SPECS routing table.
    - Mode B (Wardrobe): Identity Lock Block + clothing descriptors; Seedream 4.5 Edit on an existing photo, NB2 for a new scene.
-   - Mode C (Action & Pose): Identity Lock Block + body-position/activity descriptors, NB2 or GPT-Image-2.5 I2I.
-   - Mode D (Editorial / Lifestyle): Identity Lock Block + the style card prompt with {SUBJECT} = the identity-locked client, brand foundation block (from box brand config), GPT-Image-2.5 I2I (refs + LONG style spec). Contact sheets are a workflow step, not a mode: generate 3-4 draft variants per concept at 1K first (PHOTO-SHOOT-SOP §8 step 3), then the producer selects winners.
+   - Mode C (Action & Pose): Identity Lock Block + body-position/activity descriptors, NB2 or GPT-Image 2.6 I2I.
+   - Mode D (Editorial / Lifestyle): Identity Lock Block + the style card prompt with {SUBJECT} = the identity-locked client, brand foundation block (from box brand config), GPT-Image 2.6 I2I (refs + LONG style spec). Contact sheets are a workflow step, not a mode: generate 3-4 draft variants per concept at 1K first (PHOTO-SHOOT-SOP §8 step 3), then the producer selects winners.
    - Mode E (Slide Integration): Identity Lock Block, text-clear-zone framing and the deck's foundation style block, coordinate with Deck Systems Specialist for slide composition specs.
    - Mode F (Stylized / Cartoon): Identity Lock Block + stylized descriptors (NO named-artist or named-studio references); requires explicit consent opt-in confirmed in SOP 9.1.
    - Mode G (Retouch) is SOP 9.3.

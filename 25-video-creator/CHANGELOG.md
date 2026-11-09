@@ -1,5 +1,9 @@
 # Changelog — video-creator (Skill 25)
 
+## [7.1.5] - 2026-11-09 - GPT Image 2.6 migration lands on current main
+
+- Version rolled above `main` (7.1.4) so G3 sees the bump beside the migration content. No behavior change in this entry.
+
 ## [7.1.4] - 2026-11-08 - test: prompt-budget contract rides GPT Image 2.6
 
 - `tests/test_prompt_budget_contract.py` now targets `gpt-image-2-6/sunburst-text-to-image`, the canonical slash-form id that replaces the superseded `gpt-image-2-5-sunburst-text-to-image`. No skill code changed; the contract test follows the model migration.
