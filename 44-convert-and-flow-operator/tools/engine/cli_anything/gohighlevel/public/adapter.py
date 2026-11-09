@@ -17,6 +17,7 @@ import json
 import re
 import secrets
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +31,8 @@ from .capability import (
     ActivationBlock,
     Capability,
     CapabilityGate,
+    CapabilityRecordV2,
+    classify_failure,
     load_capability_record,
 )
 from .errors import ContractViolation, CredentialMissing, ReconciliationRequired
@@ -51,7 +54,16 @@ from .result import (
     request_fingerprint_of,
     response_fingerprint,
 )
-from .transport import RequestsTransport, Transport, TransportResponse
+from .transport import (
+    JSON_MEDIA_TYPE,
+    MULTIPART_MEDIA_TYPE,
+    LocationQuota,
+    MultipartRequest,
+    RequestsTransport,
+    Transport,
+    TransportResponse,
+    resolve_request_media_type,
+)
 
 try:  # registry lane provides the frozen rows
     from .operations import OPERATIONS, OperationRegistry
@@ -170,6 +182,8 @@ class PublicGhlAdapter:
         max_attempts: int = 1,
         clock: Callable[[], datetime] | None = None,
         browser_route: Callable[[BrowserRouteRequest], Mapping[str, Any]] | None = None,
+        quota: LocationQuota | None = None,
+        monotonic: Callable[[], float] | None = None,
     ) -> None:
         if auth is None:
             raise ContractViolation("auth_required")
@@ -192,6 +206,10 @@ class PublicGhlAdapter:
         self._default_timeout_s = float(default_timeout_s)
         self._max_attempts = int(max_attempts)
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        # ONE shared per-location budget for every rail in this process: a
+        # throttled location is never escaped by switching transports.
+        self._quota = quota
+        self._monotonic = monotonic or time.monotonic
         self._ledger = IdempotencyLedger()
         self._pending: dict[str, _PendingWrite] = {}
         self._pending_by_key: dict[tuple[str, str], _PendingWrite] = {}
@@ -222,6 +240,7 @@ class PublicGhlAdapter:
         readback: ReadbackSpec | None = None,
         timeout_s: float | None = None,
         attempt: int = 1,
+        multipart: MultipartRequest | None = None,
     ) -> OperationResult:
         started = self._clock()
 
@@ -247,6 +266,17 @@ class PublicGhlAdapter:
         auth_kinds = tuple(_row_attr(row, "auth_kinds") or ())
         binding = _row_attr(row, "tenant_binding", "none")
         scopes = tuple(_row_attr(row, "scopes_candidate") or ())
+        # The row declares its REAL request media type.  An unknown declared
+        # type is refused here, before any network call (IG-ROUTE-08).
+        media_type = resolve_request_media_type(row)
+        if media_type == JSON_MEDIA_TYPE and multipart is not None:
+            raise ContractViolation(
+                "multipart_not_allowed_for_json", operation_id=operation_id
+            )
+        if media_type == MULTIPART_MEDIA_TYPE and multipart is not None and not isinstance(
+            multipart, MultipartRequest
+        ):
+            raise ContractViolation("multipart_payload_invalid", operation_id=operation_id)
 
         if not isinstance(method, str) or not method.strip():
             raise ContractViolation("row_method_missing", operation_id=operation_id)
@@ -284,6 +314,7 @@ class PublicGhlAdapter:
         # tenant binding, the capability gate and transport: an omission is a
         # contract break (the service answers 422), never a defaulted value.
         _validate_query_contract(row, operation_id, query_map)
+
         receipt_id = "gxo_res_" + secrets.token_hex(6)
         fingerprint_box = {"value": ""}
         request_bytes = (
@@ -372,6 +403,30 @@ class PublicGhlAdapter:
                 error={"rule": refusal.rule, **refusal.detail},
                 extra={"refused_before_transport": True},
             )
+
+        if media_type == MULTIPART_MEDIA_TYPE:
+            if multipart is None:
+                # Typed request, typed payload: never guess a body shape.
+                return finish(
+                    Status.denied,
+                    error={
+                        "rule": "multipart_payload_required",
+                        "operation_id": operation_id,
+                        "request_media_type": media_type,
+                        "hint": "supply multipart=MultipartRequest; no bytes were sent",
+                    },
+                    extra={"refused_before_transport": True},
+                )
+            if not callable(getattr(self._transport, "request_multipart", None)):
+                return finish(
+                    Status.denied,
+                    error={
+                        "rule": "multipart_transport_unimplemented",
+                        "operation_id": operation_id,
+                        "request_media_type": media_type,
+                    },
+                    extra={"refused_before_transport": True},
+                )
 
         # 4. auth context -- the four credential classes never substitute.
         allowed = [kind.value if hasattr(kind, "value") else str(kind) for kind in auth_kinds]
@@ -585,6 +640,21 @@ class PublicGhlAdapter:
             # which state authorized the dispatch and never upgrades it.
             capability_evidence = _capability_evidence(capability)
 
+        if self._quota is not None:
+            allowed, retry_after = self._quota.reserve(self._monotonic())
+            if not allowed:
+                return finish(
+                    Status.rate_limited,
+                    error={
+                        "rule": "location_quota_exhausted",
+                        "location_id": tenant.location_id,
+                        "retry_after_s": round(float(retry_after), 3),
+                        "rotate_transport": False,
+                        "hint": "shared per-location budget; no transport rotation",
+                    },
+                    extra={"refused_before_transport": True},
+                )
+
         headers = auth_headers(self._auth)
         if key is not None:
             self._ledger.record(key.value, fingerprint_box["value"])
@@ -596,16 +666,33 @@ class PublicGhlAdapter:
         # unclassified failure is an unknown outcome, mapped through the normal
         # finish path below, and the write is remembered for reconcile().
         transport_exception: str | None = None
+        multipart_evidence: dict[str, Any] | None = None
         try:
-            response = self._transport.request(
-                method=method,
-                url=resolved_path,
-                version=version,
-                headers=headers,
-                query=query_map or None,
-                body=body_map or None,
-                timeout_s=timeout,
-            )
+            if media_type == MULTIPART_MEDIA_TYPE:
+                assert multipart is not None  # refused above
+                outcome = self._transport.request_multipart(  # type: ignore[attr-defined]
+                    method=method,
+                    url=resolved_path,
+                    version=version,
+                    headers=headers,
+                    query=query_map or None,
+                    payload=multipart,
+                    timeout_s=timeout,
+                )
+                response = outcome.response
+                multipart_evidence = dict(outcome.evidence)
+                # The ACTUAL body bytes were hashed by the library-built body.
+                request_bytes = int(multipart_evidence.get("body_bytes", request_bytes))
+            else:
+                response = self._transport.request(
+                    method=method,
+                    url=resolved_path,
+                    version=version,
+                    headers=headers,
+                    query=query_map or None,
+                    body=body_map or None,
+                    timeout_s=timeout,
+                )
         except Exception as caught:  # noqa: BLE001 - the blocker is exactly here
             transport_exception = type(caught).__name__
             response = TransportResponse(
@@ -658,11 +745,35 @@ class PublicGhlAdapter:
             scopes=scopes,
             readback_result=readback_result,
         )
+        # Exact, disjoint classification: a beta flag is never a bad token, and
+        # a permission denial is never a fallback.  The receipt carries it.
+        classification = classify_failure(
+            http_status=http_status,
+            body=response.body,
+            transport_error=response.error_kind,
+            write=write,
+        )
+        if error is not None:
+            error = dict(error)
+            error.update(classification.as_evidence())
+            if classification.kind in ("beta_not_enabled", "missing_scope", "wrong_role"):
+                # The precise cause replaces the generic permission rule; the
+                # status is unchanged and no fallback is attempted here.
+                error["rule"] = classification.kind
+        if self._quota is not None and http_status == 429:
+            retry_after = response.headers.get("retry-after") or response.headers.get(
+                "Retry-After"
+            )
+            self._quota.record_retry_after(retry_after, now=self._monotonic())
 
         extra: dict[str, Any] = {
             "response_headers": redact_headers(response.headers),
             "elapsed_s": response.elapsed_s,
+            "request_media_type": media_type,
         }
+        if multipart_evidence is not None:
+            # Redacted: hashes, names, sizes.  Never the bytes themselves.
+            extra["multipart_request"] = multipart_evidence
         if capability_evidence is not None:
             # A 401/403 CONTRADICTS a record's read_verified claim for this
             # tenant. The receipt must not keep claiming a verified read after
@@ -1489,6 +1600,57 @@ def _capability_evidence(capability: Capability) -> dict[str, Any]:
         "activation": capability.activation,
         "tenant_verified": capability.tenant_verified(),
         "provisional": bool(capability.provisional),
+    }
+
+
+def capability_evidence_v2(
+    record: CapabilityRecordV2 | None,
+    *,
+    principal: str | None = None,
+    request_media_type: str = "application/json",
+) -> dict[str, Any]:
+    """The v2 evidence block for a receipt: independent dimensions only."""
+
+    if record is None:
+        return {
+            "record_version": 2,
+            "operation_id": None,
+            "principal": principal,
+            "request_media_type": request_media_type,
+            "documented": False,
+            "adapter_built": False,
+            "offline_tests_passed": False,
+            "availability": "unknown",
+            "scope_state": "unverified",
+            "read_probe": {"state": "not_run", "receipt_id": None},
+            "write_canary": {"state": "not_run", "receipt_id": None},
+            "enabled": False,
+            "read_admitted": False,
+            "write_admitted": False,
+            "effective_grant_fingerprint": None,
+            "expires_at": None,
+            "invalidation_reason": None,
+            "checked_at": None,
+        }
+    return {
+        "record_version": int(record.record_version),
+        "operation_id": record.operation_id,
+        "principal": principal or record.principal,
+        "request_media_type": request_media_type or record.request_media_type,
+        "documented": bool(record.documented),
+        "adapter_built": bool(record.adapter_built),
+        "offline_tests_passed": bool(record.offline_tests_passed),
+        "availability": record.availability,
+        "scope_state": record.scope_state,
+        "read_probe": dict(record.read_probe),
+        "write_canary": dict(record.write_canary),
+        "enabled": bool(record.enabled),
+        "read_admitted": record.read_admitted(),
+        "write_admitted": record.write_admitted(),
+        "effective_grant_fingerprint": record.effective_grant_fingerprint,
+        "expires_at": record.expires_at,
+        "invalidation_reason": record.invalidation_reason,
+        "checked_at": record.checked_at,
     }
 
 
