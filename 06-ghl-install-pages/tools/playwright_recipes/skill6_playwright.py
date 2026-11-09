@@ -85,12 +85,25 @@ def validate_job(job, base):
     if not isinstance(job.get('start_url'),str) or not isinstance(job.get('location_name'),str):
         raise Stop('start_url and location_name must be strings')
     u = urlparse(job.get("start_url", ""))
-    if u.scheme != "https" or u.username or u.password or u.query or u.fragment:
-        raise Stop("start_url must be an exact HTTPS app URL without query, fragment, or credentials")
+    if u.scheme != "https" or u.username or u.password or u.fragment:
+        raise Stop("start_url must be an exact HTTPS app URL without fragment or credentials")
     if not re.search(r"/(?:v2/)?location/" + re.escape(loc) + r"(?:/|$)", u.path):
         raise Stop("start_url must belong to location_id")
     if not job.get("location_name"):
         raise Stop("location_name is required for the visible account check")
+    if u.query:
+        # The captured course Customize manager needs three exact parameters.
+        # No general query exception is granted to options or other actions.
+        query_steps = job.get('steps')
+        if (not isinstance(query_steps, list) or len(query_steps) != 1
+                or any(not isinstance(step, dict) or step.get('action') != 'native_course_theme'
+                       for step in query_steps)):
+            raise Stop('Only a captured native course-theme job may use its manager query')
+        from playwright_recipes.course_theme import validate as validate_course_theme
+        for step in query_steps:
+            payload = validate_course_theme(step)
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Course theme manager query belongs to another job identity')
     if 'auth_activation' in job:
         activation = job['auth_activation']
         if not isinstance(activation, dict) or set(activation) - {'expected_builder_title'}:
@@ -106,7 +119,7 @@ def validate_job(job, base):
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_fields", "native_field_placement", "native_condition", "quiz_configuration", "survey_configuration", "form", "form_css", "native_form_css", "native_form_schedule", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "assessment", "meeting", "options"}
+    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_course_theme", "native_fields", "native_field_placement", "native_address_fields", "native_form_consent", "native_object_fields", "native_survey_object_fields", "native_condition", "quiz_configuration", "survey_configuration", "survey_rule_stack", "form", "form_css", "native_form_css", "native_form_schedule", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "community_access", "assessment", "meeting", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -122,18 +135,44 @@ def validate_job(job, base):
         if s['action']=='native_field_placement':
             from playwright_recipes.field_placement import validate
             validate(s)
+        if s['action']=='native_address_fields':
+            from playwright_recipes.forms_advanced import validate
+            validate(s)
+        if s['action']=='native_form_consent':
+            from playwright_recipes.forms_advanced import validate_consent
+            validate_consent(s)
+        if s['action'] in ('native_object_fields', 'native_survey_object_fields'):
+            if s['action'] == 'native_object_fields':
+                from playwright_recipes.forms_advanced import validate_object_fields as validate
+            else:
+                from playwright_recipes.survey_fields import validate
+            validate(s)
+            payload = s['payload']
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Native object fields belong to a different location or editor')
         if s['action']=='native_form_schedule':
             from playwright_recipes.form_schedule import validate
             validate(s)
+        if s['action']=='native_course_theme':
+            from playwright_recipes.course_theme import validate
+            payload = validate(s)
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Course theme payload belongs to a different location or manager')
         if s['action'] in ('native_fields','native_condition'):
             from playwright_recipes.assessments import validate_fields, validate_condition
             (validate_fields if s['action']=='native_fields' else validate_condition)(s)
         if s['action']=='form_submission':
             from playwright_recipes.form_submission import validate
             validate(s)
-        if s['action'] in ('community_channels', 'community_details'):
+        if s['action'] in ('community_channels', 'community_details', 'community_access'):
             from playwright_recipes.community_portal import validate_inputs, validate_details_inputs
-            validator = validate_details_inputs if s['action'] == 'community_details' else validate_inputs
+            if s['action'] == 'community_access':
+                if set(s) - {'id', 'action', 'payload'}:
+                    raise Stop('Community access authorizations belong to the live host, never the JSON job')
+                from playwright_recipes.community_access import validate_inputs as validate_access_inputs
+                validator = validate_access_inputs
+            else:
+                validator = validate_details_inputs if s['action'] == 'community_details' else validate_inputs
             payload = validator(s.get('payload'))
             if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
                 raise Stop('Community payload belongs to a different app location')
@@ -144,9 +183,11 @@ def validate_job(job, base):
         if s['action']=='native_form_css':
             from playwright_recipes.assessments import validate_css
             validate_css(s)
-        if s['action']=='survey_configuration':
+        if s['action'] in ('survey_configuration', 'survey_rule_stack'):
             from playwright_recipes.survey_ui import validate
             validate(s)
+            if (s['action'] == 'survey_rule_stack') != ('rules' in s):
+                raise Stop('Survey rule-stack action must match its exact input schema')
         if s['action']=='quiz_configuration':
             from playwright_recipes.quiz_ui import validate
             validate(s)
@@ -289,16 +330,14 @@ def validate_job(job, base):
             if mutations and not any(option['action'].startswith('expect_') for option in s['steps'][mutations[-1]+1:]):
                 raise Stop('Recorded options require read-back after their last mutation')
         if s["action"] == "community":
-            if s.get("channels") or s.get("privacy") or s.get("branding"):
-                raise Stop("Community portal settings require a captured options profile in its authenticated portal context")
-            if not isinstance(s.get('description'),str) or len(s.get("description", "")) not in range(1, 151):
-                raise Stop("Community description must be 1–150 characters")
-            if not isinstance(s.get('slug'),str) or not re.fullmatch(r"[a-z0-9-]+", s.get("slug", "")):
-                raise Stop("Community slug is required")
-            if not s.get("allow_creation"):
-                raise Stop("Community creation leaves a retained group; allow_creation must be explicit")
-            if s.get("discovery", False):
-                raise Stop("Discovery opt-in is not part of this pilot")
+            if len(prepared['steps']) != 1:
+                raise Stop('Community creation must reconcile its native identity before any later operation')
+            context = {key:job[key] for key in ('location_id', 'location_name', 'start_url')}
+            if '_context' in s and s['_context'] != context:
+                raise Stop('Community creation context belongs to a different job')
+            s['_context'] = context
+            from playwright_recipes.community_creation import validate
+            validate(s)
     return prepared
 
 
@@ -400,7 +439,39 @@ def assert_tenant(page, job):
         return
     # Dashboard and lists prove their visible account name. The presence of an
     # unrelated iframe does not bypass this guard.
-    group = page.get_by_role('region', name='Workspace navigation', exact=True).get_by_role('group', name=job['location_name'], exact=True)
+    course = re.fullmatch(r'/v2/location/' + re.escape(job['location_id'])
+        + r'/memberships/courses/themes-overview/([A-Za-z0-9_-]+)/edit/template/([A-Za-z0-9_-]+)', path)
+    if course:
+        from urllib.parse import parse_qsl
+        query = parse_qsl(requested.query, keep_blank_values=True)
+        expected_query = [('view', 'manager'), ('sub_view', 'customize'), ('product_id', course[1])]
+        template_ids = ({job['template_id']} if 'template_id' in job else
+            {step.get('payload', {}).get('template_id') for step in job.get('steps', [])
+             if step.get('action') == 'native_course_theme'})
+        if (requested.path != '/v2/location/' + job['location_id']
+                + '/memberships/courses/course-creator-studio'
+                or sorted(query) != sorted(expected_query)
+                or template_ids != {course[2]} or urlparse(page.url).query or urlparse(page.url).fragment):
+            raise Stop('Course editor does not match the requested course/template identity')
+        page.get_by_placeholder('Template title', exact=True).wait_for(state='visible', timeout=45000)
+        if (page.get_by_placeholder('Template title', exact=True).count() != 1
+                or page.get_by_role('button', name='Activate Template', exact=True).count() != 1):
+            raise Stop('Course template editor did not hydrate its captured controls')
+        identity()
+        return
+    workspace = page.get_by_role('region', name='Workspace navigation', exact=True)
+    switcher_manager = requested.path.endswith((
+        '/memberships/courses/course-creator-studio',
+        '/memberships/communities/community-groups'))
+    if switcher_manager:
+        switcher = workspace.get_by_role('button', name=re.compile(r'^Switch account from '))
+        switcher.wait_for(state='visible', timeout=45000)
+        if (switcher.count() != 1 or not switcher.is_visible()
+                or switcher.get_attribute('aria-label') != 'Switch account from ' + job['location_name']):
+            raise Stop('Workspace switcher belongs to another account')
+        identity()
+        return
+    group = workspace.get_by_role('group', name=job['location_name'], exact=True)
     group.wait_for(state='visible', timeout=45000)
     identity()
 
@@ -1075,9 +1146,34 @@ def native_form_schedule(page, step):
     return configure(page, step)
 
 
+def native_course_theme(page, step):
+    from playwright_recipes.course_theme import configure
+    return configure(page, step)
+
+
 def native_fields(page, step):
     from playwright_recipes.assessments import configure_fields
     return configure_fields(page, step)
+
+
+def native_address_fields(page, step):
+    from playwright_recipes.forms_advanced import configure
+    return configure(page, step)
+
+
+def native_form_consent(page, step):
+    from playwright_recipes.forms_advanced import configure_consent
+    return configure_consent(page, step)
+
+
+def native_object_fields(page, step):
+    from playwright_recipes.forms_advanced import configure_object_fields
+    return configure_object_fields(page, step)
+
+
+def native_survey_object_fields(page, step):
+    from playwright_recipes.survey_fields import configure
+    return configure(page, step)
 
 
 def native_field_placement(page, step):
@@ -1190,28 +1286,8 @@ def options(page, step):
 
 
 def community(page, step):
-    navigate(page, "Communities")
-    existing = page.locator(".group-footer").filter(has=page.get_by_text(step["name"], exact=True))
-    if not existing.count():
-        # General multi-page list enumeration is not proven. Only create after an
-        # authoritative empty-state, otherwise return for inventory reconciliation.
-        if not visible(page.get_by_text("You don't have a community yet", exact=True)):
-            raise Stop("Community list is not empty; reconcile active and inactive groups before creating")
-        click(page.get_by_role("button", name="Create Group", exact=True))
-        fill(page.get_by_role("textbox", name="Group Name", exact=True), step["name"])
-        fill(page.get_by_role("textbox", name="Group Slug", exact=True), step["slug"])
-        fill(page.get_by_role("textbox", name="Enter a brief description", exact=True), step["description"])
-        page.get_by_role("switch").set_checked(False)
-        click(page.get_by_role("button", name="Create Group", exact=True))
-        existing.wait_for(state="visible", timeout=45000)
-    if step.get("inactive", True):
-        status = existing.locator("#status_button")
-        if (status.inner_text()).strip() != "Inactive":
-            click(status)
-            click(page.get_by_text("Inactive", exact=True))
-            click(page.get_by_role("dialog").get_by_role("button", name="Confirm", exact=True))
-        wait_until(lambda: _text_equals(status, "Inactive"), "Group did not become inactive")
-    return {"status":"GROUP_RETAINED_INACTIVE" if step.get("inactive", True) else "GROUP_CREATED", "name":step["name"], "slug":step["slug"], "discovery":False, "channels":"NOT_CONFIGURED", "deleted":False}
+    from playwright_recipes.community_creation import configure
+    return configure(page, step)
 
 
 def community_channels(page, step, *, portal_context=None, evidence_root=None):
@@ -1232,6 +1308,15 @@ def community_details(page, step, *, portal_context=None, evidence_root=None):
                        portal_context=portal_context)
 
 
+def community_access(page, step, *, portal_context=None, evidence_root=None, access_authorization=None):
+    """Keep access-expansion approval as an opaque live host capability."""
+    if portal_context is None or evidence_root is None:
+        raise Stop('Community access requires the authenticated portal host context')
+    from playwright_recipes.community_access import run_access
+    return run_access(page, step['payload'], evidence_root,
+                      portal_context=portal_context, access_authorization=access_authorization)
+
+
 def _text_equals(locator, text):
     return (locator.inner_text()).strip() == text
 
@@ -1239,7 +1324,7 @@ def _text_equals(locator, text):
 _EDITOR_FOREIGN_JOURNALS = (
     'provider-state.json', 'community-portal-state.json', 'auth-stop.json',
     'delivery-state.json', 'calendar-delivery-state.json',
-    'community-details-state.json',
+    'community-details-state.json', 'community-access-state.json',
 )
 
 
@@ -1307,7 +1392,7 @@ def _run_on_page(page, job, evidence_root):
     results = []
     fresh_container = None
     state = {"fingerprint":fingerprint, "location_id":job["location_id"], "status":"RUNNING", "results":results}
-    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_condition":native_condition, "quiz_configuration":quiz_configuration, "survey_configuration":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "native_form_schedule":native_form_schedule, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
+    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_course_theme":native_course_theme, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_address_fields":native_address_fields, "native_form_consent":native_form_consent, "native_object_fields":native_object_fields, "native_survey_object_fields":native_survey_object_fields, "native_condition":native_condition, "quiz_configuration":quiz_configuration, "survey_configuration":survey_configuration, "survey_rule_stack":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "native_form_schedule":native_form_schedule, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
     for step in job["steps"]:
         assert_tenant(page, job)
         state["current_step"] = step["id"]
@@ -1338,14 +1423,16 @@ def _run_on_page(page, job, evidence_root):
             completed = {
                 'RENDERED', 'SEO_RENDERED', 'COMPONENT_SAVED', 'SAVED_AND_REOPENED',
                 'FORM_CSS_RENDERED', 'NATIVE_FORM_CSS_SAVED_AND_REOPENED', 'FORM_SETTINGS_PERSISTED',
-                'FORM_SCHEDULE_SAVED_AND_REOPENED', 'ASSESSMENT_REUSED',
+                'FORM_SCHEDULE_SAVED_AND_REOPENED', 'COURSE_THEME_SAVED_AND_REOPENED',
+                'ADDRESS_FIELDS_SAVED_AND_REOPENED', 'CONSENT_SAVED_AND_REOPENED',
+                'OBJECT_FIELDS_SAVED_AND_REOPENED', 'SURVEY_OBJECT_FIELDS_SAVED_AND_REOPENED', 'ASSESSMENT_REUSED',
                 'ASSESSMENT_SAVE_SUBMITTED', 'ROOM_SAVE_SUBMITTED',
-                'RECORDED_OPTIONS_EXECUTED', 'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED',
+                'RECORDED_OPTIONS_EXECUTED', 'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED', 'GROUP_CREATED_PENDING_IDENTITY',
                 'FIELD_PROPERTIES_SAVED_AND_REOPENED', 'BUILTIN_FIELDS_SAVED_AND_REOPENED',
                 'BUILTIN_FIELDS_REUSED_AND_REOPENED', 'CONDITION_SAVE_SUBMITTED', 'CONDITION_SAVED_AND_REOPENED',
                 'QUIZ_CONFIGURATION_SAVED_AND_REOPENED', 'CONDITION_ALREADY_PRESENT',
                 'FORM_SUBMISSION_SAVED_AND_REOPENED', 'NOTIFICATION_SETTINGS_SAVED_AND_REOPENED',
-                'SURVEY_RULE_SAVED_AND_REOPENED', 'SURVEY_RULE_ALREADY_PRESENT',
+                'SURVEY_RULE_SAVED_AND_REOPENED', 'SURVEY_RULE_ALREADY_PRESENT', 'SURVEY_RULE_STACK_SAVED_AND_REOPENED',
                 'NATIVE_CONFIGURATION_READBACK_VERIFIED', 'NATIVE_CHECKOUT_UI_READBACK_VERIFIED', 'ROOM_PERSISTED',
                 'ROOM_CREATED_AND_VERIFIED', 'ROOM_REUSED_AND_VERIFIED',
                 'ROOM_CREATED_VERIFIED', 'ROOM_REUSED_VERIFIED', 'ROOM_UPDATED_VERIFIED',

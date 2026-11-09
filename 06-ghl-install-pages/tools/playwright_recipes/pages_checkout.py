@@ -9,6 +9,8 @@ before the first browser write. Missing live captures remain a named blocker.
 from __future__ import annotations
 
 from dataclasses import asdict
+from copy import deepcopy
+from collections.abc import Mapping
 import json
 from pathlib import Path
 import re
@@ -104,6 +106,8 @@ def validate_checkout_inputs(data):
         raise CheckoutRefused('Native family does not support recurring bumps')
     if main and any(b.price.currency != main.currency for b in bumps):
         raise CheckoutRefused('Bump and main currencies differ')
+    if len({b.price.currency for b in bumps}) > 1:
+        raise CheckoutRefused('Requested bumps must use one native checkout currency')
     fields = data.get('field_states', {})
     if not isinstance(fields, dict):
         raise CheckoutRefused('field_states must be an object')
@@ -138,6 +142,7 @@ class PlaywrightOrderDriver(native.BrowserManagerDriver):
             raise CheckoutRefused('Exactly one captured builder frame is required')
         self.frame = matches[0]
         self.checkout_kind = bridge.capture['element_kinds']['checkout']
+        self._field_readbacks = {}
         super().__init__(runner=self._evaluate, bridge=bridge)
 
     def _evaluate(self, argv):
@@ -151,11 +156,86 @@ class PlaywrightOrderDriver(native.BrowserManagerDriver):
     def _call(self, scope, op, **args):
         if scope != self.scope:
             raise CheckoutRefused('Native checkout operation used a different tab/frame scope')
+        expected_fields = None
+        component = args.get('component_id')
+        patch = args.get('patch')
+        if op == 'set_state' and isinstance(patch, Mapping) and 'field_states' in patch:
+            # The captured adapter replaces each projected property; it does not
+            # deep-merge field rows. Preserve both other fields and unrequested
+            # attributes on this field before handing the patch to that adapter.
+            current = super()._call(scope, 'get_state', component_id=component)
+            fields = current.get('field_states') if isinstance(current, Mapping) else None
+            wanted = patch['field_states']
+            if (not isinstance(fields, Mapping) or not isinstance(wanted, Mapping)
+                    or any(not isinstance(row, Mapping) for row in fields.values())
+                    or any(not isinstance(row, Mapping) for row in wanted.values())):
+                raise CheckoutRefused('Native field-state inventory is malformed; no field update attempted')
+            expected_fields = deepcopy(dict(fields))
+            for key, states in wanted.items():
+                expected_fields[key] = {**expected_fields.get(key, {}), **dict(states)}
+            args = {**args, 'patch': {**dict(patch), 'field_states': expected_fields}}
         result = super()._call(scope, op, **args)
+        if expected_fields is not None:
+            self._field_readbacks[component] = expected_fields
+        if op == 'get_state' and component in self._field_readbacks:
+            expected = self._field_readbacks[component]
+            if not isinstance(result, Mapping) or result.get('field_states') != expected:
+                raise native.ReadbackMismatch('Native field-state readback lost a requested or preserved sibling')
+            del self._field_readbacks[component]
         if op == 'list_components':
             return [{**row, 'kind': 'checkout' if row.get('kind') == self.checkout_kind else row.get('kind')}
                     for row in result] if isinstance(result, list) else result
         return result
+
+
+def _preflight_bumps(executor, component, prepared):
+    """Resolve the complete bump plan before any requested price write.
+
+    Capacity, duplicate offer/price identities, existing terms and all currencies
+    must be known before binding a new main price. Reusing an identical existing
+    bump consumes no additional slot. This only reads native persisted state.
+    """
+    if not prepared['bumps']:
+        return None
+    state = executor.read_component(component)
+    current = state.get('bumps') if isinstance(state, Mapping) else None
+    if (not isinstance(current, list)
+            or any(not isinstance(bump, Mapping) for bump in current)):
+        raise CheckoutRefused('Existing native bumps must be inventoried before configuration')
+    planned = deepcopy(current)
+    offers, prices, currencies = {}, {}, set()
+    for row in planned:
+        offer = _text(row.get('offer_id'), 'Existing bump offer identity')
+        price = native.validate_price_ref(row.get('price'))
+        if offer in offers or price.native_price_id in prices:
+            raise CheckoutRefused('Existing native bumps have duplicate offer or price identities')
+        if type(row.get('selected')) is not bool:
+            raise CheckoutRefused('Existing native bump selection must be explicit')
+        offers[offer] = row
+        prices[price.native_price_id] = offer
+        currencies.add(price.currency)
+    for bump in prepared['bumps']:
+        if bump.offer_id in offers:
+            if offers[bump.offer_id] != bump.as_fields():
+                raise CheckoutRefused('Existing bump differs from requested binding; reconcile before any write')
+            continue
+        if bump.price.native_price_id in prices:
+            raise CheckoutRefused('A different native bump already uses the requested price')
+        row = bump.as_fields()
+        planned.append(row)
+        offers[bump.offer_id] = row
+        prices[bump.price.native_price_id] = bump.offer_id
+        currencies.add(bump.price.currency)
+    if len(planned) > prepared['family'].max_bumps:
+        raise CheckoutRefused('Existing and requested bumps exceed the captured native family capacity')
+    if any(native.validate_price_ref(row['price']).is_recurring for row in planned) and not prepared['family'].allows_recurring_bumps:
+        raise CheckoutRefused('Captured native family does not permit the existing/requested recurring bumps')
+    main = prepared['main'].as_fields() if prepared['main'] else state.get('main_price')
+    if isinstance(main, Mapping) and main.get('currency'):
+        currencies.add(main['currency'])
+    if len(currencies) > 1:
+        raise CheckoutRefused('Existing/requested native price currencies conflict before configuration')
+    return planned
 
 
 def configure_native_checkout(page, data, *, input_dir='.'):
@@ -183,6 +263,7 @@ def configure_native_checkout(page, data, *, input_dir='.'):
     executor = native.OrderComponentExecutor(driver, scope, prepared['family'])
     component = data['component_id']
     executor.resolve_component(component)
+    planned_bumps = _preflight_bumps(executor, component, prepared)
     records = []
     if prepared['main']:
         records.append(executor.bind_main_price(component, prepared['main']))
@@ -199,6 +280,15 @@ def configure_native_checkout(page, data, *, input_dir='.'):
         records.append(executor.set_field_state(component, key, **states))
     if prepared['action']:
         records.append(executor.set_action(component, prepared['action']['kind'], prepared['action']['target_step_id']))
+    if planned_bumps is not None:
+        final = executor.read_component(component)
+        if not isinstance(final, Mapping) or final.get('bumps') != planned_bumps:
+            raise native.ReadbackMismatch('Final native checkout readback changed a requested or preserved bump')
+        if prepared['main']:
+            final_main = final.get('main_price')
+            if not isinstance(final_main, Mapping) or any(final_main.get(key) != value
+                    for key, value in prepared['main'].as_fields().items()):
+                raise native.ReadbackMismatch('Final bump configuration lost the requested main-price binding')
     assert_tenant(page, data)
     return {'status': 'NATIVE_CONFIGURATION_READBACK_VERIFIED', 'payment_verified': False,
         'verification_required': 'Independent native checkout and test-payment journey',

@@ -72,11 +72,18 @@ def compile_recipe(operation, data):
         if not isinstance(data.get('submission'), dict) or 'action' in data['submission']:
             raise Stop('Native form submission must be a configuration object without an executor action override')
         add('form_submission', **data['submission'])
-    elif operation=='forms.configure' and ('add_fields' in data or data.get('fields')):
+    elif operation=='forms.configure' and set(data).intersection({'add_fields', 'address_fields', 'fields', 'consent', 'object_fields'}):
         if 'add_fields' in data:
             add('native_field_placement', add_fields=data['add_fields'])
+        if 'object_fields' in data:
+            add('native_object_fields', payload={key:data[key] for key in (
+                'location_id', 'location_name', 'start_url', 'object_fields', 'field_dependencies')})
+        if 'address_fields' in data:
+            add('native_address_fields', address_fields=data['address_fields'])
         if data.get('fields'):
             add('native_fields', fields=data['fields'])
+        if 'consent' in data:
+            add('native_form_consent', consent=data['consent'])
     elif operation=='forms.conditions':
         if not isinstance(data.get('condition'), dict):
             raise Stop('Native form condition must be a configuration object')
@@ -94,7 +101,12 @@ def compile_recipe(operation, data):
     elif operation=='quizzes.configure':
         add('quiz_configuration', **data['configuration'])
     elif operation=='surveys.configure':
-        add('survey_configuration', **data['configuration'])
+        config = data['configuration']
+        if 'object_fields' in config:
+            add('native_survey_object_fields', payload={
+                **{key:data[key] for key in ('location_id', 'location_name', 'start_url')}, **config})
+        else:
+            add('survey_rule_stack' if 'rules' in config else 'survey_configuration', **config)
     elif operation=='checkout.configure_ui':
         add('native_checkout_ui', payload=data)
     elif operation in ('checkout.configure_native','checkout.one_click_upsell') and data.get('adapter_capture'):
@@ -109,6 +121,8 @@ def compile_recipe(operation, data):
         add('community_details', payload=data)
     elif operation=='communities.configure' and 'channels' in data:
         add('community_channels', payload=data)
+    elif operation=='communities.configure' and 'access' in data:
+        add('community_access', payload=data)
     elif operation in ('meetings.setup','meetings.update'):
         details = dict(data['meeting'])
         if operation == 'meetings.update':
@@ -116,6 +130,8 @@ def compile_recipe(operation, data):
                 raise Stop('Meeting update requires the exact existing room identity')
             details['allow_creation'] = False
         add('meeting',**details)
+    elif operation == 'courses.configure_ui' and 'template_id' in data:
+        add('native_course_theme', payload=data)
     elif operation in ('forms.configure','checkout.one_click_upsell','funnels.split_variant','communities.configure','courses.configure_ui','meetings.integrate'):
         if operation=='checkout.one_click_upsell':
             receipt=data.get('checkout_contract',{})

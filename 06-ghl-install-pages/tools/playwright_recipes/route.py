@@ -90,7 +90,7 @@ def decide(operation, location_id, probes, catalog=None, failed_lanes=(), inputs
             continue
         if lane == 'playwright' and not entry.get('implemented'):
             continue
-        if lane == 'playwright' and entry.get('action')=='options' and operation not in probes.get('recorded_profiles',[]):
+        if lane == 'playwright' and entry.get('action') in ('options', 'native_course_theme_or_options') and operation not in probes.get('recorded_profiles',[]):
             continue
         if lane == 'computer_use' and state.get('enabled') is not True:
             continue
