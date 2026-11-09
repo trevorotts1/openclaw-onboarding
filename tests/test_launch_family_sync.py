@@ -51,6 +51,11 @@ def build(tmp: Path, family: str, drift: bool = True):
             if dest.startswith(nine_rel + "/"):
                 _write(nine / dest, "999 edition " + " ".join(tokens) + "\n")
                 _write(onb / onb_rel / dest[len(nine_rel) + 1:], "onboarding version\n")
+    for onb_rel, nine_rel in parity.FAMILIES[family]:
+        for manifest in parity.REQUIRED_ROOT_MANIFESTS.get(onb_rel, ()):
+            body = '{"schema": "blackceo.skill.metadata/1", "name": "%s"}\n' % onb_rel
+            _write(onb / onb_rel / manifest, body)
+            _write(nine / nine_rel / manifest, body)
     return onb, nine
 
 
@@ -209,3 +214,37 @@ def test_failing_sync_never_prints_unprefixed_pass(tmp_path, monkeypatch, capsys
     assert "[skill71] SYNC DONE, PARITY PASS" in lines
     assert any(l.startswith("HAND-MERGE NEEDED: ") and "def cmd_plan" in l for l in lines)
     assert lines[-1].startswith("SYNC DONE, PARITY FAILURES REMAIN")
+
+
+ONB_MANIFEST = "49-signature-funnel/skill.json"
+NINE_MANIFEST = ".claude/skills/signature-funnel/skill.json"
+
+
+def test_built_root_manifest_list_names_the_manifest(tmp_path):
+    # FIX-02: the assertion is read off the BUILT tree, so this proves the positive half.
+    onb, nine = build(tmp_path, "signature-funnel", drift=False)
+    report = parity.check(onb, nine, ["signature-funnel"])
+    assert report["built_root_manifests"][".claude/skills/signature-funnel"] == ["skill.json"]
+    assert report["failures"] == [], report["failures"]
+
+
+def test_parity_fails_when_the_built_tree_lost_a_required_root_manifest(tmp_path):
+    onb, nine = build(tmp_path, "signature-funnel", drift=False)
+    (nine / NINE_MANIFEST).unlink()
+    report = parity.check(onb, nine, ["signature-funnel"])
+    assert any(f"root_manifest_missing_built: {NINE_MANIFEST}" in f for f in report["failures"]), \
+        report["failures"]
+    assert report["built_root_manifests"][".claude/skills/signature-funnel"] == []
+
+
+def test_parity_fails_when_the_source_tree_lost_a_required_root_manifest(tmp_path):
+    onb, nine = build(tmp_path, "signature-funnel", drift=False)
+    (onb / ONB_MANIFEST).unlink()
+    report = parity.check(onb, nine, ["signature-funnel"])
+    assert any("root_manifest_missing_source: " + NINE_MANIFEST in f for f in report["failures"]), \
+        report["failures"]
+
+
+def test_the_required_root_manifests_are_the_launch_family_pair():
+    assert set(parity.REQUIRED_ROOT_MANIFESTS) == {"49-signature-funnel", "83-black-friday-launcher"}
+    assert all(v == ("skill.json",) for v in parity.REQUIRED_ROOT_MANIFESTS.values())

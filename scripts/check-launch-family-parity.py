@@ -25,6 +25,15 @@ Anything present only in 999 that is not declared nine_only FAILS. Skill 71
 itself is judged by its own checker (check-skill71-parity.py), which this
 script runs and folds into the report.
 
+REQUIRED_ROOT_MANIFESTS (FIX-02) names the root manifest each published launch
+tree must carry. The assertion runs against the BUILT (999) tree, not the source
+checkout alone: a source file that never reaches the artifact proves nothing
+about what shipped. A missing manifest is `root_manifest_missing_source` (the
+build has nothing to publish) or `root_manifest_missing_built` (the artifact
+dropped it); both FAIL. The report always carries the built root manifest list,
+so the positive half — the manifest really is in the artifact — is printed
+rather than assumed.
+
 Usage:
   check-launch-family-parity.py --onboarding DIR --nine DIR
                                 [--family NAME ...] [--json PATH]
@@ -110,9 +119,20 @@ DIVERGENT = {
 # run them in its own workflow (and the carried CON-09 checker reaches 999).
 GATE_TOOLS = ("scripts/check-skill71-parity.py", "scripts/check-launch-family-parity.py")
 
+# FIX-02 (Additional November 8th Fixes): a published skill tree is not
+# self-describing without its root manifest, so anything that reads the manifest
+# to discover identity, dependencies or entry points fails on that tree. This is
+# asserted on the BUILT (999) tree, never on the source checkout alone: a source
+# file that never reaches the artifact proves nothing about what shipped.
+REQUIRED_ROOT_MANIFESTS = {
+    "49-signature-funnel": ("skill.json",),
+    "83-black-friday-launcher": ("skill.json",),
+}
+
 FAIL_STATUSES = {"missing", "drift", "adapter_missing", "divergent_missing",
                  "excluded_present", "unclassified_nine_only", "nine_only_missing",
-                 "divergent_token_missing", "self_certifying", "onb_tree_missing"}
+                 "divergent_token_missing", "self_certifying", "onb_tree_missing",
+                 "root_manifest_missing_source", "root_manifest_missing_built"}
 TRACKED_STATUSES = {"adapter_diff", "divergent_diff"}
 COPY_STATUSES = {"missing", "drift"}                       # sync overwrites or creates
 SEED_STATUSES = {"adapter_missing", "divergent_missing"}   # sync creates, never overwrites
@@ -210,6 +230,14 @@ def family_plan(onb: Path, nine: Path, name: str) -> list:
                 for tok in tokens:
                     if tok not in text:
                         rows.append(("divergent_token_missing", dest, tok))
+        # FIX-02: the root manifest must exist in the source AND in the BUILT tree.
+        for manifest in REQUIRED_ROOT_MANIFESTS.get(onb_rel, ()):
+            src = f"{onb_rel}/{manifest}"
+            dest = f"{nine_rel}/{manifest}"
+            if not (a_root / manifest).is_file():
+                rows.append(("root_manifest_missing_source", dest, src))
+            elif not (b_root / manifest).is_file():
+                rows.append(("root_manifest_missing_built", dest, src))
     return rows
 
 
@@ -229,6 +257,17 @@ def check_signature_page(onb: Path, nine: Path) -> tuple:
     return fails, tracked
 
 
+def built_root_manifests(nine: Path, families) -> dict:
+    """The root manifest list actually present in each BUILT (999) tree in scope."""
+    out = {}
+    for name in families:
+        for _onb_rel, nine_rel in FAMILIES[name]:
+            root = nine / nine_rel
+            out[nine_rel] = sorted(p.name for p in root.glob("*.json") if p.is_file()) \
+                if root.is_dir() else []
+    return out
+
+
 def check(onb: Path, nine: Path, families) -> dict:
     failures, tracked = [], []
     for name in families:
@@ -244,7 +283,8 @@ def check(onb: Path, nine: Path, families) -> dict:
                 added, removed = diff_counts(src.read_bytes(), (nine / dest).read_bytes())
                 tracked.append({"family": name, "class": status, "file": dest,
                                 "lines_added": added, "lines_removed": removed})
-    return {"failures": failures, "tracked_differences": tracked}
+    return {"failures": failures, "tracked_differences": tracked,
+            "built_root_manifests": built_root_manifests(nine, families)}
 
 
 def main(argv=None):
@@ -261,6 +301,8 @@ def main(argv=None):
     report = check(args.onb, args.nine, args.family or FAMILY_CHOICES)
     for t in report["tracked_differences"]:
         print("TRACKED " + " ".join(f"{k}={v}" for k, v in t.items()))
+    for rel, names in report["built_root_manifests"].items():
+        print(f"BUILT-ROOT-MANIFESTS {rel}: {', '.join(names) if names else '(none)'}")
     for f in report["failures"]:
         print(f"FAIL {f}")
     n, m = len(report["failures"]), len(report["tracked_differences"])

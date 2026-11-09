@@ -1,0 +1,59 @@
+{
+  "schema": "blackceo.skill.metadata/1",
+  "name": "signature-funnel",
+  "version": "v2.1.38",
+  "entry": "SKILL.md",
+  "description": "Builds a Trevor Otts Signature Funnel — the SACRED 12-section Hero copy system, per-section long-form image prompts sized to the model's own character budget (95 to 100 percent of its maximum, never below 80 percent), GHL media + funnel build, and a configurable 3/5/7-step funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching). Gates the sacred method with fail-closed deterministic provers: the intake gate, the 12-section copy contract (per-section char/word bands, six page profiles), the image-prompt two-floor gate (length and structure), and a no-pitch (clean thank-you) + image-provenance gate. A canonical fail-closed entry (deps/bypass-scan/hash-pin/0600-nonce) drives a no-skip orchestrator that issues a signed PROCESS-CERTIFICATE only on all-phases-pass. Delegates image generation to Skill 66 (model policy) then Skill 74 (the one approved KIE transport) and ALL GHL media + build to Skill 6. Client runtime uses the client's own providers, never Anthropic.",
+  "skill_number": {
+    "value": "49",
+    "status": "assigned",
+    "final": true,
+    "source": "directory name 49-signature-funnel; declared as a required launch-family tree by 83-black-friday-launcher/launcher_core/dependencies.json entry id tree-49-signature-funnel"
+  },
+  "entrypoints": {
+    "skill": "SKILL.md",
+    "front_door": "scripts/front_door.py",
+    "entry": "signature-funnel-entry.sh",
+    "orchestrator": "run_signature_funnel.py",
+    "verify": "verify.sh",
+    "pin": "scripts/SF-PROVER-PIN.sha256"
+  },
+  "pipeline_manifest": {
+    "path": "FUNNEL-MANIFEST.json",
+    "schema": "https://openclaw.ai/schemas/signature-funnel-manifest/v1",
+    "manifest_version": "1.1.0",
+    "note": "The phase spine (P0..P10), the _chk_sf_* preflight wrappers, the AF-FUN-* autofail codes and the delegation seams. It is the manifest of record for this skill's pipeline; this metadata file records identity and dependencies and never restates it."
+  },
+  "contracts": [
+    "49-signature-funnel/schema/route-graph.schema.json",
+    "49-signature-funnel/scripts/vendor/page-request.schema.json",
+    "49-signature-funnel/scripts/vendor/page-result.schema.json"
+  ],
+  "depends_on": {
+    "note": "Names resolved from this skill's own code and manifests, not hand-picked: scripts/front_door.py _skill_dirs (the two shared-utils trees and the 83 launcher tree are hard requirements of the front-door gate) and FUNNEL-MANIFEST.json delegation_seams (the page, image-policy, image-transport and GHL-build owners). No skill.json in this repository lists Skill 49's requirement set, so this record is the only one; it conforms to the code it describes.",
+    "required": [
+      "shared-utils/signature_launch_contract",
+      "shared-utils/signature_launch",
+      "71-blackceo-signature-page",
+      "66-kie-image",
+      "74-kie-live-adapter",
+      "06-ghl-install-pages"
+    ],
+    "pin_composition_requires": [
+      "83-black-friday-launcher"
+    ],
+    "pin_composition_note": "scripts/front_door.py _skill_dirs refuses (ABORT [HASH-PIN]) when the Skill 83 launcher tree is absent, because the whole-tree pin composition covers it. That is a pin-input requirement, not a delegation of this skill's behaviour, so it is named separately from `required`."
+  },
+  "provenance": {
+    "authored": "2026-11-08",
+    "reason": "The published Skill 49 tree shipped without a root manifest. The file was absent from the source checkout, so the defect was repository-side and not a packaging exclusion: scripts/check-launch-family-parity.py copies every source file into the 999 tree, so it cannot drop a file the source does not have.",
+    "sources": [
+      "49-signature-funnel/SKILL.md frontmatter (name, version, description)",
+      "49-signature-funnel/skill-version.txt (version)",
+      "49-signature-funnel/FUNNEL-MANIFEST.json (pipeline manifest, delegation seams)",
+      "49-signature-funnel/scripts/front_door.py (_PIN_SPEC, _skill_dirs)",
+      "83-black-friday-launcher/skill.json (the blackceo.skill.metadata/1 schema this file follows)",
+      "83-black-friday-launcher/launcher_core/dependencies.json (tree-49-signature-funnel metadata)"
+    ]
+  }
+}
