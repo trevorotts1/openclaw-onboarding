@@ -375,14 +375,14 @@ def test_ghl_media_course_asset_upload_validates_bytes(tmp_path):
         return FakeResponse(200, {"fileId": "f_1", "url": "https://cdn/x.mp4"})
 
     res = ghl_media.upload_course_asset(
-        path, "loc1", "launch101-intro.mp4", "pit-secret",
+        path, "loc1", "launch101-intro.mp4", "not-a-real-token",
         expected_mime="video/mp4", sha256=sha, byte_size=len(MP4_BYTES), opener=opener)
     assert res["fileId"] == "f_1" and res["sha256"] == sha
     assert captured["ctype"].startswith("multipart/form-data; boundary=")
 
     with pytest.raises(ValueError):
         ghl_media.upload_course_asset(
-            path, "loc1", "n.mp4", "pit", expected_mime="video/mp4",
+            path, "loc1", "n.mp4", "not-a-real-token", expected_mime="video/mp4",
             sha256="d" * 64, byte_size=len(MP4_BYTES), opener=opener)
 
 
@@ -392,7 +392,7 @@ def test_ghl_media_png_rail_is_unchanged(tmp_path):
     assert ghl_media.verify_png(png) is True
     assert ghl_media.verify_png(mp4) is False
     with pytest.raises(ValueError):
-        ghl_media.upload_media(mp4, "loc1", "x", "pit",
+        ghl_media.upload_media(mp4, "loc1", "x", "not-a-real-token",
                                opener=lambda r, t: FakeResponse(200, {}))
     with pytest.raises(ValueError):
         ghl_media.inspect_course_asset(png, "video/mp4")
