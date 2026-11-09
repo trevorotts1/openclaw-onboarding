@@ -6887,7 +6887,7 @@ The {role['name']} in the {dept_info['name']} department.
 ## Step-by-Step Instructions
 
 > **TODO:** This SOP needs to be populated with industry-specific best practices.
-> The AI agent should research best practices using Perplexity and personalize
+> The AI agent should research best practices using the client's configured research model and personalize
 > these steps using the client's interview answers (tools, KPIs, challenges).
 >
 > **Interview context:**
