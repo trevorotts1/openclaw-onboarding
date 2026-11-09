@@ -17,7 +17,9 @@ SMART / THINK layer exactly like ghl_form_builder.py:
     browser_manager singleton on the token-only seeded session — seed → land →
     Memberships nav → search-first (idempotency) → Create Group → fill → capture
     group id/url → add each channel → verify (render_check) → per-object receipts
-    (ghl_object_router F6) → ALWAYS delete the scratch group in cleanup.
+    (ghl_object_router F6) → cleanup DEACTIVATES a scratch group and records the
+    inactive residue. GHL has NO group delete on any known rail (D09): never claim
+    deletion or zero residue for a group. Course cleanup is the true-delete rail.
 
 D8 — ZERO INVENTED SELECTORS. Every in-area anchor is loaded from
 `selectors-live-communities-courses.json`. A REQUIRED anchor whose status is
@@ -625,6 +627,20 @@ def _write_receipt(evidence_root: str, receipt: dict) -> str:
     return path
 
 
+def cleanup_decision(action: str, *, identity_present: bool) -> dict:
+    """A13 — what cleanup is allowed to claim. A group we CREATED is deactivated and its
+    inactive residue recorded; a REUSED group (or a run that stopped before create) is
+    preserved untouched and never reported as deleted."""
+    if action == "created" and identity_present:
+        return {"cleanup_primitive": "inactivate", "deleted": False,
+                "reused_resources_preserved": True,
+                "reason": "created scratch group -> deactivate and record inactive residue"}
+    return {"cleanup_primitive": "preserve", "deleted": False,
+            "reused_resources_preserved": True,
+            "residue": "nothing created by this run — existing resources untouched",
+            "note": "nothing to clean — no scratch group created (reused, or STOP before create)"}
+
+
 def _deactivate_group(session: str, sels: dict, plan: dict, identity: dict,
                       location_id: str = "") -> dict:
     """Cleanup for a community GROUP (fix d) — HONEST: GHL has NO group delete.
@@ -637,12 +653,21 @@ def _deactivate_group(session: str, sels: dict, plan: dict, identity: dict,
     have no delete_*). Literal 0-residue is IMPOSSIBLE for a group; the group ROW/portal
     REMAINS as documented residue. NOT a fake delete — the true 0-residue proof is COURSES."""
     name = plan.get("community_name") or plan.get("slug", "")
+    slug = identity.get("slug", plan.get("slug", ""))
+    host = identity.get("portal_host", "") or (plan.get("group_ref") or {}).get("portal_host", "")
+    # Prefer the canonical member-visible URL when host+slug are known; fall back to a
+    # captured portal_url, then to nothing (never invent a host).
+    group_url = (f"https://{host}/communities/groups/{slug}/home" if (host and slug)
+                 else (identity.get("portal_url", "") or ""))
     result: Dict[str, Any] = {
         "cleanup_primitive": "inactivate",
         "deleted": False,
         "inactivated": False,
-        "slug": identity.get("slug", plan.get("slug", "")),
+        "slug": slug,
+        "group_url": group_url,
+        "status": "active",
         "residue": "group remains (GHL has no group delete on any known rail); set Inactive",
+        "residue_fields": ["group_url", "status", "slug"],
     }
     try:
         if location_id:
@@ -656,6 +681,7 @@ def _deactivate_group(session: str, sels: dict, plan: dict, identity: dict,
         _ex_click(session, sels, "community.deactivate.confirm")             # Deactivate dialog
         _ex_wait_text(session, "Deactivated", timeout=12)
         result["inactivated"] = True
+        result["status"] = "inactive"
     except StopAndReport as sr:
         result["stop"] = str(sr)
         result["residue"] += f" (deactivate STOP — {sr.reason[:80]})"
@@ -687,6 +713,7 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
 
     _ffb.browser_manager.headless_guard()
     _ffb.browser_manager.assert_agent_browser_version()
+    acquire_browser_writer(location_id, "ghl_community_builder")
     _cm = _ffb.browser_manager.browser_session(location_id)
     _sess = _cm.__enter__()
     if _sess:
@@ -780,10 +807,11 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
             # group; a STOP-and-report before create means nothing was made — no-op).
             if action == "created" and identity.get("slug"):
                 cleanup.update(_deactivate_group(session, sels, plan, identity, location_id))   # fix d
+                cleanup["reused_resources_preserved"] = True
             else:
-                cleanup["deleted"] = True
-                cleanup["note"] = ("nothing to clean — no scratch group created "
-                                   "(reused, or STOP-and-report before create)")
+                # A13: a reused group (or a run that stopped before create) is PRESERVED,
+                # not deleted. Never report deleted=True for something we did not own.
+                cleanup.update(cleanup_decision(action, identity_present=False))
         except Exception as exc:  # noqa: BLE001
             cleanup["deleted"] = False
             cleanup["error"] = f"{type(exc).__name__}: {exc}"
@@ -793,6 +821,7 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
             except Exception:  # noqa: BLE001
                 pass
             _close_session(location_id)
+            release_browser_writer(location_id)
         _write_json(os.path.join(evidence_root, "routing", "cleanup.json"), cleanup)
 
     summary = _router.reduce_receipts(evidence_root) if _HAVE_ROUTER else {}
@@ -924,6 +953,524 @@ def _verify_community(session: str, plan: dict, identity: dict, evidence_root: s
     return block
 
 
+
+# ---------------------------------------------------------------------------
+# ONE browser writer per tenant/session (spec §9.6)
+# ---------------------------------------------------------------------------
+# The managed browser is a serial resource for an authenticated tenant. Two writers
+# for the same location would interleave clicks on one session and corrupt each other
+# (the same rule the form/survey builders rely on). This is the explicit guard the
+# hybrid operational reference documents; the narrow member/content/association
+# operators acquire it through these functions.
+_ACTIVE_WRITERS: Dict[str, str] = {}
+
+
+def acquire_browser_writer(location_id: str, owner: str = "ghl_community_builder") -> str:
+    if not location_id:
+        raise StopAndReport("writer.scope", "browser writer needs an explicit location_id")
+    current = _ACTIVE_WRITERS.get(location_id)
+    if current:
+        raise StopAndReport(
+            "writer.busy",
+            f"{current!r} already holds the single browser writer for location "
+            f"{location_id!r}; serialize the browser work instead of opening a second writer.")
+    _ACTIVE_WRITERS[location_id] = owner
+    return owner
+
+
+def release_browser_writer(location_id: str) -> None:
+    _ACTIVE_WRITERS.pop(location_id, None)
+
+
+def active_writer(location_id: str) -> Optional[str]:
+    return _ACTIVE_WRITERS.get(location_id)
+
+
+class browser_writer:  # noqa: N801 — small context manager, used as `with browser_writer(loc)`
+    def __init__(self, location_id: str, owner: str = "ghl_community_builder") -> None:
+        self.location_id = location_id
+        self.owner = owner
+
+    def __enter__(self) -> str:
+        return acquire_browser_writer(self.location_id, self.owner)
+
+    def __exit__(self, *exc: Any) -> None:
+        release_browser_writer(self.location_id)
+
+
+# ---------------------------------------------------------------------------
+# Group / channel settings operations (hybrid managed-UI executors)
+# ---------------------------------------------------------------------------
+GROUP_OPERATIONS = ("create", "update", "change_access", "activate", "deactivate",
+                    "channel_update", "channel_order", "channel_settings")
+ROLE_RANK = {"member": 0, "moderator": 1, "admin": 2, "owner": 3, "agency_admin": 3}
+# Which operations need an administrative role on the tenant, and at what rank.
+REQUIRED_ROLE = {"update": "admin", "change_access": "admin", "activate": "admin",
+                 "deactivate": "admin", "channel_update": "admin",
+                 "channel_order": "admin", "channel_settings": "admin"}
+# Operations that change who can see/do something need a recorded approval.
+APPROVAL_REQUIRED = {"change_access", "channel_settings"}
+_BILLING_FIELDS = ("price", "amount", "recurring", "billing", "stripe_price",
+                   "subscription_price", "charge")
+
+
+def _role_allows(plan: dict) -> bool:
+    need = REQUIRED_ROLE.get(plan["operation"])
+    if not need:
+        return True
+    got = str(plan.get("operator_role") or "").strip().lower()
+    return ROLE_RANK.get(got, -1) >= ROLE_RANK[need]
+
+
+def plan_group_operation(task: dict) -> dict:
+    """Validate a group/channel settings operation. Only the REQUESTED fields travel —
+    unrelated group configuration is never rewritten (spec §9.3 'before/after requested
+    fields only')."""
+    op = str(task.get("operation") or "").strip().lower()
+    if op not in GROUP_OPERATIONS or op == "create":
+        raise StopAndReport("plan.operation",
+                            f"operation must be one of {GROUP_OPERATIONS[1:]} (got {op!r})")
+    location_id = str(task.get("location_id") or "").strip()
+    if not location_id:
+        raise StopAndReport("plan.location", "location_id is required")
+    group_ref = task.get("group_ref") or {}
+    if not isinstance(group_ref, dict):
+        group_ref = {}
+    slug = str(group_ref.get("group_slug") or task.get("community_slug") or "").strip()
+    gid = str(group_ref.get("group_id") or "").strip()
+    if not (slug or gid):
+        raise StopAndReport("plan.group", "group_ref needs group_id or group_slug")
+    name = ensure_zhc_name(task.get("community_name", task.get("name", ""))) if \
+        (task.get("community_name") or task.get("name")) else ""
+
+    changes = task.get("changes") or {}
+    if not isinstance(changes, dict):
+        raise StopAndReport("plan.changes", "changes must be an object of requested fields")
+    if op == "update":
+        allowed = {"name", "description", "branding_image_url"}
+        unknown = sorted(set(changes) - allowed)
+        if unknown:
+            raise StopAndReport("plan.changes", f"unsupported update fields: {unknown}")
+        if not changes:
+            raise StopAndReport("plan.changes", "update needs at least one requested field")
+        if "branding_image_url" in changes and \
+                "firebase" in str(changes["branding_image_url"]).lower():
+            raise StopAndReport("plan.branding",
+                                "branding_image_url must be a ghl_media CDN URL, never Firebase")
+    elif op == "change_access":
+        target = str(changes.get("privacy") or task.get("privacy") or "").lower()
+        if target not in ("public", "private"):
+            raise StopAndReport("plan.access", "change_access needs changes.privacy=public|private")
+        changes = {"privacy": target}
+    elif op in ("activate", "deactivate"):
+        changes = {}
+    elif op == "channel_update":
+        if not str(changes.get("channel") or "").strip():
+            raise StopAndReport("plan.channel", "channel_update needs changes.channel")
+        allowed = {"channel", "name", "description"}
+        unknown = sorted(set(changes) - allowed)
+        if unknown:
+            raise StopAndReport("plan.changes", f"unsupported channel fields: {unknown}")
+        if not (changes.get("name") or changes.get("description")):
+            raise StopAndReport("plan.changes", "channel_update needs name and/or description")
+    elif op == "channel_order":
+        order = changes.get("order") or []
+        if not isinstance(order, list) or len(order) < 2:
+            raise StopAndReport("plan.channel", "channel_order needs changes.order (>=2 names)")
+    elif op == "channel_settings":
+        if not str(changes.get("channel") or "").strip():
+            raise StopAndReport("plan.channel", "channel_settings needs changes.channel")
+        toggles = {k: bool(changes[k]) for k in
+                   ("private", "read_only", "premium") if k in changes}
+        if not toggles:
+            raise StopAndReport("plan.channel",
+                                "channel_settings needs changes.private|read_only|premium")
+        leaked = [k for k in _BILLING_FIELDS if k in changes or k in task]
+        if leaked:
+            raise StopAndReport(
+                "plan.billing",
+                f"channel settings must not change price/recurring billing (found {leaked}); "
+                "premium access needs an approved product change, not this operator.")
+        changes = {"channel": str(changes["channel"]).strip(), **toggles}
+
+    operator_role = str(task.get("operator_role") or "").strip().lower()
+    approval_ref = str(task.get("approval_ref") or "").strip()
+    if op in APPROVAL_REQUIRED and not approval_ref:
+        raise StopAndReport("plan.approval",
+                            f"{op} changes member-visible access — approval_ref is required")
+    if op == "deactivate" and not task.get("scratch_group") and not approval_ref:
+        raise StopAndReport("plan.approval",
+                            "deactivating a non-scratch group is destructive — approval_ref is required")
+    if changes.get("premium") and not approval_ref:
+        raise StopAndReport("plan.approval", "premium channel access requires approval_ref")
+
+    return {
+        "object_type": "community",
+        "operation": op,
+        "location_id": location_id,
+        "community_name": name,
+        "group_ref": {"group_id": gid, "group_slug": slug,
+                      "portal_host": str(group_ref.get("portal_host") or "").strip()},
+        "changes": changes,
+        "operator_role": operator_role,
+        "required_role": REQUIRED_ROLE.get(op, ""),
+        "approval_ref": approval_ref,
+        "scratch_group": bool(task.get("scratch_group")),
+        "before_state": task.get("before_state") if isinstance(task.get("before_state"), dict) else {},
+        "preserve_unrelated": True,
+        "planned_at": _ts(),
+    }
+
+
+def preflight_group_operation(plan: dict) -> dict:
+    checks: List[dict] = []
+
+    def chk(name: str, ok: bool, detail: str = "", hard: bool = True) -> None:
+        checks.append({"check": name, "pass": bool(ok), "hard": hard, "detail": detail})
+
+    chk("G-P1:location", bool(plan["location_id"]), "location_id required")
+    chk("G-P2:group", bool(plan["group_ref"]["group_id"] or plan["group_ref"]["group_slug"]),
+        "group id or slug required")
+    chk("G-P3:role", _role_allows(plan),
+        f"{plan['operation']} requires role >= {plan.get('required_role')!r} "
+        f"(operator_role={plan.get('operator_role')!r})")
+    chk("G-P4:approval",
+        plan["operation"] not in APPROVAL_REQUIRED or bool(plan["approval_ref"]),
+        f"{plan['operation']} requires approval_ref")
+    chk("G-P5:no_billing", not any(k in plan["changes"] for k in _BILLING_FIELDS),
+        "price/billing changes are not supported by this operator")
+    hard_fail = [c for c in checks if c["hard"] and not c["pass"]]
+    return {"pass": not hard_fail, "checks": checks,
+            "stop_reason": (hard_fail[0]["detail"] if hard_fail else "")}
+
+
+# ── scoped reads/writes for group + channel settings ────────────────────────
+_GROUP_STATE_JS = (
+    "(() => { const q=(s)=>{const el=document.querySelector(s);"
+    " if(!el) return null; return (el.value!==undefined && el.value!==null && el.value!=='')"
+    "   ? el.value : ((el.textContent||'').replace(/\\s+/g,' ').trim()||null);};"
+    " const body=(document.body?document.body.innerText:'');"
+    " const pm=body.match(/\\b(Public|Private)\\b/);"
+    " return JSON.stringify({name:q(\"input[placeholder*='Group Name' i]\"),"
+    "   description:q(\"textarea[placeholder*='description' i]\"),"
+    "   branding_image_url:q(\"input[placeholder*='image' i],input[placeholder*='url' i]\"),"
+    "   privacy:pm?pm[1].toLowerCase():null});})()"
+)
+_CHANNEL_STATE_JS_TMPL = (
+    "(() => { const want=%s; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+    " const rows=[...document.querySelectorAll('[role=row],li,[class*=channel]')]"
+    "   .map(r=>norm(r.innerText)).filter(Boolean);"
+    " const present=rows.some(t=>t.toLowerCase().indexOf(want.toLowerCase())!==-1);"
+    " const seg=rows.filter(t=>t.toLowerCase().indexOf(want.toLowerCase())!==-1)[0]||'';"
+    " return JSON.stringify({present:present, row:seg, rows:rows.length});})()"
+)
+
+
+def _read_json_eval(session: str, js: str) -> dict:
+    raw = (_eval(session, js, timeout=12) or "").strip()
+    if not raw.startswith("{"):
+        return {}
+    try:
+        return json.loads(raw)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _read_group_state(session: str) -> dict:
+    return _read_json_eval(session, _GROUP_STATE_JS)
+
+
+def _read_channel_state(session: str, name: str) -> dict:
+    return _read_json_eval(session, _CHANNEL_STATE_JS_TMPL.replace("%s", json.dumps(name)))
+
+
+def _scoped_group_settings(session: str, name: str) -> bool:
+    """Open the group's OWN list-card settings/editor (card-scoped by exact name)."""
+    js = (
+        "(() => { const want=" + json.dumps(name) + "; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+        " const el=[...document.querySelectorAll('*')].find(e=>norm(e.textContent)===want && e.children.length===0);"
+        " if(!el) return 'NO_CARD'; let card=el;"
+        " for(let i=0;i<8&&card.parentElement;i++){card=card.parentElement;"
+        "   if(/Members|Status/.test(card.textContent)) break;}"
+        " const ctl=[...card.querySelectorAll('button,[role=button],a')]"
+        "   .find(b=>/settings|edit|details/i.test(norm(b.textContent)||norm(b.getAttribute('aria-label')||'')));"
+        " if(!ctl) return 'NO_CTL'; ctl.click(); return 'OK'; })()")
+    return _ok_scoped(_eval(session, js, timeout=12))
+
+
+def _scoped_channel_control(session: str, channel: str, control: str) -> bool:
+    """Click a control INSIDE the exact channel's row (never a global first-match)."""
+    js = (
+        "(() => { const ch=" + json.dumps(channel) + ", want=" + json.dumps(control) + ";"
+        " const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+        " const rows=[...document.querySelectorAll('[role=row],li,[class*=channel]')];"
+        " const row=rows.find(r=>norm(r.innerText).toLowerCase().indexOf(ch.toLowerCase())!==-1);"
+        " if(!row) return 'NO_ROW';"
+        " const ctl=[...row.querySelectorAll('button,[role=button],a,input')]"
+        "   .find(e=>norm(e.textContent||e.getAttribute('aria-label')||e.getAttribute('placeholder')||'')"
+        "     .toLowerCase().indexOf(want.toLowerCase())!==-1);"
+        " if(!ctl) return 'NO_CTL'; ctl.click(); return 'OK'; })()")
+    return _ok_scoped(_eval(session, js, timeout=12))
+
+
+def _scoped_status_state(session: str, name: str) -> str:
+    js = (
+        "(() => { const want=" + json.dumps(name) + "; const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+        " const el=[...document.querySelectorAll('*')].find(e=>norm(e.textContent)===want && e.children.length===0);"
+        " if(!el) return 'NO_CARD'; let card=el;"
+        " for(let i=0;i<8&&card.parentElement;i++){card=card.parentElement;"
+        "   if(/Status/.test(card.textContent)) break;}"
+        " const m=norm(card.textContent).match(/Status\\s*:?\\s*(Active|Inactive)/i);"
+        " return m?m[1].toLowerCase():'UNKNOWN'; })()")
+    return (_eval(session, js, timeout=12) or "").strip().lower()
+
+
+def _group_url(plan: dict) -> str:
+    g = plan.get("group_ref") or {}
+    if g.get("portal_host") and g.get("group_slug"):
+        return f"https://{g['portal_host']}/communities/groups/{g['group_slug']}/home"
+    return ""
+
+
+def _execute_group_update(session: str, sels: dict, plan: dict) -> dict:
+    name = plan["community_name"] or plan["group_ref"]["group_slug"]
+    if not _scoped_group_settings(session, name):
+        raise StopAndReport("update.settings",
+                            "could not open the group's own settings/editor (card-scoped) — "
+                            "nothing changed.")
+    _ex_click(session, sels, "community.update_group.details_tab", required=False)
+    before = _read_group_state(session)
+    changes = plan["changes"]
+    if "name" in changes:
+        _ex_fill(session, sels, "community.update_group.name_input", ensure_zhc_name(changes["name"]))
+    if "description" in changes:
+        _ex_fill(session, sels, "community.update_group.description_input", changes["description"])
+    if "branding_image_url" in changes:
+        _ex_fill(session, sels, "community.update_group.branding_url_input",
+                 changes["branding_image_url"])
+    _ex_click(session, sels, "community.update_group.save_button")
+    _ex_wait_text(session, "Saved", timeout=15)
+    after = _read_group_state(session)
+    expect = {}
+    if "name" in changes:
+        expect["name"] = ensure_zhc_name(changes["name"])
+    if "description" in changes:
+        expect["description"] = changes["description"]
+    if "branding_image_url" in changes:
+        expect["branding_image_url"] = changes["branding_image_url"]
+    missing = [k for k, v in expect.items() if str(after.get(k) or "") != str(v)]
+    if missing:
+        raise StopAndReport(
+            "update.verify",
+            f"saved but requested field(s) {missing} were not confirmed on reload "
+            f"(observed={after}) — no false success.")
+    return {"changed_fields": sorted(expect), "before": before, "after": after}
+
+
+def _execute_change_access(session: str, sels: dict, plan: dict) -> dict:
+    name = plan["community_name"] or plan["group_ref"]["group_slug"]
+    if not _scoped_group_settings(session, name):
+        raise StopAndReport("access.settings", "could not open the group's own settings.")
+    before = _read_group_state(session)
+    _ex_click(session, sels, "community.access.privacy_control")
+    _ex_click(session, sels, "community.access.access_save_confirm")
+    _ex_wait_text(session, "Saved", timeout=15)
+    after = _read_group_state(session)
+    want = plan["changes"]["privacy"]
+    if str(after.get("privacy") or "").lower() != want:
+        raise StopAndReport(
+            "access.verify",
+            f"requested privacy={want!r} not confirmed (observed={after.get('privacy')!r}).")
+    return {"before": before, "after": after, "member_consequences": "not_measured"}
+
+
+def _execute_set_active(session: str, sels: dict, plan: dict, active: bool) -> dict:
+    name = plan["community_name"] or plan["group_ref"]["group_slug"]
+    if not _scoped_status_dropdown(session, name):
+        raise StopAndReport("activate.status",
+                            "could not open the group's OWN card Status dropdown — state unchanged.")
+    if active:
+        _ex_click(session, sels, "community.activate.active_option")
+        _ex_click(session, sels, "community.deactivate.confirm")
+        _ex_wait_text(session, "Active", timeout=12)
+    else:
+        _ex_click(session, sels, "community.deactivate.inactive_option")
+        _ex_click(session, sels, "community.deactivate.confirm")
+        _ex_wait_text(session, "Deactivated", timeout=12)
+    observed = _scoped_status_state(session, name)
+    want = "active" if active else "inactive"
+    if observed != want:
+        raise StopAndReport("activate.verify",
+                            f"requested status={want!r} not confirmed (observed={observed!r}).")
+    result = {"status": want, "inactivated": not active, "deleted": False,
+              "group_url": _group_url(plan),
+              "residue": ("group remains; set Inactive" if not active
+                          else "group remains; set Active"),
+              "residue_fields": ["group_url", "status", "slug"]}
+    return result
+
+
+def _execute_channel_update(session: str, sels: dict, plan: dict) -> dict:
+    ch = plan["changes"]
+    channel = str(ch["channel"])
+    if not _scoped_channel_control(session, channel, "edit"):
+        raise StopAndReport("channel_update.control",
+                            f"could not open channel {channel!r}'s own editor — unchanged.")
+    new_name = str(ch.get("name") or channel)
+    if ch.get("name"):
+        _ex_fill(session, sels, "community.group_nav.channel_rename_input", new_name)
+    if ch.get("description") is not None and ch.get("description") != "":
+        _ex_fill(session, sels, "community.group_nav.channel_description_input",
+                 str(ch["description"]), required=False)
+    _ex_click(session, sels, "community.group_nav.channel_save_confirm")
+    _ex_wait_text(session, new_name[:18], timeout=15)
+    state = _read_channel_state(session, new_name)
+    if not state.get("present"):
+        raise StopAndReport("channel_update.verify",
+                            f"channel {new_name!r} not present after save — no false success.")
+    return {"channel": channel, "new_name": new_name, "observed": state}
+
+
+def _execute_channel_order(session: str, sels: dict, plan: dict) -> dict:
+    order = [str(x) for x in plan["changes"]["order"]]
+    # Move each channel into place using ITS row-scoped move control, then verify the
+    # rendered order by reading the nav rows back in sequence.
+    for idx, channel in enumerate(order):
+        for _ in range(idx):
+            moved = _scoped_channel_control(session, channel, "move up")
+            if not moved:
+                _scoped_channel_control(session, channel, "up")
+    nav = _snapshot(session) or ""
+    positions = []
+    for channel in order:
+        pos = nav.lower().find(channel.lower())
+        if pos == -1:
+            raise StopAndReport("channel_order.verify",
+                                f"channel {channel!r} missing from the nav after reorder — STOP.")
+        positions.append(pos)
+    if positions != sorted(positions):
+        raise StopAndReport("channel_order.verify",
+                            f"requested order {order!r} not reflected in the nav order {positions!r}.")
+    return {"order": order, "positions": positions}
+
+
+def _execute_channel_settings(session: str, sels: dict, plan: dict) -> dict:
+    ch = plan["changes"]
+    channel = str(ch["channel"])
+    if not _scoped_channel_control(session, channel, "settings"):
+        raise StopAndReport("channel_settings.control",
+                            f"could not open channel {channel!r} settings — unchanged.")
+    applied: Dict[str, bool] = {}
+    if "private" in ch:
+        _ex_click(session, sels, "community.group_nav.channel_private_switch",
+                  required=bool(ch["private"]))
+        applied["private"] = bool(ch["private"])
+    if "read_only" in ch:
+        _ex_click(session, sels, "community.group_nav.channel_readonly_switch",
+                  required=bool(ch["read_only"]))
+        applied["read_only"] = bool(ch["read_only"])
+    if "premium" in ch:
+        _ex_click(session, sels, "community.group_nav.channel_premium_switch",
+                  required=bool(ch["premium"]))
+        applied["premium"] = bool(ch["premium"])
+    _ex_click(session, sels, "community.group_nav.channel_save_confirm")
+    _ex_wait_text(session, channel[:18], timeout=15)
+    state = _read_channel_state(session, channel)
+    if not state.get("present"):
+        raise StopAndReport("channel_settings.verify",
+                            f"channel {channel!r} missing after settings save — STOP.")
+    return {"channel": channel, "applied": applied, "observed": state,
+            "billing_unchanged": True}
+
+
+def execute_group_operation(session: str, sels: dict, plan: dict) -> dict:
+    op = plan["operation"]
+    if op == "update":
+        return _execute_group_update(session, sels, plan)
+    if op == "change_access":
+        return _execute_change_access(session, sels, plan)
+    if op == "activate":
+        return _execute_set_active(session, sels, plan, True)
+    if op == "deactivate":
+        return _execute_set_active(session, sels, plan, False)
+    if op == "channel_update":
+        return _execute_channel_update(session, sels, plan)
+    if op == "channel_order":
+        return _execute_channel_order(session, sels, plan)
+    if op == "channel_settings":
+        return _execute_channel_settings(session, sels, plan)
+    raise StopAndReport("operation", f"unsupported group operation {op!r}")
+
+
+def build_group_operation(task: dict, evidence_root: str, *, dry_run: bool = True,
+                          state: Optional["ghl_run_state.RunState"] = None) -> dict:
+    """Dry-run plan or LIVE managed-UI group/channel settings operation."""
+    started = time.monotonic()
+    os.makedirs(os.path.join(evidence_root, "routing"), exist_ok=True)
+    plan = plan_group_operation(task)
+    preflight = preflight_group_operation(plan)
+    _write_json(os.path.join(evidence_root, "routing", "group-operation-plan.json"),
+                {"plan": plan, "preflight": preflight})
+    if not preflight["pass"]:
+        return {"ok": False, "object_type": "community", "operation": plan["operation"],
+                "preflight": preflight, "error": preflight["stop_reason"],
+                "dry_run": bool(task.get("dry_run", dry_run)),
+                "duration_s": time.monotonic() - started}
+    if task.get("dry_run", dry_run):
+        return {"ok": True, "object_type": "community", "operation": plan["operation"],
+                "plan": plan, "preflight": preflight, "dry_run": True,
+                "duration_s": time.monotonic() - started}
+    if not (_HAVE_FFB and getattr(_ffb, "browser_manager", None) is not None):
+        raise RuntimeError("LIVE group operation requires the Skill-6 tools/ modules "
+                           "(ghl_form_builder glue + browser_manager).")
+    location_id = plan["location_id"]
+    os.environ["GHL_LOCATION_ID"] = location_id
+    session = _canonical_session(location_id)
+    sels = load_selectors()
+    stop: Optional[StopAndReport] = None
+    result: Dict[str, Any] = {}
+    with browser_writer(location_id, "ghl_community_builder"):
+        _ffb.browser_manager.headless_guard()
+        _ffb.browser_manager.assert_agent_browser_version()
+        _cm = _ffb.browser_manager.browser_session(location_id)
+        _sess = _cm.__enter__()
+        if _sess:
+            session = _sess
+        try:
+            _seed_and_land(session, location_id, evidence_root)
+            _nav_to_list(session, location_id, sels,
+                         "community.routes.communities_list", "Create Group")
+            result = execute_group_operation(session, sels, plan)
+            _write_json(os.path.join(evidence_root, "routing", "group-operation.json"),
+                        {"ok": True, "operation": plan["operation"],
+                         "changes": plan["changes"], "result": result,
+                         "preserve_unrelated": True, "observed_at": _ts()})
+            if plan["operation"] == "deactivate":
+                _write_json(os.path.join(evidence_root, "routing", "group-residue.json"),
+                            {"status": result.get("status"), "group_url": result.get("group_url"),
+                             "residue": result.get("residue"),
+                             "reused_resources_preserved": True, "observed_at": _ts()})
+        except StopAndReport as sr:
+            stop = sr
+            _write_json(os.path.join(evidence_root, "routing", "group-operation.json"),
+                        {"ok": False, "operation": plan["operation"], "stop": str(sr),
+                         "stop_step": sr.step, "observed_at": _ts()})
+        except Exception as exc:  # noqa: BLE001
+            stop = StopAndReport("unexpected", f"{type(exc).__name__}: {exc}")
+        finally:
+            try:
+                _cm.__exit__(None, None, None)
+            except Exception:  # noqa: BLE001
+                pass
+            _close_session(location_id)
+    base = {"object_type": "community", "operation": plan["operation"],
+            "dry_run": False, "duration_s": time.monotonic() - started}
+    if stop is not None:
+        return {**base, "ok": False, "error": str(stop), "stop_step": stop.step,
+                "stop_reason": stop.reason}
+    return {**base, "ok": True, "result": result}
+
+
 # ---------------------------------------------------------------------------
 # Main entry
 # ---------------------------------------------------------------------------
@@ -931,6 +1478,10 @@ def build_community(task: dict, evidence_root: str, *, dry_run: bool = True,
                     state: Optional["ghl_run_state.RunState"] = None) -> dict:
     started = time.monotonic()
     dry_run = bool(task.get("dry_run", dry_run))
+    op = str(task.get("operation") or "create").strip().lower()
+    if op != "create":
+        return build_group_operation(task, evidence_root,
+                                     dry_run=dry_run, state=state)
     os.makedirs(os.path.join(evidence_root, "routing"), exist_ok=True)
     os.makedirs(os.path.join(evidence_root, "shots"), exist_ok=True)
 
@@ -1154,14 +1705,34 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--description", default="")
     p.add_argument("--privacy", default="private", choices=["public", "private"])
     p.add_argument("--channels", default="", help="Comma-separated channel names")
+    p.add_argument("--operation", default="create",
+                   choices=list(GROUP_OPERATIONS),
+                   help="create (default) or a group/channel settings operation")
+    p.add_argument("--group-slug", default="")
+    p.add_argument("--group-id", default="")
+    p.add_argument("--portal-host", default="")
+    p.add_argument("--operator-role", default="")
+    p.add_argument("--approval-ref", default="")
+    p.add_argument("--changes-json", default="", help="JSON object of requested fields")
     # U8/U10 — identical flags on every Skill-6 builder.
     ghl_run_state.add_run_state_args(p)
     args = p.parse_args(argv)
     if args.selftest:
         return _selftest()
+    changes: Dict[str, Any] = {}
+    if args.changes_json:
+        try:
+            changes = json.loads(args.changes_json)
+        except Exception as exc:  # noqa: BLE001
+            p.error(f"--changes-json is not valid JSON: {exc}")
     task = {"community_name": args.community_name, "location_id": args.location_id,
             "description": args.description, "privacy": args.privacy,
-            "channels": [c.strip() for c in args.channels.split(",") if c.strip()]}
+            "channels": [c.strip() for c in args.channels.split(",") if c.strip()],
+            "operation": args.operation,
+            "group_ref": {"group_id": args.group_id, "group_slug": args.group_slug,
+                          "portal_host": args.portal_host},
+            "operator_role": args.operator_role, "approval_ref": args.approval_ref,
+            "changes": changes}
     return ghl_run_state.cli_run(
         args, builder="ghl_community_builder", specs=COMMUNITY_PHASES,
         script_path=__file__, task=task, build=build_community,

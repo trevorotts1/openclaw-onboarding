@@ -218,6 +218,79 @@
           "native DOM .click() on 'CREATE CHANNEL'"
         ],
         "conf": 9.0
+      },
+      "channel_rows": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "channel rows in the group nav (read name/description/settings state)",
+        "fallbacks": ["ghl_community_builder._read_channel_state (_CHANNEL_STATE_JS_TMPL)"],
+        "conf": 0,
+        "note": "NOT live-captured in the WF09 build lane. Required read anchor for update/order/settings verification."
+      },
+      "channel_edit_control": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "row-scoped edit control on the exact channel's nav row",
+        "fallbacks": ["ghl_community_builder._scoped_channel_control(channel, 'edit')"],
+        "conf": 0,
+        "note": "NOT live-captured. MUST be row-scoped: a populated group has many channels."
+      },
+      "channel_rename_input": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "anchor": "getByPlaceholder('Channel name')",
+        "fallbacks": ["name textbox in the channel editor"],
+        "conf": 0,
+        "note": "NOT live-captured."
+      },
+      "channel_save_confirm": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "exec": "native",
+        "anchor": "getByRole('button', { name: 'Save' })",
+        "fallbacks": ["dialog Save for the channel editor"],
+        "conf": 0,
+        "note": "NOT live-captured; Naive-UI submit expected native (like CREATE CHANNEL)."
+      },
+      "channel_settings_control": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "row-scoped settings control on the exact channel",
+        "fallbacks": ["ghl_community_builder._scoped_channel_control(channel, 'settings')"],
+        "conf": 0,
+        "note": "NOT live-captured. Optional product feature — the executor reports feature_unavailable when absent."
+      },
+      "channel_private_switch": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Private channel')",
+        "fallbacks": ["private/read-only channel toggle in channel settings"],
+        "conf": 0,
+        "note": "NOT live-captured; only touched when changes.private is requested."
+      },
+      "channel_readonly_switch": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Read only')",
+        "fallbacks": ["read-only posting toggle in channel settings"],
+        "conf": 0,
+        "note": "NOT live-captured; only touched when changes.read_only is requested."
+      },
+      "channel_premium_switch": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Premium')",
+        "fallbacks": ["premium access toggle in channel settings"],
+        "conf": 0,
+        "note": "NOT live-captured. Premium requires approval_ref and NEVER changes price/recurring billing from this operator."
+      },
+      "channel_order_control": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "row-scoped move up/down control on the exact channel",
+        "fallbacks": ["ghl_community_builder._scoped_channel_control(channel, 'move up'|'up')"],
+        "conf": 0,
+        "note": "NOT live-captured; verification reads the rendered nav order back."
       }
     },
     "learning": {
@@ -306,6 +379,314 @@
         "fallbacks": ["confirm control in the detach dialog"],
         "conf": 0,
         "note": "Detach removes the RELATIONSHIP only; it must never call a course delete."
+      }
+    },
+    "update_group": {
+      "_flow": "communities list -> group's OWN card settings/editor -> Details -> change ONLY the requested fields -> Save -> reload -> read back every requested field.",
+      "_capture_status": "pending_live_capture",
+      "_capture_note": "WF09 build (2026-11-08): NOT live-captured. Every target is capture-pending; the live executor STOP-and-reports (D8). Unrelated configuration is never rewritten.",
+      "settings_entry": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "group's own list-card settings/edit control (card-scoped by exact name)",
+        "fallbacks": ["ghl_community_builder._scoped_group_settings"],
+        "conf": 0,
+        "note": "NOT live-captured. Card-scoped so a populated list can never open a REAL group by accident."
+      },
+      "details_tab": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "required": false,
+        "anchor": "getByText('Details')",
+        "fallbacks": ["Details tab in the group settings dialog"],
+        "conf": 0,
+        "note": "Optional (settings may open on Details)."
+      },
+      "name_input": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "anchor": "getByPlaceholder('Group Name')",
+        "fallbacks": ["name field in the group details tab"],
+        "conf": 0,
+        "note": "NOT live-captured in the settings context (the create-page one is locked)."
+      },
+      "description_input": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "anchor": "getByPlaceholder('Enter a brief description')",
+        "fallbacks": ["description textarea in the group details tab"],
+        "conf": 0,
+        "note": "NOT live-captured in the settings context."
+      },
+      "branding_url_input": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "anchor": "getByPlaceholder('https://')",
+        "fallbacks": ["branding image URL field (CDN URL only, never an upload)"],
+        "conf": 0,
+        "note": "NOT live-captured. Media is never browser-uploaded."
+      },
+      "save_button": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "exec": "native",
+        "anchor": "getByRole('button', { name: 'Save' })",
+        "fallbacks": ["dialog Save in group settings"],
+        "conf": 0,
+        "note": "NOT live-captured; Naive-UI submit expected native."
+      }
+    },
+    "access": {
+      "_flow": "group settings -> access/privacy control -> set the APPROVED target -> Save -> reload -> read the privacy state back.",
+      "_capture_status": "pending_live_capture",
+      "_capture_note": "WF09 build (2026-11-08): NOT live-captured; change_access requires approval_ref and an admin role, and records member consequences as not_measured (a later member-view check is a separate proof).",
+      "privacy_control": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Public Group Radio Button')",
+        "fallbacks": ["privacy/public access control in group settings"],
+        "conf": 0,
+        "note": "NOT live-captured (the create-page privacy switch is also still pending)."
+      },
+      "access_save_confirm": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "exec": "native",
+        "anchor": "getByRole('button', { name: 'Save' })",
+        "fallbacks": ["Save/Confirm for the access change"],
+        "conf": 0,
+        "note": "NOT live-captured."
+      }
+    },
+    "activate": {
+      "_flow": "communities list -> group's OWN card Status dropdown -> 'Active' option -> confirm. Re-activation is the inverse of the locked deactivate flow.",
+      "_capture_status": "pending_live_capture",
+      "_capture_note": "The DEACTIVATE flow is Phase-B locked; the re-ACTIVATE option was not exercised. Capture it before relying on activation.",
+      "active_option": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('active')",
+        "fallbacks": ["'Active' option in the open Status dropdown"],
+        "conf": 0,
+        "note": "NOT live-captured; the confirm dialog reuses community.deactivate.confirm."
+      }
+    },
+    "members": {
+      "_flow": "group portal -> Members tab -> locate the EXACT person's row -> row-scoped action -> confirm (when destructive) -> reload -> read the member's own row back.",
+      "_capture_status": "pending_live_capture",
+      "_capture_note": "WF09 build (2026-11-08): NOT live-captured. Removal/ban/role elevation require approval_ref; a role change can never silently mint an administrator; enrolling in a workflow is not access proof.",
+      "members_tab": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Members')",
+        "fallbacks": ["Members tab in the group portal (observed among the Phase B portal tabs)"],
+        "conf": 0,
+        "note": "Tab row observed in Phase B, control itself not locked."
+      },
+      "member_rows": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "member rows (read identity/role/status text)",
+        "fallbacks": ["ghl_community_members.list_members (_ROWS_JS)"],
+        "conf": 0,
+        "note": "Required read anchor; the exact person must resolve in this list before any action."
+      },
+      "member_search_input": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "required": false,
+        "anchor": "getByPlaceholder('Search members')",
+        "fallbacks": ["members search box"],
+        "conf": 0,
+        "note": "Optional isolation aid; identity matching is exact (contact id/email)."
+      },
+      "invite_control": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: 'Invite' })",
+        "fallbacks": ["Invite/Add member control"],
+        "conf": 0,
+        "note": "NOT live-captured."
+      },
+      "invite_email_input": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "anchor": "getByPlaceholder('Email')",
+        "fallbacks": ["email field in the invite dialog"],
+        "conf": 0,
+        "note": "NOT live-captured."
+      },
+      "invite_confirm": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "exec": "native",
+        "anchor": "getByRole('button', { name: 'Send Invite' })",
+        "fallbacks": ["invite dialog submit"],
+        "conf": 0,
+        "note": "NOT live-captured."
+      },
+      "approve_control": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "row-scoped Approve control on the exact pending member",
+        "fallbacks": ["ghl_community_members._scoped_member_control(verb='approve')"],
+        "conf": 0,
+        "note": "NOT live-captured."
+      },
+      "remove_control": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "row-scoped Remove control (exact member)",
+        "fallbacks": ["ghl_community_members._scoped_member_control(verb='remove')"],
+        "conf": 0,
+        "note": "NOT live-captured; requires approval_ref."
+      },
+      "ban_control": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "row-scoped Ban control (exact member)",
+        "fallbacks": ["ghl_community_members._scoped_member_control(verb='ban')"],
+        "conf": 0,
+        "note": "NOT live-captured; requires approval_ref."
+      },
+      "role_control": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "row-scoped role control (exact member)",
+        "fallbacks": ["ghl_community_members._scoped_member_control(verb='role')"],
+        "conf": 0,
+        "note": "NOT live-captured; elevation to admin/owner requires approval_ref."
+      },
+      "role_option": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('<ROLE>')",
+        "fallbacks": ["role option matching plan.new_role"],
+        "conf": 0,
+        "note": "Value is plan-supplied; capture confirms the control shape."
+      },
+      "role_confirm": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "exec": "native",
+        "anchor": "getByRole('button', { name: 'Save' })",
+        "fallbacks": ["role dialog Save"],
+        "conf": 0,
+        "note": "NOT live-captured."
+      },
+      "grant_access_control": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "row-scoped grant group access control (or the tenant's Grant Group Access workflow action)",
+        "fallbacks": ["ghl_community_members._scoped_member_control(verb='grant')"],
+        "conf": 0,
+        "note": "NOT live-captured. A workflow enrollment alone is NOT access proof; the member row must be read back."
+      },
+      "revoke_access_control": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "row-scoped revoke group access control",
+        "fallbacks": ["ghl_community_members._scoped_member_control(verb='revoke')"],
+        "conf": 0,
+        "note": "NOT live-captured; requires approval_ref."
+      },
+      "confirm_action": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "exec": "native",
+        "anchor": "getByRole('button', { name: 'Confirm' })",
+        "fallbacks": ["confirm dialog for the member action"],
+        "conf": 0,
+        "note": "NOT live-captured."
+      },
+      "member_rows_reload": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "required": false,
+        "anchor": "getByText('Members')",
+        "fallbacks": ["reload the member list for the read-back"],
+        "conf": 0,
+        "note": "Optional: the caller may re-read in place."
+      }
+    },
+    "content": {
+      "_flow": "group portal -> content/moderation view -> locate the EXACT content row -> row-scoped pin/unpin/hide/restore/delete -> confirm (destructive/moderating) -> reload -> read the state back.",
+      "_capture_status": "pending_live_capture",
+      "_capture_note": "WF09 build (2026-11-08): NOT live-captured. Public post/comment operations are WF10's; this surface covers only the UI moderation gap.",
+      "content_tab": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "required": false,
+        "anchor": "getByText('Content')",
+        "fallbacks": ["content/moderation view in the group portal"],
+        "conf": 0,
+        "note": "NOT live-captured."
+      },
+      "content_rows": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "content/post rows (read content id + state text)",
+        "fallbacks": ["ghl_community_content.list_moderation_queue (_ROWS_JS)"],
+        "conf": 0,
+        "note": "Required read anchor; the exact content identity must resolve first."
+      },
+      "pin_control": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "row-scoped Pin control",
+        "fallbacks": ["ghl_community_content._scoped_content_control(verb='pin')"],
+        "conf": 0,
+        "note": "NOT live-captured."
+      },
+      "unpin_control": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "row-scoped Unpin control",
+        "fallbacks": ["ghl_community_content._scoped_content_control(verb='unpin')"],
+        "conf": 0,
+        "note": "NOT live-captured."
+      },
+      "hide_control": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "row-scoped Hide control",
+        "fallbacks": ["ghl_community_content._scoped_content_control(verb='hide')"],
+        "conf": 0,
+        "note": "NOT live-captured; requires approval_ref."
+      },
+      "restore_control": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "row-scoped Restore control",
+        "fallbacks": ["ghl_community_content._scoped_content_control(verb='restore')"],
+        "conf": 0,
+        "note": "NOT live-captured."
+      },
+      "delete_control": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "row-scoped Delete control",
+        "fallbacks": ["ghl_community_content._scoped_content_control(verb='delete')"],
+        "conf": 0,
+        "note": "NOT live-captured; destructive — requires approval_ref."
+      },
+      "confirm_action": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "exec": "native",
+        "anchor": "getByRole('button', { name: 'Confirm' })",
+        "fallbacks": ["confirm dialog for hide/delete"],
+        "conf": 0,
+        "note": "NOT live-captured."
+      },
+      "content_reload": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "required": false,
+        "anchor": "getByText('Content')",
+        "fallbacks": ["reload the content view for the state read-back"],
+        "conf": 0,
+        "note": "Optional: the caller may re-read in place."
       }
     },
     "deactivate": {

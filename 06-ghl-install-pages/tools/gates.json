@@ -529,6 +529,86 @@
     "not_a_secret": "Public Firebase Web API key, restricted server-side by Google (see gate 27 auth_storage_keys note); safe to ship in source under the existing D7 token-only doctrine."
   },
 
+  "community_builder_gates": {
+    "_doc": "WF09-owned shared gate registry for the Skill-6 Community / group / channel / member / content managed-UI operations. Consumed by ghl_community_builder.py, ghl_community_members.py and ghl_community_content.py. Runtime find-hints are hints, NOT fabricated CSS: the builder resolves the live @ref at runtime and a capture-pending selector in selectors-live-communities-courses.json makes the live walk STOP-and-report (D8).",
+    "_capture_status": "pending_live_capture",
+    "_capture_note": "Not live-captured in the WF09 hybrid build lane (2026-11-08). Capture on the authorized operator test group, record the real anchors in selectors-live-communities-courses.json + SELECTORS-LIVE-community.md, then flip status to locked.",
+    "_owner": "WF09",
+    "one_browser_writer_per_tenant": {
+      "required": true,
+      "enforced_in": "ghl_community_builder.acquire_browser_writer / browser_writer",
+      "note": "Different locations may use independent managed sessions; the same location never has two writers."
+    },
+    "deactivation_residue": {
+      "primitive": "inactivate",
+      "deleted": false,
+      "required_residue_fields": ["group_url", "status", "slug"],
+      "note": "GHL has no group delete on any known rail (D09). Cleanup deactivates and records the inactive residue; a reused group is preserved and never reported deleted (A13)."
+    },
+    "role_gates": {
+      "update": "admin", "change_access": "admin", "activate": "admin",
+      "deactivate": "admin", "channel_update": "admin", "channel_order": "admin",
+      "channel_settings": "admin"
+    },
+    "approval_required": ["change_access", "channel_settings",
+                          "deactivate_non_scratch", "premium_channel",
+                          "member_remove", "member_ban", "member_role_change",
+                          "member_revoke_access", "content_hide", "content_delete"],
+    "required_steps": [
+      "open_group_settings", "read_group_state", "apply_requested_fields",
+      "save_group_settings", "verify_group_state",
+      "open_channel_settings", "apply_channel_settings", "verify_channel_state",
+      "open_members", "locate_exact_member", "apply_member_action", "verify_member_row",
+      "open_content", "locate_exact_content", "apply_moderation", "verify_content_state",
+      "deactivate_and_record_residue"
+    ],
+    "steps": [
+      { "name": "open_group_settings", "status": "runtime", "label": "group's own list-card settings/edit control", "find": "find role button name 'Settings' inside the group's own card (card-scoped by exact name)" },
+      { "name": "read_group_state", "status": "runtime", "label": "group details form state", "find": "read the details form inputs (name/description/branding/privacy) via ghl_community_builder._read_group_state" },
+      { "name": "apply_requested_fields", "status": "runtime", "label": "only the requested detail fields", "find": "find placeholder 'Group Name' | find placeholder 'Enter a brief description'" },
+      { "name": "save_group_settings", "status": "runtime", "label": "Save in the group settings dialog", "find": "find role button name 'Save' (native .click() expected for Naive-UI)" },
+      { "name": "verify_group_state", "status": "runtime", "label": "re-read the saved details", "find": "re-read the same form state and compare every requested field" },
+      { "name": "open_channel_settings", "status": "runtime", "label": "row-scoped channel settings/edit control", "find": "ghl_community_builder._scoped_channel_control(channel, 'settings'|'edit')" },
+      { "name": "apply_channel_settings", "status": "runtime", "label": "private/read-only/premium toggles and rename", "find": "toggles in the channel editor (premium requires approval; no billing fields)" },
+      { "name": "verify_channel_state", "status": "runtime", "label": "channel present with the requested state", "find": "ghl_community_builder._read_channel_state" },
+      { "name": "open_members", "status": "runtime", "label": "Members tab in the group portal", "find": "find text 'Members'" },
+      { "name": "locate_exact_member", "status": "runtime", "label": "the exact member's row", "find": "ghl_community_members.list_members — match member_contact_id or email exactly" },
+      { "name": "apply_member_action", "status": "runtime", "label": "row-scoped invite/approve/remove/ban/role/grant/revoke control", "find": "ghl_community_members._scoped_member_control (verb)" },
+      { "name": "verify_member_row", "status": "runtime", "label": "re-read the member row", "find": "re-enumerate the member list; removal must show absence, role must show the new role" },
+      { "name": "open_content", "status": "runtime", "label": "content/moderation view", "find": "find text 'Content'" },
+      { "name": "locate_exact_content", "status": "runtime", "label": "the exact content row", "find": "ghl_community_content.list_moderation_queue — match content id or exact permalink" },
+      { "name": "apply_moderation", "status": "runtime", "label": "row-scoped pin/unpin/hide/restore/delete", "find": "ghl_community_content._scoped_content_control (verb)" },
+      { "name": "verify_content_state", "status": "runtime", "label": "re-read the content state", "find": "re-enumerate the content rows and compare the state" },
+      { "name": "deactivate_and_record_residue", "status": "runtime", "label": "group card Status -> Inactive -> Confirm; record group_url+status", "find": "ghl_community_builder._deactivate_group (card-scoped)" }
+    ],
+    "_change_request_intake": "WF08 / WF26 / WF34 shared selector or gate fragments are applied by WF09 (this file) under one file owner. At this build no change-request record existed in the run folder, so no foreign fragment was applied."
+  },
+
+  "learning_association_gates": {
+    "_doc": "WF09-owned gate registry for attaching an EXISTING GHL course in a Community group's Learning tab (spec §9.4). Consumed by ghl_learning_association.py. A requirement: enumerate existing associations BEFORE any write; never select 'Create new course'; verify course + policy after save; detach removes only the relationship and proves the course still exists.",
+    "_capture_status": "pending_live_capture",
+    "_capture_note": "Not live-captured in the WF09 build lane (2026-11-08). The Learning tab/controls stay capture-pending in selectors-live-communities-courses.json under community.learning.",
+    "_owner": "WF09",
+    "required_steps": [
+      "open_learning_tab", "enumerate_associations", "add_existing_course",
+      "select_course_option", "set_approved_policy", "save_association",
+      "reload_associations", "verify_course_and_policy",
+      "detach_relationship", "verify_course_not_deleted"
+    ],
+    "steps": [
+      { "name": "open_learning_tab", "status": "runtime", "label": "Learning tab on the group portal", "find": "find text 'Learning'" },
+      { "name": "enumerate_associations", "status": "runtime", "label": "existing course associations", "find": "ghl_learning_association.read_associations" },
+      { "name": "add_existing_course", "status": "runtime", "label": "add/attach EXISTING course control", "find": "find role button name 'Add Course' | 'Attach course'" },
+      { "name": "select_course_option", "status": "runtime", "label": "picker row matching the resolved course", "find": "find text '<COURSE NAME>' inside the picker (identity matched before clicking)" },
+      { "name": "set_approved_policy", "status": "runtime", "label": "access policy select -> approved option", "find": "policy select then option matching desired_access.policy_label" },
+      { "name": "save_association", "status": "runtime", "label": "Save in the association editor", "find": "find role button name 'Save' (native .click() expected)" },
+      { "name": "reload_associations", "status": "runtime", "label": "reload the relationship view", "find": "re-open the Learning tab / reload the association list" },
+      { "name": "verify_course_and_policy", "status": "runtime", "label": "exact course + policy confirmed", "find": "re-read associations; STOP on any mismatch" },
+      { "name": "detach_relationship", "status": "runtime", "label": "row-scoped remove control on the exact association", "find": "ghl_learning_association._scoped_detach" },
+      { "name": "verify_course_not_deleted", "status": "runtime", "label": "course still exists after detach", "find": "course list read-back; course_deleted must be false" }
+    ]
+  },
+
   "automations_builder_gates": {
     "_doc": "P3-08 Gap A — gate registry for the GoHighLevel Automations (Workflow) BUILDER UI, consumed by tools/ghl_workflow_builder.py. This is the Tier-4 gated, MANAGED workflow-build path Skill 44 routes to when the Firebase token is unread/misconfigured (see 44-convert-and-flow-operator/SKILL.md and 36-ghl-mcp-setup/GHL-LOOKUP-SOP.md RULE 6). The HARNESS (ghl_workflow_builder.py) is complete and unit-tested against a mocked gateway; it drives EVERY browser action through Skill 6's browser_manager.sh singleton gateway (one session, lock=1, TTL, guaranteed teardown, reaper backstop) — never bare agent-browser. Per Skill 6's 'NO invented CSS is shipped as fact' law, the step selectors below are status=runtime: role/name/visible-text FIND HINTS the harness resolves against the LIVE DOM at runtime, NOT captured CSS asserted as fact. A live-capture hardening pass on the operator's own GHL location will flip each step to status=captured and record the confirmed nodes in SELECTORS-LIVE-automations.md — same discipline every other Skill 6 runtime gate follows. The harness REFUSES to run (MissingGateError) if a required step name is absent here; it NEVER freehand-navigates.",
     "_capture_status": "pending_live_capture",

@@ -95,11 +95,30 @@ def test_selector_map_has_no_locked_inarea_targets_yet():
                        "settings_nav", "status_toggle"}
     # WF09 hybrid surfaces added AFTER Phase B: deliberately capture-pending until a
     # live capture locks them (D8 — the live walk STOP-and-reports; nothing is faked).
-    wf09_surfaces = {"learning", "update_group", "access", "activate", "members", "content"}
+    wf09_surfaces = {"learning", "update_group", "access", "activate", "members",
+                     "content", "group_nav"}
     pending_wf09 = {
+        # learning association (WF09-CP01)
         "learning_tab", "association_rows", "add_existing_course_control",
         "course_picker_search", "course_option", "policy_select", "policy_option",
         "save_association", "associations_reload", "detach_confirm",
+        # group details / access / activation
+        "settings_entry", "details_tab", "name_input", "description_input",
+        "branding_url_input", "save_button", "privacy_control", "access_save_confirm",
+        "active_option",
+        # channels: update / order / settings
+        "channel_rows", "channel_edit_control", "channel_rename_input",
+        "channel_save_confirm", "channel_settings_control", "channel_private_switch",
+        "channel_readonly_switch", "channel_premium_switch", "channel_order_control",
+        # member administration
+        "members_tab", "member_rows", "member_search_input", "invite_control",
+        "invite_email_input", "invite_confirm", "approve_control", "remove_control",
+        "ban_control", "role_control", "role_option", "role_confirm",
+        "grant_access_control", "revoke_access_control", "confirm_action",
+        "member_rows_reload",
+        # content / moderation
+        "content_tab", "content_rows", "pin_control", "unpin_control", "hide_control",
+        "restore_control", "delete_control", "content_reload",
     }
     locked_count = 0
     for top in ("community", "course"):

@@ -104,3 +104,15 @@ The Skill-36 Tier-2 (588-tool) community-MCP list ships **`create_course`,
 **Overall (scaffold): honest CAPTURE-PENDING.** Builder (with resumable per-lesson
 receipts) + QC gate are complete and proven in dry-run/selftest; the live path
 STOP-and-reports at the first capture-pending REQUIRED anchor until LOCKED.
+
+## 5. Learning association (WF09, 2026-11-08) — where the relationship controls live
+
+Attaching/detaching an EXISTING course in a **group's** Learning tab is owned by
+`ghl_learning_association.py` and its selectors live under `community.learning.*` in
+`selectors-live-communities-courses.json` (documented in
+`SELECTORS-LIVE-community.md` §4). The course builder is not the association driver and
+never selects "Create new course" for an existing course.
+
+Post-detach proof reads the COURSE list to confirm the course still exists
+(`course_deleted=false`, `course_still_present=true`). Those relationship targets are
+`capture-pending` in this build — not live-captured.

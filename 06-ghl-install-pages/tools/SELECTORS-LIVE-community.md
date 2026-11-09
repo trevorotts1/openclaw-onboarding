@@ -16,9 +16,11 @@ Per **D8 (zero invented selectors)** this doc records what is VERIFIED for the s
 leadconnectorhq rail, the anchor VALUES OBSERVED in the 2026-07-10 live-capture attempt
 (recorded, not yet LOCKed), plus the exact capture procedure to LOCK the rest. The
 machine-readable companion the builder loads is
-`selectors-live-communities-courses.json` (every in-area target there is
-`status:"capture-pending"`; a REQUIRED capture-pending anchor makes the live build
-STOP-and-report — it never guesses CSS).
+`selectors-live-communities-courses.json`. Status is mixed and honest: the Phase B
+create/channel/deactivate core is `locked`; the WF09 hybrid surfaces added in the
+2026-11-08 build (group update/access/activation, channel update/order/settings,
+members, content moderation, Learning association) are `capture-pending`, so the live
+build STOP-and-reports at the first one — it never guesses CSS.
 
 ## Phase A (2026-07-10) — the builders are now agent-browser 0.27.0 LIVE-READY
 
@@ -138,3 +140,43 @@ LOCKs them via the full create-then-deactivate procedure).
 **Overall (scaffold): honest CAPTURE-PENDING.** The builder + QC gate are complete and
 proven in dry-run/selftest; the live path STOP-and-reports at the first capture-pending
 REQUIRED anchor until this doc is LOCKED by the procedure above.
+
+
+## 4. WF09 hybrid surfaces (2026-11-08 build) — offline implementation only
+
+These operations are implemented with injected-fake tests and are **NOT** live-captured.
+Every target is `capture-pending` in `selectors-live-communities-courses.json`; the live
+executor STOP-and-reports (D8). No anchor below is claimed as a live fact.
+
+| Surface | Operations | Executor | Capture procedure |
+|---|---|---|---|
+| `community.update_group` | update requested details/branding only; preserve unrelated config | `ghl_community_builder._execute_group_update` | open the group's OWN card settings, record the Details tab + name/description/branding inputs + Save, read each requested field back |
+| `community.access` | change approved privacy/access; member consequences recorded as `not_measured` | `_execute_change_access` | record the privacy control + Save; read the state back on reload |
+| `community.activate` | re-activate an inactive group | `_execute_set_active(active=True)` | inverse of the locked deactivate flow: card Status dropdown -> `Active` -> confirm |
+| `community.group_nav.*` | channel rename/description, order, private/read-only/premium settings | `_execute_channel_update`, `_execute_channel_order`, `_execute_channel_settings` | row-scoped channel controls; re-read the nav order and settings state; premium needs approval and never touches billing |
+| `community.members.*` | invite/approve/remove/ban/role change/grant/revoke, list, member-view check | `ghl_community_members.py` | Members tab; locate the exact person by contact id/email; row-scoped action; re-read the member row |
+| `community.content.*` | pin/unpin/hide/restore/delete, moderation queue, member-view verification | `ghl_community_content.py` | content view; locate exact content id/permalink; row-scoped moderation; re-read state |
+| `community.learning.*` | attach existing course / inspect / detach, policy verification | `ghl_learning_association.py` | group Learning tab; enumerate first; add EXISTING course; set approved policy; reload; verify course+policy; detach proves course survives |
+
+Operational rules enforced by the code (not just prose):
+
+- **One browser writer per tenant/session.** `ghl_community_builder.browser_writer(location_id)`
+  raises if a second writer opens for the same location; different locations may run
+  independent managed sessions.
+- **Role checks.** Group/channel settings require `operator_role >= admin`
+  (`ROLE_RANK`); member moderation requires `moderator+`.
+- **Approvals.** Privacy/access changes, premium channel settings, deactivation of a
+  non-scratch group, member removal/ban/role elevation/revoke, and content hide/delete
+  require `approval_ref`. Routine invite/approve may use the tenant's established
+  automation authorization; a workflow enrollment is recorded as **not** access proof.
+- **Cleanup honesty (A13/D09).** Groups have no delete. A created scratch group is
+  deactivated and its `{group_url, status: inactive, slug}` residue is recorded; a
+  reused group is preserved and never reported deleted. Course cleanup is the true-delete
+  rail (0 residue) and lives in the course builder.
+- **Association is separate (A12).** Attach is idempotent, same-location, selects an
+  EXISTING course only, verifies the exact policy after reload, and writes its own
+  `learning_association` receipt. Detach removes only the relationship and proves the
+  course still exists.
+
+Capture all of the above on the authorized operator test group before any live run;
+until then the honest state is `capture-pending`, not "done live".
