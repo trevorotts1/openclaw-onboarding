@@ -250,8 +250,11 @@ has(DEP, "ZHC-", "ZHC prefix rule kept")
 for rel in CHANGED:
     body = text(rel)
     checks += 1
-    if "ghl-operations/SOP-" in body:
+    if "universal-sops/ghl-operations/" in body:
         failures.append(f"{rel}: forbidden second cluster path present")
+    if rel.startswith("universal-sops/") and rel.endswith("CERTIFY.md") or rel.endswith("BUILD.md") or rel.endswith("INTAKE.md") or rel.endswith("DEPENDENCIES.md"):
+        if "Canonical GHL operations cluster" not in body:
+            failures.append(f"{rel}: missing single canonical cluster pointer")
     if "/Users/" in body or "blackceomacmini" in body:
         failures.append(f"{rel}: operator path or banned identifier present")
 
