@@ -781,6 +781,78 @@ def _draw_images(cfg: Dict[str, Any], run_dir: Path, page_kind: str,
             "design_style": inputs.get("design_style"), "stages": list(IMAGE_STAGES)}
 
 
+def _admit_entry(run_dir: Path) -> Dict[str, Any]:
+    """F14 item 2: the 49 landing entry consults the one admission service.
+
+    A run that is just starting records a `local` entry decision, which can never
+    claim production completion. The authoritative refusals happen at the paid
+    dispatch boundary and at delivery, where evidence exists to judge.
+    """
+    try:
+        import admission_seam
+    except ImportError:
+        # An isolated fixture tree may hold this bridge alone. The entry decision
+        # is non-authoritative, so its absence is reported, never invented: the
+        # authoritative refusals (paid dispatch, install, publish, complete) still
+        # run through the seam wherever the seam exists.
+        notice = ("entry admission: admission_seam is not present beside this bridge; "
+                  "the entry decision was NOT recorded")
+        print(notice, file=sys.stderr)
+        return {"admitted": True, "recorded": False, "reason": notice}
+    try:
+        return admission_seam.admit_entry(run_dir, owner="landing_bridge",
+                                         authority="local")
+    except Exception as exc:
+        raise BridgeError(f"entry admission refused for {run_dir}: {exc}")
+
+
+def _pipeline_phase(cfg: Dict[str, Any], run_dir: Path) -> Dict[str, Any]:
+    """Phase 2: the canonical stage verdict, with the fixture seam repaired.
+
+    F14 item 10: a production-command replacement or fixture seam cannot
+    substitute a zero-exit process for canonical stage evidence. So the
+    substitutable `landing.pipeline_command` runs the production command, and the
+    canonical `stage_gate.py report` runs ALWAYS, on both paths, and its exit is
+    the only verdict the bridge records as `exit`. A zero-exit substitute is
+    reported as `substitute_exit` beside that verdict, never in place of it.
+    """
+    skill_root: Path = cfg["skill_root"]
+    python: str = cfg["python"]
+    substitute = cfg["pipeline_command"]
+    if substitute is not None:
+        _run(substitute, "landing pipeline command", cwd=run_dir)
+    gate = [python, str(skill_root / "scripts" / "stage_gate.py"),
+            "report", str(run_dir)]
+    try:
+        proc = subprocess.run(gate, capture_output=True, text=True,
+                              timeout=1800.0)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise BridgeError(f"Skill 71 stage_gate report: {exc}")
+    pipeline: Dict[str, Any] = {
+        "command": substitute if substitute is not None else gate,
+        "exit": proc.returncode,
+        "canonical_gate": {"command": gate, "exit": proc.returncode},
+        "note": "the stage gate owns stage closing; exit 0 "
+                "means every required stage is closed, any "
+                "other exit means production is still in "
+                "progress in the run directory",
+    }
+    if substitute is not None:
+        # The replacement is recorded as a replacement. Its zero exit proved
+        # that a process ran, nothing about the design, the deployment or the
+        # client's receipt.
+        pipeline["substituted"] = True
+        pipeline["substitute_exit"] = 0
+        pipeline["evidence_authority"] = "canonical_stage_gate"
+    if proc.returncode != 0 and not cfg["draft"]:
+        detail = (proc.stdout + proc.stderr).strip()[:400]
+        raise BridgeError(
+            f"Skill 71 stage_gate report exited {proc.returncode} for {run_dir}: production is not "
+            "closed (copy gate, wireframes, review), so the page is not delivered. Declare "
+            f"landing.draft true to place an unfinished run as a draft. {detail}")
+    return pipeline
+
+
 def _produce(cfg: Dict[str, Any], req: Dict[str, Any], request_raw: bytes,
              launch_raw: bytes, brand_raw: bytes, graph_raw: bytes,
              run_dir: Path, page_kind: str, page_version: str):
@@ -791,6 +863,7 @@ def _produce(cfg: Dict[str, Any], req: Dict[str, Any], request_raw: bytes,
 
     # Stage the run directory (byte-identical request; verbatim docs).
     run_dir.mkdir(parents=True, exist_ok=True)
+    _admit_entry(run_dir)
     _stage_file(run_dir, "page-request.json", request_raw, "page-request")
     _stage_file(run_dir, "launch.json", launch_raw, "launch record")
     _stage_file(run_dir, req["route_graph_ref"], graph_raw, "route graph")
@@ -823,29 +896,7 @@ def _produce(cfg: Dict[str, Any], req: Dict[str, Any], request_raw: bytes,
 
     # Phase 2: the production pipeline's own gate verdict. The gate
     # owns closing stages; the bridge never closes a stage itself.
-    if cfg["pipeline_command"] is not None:
-        _run(cfg["pipeline_command"], "landing pipeline command",
-             cwd=run_dir)
-        pipeline = {"command": cfg["pipeline_command"], "exit": 0}
-    else:
-        gate = [python, str(skill_root / "scripts" / "stage_gate.py"),
-                "report", str(run_dir)]
-        try:
-            proc = subprocess.run(gate, capture_output=True, text=True,
-                                  timeout=1800.0)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise BridgeError(f"Skill 71 stage_gate report: {exc}")
-        pipeline = {"command": gate, "exit": proc.returncode,
-                    "note": "the stage gate owns stage closing; exit 0 "
-                            "means every required stage is closed, any "
-                            "other exit means production is still in "
-                            "progress in the run directory"}
-        if proc.returncode != 0 and not cfg["draft"]:
-            detail = (proc.stdout + proc.stderr).strip()[:400]
-            raise BridgeError(
-                f"Skill 71 stage_gate report exited {proc.returncode} for {run_dir}: production is not "
-                "closed (copy gate, wireframes, review), so the page is not delivered. Declare "
-                f"landing.draft true to place an unfinished run as a draft. {detail}")
+    pipeline = _pipeline_phase(cfg, run_dir)
 
     # Phase 3: emit the page result inside the run, validate it with
     # S49's receipt rules.
