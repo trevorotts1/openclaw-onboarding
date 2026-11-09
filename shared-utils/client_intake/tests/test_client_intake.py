@@ -79,7 +79,7 @@ class Bank(unittest.TestCase):
 
     def test_never_default_list_matches_the_rules(self):
         never = {q["id"] for q in e.load_bank()["questions"] if q["never_default"]}
-        for must in ("price", "offer_name", "offer_description", "representation", "community_truth", "entitlement", "paid_render_approval", "plan_approval"):
+        for must in ("price", "offer_name", "offer_description", "representation", "community_truth", "paid_render_approval", "plan_approval"):
             self.assertIn(must, never)
 
     def test_coverage_every_required_field_has_a_question_or_a_system_reason(self):

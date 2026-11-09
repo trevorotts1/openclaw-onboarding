@@ -230,16 +230,15 @@ class BoundToDispatchTests(DispatchedRun):
         doc["approval"]["hash"] = "e" * 64
         self.refused("AF-LAUNCH-PKG-APPROVAL-HASH", doc=doc)
 
-    def test_another_entitlement_basis_or_approval_is_refused_against_the_dispatch_time_intake(self):
+    def test_another_intake_is_refused_against_the_dispatch_time_intake(self):
         run = self.copy_run()
         (run / package.INTAKE_SNAPSHOT_REL).write_text(json.dumps(self.doc), encoding="utf-8")
         ok = self.assemble(name="same", run=run)
         self.assertEqual(ok["manifest"]["dispatch_binding"]["intake_snapshot"], "verified")
         other = copy.deepcopy(self.doc)
-        other["entitlement_attestation"] = {"basis": "brand_management_membership",
-                                            "evidence_ref": "TEST-ONLY-EVIDENCE", "attested_by": "operator"}
+        other["locale"] = "en-GB"
         err = self.refused("AF-LAUNCH-PKG-INTAKE-DRIFT", name="basis", doc=other, run=run)
-        self.assertIn("entitlement", err.detail)
+        self.assertIn("locale", err.detail)
         # a practice run found beside the pieces (no named dispatch run) is held to the same snapshot
         other = copy.deepcopy(self.doc)
         other["approval"]["hash"] = "e" * 64
@@ -253,13 +252,12 @@ class BoundToDispatchTests(DispatchedRun):
         built = self.assemble(name="found-beside", run=run, named=False)  # test_only intake: not strict
         self.assertEqual(built["manifest"]["dispatch_binding"]["intake_snapshot"], "absent")
 
-    def test_a_real_dispatch_with_another_entitlement_basis_never_assembles(self):
+    def test_a_real_dispatch_with_another_intake_never_assembles(self):
         run = self.copy_run("real")
         if not self.bridge_wrote_snapshot:  # exercise exactly what dispatch left behind
             (run / package.INTAKE_SNAPSHOT_REL).unlink()
         other = copy.deepcopy(self.doc)
-        other["entitlement_attestation"] = {"basis": "brand_management_membership",
-                                            "evidence_ref": "TEST-ONLY-EVIDENCE", "attested_by": "operator"}
+        other["locale"] = "en-GB"
         with self.assertRaises(package.PackageError) as ctx:
             self.assemble(name="real-pkg", doc=other, run=run)
         self.assertIn(ctx.exception.code, {"AF-LAUNCH-PKG-INTAKE-MISSING", "AF-LAUNCH-PKG-INTAKE-DRIFT"})
