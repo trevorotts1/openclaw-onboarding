@@ -1,5 +1,9 @@
 # Changelog - kie-image
 
+## [2.2.8] - 2026-11-09 - G3 lockstep: version past main for the recut4 merge content
+
+- `SKILL.md` frontmatter (top-level and metadata) and `skill-version.txt` rolled 2.2.7 -> 2.2.8 so G3 sees the bump beside the GPT Image 2.6 migration content in this merge (models.json 2.6-native enum, 2.5-family retirement, alias funneling, validate_payload ratio rules). No behavior change in this entry.
+
 ## [2.2.7] - 2026-11-09 - GPT Image 2.6 migration lands on current main
 
 - Version rolled 2.2.6 -> 2.2.7 so G3 sees this skill's bump beside the migration content that

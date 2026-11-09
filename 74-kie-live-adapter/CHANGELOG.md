@@ -1,5 +1,9 @@
 # Changelog - Skill 74 KIE Live Adapter
 
+## [1.1.14] - 2026-11-09 - G3 lockstep: version past main for the recut4 merge content
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 1.1.13 -> 1.1.14 so G3 sees the bump beside the GPT Image 2.6 migration content in this merge (2.5-flare to 2.6/flare registry rename). No behavior change in this entry.
+
 ## [1.1.13] - 2026-11-09 - GPT Image 2.6 migration lands on current main
 
 - `SKILL.md` frontmatter and `skill-version.txt` rolled 1.1.12 -> 1.1.13 so G3 sees the bump beside the GPT Image 2.6 migration content. No behavior change in this entry.
