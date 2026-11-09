@@ -1,7 +1,7 @@
 ---
 name: avatar-alchemist
 description: Turns one completed brand-intake interview into the full brand-intelligence package — 40 generators across 7 subsystems (Avatar Core, Awareness, Bios, Tone, Facebook Ads with 13 ad sets, Booking Bots, Landing/Hero) → 16 named deliverables (37 documents), delivered as labeled markdown in ~/Downloads. Fully local: no n8n, no Airtable, no Google Drive, no Slack/Gmail — the client's own model providers only, never Anthropic. A Book/Brand version selector runs FIRST: version=brand runs this 40-stage pipeline; version=book routes to the separate Avatar Alchemist Book skill (53) or parks fail-closed "book-skill-not-available". Every process rule is a fail-closed Python prover with a negative test; a run cannot claim "done" without a signed provenance certificate. Trigger with "run avatar alchemist", "brand intelligence package", "build my avatar documents", or "avatar alchemist for <brand>".
-version: v2.0.2
+version: v2.0.3
 ---
 
 # Avatar Alchemist — Brand Intelligence Engine (Skill 52)
@@ -81,8 +81,9 @@ the version gate is code-coupled to `<RUN_DIR>/intake.json`, not a documented co
    documented fidelity trade-off, OFF by default), throttled to `min(slots, provider_cap)`,
    dispatching one sub-agent per stage with ONLY its 3 prompt files + resolved deps.
 3. **Content gate** — `aa_build_check.py` enforces stripped-word floors, exact counts (39
-   image prompts, 3×13 top-39, 12+12+12 headlines, 10 ads/set), the 5,000–19,000-char
-   image-prompt band, the 13 restored ad-set categories (R4 — only under `--apply-repairs`), bot-doc structure, the 12-section
+   image prompts, 3×13 top-39, 12+12+12 headlines, 10 ads/set), the KIE prompt rule 12
+   image-prompt band ([16,000, 20,000] stripped chars at the GPT Image 2.6 owner cap;
+   95-100% target, 80% hard floor), the 13 restored ad-set categories (R4 — only under `--apply-repairs`), bot-doc structure, the 12-section
    hero page, zero unresolved placeholders, and **zero Anthropic model ids**.
 4. **Delivery gate** — `aa_delivery_gate.py` refuses `~/Downloads` below 40/40 receipts whose
    sha256 match the artifact bytes, requires independent QC ≥ 8.5, and issues the **signed

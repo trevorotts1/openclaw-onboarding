@@ -1,4 +1,4 @@
-"""Captured marketing-quiz result header and tier-specific CTA copy.
+"""Captured marketing-quiz business-name visibility/copy and tier-specific CTA copy.
 
 Native UI Modal, Header and Call to action controls captured November 9, 2026.
 This edits caller-authored plain text/HTTPS links only. It never changes the
@@ -18,7 +18,7 @@ else:
     from assessments import reopen_editor
 
 
-HEADER_FIELDS = {'business_name'}
+HEADER_FIELDS = {'business_name', 'business_name_enabled', 'header_layout'}
 CTA_FIELDS = {'cta_content', 'cta_button_text', 'cta_url'}
 CTA_TEXT = 'Enter button text (e.g., Subscribe, Learn More)'
 CTA_URL = 'Enter URL (e.g., https://www.example.com)'
@@ -51,6 +51,15 @@ def _pair(expected, changes, allowed):
             or not changes or set(expected) != set(changes) or set(changes) - allowed):
         raise Stop('Each result-copy edit requires the exact same previous/authored field keys')
     for key in changes:
+        if key == 'header_layout':
+            if any(type(value) is not str or value not in ('Default','Reverse')
+                   for value in (expected[key],changes[key])):
+                raise Stop('Header layout requires exact previous and desired Default/Reverse names')
+            continue
+        if key == 'business_name_enabled':
+            if type(expected[key]) is not bool or type(changes[key]) is not bool:
+                raise Stop('Business-name visibility requires exact previous and desired Boolean values')
+            continue
         expected[key] = _plain(expected[key])
         changes[key] = _https(changes[key]) if key == 'cta_url' else _plain(changes[key])
         if key in ('business_name', 'cta_button_text') and not changes[key]:
@@ -135,9 +144,52 @@ def _toggle(modal):
 
 def _header(modal):
     _pane(modal, 'Header')
-    if not _toggle(modal):
-        raise Stop('Business-name copy is hidden; enable it through a separately captured operation')
-    return {'business_name':_plain(_rte(modal).inner_text())}
+    # This switch controls only the business name. The logo/layout remain
+    # independent Header controls. The RTE stays visible with this switch off.
+    label = modal.locator('.switch-handle').filter(
+        has_text=re.compile(r'^\s*Business\s*name\s*$'))
+    _one(label, 'Native Header Business name switch label changed')
+    _,layout = _layout_controls(modal)
+    return {'business_name':_plain(_rte(modal).inner_text()),
+            'business_name_enabled':_toggle(modal), 'header_layout':layout}
+
+
+def _layout_controls(modal):
+    heading = modal.get_by_text(re.compile(r'^\s*Header\s*layout\s*$'))
+    _one(heading, 'Native Header layout label is missing or ambiguous')
+    cards = modal.locator('div.flex.w-full.cursor-pointer.flex-col.items-center')
+    if cards.count() != 2:
+        raise Stop('Native Header layout card inventory changed')
+    baseline = {'flex','h-8','w-full','items-center','justify-center','gap-2',
+        'rounded-lg','border','border-gray-300','px-6','py-[18px]','pl-3',
+        'font-medium','text-gray-700','transition-colors','duration-200'}
+    controls,selected = {},[]
+    for name in ('Default','Reverse'):
+        card = cards.filter(has=modal.get_by_text(name,exact=True))
+        _one(card, 'Native Header layout card is absent or ambiguous: '+name)
+        label = _one(card.get_by_text(name,exact=True), 'Native Header layout text changed')
+        classes = set((label.get_attribute('class') or '').split())
+        if not baseline.issubset(classes):
+            raise Stop('Native Header layout card shape changed')
+        if 'layout-card-active' in classes:
+            if not {'bg-gray-100','text-primary-700'}.issubset(classes):
+                raise Stop('Native Header selected-layout classes changed')
+            selected.append(name)
+        controls[name] = card
+    if len(selected) != 1:
+        raise Stop('Native Header layout selection is missing or ambiguous')
+    return controls,selected[0]
+
+
+def _header_logo(modal):
+    # Read-only preservation of captured Header logo fields. No URL is fetched
+    # and no image chooser or uploader is opened by a layout edit.
+    image = _one(modal.locator('#bgImage[name="bgImage"]'), 'Native Header logo URL control changed')
+    sizes = modal.get_by_role('textbox',name='Please Input',exact=True)
+    if sizes.count() != 2:
+        raise Stop('Native Header logo width/height control inventory changed')
+    return {'url':image.input_value(), 'width':sizes.nth(0).input_value(),
+            'height':sizes.nth(1).input_value()}
 
 
 def _cta_context(modal, context):
@@ -193,6 +245,22 @@ def _cta_values(modal):
 
 
 def _write(modal, key, value):
+    if key == 'header_layout':
+        controls,current = _layout_controls(modal)
+        if current != value:
+            click(controls[value])
+            wait_until(lambda:_layout_controls(modal)[1] == value,
+                       'Native Header layout did not select the authored card')
+        return
+    if key == 'business_name_enabled':
+        control = _one(modal.get_by_role('switch', name='toggle', exact=True),
+                       'Native Header Business name switch changed')
+        if not control.is_enabled():
+            raise Stop('Native Header Business name switch is disabled')
+        if _toggle(modal) != value:
+            click(control)
+            wait_until(lambda:_toggle(modal) == value, 'Native business-name visibility did not change')
+        return
     if key in ('business_name', 'cta_content'):
         control = _rte(modal)
     else:
@@ -244,6 +312,18 @@ def configure(page, step):
 
     modal = open_results()
     header_before = _header(modal) if config.get('changes') else None
+    preserve_header_markup = (header_before is not None
+        and bool({'business_name_enabled','header_layout'}.intersection(config['changes']))
+        and 'business_name' not in config['changes'])
+    header_markup = _rte(modal).inner_html() if preserve_header_markup else None
+    header_logo = _header_logo(modal) if header_before is not None and 'header_layout' in config['changes'] else None
+    if preserve_header_markup and not isinstance(header_markup, str):
+        raise Stop('Business-name stored markup is unavailable before visibility editing')
+    if (header_before is not None and 'business_name_enabled' in config['changes']
+            and header_before['business_name_enabled'] != config['changes']['business_name_enabled']
+            and not _one(modal.get_by_role('switch',name='toggle',exact=True),
+                         'Native Header Business name switch changed').is_enabled()):
+        raise Stop('Native Header Business name switch is disabled before result editing')
     if header_before is not None and any(header_before[key] != value for key, value in config['expected'].items()):
         raise Stop('Quiz header copy differs from the inventoried previous values')
     variant_before = []
@@ -276,6 +356,14 @@ def configure(page, step):
         _tier(frame, modal, variant, config['cta_context'])
         if _cta_values(modal) != {**before, **variant['changes']}:
             raise Stop('Another tier edit changed a previously authored CTA before Save')
+    if preserve_header_markup:
+        _header(modal)
+        if _rte(modal).inner_html() != header_markup:
+            raise Stop('Header controls changed protected stored markup before Save')
+    if header_logo is not None:
+        _header(modal)
+        if _header_logo(modal) != header_logo:
+            raise Stop('Header layout changed protected logo URL/width/height before Save')
     identity()
     save = _one(modal.get_by_role('button', name='Save', exact=True), 'Native result-modal Save changed')
     if not save.is_enabled():
@@ -292,6 +380,10 @@ def configure(page, step):
     modal = open_results()
     if header_before is not None and _header(modal) != {**header_before, **config['changes']}:
         raise Stop('Quiz header copy did not persist after independent reopen')
+    if preserve_header_markup and _rte(modal).inner_html() != header_markup:
+        raise Stop('Business-name stored markup changed after independent reopen')
+    if header_logo is not None and _header_logo(modal) != header_logo:
+        raise Stop('Header logo URL/width/height changed after independent reopen')
     for variant, before in zip(config.get('cta_variants', []), variant_before):
         _tier(frame, modal, variant, config['cta_context'])
         if _cta_values(modal) != {**before, **variant['changes']}:

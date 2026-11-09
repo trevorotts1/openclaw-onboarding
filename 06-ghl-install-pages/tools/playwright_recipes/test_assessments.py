@@ -8,6 +8,21 @@ import skill6_playwright as runner
 import recipe_cli
 
 
+def list_reopen_surface(page):
+    """Model a real list transition rather than treating goto as completion."""
+    editor_url=page.url;state={'iframes':1};previous=page.goto.side_effect
+    def navigate(url,*args,**kwargs):
+        if previous is not None:previous(url,*args,**kwargs)
+        page.url=url;state['iframes']=0
+    page.goto.side_effect=navigate
+    page.locator.return_value.count.side_effect=lambda:state['iframes']
+    cell=MagicMock()
+    def reopen(*args,**kwargs):
+        page.url=editor_url;state['iframes']=1
+    cell.get_by_text.return_value.click.side_effect=reopen
+    return cell
+
+
 def quiz():
     return {'kind': 'quiz', 'questions': [
         {'id': 'q1', 'choices': [{'value': 'skip', 'score': 0, 'next': 'submit'},
@@ -224,12 +239,13 @@ class NativeFieldExecution(unittest.TestCase):
         return page, frame, state
 
     def run_surface(self, page, frame, step):
+        cell=list_reopen_surface(page)
         with patch.object(runner, 'form_builder', return_value=frame), \
              patch.object(runner, 'click', side_effect=lambda loc: loc.click()), \
              patch.object(runner, 'fill', side_effect=lambda loc, value: loc.fill(value)), \
              patch.object(runner, 'visible', return_value=False), \
              patch.object(runner, 'wait_until', side_effect=lambda predicate, message: self.assertTrue(predicate())), \
-             patch.object(runner, 'exact_search', return_value=MagicMock()):
+             patch.object(runner, 'exact_search', return_value=cell):
             return a.configure_fields(page, step)
 
     def test_native_field_edits_are_independently_reopened(self):
@@ -446,6 +462,7 @@ class NativeCSS(unittest.TestCase):
         state = {'css': original, 'saves': 0}
         title = MagicMock()
         title.input_value.return_value = 'ZHC CSS Fixture'
+        title.count.return_value=1
         save = MagicMock()
         save.count.return_value = 1
         save.is_enabled.return_value = True
@@ -471,12 +488,13 @@ class NativeCSS(unittest.TestCase):
         return page, frame, state
 
     def run_surface(self, page, frame, step=None):
+        cell=list_reopen_surface(page)
         with patch.object(runner, 'form_builder', return_value=frame), \
              patch.object(runner, 'click', side_effect=lambda loc: loc.click()), \
              patch.object(runner, 'fill', side_effect=lambda loc, value: loc.fill(value)), \
              patch.object(runner, 'visible', return_value=False), \
              patch.object(runner, 'wait_until', side_effect=lambda predicate, message: self.assertTrue(predicate())), \
-             patch.object(runner, 'exact_search', return_value=MagicMock()):
+             patch.object(runner, 'exact_search', return_value=cell):
             return a.configure_css(page, {'custom_css': 'input {border-radius:12px}'} if step is None else step)
 
     def test_native_css_save_preserves_client_css_and_reopens_exact_content(self):
