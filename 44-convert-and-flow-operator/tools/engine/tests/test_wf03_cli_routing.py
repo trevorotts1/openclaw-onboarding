@@ -352,13 +352,23 @@ class IGRegistrationAndAliases(_Base):
         return module
 
     def test_ig_route_06_family_registers_exactly_once(self):
+        import click
+
         from cli_anything.gohighlevel import commands
 
         counter: list = []
         self._fake_module("projects", counter)
+        # apply_families takes the ROOT CLICK GROUP (that is the contract), so
+        # the throwaway roots here are real groups; the process register set is
+        # restored afterwards so neighbouring tests see the import-time state.
+        saved = set(commands._REGISTERED)
         commands._REGISTERED.discard("projects")
-        first = commands.apply_families(object())
-        second = commands.apply_families(object())
+        try:
+            first = commands.apply_families(click.Group())
+            second = commands.apply_families(click.Group())
+        finally:
+            commands._REGISTERED.clear()
+            commands._REGISTERED.update(saved)
         self.assertIn("projects", first["applied"])
         self.assertNotIn("projects", second["applied"])
         self.assertEqual(counter, ["projects"])
@@ -367,9 +377,25 @@ class IGRegistrationAndAliases(_Base):
         from cli_anything.gohighlevel import commands
 
         delivered, pending = commands.discover()
-        self.assertIn("courses", pending)
-        self.assertEqual(pending["courses"]["owner"], "WF06")
-        self.assertNotIn("courses", delivered)
+        # WF00 (293a79b90) landed the frozen rows, so the courses family is a
+        # real delivered module now. The family that still has NO frozen row is
+        # the one that must be pending with its owner and a named reason.
+        self.assertIn("courses", delivered)
+        self.assertNotIn("courses", pending)
+        self.assertIn("meeting_rooms", pending)
+        self.assertEqual(pending["meeting_rooms"]["owner"], "WF26")
+        self.assertIn("no meeting_rooms", pending["meeting_rooms"]["reason"])
+
+    def test_ig_route_06_every_frozen_row_family_is_delivered(self):
+        """Only a family with zero frozen rows may stay pending."""
+        from cli_anything.gohighlevel import commands
+
+        delivered, pending = commands.discover()
+        self.assertEqual(sorted(delivered), sorted(set(commands.FAMILIES) - set(pending)))
+        for name in delivered:
+            module = delivered[name]
+            self.assertTrue(callable(getattr(module, "register", None)), name)
+        self.assertEqual(sorted(pending), ["meeting_rooms"])
 
     def test_ig_route_06_cli_exposes_the_three_console_aliases(self):
         import setuptools

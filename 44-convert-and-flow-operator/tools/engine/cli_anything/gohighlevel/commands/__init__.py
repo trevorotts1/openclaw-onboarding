@@ -30,6 +30,19 @@ FAMILIES: dict[str, str] = {
     "marketing_quizzes": "WF34",
 }
 
+#: Why a family that has no module is still owed, when "module not delivered"
+#: is not the whole truth. A family whose registry rows do not exist yet cannot
+#: ship a module without inventing an operation id, so it stays pending with
+#: the named gap and the change request that asks for the row.
+PENDING_REASONS: dict[str, str] = {
+    "meeting_rooms": (
+        "the frozen registry carries no meeting_rooms.* / meeting_room.* "
+        "operation row (WF26 is a managed-browser walk, not an API surface); "
+        "change request lanes/GHL-003-lane/change-requests/2.md asks WF00 for "
+        "the rows"
+    ),
+}
+
 _REGISTERED: set[str] = set()
 
 
@@ -49,7 +62,10 @@ def discover() -> tuple[dict[str, object], dict[str, dict[str, str]]]:
         except ModuleNotFoundError as exc:
             if exc.name not in (dotted, __name__ + "." + name.split(".")[0]):
                 raise
-            pending[name] = {"owner": owner, "reason": "module not delivered"}
+            pending[name] = {
+                "owner": owner,
+                "reason": PENDING_REASONS.get(name, "module not delivered"),
+            }
             continue
         register = getattr(module, "register", None)
         if not callable(register):
