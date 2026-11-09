@@ -53,6 +53,8 @@ class FakeClient:
         self.fail_create = False
         self.create_without_response = False
         self.fail_workflow_read = False
+        # Simulate a provider that ignores the enrolment field (readback absent).
+        self.drop_allow_multiple = False
 
     def _id(self, prefix):
         value = "%s-%d" % (prefix, self._next)
@@ -84,6 +86,12 @@ class FakeClient:
                 "name": body["name"], "parentId": body.get("parentId"),
                 "templates": [], "version": 1,
             }
+            # The provider keeps the top-level settings fields it was sent
+            # (enrolment = allowMultiple) — the stand-in must too, or the
+            # enrolment readback would be untestable.
+            for field in ("allowMultiple",):
+                if field in body:
+                    self.workflows[wf_id][field] = body[field]
             if self.create_without_response:
                 return None
             return {"id": wf_id}
@@ -102,6 +110,9 @@ class FakeClient:
                 wf["templates"] = body["workflowData"]["templates"]
             if "version" in body:
                 wf["version"] = body["version"]
+            for field in ("allowMultiple",):
+                if field in body:
+                    wf[field] = body[field]
             return {"ok": True}
         if method == "GET" and path.startswith("/workflow/%s/" % LOC):
             if self.fail_workflow_read:
@@ -110,8 +121,14 @@ class FakeClient:
             wf = self.workflows.get(wf_id)
             if not wf:
                 return {"_error": True, "http_code": 404}
-            return {"workflowData": {"templates": wf["templates"]},
-                    "version": wf.get("version", 1), "meta": {}}
+            document = {"workflowData": {"templates": wf["templates"]},
+                        "version": wf.get("version", 1), "meta": {}}
+            # Mirror the live document: settings are TOP-LEVEL fields, and
+            # allowMultiple is omitted when it was never sent (the honest
+            # "provider did not report it" case).
+            if "allowMultiple" in wf and not self.drop_allow_multiple:
+                document["allowMultiple"] = wf["allowMultiple"]
+            return document
         return {"_error": True, "http_code": 404}
 
     def create_location_tag(self, tag, workflow_name=None):
@@ -543,6 +560,89 @@ class JournalBuildTests(unittest.TestCase):
         self.assertTrue(any("readback" in error.lower() for error in stats["errors"]),
                         stats["errors"])
         self.assertFalse(any(item.get("ok") for item in stats["readback"].values()))
+
+
+class EnrollmentTests(unittest.TestCase):
+    """F05 / BLD-015: enrolment is applied natively and proven by readback.
+
+    The native control is the TOP-LEVEL boolean ``allowMultiple`` on the
+    workflow document (captured read-only on the operator account; see
+    evidence/F05-capability.json). ``applied`` comes from the observed value,
+    never from the request.
+    """
+
+    def _campaign(self, enrollment):
+        document = synthetic_document()
+        build = next(b for b in document["builds"] if b["id"] == "auto_pre_launch")
+        build["settings"] = {"enrollment": enrollment}
+        build["allow_enrollment"] = enrollment
+        return wb.compile_launch_builds(document)
+
+    def _key(self, campaign):
+        return next(k for k in campaign if "pre_launch" in k)
+
+    def _create_call(self, client, campaign, key):
+        name = campaign[key]["name"]
+        return next(
+            c for c in client.calls
+            if c[0] == "POST" and c[1] == "/workflow/%s" % LOC
+            and (c[2] or {}).get("name") == name)
+
+    def test_successive_is_applied_and_proven_by_readback(self):
+        campaign = self._campaign("successive")
+        key = self._key(campaign)
+        client = FakeClient()
+        builder = wb.CampaignBuilder(client)
+        stats = builder.build(campaign, folder_name="Synthetic")
+        self.assertEqual(stats["errors"], [], stats["errors"])
+        record = stats["enrollment"][key]
+        self.assertEqual(record["native_field"], "allowMultiple")
+        self.assertTrue(record["requested"])
+        self.assertIs(record["observed"], True)
+        self.assertIs(record["applied"], True)
+        self.assertIs(campaign[key]["enrollment"]["applied"], True)
+        self.assertIs(self._create_call(client, campaign, key)[2]["allowMultiple"], True)
+        summary = builder.format_summary()
+        self.assertIn("observed=True", summary)
+        self.assertIn("applied=True", summary)
+
+    def test_single_is_applied_as_false(self):
+        campaign = self._campaign("single")
+        key = self._key(campaign)
+        client = FakeClient()
+        stats = wb.CampaignBuilder(client).build(campaign, folder_name="Synthetic")
+        self.assertEqual(stats["errors"], [], stats["errors"])
+        self.assertIs(stats["enrollment"][key]["requested"], False)
+        self.assertIs(stats["enrollment"][key]["observed"], False)
+        self.assertIs(stats["enrollment"][key]["applied"], True)
+        self.assertIs(self._create_call(client, campaign, key)[2]["allowMultiple"], False)
+
+    def test_unreported_readback_is_never_reported_applied(self):
+        campaign = self._campaign("successive")
+        key = self._key(campaign)
+        client = FakeClient()
+        client.drop_allow_multiple = True  # provider ignored the field
+        stats = wb.CampaignBuilder(client).build(campaign, folder_name="Synthetic")
+        record = stats["enrollment"][key]
+        self.assertIsNone(record["observed"])
+        self.assertIs(record["applied"], False)
+        self.assertIs(campaign[key]["enrollment"]["applied"], False)
+        self.assertTrue(any("NOT proven applied" in e for e in stats["errors"]),
+                        stats["errors"])
+
+    def test_undeclared_enrollment_sends_no_native_field(self):
+        campaign = wb.compile_launch_builds(synthetic_document())
+        key = self._key(campaign)
+        self.assertIsNone(campaign[key]["allow_multiple"])
+        client = FakeClient()
+        stats = wb.CampaignBuilder(client).build(campaign, folder_name="Synthetic")
+        self.assertEqual(stats["errors"], [], stats["errors"])
+        self.assertNotIn("enrollment", stats)
+        creates = [c for c in client.calls
+                   if c[0] == "POST" and c[1] == "/workflow/%s" % LOC
+                   and (c[2] or {}).get("type") != "directory"]
+        self.assertTrue(creates)
+        self.assertTrue(all("allowMultiple" not in (c[2] or {}) for c in creates))
 
 
 if __name__ == "__main__":
