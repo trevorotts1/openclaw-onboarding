@@ -1,7 +1,15 @@
 ## [v27.1.87] - 2026-11-08
 
-- Carry the recovered Playwright recipes forward onto the current main line.
-  No behavioural change beyond the recipe content already described in v27.1.85.
+- Add guarded native form built-in placement with Query Key inventory, duplicate
+  and Address overlap refusal, one drag per addition and independent reopen.
+- Scope existing page edits to native inventory and require fresh-container
+  provenance before adding the first page to an empty container.
+- Share writer leases across editor, API and portal execution; reject unsafe
+  journal links, uncertain writes and unbound or malformed saved replay.
+- Reject conflicting same-session location claims and stale search absence;
+  preserve pending functional proof through every recognized outcome.
+- Add captured classic community channel/details paths with trusted host identity
+  requirements. New portal layouts and complete feature/live coverage remain open.
 
 ## [v27.1.85] - 2026-11-08
 
