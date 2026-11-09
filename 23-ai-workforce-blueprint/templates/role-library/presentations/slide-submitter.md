@@ -25,7 +25,7 @@ The KIE rate limit (createTask 20 per 10 seconds per account, 100 plus concurren
 
 ### What This Role Is NOT
 
-You do not write prompts. You do not score images. You do not decide which model to use. The model ids come from exactly one place, `presentation_job/model_catalog.json` (aliases `image.t2i` and `image.i2i`, a department pin that outranks Skill 74 and its `latest-family` default; today `gpt-image-2-5-sunburst-text-to-image` and `gpt-image-2-5-sunburst-image-to-image`). The renderer resolves them per submit. You never write a model id from memory, you never switch models, and a newer GPT Image generation is adopted only by an operator catalog bump.
+You do not write prompts. You do not score images. You do not decide which model to use. The model ids come from exactly one place, `presentation_job/model_catalog.json` (aliases `image.t2i` and `image.i2i`, a department pin that outranks Skill 74 and its `latest-family` default; today `gpt-image-2-6/sunburst-text-to-image` and `gpt-image-2-6/sunburst-image-to-image`). The renderer resolves them per submit. You never write a model id from memory, you never switch models, and a newer GPT Image generation is adopted only by an operator catalog bump.
 
 ---
 
@@ -205,7 +205,7 @@ This table is the API reference for Phase 4 in this role. It follows AGENTS.md N
 | Item | Value |
 |---|---|
 | Platform | Kie.ai (the pinned image platform for this SOP) |
-| Models | The `image.t2i` and `image.i2i` aliases in `presentation_job/model_catalog.json` (today `gpt-image-2-5-sunburst-text-to-image` and `gpt-image-2-5-sunburst-image-to-image`); the catalog wins over any id quoted in a document |
+| Models | The `image.t2i` and `image.i2i` aliases in `presentation_job/model_catalog.json` (today `gpt-image-2-6/sunburst-text-to-image` and `gpt-image-2-6/sunburst-image-to-image`); the catalog wins over any id quoted in a document |
 | Create task | `POST https://api.kie.ai/api/v1/jobs/createTask` |
 | Check task | `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` |
 | Balance | `GET https://api.kie.ai/api/v1/chat/credit` |
@@ -308,7 +308,7 @@ Only the correct API states are used: `waiting` (in progress), `success` (done),
 ## 13. Good Output Examples
 
 ### Example A -- Phase 4 Checkpoint (finished run)
-phase4_checkpoint.json: model_t2i = "gpt-image-2-5-sunburst-text-to-image", model_i2i = "gpt-image-2-5-sunburst-image-to-image", logo_mode = "t2i", logo_file = "working/copy/logo.png", slides_rendered = 60, slides_failed = 0, task_ids_created = 60, exit_code = 0, estimated_cost = <60 x the live per-image price from `kie_live_adapter.py price`>, budget_ceiling = <estimate x 1.30>.
+phase4_checkpoint.json: model_t2i = "gpt-image-2-6/sunburst-text-to-image", model_i2i = "gpt-image-2-6/sunburst-image-to-image", logo_mode = "t2i", logo_file = "working/copy/logo.png", slides_rendered = 60, slides_failed = 0, task_ids_created = 60, exit_code = 0, estimated_cost = <60 x the live per-image price from `kie_live_adapter.py price`>, budget_ceiling = <estimate x 1.30>.
 
 ### Example B -- Clean Receipt
 pending_tasks.json entry for slide 23: `{ "task_id": "kie-task-abc123", "completed": true, "output_path": "working/renders/slide-23.png", "sha256": "<64 hex>", "completed_at": "2026-06-11T10:22:45Z" }`; slide-23.ocr.json present; file size 3,847,291 bytes, valid PNG.

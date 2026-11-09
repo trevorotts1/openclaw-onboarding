@@ -64,7 +64,7 @@ EXIT_FAILCLOSED = 3
 # --- prompt length: KIE rule 12 (owner order 2026-10-05), measured by the shared enforcer ----------
 # 95 to 100 percent of the model maxLength, hard floor 80 percent (AF-SP56-PROMPT-FLOOR), hard ceiling
 # 100 percent (AF-SP56-PROMPT-CEILING). The limit comes from Skill 74 prompt-budget; no band lives here.
-IMAGE_MODEL_DEFAULT = "gpt-image-2-5-sunburst-text-to-image"
+IMAGE_MODEL_DEFAULT = "gpt-image-2-6/sunburst-text-to-image"
 PROMPT_MIN_DISTINCT_WORDS = 220  # AF-SP56-PROMPT-DENSITY: catches paragraph-repeat padding
 
 # BRAND-GRADE BLOCK fingerprints — any ONE proves a real color-grade discipline paragraph is

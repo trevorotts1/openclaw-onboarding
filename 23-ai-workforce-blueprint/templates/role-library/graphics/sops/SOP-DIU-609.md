@@ -24,7 +24,7 @@ The Photo Shoot Director owns the hosting policy, the consent gate, and every ho
 
 | File | Sections used | What it governs |
 |---|---|---|
-| `_system/MODEL-SPECS.md` + the live schema (`kie_live_adapter.py validate`, rule 5 of `07-kie-setup/references/kie-common-rules.md`) | §1 (reference-image size limits per endpoint, a dated snapshot of the live schema), §5.2 (`input_urls` — GPT-Image-2.5 I2I), §5.3 (`image_input` — Nano Banana 2), §5.5 (`image_urls` — Seedream 4.5 Edit) | Authoritative file-size caps and per-endpoint reference param names; do not duplicate size limits here |
+| `_system/MODEL-SPECS.md` + the live schema (`kie_live_adapter.py validate`, rule 5 of `07-kie-setup/references/kie-common-rules.md`) | §1 (reference-image size limits per endpoint, a dated snapshot of the live schema), §5.2 (`input_urls` — GPT-Image 2.6 I2I), §5.3 (`image_input` — Nano Banana 2), §5.5 (`image_urls` — Seedream 4.5 Edit) | Authoritative file-size caps and per-endpoint reference param names; do not duplicate size limits here |
 | `_system/PHOTO-SHOOT-SOP.md` | §2 (identity-sourcing hierarchy — the four source tiers and verification requirement), §3 (IDENTITY.md schema — reference image paths and quality notes) | How refs are located; where verified hosted URLs are written back |
 | `45-design-intelligence-library/` → `07-kie-setup/` | Media-librarian pattern (GHL media library as client-owned hosting) | GHL media library as the approved identity-ref hosting target |
 | `templates/role-library/presentations/` → `media-librarian` pattern | ImgBB ephemeral-upload flow reference | Non-person asset upload procedure |

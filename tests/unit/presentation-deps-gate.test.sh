@@ -328,6 +328,7 @@ cp "$REPO_ROOT/06-ghl-install-pages/tools/ghl_secret_resolver.py" "$FAKE_SCRIPTS
 cp "$REPO_ROOT/06-ghl-install-pages/tools/ghl_evidence.py" "$FAKE_SCRIPTS/ghl_evidence.py" || exit 1
 # ...with the embedded, hash-locked copy of the KIE prompt enforcer it ships beside it (no shared-utils on this fake box).
 cp "$REPO_ROOT/06-ghl-install-pages/tools/_kie_prompt_enforcer_embedded.py" "$FAKE_SCRIPTS/_kie_prompt_enforcer_embedded.py" 2>/dev/null || true
+cp "$REPO_ROOT/06-ghl-install-pages/tools/prompt_policy.py" "$FAKE_SCRIPTS/prompt_policy.py" || exit 1
 cat > "$FAKE_SCRIPTS/run_signature_deck.py" <<'FAKERUNNER'
 import os, sys
 print("KIE_PROMPT_GATE=" + os.environ.get("KIE_PROMPT_GATE", "<UNSET>"))

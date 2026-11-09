@@ -6,8 +6,8 @@ KIE page fetched that day. The machine-readable source of truth is
 `last_verified_at`, `cap_status`). This page is the human-readable view.
 
 Encoding sources (research files, verbatim quotes):
-- `02-kie-image-a.md`, GPT Image 2.5 (GPT Image 2 legacy, retained by operator
-  ruling 2026-09-09 for aspect ratios 3:1, 1:3, 9:21 only), Qwen 3.0/Pro,
+- `02-kie-image-a.md`, GPT Image 2.6 Sunburst and Flare (the default; GPT
+  Image 2 legacy retained with its own unchanged rules), Qwen 3.0/Pro,
   Ideogram V3, Imagen 4
 - `03-kie-image-b.md`, Seedream 5.0 Pro/Lite/4.5, Nano Banana 2/2 Lite/Pro/legacy,
   Wan 2.7 Image, FLUX.2, Z-Image
@@ -19,8 +19,8 @@ Encoding sources (research files, verbatim quotes):
 
 | Family | Canonical model IDs | Prompt limit (status) | Max refs | Output notes |
 |---|---|---|---|---|
-| GPT Image 2 (Legacy, retained for 3:1/1:3/9:21 only — ruling 2026-09-09) | `gpt-image-2-text-to-image`, `gpt-image-2-image-to-image` | **25,000 chars `OWNER_CONFIRMED`** (operator-confirmed 2026-08-27, authoritative for GPT Image 2 only; warn-only, never hard-fail), docs page text also says "maximum 20,000 characters" but that figure is STALE | 16 @ 30 MB, JPEG/PNG/WEBP/JPG | 1K/2K/4K; 2K/4K exclude 5:4, 4:5, 3:1, 1:3, 9:21; auto→1K only; 1:1 cannot convert to 4K |
-| GPT Image 2.5 (Default — ruling 2026-09-09) | `gpt-image-2-5-sunburst-text-to-image`, `gpt-image-2-5-sunburst-image-to-image` | **20,000 chars `DOCS`** (KIE docs dated 2026-09-09, NOT owner-confirmed — the GPT Image 2 25K confirmation does not carry forward) | 16 @ 30 MB, JPEG/PNG/WEBP/JPG (carried forward unchanged) | 1K/2K/4K; 2K/4K exclude 27:16, 16:27, 9:8, 8:9 (1K only); auto/1:1 legacy rules RETIRED; 5:4/4:5/2:1/1:2 served via operator-approved substitution; 3:1/1:3/9:21 route to the legacy row above instead |
+| GPT Image 2 (Legacy, retained with unchanged rules) | `gpt-image-2-text-to-image`, `gpt-image-2-image-to-image` | **25,000 chars `OWNER_CONFIRMED`** (operator-confirmed 2026-08-27, authoritative for GPT Image 2 only; warn-only, never hard-fail), docs page text also says "maximum 20,000 characters" but that figure is STALE | 16 @ 30 MB, JPEG/PNG/WEBP/JPG | 1K/2K/4K; 2K/4K exclude 5:4, 4:5, 3:1, 1:3, 9:21; auto→1K only; 1:1 cannot convert to 4K |
+| GPT Image 2.6 (Default — Sunburst and Flare) | `gpt-image-2-6/sunburst-text-to-image`, `gpt-image-2-6/sunburst-image-to-image`, `gpt-image-2-6/flare-text-to-image`, `gpt-image-2-6/flare-image-to-image` | **20,000 chars `OWNER_RULED`** (owner ruling 2026-11-08; the vendor OpenAPI publishes 32,000, which does NOT govern) | 16 @ 30 MB, inputs JPEG/PNG/WEBP only | 1K/2K/4K with NO per-resolution exclusions; 16-value ratio enum incl 3:1, 1:3, 9:21, 5:4, 4:5, 2:1, 1:2; 27:16/16:27/9:8/8:9 are NOT enum members at ANY resolution; t2i output png/jpeg/webp/gif/svg, i2i png/jpeg/webp only |
 | Qwen Image 3.0 / Pro | `qwen3/text-to-image`, `qwen3-pro/text-to-image`, `qwen3/image-to-image`, `qwen3-pro/image-to-image` | 4.5K **tokens** advertised (marketing copy); docs schemas say maxLength 5000 chars. Token cap, NEVER converted to a fake char cap (spec rule D) | 3 @ 10 MB, JPEG/PNG/WEBP/BMP/GIF/TIFF | 1K/2K; ratios 1:1, 3:2, 2:3, 4:3, 3:4, 16:9, 9:16, 21:9 |
 | Seedream 5.0 Pro | `seedream/5-pro-text-to-image`, `seedream/5-pro-image-to-image`, `seedream/5-pro-layer-decomposition` | NOT PUBLISHED | 10 @ 30 MB, JPEG/PNG/WEBP | Basic=1K / High=2K; 21:9 in enum |
 | Seedream 5.0 Lite | `seedream/5-lite-text-to-image`, `seedream/5-lite-image-to-image` | NOT PUBLISHED | 14 @ 30 MB, JPEG/PNG/WEBP | Basic=2K / High=3K / Ultra=4K; 21:9 in enum |
@@ -39,20 +39,19 @@ Encoding sources (research files, verbatim quotes):
 
 ## 2. Per-family routing guidance
 
-### GPT Image 2.5, preferred default when compatible (operator ruling 2026-09-09)
+### GPT Image 2.6 Sunburst and Flare, preferred default (operator ruling 2026-09-09)
 Owner's preferred KIE image model, superseding GPT Image 2. Prefer for
 high-fidelity general generation, editing, product/brand images, and detailed
-long-form creative instructions. Prompt cap 20,000 chars per KIE docs dated
-2026-09-09 (`DOCS`, NOT owner-confirmed — the GPT Image 2 25K confirmation
-below does not carry forward and has not been retested on 2.5). House band
-5,000–19,000 chars is legal here (short prompts expanded, never rejected).
-Validators warn-only up to the docs cap.
+long-form creative instructions. Prompt cap 20,000 chars by owner ruling 2026-11-08,
+which governs over the vendor OpenAPI's published 32,000. House band 5,000-19,000 chars
+is legal here (short prompts expanded, never rejected). Validators warn-only
+up to the documented cap.
 
-### GPT Image 2 (Legacy, retained for 3:1/1:3/9:21 only — ruling 2026-09-09)
-Two-model system: GPT Image 2.5 above is now the default; this route is
-RETAINED (not retired) specifically because it is the only one of the two
-that serves aspect ratios 3:1, 1:3, and 9:21 — the selector routes those
-three here automatically. This route's own constraints are UNCHANGED. Prompt
+### GPT Image 2 (Legacy, retained with unchanged rules)
+Two-model system: GPT Image 2.6 above is now the default; this route is
+RETAINED (not retired) and its own constraints are UNCHANGED. It is no longer
+REQUIRED for any ratio: 3:1, 1:3, and 9:21 are native members of the 2.6
+enum, so nothing routes here for them. Prompt
 cap 25,000 chars, operator-confirmed 2026-08-27 (`OWNER_CONFIRMED`) for GPT
 Image 2 only; docs page "maximum 20,000 characters" is stale. House band
 5,000–19,000 chars is legal here too. Validators warn-only above the house
@@ -115,7 +114,7 @@ do not invent multi-reference support.
   `OWNER_CONFIRMED`, operator-confirmed 2026-08-27 (vendor docs page's 20,000
   figure is stale); warn-only, never hard-failed upon. This confirmation is
   scoped to GPT Image 2 only.
-- GPT Image 2.5 (default, operator ruling 2026-09-09) sits in
-  `vendor_hard_cap_chars: 20000`, cap_status `DOCS` (KIE docs dated
-  2026-09-09, NOT owner-confirmed — has not been retested on 2.5).
+- GPT Image 2.6 Sunburst and Flare (default, operator ruling 2026-09-09) sit
+  in `owner_prompt_cap_chars: 20000`, cap_status `DOCS` (owner ruling
+  2026-11-08; the vendor OpenAPI's 32,000 is retained for provenance only), with no per-resolution ratio exclusions.
 - NOT_PUBLISHED families keep `null` caps; no invented numbers anywhere.

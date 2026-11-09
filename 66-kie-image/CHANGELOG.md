@@ -16,6 +16,21 @@
 
 - `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.2 -> 2.2.3 by the F18 version bump: prompt-gate prompt-budget enforcement carries forward, no new behavior in this entry. Entry added so the Skill 07 docs-port changelog gate pins the shipped version.
 
+
+- `scripts/validate_prompt.py` carries the merged rule-12 band arithmetic beside the GPT Image 2.6
+  slash ids and the owner cap of 20,000 characters (`owner_prompt_cap_chars` outranks the vendor
+  schema at limit resolution).
+- Version bumped to v2.2.6: main's W19 fold already reached v2.2.5.
+- Risk: LOW. Band arithmetic and model ids only; no route or credential changed.
+
+
+- Every 2.5 reference in this skill now names `gpt-image-2-6/sunburst-text-to-image` (T2I) and
+  `gpt-image-2-6/sunburst-image-to-image` (I2I). Skill 88 explicitly calls models.json for
+  capability data, the adapter for dispatch.
+- `models.json` 2.6 rows carry the real 16-value `aspect_ratio` enum and the owner prompt cap.
+- No credential, endpoint or payload shape changed.
+
+
 ## [2.2.2] - 2026-10-09 - fix: key-variable sentence names KIE_API_KEY from the official docs
 
 - `SKILL.md` prerequisites: the sentence "KIE docs use the literal `YOUR_API_KEY` placeholder — nothing documents the env var" was wrong as of 2026-10-09. KIE's own overview page names the variable `KIE_API_KEY` (`export KIE_API_KEY=your_key`). The sentence now says so and cites docs.kie.ai/ai-agent/overview with the date.
@@ -126,6 +141,5 @@ All notable changes to this skill are documented here.
   INSTRUCTIONS.md, EXAMPLES.md, CORE_UPDATES.md, CHANGELOG.md, QC.md,
   PREREQS.json, models.json, references/, scripts/, skill-version.txt).
 
-## [v2.0.0] - 2026-09-03 - v23 major generation bump: no behavior change, version roll only
 
 No functional changes. Version advanced to the next major generation alongside the v23.0.0 repo release.
