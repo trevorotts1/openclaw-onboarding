@@ -11,12 +11,18 @@ invisible in a green rollup:
   2. A context whose job is skipped on pull_request DOES appear, as SKIPPED,
      and the merge gate counts SKIPPED as PASS (scripts/pr-rollup-check.py
      TERMINAL_PASS). The check is green on every PR while proving nothing.
+  3. A context whose workflow is PATH-FILTERED (`paths:` / `paths-ignore:` on
+     its push or pull_request trigger) is not skipped, it does not run at all:
+     GitHub SKIPS the whole workflow when the diff misses the filter, so the
+     required context never appears and the PR hangs at "Expected - Waiting for
+     status to be reported" with ZERO failing checks. This is the failure mode
+     that gets a real gate switched off, and it is invisible in every rollup.
 
 This module maps each required context to the workflow job that reports it and
 the behavior that job actually verifies on a PR, and exits non-zero when a
 context is missing, ambiguous, reported from a workflow that never runs on a
-PR, skipped on PRs without a declared gap, or covered by a declared gap that no
-longer matches reality.
+PR, path-filtered on either trigger, skipped on PRs without a declared gap, or
+covered by a declared gap that no longer matches reality.
 
   python3 scripts/ci/required_context_behaviors.py [--root DIR] [--json]
 
@@ -196,13 +202,41 @@ def _on_block(lines: list[str]) -> dict[str, tuple[int, list[str]]]:
     return events
 
 
-def _pr_runs(events: dict[str, tuple[int, list[str]]]) -> tuple[bool, str]:
-    """Would this workflow report a job on a pull_request targeting main?"""
-    if "pull_request" not in events:
-        return False, "workflow has no pull_request trigger"
-    _, block = events["pull_request"]
+_PATH_FILTER_RE = re.compile(r"^    (paths|paths-ignore):\s*(.*)$")
+_BRANCHES_RE = re.compile(r"^    branches:\s*(.*)$")
+
+
+def _path_filter(block: list[str]) -> str:
+    """Return the `paths:`/`paths-ignore:` filter on an event, or "" if none.
+
+    A path-filtered workflow does not merely get skipped job-by-job: GitHub
+    SKIPS THE WHOLE WORKFLOW when a diff misses the filter, so none of its jobs
+    reports and the required context never appears. Both list forms count --
+    inline (`paths: ['a']`) and block (`paths:` followed by `- a` entries) --
+    because either one hides the context from a PR that does not touch the
+    listed paths.
+    """
+    for line in block:
+        m = _PATH_FILTER_RE.match(line)
+        if m:
+            spec = m.group(2).strip()
+            return "%s: %s" % (m.group(1), spec if spec else "<block list>")
+    return ""
+
+
+def _event_runs(events: dict[str, tuple[int, list[str]]], event: str,
+                requires_main: bool) -> tuple[bool, str]:
+    """Would this workflow report a job on `event` against main, never skipped?"""
+    if event not in events:
+        return False, "workflow has no %s trigger" % event
+    _, block = events[event]
+    filtered = _path_filter(block)
+    if filtered:
+        return False, "%s trigger is path-filtered (%s)" % (event, filtered)
+    if not requires_main:
+        return True, ""
     for i, line in enumerate(block):
-        m = re.match(r"^    branches:\s*(.*)$", line)
+        m = _BRANCHES_RE.match(line)
         if not m:
             continue
         spec = m.group(1).strip()
@@ -216,8 +250,18 @@ def _pr_runs(events: dict[str, tuple[int, list[str]]]) -> tuple[bool, str]:
                     break
                 patterns.append(_unquote(mm.group(1)))
         if "main" not in patterns:
-            return False, "pull_request trigger excludes main (%s)" % (patterns,)
+            return False, "%s trigger excludes main (%s)" % (event, patterns)
     return True, ""
+
+
+def _pr_runs(events: dict[str, tuple[int, list[str]]]) -> tuple[bool, str]:
+    """Would this workflow report a job on a pull_request targeting main?"""
+    return _event_runs(events, "pull_request", requires_main=True)
+
+
+def _push_runs(events: dict[str, tuple[int, list[str]]]) -> tuple[bool, str]:
+    """Would this workflow report a job on a push to main?"""
+    return _event_runs(events, "push", requires_main=True)
 
 
 def load_jobs(workflow_dir: Path) -> dict[str, dict]:
@@ -235,6 +279,7 @@ def load_jobs(workflow_dir: Path) -> dict[str, dict]:
         events = _on_block(lines)
         for job in _collect_jobs(lines, start, path.name):
             job["pr_runs"], job["pr_reason"] = _pr_runs(events)
+            job["push_runs"], job["push_reason"] = _push_runs(events)
             if job["name"]:
                 jobs.setdefault(job["name"], []).append(job)
     return jobs
@@ -293,10 +338,13 @@ def build(root: Path) -> dict:
             row["errors"].append("reported by more than one job (%s)" % where)
         job = matches[0]
         row.update({"workflow": job["workflow"], "job": job["id"],
-                    "proves": spec["proves"] if spec else ""})
+                    "proves": spec["proves"] if spec else "",
+                    "push_runs": job["push_runs"]})
 
         if not job["pr_runs"]:
             row["errors"].append("does not run on pull_request: %s" % job["pr_reason"])
+        if not job["push_runs"]:
+            row["errors"].append("does not run on push to main: %s" % job["push_reason"])
         if job["if"] is not None:
             skip = KNOWN_PR_SKIPS.get(context)
             if skip is None:
@@ -360,6 +408,8 @@ def print_text(result: dict) -> None:
             "RUNS" if row["status"] == "OK" else
             "SKIPPED - counted as PASS, proves nothing" if row["status"] == "GAP" else
             "BROKEN"))
+        if row.get("push_runs") is False:
+            print("   on a push to main: BROKEN")
         if row.get("proves"):
             print("   proves: %s" % row["proves"])
         if row.get("pr_skip_condition"):
