@@ -1,3 +1,7 @@
+## [v2.1.51] - 2026-11-09 - G3 lockstep roll for the RES-002 VERSION gate after merging main (no Skill 49 behaviour change)
+
+- main re-joined `VERSION` to `skill-version.txt` at v2.1.50 (VRD-001) while this branch did the same; both v2.1.50 entries below are kept. What this branch still adds is the `scripts/qc-assert-skill-frontmatter-version.sh` VERSION comparison, so the merge rolls `VERSION`, `skill-version.txt` and the SKILL.md frontmatter to v2.1.51 together. Not a pinned file; the SF prover pin is unchanged.
+
 ## [v2.1.50] - 2026-11-09 - VERSION stamp re-joined to skill-version.txt after the v2.1.49 G3 bump (no Skill 49 behaviour change)
 
 - `VERSION` still read `v2.1.48` while `skill-version.txt` and the SKILL.md frontmatter read `v2.1.49`: commit d0855b696 ("bump 49 v2.1.48 -> v2.1.49 for train 3011") rolled `skill-version.txt` and `SKILL.md` by hand and skipped `VERSION`. This is the second occurrence (the v2.1.48 entry above repaired the same split at v2.1.47 -> v2.1.48). `scripts/batch-prep.sh` rolled all three stamps to v2.1.50, so `VERSION` == `skill-version.txt` == SKILL.md frontmatter again.
