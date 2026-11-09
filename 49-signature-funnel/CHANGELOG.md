@@ -1,3 +1,18 @@
+## [v2.1.48] - 2026-11-09 - prompt floor is a PRE-SUBMIT gate; warn-and-expand warning surfaced; front door fixed
+
+- A3: `prove_sf_prompt_floor.py` publishes `preflight_prompt` / `preflight_ledger`, and the paid
+  submit paths (`page_swarm.execute`, `legacy_downsell_images.py --image-provider kie`) refuse a
+  non-conforming prompt BEFORE any lane or page starts. The false "NOT sent to Kie" text is gone:
+  it now says the prompt is REFUSED before submit, which is what the gate actually proves.
+- A3b: the length band is the OWNER cap, 20,000 characters (owner ruling 2026-11-08), passed to the
+  policy service as an explicit maximum so a drifted live-schema cache cannot widen it.
+- A4: the owner rule's 80-to-below-95 percent warn-and-expand band is surfaced (`WARN:` lines and a
+  `warnings` list on the receipt); it was silently dropped before.
+- A6: the documented front door works — `signature-funnel-entry.sh` no longer mints or forwards a
+  nonce (the orchestrator refuses caller nonces and authorizes on the operator key), a bare
+  invocation prints usage and exits 0, and the model receipt is minted with the operator key.
+  `scripts/test_entry_front_door.py` runs the door end to end (10 phases, exit 0).
+
 ## [v2.1.47] - 2026-11-09 - G3 lockstep roll for the Skill 83 version-parity completion (no Skill 49 behaviour change)
 
 - Version bumped because the bot-minted `scripts/SF-PROVER-PIN.sha256` changed when Skill 83 `launcher_core/constants.py` carried its version. No functional change in Skill 49.
