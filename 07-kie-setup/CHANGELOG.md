@@ -1,3 +1,7 @@
+## [v7.2.6] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
+
 ## [v7.2.5] - 2026-11-08 - batch merge: W26 fold content landed; version stamped above main for G3
 
 Version stamped above `main` (v7.2.4) so G3 sees the bump for the folded content in the same batch. No change beyond the folded content itself.

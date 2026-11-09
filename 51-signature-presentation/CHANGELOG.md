@@ -1,4 +1,7 @@
 # Changelog - 51 Signature Presentation (51-signature-presentation)
+## [2.1.9] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
 
 ## [2.1.6] - 2026-10-13 - Intake-gate doctrine repair: the trace check IS the gate, and the golden fixture speaks one-at-a-time
 
