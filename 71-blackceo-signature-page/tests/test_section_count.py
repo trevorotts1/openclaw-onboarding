@@ -166,13 +166,15 @@ class SectionCountTests(unittest.TestCase):
         prompt = exe.stage_prompt("visual-mockup", {"section_id": "1", "copy": copy}, 1, 1440, request, "3:4")
         self.assertEqual(prompt.count("Second paragraph here."), 1)
 
-    def test_under_floor_is_refused_when_strict_and_warned_otherwise(self):
+    def test_under_the_80_percent_floor_is_refused_on_the_paid_path(self):
+        # Owner rule 12 / Decision 1: the paid path refuses below the 80 percent floor and
+        # warns (never refuses) below the 95 percent target.
         request = {"model": "gpt-image-2-5-sunburst", "stage_prompts": {"visual-mockup": "{copy}"},
                    "_hypersat": exe.hypersaturation.roles_for_run(self.run)}
         section = {"section_id": "1", "copy": "A finished sentence."}
         with self.assertRaises(exe.ExecutorError) as ctx:
             exe.stage_prompt("visual-mockup", section, 1, 1440, request, "3:4", strict_floor=True)
-        self.assertIn("below the 19000-char strict floor", str(ctx.exception))
+        self.assertIn("below the 16000-char 80 percent floor", str(ctx.exception))
         self.assertTrue(exe.stage_prompt("visual-mockup", section, 1, 1440, request, "3:4"))
 
     def test_preflight_exits_1_on_a_prompt_under_the_floor(self):
@@ -282,7 +284,7 @@ class BandTests(unittest.TestCase):
     def test_no_design_prose_means_a_named_refusal_not_a_short_prompt(self):
         with self.assertRaises(builder.BuildError) as ctx:
             self.build("standard", {})
-        self.assertIn("below the 19000-char strict floor", str(ctx.exception))
+        self.assertIn("below the 16000-char 80 percent floor", str(ctx.exception))
         self.assertIn("--design-prose", str(ctx.exception))
 
     def test_private_framework_labels_never_reach_a_prompt(self):
