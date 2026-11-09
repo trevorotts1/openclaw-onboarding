@@ -94,12 +94,10 @@ grep -q "D_prose_bare=[1-9]" <<< "$OUT" || fail "D_prose_bare stayed zero on a b
 grep -q "BARE .*docs/bare.md" <<< "$OUT" || fail "D_prose_bare did not name docs/bare.md"
 if grep -q "docs/decoy.md" <<< "$OUT"; then fail "D_prose_bare over-reached onto a non GPT-Image version number"; fi
 
-# ── 4. a pristine export of the committed tree must show the fail-closed ────
-# RED this guard exists for: `git archive HEAD` is the committed base with no
-# working-tree edits, and the base 2.6 rows still carry the WRONG 13-ratio set
-# (27:16/16:27/9:8/8:9 invented, 5:4/4:5/2:1/1:2/9:21/3:1/1:3 omitted).
-# PR #2985 corrects 66-kie-image/models.json to the true enum; until it lands
-# this gate MUST report those four as defects. Expected RED, not a regression.
+# ── 4. a pristine export of the committed tree must be GREEN ─────────────────
+# `git archive HEAD` is the committed base with no working-tree edits. Since
+# #2985 landed, the 2.6 rows carry the TRUE 16-value vendor enum, so the guard
+# must report zero defects and exit 0 on the committed tree.
 mkdir -p "$TMP/clean"
 git -C "$REPO_ROOT" archive HEAD | tar -x -C "$TMP/clean"
 set +e
@@ -107,23 +105,20 @@ OUT_CLEAN=$(python3 -I "$GUARD" --root "$TMP/clean" 2>&1)
 RC_CLEAN=$?
 set -e
 printf '%s\n' "$OUT_CLEAN"
-[ "$RC_CLEAN" -ne 0 ] || fail "clean committed tree exited 0 — the guard cannot see the wrong 13-ratio set"
-grep -q "D_ratio=[1-9]" <<< "$OUT_CLEAN" || fail "D_ratio stayed zero on the committed tree's wrong ratios"
-for R in 27:16 16:27 9:8 8:9; do
-  grep -q "RATIO .*$R" <<< "$OUT_CLEAN" || fail "committed tree did not report $R as a defect"
-done
+[ "$RC_CLEAN" -eq 0 ] || fail "clean committed tree exited $RC_CLEAN — expected GREEN now that #2985 landed"
+grep -q "DEFECTS=0" <<< "$OUT_CLEAN" || fail "committed tree reported defects — expected DEFECTS=0"
+grep -q "D_ratio=0" <<< "$OUT_CLEAN" || fail "committed tree D_ratio nonzero — expected the true enum"
 
-# ── 5. the real tree is expected RED until #2985 lands ───────────────────────
-# Same wrong 13-ratio set as the committed base (see §4): expect the four
-# not-served ratios named, non-zero exit, and D_prose_bare quiet.
+# ── 5. the real tree must be GREEN now that #2985 has landed ─────────────────
+# Same true-enum 2.6 rows as the committed base (see §4): expect zero defects
+# and a zero exit.
 set +e
 OUT_REAL=$(python3 -I "$GUARD" --root "$REPO_ROOT" 2>&1)
 RC_REAL=$?
 set -e
 printf '%s\n' "$OUT_REAL"
-[ "$RC_REAL" -ne 0 ] || fail "real tree exited 0 — the wrong 13-ratio set should still fail"
-for R in 27:16 16:27 9:8 8:9; do
-  grep -q "RATIO .*$R" <<< "$OUT_REAL" || fail "real tree did not report $R as a defect"
-done
+[ "$RC_REAL" -eq 0 ] || fail "real tree exited $RC_REAL — expected GREEN now that #2985 landed"
+grep -q "DEFECTS=0" <<< "$OUT_REAL" || fail "real tree reported defects — expected DEFECTS=0"
+grep -q "D_ratio=0" <<< "$OUT_REAL" || fail "real tree D_ratio nonzero — expected the true enum"
 
 echo "PASS: check-kie-image-defaults self-test"
