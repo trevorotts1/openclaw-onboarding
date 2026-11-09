@@ -124,6 +124,22 @@ jobs:
         shell: bash
         run: bash tests/unit/check-kie-image-defaults.test.sh
 
+      # VGD-002: per-skill VERSION agreement — fails when a skill's own VERSION
+      # file disagrees with its sibling skill-version.txt (or the SKILL.md
+      # frontmatter). No earlier guard reads VERSION; G3 only enforces
+      # skill-version.txt and the frontmatter guard only compares SKILL.md
+      # against skill-version.txt. This is ADDITIVE: G1, G1b, G2, G3, the
+      # newline guard and the frontmatter guard below all stay exactly as they
+      # are. Self-test proves fail-on-stale + pass-on-agree; the live run then
+      # scans the real tree.
+      - name: "Per-skill VERSION agreement guard (scripts/qc-assert-skill-version-agreement.sh)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/qc-assert-skill-version-agreement.sh
+          bash scripts/qc-assert-skill-version-agreement.sh --self-test
+          bash scripts/qc-assert-skill-version-agreement.sh
+
       - name: "Fix 9: exactly one presentation-intake wrangler.toml (deployed-r2) - no name collision"
         shell: bash
         run: |
