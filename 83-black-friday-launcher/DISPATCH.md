@@ -162,10 +162,14 @@ The design board and the final mockups are recorded as `awaiting_client_approval
 ## Graphics department hooks
 
 `launcher_core/graphics_hooks.py` is wired into the real handoff. After `package.assemble` seals the
-package, `assemble` writes the SOP-GIP-02 request (`qc/image_qc_request.json`), then
+package, `assemble` writes the
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md` request
+(`qc/image_qc_request.json`), then
 `qc/image_qc_report.json` from the Review Receipt v2 files Skill 71's `write_review.py` wrote (never a
 score typed into the report: each record resolves to a receipt whose own hash and `artifact_sha256` are
-checked), then the SOP-GIP-03 record (`delivery_record.json`). `check` re-runs the same review check.
+checked), then the
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`
+record (`delivery_record.json`). `check` re-runs the same review check.
 `--run-image-stages` runs Skill 71's real image-stage driver before assembly; it stops at the client's
 layout-proof approval and never spends without `--allow-paid`.
 
@@ -191,9 +195,9 @@ The package ends at approved local files. Each item below is tracked, not forgot
 | --- | --- |
 | Skill 44, 50 and 06 install and build steps for the launch automations | SKILL.md "Launch mode (Skill 49/83)" routes the agent; S44-25 |
 | Native order form, bump and one-click steps installed by Skill 06 | S06-02, CHK-19 |
-| Live link checks and a hosted link for every image | IMG-12 (SOP-GIP-03 hosting is its own approval; `assemble --host-media <approval_ref>` runs it) |
-| SOP-DIU-602, 607 and 610 wiring | follow-up, no defect id yet |
-| SOP-07 and Skill 06 registry registration of Skill 83 | follow-up, no defect id yet |
+| Live link checks and a hosted link for every image | IMG-12 (`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md` hosting is its own approval; `assemble --host-media <approval_ref>` runs it) |
+| `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-602.md`, `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-607.md` and `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-610.md` wiring | follow-up, no defect id yet |
+| `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-07-Full-Funnel-Build-Orchestration.md` and Skill 06 registry registration of Skill 83 | follow-up, no defect id yet |
 | Command Center launch view | CON-21, CON-22 |
 | 999 package parity gap | CON-06, CON-07, CON-08 |
 | Attestation boundary label on `receipt.json`, the route record and `checks.py` | follow-up below |
