@@ -84,8 +84,13 @@ class Fake74:
                         "result_urls": ["https://example.invalid/a.png"],
                         "credits_consumed": self.credits})
         if sub == "save":
-            path = os.path.join(tmp, "f5-%d.png" % len(self.calls))
-            open(path, "wb").write(b"f5-bytes")
+            # Unique per call: each job drives its own Fake74 from its own
+            # thread, so a shared name let a concurrent writer truncate the
+            # file after another job's save returned (0 bytes ->
+            # KIE_SAVE_OUTPUT_EMPTY, a flaky 16/17).
+            fd, path = tempfile.mkstemp(prefix="f5-", suffix=".png", dir=tmp)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(b"f5-bytes")
             return (0, {"state": "success", "task_id": "t-x",
                         "saved_paths": [path],
                         "credits_consumed": self.credits})
