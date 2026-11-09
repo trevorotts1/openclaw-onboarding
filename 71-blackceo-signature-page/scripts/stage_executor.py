@@ -249,13 +249,48 @@ def _platform(stage: str, template: str) -> str:
     return "mobile" if template.startswith("mobile") else "desktop"
 
 
-def prior_slices(stage: str, run_dir: Path, index: int, template: str):
+def generated_images_for_section(run_dir: Path, section: dict) -> list:
+    """The client's GENERATED images for THIS section (fix plan B8, unowned requirement G-11).
+
+    The final-mockups draw used to receive only earlier STAGE slices (the wireframe and the
+    visual mockup) — never the pictures the client actually generated for the slots. The model
+    therefore invented the imagery and the mockup shipped without the images that belong in it.
+
+    The files come from the same resolver the Design Board uses (design_board.page_images:
+    image-map-upload/image-map.json first, then image-generation-qc/Image-NNN.png), so there is
+    one answer to "where is this slot's image", never a second one. An unresolvable section
+    yields [] — the reverse-coverage gate, not this helper, is what refuses a missing image.
+    """
+    try:
+        slots = section.get("slots") if isinstance(section, dict) else None
+        wanted = {str(s.get("slot_id")) for s in (slots or [])
+                  if isinstance(s, dict) and s.get("slot_id")}
+        if not wanted:
+            return []
+        import design_board  # lazy: keeps this module importable without the Pillow path
+        items = design_board.page_images(Path(run_dir), {"sections": [section]})
+    except Exception:  # noqa: BLE001  (any failure means "no extra references", never a crash)
+        return []
+    picks = []
+    for item in items:
+        if str(item.get("slot_id")) in wanted:
+            p = item.get("_path")
+            if p is not None and Path(p).is_file() and Path(p) not in picks:
+                picks.append(Path(p))
+    return picks
+
+def prior_slices(stage: str, run_dir: Path, index: int, template: str,
+                 section: dict | None = None):
     """The matching slice of each earlier stage for THIS section only.
 
     The executor used to attach every earlier slice to every job. A model
     handed all twelve slices draws a whole page and leaves the rest blank;
     it must see the same-index wireframe (and, at final mockups, the
     same-index visual mockup) and nothing else.
+
+    At final mockups the client's GENERATED images for this section are appended after the
+    stage slices (fix plan B8 / G-11), so the draw composites the real pictures instead of
+    inventing them.
     """
     earlier = STAGES[:STAGES.index(stage)]
     want = _platform(stage, template)
@@ -268,6 +303,10 @@ def prior_slices(stage: str, run_dir: Path, index: int, template: str):
                 candidate = run_dir / name / pattern.format(n=index)
                 if candidate.is_file() and candidate not in picks:
                     picks.append(candidate)
+    if stage == "final-mockups" and section is not None:
+        for candidate in generated_images_for_section(run_dir, section):
+            if candidate not in picks:
+                picks.append(candidate)
     return picks
 
 
@@ -2402,7 +2441,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
             out = run_dir / stage / slot
             ratio = target_ratio(stage, template, section, run_dir, index)
             style = style_refs(stage, request, provider.name == "kie")
-            refs = prior_slices(stage, run_dir, index, template)
+            refs = prior_slices(stage, run_dir, index, template, section)
             typed = section_typed_references(
                 stage, width, resolve_composition(section, index, request), section,
                 request_form(request), request)
@@ -2880,7 +2919,7 @@ def main(argv=None) -> int:
                                 stage, section, index, width, request, ratio,
                                 with_sizes=True, strict_floor=True, typed_refs=typed)
                             refs = style_refs(stage, request) + prior_slices(
-                                stage, run_dir, index, template)
+                                stage, run_dir, index, template, section)
                         except ExecutorError as exc:
                             refused += 1
                             print(f"PREFLIGHT {stage} {name} REFUSED: {exc}")
