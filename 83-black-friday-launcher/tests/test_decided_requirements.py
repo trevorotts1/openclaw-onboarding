@@ -124,19 +124,22 @@ class EntitlementGateTests(unittest.TestCase):
         self.assertTrue(result["entitlement"]["qualifies"])
 
     def test_school_of_ai_alone_does_not_qualify(self):
+        # DEC-002 / Document 3 FIX-12 line 2004: a known account outside the
+        # accepted set is refused as a NON-MEMBER, not as an unknown basis.
         with self.assertRaises(intake.IntakeError) as ctx:
             intake.validate(base_intake(basis="school_of_ai_membership"))
-        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ENTITLEMENT-NOT-QUALIFIED")
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ENTITLEMENT-NOT-MEMBER")
 
     def test_zhc_alone_does_not_qualify(self):
         with self.assertRaises(intake.IntakeError) as ctx:
             intake.validate(base_intake(basis="zhc"))
-        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ENTITLEMENT-NOT-QUALIFIED")
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ENTITLEMENT-NOT-MEMBER")
 
     def test_unknown_basis_fails_closed(self):
+        # DEC-002: NOT-QUALIFIED is reserved for a basis that cannot be established.
         with self.assertRaises(intake.IntakeError) as ctx:
             intake.validate(base_intake(basis="friend_of_the_founder"))
-        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ENTITLEMENT-UNKNOWN")
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ENTITLEMENT-NOT-QUALIFIED")
 
     def test_missing_attestation_fails_closed(self):
         payload = base_intake()
@@ -219,6 +222,68 @@ class EntitlementGateTests(unittest.TestCase):
             boundary = result["attestation_boundary"].lower()
             self.assertIn("read-only ghl lookup", boundary, basis)
             self.assertIn("never trusted", boundary, basis)  # attested_by is recorded, not believed
+
+
+class EntitlementRefusalCodeTests(unittest.TestCase):
+    """DEC-002 / Document 3 FIX-12 lines 2003-2004.
+
+    A KNOWN basis is refused as NOT-MEMBER on both the internal and the client
+    path; NOT-QUALIFIED is reserved for a basis that cannot be established. Every
+    fixture is offline: a read-only static transport, never a live account.
+    """
+
+    def readback(self, tags):
+        cm = entitlement._membership_module()
+        price = entitlement.load_declaration()["purchase_price"]
+        transport = cm.StaticReadTransport({
+            "/contacts/TEST-ONLY-EVIDENCE": {"contact": {"tags": list(tags)}},
+            "/payments/orders/TEST-ONLY-PURCHASE-REFERENCE": {
+                "_id": "TEST-ONLY-PURCHASE-REFERENCE",
+                "contactId": "TEST-ONLY-EVIDENCE", "status": "completed",
+                "amount": price["amount_minor"] / 100, "currency": price["currency"]},
+        })
+        entitlement.set_transport(transport)
+        return transport
+
+    def test_known_internal_non_member_is_refused_as_not_member(self):
+        transport = self.readback(())
+        with self.assertRaises(intake.IntakeError) as ctx:
+            intake.validate(base_intake(basis="brand_management_membership"))
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ENTITLEMENT-NOT-MEMBER")
+        self.assertTrue(transport.requests, "the record must be read before refusing")
+
+    def test_client_outside_the_accepted_set_is_refused_as_not_member(self):
+        for basis, tags in (("school_of_ai_membership", ("school-of-ai",)),
+                            ("zhc", ("zhc-member",))):
+            transport = self.readback(tags)
+            with self.assertRaises(intake.IntakeError) as ctx:
+                intake.validate(base_intake(basis=basis))
+            self.assertEqual(ctx.exception.code,
+                             "AF-LAUNCH-ENTITLEMENT-NOT-MEMBER", basis)
+            self.assertTrue(transport.requests,
+                            "the basis is established before the refusal: " + basis)
+
+    def test_an_unknown_basis_is_refused_as_not_qualified(self):
+        transport = self.readback(("brand-management-member",))
+        with self.assertRaises(intake.IntakeError) as ctx:
+            intake.validate(base_intake(basis="friend_of_the_founder"))
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ENTITLEMENT-NOT-QUALIFIED")
+        self.assertEqual(transport.requests, [],
+                         "an unestablishable basis needs no lookup")
+
+    def test_brand_management_member_is_admitted(self):
+        self.readback(("brand-management-member",))
+        result = intake.validate(base_intake(basis="brand_management_membership"))
+        self.assertTrue(result["entitlement"]["qualifies"])
+        self.assertFalse(result["entitlement"]["requires_purchase"])
+
+    def test_a_client_with_no_membership_is_admitted_by_a_qualifying_purchase(self):
+        # No membership tag at all: admission comes from the qualifying purchase,
+        # so a client is never required to hold a BlackCEO membership.
+        self.readback(())
+        result = intake.validate(base_intake(basis="purchase"))
+        self.assertTrue(result["entitlement"]["qualifies"])
+        self.assertTrue(result["entitlement"]["proves_purchase"])
 
 
 class DocumentationTests(unittest.TestCase):
