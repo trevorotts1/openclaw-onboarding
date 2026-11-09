@@ -1,5 +1,13 @@
 # Changelog - kie-image
 
+## [2.2.4] - 2026-11-08 - G3 lockstep rolls (F18 touch, CI clear)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.2 -> 2.2.4 by the F18 version bump (2026-11-07) and the PR 2864 CI-clear roll (2026-11-08): prompt-gate prompt-budget enforcement carries forward, no new behavior in this entry. Entry added so the Skill 07 docs-port changelog gate pins the shipped version.
+
+## [2.2.3] - 2026-11-07 - G3 lockstep roll (F18 touch)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.2 -> 2.2.3 by the F18 version bump: prompt-gate prompt-budget enforcement carries forward, no new behavior in this entry. Entry added so the Skill 07 docs-port changelog gate pins the shipped version.
+
 ## [2.2.2] - 2026-10-09 - fix: key-variable sentence names KIE_API_KEY from the official docs
 
 - `SKILL.md` prerequisites: the sentence "KIE docs use the literal `YOUR_API_KEY` placeholder — nothing documents the env var" was wrong as of 2026-10-09. KIE's own overview page names the variable `KIE_API_KEY` (`export KIE_API_KEY=your_key`). The sentence now says so and cites docs.kie.ai/ai-agent/overview with the date.

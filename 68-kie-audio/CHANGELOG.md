@@ -4,6 +4,14 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.3.5] - 2026-11-08 - G3 lockstep roll (CI clear)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 2.3.4 -> 2.3.5 by the PR 2864 CI-clear roll (2026-11-08): audio-request validation carries forward, no new behavior in this entry. Entry added so the Skill 07 docs-port changelog gate pins the shipped version.
+
+## [2.3.4] - 2026-11-07 - G3 lockstep roll (F18 touch)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 2.3.3 -> 2.3.4 by the F18 version bump: audio-request validation carries forward, no new behavior in this entry. Entry added so the Skill 07 docs-port changelog gate pins the shipped version.
+
 ## [2.3.3] - 2026-10-11 - DOC68-EX: EXAMPLES.md music examples point at createTask; the legacy /api/v1/generate music-generation route is marked RETIRED everywhere
 
 - `EXAMPLES.md` EXAMPLE 4 (custom song) and EXAMPLE 5 (non-custom prompt-only) now dispatch the ONE music-generation contract: `POST /api/v1/jobs/createTask` with top-level `"model": "ai-music-api/generate"`, a top-level camelCase `callBackUrl`, and every direction nested under snake_case `input` (`custom_mode`, `instrumental`, `model`, `title`, `style`, `lyrics`/`prompt`, `negative_tags`, `duration`) -- matching `references/music.md` and Skill 75's `suno_recipe.check_envelope`. Neither curls `POST /api/v1/generate` any more.
