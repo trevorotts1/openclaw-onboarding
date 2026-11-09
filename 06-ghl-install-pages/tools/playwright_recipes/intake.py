@@ -23,7 +23,7 @@ FIELDS = {
         'contact_fields', 'checkout_options', 'content', 'theme_inputs', 'legal_copy',
         'product_binding', 'product_id', 'price_id', 'charge', 'execute_payment'},
     'forms.create': {'name', 'required', 'allow_creation', 'radius'},
-    'forms.configure': {'fields', 'add_fields'},
+    'forms.configure': {'fields', 'add_fields', 'address_fields', 'consent', 'object_fields', 'field_dependencies'},
     'forms.style': {'custom_css', 'radius', 'css_key', 'expect_styles'},
     'forms.settings': {'settings', 'schedule'},
     'forms.submission': {'submission'}, 'forms.notifications': {'notifications'},
@@ -32,10 +32,11 @@ FIELDS = {
     'quizzes.create': {'name', 'allow_creation', 'standard_fields', 'fixture'},
     'surveys.configure': {'configuration'}, 'quizzes.configure': {'configuration'},
     'communities.create': {'community'},
-    'communities.configure': {'portal_url', 'group_name', 'channels', 'details'},
+    'communities.configure': {'portal_url', 'group_name', 'channels', 'details', 'access'},
     'meetings.setup': {'meeting'}, 'meetings.update': {'meeting'},
     'meetings.integrate': {'integration_mode'},
-    'courses.configure_ui': set(), 'funnels.split_variant': set(),
+    'courses.configure_ui': {'course_id', 'template_id', 'expected_template_title', 'changes', 'expected_values'},
+    'funnels.split_variant': set(),
 }
 REQUIRED = {
     **{name: {'container_name', 'page_name', 'path'} for name in ('funnels.create', 'funnels.add_page', 'websites.create', 'websites.add_page')},
@@ -79,28 +80,61 @@ def validate_intake(operation, data):
         unused = set(data).intersection(CHECKOUT - {'checkout_contract'})
         if unused:
             raise Stop('Native checkout inputs require their captured adapter: ' + ', '.join(sorted(unused)))
-    if operation == 'communities.configure' and not set(data).intersection({'channels', 'details'}):
+    if operation == 'communities.configure' and not set(data).intersection({'channels', 'details', 'access'}):
         if set(data).intersection({'portal_url', 'group_name'}):
             raise Stop('Portal identity requires a concrete channel or details operation')
     if missing:
         raise Stop('Missing required recipe inputs: ' + ', '.join(sorted(missing)))
+    if operation == 'courses.configure_ui':
+        native = set(data).intersection(FIELDS[operation])
+        if native and 'options' in data:
+            raise Stop('Native course theme edits and recorded options require separate jobs')
+        if native:
+            from playwright_recipes.course_theme import validate_inputs
+            validate_inputs(data)
     for key in ('seo', 'checkout', 'configuration', 'submission', 'notifications', 'community', 'meeting', 'options'):
         if key in data and (not isinstance(data[key], dict)
                 or set(data[key]).intersection({'action', '_context'})):
             raise Stop(key + ' must be a configuration object without runner-owned metadata')
     if 'options' in data and not data['options']:
         raise Stop('Explicit options must contain a captured executable profile')
+    if operation == 'communities.create' and 'options' in data:
+        raise Stop('Community creation must reconcile its native identity before a separate portal operation')
     for nested in ('community', 'meeting'):
         for flag in ('allow_creation', 'inactive', 'discovery'):
             if nested in data and flag in data[nested] and type(data[nested][flag]) is not bool:
                 raise Stop(nested + '.' + flag + ' requires a real boolean')
     if operation == 'forms.configure':
-        for key in ('fields', 'add_fields'):
+        for key in ('fields', 'add_fields', 'address_fields', 'object_fields'):
             if key in data and (not isinstance(data[key], list) or not data[key]):
                 raise Stop(key + ' must be a nonempty list when supplied')
+        if ('object_fields' in data) != ('field_dependencies' in data):
+            raise Stop('Native object fields require their matching API dependency inventory')
+        if 'object_fields' in data:
+            from playwright_recipes.forms_advanced import validate_object_fields
+            validate_object_fields({'payload':{key:data[key] for key in (
+                'location_id', 'location_name', 'start_url', 'object_fields', 'field_dependencies')}})
+        if 'consent' in data:
+            from playwright_recipes.forms_advanced import validate_consent
+            validate_consent({'consent':data['consent']})
+        if 'address_fields' in data:
+            from playwright_recipes.forms_advanced import validate
+            validate({'address_fields':data['address_fields']})
     if operation == 'forms.style' and 'custom_css' not in data and set(data).intersection({'css_key', 'expect_styles'}):
         raise Stop('CSS identity and render checks require custom_css')
-    if operation == 'communities.configure' and 'channels' in data and 'details' in data:
-        raise Stop('Community channels and details require separately journaled jobs')
+    if operation == 'surveys.configure' and isinstance(data.get('configuration'), dict):
+        config = data['configuration']
+        if set(config).intersection({'object_fields', 'field_dependencies'}):
+            if set(config).intersection({'location_id', 'location_name', 'start_url'}):
+                raise Stop('Survey object-field owner identity must come from its parent inputs')
+            if 'rules' in config:
+                raise Stop('Survey object questions and conditional rule stacks require separate jobs')
+            from playwright_recipes.survey_fields import validate
+            validate({'payload':{**{key:data[key] for key in ('location_id', 'location_name', 'start_url')}, **config}})
+    if operation == 'communities.configure':
+        if len(set(data).intersection({'channels', 'details', 'access'})) > 1:
+            raise Stop('Community channels, details and access require separately journaled jobs')
+        if set(data).intersection({'channels', 'details', 'access'}) and 'options' in data:
+            raise Stop('Concrete community operations and generic options require separate jobs')
     if operation == 'meetings.integrate' and data.get('integration_mode') is not None:
         raise Stop('Native calendar API integration must use the measured API host route')

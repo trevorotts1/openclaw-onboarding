@@ -3,8 +3,9 @@
 https://marketplace.gohighlevel.com/docs/ghl/courses/update-category/index.html
 https://marketplace.gohighlevel.com/docs/ghl/courses/update-lesson/index.html
 
-This operation changes existing draft content only. Publication, access rules,
-module moves, enrollment and quiz/assignment provisioning retain their own rails.
+This operation changes existing drafts only, including module hierarchy and
+inactive drip/lock configuration. Activating visibility/access, publication,
+enrollment and quiz/assignment provisioning retain their own rails.
 """
 import fcntl
 import json
@@ -24,9 +25,11 @@ else:
 
 
 OPERATION = 'courses.lessons'
-CATEGORY_CHANGES = frozenset(('title','description','posterImage','sequenceNo','commentPermission'))
+CATEGORY_CHANGES = frozenset(('title','description','posterImage','sequenceNo','commentPermission',
+    'parentCategory','dripDays','metadata','lockedBy','lockedByCategory'))
 LESSON_CHANGES = frozenset(('title','description','posterImage','sequenceNo','commentStatus',
-    'contentId','contentType','commentPermission','certificateTemplateId','metaData'))
+    'contentId','contentType','commentPermission','certificateTemplateId','metaData',
+    'lockedByPost','lockedByCategory','categoryId'))
 
 
 def _changes(value, kind):
@@ -34,9 +37,11 @@ def _changes(value, kind):
     if not isinstance(value, dict) or not value or set(value) - allowed:
         raise Stop('Draft outline changes contain unsupported fields or no changes')
     data = delivery._body({'title':'Validation only', **value},
-        delivery.CATEGORY_FIELDS if kind == 'category' else delivery.LESSON_FIELDS,
+        delivery.CATEGORY_FIELDS if kind == 'category' else delivery.LESSON_FIELDS | {'categoryId'},
         'module' if kind == 'category' else 'lesson')
     delivery._outline_properties(data, 'module' if kind == 'category' else 'lesson')
+    if 'categoryId' in data:
+        delivery._id(data['categoryId'], 'destination categoryId')
     data.pop('visibility', None)
     if 'title' not in value:
         data.pop('title')
@@ -105,14 +110,149 @@ def course_outline_executor(*, operation, inputs, route, evidence_root):
 def _preserved(expected, actual):
     if not delivery._matches(expected,actual):
         return False
-    if 'metaData' in expected:
-        return delivery._matches(expected['metaData'],actual.get('metaData'),exact=True)
+    for key in ('metaData', 'metadata'):
+        if key in expected and not delivery._matches(expected[key],actual.get(key),exact=True):
+            return False
     return True
+
+
+def _category_payload(changes, current):
+    """Merge the documented drip metadata siblings before replacing its object."""
+    changes = dict(changes)
+    metadata = changes.get('metadata')
+    if 'metadata' in changes and metadata is not None:
+        previous = current.get('metadata')
+        if previous is not None and (not isinstance(previous, dict)
+                or set(previous) - {'dripUnit','dripDate'}):
+            raise Stop('Existing module metadata contains unrecognized writable siblings')
+        changes['metadata'] = {**(previous or {}), **metadata}
+        if set(changes['metadata']) != {'dripUnit','dripDate'}:
+            raise Stop('A new drip metadata object requires an explicit dripUnit and nullable dripDate')
+        delivery._outline_properties(changes, 'module')
+    return changes
+
+
+def _draft_dependencies(plan, snapshots, get):
+    """Resolve all hierarchy and unlock references before the first PUT.
+
+    Unlock dependencies are read from the same product and must already be
+    published. The targets remain drafts; no access rule is activated here.
+    """
+    reference_fields = {'parentCategory','categoryId','lockedBy','lockedByPost','lockedByCategory'}
+    if not any(reference_fields.intersection(edit['changes'])
+            for group in ('category_changes','lesson_changes') for edit in plan[group]):
+        return {}
+    proposed = {edit['category_id']:edit['changes'] for edit in plan['category_changes']}
+    category_cache = {identity:current for (kind,identity), (_,current) in snapshots.items()
+                      if kind == 'category'}
+
+    def category(identity):
+        if identity not in category_cache:
+            category_cache[identity] = get('category', identity)[1]
+        return category_cache[identity]
+
+    starts = {edit['category_id'] for edit in plan['category_changes']
+              if 'parentCategory' in edit['changes']}
+    starts.update(edit['changes']['categoryId'] for edit in plan['lesson_changes']
+                  if 'categoryId' in edit['changes'])
+    for start in starts:
+        # Read both current and proposed ancestors. A valid final plan can
+        # still contain a temporarily cyclic write order (move a child out
+        # before moving its former parent beneath it). Retain both inventories
+        # so the scheduler can select safe individual PUTs before any write.
+        for proposed_tree in (False, True):
+            seen, identity = set(), start
+            while identity is not None:
+                if identity in seen:
+                    raise Stop('Course module hierarchy contains a cycle')
+                seen.add(identity)
+                current = category(identity)
+                if 'parentCategory' not in current:
+                    raise Stop('Module hierarchy is not fully exposed by inventory')
+                identity = (proposed.get(identity, {}).get('parentCategory', current['parentCategory'])
+                            if proposed_tree else current['parentCategory'])
+                if identity is not None:
+                    delivery._id(identity, 'parentCategory')
+
+    published = {}
+    def predecessor(kind, identity):
+        key = (kind, identity)
+        if key not in published:
+            current = get(kind, identity, draft=False)[1]
+            if current.get('visibility') != 'published':
+                raise Stop('Unlock dependencies must already be published in the same product')
+            if kind == 'lesson':
+                parent = delivery._id(current.get('categoryId'), 'unlock lesson categoryId')
+                predecessor('category', parent)
+            published[key] = current
+        return published[key]
+
+    for group,kind in (('category_changes','category'),('lesson_changes','lesson')):
+        for edit in plan[group]:
+            identity = edit[kind+'_id']
+            for field, reference_kind in (
+                    ('lockedBy' if kind == 'category' else 'lockedByPost', 'lesson'),
+                    ('lockedByCategory', 'category')):
+                reference = edit['changes'].get(field)
+                if reference is None:
+                    continue
+                if reference_kind == kind and reference == identity:
+                    raise Stop('A draft course target cannot unlock itself')
+                dependency = predecessor(reference_kind, reference)
+                if kind == 'category' and reference_kind == 'lesson' and dependency['categoryId'] == identity:
+                    raise Stop('A module cannot be unlocked by a lesson inside that module')
+    edited = {(kind,edit[kind+'_id'])
+        for group,kind in (('category_changes','category'),('lesson_changes','lesson'))
+        for edit in plan[group]}
+    dependencies = {('category',identity):current for identity,current in category_cache.items()
+                    if ('category',identity) not in edited}
+    dependencies.update(published)
+    return dependencies
+
+
+
+def _ordered_tasks(tasks, snapshots, dependencies):
+    """Apply module moves only when their individual write is cycle-free.
+
+    The requested final graph is checked in _draft_dependencies. Ordering by
+    the authored array alone can nevertheless create a temporary cycle while
+    moving an ancestor beneath one of its former children. Do not rely on the
+    provider accepting such an intermediate state or leave half a move saved.
+    """
+    categories = {identity:current for (kind,identity), (_,current) in snapshots.items()
+                  if kind == 'category'}
+    categories.update({identity:current for (kind,identity), current in dependencies.items()
+                       if kind == 'category'})
+    parents = {identity:current['parentCategory'] for identity,current in categories.items()
+               if 'parentCategory' in current}
+    pending = [task for task in tasks if task[0] == 'category']
+    ordered = []
+    while pending:
+        for index,task in enumerate(pending):
+            _, identity, _, _, changes = task
+            if 'parentCategory' not in changes:
+                ordered.append(pending.pop(index))
+                break
+            parent, seen = changes['parentCategory'], {identity}
+            while parent is not None and parent not in seen:
+                seen.add(parent)
+                if parent not in parents:
+                    raise Stop('Module move ancestor inventory is incomplete')
+                parent = parents[parent]
+            if parent is None:
+                parents[identity] = changes['parentCategory']
+                ordered.append(pending.pop(index))
+                break
+        else:
+            raise Stop('Module moves have no cycle-free native write order')
+    return ordered + [task for task in tasks if task[0] != 'category']
 
 
 def _objects(plan):
     categories = {edit['category_id'] for edit in plan['category_changes']}
     categories.update(edit['category_id'] for edit in plan['lesson_changes'])
+    categories.update(edit['changes']['categoryId'] for edit in plan['lesson_changes']
+                      if 'categoryId' in edit['changes'])
     return ([{'kind':'course','id':plan['product_id']}]
         + [{'kind':'category','id':identity} for identity in sorted(categories)]
         + [{'kind':'lesson','id':edit['lesson_id']} for edit in plan['lesson_changes']])
@@ -149,11 +289,11 @@ def run_outline(inputs, evidence_root, *, capability, transport=None):
             return result
         api = transport or delivery.Skill44Transport()
         base = '/courses/products/' + product
-        def get(kind, identity):
+        def get(kind, identity, *, draft=True):
             resource = base if kind == 'course' else base + ('/categories/' if kind=='category' else '/lessons/') + identity
             current = delivery._bound_resource(api.request('GET',resource,location_id=loc),identity,loc,kind,
                 **({'productId':product} if kind!='course' else {}))
-            if kind != 'course' and current.get('visibility') != 'draft':
+            if draft and kind != 'course' and current.get('visibility') != 'draft':
                 raise Stop('Outline targets and parent modules must remain inventoried drafts')
             return resource,current
         get('course',product)
@@ -161,6 +301,7 @@ def run_outline(inputs, evidence_root, *, capability, transport=None):
         for obj in objects[1:]:
             key = (obj['kind'],obj['id'])
             snapshots[key] = get(*key)
+        dependencies = _draft_dependencies(plan, snapshots, get)
         tasks = []
         for group,kind in (('category_changes','category'),('lesson_changes','lesson')):
             for edit in plan[group]:
@@ -177,7 +318,9 @@ def run_outline(inputs, evidence_root, *, capability, transport=None):
                         raise Stop('Quiz and assignment transitions require their dedicated content operation')
                     if current.get('contentType') in ('quiz','assignment') and 'contentId' in edit['changes'] and edit['changes']['contentId'] != current.get('contentId'):
                         raise Stop('Existing quiz or assignment content cannot be rebound as an ordinary lesson edit')
-                tasks.append((kind,identity,resource,current,edit['changes']))
+                changes = _category_payload(edit['changes'],current) if kind == 'category' else edit['changes']
+                tasks.append((kind,identity,resource,current,changes))
+        tasks = _ordered_tasks(tasks, snapshots, dependencies)
         # Every target and inventory precondition has been checked before intent
         # or the first HTTP write; no later malformed target can leave half a build.
         state = {'operation':OPERATION,'location_id':loc,'fingerprint':fingerprint,
@@ -187,10 +330,17 @@ def run_outline(inputs, evidence_root, *, capability, transport=None):
         try:
             for kind,identity,resource,current,changes in tasks:
                 if not _preserved(changes,current):
+                    for (dependency_kind, dependency_id), previous in dependencies.items():
+                        _, dependency = get(dependency_kind, dependency_id,
+                            draft=previous.get('visibility') == 'draft')
+                        if not _preserved(previous, dependency):
+                            raise Stop('Course hierarchy or unlock dependency changed after preflight')
                     if kind == 'lesson':
                         # A parent becoming live after preflight must not turn
                         # a draft-only edit into an implicit live-content job.
                         get('category',current['categoryId'])
+                        if 'categoryId' in changes:
+                            get('category',changes['categoryId'])
                     _,fresh = get(kind,identity)
                     if not _preserved(current,fresh):
                         raise Stop('Course outline target changed after the complete preflight')
@@ -204,6 +354,12 @@ def run_outline(inputs, evidence_root, *, capability, transport=None):
                 state['completed'].append({'kind':kind,'id':identity})
                 state['current_step_status'] = 'VERIFIED'
                 secure_json(path,state)
+            # A successful receipt uses authored target order, independent of
+            # the safe native hierarchy write order selected above. Interrupted
+            # journals retain their real completed sequence for reconciliation.
+            state['completed'] = [{'kind':kind,'id':edit[kind+'_id']}
+                for group,kind in (('category_changes','category'),('lesson_changes','lesson'))
+                for edit in plan[group]]
             state.update(status='NEEDS_VERIFICATION',current_step_status='VERIFIED')
             secure_json(path,state)
             return state

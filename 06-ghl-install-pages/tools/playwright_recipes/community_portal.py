@@ -123,6 +123,12 @@ def validate_details_inputs(inputs):
 
 
 def _context_inputs(inputs):
+    if isinstance(inputs, Mapping) and 'access' in inputs:
+        if __package__:
+            from .community_access import validate_inputs as validate_access_inputs
+        else:
+            from community_access import validate_inputs as validate_access_inputs
+        return validate_access_inputs(inputs)
     return validate_details_inputs(inputs) if isinstance(inputs, Mapping) and 'details' in inputs else validate_inputs(inputs)
 
 
@@ -148,7 +154,7 @@ def _facts(page, inputs, reader, *, verify_control=True):
     # the single authenticated identity read, then recheck the route: hydration
     # must not bless a redirect or user change that happened during the wait.
     if verify_control:
-        if 'details' in inputs:
+        if 'details' in inputs or 'access' in inputs:
             settings = page.get_by_role('button', name='SETTINGS', exact=True)
             settings.wait_for(state='visible', timeout=45000)
             if settings.count() != 1 or not settings.is_visible():
@@ -258,7 +264,7 @@ def run_channels(page, inputs, evidence_root, *, portal_context, clock=time.time
         if any(_has_evidence(root / name) for name in
                ('state.json', 'handoff.json', 'provider-state.json', 'auth-stop.json',
                 'delivery-state.json', 'calendar-delivery-state.json',
-                'community-details-state.json')):
+                'community-details-state.json', 'community-access-state.json')):
             raise Stop('Another execution lane has evidence here; reconcile before a portal write')
         existing = root / 'community-portal-state.json'
         if _has_evidence(existing):
