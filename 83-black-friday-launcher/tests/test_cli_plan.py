@@ -96,10 +96,9 @@ class PlanTests(_Tmp):
         return doc
 
     def test_plan_shows_every_offer_price_term_route_and_the_hash(self):
-        # the acceptance command, as the client would run it, in a process that has the TEST-ONLY read-back
-        # transport installed (a subprocess does not inherit the suite's: the fixtures name TEST-ONLY ids only)
+        # the acceptance command, as the client would run it, in its own process
         doc = self.plan_doc()
-        runner = ("import sys; sys.path[:0] = [%r]; import test_only_readback; test_only_readback.install(); "
+        runner = ("import sys; sys.path[:0] = [%r]; "
                   "from launcher_core import cli; sys.exit(cli.main(sys.argv[1:]))"
                   % str(SKILL_ROOT / "fixtures"))
         # hermetic: the CLI repairs a missing package itself, so the child gets an empty pydeps folder and no index
@@ -434,7 +433,7 @@ class DispatchBindsTheAnswersFile(_Tmp):
         self.li = cli._launcher_intake()
         doc = json.loads(json.dumps(helpers.ELEVATION))  # the three answers a launch intake also needs, as the
         doc["meta"]["mode"] = "bf"                       # client gave them (set directly: the interview engine
-        for qid, answer in (("entitlement", "attested"), ("plan_approval", "approve"),  # now cites transcripts)
+        for qid, answer in (("plan_approval", "approve"),  # now cites transcripts
                             ("visual_direction", helpers.HOUSE), ("checkout_terms", helpers.TERMS)):
             helpers.e._set(doc, qid, answer, "provided", "client")
         self.answers = self.write("answers.json", doc)

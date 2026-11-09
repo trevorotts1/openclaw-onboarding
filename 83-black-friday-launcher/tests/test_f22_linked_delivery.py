@@ -28,15 +28,7 @@ FIXTURE = SKILL_ROOT / "fixtures" / "seven-figure-preneur" / "intake.json"
 
 
 def setUpModule():
-    """unittest never loads conftest.py: install the same offline GHL read-back it does."""
-    from launcher_core import entitlement
-    from test_only_readback import test_only_transport
-    entitlement.set_transport(test_only_transport())
-
-
-def tearDownModule():
-    from launcher_core import entitlement
-    entitlement.set_transport(None)
+    """unittest never loads conftest.py; nothing to install: no read-back exists."""
 
 
 def normalized(**overrides) -> dict:

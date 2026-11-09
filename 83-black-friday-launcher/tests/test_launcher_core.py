@@ -44,14 +44,6 @@ def _base_intake_raw(mode: str = "single_simple") -> dict:
         "brand": {"ref": "brand-a", "hash": "a" * 64},
         "copy_profile": "signature_12_section",
         "approval": {"ref": "approval-1", "hash": "b" * 64},
-        "entitlement_attestation": {
-            "basis": "purchase",
-            "evidence_ref": "TEST-ONLY-EVIDENCE",
-            "attested_by": "operator",
-            "purchase_reference": "TEST-ONLY-PURCHASE-REFERENCE",
-            "amount_minor": 49700,
-            "currency": "USD",
-        },
         "offers": offers,
     }
 
