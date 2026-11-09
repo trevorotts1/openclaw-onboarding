@@ -105,7 +105,7 @@ class ExactJourney(Base):
 
 class CitedMessages(Base):
     def test_a_commercial_answer_without_a_ref_is_refused(self):
-        for qid, value in (("funnel_shape", "One offer"), ("deliverables", "12 lessons; 4 calls"), ("entitlement", "Yes, it is included")):
+        for qid, value in (("funnel_shape", "One offer"), ("deliverables", "12 lessons; 4 calls")):
             for ref in (None, "", "nope", "a1"):  # missing, empty, unknown id, an assistant message
                 d = e.new_doc()
                 r = e.record(d, qid, value, source_message_ref=ref)
@@ -129,13 +129,14 @@ class CitedMessages(Base):
 
     def test_status_cannot_be_forced_up_to_provided(self):
         d = e.new_doc()
-        r = e.record(d, "entitlement", "Please check for me", status="provided", source_message_ref="c7")
+        r = e.record(d, "price", {"amount_minor": 49700, "currency": "USD",
+                                  "rationale": "Similar programs charge 400 to 600."},
+                     status="provided", source_message_ref="c1")
         self.assertFalse(r["ok"])
 
     def test_cited_answers_are_recorded_with_their_ref(self):
         d = e.new_doc()
-        for qid, value, ref in (("funnel_shape", "One offer", "c4"), ("deliverables", "12 lessons; 4 calls", "c5"),
-                                ("entitlement", "Yes, it is included", "c7")):
+        for qid, value, ref in (("funnel_shape", "One offer", "c4"), ("deliverables", "12 lessons; 4 calls", "c5")):
             self.assertTrue(e.record(d, qid, value, source_message_ref=ref)["ok"], qid)
             self.assertEqual(e.get(d, qid)["source_message_ref"], ref)
         json.dumps(d)  # the doc stays plain JSON

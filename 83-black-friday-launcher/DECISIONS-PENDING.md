@@ -8,23 +8,21 @@ carries a value anywhere in this build.
 
 ## Decided
 
-### 1. Entitlement: a declaration the skill carries plus a fail-closed attestation gate
+### 1. There is no account-entitlement question and no admission gate
 
-**Owner decision.** Brand Management membership qualifies WITHOUT a new $497
-purchase. Everyone else buys at $497. School of AI membership alone does not
-qualify. ZHC qualifies only together with Brand Management.
+**Owner order (2026-11-08).** A client must never be asked to self-classify their account before a page
+can be built. The question, the carried rules, the read-back and the build refusal are all removed.
 
-**Code.** `entitlement-declaration.json` carries the rules.
-`launcher_core/entitlement.py` verifies that declaration (including that the
-rules were not silently flipped), then verifies the run's attestation. A
-missing, unknown or unqualified basis fails with a named code before any page
-is planned: `AF-LAUNCH-ENTITLEMENT-UNKNOWN`, `-NOT-QUALIFIED`,
-`-PURCHASE-UNVERIFIED`, `-DECLARATION`, `-PRICE-CONTRADICTION`.
+**Code.** `launcher_core/entitlement.py` and `entitlement-declaration.json` are deleted. The intake no
+longer requires or verifies anything of the kind: the normalized record carries
+`entitlement = {"state": "unknown", "basis": null, "qualifies": null, "requires_purchase": false,
+"billing": "none"}`, and nothing consumes it as a permission. `checks.py` no longer refuses a package for
+want of an attestation. The shared question bank no longer offers the question and
+`shared-utils/client_intake/launcher_intake.py` no longer requires an answer for it.
 
-**Ceiling.** Nothing charges, creates an entitlement or calls a billing API;
-`no_billing`, `creates_entitlements` and `calls_billing_api` are asserted false
-in the declaration. A membership attestation carries no purchase reference — a
-membership is not a purchase event — and the gate rejects one that does.
+**Ceiling.** No entitlement is created, inferred or stored, and no billing API is called. A legacy intake
+that still carries an `entitlement_attestation` key keeps validating; the value is ignored, never read.
+Spend caps, approval refs and QC gates are untouched.
 
 ### 2. Council advice is included in launch planning
 

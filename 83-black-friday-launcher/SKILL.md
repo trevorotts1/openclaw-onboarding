@@ -2,7 +2,7 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.26
+version: 0.2.27
 priority: HIGH
 ---
 
@@ -160,7 +160,7 @@ I need a moment to get something ready on my side — I'll be right back with yo
 | Never say to the client | Say this instead |
 | --- | --- |
 | "Black Friday Launcher is installed and ready (with a version number)" | "Yes, I'm ready to help you with your Black Friday sale." |
-| "validates the intake behind an entitlement gate" | "First I'll make sure I have everything I need from you." |
+| "validates the intake fail-closed" | "First I'll make sure I have everything I need from you." |
 | "builds the route graph", "maps the checkout contract" | "the steps your customers go through, from your sales page to your order form to your thank-you page" |
 | "dispatches the page builds" | "I'll put your pages together." |
 | "the manifest and the receipt" | "a complete folder with everything we made" |
@@ -172,14 +172,15 @@ Everything below is for the operator and for you as the engine room. It is techn
 client asks what this skill does, use the `client_summary` or the opening above, not this.
 
 Technical description (operator only): composes the Black Friday launch from the separate page skills
-through the signature launch contracts. It validates the launch intake fail-closed behind an entitlement
-attestation gate, compiles the doc 02 route graph (including the folded_levels shape), maps the native
-Skill 79 checkout contract, runs a Council planning step (a Skill 77 package check unless a live Council
-session returns advice), produces the 7FigurePreneur shape without a product-selection page, dispatches
-page requests through Skill 49, and assembles the delivered package with a manifest, a receipt and
-executable completeness checks. Enabled in 999: installed from CONTROL/bundled-skills.txt, with a
-dependency preflight that verifies every dependency before it reports ready. Offline core only: no live
-payment, no entitlement creation, no paid model session.
+through the signature launch contracts. It validates the launch intake fail-closed, compiles the doc 02
+route graph (including the folded_levels shape), maps the native Skill 79 checkout contract, runs a
+Council planning step (a Skill 77 package check unless a live Council session returns advice), produces
+the 7FigurePreneur shape without a product-selection page, dispatches page requests through Skill 49, and
+assembles the delivered package with a manifest, a receipt and executable completeness checks. Enabled in
+999: installed from CONTROL/bundled-skills.txt, with a dependency preflight that verifies every dependency
+before it reports ready. Offline core only: no live payment, no entitlement creation, no paid model session.
+The client is never asked to declare a membership or a purchase, and no build is refused or deferred for
+want of one.
 
 The number **83 is assigned** (LAUNCH-04, 2026-10-18; the availability evidence
 is recorded in `registration.json:number_assignment`). It lives in exactly one
@@ -197,9 +198,10 @@ a numbered directory, so the same code runs in both layouts.
 1. **Intake** (`launcher_core/intake.py`). Validates a launch intake. Required
    fields are only those the pages genuinely cannot be built without. Nothing
    commercial defaults: a missing price is an error, never zero and never free;
-   a level is supplied or explicitly unknown. The entitlement attestation is
-   verified by `launcher_core/entitlement.py` against the declaration the skill
-   carries, so an unknown entitlement state never builds.
+   a level is supplied or explicitly unknown. There is no account-entitlement
+   question and no admission gate: the client is never asked to declare a
+   membership or a purchase, the state is recorded `unknown`, and nothing blocks
+   on it.
 2. **Route compilation** (`launcher_core/route.py`). Emits the route graph from
    doc 02 section 4 (`contracts/49-signature-funnel/schema/route-graph.schema.json`):
    `single_simple` skips Product Selection; `multiple_options` inserts it;
@@ -224,10 +226,10 @@ a numbered directory, so the same code runs in both layouts.
    never duplicated.
 6. **Completeness checks** (`launcher_core/checks.py`). Fail when a required
    piece is missing or blocked, when an artifact is absent or its hash drifted,
-   when a bound path does not resolve or is placeholder-shaped, when a price,
-   level or entitlement was defaulted, when the entitlement is unattested, when
-   Council advice is recorded as blocking, or when checkout is not the native
-   contract.
+   when a bound path does not resolve or is placeholder-shaped, when a price or
+   level was defaulted, when Council advice is recorded as blocking, or when
+   checkout is not the native contract. Nothing is refused for want of an
+   account-entitlement declaration; there is none to make.
 7. **999 dependency package** (`launcher_core/dependencies.py`). Lists every
    dependency and reports which are present and which are missing. The skill is
    enabled in 999: `registration.json` records `enablement.enabled_in_999: true`,
