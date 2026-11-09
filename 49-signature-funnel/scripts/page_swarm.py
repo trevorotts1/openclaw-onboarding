@@ -275,6 +275,17 @@ def execute(requests: List[Dict[str, Any]], executor: Callable[..., Dict[str, An
                                           indent=2) + "\n", encoding="utf-8")
 
     def run(lane):
+        # F14 item 2: the lane handed to a delegated worker passes the same
+        # admission service as every other entry. A lane root that is not a
+        # governed run root is reported as not recorded, never as admitted.
+        try:
+            import admission_seam
+        except ImportError as exc:  # the seam ships beside this module
+            raise SwarmError(f"lane {lane['lane']}: admission_seam is missing ({exc})")
+        try:
+            admission_seam.record_lane(out_dir, lane["lane"], owner="page_swarm")
+        except Exception as exc:
+            raise SwarmError(f"lane {lane['lane']} was not admitted: {exc}")
         return executor(lane["request"], lane["lane"]) if lane["extra"] else executor(lane["request"])
 
     outcomes = run_swarm(lanes, run, workers=workers, limiter=limiter if paid else None, ledger=ledger)
