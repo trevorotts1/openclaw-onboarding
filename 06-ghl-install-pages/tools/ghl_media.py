@@ -74,6 +74,7 @@ upload that returns no ``fileId``/``url`` raises (never a fake CDN URL). The
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import mimetypes
@@ -858,6 +859,26 @@ def upload_media(
         fields["parentId"] = parent_id  # documented folder field is parentId
 
     body, content_type = _multipart_encode(fields, "file", png_path)
+    posted = _post_multipart_media(body, content_type, name, pit,
+                                   timeout=timeout, opener=opener)
+    return {
+        "fileId": posted["fileId"],
+        "url": posted["url"],
+        "name": name,
+        "local_path": png_path,
+        "http": posted["http"],
+    }
+
+
+def _post_multipart_media(body: bytes, content_type: str, name: str, pit: str, *,
+                          timeout: int = 300,
+                          opener: Callable[[urllib.request.Request, int], Any] | None = None) -> dict:
+    """POST one already-encoded multipart body to the media upload endpoint.
+
+    Shared by ``upload_media`` (PNG rail) and ``upload_course_asset`` (validated
+    course-content rail) so the proven services.* + Bearer-LOCATION-PIT call
+    exists exactly once. FAIL-LOUD: a non-2xx, or a 2xx without ``fileId``/``url``,
+    raises and never fabricates a CDN URL."""
     url = GHL_SERVICES_ORIGIN.rstrip("/") + GHL_MEDIA_UPLOAD_PATH
     req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Authorization", f"Bearer {pit}")
@@ -896,13 +917,143 @@ def upload_media(
             f"media upload {code} but response missing fileId/url for {name!r}: "
             f"{json.dumps(data)[:300]} — refusing to fabricate a CDN URL"
         )
+    return {"fileId": file_id, "url": public_url, "http": int(code)}
 
+
+# ── 3b) upload_course_asset — validated NON-PNG course content (WF08) ────────
+#
+# Doc 1 section 8.5: ordinary GHL media uploads stay API-first through this
+# module; the managed-browser exception covers ONLY a native course-content
+# ingestion step. Course lessons carry video/audio/document assets as well as
+# images, so this entrypoint validates the ACTUAL BYTES (magic, sha256, size)
+# before the same proven multipart POST runs. It never weakens the PNG-only
+# guarantee of ``upload_media`` for the page-image rail and never touches
+# browser upload itself.
+
+COURSE_ASSET_MIME_PREFIXES = ("video/", "audio/", "image/", "application/pdf",
+                              "application/zip", "text/")
+
+_COURSE_MAGIC = (
+    ("image/png", b"\x89PNG\r\n\x1a\n"),
+    ("image/jpeg", b"\xff\xd8\xff"),
+    ("video/webm", b"\x1a\x45\xdf\xa3"),
+    ("audio/mpeg", b"ID3"),
+    ("audio/mpeg", b"\xff\xfb"),
+    ("application/pdf", b"%PDF"),
+    ("application/zip", b"PK\x03\x04"),
+)
+
+
+def _sniff_course_mime(head: bytes) -> str:
+    if len(head) >= 8 and head[4:8] == b"ftyp":
+        return "video/mp4"
+    if head.startswith(b"RIFF") and b"WAVE" in head[:16]:
+        return "audio/wav"
+    for mime, magic in _COURSE_MAGIC:
+        if head.startswith(magic):
+            return mime
+    return ""
+
+
+def inspect_course_asset(path: str, expected_mime: str) -> dict:
+    """Hash + magic-sniff one course asset. Returns the facts; raises on refusal."""
+    _require(path, "path")
+    _require(expected_mime, "expected_mime")
+    want = str(expected_mime).strip().lower()
+    if not any(want.startswith(p) for p in COURSE_ASSET_MIME_PREFIXES):
+        raise ValueError(
+            f"course asset mime {want!r} is outside the supported course content set "
+            f"({', '.join(COURSE_ASSET_MIME_PREFIXES)})"
+        )
+    if not os.path.isfile(path):
+        raise ValueError(f"course asset not found: {path!r}")
+    size = os.path.getsize(path)
+    if size <= 0:
+        raise ValueError(f"course asset is empty: {path!r}")
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        head = fh.read(32)
+        fh.seek(0)
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    sniffed = _sniff_course_mime(head)
+    if not sniffed:
+        raise ValueError(
+            f"course asset {path!r} does not match any supported content signature "
+            "(mp4/webm/mp3/wav/png/jpeg/pdf/zip) — refusing to upload an unverified file"
+        )
+    if sniffed != want and not want.startswith(sniffed.split("/")[0] + "/"):
+        raise ValueError(
+            f"course asset {path!r} sniffs as {sniffed!r} but the manifest declares "
+            f"{want!r} — refusing a type mismatch"
+        )
     return {
-        "fileId": file_id,
-        "url": public_url,
+        "path": os.path.abspath(path),
+        "sha256": h.hexdigest(),
+        "byte_size": size,
+        "mime_type": want,
+        "sniffed_mime_type": sniffed,
+        "magic_verified": True,
+    }
+
+
+def upload_course_asset(
+    asset_path: str,
+    location_id: str,
+    name: str,
+    pit: str,
+    *,
+    expected_mime: str,
+    sha256: str,
+    byte_size: int,
+    parent_id: str | None = None,
+    timeout: int = 600,
+    opener: Callable[[urllib.request.Request, int], Any] | None = None,
+) -> dict:
+    """Upload ONE validated course asset (video/audio/document/image) over the API.
+
+    Validates the local bytes (magic + sha256 + byte_size) against the approved
+    asset manifest, then uses the same proven ``services.*`` multipart POST as
+    ``upload_media``. A production URL for a paid course is returned by GHL; the
+    storage-access policy for the course is decided by
+    ``ghl_course_media_binding.validate_asset_manifest`` (approved/private only).
+
+    Returns ``{fileId, url, name, local_path, http, sha256, byte_size, mime_type}``.
+    """
+    _require(location_id, "location_id")
+    _require(name, "name")
+    _require(pit, "pit")
+    _require(sha256, "sha256")
+    inspected = inspect_course_asset(asset_path, expected_mime)
+    if inspected["sha256"].lower() != str(sha256).strip().lower():
+        raise ValueError(
+            f"refusing to upload {asset_path!r}: local sha256 does not match the approved "
+            "manifest sha256"
+        )
+    if inspected["byte_size"] != int(byte_size):
+        raise ValueError(
+            f"refusing to upload {asset_path!r}: local byte_size {inspected['byte_size']} "
+            f"does not match the approved manifest byte_size {byte_size}"
+        )
+    fields: dict[str, str] = {
+        "locationId": location_id,
         "name": name,
-        "local_path": png_path,
-        "http": int(code),
+        "hosted": "false",
+    }
+    if parent_id:
+        fields["parentId"] = parent_id
+    body, content_type = _multipart_encode(fields, "file", asset_path)
+    posted = _post_multipart_media(body, content_type, name, pit,
+                                   timeout=timeout, opener=opener)
+    return {
+        "fileId": posted["fileId"],
+        "url": posted["url"],
+        "name": name,
+        "local_path": asset_path,
+        "http": posted["http"],
+        "sha256": inspected["sha256"],
+        "byte_size": inspected["byte_size"],
+        "mime_type": inspected["mime_type"],
     }
 
 
@@ -1367,6 +1518,9 @@ __all__ = [
     "verify_png",
     "generate_images",
     "upload_media",
+    "upload_course_asset",
+    "inspect_course_asset",
+    "COURSE_ASSET_MIME_PREFIXES",
     "create_media_folder",
     "media_folder_name_prefix",
     "funnel_media_folder_plan",
