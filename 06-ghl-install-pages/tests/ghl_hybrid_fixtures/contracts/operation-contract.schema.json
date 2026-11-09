@@ -1,0 +1,136 @@
+{
+  "$id": "https://blackceo.local/ghl/contracts/operation-contract.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "approval_class": {
+      "enum": [
+        "none",
+        "owner",
+        "canary"
+      ],
+      "type": "string"
+    },
+    "documentation_url": {
+      "type": "string"
+    },
+    "documented_at": {
+      "type": "string"
+    },
+    "effect": {
+      "enum": [
+        "read",
+        "write",
+        "publish",
+        "delete"
+      ],
+      "type": "string"
+    },
+    "identity_placement": {
+      "enum": [
+        "path",
+        "query",
+        "body",
+        "header"
+      ],
+      "type": "string"
+    },
+    "implementation": {
+      "enum": [
+        "public_rest",
+        "official_mcp",
+        "firebase_internal",
+        "managed_browser",
+        "none"
+      ],
+      "type": "string"
+    },
+    "method": {
+      "enum": [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "MULTIPART"
+      ],
+      "type": "string"
+    },
+    "operation_id": {
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9_]+)+$",
+      "type": "string"
+    },
+    "pagination_policy": {
+      "type": "string"
+    },
+    "path": {
+      "pattern": "^/",
+      "type": "string"
+    },
+    "readback": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "required",
+        "operation_id"
+      ],
+      "type": "object"
+    },
+    "request_schema": {
+      "type": "string"
+    },
+    "response_schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "type": "string"
+    },
+    "scopes": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "token_class": {
+      "enum": [
+        "location_pit",
+        "agency_pit",
+        "oauth"
+      ],
+      "type": "string"
+    },
+    "version_header": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "operation_id",
+    "method",
+    "path",
+    "version_header",
+    "identity_placement",
+    "token_class",
+    "scopes",
+    "effect",
+    "approval_class",
+    "documentation_url",
+    "documented_at",
+    "request_schema",
+    "response_schema",
+    "pagination_policy",
+    "readback",
+    "implementation"
+  ],
+  "title": "GHL operation contract row (fixture snapshot pending WF00-CP01)",
+  "type": "object",
+  "version": "1.0.0"
+}

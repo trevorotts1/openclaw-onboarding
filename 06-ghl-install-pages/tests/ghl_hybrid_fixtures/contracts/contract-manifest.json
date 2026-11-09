@@ -1,0 +1,18 @@
+{
+  "assumed_checkpoint": "WF00-CP01",
+  "assumed_checkpoint_status": "pending (no contracts/ record in the run ledger at WF22 build time)",
+  "authoritative_source": "shared-utils/ghl/contracts/ (owned by WF00 / GHL-000)",
+  "authority": "fixture-snapshot",
+  "contract_revision": "3.0",
+  "contract_set": "bcm-ghl-hybrid-2026-11-08-r3",
+  "derived_from": "Document 1 sections 3.4, 5.2, 5.5 and 17",
+  "files": {
+    "capability-record.v2.schema.json": "71afd41c85097c2605d728df725d78f8f7a6c54ab20ab6205146ef76aba8d3f5",
+    "course-asset-manifest.v1.schema.json": "9c8f2d6ea02a6da78a64e1e7ad54e38a7ca2cd28d92985ecd5337ba7acc637b0",
+    "course-build-plan.v1.schema.json": "e0589bc82a0e8a3ac73b526dce3762fc891f1f35cfa3d2581fdbfa4e64c3edbd",
+    "course-delivery-receipt.v1.schema.json": "06b860d75a540d2064a75f21d30089d7758af841a99132d3aca76893b28c2e4d",
+    "hybrid-operation-receipt.v1.schema.json": "96cc0467b3c50b3841d93bf936b9e3b3d8560cda1254d910500861faf1f7a7c4",
+    "learning-association.v1.schema.json": "b7e75fb16d2b1fe70ea759ee26b2ddcb44ce99f82ad48aeea265f127c68b2eb0",
+    "operation-contract.schema.json": "987221c7e590ac5ae752a7489d0711940ee4346f8122f512b176474bc3cfdfb2"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "acceptance_ids": [
+    "B02",
+    "B06",
+    "B07",
+    "B08",
+    "B21",
+    "IG-MEET-01",
+    "IG-MEET-03",
+    "IG-MEET-06",
+    "IG-MEET-07",
+    "IG-MEET-08",
+    "IG-PAGE-02"
+  ],
+  "assumed_checkpoints": [
+    "WF09-CP01",
+    "WF26-CP01",
+    "WF34-CP01"
+  ],
+  "expected": {
+    "av_claimed_passed": false,
+    "lesson_quiz_reused_for_marketing": false,
+    "missing_media_device_reported_as_passed": false
+  },
+  "marketing_quiz": {
+    "builder": "managed_browser",
+    "kind": "marketing_quiz",
+    "lesson_quiz_separate": true,
+    "outcomes": {
+      "contact": true,
+      "field": true,
+      "tag": true,
+      "workflow": true
+    },
+    "quiz_id": "SYNTHETIC_MARKETING_QUIZ"
+  },
+  "meeting": {
+    "av": {
+      "audio": "not_run",
+      "breakout_created_not_opened": true,
+      "recording": "not_run",
+      "summary": "not_run",
+      "transcript": "not_run",
+      "video": "not_run"
+    },
+    "guest_session_isolated": true,
+    "host_identity": "SYNTHETIC_HOST",
+    "location_id": "SYNTHETIC_GHL_LOCATION",
+    "meeting_room_id": "SYNTHETIC_ROOM",
+    "reusable_link": true,
+    "reused_room": true,
+    "unique_link_mode": false
+  },
+  "scenario_id": "meeting-quiz-managed-browser-boundary",
+  "tenant": {
+    "company_id": "SYNTHETIC_CC_COMPANY",
+    "location_id": "SYNTHETIC_GHL_LOCATION",
+    "run_id": "SYNTHETIC_RUN_WF22_001"
+  }
+}

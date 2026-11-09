@@ -1,0 +1,77 @@
+{
+  "acceptance_ids": [
+    "B03",
+    "B11",
+    "B12",
+    "B14",
+    "B15",
+    "B16",
+    "B17",
+    "IG-KB-01",
+    "IG-KB-03",
+    "IG-WIDGET-01",
+    "IG-WIDGET-02",
+    "IG-WIDGET-04"
+  ],
+  "assumed_checkpoints": [
+    "WF01-CP01",
+    "WF28-CP01",
+    "WF30-CP01",
+    "WF31-CP01"
+  ],
+  "expected": {
+    "bubble_render_counts_as_conversation": false,
+    "duplicate_responses": 0,
+    "kb_states_are_distinct": true,
+    "unsupported_chat_type_refused": true
+  },
+  "kb": {
+    "attached_to_agent": true,
+    "cross_client_isolation": true,
+    "ingested": true,
+    "kb_id": "SYNTHETIC_KB",
+    "source_update_reingested": true,
+    "trained": true,
+    "unknown_answer": "fallback_to_human",
+    "uploaded": true
+  },
+  "responder": {
+    "channel_mapping": {
+      "sms": "native",
+      "web_chat": "native"
+    },
+    "human_handoff": true,
+    "inbound": [
+      {
+        "message_id": "SYNTHETIC_MSG_1",
+        "responses_sent": 1
+      }
+    ],
+    "local_brain": "SYNTHETIC_LOCAL_BRAIN",
+    "native_responder": "SYNTHETIC_NATIVE_CONVERSATION",
+    "opt_out": true,
+    "quiet_hours": true,
+    "single_responder_owner": "native"
+  },
+  "scenario_id": "kb-responder-widget",
+  "tenant": {
+    "company_id": "SYNTHETIC_CC_COMPANY",
+    "location_id": "SYNTHETIC_GHL_LOCATION",
+    "run_id": "SYNTHETIC_RUN_WF22_001"
+  },
+  "widget": {
+    "chat_type": "live_chat",
+    "config_version": 2,
+    "embeds": 1,
+    "thread": {
+      "handoff_to_human": true,
+      "reached_inbox": "SYNTHETIC_INBOX",
+      "responder": "native"
+    },
+    "unsupported_chat_types": [
+      "voice",
+      "sms_only"
+    ],
+    "widget_id": "SYNTHETIC_WIDGET_ID"
+  }
+}

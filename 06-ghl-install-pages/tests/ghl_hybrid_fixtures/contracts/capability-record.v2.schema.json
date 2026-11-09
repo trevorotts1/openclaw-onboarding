@@ -1,0 +1,156 @@
+{
+  "$id": "https://blackceo.local/ghl/contracts/capability-record.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "adapter_built": {
+      "type": "boolean"
+    },
+    "authenticated_principal": {
+      "type": "string"
+    },
+    "availability": {
+      "enum": [
+        "unknown",
+        "available",
+        "beta_not_enabled",
+        "unavailable"
+      ],
+      "type": "string"
+    },
+    "checked_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contract_revision": {
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "credential_fingerprint": {
+      "type": "string"
+    },
+    "credential_ref": {
+      "type": "string"
+    },
+    "documented": {
+      "type": "boolean"
+    },
+    "effective_grant_fingerprint": {
+      "type": "string"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "expires_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fallback_policy": {
+      "type": "string"
+    },
+    "invalidation_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "location_id": {
+      "type": "string"
+    },
+    "offline_tests_passed": {
+      "type": "boolean"
+    },
+    "operation_id": {
+      "type": "string"
+    },
+    "read_probe": {
+      "additionalProperties": false,
+      "properties": {
+        "receipt_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "enum": [
+            "not_run",
+            "passed",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
+    "record_version": {
+      "const": 2,
+      "type": "integer"
+    },
+    "request_media_type": {
+      "type": "string"
+    },
+    "scope_state": {
+      "enum": [
+        "unknown",
+        "verified",
+        "unverified",
+        "revoked"
+      ],
+      "type": "string"
+    },
+    "write_canary": {
+      "additionalProperties": false,
+      "properties": {
+        "receipt_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "enum": [
+            "not_run",
+            "passed",
+            "failed",
+            "not_requested"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "record_version",
+    "location_id",
+    "operation_id",
+    "contract_revision",
+    "credential_ref",
+    "credential_fingerprint",
+    "documented",
+    "adapter_built",
+    "offline_tests_passed",
+    "availability",
+    "scope_state",
+    "read_probe",
+    "write_canary",
+    "enabled",
+    "checked_at",
+    "expires_at",
+    "fallback_policy"
+  ],
+  "title": "GHL capability record v2 (fixture snapshot pending WF00-CP01)",
+  "type": "object",
+  "version": "2.0.0"
+}

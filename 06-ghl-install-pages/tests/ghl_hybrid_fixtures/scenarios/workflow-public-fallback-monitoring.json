@@ -1,0 +1,83 @@
+{
+  "acceptance_ids": [
+    "A01",
+    "A02",
+    "A04",
+    "A05",
+    "A06",
+    "A07",
+    "B04",
+    "B05",
+    "IG-WF-01",
+    "IG-WF-04",
+    "IG-LOG-01",
+    "IG-LOG-04"
+  ],
+  "assumed_checkpoints": [
+    "WF00-CP01",
+    "WF01-CP01",
+    "WF02-CP01",
+    "WF04-CP01",
+    "WF25-CP01"
+  ],
+  "expected": {
+    "cohort_label_correct": true,
+    "duplicate_mutations": 0,
+    "rail_switch_after_submitted": false,
+    "valid_false_blocks_save": true
+  },
+  "fallback": {
+    "approved": true,
+    "rail": "firebase_internal",
+    "retried_public_after_submit": false,
+    "selected": "firebase_internal"
+  },
+  "monitoring": {
+    "count_kind": "events",
+    "cursor": {
+      "next": null
+    },
+    "evidence_states": {
+      "builder_tests": "offline",
+      "controlled_live_execution": "not_run",
+      "empty_log": "not_run"
+    },
+    "retention": {
+      "limited": true,
+      "silently_dropped_rows": 0
+    },
+    "same_window_ratio_is_cohort_conversion": false,
+    "window": {
+      "from": "2026-11-01T00:00:00Z",
+      "to": "2026-11-08T00:00:00Z"
+    }
+  },
+  "operation_id": "workflows.definition.create",
+  "public_route": {
+    "available": false,
+    "beta_error": "WORKFLOW_API_NOT_ENABLED_FOR_LOCATION",
+    "classified_as": "beta_not_enabled",
+    "rail": "public_rest"
+  },
+  "published_workflow": {
+    "silent_draft_transition": false,
+    "status_after": "published",
+    "status_before": "published"
+  },
+  "scenario_id": "workflow-public-fallback-monitoring",
+  "stale_revision": {
+    "rejected": true,
+    "reread_before_retry": true,
+    "workflow_intact": true
+  },
+  "tenant": {
+    "company_id": "SYNTHETIC_CC_COMPANY",
+    "location_id": "SYNTHETIC_GHL_LOCATION",
+    "run_id": "SYNTHETIC_RUN_WF22_001"
+  },
+  "validation": {
+    "http_status": 200,
+    "save_attempted": false,
+    "valid": false
+  }
+}

@@ -1,0 +1,96 @@
+{
+  "$id": "https://blackceo.local/ghl/contracts/course-build-plan.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "course": {
+      "additionalProperties": false,
+      "properties": {
+        "course_category_id": {
+          "type": "string"
+        },
+        "course_product_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "visibility": {
+          "enum": [
+            "draft",
+            "published"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "course_product_id",
+        "title",
+        "visibility"
+      ],
+      "type": "object"
+    },
+    "modules": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "course_module_id": {
+            "type": "string"
+          },
+          "lessons": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "content_bound": {
+                  "type": "boolean"
+                },
+                "course_lesson_id": {
+                  "type": "string"
+                },
+                "media_asset_ids": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "course_lesson_id",
+                "title",
+                "content_bound",
+                "media_asset_ids"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_module_id",
+          "title",
+          "lessons"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "course",
+    "modules"
+  ],
+  "title": "Course build plan (fixture snapshot pending WF00-CP01)",
+  "type": "object",
+  "version": "1.0.0"
+}

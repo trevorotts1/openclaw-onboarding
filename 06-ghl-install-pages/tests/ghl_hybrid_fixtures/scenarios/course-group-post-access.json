@@ -1,0 +1,351 @@
+{
+  "acceptance_ids": [
+    "A08",
+    "A09",
+    "A10",
+    "A12",
+    "A13",
+    "A14",
+    "A15",
+    "A17",
+    "A27",
+    "IG-COURSE-01",
+    "IG-COURSE-02",
+    "IG-COURSE-03"
+  ],
+  "access": {
+    "access_verified": true,
+    "course_product_id": "SYNTHETIC_COURSE_PRODUCT",
+    "delivery_receipt_id": "SYNTHETIC_DELIVERY_RECEIPT",
+    "delivery_state": "verified",
+    "enrollment_id": "SYNTHETIC_ENROLLMENT",
+    "object_refs": {
+      "member_contact_id": "SYNTHETIC_MEMBER_CONTACT"
+    },
+    "payment_claim": false,
+    "run_id": "SYNTHETIC_RUN_WF22_001",
+    "schema_version": "1.0.0"
+  },
+  "asset_manifest": {
+    "assets": [
+      {
+        "asset_id": "SYNTHETIC_ASSET_1",
+        "bound_to_lesson_id": "SYNTHETIC_LESSON_1",
+        "checksum_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "duplicate_callback": true,
+        "kind": "video"
+      }
+    ],
+    "schema_version": "1.0.0"
+  },
+  "assumed_checkpoints": [
+    "WF00-CP01",
+    "WF06-CP01",
+    "WF07-CP01",
+    "WF08-CP01",
+    "WF09-CP01",
+    "WF10-CP01",
+    "WF13-CP01",
+    "WF18-CP01"
+  ],
+  "community_post": {
+    "attachment_state": "attached",
+    "community_group_id": "SYNTHETIC_GROUP_ID",
+    "member_contact_id": "SYNTHETIC_MEMBER_CONTACT",
+    "scheduled": false,
+    "social_account_id": "SYNTHETIC_SOCIAL_ACCOUNT",
+    "state": "published"
+  },
+  "course": {
+    "course_category_id": "SYNTHETIC_COURSE_CATEGORY",
+    "course_product_id": "SYNTHETIC_COURSE_PRODUCT",
+    "title": "Synthetic Launch 101",
+    "visibility": "draft"
+  },
+  "expected": {
+    "access_is_separate_object": true,
+    "all_object_receipts_verified": true,
+    "association_same_location": true,
+    "detach_deletes_course": false,
+    "duplicate_objects_on_resume": 0,
+    "object_receipt_total_after_dedupe": 6,
+    "payment_claim": false,
+    "post_state": "published"
+  },
+  "learning_association": {
+    "community_group_id": "SYNTHETIC_GROUP_ID",
+    "community_group_slug": "synthetic-launch-101",
+    "course_product_id": "SYNTHETIC_COURSE_PRODUCT",
+    "detach_deletes_course": false,
+    "idempotent": true,
+    "learning_association_id": "SYNTHETIC_ASSOC_1",
+    "location_id": "SYNTHETIC_GHL_LOCATION",
+    "same_location": true,
+    "schema_version": "1.0.0"
+  },
+  "modules": [
+    {
+      "course_module_id": "SYNTHETIC_MODULE_1",
+      "lessons": [
+        {
+          "content_bound": true,
+          "course_lesson_id": "SYNTHETIC_LESSON_1",
+          "media_asset_ids": [
+            "SYNTHETIC_ASSET_1"
+          ],
+          "title": "Welcome"
+        }
+      ],
+      "title": "Foundations"
+    }
+  ],
+  "object_receipts": [
+    {
+      "action": "created",
+      "object_type": "course",
+      "response_id": "SYNTHETIC_COURSE_PRODUCT",
+      "slug": "synthetic-launch-101",
+      "verify": {
+        "ok": true
+      }
+    },
+    {
+      "action": "created",
+      "object_type": "course_lesson",
+      "response_id": "SYNTHETIC_LESSON_1",
+      "slug": "synthetic-welcome",
+      "verify": {
+        "ok": true
+      }
+    },
+    {
+      "action": "created",
+      "object_type": "course_lesson",
+      "response_id": "SYNTHETIC_LESSON_1",
+      "slug": "synthetic-welcome",
+      "verify": {
+        "ok": true
+      }
+    },
+    {
+      "action": "created",
+      "object_type": "course_asset",
+      "response_id": "SYNTHETIC_ASSET_1",
+      "slug": "synthetic-welcome-video",
+      "verify": {
+        "ok": true
+      }
+    },
+    {
+      "action": "reused",
+      "object_type": "community_group",
+      "response_id": "SYNTHETIC_GROUP_ID",
+      "slug": "synthetic-launch-101",
+      "verify": {
+        "ok": true
+      }
+    },
+    {
+      "action": "created",
+      "object_type": "community_post",
+      "response_id": "SYNTHETIC_POST_ID",
+      "slug": "synthetic-launch-announcement",
+      "verify": {
+        "ok": true
+      }
+    },
+    {
+      "action": "created",
+      "object_type": "access_grant",
+      "response_id": "SYNTHETIC_ENROLLMENT",
+      "slug": "synthetic-enrollment",
+      "verify": {
+        "ok": true
+      }
+    }
+  ],
+  "operation_receipts": [
+    {
+      "actual_visibility": "draft",
+      "attempt_id": "SYNTHETIC-ATTEMPT-COURSE:LAUNCH101:CREATE",
+      "attempts": [],
+      "build_state": "implemented",
+      "company_id": "SYNTHETIC_CC_COMPANY",
+      "event_sequence": 1,
+      "evidence_refs": [
+        "evidence/SYNTHETIC-COURSE:LAUNCH101:CREATE.json"
+      ],
+      "location_id": "SYNTHETIC_GHL_LOCATION",
+      "next_action": null,
+      "object_refs": {
+        "course_product_id": "SYNTHETIC_COURSE_PRODUCT"
+      },
+      "observed_at": "2026-11-08T00:00:00Z",
+      "operation_id": "courses.products.create",
+      "operation_key": "course:launch101:create",
+      "outcome": "verified",
+      "rail": "public_rest",
+      "readback": {
+        "checked_fields": [
+          "title",
+          "visibility"
+        ],
+        "state": "matched"
+      },
+      "receipt_id": "SYNTHETIC-RECEIPT-COURSE:LAUNCH101:CREATE",
+      "request_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requested_visibility": "draft",
+      "run_id": "SYNTHETIC_RUN_WF22_001",
+      "schema_version": "1.0.0",
+      "skill": "06",
+      "task_id": "SYNTHETIC_CC_TASK"
+    },
+    {
+      "actual_visibility": "draft",
+      "attempt_id": "SYNTHETIC-ATTEMPT-COURSE:LAUNCH101:LESSON:WELCOME:CREATE",
+      "attempts": [],
+      "build_state": "implemented",
+      "company_id": "SYNTHETIC_CC_COMPANY",
+      "event_sequence": 1,
+      "evidence_refs": [
+        "evidence/SYNTHETIC-COURSE:LAUNCH101:LESSON:WELCOME:CREATE.json"
+      ],
+      "location_id": "SYNTHETIC_GHL_LOCATION",
+      "next_action": null,
+      "object_refs": {
+        "course_lesson_id": "SYNTHETIC_LESSON_1"
+      },
+      "observed_at": "2026-11-08T00:00:00Z",
+      "operation_id": "courses.lessons.create",
+      "operation_key": "course:launch101:lesson:welcome:create",
+      "outcome": "verified",
+      "rail": "public_rest",
+      "readback": {
+        "checked_fields": [
+          "title",
+          "visibility"
+        ],
+        "state": "matched"
+      },
+      "receipt_id": "SYNTHETIC-RECEIPT-COURSE:LAUNCH101:LESSON:WELCOME:CREATE",
+      "request_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requested_visibility": "draft",
+      "run_id": "SYNTHETIC_RUN_WF22_001",
+      "schema_version": "1.0.0",
+      "skill": "06",
+      "task_id": "SYNTHETIC_CC_TASK"
+    },
+    {
+      "actual_visibility": "draft",
+      "attempt_id": "SYNTHETIC-ATTEMPT-COMMUNITY:GROUP:LAUNCH101:ASSOCIATE",
+      "attempts": [],
+      "build_state": "implemented",
+      "company_id": "SYNTHETIC_CC_COMPANY",
+      "event_sequence": 1,
+      "evidence_refs": [
+        "evidence/SYNTHETIC-COMMUNITY:GROUP:LAUNCH101:ASSOCIATE.json"
+      ],
+      "location_id": "SYNTHETIC_GHL_LOCATION",
+      "next_action": null,
+      "object_refs": {
+        "community_group_id": "SYNTHETIC_GROUP_ID",
+        "course_product_id": "SYNTHETIC_COURSE_PRODUCT"
+      },
+      "observed_at": "2026-11-08T00:00:00Z",
+      "operation_id": "community.learning.associate",
+      "operation_key": "community:group:launch101:associate",
+      "outcome": "verified",
+      "rail": "managed_browser",
+      "readback": {
+        "checked_fields": [
+          "title",
+          "visibility"
+        ],
+        "state": "matched"
+      },
+      "receipt_id": "SYNTHETIC-RECEIPT-COMMUNITY:GROUP:LAUNCH101:ASSOCIATE",
+      "request_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requested_visibility": "draft",
+      "run_id": "SYNTHETIC_RUN_WF22_001",
+      "schema_version": "1.0.0",
+      "skill": "06",
+      "task_id": "SYNTHETIC_CC_TASK"
+    },
+    {
+      "actual_visibility": "draft",
+      "attempt_id": "SYNTHETIC-ATTEMPT-COMMUNITY:POST:LAUNCH101:CREATE",
+      "attempts": [],
+      "build_state": "implemented",
+      "company_id": "SYNTHETIC_CC_COMPANY",
+      "event_sequence": 1,
+      "evidence_refs": [
+        "evidence/SYNTHETIC-COMMUNITY:POST:LAUNCH101:CREATE.json"
+      ],
+      "location_id": "SYNTHETIC_GHL_LOCATION",
+      "next_action": null,
+      "object_refs": {
+        "community_post_id": "SYNTHETIC_POST_ID"
+      },
+      "observed_at": "2026-11-08T00:00:00Z",
+      "operation_id": "community.posts.create",
+      "operation_key": "community:post:launch101:create",
+      "outcome": "verified",
+      "rail": "public_rest",
+      "readback": {
+        "checked_fields": [
+          "title",
+          "visibility"
+        ],
+        "state": "matched"
+      },
+      "receipt_id": "SYNTHETIC-RECEIPT-COMMUNITY:POST:LAUNCH101:CREATE",
+      "request_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requested_visibility": "draft",
+      "run_id": "SYNTHETIC_RUN_WF22_001",
+      "schema_version": "1.0.0",
+      "skill": "06",
+      "task_id": "SYNTHETIC_CC_TASK"
+    },
+    {
+      "actual_visibility": "draft",
+      "attempt_id": "SYNTHETIC-ATTEMPT-LAUNCH:ACCESS:LAUNCH101:GRANT",
+      "attempts": [],
+      "build_state": "implemented",
+      "company_id": "SYNTHETIC_CC_COMPANY",
+      "event_sequence": 1,
+      "evidence_refs": [
+        "evidence/SYNTHETIC-LAUNCH:ACCESS:LAUNCH101:GRANT.json"
+      ],
+      "location_id": "SYNTHETIC_GHL_LOCATION",
+      "next_action": null,
+      "object_refs": {
+        "enrollment_id": "SYNTHETIC_ENROLLMENT"
+      },
+      "observed_at": "2026-11-08T00:00:00Z",
+      "operation_id": "courses.enrollments.create",
+      "operation_key": "launch:access:launch101:grant",
+      "outcome": "verified",
+      "rail": "public_rest",
+      "readback": {
+        "checked_fields": [
+          "title",
+          "visibility"
+        ],
+        "state": "matched"
+      },
+      "receipt_id": "SYNTHETIC-RECEIPT-LAUNCH:ACCESS:LAUNCH101:GRANT",
+      "request_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requested_visibility": "draft",
+      "run_id": "SYNTHETIC_RUN_WF22_001",
+      "schema_version": "1.0.0",
+      "skill": "06",
+      "task_id": "SYNTHETIC_CC_TASK"
+    }
+  ],
+  "scenario_id": "course-group-post-access",
+  "tenant": {
+    "company_id": "SYNTHETIC_CC_COMPANY",
+    "location_id": "SYNTHETIC_GHL_LOCATION",
+    "run_id": "SYNTHETIC_RUN_WF22_001"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "$id": "https://blackceo.local/ghl/contracts/course-delivery-receipt.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "access_verified": {
+      "type": "boolean"
+    },
+    "course_product_id": {
+      "type": "string"
+    },
+    "delivery_receipt_id": {
+      "type": "string"
+    },
+    "delivery_state": {
+      "enum": [
+        "planned",
+        "published",
+        "verified",
+        "blocked"
+      ],
+      "type": "string"
+    },
+    "enrollment_id": {
+      "type": "string"
+    },
+    "object_refs": {
+      "type": "object"
+    },
+    "payment_claim": {
+      "type": "boolean"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "delivery_receipt_id",
+    "course_product_id",
+    "run_id",
+    "delivery_state",
+    "access_verified",
+    "payment_claim"
+  ],
+  "title": "Course delivery receipt (fixture snapshot pending WF00-CP01)",
+  "type": "object",
+  "version": "1.0.0"
+}

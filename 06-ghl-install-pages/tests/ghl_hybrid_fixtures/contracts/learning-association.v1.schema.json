@@ -1,0 +1,47 @@
+{
+  "$id": "https://blackceo.local/ghl/contracts/learning-association.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "community_group_id": {
+      "type": "string"
+    },
+    "community_group_slug": {
+      "type": "string"
+    },
+    "course_product_id": {
+      "type": "string"
+    },
+    "detach_deletes_course": {
+      "type": "boolean"
+    },
+    "idempotent": {
+      "type": "boolean"
+    },
+    "learning_association_id": {
+      "type": "string"
+    },
+    "location_id": {
+      "type": "string"
+    },
+    "same_location": {
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "learning_association_id",
+    "course_product_id",
+    "community_group_id",
+    "same_location",
+    "idempotent",
+    "detach_deletes_course"
+  ],
+  "title": "Learning association (fixture snapshot pending WF00-CP01)",
+  "type": "object",
+  "version": "1.0.0"
+}

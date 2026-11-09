@@ -1,0 +1,62 @@
+{
+  "acceptance_ids": [
+    "B18",
+    "B19",
+    "B20",
+    "IG-PROJECT-01",
+    "IG-PROJECT-03",
+    "IG-PROJECT-07"
+  ],
+  "assumed_checkpoints": [
+    "WF18-CP01",
+    "WF32-CP01",
+    "WF33-CP01"
+  ],
+  "cc_task": {
+    "cc_task_id": "SYNTHETIC_CC_TASK",
+    "completion_authority": "cc",
+    "status": "in_progress"
+  },
+  "expected": {
+    "completion_authority": "cc",
+    "duplicates_on_replay": 0,
+    "echo_events": 0
+  },
+  "projection": {
+    "default_list_id": "SYNTHETIC_LIST",
+    "direction": "one_way",
+    "echo_loop": false,
+    "events": [
+      {
+        "event_id": "SYNTHETIC-EVENT-1",
+        "project_task_id": "SYNTHETIC_PROJECT_TASK",
+        "type": "upsert_task"
+      },
+      {
+        "event_id": "SYNTHETIC-EVENT-2",
+        "project_task_id": "SYNTHETIC_PROJECT_TASK",
+        "type": "status_update"
+      }
+    ],
+    "mapping": {
+      "cc_task_id": "project_task_id"
+    },
+    "opt_in": true,
+    "pagination_styles": [
+      "cursor",
+      "offset"
+    ],
+    "projects_space_id": "SYNTHETIC_SPACE",
+    "promotes_unverified_build_to_done": false,
+    "replay_creates_duplicate": false,
+    "single_assignee": true,
+    "target": "ghl_projects",
+    "target_to_cc_events": []
+  },
+  "scenario_id": "cc-projects-projection",
+  "tenant": {
+    "company_id": "SYNTHETIC_CC_COMPANY",
+    "location_id": "SYNTHETIC_GHL_LOCATION",
+    "run_id": "SYNTHETIC_RUN_WF22_001"
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "acceptance_ids": [
+    "A17",
+    "A22",
+    "A23",
+    "A24",
+    "B22",
+    "IG-RELEASE-03"
+  ],
+  "ambiguous_write": {
+    "outcome": "unknown_outcome",
+    "reconciled_before_retry": true,
+    "reconciled_by": "readback",
+    "retried_on_other_rail": false
+  },
+  "assumed_checkpoints": [
+    "WF13-CP01",
+    "WF18-CP01",
+    "WF20-CP01",
+    "WF21-CP01"
+  ],
+  "binding_formats": {
+    "new": {
+      "accepted": true,
+      "schema": "siglaunch-binding/2"
+    },
+    "old": {
+      "accepted": true,
+      "schema": "siglaunch-binding/1"
+    }
+  },
+  "board": {
+    "card_id": "SYNTHETIC_CC_TASK",
+    "card_state": "in_progress",
+    "create_success_is_done": false,
+    "receipt_id": "SYNTHETIC-RECEIPT-LAUNCH-ACCESS-LAUNCH101-GRANT",
+    "source": "funnel",
+    "stale_and_unknown_visible": true
+  },
+  "expected": {
+    "card_without_receipt": false,
+    "duplicate_mutations": 0,
+    "new_format_accepted": true,
+    "old_format_accepted": true
+  },
+  "fulfillment": {
+    "access_receipt_id": "SYNTHETIC_DELIVERY_RECEIPT",
+    "delivery_state": "verified",
+    "entitlement_id": "SYNTHETIC_ENTITLEMENT",
+    "order_id": "SYNTHETIC_ORDER"
+  },
+  "outage": {
+    "board_available": false,
+    "execution_continued": true,
+    "ghl_mutation_repeated": false,
+    "outbox_event": "board.outbox.card_pending"
+  },
+  "scenario_id": "launch-fulfillment-board",
+  "tenant": {
+    "company_id": "SYNTHETIC_CC_COMPANY",
+    "location_id": "SYNTHETIC_GHL_LOCATION",
+    "run_id": "SYNTHETIC_RUN_WF22_001"
+  }
+}

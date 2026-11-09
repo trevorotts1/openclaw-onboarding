@@ -1,0 +1,55 @@
+{
+  "$id": "https://blackceo.local/ghl/contracts/course-asset-manifest.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "assets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_id": {
+            "type": "string"
+          },
+          "bound_to_lesson_id": {
+            "type": "string"
+          },
+          "checksum_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "duplicate_callback": {
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "video",
+              "image",
+              "audio",
+              "document"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_id",
+          "kind",
+          "checksum_sha256",
+          "bound_to_lesson_id"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "assets"
+  ],
+  "title": "Course asset manifest (fixture snapshot pending WF00-CP01)",
+  "type": "object",
+  "version": "1.0.0"
+}

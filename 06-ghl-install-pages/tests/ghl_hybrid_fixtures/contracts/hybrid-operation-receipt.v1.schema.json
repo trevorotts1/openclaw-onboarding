@@ -1,0 +1,154 @@
+{
+  "$id": "https://blackceo.local/ghl/contracts/hybrid-operation-receipt.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "actual_visibility": {
+      "type": "string"
+    },
+    "attempt_id": {
+      "type": "string"
+    },
+    "attempts": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "build_state": {
+      "enum": [
+        "implemented",
+        "staged",
+        "not_implemented"
+      ],
+      "type": "string"
+    },
+    "company_id": {
+      "type": "string"
+    },
+    "event_sequence": {
+      "type": "integer"
+    },
+    "evidence_refs": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "location_id": {
+      "type": "string"
+    },
+    "next_action": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "object_refs": {
+      "type": "object"
+    },
+    "observed_at": {
+      "type": "string"
+    },
+    "operation_id": {
+      "type": "string"
+    },
+    "operation_key": {
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "planned",
+        "submitted",
+        "processing",
+        "verified",
+        "failed",
+        "blocked",
+        "unknown_outcome",
+        "not_requested"
+      ],
+      "type": "string"
+    },
+    "rail": {
+      "enum": [
+        "public_rest",
+        "official_mcp",
+        "firebase_internal",
+        "managed_browser",
+        "none"
+      ],
+      "type": "string"
+    },
+    "readback": {
+      "additionalProperties": false,
+      "properties": {
+        "checked_fields": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "state": {
+          "enum": [
+            "matched",
+            "mismatch",
+            "not_run"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
+    "receipt_id": {
+      "type": "string"
+    },
+    "request_hash": {
+      "type": "string"
+    },
+    "requested_visibility": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "type": "string"
+    },
+    "skill": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "attempt_id",
+    "event_sequence",
+    "run_id",
+    "operation_key",
+    "operation_id",
+    "company_id",
+    "location_id",
+    "skill",
+    "rail",
+    "outcome",
+    "build_state",
+    "object_refs",
+    "readback",
+    "attempts",
+    "evidence_refs",
+    "observed_at"
+  ],
+  "title": "GHL hybrid logical-operation receipt (fixture snapshot pending WF00-CP01)",
+  "type": "object",
+  "version": "1.0.0"
+}
