@@ -73,6 +73,16 @@
     "approval_class": { "enum": ["none", "approval", "destructive"] },
     "doc_url": { "type": ["string", "null"] },
     "doc_retrieved_at": { "type": ["string", "null"], "format": "date" },
+    "doc_evidence": {
+      "enum": [
+        "frozen",
+        "reopened_2026-11-07",
+        "reopened_2026-11-08",
+        "revision3_spec",
+        "none"
+      ],
+      "description": "Provenance of doc_url and doc_retrieved_at. revision3_spec means the contract came from the revision-3 specification without reopening the page; it must never be reported as a fresh fetch."
+    },
     "request_media_type": {
       "enum": ["application/json", "multipart/form-data", "unknown"],
       "description": "The real request media type. A typed JSON request and a typed multipart request can never be confused."

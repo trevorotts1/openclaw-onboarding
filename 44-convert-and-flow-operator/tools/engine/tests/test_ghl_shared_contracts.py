@@ -273,6 +273,46 @@ class WorkflowReFreezeTest(unittest.TestCase):
                 self.assertEqual(row.resolved_availability, "private_beta")
                 self.assertEqual(row.blocker, "B-WORKFLOW-BETA")
 
+    def test_documentation_provenance_is_not_fabricated(self) -> None:
+        # Section 34.1: a citation to inherited evidence is not a fresh live
+        # test.  A row recorded from the specification must say so, and its
+        # retrieval date must be the date that evidence was captured.
+        for operation_id in (
+            "workflows.definition.read",
+            "workflows.definition.create",
+            "workflows.definition.update",
+            "workflows.status.publish",
+            "workflows.definition.delete",
+        ):
+            row = OPERATIONS[operation_id]
+            with self.subTest(operation_id=operation_id):
+                self.assertEqual(row.doc_evidence, "reopened_2026-11-07")
+                self.assertEqual(row.doc_fetch_date, "2026-11-07")
+
+        for operation_id in (
+            "workflows.step_types.list",
+            "workflows.definition.validate",
+            "workflows.search",
+            "agency.locations.create",
+            "courses.products.create",
+            "knowledge_bases.files.upload",
+        ):
+            row = OPERATIONS[operation_id]
+            with self.subTest(operation_id=operation_id):
+                self.assertEqual(row.doc_evidence, "revision3_spec")
+                if row.doc_url is None:
+                    self.assertIsNone(row.doc_fetch_date)
+                else:
+                    self.assertEqual(row.doc_fetch_date, "2026-11-08")
+
+    def test_every_row_has_a_documentation_evidence_basis(self) -> None:
+        for operation_id, row in OPERATIONS.items():
+            with self.subTest(operation_id=operation_id):
+                self.assertIn(row.doc_evidence, {"frozen", "reopened_2026-11-07",
+                                                 "reopened_2026-11-08",
+                                                 "revision3_spec", "none"})
+                self.assertEqual(row.doc_fetch_date is None, row.doc_url is None)
+
 
 class VersionAndIdentityDistinctionsTest(unittest.TestCase):
     """IG-ROUTE-07 -- versions and typed identities stay distinct."""

@@ -22,7 +22,7 @@
       ],
       "name": "operation-contract",
       "path": "shared-utils/ghl/contracts/operation-contract.schema.json",
-      "sha256": "ed551a37e671829f24f9a63e250db4c4354e06e55f941652c6c9c47142896da9",
+      "sha256": "a41a452c0e2c0d24a3d33c44817a10b614e572ebb3f898adea296b1ba314ec38",
       "status": "frozen",
       "version": "1.0.0"
     },

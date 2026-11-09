@@ -184,6 +184,16 @@
           "consumes_write_quota": {
             "type": "boolean"
           },
+          "doc_evidence": {
+            "description": "Provenance of doc_url and doc_retrieved_at. revision3_spec means the contract came from the revision-3 specification without reopening the page; it must never be reported as a fresh fetch.",
+            "enum": [
+              "frozen",
+              "reopened_2026-11-07",
+              "reopened_2026-11-08",
+              "revision3_spec",
+              "none"
+            ]
+          },
           "doc_retrieved_at": {
             "format": "date",
             "type": [
@@ -426,7 +436,7 @@
           "implementation must agree with route_class through TRANSPORT_BY_ROUTE."
         ]
       },
-      "sha256": "ed551a37e671829f24f9a63e250db4c4354e06e55f941652c6c9c47142896da9",
+      "sha256": "a41a452c0e2c0d24a3d33c44817a10b614e572ebb3f898adea296b1ba314ec38",
       "version": "1.0.0"
     },
     {

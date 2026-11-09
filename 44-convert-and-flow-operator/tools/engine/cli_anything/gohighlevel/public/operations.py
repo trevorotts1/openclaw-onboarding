@@ -29,13 +29,18 @@ silently injected into a request.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterator, Literal, Mapping
 
 from .auth import AuthKind
 from .errors import ContractViolation
 
 DOC_FETCH_DATE = "2026-10-18"
+#: The revision-3 specification supplied new operation contracts on this date.
+#: A row recorded from the specification is NOT a fresh page fetch: the
+#: ``doc_evidence`` field says which basis produced it, and the retrieval date
+#: is the date that basis was captured, never an invented fetch timestamp.
+DOC_SPEC_DATE = "2026-11-08"
 UNKNOWN = "UNKNOWN"
 
 DOCS = "https://marketplace.gohighlevel.com/docs"
@@ -164,6 +169,10 @@ class OperationRow:
     availability: str | None = None
     #: Declared fields the evidence did not settle.  Named, never guessed.
     unresolved_fields: tuple[str, ...] = ()
+    #: Provenance of ``doc_url``/``doc_fetch_date``.  The revision-3
+    #: specification says not every official page was reopened (Section 34.1),
+    #: so a row must not claim a fresh fetch it did not perform.
+    doc_evidence: str = "frozen"
 
     def __post_init__(self) -> None:
         for field_name in ("required_query",):
@@ -320,6 +329,12 @@ class OperationRow:
                 raise ContractViolation(
                     "row_unresolved_fields_invalid", operation_id=self.operation_id
                 )
+        if self.doc_evidence not in DOC_EVIDENCE:
+            raise ContractViolation(
+                "row_doc_evidence_invalid",
+                operation_id=self.operation_id,
+                detail={"doc_evidence": str(self.doc_evidence)},
+            )
 
     # -- derived declarations (never a second stored authority) -------------
 
@@ -421,6 +436,7 @@ class OperationRow:
             ],
             "outcomes": list(RECEIPT_OUTCOMES),
             "unresolved_fields": list(self.unresolved_fields),
+            "doc_evidence": self.doc_evidence,
         }
 
 
@@ -441,6 +457,19 @@ AVAILABILITIES: frozenset[str] = frozenset(
         "internal",
         "retired",
         "unknown",
+    }
+)
+#: Where a row's doc URL and retrieval date came from.  ``frozen`` is the
+#: original 2026-10-18 freeze; ``reopened_*`` means the official page was
+#: reopened on that date; ``revision3_spec`` means the contract was recorded
+#: from the revision-3 specification without reopening the page.
+DOC_EVIDENCE: frozenset[str] = frozenset(
+    {
+        "frozen",
+        "reopened_2026-11-07",
+        "reopened_2026-11-08",
+        "revision3_spec",
+        "none",
     }
 )
 #: The receipt outcome vocabulary shared with the contract schemas.  It is
@@ -1395,6 +1424,89 @@ _ROWS: tuple[OperationRow, ...] = (
     + _NATIVE_FAMILIES
 )
 
+# ---------------------------------------------------------------------------
+# Documentation provenance (revision 3.0, Document 1 section 34.1)
+#
+# The revision says explicitly that not every official source was reopened, and
+# that a citation to inherited evidence is not a fresh live test.  A row added
+# from the specification therefore records ``revision3_spec`` and the date the
+# specification supplied the contract -- never the 2026-10-18 freeze date and
+# never a fabricated fetch timestamp.  Rows whose page WAS reopened carry the
+# recheck date Document 1 Section 34.4 names.
+# ---------------------------------------------------------------------------
+_ROW_DOC_EVIDENCE: dict[str, str] = {
+    "workflows.definition.read": "reopened_2026-11-07",
+    "workflows.definition.create": "reopened_2026-11-07",
+    "workflows.definition.update": "reopened_2026-11-07",
+    "workflows.status.publish": "reopened_2026-11-07",
+    "workflows.definition.delete": "reopened_2026-11-07",
+    "workflows.logs.list": "reopened_2026-11-08",
+    "workflows.logs.aggregate": "reopened_2026-11-08",
+    "funnels.list": "reopened_2026-11-08",
+    "funnels.pages.list": "reopened_2026-11-08",
+    "funnels.pages.count": "reopened_2026-11-08",
+    "voice.agents.create": "reopened_2026-11-08",
+    "widgets.create": "reopened_2026-11-08",
+    "projects.spaces.create": "reopened_2026-11-08",
+    "projects.tasks.create": "reopened_2026-11-08",
+    "knowledge_bases.create": "reopened_2026-11-08",
+    "workflows.step_types.list": "revision3_spec",
+    "workflows.definition.validate": "revision3_spec",
+    "workflows.search": "revision3_spec",
+    "social.community.accounts.users.list": "revision3_spec",
+    "social.community.authors.validate": "revision3_spec",
+    "social.community.comments.create": "revision3_spec",
+    "agency.locations.create": "revision3_spec",
+    "courses.products.create": "revision3_spec",
+    "courses.products.read": "revision3_spec",
+    "courses.import.create": "revision3_spec",
+    "courses.lessons.quiz.create": "revision3_spec",
+    "courses.quizzes.questions.upsert": "revision3_spec",
+    "courses.enrollments.create": "revision3_spec",
+    "courses.categories.create": "revision3_spec",
+    "courses.lessons.create": "revision3_spec",
+    "courses.offers.create": "revision3_spec",
+    "courses.enrollments.products.list": "revision3_spec",
+    "voice.actions.create": "revision3_spec",
+    "voice.call_logs.list": "revision3_spec",
+    "voice.call_logs.get": "revision3_spec",
+    "conversation.agents.create": "revision3_spec",
+    "studio.agents.create": "revision3_spec",
+    "studio.versions.publish": "revision3_spec",
+    "studio.agents.execute": "revision3_spec",
+    "knowledge_bases.files.upload": "revision3_spec",
+}
+
+_DOC_EVIDENCE_DATE: dict[str, str] = {
+    "reopened_2026-11-07": "2026-11-07",
+    "reopened_2026-11-08": DOC_SPEC_DATE,
+    "revision3_spec": DOC_SPEC_DATE,
+}
+
+
+def _apply_doc_evidence(
+    rows: tuple[OperationRow, ...],
+) -> tuple[OperationRow, ...]:
+    out: list[OperationRow] = []
+    for row in rows:
+        basis = _ROW_DOC_EVIDENCE.get(row.operation_id, row.doc_evidence)
+        if basis == row.doc_evidence:
+            out.append(row)
+            continue
+        out.append(
+            replace(
+                row,
+                doc_evidence=basis,
+                doc_fetch_date=(
+                    _DOC_EVIDENCE_DATE.get(basis) if row.doc_url else None
+                ),
+            )
+        )
+    return tuple(out)
+
+
+_ROWS = _apply_doc_evidence(_ROWS)
+
 
 class OperationRegistry(Mapping[str, OperationRow]):
     """Read-only operation-id -> row mapping."""
@@ -1626,6 +1738,8 @@ __all__ = [
     "OperationRegistry",
     "OPERATIONS",
     "DOC_FETCH_DATE",
+    "DOC_SPEC_DATE",
+    "DOC_EVIDENCE",
     "SUPPORTED_VERSIONS",
     "MEDIA_FILE_TYPES",
     "MEDIA_TYPES",
