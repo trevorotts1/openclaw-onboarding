@@ -199,26 +199,58 @@ def _nonempty(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _resolve_transport(transport: Any) -> Any:
+    """The read-only transport to use: explicit, then the module seam, then live env."""
+    if transport is not None:
+        return transport
+    if _transport is not None:
+        return _transport
+    cm = _membership_module()
+    try:
+        return cm.LiveReadTransport.from_env()
+    except cm.LookupFailed as exc:
+        _fail("AF-LAUNCH-ENTITLEMENT-UNVERIFIED", "entitlement_attestation",
+              f"no way to read the contact record: {exc.detail}")
+
+
+def _lookup_failed(exc: Any) -> None:
+    """One stable code per lookup failure: unresolved (404) vs unverifiable."""
+    code = ("AF-LAUNCH-ENTITLEMENT-EVIDENCE-UNRESOLVED" if exc.kind == "unresolved"
+            else "AF-LAUNCH-ENTITLEMENT-UNVERIFIED")
+    _fail(code, "entitlement_attestation.evidence_ref", exc.detail)
+
+
+def _refuse_outside_accepted_set(basis: str, evidence_ref: str,
+                                 transport: Any) -> None:
+    """Establish the basis from the record, THEN refuse a known non-member.
+
+    A client outside the accepted set and a BlackCEO-internal account that is not
+    a member are both KNOWN answers, so both refuse with NOT-MEMBER (Document 3
+    FIX-12 lines 2003-2004). NOT-QUALIFIED is reserved for a basis that cannot be
+    established at all, which ``attest`` refuses before it reaches here.
+    """
+    cm = _membership_module()
+    transport = _resolve_transport(transport)
+    try:
+        cm.contact_tags(transport, evidence_ref)
+    except cm.LookupFailed as exc:
+        _lookup_failed(exc)
+    _fail("AF-LAUNCH-ENTITLEMENT-NOT-MEMBER", "entitlement_attestation.basis",
+          f"{basis!r} is outside the accepted set for this launch: the contact "
+          "record was read and the account is not a member we accept")
+
+
 def _verify(declaration: Dict[str, Any], rule: Dict[str, Any], basis: str,
             evidence_ref: str, purchase_ref: Any, transport: Any) -> None:
     """Resolve the attestation in the client's GHL record. Raises on any miss."""
     cm = _membership_module()
-    if transport is None:
-        transport = _transport
-    if transport is None:
-        try:
-            transport = cm.LiveReadTransport.from_env()
-        except cm.LookupFailed as exc:
-            _fail("AF-LAUNCH-ENTITLEMENT-UNVERIFIED", "entitlement_attestation",
-                  f"no way to read the contact record: {exc.detail}")
+    transport = _resolve_transport(transport)
     try:
         tags = cm.contact_tags(transport, evidence_ref)
         order = (cm.order_record(transport, purchase_ref.strip())
                  if rule["requires_purchase"] else None)
     except cm.LookupFailed as exc:
-        code = ("AF-LAUNCH-ENTITLEMENT-EVIDENCE-UNRESOLVED" if exc.kind == "unresolved"
-                else "AF-LAUNCH-ENTITLEMENT-UNVERIFIED")
-        _fail(code, "entitlement_attestation.evidence_ref", exc.detail)
+        _lookup_failed(exc)
     if not rule["requires_purchase"]:
         needed = [n.strip().lower() for n in declaration["membership_tags"][basis]]
         absent = [n for n in needed if n not in tags]
@@ -258,14 +290,16 @@ def attest(attestation: Any, transport: Any = None) -> Dict[str, Any]:
                   f"entitlement_attestation.{key}", "must be a non-empty string")
     basis = attestation["basis"].strip()
     if basis not in ENTITLEMENT_BASES:
-        _fail("AF-LAUNCH-ENTITLEMENT-UNKNOWN",
-              "entitlement_attestation.basis",
-              f"{basis!r} is not a declared basis; unknown state fails closed")
-    rule = next(r for r in declaration["rules"] if r["basis"] == basis)
-    if not rule["qualifies"]:
+        # Genuinely unknown basis: nothing can be established, so NOT-QUALIFIED.
         _fail("AF-LAUNCH-ENTITLEMENT-NOT-QUALIFIED",
               "entitlement_attestation.basis",
-              f"{basis!r} does not qualify for this launch")
+              f"{basis!r} is not a declared basis; the basis cannot be established")
+    rule = next(r for r in declaration["rules"] if r["basis"] == basis)
+    if not rule["qualifies"]:
+        # The basis IS known here. Establish it from the record before refusing, so
+        # a known non-member is refused as a non-member, never as an unknown one.
+        _refuse_outside_accepted_set(basis, attestation["evidence_ref"].strip(),
+                                     transport)
     purchase_ref = attestation.get("purchase_reference")
     amount = attestation.get("amount_minor")
     currency = attestation.get("currency")
