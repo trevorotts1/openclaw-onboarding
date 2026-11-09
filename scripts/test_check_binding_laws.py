@@ -139,7 +139,7 @@ def test_l1_added_xfail_fails():
     try:
         fixture = f"import pytest\n@{SKIP_MARK}\ndef test_ok():\n    assert 1 == 1\n"
         r._write("tests/test_sample.py", fixture)
-        r.commit("mark it xfail")
+        r.commit(f"mark it {XF}")
         rc, out = run(r)
         assert statuses(out)["L1"] == "FAIL", out
     finally:
