@@ -11376,6 +11376,7 @@
   },
   {
    "id": "gpt-image-2-6/flare-image-to-image",
+   "owner_prompt_cap_chars": 20000,
    "provider": "OpenAI",
    "title": "Gpt Image 2.6 Flare Image to Image ",
    "taskType": [
@@ -11476,6 +11477,7 @@
   },
   {
    "id": "gpt-image-2-6/flare-text-to-image",
+   "owner_prompt_cap_chars": 20000,
    "provider": "OpenAI",
    "title": "Gpt Image 2.6 Flare Text to Image",
    "taskType": [
@@ -11568,6 +11570,7 @@
   },
   {
    "id": "gpt-image-2-6/sunburst-image-to-image",
+   "owner_prompt_cap_chars": 20000,
    "provider": "OpenAI",
    "title": "Gpt Image 2.6 Sunburst Image to Image",
    "taskType": [
@@ -11668,6 +11671,7 @@
   },
   {
    "id": "gpt-image-2-6/sunburst-text-to-image",
+   "owner_prompt_cap_chars": 20000,
    "provider": "OpenAI",
    "title": "Gpt Image 2.6 Sunburst Text to Image",
    "taskType": [
