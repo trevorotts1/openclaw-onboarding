@@ -293,3 +293,23 @@ def test_page_img_whose_bytes_differ_from_the_qcd_file_fails(validated):
     proc, out = validated["changed_bytes"]
     assert proc.returncode == 1
     assert "differ from the QC'd file" in out
+
+def test_planned_coverage_is_a_reverse_pass():
+    """IMG-18's other half: a page that renders 2 of 12 planned slots fails."""
+    plan = {"sections": [{"slots": [{"slot_id": "IMG-%03d" % i}]} for i in range(1, 13)]}
+    planned = image_slots.planned_slot_ids(plan)
+    assert planned == ["IMG-%03d" % i for i in range(1, 13)]
+    rendered = [{"slot_id": "IMG-001"}, {"slot_id": "IMG-002"}]
+    errors = image_slots.check_planned_coverage(planned, rendered)
+    assert len(errors) == 10
+    assert all("is missing from the rendered page (2 of 12" in e for e in errors)
+    assert "IMG-003" in errors[0]
+    assert image_slots.check_planned_coverage(planned, planned) == []
+
+def test_planned_slot_ids_reads_a_copy_spec_and_refuses_a_duplicate():
+    spec = {"sections": [{"default_slots": [{"slot_id": "IMG-001"}, {"slot_id": "IMG-002"}]},
+                         {"id": "6"}]}
+    assert image_slots.planned_slot_ids(spec) == ["IMG-001", "IMG-002"]
+    with pytest.raises(image_slots.ImageSlotError, match="planned twice"):
+        image_slots.planned_slot_ids({"sections": [{"slots": [{"slot_id": "A"}]},
+                                                   {"slots": [{"slot_id": "A"}]}]})
