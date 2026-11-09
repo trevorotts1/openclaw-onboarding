@@ -93,7 +93,7 @@ percent; verbatim fields (TTS script, user lyrics) are exempt from the floor. Th
 
 ```python
 import kie_prompt_enforcer as K
-v = K.check("gpt-image-2-5-sunburst-text-to-image", prompt)        # ok, status, chars, add, cut, message
+v = K.check("gpt-image-2-6/sunburst-text-to-image", prompt)        # ok, status, chars, add, cut, message
 K.require(model, prompt)                                           # raises PromptBudgetError naming the chars to add or cut
 K.rewrite_to_band(model, prompt, rewriter)                         # up to 3 automatic rewrites, then PromptBudgetEscalation
 K.budget_for(model)                                                # {max, floor, target_min} for sizing a prompt

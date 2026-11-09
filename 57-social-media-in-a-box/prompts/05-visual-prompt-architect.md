@@ -34,7 +34,7 @@ INPUT THEME: "{{ $json.theme }}"
 UNIFIED IMAGE BRIEF: {{ $json.imageBrief }}
 
 ROUTING:
-- Every social image, text-bearing or not, is routed to GPT Image 2.5 Sunburst via Kie
+- Every social image, text-bearing or not, is routed to GPT Image 2.6 Sunburst via Kie
   (owner order 2026-10, AGENTS.md N43). There is no Ideogram, Agnes or Nano Banana route
   for social images. The only fallback is legacy gpt-image-2 under the N43 ratio rules.
 
