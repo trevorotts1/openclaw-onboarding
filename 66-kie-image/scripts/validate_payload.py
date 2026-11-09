@@ -336,9 +336,15 @@ def validate(payload, model_id_override=None):
     # exclusions -- a NEW, separate rule set. The legacy 'auto -> 1K only' and
     # '1:1 cannot convert to 4K' rules are RETIRED here; not restated in the
     # 2.5 docs (Ruling 3).
+    #
+    # GPT Image 2.6 Sunburst is deliberately NOT in this branch: the vendor
+    # schema for 2.6 publishes no per-ratio resolution exclusions (verified
+    # 2026-11-09 against 74-kie-live-adapter/references/kie-model-registry.json
+    # -> gpt-image-2-6/sunburst-* input_fields.aspect_ratio.enum). 2.6 is
+    # validated by plain enum membership above, against its own 16-member
+    # aspect_ratios list, and by nothing else.
     if model.get("canonical_model_id") in (
-            "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image",
-            "gpt-image-2-6/sunburst-text-to-image", "gpt-image-2-6/sunburst-image-to-image"):
+            "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image"):
         excl = model.get("ratio_resolution_exclusions") or []
         if res in ("2K", "4K") and ratio in excl:
             errors.append(
@@ -519,6 +525,28 @@ def selftest():
     case("gpt-image-2.5 i2i 17 refs FAIL (carried forward unchanged from legacy)",
          _base("gpt-image-2-5-sunburst-image-to-image", {"input_urls": _refs(17)}), False,
          expect_err_contains="exceeds published maximum 16")
+
+    # GPT Image 2.6 Sunburst: vendor enum only (16 members, no substitution, no
+    # per-ratio resolution exclusion). Cross-checked against the live catalog.
+    case("gpt-image-2.6 3:1 OK (literal vendor enum member)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "3:1"}), True)
+    case("gpt-image-2.6 1:3 OK (literal vendor enum member)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "1:3"}), True)
+    case("gpt-image-2.6 5:4 OK (literal, not substituted)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "5:4"}), True)
+    case("gpt-image-2.6 2:1 OK (literal, not substituted)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "2:1"}), True)
+    case("gpt-image-2.6 9:21 at 4K OK (2.6 publishes no per-ratio exclusion)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "9:21", "resolution": "4K"}), True)
+    case("gpt-image-2.6 1:1 at 4K OK (legacy 2 rule does not apply to 2.6)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "1:1", "resolution": "4K"}), True)
+    case("gpt-image-2.6 auto at 2K OK (legacy 2 rule does not apply to 2.6)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "auto", "resolution": "2K"}), True)
+    case("gpt-image-2.6 27:16 FAIL (not in vendor enum)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "27:16"}), False,
+         expect_err_contains="not in exposed enum")
+    case("gpt-image-2.6 i2i 3:1 OK (literal vendor enum member)",
+         _base("gpt-image-2-6/sunburst-image-to-image", {"input_urls": _refs(1), "aspect_ratio": "3:1"}), True)
 
     # Wan n / bbox
     case("wan n=4 OK", _base("wan/2-7-image", {"n": 4}), True)

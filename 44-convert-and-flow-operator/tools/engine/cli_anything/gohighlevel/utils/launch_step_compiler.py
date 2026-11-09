@@ -531,11 +531,19 @@ def purchase_identity(build: Mapping[str, Any]) -> dict:
     purchase.  Only an event / transaction / purchased-line identity is
     sufficient; anything less is recorded as insufficient rather than
     normalised into a usable key.
+
+    The reader carries the plan's ``enrollment`` decision, so a ``successive``
+    automation says out loud why an order-level basis will not do: a second
+    purchase is only delivered when the basis is per line.
     """
     observed = build.get("purchase_identity")
+    successive = build.get("enrollment") == "successive"
+    suffix = ("; successive enrolment delivers a second purchase only when the "
+              "basis is per line, never the order") if successive else ""
     if not isinstance(observed, Mapping):
         return {"basis": None, "value": None, "dedupe_key": None,
-                "sufficient": False, "reason": "no purchase-event identity declared"}
+                "sufficient": False,
+                "reason": "no purchase-event identity declared" + suffix}
     for field in PURCHASE_IDENTITY_FIELDS:
         value = observed.get(field)
         if isinstance(value, str) and value.strip():
@@ -548,9 +556,9 @@ def purchase_identity(build: Mapping[str, Any]) -> dict:
         "value": str(order_id) if order_id else None,
         "dedupe_key": None,
         "sufficient": False,
-        "reason": ("an order id alone cannot deduplicate a purchase: one order "
-                   "can carry several paid changes") if order_id
-                  else "no purchase-event identity declared",
+        "reason": (("an order id alone cannot deduplicate a purchase: one order "
+                    "can carry several paid changes") if order_id
+                   else "no purchase-event identity declared") + suffix,
     }
 
 
@@ -615,6 +623,9 @@ def compile_installable(workflow: Mapping[str, Any], build: Mapping[str, Any], *
         "browser_steps": [], "notes": [], "steps": [],
         "compile_mode": "bound_sequence", "template": None,
         "channel_actions": {}, "incomplete_actions": [],
+        # The plan's enrolment decision, carried through so the purchase identity
+        # below reads it and the build result can state which succession it is.
+        "enrollment": build.get("enrollment"),
         "purchase_identity": purchase_identity(build),
     }
     blocked = out["blocked_by"]
