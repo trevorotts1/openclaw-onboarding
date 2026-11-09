@@ -62,7 +62,7 @@
         "AF-AV-IMG-BAND",
         "AF-AV-UNIQUE-ARTIST"
       ],
-      "desc": "image-prompt artifacts stripped-char band [5000,19000]; no repeated artist/photographer/producer token."
+      "desc": "image-prompt artifacts stripped-char band [16000,20000] (KIE prompt rule 12 at the GPT Image 2.6 owner cap); no repeated artist/photographer/producer token."
     },
     {
       "id": "P-AV-ADSET-CAT",
@@ -164,7 +164,7 @@
     "AF-AV-COUNT-39": "image-prompt / top-39 artifact does not carry exactly 39 numbered items (3x13)",
     "AF-AV-COUNT-HEADLINE": "headline doc is not 12 headlines + 12 short-form + 12 long-form",
     "AF-AV-ADCOUNT": "an ad set does not carry 10 ads",
-    "AF-AV-IMG-BAND": "image-prompt artifact outside the stripped-char band [5000,19000]",
+    "AF-AV-IMG-BAND": "image-prompt artifact outside the stripped-char band [16000,20000] (KIE prompt rule 12 at the GPT Image 2.6 owner cap)",
     "AF-AV-UNIQUE-ARTIST": "a repeated artist/photographer/producer token across image prompts",
     "AF-AV-ADSET-CAT": "REPAIR-GATED (R4, --apply-repairs only): an ad-set artifact does not match its restored R4 category signature ('category 2' drift). Not enforced in the default faithful-to-live run.",
     "AF-AV-LINKS-MISSING": "stage 02 (avatar-questions-31-32) produced no non-empty artifact for the podcast/TED link check (G-LINKS fail-closed). Unverifiable-but-present links degrade to 'degraded:search', they do not fail.",

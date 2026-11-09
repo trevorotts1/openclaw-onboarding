@@ -43,9 +43,10 @@ Encoding sources (research files, verbatim quotes):
 Owner's preferred KIE image model, superseding GPT Image 2. Prefer for
 high-fidelity general generation, editing, product/brand images, and detailed
 long-form creative instructions. Prompt cap 20,000 chars by owner ruling 2026-11-08,
-which governs over the vendor OpenAPI's published 32,000. House band 5,000-19,000 chars
-is legal here (short prompts expanded, never rejected). Validators warn-only
-up to the documented cap.
+which governs over the vendor OpenAPI's published 32,000. The band at that cap is
+16,000-20,000 chars: hard floor 16,000 (80 percent), target 19,000 (95 percent),
+ceiling 20,000. A short prompt is expanded, never rejected; 16,000-18,999 warns
+and expands. Validators warn-only up to the documented cap.
 
 ### GPT Image 2 (Legacy, retained with unchanged rules)
 Two-model system: GPT Image 2.6 above is now the default; this route is
@@ -53,9 +54,10 @@ RETAINED (not retired) and its own constraints are UNCHANGED. It is no longer
 REQUIRED for any ratio: 3:1, 1:3, and 9:21 are native members of the 2.6
 enum, so nothing routes here for them. Prompt
 cap 25,000 chars, operator-confirmed 2026-08-27 (`OWNER_CONFIRMED`) for GPT
-Image 2 only; docs page "maximum 20,000 characters" is stale. House band
-5,000–19,000 chars is legal here too. Validators warn-only above the house
-max, the confirmed cap is never hard-enforced.
+Image 2 only; docs page "maximum 20,000 characters" is stale. The shared
+prompt-policy band governs here too: 95-100 percent of the verified cap,
+80 percent hard floor (`shared-utils/prompt_policy.py`). Validators warn-only
+above the target band, the confirmed cap is never hard-enforced.
 
 ### Qwen Image 3.0 / Pro
 Use for information-dense layouts, multilingual content, typography, structured

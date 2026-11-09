@@ -79,9 +79,9 @@ def reopen_editor(page, kind, name, editor_url):
     These list routes were captured in the corresponding native builders.
     """
     if __package__:
-        from .skill6_playwright import exact_search, click, Stop
+        from .skill6_playwright import exact_search, click, Stop, wait_until
     else:
-        from skill6_playwright import exact_search, click, Stop
+        from skill6_playwright import exact_search, click, Stop, wait_until
     if kind not in ('form', 'survey', 'quiz'):
         raise AssessmentError('Unknown native editor kind')
     parsed = urlsplit(editor_url)
@@ -89,15 +89,33 @@ def reopen_editor(page, kind, name, editor_url):
     if parsed.scheme != 'https' or parsed.username or parsed.password or parsed.query or parsed.fragment or not match:
         raise Stop('Native editor identity is not a captured exact HTTPS route')
     list_url = parsed.scheme + '://' + parsed.netloc + '/v2/location/' + match.group(1) + '/' + kind + '-builder/main'
+    editor_frames=page.locator('iframe[name="form-builder-app"],iframe[name="survey-builder-app"],iframe[name="quiz-builder-app"]')
     page.goto(list_url, wait_until='domcontentloaded', timeout=45000)
+    # A browser beforeunload or native unsaved-work guard can cancel navigation.
+    # Merely invoking goto, or finding cached/background grid content, does not
+    # prove that the edited document was left. Never accept/discard that guard
+    # implicitly after a Save whose persistence is still in doubt.
+    wait_until(lambda:page.url==list_url and editor_frames.count()==0,
+               'Native '+kind+' independent list navigation did not leave the editor')
     cell = exact_search(page, kind + ('zes' if kind == 'quiz' else 's'), name)
     if cell is None:
         raise Stop('Saved ' + kind + ' absent from independent list read-back')
+    if page.url!=list_url or editor_frames.count()!=0:
+        raise Stop('Native list identity changed before independent editor reopening')
     click(cell.get_by_text(name, exact=True))
     title = page.frame_locator('iframe[name="' + kind + '-builder-app"]').get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
-    if page.url != editor_url or title.input_value() != name:
-        raise Stop('Reopened native editor identity changed')
+    def loaded_title():
+        if page.url==list_url:return False
+        if page.url!=editor_url or editor_frames.count()>1 or title.count()>1:
+            raise Stop('Reopened native editor identity changed')
+        if (editor_frames.count()==0 or page.locator('iframe[name="'+kind+'-builder-app"]').count()!=1
+                or title.count()==0):return False
+        actual=title.input_value()
+        if not actual or not actual.strip():return False
+        if actual!=name:raise Stop('Reopened native editor identity changed')
+        return True
+    wait_until(loaded_title,'Reopened native editor title did not finish loading')
 
 
 def validate_css(step):

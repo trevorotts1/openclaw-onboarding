@@ -291,6 +291,16 @@ Read in this order. Each step names the file, so nothing here depends on guessin
    `launcher_core/dependencies.py`). `skill.json` and `registration.json` carry only a
    NON-AUTHORITATIVE pointer to it (target, digest, counts); `dependencies.py:metadata_spine`
    reports any disagreement as a finding in the `dependencies` report, never as a crash.
+4. The SOPs this skill declares, read in full before the assembly step:
+   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md` and
+   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`,
+   plus `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-602.md`,
+   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-607.md`,
+   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-610.md` and
+   `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-07-Full-Funnel-Build-Orchestration.md`
+   (today tracked follow-ups in `DISPATCH.md`, not enforced gates).
+   Each GIP SOP is a `sop` entry in `launcher_core/dependencies.json`; `assemble` refuses when its read
+   receipt in `receipts/sop-read/` is absent or does not match the SOP file's sha256.
 
 ## Entry
 
