@@ -1,3 +1,7 @@
+## [v2.1.46] - 2026-11-09 - G3 lockstep roll for the Skill 83 intake-drift cure (no Skill 49 behaviour change)
+
+- Version bumped because the bot-minted `scripts/SF-PROVER-PIN.sha256` changed for the Skill 83 `launcher_core/package.py` cure (report intake drift before the plan drift it implies). No functional change in Skill 49.
+
 ## [v2.1.45] - 2026-11-09 - G3 lockstep roll for the ENT-001 pin mint (no behaviour change)
 
 - Version bumped because the minted `scripts/SF-PROVER-PIN.sha256` is Skill 49 content and G3 requires a skill-version.txt bump alongside it. No functional change.
