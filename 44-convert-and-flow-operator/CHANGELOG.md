@@ -1,10 +1,17 @@
-## [v2.1.44] - 2026-11-08 - F05 / BLD-015: native enrolment applied and proven by readback
+## [v2.1.44] - 2026-11-08
+
+### F05 / BLD-015: native enrolment applied and proven by readback
 
 `workflow_builder.py` no longer records `enrollment.applied = None` behind the claim that no verified native enrolment payload exists. A read-only capture of 26 live workflows on the operator account (`evidence/F05-capability.json`, identifiers reduced to sha256 prefixes) shows the provider returns **no nested `settings` object**: its settings are top-level fields, and the enrolment control is the boolean `allowMultiple` (both values observed across the capture; no `enrollment`, `enrolment`, `allowEnrollment`, `reEntry`, `allowReentry` or `allowReentryAfterCompletion` key exists on any workflow).
 
 `automations[].settings.enrollment` now maps `single -> allowMultiple=false` and `successive -> allowMultiple=true`, writes that value into the create body and the step-save PUT, then re-reads the saved workflow document and sets `applied` **from that readback**. An absent value stays unknown with `applied=false`, and the build reports the setting as NOT proven — nothing is hardcoded true. `CampaignBuilder.format_summary` prints declared/requested/observed/applied for every declared build, and the build journal records an `enrollment` phase.
 
 The declared-value description in `automation-templates/launch-c/automation-build.schema.json` and the shared `signature_launch_contract/launch-plan.schema.json` now state the native mapping and the readback requirement instead of asserting that no payload exists. Tests: four new cases in `tools/engine/tests/test_workflow_builder_l07.py` (successive applies and reads back, single applies false, provider-ignores-field is never reported applied, undeclared sends no native field). `skill-version.txt` and the `SKILL.md` frontmatter move v2.1.43 -> v2.1.44.
+
+### Skill 6 permanent-room calendar registration
+
+- Register documented Calendars v3 update with scope, location, write and independent read-back requirements for Skill 6 permanent-room integration.
+- Existing safety gates remain required. No calendar mutation or release performed by this source change.
 
 ## [v2.1.42] - 2026-11-04 - jsonschema activation for the siglaunch normalizer and processor
 

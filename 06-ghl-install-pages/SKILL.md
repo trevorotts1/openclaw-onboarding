@@ -2,16 +2,15 @@
 name: ghl-install-pages
 description: >
   How to deploy HTML pages into GoHighLevel (Go High Level) or Convert and Flow
-  using browser automation. This skill teaches the AI agent how to use the
-  OpenClaw Chrome extension (the OpenClaw browser's extension driver, on the
-  operator's paired, already signed-in Chrome) as the primary engine, with
-  agent-browser (Vercel Labs, Skill 03) as the fallback engine and Playwright
-  as the scripted escape hatch, to start a session already logged-in,
+  using API-first routing and reusable Playwright recipes for captured UI work.
+  The OpenClaw Chrome extension handles browser recovery, followed by
+  agent-browser (Vercel Labs, Skill 03) and enabled computer use. Reuse the
+  existing Firebase token bridge to start a session already logged-in,
   navigate the funnel/website page builder, paste code, save, preview, and
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v27.1.86"
+  version: "v27.1.87"
   priority: HIGH
 ---
 
@@ -23,23 +22,17 @@ This skill is about deploying finished HTML code into the GoHighLevel (Go High
 Level) or Convert and Flow page builder using browser automation. The AI agent
 drives the browser, pastes the code, and handles all the clicks and navigation.
 
-> **ENGINE (v4.0 default, operator decision 2026-10-13):** PRIMARY = the
-> **OpenClaw Chrome extension**: the OpenClaw browser's extension driver on
-> the operator's paired, already signed-in Chrome, driven via
-> `openclaw browser`. The extension is the default because it now drives the
-> real signed-in browser better than an isolated session does. FALLBACK =
-> `agent-browser` (Vercel Labs, Skill 03) through the mandatory
-> `tools/browser_manager.sh` gateway, headless with an isolated
-> `--session <client>`, for when the extension channel is unavailable or a
-> flow defeats it. Playwright stays the scripted escape hatch for known-hard
-> flows and the CDP hybrid for cross-origin iframe drag. The full hardened
-> procedure is in `ghl-browser-builder-full.md`. **Standing preflight
-> (Lane 1 only):** `scripts/check-openclaw-extension-version.sh` reports
-> the extension lane's verdict before any install run. An absent or
-> out-of-date extension disables Lane 1 ONLY, with the reason and the
-> update path recorded; the run proceeds on the next lane the capability
-> probe verifies. The run STOPs only when the probe verifies zero lanes
-> (fail closed).
+> **ENGINE (operator decision 2026-11-08; supersedes the old v4.0 lane order):**
+> Use a proven API/official MCP/Skill 44 operation first. For UI-only work,
+> use a ready **Playwright recipe first**, then the current OpenClaw Chrome
+> extension, then managed Agent Browser, then enabled computer use. Consult
+> `tools/playwright_recipes/route.py` using current per-location capability
+> receipts. Read `references/PLAYWRIGHT-RECIPES.md` for named recipes, intake,
+> invocation, recovery and the honest coverage table. A PROFILE recipe is
+> eligible only after its actual controls have been captured; otherwise the
+> next browser lane performs the capture. The final Python process still needs
+> Mac/VPS end-to-end receipts; live UI paths do not establish that proof.
+> Existing auth, isolation, dependency, approval and QC gates remain binding.
 
 > **STATUS — PENDING-LIVE-RUN (split claim — read each side, do not merge them).**
 > **PAID / OFFLINE EVIDENCE (captured — do not weaken):** the login-form DOM
@@ -159,14 +152,14 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 - Teach Yourself Protocol (TYP) must be learned first (skill 01)
 - Backup Protocol must be learned first (skill 02)
 - OpenClaw Chrome extension installed in the operator's Chrome and CURRENT
-  (`bash scripts/check-openclaw-extension-version.sh` exits 0) - PRIMARY
+  (`bash scripts/check-openclaw-extension-version.sh` exits 0) - recovery
   browser engine (the OpenClaw browser extension driver). Required for
-  Lane 1 only: absent or behind disables Lane 1, never the fallback lanes.
+  extension lane only: absence or age never disables other verified lanes.
 - agent-browser must be installed (skill 03) - FALLBACK browser engine
   (via the `tools/browser_manager.sh` gateway)
 - GHL Setup must be complete (skill 05) - the account must already exist
 - Vercel Setup (skill 08) - only for Mode 2 iframe-embed of rich payloads
-- Playwright installed - FALLBACK engine for known-hard flows
+- Playwright installed - first UI engine for ready captured recipes
 - GoHighLevel auth in ~/.openclaw/secrets/.env: a Firebase refresh token
   (GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN: the only auth path for ordinary
   builds; seeds a logged-in session with NO login form, NO password, NO
@@ -457,15 +450,16 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
 
 ## Critical Things to Know
 
-- PRIMARY engine is the OpenClaw Chrome extension: the OpenClaw browser's
-  extension driver on the operator's paired, already signed-in Chrome (driven
-  via `openclaw browser`). The session starts logged in by construction; a
+- API-first, then ready Playwright recipes, then the current OpenClaw Chrome
+  extension, managed Agent Browser and enabled computer use. See the named
+  recipe reference above; older procedure documents' lane numbers are historical.
+  The session starts through the existing Firebase bridge; a
   rendered GHL login form on ANY lane is the D7 stop signal, never a form to
   fill. The extension must be CURRENT: `scripts/check-openclaw-extension-version.sh`
-  gates every install run. FALLBACK engine is agent-browser, headless, with
+  gates the extension lane. Agent Browser remains headless, with
   an isolated `--session <client>` (NO-COMINGLING), routed only through the
-  gateway below. Playwright is the scripted escape hatch only; if you use
-  it, `launchPersistentContext()` never `launch()`.
+  gateway below. Playwright must use the existing managed lifecycle or the
+  host-owned authenticated page, never an unmanaged second browser.
 - SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown, reaper backstop. (This lifecycle governs the FALLBACK agent-browser lane.)
   Route EVERY agent-browser call through the single mandatory
   gateway `tools/browser_manager.sh` (`bash tools/browser_manager.sh ensure`
@@ -540,12 +534,11 @@ Lanes are selected per host by the capability probe — never assumed:
 
 | # | Lane | Cross-origin drag? |
 |---|------|--------------------|
-| 1 | OpenClaw Chrome extension (`openclaw browser`, extension driver on the paired signed-in Chrome) (PRIMARY) | Partial without Playwright |
-| 2 | agent-browser via `browser_manager` (FALLBACK, pin 0.27.0) | Partial without Playwright |
-| 2b | agent-browser + Playwright CDP hybrid | Yes — required for iframe drag/drop |
-| 3 | Playwright-only | Degraded escape hatch |
-| 4 | REST / fallback-ladder | Content ops without UI drag |
-| 5 | CUA | NOT in Skill 6 yet — future last resort only |
+| 1 | Proven API / official MCP / Skill 44 operation | No UI needed |
+| 2 | Ready Playwright recipe in the managed authenticated session | Yes |
+| 3 | Current OpenClaw Chrome extension | Partial without Playwright |
+| 4 | Agent Browser through browser_manager; managed CDP hybrid as needed | Yes with hybrid |
+| 5 | Computer use, only when installed and enabled | Last resort |
 
 Run the capability probe (`tools/capability_probe.py`) before a build; its JSON
 is the runtime source of truth. Probe secret booleans are env-presence
@@ -554,9 +547,11 @@ provisioned solely under the CAF refresh alias, solely in a store, or
 solely via a `*_FILE` variable reads as not-present in the probe even
 though the orchestrator and the media resolver resolve it. Treat a false
 boolean as "not in the live env under a declared name", never as
-"absent from the box". The probe selects Lane 1 only when the extension
-is installed and current; otherwise it falls to Lane 2 and warns, naming the
-preflight script. Capability-class mapping and lane detail live in
+"absent from the box". Its box-default `selectedLane` uses the historical
+order; pass its measured eligible routes through
+`playwright_recipes.route.from_capability_probe` and use `route.decide` for
+the new exact-operation order. Extension eligibility still requires current
+installation. Capability-class mapping and legacy lane detail live in
 `ENV-MATRIX.md` ("Capability classes").
 
 - Always verify you are in the correct sub-account before building

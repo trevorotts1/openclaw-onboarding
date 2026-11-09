@@ -1,0 +1,10 @@
+{
+  "location_id": "LOCATION_ID",
+  "location_name": "CLIENT_LOCATION_NAME",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_ID/form-builder-v2/FORM_ID",
+  "submission": {
+    "mode": "Redirect to URL",
+    "redirect_url": "https://example.com/your-approved-thank-you-page",
+    "ack_conditional_precedence": false
+  }
+}
