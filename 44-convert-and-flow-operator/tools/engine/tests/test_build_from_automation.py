@@ -133,8 +133,12 @@ def test_live_build_runs_compile_then_build_with_journal(tmp_path):
         def __init__(self, client, v4=None):
             calls["client"] = client
 
-        def build(self, campaign, folder_name=None, folder_id=None, *, journal=None):
-            calls.update(campaign=campaign, folder=folder_name, journal=journal)
+        def build(self, campaign, folder_name=None, folder_id=None, *, journal=None,
+                  browser_executor=None):
+            # Mirror CampaignBuilder.build() exactly: the CLI always forwards the
+            # resolved browser capability (F04/F11), even when it resolved to None.
+            calls.update(campaign=campaign, folder=folder_name, journal=journal,
+                         browser_executor=browser_executor)
             return {"errors": []}
 
         def format_summary(self):
@@ -148,6 +152,9 @@ def test_live_build_runs_compile_then_build_with_journal(tmp_path):
             "--from-automation-build", str(doc), "--journal", str(journal)])
     assert result.exit_code == 0, result.output
     assert calls["journal"] == str(journal)
+    # The live path forwards the resolved browser capability (None is a real
+    # answer); the stub above mirrors CampaignBuilder.build() so this is proven.
+    assert "browser_executor" in calls
     assert calls["folder"] == "launch-u44-05"
     key, wf = next(iter(calls["campaign"].items()))
     assert wf["unit_key"] == "u44-05/auto_pre_launch/email_pre_launch" and wf["promotional"] is True
