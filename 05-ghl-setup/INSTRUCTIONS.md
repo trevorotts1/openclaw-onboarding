@@ -4,7 +4,7 @@ This document explains how to actually USE the GHL API integration after it has 
 
 After setup is complete, your AI agent can search contacts, send SMS and email messages, manage calendars, work with opportunities (deals), and access the media library. This guide covers all the common operations.
 
-> **Tiering — prefer MCP / caf over raw curl:** For routine GHL work, prefer the Official GHL MCP and Community GHL MCP (install **skill 36**, `36-ghl-mcp-setup`) and build workflows with caf (**skill 44**). Drop to the raw curl shown below only when no MCP/caf tool covers the operation. This skill's direct REST is the foundation/fallback tier — required to bootstrap credentials and prove connectivity, not the preferred path for day-to-day bulk operations.
+> **Tiering — prefer MCP / caf over raw curl:** For routine GHL work, prefer the Official GHL MCP (install **skill 36**, `36-ghl-mcp-setup`) and build workflows with caf (**skill 44**). The Official MCP uses **OAuth** and its four documented tools (`list_locations`, `search_operations`, `describe_operation`, `execute_operation`) — the location PIT below is the **REST** credential and is never an MCP substitute. The community GHL MCP is **retired** and is not a route. Drop to the raw curl shown below only when no MCP/caf tool covers the operation. This skill's direct REST is the foundation/fallback tier — required to bootstrap credentials and prove connectivity, not the preferred path for day-to-day bulk operations.
 
 > **Credential variable names:** All commands read `$GOHIGHLEVEL_API_KEY` (preferred) and `$GOHIGHLEVEL_LOCATION_ID`. The full canonical LOCATION-PIT alias set (11 names) is listed in **`TERMINOLOGY.md`** — any of those names holds the same `pit-` token. See TERMINOLOGY.md for backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
 
@@ -22,14 +22,24 @@ All the endpoint paths below get added to the end of this base URL.
 
 ## Required Headers for Every Request
 
-Every single API call to GHL must include these two headers. No exceptions.
+Every single API call to GHL must include two headers. No exceptions.
 
 ```
 Authorization: Bearer $GOHIGHLEVEL_API_KEY
-Version: 2021-07-28
+Version: <the literal documented for THIS operation>
 ```
 
-The Authorization value is your Private Integration Token (PIT), not an API key. If you forget the Version header, you will get confusing 400 errors. This is the most common mistake.
+The Authorization value is your Private Integration Token (PIT), not an API key. The `Version`
+value is selected **per operation** — read the operation's own page
+(`https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/`) and cross-check
+`29-ghl-convert-and-flow/references/<module>.md`. `2021-07-28` is one documented value, not a
+global default; sweeping one literal across every call is the most common cause of confusing
+400/401 errors.
+
+The **official GHL MCP** (skill 36) is a separate path: OAuth, four documented discovery tools
+(`list_locations`, `search_operations`, `describe_operation`, `execute_operation`). Never send
+the PIT to an MCP endpoint as if it were the documented MCP credential. The community GHL MCP is
+retired.
 
 
 ## Priority Scopes (Test These First)
@@ -168,7 +178,7 @@ Let `curl -F` set the `multipart/form-data` Content-Type and boundary automatica
 
 1. **Never use the native GHL node in n8n.** It is limited and often broken. Always use HTTP Request nodes for GHL API calls instead.
 
-2. **Always include the Version header.** This cannot be stressed enough. Without it, requests will fail.
+2. **Always include the right Version literal.** The header is mandatory, but its value is per operation — read the operation's own page. `2021-07-28` is one documented value, not a default for everything.
 
 3. **Rate limits exist.** GHL allows approximately 100 requests per minute for most endpoints. If your AI is making rapid-fire requests (like importing hundreds of contacts), it needs to pace itself and not exceed this limit.
 
@@ -198,6 +208,7 @@ ghl_preflight() {
 
   # Location missing only -> auto-discover via /locations/search, then persist
   if [ -z "$GHL_LOC" ]; then
+    # Version literal is per operation — confirm it on the operation's page before changing it.
     GHL_LOC="$(curl -sS -m 10 \
       -H "Authorization: Bearer $GHL_TOKEN" -H "Version: 2021-07-28" \
       "https://services.leadconnectorhq.com/locations/search?limit=1" \
@@ -214,12 +225,15 @@ ghl_preflight() {
 }
 
 # ---- ghl_request: curl wrapper with 429 backoff + one 5xx/timeout retry ----
-# usage: ghl_request <extra curl args...>   (Authorization + Version added for you)
+# usage: ghl_request -H "Version: <operation literal>" <other curl args...>
+#        (Authorization is added for you; the Version literal is per operation, so the caller supplies it)
 ghl_request() {
   local attempt=0 max=3 out code
   while :; do
+    # The caller passes the per-operation Version header in "$@"; this wrapper never
+    # hardcodes one global literal.
     out="$(curl -sS -m 30 -w $'\n%{http_code}' \
-      -H "Authorization: Bearer $GHL_TOKEN" -H "Version: 2021-07-28" "$@")"
+      -H "Authorization: Bearer $GHL_TOKEN" "$@")"
     code="${out##*$'\n'}"; out="${out%$'\n'*}"
     case "$code" in
       429)  attempt=$((attempt+1)); [ "$attempt" -gt "$max" ] && { echo "$out"; return 22; }
@@ -238,9 +252,10 @@ ghl_request() {
 ## Troubleshooting Common Issues
 
 ### Getting 400 errors
-The most likely cause is a missing Version header. Make sure every request includes:
+The most likely cause is a missing or wrong `Version` header. The literal is **per operation** —
+read the operation's own page. `2021-07-28` is one documented value, not a default:
 ```
-Version: 2021-07-28
+Version: <the literal documented for THIS operation>
 ```
 
 ### Getting 401 (Unauthorized) errors
@@ -270,4 +285,5 @@ After learning this, update your files following TYP rules:
 
 **MEMORY.md** - Note that GHL credentials are configured and where they are stored.
 
-**AGENTS.md** - Add the rule to always include the Version header in every GHL request.
+**AGENTS.md** - Add the rule that every GHL request carries the `Version` header with the
+literal documented for that operation (no global default).

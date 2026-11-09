@@ -14,7 +14,10 @@ Enables the agent to connect to Convert and Flow (GoHighLevel) using the correct
 - [ ] TYP and BYUP are installed first.
 - [ ] An active Convert and Flow / GHL account exists.
 - [ ] curl and python3 or jq are available to inspect config and test endpoints.
-- [ ] The agent understands and uses the mandatory `Version: 2021-07-28` header on every GHL API request.
+- [ ] The agent understands that the `Version` header is selected PER OPERATION by reading that
+      operation's own page; `2021-07-28` is one documented value, never a global default.
+- [ ] The agent treats the official GHL MCP as a separate OAuth path (four documented tools) and
+      never sends the location PIT to an MCP endpoint; the community GHL MCP is recorded as retired.
 
 ## 4. Key Detection
 - [ ] Search all standard secret locations in order: `~/.openclaw/secrets/.env`, `~/.openclaw/openclaw.json` `env.vars`, `~/.openclaw/.env`, live environment via `printenv`, and `~/.env`.

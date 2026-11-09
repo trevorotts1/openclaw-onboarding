@@ -256,17 +256,29 @@ The agent must understand and enforce that every single request to the GHL API r
    - This proves the agent has permission to access the API
    - The value is the Private Integration Token (PIT) — the exact value from secrets/.env
 
-2. **Version:** 2021-07-28
-   - This tells GHL which API version the agent is using
-   - This header is MANDATORY - requests without it will fail
-   - This is the number one cause of GHL API problems if omitted
+2. **Version:** the literal documented for THAT operation
+   - The `Version` header is selected **per operation**; there is no global default
+   - `2021-07-28` is one documented value, not a value to sweep across every call
+   - Read the operation's own page before each call:
+     `https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/`,
+     and cross-check `29-ghl-convert-and-flow/references/<module>.md`
+   - A missing or wrong literal fails with a 400/401 (`version header was not found`)
 
 The agent must include both headers in every GHL API call. No exceptions.
+
+**MCP is a different credential class.** The official GHL MCP (skill 36) uses **OAuth** and its
+four documented tools (`list_locations`, `search_operations`, `describe_operation`,
+`execute_operation`). The PIT described here is the **public REST** credential. Never send the
+PIT to an MCP endpoint and call it the documented MCP connection. The community GHL MCP is
+retired.
 
 
 ### Action 4: Execute Self-Tests
 
 The agent must run all four tests sequentially and report results:
+
+The example tests below use the documented literal for those example operations. They
+illustrate the shape; the rule from Action 3 (per-operation literal) still governs every call.
 
 **Test 1 - Verify credentials are loaded (presence only — never print a value):**
 Execute:
@@ -314,7 +326,8 @@ Failure: Error response indicates media scope not enabled
 If ANY test fails:
 - Verify the API key is correct and has not expired
 - Verify the Location ID matches the account
-- Verify the Version header is exactly: 2021-07-28
+- Verify the Version header is the literal documented for THIS operation (no global default;
+  `2021-07-28` is only one documented value)
 - Verify the API key has correct permissions/scopes enabled in GHL
 - Report the specific error message
 
@@ -352,7 +365,7 @@ The agent must verify all of these conditions are true:
 - [ ] Network connectivity to services.leadconnectorhq.com confirmed
 - [ ] Location info retrieval successful (Test 2 passed)
 - [ ] Contact search successful (Test 3 passed)
-- [ ] Version header is being sent with all requests (no 400 errors)
+- [ ] The Version literal is selected per operation from that operation's page (no 400 errors)
 - [ ] Media library access confirmed (Test 4 passed)
 - [ ] Core .md files updated with references
 

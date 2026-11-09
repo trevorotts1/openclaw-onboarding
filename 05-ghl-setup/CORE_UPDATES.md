@@ -35,7 +35,12 @@ Add:
 - Two types: Location PIT (GOHIGHLEVEL_API_KEY) for day-to-day work. Agency PIT (GOHIGHLEVEL_AGENCY_PIT) for agency-wide operations.
 - Media uploads require the Location PIT, not the Agency PIT. Upload endpoint: POST /medias/upload-file (multipart/form-data).
 - API credentials stored in ~/.openclaw/secrets/.env: GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID (canonical); GHL_API_KEY / GHL_LOCATION_ID are legacy aliases.
-- Always include Version header: 2021-07-28 in API calls
+- Version is PER OPERATION, not one global literal: read the operation's own page
+  (https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/) before each call.
+  `2021-07-28` is one documented value, not a default for every request.
+- Official GHL MCP (skill 36) is a separate OAuth path. Its four documented tools are
+  list_locations / search_operations / describe_operation / execute_operation. Never send the
+  location PIT to an MCP endpoint and call it equivalent. The community GHL MCP is RETIRED.
 - Full setup guide: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/05-ghl-setup/ghl-setup-full.md
 ```
 
@@ -50,7 +55,8 @@ Add:
 - GHL does NOT use API keys. It uses Private Integration Tokens (PITs). Never tell a client they need an "API key" for GHL.
 - Base URL: https://services.leadconnectorhq.com
 - Auth: Bearer token using the Location PIT (GOHIGHLEVEL_API_KEY from secrets/.env)
-- Required header: Version: 2021-07-28 (without this you get 400 errors)
+- Version header: PER OPERATION — read the operation's own page before each call
+  (`2021-07-28` is one documented value, not a global default).
 - Key endpoints: /contacts/search, /conversations/messages, /opportunities/
 - Full reference: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/05-ghl-setup/ghl-setup-full.md
 ```
@@ -64,7 +70,7 @@ Add:
 ```
 ## GHL/Convert and Flow Setup - Installed [DATE]
 - API credentials in ~/.openclaw/secrets/.env
-- Version header 2021-07-28 is MANDATORY on all API calls
+- Version header is per operation, not one global literal (`2021-07-28` is one documented value)
 - Full guide: [MASTER_FILES_FOLDER]/OpenClaw Onboarding/05-ghl-setup/ghl-setup-full.md
 ```
 
