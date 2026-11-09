@@ -1,0 +1,38 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Approved account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/quiz-builder-v2/QUIZ_FROM_INVENTORY",
+  "configuration": {
+    "short_answer_questions": {
+      "expected_quiz_name": "Exact existing quiz name",
+      "pages": [
+        {
+          "label": "Page 1",
+          "questions": [
+            {
+              "field_type": "RADIO",
+              "question": "Existing choice from inventory",
+              "placeholder": "",
+              "short_label": "",
+              "query_key": "existing_radio_key",
+              "required": false,
+              "hidden": false
+            }
+          ]
+        }
+      ],
+      "target_page": 1,
+      "questions": [
+        {
+          "field_type": "TEXT",
+          "question": "What would you like us to know?",
+          "placeholder": "Type your answer",
+          "short_label": "Additional context",
+          "query_key": "additional_context",
+          "required": true,
+          "hidden": false
+        }
+      ]
+    }
+  }
+}

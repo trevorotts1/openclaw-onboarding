@@ -1,0 +1,21 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "ACCOUNT_FROM_INVENTORY",
+  "start_url": "https://app.example.com/v2/location/LOCATION_FROM_INVENTORY/form-builder-v2/FORM_FROM_INVENTORY",
+  "condition": {
+    "rules": [
+      {
+        "match": "all",
+        "clauses": [{"if_field": "First Name", "operator": "Is Filled"}],
+        "effect": "Hide Field",
+        "target": "Phone"
+      },
+      {
+        "match": "all",
+        "clauses": [{"if_field": "First Name", "operator": "Is Filled"}],
+        "effect": "Hide Field",
+        "target": "Email"
+      }
+    ]
+  }
+}

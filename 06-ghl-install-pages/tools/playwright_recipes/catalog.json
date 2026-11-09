@@ -90,7 +90,7 @@
       "action": "native_field_placement_or_fields_or_options",
       "implemented": true,
       "proof": "PROFILE",
-      "use": "Captured native built-in placement and property edits for12simplefield types; preserves caller intent, query identity and pending submission proof; custom schemas remain API-owned"
+      "use": "Captured native built-ins/Address/consent, API-inventoried Radio placement and exact native embed export; custom schemas remain API-owned and submission/installation proof pending"
     },
     "forms.style": {
       "name": "13_polish_form_css",
@@ -125,10 +125,12 @@
       "action": "options",
       "implemented": true,
       "proof": "PROFILE",
-      "use": "Native channels and authored group-description settings through an authenticated caller-owned portal context; same-session identity capture required. Inactive groups cannot create channels. Other privacy/branding/course settings need profiles.",
+      "use": "Authenticated caller-owned portal channels/details/access and exact Private course associations; unknown empty Learning inventories refuse, branding/other options remain incomplete",
       "specific_handlers": [
         "community_channels",
-        "community_details"
+        "community_details",
+        "community_access",
+        "community_courses"
       ],
       "live_identity_status": "CAPTURE_REQUIRED"
     },
@@ -141,10 +143,10 @@
     },
     "courses.configure_ui": {
       "name": "19_configure_course_ui",
-      "action": "options",
+      "action": "native_course_theme_or_options",
       "implemented": true,
-      "proof": "PROFILE",
-      "use": "Recorded UI-only course controls; never replace documented API operations"
+      "proof": "CAPTURED",
+      "use": "Inactive existing theme text/palette/fonts, exact Custom Blocks and SHA256-bound native PNG background upload; activation/learner proof remains separate"
     },
     "meetings.setup": {
       "name": "20_setup_meeting_room",
@@ -158,21 +160,21 @@
       "action": "options",
       "implemented": true,
       "proof": "PROFILE",
-      "use": "Recorded calendar/community/course event integration using the verified room link"
+      "use": "Exact single-staff native dynamic Meeting Room calendar location, static permanent-link API integration or captured profiles; native generated room/community/course proof remains separate"
     },
     "forms.settings": {
       "name": "22_configure_form_settings",
       "action": "native_form_schedule_or_settings",
       "implemented": true,
       "proof": "CAPTURED",
-      "use": "Captured opening/closing windows, IANA timezone and outside-window message/redirect plus seven ordinary switches; preserve branding, save/reopen and retain functional verification pending"
+      "use": "Captured scheduling windows, IANA timezone, outside-window outcomes, ordinary switches and Facebook Pixel ID/page/submission events; exact save/reopen, functional proof pending"
     },
     "courses.update": {
       "name": "23_update_course",
       "action": "api",
       "implemented": true,
       "proof": "API_FIRST",
-      "use": "Documented course styling/content settings through Courses v3"
+      "use": "Documented course settings or approved SHA256-bound PNG media upload and API appearance attachment through exact Courses v3 capability route"
     },
     "courses.lesson_quiz.create": {
       "name": "24_create_lesson_quiz",
@@ -186,7 +188,7 @@
       "action": "native_condition",
       "implemented": true,
       "proof": "CAPTURED",
-      "use": "Captured Hide Field rule; persisted behavior verification pending"
+      "use": "Captured single-target Hide/Show and homogeneous 2..20-clause AND/OR groups; complete existing rule inventory and independently reopened summary; behavior proof pending"
     },
     "checkout.configure_native": {
       "name": "26_configure_native_checkout",
@@ -200,14 +202,14 @@
       "action": "meeting",
       "implemented": true,
       "proof": "CAPTURED",
-      "use": "Native room identity guard, Save changes and independent readback"
+      "use": "Exact room/security updates or independently journaled complete nonempty cohost roster reconciliation with saved readback; empty roster and native access proof remain incomplete"
     },
     "quizzes.configure": {
       "name": "28_configure_quiz_scores_and_tiers",
       "action": "quiz_configuration",
       "implemented": true,
       "proof": "CAPTURED",
-      "use": "Native categories, existing choice scores and three result tiers; final Python live run pending"
+      "use": "Native categories, existing choice scores, any captured existing tier layout and Header/CTA copy; tier creation/removal and native outcome proof remain separate"
     },
     "surveys.configure": {
       "name": "29_configure_survey_branch",

@@ -33,10 +33,43 @@ SIMPLE_FIELD_TYPES = {name: ('email' if name == 'Email' else
     for name in SIMPLE_FIELDS}
 FIELD_WRAPPER = 'xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " form-field-wrapper ") and parent::*[@id="form-builder-container"]][1]'
 PROPERTIES = ('label', 'placeholder', 'short_label', 'query_key', 'width_pct')
+CAPTURED_SIMPLE_TYPES = frozenset(('text', 'email', 'date', 'select', 'RADIO'))
 
 
 class AssessmentError(ValueError):
     pass
+
+
+def _field_type(field):
+    """Built-in defaults or an exact inventoried existing simple custom field.
+
+    This does not authorize creating a contact-field schema. Every runtime
+    target must expose the captured General Settings control shape and its
+    exact current query/placeholder, or the operation stops before editing.
+    """
+    name = field['field']
+    if name in SIMPLE_FIELDS:
+        expected = SIMPLE_FIELD_TYPES[name]
+        if 'field_type' in field and field['field_type'] != expected:
+            raise AssessmentError('Field type conflicts with its captured built-in identity')
+        return expected
+    if field.get('field_type') == 'RADIO':
+        if (not isinstance(field.get('field_id'), str)
+                or not re.fullmatch(r'[A-Za-z0-9_-]{1,256}', field['field_id'])
+                or not isinstance(field.get('current_placeholder'), str)
+                or not field.get('current_query_key')):
+            raise AssessmentError('Existing Radio properties require exact API field id and current anchors')
+        return 'RADIO'
+    if (field.get('field_type') not in CAPTURED_SIMPLE_TYPES
+            or not field.get('current_placeholder') or not field.get('current_query_key')):
+        raise AssessmentError('Existing custom simple fields require captured type and both current anchors')
+    return field['field_type']
+
+
+def _field_anchor(field):
+    if field['field'] in SIMPLE_FIELDS:
+        return SIMPLE_FIELDS[field['field']]
+    return field['current_placeholder'], field['current_query_key']
 
 
 def reopen_editor(page, kind, name, editor_url):
@@ -46,9 +79,9 @@ def reopen_editor(page, kind, name, editor_url):
     These list routes were captured in the corresponding native builders.
     """
     if __package__:
-        from .skill6_playwright import exact_search, click, Stop
+        from .skill6_playwright import exact_search, click, Stop, wait_until
     else:
-        from skill6_playwright import exact_search, click, Stop
+        from skill6_playwright import exact_search, click, Stop, wait_until
     if kind not in ('form', 'survey', 'quiz'):
         raise AssessmentError('Unknown native editor kind')
     parsed = urlsplit(editor_url)
@@ -56,15 +89,33 @@ def reopen_editor(page, kind, name, editor_url):
     if parsed.scheme != 'https' or parsed.username or parsed.password or parsed.query or parsed.fragment or not match:
         raise Stop('Native editor identity is not a captured exact HTTPS route')
     list_url = parsed.scheme + '://' + parsed.netloc + '/v2/location/' + match.group(1) + '/' + kind + '-builder/main'
+    editor_frames=page.locator('iframe[name="form-builder-app"],iframe[name="survey-builder-app"],iframe[name="quiz-builder-app"]')
     page.goto(list_url, wait_until='domcontentloaded', timeout=45000)
+    # A browser beforeunload or native unsaved-work guard can cancel navigation.
+    # Merely invoking goto, or finding cached/background grid content, does not
+    # prove that the edited document was left. Never accept/discard that guard
+    # implicitly after a Save whose persistence is still in doubt.
+    wait_until(lambda:page.url==list_url and editor_frames.count()==0,
+               'Native '+kind+' independent list navigation did not leave the editor')
     cell = exact_search(page, kind + ('zes' if kind == 'quiz' else 's'), name)
     if cell is None:
         raise Stop('Saved ' + kind + ' absent from independent list read-back')
+    if page.url!=list_url or editor_frames.count()!=0:
+        raise Stop('Native list identity changed before independent editor reopening')
     click(cell.get_by_text(name, exact=True))
     title = page.frame_locator('iframe[name="' + kind + '-builder-app"]').get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
-    if page.url != editor_url or title.input_value() != name:
-        raise Stop('Reopened native editor identity changed')
+    def loaded_title():
+        if page.url==list_url:return False
+        if page.url!=editor_url or editor_frames.count()>1 or title.count()>1:
+            raise Stop('Reopened native editor identity changed')
+        if (editor_frames.count()==0 or page.locator('iframe[name="'+kind+'-builder-app"]').count()!=1
+                or title.count()==0):return False
+        actual=title.input_value()
+        if not actual or not actual.strip():return False
+        if actual!=name:raise Stop('Reopened native editor identity changed')
+        return True
+    wait_until(loaded_title,'Reopened native editor title did not finish loading')
 
 
 def validate_css(step):
@@ -193,21 +244,31 @@ def validate_fields(step):
     if not isinstance(fields, list) or not fields:
         raise AssessmentError('fields must be a nonempty list')
     seen = set()
+    seen_ids = set()
     result = deepcopy(step)
     for field in result['fields']:
-        if not isinstance(field, dict) or field.get('field') not in SIMPLE_FIELDS:
-            raise AssessmentError('Only captured simple native fields are supported')
+        if (not isinstance(field, dict) or not isinstance(field.get('field'), str)
+                or not field['field'].strip() or len(field['field']) > 256):
+            raise AssessmentError('Existing simple fields require a nonempty inventory label')
+        _field_type(field)
+        if _field_type(field) == 'RADIO':
+            if field['field_id'] in seen_ids:
+                raise AssessmentError('Duplicate Radio API field edit')
+            seen_ids.add(field['field_id'])
         if field['field'] in seen:
             raise AssessmentError('Duplicate field edit')
         seen.add(field['field'])
-        if set(field) - {'field', *PROPERTIES, 'required', 'hidden', 'hidden_value', 'current_placeholder', 'current_query_key'}:
+        if set(field) - {'field', 'field_type', 'field_id', *PROPERTIES, 'required', 'hidden', 'hidden_value', 'current_placeholder', 'current_query_key'}:
             raise AssessmentError('Unknown field property')
+        if 'field_id' in field and _field_type(field) != 'RADIO':
+            raise AssessmentError('API field-id selection is captured for Radio fields only')
         if not set(field).intersection({*PROPERTIES, 'required', 'hidden', 'hidden_value'}):
             raise AssessmentError('A field edit must change at least one property')
         if ('current_placeholder' in field) != ('current_query_key' in field):
             raise AssessmentError('Current field anchor requires both placeholder and query key')
         for key in ('current_placeholder', 'current_query_key'):
-            if key in field and (not isinstance(field[key], str) or not field[key].strip()):
+            if key in field and (not isinstance(field[key], str)
+                    or (not field[key].strip() and not (key == 'current_placeholder' and _field_type(field) == 'RADIO'))):
                 raise AssessmentError('Current field anchors must be nonempty text')
         for key in ('required', 'hidden'):
             if key in field and type(field[key]) is not bool:
@@ -219,7 +280,7 @@ def validate_fields(step):
         for key in PROPERTIES[:-1]:
             if key in field and not isinstance(field[key], str):
                 raise AssessmentError(key + ' must be text')
-        if 'placeholder' in field and not field['placeholder'].strip():
+        if 'placeholder' in field and not field['placeholder'].strip() and _field_type(field) != 'RADIO':
             raise AssessmentError('Placeholder must remain an unambiguous field anchor')
         if 'label' in field and not field['label'].strip():
             raise AssessmentError('Field label cannot be empty')
@@ -235,11 +296,15 @@ def validate_fields(step):
                                   ('query_key', 'current_query_key', 1)):
         old = {name: values[offset] for name, values in SIMPLE_FIELDS.items()}
         for field in result['fields']:
-            old[field['field']] = field.get(current, old[field['field']])
+            if prop == 'placeholder' and _field_type(field) == 'RADIO':
+                continue  # Radio selection uses the API id, not a canvas placeholder.
+            old[field['field']] = field[current] if current in field else _field_anchor(field)[offset]
         if len(set(old.values())) != len(old):
             raise AssessmentError('Current field ' + prop + ' identities must remain unique')
         final = dict(old)
         for field in result['fields']:
+            if prop == 'placeholder' and _field_type(field) == 'RADIO':
+                continue
             name, value = field['field'], field.get(prop, old[field['field']])
             if any(value == previous for other, previous in old.items() if other != name):
                 raise AssessmentError('Edited field ' + prop + ' collides with another current identity')
@@ -285,21 +350,33 @@ def configure_fields(page, step):
     def panel(field, placeholder):
         close_drawer()
         click(frame.get_by_role('tab', name='Edit', exact=True))
-        target = frame.get_by_placeholder(placeholder, exact=True)
-        if target.count() != 1:
-            raise Stop('Field anchor is absent or ambiguous: ' + field['field'])
-        wrapper = target.locator(FIELD_WRAPPER)
+        if _field_type(field) == 'RADIO':
+            radios = frame.locator('#form-builder-container input[name="' + field['field_id'] + '"]')
+            if radios.count() < 1:
+                raise Stop('Exact existing Radio API field identity is missing')
+            wrapper = radios.nth(0).locator(FIELD_WRAPPER)
+            target = wrapper.locator('[data-field-type="RADIO"]')
+            if (wrapper.count() != 1 or wrapper.locator('input').count() != radios.count()
+                    or any(radios.nth(i).get_attribute('type') != 'radio' for i in range(radios.count()))):
+                raise Stop('Native Radio input identity or type changed')
+        else:
+            target = frame.get_by_placeholder(placeholder, exact=True)
+            if target.count() != 1:
+                raise Stop('Field anchor is absent or ambiguous: ' + field['field'])
+            wrapper = target.locator(FIELD_WRAPPER)
         kind = wrapper.locator('[data-field-type]')
         if (wrapper.count() != 1 or kind.count() != 1
-                or kind.get_attribute('data-field-type') != SIMPLE_FIELD_TYPES[field['field']]
-                or wrapper.locator('input').count() != 1):
+                or kind.get_attribute('data-field-type') != _field_type(field)
+                or (_field_type(field) != 'RADIO' and wrapper.locator('input').count() != 1)):
             raise Stop('Field anchor belongs to a different native type or composite group')
         click(target)
-        if SIMPLE_FIELD_TYPES[field['field']] in ('date', 'select'):
+        if _field_type(field) in ('date', 'select'):
             target.press('Escape', timeout=45000)
         gear = wrapper.locator('[aria-label="Open settings"]')
         click(gear)
         frame.get_by_text('General Settings', exact=True).wait_for(state='visible', timeout=45000)
+        if _field_type(field) == 'RADIO':
+            click(frame.get_by_text('General Settings', exact=True))
         inputs = frame.get_by_role('textbox', name='Please Input', exact=True)
         hidden = frame.get_by_role('checkbox', name='Hidden', exact=True)
         required = frame.get_by_role('checkbox', name='Required', exact=True)
@@ -326,14 +403,17 @@ def configure_fields(page, step):
     # Read-only selection of every requested target before touching properties.
     plans = []
     for field in step['fields']:
-        default_placeholder, default_key = SIMPLE_FIELDS[field['field']]
+        default_placeholder, default_key = _field_anchor(field)
         old_placeholder = field.get('current_placeholder', default_placeholder)
         key = field.get('current_query_key', default_key)
         inputs, required, hidden = panel(field, old_placeholder)
         new_placeholder = field.get('placeholder', old_placeholder)
-        if new_placeholder != old_placeholder and frame.get_by_placeholder(new_placeholder, exact=True).count():
+        if (_field_type(field) != 'RADIO' and new_placeholder != old_placeholder
+                and frame.get_by_placeholder(new_placeholder, exact=True).count()):
             raise Stop('New field placeholder is already present in the native editor')
         before = [inputs.nth(i).input_value() for i in range(inputs.count())]
+        if _field_type(field) == 'RADIO' and before[1] != old_placeholder:
+            raise Stop('Native Radio placeholder differs from its inventoried property value')
         if before[3] != key:
             raise Stop('Native field identity differs from captured query key')
         booleans = (required.is_checked(), hidden.is_checked())
@@ -346,7 +426,7 @@ def configure_fields(page, step):
     # Query keys can be renamed on unrequested fields, including custom text
     # fields. Static canonical names cannot establish that a new key is free.
     query_inventory = None
-    if any('query_key' in field and field['query_key'] != before[3]
+    if any(field['field'] not in SIMPLE_FIELDS or ('query_key' in field and field['query_key'] != before[3])
             for field, before, _, _ in plans):
         if __package__:
             from .field_placement import _inventory
@@ -355,7 +435,7 @@ def configure_fields(page, step):
         query_inventory = _inventory(frame, allow_unknown_queries=True)
         for field, before, _, _ in plans:
             key, wanted_key = before[3], field.get('query_key', before[3])
-            if query_inventory.get(key) != SIMPLE_FIELD_TYPES[field['field']]:
+            if query_inventory.get(key) != _field_type(field):
                 raise Stop('Native query inventory differs from the requested field identity')
             if wanted_key != key:
                 if wanted_key in query_inventory:
