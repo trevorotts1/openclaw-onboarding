@@ -1,4 +1,8 @@
 # Changelog — Cinematic and Web Funnel Engine (Skill 62)
+## v2.1.7 - 2026-11-09
+
+- `providers/model-registry.json`: corrected the `legacy_note` on both `kie-gpt-image-2-*` entries. It claimed the GPT-Image 2.6 route does not support aspect ratios 3:1, 1:3 and 9:21; per the vendor enum 2.6 supports those ratios natively, so the legacy entry is no longer required solely for them. Note text only: no model rows, aspect-ratio lists, tiers or prices changed.
+
 ## v2.1.6 - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 
 - Version bumped so the folded content carries the version G3 requires above main. No functional change.
