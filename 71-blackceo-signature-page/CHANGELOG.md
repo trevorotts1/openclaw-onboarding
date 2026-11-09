@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 1.3.21 - 2026-11-09 - F16 S2 policy work: one style vocabulary, brand hash binding, creative-direction precedence (BLD-004)
+
+- `scripts/write_intake.py`: style source resolves in the shared vocabulary (`recommended_accepted` for an accepted proposal, never `client_choice`; unproven stays `client_choice`, unconfirmed default stays `default_to_confirm`); brand hash binding (`--brand-sha256`/`--brand-version` refuse on mismatch/unreadable); creative-direction precedence (`--creative-direction-kind`/`--creative-direction-grade-mode`/`--creative-direction-approval-ref`); palette status in the one vocabulary (`unknown` when missing/unrecognized, never omitted).
+- `scripts/stage_gate.py`: F16 rule updates. Tests: `tests/test_f16_intake_provenance.py`, `tests/test_stage_gate.py`.
+- Version bumped to 1.3.21 (`VERSION`, `skill-version.txt`, `SKILL.md` frontmatter) for the G3 content-change gate.
+
 ## 1.3.18 - 2026-11-08 - one prompt-band rule: owner rule 12 governs (POL-001)
 
 - `scripts/stage_executor.py`: the paid path's hard floor moves from the strict 95 percent reading to owner rule 12's 80 percent. `prompt_budget()` now carries `hard_floor_chars` (ceil(0.80 x max)) beside the 95 percent target; below the hard floor the paid path refuses (naming the ADD to the floor and to the target), and 80 to below 95 percent PASSES with a warn-and-expand ADD on stderr. Basis: owner Decision 1 (2026-10-15) adopted the rule 12 band and Q1 (2026-10-17) confirmed it governs in all contexts; F18 (2026-11-07) introduced the strict reading without an owner ruling.

@@ -57,11 +57,17 @@ class DontKnowTests(unittest.TestCase):
             self.assertIn("A, B or C", row["how_to_change"])
 
     def test_a_chosen_style_is_not_flagged(self):
-        inputs, to_confirm = resolve({**BASE, "design_style": "B", "image_provider": "kie", "image_cap": 50},
-                                     test_only=True)
+        inputs, to_confirm = resolve({**BASE, "design_style": "B", "design_style_source": "client_choice",
+                                      "image_provider": "kie", "image_cap": 50}, test_only=True)
         self.assertEqual(inputs["design_style"], "B")
         self.assertEqual(inputs["design_style_source"], "client_choice")
         self.assertEqual(to_confirm, [])
+
+    def test_a_style_with_no_recorded_source_is_unknown_never_a_client_choice(self):
+        # F16 item 4: absence is unknown. A style nobody recorded a decision for must not read as
+        # the client's own choice (which would also make it payable).
+        inputs, _ = resolve({**BASE, "design_style": "B"}, test_only=True)
+        self.assertEqual(inputs["design_style_source"], "unknown")
 
     def test_practice_run_defaults_cap_and_provider_flagged_and_stays_free(self):
         inputs, to_confirm = resolve(dict(BASE), test_only=True)
@@ -105,7 +111,8 @@ class NeverDefaultedTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             brand = Path(tmp) / "brand.json"
             brand.write_text(json.dumps({"palette_status": "provided"}), encoding="utf-8")
-            raw = {**BASE, "brand_file": str(brand), "design_style": "B", "image_cap": 120,
+            raw = {**BASE, "brand_file": str(brand), "design_style": "B",
+                   "design_style_source": "client_choice", "image_cap": 120,
                    "image_cap_minor": 960, "image_currency": "USD", "paid_render_approval_ref": "APPR-9"}
             verify = mock.Mock(return_value={"ok": True, "approval_id": "APPR-9", "kind": "paid_asset_budget",
                                              "authority": "command-center"})

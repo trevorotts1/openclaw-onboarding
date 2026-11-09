@@ -45,8 +45,8 @@ ALL_ELEMENTS = {"subject", "environment", "style", "lighting",
 # The active kie-rule-12-band entry as re-stamped by U-images-07 (IMG-20: the 80/95 percent band, no
 # fixed character numbers; the earlier entry is kept as kie-rule-12-band-r1). The registry stores this
 # hash and resolve_governing_citation recomputes it from the entry's own bytes before returning it.
-KNOWN_ENTRY_HASH = ("0981c8f0e6e754d6f473fffbb385e92655be7080"
-                    "8356cc0d3c3761c07dbb741c")
+KNOWN_ENTRY_HASH = ("d90d7f6f42ed622f7c5979bbdc9f3c7eaff74d42"
+                    "139ae1c252d0d28b6a11691e")
 
 
 def long_prompt(chars: int) -> str:

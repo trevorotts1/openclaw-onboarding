@@ -1,5 +1,10 @@
 # Changelog — video-creator (Skill 25)
 
+## [7.1.4] - 2026-11-08 - test: prompt-budget contract rides GPT Image 2.6
+
+- `tests/test_prompt_budget_contract.py` now targets `gpt-image-2-6/sunburst-text-to-image`, the canonical slash-form id that replaces the superseded `gpt-image-2-5-sunburst-text-to-image`. No skill code changed; the contract test follows the model migration.
+- Its "ADD at least" refusal assertion is derived from the resolved 20,000 cap instead of a hardcoded 3,200, so the expected gap follows the cap rather than restating it. Same assertion, same threshold, no weakening.
+
 ## [7.1.3] - 2026-11-07 - chore: version stamp for the November 7 batch (test-only change)
 
 - `tests/test_prompt_budget_contract.py` came in with the hard-floor message fix (#2847): the prompt-floor refusal now names the real 95 percent gap instead of a generic band. No skill code changed in this batch; the stamp exists so G3 (`version-consistency.yml` -> `check-skill-version-bump`) can pass.
