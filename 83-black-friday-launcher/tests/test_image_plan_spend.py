@@ -49,7 +49,8 @@ class PaidSpendTests(unittest.TestCase):
         return str(path)
 
     def raw(self, **over):
-        raw = {"brand_file": self.brand, "brand_owner": "TEST-ONLY Client", "design_style": "B", "image_provider": "kie",
+        raw = {"brand_file": self.brand, "brand_owner": "TEST-ONLY Client", "design_style": "B",
+               "design_style_source": "client_choice", "image_provider": "kie",
                "image_cap_minor": 4000, "image_currency": "USD", "paid_render_approval_ref": APPROVAL_ID}
         raw.update(over)
         return raw
@@ -81,7 +82,11 @@ class PaidSpendTests(unittest.TestCase):
         self.assertIn("nothing has been spent", err.detail.lower())
 
     def test_with_no_approval_checker_installed_a_paid_run_fails_closed(self):
-        with mock.patch.object(image_plan.Path, "is_file", return_value=False):
+        # The seam is the approval checker itself: when it is not installed, a paid run cannot be
+        # approved and stops. (A brand path is loaded the same way, so patching every is_file()
+        # would test the brand record instead of the approval gate.)
+        missing = ImagePlanError("AF-LAUNCH-IMAGE-PLAN-APPROVAL", "x", "the approval checker is not installed")
+        with mock.patch.object(image_plan, "_approval_verify", side_effect=missing):
             with self.assertRaises(ImagePlanError) as ctx:
                 resolve(self.raw(), test_only=False, plan_hash=PLAN_HASH)
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-APPROVAL")
@@ -197,8 +202,8 @@ class PaidSpendTests(unittest.TestCase):
         self.write_brand([], "list.json")
         self.refused("AF-LAUNCH-IMAGE-PLAN-BRAND", self.raw(brand_file=str(self.tmp / "list.json")))
 
-    def test_a_confirmed_or_legacy_palette_passes_and_a_practice_run_is_not_checked(self):
-        for doc in ({"palette_status": "provided"}, {"palette_status": "client-confirmed"}, {}):
+    def test_a_confirmed_palette_passes_and_a_practice_run_is_not_checked(self):
+        for doc in ({"palette_status": "provided"}, {"palette_status": "client-confirmed"}):
             brand = self.write_brand(doc, "ok.json")
             (inputs, _), _v = self.paid(self.raw(brand_file=brand))
             self.assertTrue(inputs["allow_paid"])
@@ -206,15 +211,22 @@ class PaidSpendTests(unittest.TestCase):
         inputs, _ = resolve(self.raw(brand_file=bad), test_only=True)
         self.assertFalse(inputs["allow_paid"])
 
+    def test_a_brand_file_with_no_palette_status_is_unknown_and_never_paid(self):
+        # F16 item 8: a missing status is unknown, not "provided" for files made before the field.
+        brand = self.write_brand({}, "legacy.json")
+        err = self.refused("AF-LAUNCH-IMAGE-PLAN-BRAND", self.raw(brand_file=brand))
+        self.assertIn("no palette status", err.detail)
+
     # ---- the shared file carries the style source and the creative direction -------------------
     def test_design_style_source_and_creative_direction_travel_in_the_shared_file(self):
-        inputs, _ = resolve(self.raw(creative_direction="like the Acme homepage"), test_only=True)
+        inputs, _ = resolve(self.raw(creative_direction="like the Acme homepage",
+                                     design_style_source="recommended_accepted"), test_only=True)
         self.assertEqual(inputs["creative_direction"], "like the Acme homepage")
         takes_all = SimpleNamespace(dispatch=lambda: SimpleNamespace(pset=SimpleNamespace(
             IMAGE_INPUT_KEYS=image_plan.C3_KEYS + image_plan.C3_CARRIED_KEYS)))
         with mock.patch.dict(sys.modules, {"substrate": takes_all}):
             doc = image_plan.image_inputs_file(inputs)
-        self.assertEqual(doc["design_style_source"], "client_choice")
+        self.assertEqual(doc["design_style_source"], "recommended_accepted")
         self.assertEqual(doc["creative_direction"], "like the Acme homepage")
         takes_base = SimpleNamespace(dispatch=lambda: SimpleNamespace(pset=SimpleNamespace(
             IMAGE_INPUT_KEYS=image_plan.C3_KEYS)))

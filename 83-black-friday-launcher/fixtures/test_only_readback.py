@@ -59,7 +59,8 @@ def paid_image_plan(cap: int = 9, approval_ref: str = "TEST-APPROVAL-REF") -> di
         path = Path(tempfile.mkdtemp(prefix="paid-brand-")) / "brand.json"
         path.write_text(json.dumps({"palette_status": "provided"}), encoding="utf-8")
         _PAID_BRAND.append(str(path))
-    return {"brand_file": _PAID_BRAND[0], "design_style": "B", "image_cap": cap, "image_cap_minor": cap * 8,
+    return {"brand_file": _PAID_BRAND[0], "design_style": "B", "design_style_source": "client_choice",
+            "image_cap": cap, "image_cap_minor": cap * 8,
             "image_currency": "USD", "paid_render_approval_ref": approval_ref}
 
 

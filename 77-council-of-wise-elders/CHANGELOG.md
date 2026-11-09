@@ -1,5 +1,12 @@
 # Council of Wise Elders (77): Changelog
 
+## v1.0.85: model-id migration release
+
+The GPT Image 2.5 references were migrated to 2.6 across the skill library. This
+skill's shipped content changed (manifest and archive rebuilt to match), so the
+version moves. No behaviour change in the Council itself: no session was run, no
+provider call made, and no box was written.
+
 ## v1.0.84: the resolver-copy refresh release (the install step that was missing)
 
 In plain English: the roll maintains `~/.openclaw/skills`, but the OpenClaw agent on some boxes reads a different copy (`~/.agents/skills/council-of-wise-elders`). Nothing in the roll ever wrote that copy, so it kept the PREVIOUS release's `.skill` archive while every version carrier said the new one — measured on rescue-eddie-otts, where four copies all reported 1.0.80 and the agent-resolved copy still carried archive `33e4063d…` against the release's `4d921542…`. The selected-tree gate correctly refused it, which is why boxes stopped at 77/79 or 78/79 and the operator box only reached 79/79 after a hand rsync. `wire.sh` now converges the copy the resolver selects from the shipped tree and re-runs the SAME gate, so a box reaches readiness without a human step. The gate is unchanged. Source only: no box was written, no provider or Telegram call made, and no paid Council session run.

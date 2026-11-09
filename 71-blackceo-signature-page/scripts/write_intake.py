@@ -193,6 +193,22 @@ def parse_money(text):
     return {"amount": amount.strip(), "currency": currency.strip()}
 
 
+def brand_record_module():
+    """The shared F16 brand record module (one style vocabulary, the brand digest, the creative-
+    direction precedence), loaded from the repository beside this skill. None when this skill is
+    installed without it: the caller then refuses anything that would need a second copy."""
+    path = Path(__file__).resolve().parents[2] / "shared-utils" / "client_intake" / "brand_record.py"
+    if not path.is_file():
+        return None
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("intake_brand_record", path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def read_json_object(path):
     """The JSON object in `path`, or None when it is unreadable or not an object."""
     try:
@@ -548,8 +564,18 @@ def read_answers(path):
         form = "standard" if profile == "standard" else "long-form"
         defaults["page_version"] = form
         defaults["copy_version"] = form
+    style_entry = entry("design_style")
     if value("design_style") in design_style.STYLE_IDS:
         defaults["design_style"] = value("design_style")
+        # F16 item 4: an accepted recommendation is NOT the client's own choice, and a proposal is
+        # not a decision at all. The shared vocabulary decides; if it is not installed, an accepted
+        # proposal is still never mislabelled - the safer `recommended_accepted` is refused below
+        # only when it cannot be proven, so an unproven provided answer stays client_choice.
+        brand_record = brand_record_module()
+        defaults["design_style_source"] = (
+            brand_record.style_source_from_entry(style_entry) if brand_record is not None
+            else ("client_choice" if style_entry.get("status") == "provided"
+                  and not style_entry.get("accepted_proposal") else "default_to_confirm"))
     provider = value("image_provider")
     if provider in ENGINES:
         defaults["image_engine"] = provider
@@ -594,12 +620,27 @@ def main(argv=None):
                    help="the one external Creative Direction the client named; recorded with its "
                         "source (client_choice, house_look_accepted from the answers file, or "
                         "not_asked) as creative_direction_source")
+    p.add_argument("--brand-sha256", default=None,
+                   help="the plan's brand hash (the producer's brand_file_sha256): when given, the "
+                        "brand file this intake records must be that exact file or intake stops; "
+                        "recorded in intake.json as brand_sha256 with its binding state")
+    p.add_argument("--brand-version", default=None,
+                   help="the brand version the plan recorded (monotonic per the answers file)")
+    p.add_argument("--creative-direction-kind", default=None,
+                   help="house_look | external_direction | own_reference | described; resolved with "
+                        "--creative-direction-grade-mode through the shared precedence")
+    p.add_argument("--creative-direction-grade-mode", choices=["FULL", "ADAPT", "SUPPRESS"], default=None,
+                   help="the creative-direction precedence (F16 item 11): an approved blend supplies "
+                        "the grade; without --creative-direction-approval-ref the house grade applies")
+    p.add_argument("--creative-direction-approval-ref", default=None,
+                   help="the scoped approval that binds an external FULL/ADAPT/SUPPRESS blend")
     p.add_argument("--image-cap", type=int, required="image_cap" not in from_answers, default=from_answers.get("image_cap"))
     p.add_argument("--image-engine", choices=ENGINES, default=from_answers.get("image_engine", "kie"))
     p.add_argument("--design-style", choices=design_style.STYLE_IDS, default=from_answers.get("design_style"),
                    help="the client's page design style: A Block, B Circle or C Hybrid "
                         "(references/design-styles.md); ask with `design_style.py question`")
-    p.add_argument("--design-style-source", choices=DESIGN_STYLE_SOURCES, default=None,
+    p.add_argument("--design-style-source", choices=DESIGN_STYLE_SOURCES,
+                   default=from_answers.get("design_style_source"),
                    help="how the style was chosen (default client_choice when --design-style is given); "
                         "default_to_confirm records an unconfirmed default and is refused on a "
                         "production run")
@@ -785,10 +826,41 @@ def main(argv=None):
                 print(f"REFUSED: {line}")
             return 2
 
+    # F16 item 6: the brand record. The plan's brand hash is the producer's own value
+    # (engine.brand_provenance's brand_file_sha256); this binds the file the run records to it.
+    brand_evidence = None
+    if a.brand_sha256 is not None or a.brand_version is not None:
+        record_module = brand_record_module()
+        if record_module is None:
+            print("REFUSED: --brand-sha256/--brand-version need the shared brand record module "
+                  "(shared-utils/client_intake/brand_record.py), and it is not installed here.")
+            return 2
+        brand_evidence = record_module.brand_record(
+            brand_path if brand_path is not None else a.brand_file,
+            plan_brand_sha256=a.brand_sha256, version=a.brand_version, owner=a.brand_owner)
+        if brand_evidence["state"] == "mismatch":
+            return refuse(
+                "the brand file this run would record is not the one the plan was built from, so "
+                "intake stopped before writing anything.",
+                f"record the plan's own brand file (its hash is {a.brand_sha256}); a stale pin or a "
+                "substituted file is never drawn.",
+                "intake")
+        if brand_evidence["state"] == "unreadable" and a.brand_sha256:
+            return refuse(
+                "the brand file cannot be read, so the plan's brand hash cannot be matched, and "
+                "intake stopped before writing anything.",
+                "supply the readable brand file the plan records, then rerun.",
+                "intake")
+
     intake = {"page_version": a.page_version, "brand_owner": a.brand_owner, "brand_file": a.brand_file,
               "creative_direction": a.creative_direction, "image_cap": a.image_cap,
               "image_engine": a.image_engine, "test_run": a.test_run,
               "copy_version": a.copy_version}
+    if brand_evidence is not None:
+        intake["brand_sha256"] = brand_evidence["plan_brand_sha256"]
+        intake["brand_record_state"] = brand_evidence["state"]
+        if brand_evidence["version"] is not None:
+            intake["brand_version"] = brand_evidence["version"]
     # a page type's own form records its role, so every stage (section count, wireframe prompt,
     # design board, gate) reads one declaration instead of guessing a landing page
     if own_form:
@@ -810,11 +882,17 @@ def main(argv=None):
               "the answers file.")
     if a.design_style:
         source, status = a.design_style_source, None
-        if answers_doc is not None and not source and from_answers.get("design_style") == a.design_style:
-            # the answers file's own status decides the source; a default is never stamped client_choice (IMG-08)
-            status = ((answers_doc.get("answers") or {}).get("design_style") or {}).get("status")
-            source = {"provided": "client_choice",
-                      "default_to_confirm": "default_to_confirm"}.get(status, "recommended_accepted")
+        if answers_doc is not None and from_answers.get("design_style") == a.design_style:
+            # F16 item 4: the answers entry decides, in the ONE vocabulary. A provided answer that
+            # accepted our recommendation is recommended_accepted, never client_choice; a flagged
+            # default stays default_to_confirm (IMG-08); no evidence stays unknown.
+            style_entry = (answers_doc.get("answers") or {}).get("design_style") or {}
+            status = style_entry.get("status")
+            if not source:
+                brand_record = brand_record_module()
+                source = (brand_record.style_source_from_entry(style_entry) if brand_record is not None
+                          else ("client_choice" if status == "provided"
+                                and not style_entry.get("accepted_proposal") else "default_to_confirm"))
         intake["design_style"] = a.design_style
         intake["design_style_source"] = source or "client_choice"
         if status:
@@ -842,18 +920,46 @@ def main(argv=None):
     if direction_source != "not_asked" or answers_doc is not None:
         intake["creative_direction_source"] = direction_source
 
-    # IMG-09: carry the palette status so a proposal palette is never read back as a confirmed one
+    # F16 item 11: the ONE creative-direction precedence, resolved before any prompt is assembled.
+    # The Image Guide allows an approved FULL/ADAPT/SUPPRESS blend; the later house order is the
+    # default. Neither silently removes the other: an unapproved blend keeps the house grade, and
+    # the resolved mode is recorded so the grade assembly reads one rule.
+    if a.creative_direction_grade_mode is not None or a.creative_direction_kind is not None:
+        record_module = brand_record_module()
+        if record_module is None:
+            print("REFUSED: the creative-direction policy needs the shared brand record module "
+                  "(shared-utils/client_intake/brand_record.py), and it is not installed here.")
+            return 2
+        policy = record_module.creative_direction_policy(
+            kind=a.creative_direction_kind, blend=a.creative_direction_grade_mode,
+            approval_ref=a.creative_direction_approval_ref)
+        intake["creative_direction_grade_mode"] = policy["grade_mode"]
+        intake["creative_direction_grade_owner"] = policy["grade_owner"]
+        for conflict in policy["conflicts"]:
+            print(f"NOTE creative direction: {conflict}")
+
+    # IMG-09 / F16 item 8: the palette status is carried in the ONE vocabulary. A missing or
+    # unrecognized status is `unknown` - never omitted into an assumed `provided`.
+    record_for_palette = brand_record_module()
+    palette_normalizer = (record_for_palette.normalize_palette_status if record_for_palette is not None
+                          else (lambda v: v if v in ("provided", "suggested", "default_to_confirm")
+                                else "unknown"))
     if answers_doc is not None:
         import brand_colors  # lazy: a launch-context run copies only the scripts it needs
         if brand_colors._answer(answers_doc, "brand_primary"):
-            intake["palette_status"] = brand_colors.brand_extras_from_answers(answers_doc)["palette_status"]
-    elif brand_path is not None:
+            intake["palette_status"] = palette_normalizer(
+                brand_colors.brand_extras_from_answers(answers_doc)["palette_status"])
+    if brand_path is not None and "palette_status" not in intake:
         try:
             palette_status = json.loads(brand_path.read_text(encoding="utf-8")).get("palette_status")
         except (OSError, ValueError, AttributeError):
             palette_status = None
-        if palette_status:
-            intake["palette_status"] = palette_status
+        # An answers-file run records the true state, including `unknown`. A bare legacy invocation
+        # keeps its byte-identical intake (test_launch_profile's legacy contract): no invented key.
+        if answers_doc is not None:
+            intake["palette_status"] = palette_normalizer(palette_status)
+        elif palette_status:
+            intake["palette_status"] = palette_normalizer(palette_status)
 
     waivers = []
     for flag, reason, gate_name in (
