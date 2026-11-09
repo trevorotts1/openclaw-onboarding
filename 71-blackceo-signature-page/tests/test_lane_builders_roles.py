@@ -579,6 +579,15 @@ class RoleStagesRunnerModelTests(unittest.TestCase):
             return types.SimpleNamespace(returncode=0)
         role_runner.subprocess.run = fake
         self.addCleanup(setattr, role_runner, "IMAGE_MODEL_PATH", role_runner.IMAGE_MODEL_PATH)
+        # F14 item 3: a paid dispatch now runs the canonical stage check before
+        # it starts. This class tests model routing, so it supplies a gate whose
+        # check passes; the gate's own refusal is proven in
+        # tests/test_f14_governed_runner.py.
+        gate = self.root / "gate_pass.py"
+        gate.write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+        runner_module = role_runner.governed_runner
+        self.addCleanup(setattr, runner_module, "GATE_PATH", runner_module.GATE_PATH)
+        runner_module.GATE_PATH = gate
 
     def main(self, *extra):
         out = io.StringIO()

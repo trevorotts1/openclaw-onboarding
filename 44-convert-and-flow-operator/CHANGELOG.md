@@ -1,4 +1,18 @@
+## [v2.1.45] - 2026-11-08 - merge union: F05 enrolment readback and Skill 6 calendar registration both kept
+
+The batch merge of `origin/main` (`a89a789a2`, #2877) into the W26 content fold hit the same two files from both sides: this changelog and `tools/engine/tests/test_build_from_automation.py`. Both sides are kept: the F05 `allowMultiple` enrolment readback entry and the Calendars v3 registration entry, both below, stand, and the build stub keeps the head-side comment and signature the F11 browser capability needs. No engine, CLI, template, guard or QC script behaviour changed by this merge. `skill-version.txt` and the `SKILL.md` frontmatter move v2.1.44 -> v2.1.45 for G3.
+
 ## [v2.1.44] - 2026-11-08
+
+### F05 / BLD-015: native enrolment applied and proven by readback
+
+`workflow_builder.py` no longer records `enrollment.applied = None` behind the claim that no verified native enrolment payload exists. A read-only capture of 26 live workflows on the operator account (`evidence/F05-capability.json`, identifiers reduced to sha256 prefixes) shows the provider returns **no nested `settings` object**: its settings are top-level fields, and the enrolment control is the boolean `allowMultiple` (both values observed across the capture; no `enrollment`, `enrolment`, `allowEnrollment`, `reEntry`, `allowReentry` or `allowReentryAfterCompletion` key exists on any workflow).
+
+`automations[].settings.enrollment` now maps `single -> allowMultiple=false` and `successive -> allowMultiple=true`, writes that value into the create body and the step-save PUT, then re-reads the saved workflow document and sets `applied` **from that readback**. An absent value stays unknown with `applied=false`, and the build reports the setting as NOT proven — nothing is hardcoded true. `CampaignBuilder.format_summary` prints declared/requested/observed/applied for every declared build, and the build journal records an `enrollment` phase.
+
+The declared-value description in `automation-templates/launch-c/automation-build.schema.json` and the shared `signature_launch_contract/launch-plan.schema.json` now state the native mapping and the readback requirement instead of asserting that no payload exists. Tests: four new cases in `tools/engine/tests/test_workflow_builder_l07.py` (successive applies and reads back, single applies false, provider-ignores-field is never reported applied, undeclared sends no native field). `skill-version.txt` and the `SKILL.md` frontmatter move v2.1.43 -> v2.1.44.
+
+### Skill 6 permanent-room calendar registration
 
 - Register documented Calendars v3 update with scope, location, write and independent read-back requirements for Skill 6 permanent-room integration.
 - Existing safety gates remain required. No calendar mutation or release performed by this source change.

@@ -608,7 +608,7 @@ def steps_in_spec(spec) -> dict | None:
     return None
 
 
-def _step_rule(band: dict | None, page_spec: dict | None, default_count: int = 0) -> str:
+def _step_rule(band: dict | None, page_spec: dict | None, default_count: int | None = None) -> str:
     """The negative block's steps sentence for THIS page, or '' when the page has no steps band.
 
     A page type with its own wording (the thank-you page) keeps its band's range; every other page
@@ -625,16 +625,35 @@ def _step_rule(band: dict | None, page_spec: dict | None, default_count: int = 0
             return (f"Do not mis-number the steps: the badges read 1, 2, 3 and on up to the last step "
                     f"once each ({band['min']} to {band['max']} steps), with one step label per badge "
                     "and no badge the copy does not carry. ")
-        return ("Do not mis-number the steps: the badges read 1, 2, 3 and on up to the last step once "
-                "each, with one step label per badge and no badge the copy does not carry. ")
+        if band:
+            try:
+                count = int(band.get("count") or 0)
+            except (TypeError, ValueError):
+                count = 0
+            if count > 0:
+                return _counted_step_rule(count)
+            return ("Do not mis-number the steps: the badges read 1, 2, 3 and on up to the last step "
+                    "once each, with one step label per badge and no badge the copy does not carry. ")
+        return ""  # the page's own structure carries no steps band: order no badges at all
     try:
         count = int((band or {}).get("count") or 0)
     except (TypeError, ValueError):
         count = 0
+    # No page spec resolved (the landing skeleton and every legacy caller): keep the rule the
+    # negative block has always carried. The seven badges are the main sales skeleton's own.
+    # Both sides kept that seven: the branch hardcoded it, main threads it through default_count.
+    # Caller passes default_count=7 for landing forms and 0 for no-steps forms, so both land here.
     if count < 1:
-        count = int(default_count or 0)
+        # Legacy callers pass no default: the landing skeleton has always carried seven.
+        # Explicit default_count=0 (a form with no numbered-steps shape) keeps no rule.
+        count = 7 if default_count is None else int(default_count or 0)
     if count < 1:
         return ""
+    return _counted_step_rule(count)
+
+
+def _counted_step_rule(count: int) -> str:
+    """The negative block's counted steps sentence: exactly N badges reading 1..N, once each."""
     return (f"Do not mis-number the {count} steps: exactly {count} badges reading "
             + ", ".join(str(i) for i in range(1, count + 1))
             + f" once each, and exactly {count} step labels. ")
@@ -1200,12 +1219,14 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
             raise ExecutorError(str(exc))
     copy_block = copy_contract(section, closing or "")
     frame_block = frame_contract(width, ratio or "")
-    neg_block = negative_block(stage, steps=request_form(request) not in copy_forms.NO_STEPS_FORMS,
-                               page_spec=page_role.request_spec(request),
-                               step_rule=_step_rule(
-                                   request.get("_step_band"), page_role.request_spec(request),
-                                   default_count=(7 if request_form(request)
-                                                  not in copy_forms.NO_STEPS_FORMS else 0)))
+    page_spec = page_role.request_spec(request)
+    steps_ok = request_form(request) not in copy_forms.NO_STEPS_FORMS
+    neg_block = negative_block(stage, steps=steps_ok, page_spec=page_spec,
+                               # Both sides agreed: landing forms default to seven, no-steps forms
+                               # (product selection) get no rule. Branch gated with "" for those;
+                               # main threads default_count=0. Same outcome, explicit default wins.
+                               step_rule=_step_rule(request.get("_step_band"), page_spec,
+                                                    default_count=(7 if steps_ok else 0)))
     ref_block = reference_use.reference_block(request.get("references"),
                                               request.get("reference_roles"))
     color_block = str(request.get("_brand_block") or "")

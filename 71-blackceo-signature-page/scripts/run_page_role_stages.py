@@ -34,10 +34,24 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import page_role  # noqa: E402
+import governed_runner  # noqa: E402  F14: the one admission caller
 
 DEFAULT_STAGES = "desktop-wireframe,mobile-tablet,visual-mockup"
 STUB_MODEL = "STUB-NO-MODEL"
 IMAGE_MODEL_PATH = HERE.parents[1] / "shared-utils" / "signature_launch" / "image_model.py"
+
+
+def govern(run_dir, stage, *, provider, allow_paid, preflight):
+    """F14: this executor path passes the one admission call before its first write."""
+    authority = "preview" if preflight else (
+        "paid_dispatch" if (provider == "kie" and allow_paid) else "local")
+    try:
+        governed_runner.admit(run_dir, kind="direct_executor", authority=authority,
+                              stage=stage, owner="run_page_role_stages")
+        return True
+    except governed_runner.AdmissionRefused as exc:
+        print(f"REFUSED: {exc}")
+        return False
 
 
 def resolve_model(provider: str) -> str:
@@ -101,10 +115,15 @@ def main(argv=None) -> int:
             run.append("--allow-paid")
         if a.preflight:
             run.append("--preflight")
-        for argv_ in (build, run):
-            if subprocess.run(argv_).returncode:
-                print(f"FAIL: {spec['page_label']} stage {stage} stopped at {Path(argv_[1]).name}")
-                return 1
+        if subprocess.run(build).returncode:
+            print(f"FAIL: {spec['page_label']} stage {stage} stopped at {Path(build[1]).name}")
+            return 1
+        if not govern(run_dir, stage, provider=a.provider, allow_paid=a.allow_paid,
+                      preflight=a.preflight):
+            return 1
+        if subprocess.run(run).returncode:
+            print(f"FAIL: {spec['page_label']} stage {stage} stopped at {Path(run[1]).name}")
+            return 1
     if a.preflight:  # prompts only: no provider call, no image, nothing is complete
         print(f"PREVIEW {spec['page_label']}: every prompt composed and validated; no provider was "
               "called, no image exists and nothing is complete. Re-run without --preflight to generate.")

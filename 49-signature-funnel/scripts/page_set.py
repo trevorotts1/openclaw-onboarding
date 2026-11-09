@@ -323,7 +323,29 @@ def design_artifacts(page_key: str, run_dir: Path, relative: bool = False,
 # ---------------------------------------------------------------------------------------------
 IMAGE_INPUT_KEYS = ("design_style", "brand_file", "brand_owner", "image_cap", "image_provider",
                     "paid_render_approval_ref", "design_prose_ref", "visual_bible_ref", "test_only",
-                    "design_style_source", "creative_direction")
+                    "design_style_source", "creative_direction",
+                    # F16 items 6 and 11: the plan's brand hash and the resolved creative-direction
+                    # precedence travel with the style, so no page invents its own.
+                    "brand_sha256", "creative_direction_source", "creative_direction_grade_mode")
+
+GRADE_MODES = ("FULL", "ADAPT", "SUPPRESS")
+DIRECTION_STATES = ("house_look", "recorded", "not_asked", "unknown")
+
+
+def _brand_record():
+    """The shared F16 brand record module (one style vocabulary, one brand digest, the creative-
+    direction precedence). Repository-relative; None when Skill 49 is installed without it, in which
+    case only the canonical constants below are checked and nothing is silently normalized."""
+    path = HERE.parents[1] / "shared-utils" / "client_intake" / "brand_record.py"
+    if not path.is_file():
+        return None
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("pset_brand_record", path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def load_image_inputs(path) -> Dict[str, Any]:
@@ -341,21 +363,60 @@ def load_image_inputs(path) -> Dict[str, Any]:
     unknown = sorted(set(doc) - set(IMAGE_INPUT_KEYS))
     if unknown:
         raise PageSetError(f"image inputs: unknown key(s) {unknown}; allowed {list(IMAGE_INPUT_KEYS)}")
+    br = _brand_record()
     style = doc.get("design_style")
     if style is not None and style not in STYLES:
         raise PageSetError(f"image inputs: design_style must be A, B or C (or null to ask), got {style!r}")
-    src = doc.get("design_style_source")
-    if src is not None and src not in ("client_choice", "default_to_confirm"):
-        raise PageSetError(f"image inputs: design_style_source must be client_choice or default_to_confirm, got {src!r}")
+    # F16 item 4: ONE style vocabulary. Both live spellings of an accepted recommendation are
+    # accepted and normalized to the canonical one; an invented value is refused, never downgraded.
+    src, source = doc.get("design_style_source"), None
+    if src is not None:
+        if br is not None:
+            if not br.is_known_style_source(src):
+                raise PageSetError(f"image inputs: design_style_source must be one of "
+                                   f"{list(br.STYLE_SOURCES)}, got {src!r}")
+            source = br.normalize_style_source(src)
+        elif src not in ("client_choice", "recommended_accepted", "default_to_confirm", "unknown"):
+            raise PageSetError("image inputs: design_style_source must be client_choice, "
+                               f"recommended_accepted, default_to_confirm or unknown, got {src!r}")
+        else:
+            source = src
     cd = doc.get("creative_direction")
     if cd is not None and not isinstance(cd, str):
         raise PageSetError("image inputs: creative_direction must be text or null")
+    direction = doc.get("creative_direction_source")
+    if direction is not None and direction not in DIRECTION_STATES:
+        raise PageSetError(f"image inputs: creative_direction_source must be one of "
+                           f"{list(DIRECTION_STATES)}, got {direction!r}")
+    grade = doc.get("creative_direction_grade_mode")
+    if grade is not None and grade not in GRADE_MODES:
+        raise PageSetError(f"image inputs: creative_direction_grade_mode must be one of "
+                           f"{list(GRADE_MODES)}, got {grade!r}")
     cap = doc.get("image_cap")
     if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
         raise PageSetError(f"image inputs: image_cap must be an integer >= 0, got {cap!r}")
     for key in ("brand_file", "brand_owner"):
         if not isinstance(doc.get(key), str) or not doc[key].strip():
             raise PageSetError(f"image inputs: {key} is missing; it is the client's own value and is never invented")
+    # F16 item 6: the plan's own brand hash must be the file in hand. The hash is the producer's
+    # (engine.brand_provenance -> brand_file_sha256); recomputing it here proves the same bytes,
+    # it does not invent a second identity.
+    plan_brand = doc.get("brand_sha256")
+    if plan_brand is not None:
+        if not (isinstance(plan_brand, str) and re.fullmatch(r"[0-9a-f]{64}", plan_brand)):
+            raise PageSetError("image inputs: brand_sha256 must be the plan's 64-character lowercase hex SHA-256")
+        try:
+            digest = hashlib.sha256(Path(doc["brand_file"]).read_bytes()).hexdigest()
+        except (OSError, TypeError, ValueError):
+            digest = None
+        if digest is None:
+            raise PageSetError("image inputs: brand_sha256 is recorded but the brand file cannot be read, "
+                               "so the binding to the plan cannot be proved")
+        if digest != plan_brand:
+            raise PageSetError(
+                "image inputs: brand_sha256 does not match the brand file "
+                f"{doc['brand_file']!r}; the plan was built from a different brand file, so no page is drawn "
+                "from this one (a stale pin or a substituted file)")
     provider = doc.get("image_provider", "stub")
     if provider == "agnes":
         raise PageSetError("image inputs: image_provider 'agnes' is refused: Skill 71's stage executor "
@@ -369,6 +430,8 @@ def load_image_inputs(path) -> Dict[str, Any]:
     if "test_only" in doc and not isinstance(doc["test_only"], bool):
         raise PageSetError("image inputs: test_only must be true or false")
     out = dict(doc, image_provider=provider)
+    if source is not None:  # the canonical spelling, so every consumer reads one vocabulary
+        out["design_style_source"] = source
     out["allow_paid"] = provider == "kie" and bool(ref)
     return out
 

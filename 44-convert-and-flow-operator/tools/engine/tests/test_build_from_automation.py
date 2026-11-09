@@ -134,7 +134,10 @@ def test_live_build_runs_compile_then_build_with_journal(tmp_path):
         def __init__(self, client, v4=None):
             calls["client"] = client
 
-        def build(self, campaign, folder_name=None, folder_id=None, *, journal=None, browser_executor=None):
+        # Mirror CampaignBuilder.build's real signature: the CLI forwards the
+        # F11 browser capability, so a stub without it fails on the kwarg.
+        def build(self, campaign, folder_name=None, folder_id=None, *,
+                  journal=None, browser_executor=None):
             calls.update(campaign=campaign, folder=folder_name, journal=journal,
                          browser_executor=browser_executor)
             return {"errors": []}
