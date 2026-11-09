@@ -1,3 +1,7 @@
+## [1.3.23] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
+
 ## [1.3.22] - 2026-11-08 - batch merge: W26 fold content landed (F14 governed runner, F16 intake provenance); version stamped above main for G3
 
 Version stamped above `main` (1.3.21) so G3 sees the bump for the folded content in the same batch. No change beyond the folded content itself.

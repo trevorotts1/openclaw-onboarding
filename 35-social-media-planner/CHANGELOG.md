@@ -1,4 +1,7 @@
 # Changelog - Social Media Planner (Skill 35)
+## [3.9.16] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
 
 ## [3.9.13] - 2026-10-28 - chore(train11): version stamp for the twelve-unit train
 ## [3.9.12] - 2026-10-27 - chore(batch-20261027-0754): version stamp for T-56 (scope includes T-57)

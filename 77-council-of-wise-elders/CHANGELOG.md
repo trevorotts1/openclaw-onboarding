@@ -1,4 +1,7 @@
 # Council of Wise Elders (77): Changelog
+## v1.0.86 - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
 
 ## v1.0.85: model-id migration release
 
