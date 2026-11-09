@@ -86,15 +86,29 @@ class DesignCheckTests(Base):
         built = self.assemble(self.pieces())
         self.assertEqual(self.check(built), [])
 
-    def test_a_design_less_package_fails_for_every_page(self):
+    def _design_less(self):
         pieces = self.pieces()
         for role, piece in pieces.items():
             doc = self.work / f"{role}-page.html"
             doc.write_text("<html></html>", encoding="utf-8")
             piece["artifacts"] = [{"path": str(doc), "sha256": hashlib.sha256(doc.read_bytes()).hexdigest()}]
-        fails = self.check(self.assemble(pieces, name="bare"), name="bare")
+        return pieces
+
+    def test_a_design_less_package_fails_for_every_page(self):
+        # B4: the miss is now refused at assembly, so it can never reach a client as a sealed
+        # package that only `check` complains about. Every page is still named.
+        with self.assertRaises(package.PackageError) as caught:
+            self.assemble(self._design_less(), name="bare")
+        self.assertEqual(caught.exception.code, "AF-LAUNCH-PKG-PAGE-DESIGNS")
+        detail = caught.exception.detail
         for role in ("landing", "product_selection", "checkout", "upsell_1", "downsell_1", "upsell_2", "thank_you"):
-            self.assertTrue(any(f"{role} is missing wireframe desktop section" in f for f in fails), (role, fails))
+            self.assertIn(f"{role} is missing wireframe desktop section", detail, role)
+
+    def test_assemble_raises_and_seals_nothing_for_a_design_less_package(self):
+        with self.assertRaises(package.PackageError):
+            self.assemble(self._design_less(), name="bare")
+        self.assertFalse((self.work / "bare" / "package-manifest.json").exists())
+        self.assertFalse((self.work / "bare" / "receipt.json").exists())
 
     def test_a_page_missing_a_kind_is_named_with_the_kind(self):
         for kind in page_designs.KINDS:
