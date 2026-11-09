@@ -122,8 +122,22 @@ jobs:
             fi
           done < <(git log --format='%H %ae %ce' "$BASE_SHA..$HEAD_SHA" -- "$pin")
 
+  gate:
+    name: Required pin gate
+    # Document 3 section 9: the re-mint declares the gate as a dependency, so a mint over red bytes cannot
+    # run. It depends on the gate's pin-shape, pin-coverage, pin-scope-vouched, suite and authority-guard
+    # jobs only: pin-digest is red BY DEFINITION until this same workflow's mint writes the new line, and a
+    # mint that waited on it could never mint (the gate's own header records that resolved contradiction).
+    # pin-digest stays a required check on every pull request and push, which is what makes it required for
+    # merge. No job below this point was changed.
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/sf-prover-pin-gate.yml
+
   mint:
     name: Mint the pin (the only minting path)
+    needs: [gate]
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:

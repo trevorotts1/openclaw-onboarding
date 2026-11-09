@@ -1,0 +1,188 @@
+name: SF prover pin gate
+
+# ── Document 3 section 9: the required gate ─────────────────────────────────
+#
+# REQUIRED, NOT ADVISORY. A red run blocks merge: this workflow is the required status-check set on the
+# default branch (making it required is a repository-settings action owned by the operator, not a file in
+# this repository), and a pull request without a green run cannot be merged.
+#
+# Six jobs, one per finding class, each with the exact failure string of Document 3 lines 1546-1576:
+#
+#   pin-digest          recomputes the whole-tree digest and names every drifted file from the last commit
+#                       that modified the pin line. It never writes the pin.
+#   pin-shape           the artifact is exactly one 64-character lowercase hex digest.
+#   pin-coverage        both directions: a file matching a pin rule is in the composition, and every
+#                       composed file matches a pin rule.
+#   pin-scope-vouched   FIX-16 Branch A: every file whose behaviour the pin is used to vouch for
+#                       (copy_forms.py, page_role.py, shared_page_service.py, build_production_request.py,
+#                       **/references/copy-specs/**/*.json) is in the composition. EXPECTED RED on the tree
+#                       measured 2026-11-08: that failure is the finding, and it goes green only when the
+#                       composition is widened and re-minted in the authorised path.
+#   suite               one invocation, one expected count: python3 -m pytest 83-black-friday-launcher -q,
+#                       672 collected, 0 failed, 0 errors.
+#   authority-guard     the re-mint's dependency: when this workflow is invoked as a reusable workflow by
+#                       sf-prover-pin-authority.yml, refuse unless the four checks above are green.
+#
+# ONE COMPOSITION. Every job calls 49-signature-funnel/scripts/pin_gate.py, which imports the writer and
+# checker itself (front_door.pin_files / compute_pin / _PIN_SPEC) and never retypes a glob. No job here
+# writes, mints or reseals the pin, and there is no bypass flag and no environment skip anywhere in it.
+#
+# RESOLVED CONTRADICTION (Document 3 makes the mint depend on the gate). pin-digest is red BY DEFINITION
+# on any branch that changed a composed file, until the mint writes the new line; a mint that waits on
+# pin-digest therefore can never mint. So the reusable call excluded from pin-digest, and the authority
+# workflow's mint depends on pin-shape, pin-coverage, pin-scope-vouched and suite (via authority-guard),
+# NOT on pin-digest. pin-digest stays a required check on every pull request and on every push, which is
+# what makes it required for merge.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+  push:
+    branches:
+      - main
+      # The working branch of a release run, so a lane sees its own gate before it is proposed.
+      - "ghl-hybrid/**"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sf-prover-pin-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pin-digest:
+    name: pin-digest
+    # Excluded ONLY from the reusable call made by the authority workflow, and only because the digest is
+    # red until that same workflow's mint runs (see RESOLVED CONTRADICTION above). It runs on every
+    # pull_request, every push and every manual dispatch.
+    if: github.event_name != 'workflow_call'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with full history so the drift baseline commit resolves
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Recompute the whole-tree digest and name drifted files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 49-signature-funnel/scripts/pin_gate.py digest
+
+  pin-shape:
+    name: pin-shape
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Assert the artifact is one digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 49-signature-funnel/scripts/pin_gate.py shape
+
+  pin-coverage:
+    name: pin-coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Assert the composition and the launch-path rules agree
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 49-signature-funnel/scripts/pin_gate.py coverage
+
+  pin-scope-vouched:
+    name: pin-scope-vouched
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Assert every vouched behaviour file is in the composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 49-signature-funnel/scripts/pin_gate.py scope
+
+  suite:
+    name: suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install the declared runtime requirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check pytest
+          if [ -f 83-black-friday-launcher/requirements.txt ]; then
+            python3 -m pip install --disable-pip-version-check -r 83-black-friday-launcher/requirements.txt
+          fi
+
+      - name: Run the named invocation at the named count
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 49-signature-funnel/scripts/pin_gate.py suite
+
+  authority-guard:
+    name: authority-guard
+    # Job 6. Reached only through sf-prover-pin-authority.yml's `gate` job (a reusable-workflow call).
+    if: always() && github.event_name == 'workflow_call'
+    needs: [pin-shape, pin-coverage, pin-scope-vouched, suite]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse a re-mint over red bytes
+        shell: bash
+        env:
+          SHAPE: ${{ needs.pin-shape.result }}
+          COVERAGE: ${{ needs.pin-coverage.result }}
+          SCOPE: ${{ needs.pin-scope-vouched.result }}
+          SUITE: ${{ needs.suite.result }}
+        run: |
+          set -euo pipefail
+          bad=0
+          for result in "$SHAPE" "$COVERAGE" "$SCOPE" "$SUITE"; do
+            if [ "$result" != "success" ]; then
+              bad=1
+            fi
+          done
+          if [ "$bad" -ne 0 ]; then
+            echo "PIN-AUTHORITY REFUSED: gate job failed; a re-mint over red bytes is a forgery"
+            exit 1
+          fi
+          echo "PIN-AUTHORITY: pin-shape/pin-coverage/pin-scope-vouched/suite all green; the mint may proceed"
