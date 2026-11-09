@@ -1,9 +1,9 @@
 {
   "pinned": {
-    "AA-PIPELINE-MANIFEST.json": "8341c64e0ebe0a151232db4a2f395efbba12b22a21304404534a3605356f002d",
-    "AVATAR-MANIFEST.json": "3f3bfd366f2173e86e8d3ffc28835f7ad478daea1f6dcbc6d8594f5cf8a71113",
+    "AA-PIPELINE-MANIFEST.json": "5fb0db09700839da6cfa77f2b01d18a7505a7f00f9f2dbc230accadf821bde3f",
+    "AVATAR-MANIFEST.json": "7b90fed4173a5ebdabd7237dffbbbeb1e518db85dbae72790b7b30fd592f631f",
     "scripts/aa_intake_gate.py": "af54c97ffaf6e9ac1d9eb8dabc8830368d3aecd405a8360424f71fffa2dd1255",
-    "scripts/aa_build_check.py": "2371326c6cd72cc2ad21ed51bf2f0ef90807af217a2c16b72841ab72bd2e70fd",
+    "scripts/aa_build_check.py": "0114ff261954f6bd4dc0487782cceb2c0ff2fb0dfc1d5372704f8abd818c7f49",
     "scripts/aa_delivery_gate.py": "f8fa064d1f8c4f7323f8a4b696cf505e1fb11ecc149ebb5bd7f16c62466638aa",
     "scripts/aa_qc_cert.py": "4cad4358815f95d827eef0fa6dd605135d1131e3cd44157db86e549f1773c0ff",
     "scripts/aa_egress_gate.py": "eb3cb92dc9a482a7bc5b81294022188b612e92805f33ea7403e5a8af90d2b480",

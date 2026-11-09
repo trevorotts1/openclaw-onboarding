@@ -1,4 +1,4 @@
-## [2.2.11] - 2026-11-09 - Ratio coherence: GPT Image 2.6 now matches the vendor 16-member enum
+## [2.2.12] - 2026-11-09 - Ratio coherence: GPT Image 2.6 now matches the vendor 16-member enum (merge of main's 2.2.11 entry)
 
 - `models.json`: both `gpt-image-2-6/sunburst` rows' `aspect_ratios` set to the vendor live schema
   (`auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3` -- 16 members,
@@ -14,6 +14,10 @@
   `GPT_2_5_RATIO_SUBSTITUTIONS`) are gated to the 2.5 family, so 3:1/1:3/9:21 stay on 2.6 and
   5:4/4:5/2:1/1:2 are passed through unsubstituted. Self-test cases updated; 2.5 behaviour re-tested
   under an explicit 2.5 pin.
+
+## [2.2.11] - 2026-11-09 - fix: restore the PENDING_ACCEPTANCE_TEST status clause dropped from models.json notes (INST-001 #23)
+
+- `models.json` notes: the `hard-enforcement status PENDING_ACCEPTANCE_TEST, validators warn only` clause the gapfill dropped is restored on the legacy GPT Image 2 entries (with the owner-confirmed 25,000 cap band restated) and on the 2.5 entries. No cap, band, id, alias, ratio or ordering changed.
 
 ## [2.2.10] - 2026-11-09 - GPT Image 2.6 owner cap 20,000 recorded in models.json
 

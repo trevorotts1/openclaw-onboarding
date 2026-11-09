@@ -3,6 +3,10 @@
 All notable changes to this skill are documented here.
 
 ---
+## [2.3.8] - 2026-11-09 - fix: retired image house band no longer governs audio prose (INST-001 #21)
+
+- `SKILL.md` Prompt sizing + `references/tts.md` house-band section: the 5,000/9,000/19,000 image band is retired for audio; sizing states KIE prompt rule 12 (95-100% target, 80% floor, model cap wins). Per-route safe ceilings unchanged. Self-test 58 green.
+
 ## [2.3.7] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 
 - Version bumped so the folded content carries the version G3 requires above main. No functional change.
