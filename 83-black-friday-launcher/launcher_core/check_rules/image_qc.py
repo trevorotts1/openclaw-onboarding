@@ -29,8 +29,37 @@ if str(_SKILL_ROOT) not in sys.path:
 from launcher_core import graphics_hooks, image_stages  # noqa: E402
 
 CODE = "AF-LAUNCH-IMAGE-STAGES"
+CODE_BINDING = "AF-LAUNCH-HOSTING-BINDING"
 # What a launch leaves in the package root: the stage report, the layout-proof approval, the dispatch report.
 LAUNCH_MARKS = (image_stages.REPORT_REL, image_stages.LAYOUT_APPROVAL_REL, "dispatch-report.json")
+
+
+def _hosting_binding_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
+    """A client delivery ships hosted images: every page's own binding must admit them.
+
+    ``image_stages.hosted_admission`` is the launcher's decision; it is re-run from each
+    page's run folder (against the binding the launcher wrote), so a report row alone cannot
+    pass. The local SHA-256 is the identity: a changed artifact or a row with no folder/media
+    id/recognised status/usable URL is named. A test package keeps the existing "images only,
+    render pending" state and is not required to host.
+    """
+    if manifest.get("test_only") is True:
+        return []
+    runs = image_stages.discover_page_runs(root)
+    fails: List[str] = []
+    for piece in manifest.get("pieces") or []:
+        role = str((piece or {}).get("role") or "")
+        mine = [run for run in runs if image_stages.page_role(run) == role]
+        for run in mine:
+            decision = image_stages.hosted_admission(root, run)
+            if decision.get("state") == "pass":
+                continue
+            refused = decision.get("refused") or []
+            detail = (refused[0].get("problems") if isinstance(refused[0], dict) else str(refused[0])) \
+                if refused else decision.get("reason") or decision.get("state")
+            fails.append(f"{CODE_BINDING}: page {role} has no admitted hosting binding "
+                         f"({decision.get('state')}): {detail}")
+    return fails
 
 
 def _stage_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
@@ -77,4 +106,6 @@ def violations(manifest: Dict[str, Any], root: Path, skill_root: Path) -> List[s
     root = Path(root)
     if not applies(manifest, root):
         return []
-    return graphics_hooks.report_violations(manifest, root) + _stage_violations(manifest, root)
+    return (graphics_hooks.report_violations(manifest, root)
+            + _stage_violations(manifest, root)
+            + _hosting_binding_violations(manifest, root))
