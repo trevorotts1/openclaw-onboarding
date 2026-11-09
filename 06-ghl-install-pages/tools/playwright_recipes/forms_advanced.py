@@ -521,7 +521,15 @@ def _object_record(value):
     return deepcopy(value)
 
 
-def validate_object_fields(step, *, kind='form'):
+def validate_object_fields(step, *, kind='form', require_fresh=False):
+    """Validate dependency identity; only a new native execution requires age.
+
+    Intake, compilation and completed replay must remain structurally valid as
+    the original GET ages. configure_object_fields separately opts into the
+    fresh same-location read required before touching native controls.
+    """
+    if type(require_fresh) is not bool:
+        raise Stop('Object-field freshness requirement must be a real boolean')
     if (not isinstance(step, dict) or set(step) - {'id', 'action', 'payload'}
             or step.get('action', 'native_object_fields') != 'native_object_fields'
             or kind not in ('form', 'survey')):
@@ -560,7 +568,8 @@ def validate_object_fields(step, *, kind='form'):
             or type(dependency['http_status']) is not int or dependency['http_status'] != 200
             or type(dependency['observed_at']) not in (int, float)
             or not math.isfinite(dependency['observed_at'])
-            or not 0 <= time.time() - dependency['observed_at'] <= 3600
+            or dependency['observed_at'] < 0
+            or (require_fresh and not 0 <= time.time() - dependency['observed_at'] <= 3600)
             or not isinstance(dependency['fields'], list)):
         raise Stop('Object fields require fresh verified same-location API dependency read-back')
     # A real location list includes fields that are not being placed in this
@@ -589,9 +598,8 @@ def validate_object_fields(step, *, kind='form'):
 def object_fields_configuration_hash(step, *, kind='form'):
     # Configuration hashes remain usable on replay after a capability ages out.
     # Freshness is an execution preflight, not permission to forget an old write.
-    payload = step.get('payload') if isinstance(step, dict) else None
-    if not isinstance(payload, dict):
-        raise Stop('Object-field receipt is missing its payload')
+    valid=validate_object_fields(step,kind=kind,require_fresh=False)
+    payload=valid['payload']
     fields = [_object_record(field) for field in payload.get('object_fields', [])]
     if not fields:
         raise Stop('Object-field receipt has no authored fields')
@@ -696,7 +704,7 @@ def configure_object_fields(page, step, *, kind='form', frame=None, canvas_scope
     and supply an independent reopen callback returning fresh (frame, scope).
     No custom-field schema or global choice value is created/edited here.
     """
-    plan = validate_object_fields(step, kind=kind)
+    plan = validate_object_fields(step, kind=kind, require_fresh=True)
     payload = plan['payload']
     if page.url != payload['start_url']:
         raise Stop('Object-field placement page differs from its requested editor')

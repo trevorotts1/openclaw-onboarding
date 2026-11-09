@@ -48,7 +48,7 @@ class MixedInventoryTests(unittest.TestCase):
             step = payload()
             step['payload']['field_dependencies']['fields'].append(other)
             with self.subTest(other=other), self.assertRaisesRegex(Stop,'duplicated'):
-                native.validate_object_fields(step)
+                native.validate_object_fields(step,require_fresh=True)
 
     def test_malformed_unrelated_identity_is_not_ignored(self):
         for other in [None, {}, {'id':[], 'field_key':'contact.other'},
@@ -72,7 +72,7 @@ class MixedInventoryTests(unittest.TestCase):
             step = payload()
             step['payload']['field_dependencies'].update(change)
             with self.subTest(change=change), self.assertRaisesRegex(Stop,'fresh verified'):
-                native.validate_object_fields(step)
+                native.validate_object_fields(step,require_fresh=True)
 
     def test_survey_uses_same_selected_definition_contract(self):
         step = payload()
