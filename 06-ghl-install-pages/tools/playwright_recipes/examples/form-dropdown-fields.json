@@ -1,0 +1,33 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "ACCOUNT_FROM_INVENTORY",
+  "start_url": "https://app.example.com/v2/location/LOCATION_FROM_INVENTORY/form-builder-v2/FORM_FROM_INVENTORY",
+  "dropdown_fields": [
+    {
+      "id": "FIELD_FROM_API_GET",
+      "name": "Select Your T-shirt Size",
+      "field_key": "contact.select_your_tshirt_size",
+      "data_type": "SINGLE_OPTIONS",
+      "options": ["Men's Medium (M)", "Men's Large (L)", "Men's X-Large (XL)", "Men's XX-Large (XXL)", "Women's Medium (M)", "Women's Small (S)", "Women's Large (L)", "Women's X-Large (XL)", "Women's XX-Large (XXL)"],
+      "native_query_key": "select_your_t-shirt_size",
+      "expected_label": "Select Your T-shirt Size"
+    }
+  ],
+  "field_dependencies": {
+    "status": "VERIFIED",
+    "provider": "public_api",
+    "location_id": "LOCATION_FROM_INVENTORY",
+    "operation": "custom_fields.get",
+    "http_status": 200,
+    "observed_at": 0,
+    "fields": [
+      {
+        "id": "FIELD_FROM_API_GET",
+        "name": "Select Your T-shirt Size",
+        "field_key": "contact.select_your_tshirt_size",
+        "data_type": "SINGLE_OPTIONS",
+        "options": ["Men's Medium (M)", "Men's Large (L)", "Men's X-Large (XL)", "Men's XX-Large (XXL)", "Women's Medium (M)", "Women's Small (S)", "Women's Large (L)", "Women's X-Large (XL)", "Women's XX-Large (XXL)"]
+      }
+    ]
+  }
+}

@@ -1,4 +1,8 @@
 # Changelog — Sales Page Assets (Skill 56)
+## v2.1.7 - 2026-11-09 - fix: manifest prose states rule 12, not the retired 5,000-19,000 band (INST-001 #21)
+
+- `SALESPAGE-MANIFEST.json`: P1 gate text + FLOOR/CEILING triggers now state KIE prompt rule 12 (95-100% target, 80% floor, 100% ceiling) instead of the retired 5,000/19,000 numbers. `prove_sp_prompt_floor.py` unchanged; AF codes unchanged. Self-test PASS (1 valid, 9/9 catches).
+
 ## v2.1.6 - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 
 - Version bumped so the folded content carries the version G3 requires above main. No functional change.

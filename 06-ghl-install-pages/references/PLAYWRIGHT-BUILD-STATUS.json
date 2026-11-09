@@ -1,6 +1,6 @@
 {
   "schema": "skill6-build-inventory/2",
-  "updated_at": "2026-11-09T15:20:42.637Z",
+  "updated_at": "2026-11-09T18:11:56.022210+00:00",
   "scope": "33 named catalog operations; executable build coverage, not elapsed effort or live readiness.",
   "counts": {
     "BUILT": 21,
@@ -87,7 +87,7 @@
       "recipe_name": "12_configure_form_options",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Additional native field types/properties, composite Address child properties beyond Query Keys, and uncaptured builder controls remain incomplete. Captured consent and existing Radio placement are implemented."
+        "Captured Address child properties, consent, existing Radio placement and four-layout/Advanced native embed export are implemented. Additional native field/widget types and remaining integration controls remain incomplete."
       ]
     },
     {
@@ -101,7 +101,7 @@
       "recipe_name": "14_create_survey",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Creation of authored advanced question types, choice schemas and per-question properties remains partial."
+        "Authored Radio definition creation/reuse through measured API fallback and placement in an exact existing survey/slide are implemented. Additional native question types, and a combined new-survey shell/question flow, remain incomplete."
       ]
     },
     {
@@ -123,7 +123,7 @@
       "recipe_name": "17_configure_community",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Captured classic channels/details/access paths exist. Branding/media/course associations and exact app-to-portal identity/reuse mapping remain incomplete."
+        "Classic details/channels/access and Private course associations on exact nonempty Learning inventories are implemented. First association on an unproven empty list, other visibility/media/branding and complete app-to-portal identity/reuse remain incomplete."
       ]
     },
     {
@@ -137,7 +137,7 @@
       "recipe_name": "19_configure_course_ui",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Inactive theme text/visibility, six-color palette and primary/secondary font/weight are implemented. Media uploads and custom content blocks remain incomplete."
+        "Inactive text/visibility/palette/fonts, Custom Blocks and approved PNG background upload are implemented; product appearance media is separately API-backed. Other native theme media locations/uploads and uncaptured builder controls remain incomplete."
       ]
     },
     {
@@ -145,7 +145,7 @@
       "recipe_name": "20_setup_meeting_room",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Co-host assignment remains incomplete; read-only roster/candidate preflight is available, without assignment/removal/save."
+        "Existing-room co-host writer now preflights complete approved rosters and exact candidate identities, saves once and independently reopens. Authoritative zero-roster loading/empty evidence and combined creation/access workflow remain incomplete; preserve partial status until resolved."
       ]
     },
     {
@@ -153,7 +153,7 @@
       "recipe_name": "21_integrate_meeting_room",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Static permanent calendar links are implemented. Dynamic per-appointment rooms and native community/course associations remain incomplete."
+        "Permanent calendar links and captured single-staff per-appointment Meeting Room location configuration are implemented. Native community/course associations and generated-room/booking behavior remain incomplete."
       ]
     },
     {
@@ -179,7 +179,7 @@
       "recipe_name": "25_configure_form_condition",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Compound AND/OR condition groups, multi-target effects and other native effects remain incomplete; single-target Hide/Show paths exist."
+        "Homogeneous AND/OR groups with two to twenty clauses and single-target Hide/Show are implemented with exact existing-stack reconciliation. Mixed/nested conditions, multiple rule editing, multi-target effects and other native effects remain incomplete."
       ]
     },
     {
@@ -193,7 +193,7 @@
       "recipe_name": "27_update_meeting_room",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Co-host assignment/removal and persisted roster writer remain incomplete; existing room/security update path is implemented."
+        "Existing-room co-host assignment/removal writer is integrated with hash/room/roster-count-bound replay and preserved security settings. Authoritative empty-roster proof remains incomplete; no native functional access/notification acceptance claimed."
       ]
     },
     {
@@ -201,7 +201,7 @@
       "recipe_name": "28_configure_quiz_scores_and_tiers",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Existing question properties, categories, scoring, three tiers and Header/CTA copy are implemented. New question types, answer jump routing, other result layouts/styling/media remain incomplete."
+        "Existing question properties, categories/scoring, any captured existing tier layout and Header/CTA copy are implemented. New question types, answer jump routing, tier creation/removal, other result layouts/styling/media remain incomplete."
       ]
     },
     {
@@ -241,8 +241,8 @@
   "uncatalogued_requirements": [
     {
       "feature": "Native form tracking/integrations",
-      "status": "UNMAPPED_BUILD_GAP",
-      "reason": "Native inventory and executable schema still required; not silently counted as complete."
+      "status": "PARTIALLY_IMPLEMENTED",
+      "reason": "Captured Pixel/event settings and four native embed layouts/Advanced exports are executable. Exported settings are not claimed persisted/installed; other native integration controls remain incomplete."
     },
     {
       "feature": "Native Order Confirmation submission mode",
@@ -250,5 +250,10 @@
       "reason": "Must map to native payment implementation. Not a missing Message/HTTPS Redirect feature."
     }
   ],
-  "verification": "Optional/manual/live execution deferred. Required repository merge checks remain enabled. Synthetic checks do not establish native client acceptance."
+  "verification": "Optional/manual/live execution deferred. Required repository merge checks remain enabled. Synthetic checks do not establish native client acceptance.",
+  "merge_checkpoint": {
+    "saved_batch": "Merged through PR #3011; original PR #2962 closed as reconciled source batch",
+    "merge_commit": "d64498b35a8b1ec9c39429a46c9ab760403711a1",
+    "current_batch": "Native control continuation on skill6/next-native-controls-20261109; predecessor PR #3018 tracked independently by GitHub"
+  }
 }

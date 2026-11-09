@@ -1,0 +1,37 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Approved account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/form-builder-v2/FORM_FROM_INVENTORY",
+  "condition": {
+    "rules": [
+      {
+        "match": "all",
+        "clauses": [{"if_field": "First Name", "operator": "Is Empty"}],
+        "effect": "Show Field",
+        "target": "Last Name"
+      },
+      {
+        "match": "all",
+        "clauses": [{"if_field": "Email", "operator": "Contains", "value": "@example.com"}],
+        "effect": "Redirect to URL",
+        "redirect_url": "https://example.com/approved-next-step"
+      },
+      {
+        "match": "any",
+        "clauses": [
+          {"if_field": "First Name", "operator": "Is Empty"},
+          {"if_field": "Email", "operator": "Is Empty"}
+        ],
+        "effect": "Display custom message",
+        "message": "Please enter your first name and email address."
+      },
+      {
+        "match": "all",
+        "clauses": [{"if_field": "Phone", "operator": "Is Empty"}],
+        "effect": "Disqualify lead",
+        "mode": "Show custom message",
+        "message": "This request requires a phone number."
+      }
+    ]
+  }
+}
