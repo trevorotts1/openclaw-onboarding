@@ -8,9 +8,10 @@ gate raises FrontDoorError, a SystemExit subclass: it is not swallowed by `excep
 process ends non-zero with `ABORT [HASH-PIN|BYPASS-SCAN|VERSION|PIN-ROTATION]: ...` on stderr.
 
 PIN. The digest covers every file the dispatch/launch path executes or reads for decisions (see
-`pin_files`): all non-test Skill 49 scripts and data, the Skill 83 launcher tree, the shared launch contract
-and the shared launch package. The list is GENERATED from the tree, so a new file changes the digest and
-trips HASH-PIN until the pin is re-minted.
+`pin_files`): all non-test Skill 49 scripts and data, the Skill 83 launcher tree, the Skill 71 page-build
+tree (scripts plus the reference JSON those scripts read), the shared launch contract and the shared launch
+package. The list is GENERATED from the tree, so a new file changes the digest and trips HASH-PIN until the
+pin is re-minted.
 
 MINTING. Only two paths write scripts/SF-PROVER-PIN.sha256:
   * GitHub Actions (.github/workflows/sf-prover-pin-authority.yml) through `mint-pin --ci`; and
@@ -51,6 +52,11 @@ _PIN_SPEC = (
                   ("schema", "*.json"), ("intake", "*.json"))),
     ("83", "83", (("launcher_core", "*.py"), ("launcher_core", "*.json"), ("routes", "*.py"),
                   ("", "entitlement-declaration.json"), ("", "receipt.schema.json"))),
+    # Skill 71 builds the pages the launch path dispatches, so its scripts and the reference JSON they read
+    # are decision data for the same launch (FIX-16, Branch A): two boxes must not be able to present one pin
+    # digest while running different Skill 71 code.
+    ("71", "71", (("scripts", "*.py"), ("references", "*.json"), ("references/copy-specs", "*.json"),
+                  ("references/copy-specs/roles", "*.json"), ("references/style-traits", "*.json"))),
     ("shared/contract", "contract", (("", "*.py"), ("", "*.json"))),
     ("shared/launch", "launch", (("", "*.py"), ("", "*.json"))),
 )
@@ -93,7 +99,7 @@ class FrontDoorError(SystemExit):
 # ---------------------------------------------------------------- layout
 
 def _skill_dirs(skill_dir: Path) -> Dict[str, Path]:
-    """Resolve the 49, 83, contract and launch trees beside skill_dir (onboarding or deployed layout)."""
+    """Resolve the 49, 83, 71, contract and launch trees beside skill_dir (onboarding or deployed layout)."""
     root = skill_dir.parent
     bases = [root, root / ".claude" / "skills", root / "skills"]
 
@@ -105,7 +111,7 @@ def _skill_dirs(skill_dir: Path) -> Dict[str, Path]:
         return None
 
     shared = next((b / "shared-utils" for b in bases if (b / "shared-utils").is_dir()), None)
-    out = {"49": skill_dir, "83": skill("black-friday-launcher")}
+    out = {"49": skill_dir, "83": skill("black-friday-launcher"), "71": skill("blackceo-signature-page")}
     out["contract"] = shared / "signature_launch_contract" if shared else None
     out["launch"] = shared / "signature_launch" if shared else None
     for key, path in out.items():
@@ -223,15 +229,18 @@ def _text_hits(rel: str, data: bytes) -> Tuple[str, ...]:
 def scan_tree(skill_dir: Path = SKILL_DIR) -> List[str]:
     """Bypass scan over the skill tree itself (49, 83, shared contract/launch): strings plus an AST network check."""
     trees = _skill_dirs(Path(skill_dir))
+    # 71 is pinned but deliberately NOT scanned here: its builders legitimately import urllib.request to open
+    # a browser/ship run events, so the string/AST rules would fire on approved code. Scan scope is unchanged.
     prefixes = {"49": "49", "83": "83", "contract": "shared/contract", "launch": "shared/launch"}
     hits: List[str] = []
-    for key, base in trees.items():
+    for key, prefix in prefixes.items():
+        base = trees[key]
         for dirpath, dirnames, filenames in os.walk(base):
             dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS)
             for fn in sorted(filenames):
                 p = Path(dirpath) / fn
                 if p.suffix in (".py", ".sh", ".json") and not _is_test(fn) and not p.is_symlink():
-                    hits += _text_hits(f"{prefixes[key]}/{p.relative_to(base).as_posix()}", p.read_bytes())
+                    hits += _text_hits(f"{prefix}/{p.relative_to(base).as_posix()}", p.read_bytes())
     return hits
 
 
