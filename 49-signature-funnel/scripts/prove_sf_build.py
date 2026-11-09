@@ -76,8 +76,12 @@ GHL_TOOLS = SKILL_DIR.parent / "06-ghl-install-pages" / "tools"  # Skill 6: ghl_
 EVIDENCE_REL = Path("build") / "evidence"        # Skill 6 verify evidence root inside the run dir
 PAGE_IMAGES_REL = Path("page-images")            # legacy_downsell_images.py --out-dir
 PAGE_IMAGES_RECEIPT = "page-images-receipt.json"
-# Same tuple as legacy_downsell_images.STAGES (a test holds them equal).
-VISUAL_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
+# The BUILD GATE requires four visual stages. legacy_downsell_images.py DRAWS the first three;
+# the fourth (final-mockups) is the client-gated stage Skill 71 runs after design-board approval
+# (83-black-friday-launcher/launcher_core/image_stages.py). Fix plan B3: the gate previously
+# mirrored the tool's three stages, so a run with no final mockups could certify.
+# test_legacy_structure_proofs.py holds this a strict superset of the tool's STAGES.
+VISUAL_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup", "final-mockups")
 MIN_SECTION_CHARS = 10   # a section marker around no real text is not a built section
 QC_TOLERANCE = 0.05
 

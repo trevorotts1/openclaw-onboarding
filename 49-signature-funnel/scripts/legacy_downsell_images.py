@@ -297,7 +297,9 @@ def main(argv=None):
         for slug in slugs:
             report["pages"][slug] = run_page(slug, structure, ledger, args, scripts, entries)
         report["note"] = ("the image inventory, generation, Design Board approval and final-mockups "
-                          "are client-gated stages downstream and were not run")
+                          "are client-gated stages downstream and were not run HERE. final-mockups is "
+                          "NOT optional: prove_sf_build.VISUAL_STAGES requires it, so P7-BUILD refuses "
+                          "to certify until the client-gated final-mockups stage has closed (fix plan B3)")
         args.out_dir.mkdir(parents=True, exist_ok=True)
         (args.out_dir / "page-images-receipt.json").write_text(
             json.dumps(report, indent=2) + "\n", encoding="utf-8")
