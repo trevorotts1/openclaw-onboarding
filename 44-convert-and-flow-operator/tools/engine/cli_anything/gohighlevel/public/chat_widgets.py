@@ -373,11 +373,17 @@ class EmbedInstruction:
     captured_at: str | None = None
 
     def __post_init__(self) -> None:
-        widget_id = _required_text(self.widget_id, "widget_id")
-        script_url = _required_text(self.script_url, "script_url")
+        widget_id = str(self.widget_id or "").strip()
+        if not widget_id or widget_id.lower() in _PLACEHOLDER:
+            raise EmbedInstructionError("field_required", field="widget_id")
+        script_url = str(self.script_url or "").strip()
+        if not script_url or script_url.lower() in _PLACEHOLDER:
+            raise EmbedInstructionError("field_required", field="script_url")
         snippet = str(self.snippet or "")
         provenance = str(self.provenance or "")
-        evidence_ref = _required_text(self.evidence_ref, "evidence_ref")
+        evidence_ref = str(self.evidence_ref or "").strip()
+        if not evidence_ref:
+            raise EmbedInstructionError("field_required", field="evidence_ref")
         if provenance not in EMBED_PROVENANCE:
             raise EmbedInstructionError(
                 "provenance_invalid", provenance=provenance or "<empty>"
@@ -508,23 +514,27 @@ def find_widget_occurrences(
     occurrences: list[EmbedOccurrence] = []
     for index, snippet in enumerate(global_snippets):
         text = str(snippet or "")
-        if (widget_id and widget_id in text) or (script_url and script_url in text):
+        match_widget = bool(widget_id and widget_id in text)
+        match_url = bool(script_url and script_url in text)
+        if match_widget or match_url:
             occurrences.append(
                 EmbedOccurrence(
                     scope="global",
                     path=f"global[{index}]",
-                    widget_id=widget_id if widget_id and widget_id in text else None,
-                    script_url=script_url if script_url and script_url in text else None,
+                    widget_id=widget_id if match_widget else None,
+                    script_url=script_url if match_url else None,
                 )
             )
     for path, text in _iter_embed_texts(page_data):
-        if (widget_id and widget_id in text) or (script_url and script_url in text):
+        match_widget = bool(widget_id and widget_id in text)
+        match_url = bool(script_url and script_url in text)
+        if match_widget or match_url:
             occurrences.append(
                 EmbedOccurrence(
                     scope="page",
                     path=path,
-                    widget_id=widget_id if widget_id and widget_id in text else None,
-                    script_url=script_url if script_url and script_url in text else None,
+                    widget_id=widget_id if match_widget else None,
+                    script_url=script_url if match_url else None,
                 )
             )
     return occurrences
@@ -542,10 +552,11 @@ def assert_single_install(
         script_url=instruction.script_url,
         global_snippets=global_snippets,
     )
-    if len(occurrences) > 1:
+    if occurrences:
         raise DuplicateEmbed(
-            "widget_installed_more_than_once",
+            "widget_already_installed",
             widget_id=instruction.widget_id,
+            count=len(occurrences),
             paths=",".join(item.path for item in occurrences),
         )
 
