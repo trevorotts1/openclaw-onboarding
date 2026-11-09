@@ -32,14 +32,14 @@ ALWAYS run the validators first (see INSTRUCTIONS.md step 4): select_image_model
 validate_prompt.py, validate_payload.py. A bad payload never reaches the API.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXAMPLE 1: GPT IMAGE 2.5 TEXT-TO-IMAGE (default pick, 1:1 1K)
+EXAMPLE 1: GPT IMAGE 2.6 TEXT-TO-IMAGE (default pick, 1:1 1K)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 curl -sS https://api.kie.ai/api/v1/jobs/createTask \
   -H "Authorization: Bearer $KIE_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-image-2-5-sunburst-text-to-image",
+    "model": "gpt-image-2-6/sunburst-text-to-image",
     "callBackUrl": "https://your-domain.example/kie/callback",
     "input": {
       "prompt": "A futuristic Black woman CEO standing in a glass office overlooking a neon city at dusk, cinematic lighting, 1:1",
@@ -48,36 +48,37 @@ curl -sS https://api.kie.ai/api/v1/jobs/createTask \
     }
   }'
 
-Notes: resolution enum 1K/2K/4K. 2K/4K exclude 27:16, 16:27, 9:8, 8:9 (1K
-only). Operator ruling 2026-09-09: 3:1, 1:3, 9:21 are NOT served by this
-model — use the retained legacy `gpt-image-2-text-to-image` for those three
-ratios instead (see the MODEL NOTE at the end of this file).
+Notes: resolution enum 1K/2K/4K (default 1K) with NO per-resolution ratio
+exclusions. aspect_ratio enum is 16 values: auto, 1:1, 3:2, 2:3, 4:3, 3:4,
+5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3. 3:1, 1:3 and 9:21 are
+served natively by this model. 27:16, 16:27, 9:8 and 8:9 are NOT in the enum
+at any resolution. Model ids are slash form — a hyphenated
+gpt-image-2-6-sunburst-* answers HTTP 422 "model name not supported".
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXAMPLE 2: GPT IMAGE 2.5 IMAGE-TO-IMAGE (16 refs max, 30MB)
+EXAMPLE 2: GPT IMAGE 2.6 IMAGE-TO-IMAGE (16 refs max, 30MB)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 curl -sS https://api.kie.ai/api/v1/jobs/createTask \
   -H "Authorization: Bearer $KIE_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-image-2-5-sunburst-image-to-image",
+    "model": "gpt-image-2-6/sunburst-image-to-image",
     "input": {
       "prompt": "Restyle the product shot to matte black on a white studio background, preserving the original geometry, lighting direction, and camera angle",
-      "aspect_ratio": "3:4",
+      "aspect_ratio": "4:5",
       "resolution": "2K",
       "input_urls": [ "https://example.com/product-clean.png" ]
     }
   }'
 
-Notes: "Supported formats: JPEG, PNG, WEBP, JPG"; "Maximum file size: 30MB;
-Maximum files: 16" (carried forward unchanged from GPT Image 2). Live probe
-2026-09-10: the endpoint also accepts image_input (task 8fcde5... success,
-6 credits); input_urls stays preferred. Ratio 3:4 is
-the operator-approved substitute for a 4:5 vertical product shot (4:5 is not
-in the GPT Image 2.5 ratio enum; the selector performs this substitution
-automatically — this example shows the already-substituted payload).
-Ratio/resolution otherwise obey the same 1K-only exclusion list as Example 1.
+Notes: refs via input_urls, maxItems 16, max 30MB, formats JPEG/PNG/WEBP only
+and publicly reachable. Probe 2026-09-10 on the 2.5 generation: the route also
+accepted image_input (task 8fcde5... success, 6 credits) and has NOT been
+retested on 2.6 — use input_urls.
+4:5 is a native member of the 2.6 ratio enum, so this needs no substitution
+and no second model. Output format on i2i is png/jpeg/webp ONLY — gif and svg
+are text-to-image only. mask_url OR markup may be added, never both.
 Client logo/brand work MUST be I2I with the logo as input_urls[0] (never T2I).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -166,8 +167,8 @@ MISTAKE 1: Treating createTask 200 as the finished image.
 
 MISTAKE 2: Skipping the validators.
   validate_prompt.py + validate_payload.py run BEFORE dispatch. Wan >5,000
-  chars, GPT Image 2 / GPT Image 2.5 excluded ratios at 2K/4K (two separate
-  lists, never merged — see MISTAKE 5), >16 refs, wrong 30MB vs 10MB
+  chars, a GPT Image 2 excluded ratio at 2K/4K, a ratio outside the GPT Image
+  2.6 enum, more than 20,000 chars on 2.6, >16 refs, wrong 30MB vs 10MB
   limits — all rejected locally, never charged.
 
 MISTAKE 3: Inventing a prompt cap.
@@ -180,12 +181,13 @@ MISTAKE 4: Converting Qwen's "4.5K token inputs" into a 4,500-char rule.
 
 MISTAKE 5: Forgetting the ratio rules — and mixing up which model they
 belong to (operator ruling 2026-09-09, two SEPARATE rule sets):
-  GPT Image 2 (legacy, 3:1/1:3/9:21 route only): auto -> 1K only; 1:1 never
+  GPT Image 2 (legacy, own unchanged rules): auto -> 1K only; 1:1 never
   4K; 5:4/4:5/3:1/1:3/9:21 excluded at 2K/4K.
-  GPT Image 2.5 (default): 27:16/16:27/9:8/8:9 excluded at 2K/4K (1K only);
-  the legacy auto/1:1 rules do NOT apply here. 5:4/4:5/2:1/1:2 are served via
-  an operator-approved substitution (5:4→4:3, 4:5→3:4, 2:1→16:9, 1:2→9:16);
-  3:1/1:3/9:21 are not served at all and route to GPT Image 2 instead.
+  GPT Image 2.6 (default): NO per-resolution exclusions — every enum member
+  is legal at 1K, 2K and 4K. Its enum is auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4,
+  4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3, so 5:4, 4:5, 2:1, 1:2, 3:1,
+  1:3 and 9:21 need no substitution and no second model. 27:16/16:27/9:8/8:9
+  are not enum members at all and are rejected at every resolution.
 
 MISTAKE 6: Text-to-image for a client logo.
   Logo/brand-mark work must be I2I with the logo as a reference. A T2I model

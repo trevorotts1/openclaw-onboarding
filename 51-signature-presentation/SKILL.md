@@ -142,7 +142,7 @@ nothing skippable, fail-closed gates at close()). An engine that is installed bu
 job is a **blocking failure (exit 9, `ENGINE DISPATCH FAILED`) — never a silent downgrade**;
 `run_signature_deck.py` runs ONLY as a loudly announced fallback when the engine component is
 genuinely absent from the box, and that fallback is recorded in
-`working/checkpoints/.fallback-legacy-runner-used`. Rendering (kie.ai through the department's image pin in `presentation_job/model_catalog.json`, today GPT Image 2.5 Sunburst, bumped only by an operator catalog change; every
+`working/checkpoints/.fallback-legacy-runner-used`. Rendering (kie.ai through the department's image pin in `presentation_job/model_catalog.json`, today GPT Image 2.6 Sunburst, bumped only by an operator catalog change; every
 word baked into the image; zero native on-slide text) is done by the engine's render phases
 through `build_deck.py`. Writing and running your own per-deck driver — `python3 working/*.py`
 — is the **ungoverned path and is FORBIDDEN** (`AF-CANONICAL-RENDER-BYPASS` /

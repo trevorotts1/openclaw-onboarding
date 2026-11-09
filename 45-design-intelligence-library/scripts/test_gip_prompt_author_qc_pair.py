@@ -111,7 +111,7 @@ def _compliant_visual_long_prompt() -> str:
         "LOGO / REFERENCE DIRECTIVE: no logo baked into this frame. Use the attached images only as style "
         "reference for color grading, lighting, and composition — do not copy their subjects, faces, or "
         "text.",
-        "TECHNICAL: endpoint gpt-image-2-5-sunburst-text-to-image, aspect ratio 1:1, resolution 2048x2048, output "
+        "TECHNICAL: endpoint gpt-image-2-6/sunburst-text-to-image, aspect ratio 1:1, resolution 2048x2048, output "
         "format png, no watermark.",
         "SECONDARY SCENE DETAIL: a shelf of hand-labeled jars and a small potted fern sits just out of "
         "focus behind the subject's right shoulder, reinforcing an established, grounded brand feel "
@@ -140,7 +140,7 @@ def _compliant_visual_long_prompt() -> str:
         "cast the subject exactly as specified above. Do not render watermarks, emoji, clipart, or a "
         "basic platform-default font anywhere in the frame.",
     ]
-    # Rule 12: the first endpoint of visual_long is GPT Image 2.5 (max 20,000), so a compliant prompt is 95 to
+    # Rule 12: the first endpoint of visual_long is GPT Image 2.6 (max 20,000), so a compliant prompt is 95 to
     # 100 percent of it. The Prompt Author deepens the anatomy above with distinct render decisions until it is
     # in band, then closes with the negative block.
     negative = clauses.pop()

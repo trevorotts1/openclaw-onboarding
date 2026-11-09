@@ -355,7 +355,7 @@ This is the single canonical index of the N1–N35 non-negotiables. Every other 
 | N40 | **FAIL-CLOSED DEPENDENCY — stop at 2 attempts, report once, never narrate the hunt.** A dependency that answers `unauthorized` / `forbidden` / `invalid api key` / `authentication failed` / `not authenticated` / `missing credentials` is refusing on PURPOSE — a permission answer, not a capability answer, and the same answer however the request is worded. **At most 2 attempts**, then STOP. **Rewording is not a new approach**: different arguments against the same fail-closed dependency are the same attempt repeated. Emit **exactly ONE** message — what is blocked, what is needed, who can supply it — and **NEVER narrate a discovery hunt to the client**. This is the fail-closed exception that the "Blockers — Research Before Giving Up" section (try 5-10 methods) previously lacked; that section governs CAPABILITY failures only and is now explicitly bounded by this rule. Root cause: an agent on a client box made **13 tool calls in 49 seconds**, each a reworded attempt at one intent, while OBEYING the unbounded 5-10-methods rule; the client cancelled it and typed "stop looping." No detector fired because every loop guard on the fleet keys on the ARGUMENTS (runtime: `toolName`+`sha256(params)`; runaway guard: +`resultHash`; D3: +target), and OpenClaw exposes **no per-turn tool-call ceiling** to fall back on. Escalate per N36, never grind. | This file (N40 section) + `<!-- FAIL_CLOSED_DEPENDENCY_V1 -->` marker | `scripts/qc-assert-fail-closed-doctrine.sh` (doctrine present + Blockers bound intact) + `tests/unit/fail-closed-doctrine-gate.test.sh` + `.github/workflows/fail-closed-doctrine-gate.yml` + Skill 61 detector **D6 / LP-A9** (`61-loop-protection-system/scripts/loop_detectors.py`, argument-blind, after-the-fact) |
 
 | N42 | **BRANCH GREEN IS NOT GREEN — ONLY THE PR ROLLUP IS GREEN.** A workflow run on a branch/ref (`gh run list --branch <b>`, a local CI watch, "the branch is passing") answers a DIFFERENT question than "is this PR mergeable" — the PR's required-check rollup includes contexts (G1/G1b/G2/G3 version-ceremony gates, `ghl-mcp-pin-gate`, `QC static invariants`, `GHL MCP supervision + install regression guard`, `Verify all version markers agree`) that a branch-scoped check never runs, and the SAME context name can appear MORE THAN ONCE in one PR's rollup with DIFFERENT states (a re-run, or two workflow triggers producing two check runs under one name) — reading only the first match is a false green. Root cause paid for THREE TIMES in one session before this rule existed: PR #941 was called green and then showed 5 red gates at PR level; #943 and #946 each hit gate G3 at PR level after being called green too (`CONTROL/DELAY-DIAGNOSIS-FABLE.md` #3 row 12, #7 item 4). **EXPECTED/PENDING/QUEUED on a required context is NOT green and must never be reported as green** — a real merge refusal on PR #952 read "8 of 8 required status checks are expected," which is not a pass. Never report a PR "green" or "mergeable" from a branch check, a partial glance at `gh pr checks`, or memory of a prior run — run `scripts/pr-rollup-check.py <PR_NUMBER>` and read its exit code (0=GREEN, 1=RED-failed, 2=RED-pending/expected, 3=could-not-determine — never treat 3 as green). That script also fetches the TRUE required-context list live from this repo's branch-protection ruleset on every run rather than trusting a hardcoded copy, and does not repeat gh's own `--json`-mode trap (`gh pr checks --required --json ...` returns process exit 0 even when a required context's `bucket` is `"fail"` — proven live on PR #956 during the investigation that added this rule). | This file (N42 section) + `scripts/pr-rollup-check.py` module docstring (full investigation writeup, live proof against PR #941/#955/#956) | Read-only helper, not a CI gate itself — the eight contexts above ARE the enforcement; this rule and script exist so an agent's REPORT of their state is never wrong |
-| N43 | **KIE IMAGE MODEL PIN — GPT-Image-2.5 (`sunburst`) is the DEFAULT; GPT-Image-2 is RETAINED for exactly three aspect ratios.** Kie.ai shipped GPT-Image-2.5 on **2026-09-09**, replacing GPT-Image-2. It ships in TWO variants (`flare`, `sunburst`); this fleet uses **`sunburst` ONLY** — `gpt-image-2-5-sunburst-text-to-image` and `gpt-image-2-5-sunburst-image-to-image`. **Never `flare`.** 2.5's supported aspect ratios are EXACTLY `auto, 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4, 21:9, 27:16, 16:27, 9:8, 8:9`, and `27:16 / 16:27 / 9:8 / 8:9` are **1K ONLY** (2K/4K must be rejected for those four). Documented prompt cap on 2.5 is **20,000 chars**. FOUR legacy ratios are SUBSTITUTED on 2.5 by operator ruling: `5:4→4:3`, `4:5→3:4`, `2:1→16:9`, `1:2→9:16`. THREE legacy ratios must **NOT** use 2.5 — they dispatch to the RETAINED legacy `gpt-image-2-*` route via Kie.ai: **`3:1`, `1:3`, `9:21`**. The old registry entries therefore STAY LIVE and keep their OWN pre-existing constraints (including the 25,000-char `OWNER_CONFIRMED` cap and the old ratio list) — the new caps apply to the 2.5 entries ONLY and are never retro-applied to the retained legacy entries. Endpoints, auth (`KIE_API_KEY`), response shape and `input_urls` are UNCHANGED across both generations. | This file (N43 section) + `66-kie-image/models.json` (registry carries BOTH generations) | `66-kie-image/scripts/select_image_model.py` capability check + the three alias tables (`66-kie-image/scripts/normalize_alias.py`, `select_image_model.py` ALIASES, `68-kie-audio/scripts/normalize_alias.py`) which must move in lockstep |
+| N43 | **KIE IMAGE MODEL PIN — GPT-Image-2.6 (`sunburst`) is the DEFAULT and serves every ratio in its enum natively.** Kie.ai shipped GPT-Image-2.6, superseding 2.5 at the same family. It ships in TWO variants (`flare`, `sunburst`); this fleet uses **`sunburst` ONLY** — `gpt-image-2-6/sunburst-text-to-image` and `gpt-image-2-6/sunburst-image-to-image`. **The version is followed by a SLASH: a hyphenated `gpt-image-2-6-sunburst-*` is HTTP 422.** **Never `flare`.** 2.6's supported aspect ratios are EXACTLY `auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3` (16 values) with **NO per-resolution exclusions**. `3:1`, `1:3` and `9:21` are **served natively on 2.6** — they do NOT dispatch to the legacy `gpt-image-2-*` route. `5:4`, `4:5`, `2:1` and `1:2` are **served literally** — they are NOT substituted to `4:3`, `3:4`, `16:9`, `9:16`. `27:16 / 16:27 / 9:8 / 8:9` are NOT enum members at any resolution. Documented prompt cap on 2.6 is **20,000 chars** by OWNER RULING 2026-11-08 (the vendor OpenAPI's 32,000 is retained for provenance and does NOT govern). The legacy `gpt-image-2-*` registry entries are RETAINED and keep their OWN pre-existing constraints (including the 25,000-char `OWNER_CONFIRMED` cap and the old ratio list) — the 2.6 cap applies to the 2.6 entries ONLY and is never retro-applied to the retained legacy entries. Endpoints, auth (`KIE_API_KEY`), response shape and `input_urls` are UNCHANGED across both generations. | This file (N43 section) + `66-kie-image/models.json` (registry carries BOTH generations) | `66-kie-image/scripts/select_image_model.py` capability check + the three alias tables (`66-kie-image/scripts/normalize_alias.py`, `select_image_model.py` ALIASES, `68-kie-audio/scripts/normalize_alias.py`) which must move in lockstep |
 | N44 | **CORE-FILE CLAIMS: name the absolute paths, follow symlinks, never judge the owner's files from a secondary agent's own folder.** Before an agent says a core file is missing, blank or unconfigured it names every absolute path it checked (and what it did not check), follows symlinks (`find -L`), and looks in the OWNER's main workspace (`$OPENCLAW_WORKSPACE`, else `agents.entries.main.workspace`, else `agents.defaults.workspace`, else `<root>/workspace`), never only in its own folder. Root cause 2026-10-11: the remote-rescue helper read its own empty folder and told an operator the owner's workspace was unconfigured; skill 15 now seeds that folder with an identity and a pointer to the main workspace. | This file (Core-File Claims section) | `<!-- CORE_FILE_CLAIMS_V1 -->` marker (injected by `apply-fleet-standards.sh`) + skill 15 QC workspace-seed gate (`tests/unit/skill15-workspace-seed.test.sh`) |
 
 If you invoke a rule by N-number elsewhere, link back to this index. If a rule's status changes (added, deprecated, renumbered), update this table FIRST and port the change to dependent docs.
@@ -1488,32 +1488,28 @@ for a deliberate release cut directly on `main` with no PR involved — this rul
 concerns fix PRs.
 
 
-## 🔴 N43 — AF-KIE-IMAGE-MODEL-PIN (GPT-Image-2.5 `sunburst` default; GPT-Image-2 retained for `3:1`, `1:3`, `9:21`)
+## 🔴 N43 — AF-KIE-IMAGE-MODEL-PIN (GPT-Image-2.6 `sunburst` default; every supported ratio served natively)
 
-**Effective 2026-09-09.** Kie.ai upgraded GPT-Image-2 to GPT-Image-2.5. This is NOT a
-drop-in string swap and must never be applied as a blind find-and-replace.
+**Effective 2026-11-08.** Kie.ai upgraded GPT-Image-2.5 to GPT-Image-2.6 at the same
+`gpt-image` family. This is NOT a drop-in string swap and must never be applied as a
+blind find-and-replace: the 2.6 ids carry a **SLASH** after the version, and a hyphenated
+`gpt-image-2-6-sunburst-*` id is HTTP 422.
 
-### The two-model routing rule
+### One model serves every ratio
 
 | Request | Model dispatched |
 |---|---|
-| Default — everything not listed below | `gpt-image-2-5-sunburst-text-to-image` / `-image-to-image` |
-| `5:4` | 2.5 sunburst, substituted to `4:3` |
-| `4:5` | 2.5 sunburst, substituted to `3:4` (best FB/IG vertical-feed replacement) |
-| `2:1` | 2.5 sunburst, substituted to `16:9` |
-| `1:2` | 2.5 sunburst, substituted to `9:16` |
-| **`3:1`** | **legacy `gpt-image-2-*` via Kie.ai — do NOT use 2.5** |
-| **`1:3`** | **legacy `gpt-image-2-*` via Kie.ai — do NOT use 2.5** |
-| **`9:21`** | **legacy `gpt-image-2-*` via Kie.ai — do NOT use 2.5** |
+| Everything | `gpt-image-2-6/sunburst-text-to-image` / `gpt-image-2-6/sunburst-image-to-image` |
 
-The three legacy-routed ratios were rated **WEAK** on 2.5 by the operator — `21:9` for
-`3:1` is "too much difference", `9:16`/`16:27` for `1:3` is "neither is a true
-replacement", `9:16` for `9:21` carries "heavy crop/padding risk". No substitute was
-blessed, so those three keep the old model rather than degrade the asset.
+Every ratio in the 2.6 enum is served natively. There is no second model and no
+substitution: `3:1`, `1:3` and `9:21` are no longer routed to the legacy `gpt-image-2-*`
+route, and `5:4`, `4:5`, `2:1` and `1:2` are no longer rewritten to `4:3`, `3:4`, `16:9`
+and `9:16`. The legacy route is retained in the registry for its own callers and keeps its
+own rules; it is not a fallback for any 2.6 ratio.
 
 ### Variant discipline
 
-2.5 ships as `flare` (reference-fidelity / identity preservation) and `sunburst`
+2.6 ships as `flare` (reference-fidelity / identity preservation) and `sunburst`
 (prompt-built promotional scenes). **This fleet is pinned to `sunburst`.** `flare` is not
 registered and must not be introduced without a new operator ruling. A grep for
 `gpt-image.*flare` in this repo must return nothing outside this rule and the registry's
@@ -1521,11 +1517,12 @@ own documentation of what exists upstream.
 
 ### Constraint sets are PER-GENERATION and never merged
 
-- **2.5 entries:** prompt cap **20,000** (documented 2026-09-09); the 13-ratio allowed
-  set above; `27:16 / 16:27 / 9:8 / 8:9` at **1K only**; `2K`/`4K` available for the rest;
-  default resolution `1K`.
+- **2.6 entries:** prompt cap **32,000** (live schema 2026-11-08); the 16-ratio enum
+  above; **no per-resolution exclusions** — nothing is 1K-only and nothing is rejected at
+  `2K`/`4K` on the basis of aspect ratio; `27:16 / 16:27 / 9:8 / 8:9` are not members at
+  any resolution.
 - **Retained GPT-Image-2 entries:** UNCHANGED. They keep the **25,000** `OWNER_CONFIRMED`
-  cap (operator-confirmed 2026-08-27) and their original ratio list. Applying 2.5's caps
+  cap (operator-confirmed 2026-08-27) and their original ratio list. Applying 2.6's caps
   to these entries is a defect — it silently truncates prompts on the legacy route.
 
 ### What is UNCHANGED across both generations
@@ -1559,7 +1556,7 @@ and the image-to-image reference field **`input_urls`** (30 MB/file; JPEG/PNG/WE
    `universal-sops/presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md:187`.
    GPT-Image has text-to-image and image-to-image routes only.
 
-Owner rule 2026-10-05: the fleet GPT Image default follows the newest GPT Image generation in KIE's live catalog (resolved by Skill 74 `latest-family`); today that is GPT Image 2.5 Sunburst. Legacy ratio routing and substitutions above still apply.
+Owner rule 2026-11-08: the fleet GPT Image default follows the newest GPT Image generation in KIE's live catalog (resolved by Skill 74 `latest-family`); today that is GPT Image 2.6 Sunburst. The retired 2.5 ratio routing and substitutions no longer apply — 2.6 serves every ratio in its enum natively.
 
 Note 2026-10-05: KIE live schema 2026-10-05 reports a 20,000-character maxLength for legacy gpt-image-2; KIE enforces the live value, so 20,000 is the effective cap.
 
