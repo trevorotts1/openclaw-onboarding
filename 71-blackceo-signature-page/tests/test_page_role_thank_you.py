@@ -188,10 +188,13 @@ class SectionCountTests(RunCase):
             self.check(IDS, page_role="landing", copy_version="thank-you")
         self.assertIn("disagree", str(ctx.exception))
 
-    def test_landing_and_roles_without_a_structure_keep_the_legacy_path(self):
+    def test_landing_keeps_the_legacy_path_and_a_registered_role_does_not(self):
         self.assertEqual(self.check(STANDARD, copy_version="standard")[1], STANDARD)
-        self.assertEqual(self.check(STANDARD, copy_version="standard", page_role="product_selection")[1],
-                         STANDARD)
+        # product_selection is a registered form: it is never forced into landing's sections
+        # (finding 14; copy_forms.form_for_role is the guard both the builder and executor read)
+        with self.assertRaises(exe.ExecutorError) as ctx:
+            self.check(STANDARD, copy_version="standard", page_role="product_selection")
+        self.assertIn("disagree", str(ctx.exception))
 
     def test_the_copy_source_must_match_the_five_sections(self):
         (self.run / "copy.json").write_text(json.dumps({"sections": [{"id": i} for i in IDS[:4]]}))
