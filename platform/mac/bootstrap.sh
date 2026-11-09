@@ -122,6 +122,22 @@ exec 1> >(tee -a "$LOG_FILE") 2>&1
 #     2. <_SCRIPT_DIR>/.openclaw/platform/...  entry run from $HOME (the defect)
 #     3. <bootstrap.sh checkout root>/...      in-tree; correct for a real file
 #     4. $OPENCLAW_ROOT/platform/...           explicit override
+#     5. $HOME/.openclaw/platform/...          THE INSTALL ROOT
+#     6. $HOME/.openclaw/onboarding/platform/...   mirror layout
+#     7. $HOME/.openclaw/fleet-refresh/onboarding/platform/...  roll clone
+#     8. $HOME/openclaw-onboarding/platform/...    plain git checkout
+#
+#   Candidates 5-8 are anchored to $HOME, so they are independent of the caller's
+#   cwd AND of where bootstrap.sh itself lives. That is what closes the canonical
+#   `curl ... | bash` path: there _SCRIPT_DIR collapses to the caller's cwd and
+#   the bootstrap file sits in a mktemp file, so candidates 1-3 all miss on any
+#   box whose library is not in the cwd. 5 and 6 are the two layouts measured as
+#   real on a live Mac; 7 and 8 are the same library inside the roll's clone and
+#   a plain checkout. Candidate 5 duplicates 4 in the normal case ($OPENCLAW_ROOT
+#   defaults to $HOME/.openclaw) — deliberately, so a run where OPENCLAW_ROOT was
+#   never set still finds the install root.
+#   NOT covered: a run under `sudo` with sudo's HOME ($HOME then points at root's
+#   home). That box still warns; it is not silently passed.
 #   Empty candidates are SKIPPED, so a failed `cd` can never degrade to
 #   "/platform/...". A genuine miss still warns and is never a silent pass.
 _PR_LIB=""
@@ -130,7 +146,11 @@ for _pr_root in \
     "${_SCRIPT_DIR:-}" \
     "${_SCRIPT_DIR:+$_SCRIPT_DIR/.openclaw}" \
     "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)" \
-    "${OPENCLAW_ROOT:-}"; do
+    "${OPENCLAW_ROOT:-}" \
+    "${HOME:+$HOME/.openclaw}" \
+    "${HOME:+$HOME/.openclaw/onboarding}" \
+    "${HOME:+$HOME/.openclaw/fleet-refresh/onboarding}" \
+    "${HOME:+$HOME/openclaw-onboarding}"; do
     [ -n "$_pr_root" ] || continue
     _pr_cand="$_pr_root/platform/mac/power-resilience/lib-power-resilience.sh"
     _PR_TRIED="${_PR_TRIED}${_PR_TRIED:+ | }$_pr_cand"
