@@ -4,10 +4,11 @@ Installs GoHighLevel (Convert and Flow) funnel and website pages from approved
 designs: page builds, form and survey wiring, order forms, and the click
 through verification that proves a visitor can travel the whole funnel.
 
-Current engine doctrine: v4.0 (operator decision 2026-10-13, repo release
-v27.1.27). The OpenClaw Chrome extension is the PRIMARY browser engine,
-agent-browser is the FALLBACK lane, Playwright is the escape hatch, the REST
-ladder carries what the API officially carries, and CUA is the last resort.
+Current engine doctrine (operator decision 2026-11-08): proven API/official
+MCP/Skill 44 first; reusable Playwright recipes first for captured UI work;
+then the current OpenClaw Chrome extension, managed Agent Browser and enabled
+computer use. The new [recipe guide](references/PLAYWRIGHT-RECIPES.md) lists
+all entry points, commands and remaining live verification work.
 
 ## Start here
 
@@ -19,19 +20,16 @@ ladder carries what the API officially carries, and CUA is the last resort.
 
 ## Engine lanes
 
-- Lane 1 (PRIMARY): OpenClaw Chrome extension, driving the operator's real,
-  signed-in Chrome. Default for funnel page builds, step bindings, forms,
-  pop-ups, click actions, and order-form wiring.
-- Lane 2 (FALLBACK): agent-browser, gateway-only pooled singleton. Carries a
-  run when the extension channel is unavailable. Same snapshot discipline,
-  same teardown rules.
-- Lane 2b: hybrid iframe work (extension drives the GHL shell, CDP assist
-  inside cross-origin iframes). See TECHNIQUES-cross-origin-iframe-dragdrop.md.
-- Lane 3: Playwright escape hatch, used only when neither browser lane can
-  carry the job.
-- Lane 4: REST ladder (caf CLI, official MCP, direct REST) for the objects the
-  public API officially carries: products, redirects, custom values, tags.
-- Lane 5: CUA, last resort only.
+- Lane 1: verified API/official MCP/Skill 44 operations with current tenant,
+  version and scope receipts, including documented Courses v3 operations.
+- Lane 2: ready Playwright recipes in the existing managed authenticated
+  session. Profiles without captured controls are not eligible yet.
+- Lane 3: the current OpenClaw Chrome extension for new controls and recovery.
+- Lane 4: managed Agent Browser, with the existing CDP hybrid when needed.
+- Lane 5: enabled computer use as the last resort.
+
+The older procedure cards retain historical lane numbers. This ordering and
+SKILL.md govern new runs. Editor completion is not full-funnel QC PASS.
 
 Fail closed: if no lane verifies, the run stops and reports. It never
 improvises a path.

@@ -128,6 +128,7 @@ def test_live_build_runs_compile_then_build_with_journal(tmp_path):
     doc = ready_document(tmp_path)
     journal = tmp_path / "j.jsonl"
     calls = {}
+    selected_browser_executor = object()
 
     class Builder:
         def __init__(self, client, v4=None):
@@ -145,6 +146,7 @@ def test_live_build_runs_compile_then_build_with_journal(tmp_path):
             return "ok"
 
     with patch.object(wb, "CampaignBuilder", Builder), \
+            patch.object(wb, "resolve_browser_executor", return_value=selected_browser_executor), \
             patch.object(cli_mod, "_get_internal_client", return_value=object()), \
             patch.object(cli_mod, "_get_public_v4", return_value=(None, "off")):
         result = CliRunner().invoke(cli, [
@@ -152,6 +154,7 @@ def test_live_build_runs_compile_then_build_with_journal(tmp_path):
             "--from-automation-build", str(doc), "--journal", str(journal)])
     assert result.exit_code == 0, result.output
     assert calls["journal"] == str(journal)
+    assert calls["browser_executor"] is selected_browser_executor
     assert calls["folder"] == "launch-u44-05"
     key, wf = next(iter(calls["campaign"].items()))
     assert wf["unit_key"] == "u44-05/auto_pre_launch/email_pre_launch" and wf["promotional"] is True
