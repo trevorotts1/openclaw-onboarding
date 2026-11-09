@@ -45,6 +45,22 @@ def _terminal_auth_stop(operation, inputs, root, error_type, *, contract=False, 
     return receipt
 
 
+def _provider_objects(operation, inputs, objects):
+    """Bind receipts to every authored outline target, including on replay."""
+    identities = minimal_objects(operation, objects)
+    if operation == 'courses.lessons':
+        if __package__:
+            from .course_outline import _objects, validate_inputs
+        else:
+            from course_outline import _objects, validate_inputs
+        expected = _objects(validate_inputs(inputs))
+        actual_keys = sorted((obj['kind'], obj['id']) for obj in identities)
+        expected_keys = sorted((obj['kind'], obj['id']) for obj in expected)
+        if actual_keys != expected_keys:
+            raise Stop('Course outline receipt does not match the exact requested targets')
+    return identities
+
+
 def _execute_provider(operation, inputs, route, root, executor):
     """Share the editor lease so changing lanes cannot introduce a second writer."""
     replay_only = journal_present(root / 'provider-state.json')
@@ -82,7 +98,7 @@ def _execute_provider_owned(operation, inputs, route, root, executor, *, replay_
                 or saved.get('verification_required') is not True
                 or (uses_browser and saved.get('status') == 'API_STEPS_COMPLETE')):
             raise Stop('Saved provider outcome is malformed or belongs to another location')
-        objects = minimal_objects(operation, saved.get('objects'))
+        objects = _provider_objects(operation, inputs, saved.get('objects'))
         pending = prior['status'] == 'PROVIDER_NEEDS_VERIFICATION' or pending_proof(saved)
         # A journal may predate today's outcome whitelist. Validate its binding,
         # then return only minimal identities/status, never arbitrary saved data.
@@ -119,7 +135,7 @@ def _execute_provider_owned(operation, inputs, route, root, executor, *, replay_
                     'independent_readback', 'behavior_verification')):
             status = 'NEEDS_VERIFICATION'
         # Do not persist arbitrary API responses, credential strings or logs.
-        objects = minimal_objects(operation, result.get('objects', []))
+        objects = _provider_objects(operation, inputs, result.get('objects', []))
         outcome = {'status': status, 'location_id': inputs['location_id'],
                    'objects': [{'kind':obj['kind'], 'id':obj['id']} for obj in objects],
                    'verification_required': True}
@@ -200,6 +216,12 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
         secure_json(root / 'route.json', route)
     if route['lane'] != 'playwright':
         provider = (executors or {}).get(route['lane'])
+        if provider is None and operation == 'courses.lessons' and route['lane'] in ('public_api','skill44') and inputs.get('api_capability'):
+            if __package__:
+                from .course_outline import course_outline_executor
+            else:
+                from course_outline import course_outline_executor
+            provider = course_outline_executor
         if provider is None and operation in ('courses.create','courses.update','courses.lesson_quiz.create') and route['lane'] in ('public_api','skill44') and inputs.get('api_capability'):
             # Reuse the course implementation's real Skill 44 transport. An
             # official-MCP route always requires its actual injected MCP tool.
@@ -316,6 +338,13 @@ def main(argv=None):
                     from .delivery import validate_api_inputs
                 else:
                     from delivery import validate_api_inputs
+                validate_api_inputs(args.operation, inputs, selected)
+                status = 'VALIDATED_ONLY'
+            elif selected['lane'] in ('public_api','skill44','official_mcp') and args.operation == 'courses.lessons':
+                if __package__:
+                    from .course_outline import validate_api_inputs
+                else:
+                    from course_outline import validate_api_inputs
                 validate_api_inputs(args.operation, inputs, selected)
                 status = 'VALIDATED_ONLY'
             elif selected['lane'] in ('public_api','skill44','official_mcp') and args.operation == 'meetings.integrate' and inputs.get('integration_mode') == 'permanent_calendar_link':

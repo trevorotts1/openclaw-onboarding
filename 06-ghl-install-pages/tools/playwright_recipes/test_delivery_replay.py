@@ -26,7 +26,7 @@ class DeliveryReplayTests(unittest.TestCase):
                 def request(self,method,path,**kw):
                     if method == 'GET' and path in ('/courses/products/p','/courses/products/p/lessons/l'):
                         self.calls.append((method,path,kw['location_id'],None,None))
-                        return {'id':'parent'}
+                        return {'id':path.rsplit('/',1)[-1]}
                     if method == 'GET' and path.endswith('/quiz') and path not in self.objects:
                         self.calls.append((method,path,kw['location_id'],None,None))
                         raise delivery.DeliveryApiError(404)
