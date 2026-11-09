@@ -14,18 +14,21 @@ exactly those two reads and nothing else:
   * ``GET /funnels/funnel/list``  (locationId required; offset/limit paging)
   * ``GET /funnels/page``         (locationId + funnelId required;
                                    limit/offset required)
+  * ``GET /funnels/page/count``   (locationId + funnelId required; read-only
+                                   total for one funnel)
 
 READS ONLY. No public WRITE API for funnels/pages is documented by W3 and
 none is claimed or extrapolated here: funnel/page CREATE stays on the
 internal canvas / browser rails (see `ghl_rest_canvas.py`, labeled internal
 there and everywhere).
 
-GHL-169 ROUTE DISPOSITION: both reads are NAMED GAPS against the frozen public
-registry. The called paths (`/funnels/funnel/list`, `/funnels/page`) have no
-registry row; the registered alternatives (`funnels.list` GET /funnels/,
-`funnels.pages.list` GET /funnels/{funnelId}/pages) are different routes whose
-envelopes were never captured, so they are recorded — not substituted. See
-`ghl_route_gaps.py` entries for lines 145/146/258.
+WF24 ROUTE DISPOSITION (reconciled): the published contracts are
+`GET /funnels/funnel/list`, `GET /funnels/page` and `GET /funnels/page/count`
+with the query placement recorded in `shared-utils/ghl/funnel_read_contract.py`
+(WF24-CP01). The central operation registry is WF00-owned; where its frozen row
+still carries an older path, the shared object router reports that registration
+as DECLARED with the exact WF00 correction request instead of substituting a
+guessed route. This module never emits an old shape.
 
 CONTRACT PROVENANCE (step-1 capture, S06-07)
 --------------------------------------------
@@ -144,6 +147,13 @@ GHL_FUNNELS_VERSION = "2023-02-21"
 
 FUNNEL_LIST_PATH = "/funnels/funnel/list"
 PAGE_LIST_PATH = "/funnels/page"
+PAGE_COUNT_PATH = "/funnels/page/count"
+
+# Candidate keys for the page-count envelope. The published contract names the
+# operation but not the response key in the captured notes (UNVERIFIED), so the
+# reader accepts the tree's established count spellings and raises on anything
+# else. A bare integer body is also accepted.
+_PAGE_COUNT_KEYS = ("count", "total", "totalCount")
 
 # Design parameters, NOT contract claims (the capture states no ceiling):
 # rows requested per page, and the runaway cap on pages per read (the
@@ -553,6 +563,84 @@ def list_pages(
     return [normalize_page_row(r) for r in rows]
 
 
+def count_pages(
+    funnel_id: str,
+    location_id: str,
+    *,
+    pit: Optional[str] = None,
+    opener: Optional[Callable[[urllib.request.Request, int], Any]] = None,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> Dict[str, Any]:
+    """Read the public page count for ONE funnel (GET /funnels/page/count).
+
+    The documented required query parameters are locationId + funnelId; this
+    reader sends exactly those and nothing else. The response-key name is
+    UNVERIFIED in the captured notes, so extraction accepts the established
+    candidate keys or a bare integer and RAISES on an unrecognized shape.
+
+    Returns ``{"count": int, "source_key": str, "traceId": str|None}``. A count
+    is a read-only total: it never implies a page authoring route.
+    """
+    _require(funnel_id, "funnel_id")
+    _require(location_id, "location_id")
+    pit = pit if pit is not None else ghl_media.resolve_location_pit()
+    _opener = opener or _default_opener
+    what = "GET /funnels/page/count"
+
+    body = _get_json(
+        PAGE_COUNT_PATH,
+        {"locationId": location_id, "funnelId": funnel_id},
+        pit=pit, opener=_opener, timeout=timeout, what=what,
+    )
+
+    source_key = ""
+    value: Any = None
+    if isinstance(body, bool):
+        raise FunnelsReadError(
+            f"{what}: a boolean body is not a page count; refusing to guess"
+        )
+    if isinstance(body, int):
+        source_key = "<bare integer>"
+        value = body
+    elif isinstance(body, str) and body.strip().isdigit():
+        source_key = "<numeric string>"
+        value = int(body.strip())
+    elif isinstance(body, dict):
+        for key in _PAGE_COUNT_KEYS:
+            if body.get(key) is not None:
+                source_key = key
+                value = body[key]
+                break
+    else:
+        raise FunnelsReadError(
+            f"{what}: unrecognized response envelope; expected an integer or "
+            f"an object carrying a count under one of {_PAGE_COUNT_KEYS}. "
+            "Refusing to guess the shape."
+        )
+
+    if value is None:
+        raise FunnelsReadError(
+            f"{what}: no recognized count field ({_PAGE_COUNT_KEYS}) in the "
+            "response; refusing to report an unknown total"
+        )
+    if isinstance(value, bool):
+        raise FunnelsReadError(
+            f"{what}: count field {source_key!r} is a boolean, not a number"
+        )
+    try:
+        count = int(value)
+    except (TypeError, ValueError) as exc:
+        raise FunnelsReadError(
+            f"{what}: count field {source_key!r} is not a number ({value!r})"
+        ) from exc
+    if count < 0:
+        raise FunnelsReadError(
+            f"{what}: count field {source_key!r} is negative ({count})"
+        )
+    trace_id = body.get("traceId") if isinstance(body, dict) else None
+    return {"count": count, "source_key": source_key, "traceId": trace_id}
+
+
 # ── Self-test (fixtures only; no network, no credential resolution) ──────────
 
 class _FakeResponse:
@@ -614,6 +702,28 @@ def _selftest() -> int:
     if [p["id"] for p in got] != ["p1", "p2", "p3"]:
         errors.append(f"page read wrong: {got}")
 
+    # Page count: exact path + query, numeric parse, unknown key raises.
+    calls = []
+
+    def _count_opener(req: urllib.request.Request, timeout: int) -> Any:
+        calls.append(req)
+        return _FakeResponse({"count": 3, "traceId": "t"})
+
+    got = count_pages("f1", "loc1", pit="pit-selftest-placeholder-value", opener=_count_opener)
+    if got["count"] != 3 or got["source_key"] != "count":
+        errors.append(f"page count read wrong: {got}")
+    if calls:
+        split = urllib.parse.urlsplit(calls[0].full_url)
+        q = urllib.parse.parse_qs(split.query)
+        if split.path != PAGE_COUNT_PATH or q.get("funnelId") != ["f1"] or q.get("locationId") != ["loc1"]:
+            errors.append(f"page count request shape wrong: {calls[0].full_url}")
+    opener = lambda req, timeout: _FakeResponse({"pages": []})  # noqa: E731
+    try:
+        count_pages("f1", "loc1", pit="pit-selftest-placeholder-value", opener=opener)
+        errors.append("an unrecognized count envelope must raise FunnelsReadError")
+    except FunnelsReadError:
+        pass
+
     # An unmapped third status raises instead of being silently coerced.
     opener = _opener_for({0: {"pages": [{"_id": "p1", "status": "archived"}]}}, [])
     try:
@@ -648,12 +758,14 @@ __all__ = [
     "GHL_FUNNELS_VERSION",
     "FUNNEL_LIST_PATH",
     "PAGE_LIST_PATH",
+    "PAGE_COUNT_PATH",
     "DEFAULT_LIMIT",
     "DEFAULT_MAX_PAGES",
     "FunnelsReadError",
     "IncompleteInventoryError",
     "list_funnels",
     "list_pages",
+    "count_pages",
     "normalize_funnel_row",
     "normalize_page_row",
 ]

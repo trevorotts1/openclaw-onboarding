@@ -60,6 +60,7 @@ if _HERE not in sys.path:
 # The real W2A operation contracts.  Required: this module consumes them and
 # never re-declares a capability, ladder or endpoint of its own.
 import capability_inventory as contracts  # noqa: E402
+import funnel_read_contract as funnel_contract  # noqa: E402
 from capability_inventory import (  # noqa: E402,F401
     Capability,
     OpClass,
@@ -141,6 +142,29 @@ INCOMPLETE = "incomplete"
 #: carries JSON bodies only (public/transport.py json.dumps); the exact gap
 #: reason is the one ghl_route_gaps.py already records (_JSON_ONLY).
 MULTIPART_ROWS: FrozenSet[str] = frozenset({"media.upload"})
+
+#: Reconciled funnel read paths (WF24-CP01). This module does not own the
+#: central registry; when a frozen row still carries the older path the
+#: registration stays DECLARED and names the WF00 correction request.
+RECONCILED_FUNNEL_PATHS: Dict[str, str] = {
+    c.operation_id: c.path for c in funnel_contract.operations()
+}
+
+FROZEN_ROW_CHANGE_REQUESTS: Dict[str, str] = {
+    "funnels.list": (
+        "CHANGE REQUEST to WF00: correct funnels.list from GET /funnels/ to "
+        "GET /funnels/funnel/list (WF24-CP01)"
+    ),
+    "funnels.pages.list": (
+        "CHANGE REQUEST to WF00: correct funnels.pages.list from "
+        "GET /funnels/{funnelId}/pages to GET /funnels/page (WF24-CP01)"
+    ),
+    "funnels.pages.count": (
+        "CHANGE REQUEST to WF00: correct funnels.pages.count from "
+        "GET /funnels/{funnelId}/pages/count to GET /funnels/page/count "
+        "(WF24-CP01)"
+    ),
+}
 
 #: W2A restrictions that mark a whole family incomplete.  Keys are registration
 #: families; values are capability_inventory.RESTRICTIONS ids.  Validated
@@ -316,6 +340,23 @@ def classify(reg: "ObjectOperationRegistration") -> Tuple[str, str]:
                     % (cap.route, "%s %s" % (row.method, row.path_template))
                 )
 
+    if reg.reg_id in RECONCILED_FUNNEL_PATHS and row is not None:
+        expected_path = RECONCILED_FUNNEL_PATHS[reg.reg_id]
+        frozen_pair = (str(row.method).upper(), str(row.path_template))
+        if frozen_pair != ("GET", expected_path):
+            failures.append(
+                "frozen row still declares %s %s; the reconciled public shape "
+                "is GET %s (%s, %s). %s"
+                % (
+                    frozen_pair[0],
+                    frozen_pair[1],
+                    expected_path,
+                    funnel_contract.CONTRACT_ID,
+                    funnel_contract.CONTRACT_REVISION,
+                    FROZEN_ROW_CHANGE_REQUESTS[reg.reg_id],
+                )
+            )
+
     if failures:
         return DECLARED, "; ".join(failures) + (("; " + notes) if notes else "")
 
@@ -398,8 +439,8 @@ _RAW: Tuple[Tuple[str, str, Tuple[OpClass, ...], Optional[str], Optional[str]], 
     ("funnels.list", "funnels", (OpClass.LIST,), "funnels.list", "funnels.list"),
     ("funnels.pages.list", "funnels", (OpClass.LIST,), "funnels.pages_list", "funnels.pages.list"),
     ("funnels.pages.count", "funnels", (OpClass.READ,), "funnels.pages_count", "funnels.pages.count"),
-    ("forms.list", "forms", (OpClass.LIST,), None, "forms.list"),
-    ("surveys.list", "surveys", (OpClass.LIST,), None, "surveys.list"),
+    ("forms.list", "forms", (OpClass.LIST,), "forms.list", "forms.list"),
+    ("surveys.list", "surveys", (OpClass.LIST,), "surveys.list", "surveys.list"),
     ("products.list", "products", (OpClass.LIST,), None, "products.list"),
     ("products.create", "products", (OpClass.CREATE,), None, "products.create"),
     ("products.prices.list", "products", (OpClass.LIST,), None, "products.prices.list"),
@@ -464,6 +505,22 @@ def public_client_registrations() -> List[Dict[str, Any]]:
             "status": r.status,
             "reason": r.reason,
         }
+        if r.reg_id in RECONCILED_FUNNEL_PATHS:
+            spec = funnel_contract.contract(r.reg_id)
+            entry["reconciled_method"] = spec.method
+            entry["reconciled_path"] = spec.path
+            entry["reconciled_required_query"] = list(spec.required_query())
+            entry["reconciled_version_header"] = spec.version_header
+            entry["reconciled_version_state"] = spec.version_state
+            entry["reconciled_scope_state"] = spec.scope_state
+            entry["frozen_row_matches_reconciled"] = bool(
+                row is not None
+                and str(row.method).upper() == spec.method
+                and str(row.path_template) == spec.path
+            )
+            if not entry["frozen_row_matches_reconciled"]:
+                entry["change_request_owner"] = funnel_contract.CENTRAL_REGISTRY_OWNER
+                entry["change_request"] = FROZEN_ROW_CHANGE_REQUESTS[r.reg_id]
         if row is not None:
             entry.update({
                 "method": row.method,
@@ -686,7 +743,32 @@ def self_check() -> None:
     ))
     assert status == INCOMPLETE and "INCOMPLETE" in reason, (status, reason)
 
-    # 10. The extended table covers the GHL object families.
+    # 10. Reconciled funnel reads agree with the frozen interface (B01/IG-ROUTE-06).
+    for reg_id in ("funnels.list", "funnels.pages.list", "funnels.pages.count"):
+        spec = funnel_contract.contract(reg_id)
+        reg = registration(reg_id)
+        assert reg.capability_id == spec.capability_id, reg_id
+        cap = _cap_index()[spec.capability_id]
+        assert _norm_shape(cap.route) == (spec.method, spec.path), (reg_id, cap.route)
+        row = frozen_row(reg.public_operation_id)
+        assert row is not None, reg_id
+        frozen_pair = (str(row.method).upper(), str(row.path_template))
+        if frozen_pair != (spec.method, spec.path):
+            assert reg.status == DECLARED, (reg_id, reg.status)
+            assert spec.path in reg.reason and "WF00" in reg.reason, reg.reason
+        else:
+            assert reg.status == ROUTABLE, (reg_id, reg.status, reg.reason)
+
+    # 10b. Forms/surveys list bindings exist (no unbound read family).
+    for reg_id in ("forms.list", "surveys.list"):
+        assert registration(reg_id).capability_id == reg_id, reg_id
+        assert reg_id in _cap_index(), reg_id
+
+    # 10c. No old/new mixed shape is exposed as a reconciled path.
+    for reg_id, old in funnel_contract.OBSOLETE_FROZEN_SHAPES.items():
+        assert RECONCILED_FUNNEL_PATHS[reg_id] != old.split(" ", 1)[1], reg_id
+
+    # 11. The extended table covers the GHL object families.
     families = {r.family for r in REGISTRATIONS}
     for required in ("contacts", "custom_fields", "custom_values", "tags",
                      "opportunities", "pipelines", "conversations", "calendars",

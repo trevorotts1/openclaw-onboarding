@@ -23,11 +23,19 @@ default-deny (and, on the base revision, bound to a different tenant), so a call
 is refused *before transport*.  Tests inject an explicit ``CapabilityGate``; the
 production default stays default-deny.
 
-NAMED GAPS
-----------
+NAMED GAPS AND RECONCILED FUNNEL READS
+-------------------------------------
 Routes whose called path has no registry row, or whose shape the adapter cannot
 carry (multipart upload; internal SPA authoring), are NOT invented here.  They
 are recorded in ``ghl_route_gaps.py`` with file:line and reason.
+
+The three funnel reads are reconciled (WF24-CP01): GET /funnels/funnel/list,
+GET /funnels/page and GET /funnels/page/count. The helpers below call them
+through the central adapter, but refuse BEFORE transport while the current
+frozen row still declares an older path. That refusal is the honest state, not
+a fallback: the central row is WF00-owned and the correction request travels
+with the registration row. Once the row matches, the same helpers route with no
+code change.
 """
 
 from __future__ import annotations
@@ -43,6 +51,34 @@ from typing import Any, Callable, Mapping, Optional
 
 MEDIA_FILES_LIST = "media.files.list"
 SURVEYS_LIST = "surveys.list"
+
+FUNNEL_LIST = "funnels.list"
+FUNNEL_PAGES_LIST = "funnels.pages.list"
+FUNNEL_PAGES_COUNT = "funnels.pages.count"
+
+#: Reconciled funnel read contract (WF24-CP01), mirrored here because Skill 06
+#: ships standalone. The focused test asserts this mirror equals
+#: tests/fixtures/ghl_compat/funnel_read_contracts.json, so drift fails loudly.
+RECONCILED_FUNNEL_READS = {
+    FUNNEL_LIST: {
+        "method": "GET",
+        "path": "/funnels/funnel/list",
+        "required_query": ("locationId", "offset", "limit"),
+        "optional_query": ("type", "category", "parentId", "name"),
+    },
+    FUNNEL_PAGES_LIST: {
+        "method": "GET",
+        "path": "/funnels/page",
+        "required_query": ("locationId", "funnelId", "limit", "offset"),
+        "optional_query": ("name",),
+    },
+    FUNNEL_PAGES_COUNT: {
+        "method": "GET",
+        "path": "/funnels/page/count",
+        "required_query": ("locationId", "funnelId"),
+        "optional_query": (),
+    },
+}
 
 DEFAULT_BASE_URL = "https://services.leadconnectorhq.com"
 
@@ -419,6 +455,182 @@ def list_media_files(
     }
 
 
+def _funnel_query(operation_id: str, *, location_id: str, **values: object) -> dict:
+    """Exact query mapping for one reconciled funnel read (contract order)."""
+    spec = RECONCILED_FUNNEL_READS[operation_id]
+    declared = set(spec["required_query"]) | set(spec["optional_query"])
+    unknown = sorted(set(values) - declared)
+    if unknown:
+        raise PublicRouteError(
+            operation_id, status="validation_error", rule="unknown_query_parameter"
+        )
+    query = {
+        "locationId": str(location_id),
+        "offset": int(values.get("offset", 0)),
+        "limit": int(values.get("limit", 100)),
+    }
+    if "funnelId" in spec["required_query"]:
+        funnel_id = values.get("funnelId")
+        if not funnel_id or not str(funnel_id).strip():
+            raise PublicRouteError(
+                operation_id, status="validation_error", rule="funnel_id_required"
+            )
+        query["funnelId"] = str(funnel_id)
+    for name in spec["optional_query"]:
+        value = values.get(name)
+        if value is not None and str(value).strip():
+            query[name] = str(value)
+    return query
+
+
+def assert_reconciled_funnel_row(operation_id: str) -> None:
+    """Refuse before transport while the frozen registry row is stale.
+
+    The central row is WF00-owned. Emitting the old shape would be a mixed
+    old/new request (IG-ROUTE-09), so the call fails loudly instead.
+    """
+    spec = RECONCILED_FUNNEL_READS[operation_id]
+    registry = engine()["OPERATIONS"]
+    row = registry.get(operation_id)
+    if row is None:
+        raise PublicRouteError(
+            operation_id, status="contract_mismatch", rule="frozen_row_missing"
+        )
+    if (
+        str(row.method).upper() != spec["method"]
+        or str(row.path_template) != spec["path"]
+    ):
+        raise PublicRouteError(
+            operation_id,
+            status="contract_mismatch",
+            rule="reconciled_path_mismatch",
+        )
+
+
+def list_funnels(
+    location_id: str,
+    pit: str,
+    *,
+    offset: int = 0,
+    limit: int = 100,
+    opener: Optional[Callable[[urllib.request.Request, float], Any]] = None,
+    capability: Any = None,
+    capability_record: Optional[str] = None,
+    timeout: float = 60.0,
+    **optional: object,
+) -> dict:
+    """One PUBLIC page of GET /funnels/funnel/list through the adapter."""
+    query = _funnel_query(
+        FUNNEL_LIST, location_id=location_id, offset=offset, limit=limit, **optional
+    )
+    assert_reconciled_funnel_row(FUNNEL_LIST)
+    adapter, transport = make_adapter(
+        location_id, pit, opener=opener, capability=capability,
+        capability_record=capability_record, timeout=timeout,
+    )
+    body = call_public(
+        adapter, transport, FUNNEL_LIST, location_id, query=query, timeout=timeout
+    )
+    if not isinstance(body, dict) or not isinstance(body.get("funnels"), list):
+        raise PublicRouteError(
+            FUNNEL_LIST, status="validation_error", rule="payload_no_funnels"
+        )
+    return {
+        "funnels": body["funnels"],
+        "count": body.get("count"),
+        "traceId": body.get("traceId"),
+        "http": 200,
+    }
+
+
+def list_funnel_pages(
+    location_id: str,
+    pit: str,
+    funnel_id: str,
+    *,
+    offset: int = 0,
+    limit: int = 100,
+    opener: Optional[Callable[[urllib.request.Request, float], Any]] = None,
+    capability: Any = None,
+    capability_record: Optional[str] = None,
+    timeout: float = 60.0,
+    **optional: object,
+) -> Any:
+    """One PUBLIC page of GET /funnels/page through the adapter."""
+    query = _funnel_query(
+        FUNNEL_PAGES_LIST,
+        location_id=location_id,
+        funnelId=funnel_id,
+        offset=offset,
+        limit=limit,
+        **optional,
+    )
+    assert_reconciled_funnel_row(FUNNEL_PAGES_LIST)
+    adapter, transport = make_adapter(
+        location_id, pit, opener=opener, capability=capability,
+        capability_record=capability_record, timeout=timeout,
+    )
+    return call_public(
+        adapter, transport, FUNNEL_PAGES_LIST, location_id,
+        query=query, timeout=timeout,
+    )
+
+
+def count_funnel_pages(
+    location_id: str,
+    pit: str,
+    funnel_id: str,
+    *,
+    opener: Optional[Callable[[urllib.request.Request, float], Any]] = None,
+    capability: Any = None,
+    capability_record: Optional[str] = None,
+    timeout: float = 60.0,
+) -> dict:
+    """GET /funnels/page/count through the adapter; returns the numeric total."""
+    query = _funnel_query(
+        FUNNEL_PAGES_COUNT, location_id=location_id, funnelId=funnel_id
+    )
+    assert_reconciled_funnel_row(FUNNEL_PAGES_COUNT)
+    adapter, transport = make_adapter(
+        location_id, pit, opener=opener, capability=capability,
+        capability_record=capability_record, timeout=timeout,
+    )
+    body = call_public(
+        adapter, transport, FUNNEL_PAGES_COUNT, location_id,
+        query=query, timeout=timeout,
+    )
+    source_key = ""
+    value = None
+    if isinstance(body, bool):
+        value = None
+    elif isinstance(body, int):
+        source_key, value = "<bare integer>", body
+    elif isinstance(body, dict):
+        for key in ("count", "total", "totalCount"):
+            if body.get(key) is not None:
+                source_key, value = key, body[key]
+                break
+    if value is None or isinstance(value, bool):
+        raise PublicRouteError(
+            FUNNEL_PAGES_COUNT, status="validation_error", rule="payload_no_count"
+        )
+    try:
+        total = int(value)
+    except (TypeError, ValueError) as exc:
+        raise PublicRouteError(
+            FUNNEL_PAGES_COUNT, status="validation_error", rule="count_not_numeric"
+        ) from exc
+    if total < 0:
+        raise PublicRouteError(
+            FUNNEL_PAGES_COUNT, status="validation_error", rule="count_negative"
+        )
+    return {
+        "count": total,
+        "source_key": source_key,
+        "traceId": body.get("traceId") if isinstance(body, dict) else None,
+    }
+
+
 def list_surveys(
     location_id: str,
     pit: str,
@@ -449,14 +661,22 @@ def list_surveys(
 
 __all__ = [
     "BROWSER_UA",
+    "FUNNEL_LIST",
+    "FUNNEL_PAGES_COUNT",
+    "FUNNEL_PAGES_LIST",
     "MEDIA_FILES_LIST",
     "MEDIA_LIST_TYPES",
     "MediaTypeRequired",
     "OpenerTransport",
     "PublicRouteError",
     "SURVEYS_LIST",
+    "RECONCILED_FUNNEL_READS",
+    "assert_reconciled_funnel_row",
     "call_public",
+    "count_funnel_pages",
     "engine",
+    "list_funnel_pages",
+    "list_funnels",
     "list_media_files",
     "list_surveys",
     "make_adapter",
