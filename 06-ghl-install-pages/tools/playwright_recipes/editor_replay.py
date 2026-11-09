@@ -45,6 +45,9 @@ STATUSES = {
     'native_order_confirmation': {'ORDER_CONFIRMATION_SAVED_AND_REOPENED', 'ORDER_CONFIRMATION_REUSED_AND_REOPENED'},
     'native_course_theme': {'COURSE_THEME_SAVED_AND_REOPENED'},
     'native_course_blocks': {'COURSE_BLOCKS_SAVED_AND_REOPENED'},
+    'native_course_text_blocks': {'COURSE_TEXT_BLOCKS_SAVED_AND_REOPENED'},
+    'native_course_section_media': {'COURSE_SECTION_MEDIA_SAVED_AND_REOPENED'},
+    'native_course_image_blocks': {'COURSE_IMAGE_BLOCKS_SAVED_AND_REOPENED'},
     'native_course_theme_media': {'COURSE_THEME_MEDIA_SAVED_AND_REOPENED'},
     'native_course_block_media': {'COURSE_BLOCK_MEDIA_SAVED_AND_REOPENED'},
     'form_submission': {'FORM_SUBMISSION_SAVED_AND_REOPENED'},
@@ -85,6 +88,9 @@ REQUIRED = {
     'native_form_schedule': ('editor_url', 'enabled', 'configuration_sha256', 'independent_readback', 'behavior_verified', 'submission_verified'),
     'native_course_theme': ('editor_url', 'course_id', 'template_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed'),
     'native_course_blocks': ('editor_url', 'course_id', 'template_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed', 'added_block_ids', 'block_ids'),
+    'native_course_text_blocks': ('editor_url','course_id','template_id','configuration_sha256','independent_readback','functional_verified','activation_performed','added_block_ids','block_ids','block_count'),
+    'native_course_section_media': ('editor_url','course_id','template_id','configuration_sha256','independent_readback','functional_verified','activation_performed','images'),
+    'native_course_image_blocks': ('editor_url','course_id','template_id','configuration_sha256','independent_readback','functional_verified','activation_performed','added_block_ids','block_ids','block_count','images'),
     'native_course_theme_media': ('editor_url', 'course_id', 'template_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed', 'source_sha256', 'background_url_sha256'),
     'native_course_block_media': ('editor_url', 'course_id', 'template_id', 'block_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed', 'source_sha256', 'image_url_sha256'),
     'native_condition_stack': ('kind', 'editor_url', 'configuration_sha256', 'rule_count', 'independent_readback', 'behavior_verified', 'submission_verified'),
@@ -105,7 +111,7 @@ BOOLEANS = frozenset(('behavior_verified', 'submission_verified', 'payment_verif
     'products_missing', 'form_submitted', 'notifications_sent', 'legal_copy_saved', 'legal_acceptance',
     'conditional_precedence_present', 'conditional_precedence_acknowledged', 'activation_performed',
     'settings_persisted', 'installation_verified', 'appointment_created', 'dynamic_room_generation_verified', 'notification_behavior_verified', 'native_name_seen_after_reload', 'slug_identity_verified', 'portal_identity_verified', 'description_verified', 'reused', 'discovery_verified', 'group_activation_attempted', 'dependency_api_used', 'native_deactivation_attempted', 'inactive_verified', 'disqualification_executed'))
-COUNTS = frozenset(('count', 'radius', 'render_checks', 'recipient_count', 'questions', 'source_slide', 'target_slide', 'rule_count', 'field_count', 'cohost_count', 'addition_count', 'removal_count', 'clause_count', 'question_count', 'target_page'))
+COUNTS = frozenset(('count', 'radius', 'render_checks', 'recipient_count', 'questions', 'source_slide', 'target_slide', 'rule_count', 'field_count', 'cohost_count', 'addition_count', 'removal_count', 'clause_count', 'question_count', 'target_page', 'block_count'))
 IDS = frozenset(('element_id', 'section_id', 'component_id', 'page_id', 'calendar_id', 'course_id', 'template_id', 'slug', 'staff_id', 'form_id', 'block_id', 'product_id', 'price_id'))
 HASHES = frozenset(('html_sha256', 'css_sha256', 'value_sha256', 'configuration_sha256', 'requested_slug_sha256', 'source_sha256', 'background_url_sha256', 'observed_slug_sha256', 'embed_sha256', 'image_url_sha256'))
 ID_PATTERN = re.compile(r'[A-Za-z0-9_-]{1,256}')
@@ -183,6 +189,18 @@ def _result(step, value, job):
         _fail()
     embed = None
     insertion = None
+    text_blocks = None
+    section_media = None
+    image_blocks = None
+    if action == 'native_course_image_blocks':
+        from playwright_recipes.course_image_blocks import validate_receipt
+        image_blocks = validate_receipt(dict(value),step)
+    if action == 'native_course_section_media':
+        from playwright_recipes.course_section_media import validate_receipt
+        section_media = validate_receipt(dict(value),step)
+    if action == 'native_course_text_blocks':
+        from playwright_recipes.course_text_blocks import validate_receipt
+        text_blocks = validate_receipt(dict(value),step)
     if action == 'native_form_embed':
         from playwright_recipes.form_embed import validate_receipt
         embed = validate_receipt(value, step)
@@ -227,7 +245,7 @@ def _result(step, value, job):
         safe[key] = value[key]
     for key in ('editor_url', 'container_url', 'form_url'):
         if key in value:
-            if action in ('native_course_theme', 'native_course_blocks', 'native_course_theme_media', 'native_course_block_media') and key == 'editor_url':
+            if action in ('native_course_theme', 'native_course_blocks', 'native_course_theme_media', 'native_course_block_media', 'native_course_text_blocks', 'native_course_section_media', 'native_course_image_blocks') and key == 'editor_url':
                 from playwright_recipes.course_theme import editor_url
                 expected_url = editor_url(step['payload'])
                 if value[key] != expected_url:
@@ -349,6 +367,15 @@ def _result(step, value, job):
                 or value['independent_readback'] != 'VERIFIED'
                 or value['functional_verified'] is not False or value['activation_performed'] is not False):
             _fail()
+    if action == 'native_course_image_blocks':
+        safe['images'] = image_blocks['images']
+        safe['added_block_ids'] = image_blocks['added_block_ids']
+        safe['block_ids'] = image_blocks['block_ids']
+    if action == 'native_course_section_media':
+        safe['images'] = section_media['images']
+    if action == 'native_course_text_blocks':
+        safe['added_block_ids'] = text_blocks['added_block_ids']
+        safe['block_ids'] = text_blocks['block_ids']
     if action == 'native_course_blocks':
         from playwright_recipes.course_blocks import configuration_hash, validate_inputs
         plan = validate_inputs(step['payload'])

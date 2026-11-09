@@ -1,7 +1,7 @@
 {
   "schema": "skill6-build-inventory/2",
-  "updated_at": "2026-11-09T18:11:56.022210+00:00",
-  "scope": "33 named catalog operations; executable build coverage, not elapsed effort or live readiness.",
+  "updated_at": "2026-11-09T20:10:05.379816+00:00",
+  "scope": "33 named catalog operations; equal-weight executable build coverage of frozen source, not elapsed effort, feature-weighted progress or live readiness.",
   "counts": {
     "BUILT": 21,
     "PARTIAL": 11,
@@ -10,7 +10,7 @@
   "remaining_named_operations_requiring_build_work": 12,
   "definition": {
     "BUILT": "Concrete executable implementation exists for the named operation contract; provider/capture/input credentials and deferred proof alone are not missing code.",
-    "PARTIAL": "Concrete executable implementation exists but identified requested features within its area lack native schema/action/dispatch.",
+    "PARTIAL": "Concrete implementation exists, but identified requested controls or native identity/action paths within the recorded operation area remain unimplemented or cannot complete on the measured native shape.",
     "GENERIC_ONLY": "Named operation has only generic recorded-profile execution, without a dedicated implementation."
   },
   "operations": [
@@ -18,126 +18,784 @@
       "operation": "funnels.create",
       "recipe_name": "01_create_funnel",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R09",
+        "R18"
+      ],
+      "implemented_executable_features": [
+        "Create or reuse the exact named funnel and its initial named page/path; preserve container reuse state so page creation does not assume a new empty funnel."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "ensure_container",
+          "line": 657,
+          "current_line": 681
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "ensure_page",
+          "line": 793,
+          "current_line": 817
+        }
+      ],
+      "deferred_live_proof": [
+        "Final installed native create/reuse and no-duplicate recovery receipt; desktop/mobile page rendering."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [],
+      "boundary": "Funnel/container/page creation; page content and native split variants are separate operations."
     },
     {
       "operation": "funnels.add_page",
       "recipe_name": "02_add_funnel_page",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R10",
+        "R11"
+      ],
+      "implemented_executable_features": [
+        "Select an exact existing funnel and reconcile the requested page/path using the complete native page inventory and scoped editor action."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "ensure_container",
+          "line": 657,
+          "current_line": 681
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "ensure_page",
+          "line": 793,
+          "current_line": 817
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native multiple-page addition/reuse and persisted path/content receipt."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": []
     },
     {
       "operation": "websites.create",
       "recipe_name": "03_create_website",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R12",
+        "R18"
+      ],
+      "implemented_executable_features": [
+        "Create or reuse the exact named website and initial named page/path through the maintained native container/page executor."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "ensure_container",
+          "line": 657,
+          "current_line": 681
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "ensure_page",
+          "line": 793,
+          "current_line": 817
+        }
+      ],
+      "deferred_live_proof": [
+        "Final installed native create/reuse and duplicate-prevention receipt; desktop/mobile rendering."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": []
     },
     {
       "operation": "websites.add_page",
       "recipe_name": "04_add_website_page",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R13"
+      ],
+      "implemented_executable_features": [
+        "Reconcile a page/path under the selected website using the same scoped, multiple-page native inventory as funnels."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "ensure_container",
+          "line": 657,
+          "current_line": 681
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "ensure_page",
+          "line": 793,
+          "current_line": 817
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native existing-website multiple-page addition/update and persisted path receipt."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": []
     },
     {
       "operation": "pages.install_code",
       "recipe_name": "05_install_external_code",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R11",
+        "R13",
+        "R15",
+        "R17",
+        "R18"
+      ],
+      "implemented_executable_features": [
+        "Install approved fragment/full-document HTML through the shared normalization path; bind exact code element/section and preserve unrelated content; configure Full width and entire-width rows and verify the saved rendered marker."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "install_html",
+          "line": 873,
+          "current_line": 897
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "full_width",
+          "line": 823,
+          "current_line": 847
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/pages_checkout.py",
+          "function": "resolve_code_target",
+          "line": 399
+        }
+      ],
+      "deferred_live_proof": [
+        "Final installed script on representative existing multi-section pages; desktop/mobile rendered content, order and width proof."
+      ],
+      "input_or_capture_dependencies": [
+        "Approved HTML, marker, SEO inputs and exact existing target identity or captured target profile."
+      ],
+      "retired_previous_gaps": []
     },
     {
       "operation": "pages.install_embed",
       "recipe_name": "06_install_hosted_embed",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R16",
+        "R17",
+        "R18"
+      ],
+      "implemented_executable_features": [
+        "Use the native code-element writer for an approved hosted iframe/script fragment only after a location/hash/source-URL-bound embeddability PASS receipt."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/recipe_cli.py",
+          "function": "compile_recipe",
+          "line": 13
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "install_html",
+          "line": 873,
+          "current_line": 897
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "full_width",
+          "line": 823,
+          "current_line": 847
+        }
+      ],
+      "deferred_live_proof": [
+        "Native desktop/mobile rendering, actual hosted embedding/authentication permission and the intended application behavior."
+      ],
+      "input_or_capture_dependencies": [
+        "Actual embeddability receipt and authored fragment; an app URL alone is insufficient."
+      ],
+      "retired_previous_gaps": []
     },
     {
       "operation": "checkout.wrap_native",
       "recipe_name": "07_wrap_native_checkout",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R19"
+      ],
+      "implemented_executable_features": [
+        "Install approved before/native-order-form/after design in order; configure the native one/two-step component and preserve payment ownership. Product/price binding uses its dedicated native checkout operation."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/recipe_cli.py",
+          "function": "compile_recipe",
+          "line": 13
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "checkout",
+          "line": 970,
+          "current_line": 994
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "install_html",
+          "line": 873,
+          "current_line": 897
+        }
+      ],
+      "deferred_live_proof": [
+        "Native saved element order and desktop/mobile layout; downstream authorized payment journey."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [],
+      "boundary": "Native component placement and surrounding design. A component save is not product/price/payment readiness."
     },
     {
       "operation": "checkout.one_click_upsell",
       "recipe_name": "08_configure_native_upsell",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R21"
+      ],
+      "implemented_executable_features": [
+        "Dedicated captured-adapter path validates the location-bound product/price, source/upsell step and prior-payment contract, then applies the native purchase-action binding through the canonical order-component executor. A separately supplied recorded profile remains a fallback."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/recipe_cli.py",
+          "function": "compile_recipe",
+          "line": 13
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/pages_checkout.py",
+          "function": "validate_checkout_inputs",
+          "line": 56
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/pages_checkout.py",
+          "function": "configure_native_checkout",
+          "line": 241
+        }
+      ],
+      "deferred_live_proof": [
+        "Final client native adapter execution and independent binding readback; authorized test-mode accept/decline and prior-payment reuse."
+      ],
+      "input_or_capture_dependencies": [
+        "Real same-location/page adapter capture and complete verified Skill44/79 offer/prior-payment inventory; a fixture adapter is not a live capture."
+      ],
+      "retired_previous_gaps": [],
+      "boundary": "Concrete adapter-driven build exists; native runtime capture and test payment are execution prerequisites/proof, not a replacement implementation."
     },
     {
       "operation": "funnels.split_variant",
       "recipe_name": "09_create_split_variant",
       "status": "GENERIC_ONLY",
       "missing_executable_features": [
-        "No executable dedicated native variant/traffic handler. Actual control/variant identity, creation/save and traffic allocation captures are still required."
-      ]
+        "No dedicated executable native variant creation/reuse handler, source/variant ID binding, or traffic-allocation writer/readback. The domain prerequisite reader and generic profile do not implement these writes."
+      ],
+      "requirements": [
+        "R14"
+      ],
+      "implemented_executable_features": [
+        "Read-only exact source-step prerequisite check reports the captured missing-domain blocker. A generic recorded-options recipe exists."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/pages_checkout.py",
+          "function": "check_split_prerequisites",
+          "line": 302
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "options",
+          "line": 1424,
+          "current_line": 1460
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/recipe_cli.py",
+          "function": "compile_recipe",
+          "line": 13
+        }
+      ],
+      "deferred_live_proof": [
+        "Native creation/allocation/no-duplicate acceptance can be collected only after the missing dedicated implementation and actual control capture."
+      ],
+      "input_or_capture_dependencies": [
+        "Configured funnel domain and current native variation/allocation controls."
+      ],
+      "retired_previous_gaps": []
     },
     {
       "operation": "pages.seo",
       "recipe_name": "10_fill_page_seo",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R22"
+      ],
+      "implemented_executable_features": [
+        "Set authored title, description, three researched visible-copy keywords, verified author, canonical and English language; inspect rendered metadata after saving, including replacement of existing values."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "seo",
+          "line": 928,
+          "current_line": 952
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native existing-page metadata update and independent rendered metadata receipt."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": []
     },
     {
       "operation": "forms.create",
       "recipe_name": "11_create_form",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R23"
+      ],
+      "implemented_executable_features": [
+        "Create/reuse an exact named native form, configure required states for captured standard fields, save and reopen from the form list."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "make_form",
+          "line": 991,
+          "current_line": 1015
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native identity/required-state run, field validation and fixture submission."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [],
+      "boundary": "Form shell and default standard required fields. Advanced field creation/properties/consent are tracked under forms.configure."
     },
     {
       "operation": "forms.configure",
       "recipe_name": "12_configure_form_options",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Captured Address child properties, consent, existing Radio placement and four-layout/Advanced native embed export are implemented. Additional native field/widget types and remaining integration controls remain incomplete."
+        "Remaining R24 advanced widget families have no dedicated typed placement/property/options path: numeric, checkbox/multiselect, file upload and signature, plus other visible uncaptured builder widgets. Radio is the only authored custom-schema dependency writer in this package.",
+        "Address parent Auto-Complete Address and Mandatory to Select Address in Search Bar controls have no authored native schema/action; existing child-property writers do not implement them.",
+        "Dropdown/LARGE_TEXT arbitrary legacy reuse cannot be proven from canvas shape because native wrappers expose no API field ID; an independently grounded reuse mechanism remains unavailable. Fresh one-field insertion and completed journal replay are implemented.",
+        "Native embed button color and alternate icon changes have no captured authored writer; existing color/icon data are preserved. Native integration surfaces outside the captured embed contract remain unaudited rather than assumed complete."
+      ],
+      "requirements": [
+        "R24",
+        "R25",
+        "R26",
+        "R27"
+      ],
+      "implemented_executable_features": [
+        "Place thirteen captured built-ins including Website, Organization, Full Name, Date of birth and Address; preserve complete canvas identities.",
+        "Edit captured simple-field label/placeholder/short label/Query Key/width/Required/Hidden/default properties, plus Address child Query Keys and child label/placeholder/short label/Required/Hidden/defaults.",
+        "Edit inventoried existing consent copy and Required/Query Key controls.",
+        "Place same-location API-inventoried Radio, Single Dropdown (SINGLE_OPTIONS) and multiline (LARGE_TEXT) custom fields. New Dropdown/LARGE_TEXT placement binds the exact API picker ID to the measured one-widget delta; arbitrary disabled-row legacy reuse is refused without durable placement evidence.",
+        "Provision authored Radio definitions through the measured API dependency rail and chain them into an exact existing form with separate journals.",
+        "Export all four captured native embed layouts and Advanced activation/trigger/deactivation/cookie-consent settings, plus button corner/font/type/size appearance, with twice-read exact validated code bytes."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/field_placement.py",
+          "function": "configure",
+          "line": 272
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/assessments.py",
+          "function": "configure_fields",
+          "line": 317
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/forms_advanced.py",
+          "function": "configure",
+          "line": 235
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/forms_advanced.py",
+          "function": "configure_consent",
+          "line": 435
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/forms_advanced.py",
+          "function": "configure_object_fields",
+          "line": 715
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/dropdown_fields.py",
+          "function": "configure",
+          "line": 186
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/large_text_fields.py",
+          "function": "configure",
+          "line": 193
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_radio_chain.py",
+          "function": "build_form_questions",
+          "line": 63
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_embed.py",
+          "function": "configure",
+          "line": 511
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native placement/property/consent runs and saved readback; native backend/shared-field effects; installed embed and cookie/event behavior; fixture submissions. Exported settings are per-embed artifacts and are not claimed globally saved or installed."
+      ],
+      "input_or_capture_dependencies": [
+        "Exact tenant/editor and native before-values, canonical same-location API field inventory, caller-authored text and actual observed query identities."
+      ],
+      "retired_previous_gaps": [
+        "Address child properties beyond Query Keys.",
+        "Radio, Single Dropdown and LARGE_TEXT placement with canonical API inventory; authored Radio-to-form dependency chain.",
+        "Native consent editing; four embed layouts/Advanced and captured button appearance export."
       ]
     },
     {
       "operation": "forms.style",
       "recipe_name": "13_polish_form_css",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R29"
+      ],
+      "implemented_executable_features": [
+        "Preserve existing client CSS while replacing only the owned radius or caller-approved CSS block; support typeless inputs and requested computed-style checks after native save/reopen/preview."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "form_css",
+          "line": 1029,
+          "current_line": 1053
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/assessments.py",
+          "function": "merge_css",
+          "line": 147
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/assessments.py",
+          "function": "configure_css",
+          "line": 166
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native saved CSS and representative desktop/mobile computed-style/render receipts."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": []
     },
     {
       "operation": "surveys.create",
       "recipe_name": "14_create_survey",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Authored Radio definition creation/reuse through measured API fallback and placement in an exact existing survey/slide are implemented. Additional native question types, and a combined new-survey shell/question flow, remain incomplete."
-      ]
+        "Survey-specific native question creation beyond the limited standard-field shell and Radio object-field placement is absent, including authored choices and other R31 question/widget types.",
+        "No typed complete new-survey slide/question authoring flow with independent complete saved inventory; the shell returns ASSESSMENT_SAVE_SUBMITTED and independent_readback REQUIRED."
+      ],
+      "requirements": [
+        "R31"
+      ],
+      "implemented_executable_features": [
+        "Native survey shell create/reuse and captured standard-field/page setup are executable.",
+        "Separate existing-survey flow provisions authored Radio definitions through API and places them on one exact existing slide."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "assessment",
+          "line": 1082,
+          "current_line": 1106
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "drag_field",
+          "line": 1065,
+          "current_line": 1089
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/radio_dependencies.py",
+          "function": "build_survey_questions",
+          "line": 309
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/survey_fields.py",
+          "function": "configure",
+          "line": 123
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native shell/question/slide persistence and authorized fixture completion."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [
+        "Authored Radio dependency provisioning and exact existing-slide placement are implemented, but they are not a new-survey question builder."
+      ],
+      "boundary": "Existing-survey Radio placement is shared implementation progress; it does not close creation of a complete requested survey."
     },
     {
       "operation": "quizzes.create",
       "recipe_name": "15_create_marketing_quiz",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Native creation of authored quiz question types remains partial; current blank/standard-field creation does not cover all requested questions."
+        "Native Multiple Dropdown and Picture Choice tile creation/identity/options are not implemented in this frozen source.",
+        "Reliable placement on an existing populated quiz page remains unresolved: the measured lower-edge attempt can create another page, which the writer now refuses during its first insertion poll. Explicit new-page mode is separate authored intent, not an append fallback.",
+        "No complete typed new-quiz shell-to-authored-questions-to-scoring/results flow with full independent shell readback. Existing-quiz question jobs do not establish that the new-shell path is complete."
+      ],
+      "requirements": [
+        "R33"
+      ],
+      "implemented_executable_features": [
+        "Native marketing-quiz shell creation/reuse is distinct from survey/course quizzes.",
+        "Existing-quiz configuration now creates seven captured tile profiles: Short Answer, Long Answer, Number, Single Choice, Yes/No, Multiple Choice and Single Dropdown, with full before-inventory and independent reopened readback.",
+        "An explicit create_page:true mode authors one question on an explicitly appended empty Page N+1, with generated caption/owner/empty-marker guards and the original request hash."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "assessment",
+          "line": 1082,
+          "current_line": 1106
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_text_questions.py",
+          "function": "configure",
+          "line": 431,
+          "current_line": 495
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_text_questions.py",
+          "function": "_target_page",
+          "line": 292,
+          "current_line": 331
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_choice_questions.py",
+          "function": "configure",
+          "line": 287,
+          "current_line": 385
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_written_questions.py",
+          "function": "configure",
+          "line": 66
+        }
+      ],
+      "deferred_live_proof": [
+        "Final installed native question/save/reopen acceptance and actual fixture answers/backend field effects; native client acceptance is not inferred from DOM doubles."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [
+        "Blanket absence of native question creation: six native field types/seven captured tiles and explicit new empty-page authoring now exist."
       ]
     },
     {
       "operation": "communities.create",
       "recipe_name": "16_create_community",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R35"
+      ],
+      "implemented_executable_features": [
+        "Inventory Active/Inactive lists, create an authored exact name/slug/description once, bind the native creation redirect, keep discovery off and optionally deactivate only the just-created identified group.",
+        "Verify active existing-group reuse through the exact native Login popup name/slug identity."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/community_creation.py",
+          "function": "inventory",
+          "line": 167
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/community_creation.py",
+          "function": "configure",
+          "line": 319
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/community_creation.py",
+          "function": "_reuse_active",
+          "line": 240
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/community_creation.py",
+          "function": "_deactivate_created",
+          "line": 281
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native creation/reuse/deactivation and saved portal identity receipt."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [],
+      "boundary": "Bounded native creation and positively identified active reuse. Existing inactive or ambiguous reuse refuses; the remaining app-to-portal reuse/parity gap is tracked under communities.configure."
     },
     {
       "operation": "communities.configure",
       "recipe_name": "17_configure_community",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Classic details/channels/access and Private course associations on exact nonempty Learning inventories are implemented. First association on an unproven empty list, other visibility/media/branding and complete app-to-portal identity/reuse remain incomplete."
+        "First course association from zero native Learning cards has no authoritative loaded-empty identity proof and is refused; non-Private course visibility modes have no typed writer.",
+        "Classic channel/details/access handlers do not provide complete modern-portal settings parity. Existing inactive/ambiguous app-to-portal reuse handling remains incomplete."
+      ],
+      "requirements": [
+        "R36"
+      ],
+      "implemented_executable_features": [
+        "Classic portal channel creation, description editing and explicit privacy/access reconciliation using live same-session context and independent readback.",
+        "Private course association binds native group/product identities to same-location Courses API inventory.",
+        "Modern portal logo/favicon/cover approved PNG upload uses exact slots, preserved sibling previews and independent saved reload."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/community_portal.py",
+          "function": "run_channels",
+          "line": 279
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/community_portal.py",
+          "function": "run_details",
+          "line": 507
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/community_access.py",
+          "function": "run_access",
+          "line": 177
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/community_courses.py",
+          "function": "run_courses",
+          "line": 244
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/community_courses.py",
+          "function": "_inventory",
+          "line": 152
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/community_branding.py",
+          "function": "run_branding",
+          "line": 151
+        }
+      ],
+      "deferred_live_proof": [
+        "Final same-session portal execution, saved member visibility/access and native course links; member behavior and notification acceptance remain pending."
+      ],
+      "input_or_capture_dependencies": [
+        "Authenticated caller-owned portal Page and actual same-session identity reader; exact before-values and scoped authorization for access expansion."
+      ],
+      "retired_previous_gaps": [
+        "Blanket community branding/media gap: modern logo/favicon/cover uploads exist.",
+        "Blanket identity gap: new creation redirect and exact active Login-popup reuse identity are implemented.",
+        "Private course associations are implemented on grounded nonempty inventories."
       ]
     },
     {
       "operation": "courses.create",
       "recipe_name": "18_create_course",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R37",
+        "R38"
+      ],
+      "implemented_executable_features": [
+        "Courses v3 course/category/lesson/embedded-quiz creation with title inventory and reconciliation, authored content/access metadata, library ordering, guarded Skill44 transport, durable intent and independent GET readback."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/delivery.py",
+          "function": "validate_course",
+          "line": 265
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/delivery.py",
+          "function": "_run_course",
+          "line": 435
+        }
+      ],
+      "deferred_live_proof": [
+        "Real client API create/reuse/readback receipts and intended learner delivery view."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [],
+      "boundary": "Documented API creation contract; unsupported UI-only theme controls are tracked separately."
     },
     {
       "operation": "courses.configure_ui",
       "recipe_name": "19_configure_course_ui",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Inactive text/visibility/palette/fonts, Custom Blocks and approved PNG background upload are implemented; product appearance media is separately API-backed. Other native theme media locations/uploads and uncaptured builder controls remain incomplete."
+        "Native background transparency is observed and preserved but has no authored slider action. Background and Custom Block #remove-image controls are observed but have no removal schema/writer.",
+        "Other uncaptured template/block types and their media/settings remain unsupported; no activation/publication is included."
+      ],
+      "requirements": [
+        "R40"
+      ],
+      "implemented_executable_features": [
+        "Captured inactive-theme text/visibility, hero spacing, six-color palette, fonts/weights, Custom Block append/edit, main background PNG replacement and exact existing Custom Block image replacement; preserve active template and protected siblings."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/course_theme.py",
+          "function": "configure",
+          "line": 415
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/course_blocks.py",
+          "function": "configure",
+          "line": 236,
+          "current_line": 252
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/course_theme_media.py",
+          "function": "configure",
+          "line": 141
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/course_theme_media.py",
+          "function": "_background",
+          "line": 64
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/course_block_media.py",
+          "function": "configure",
+          "line": 87
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/course_block_media.py",
+          "function": "_image",
+          "line": 65
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native inactive-template save/reopen, preview media/rendering and learner appearance receipts."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [
+        "Main background PNG upload and exact existing Custom Block image replacement are implemented.",
+        "Product poster/logo/hero/favicon/instructor-headshot uploads are implemented separately under courses.update."
       ]
     },
     {
@@ -145,7 +803,45 @@
       "recipe_name": "20_setup_meeting_room",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Existing-room co-host writer now preflights complete approved rosters and exact candidate identities, saves once and independently reopens. Authoritative zero-roster loading/empty evidence and combined creation/access workflow remain incomplete; preserve partial status until resolved."
+        "First co-host assignment from an empty roster and clear-all removals are unsupported: no authoritative native loaded-empty roster marker is captured.",
+        "Co-host reconciliation requires an existing room with unchanged room metadata; creation/security edits and access-roster changes are separate jobs with fresh inventories. The missing empty-roster path prevents completing a newly empty room co-host setup."
+      ],
+      "requirements": [
+        "R41",
+        "R42"
+      ],
+      "implemented_executable_features": [
+        "Create or positively reuse a canonical personal room with authored name/slug and explicit waiting-room/guest/open-room choices; independently reload the saved room.",
+        "Separate existing-room co-host reconciliation preflights exact candidate identities, stages additions/removals and independently reopens a nonempty complete approved roster."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/meetings.py",
+          "function": "create_room",
+          "line": 173
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/meetings.py",
+          "function": "read_room",
+          "line": 80
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/meeting_cohosts.py",
+          "function": "configure",
+          "line": 300
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/meeting_cohosts.py",
+          "function": "validate_write_inputs",
+          "line": 204
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native room setup/security and authorized co-host access/notification acceptance; no meeting start/mic/camera action is required."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [
+        "Existing-room nonempty co-host assignment/removal writer, candidate preflight and saved roster readback are implemented."
       ]
     },
     {
@@ -153,47 +849,285 @@
       "recipe_name": "21_integrate_meeting_room",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Permanent calendar links and captured single-staff per-appointment Meeting Room location configuration are implemented. Native community/course associations and generated-room/booking behavior remain incomplete."
+        "Native course live-session/Meeting Room association has no concrete typed implementation.",
+        "Dynamic calendar UI configuration is limited to the captured single-staff/single-location shape; multi-staff/multi-location variants and connecting a new conferencing provider or changing Connections staff remain unsupported.",
+        "Community event native association is limited to the captured existing free, nonrecurring, all-member event without thumbnail/reminders; other event shapes lack captured preserved-state handling.",
+        "Recording/transcription integration has no captured typed path in this package."
+      ],
+      "requirements": [
+        "R43"
+      ],
+      "implemented_executable_features": [
+        "Permanent reusable room-link calendar association executes the registered API GET/PUT/GET path.",
+        "Captured dynamic Meeting Room calendar-location configuration supports one existing assigned staff and one location, with complete fresh same-location user inventory and independently reopened settings.",
+        "Existing community event Live Room association has a dedicated same-session portal handler, explicit immediate room-creation intent journal, exact event/group/generated-room identities, preserved event/payment fields and independent reopened saved readback."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/meetings.py",
+          "function": "integrate_calendar",
+          "line": 396
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/delivery.py",
+          "function": "meeting_calendar_executor",
+          "line": 844
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/meeting_dynamic.py",
+          "function": "configure",
+          "line": 228
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/community_event_meeting.py",
+          "function": "run_event",
+          "line": 364
+        }
+      ],
+      "deferred_live_proof": [
+        "Actual booking-generated unique room/link behavior, event/member access/delivery and course integration after implementation; these functional proofs are separate from saved configuration code."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [
+        "Native single-staff dynamic appointment location setting.",
+        "Native existing community-event Live Room creation/reuse association; this is more than a text link."
       ]
     },
     {
       "operation": "forms.settings",
       "recipe_name": "22_configure_form_settings",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R30",
+        "R27"
+      ],
+      "implemented_executable_features": [
+        "Seven captured ordinary switches with exact row/count checks and reopened persisted state.",
+        "Native visibility scheduling supports opening/closing dates/times, IANA timezone and outside-window plain-message/HTTPS-redirect outcomes.",
+        "Native Facebook Pixel ID and page/submission event changes use exact previous-value guards and independent saved reopen."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
+          "function": "form_settings",
+          "line": 1140,
+          "current_line": 1164
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_schedule.py",
+          "function": "configure",
+          "line": 431
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_tracking.py",
+          "function": "configure",
+          "line": 125
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native switch/schedule/tracking save/reopen; timezone/window boundary behavior and authorized pixel events after fixture submission."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [],
+      "boundary": "Captured settings/schedule/Pixel contract. Embed/integration export and remaining controls are recorded under forms.configure and uncatalogued_requirements."
     },
     {
       "operation": "courses.update",
       "recipe_name": "23_update_course",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R38"
+      ],
+      "implemented_executable_features": [
+        "Documented product/content/appearance updates preserve existing customization siblings; approved SHA256-bound PNG upload/attachment supports poster, logo, hero, favicon and instructor headshot through course/media API capabilities and GET/PUT/GET readback."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/delivery.py",
+          "function": "run_course_update",
+          "line": 685
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/course_media.py",
+          "function": "run_media",
+          "line": 164
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/course_media.py",
+          "function": "course_executor",
+          "line": 111
+        }
+      ],
+      "deferred_live_proof": [
+        "Real client API update/upload/readback and learner-rendered appearance/content."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [],
+      "boundary": "Documented API update/media contract; publication and native theme-only controls remain separate."
     },
     {
       "operation": "courses.lesson_quiz.create",
       "recipe_name": "24_create_lesson_quiz",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R39"
+      ],
+      "implemented_executable_features": [
+        "Create/reconcile an existing-lesson course quiz with exact course/lesson/quiz identities, single/multiple-answer questions, authored answers and grading/pass/fail settings through the documented API."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/delivery.py",
+          "function": "validate_quiz",
+          "line": 304
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/delivery.py",
+          "function": "run_lesson_quiz",
+          "line": 608
+        }
+      ],
+      "deferred_live_proof": [
+        "Real client course-quiz API execution/readback and an authorized learner attempt proving grading/result."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": []
     },
     {
       "operation": "forms.conditions",
       "recipe_name": "25_configure_form_condition",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Homogeneous AND/OR groups with two to twenty clauses and single-target Hide/Show are implemented with exact existing-stack reconciliation. Mixed/nested conditions, multiple rule editing, multi-target effects and other native effects remain incomplete."
+        "Mixed AND/OR connectors within one predicate have no schema/writer: match is homogeneous all/any. Nested grouping is also unsupported, but native availability must be established before treating it as a separate captured platform control.",
+        "Condition-card deletion, card reordering and count-changing replacement are not implemented. Same-count edits apply to Show/Hide stacks; outcome stacks preserve an exact prefix and do not edit existing Redirect/message/disqualification cards.",
+        "Source/target field choice is limited to the captured built-in/TnC labels; conditions on additional custom/advanced field families need grounded native identity/control capture."
+      ],
+      "requirements": [
+        "R28"
+      ],
+      "implemented_executable_features": [
+        "Captured single rules and homogeneous one-to-twenty-clause AND/OR groups. Ordered Show/Hide stacks support one explicit rule per target and complete-inventory same-count edits, predicate growth and captured tail-clause shrink while protecting the initial If row.",
+        "Ordered mixed effect stacks append Show/Hide, HTTPS Redirect, literal Display custom message and Disqualify lead with explicit message/redirect mode, preserving all existing summary HTML."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/assessments.py",
+          "function": "configure_condition",
+          "line": 540
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_conditions.py",
+          "function": "configure",
+          "line": 191
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_stack.py",
+          "function": "configure",
+          "line": 207
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_stack.py",
+          "function": "_edit",
+          "line": 113
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_stack.py",
+          "function": "_remove_tail",
+          "line": 174
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_outcomes.py",
+          "function": "configure",
+          "line": 284
+        }
+      ],
+      "deferred_live_proof": [
+        "Final actual saved conditions and positive/negative fixture submissions exercising all requested branches, messages, redirects and disqualification."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [
+        "Multiple Show/Hide rule editing and homogeneous compound predicates, including tail-clause removal.",
+        "Multiple targets via one ordered native rule per target; the observed native target select itself is single-valued.",
+        "Other native effects: Redirect, Display custom message and both disqualification outcomes now exist."
       ]
     },
     {
       "operation": "checkout.configure_native",
       "recipe_name": "26_configure_native_checkout",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R20"
+      ],
+      "implemented_executable_features": [
+        "Canonical order-component adapter binds exact native main price, preflighted bumps/terms/currency/capacity, field-state changes with preserved siblings and native purchase action; all targets/dependencies resolve before mutation."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/pages_checkout.py",
+          "function": "validate_checkout_inputs",
+          "line": 56
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/pages_checkout.py",
+          "function": "_preflight_bumps",
+          "line": 191
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/pages_checkout.py",
+          "function": "configure_native_checkout",
+          "line": 241
+        }
+      ],
+      "deferred_live_proof": [
+        "Final live native adapter and independent component readback; authorized test-mode payments/bumps."
+      ],
+      "input_or_capture_dependencies": [
+        "Actual target-bound adapter capture and verified same-location Skill44/79 product/price/family inventory."
+      ],
+      "retired_previous_gaps": [],
+      "boundary": "A complete adapter-driven executor exists. Missing runtime capture/credentials are input dependencies; no live native readiness is claimed."
     },
     {
       "operation": "meetings.update",
       "recipe_name": "27_update_meeting_room",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Existing-room co-host assignment/removal writer is integrated with hash/room/roster-count-bound replay and preserved security settings. Authoritative empty-roster proof remains incomplete; no native functional access/notification acceptance claimed."
+        "Authoritative loaded-empty co-host evidence and the first-assignment/clear-all paths remain unimplemented; the writer requires nonempty expected and desired rosters."
+      ],
+      "requirements": [
+        "R41",
+        "R42"
+      ],
+      "implemented_executable_features": [
+        "Exact expected-room identity with saved name/slug/security readback; separate complete nonempty roster reconciliation supports checked candidate additions and scoped row removals while preserving security."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/meetings.py",
+          "function": "update_room",
+          "line": 215
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/meeting_cohosts.py",
+          "function": "configure",
+          "line": 300
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/meeting_cohosts.py",
+          "function": "validate_write_inputs",
+          "line": 204
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native room/security/roster save and actual authorized co-host access/notification behavior."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [
+        "Existing-room nonempty co-host assignment/removal with complete before/after roster binding and hash/count-bound replay."
       ]
     },
     {
@@ -201,7 +1135,61 @@
       "recipe_name": "28_configure_quiz_scores_and_tiers",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Existing question properties, categories/scoring, any captured existing tier layout and Header/CTA copy are implemented. New question types, answer jump routing, tier creation/removal, other result layouts/styling/media remain incomplete."
+        "Native Multiple Dropdown and Picture Choice creation/option identity are absent. Reliable existing-populated-page append remains unresolved; explicit Page N+1 mode is not a silent substitute.",
+        "Answer Jump To routing and its complete destination identities have no writer; active jump/spread configurations are refused where complete preservation is not captured.",
+        "Tier creation/removal, result Header logo/media authoring and remaining result styling/media controls have no native schema/action. Existing-tier edits and the two Header layouts do not implement those controls."
+      ],
+      "requirements": [
+        "R34",
+        "R33"
+      ],
+      "implemented_executable_features": [
+        "Existing question/answer properties and appended answers, category create/rename, category/score bindings and arbitrary captured existing tier layouts/ranges with exact previous inventories.",
+        "Header business-name text/visibility and Default/Reverse layout plus static/dynamic tier-specific CTA heading/button/HTTPS-link copy, preserving unrequested Header HTML/logo data.",
+        "Native TEXT, LARGE_TEXT, NUMERICAL, RADIO, CHECKBOX and SINGLE_OPTIONS question creation covers seven tiles; explicit new-empty-page mode is available for one question with full original-owner preservation."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_ui.py",
+          "function": "configure",
+          "line": 171
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_results.py",
+          "function": "configure",
+          "line": 276
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_text_questions.py",
+          "function": "configure",
+          "line": 431,
+          "current_line": 495
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_text_questions.py",
+          "function": "_target_page",
+          "line": 292,
+          "current_line": 331
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_choice_questions.py",
+          "function": "configure",
+          "line": 287,
+          "current_line": 385
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_written_questions.py",
+          "function": "configure",
+          "line": 66
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native question/result/scoring saves and submitted fixture branch/boundary-score outcomes; backend/shared-field effects remain unverified."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [
+        "Blanket new-question creation gap: seven captured tile profiles and explicit one-question new-page mode are executable.",
+        "Header business-name visibility and Default/Reverse layouts; tier-specific CTA copy/link editing."
       ]
     },
     {
@@ -209,51 +1197,260 @@
       "recipe_name": "29_configure_survey_branch",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Ordered forward Jump To stacks and existing Radio object-question placement are implemented. Other question types, compound conditions, completion/disqualification effects remain incomplete."
+        "Other native question/widget types and authored choices lack survey-specific typed creation/placement/property paths; the Radio rail does not generalize automatically.",
+        "Compound/mixed conditional predicates, completion/redirect/custom-message/disqualification outcomes and editing/removal/reordering of arbitrary existing survey rules are not implemented by the forward-Jump-To stack schema."
+      ],
+      "requirements": [
+        "R32",
+        "R31"
+      ],
+      "implemented_executable_features": [
+        "Ordered forward Jump To rule stacks bind exact existing numbered slides, source fields/operators/values and destination labels, preserve complete prior rules and independently reopen saved summaries.",
+        "Existing-slide Radio placement binds the same-location API field inventory; an optional separately journaled authored Radio API dependency chain preflights the exact survey/slide before schema writes."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/survey_ui.py",
+          "function": "configure",
+          "line": 92
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/survey_fields.py",
+          "function": "configure",
+          "line": 123
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/radio_dependencies.py",
+          "function": "build_survey_questions",
+          "line": 309
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native question/rule persistence and fixture answers covering every branch/completion outcome."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [
+        "Authored Radio API provisioning and exact existing-slide placement; ordered multiple forward Jump To rules."
       ]
     },
     {
       "operation": "checkout.configure_ui",
       "recipe_name": "30_configure_native_checkout_ui",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R20"
+      ],
+      "implemented_executable_features": [
+        "Exact native order-form/section identity; captured one/two-step mode, Products switches, required/visible Contact fields, Checkout options/legal copy, thirty-seven Content textboxes and Input appearance/label choices with native save/reopen readback."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/checkout_ui.py",
+          "function": "configure_native_checkout_ui",
+          "line": 497
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/checkout_ui.py",
+          "function": "verify_checkout_ui",
+          "line": 453
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native saved UI, desktop/mobile rendered checkout and separate authorized payment journey."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [],
+      "boundary": "Native visual/field/options contract. Product/price ID bindings and purchase actions use checkout.configure_native."
     },
     {
       "operation": "forms.submission",
       "recipe_name": "31_configure_form_submission",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R26"
+      ],
+      "implemented_executable_features": [
+        "Native authored plain Message or credential-free HTTPS Redirect mode with explicit conditional-precedence acknowledgment and independent saved editor readback.",
+        "Payment-owned Order Confirmation has dedicated same-form contract/catalog/native-selection validation, a saved mode writer and reopened readback; it never charges or treats canned preview copy as successful payment."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_submission.py",
+          "function": "configure",
+          "line": 55
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_order_confirmation.py",
+          "function": "configure",
+          "line": 238
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_order_confirmation.py",
+          "function": "validate_receipt",
+          "line": 320
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native submit-mode persistence; actual message/redirect fixture behavior and authorized successful-payment Order Confirmation journey."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [],
+      "boundary": "Plain Message/Redirect plus captured payment-owned Order Confirmation configuration. Captured payment terms are USD monthly recurring without trial; additional terms remain separately recorded in uncatalogued_requirements."
     },
     {
       "operation": "forms.notifications",
       "recipe_name": "32_configure_form_notifications",
       "status": "BUILT",
-      "missing_executable_features": []
+      "missing_executable_features": [],
+      "requirements": [
+        "R27"
+      ],
+      "implemented_executable_features": [
+        "Native email notification and auto responder enable/disable, authored subject/reply-to/sender/PDF settings and complete email-recipient replacement with exact expected-recipient inventory; independent reopen protects saved values."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_notifications.py",
+          "function": "configure_notifications",
+          "line": 155
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_notifications.py",
+          "function": "validate_notifications",
+          "line": 53
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native persisted notification settings and an explicitly authorized fixture event/mail-delivery receipt to intended recipients only."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": [],
+      "boundary": "Captured notification/auto-responder controls. No unrequested message is sent during configuration."
     },
     {
       "operation": "courses.lessons",
       "recipe_name": "33_update_course_outline",
       "status": "BUILT",
       "missing_executable_features": [],
-      "boundary": "Existing draft categories/lessons only: hierarchy moves, drip metadata and lock references. No publication, activated learner access or learner proof is claimed."
+      "boundary": "Existing draft categories/lessons only; publication, activated learner access and learner proof are separate rails.",
+      "requirements": [
+        "R38"
+      ],
+      "implemented_executable_features": [
+        "Existing draft category/lesson content and metadata, hierarchy moves, drip metadata and lock references with all-target version/dependency preflight, safe task ordering, protected siblings and independent API readback."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/course_outline.py",
+          "function": "validate_inputs",
+          "line": 55
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/course_outline.py",
+          "function": "_draft_dependencies",
+          "line": 135
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/course_outline.py",
+          "function": "_ordered_tasks",
+          "line": 214
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/course_outline.py",
+          "function": "run_outline",
+          "line": 262
+        }
+      ],
+      "deferred_live_proof": [
+        "Real client API outline/access metadata execution and intended learner-role delivery/access proof."
+      ],
+      "input_or_capture_dependencies": [],
+      "retired_previous_gaps": []
     }
   ],
   "uncatalogued_requirements": [
     {
       "feature": "Native form tracking/integrations",
       "status": "PARTIALLY_IMPLEMENTED",
-      "reason": "Captured Pixel/event settings and four native embed layouts/Advanced exports are executable. Exported settings are not claimed persisted/installed; other native integration controls remain incomplete."
+      "implemented": [
+        "Native Pixel ID and page/submission events with saved reopen.",
+        "Four embed layouts/Advanced/cookie consent, exact twice-read code export and captured button corner/font/type/size appearance."
+      ],
+      "missing_executable_features": [
+        "Authored embed button color/alternate icon and integration surfaces outside the captured native embed contract are not implemented/audited."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_tracking.py",
+          "function": "configure",
+          "line": 125
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_embed.py",
+          "function": "configure",
+          "line": 511
+        }
+      ],
+      "deferred_live_proof": [
+        "Actual event behavior, cookie-consent behavior and installed embed acceptance. Per-embed export is not a claim of globally persisted settings."
+      ]
     },
     {
       "feature": "Native Order Confirmation submission mode",
-      "status": "PAYMENT_RAIL_OWNED_UNMAPPED",
-      "reason": "Must map to native payment implementation. Not a missing Message/HTTPS Redirect feature."
+      "status": "CAPTURED_CONFIGURATION_IMPLEMENTED_ADDITIONAL_TERMS_PENDING",
+      "implemented": [
+        "Dedicated same-form payment-owned native configuration, catalog/native binding validation, explicit mode/precedence safeguards and independently reopened saved readback."
+      ],
+      "missing_executable_features": [
+        "The captured payment schema supports USD monthly recurring terms without trial only; other currency/billing/trial display shapes require grounded native capture and implementation."
+      ],
+      "source_evidence": [
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_order_confirmation.py",
+          "function": "validate",
+          "line": 33
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_order_confirmation.py",
+          "function": "configure",
+          "line": 238
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_order_confirmation.py",
+          "function": "validate_receipt",
+          "line": 320
+        }
+      ],
+      "deferred_live_proof": [
+        "Final native same-form saved-mode execution and authorized successful-payment journey. No payment, submission or canned-preview acceptance is inferred from source tests."
+      ]
     }
   ],
-  "verification": "Optional/manual/live execution deferred. Required repository merge checks remain enabled. Synthetic checks do not establish native client acceptance.",
-  "merge_checkpoint": {
+  "verification": "Native final-script/client execution, Mac/Linux VPS compatibility runs, desktop/mobile rendering, submissions, branch/scoring behavior, member/learner access and payment journeys remain separately pending. This source audit does not execute them. Required repository merge checks remain enabled; offline tests are not native acceptance.",
+  "audit_checkpoint": {
+    "source_commit": "f5b039b0a186b2bc35784dbc2ff876fc91b41eb9",
+    "source_ref": "frozen fifth Skill6 v27.1.96 checkpoint",
+    "method": "Read the 33 named contracts, compiler/host dispatch, leaf schemas/writers, examples and preserved R01-R47 owner requirements; independently reviewed course/community subset. Source build coverage only; no new native or functional acceptance run.",
+    "coverage": "All 33 catalog rows reviewed. Each row lists exact executable coverage, source functions, remaining implementation gaps and separately deferred proof.",
+    "count_change": "No operation changed category: 21 BUILT, 11 PARTIAL, 1 GENERIC_ONLY. Many features were implemented inside the eleven still-partial broad operations; their stale feature gaps are retired per row.",
+    "counting_rule": "BUILT uses the bounded named operation contract, not every possible feature of a product area. Unsupported explicit requested controls keep their affected area PARTIAL. Credentials, actual client inventories/captures and deferred native/functional proof alone do not change a built contract to partial. Unobserved platform capabilities are not invented as completed or as positively captured controls.",
+    "merge_status": "This is an audit of a local immutable commit, not a new claim that the fifth batch is merged. Public PR/merge status must be checked independently.",
+    "reference_hint_validation": {
+      "source_scope": "Sixth integration working tree; frozen fifth coverage classifications are unchanged",
+      "named_references_validated": 112,
+      "uncatalogued_references_validated": 5,
+      "missing_or_ambiguous_functions": 0,
+      "shifted_definition_hints": 29,
+      "original_line_basis": "source_evidence.line remains the frozen audit commit anchor",
+      "current_line_basis": "optional source_evidence.current_line points to the current integrated definition; it does not re-audit coverage"
+    }
+  },
+  "historical_merge_checkpoint": {
     "saved_batch": "Merged through PR #3011; original PR #2962 closed as reconciled source batch",
     "merge_commit": "d64498b35a8b1ec9c39429a46c9ab760403711a1",
-    "current_batch": "Native control continuation on skill6/next-native-controls-20261109; predecessor PR #3018 tracked independently by GitHub"
+    "current_batch": "Native control continuation on skill6/next-native-controls-20261109; predecessor PR #3018 tracked independently by GitHub",
+    "not_revalidated_by_this_audit": true
   }
 }

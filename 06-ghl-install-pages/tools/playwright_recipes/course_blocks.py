@@ -76,8 +76,8 @@ def validate_inputs(inputs):
     identities=[]
     for row in config['expected_inventory']:
         if (not isinstance(row,dict) or set(row)!={'id','type'}
-                or row.get('type') not in ('Category Block','Custom Block')):
-            raise Stop('Only captured Category/Custom Block inventories are supported')
+                or row.get('type') not in ('Category Block','Custom Block','Text Block','Image Block')):
+            raise Stop('Only captured Category/Custom/Text/Image Block inventories are supported')
         theme._id(row.get('id'));identities.append(row['id'])
     if len(set(identities))!=len(identities) or identities.count('categoryBlock')!=1:
         raise Stop('Native block IDs must be unique with one captured Category Block')
@@ -127,7 +127,7 @@ def _inventory(page,plan):
         row=rows.nth(index);identity=theme._id(row.get_attribute('id'))
         title=_one(row.locator(':scope > div.w-full.hl-text-md-medium'),
             'Native course block type label changed').inner_text().strip()
-        if title not in ('Category Block','Custom Block'):
+        if title not in ('Category Block','Custom Block','Text Block','Image Block'):
             raise Stop('Uncaptured native block type requires inventory before editing')
         result.append({'id':identity,'type':title})
     if (len({row['id'] for row in result})!=len(result)
@@ -208,7 +208,23 @@ def _read_block(page,plan,identity):
 
 
 def _snapshot(page,plan,inventory):
-    return {row['id']:_read_block(page,plan,row['id']) for row in inventory if row['type']=='Custom Block'}
+    result={}
+    for row in inventory:
+        if row['type']=='Custom Block':
+            result[row['id']]=_read_block(page,plan,row['id'])
+        elif row['type']=='Text Block':
+            if __package__:
+                from .course_text_blocks import read_text_block
+            else:
+                from course_text_blocks import read_text_block
+            result[row['id']]=read_text_block(page,plan,row['id'])
+        elif row['type']=='Image Block':
+            if __package__:
+                from .course_image_blocks import read_image_block
+            else:
+                from course_image_blocks import read_image_block
+            result[row['id']]=read_image_block(page,plan,row['id'])
+    return result
 
 
 def _write_block(page,plan,identity,changes):

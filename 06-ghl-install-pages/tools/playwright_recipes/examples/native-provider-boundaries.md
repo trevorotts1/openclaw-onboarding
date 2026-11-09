@@ -32,7 +32,7 @@ actions still record intent before mutation, preserve uncertain writes and
 validate completed receipts before replay; changing browser lanes does not
 authorize another create or Save.
 
-The regression matrix compiles 64 valid examples covering all 53 current editor
+The regression matrix compiles 69 valid examples covering all 56 current editor
 actions and refuses generic status-only API/browser completions. Positive Page
 transport tests exercise the real host and runner, exact leaf receipt checks,
 intent ordering, aged completed replay and corrupted identity refusal. They

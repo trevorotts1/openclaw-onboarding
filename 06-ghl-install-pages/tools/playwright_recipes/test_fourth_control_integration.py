@@ -36,6 +36,7 @@ def request(kind):
         'radio':('test_quiz_radio_creation','step','multiple_choice_questions','quiz_choice_questions'),
         'yes_no':('test_quiz_radio_creation','step','multiple_choice_questions','quiz_choice_questions'),
         'quiz_dropdown':('test_quiz_dropdown_creation','step','multiple_choice_questions','quiz_choice_questions'),
+        'quiz_multi':('test_quiz_multi_dropdown','step','multiple_choice_questions','quiz_choice_questions'),
         'written':('test_quiz_written_questions','step','written_answer_questions','quiz_written_questions'),
         'dropdown':('test_dropdown_fields','plan',None,'dropdown_fields'),
         'large':('test_large_text_fields','plan',None,'large_text_fields'),
@@ -81,12 +82,12 @@ def receipt(job,module):
     return value
 
 
-KINDS = ('short','choice','radio','yes_no','quiz_dropdown','written','dropdown','large','outcomes','stack_edit','stack_shrink')
+KINDS = ('short','choice','radio','yes_no','quiz_dropdown','quiz_multi','written','dropdown','large','outcomes','stack_edit','stack_shrink')
 
 
 class FourthControls(unittest.TestCase):
     def test_real_compiler_routes_each_full_request_without_dropping_previous_inventory(self):
-        actions = ('quiz_short_answers','quiz_multiple_choices','quiz_multiple_choices','quiz_multiple_choices','quiz_multiple_choices','quiz_written_answers',
+        actions = ('quiz_short_answers','quiz_multiple_choices','quiz_multiple_choices','quiz_multiple_choices','quiz_multiple_choices','quiz_multiple_choices','quiz_written_answers',
             'native_dropdown_fields','native_large_text_fields','native_condition_outcomes','native_condition_stack','native_condition_stack')
         for kind,action in zip(KINDS,actions):
             with self.subTest(kind=kind):
@@ -96,7 +97,7 @@ class FourthControls(unittest.TestCase):
         self.assertEqual(compiled('stack_edit')['steps'][0]['expected_rules'],data['condition']['expected_rules'])
 
     def test_quiz_creation_refuses_mixed_controls_and_parent_owner_overrides(self):
-        for kind in ('short','choice','radio','yes_no','quiz_dropdown','written'):
+        for kind in ('short','choice','radio','yes_no','quiz_dropdown','quiz_multi','written'):
             operation,data,_ = request(kind)
             key = next(iter(data['configuration']))
             invalid = []
@@ -108,7 +109,7 @@ class FourthControls(unittest.TestCase):
                     recipe_cli.compile_recipe(operation,bad)
 
     def test_native_payloads_cannot_cross_parent_location_or_editor(self):
-        for kind in ('short','choice','radio','yes_no','quiz_dropdown','written','dropdown','large'):
+        for kind in ('short','choice','radio','yes_no','quiz_dropdown','quiz_multi','written','dropdown','large'):
             job = compiled(kind);job['steps'][0]['payload']['start_url'] += '_FOREIGN'
             with self.subTest(kind=kind),self.assertRaises(runner.Stop):runner.validate_job(job,Path('.'))
 
@@ -135,7 +136,7 @@ class FourthControls(unittest.TestCase):
                 self.assertEqual(saved['status'],'NEEDS_VERIFICATION')
 
     def test_native_quiz_creation_cannot_delegate_to_an_api_or_generic_browser_provider(self):
-        for kind in ('short','choice','radio','yes_no','written'):
+        for kind in ('short','choice','radio','yes_no','quiz_multi','written'):
             operation,data,_ = request(kind)
             for lane in ('public_api','official_mcp','skill44','openclaw_extension','agent_browser','computer_use'):
                 probes = {'lanes':{lane:{'available':True,'current':True,'enabled':True}},
@@ -192,7 +193,7 @@ class FourthControls(unittest.TestCase):
                 self.assertEqual(state['results'],[])
 
     def test_malformed_first_quiz_receipts_stop_without_blessing_or_second_insertion(self):
-        for kind in ('short','choice','radio','yes_no','quiz_dropdown','written'):
+        for kind in ('short','choice','radio','yes_no','quiz_dropdown','quiz_multi','written'):
             job = compiled(kind);_,_,module = request(kind)
             native = importlib.import_module('playwright_recipes.'+module)
             for change in ({'question_count':True},{'target_page':2},{'kind':'quiz'},
@@ -305,8 +306,52 @@ class FourthControls(unittest.TestCase):
                 self.assertEqual(state['results'],[])
                 self.assertEqual(state['current_step_status'],'INTENT_RECORDED')
 
+    def test_multi_unique_key_and_resize_plan_bind_primary_fallback_and_replay(self):
+        from test_quiz_multi_dropdown import authored
+        for count in (2,3,4):
+            for fallback in (False,True):
+                operation,data,module = request('quiz_multi')
+                plan = data['configuration']['multiple_choice_questions']
+                plan['questions']=[authored(count)]
+                plan.update(create_page=True,new_page_label='Page 2',target_page=2)
+                job = runner.validate_job(recipe_cli.compile_recipe(operation,data),Path('.'))
+                step = job['steps'][0]
+                self.assertEqual(step['payload']['questions'],plan['questions'])
+                self.assertNotIn('query_key',step['payload']['questions'][0])
+                self.assertNotIn('hidden',step['payload']['questions'][0])
+                native = importlib.import_module('playwright_recipes.'+module)
+                provider = Mock(return_value={'status':'EDITOR_STEPS_COMPLETE','location_id':data['location_id'],'objects':[]})
+                probes = {'lanes':{'playwright':{'available':not fallback},
+                    'openclaw_extension':{'available':fallback,'current':fallback}}}
+                with self.subTest(count=count,fallback=fallback),tempfile.TemporaryDirectory() as root, \
+                        patch.object(runner,'assert_tenant'):
+                    page = object()
+                    def owned_write(actual_page,actual_step):
+                        self.assertIs(actual_page,page)
+                        self.assertEqual(actual_step,step)
+                        self.assertEqual(json.loads(Path(root,'state.json').read_text())['current_step_status'],'INTENT_RECORDED')
+                        return receipt(job,module)
+                    with patch.object(native,'configure',side_effect=owned_write) as write:
+                        first = host.run_recipe(operation,data,probes,root,input_dir='.',page=page,
+                            executors={'public_api':provider,'openclaw_extension':provider})
+                        state_path = Path(root,'state.json');saved = state_path.read_bytes()
+                        repeated = host.run_recipe(operation,data,probes,root,input_dir='.',page=page,
+                            executors={'public_api':provider,'openclaw_extension':provider})
+                        self.assertEqual(first['status'],'NEEDS_VERIFICATION',first)
+                        self.assertEqual(repeated['status'],'NEEDS_VERIFICATION',repeated)
+                        self.assertEqual(state_path.read_bytes(),saved)
+                        write.assert_called_once();provider.assert_not_called()
+                        changed = deepcopy(job)
+                        changed['steps'][0]['payload']['questions'][0]['unique_key']='foreign_literal'
+                        with self.assertRaises(runner.Stop):runner.run_on_page(page,changed,root)
+                        state = json.loads(saved)
+                        state['results'][0]['result']['configuration_sha256']='0'*64
+                        state_path.write_text(json.dumps(state))
+                        with self.assertRaises(runner.Stop):runner.run_on_page(page,job,root)
+                        write.assert_called_once()
+
     def test_explicit_new_page_intent_survives_frontdoor_hash_and_completed_replay(self):
-        for kind in ('short','choice','quiz_dropdown','written'):
+        for kind in ('short','choice','quiz_dropdown','quiz_multi','written'):
             operation,data,module = request(kind)
             key = next(iter(data['configuration']))
             authored = data['configuration'][key]
