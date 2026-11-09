@@ -1,5 +1,9 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## v2.1.36 - 2026-11-08 - launch-path pin re-minted for the contract wording (F05/BLD-015)
+
+- `scripts/SF-PROVER-PIN.sha256` was minted by the `sf-prover-pin-authority` mint job for this tree. The only launch-path change in the pull request is the description wording of `shared-utils/signature_launch_contract/launch-plan.schema.json`: no prover, validator, wrapper, route, page type or launcher file changed, and `hashpin` plus `bypass-scan` both pass on the minted pin.
+
 ## v2.1.27 - 2026-10-26 - oct-25 fix batch: l09-l12 launch-plan, dispatch and role-wrapper hardening
 
 - `scripts/launch_plan.py` (l09): launch plans reject non-web access URLs, honour no-delivery plans, and reject parse-mismatch access URLs; `check()` tests tightened to the same contract.

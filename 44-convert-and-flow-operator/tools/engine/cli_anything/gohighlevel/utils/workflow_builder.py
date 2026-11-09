@@ -1058,19 +1058,28 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
             "reason": None if isinstance(allow_reentry, bool) else
             "insufficient: the launch plan declares no automations[].settings.reentry",
         }
+        native_enrollment = ENROLLMENT_TO_NATIVE.get(allow_enrollment)
         enrollment_record = {
             "declared": allow_enrollment,
             "state": "declared" if allow_enrollment else "insufficient",
+            # Set from the post-save readback by CampaignBuilder, never here.
             "applied": None,
+            "native_field": NATIVE_ENROLLMENT_FIELD,
+            "requested": native_enrollment,
+            "observed": None,
             "reason": None if allow_enrollment else
             "insufficient: the launch plan declares no automations[].settings.enrollment",
         }
         if allow_enrollment:
-            # Recorded only: this rail has no verified native enrolment payload,
-            # so claiming it applied would be a guess.
+            # F05/BLD-015: the native enrolment control exists — the top-level
+            # boolean allowMultiple on the workflow document (captured live,
+            # see evidence/F05-capability.json). It is APPLIED in the create
+            # body and read back after the save; `applied` stays None until
+            # that readback proves it. Nothing is claimed from the request.
             enrollment_record["reason"] = (
-                "recorded from the launch plan; this rail has no verified native "
-                "enrolment payload, so it is not applied here")
+                "declared %r -> %s=%r, applied in the create body and proven "
+                "only by the post-save readback"
+                % (allow_enrollment, NATIVE_ENROLLMENT_FIELD, native_enrollment))
         wf_key = "%s__%s" % (build.get("id"), workflow.get("key"))
         # The trigger is the automation's approved one.  A contact-tag trigger
         # carries the tag the builder creates; any other approved trigger has
@@ -1102,6 +1111,9 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
             # the save.  None (not declared, not observed) stays unknown.
             "allow_reentry": allow_reentry if isinstance(allow_reentry, bool) else None,
             "allow_enrollment": allow_enrollment,
+            # The native boolean the create body carries: "successive" ->
+            # allowMultiple true, "single" -> false. None applies nothing.
+            "allow_multiple": native_enrollment,
             "reentry": reentry_record,
             "enrollment": enrollment_record,
             "trigger": trigger,
@@ -1337,14 +1349,23 @@ def _readback_templates(client: Any, location_id: str,
     return None
 
 
-def _readback_settings(client: Any, location_id: str,
+def _readback_workflow(client: Any, location_id: str,
                        workflow_id: str) -> Optional[dict]:
-    """The saved workflow's settings as the provider reports them, or None."""
+    """The saved workflow document as the provider reports it, or None."""
     try:
         data = client.request("GET", "/workflow/%s/%s" % (location_id, workflow_id))
     except Exception:  # noqa: BLE001 - an unreadable readback is an explicit unknown
         return None
     if not isinstance(data, dict) or data.get("_error"):
+        return None
+    return data
+
+
+def _readback_settings(client: Any, location_id: str,
+                       workflow_id: str) -> Optional[dict]:
+    """The saved workflow's settings as the provider reports them, or None."""
+    data = _readback_workflow(client, location_id, workflow_id)
+    if data is None:
         return None
     settings = data.get("settings")
     if isinstance(settings, dict):
@@ -1352,6 +1373,37 @@ def _readback_settings(client: Any, location_id: str,
     workflow_data = data.get("workflowData")
     if isinstance(workflow_data, dict) and isinstance(workflow_data.get("settings"), dict):
         return workflow_data["settings"]
+    return None
+
+
+# ── Native enrolment (F05 / BLD-015) ────────────────────────────────────────
+#
+# The live workflow document does NOT carry a nested ``settings`` object: its
+# settings are TOP-LEVEL fields (captured read-only on the operator account,
+# 26 workflows, 2026-11-08 — evidence/F05-capability.json).  The enrolment
+# control is the boolean ``allowMultiple`` (observed with BOTH values in the
+# capture, and it is the only enrol-shaped field the provider returns; no
+# ``enrollment``/``enrolment``/``allowReentry``/``reEntry`` key exists at all).
+# So "successive" -> allowMultiple true, "single" -> allowMultiple false.  The
+# requested value is written in the create/PUT body and ``applied`` is set ONLY
+# from the value read back afterwards — never from the request.
+NATIVE_ENROLLMENT_FIELD = "allowMultiple"
+ENROLLMENT_TO_NATIVE = {"single": False, "successive": True}
+
+
+def _observed_enrollment(document: Optional[dict]) -> Optional[bool]:
+    """Native enrolment flag as observed, or None when the provider omits it."""
+    if not isinstance(document, dict):
+        return None
+    for container in (document, document.get("settings"),
+                      document.get("workflowData")):
+        if not isinstance(container, dict):
+            continue
+        for key in (NATIVE_ENROLLMENT_FIELD, "allowMultipleEnrollments",
+                    "allow_multiple"):
+            value = container.get(key)
+            if isinstance(value, bool):
+                return value
     return None
 
 
@@ -2259,6 +2311,12 @@ class CampaignBuilder:
             create_body: dict[str, Any] = {"name": wf_name, "parentId": folder_id}
             if wf_def.get("settings"):
                 create_body["settings"] = wf_def["settings"]
+            native_enrollment = wf_def.get("allow_multiple")
+            if isinstance(native_enrollment, bool):
+                # F05/BLD-015: the provider's settings are TOP-LEVEL fields on
+                # the workflow document; the enrolment control is the boolean
+                # allowMultiple. Applied here, proven only by the readback.
+                create_body[NATIVE_ENROLLMENT_FIELD] = native_enrollment
             result = self.client.request(
                 "POST", f"/workflow/{self.loc}",
                 create_body,
@@ -2353,6 +2411,8 @@ class CampaignBuilder:
             }
             if wf_def.get("settings"):
                 put_body["settings"] = wf_def["settings"]
+            if isinstance(native_enrollment, bool):
+                put_body[NATIVE_ENROLLMENT_FIELD] = native_enrollment
             put_result = self.client.request(
                 "PUT", f"/workflow/{self.loc}/{wf_id}", put_body,
                 workflow_name=wf_name,
@@ -2493,6 +2553,43 @@ class CampaignBuilder:
                         f"{declared_reentry} but read back "
                         + ("an unreadable/absent value" if observed_reentry is None
                            else str(observed_reentry))
+                        + " — the setting is NOT proven applied.")
+
+            # F05/BLD-015: enrolment is proven by the READBACK, never by the
+            # request. `applied` is set from the observed native field; an
+            # absent value stays unknown (applied False), never normalised.
+            if isinstance(native_enrollment, bool):
+                observed_enrollment = _observed_enrollment(
+                    _readback_workflow(self.client, self.loc, str(wf_id)))
+                enrollment_applied = observed_enrollment == native_enrollment
+                record = campaign[key].get("enrollment") if isinstance(
+                    campaign.get(key), dict) else None
+                if isinstance(record, dict):
+                    record["observed"] = observed_enrollment
+                    record["applied"] = enrollment_applied
+                self.stats.setdefault("enrollment", {})[key] = {
+                    "declared": wf_def.get("allow_enrollment"),
+                    "native_field": NATIVE_ENROLLMENT_FIELD,
+                    "requested": native_enrollment,
+                    "observed": observed_enrollment,
+                    "applied": enrollment_applied,
+                }
+                if journal and unit_key:
+                    journal.append(
+                        unit_key=unit_key, name=wf_name, remote_id=str(wf_id),
+                        phase="enrollment",
+                        status=("ok" if enrollment_applied else
+                                "unknown" if observed_enrollment is None
+                                else "mismatch"),
+                        expected_hash=expected_hash,
+                        observed=observed_enrollment)
+                if not enrollment_applied and step_err is None:
+                    step_err = (
+                        f"{wf_name}: enrolment {wf_def.get('allow_enrollment')!r} "
+                        f"was requested as {NATIVE_ENROLLMENT_FIELD}="
+                        f"{native_enrollment} but read back "
+                        + ("an absent value" if observed_enrollment is None
+                           else str(observed_enrollment))
                         + " — the setting is NOT proven applied.")
 
             return key, wf_id, steps_ok, trigger_ok, step_err, readback_ok
@@ -2655,6 +2752,18 @@ class CampaignBuilder:
             for operation, info in sorted(routes.items()):
                 lines.append(
                     f"    {operation}: {info.get('route')} ({info.get('reason')})"
+                )
+
+        enrollment = self.stats.get("enrollment") or {}
+        if enrollment:
+            # F05/BLD-015: the enrolment readback is PRINTED, not implied.
+            lines.append("  Enrollment:")
+            for key, info in sorted(enrollment.items()):
+                lines.append(
+                    "    %s: declared=%s %s=%s observed=%s applied=%s"
+                    % (key, info.get("declared"), info.get("native_field"),
+                       info.get("requested"), info.get("observed"),
+                       info.get("applied"))
                 )
 
         wf_ids = self.stats.get("workflow_ids", {})

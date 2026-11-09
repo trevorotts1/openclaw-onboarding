@@ -676,7 +676,7 @@
             "enrollment": {
               "type": ["string", "null"],
               "enum": ["single", "successive", "unknown", null],
-              "description": "The requested purchase-succession policy: successive means a later distinct purchase (for example an upsell or downsell line on the same order) must still be delivered, deduplicated by the native event/transaction/line identity rather than the order. This is a plan declaration only: no verified native enrolment payload exists yet, so the compiler records it as declared with applied=null and the exact reason, and no consumer may treat this value as an applied setting."
+              "description": "The requested purchase-succession policy: successive means a later distinct purchase (for example an upsell or downsell line on the same order) must still be delivered, deduplicated by the native event/transaction/line identity rather than the order. It is applied natively as the top-level workflow boolean allowMultiple (single=false, successive=true; captured live on the operator account — evidence/F05-capability.json) and is proven only by the post-save readback: the record carries applied=true only when the provider echoed the requested value, and stays unknown/false otherwise. No consumer may treat this declaration as an applied setting without that observed readback."
             },
             "stop_on_response": {
               "type": ["boolean", "null"]
