@@ -22,7 +22,7 @@ def native_cases(root):
  asset=root/'approved.png';asset.write_bytes(b'\x89PNG\r\n\x1a\nAPPROVED')
  for k,o,d,*_ in form_cases():yield k,o,d
  yield from other_cases(asset)
- for k in ('short','choice','radio','yes_no','written'):
+ for k in ('short','choice','radio','yes_no','quiz_dropdown','quiz_multi','written'):
   from test_fourth_control_integration import request
   o,d,_=request(k);yield 'quiz_'+k,o,d
  from test_field_placement_integration import inputs
@@ -110,7 +110,7 @@ class CompleteNativeProviderBoundaries(unittest.TestCase):
                 named |= literal_action(node.args[0])
         self.assertTrue(named <= covered,named-covered)
         self.assertEqual(len(covered),56,'Update the bounded fixtures for newly added dynamic compiler actions')
-        self.assertEqual(len(rows),67)
+        self.assertEqual(len(rows),69)
 
     def test_no_current_native_job_delegates_to_status_only_api_or_extension_callback(self):
         with tempfile.TemporaryDirectory() as directory:

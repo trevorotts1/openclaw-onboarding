@@ -582,17 +582,19 @@
           "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_text_questions.py",
           "function": "configure",
           "line": 431,
-          "current_line": 444
+          "current_line": 495
         },
         {
           "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_text_questions.py",
           "function": "_target_page",
-          "line": 292
+          "line": 292,
+          "current_line": 331
         },
         {
           "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_choice_questions.py",
           "function": "configure",
-          "line": 287
+          "line": 287,
+          "current_line": 385
         },
         {
           "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_written_questions.py",
@@ -1161,17 +1163,19 @@
           "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_text_questions.py",
           "function": "configure",
           "line": 431,
-          "current_line": 444
+          "current_line": 495
         },
         {
           "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_text_questions.py",
           "function": "_target_page",
-          "line": 292
+          "line": 292,
+          "current_line": 331
         },
         {
           "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_choice_questions.py",
           "function": "configure",
-          "line": 287
+          "line": 287,
+          "current_line": 385
         },
         {
           "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_written_questions.py",
@@ -1438,7 +1442,7 @@
       "named_references_validated": 112,
       "uncatalogued_references_validated": 5,
       "missing_or_ambiguous_functions": 0,
-      "shifted_definition_hints": 25,
+      "shifted_definition_hints": 29,
       "original_line_basis": "source_evidence.line remains the frozen audit commit anchor",
       "current_line_basis": "optional source_evidence.current_line points to the current integrated definition; it does not re-audit coverage"
     }

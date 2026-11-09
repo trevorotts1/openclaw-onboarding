@@ -30,7 +30,7 @@ def validate(step):
         for page in projected['pages']:
             if isinstance(page,dict) and isinstance(page.get('questions'),list):
                 for index,question in enumerate(page['questions']):
-                    if isinstance(question,dict) and question.get('field_type') in ('RADIO','CHECKBOX','SINGLE_OPTIONS'):
+                    if isinstance(question,dict) and question.get('field_type') in ('RADIO','CHECKBOX','SINGLE_OPTIONS','MULTIPLE_OPTIONS'):
                         choice._question(question)
                         page['questions'][index]={key:question[key] for key in native.properties_for(question['field_type'])}
     projected=native.validate({'action':'quiz_short_answers','payload':projected},field_types=TYPES,

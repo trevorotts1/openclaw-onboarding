@@ -22,7 +22,26 @@ a compatible managed session. Uncertain writes retain their intent and never
 retry automatically. Native Python execution, saved client acceptance, learner
 rendering, submissions, notifications and payment behavior remain pending.
 
-Multi Dropdown/Picture Choice, Video Blocks, native split creation/traffic,
+Picture Choice, Video Blocks, native split creation/traffic,
 loaded-empty co-host assignment/clear-all and unavailable course Live Sessions
 are not completed by this checkpoint. The audit records further operation-level
 requirements; this table does not replace that complete ledger.
+
+## Post-core source checkpoint
+
+The protected v27.1.97 core remains immutable. The subsequent v27.1.98 source
+adds Multi Dropdown (`MULTIPLE_OPTIONS`) using the existing multiple-choice
+front door and an explicit `unique_key`. Query Key and Hidden are refused for
+this captured profile. Complete retained option metadata is protected after
+every count delta and again before the first property write. The adapter's
+2–50 authoring bound is distinct from measured native platform limits.
+
+Real-host primary and owned-Page fallback tests bind the exact original plan,
+Unique Key hash, explicit new-page target and native fresh/replay receipt. The
+expanded generic-provider refusal matrix covers 69 jobs and 56 compiler actions.
+The caption followup scopes native Text/Image headings outside measured authored
+regions while retaining exact block order, type, UUID and active-owner checks.
+
+These source additions do not change the frozen 21/11/1 audit classification.
+Native outer Save, persisted Unique Key normalization, all accepted option counts
+and functional/submission behavior still need their separate acceptance proof.

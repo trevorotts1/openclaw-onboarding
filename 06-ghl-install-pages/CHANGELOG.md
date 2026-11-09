@@ -1,3 +1,23 @@
+## [v27.1.98] - 2026-11-09
+
+- Add captured quiz Multi Dropdown through the existing multiple-choice native
+  action, with an explicit Unique Key and separate advanced field-name/hint
+  preservation. Reject Query Key and Hidden aliases for this profile.
+- Resize options with one measured Add/Delete per exact count delta; protect
+  the complete retained category, score, enabled and jump inventory after each
+  click and bind the resized snapshot again before property authoring. The
+  adapter's 2–50 bound is not a measured native platform limit.
+- Exercise native primary/fallback Page transport, new-page intent, exact
+  Unique Key hashes, fresh receipts and completed replay through the real host.
+  The provider-boundary matrix now covers 69 jobs and all 56 compiler actions.
+- Keep native inspector captions distinct from authored Text/Image content
+  inside captured editor and preview regions while preserving exact selected
+  block/type/order and active-preview guards.
+- Keep the immutable sixth core and frozen-fifth operation audit unchanged.
+  Native outer Save, backend Unique Key normalization, full option-range and
+  functional acceptance remain pending; Picture Choice and Video Blocks are
+  not added by this checkpoint. Global release metadata stays unchanged.
+
 ## [v27.1.97] - 2026-11-09
 
 - Add inactive-template native Text Block append/plain-text editing with exact
