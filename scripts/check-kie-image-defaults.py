@@ -23,9 +23,10 @@ THE SIX AXES (all must be zero)
                 version: 2-5 must be `legacy`, 2-6 must be `default`
   D_dispatch    the live selector must resolve a generic request to a 2.6 id
                 (behavioural: this is the check a doc edit cannot satisfy)
-  D_ratio       a row on the 2.6 default route whose `aspect_ratios` set is not
-                exactly the vendor-served 2.6 set: a ratio it CLAIMS that 2.6
-                does not serve (3:1, 1:3, 9:21 are legacy-only), or a ratio it
+  D_ratio       a row on the 2.6 route whose `aspect_ratios` set is not
+                exactly the vendor-served 2.6 set (derived at check time from
+                the vendor registry enum): a ratio it CLAIMS that 2.6
+                does not serve (27:16, 16:27, 9:8, 8:9), or a ratio it
                 fails to advertise that 2.6 does serve
   D_prose_bare  a `default` claim within 40 chars of a BARE version token in a
                 GPT-Image context, with no model prefix on that token — the
@@ -70,14 +71,33 @@ BARE_MODEL = re.compile(r"(?<![\d.])2[._](5|6)\d*(?![\d])")
 # "in a GPT-Image context": the line must name the image family, so a stray
 # "2.5" in a Python or package-version sentence stays out of scope.
 GPT_IMAGE_CTX = re.compile(r"gpt[-_ ]?image|sunburst", re.I)
-# Aspect ratios the GPT Image 2.6 route actually serves. Quote provenance:
-# docs.kie.ai market pages for gpt-image-2-6/sunburst, verified 2026-08-26 and
-# mirrored by BOTH status:"default" rows in 66-kie-image/models.json. 3:1, 1:3
-# and 9:21 are NOT served by 2.6 — they are the legacy gpt-image-2 carve-out.
-VENDOR_26_RATIOS = frozenset({
-    "auto", "1:1", "3:2", "2:3", "16:9", "9:16", "4:3", "3:4", "21:9",
-    "27:16", "16:27", "9:8", "8:9",
-})
+# Source of truth for the served 2.6 ratio set (vendor enum for
+# gpt-image-2-6/sunburst-text-to-image):
+#   74-kie-live-adapter/references/kie-model-registry.json
+#   models[].input_fields.aspect_ratio.enum
+# Read at check time so the guard tracks the vendor, not a pasted copy.
+VENDOR_MODEL_ID = "gpt-image-2-6/sunburst-text-to-image"
+
+
+def load_vendor_26_ratios(root: Path) -> frozenset:
+    """Derive the served 2.6 ratio set from the vendor registry enum."""
+    registry = root / "74-kie-live-adapter" / "references" / "kie-model-registry.json"
+    if not registry.exists():
+        raise SystemExit("check-kie-image-defaults: missing %s" % registry)
+    try:
+        data = json.loads(registry.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise SystemExit("check-kie-image-defaults: unparsable vendor registry: %s" % exc)
+    models = data.get("models", []) if isinstance(data, dict) else []
+    for model in models:
+        if model.get("id") == VENDOR_MODEL_ID:
+            enum = (model.get("input_fields") or {}).get("aspect_ratio", {}).get("enum")
+            if isinstance(enum, list) and enum:
+                return frozenset(str(r) for r in enum)
+            raise SystemExit(
+                "check-kie-image-defaults: no aspect_ratio enum for %s in vendor registry"
+                % VENDOR_MODEL_ID)
+    raise SystemExit("check-kie-image-defaults: %s not found in vendor registry" % VENDOR_MODEL_ID)
 EXCLUDED_BASENAME = "changelog.md"
 TEXT_EXT = {
     "", ".md", ".json", ".py", ".sh", ".yaml", ".yml", ".js", ".mjs", ".ts",
@@ -163,6 +183,7 @@ HISTORY = re.compile(
 
 def audit(root: Path):
     live, prose, bare, ratio = [], [], [], []
+    vendor_26_ratios = load_vendor_26_ratios(root)
     for rel, path in tracked_files(root):
         text = read_text(path)
         if text is None:
@@ -233,17 +254,17 @@ def audit(root: Path):
             rows.append((label, status, "2-5 row must be legacy"))
         elif version == "6" and status != "default":
             rows.append((label, status, "2-6 row must be default"))
-        # D_ratio: the 2.6 default route must advertise exactly the vendor set.
-        # Legacy rows are out of scope by design — the legacy gpt-image-2 route
-        # exists precisely to serve 3:1, 1:3 and 9:21, which 2.6 does not.
+        # D_ratio: the 2.6 route must advertise exactly the vendor enum set.
+        # Legacy rows are out of scope by design — the legacy gpt-image-2 rows
+        # serve their own enum, which this axis does not govern.
         if status == "default" or version == "6":
             claimed = row.get("aspect_ratios")
             if not isinstance(claimed, list) or not claimed:
                 ratio.append((label, "none", "default row declares no aspect-ratio set"))
                 continue
             claimed_set = [str(r) for r in claimed]
-            extra = [r for r in claimed_set if r not in VENDOR_26_RATIOS]
-            missing = [r for r in sorted(VENDOR_26_RATIOS) if r not in claimed_set]
+            extra = [r for r in claimed_set if r not in vendor_26_ratios]
+            missing = [r for r in sorted(vendor_26_ratios) if r not in claimed_set]
             if extra:
                 ratio.append((label, ",".join(extra),
                               "claims ratio(s) the 2.6 route does not serve"))
@@ -304,7 +325,14 @@ def report(root: Path, live, prose, rows, ratio, bare, dispatch) -> int:
 
 
 def self_test() -> int:
-    """Prove the gate discriminates: a stale fixture fails, the real tree passes."""
+    """Prove the gate discriminates: a stale fixture fails, a true-enum row passes.
+
+    The stale fixture carries a minimal vendor registry with the TRUE served
+    enum and proves both directions: the defective row (claims 27:16, drops
+    5:4) is reported, the clean row (exact enum) is not. The real-tree count
+    is printed informationally only — it is expected RED until
+    66-kie-image/models.json carries the true enum (PR #2985), which is the
+    intended fail-closed ordering, not a gate failure."""
     import tempfile
 
     failures = 0
@@ -315,15 +343,28 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "66-kie-image" / "scripts").mkdir(parents=True)
+        # The self-test fixture needs the vendor registry: the served set is
+        # derived from it at check time. A minimal registry carrying the TRUE
+        # vendor enum keeps the fixture independent of the real tree's size.
+        (root / "74-kie-live-adapter" / "references").mkdir(parents=True)
+        (root / "74-kie-live-adapter" / "references" / "kie-model-registry.json").write_text(
+            json.dumps({"models": [{
+                "id": VENDOR_MODEL_ID,
+                "input_fields": {"aspect_ratio": {"enum": [
+                    "auto", "1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5",
+                    "16:9", "9:16", "2:1", "1:2", "21:9", "9:21", "3:1", "1:3",
+                ]}},
+            }]}), encoding="utf-8")
         (root / "66-kie-image" / "models.json").write_text(json.dumps({"models": [
             {"canonical_model_id": m25 + "-sunburst-text-to-image",
              "family": m25 + "-sunburst", "status": "default"},
-            # deliberate D_ratio defect: claims 3:1 (legacy-only) and drops 8:9
+            # deliberate D_ratio defect: claims 27:16 (not served) and drops
+            # 5:4 (served) — mirrors the real-tree defect awaiting #2985
             {"canonical_model_id": "gpt-image-2-6/sunburst-text-to-image",
              "family": "gpt-image-2-6/sunburst", "status": "default",
              "aspect_ratios": ["auto", "1:1", "3:2", "2:3", "16:9", "9:16",
                                "4:3", "3:4", "21:9", "27:16", "16:27", "9:8",
-                               "3:1"]},
+                               "8:9"]},
         ]}), encoding="utf-8")
         (root / "docs.md").write_text(
             "GPT Image " + m25d + " Sunburst is the default for everything.\n"
@@ -344,9 +385,10 @@ def self_test() -> int:
         bare_line = [s[2] for s in bare]
         bare_ok = any("GPT-Image route" in s for s in bare_line)
         decoy_ok = not any("Python" in s for s in bare_line)
-        ratio_ok = any("3:1" in why or "3:1" in vals for _, vals, why in ratio)
-        print("self-test stale fixture: DEFECTS=%d prose_named=%s bare_ok=%s decoy_ok=%s ratio_ok=%s"
-              % (total, named, bare_ok, decoy_ok, ratio_ok))
+        ratio_extra_ok = any("27:16" in vals for _, vals, _ in ratio)
+        ratio_missing_ok = any("5:4" in vals for _, vals, _ in ratio)
+        print("self-test stale fixture: DEFECTS=%d prose_named=%s bare_ok=%s decoy_ok=%s ratio_extra=%s ratio_missing=%s"
+              % (total, named, bare_ok, decoy_ok, ratio_extra_ok, ratio_missing_ok))
         if total < 5 or not named:
             print("FAIL: stale fixture was not caught (expected >=5 defects incl. docs.md)")
             failures += 1
@@ -356,17 +398,18 @@ def self_test() -> int:
         if not decoy_ok:
             print("FAIL: a bare version outside a GPT-Image context was reported")
             failures += 1
-        if not ratio_ok:
-            print("FAIL: a 2.6 default row claiming 3:1 was not caught")
+        if not ratio_extra_ok:
+            print("FAIL: a 2.6 default row claiming 27:16 was not caught")
+            failures += 1
+        if not ratio_missing_ok:
+            print("FAIL: a 2.6 default row dropping 5:4 was not caught")
             failures += 1
 
     live, prose, rows, ratio, bare, dispatch = audit(ROOT)
     total = (len(live) + len(prose) + len(rows) + len(ratio) + len(bare)
              + (0 if "2-6" in dispatch else 1))
-    print("self-test real tree: DEFECTS=%d" % total)
-    if total != 0:
-        print("FAIL: the real tree must be clean for this gate to be meaningful")
-        failures += 1
+    print("self-test real tree: DEFECTS=%d (informational; expected RED until "
+          "66-kie-image/models.json carries the true enum)" % total)
     print("SELFTEST %s" % ("OK" if failures == 0 else "FAILED"))
     return 0 if failures == 0 else 1
 
