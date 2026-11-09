@@ -1,3 +1,7 @@
+## [v2.1.45] - 2026-11-08 - merge union: F05 enrolment readback and Skill 6 calendar registration both kept
+
+The batch merge of `origin/main` (`a89a789a2`, #2877) into the W26 content fold hit the same two files from both sides: this changelog and `tools/engine/tests/test_build_from_automation.py`. Both sides are kept: the F05 `allowMultiple` enrolment readback entry and the Calendars v3 registration entry, both below, stand, and the build stub keeps the head-side comment and signature the F11 browser capability needs. No engine, CLI, template, guard or QC script behaviour changed by this merge. `skill-version.txt` and the `SKILL.md` frontmatter move v2.1.44 -> v2.1.45 for G3.
+
 ## [v2.1.44] - 2026-11-08
 
 ### F05 / BLD-015: native enrolment applied and proven by readback
