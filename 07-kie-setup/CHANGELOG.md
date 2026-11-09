@@ -1,3 +1,7 @@
+## [v7.2.8] - 2026-11-09 - test pins follow the shipped versions (G3 lockstep)
+
+- `tests/test_official_docs_port.py`: `SKILL_VERSIONS` pinned 07 at 7.2.4, 74 at 1.1.12, 66 at 2.2.6 and 68 at 2.3.6 while the shipped files read 7.2.7 / 1.1.14 / 2.2.9 / 2.3.7, so `test_skill_version_files` and `test_skill_md_frontmatter` failed at HEAD. The pins now name the shipped values and the skill's own pin moves to 7.2.8 with this version roll. No setup step changes.
+
 ## [v7.2.7] - 2026-11-09 - GPT Image 2.6 named as the Presentations pin (2.5 claim corrected)
 
 - `SKILL.md` line 90 named GPT-Image-2.5 as the Presentations-pinned model; Presentations pins `gpt-image-2-6/sunburst-*`, so the sentence now names GPT-Image-2.6. Text only, no behaviour change.
