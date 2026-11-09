@@ -55,6 +55,20 @@ def _make_repo(tmp_path, cohort_extra=None):
         "onb_version": "v9.0.0",
         "cc_version": "v1.0.0",
         "contract": "1.1.0",
+        # F24 item 5: a complete record names all four distributions. The
+        # fixture must model the current contract or it tests a shape the
+        # roll script now refuses.
+        "sources": {
+            "onboarding": {"version": "v9.0.0", "sha": _STALE_ONB_SHA},
+            "n999": {"version": "1.0.0", "sha": "e" * 40},
+            "command_center": {"version": "v1.0.0", "sha": _STALE_CC_SHA,
+                               "tag_object_sha": "f" * 40},
+            "shared_launch_contract": {
+                "launch_plan": "U-CONTRACT v1",
+                "command_center_launch": 2,
+                "approval_record": "2.0",
+            },
+        },
         "notes": "pre-existing note that must survive the roll untouched",
     }
     if cohort_extra:
