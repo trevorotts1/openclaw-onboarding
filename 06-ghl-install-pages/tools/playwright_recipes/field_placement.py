@@ -9,6 +9,7 @@ import re
 
 
 BUILTIN_LABELS = (
+    'First Name', 'Last Name', 'Phone', 'Email',
     'Full Name', 'Date of birth', 'Address', 'City', 'State', 'Country',
     'Postal Code', 'Organization', 'Website',
 )
@@ -74,6 +75,10 @@ def _query_key(frame):
 # Only live-observed native identities enter this map. Menu labels alone do not
 # prove a contact-field key or permission to invent an unobserved placement.
 CAPTURED_FIELDS = {
+    'First Name': {'field_type':'text', 'query_keys':('first_name',)},
+    'Last Name': {'field_type':'text', 'query_keys':('last_name',)},
+    'Phone': {'field_type':'text', 'query_keys':('phone',)},
+    'Email': {'field_type':'email', 'query_keys':('email',)},
     'Full Name': {'field_type':'text', 'query_keys':('full_name',)},
     'Website': {'field_type':'text', 'query_keys':('website',)},
     'Organization': {'field_type':'text', 'query_keys':('organization',)},
@@ -84,7 +89,7 @@ CAPTURED_FIELDS = {
     'Postal Code': {'field_type':'text', 'query_keys':('postal_code',)},
     'Address': {'field_type':'group', 'query_keys':('address', 'country', 'state', 'city', 'postal_code')},
 }
-SELECTABLE_INPUT_TYPES = frozenset(('text', 'email', 'date', 'select'))
+SELECTABLE_INPUT_TYPES = frozenset(('text', 'email', 'date', 'select', 'RADIO'))
 NON_CONTACT_TYPES = frozenset(('terms_and_conditions', 'submit', 'h1'))
 CANVAS_ITEMS = '#form-builder-container > .form-field-wrapper'
 SUBMIT_DROP = CANVAS_ITEMS + ':has(button#submit-button)'
@@ -116,7 +121,7 @@ _ADDRESS_QUERIES = {
 }
 
 
-def _address_keys(frame):
+def _address_keys(frame, *, allow_unknown_queries=False):
     """Read the captured five child fields of one complete native Address group."""
     headers = frame.locator('.n-collapse-item__header-main')
     if headers.count() != len(_ADDRESS_QUERIES):
@@ -136,8 +141,10 @@ def _address_keys(frame):
         if not controls or not controls[0].is_visible():
             header.click(timeout=45000)
         key = _query_key(item)
-        if key != expected:
+        if not allow_unknown_queries and key != expected:
             _stop('Native Address child Query Key differs from its captured identity')
+        if allow_unknown_queries and any(char.isspace() for char in key):
+            _stop('Native Address child Query Key is not a valid query token')
         observed.append(key)
     if len(set(observed)) != len(_ADDRESS_QUERIES):
         _stop('Native Address child query identities are duplicated')
@@ -172,12 +179,21 @@ def _inventory(frame, *, allow_unknown_queries=False):
         if field_type not in SELECTABLE_INPUT_TYPES | {'group'}:
             _stop('Uncaptured existing native field type requires inventory capture')
         controls = item.locator('input')
-        expected_count = 6 if field_type == 'group' else 1
-        if controls.count() != expected_count:
-            _stop('Native field selectable input is missing or ambiguous')
-        # The complete Address group has search plus five child inputs. Its
-        # second input selects the whole group, including renamed child labels.
-        selected = controls.nth(1) if field_type == 'group' else controls
+        if field_type == 'RADIO':
+            radios = item.locator('input[type="radio"]')
+            if radios.count() < 1 or radios.count() != controls.count():
+                _stop('Native custom Radio input inventory is missing or changed')
+            ids = [radios.nth(i).get_attribute('name') for i in range(radios.count())]
+            if not ids[0] or len(set(ids)) != 1:
+                _stop('Native custom Radio inputs do not share one existing field identity')
+            selected = labels
+        else:
+            expected_count = 6 if field_type == 'group' else 1
+            if controls.count() != expected_count:
+                _stop('Native field selectable input is missing or ambiguous')
+            # The complete Address group has search plus five child inputs. Its
+            # second input selects the whole group, including renamed labels.
+            selected = controls.nth(1) if field_type == 'group' else controls
         selected.click(timeout=45000)
         if field_type in ('date', 'select'):
             selected.press('Escape', timeout=45000)
@@ -187,7 +203,7 @@ def _inventory(frame, *, allow_unknown_queries=False):
             _stop('Native field settings control does not belong to its canvas wrapper')
         gear.click(timeout=45000)
         frame.get_by_text('Address Fields' if field_type == 'group' else 'General Settings', exact=True).wait_for(state='visible', timeout=45000)
-        keys = _address_keys(frame) if field_type == 'group' else (_query_key(frame),)
+        keys = _address_keys(frame, allow_unknown_queries=allow_unknown_queries) if field_type == 'group' else (_query_key(frame),)
         known = {'first_name', 'last_name', 'phone', 'email'} | {
             key for spec in CAPTURED_FIELDS.values() for key in spec['query_keys']}
         for key in keys:
@@ -261,17 +277,31 @@ def configure(page, step):
     _close_initial(frame)
     click(frame.get_by_role('tab', name='Edit', exact=True))
     initial = _inventory(frame)
-    expected, outcomes = dict(initial), []
-    added = False
+    # Resolve every requested field against the complete existing inventory
+    # before the first drag. A later Address/standalone overlap or type conflict
+    # must not follow an earlier successful insertion in the same job.
+    planned = dict(initial)
+    placements = []
     for label in step['add_fields']:
         spec = CAPTURED_FIELDS[label]
         keys = spec['query_keys']
-        present = [key for key in keys if key in expected]
+        present = [key for key in keys if key in planned]
         if present:
-            if len(present) != len(keys) or any(expected[key] != spec['field_type'] for key in keys):
+            if len(present) != len(keys) or any(planned[key] != spec['field_type'] for key in keys):
                 _stop('Existing native query belongs to a different field type or overlapping address layout')
+            placements.append((label, spec, True))
+        else:
+            placements.append((label, spec, False))
+            planned.update({key:spec['field_type'] for key in keys})
+    expected, outcomes = dict(initial), []
+    added = False
+    for label, spec, reused in placements:
+        keys = spec['query_keys']
+        if reused:
             outcomes.append({'field':label, 'query_keys':list(keys), 'placement':'reused'})
             continue
+        if _inventory(frame) != expected:
+            _stop('Native canvas identities changed after the complete placement preflight')
         _drag_builtin(frame, label, spec)
         expected.update({key:spec['field_type'] for key in keys})
         if _inventory(frame) != expected:

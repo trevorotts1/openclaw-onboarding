@@ -41,7 +41,7 @@ class _Owner:
 
 _owned = ContextVar('skill6_evidence_lease', default=None)
 JOURNALS = ('state.json', 'provider-state.json', 'community-portal-state.json',
-            'community-details-state.json', 'delivery-state.json',
+            'community-details-state.json', 'community-access-state.json', 'delivery-state.json',
             'calendar-delivery-state.json', 'handoff.json', 'auth-stop.json')
 
 
@@ -101,6 +101,8 @@ def _journal_checks(root, kind, *, nested=False):
     names = ['state.json', 'community-portal-state.json', 'handoff.json', 'auth-stop.json']
     if kind != 'community_details':
         names.append('community-details-state.json')
+    if kind != 'community_access':
+        names.append('community-access-state.json')
     if kind not in ('provider', 'provider_replay') and not nested:
         names.append('provider-state.json')
     if kind == 'provider':
@@ -109,7 +111,7 @@ def _journal_checks(root, kind, *, nested=False):
         names.append('calendar-delivery-state.json')
     elif kind == 'calendar':
         names.append('delivery-state.json')
-    elif kind == 'community_details':
+    elif kind in ('community_details', 'community_access'):
         names.extend(('delivery-state.json', 'calendar-delivery-state.json'))
     for name in names:
         if journal_present(root / name):
@@ -126,7 +128,7 @@ def evidence_lease(root, location_id, *, kind):
     provider_replay admits existing API journals only for returning a prior host
     receipt. It cannot nest a delivery write, even in the same thread/task.
     """
-    if kind not in ('provider', 'provider_replay', 'course', 'calendar', 'community_details'):
+    if kind not in ('provider', 'provider_replay', 'course', 'calendar', 'community_details', 'community_access'):
         raise Stop('Unknown evidence-root writer')
     if not isinstance(location_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]+', location_id):
         raise Stop('A valid evidence-root location identity is required')

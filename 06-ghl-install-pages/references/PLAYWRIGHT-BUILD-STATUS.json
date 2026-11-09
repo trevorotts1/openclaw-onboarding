@@ -1,0 +1,254 @@
+{
+  "schema": "skill6-build-inventory/2",
+  "updated_at": "2026-11-09T15:20:42.637Z",
+  "scope": "33 named catalog operations; executable build coverage, not elapsed effort or live readiness.",
+  "counts": {
+    "BUILT": 21,
+    "PARTIAL": 11,
+    "GENERIC_ONLY": 1
+  },
+  "remaining_named_operations_requiring_build_work": 12,
+  "definition": {
+    "BUILT": "Concrete executable implementation exists for the named operation contract; provider/capture/input credentials and deferred proof alone are not missing code.",
+    "PARTIAL": "Concrete executable implementation exists but identified requested features within its area lack native schema/action/dispatch.",
+    "GENERIC_ONLY": "Named operation has only generic recorded-profile execution, without a dedicated implementation."
+  },
+  "operations": [
+    {
+      "operation": "funnels.create",
+      "recipe_name": "01_create_funnel",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "funnels.add_page",
+      "recipe_name": "02_add_funnel_page",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "websites.create",
+      "recipe_name": "03_create_website",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "websites.add_page",
+      "recipe_name": "04_add_website_page",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "pages.install_code",
+      "recipe_name": "05_install_external_code",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "pages.install_embed",
+      "recipe_name": "06_install_hosted_embed",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "checkout.wrap_native",
+      "recipe_name": "07_wrap_native_checkout",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "checkout.one_click_upsell",
+      "recipe_name": "08_configure_native_upsell",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "funnels.split_variant",
+      "recipe_name": "09_create_split_variant",
+      "status": "GENERIC_ONLY",
+      "missing_executable_features": [
+        "No executable dedicated native variant/traffic handler. Actual control/variant identity, creation/save and traffic allocation captures are still required."
+      ]
+    },
+    {
+      "operation": "pages.seo",
+      "recipe_name": "10_fill_page_seo",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "forms.create",
+      "recipe_name": "11_create_form",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "forms.configure",
+      "recipe_name": "12_configure_form_options",
+      "status": "PARTIAL",
+      "missing_executable_features": [
+        "Additional native field types/properties, composite Address child properties beyond Query Keys, and uncaptured builder controls remain incomplete. Captured consent and existing Radio placement are implemented."
+      ]
+    },
+    {
+      "operation": "forms.style",
+      "recipe_name": "13_polish_form_css",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "surveys.create",
+      "recipe_name": "14_create_survey",
+      "status": "PARTIAL",
+      "missing_executable_features": [
+        "Creation of authored advanced question types, choice schemas and per-question properties remains partial."
+      ]
+    },
+    {
+      "operation": "quizzes.create",
+      "recipe_name": "15_create_marketing_quiz",
+      "status": "PARTIAL",
+      "missing_executable_features": [
+        "Native creation of authored quiz question types remains partial; current blank/standard-field creation does not cover all requested questions."
+      ]
+    },
+    {
+      "operation": "communities.create",
+      "recipe_name": "16_create_community",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "communities.configure",
+      "recipe_name": "17_configure_community",
+      "status": "PARTIAL",
+      "missing_executable_features": [
+        "Captured classic channels/details/access paths exist. Branding/media/course associations and exact app-to-portal identity/reuse mapping remain incomplete."
+      ]
+    },
+    {
+      "operation": "courses.create",
+      "recipe_name": "18_create_course",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "courses.configure_ui",
+      "recipe_name": "19_configure_course_ui",
+      "status": "PARTIAL",
+      "missing_executable_features": [
+        "Inactive theme text/visibility, six-color palette and primary/secondary font/weight are implemented. Media uploads and custom content blocks remain incomplete."
+      ]
+    },
+    {
+      "operation": "meetings.setup",
+      "recipe_name": "20_setup_meeting_room",
+      "status": "PARTIAL",
+      "missing_executable_features": [
+        "Co-host assignment remains incomplete; read-only roster/candidate preflight is available, without assignment/removal/save."
+      ]
+    },
+    {
+      "operation": "meetings.integrate",
+      "recipe_name": "21_integrate_meeting_room",
+      "status": "PARTIAL",
+      "missing_executable_features": [
+        "Static permanent calendar links are implemented. Dynamic per-appointment rooms and native community/course associations remain incomplete."
+      ]
+    },
+    {
+      "operation": "forms.settings",
+      "recipe_name": "22_configure_form_settings",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "courses.update",
+      "recipe_name": "23_update_course",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "courses.lesson_quiz.create",
+      "recipe_name": "24_create_lesson_quiz",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "forms.conditions",
+      "recipe_name": "25_configure_form_condition",
+      "status": "PARTIAL",
+      "missing_executable_features": [
+        "Compound AND/OR condition groups, multi-target effects and other native effects remain incomplete; single-target Hide/Show paths exist."
+      ]
+    },
+    {
+      "operation": "checkout.configure_native",
+      "recipe_name": "26_configure_native_checkout",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "meetings.update",
+      "recipe_name": "27_update_meeting_room",
+      "status": "PARTIAL",
+      "missing_executable_features": [
+        "Co-host assignment/removal and persisted roster writer remain incomplete; existing room/security update path is implemented."
+      ]
+    },
+    {
+      "operation": "quizzes.configure",
+      "recipe_name": "28_configure_quiz_scores_and_tiers",
+      "status": "PARTIAL",
+      "missing_executable_features": [
+        "Existing question properties, categories, scoring, three tiers and Header/CTA copy are implemented. New question types, answer jump routing, other result layouts/styling/media remain incomplete."
+      ]
+    },
+    {
+      "operation": "surveys.configure",
+      "recipe_name": "29_configure_survey_branch",
+      "status": "PARTIAL",
+      "missing_executable_features": [
+        "Ordered forward Jump To stacks and existing Radio object-question placement are implemented. Other question types, compound conditions, completion/disqualification effects remain incomplete."
+      ]
+    },
+    {
+      "operation": "checkout.configure_ui",
+      "recipe_name": "30_configure_native_checkout_ui",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "forms.submission",
+      "recipe_name": "31_configure_form_submission",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "forms.notifications",
+      "recipe_name": "32_configure_form_notifications",
+      "status": "BUILT",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "courses.lessons",
+      "recipe_name": "33_update_course_outline",
+      "status": "BUILT",
+      "missing_executable_features": [],
+      "boundary": "Existing draft categories/lessons only: hierarchy moves, drip metadata and lock references. No publication, activated learner access or learner proof is claimed."
+    }
+  ],
+  "uncatalogued_requirements": [
+    {
+      "feature": "Native form tracking/integrations",
+      "status": "UNMAPPED_BUILD_GAP",
+      "reason": "Native inventory and executable schema still required; not silently counted as complete."
+    },
+    {
+      "feature": "Native Order Confirmation submission mode",
+      "status": "PAYMENT_RAIL_OWNED_UNMAPPED",
+      "reason": "Must map to native payment implementation. Not a missing Message/HTTPS Redirect feature."
+    }
+  ],
+  "verification": "Optional/manual/live execution deferred. Required repository merge checks remain enabled. Synthetic checks do not establish native client acceptance."
+}

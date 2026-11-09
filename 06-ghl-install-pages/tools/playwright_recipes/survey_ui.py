@@ -1,9 +1,13 @@
-"""Native survey forward Jump To rules captured on 2026-11-08.
+"""Native survey forward Jump To rules and complete ordered branch stacks.
 
 Rule save, drawer save and form save are separate operations. Preview behavior
-is a separate verification concern from persisted native configuration.
+is a separate verification concern from persisted native configuration. The
+same captured rule controls support a fully inventoried ordered stack, without
+inventing compound conditions or completion effects.
 """
 from copy import deepcopy
+import hashlib
+import json
 import re
 
 
@@ -15,7 +19,7 @@ OPERATORS = {'Is Equal To', 'Is Not Equal To', 'Contains', 'Does Not Contain',
              'Starts With', 'Ends With', 'Is Empty', 'Is Filled'}
 
 
-def validate(step):
+def _validate_rule(step):
     if not isinstance(step, dict):
         raise SurveyError('Survey rule must be an object')
     if set(step) - {'id', 'action', 'expected_slide_count', 'source_slide', 'target_slide',
@@ -49,7 +53,75 @@ def validate(step):
     return deepcopy(step)
 
 
+def validate(step):
+    """Accept one rule or an explicitly ordered stack of existing-slide rules."""
+    if not isinstance(step, dict) or 'rules' not in step:
+        return _validate_rule(step)
+    if set(step) - {'id', 'action', 'expected_slide_count', 'slide_labels', 'rules'}:
+        raise SurveyError('Unsupported native survey rule-stack option')
+    rules = step.get('rules')
+    if not isinstance(rules, list) or not rules:
+        raise SurveyError('A survey rule stack requires at least one explicit rule')
+    seen = set()
+    for rule in rules:
+        if not isinstance(rule, dict) or set(rule) - {
+                'source_slide', 'target_slide', 'if_field', 'source_placeholder', 'operator', 'value'}:
+            raise SurveyError('Survey stack rules must contain only their authored condition and targets')
+        value = _validate_rule({
+            'expected_slide_count':step.get('expected_slide_count'),
+            'slide_labels':step.get('slide_labels'), **rule})
+        # Native summary cards identify the condition independently of its
+        # destination. Duplicate/conflicting destinations are not two rules.
+        identity = (value['if_field'], value['operator'], value.get('value'))
+        if identity in seen:
+            raise SurveyError('Duplicate survey stack condition requires reconciliation')
+        seen.add(identity)
+    return deepcopy(step)
+
+
+def configuration_hash(step):
+    value = validate(step)
+    canonical = {key:item for key, item in value.items() if key not in ('id', 'action')}
+    return hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def _summary(rule):
+    return 'If' + rule['if_field'] + rule['operator'] + rule.get('value', '')
+
+
 def configure(page, step):
+    """Author every requested forward branch without a model call per rule."""
+    value = validate(step)
+    if 'rules' not in value:
+        return _configure_rule(page, value)
+    common = {key:value[key] for key in ('expected_slide_count', 'slide_labels')}
+    rules = [{**common, **rule} for rule in value['rules']]
+    # Read every source, slide inventory and conflicting native condition before
+    # the first new rule. Each later write remains individually duplicate-safe.
+    intended_order = [_summary(rule) for rule in rules]
+    existing_order = None
+    for rule in rules:
+        observed = _configure_rule(page, rule, preflight=True)['_native_summaries']
+        if existing_order is None:
+            existing_order = observed
+        if observed != existing_order or observed != intended_order[:len(observed)]:
+            raise SurveyError('Existing survey conditions are not the exact prefix of this complete ordered rule stack')
+    for rule in rules:
+        _configure_rule(page, rule)
+    # Later rule saves must not silently remove an earlier branch. Reopen and
+    # inspect every requested native summary card after the last authored rule.
+    for rule in rules:
+        observed = _configure_rule(page, rule, read_only=True)['_native_summaries']
+        if observed != intended_order:
+            raise SurveyError('Saved survey stack priority/order differs from the requested complete rule stack')
+    return {'status':'SURVEY_RULE_STACK_SAVED_AND_REOPENED',
+            'kind':'survey_condition_stack', 'editor_url':page.url,
+            'rule_count':len(rules), 'configuration_sha256':configuration_hash(value),
+            'independent_readback':'VERIFIED', 'behavior_verified':False,
+            'submission_verified':False}
+
+
+def _configure_rule(page, step, *, preflight=False, read_only=False):
     """Create/reuse one native forward rule and independently reopen its card.
 
     Source ownership is checked against actual survey slide containers before
@@ -59,7 +131,7 @@ def configure(page, step):
         from .skill6_playwright import click, fill, visible, wait_until, Stop
     else:
         from skill6_playwright import click, fill, visible, wait_until, Stop
-    step = validate(step)
+    step = _validate_rule(step)
     frame = page.frame_locator('iframe[name="survey-builder-app"]')
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
@@ -86,14 +158,24 @@ def configure(page, step):
                     'Last Name': 'Enter your last name', 'Phone': '+1 (555) 000-0000'}
         placeholder = step.get('source_placeholder', defaults.get(step['if_field']))
         if placeholder:
-            if owner.get_by_placeholder(placeholder, exact=True).count() != 1:
+            target = owner.get_by_placeholder(placeholder, exact=True)
+            if target.count() != 1:
                 raise Stop('Conditional field does not belong to the claimed source slide')
-        elif owner.get_by_text(step['if_field'], exact=True).count() + owner.get_by_text(step['if_field'] + '*', exact=True).count() != 1:
-            raise Stop('Custom conditional field owner is absent or ambiguous')
+        else:
+            plain = owner.get_by_text(step['if_field'], exact=True)
+            required = owner.get_by_text(step['if_field'] + '*', exact=True)
+            if plain.count() + required.count() != 1:
+                raise Stop('Custom conditional field owner is absent or ambiguous')
+            target = plain if plain.count() else required
+        return target
 
     close_initial()
     click(frame.get_by_role('tab', name='Edit', exact=True))
-    source_guard()
+    source = source_guard()
+    # The captured legacy survey rail selects the owner before opening its
+    # amber condition control. Merely finding a field on that slide does not
+    # change which slide/field is currently selected in the native editor.
+    click(source)
     click(frame.get_by_role('button', name='Open Conditional Logic', exact=True))
     dialog = frame.get_by_role('dialog')
     dialog.wait_for(state='visible', timeout=45000)
@@ -115,13 +197,30 @@ def configure(page, step):
         return True
 
     def result(status):
-        return {'status': status, 'kind': 'survey_condition', 'editor_url': page.url,
+        outcome = {'status': status, 'kind': 'survey_condition', 'editor_url': page.url,
                 'if_field': step['if_field'], 'operator': step['operator'],
                 'source_slide': step['source_slide'], 'target_slide': step['target_slide'],
                 'independent_readback': 'VERIFIED', 'behavior_verified': False,
                 'submission_verified': False}
+        if preflight or read_only:
+            rows = dialog.locator('.condition-summary-row')
+            outcome['_native_summaries'] = [
+                (rows.nth(index).text_content() or '').replace('\u00a0', ' ').strip()
+                for index in range(rows.count())]
+        return outcome
 
-    if persisted_match():
+    matched = persisted_match()
+    if preflight or read_only:
+        if read_only and not matched:
+            raise Stop('A previously saved survey stack rule is absent from independent read-back')
+        outcome = result('SURVEY_RULE_PREFLIGHT_READY' if preflight else 'SURVEY_RULE_ALREADY_PRESENT')
+        close = dialog.get_by_role('button', name='Close', exact=True)
+        if close.count() != 1 or not close.is_visible():
+            raise Stop('Captured survey condition drawer close control is unavailable; no rule save attempted')
+        click(close)
+        dialog.wait_for(state='hidden', timeout=45000)
+        return outcome
+    if matched:
         return result('SURVEY_RULE_ALREADY_PRESENT')
     click(dialog.get_by_text('Jump To', exact=True))
     inputs = dialog.get_by_role('textbox')
@@ -162,7 +261,8 @@ def configure(page, step):
         raise Stop('Reopened survey identity changed')
     close_initial()
     click(frame.get_by_role('tab', name='Edit', exact=True))
-    source_guard()
+    source = source_guard()
+    click(source)
     click(frame.get_by_role('button', name='Open Conditional Logic', exact=True))
     dialog.wait_for(state='visible', timeout=45000)
     if not persisted_match():

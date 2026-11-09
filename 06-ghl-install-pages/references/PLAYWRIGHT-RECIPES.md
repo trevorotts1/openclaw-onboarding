@@ -314,3 +314,28 @@ reads each result independently. Quiz/assignment transitions, publication,
 enrollment, moving modules and access/drip/lock rules are outside this operation.
 The receipt stays pending learner verification. Official MCP execution requires
 an actual installed callback; it never silently substitutes the HTTP transport.
+
+## November 9 native build continuation
+
+`forms.configure` accepts captured Address child Query Keys, consent and
+API-inventoried existing Radio fields. `surveys.configure` accepts complete ordered
+forward rule stacks or exact existing-slide Radio placement. See package examples.
+
+`quizzes.configure.configuration.result_page` edits existing Header business-name
+and per-tier CTA plain text/button/HTTPS link values. Expected previous values and
+existing dynamic mode/source are mandatory; see `quiz-result-copy.json`. Normal
+question/category/scoring configuration remains a separate earlier action in the
+same compiled job. Saved/replayed results bind exact editor and configuration.
+
+`courses.configure_ui` accepts an inventoried inactive template with fourteen
+text/visibility controls, six-color layout palette and primary/secondary font and
+weight. It preserves the current active theme; media and custom blocks remain
+incomplete. `courses.lessons` supports existing draft module/lesson moves and
+drip/lock-reference metadata through the API-first provider.
+
+`community_access.py` implements captured classic privacy/access controls;
+`meeting_cohosts.py` is a read-only preflight helper only. It never assigns, removes
+or saves a co-host. Neither file establishes all community/meeting options.
+
+Consult `PLAYWRIGHT-BUILD-STATUS.json` for exact scope; native functional acceptance
+remains separately pending.
