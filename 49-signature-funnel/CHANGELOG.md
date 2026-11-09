@@ -1,6 +1,6 @@
 # Changelog — Signature Funnel (Skill 49)
 
-## v2.1.39 - 2026-11-08 - registry-hash restamp for the AGNES gate fixtures (no behaviour change)
+## v2.1.40 - 2026-11-08 - registry-hash restamp for the AGNES gate fixtures (no behaviour change)
 
 - `scripts/test_agnes_gates.py` and `scripts/test_agnes_dispatch_e2e.py` carry the updated
   `KNOWN_ENTRY_HASH` (`0981c8f0…` to `d90d7f6f…`) for the KIE GPT Image 2.6 Sunburst registry
@@ -9,6 +9,8 @@
   hash-pin gate matches the restamped fixtures. Test files are outside the pin set.
 - No production path, gate threshold, band or dispatch rule changed; the front door, the
   12-section contract and every autofail code are untouched.
+- Version v2.1.40: main independently reached v2.1.39 (#2895, BLD-010 F17 residue), so this
+  migration takes the next patch to keep the G3 skill-version-bump guard honest.
 - Risk: LOW. Tests and their pin only.
 
 ## v2.1.27 - 2026-10-26 - oct-25 fix batch: l09-l12 launch-plan, dispatch and role-wrapper hardening
