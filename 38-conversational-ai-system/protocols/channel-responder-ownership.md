@@ -11,7 +11,7 @@ brain. Before any native agent is created or switched on, the operator records
 which component answers each channel. The record is the authority; a second
 declared responder is a refusal, not a preference.
 
-Source contract: BlackCEO GHL Hybrid Implementation Specification v3.0 §25
+Source contract: the GHL Hybrid implementation specification v3.0 §25
 (native Conversation AI and single-responder ownership). Activation behaviour is
 detailed in `references/native-ghl-ai-provisioning.md`; the layer distinction is
 in `references/GHL_AI_LAYERS.md`.
