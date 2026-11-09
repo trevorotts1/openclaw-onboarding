@@ -168,21 +168,29 @@ class WireRepairRoundThreeTests(unittest.TestCase):
         self.assertIn("BlackCEO gold hairline", prompt)
         self.assertIn("1440px frame", prompt)
 
-    def test_below_strict_floor_is_refused_on_the_paid_path(self):
-        # F18: on the PAID KIE path below 95 percent is a hard revision; a stub compose
-        # records the deficit and the last paid-submit boundary still refuses.
+    def test_short_prompt_is_refused_below_the_80_percent_floor(self):
+        # Owner rule 12: on the PAID path below the 80 percent floor (16,000 of 20,000) is the
+        # hard reject, naming the characters to add and the count to the 95 percent target.
         request = {"model": "gpt-image-2-5-sunburst", "_hypersat": PALETTE,
                    "stage_prompts": {"visual-mockup": "{copy}"}}
         with self.assertRaises(exe.ExecutorError) as ctx:
             exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4",
                              strict_floor=True)
-        self.assertIn("19000-char strict floor", str(ctx.exception))
+        self.assertIn("16000-char 80 percent floor", str(ctx.exception))
         self.assertIn("chars", str(ctx.exception))
+
+    def test_80_to_below_95_percent_passes_and_warns(self):
+        # The middle band PASSES and never silently: it names the characters to add.
+        request = {"model": "gpt-image-2-5-sunburst", "_hypersat": PALETTE,
+                   "stage_prompts": {"visual-mockup": "Detailed rule. " * 900}}
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
             prompt = exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4")
-        self.assertIn("19000-char strict floor", stderr.getvalue())
         self.assertTrue(prompt)
+        self.assertGreaterEqual(len(prompt), 16000)
+        self.assertLess(len(prompt), 19000)
+        self.assertIn("warn and expand", stderr.getvalue())
+        self.assertIn("below the 19000-char target", stderr.getvalue())
 
     def test_design_prose_section_budget_refuses(self):
         filler = "Detailed rule. " * 1400
