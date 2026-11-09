@@ -920,10 +920,12 @@ method (SOP Stage 4D and Stage 11C):
   allows (`4K` where it allows it; otherwise the nearest tier the route
   offers). The record carries the slice's real width and height from
   the filed bytes, never an intended size;
-- a slot designed at 3:1, 1:3 or 9:21 records `model_source:
-  explicit-request` with its `evidence` (or records
-  `legacy-ratio-route`), so the N43 ratio rule never rewrites the
-  designed ratio silently before generation;
+- the generated aspect ratio must equal the requested aspect ratio for
+  every slot and every `model_source`: GPT Image 2.6 serves all sixteen
+  enum ratios natively (3:1, 1:3 and 9:21 included), so no ratio is
+  rerouted to the legacy route and no ratio is substituted, and a
+  `legacy-ratio-route` source is a record of where the model id came
+  from, never an exemption from this equality;
 - assembly by deterministic code, never by hand:
   `scripts/stitch_sections.py` stitches the slices into the full-page
   PNG in record order and writes `stitch-receipt.json`;
@@ -982,9 +984,10 @@ the filed bytes and `generation.native_aspect` equals them;
 `generation.resolution` records the tier requested at generation time
 (`4K` where the chosen route's ratio allows it, otherwise the nearest
 tier the route offers; no `resolution` value was recorded before this
-rule); a slot designed at 3:1, 1:3 or 9:21 records `model_source`
-`explicit-request` with its `evidence` (or `legacy-ratio-route`), so
-N43 never rewrites it silently; `text_qc.garbled_words` is the set
+rule); a slot's generated aspect ratio must equal its requested aspect
+ratio whatever `model_source` records, because every enum ratio is served
+natively by GPT Image 2.6 and `legacy-ratio-route` carries no exemption;
+`text_qc.garbled_words` is the set
 of read-back tokens that do not appear in `expected_text` (the validator
 recomputes it, so a record cannot claim a pass over garbled text);
 `text_qc.attempts` counts the section's generations, so a section that
@@ -1045,7 +1048,7 @@ resolved from the registry at build time, never a name typed from memory.
       "height": 900,
       "generation": {
         "route": "kie-gpt-image",
-        "model_id": "gpt-image-2-5-sunburst-text-to-image",
+        "model_id": "gpt-image-2-6/sunburst-text-to-image",
         "model_source": "latest-family",
         "resolution": "4K",
         "layout_reference": "desktop-wireframe/section-01.png",
@@ -1069,7 +1072,7 @@ resolved from the registry at build time, never a name typed from memory.
       "height": 760,
       "generation": {
         "route": "kie-gpt-image",
-        "model_id": "gpt-image-2-5-sunburst-text-to-image",
+        "model_id": "gpt-image-2-6/sunburst-text-to-image",
         "model_source": "latest-family",
         "resolution": "4K",
         "layout_reference": "desktop-wireframe/section-02.png",

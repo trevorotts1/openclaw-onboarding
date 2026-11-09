@@ -2,7 +2,7 @@
 """Hypersaturation: the page color system and the image color grade, as prompt blocks (Skill 71).
 
 Owner order (Trevor Otts, 2026-10-19): "we use hyper saturation in our images - the blacks are
-blacker, the reds are redder, the whites are whiter." GPT Image 2.5 through KIE rarely produces that
+blacker, the reds are redder, the whites are whiter." GPT Image 2.6 through KIE rarely produces that
 vibrancy on its own, so it is prompted, every time, built in, and always in the CLIENT's brand
 colors. The rules and their evidence are references/hypersaturation-framework.md. This module is the
 one place the wording lives:

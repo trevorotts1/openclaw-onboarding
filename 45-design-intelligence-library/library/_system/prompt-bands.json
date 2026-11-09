@@ -26,12 +26,12 @@
         "carousel slide with baked headline"
       ],
       "endpoints": [
-        "gpt-image-2-5-sunburst-text-to-image",
-        "gpt-image-2-5-sunburst-image-to-image",
+        "gpt-image-2-6/sunburst-text-to-image",
+        "gpt-image-2-6/sunburst-image-to-image",
         "gpt-image-2-text-to-image",
         "gpt-image-2-image-to-image"
       ],
-      "_rationale": "Text-bearing assets (ads, covers, infographics, and social posts with baked text) route to GPT Image 2.5, the strongest on long structured prompts (MODEL-SPECS section 4). Social text-led posts no longer have a separate Ideogram band: Skill 35 routes every social image to GPT Image 2.5 Sunburst (owner order 2026-10-05). GK-20: nano-banana-2 is NOT an endpoint of any text-bearing band."
+      "_rationale": "Text-bearing assets (ads, covers, infographics, and social posts with baked text) route to GPT Image 2.6, the strongest on long structured prompts (MODEL-SPECS section 4). Social text-led posts no longer have a separate Ideogram band: Skill 35 routes every social image to GPT Image 2.6 Sunburst (owner order 2026-10-05). GK-20: nano-banana-2 is NOT an endpoint of any text-bearing band."
     },
     "visual_long": {
       "tier": "LONG",
@@ -43,8 +43,8 @@
         "thumbnail without text"
       ],
       "endpoints": [
-        "gpt-image-2-5-sunburst-text-to-image",
-        "gpt-image-2-5-sunburst-image-to-image",
+        "gpt-image-2-6/sunburst-text-to-image",
+        "gpt-image-2-6/sunburst-image-to-image",
         "gpt-image-2-text-to-image",
         "gpt-image-2-image-to-image",
         "nano-banana-2"

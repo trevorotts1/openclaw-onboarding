@@ -185,7 +185,7 @@ If the core files do not contain sufficient brand information, the AI must notif
 ### The Tech Stack
 
 - **AI Brain:** OpenClaw
-- **Image Generation:** kie.ai GPT Image 2.5 Sunburst for every image (`gpt-image-2-5-sunburst-text-to-image`; `gpt-image-2-5-sunburst-image-to-image` when a reference image is supplied). Owner order 2026-10-05; AGENTS.md N43 fleet pin. See Section 8.
+- **Image Generation:** kie.ai GPT Image 2.6 Sunburst for every image (`gpt-image-2-6/sunburst-text-to-image`; `gpt-image-2-6/sunburst-image-to-image` when a reference image is supplied). Owner order 2026-10-05; AGENTS.md N43 fleet pin. See Section 8.
 - **Video Generation:** kie.ai through Skill 67 (`67-kie-video` owns model selection and dispatch; see Section 16) + FFmpeg for merging
 - **Audio/Podcast:** Fish Audio S2 with inline emotion tags (requires Fish Audio API key + Voice ID. Depends on Skill 30: Fish Audio API Reference)
 - **Podcast Publishing:** n8n webhook automation (handles Podbean auth, upload, episode numbering, scheduling, and client email confirmation)
@@ -320,9 +320,9 @@ This step is automated via the heartbeat.md file. Every Saturday, the AI reaches
 15. Verify that each day works as a standalone piece while connecting to the series.
 
 **Step 4: Generate Images**
-16. Generate 7 images at 4:5 (1080 x 1350) for feed posts via kie.ai GPT Image 2.5 Sunburst (request 3:4 per N43, then crop to 4:5; see Section 8).
-17. Generate 7 images at 2:3 (1000 x 1500) for Pinterest via kie.ai GPT Image 2.5 Sunburst.
-18. Generate 7 images at 9:16 (1080 x 1920) for Stories/Reels/TikTok via kie.ai GPT Image 2.5 Sunburst.
+16. Generate 7 images at 4:5 (1080 x 1350) for feed posts via kie.ai GPT Image 2.6 Sunburst (request 3:4 per N43, then crop to 4:5; see Section 8).
+17. Generate 7 images at 2:3 (1000 x 1500) for Pinterest via kie.ai GPT Image 2.6 Sunburst.
+18. Generate 7 images at 9:16 (1080 x 1920) for Stories/Reels/TikTok via kie.ai GPT Image 2.6 Sunburst.
 19. Generate YouTube thumbnails at 16:9 (1280 x 720) as needed.
 20. Generate 1 blog post featured image at 16:9 (1200 x 630) for the weekly blog post.
 
@@ -678,7 +678,7 @@ There are exactly THREE ways an image for this skill gets produced. Pick ONE per
 
 | # | Path | When to use | Producer | Credential | Gate before it counts |
 |---|------|-------------|----------|------------|------------------------|
-| 1 | **kie.ai direct** (DEFAULT) | The skill's own pipeline produces the asset and no Agnes/Graphics override is in play. This is the normal weekly path. | kie.ai GPT Image 2.5 Sunburst (`gpt-image-2-5-sunburst-text-to-image`, or `-image-to-image` with a reference) for every image, text-bearing or not (Section 8 model table, AGENTS.md N43). | `KIE_API_KEY` | `pregen_prompt_gate.py check` (Section 8a) BEFORE the paid call; Section 19 post-gen QC after. |
+| 1 | **kie.ai direct** (DEFAULT) | The skill's own pipeline produces the asset and no Agnes/Graphics override is in play. This is the normal weekly path. | kie.ai GPT Image 2.6 Sunburst (`gpt-image-2-6/sunburst-text-to-image`, or `-image-to-image` with a reference) for every image, text-bearing or not (Section 8 model table, AGENTS.md N43). | `KIE_API_KEY` | `pregen_prompt_gate.py check` (Section 8a) BEFORE the paid call; Section 19 post-gen QC after. |
 | 2 | **Agnes (Skill 63 image / Skill 64 video)** | The request explicitly names Agnes ("generate this with Agnes"), OR an upstream skill/operator routes the asset to Agnes, OR kie.ai is unavailable and Agnes is the configured fallback. Agnes is OPT-IN, never the silent default. | Skill 63 `agnes-image-2.1-flash` (synchronous text-to-image / image-to-image) for stills; Skill 64 `agnes-video-v2.0` (async create-task → poll) for video segments. | `AGNES_AI_API_KEY` (existing fleet credential) | Same `pregen_prompt_gate.py check` routing rule still applies (text-overlay assets must not be routed to a non-text-rendering model); then upload to GHL CDN. |
 | 3 | **Graphics department handoff** | A human/department supplies the finished asset instead of this skill generating it. The Image Generator step is REPLACED, not skipped. | Graphics department (external) — the skill only receives + QC-gates the file. | none (no generation call) | Section 19a input-quality gate: REJECT any graphics-department asset lacking a SOP-GIP-02 QC receipt scoring >= 8.5 (`pregen_prompt_gate.py check --asset-source graphics-department --qc-receipt-file <job>/qc/image_qc_report.json`). |
 
@@ -691,16 +691,16 @@ Path 1 — kie.ai direct (default, text-overlay daily image):
 # 1) Gate the prompt BEFORE spending the paid call (Section 8a)
 python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py check \
   --prompt-file working/prompts/day1-primary.txt \
-  --model gpt-image-2-5-sunburst-text-to-image \
+  --model gpt-image-2-6/sunburst-text-to-image \
   --platform instagram --ratio 4:5 --pixels 1080x1350 \
   --text-overlay "Three Moves That Doubled Our Pipeline" \
   --brand-colors "#0B3D2E,#F5EFE0,#C9A24B" \
   --avoid-list-file working/compiled-negatives.txt
 # 2) Check the prompt budget, validate the payload, check credits, run the job (Skill 74, section 8c)
 KIE=~/.openclaw/skills/74-kie-live-adapter/scripts/kie_live_adapter.py
-python3 $KIE prompt-budget --model gpt-image-2-5-sunburst-text-to-image --check --prompt-file working/prompts/day1-primary.txt
-python3 $KIE validate  --model gpt-image-2-5-sunburst-text-to-image --payload working/jobs/day1/input.json --json
-python3 $KIE preflight --model gpt-image-2-5-sunburst-text-to-image --json
+python3 $KIE prompt-budget --model gpt-image-2-6/sunburst-text-to-image --check --prompt-file working/prompts/day1-primary.txt
+python3 $KIE validate  --model gpt-image-2-6/sunburst-text-to-image --payload working/jobs/day1/input.json --json
+python3 $KIE preflight --model gpt-image-2-6/sunburst-text-to-image --json
 python3 $KIE run --request working/jobs/day1/req.json --save-dir working/images --mode active --json
 # 3) Upload to GHL CDN (SKILL.md Media Delivery Contract — NO -F "hosted=true")
 curl -X POST "https://services.leadconnectorhq.com/medias/upload-file" \
@@ -740,18 +740,18 @@ python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py
   --prompt-file working/prompts/day1-primary.txt \
   --asset-source graphics-department \
   --qc-receipt-file working/jobs/day1/qc/image_qc_report.json \
-  --model gpt-image-2-5-sunburst-text-to-image --platform instagram --ratio 4:5 --pixels 1080x1350
+  --model gpt-image-2-6/sunburst-text-to-image --platform instagram --ratio 4:5 --pixels 1080x1350
 # exit 0 only if the SOP-GIP-02 receipt scores >= 8.5 (Section 19a); then upload to GHL CDN.
 ```
 
 ### Image Generation Models
 
-**Model rule (owner order 2026-10-05, AGENTS.md N43 fleet pin):** every image this skill produces uses KIE **GPT Image 2.5 Sunburst**. Every image carries a baked text/headline overlay (Section 18), and 2.5 Sunburst renders baked text; the pre-generation gate (Section 8a) still enforces the verbatim-copy and spelling checks. Nano Banana is never a route.
+**Model rule (owner order 2026-10-05, AGENTS.md N43 fleet pin):** every image this skill produces uses KIE **GPT Image 2.6 Sunburst**. Every image carries a baked text/headline overlay (Section 18), and 2.5 Sunburst renders baked text; the pre-generation gate (Section 8a) still enforces the verbatim-copy and spelling checks. Nano Banana is never a route.
 
 | Model id | Role | When to use |
 |----------|------|-------------|
-| `gpt-image-2-5-sunburst-text-to-image` | **DEFAULT for every image** | Every daily image, carousel slide, blog featured image, podcast cover, and thumbnail, with or without a reference. Endpoint `POST /api/v1/jobs/createTask`; poll `GET /api/v1/jobs/recordInfo`. |
-| `gpt-image-2-5-sunburst-image-to-image` | **DEFAULT when a reference image is supplied** | Logo, product, layout or style references, passed as `input_urls` with the role-correct per-reference instruction (`shared-utils/social_prompt_policy.json` `reference_roles`). |
+| `gpt-image-2-6/sunburst-text-to-image` | **DEFAULT for every image** | Every daily image, carousel slide, blog featured image, podcast cover, and thumbnail, with or without a reference. Endpoint `POST /api/v1/jobs/createTask`; poll `GET /api/v1/jobs/recordInfo`. |
+| `gpt-image-2-6/sunburst-image-to-image` | **DEFAULT when a reference image is supplied** | Logo, product, layout or style references, passed as `input_urls` with the role-correct per-reference instruction (`shared-utils/social_prompt_policy.json` `reference_roles`). |
 | legacy `gpt-image-2-*` | Only for ratios 3:1, 1:3, 9:21 | Skill 35 produces none of these ratios, so it never uses the legacy model. |
 | `flare` variants | Never | Not registered; needs a new operator ruling. |
 | Nano Banana 2 / Nano Banana Pro | Never used for social images | Refused by `pregen_prompt_gate.py` in every case, labeled or not. The only fallback for Sunburst is legacy `gpt-image-2` under the N43 ratio rules (3:1, 1:3, 9:21; Skill 35 produces none). |
@@ -773,7 +773,7 @@ Before ANY image prompt reaches kie.ai, run it through the gate. This is the pre
 ```bash
 python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py check \
   --prompt-file working/prompts/day1-primary.txt \
-  --model gpt-image-2-5-sunburst-text-to-image \
+  --model gpt-image-2-6/sunburst-text-to-image \
   --platform instagram --ratio 4:5 --pixels 1080x1350 \
   --text-overlay "Three Moves That Doubled Our Pipeline" \
   --brand-colors "#0B3D2E,#F5EFE0,#C9A24B" \
@@ -1251,7 +1251,7 @@ Follow these steps in order:
 - Use short paragraphs (2-3 sentences max).
 - Include a featured image (generated at 16:9, 1200x630 pixels).
 
-5. **Blog Image:** Generate one featured image at 16:9 (1200 x 630 pixels) via kie.ai GPT Image 2.5 Sunburst (16:9) that visually represents the weekly theme.
+5. **Blog Image:** Generate one featured image at 16:9 (1200 x 630 pixels) via kie.ai GPT Image 2.6 Sunburst (16:9) that visually represents the weekly theme.
 
 ---
 
@@ -1302,7 +1302,7 @@ Fish Audio S2 uses [square bracket] tags placed anywhere in the script. Tags aff
 
 Podbean and Apple Podcasts require podcast artwork between 1400 x 1400 and 3000 x 3000 pixels, 1:1 square, JPEG or PNG, RGB color space, 72 dpi, under 500 KB file size. If the generated image exceeds 500 KB, resize it before uploading to GHL. Use ImageMagick: `convert input.png -resize 1400x1400 -quality 85 output.jpg` or increase JPEG compression until under 500 KB.
 
-**Generate one 1:1 cover via kie.ai GPT Image 2.5 Sunburst at 2K (1:1 is a supported ratio), then deliver it as a 1400 x 1400 JPEG.** A 1K output is about 1024 x 1024, below Podbean's 1400 x 1400 minimum, so request 2K (confirm with `kie_live_adapter.py validate`). Podbean accepts 1400 to 3000 px; the 2K output is inside that range, but export a 1400 x 1400 RGB JPEG under 500 KB so the same file also satisfies Skill 57's `AF-SM-PODCAST-COVER` band (exactly 1400 x 1400). Price: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`.
+**Generate one 1:1 cover via kie.ai GPT Image 2.6 Sunburst at 2K (1:1 is a supported ratio), then deliver it as a 1400 x 1400 JPEG.** A 1K output is about 1024 x 1024, below Podbean's 1400 x 1400 minimum, so request 2K (confirm with `kie_live_adapter.py validate`). Podbean accepts 1400 to 3000 px; the 2K output is inside that range, but export a 1400 x 1400 RGB JPEG under 500 KB so the same file also satisfies Skill 57's `AF-SM-PODCAST-COVER` band (exactly 1400 x 1400). Price: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>`.
 
 The image should visually represent the weekly theme and include the client's branding.
 
@@ -1491,7 +1491,7 @@ The agent does NOT publish directly to Podbean. Publishing goes through an n8n w
 **Publishing Flow:**
 1. Agent generates podcast audio via Fish Audio S2 (MP3, 192 kbps)
 2. Agent uploads the audio file to a public HTTPS host. GHL Media Library is the DEFAULT host; a Google Drive direct-download link is the sanctioned fallback when GHL credentials are down. NEVER send a Fish Audio URL directly to the webhook. It must go through GHL (or the Drive fallback) first.
-3. Agent generates the podcast cover image via kie.ai, generated with GPT Image 2.5 Sunburst per Section 8 (1400x1400, 1:1, JPEG or PNG). NEVER use WebP. Apple Podcasts rejects WebP.
+3. Agent generates the podcast cover image via kie.ai, generated with GPT Image 2.6 Sunburst per Section 8 (1400x1400, 1:1, JPEG or PNG). NEVER use WebP. Apple Podcasts rejects WebP.
 4. Agent uploads the cover image to the same host as step 2.
 5. **Before sending, run `python3 ~/.openclaw/skills/35-social-media-planner/scripts/validate_podcast_publish_payload.py podcast-publish-payload.json` and proceed only on exit 0.** This deterministic pre-flight verifies the REQUIRED fields below are present and non-null/non-empty in the payload, especially `image_url`, `client_last_name`, and `client_email`. A 2026-07-12 production incident sent a payload missing required fields, which crashed the automation mid-pipeline (audio already uploaded to Podbean) before a fail-closed entry guard existed on the n8n side. If step 3/4 (cover art generation/upload) did not complete and produce a real hosted `image_url`, or the client's last name/email are not known, DO NOT send the webhook request. Finish step 3/4 or notify the operator via Telegram first. n8n now refuses an incomplete or contract-v1 payload before making any Podbean call and sends an honest refusal (entry guard, GK-01/U63, extended for contract v2), but the agent must not rely on it as the primary check. It is a backstop, not a substitute for sending a complete payload.
 6. Agent sends the following JSON payload to the webhook, with the shared auth header.
@@ -2045,7 +2045,7 @@ Every image generated for social posts must include text overlay (a title or hea
 
 ### If Image Text Has Spelling Errors
 
-**First remedy — check the routing, not just the copy (P3-05 fix):** before regenerating with "corrected" text, confirm the prompt was generated with GPT Image 2.5 Sunburst (Section 8) and cleared the Section 8a pre-generation gate. A recurring spelling-error loop on a prompt that WAS correctly gated and routed is a genuine model defect; a spelling-error loop on a prompt that skipped the gate or was routed to Nano Banana is a routing defect, not a text defect — fix the routing first, then retry.
+**First remedy — check the routing, not just the copy (P3-05 fix):** before regenerating with "corrected" text, confirm the prompt was generated with GPT Image 2.6 Sunburst (Section 8) and cleared the Section 8a pre-generation gate. A recurring spelling-error loop on a prompt that WAS correctly gated and routed is a genuine model defect; a spelling-error loop on a prompt that skipped the gate or was routed to Nano Banana is a routing defect, not a text defect — fix the routing first, then retry.
 
 1. QC agent identifies the spelling error.
 2. Confirm routing + gate compliance (above) before assuming the copy itself is at fault.
@@ -2095,7 +2095,7 @@ The QC agent checks each of the following. If ANY check fails, the content is se
 
 **Image Checks:**
 - [ ] The prompt passed `scripts/pregen_prompt_gate.py check` BEFORE generation (Section 8a) — a prompt generated without a passing gate run is itself a QC failure, regardless of how the resulting image looks
-- [ ] Every image was generated with GPT Image 2.5 Sunburst (`-text-to-image`, or `-image-to-image` with a reference); Nano Banana is never allowed (Section 8)
+- [ ] Every image was generated with GPT Image 2.6 Sunburst (`-text-to-image`, or `-image-to-image` with a reference); Nano Banana is never allowed (Section 8)
 - [ ] If the asset originated from the Graphics department, it carries a SOP-GIP-02 QC receipt scoring >= 8.5 (Section 19a) — an ungated graphics-department asset is REJECTED, not posted
 - [ ] Image prompt is appropriate for the client's brand and target audience
 - [ ] Image contains NO sexually suggestive content
@@ -2330,7 +2330,7 @@ Plus 16:9 thumbnails (1280x720) for YouTube and blog featured image (1200x630) a
 
 ### Weekly Cost Estimate
 
-> This section holds no dollar figures. The old table used April 2026 snapshot prices at Nano Banana 2 rates. Every image is now GPT Image 2.5 Sunburst (Section 8). Price every line item with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`).
+> This section holds no dollar figures. The old table used April 2026 snapshot prices at Nano Banana 2 rates. Every image is now GPT Image 2.6 Sunburst (Section 8). Price every line item with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (live `pricingDesc`; fallback snapshot `74-kie-live-adapter/references/kie-model-registry.json`).
 
 | Item | Quantity | Price source |
 |------|----------|--------------|
@@ -2521,7 +2521,7 @@ This section documents what the playbook covers, confirms completeness, and iden
 | 7-Part Series Framework | Complete | Television show structure. One of Seven through Seven of Seven. Pitch intensity scales from soft (Day 1) to maximum (Day 7). |
 | Content Zone System | Complete | 6 zones defined with platform-specific character limits. Zone 1 (Mobile Hook) is sacred. Recaps never in the hook zone. |
 | Platform Specifications | Complete | Facebook, Instagram, LinkedIn, YouTube, TikTok, Pinterest. Image ratios, character limits, truncation points, carousel specs all documented. |
-| Image Production | Complete | kie.ai GPT Image 2.5 Sunburst for every image (owner order 2026-10-05, N43), 3:4 requested and cropped to 4:5. 4:5, 2:3, 9:16, 16:9, 1:1 ratios. Text overlay with creative fonts. Spelling QC. Family-friendly prompts. Brand colors from core files. |
+| Image Production | Complete | kie.ai GPT Image 2.6 Sunburst for every image (owner order 2026-10-05, N43), 3:4 requested and cropped to 4:5. 4:5, 2:3, 9:16, 16:9, 1:1 ratios. Text overlay with creative fonts. Spelling QC. Family-friendly prompts. Brand colors from core files. |
 | Video Production | Complete | 2 videos per week (Day 1 opener, Day 7 finale). Veo 3.1 Lite (`veo3_lite`) default request through Skill 67 on kie.ai. FFmpeg merge with 192 kbps audio. Video model comparison table with no prices (live prices: Skill 74). |
 | Podcast Production | Complete | Fish Audio S2 with inline [square bracket] emotion tags. 192 kbps MP3 for Podbean. 1400x1400 cover image at 2K resolution. Example script with emotion tags. |
 | Blog Post| Complete | 1,500-2,500 words. Soft pitch in the middle, intentional pitch at the end. SEO optimized. Featured image at 16:9. |

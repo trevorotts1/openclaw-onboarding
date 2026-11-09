@@ -67,7 +67,7 @@ WHAT IT DOES (zero AI judgement at runtime):
        placement, usage, the logo(s), the scene, the verbatim copy, the negative
        block, and everything else that appears on the slide. build_deck.py renders
        THAT prompt verbatim — it does NOT compose its own thin prompt from
-       scene+copy. A whole slide is rendered in ONE gpt-image-2.5 generation.
+       scene+copy. A whole slide is rendered in ONE gpt-image-2-6 generation.
        If a slide has NO rich prompt file, or the prompt is below the rule 12 floor
        (80 percent of the model maxLength), or it fails the QUALITY floor (AF-P13 eight-class negative
        block / AF-P14 spelling-lock / AF-P-DENSITY / AF-P-VERBATIM), build_deck.py
@@ -87,7 +87,7 @@ WHAT IT DOES (zero AI judgement at runtime):
              and the ceiling is HARD at 100 percent (AF-P2, the message names the exact
              characters to CUT). The mandatory English pin (appended at submit when
              absent) counts toward the ceiling.
-    3. Calls KIE.ai (gpt-image-2-5-sunburst-text-to-image, or gpt-image-2-5-sunburst-image-to-image when a
+    3. Calls KIE.ai (gpt-image-2-6/sunburst-text-to-image, or gpt-image-2-6/sunburst-image-to-image when a
        logo is supplied via input_urls so the WHOLE slide + logo render in ONE
        generation) per the ONLY-allowed recipe:
          POST https://api.kie.ai/api/v1/jobs/createTask  -> data.taskId
@@ -139,7 +139,7 @@ OFFICIAL-LOGO COMPOSITING (optional):
         (or when working/copy/intake.json carries brand.logo_image_path), the deck
         wears the client's actual mark, not an AI-hallucinated wordmark:
           (1) When --logo is a URL: KIE composites the REAL logo via image-to-image
-              (gpt-image-2-5-sunburst-image-to-image, input_urls) in the SAME single generation
+              (gpt-image-2-6/sunburst-image-to-image, input_urls) in the SAME single generation
               that renders the slide — the rich prompt already carries the
               "place this exact provided logo, do not redraw/recolor/restyle"
               instruction (the AI wordmark is suppressed by the prompt itself).
@@ -352,7 +352,7 @@ DEAD_ENDPOINT_FRAGMENT = "/api/v1/image/gpt-image"
 # Poll cadence per the recipe: exponential backoff 10s/20s/40s with a HARD cap at
 # ~15 minutes (D14 / FIX-7). A dead or never-completing kie task must surface a
 # terminal FAIL (RenderPollTimeout) instead of hanging the run in 'in_progress'.
-# Heavy gpt-image-2.5 renders (e.g. a split then-vs-now band with two photoreal scenes
+# Heavy gpt-image-2-6 renders (e.g. a split then-vs-now band with two photoreal scenes
 # and multiple text zones) regularly exceed 3 minutes of pure render latency. 180s was
 # too low and made merely-slow slides time out and fail loud with outputPath=null.
 # The backoff ladder below (10s for the first 2 min, 20s for the next 3 min, then 40s)
@@ -521,7 +521,7 @@ ENGLISH_PIN = (
 # from the shared enforcer shared-utils/kie_prompt_enforcer.py (KPE), which wraps Skill 74
 # `kie_live_adapter.py prompt-budget --check` (live schema, registry fallback). The retired
 # 9,000 / 18,000 house band and its constants (PROMPT_CHAR_FLOOR / PROMPT_CHAR_TARGET_HIGH /
-# PROMPT_CHAR_CEILING) are gone; GPT Image 2.5 (maxLength 20,000) now means floor 16,000, target
+# PROMPT_CHAR_CEILING) are gone; GPT Image 2.6 (maxLength 20,000) now means floor 16,000, target
 # 19,000 to 20,000. Facts the gate still rests on (qc-specialist-presentations.md AF-P1/AF-P2,
 # slide-image-creator-sops.md SOP 9.1 step 3, MODEL-SPECS.md):
 #   * build_deck.py does NOT compose its own thin prompt: it renders the Slide Image Creator's
@@ -882,7 +882,7 @@ PLACEHOLDER_MIN_BYTES = 51200   # AF-I14: per-slide PNG floor — below this = n
 # These are named (not inlined) so sync_check can verify they exist and the manifest
 # AF-KIE-BALANCE secondary_py_symbols can point at them.
 KIE_CREDIT_URL = "https://api.kie.ai/api/v1/chat/credit"  # AF-KIE-BALANCE: live credit endpoint
-PER_SLIDE_CREDIT_ESTIMATE = 4      # AF-KIE-BALANCE: estimated Kie credits consumed per slide render (gpt-image-2.5 2K)
+PER_SLIDE_CREDIT_ESTIMATE = 4      # AF-KIE-BALANCE: estimated Kie credits consumed per slide render (gpt-image-2-6 2K)
 KIE_BALANCE_FLOOR_MULTIPLIER = 1.25  # AF-KIE-BALANCE: safety headroom over the bare per-slide estimate (retries/QC re-renders)
 
 # 5C — native PPTX text/element-overlay path ELIMINATED (AF-OVERLAY-DELIVERED). The
@@ -890,7 +890,7 @@ KIE_BALANCE_FLOOR_MULTIPLIER = 1.25  # AF-KIE-BALANCE: safety headroom over the 
 # composited it as a native PPTX text box. That path is removed by construction: its
 # mere presence in a run dir, OR any native (non-notes) on-slide text run in the
 # delivered PPTX, is a hard auto-fail. The only legitimate slide text is baked into
-# the single composed gpt-image-2.5 image; the only legitimate PPTX text part is the
+# the single composed gpt-image-2-6 image; the only legitimate PPTX text part is the
 # off-slide speaker-notes pane. OVERLAY_FORBIDDEN_FILES are the run-relative paths the
 # eliminated path used to write (any present = violation).
 OVERLAY_FORBIDDEN_FILES = (
@@ -904,7 +904,7 @@ OVERLAY_FORBIDDEN_FILES = (
 # ---------------------------------------------------------------------------
 # The canonical render path is build_deck.py / run_signature_deck.py ONLY. Every
 # slide's WORDS and VISUAL are generated TOGETHER in ONE image by kie.ai
-# gpt-image-2.5 (text-to-image, or image-to-image for the logo composite). There is
+# gpt-image-2-6 (text-to-image, or image-to-image for the logo composite). There is
 # NO Pillow slide canvas, NO other model, NO silent fallback, and NO native
 # PowerPoint text overlaid on top. The three auto-fail codes below are SHARED
 # across the enforcement surface: this module DEFINES + EXPORTS them and the
@@ -935,7 +935,7 @@ CANONICAL_RENDER_SCRIPTS = frozenset({
 })
 
 # Pixel-level flat-card detector thresholds (AF-IMAGE-QC-VISION). A genuine kie.ai
-# gpt-image-2.5 render carries a photographic/illustrative subject (and model noise),
+# gpt-image-2-6 render carries a photographic/illustrative subject (and model noise),
 # so no single quantised colour dominates the frame. A flat cream/typography card
 # (Pillow Image.new fill + drawn type) is overwhelmingly ONE near-uniform light
 # fill — exactly the slide-1/24/49 hook-card defect this gate must reject.
@@ -1594,7 +1594,7 @@ def load_rich_prompt(slide: dict, run_dir: Path) -> str:
     back to one. The rich prompt already carries the full 15-element spec
     (typography per-line weight + pt size, placement, usage, the logo(s), the scene,
     the verbatim copy, the negative block — everything on the slide), and KIE
-    (gpt-image-2.5) renders the WHOLE slide in ONE generation.
+    (gpt-image-2-6) renders the WHOLE slide in ONE generation.
 
     FAIL LOUD (ValueError; the caller fails the slide and the run is blocked) when:
       * no rich prompt file exists for this slide                       → AF-P1
@@ -7416,7 +7416,7 @@ def _chk_assets_manifest(run_dir: Path, slides_path: Optional[Path] = None) -> s
     Media-Librarian step must have written assets_manifest.json AND every provided
     asset must be provably consumed downstream (a non-empty consumed_by list AND a
     resolvable public_url the Brand Steward / Slide Image Creator can pass to
-    gpt-image-2.5 as input_urls). Provided-but-unconsumed assets are the defect this
+    gpt-image-2-6 as input_urls). Provided-but-unconsumed assets are the defect this
     gate catches. Defers (passes) when intake says no assets were provided, or when
     intake is absent (pre-intake phase)."""
     obj = _read_intake_obj(run_dir)
@@ -7436,7 +7436,7 @@ def _chk_assets_manifest(run_dir: Path, slides_path: Optional[Path] = None) -> s
                     "exists. The Media-Librarian step must classify each provided asset, "
                     "upload it to a stable public URL, and record it (with consumed_by) in "
                     "assets_manifest.json so the Brand Steward + Slide Image Creator consume "
-                    "it as gpt-image-2.5 input_urls.")
+                    "it as gpt-image-2-6 input_urls.")
         return ""  # no assets provided and no manifest — nothing to consume.
     # Manifest exists — validate it proves the question was asked + assets consumed.
     if not isinstance(manifest, dict):
@@ -7467,7 +7467,7 @@ def _chk_assets_manifest(run_dir: Path, slides_path: Optional[Path] = None) -> s
                 "consumed downstream — " + "; ".join(unconsumed[:8]) + ". Every provided "
                 "asset must carry a public_url AND a non-empty consumed_by (e.g. "
                 "['brand-steward','slide-image-creator']) so it is actually fed to "
-                "gpt-image-2.5 as input_urls, not collected and ignored.")
+                "gpt-image-2-6 as input_urls, not collected and ignored.")
     return ""
 
 
@@ -8105,7 +8105,7 @@ def check_phase_preconditions(run_dir: Path, phase_id, prior_phase_ids) -> str:
 
 # ---------------------------------------------------------------------------
 # 5C — native-overlay path ELIMINATED (AF-OVERLAY-DELIVERED). No slide may ship a
-#      native PPTX text run instead of a single composed gpt-image-2.5 image, and the
+#      native PPTX text run instead of a single composed gpt-image-2-6 image, and the
 #      eliminated pptx_text_overlays.json must never be present.
 # ---------------------------------------------------------------------------
 def _delivered_pptx_native_text(pptx_path: Path) -> str:
@@ -8154,7 +8154,7 @@ def _delivered_pptx_native_text(pptx_path: Path) -> str:
                 offenders.append(f"slide {idx}: native text run {txt[:40]!r}")
     if offenders:
         return ("delivered slides carry NATIVE on-slide text instead of a single composed "
-                "gpt-image-2.5 image — " + "; ".join(offenders[:8]))
+                "gpt-image-2-6 image — " + "; ".join(offenders[:8]))
     return ""
 
 
@@ -8163,7 +8163,7 @@ def _chk_no_overlay(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     eliminated. This gate fails when (a) any eliminated pptx_text_overlays.json file
     is present in the run dir (its mere presence at assembly is a violation), OR
     (b) the delivered PPTX carries any native (non-notes) on-slide text run. The
-    only legitimate slide text is baked into the single composed gpt-image-2.5 image;
+    only legitimate slide text is baked into the single composed gpt-image-2-6 image;
     the only legitimate PPTX text part is the off-slide speaker-notes pane. Persistent
     garble is re-prompted / re-seeded then escalated to a human — NEVER overlaid."""
     # (a) the eliminated overlays file must never exist.
@@ -8174,7 +8174,7 @@ def _chk_no_overlay(run_dir: Path, slides_path: Optional[Path] = None) -> str:
                     "was removed by construction (Decision 5C). Persistent garble must be "
                     "re-prompted / re-seeded and, if it still fails, escalated to a human — "
                     "NEVER composited as a native PPTX text box. Delete this file and "
-                    "re-render the affected slide as a single composed gpt-image-2.5 image.")
+                    "re-render the affected slide as a single composed gpt-image-2-6 image.")
     # (b) scan any delivered PPTX in the run dir for native on-slide text.
     for pptx in sorted(run_dir.glob("**/*.pptx")):
         # skip Office lock/temp files
@@ -8183,7 +8183,7 @@ def _chk_no_overlay(run_dir: Path, slides_path: Optional[Path] = None) -> str:
         reason = _delivered_pptx_native_text(pptx)
         if reason:
             return ("AF-OVERLAY-DELIVERED: " + reason + ". Every delivered slide must be a "
-                    "SINGLE composed gpt-image-2.5 image with its text baked in; the native "
+                    "SINGLE composed gpt-image-2-6 image with its text baked in; the native "
                     "PPTX text-overlay path is eliminated. Re-prompt/re-seed the garbled "
                     "slide, escalate to a human if it persists, and re-render — do not add a "
                     "native text run.")
@@ -8789,7 +8789,7 @@ def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> 
         if size < PLACEHOLDER_MIN_BYTES:
             problems.append(
                 f"{png.name}: {size:,} bytes, below the {PLACEHOLDER_MIN_BYTES:,}-byte "
-                f"kie-bake floor — a flat/native-rendered card, not a real gpt-image-2.5 "
+                f"kie-bake floor — a flat/native-rendered card, not a real gpt-image-2-6 "
                 f"bake (AF-LOCAL-CANVAS signature)")
             continue
         if motion_posters:
@@ -8830,7 +8830,7 @@ def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> 
                 "rendered slides (rubber-stamp / flat card / pixel-blind report). A real "
                 "image-QC pass is a multimodal PIXEL read of every PNG; flat cream cards, "
                 "below-floor PNGs, and self-typed scores are rejected. Re-render any flat "
-                "card through kie.ai gpt-image-2.5 and re-run the Image QC Specialist with a "
+                "card through kie.ai gpt-image-2-6 and re-run the Image QC Specialist with a "
                 "per-slide vision read. Offenders: " + "; ".join(problems[:10])
                 + ("" if len(problems) <= 10 else f" (+{len(problems) - 10} more)")
                 + ". This gate may be waived ONLY by a logged owner_skip_approval for "
@@ -9012,7 +9012,7 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
         if "Image.new" in text and "2048" in text and "1152" in text:
             offenders.append((rel, AF_LOCAL_CANVAS,
                               "defines a LOCAL 2048x1152 slide canvas (Image.new) instead "
-                              "of a kie.ai gpt-image-2.5 render"))
+                              "of a kie.ai gpt-image-2-6 render"))
         elif ("add_textbox" in text) or ("add_text_box" in text):
             offenders.append((rel, AF_CANONICAL_RENDER_BYPASS,
                               "adds NATIVE PowerPoint text boxes (add_textbox) on top of "
@@ -9026,7 +9026,7 @@ def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = Non
         more = f" (+{len(offenders) - 1} more hand-rolled script(s))" if len(offenders) > 1 else ""
         return (f"{code}: non-canonical renderer/assembler {rel!r} {why}. The canonical "
                 f"render path is build_deck.py / run_signature_deck.py ONLY: every slide's "
-                f"WORDS and VISUAL are generated together in ONE kie.ai gpt-image-2.5 image, "
+                f"WORDS and VISUAL are generated together in ONE kie.ai gpt-image-2-6 image, "
                 f"with ZERO native PowerPoint text and NO local Pillow canvas. Delete the "
                 f"hand-rolled script and route the deck through run_signature_deck.py -> "
                 f"build_deck.py. This gate may be waived ONLY by a logged owner_skip_approval "
@@ -11854,7 +11854,7 @@ PREFLIGHT_REQUIRED = [
     # consumed_by). Run-dir-scoped; defers when no assets provided / pre-intake.
     (None,
      "provided assets consumed — assets_manifest.json records each provided asset with a "
-     "public_url + non-empty consumed_by (fed to gpt-image-2.5 as input_urls)",
+     "public_url + non-empty consumed_by (fed to gpt-image-2-6 as input_urls)",
      "Media-Librarian asset-ingest step (AF-MANIFEST-UNREFERENCED)",
      _chk_assets_manifest),
     # GOAL-4 / 1C — SCRATCH-PARSE gate (AF-SCRATCH-PARSE-SKIPPED). An uploaded
@@ -11883,10 +11883,10 @@ PREFLIGHT_REQUIRED = [
     # GOAL-4 / 5C — NO-OVERLAY gate (AF-OVERLAY-DELIVERED). The native PPTX
     # text-overlay path is eliminated: no pptx_text_overlays.json may be present and
     # no delivered slide may carry a native on-slide text run (only a single composed
-    # gpt-image-2.5 image; only off-slide speaker notes are allowed). Run-dir-scoped.
+    # gpt-image-2-6 image; only off-slide speaker notes are allowed). Run-dir-scoped.
     (None,
      "no native overlay — no pptx_text_overlays.json present and no delivered slide ships "
-     "native on-slide text instead of a composed gpt-image-2.5 image",
+     "native on-slide text instead of a composed gpt-image-2-6 image",
      "Phase 5/6/Postflight — render + PPTX assembly (AF-OVERLAY-DELIVERED)",
      _chk_no_overlay),
     # MG-036 — GOVERNED MOTION PLAN. Runs the motion planner so
@@ -13605,7 +13605,7 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
     # --- AF-OVERLAY-DELIVERED sub-check (2026-06-20, Decision 5C) ---
     # The native PPTX text-overlay path is eliminated. At closeout, re-prove no
     # eliminated pptx_text_overlays.json is present AND the delivered PPTX carries no
-    # native on-slide text run (only a composed gpt-image-2.5 image + off-slide notes).
+    # native on-slide text run (only a composed gpt-image-2-6 image + off-slide notes).
     overlay_reason = ""
     if run_dir is not None:
         overlay_reason = _chk_no_overlay(run_dir, slides_path)
@@ -13617,14 +13617,14 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
             r = _delivered_pptx_native_text(pptx)
             if r:
                 overlay_reason = ("AF-OVERLAY-DELIVERED: " + r + ". Every delivered slide "
-                                  "must be a single composed gpt-image-2.5 image; the native "
+                                  "must be a single composed gpt-image-2-6 image; the native "
                                   "PPTX text-overlay path is eliminated (Decision 5C).")
                 break
     if overlay_reason:
         missing_or_short.append((
             "deck_pptx",
             _expand_filename("deck.pptx", deck_slug),
-            "no native overlay (every slide a composed gpt-image-2.5 image; "
+            "no native overlay (every slide a composed gpt-image-2-6 image; "
             "no pptx_text_overlays.json)",
             0, 0, "OVERLAY_DELIVERED"))
         update_deliverable_status(ledger_path, "deck_pptx", "failed",
@@ -13875,7 +13875,7 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                 print(f"  OVERLAY   [{key}] {fname}  ({label})", file=sys.stderr)
                 print(f"           a delivered slide ships native on-slide text (or a "
                       f"pptx_text_overlays.json", file=sys.stderr)
-                print(f"           is present) instead of a single composed gpt-image-2.5 "
+                print(f"           is present) instead of a single composed gpt-image-2-6 "
                       f"image — AF-OVERLAY-DELIVERED.", file=sys.stderr)
                 print(f"           {overlay_reason}", file=sys.stderr)
                 print(f"           The native-overlay path is eliminated (Decision 5C): "
@@ -13900,7 +13900,7 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                 print(f"           below-floor PNG, or rubber-stamp report) — "
                       f"AF-IMAGE-QC-VISION.", file=sys.stderr)
                 print(f"           {image_qc_vision_reason}", file=sys.stderr)
-                print(f"           Re-render any flat card through kie.ai gpt-image-2.5 and "
+                print(f"           Re-render any flat card through kie.ai gpt-image-2-6 and "
                       f"re-run the Image", file=sys.stderr)
                 print(f"           QC Specialist with a per-slide multimodal pixel read.",
                       file=sys.stderr)
@@ -14563,7 +14563,7 @@ def main():
 
     # OFFICIAL-LOGO resolution: --logo wins; else intake.json brand.logo_image_path.
     # IMAGE-TO-IMAGE logo: if --logo is a URL, KIE composites the REAL logo via
-    # input_urls (verified gpt-image-2-5-sunburst-image-to-image). A local path falls back to a
+    # input_urls (verified gpt-image-2-6/sunburst-image-to-image). A local path falls back to a
     # flat overlay in assemble. Never resolve a URL as a local file.
     logo_url = logo_arg if (logo_arg and str(logo_arg).startswith("http")) else None
     if logo_url:

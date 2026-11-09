@@ -24,7 +24,7 @@ The operating philosophy is simple: **attention is scarce, boring is a defect, g
 
 The Graphics department had MAX-only prompt caps (`diu_validator.py prompt-caps`, SHORT ≤500 /
 MEDIUM ≤2,800 / LONG ≤19,000) and **no minimum floor anywhere** — a one-line prompt could reach
-the paid Kie.ai / GPT-Image-2.5 API unchallenged (diagnosis G1). This SOP is the graphics analogue
+the paid Kie.ai / GPT-Image 2.6 API unchallenged (diagnosis G1). This SOP is the graphics analogue
 of the Presentations 9,000-character prompt floor + quality gate: every production image prompt is
 authored to a TEN-ELEMENT anatomy and validated by `diu_validator.py prompt-band` **before**
 submission. SOP-DIU-601 preflight step 2 now runs the **BAND** check (floor + cap + quality), not
@@ -37,11 +37,11 @@ just the cap check.
 Band names, tiers, and quality teeth live in `45-design-intelligence-library/library/_system/prompt-bands.json` (bands: `text_bearing_long`, `visual_long`, `medium`, `short_draft`; `short_draft` is NEVER a client deliverable). The band file's qualitative contract: `text_bearing_long` is the LONG text-bearing band (150 distinct-word floor), `visual_long` is the LONG non-text band (120 distinct-word floor), `medium` is the MEDIUM non-text specialty band (60 distinct-word floor), and `short_draft` is the SHORT draft band (25 distinct-word floor, drafts only). For length, the numbers (target, floor, ceiling) are defined only by rule 12 of `07-kie-setup/references/kie-common-rules.md`, enforced by `shared-utils/kie_prompt_enforcer.py` over `kie_live_adapter.py prompt-budget --model <id>`; this SOP states no character floors or caps, and the thresholds inside `prompt-bands.json` and `diu_validator.py` are owned by the prompt-band code work.
 
 **GK-20 (2026-07-15, band<->routing reconciliation; conformed to prompt-bands.json v3 at the
-v2.0 landing):** `text_bearing_long` targets GPT-Image-2.5 T2I/I2I only — `nano-banana-2` was
+v2.0 landing):** `text_bearing_long` targets GPT-Image 2.6 T2I/I2I only — `nano-banana-2` was
 removed from its endpoints (Nano Banana is refused for ANY text-overlay deliverable everywhere
 else in the fleet). prompt-bands.json v3 carries NO `text_bearing_medium` band. Every
 quote-card/text-led social post declares `text_bearing_long` on the prompt's first line and
-routes to GPT Image 2.5 Sunburst, per the band file's own routing note. Ideogram V3 appears
+routes to GPT Image 2.6 Sunburst, per the band file's own routing note. Ideogram V3 appears
 only in the `medium` band's endpoints, and `medium` is a non-text-bearing, non-social
 specialty band: Ideogram V3 work declares `medium`, and no text-bearing band names an
 Ideogram endpoint.
@@ -123,7 +123,7 @@ Ideogram endpoint.
    combination unless deliberate recurring-character continuity is recorded. Never randomize a real
    person's complexion, hair, or facial hair away from their supplied reference.
 8. **LOGO / REFERENCE DIRECTIVE:** image-to-image `input_urls` handling; the STYLE-REFERENCE-ONLY
-   sentence whenever refs are stylistic (MODEL-SPECS §4 — MANDATORY for GPT-Image-2.5 I2I and
+   sentence whenever refs are stylistic (MODEL-SPECS §4 — MANDATORY for GPT-Image 2.6 I2I and
    Nano Banana 2): *"Use the attached images only as style reference for color grading, lighting, and
    composition — do not copy their subjects, faces, or text."*
 9. **TECHNICAL:** endpoint id, aspect ratio (REQUIRED on Seedream), resolution, `output_format`

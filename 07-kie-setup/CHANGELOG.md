@@ -1,3 +1,7 @@
+## [v7.2.6] - 2026-11-09 - GPT Image 2.6 migration lands on current main
+
+Version rolled above `main` (v7.2.5) so G3 sees the bump beside the GPT Image 2.6 migration content. No behavior change in this entry.
+
 ## [v7.2.5] - 2026-11-08 - batch merge: W26 fold content landed; version stamped above main for G3
 
 Version stamped above `main` (v7.2.4) so G3 sees the bump for the folded content in the same batch. No change beyond the folded content itself.

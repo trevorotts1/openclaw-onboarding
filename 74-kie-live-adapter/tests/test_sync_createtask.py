@@ -32,7 +32,7 @@ SYNC_DATA = {"code": 200, "msg": "success", "data": SYNC_RESPONSE}
 def routes(answer):
     """std_routes() with the createTask answer replaced (schema routes stay first)."""
     return [
-        ["GET", "/api/v1/models/gpt-image-2-5-sunburst-text-to-image/schema", [(200, fx("schema_image.json"))]],
+        ["GET", "/api/v1/models/gpt-image-2-6/sunburst-text-to-image/schema", [(200, fx("schema_image.json"))]],
         ["GET", "/api/v1/models", [(200, fx("catalog.json"))]],
         ["GET", "/api/v1/chat/credit", [(200, {"code": 200, "msg": "success", "data": 2450})]],
         ["GET", "recordInfo", [(200, {"code": 200, "data": {"taskId": "T1", "state": "success"}})]],

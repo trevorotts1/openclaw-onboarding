@@ -18,9 +18,9 @@ import sys
 
 # Transcription alias -> normalized family name (spec 13, image-relevant rows).
 #
-# OPERATOR RULING 2026-09-09 (Ruling 6): GPT Image 2.5 Sunburst is now the
+# OPERATOR RULING 2026-09-09 (Ruling 6): GPT Image 2.6 Sunburst is now the
 # default two-model system entry point. Short human aliases ("gpt-img2",
-# "GPT-image 2.0") resolve to "gpt image 2.5" (the new default family token)
+# "GPT-image 2.0") resolve to "gpt image 2.6" (the new default family token)
 # rather than the retained legacy family. The legacy family token
 # "gpt image 2" is KEPT below (FAMILY_OF still resolves it to the old ids);
 # nothing in ALIAS_MAP points at it anymore, but it stays reachable for any
@@ -38,14 +38,8 @@ ALIAS_MAP = {
     "gpt image": "gpt image 2.6",
     "gpt-image": "gpt image 2.6",
     "openai image": "gpt image 2.6",
-    "gpt-img2.5": "gpt image 2.5",
-    "gpt-image 2.5": "gpt image 2.5",
-    "gpt image 2.6": "gpt image 2.6",
-    "gpt-image 2.6": "gpt image 2.6",
-    "gpt-image-2.6": "gpt image 2.6",
-    "gpt image 2.6 sunburst": "gpt image 2.6",
     "gpt-img2.6": "gpt image 2.6",
-    "sunburst": "gpt image 2.6",
+    "gpt-image 2.5": "gpt image 2.6",
     "nano banana light": "nano banana 2 lite",
     # Z-Image stays its own family -- never funneled into qwen.
     "z image": "z image",
@@ -54,15 +48,10 @@ ALIAS_MAP = {
 
 # Family name -> canonical KIE Market model IDs (registry models.json).
 FAMILY_OF = {
-    # GPT Image 2.6 Sunburst -- operator default since #2860 (same route shape as 2.5; KIE-066).
+    # GPT Image 2.6 Sunburst -- operator default (ruling 2026-09-09).
     "gpt image 2.6": [
         "gpt-image-2-6/sunburst-text-to-image",
         "gpt-image-2-6/sunburst-image-to-image",
-    ],
-    # GPT Image 2.5 Sunburst -- operator default (ruling 2026-09-09).
-    "gpt image 2.5": [
-        "gpt-image-2-5-sunburst-text-to-image",
-        "gpt-image-2-5-sunburst-image-to-image",
     ],
     # GPT Image 2 -- LEGACY, retained by operator ruling 2026-09-09 for
     # aspect ratios 3:1, 1:3, 9:21 only. Not deleted; no alias points here
@@ -140,20 +129,16 @@ def main(argv=None) -> int:
         assert normalize_alias("Idiogram") == "ideogram"
         assert normalize_alias("imagine 4") == "imagen 4"
         # Ruling 2026-09-09 (Ruling 6): short GPT-image aliases now resolve to
-        # the 2.5 Sunburst default, not the retained legacy family.
+        # the 2.6 Sunburst default, not the retained legacy family.
         assert normalize_alias("gpt-img2") == "gpt image 2"
         assert normalize_alias("GPT-image 2.0") == "gpt image 2"
         assert normalize_alias("gpt image") == "gpt image 2.6"
         assert normalize_alias("OpenAI image") == "gpt image 2.6"
-        assert normalize_alias("gpt-img2.5") == "gpt image 2.5"
-        assert normalize_alias("GPT-image 2.5") == "gpt image 2.5"
         assert normalize_alias("gpt-img2.6") == "gpt image 2.6"
-        assert normalize_alias("sunburst") == "gpt image 2.6"
+        assert normalize_alias("GPT-image 2.5") == "gpt image 2.6"
         # Legacy family stays resolvable directly (not deleted, just unaliased).
         assert FAMILY_OF["gpt image 2"] == [
             "gpt-image-2-text-to-image", "gpt-image-2-image-to-image"]
-        assert FAMILY_OF["gpt image 2.5"] == [
-            "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image"]
         assert FAMILY_OF["gpt image 2.6"] == [
             "gpt-image-2-6/sunburst-text-to-image", "gpt-image-2-6/sunburst-image-to-image"]
         assert normalize_alias("nano banana light") == "nano banana 2 lite"
