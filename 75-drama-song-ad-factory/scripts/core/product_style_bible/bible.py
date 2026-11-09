@@ -25,7 +25,7 @@ ASPECTS = frozenset(("16:9", "9:16", "1:1", "5:4", "4:5",
 #: Legacy routes keep gpt-image-2, never 2.5 (provider-contracts.md R04).
 LEGACY_ASPECTS = frozenset(("3:1", "1:3", "9:21"))
 
-SUNBURST_MODEL = "gpt-image-2-5-sunburst"
+SUNBURST_MODEL = "gpt-image-2-6/sunburst"
 LEGACY_MODEL = "gpt-image-2-legacy"  # per-mode suffix chosen by image layer
 
 PROMPT_CAP_SUNBURST = 20000

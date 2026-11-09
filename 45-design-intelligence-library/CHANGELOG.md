@@ -1,4 +1,16 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
+## v2.2.12 - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
+
+## v2.2.10 - 2026-11-08 - GPT Image 2.6 stays the endpoint name after main's fold
+
+- `SKILL.md`: the description keeps GPT Image 2.6 as the first of the seven image endpoints.
+  Main's W19 fold reintroduced the retired 2.5 wording in that line; this patch restores 2.6.
+- `scripts/_kie_prompt_enforcer_embedded.py` and `scripts/prompt_policy.py` carry the merged
+  rule-12 band (95 to 100 passes, 80 to below 95 warns and expands, below 80 rejects).
+- Version bumped to v2.2.10: main's fold already reached v2.2.9.
+- Risk: LOW. One description line and the regenerated enforcer copy.
 
 ## v2.2.2 - 2026-10-06 - feat: rule 12 on the library bands, merged with the Ideogram alignment
 

@@ -36,7 +36,7 @@ H3 = "minimax-h3/image-to-video"
 H3_ROWS = ("text-to-video", "image-to-video", "reference-to-video")
 SUNO = "ai-music-api/generate"
 AVATAR = "kling/ai-avatar-standard"
-PLAIN = "gpt-image-2-5-sunburst-text-to-image"
+PLAIN = "gpt-image-2-6/sunburst-text-to-image"
 
 BAND = {"floor": 5000, "target_min": 5000, "target_max": 6800, "hard_max": 7000,
         "owner": "Trevor 2026-10-08", "below_floor": "FLAG_AND_EXPAND",

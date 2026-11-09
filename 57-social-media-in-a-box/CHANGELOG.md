@@ -1,4 +1,7 @@
 # Changelog — Social Media in a Box (Skill 57)
+## v1.8.2 - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
 
 ## v1.7.12 - 2026-10-29 - fix: verify.sh runs the goldens in the skill's test posture (Big Fleet Roll row 22)
 

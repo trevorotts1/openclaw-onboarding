@@ -1,4 +1,7 @@
 # Changelog - 58 Podcast Production Engine (58-podcast-production-engine)
+## v1.1.2 - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
 
 ## v1.0.18 - 2026-10-13 - refactor(models): client-choice model selection, no prescribed models
 

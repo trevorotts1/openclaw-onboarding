@@ -92,11 +92,11 @@ echo "=== TEST 1: workflow infographic goes through Skill 74, sunburst first ===
 start_mock ""; new_box
 rc=$(run "$INFO" workflow)
 [[ "$rc" == "0" ]] && pass "T1: exit 0" || { fail "T1: exit $rc"; tail -5 "$WORK/run.out"; }
-[[ "$(head -1 "$MODELS_LOG")" == "gpt-image-2-5-sunburst-text-to-image" ]] && pass "T1: first model is sunburst" || fail "T1: first model was $(head -1 "$MODELS_LOG")"
+[[ "$(head -1 "$MODELS_LOG")" == "gpt-image-2-6/sunburst-text-to-image" ]] && pass "T1: first model is sunburst" || fail "T1: first model was $(head -1 "$MODELS_LOG")"
 [[ "$(jq -r '.infographic2Url // empty' "$STATE")" == "https://tempfile.example/img.png" ]] && pass "T1: result URL written to state" || fail "T1: state url missing"
 
 echo "=== TEST 2: primary rejected as unsupported -> early switch to nano-banana-2 ==="
-start_mock "gpt-image-2-5-sunburst-text-to-image"; new_box
+start_mock "gpt-image-2-6/sunburst-text-to-image"; new_box
 rc=$(run "$INFO" workflow)
 [[ "$rc" == "0" ]] && pass "T2: exit 0 on the fallback" || { fail "T2: exit $rc"; tail -5 "$WORK/run.out"; }
 [[ "$(head -1 "$MODELS_LOG")" == "nano-banana-2" ]] && pass "T2: only the fallback model was dispatched (rejected primary never spent)" || fail "T2: models: $(tr '\n' ' ' < "$MODELS_LOG")"
@@ -107,7 +107,7 @@ start_mock ""; new_box
 rc=$(run "$VISI")
 [[ "$rc" == "0" ]] && pass "T3: exit 0" || { fail "T3: exit $rc"; tail -5 "$WORK/run.out"; }
 [[ "$(jq -r '.visualIntelligenceUrls | length' "$STATE")" -ge 3 ]] && pass "T3: at least 3 image URLs in state" || fail "T3: fewer than 3 URLs"
-[[ "$(sort -u "$MODELS_LOG" | tr '\n' ' ')" == "gpt-image-2-5-sunburst-text-to-image " ]] && pass "T3: sunburst only (no fallback needed)" || fail "T3: models: $(sort -u "$MODELS_LOG" | tr '\n' ' ')"
+[[ "$(sort -u "$MODELS_LOG" | tr '\n' ' ')" == "gpt-image-2-6/sunburst-text-to-image " ]] && pass "T3: sunburst only (no fallback needed)" || fail "T3: models: $(sort -u "$MODELS_LOG" | tr '\n' ' ')"
 
 echo "=== TEST 4: Skill 74 not installed -> clear failure, no fallback client, no HTTP ==="
 start_mock ""; new_box

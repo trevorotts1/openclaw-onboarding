@@ -1,7 +1,7 @@
 """KIE prompt rule 12 on the Presentations render path (owner order 2026-10-05).
 
 build_deck.py and prompt_gate.py keep no 9,000 / 18,000 band: both call the shared enforcer
-shared-utils/kie_prompt_enforcer.py (Skill 74 prompt-budget --check). GPT Image 2.5 maxLength 20,000:
+shared-utils/kie_prompt_enforcer.py (Skill 74 prompt-budget --check). GPT Image 2.6 maxLength 20,000:
 79 percent is rejected with the exact characters to ADD, 95 and 100 percent pass, 101 percent is rejected with the
 exact characters to CUT; the mandatory English pin counts toward the ceiling. Hermetic: the real adapter answers
 from its registry snapshot (empty HOME, no key).

@@ -33,8 +33,8 @@
       "dept": "presentations",
       "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-01-KIE-CALL-MECHANICS.md",
       "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md",
-      "role_library_sha256": "cee00b0732f53afc274adce5c1df87177c21bc4900e89546a9f78b6de514aa65",
-      "universal_sops_sha256": "948e2d918e4db72fef13365dccc2deecd9e6fdddeef40a4f1388faa00bc9035e",
+      "role_library_sha256": "2020634a81e115117c80b43628c5525d0dc225612f8397674d265076baf2b530",
+      "universal_sops_sha256": "1e5af32b57fc8492c8ae635264b9fa3c23dd78f0657a8306125034cd50cbed2b",
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"
@@ -44,8 +44,8 @@
       "dept": "presentations",
       "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md",
       "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md",
-      "role_library_sha256": "5deb4b89a6022a85db57676fdc1b6598ce97c2e822377c6edb0ea61bb5b7e36a",
-      "universal_sops_sha256": "aa8002e46493bf1fed2854936ca1c7a79bb85b87f05df7ca858aa52150243d15",
+      "role_library_sha256": "1de78ef2d03dffa24a405909477a0fbc7c3bfee8ea5c380bfc4e59a363fe2d48",
+      "universal_sops_sha256": "537e30b85fe5fd1bc21346f3db53ba8352b2d0a80e588957b135476e7e718216",
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"
@@ -66,8 +66,8 @@
       "dept": "presentations",
       "role_library_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md",
       "universal_sops_path": "universal-sops/presentation-image-library/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md",
-      "role_library_sha256": "3fc4a78084f62369394830e8db8f200f9091bb07a687370ef8f19b4867080dc1",
-      "universal_sops_sha256": "5a88394709fa4070fc1036a87bead6bedc2f4113983b440f59134dd14375c0d1",
+      "role_library_sha256": "014ba3f50f2643b44f19eb128e867208747a89bb462ee8ad33ba9f411a19946d",
+      "universal_sops_sha256": "309a4785931b4e561271e1f8412ced680f29b4b55a6de9f306980aa50d5d72ac",
       "canonical_side": "role-library",
       "reason": "Pre-existing divergence recorded, not reconciled. Content is doctrine and belongs to the operator. Pinned by sha256 on BOTH sides: any edit to either copy invalidates this waiver and the gate fails until the change is reviewed and re-recorded.",
       "recorded_at": "2026-09-05"
