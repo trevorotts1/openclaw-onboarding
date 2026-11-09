@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-11-08T18:11:17Z",
-  "file_count": 116,
+  "generated_at": "2026-11-09T00:45:25Z",
+  "file_count": 131,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "510bb4333de3c01bd94fb60a35cd7fcb39106ab467eadf64268ff2c43686947a",
@@ -165,8 +165,8 @@
       "bytes": 5232
     },
     "form-craft/README.md": {
-      "sha256": "88f9829cc4f8ff1fd7c69bd9b7c2630c022ceebd642f1bf26d9e8d72e419be00",
-      "bytes": 9171
+      "sha256": "459572325fa92544b636e3c650103ea9612fea86c37c73b45e7404cb833274a3",
+      "bytes": 9217
     },
     "form-craft/SOP-FORM-01-INTAKE.md": {
       "sha256": "a32d22a91322528970b8f81697a89fe3ca7545c680678a63c2f9cc97ae60af0f",
@@ -223,6 +223,66 @@
     "funnel-craft/SOP-FUNNEL-05-CERTIFY.md": {
       "sha256": "c4d25a5df0b6623cd2dbe0f7ac81e6487d88a0bf119780cc3b07631cca6e672b",
       "bytes": 2963
+    },
+    "ghl-hybrid-operations/README.md": {
+      "sha256": "400c29faa425779acae91344103e2a49a94577e024dd069a59af13f2d27c9ab3",
+      "bytes": 10159
+    },
+    "ghl-hybrid-operations/SOP-GHL-01-CAPABILITY-AND-ROUTING.md": {
+      "sha256": "301d7de1aab8c948a5fd45c27eedbbb93268329ccdf2f2a4c28b734b68a2ccb3",
+      "bytes": 4635
+    },
+    "ghl-hybrid-operations/SOP-GHL-02-WORKFLOW-BUILD-AND-EDIT.md": {
+      "sha256": "4ffa0fb860324b67a19016468d632a53c8ee9339dfc00d15d918349e9f89f279",
+      "bytes": 4229
+    },
+    "ghl-hybrid-operations/SOP-GHL-03-COURSE-PRODUCTION.md": {
+      "sha256": "9118e3c3a1ed213c3c743464b9b0dd503ba018f3a1ee3e0827e051e9d2eae3e1",
+      "bytes": 3423
+    },
+    "ghl-hybrid-operations/SOP-GHL-04-COMMUNITY-AND-LEARNING.md": {
+      "sha256": "579298463f5911d03c3e9ae3e9c03b98f67a1c9036ba67ef7ffe117fa017f96a",
+      "bytes": 3482
+    },
+    "ghl-hybrid-operations/SOP-GHL-05-COMMUNITY-PUBLISHING.md": {
+      "sha256": "51f7fa56f8f34d40f5c1973a07297ffbc4362d8731afd88a34cef5940b5a183e",
+      "bytes": 3164
+    },
+    "ghl-hybrid-operations/SOP-GHL-06-FULFILLMENT-AND-EVIDENCE.md": {
+      "sha256": "20e321bb902e4025df39ad2e3b9fd6427146c08f09b0d6835e1c705cca6a8c44",
+      "bytes": 3032
+    },
+    "ghl-hybrid-operations/SOP-GHL-07-MEETING-ROOMS.md": {
+      "sha256": "eddef02a5d0d9112f64824dca8441c7670feb8b162511dda72e0bdad02ff4420",
+      "bytes": 2736
+    },
+    "ghl-hybrid-operations/SOP-GHL-08-NATIVE-AI.md": {
+      "sha256": "e049315e5e370cc9b9408684d2660d1acb47fa976b3db74e4aab93d8cd865012",
+      "bytes": 2791
+    },
+    "ghl-hybrid-operations/SOP-GHL-09-KNOWLEDGE-LIFECYCLE.md": {
+      "sha256": "b58f07817dddc062ac767748614944bda1cc08895e29d2625473028c06af9b5a",
+      "bytes": 2710
+    },
+    "ghl-hybrid-operations/SOP-GHL-10-WIDGET-INSTALLATION.md": {
+      "sha256": "abefc86015202a1a7679b044b3ebda3498f1edd7569c7c476f8c3512b6c93f3c",
+      "bytes": 2425
+    },
+    "ghl-hybrid-operations/SOP-GHL-11-PROJECTS-AND-SYNC.md": {
+      "sha256": "f12167801ba881e85587bf7c4a43b9bbfdee0396e5e651de0d93d9647b3d817a",
+      "bytes": 2581
+    },
+    "ghl-hybrid-operations/SOP-GHL-12-WORKFLOW-MONITORING.md": {
+      "sha256": "c9182724ab820c20bc3f95cfbe4d80a677ce4d03f2e9025870e19b7783697fc8",
+      "bytes": 2562
+    },
+    "ghl-hybrid-operations/SOP-GHL-13-MARKETING-QUIZZES.md": {
+      "sha256": "b850ad57590e4f06195dad7813391ccc4c976deb75f6ffafb931fd86907266f7",
+      "bytes": 2699
+    },
+    "ghl-hybrid-operations/WF16-CP01-ALIAS-AND-POINTER-CONTRACT.json": {
+      "sha256": "98e7e7f25fc3297f864d4b4343b87ee5edc0e15bbc8b9811ed656732e4fe1418",
+      "bytes": 9816
     },
     "interdepartmental-communication-guidelines.md": {
       "sha256": "5b6f7ec3d6b00cc4c476729b49223ee49230d9f5f034cf889e0290e1204d6e94",
@@ -381,8 +441,8 @@
       "bytes": 9411
     },
     "social-media-craft/README.md": {
-      "sha256": "040c56d82fd8550970035751f9648c56ff76266985551a79e88310f8e893d69e",
-      "bytes": 6130
+      "sha256": "ee400f726d5778d09829537af729d0cd56215a7c772fac60796a63ed418eb1ca",
+      "bytes": 6182
     },
     "social-media-craft/SOCIAL-PIPELINE-MANIFEST.json": {
       "sha256": "6d8dbd74aa5e082780e9d8be90911e386c903566a222097f7b30cfe8d8edce6c",
