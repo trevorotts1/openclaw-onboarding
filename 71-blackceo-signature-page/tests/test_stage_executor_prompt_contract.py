@@ -171,7 +171,7 @@ class WireRepairRoundThreeTests(unittest.TestCase):
     def test_below_strict_floor_is_refused_on_the_paid_path(self):
         # F18: on the PAID KIE path below 95 percent is a hard revision; a stub compose
         # records the deficit and the last paid-submit boundary still refuses.
-        request = {"model": "gpt-image-2-6/sunburst", "_hypersat": PALETTE,
+        request = {"model": "gpt-image-2-5-sunburst", "_hypersat": PALETTE,
                    "stage_prompts": {"visual-mockup": "{copy}"}}
         with self.assertRaises(exe.ExecutorError) as ctx:
             exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4",
@@ -186,7 +186,7 @@ class WireRepairRoundThreeTests(unittest.TestCase):
 
     def test_design_prose_section_budget_refuses(self):
         filler = "Detailed rule. " * 1400
-        request = {"model": "gpt-image-2-6/sunburst", "_hypersat": PALETTE,
+        request = {"model": "gpt-image-2-5-sunburst", "_hypersat": PALETTE,
                    "stage_prompts": {"visual-mockup": filler + "{copy} {slots}"}}
         with self.assertRaises(exe.ExecutorError) as ctx:
             exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4")

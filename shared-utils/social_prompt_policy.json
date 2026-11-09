@@ -3,7 +3,7 @@
   "policy_version": "1.1.0",
   "effective_date": "2026-10-05",
   "owner_requirement": "Every final social-planner image prompt for a Kie model is 95 to 100 percent of that model's maxLength, never below 80 percent (KIE prompt rule 12, owner order 2026-10-05). Models with no published limit (Agnes) have no floor. This is a production policy, not a claim that longer prompts automatically create better images.",
-  "scope": "SOCIAL PLANNER ONLY (Skill 35 social-media-planner and Skill 57 social-media-in-a-box image paths, Kie GPT Image 2.6 + Agnes adapters). Unrelated skills keep their own gates. This file is the single source of truth for the scoped override.",
+  "scope": "SOCIAL PLANNER ONLY (Skill 35 social-media-planner and Skill 57 social-media-in-a-box image paths, Kie GPT Image 2.5 + Agnes adapters). Unrelated skills keep their own gates. This file is the single source of truth for the scoped override.",
   "length_rule": {
     "rule": "KIE prompt rule 12 (07-kie-setup/references/kie-common-rules.md)",
     "enforcer": "shared-utils/kie_prompt_enforcer.py",
@@ -30,11 +30,11 @@
     "5. recheck after every regeneration"
   ],
   "providers": {
-    "kie-gpt-image-2-6": {
+    "kie-gpt-image-2-5": {
       "provider_id": "kie",
-      "model_id": "gpt-image-2-6/sunburst-text-to-image",
+      "model_id": "gpt-image-2-5-sunburst-text-to-image",
       "vendor_cap_chars": 20000,
-      "vendor_cap_source": "owner ruling 2026-11-08: 20,000 characters for GPT Image 2.6, which governs over the larger vendor docs figure; recorded here only as the policy-owner fallback when the Skill 74 adapter is unreachable",
+      "vendor_cap_source": "published text-to-image schema maxLength 20000 (verified 2026-09-08); recorded here only as the policy-owner fallback when the Skill 74 adapter is unreachable",
       "uncertainty_note": "Check the selected endpoint independently for image-to-image and future GPT models; a verified provider cap that cannot hold a rule 12 prompt requires a visible compatible-model choice, never truncation.",
       "adapter_verified": true
     },

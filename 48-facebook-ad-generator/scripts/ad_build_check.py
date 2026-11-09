@@ -101,17 +101,17 @@ PROMPT_BUILD_ORDER = [
 ]
 # Prompt length is KIE prompt rule 12 (owner order 2026-10-05): 95 to 100 percent of the model maxLength, hard floor
 # 80 percent, hard ceiling 100 percent, measured by the shared enforcer (Skill 74 prompt-budget). No band lives here.
-IMAGE_MODEL_DEFAULT = "gpt-image-2-6/sunburst-text-to-image"  # the id this skill sends (Skill 66 registry)
+IMAGE_MODEL_DEFAULT = "gpt-image-2-5-sunburst-text-to-image"  # the id this skill sends (Skill 66 registry)
 
 # Image size (square feed ad) + the model family the generation must stay on.
 IMAGE_EDGE_PX = 1500
 # Auto-adopt any future gpt-image version: a model id must START WITH this prefix.
 # This is a deliberate, documented FAMILY gate (the version is never hardcoded), not
 # the dispatch pin. The id this skill actually sends is Skill 66's registry id
-# `gpt-image-2-6/sunburst-text-to-image` (AGENTS.md N43 pins the fleet to
-# gpt-image-2-6/sunburst-*; legacy gpt-image-2-* is only for ratios 3:1, 1:3, 9:21,
-# which a square 1:1 ad never uses). gpt-image-2-6/sunburst-text-to-image,
-# gpt-image-2-6/sunburst-image-to-image and any future gpt-image-N all pass;
+# `gpt-image-2-5-sunburst-text-to-image` (AGENTS.md N43 pins the fleet to
+# gpt-image-2-5-sunburst-*; legacy gpt-image-2-* is only for ratios 3:1, 1:3, 9:21,
+# which a square 1:1 ad never uses). gpt-image-2-5-sunburst-text-to-image,
+# gpt-image-2-5-sunburst-image-to-image and any future gpt-image-N all pass;
 # "dalle" / "flux" / "" fail.
 GPT_IMAGE_MODEL_PREFIX = "gpt-image-"
 

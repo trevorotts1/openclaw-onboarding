@@ -558,7 +558,7 @@ def presentations_gate_enabled() -> bool:
     specs and whose renders are NOT English-only 16:9 2K — Skill 06 (GHL landing images),
     Skill 49 (Signature Funnel, 5,000-char band), Skill 47 (movie frames), Skill 59
     (Anthology book covers, portrait), and the video roles. Forcing the presentations band /
-    English-only pin / gpt-image-2-6 mode-pin on those callers would break them. So the heavy
+    English-only pin / gpt-image-2.5 mode-pin on those callers would break them. So the heavy
     gate is opt-in: the PRESENTATIONS context sets KIE_PROMPT_GATE=presentations to enable
     it; every other caller gets only the always-on universal-safe checks
     (verify_prompt_minimal: dead-endpoint + empty-prompt refusal)."""
@@ -628,7 +628,7 @@ def ensure_english_pin(prompt_text: str) -> str:
 def check_mode_consistency(model: str, input_urls, logo_bearing: bool = False,
                            slide_id=None) -> None:
     """Refuse (PromptGateError) an inconsistent model/reference combination:
-      * input_urls (reference images) present => model MUST be gpt-image-2-6/sunburst-image-to-image
+      * input_urls (reference images) present => model MUST be gpt-image-2-5-sunburst-image-to-image
         (a text-to-image call ignores the references and invents its own mark).
       * a slide flagged logo-bearing with EMPTY input_urls => hard fail (the canonical
         invented-logo defect: T2I on a logo slide invents a new mark each render).
@@ -964,7 +964,7 @@ def _self_test() -> int:
     if not prompt_problems("too short"):
         failures.append("thin stub did not fail the gate")
 
-    # Rule 12 length through the shared enforcer (GPT Image 2.6 max 20,000): 79 percent rejected naming the
+    # Rule 12 length through the shared enforcer (GPT Image 2.5 max 20,000): 79 percent rejected naming the
     # chars to add, 95 percent clears the length gate, 101 percent rejected naming the chars to cut.
     for n, want in ((15800, "ADD at least 3200"), (19000, None), (20200, "CUT exactly")):
         lp = length_problems("x" * n)

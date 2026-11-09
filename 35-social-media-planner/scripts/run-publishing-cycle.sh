@@ -997,7 +997,7 @@ for f in "$IMAGE_MODEL_JSON" "$VIDEO_SPECS_JSON" "$SOCIAL_CADENCE_JSON"; do
 done
 
 # ---------- KIE media plan (Skill 74 / 66 / 67 plug-in for image-model.json + video-specs.json) ----------
-# One stdlib call, no network: resolves the image model (GPT Image 2.6 Sunburst unless the client config
+# One stdlib call, no network: resolves the image model (GPT Image 2.5 Sunburst unless the client config
 # names another GPT Image generation), lists the Skill 74 steps every paid job runs, locates Skill 67, and
 # reports any config that names Nano Banana, Midjourney or Sora. The result goes into cycle-manifest.json.
 MEDIA_PLAN_JSON="{}"

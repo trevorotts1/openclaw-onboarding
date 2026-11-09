@@ -122,7 +122,7 @@ STAMPED_CARD = {"answers": {"video_style": "Lifelike 3D",
                 "who": "w8 merge test", "at": "2026-10-08T09:00:00Z"}
 
 
-def run_case(script, label, request=None, model="gpt-image-2-6/sunburst-text-to-image"):
+def run_case(script, label, request=None, model="gpt-image-2-5-sunburst-text-to-image"):
     tmp = tempfile.mkdtemp(prefix="kie-f10-test-")
     db = os.path.join(tmp, "spend.db")
     L.init_run(db, "run-" + label, 10000)

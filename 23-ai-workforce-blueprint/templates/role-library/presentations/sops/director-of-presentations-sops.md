@@ -86,8 +86,8 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    ```json
    {
      "image_platform": "kie.ai",
-     "image_model_t2i": "gpt-image-2-6/sunburst-text-to-image",
-     "image_model_i2i": "gpt-image-2-6/sunburst-image-to-image",
+     "image_model_t2i": "gpt-image-2-5-sunburst-text-to-image",
+     "image_model_i2i": "gpt-image-2-5-sunburst-image-to-image",
      "resolution": "2K",
      "aspect_ratio": "16:9",
      "authorized_by": "<operator>",

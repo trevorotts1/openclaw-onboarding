@@ -102,7 +102,7 @@ This table is the API reference for Phase 4 in this role. It follows AGENTS.md N
 | Item | Value |
 |---|---|
 | Platform | Kie.ai (the pinned image platform for this SOP) |
-| Models | The `image.t2i` and `image.i2i` aliases in `presentation_job/model_catalog.json` (today `gpt-image-2-6/sunburst-text-to-image` and `gpt-image-2-6/sunburst-image-to-image`); the catalog wins over any id quoted in a document |
+| Models | The `image.t2i` and `image.i2i` aliases in `presentation_job/model_catalog.json` (today `gpt-image-2-5-sunburst-text-to-image` and `gpt-image-2-5-sunburst-image-to-image`); the catalog wins over any id quoted in a document |
 | Create task | `POST https://api.kie.ai/api/v1/jobs/createTask` |
 | Check task | `GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>` |
 | Balance | `GET https://api.kie.ai/api/v1/chat/credit` |

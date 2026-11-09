@@ -65,7 +65,7 @@ independent.
 {
   "prompt_count": 10,
   "prompts": [
-    { "char_count": 19200, "model": "gpt-image-2-6/sunburst-text-to-image",
+    { "char_count": 19200, "model": "gpt-image-2-5-sunburst-text-to-image",
       "sections": ["subject","composition","typography","color-grading","lighting","quality","facial-intelligence","brand-style-block"],
       "styleblock_ok": true, "baked_text_present": true },
     "... one object per prompt ..."
@@ -80,7 +80,7 @@ independent.
 ### B1. The engine (reused as-is)
 
 Generate via the reused Kie adapter `kie_image.py` with the **client's own KIE_API_KEY**.
-The model id is the fleet default from AGENTS.md N43 and rule 11 of the shared Kie rules: `gpt-image-2-6/sunburst-text-to-image`
+The model id is the fleet default from AGENTS.md N43 and rule 11 of the shared Kie rules: `gpt-image-2-5-sunburst-text-to-image`
 (or `-image-to-image` when references are supplied). The 1:1 ratio never routes to the legacy
 `gpt-image-2-*` model, and the `flare` variant is not registered. The gate only checks that the
 id begins `gpt-image-` (AF-FBAD-IMAGE-MODEL), which is a forward-compatible shape check and
@@ -117,7 +117,7 @@ model is least predictable); every redo costs money and counts against the ceili
   "image_count": 10,
   "images": [
     { "kie_task_id": "a27542cb60343417e562afc2be65da5c", "width": 1500, "height": 1500,
-      "model": "gpt-image-2-6/sunburst-text-to-image", "would_cross": false },
+      "model": "gpt-image-2-5-sunburst-text-to-image", "would_cross": false },
     "... one object per image ..."
   ]
 }

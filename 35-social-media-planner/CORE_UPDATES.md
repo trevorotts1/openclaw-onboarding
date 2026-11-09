@@ -100,7 +100,7 @@ The agent produces every podcast episode end-to-end. It NEVER asks the client to
 
 6. **On failure: diagnose and retry** — the script diagnoses common causes (invalid API key, invalid voice ID, network error, rate limit, model unavailable) and retries up to 3x. After 3 failures: notify operator via Telegram with diagnostic output, then (only then) offer client the self-record fallback.
 
-7. **Generate the cover** via kie.ai, with KIE GPT Image 2.6 Sunburst per playbook Section 8c (1:1 at 2K, then export a 1400x1400 JPEG: Podbean accepts 1400 to 3000 px, and exactly 1400 also satisfies Skill 57). JPEG only, never WebP (Apple Podcasts rejects it). If over 500 KB, resize with ImageMagick (`magick` on IM7, `convert` on IM6): `IM="$(command -v magick || command -v convert)"; "$IM" input.png -resize 1400x1400 -quality 85 output.jpg`.
+7. **Generate the cover** via kie.ai, with KIE GPT Image 2.5 Sunburst per playbook Section 8c (1:1 at 2K, then export a 1400x1400 JPEG: Podbean accepts 1400 to 3000 px, and exactly 1400 also satisfies Skill 57). JPEG only, never WebP (Apple Podcasts rejects it). If over 500 KB, resize with ImageMagick (`magick` on IM7, `convert` on IM6): `IM="$(command -v magick || command -v convert)"; "$IM" input.png -resize 1400x1400 -quality 85 output.jpg`.
 
 8. **Upload audio + cover to GHL Media Library** — NEVER send Fish Audio URLs directly to the webhook.
 
@@ -138,7 +138,7 @@ The agent produces every podcast episode end-to-end. It NEVER asks the client to
 | Tool | Purpose | Credentials |
 |------|---------|-------------|
 | GoHighLevel Social Planner API | Post scheduling, commenting, media attachment across every channel connected in GHL (live-queried — not a fixed list) | GOHIGHLEVEL_API_KEY + GOHIGHLEVEL_LOCATION_ID |
-| kie.ai API | Image generation at 4:5, 2:3, 9:16, 16:9, 1:1 ratios (KIE GPT Image 2.6 Sunburst, `gpt-image-2-6/sunburst-text-to-image` / `-image-to-image`, per playbook Section 8; Nano Banana is never used for social; the only fallback is legacy gpt-image-2 under the N43 ratio rules). Video generation through Skill 67 (default request Veo 3.1 Lite, `veo3_lite`). Prices: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74) | KIE_API_KEY |
+| kie.ai API | Image generation at 4:5, 2:3, 9:16, 16:9, 1:1 ratios (KIE GPT Image 2.5 Sunburst, `gpt-image-2-5-sunburst-text-to-image` / `-image-to-image`, per playbook Section 8; Nano Banana is never used for social; the only fallback is legacy gpt-image-2 under the N43 ratio rules). Video generation through Skill 67 (default request Veo 3.1 Lite, `veo3_lite`). Prices: `python3 74-kie-live-adapter/scripts/kie_live_adapter.py price --model <id>` (Skill 74) | KIE_API_KEY |
 | Fish Audio S2 API | Podcast TTS with inline [emotion] tags (depends on Skill 30) | FISH_AUDIO_API_KEY + FISH_AUDIO_VOICE_ID |
 | Google Sheets API | Content logging across 19 worksheets with inline image previews | **Sheet created automatically via n8n webhook** - no client credentials needed |
 | FFmpeg | Video segment merging (audio + video, 192 kbps, H.264, 30fps) | Installed locally |

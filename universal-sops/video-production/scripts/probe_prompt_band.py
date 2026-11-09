@@ -52,7 +52,7 @@ EXIT_FAILCLOSED = 3
 
 # Length: KIE prompt rule 12 (owner order 2026-10-05) through the shared enforcer; the limit comes from Skill 74
 # prompt-budget for the image model, and no band lives here (AF-PVC-PROMPT-FLOOR / AF-PVC-PROMPT-CEILING).
-IMAGE_MODEL_DEFAULT = "gpt-image-2-6/sunburst-text-to-image"
+IMAGE_MODEL_DEFAULT = "gpt-image-2-5-sunburst-text-to-image"
 PROMPT_MIN_DISTINCT_WORDS = 220  # AF-PVC-PROMPT-IDENTITY (density)
 
 IDENTITY_ANCHORS = (

@@ -11375,20 +11375,20 @@
    "verbatim_fields": []
   },
   {
-   "id": "gpt-image-2-6/flare-image-to-image",
+   "id": "gpt-image-2-5-flare-image-to-image",
    "provider": "OpenAI",
-   "title": "Gpt Image 2.6 Flare Image to Image ",
+   "title": "Gpt Image 2.5 Flare Image to Image ",
    "taskType": [
     "Image to Image"
    ],
    "family": "gpt-image",
    "version": [
     2,
-    6
+    5
    ],
    "variant": "flare",
    "pricing": {
-    "raw": "GPT Image 2.6 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
+    "raw": "GPT Image 2.5 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
     "status": "ok",
     "credits_min": 6.0,
     "credits_max": 16.0,
@@ -11435,16 +11435,13 @@
       "2:3",
       "4:3",
       "3:4",
-      "5:4",
-      "4:5",
       "16:9",
       "9:16",
-      "2:1",
-      "1:2",
       "21:9",
-      "9:21",
-      "3:1",
-      "1:3"
+      "27:16",
+      "16:27",
+      "9:8",
+      "8:9"
      ]
     },
     "resolution": {
@@ -11475,20 +11472,20 @@
    "verbatim_fields": []
   },
   {
-   "id": "gpt-image-2-6/flare-text-to-image",
+   "id": "gpt-image-2-5-flare-text-to-image",
    "provider": "OpenAI",
-   "title": "Gpt Image 2.6 Flare Text to Image",
+   "title": "Gpt Image 2.5 Flare Text to Image",
    "taskType": [
     "Text to Image"
    ],
    "family": "gpt-image",
    "version": [
     2,
-    6
+    5
    ],
    "variant": "flare",
    "pricing": {
-    "raw": "GPT Image 2.6 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
+    "raw": "GPT Image 2.5 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
     "status": "ok",
     "credits_min": 6.0,
     "credits_max": 16.0,
@@ -11527,16 +11524,13 @@
       "2:3",
       "4:3",
       "3:4",
-      "5:4",
-      "4:5",
       "16:9",
       "9:16",
-      "2:1",
-      "1:2",
       "21:9",
-      "9:21",
-      "3:1",
-      "1:3"
+      "27:16",
+      "16:27",
+      "9:8",
+      "8:9"
      ]
     },
     "resolution": {
@@ -11567,20 +11561,20 @@
    "verbatim_fields": []
   },
   {
-   "id": "gpt-image-2-6/sunburst-image-to-image",
+   "id": "gpt-image-2-5-sunburst-image-to-image",
    "provider": "OpenAI",
-   "title": "Gpt Image 2.6 Sunburst Image to Image",
+   "title": "Gpt Image 2.5 Sunburst Image to Image",
    "taskType": [
     "Image to Image"
    ],
    "family": "gpt-image",
    "version": [
     2,
-    6
+    5
    ],
    "variant": "sunburst",
    "pricing": {
-    "raw": "GPT Image 2.6 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
+    "raw": "GPT Image 2.5 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
     "status": "ok",
     "credits_min": 6.0,
     "credits_max": 16.0,
@@ -11627,16 +11621,13 @@
       "2:3",
       "4:3",
       "3:4",
-      "5:4",
-      "4:5",
       "16:9",
       "9:16",
-      "2:1",
-      "1:2",
       "21:9",
-      "9:21",
-      "3:1",
-      "1:3"
+      "27:16",
+      "16:27",
+      "9:8",
+      "8:9"
      ]
     },
     "resolution": {
@@ -11667,20 +11658,20 @@
    "verbatim_fields": []
   },
   {
-   "id": "gpt-image-2-6/sunburst-text-to-image",
+   "id": "gpt-image-2-5-sunburst-text-to-image",
    "provider": "OpenAI",
-   "title": "Gpt Image 2.6 Sunburst Text to Image",
+   "title": "Gpt Image 2.5 Sunburst Text to Image",
    "taskType": [
     "Text to Image"
    ],
    "family": "gpt-image",
    "version": [
     2,
-    6
+    5
    ],
    "variant": "sunburst",
    "pricing": {
-    "raw": "GPT Image 2.6 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
+    "raw": "GPT Image 2.5 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
     "status": "ok",
     "credits_min": 6.0,
     "credits_max": 16.0,
@@ -11719,16 +11710,13 @@
       "2:3",
       "4:3",
       "3:4",
-      "5:4",
-      "4:5",
       "16:9",
       "9:16",
-      "2:1",
-      "1:2",
       "21:9",
-      "9:21",
-      "3:1",
-      "1:3"
+      "27:16",
+      "16:27",
+      "9:8",
+      "8:9"
      ]
     },
     "resolution": {
@@ -11752,510 +11740,6 @@
    "prompt_field": {
     "name": "prompt",
     "maxLength": 20000,
-    "verbatim": false,
-    "max_source": "schema",
-    "limits_listed": []
-   },
-   "verbatim_fields": []
-  },
-  {
-   "id": "gpt-image-2-6/flare-image-to-image",
-   "provider": "OpenAI",
-   "title": "Gpt Image 2.6 Flare Image to Image",
-   "taskType": [
-    "Image to Image"
-   ],
-   "family": "gpt-image",
-   "version": [
-    2,
-    6
-   ],
-   "variant": "flare",
-   "schema": {
-    "readable": true,
-    "submit_path": "/api/v1/jobs/createTask",
-    "method": "post",
-    "kind": "createTask"
-   },
-   "schema_paths": [
-    {
-     "path": "/api/v1/jobs/createTask",
-     "method": "post",
-     "kind": "createTask"
-    }
-   ],
-   "callback_supported": true,
-   "required": [
-    "prompt"
-   ],
-   "input_fields": {
-    "prompt": {
-     "type": "string",
-     "minLength": 1,
-     "maxLength": 32000
-    },
-    "aspect_ratio": {
-     "type": "string",
-     "enum": [
-      "auto",
-      "1:1",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "5:4",
-      "4:5",
-      "16:9",
-      "9:16",
-      "2:1",
-      "1:2",
-      "21:9",
-      "9:21",
-      "3:1",
-      "1:3"
-     ]
-    },
-    "resolution": {
-     "type": "string",
-     "enum": [
-      "1K",
-      "2K",
-      "4K"
-     ],
-     "default": "1K"
-    },
-    "quality": {
-     "type": "string",
-     "enum": [
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-      "auto"
-     ],
-     "default": "medium"
-    },
-    "background": {
-     "type": "string",
-     "enum": [
-      "transparent",
-      "opaque",
-      "auto"
-     ]
-    },
-    "output_format": {
-     "type": "string",
-     "enum": [
-      "png",
-      "jpeg",
-      "webp"
-     ]
-    },
-    "complexity": {
-     "type": "string",
-     "enum": [
-      "low",
-      "medium",
-      "high"
-     ]
-    },
-    "moderation": {
-     "type": "string",
-     "enum": [
-      "auto",
-      "low"
-     ]
-    },
-    "input_urls": {
-     "type": "array",
-     "maxItems": 16
-    },
-    "mask_url": {
-     "type": "string"
-    },
-    "markup": {
-     "type": "string"
-    }
-   },
-   "branches": [],
-   "prompt_field": {
-    "name": "prompt",
-    "maxLength": 32000,
-    "verbatim": false,
-    "max_source": "schema",
-    "limits_listed": []
-   },
-   "verbatim_fields": []
-  },
-  {
-   "id": "gpt-image-2-6/flare-text-to-image",
-   "provider": "OpenAI",
-   "title": "Gpt Image 2.6 Flare Text to Image",
-   "taskType": [
-    "Text to Image"
-   ],
-   "family": "gpt-image",
-   "version": [
-    2,
-    6
-   ],
-   "variant": "flare",
-   "schema": {
-    "readable": true,
-    "submit_path": "/api/v1/jobs/createTask",
-    "method": "post",
-    "kind": "createTask"
-   },
-   "schema_paths": [
-    {
-     "path": "/api/v1/jobs/createTask",
-     "method": "post",
-     "kind": "createTask"
-    }
-   ],
-   "callback_supported": true,
-   "required": [
-    "prompt"
-   ],
-   "input_fields": {
-    "prompt": {
-     "type": "string",
-     "minLength": 1,
-     "maxLength": 32000
-    },
-    "aspect_ratio": {
-     "type": "string",
-     "enum": [
-      "auto",
-      "1:1",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "5:4",
-      "4:5",
-      "16:9",
-      "9:16",
-      "2:1",
-      "1:2",
-      "21:9",
-      "9:21",
-      "3:1",
-      "1:3"
-     ]
-    },
-    "resolution": {
-     "type": "string",
-     "enum": [
-      "1K",
-      "2K",
-      "4K"
-     ],
-     "default": "1K"
-    },
-    "quality": {
-     "type": "string",
-     "enum": [
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-      "auto"
-     ],
-     "default": "medium"
-    },
-    "background": {
-     "type": "string",
-     "enum": [
-      "transparent",
-      "opaque",
-      "auto"
-     ]
-    },
-    "output_format": {
-     "type": "string",
-     "enum": [
-      "png",
-      "jpeg",
-      "webp",
-      "gif",
-      "svg"
-     ]
-    },
-    "complexity": {
-     "type": "string",
-     "enum": [
-      "low",
-      "medium",
-      "high"
-     ]
-    },
-    "moderation": {
-     "type": "string",
-     "enum": [
-      "auto",
-      "low"
-     ]
-    }
-   },
-   "branches": [],
-   "prompt_field": {
-    "name": "prompt",
-    "maxLength": 32000,
-    "verbatim": false,
-    "max_source": "schema",
-    "limits_listed": []
-   },
-   "verbatim_fields": []
-  },
-  {
-   "id": "gpt-image-2-6/sunburst-image-to-image",
-   "provider": "OpenAI",
-   "title": "Gpt Image 2.6 Sunburst Image to Image",
-   "taskType": [
-    "Image to Image"
-   ],
-   "family": "gpt-image",
-   "version": [
-    2,
-    6
-   ],
-   "variant": "sunburst",
-   "schema": {
-    "readable": true,
-    "submit_path": "/api/v1/jobs/createTask",
-    "method": "post",
-    "kind": "createTask"
-   },
-   "schema_paths": [
-    {
-     "path": "/api/v1/jobs/createTask",
-     "method": "post",
-     "kind": "createTask"
-    }
-   ],
-   "callback_supported": true,
-   "required": [
-    "prompt"
-   ],
-   "input_fields": {
-    "prompt": {
-     "type": "string",
-     "minLength": 1,
-     "maxLength": 32000
-    },
-    "aspect_ratio": {
-     "type": "string",
-     "enum": [
-      "auto",
-      "1:1",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "5:4",
-      "4:5",
-      "16:9",
-      "9:16",
-      "2:1",
-      "1:2",
-      "21:9",
-      "9:21",
-      "3:1",
-      "1:3"
-     ]
-    },
-    "resolution": {
-     "type": "string",
-     "enum": [
-      "1K",
-      "2K",
-      "4K"
-     ],
-     "default": "1K"
-    },
-    "quality": {
-     "type": "string",
-     "enum": [
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-      "auto"
-     ],
-     "default": "medium"
-    },
-    "background": {
-     "type": "string",
-     "enum": [
-      "transparent",
-      "opaque",
-      "auto"
-     ]
-    },
-    "output_format": {
-     "type": "string",
-     "enum": [
-      "png",
-      "jpeg",
-      "webp"
-     ]
-    },
-    "complexity": {
-     "type": "string",
-     "enum": [
-      "low",
-      "medium",
-      "high"
-     ]
-    },
-    "moderation": {
-     "type": "string",
-     "enum": [
-      "auto",
-      "low"
-     ]
-    },
-    "input_urls": {
-     "type": "array",
-     "maxItems": 16
-    },
-    "mask_url": {
-     "type": "string"
-    },
-    "markup": {
-     "type": "string"
-    }
-   },
-   "branches": [],
-   "prompt_field": {
-    "name": "prompt",
-    "maxLength": 32000,
-    "verbatim": false,
-    "max_source": "schema",
-    "limits_listed": []
-   },
-   "verbatim_fields": []
-  },
-  {
-   "id": "gpt-image-2-6/sunburst-text-to-image",
-   "provider": "OpenAI",
-   "title": "Gpt Image 2.6 Sunburst Text to Image",
-   "taskType": [
-    "Text to Image"
-   ],
-   "family": "gpt-image",
-   "version": [
-    2,
-    6
-   ],
-   "variant": "sunburst",
-   "schema": {
-    "readable": true,
-    "submit_path": "/api/v1/jobs/createTask",
-    "method": "post",
-    "kind": "createTask"
-   },
-   "schema_paths": [
-    {
-     "path": "/api/v1/jobs/createTask",
-     "method": "post",
-     "kind": "createTask"
-    }
-   ],
-   "callback_supported": true,
-   "required": [
-    "prompt"
-   ],
-   "input_fields": {
-    "prompt": {
-     "type": "string",
-     "minLength": 1,
-     "maxLength": 32000
-    },
-    "aspect_ratio": {
-     "type": "string",
-     "enum": [
-      "auto",
-      "1:1",
-      "3:2",
-      "2:3",
-      "4:3",
-      "3:4",
-      "5:4",
-      "4:5",
-      "16:9",
-      "9:16",
-      "2:1",
-      "1:2",
-      "21:9",
-      "9:21",
-      "3:1",
-      "1:3"
-     ]
-    },
-    "resolution": {
-     "type": "string",
-     "enum": [
-      "1K",
-      "2K",
-      "4K"
-     ],
-     "default": "1K"
-    },
-    "quality": {
-     "type": "string",
-     "enum": [
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-      "auto"
-     ],
-     "default": "medium"
-    },
-    "background": {
-     "type": "string",
-     "enum": [
-      "transparent",
-      "opaque",
-      "auto"
-     ]
-    },
-    "output_format": {
-     "type": "string",
-     "enum": [
-      "png",
-      "jpeg",
-      "webp",
-      "gif",
-      "svg"
-     ]
-    },
-    "complexity": {
-     "type": "string",
-     "enum": [
-      "low",
-      "medium",
-      "high"
-     ]
-    },
-    "moderation": {
-     "type": "string",
-     "enum": [
-      "auto",
-      "low"
-     ]
-    }
-   },
-   "branches": [],
-   "prompt_field": {
-    "name": "prompt",
-    "maxLength": 32000,
     "verbatim": false,
     "max_source": "schema",
     "limits_listed": []

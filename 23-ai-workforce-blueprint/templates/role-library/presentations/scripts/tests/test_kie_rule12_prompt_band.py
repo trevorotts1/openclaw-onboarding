@@ -1,7 +1,7 @@
 """KIE prompt rule 12 on the Presentations render path (owner order 2026-10-05).
 
 build_deck.py and prompt_gate.py keep no 9,000 / 18,000 band: both call the shared enforcer
-shared-utils/kie_prompt_enforcer.py (Skill 74 prompt-budget --check). GPT Image 2.6 maxLength 20,000:
+shared-utils/kie_prompt_enforcer.py (Skill 74 prompt-budget --check). GPT Image 2.5 maxLength 20,000:
 79 percent is rejected with the exact characters to ADD, 95 and 100 percent pass, 101 percent is rejected with the
 exact characters to CUT; the mandatory English pin counts toward the ceiling. Hermetic: the real adapter answers
 from its registry snapshot (empty HOME, no key).
@@ -54,12 +54,12 @@ def test_both_modules_apply_the_same_band(pct, ok):
 
 
 def test_79_percent_names_the_chars_to_add_and_101_the_chars_to_cut():
-    assert "ADD at least 5120" in bd._length_problems(rich(79))[0][1]
+    assert "ADD at least 3200" in bd._length_problems(rich(79))[0][1]
     assert bd._length_problems(rich(79))[0][0] == "AF-P1"
-    assert "CUT exactly 320" in bd._length_problems(rich(101))[0][1]
+    assert "CUT exactly 200" in bd._length_problems(rich(101))[0][1]
     assert bd._length_problems(rich(101))[0][0] == "AF-P2"
-    assert "ADD at least 5120" in pg.length_problems(rich(79))[0]
-    assert "CUT exactly 320" in pg.length_problems(rich(101))[0]
+    assert "ADD at least 3200" in pg.length_problems(rich(79))[0]
+    assert "CUT exactly 200" in pg.length_problems(rich(101))[0]
 
 
 def test_the_retired_9000_floor_no_longer_passes():

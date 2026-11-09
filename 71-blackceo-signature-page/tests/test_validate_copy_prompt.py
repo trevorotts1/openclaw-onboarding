@@ -298,7 +298,7 @@ class TestPartCBudget(unittest.TestCase):
         self.assertEqual(budget["add_chars"], 200)
 
     def test_verified_cap_fails_closed(self):
-        policy = {"models": [{"match": "gpt-image-2-6", "max_chars": 5000,
+        policy = {"models": [{"match": "gpt-image-2-5", "max_chars": 5000,
                               "cap_status": "VERIFIED", "unit": "chars"}],
                   "default": {"max_chars": None, "cap_status": "UNKNOWN",
                               "unit": "chars"},

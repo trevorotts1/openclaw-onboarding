@@ -285,7 +285,7 @@ class BoundariesThroughARealProviderTests(unittest.TestCase):
         quiet.__enter__()
         self.addCleanup(quiet.__exit__, None, None, None)
         self.provider = kie.KieProvider(transport=Spy())
-        self.mid = "kie-gpt-image-2-6/sunburst-text-to-image"
+        self.mid = "kie-gpt-image-2-5-sunburst-text-to-image"
 
     def go(self, n: int):
         return self.provider.generate_image(base.ImageGenerationRequest(model_id=self.mid, prompt="x" * n))

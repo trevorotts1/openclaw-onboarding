@@ -1,7 +1,7 @@
 ---
 name: signature-presentation
 description: Builds a Trevor Otts Signature Presentation — the 4-phase, minimum-100-slide signature-talk methodology (Avatar → Signature Story → Transformational Teaching → Purpose Pitch) — as a governed deck TYPE that runs THROUGH the existing Presentations department engine. Gates the sacred method with three fail-closed provers: the 8-Questions-in-one-block intake gate, the sacred-structure ledger (phase ranges, ≥100 floor with client-exact override, ≤2 case studies, 3–7 teaching steps, suggested-image-per-slide, central-hook + section-hooks, N.E.E.I.T./4-Quadrant), and Phase-3 no-pitch hygiene. Ships four client-facing teaching frames — The Rulebook, The Vault, The Quest, The Original. Never forks the render path; the department's canonical entry gate (presentation-canonical-entry.sh) runs the fail-closed gates and dispatches the presentation_job engine, which does all rendering, assembly, delivery, and Kanban.
-version: v2.1.8
+version: v2.1.7
 ---
 
 # Signature Presentation (Skill 51)
@@ -142,7 +142,7 @@ nothing skippable, fail-closed gates at close()). An engine that is installed bu
 job is a **blocking failure (exit 9, `ENGINE DISPATCH FAILED`) — never a silent downgrade**;
 `run_signature_deck.py` runs ONLY as a loudly announced fallback when the engine component is
 genuinely absent from the box, and that fallback is recorded in
-`working/checkpoints/.fallback-legacy-runner-used`. Rendering (kie.ai through the department's image pin in `presentation_job/model_catalog.json`, today GPT Image 2.6 Sunburst, bumped only by an operator catalog change; every
+`working/checkpoints/.fallback-legacy-runner-used`. Rendering (kie.ai through the department's image pin in `presentation_job/model_catalog.json`, today GPT Image 2.5 Sunburst, bumped only by an operator catalog change; every
 word baked into the image; zero native on-slide text) is done by the engine's render phases
 through `build_deck.py`. Writing and running your own per-deck driver — `python3 working/*.py`
 — is the **ungoverned path and is FORBIDDEN** (`AF-CANONICAL-RENDER-BYPASS` /

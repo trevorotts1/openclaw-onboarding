@@ -34,12 +34,12 @@ Skill 71 stage -> policy owner (Skill 66 image, Skill 67 video) -> transport (Sk
   An explicit client request for a model or a department pin wins over the default.
 - The GPT Image default is the newest GPT Image generation in KIE's live catalog (rule 13). Skill 66
   resolves it with `python3 74-kie-live-adapter/scripts/kie_live_adapter.py latest-family --family gpt-image`.
-  Today that is GPT Image 2.6 Sunburst. If it changes, the adapter writes a receipt and the operator is told.
+  Today that is GPT Image 2.5 Sunburst. If it changes, the adapter writes a receipt and the operator is told.
 - Ratio rules from AGENTS.md N43 (rule 11), applied by Skill 66 before dispatch and recorded on the receipt:
-  the default route serves every ratio in its enum as asked — 3:1, 1:3 and 9:21 included, with no dispatch
-  to the legacy `gpt-image-2-*` route, and 5:4, 4:5, 2:1 and 1:2 used literally rather than substituted to
-  4:3, 3:4, 16:9 and 9:16. The page slot ratio comes from the wireframe image inventory. Record the
-  requested and generated ratio in the receipt; they are the same unless a model or a pin overrides them.
+  3:1, 1:3 and 9:21 go to the legacy `gpt-image-2-*` route only; on the default route 5:4 becomes 4:3,
+  4:5 becomes 3:4, 2:1 becomes 16:9 and 1:2 becomes 9:16; every other ratio is used as asked.
+  The page slot ratio comes from the wireframe image inventory. When a substitution happens, write the
+  prompt's composition for the ratio that will be generated, and record both ratios in the receipt.
 - Constraint sets are per generation and never merged (rule 11).
 
 ## 2. Transport: how (Skill 74 only)
@@ -99,13 +99,15 @@ block that matches this route. Example (values are placeholders):
 "cost": {"provider": "kie", "credits_before": 0, "credits_after": 0}
 ```
 
-`model_id` and `model_source` are per task because one page can carry an explicit request or a department
-pin alongside the default. `model_source` is one of `latest-family`, `explicit-request`, `department-pin`,
-`legacy-ratio-route`. The gate checks the N43 ratio rule on every task: the generated ratio must equal the
-requested ratio for every value, `3:1`, `1:3`, `9:21`, `5:4`, `4:5`, `2:1` and `1:2` included — no ratio
-routes to the legacy `gpt-image-2-*` route and none is substituted. An explicit request or a pin may select
-a different model, and the receipt records that choice.
-Every `task_id` must also exist as its own file `<run>/receipts/kie74/<task_id>.json` (a successful active Skill 74 result, recorded with the Skill 49/56 `kie74_receipt.py` pattern or written by the run's own recorder) and be unique across tasks and files. A task whose `model_source` is `explicit-request` or `department-pin` carries `evidence` (the request text or the pin id); without it the pin is not honored. `evidence` must be at least 12 characters and not a placeholder. The intake stage writes `intake.json` with `scripts/write_intake.py`, whose `--image-engine` is `kie` (default) or `agnes`; the Agnes route is accepted only when `intake.json` has `image_engine: "agnes"`.
+`model_id` and `model_source` are per task because one page can use the legacy route for a 3:1 slot and
+the default for the rest. `model_source` is one of `latest-family`, `explicit-request`, `department-pin`,
+`legacy-ratio-route`. The gate checks the N43 ratio rule on every task: a requested 3:1, 1:3 or 9:21 must be
+generated as asked on the legacy route; on the default route 5:4, 4:5, 2:1 and 1:2 must be generated as
+4:3, 3:4, 16:9 and 9:16; every other ratio must be generated as requested. An explicit request or a pin may
+override the substitution. A slot designed at 3:1, 1:3 or 9:21 records
+`model_source: explicit-request` with its `evidence` (or records `legacy-ratio-route`), so the
+designed ratio is never rewritten silently before generation.
+Every `task_id` must also exist as its own file `<run>/receipts/kie74/<task_id>.json` (a successful active Skill 74 result, recorded with the Skill 49/56 `kie74_receipt.py` pattern or written by the run's own recorder) and be unique across tasks and files. A task whose `model_source` is `explicit-request` or `department-pin` carries `evidence` (the request text or the pin id); without it the N43 substitution cannot be skipped. `evidence` must be at least 12 characters and not a placeholder. The intake stage writes `intake.json` with `scripts/write_intake.py`, whose `--image-engine` is `kie` (default) or `agnes`; the Agnes route is accepted only when `intake.json` has `image_engine: "agnes"`.
 `credits_before` and `credits_after` come from `kie_live_adapter.py credits`, never from an estimate.
 When the client selected Agnes, `skill` and `policy` are both `63-agnes-image` and `cost.provider` is `agnes`.
 

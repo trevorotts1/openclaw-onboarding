@@ -46,7 +46,7 @@ any other way.
 
 **Policy (Skill 66 for images, Skill 67 for video):** picks the model from its registry. The GPT Image default is
 the newest GPT Image generation in KIE's live catalog, resolved by
-`kie_live_adapter.py latest-family --family gpt-image` (rule 13; GPT Image 2.6 Sunburst today; every automatic
+`kie_live_adapter.py latest-family --family gpt-image` (rule 13; GPT Image 2.5 Sunburst today; every automatic
 switch writes a receipt and is reported). A department pin or an explicit client model request overrides it.
 Never write a model id from memory (rule 10). Ratios follow N43 (rule 11): the funnel's 16:9 slots and Sec 12's
 3:4 are served as asked on the default model; 5:4 becomes 4:3, 4:5 becomes 3:4, 2:1 becomes 16:9, 1:2 becomes

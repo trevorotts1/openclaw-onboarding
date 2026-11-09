@@ -8,7 +8,7 @@ This is the P3-05 (e) QC break-it probe set, run as an actual fail-first test
 rather than only described in a QC report. Length is KIE prompt rule 12 (owner order
 2026-10-05): 95 to 100 percent of the model maxLength, hard floor 80 percent, hard
 ceiling 100 percent, from the shared enforcer (Skill 74 prompt-budget). The real adapter
-runs against its registry snapshot (hermetic HOME, no key): GPT Image 2.6 max 20,000.
+runs against its registry snapshot (hermetic HOME, no key): GPT Image 2.5 max 20,000.
   1. A 300-char "logo pls" prompt through the `medium` band -> refused, exit 3,
      AF-GIP-PROMPT-FLOOR quoted in stderr with the exact characters to ADD.
   2. A prompt built almost entirely from ONE repeated word, sized INSIDE the length band
@@ -23,7 +23,7 @@ runs against its registry snapshot (hermetic HOME, no key): GPT Image 2.6 max 20
      ADD; 101 percent -> exit 3 naming the chars to CUT; 95 and 100 percent length-clear.
   6. The text_bearing_medium Ideogram social band no longer exists (unknown band, exit 2).
   7. `prompt-caps` is ceiling-only (verbatim-style exemption from the floor): a short
-     prompt passes, 20,001 characters on GPT Image 2.6 is refused.
+     prompt passes, 20,001 characters on GPT Image 2.5 is refused.
 
 Run:  python3 test_prompt_band_cli.py
 Exit: 0 = every assertion passed; 1 = a case failed (prints which one).
@@ -42,7 +42,7 @@ VALIDATOR = HERE / "diu_validator.py"
 sys.path.insert(0, str(HERE))
 import prove_gip_prompt_floor as pg  # noqa: E402  (fixture builders sized by percentage of the model max)
 
-MAX = 20000  # GPT Image 2.6 maxLength, the first endpoint of text_bearing_long
+MAX = 20000  # GPT Image 2.5 maxLength, the first endpoint of text_bearing_long
 
 FAILURES: list[str] = []
 
@@ -75,7 +75,7 @@ def run_prompt_band(band: str, prompt: str, *, copy: list[str] | None = None,
         Path(prompt_path).unlink(missing_ok=True)
 
 
-def run_prompt_caps(prompt: str, model: str = "gpt-image-2-6/sunburst-text-to-image") -> subprocess.CompletedProcess:
+def run_prompt_caps(prompt: str, model: str = "gpt-image-2-5-sunburst-text-to-image") -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, str(VALIDATOR), "prompt-caps", "--model", model, "--prompt", prompt],
                           capture_output=True, text=True, timeout=60)
 
@@ -112,7 +112,7 @@ def main() -> int:
     print("\n=== 4. fail-first proof: each refusal is caused by the one thing it targets ===")
     permissive = {"bands": {
         "medium": {"min_distinct_words": 0, "text_bearing": False},
-        "text_bearing_long": {"min_distinct_words": 0, "text_bearing": True, "endpoints": ["gpt-image-2-6/sunburst-text-to-image"]},
+        "text_bearing_long": {"min_distinct_words": 0, "text_bearing": True, "endpoints": ["gpt-image-2-5-sunburst-text-to-image"]},
     }}
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as fh:
         json.dump(permissive, fh)

@@ -7,7 +7,7 @@ that goes into cycle-manifest.json under "media": the image model the cycle will
 use, the Skill 74 steps every paid job runs, and where Skill 67 (video) lives.
 
 Policy (owner order 2026-10-05, AGENTS.md N43, 07-kie-setup/references/kie-common-rules.md):
-  * Social images are KIE GPT Image 2.6 Sunburst. Rule 13 keeps that default at the newest
+  * Social images are KIE GPT Image 2.5 Sunburst. Rule 13 keeps that default at the newest
     GPT Image generation: the resolver is `kie_live_adapter.py latest-family --family gpt-image`
     (Skill 74). This script makes no network call; the cycle agent runs the resolver.
   * Nano Banana, Midjourney, Ideogram and any other non-GPT-Image id in image-model.json is
@@ -36,8 +36,8 @@ import re
 import sys
 from pathlib import Path
 
-DEFAULT_T2I = "gpt-image-2-6/sunburst-text-to-image"
-DEFAULT_I2I = "gpt-image-2-6/sunburst-image-to-image"
+DEFAULT_T2I = "gpt-image-2-5-sunburst-text-to-image"
+DEFAULT_I2I = "gpt-image-2-5-sunburst-image-to-image"
 DEFAULT_VIDEO_REQUEST = "veo3_lite"  # Skill 35 default request; the Skill 67 selector decides
 MODEL_KEYS = ("model", "image_model", "default_model", "default", "primary")
 VIDEO_MODEL_KEYS = ("model", "video_model", "provider_model", "engine", "default_model")
@@ -68,22 +68,18 @@ def _first_str(obj, keys):
 
 def judge_image_model(requested):
     """-> (accepted: bool, reason). Only the GPT Image family at the 2.5 generation or newer."""
-    s = (requested or "").strip().lower()
-    if not s:
+    m = (requested or "").strip().lower().split("/")[-1]
+    if not m:
         return True, "none requested"
-    if "flare" in s:
+    if "flare" in m:
         return False, "flare variants are not registered; they need a new owner ruling"
-    # KIE ids are family/route (gpt-image-2-6/sunburst-text-to-image): the generation
-    # lives in the FIRST segment, so splitting on "/" and keeping the last one judged
-    # every correct id as a non-GPT route.
-    m = s.split("/")[0] if s.startswith("gpt-image-") else s.split("/")[-1]
     g = GPT_GEN.match(m)
     if g:
         gen = (int(g.group(1)), int(g.group(2) or 0))
         if gen >= (2, 5):
-            return True, "GPT Image 2.6 or newer"
+            return True, "GPT Image 2.5 or newer"
         return False, "GPT Image generation below 2.5 (legacy gpt-image-2 is only for 3:1, 1:3 and 9:21, AGENTS.md N43); Skill 35 needs 2.5 or newer"
-    return False, "not a Skill 35 image route (owner order 2026-10-05: social images are GPT Image 2.6 Sunburst)"
+    return False, "not a Skill 35 image route (owner order 2026-10-05: social images are GPT Image 2.5 Sunburst)"
 
 
 def scan_banned(obj, fname, path=""):
@@ -118,8 +114,7 @@ def build_plan(image_cfg_path, video_cfg_path, skill_dir, openclaw_dir):
     accepted, why = judge_image_model(requested)
     violations += list(scan_banned(icfg, "image-model.json"))
     if requested and not accepted and not any(v["value"] == requested for v in violations):
-        key = next((k for k in MODEL_KEYS if icfg.get(k) == requested), "model")
-        violations.append({"file": "image-model.json", "path": key, "value": requested, "action": "ignored, default used", "reason": why})
+        violations.append({"file": "image-model.json", "value": requested, "action": "ignored, default used", "reason": why})
     image_model = requested if (requested and accepted) else DEFAULT_T2I
     i2i = image_model.replace("text-to-image", "image-to-image") if "text-to-image" in image_model else DEFAULT_I2I
 

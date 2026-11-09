@@ -35,7 +35,7 @@ WHAT IT ENFORCES (three sub-commands)
           clear the band floor (anti-padding); and when style reference images are
           attached (--style-ref) the STYLE-REFERENCE-ONLY directive is mandatory
           (MODEL-SPECS §4). Clearing the floor is NECESSARY, never SUFFICIENT.
-          Text-bearing assets route to GPT Image 2.6 (`text_bearing_long`). There is no
+          Text-bearing assets route to GPT Image 2.5 (`text_bearing_long`). There is no
           Ideogram text-bearing band: Ideogram V3 stays only on the non-social
           specialty `medium` band.
 
@@ -82,7 +82,7 @@ EXIT CODES
         copy / density / style-reference-only) did not — re-author, do not submit.
 
 USAGE
-    python3 diu_validator.py prompt-caps --model gpt-image-2-6/sunburst-text-to-image --prompt-file assembled.txt
+    python3 diu_validator.py prompt-caps --model gpt-image-2-5-sunburst-text-to-image --prompt-file assembled.txt
     python3 diu_validator.py prompt-band --band text_bearing_long \
                 --prompt-file assembled.txt --copy "Stop Guessing." [--style-ref] [--model MODEL_ID]
     python3 diu_validator.py prompt-band --band medium --prompt "…inline…" [--run-dir RUN]
@@ -134,7 +134,7 @@ KPE = _load_enforcer()
 
 # Model used when --model is not given and the band names no endpoint (drafts). Only the id is named here;
 # its limit is read live by the enforcer.
-DEFAULT_MODEL = "gpt-image-2-6/sunburst-text-to-image"
+DEFAULT_MODEL = "gpt-image-2-5-sunburst-text-to-image"
 
 # ---------------------------------------------------------------------------
 # 1) MODEL MAX CEILING: KIE prompt rule 12, through the shared enforcer.
@@ -542,7 +542,7 @@ GIP_SPELLING_LOCK_TOKENS = [
 ]
 
 # STYLE-REFERENCE-ONLY directive tokens (mandatory whenever refs are attached for style —
-# MODEL-SPECS §4 "MANDATORY … applies equally to GPT-Image 2.6 I2I").
+# MODEL-SPECS §4 "MANDATORY … applies equally to GPT-Image 2.5 I2I").
 GIP_STYLE_REF_ONLY_TOKENS = [
     "style reference only", "style-reference only", "style-reference-only",
     "only as style reference", "as style reference", "only for style reference",
@@ -679,7 +679,7 @@ def band_quality_problems(prompt_text: str, band: dict, band_id: str,
     if style_ref and not any(t in prompt_lc for t in GIP_STYLE_REF_ONLY_TOKENS):
         problems.append(
             "AF-GIP-PROMPT-QUALITY: style reference image(s) attached (--style-ref) but the "
-            "STYLE-REFERENCE-ONLY directive is absent (MODEL-SPECS §4, MANDATORY for GPT-Image 2.6 "
+            "STYLE-REFERENCE-ONLY directive is absent (MODEL-SPECS §4, MANDATORY for GPT-Image 2.5 "
             "I2I / Nano Banana 2): add 'Use the attached images only as style reference for color "
             "grading, lighting, and composition — do not copy their subjects, faces, or text.'")
 
@@ -823,7 +823,7 @@ def cmd_self_test(_args) -> int:
             failures.append(f"{bid}: nano-banana-2 in endpoints on text-bearing band (GK-20).")
     print("SELF-TEST OK: no text-bearing band routes to nano-banana-2 (GK-20 reconciled).")
 
-    # (c) Rule 12 on GPT Image 2.6 (max 20,000): 79 percent rejected (add), 101 percent rejected (cut), 95 percent passes.
+    # (c) Rule 12 on GPT Image 2.5 (max 20,000): 79 percent rejected (add), 101 percent rejected (cut), 95 percent passes.
     for n, want in ((15800, 3), (20200, 3), (19000, 0), (20000, 0)):
         pb = cmd_prompt_band(_FakeArgs(band="text_bearing_long", prompt="x" * n))
         # length passes -> the filler has no negative block, so the exit is 6 (quality), never 3
@@ -834,9 +834,9 @@ def cmd_self_test(_args) -> int:
 
     # (d) prompt-caps: over the model max exits 3; at the max exits 0.
     if cmd_prompt_caps(_FakeArgs(prompt="x" * 20001, model=DEFAULT_MODEL)) != 3:
-        failures.append("prompt-caps: 20,001 chars on GPT Image 2.6 should exit 3")
+        failures.append("prompt-caps: 20,001 chars on GPT Image 2.5 should exit 3")
     if cmd_prompt_caps(_FakeArgs(prompt="x" * 20000, model=DEFAULT_MODEL)) != 0:
-        failures.append("prompt-caps: 20,000 chars on GPT Image 2.6 should exit 0")
+        failures.append("prompt-caps: 20,000 chars on GPT Image 2.5 should exit 0")
     print("SELF-TEST OK: prompt-caps enforces the model max (exit 3 above, exit 0 at the max).")
 
     # (f) route-check: a webinar deck must be rejected.

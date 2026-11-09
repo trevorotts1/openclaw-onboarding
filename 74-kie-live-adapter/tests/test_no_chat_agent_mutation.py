@@ -13,7 +13,7 @@ import unittest
 from fakes import HERE, KEY, fx
 
 SCRIPT = os.path.join(HERE, "..", "scripts", "kie_live_adapter.py")
-MODEL = "gpt-image-2-6/sunburst-text-to-image"
+MODEL = "gpt-image-2-5-sunburst-text-to-image"
 SEEN = []
 
 

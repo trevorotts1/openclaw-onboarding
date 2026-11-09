@@ -12,7 +12,7 @@
 # WHAT IT DOES (S7 render leg only): takes the image prompt produced by the
 # Layer 1 cover-prompt generator (pin aw-11, the Senior Book-Cover Design
 # Specialist, structured image-prompt object) and renders the book cover on the
-# CLIENT's OWN Kie.ai account using model GPT-Image 2.6 against the TEXT-TO-IMAGE
+# CLIENT's OWN Kie.ai account using model GPT-image-2.5 against the TEXT-TO-IMAGE
 # PORTRAIT endpoint LIVE-VERIFIED at Wave 0 (W0.6.json). It submits createTask,
 # waits with a bounded re-poll of recordInfo, downloads the result PNG to a
 # local target path, and proves the file is a real portrait 1024x1536 PNG on
@@ -35,7 +35,7 @@
 # styles, the result-host allowlist, the render-state sidecar, the portrait read-back and the typed exit
 # codes. It carries no createTask, recordInfo or download HTTP code of its own (live shape of record:
 # W0.6.json; the contract itself now lives in Skill 74's references/adapter-contract.md).
-#   submit : model "gpt-image-2-6/sunburst-text-to-image", input {prompt, aspect_ratio "2:3", output_format "png"}
+#   submit : model "gpt-image-2-5-sunburst-text-to-image", input {prompt, aspect_ratio "2:3", output_format "png"}
 #   wait   : bounded poll (the ceiling below), result URLs from the finished job
 #   save   : downloads the result; the result CDN 403s the default urllib User-Agent, so this adapter passes
 #            the browser User-Agent below (--user-agent, W0.6) and only allowlisted hosts (--allow-host).
@@ -76,7 +76,7 @@
 # json + hashlib): zero third-party deps; the self-test makes ZERO network
 # calls and spends ZERO credits.
 # =============================================================================
-"""cover_render.py - the Kie.ai GPT-Image 2.6 portrait cover render adapter (S7)."""
+"""cover_render.py - the Kie.ai GPT-image-2.5 portrait cover render adapter (S7)."""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ KIE_ADAPTER_SKILL = "74-kie-live-adapter"
 
 # Primary cover model (W0.6): the TEXT-TO-IMAGE portrait model, NOT the
 # image-to-image presentation recipe.
-COVER_MODEL = "gpt-image-2-6/sunburst-text-to-image"
+COVER_MODEL = "gpt-image-2-5-sunburst-text-to-image"
 
 # THE OVERRIDE. Skill 46's submitter defaults aspect_ratio to "16:9"; a cover is
 # portrait, so this adapter pins "2:3" (W0.6: 2:3 -> exactly 1024x1536).
@@ -857,7 +857,7 @@ def _load_prompt(args) -> str:
 def cmd_plan() -> int:
     lf = _cover_link_fields()
     print("cover_render.py  (S7 cover render adapter, unit W1.14)")
-    print("  model            : %s  (Kie GPT-Image 2.6 text-to-image, W0.6)" % COVER_MODEL)
+    print("  model            : %s  (Kie GPT-image-2.5 text-to-image, W0.6)" % COVER_MODEL)
     print("  aspect_ratio     : %s  (PORTRAIT; overrides Skill 46 default %s)"
           % (COVER_ASPECT, SKILL46_DEFAULT_ASPECT))
     print("  target geometry  : %dx%d portrait" % (COVER_WIDTH, COVER_HEIGHT))
@@ -1148,7 +1148,7 @@ def self_test() -> int:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
-        description="Render an anthology cover: Kie GPT-Image 2.6 PORTRAIT 1024x1536 (S7).")
+        description="Render an anthology cover: Kie GPT-image-2.5 PORTRAIT 1024x1536 (S7).")
     ap.add_argument("--participant-key", default="", help="composite contact_id::anthology_id (logging/result keying)")
     ap.add_argument("--prompt", help="the aw-11 image prompt text")
     ap.add_argument("--prompt-file", help="path to the aw-11 prompt (raw text or a JSON object with a 'prompt' field)")

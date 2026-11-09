@@ -7,7 +7,7 @@
 ## Lanes (parallel; no shared dependency until publish)
 
 ### Image
-Visual Prompt Architect (05) → Kie.ai GPT Image 2.6 sunburst (`gpt-image-2-6/sunburst-text-to-image`, Skill 66 id, AGENTS.md N43) → **Prompt-Doctor** retry on 422 (06, shorten /
+Visual Prompt Architect (05) → Kie.ai GPT Image 2.5 sunburst (`gpt-image-2-5-sunburst-text-to-image`, Skill 66 id, AGENTS.md N43) → **Prompt-Doctor** retry on 422 (06, shorten /
 remove banned words, preserve intent) → vision QC → winner staged → SeedDream resizes 9:16 / 16:9
 when a Reel/Story/TikTok/Short post type demands. The Gemini grid selector (07, returns a single
 digit 0–3; `AF-SM-GRID-DIGIT`) applies only when a provider returns a multi-image collage; GPT Image
@@ -18,13 +18,13 @@ Storyboard Architect (08; **3–7 scenes, sum EXACTLY 25.0s**, max 1.5 spoken wo
 deterministic math validator (`AF-SM-STORYBOARD`) → the Skill 67 (kie-video) model selector (a 25 second single clip resolves to a long-clip model such as `wan/3-0-video`; no Sora, no model named in this skill) → poll → download.
 
 ### Carousel image (the QC loop)
-GPT Image 2.6 sunburst generate (12; 3:4, 2K, typographic `textOnImage`; 3:4 is the N43 substitution for 4:5) → **Gemini QC bot** casual-viewer
+GPT Image 2.5 sunburst generate (12; 3:4, 2K, typographic `textOnImage`; 3:4 is the N43 substitution for 4:5) → **Gemini QC bot** casual-viewer
 test (11; verbatim in both QC 1 and QC 2) → FAIL → **SeedDream 4.5 edit** from the QC feedback (13,
 Instagram center-crop safety) → **QC 2** → final fallback strips ALL text (13 fallback) → ledger
 update. The QC output is `Good` or the JSON-safe 4-field fix set (`AF-SM-QC-JSON`).
 
 ### Podcast cover + audio (C3, v0.2.0)
-1:1 art (14; GPT Image 2.6 sunburst, same id and payload as Skill 58 `generate_cover.sh`; 1400×1400 JPEG, `AF-SM-PODCAST-COVER`), one retry, fail → notification + empty-URL
+1:1 art (14; GPT Image 2.5 sunburst, same id and payload as Skill 58 `generate_cover.sh`; 1400×1400 JPEG, `AF-SM-PODCAST-COVER`), one retry, fail → notification + empty-URL
 return. **v0.2.0 folds the AUDIO episode in** (merge plan C3): `--mode podcast` runs prompt 17
 (1,500–2,000-word `[emotion]`-tagged script) → Fish-Audio S2 TTS → ffprobe 600–900 s / ≥128 kbps
 (`AF-SM-PODCAST-SCRIPT` / `AF-SM-PODCAST-DURATION`) → local Podbean API call (no n8n), with the
@@ -41,9 +41,9 @@ FB/IG **Stories captions** — ships as reformatter output banded by `AF-SM-STOR
 
 ## KIE dispatch contract (every paid image, edit and video job)
 
-Policy owners: Skill 66 (image) and Skill 67 (video). Mechanics: Skill 74 (`74-kie-live-adapter/scripts/kie_live_adapter.py`). Rules: `07-kie-setup/references/kie-common-rules.md` (it wins on any conflict). The social image default is GPT Image 2.6 Sunburst (rule 13 keeps it at the newest GPT Image generation, resolved with `latest-family --family gpt-image`); Nano Banana is never primary. Per job, in order, each step fail-closed:
+Policy owners: Skill 66 (image) and Skill 67 (video). Mechanics: Skill 74 (`74-kie-live-adapter/scripts/kie_live_adapter.py`). Rules: `07-kie-setup/references/kie-common-rules.md` (it wins on any conflict). The social image default is GPT Image 2.5 Sunburst (rule 13 keeps it at the newest GPT Image generation, resolved with `latest-family --family gpt-image`); Nano Banana is never primary. Per job, in order, each step fail-closed:
 
-1. Route: model id from the policy owner (`gpt-image-2-6/sunburst-text-to-image`, or `-image-to-image` with a reference; video through the Skill 67 selector). Never a model id from memory.
+1. Route: model id from the policy owner (`gpt-image-2-5-sunburst-text-to-image`, or `-image-to-image` with a reference; video through the Skill 67 selector). Never a model id from memory.
 2. Expand the seed prompt (prompt 05) to 95 to 100 percent of the model maxLength; check with `prompt-budget --model ID --check --prompt-file F` (exit 3 means add the printed characters, exit 4 means cut them).
 3. `validate --model ID --payload input.json` against the live schema (registry fallback).
 4. `preflight --model ID` (balance must cover price x 1.30; this skill's preflight floor of 200 credits also applies). Estimates come from `price --model ID`, never a table in this skill.

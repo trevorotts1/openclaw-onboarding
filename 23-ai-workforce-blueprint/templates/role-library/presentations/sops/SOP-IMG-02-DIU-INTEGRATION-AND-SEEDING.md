@@ -33,12 +33,12 @@ Wire skill 45 into the Presentations pipeline as the imagery STYLE-INTELLIGENCE 
 
 Per SOP-DIU-611 and the 00-START-HERE T7b mirror, the two pipelines stay separate and there are exactly TWO legal crossings:
 
-- **Presentations** owns CLIENT-WEBINAR-DECK-SOP: webinar/funnel decks, the five archetypes (A1-A5), white-base doctrine, the department image-model pin (`presentation_job/model_catalog.json`, today GPT Image 2.6 Sunburst), narrative + price-ladder + PPTX assembly.
+- **Presentations** owns CLIENT-WEBINAR-DECK-SOP: webinar/funnel decks, the five archetypes (A1-A5), white-base doctrine, the department image-model pin (`presentation_job/model_catalog.json`, today GPT Image 2.5 Sunburst), narrative + price-ladder + PPTX assembly.
 - **DIU (in Graphics)** owns PPT-ANALYSIS-SOP: visual style analysis, the 3-8-family Deck Style System, the Rotation Engine, the 7-endpoint roster.
 - **Crossing A:** the Brand Steward consumes a PPT-category style card's **Foundation Prompt Block** as the STYLE BLOCK input for a webinar deck, requested via SOP-DIU-612. This is the ONLY way DIU style content enters a Presentations deck.
 - **Crossing B:** for DIU strategy-(b) decks, the DIU delivers text-clear background imagery to Presentations for editable overlay. (Not the webinar-deck path; out of scope here.)
 
-**Hard rule (unchanged):** Webinar/funnel decks NEVER enter the DIU Rotation Engine, and the DIU's 7-endpoint routing NEVER overrides the Presentations model catalog (`presentation_job/model_catalog.json`, GPT Image 2.6 Sunburst only). The DIU supplies STYLE, not generation, for webinar decks. This SOP only adds WHEN and HOW the crossing fires; it changes none of the boundary.
+**Hard rule (unchanged):** Webinar/funnel decks NEVER enter the DIU Rotation Engine, and the DIU's 7-endpoint routing NEVER overrides the Presentations model catalog (`presentation_job/model_catalog.json`, GPT Image 2.5 Sunburst only). The DIU supplies STYLE, not generation, for webinar decks. This SOP only adds WHEN and HOW the crossing fires; it changes none of the boundary.
 
 ---
 

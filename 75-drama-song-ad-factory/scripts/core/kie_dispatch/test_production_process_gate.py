@@ -17,7 +17,7 @@ import spend_ledger as ledger
 from audio_c3 import lipsync_producer as producer
 from lip_sync.lip_gate import picture_gate as picture
 
-MODEL = "gpt-image-2-6/sunburst-text-to-image"
+MODEL = "gpt-image-2-5-sunburst-text-to-image"
 CARD = {"answers": {"video_style": "Lifelike 3D", "audio_style": "Soul Ballad",
                     "length": 120, "video_model": "MiniMax H3 768P"},
         "who": "owner", "at": "2026-10-24T00:00:00Z"}

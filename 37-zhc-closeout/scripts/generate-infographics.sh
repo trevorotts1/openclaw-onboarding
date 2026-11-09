@@ -12,9 +12,9 @@
 #        Driven by templates/workforce-org-chart/render.mjs.
 #
 #   workflow  (Infographic #2 - How Work Flows)
-#     -> KIE.AI GPT Image 2.6 sunburst (gpt-image-2-6/sunburst-text-to-image)
+#     -> KIE.AI GPT Image 2.5 sunburst (gpt-image-2-5-sunburst-text-to-image)
 #        is the PRIMARY: AGENTS.md N43 (AF-KIE-IMAGE-MODEL-PIN) pins the fleet
-#        to gpt-image-2-6/sunburst-*, and Skill 66 (kie-image) names it the
+#        to gpt-image-2-5-sunburst-*, and Skill 66 (kie-image) names it the
 #        default. The workflow diagram is stylized enough that AI image gen is
 #        fine. Fallback: nano-banana-2 (Nano Banana 2 / Gemini 3.1 Flash Image).
 #        Override the primary with env var ZHC_IMAGE_MODEL.
@@ -218,7 +218,7 @@ fi
 
 # ----------------------------------------------------------------------
 # Workflow infographic = KIE.AI through Skill 74 (stylized diagram, less text density).
-# Primary model: gpt-image-2-6/sunburst-text-to-image (N43). Fallback: nano-banana-2.
+# Primary model: gpt-image-2-5-sunburst-text-to-image (N43). Fallback: nano-banana-2.
 # ----------------------------------------------------------------------
 if [[ ! -f "$TEMPLATE" ]]; then
   log "ERROR" "prompt template not found: $TEMPLATE"
@@ -287,7 +287,7 @@ PROMPT="$(_literal_replace "$PROMPT" '{{INDUSTRY}}'         "$INDUSTRY")"
 PROMPT="$(_literal_replace "$PROMPT" '{{WHAT_THEY_DELIVER}}' "$WHAT_THEY_DELIVER")"
 PROMPT="$(_literal_replace "$PROMPT" '{{EXAMPLE_TASK}}'     "$EXAMPLE_TASK")"
 
-PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-gpt-image-2-6/sunburst-text-to-image}"
+PRIMARY_MODEL="${ZHC_IMAGE_MODEL:-gpt-image-2-5-sunburst-text-to-image}"
 FALLBACK_MODEL="nano-banana-2"
 
 # One KIE path: Skill 74 does the validate, createTask, poll (lib-kie74.sh). This script keeps the policy:

@@ -21,7 +21,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 DECL = json.loads((REPO / "shared-utils" / "kie_prompt_gates.json").read_text(encoding="utf-8"))
-M = "gpt-image-2-6/sunburst-text-to-image"
+M = "gpt-image-2-5-sunburst-text-to-image"
 
 
 def load(rel):
@@ -57,12 +57,12 @@ class TestEmbeddedCopies(unittest.TestCase):
             self.assertEqual(fb, 20000)
             low = k.check(M, "x" * (fb * 79 // 100), fallback_max=fb)
             self.assertFalse(low["ok"])
-            self.assertIn("ADD at least %d" % (fb * 95 // 100 - fb * 79 // 100), low["message"])
+            self.assertIn("ADD at least 3200", low["message"])
             for pct in (95, 100):
                 self.assertTrue(k.check(M, "x" * (fb * pct // 100), fallback_max=fb)["ok"], (rel, pct))
             high = k.check(M, "x" * (fb * 101 // 100), fallback_max=fb)
             self.assertFalse(high["ok"])
-            self.assertIn("CUT exactly %d" % (fb * 101 // 100 - fb), high["message"])
+            self.assertIn("CUT exactly 200", high["message"])
             self.assertTrue(k.check(M, "short spoken line", "verbatim", fallback_max=fb)["ok"])
 
     def test_an_unlisted_model_fails_closed_without_the_adapter(self):
