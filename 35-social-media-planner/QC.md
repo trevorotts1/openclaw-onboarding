@@ -122,6 +122,37 @@ esac
 - [ ] KIE cost recorded for the ad is within the run's approved ceiling
       (price + 20% retake allowance); no second ceiling is opened
 
+## Community Publishing QC (inside-group destinations)
+
+Run these before any Community post. The runtime limit table is
+`config/community-channels.json` — these checks read it, they do not restate a
+private copy of the numbers.
+
+- [ ] The task is an **approved** Community Builder task for inside-group intent (Skill 35 executes, it does not invent the approval)
+- [ ] `notifyAllGroupMembers` is false unless an explicit broadcast approval exists
+- [ ] Every Community account in the request has its **own** author mapping (`accountIds` and `communityPostDetails.postAsUser` agree)
+- [ ] The author is a member `contactId` from that channel's own eligible list — not a staff user id
+- [ ] The account identity is `account.id`, never `oauthId`
+- [ ] Two private channels each passed their **own** eligibility check (no borrowed membership)
+- [ ] The saved author passed `validate_community_author` against the observed backend group id immediately before scheduling
+- [ ] Title ≤ 1,000 characters; Community caption ≤ 100,000 characters; media ≤ 4 documented `{url, type}` objects; comment ≤ 8,000 characters
+- [ ] The Community destination is its own provider request (never merged with an external channel that could truncate the caption)
+- [ ] A new group/channel went through the managed re-sync and accounts were re-queried; no account id was inferred from a group slug
+- [ ] The receipt state is recorded truthfully: `scheduled` and `submitted` are NOT published; only `published_verified` requires a matching readback
+- [ ] A null permalink alone was not treated as failure (some destinations do not return one)
+- [ ] A member who lost access after scheduling is captured as a failure to repair — no impersonation of another member
+- [ ] Comments use the INTERNAL post id (not a native platform id); `isParentThread` is true for the post and false for an existing comment
+- [ ] A comment with an attachment URL is NOT described as an attached resource (Community does not render attachment URLs)
+- [ ] Skill 35 did not answer any reply/conversation turn — Skill 38 owns that (`conversation_owned_by_skill_38`)
+- [ ] Non-Community (external) posting behaviour is unchanged
+
+Fail-closed assertions available in code: `scripts/community_publish.py` refuses
+with a named code (`caption_over_limit`, `title_over_limit`, `media_over_limit`,
+`media_item_shape`, `staff_id_rejected`, `member_not_eligible_for_channel`,
+`author_revoked`, `broadcast_not_approved`, `group_id_required`,
+`no_community_accounts`, `resync_step_required`, `conversation_owned_by_skill_38`).
+None of these is a warning to be waived.
+
 ## Posting Verification (critical)
 
 - [ ] Regular posts: image URL is in the `mediaUrls` field of the GHL API call (bundled with content)
@@ -351,6 +382,8 @@ These checks guard against stale platform lists that cause agents to give incomp
 - [ ] Carousels (Thursday carousel strategy) are mentioned in SKILL.md as a content type.
 - [ ] **SKILL.md**, **INSTRUCTIONS.md** and **QC.md** all describe the weekly drama song ad the same way: one 9:16 ad per week from the Theme of the Week, Skill 75 through Skill 74 active mode only, 59.0 s planner cap, Stories take the 15-second teaser, Google Business Profile refused.
 - [ ] **INSTRUCTIONS.md** names every `core/smp/` module the weekly step wires (weekly_step, initial_questions, saturday_prompt, length_routing, stories_teaser, sheet_schema_130, sheet_migration) — no file names a module the build tree does not stage.
+- [ ] **SKILL.md**, **INSTRUCTIONS.md** and **QC.md** all describe Community publishing the same way: a separate inside-group destination, Community Builder owning inside-group intent, per-account member author selection, limits refused (not truncated), and only `published_verified` counting as published.
+- [ ] `config/community-channels.json` exists and carries a `community` row — the runtime limit table referenced by the docs and read by `scripts/community_publish.py`.
 
 **How to check programmatically:**
 ```bash

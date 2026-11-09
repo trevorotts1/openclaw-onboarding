@@ -99,7 +99,6 @@ QC: Grammar, Fact-Check, Visual.
 
 ### Phase 3: Multi-Platform Publishing
 1. Publisher: Query live GHL connected accounts first (see INSTRUCTIONS.md `check-social-connections`). Format and post per enabled channel:
-
    **Primary GHL Social Planner channels (publish through GHL API):**
    | Platform | GHL API path |
    |----------|-------------|
@@ -125,6 +124,57 @@ QC: Grammar, Fact-Check, Visual.
 2. Upload media first (GHL Media Library CDN), embed links.
 3. Post comments as a separate call 1-2 minutes after each parent post.
 QC: Compliance.
+
+### Phase 3b: Community publishing (inside-group destinations)
+
+A GHL Community group is a **different destination** from an external channel and
+is published by a different path. `scripts/community_publish.py` is the Skill 35
+consumer of the shared Community adapter; the runtime limit table for every
+channel is `config/community-channels.json` (read at run time — the prose lists
+in this file are not the authority).
+
+1. **Community Builder owns inside-group intent.** Skill 35 executes an approved
+   Community calendar task; it never invents the approval. `route_department()`
+   reports `community-builder` for an inside-group task and `social-media`
+   otherwise. A connected account is **not** permission to broadcast an external
+   marketing post into a private group — `notifyAllGroupMembers` defaults to
+   false and needs explicit broadcast approval.
+2. **Per-account author selection.** Every Community account in one request gets
+   its OWN member mapping. The stored identity is `account.id` (never `oauthId`)
+   and the author is a member `contactId` (never a staff user id). Membership is
+   channel-specific: a member eligible in one private channel is not assumed
+   eligible in another. The saved author is validated against the group's
+   observed backend id before scheduling.
+3. **Platform-specific request splitting.** A Community destination is always its
+   own provider request, so a 280-character channel can never truncate a
+   100,000-character Community caption. Limits are enforced per channel and are
+   **refused, never silently truncated**: title 1,000, Community caption
+   100,000, media 4 items, comment 8,000.
+4. **New groups/channels need the explicit re-sync step.** An account id is never
+   derived from a group slug. Run the managed connection/re-sync, then re-query
+   accounts (`sync_then_requery`); an incomplete re-sync is an error.
+5. **Honest receipts.** A created record, an accepted schedule and a published
+   post are three different states. Only a provider status that says published
+   plus a matching readback yields `published_verified`. A member who loses
+   access after scheduling is a captured failure to repair — never impersonate
+   another member.
+6. **Skill 38 owns conversations.** Skill 35 publishes approved content and
+   never answers a reply. A reply/conversation intent is refused here
+   (`conversation_owned_by_skill_38`) so the same turn is never answered twice.
+7. **Comments.** The comment endpoint takes the INTERNAL post id from the create
+   response, never a native platform id; `isParentThread` is true for the post
+   and false for an existing comment. Community comment attachment URLs are not
+   rendered by the Community bucket, so a successful response is never described
+   as a successfully attached resource.
+8. **Non-Community posting is unchanged.** External channels keep their existing
+   path; `split_by_channel()` separates them and never rewrites their payload.
+
+Entrypoint: `scripts/run-publishing-cycle.sh --community-task <file>
+--community-group-id <id>` is CHECK ONLY (validates and prints the plan, no
+provider call). Add `--community-publish` to create the post; it exits 3 BLOCKED
+when the shared adapter is unavailable rather than reporting a post that was
+never created. Example task: `scripts/community-task.example.json`.
+
 
 ### Phase 4: Engagement Monitoring
 1. Engagement Monitor: Poll APIs for likes/views (e.g., every [from config: monitor_interval]h).

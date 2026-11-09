@@ -156,6 +156,51 @@ provider/model selection or publishing policy/consent (F31/F37).
 
 ---
 
+## Community publishing — inside-group destinations
+
+A GHL Community group is a separate destination with its own adapter, its own
+limits and its own author rules. `scripts/community_publish.py` is the Skill 35
+consumer; `config/community-channels.json` is the runtime limit table every
+platform is checked against.
+
+### Run it
+
+```bash
+# CHECK ONLY — validates the approved task, prints the plan, no provider call
+bash ~/.openclaw/skills/35-social-media-planner/scripts/run-publishing-cycle.sh \
+  --community-task ~/.openclaw/config/community-task.json \
+  --community-group-id <OBSERVED_BACKEND_GROUP_ID>
+
+# Create the post (fails loudly, exit 3, when the shared adapter is absent)
+bash ~/.openclaw/skills/35-social-media-planner/scripts/run-publishing-cycle.sh \
+  --community-task ~/.openclaw/config/community-task.json \
+  --community-group-id <OBSERVED_BACKEND_GROUP_ID> --community-publish
+```
+
+Exit codes for this mode: `0` ok; `2` unreadable task/arguments; `3` BLOCKED —
+shared adapter unavailable, nothing published; `4` refused by a limit,
+eligibility or lifecycle check; `5` record created but NOT verified as published.
+
+### Rules that are enforced in code, not prose
+
+| Rule | What it means |
+|---|---|
+| Community Builder owns inside-group intent | Skill 35 executes an approved task; `route_department()` reports `community-builder` for inside-group scope. |
+| Per-account author mapping | Every Community account gets its own member `contactId`. `account.id` is stored, never `oauthId`; a staff user id is rejected. |
+| Channel-specific eligibility | A member eligible in one private channel is not assumed eligible in another; the saved author is validated against the group's backend id before scheduling. |
+| No implicit broadcast | `notifyAllGroupMembers` defaults to false and needs explicit broadcast approval. A connected account is not permission to notify every member. |
+| Per-platform requests | A Community destination is always its own request, so a 280-character channel never truncates a 100,000-character Community caption. Limits (title 1,000 / caption 100,000 / 4 media / comment 8,000) are refused, never truncated. |
+| Explicit re-sync | A new group/channel is never given an inferred account id. Run the managed re-sync, then re-query accounts. |
+| Honest receipt state | `submitted`, `draft_saved`, `scheduled`, `publishing`, `pending_moderation`, `processing`, `published_verified`, `failed`. Only a published provider status plus a matching readback is `published_verified`. |
+| Single responder | A reply/conversation intent is refused (`conversation_owned_by_skill_38`). Skill 38 answers conversations; Skill 35 publishes approved content. |
+| Comment ids and attachments | Comments use the INTERNAL post id, `isParentThread` true for the post / false for an existing comment. Community comment attachment URLs are not rendered, and a success response is never described as an attached resource. |
+
+External (non-Community) posting is unchanged: `split_by_channel()` separates the
+two kinds and never rewrites an external payload.
+
+
+---
+
 ## Weekly drama-song step (plan 6.15, owner D27/D35)
 
 Once a week the planner produces **one 9:16 drama song ad** from the week's

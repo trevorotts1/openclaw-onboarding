@@ -48,6 +48,14 @@ OVERDUE_AFTER="${SKILL35_OVERDUE_AFTER:-900}"
 APPROVAL_MANIFEST=""
 APPROVAL_PLACEMENTS=""
 CHECK_APPROVAL_ONLY=0
+# WF11 — Community publishing path. An approved inside-group calendar task is
+# executed by scripts/community_publish.py (the Skill 35 consumer of the WF10
+# adapter). Default is CHECK ONLY: no provider call. --community-publish is the
+# only switch that may create a post, and it fails loudly when the adapter is
+# absent rather than reporting a post that was never created.
+COMMUNITY_TASK=""
+COMMUNITY_GROUP_ID=""
+COMMUNITY_PUBLISH=0
 
 print_help() {
   cat <<EOF
@@ -83,6 +91,16 @@ OPTIONAL
                               (exit 6) when accounts are connected but 0 posts were
                               created, or posts were planned but 0 created. Run this
                               after the orchestrator finishes posting.
+  --community-task <path>     Approved inside-group Community calendar task
+                              (see scripts/community-task.example.json). Runs the
+                              Skill 35 consumer (scripts/community_publish.py)
+                              against the WF10 adapter. CHECK ONLY by default:
+                              validates the task, prints the plan, no provider
+                              call. Requires --community-group-id.
+  --community-group-id <id>   Observed backend group id (never a portal slug).
+  --community-publish         Actually create the Community post. Fails loudly
+                              (exit 3) when the WF10 adapter is absent — a post
+                              that was never created is never reported.
   --ack-execution             (worker) Accept the staged dispatch on behalf of
                               --worker-id and record the accepted execution in the
                               durable dispatch record. ONLY after an accepted ack
@@ -196,6 +214,11 @@ EXIT CODES
   7   lifecycle precondition refused (e.g. --complete-phase without an accepted
       worker execution, --mark-review before every phase is complete with
       verified hashes, ack recorded against a foreign run)
+  Community mode (--community-task) returns its own codes:
+  2   the task or its arguments were unreadable/bad
+  3   BLOCKED: the WF10 adapter is unavailable — nothing was published
+  4   refused by a limit, eligibility or lifecycle check — nothing was published
+  5   a record was created but is NOT verified as published (see the receipt)
 EOF
 }
 
@@ -217,6 +240,9 @@ while [ $# -gt 0 ]; do
     --approval-manifest) APPROVAL_MANIFEST="${2:-}"; shift 2;;
     --placement)  APPROVAL_PLACEMENTS="${APPROVAL_PLACEMENTS} ${2:-}"; shift 2;;
     --check-approval-only) CHECK_APPROVAL_ONLY=1; shift;;
+    --community-task) COMMUNITY_TASK="${2:-}"; shift 2;;
+    --community-group-id) COMMUNITY_GROUP_ID="${2:-}"; shift 2;;
+    --community-publish) COMMUNITY_PUBLISH=1; shift;;
     --help|-h)    SHOW_HELP=1; shift;;
     *)
       echo "ERROR: unknown argument: $1" >&2
@@ -235,7 +261,8 @@ fi
 # (--verify-receipts / --status are standalone modes and must not be swallowed here.)
 if [ -z "$TOPIC" ] && [ -z "$PLATFORMS" ] && [ "$DRY_RUN" -eq 0 ] && [ -z "$VERIFY_RECEIPTS" ] \
    && [ "$STATUS_ONLY" -eq 0 ] && [ "$ACK_EXECUTION" -eq 0 ] && [ "$MARK_REVIEW" -eq 0 ] \
-   && [ -z "$COMPLETE_PHASE" ] && [ -z "$APPROVAL_MANIFEST" ] && [ "$CHECK_APPROVAL_ONLY" -eq 0 ]; then
+   && [ -z "$COMPLETE_PHASE" ] && [ -z "$APPROVAL_MANIFEST" ] && [ "$CHECK_APPROVAL_ONLY" -eq 0 ] \
+   && [ -z "$COMMUNITY_TASK" ]; then
   print_help
   exit 0
 fi
@@ -922,6 +949,9 @@ if [ -n "$VERIFY_RECEIPTS" ]; then
 fi
 
 # ---------- validate required args ----------
+# Community mode takes its own task file and group id; it has no --topic and no
+# --platforms, so the external-cycle requirements do not apply to it.
+if [ -z "$COMMUNITY_TASK" ]; then
 if [ -z "$TOPIC" ]; then
   err "--topic is required."; echo "Try: $SCRIPT_NAME --help" >&2; exit 2
 fi
@@ -929,8 +959,13 @@ if [ -z "$PLATFORMS" ]; then
   err "--platforms is required (comma-separated list)."
   echo "Try: $SCRIPT_NAME --help" >&2; exit 2
 fi
+fi
 
 # Normalize platforms list
+if [ -n "$COMMUNITY_TASK" ]; then
+  PLATFORMS_NORM="community"
+  PLATFORM_ARR=("community")
+else
 PLATFORMS_NORM=$(echo "$PLATFORMS" \
   | tr 'A-Z' 'a-z' \
   | tr -d '[:space:]' \
@@ -948,6 +983,7 @@ for p in "${PLATFORM_ARR[@]}"; do
     *) err "Unsupported platform: '$p'. Supported: $SUPPORTED"; exit 2;;
   esac
 done
+fi
 
 log "topic     = $TOPIC"
 log "platforms = ${PLATFORM_ARR[*]}"
@@ -1182,6 +1218,43 @@ if [ "$MISSING_REQ" -gt 0 ]; then
   err "Required configuration missing (count=$MISSING_REQ). Per INSTRUCTIONS.md N22, the cycle STOPS rather than inventing defaults."
   err "Populate the listed files, then re-run."
   exit 3
+fi
+
+# ---------- WF11: Community publishing mode ----------
+# An APPROVED inside-group calendar task runs through the Skill 35 consumer
+# (scripts/community_publish.py), which calls the WF10 adapter. This mode is
+# separate from the external staging path and never changes it.
+#   default            -> CHECK ONLY: validate the task, print the plan, no call
+#   --community-publish -> create the post through the WF10 adapter
+# Exit codes: 0 ok, 2 bad task/usage, 3 adapter unavailable (BLOCKED, never a
+# fake success), 4 a lifecycle/preflight refusal, 5 created but not published.
+if [ -n "$COMMUNITY_TASK" ]; then
+  _cp_consumer="$SCRIPT_DIR/community_publish.py"
+  if [ ! -f "$_cp_consumer" ]; then
+    err "community_publish.py is missing at $_cp_consumer — the Community path cannot run."
+    exit 3
+  fi
+  if [ -z "$COMMUNITY_GROUP_ID" ]; then
+    err "--community-task requires --community-group-id (the observed backend group id, never a portal slug)."
+    exit 2
+  fi
+  _cp_args=(--task "$COMMUNITY_TASK" --location-id "$GOHIGHLEVEL_LOCATION_ID"
+            --group-id "$COMMUNITY_GROUP_ID")
+  if [ "$COMMUNITY_PUBLISH" -eq 1 ] && [ "$DRY_RUN" -eq 0 ]; then
+    log "Community publish: creating the approved inside-group post via the WF10 adapter."
+  else
+    _cp_args+=(--check)
+    log "Community publish: CHECK ONLY (no provider call). Pass --community-publish to create."
+  fi
+  _cp_rc=0
+  python3 -I "$_cp_consumer" "${_cp_args[@]}" || _cp_rc=$?
+  case "$_cp_rc" in
+    0) log "Community path finished (rc=0).";;
+    3) err "Community path BLOCKED: the WF10 adapter is not available. Nothing was published.";;
+    5) warn "Community record created but NOT verified as published — see the receipt state.";;
+    *) err "Community path refused (rc=$_cp_rc) — nothing was published.";;
+  esac
+  exit "$_cp_rc"
 fi
 
 # ---------- agent-roster discovery ----------

@@ -1,6 +1,6 @@
 {
   "version": "v1.0",
-  "_comment": "Starter template for Skill 35 weekly-batch.sh. Copy to ~/.openclaw/config/content-calendar.json and edit. Dates are YYYY-MM-DD in the box's local timezone. 'platforms' values match run-publishing-cycle.sh --platforms (linkedin, medium, x, wordpress, substack, ghl, youtube, facebook, instagram, tiktok, threads, pinterest, email, podcast). 'schedule' is one of: 'auto' (cadence-driven, default), 'now' (publish immediately), or an ISO 8601 timestamp like '2026-05-26T14:00:00Z'.",
+  "_comment": "Starter template for Skill 35 weekly-batch.sh. Copy to ~/.openclaw/config/content-calendar.json and edit. Dates are YYYY-MM-DD in the box's local timezone. 'platforms' values match run-publishing-cycle.sh --platforms (linkedin, medium, x, wordpress, substack, ghl, youtube, facebook, instagram, tiktok, threads, pinterest, email, podcast). 'schedule' is one of: 'auto' (cadence-driven, default), 'now' (publish immediately), or an ISO 8601 timestamp like '2026-05-26T14:00:00Z'. An INSIDE-GROUP Community task is NOT listed here: it is an approved community-task.json executed through run-publishing-cycle.sh --community-task (see scripts/community-task.example.json), because it needs a per-account author mapping and an observed backend group id that an entry in this list cannot carry.",
   "entries": [
     {
       "date": "2026-05-25",
