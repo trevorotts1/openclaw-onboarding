@@ -1,0 +1,191 @@
+{
+  "central_registry_owner": "WF00",
+  "contract_id": "WF24-CP01",
+  "contract_revision": "wf24-cp01.v1",
+  "fixture_purpose": "Path/query compatibility fixture published with the WF24-CP01 interface checkpoint. Drift between this fixture and funnel_read_contract.py fails the focused test.",
+  "obsolete_frozen_shapes": {
+    "funnels.list": "GET /funnels/",
+    "funnels.pages.count": "GET /funnels/{funnelId}/pages/count",
+    "funnels.pages.list": "GET /funnels/{funnelId}/pages"
+  },
+  "operations": [
+    {
+      "capability_id": "funnels.list",
+      "docs": "https://marketplace.gohighlevel.com/docs/ghl/funnels/get-funnels/",
+      "method": "GET",
+      "operation_id": "funnels.list",
+      "optional_query": [
+        "type",
+        "category",
+        "parentId",
+        "name"
+      ],
+      "pagination": "offset_limit_with_reported_total",
+      "path": "/funnels/funnel/list",
+      "query": [
+        {
+          "name": "locationId",
+          "placement": "query",
+          "required": true,
+          "value_kind": "string"
+        },
+        {
+          "name": "offset",
+          "placement": "query",
+          "required": true,
+          "value_kind": "int"
+        },
+        {
+          "name": "limit",
+          "placement": "query",
+          "required": true,
+          "value_kind": "int"
+        },
+        {
+          "name": "type",
+          "note": "optional filter",
+          "placement": "query",
+          "required": false,
+          "value_kind": "string"
+        },
+        {
+          "name": "category",
+          "note": "optional filter",
+          "placement": "query",
+          "required": false,
+          "value_kind": "string"
+        },
+        {
+          "name": "parentId",
+          "note": "optional filter",
+          "placement": "query",
+          "required": false,
+          "value_kind": "string"
+        },
+        {
+          "name": "name",
+          "note": "optional filter",
+          "placement": "query",
+          "required": false,
+          "value_kind": "string"
+        }
+      ],
+      "required_query": [
+        "locationId",
+        "offset",
+        "limit"
+      ],
+      "response_shape": "object {funnels: [funnel], count: integer, traceId: string}; count is the reported total",
+      "scope_state": "unverified",
+      "total_field": "count",
+      "unresolved": [
+        "literal Version header value (2023-02-21 is a documentation label, unverified)",
+        "required Private Integration Token scope name",
+        "funnel item field schema"
+      ],
+      "version_header": "2023-02-21",
+      "version_state": "unverified"
+    },
+    {
+      "capability_id": "funnels.pages_list",
+      "docs": "https://marketplace.gohighlevel.com/docs/ghl/funnels/get-pages-by-funnel-id/index.html",
+      "method": "GET",
+      "operation_id": "funnels.pages.list",
+      "optional_query": [
+        "name"
+      ],
+      "pagination": "offset_limit_short_page_end",
+      "path": "/funnels/page",
+      "query": [
+        {
+          "name": "locationId",
+          "placement": "query",
+          "required": true,
+          "value_kind": "string"
+        },
+        {
+          "name": "funnelId",
+          "placement": "query",
+          "required": true,
+          "value_kind": "string"
+        },
+        {
+          "name": "limit",
+          "placement": "query",
+          "required": true,
+          "value_kind": "int"
+        },
+        {
+          "name": "offset",
+          "placement": "query",
+          "required": true,
+          "value_kind": "int"
+        },
+        {
+          "name": "name",
+          "note": "optional filter",
+          "placement": "query",
+          "required": false,
+          "value_kind": "string"
+        }
+      ],
+      "required_query": [
+        "locationId",
+        "funnelId",
+        "limit",
+        "offset"
+      ],
+      "response_shape": "object carrying a page list under one of ('pages', 'funnelPages', 'data', 'steps') or a bare JSON list; envelope key unverified",
+      "scope_state": "unverified",
+      "total_field": null,
+      "unresolved": [
+        "literal Version header value (2023-02-21 is a documentation label, unverified)",
+        "required Private Integration Token scope name",
+        "pages response-envelope key",
+        "page item field schema",
+        "page status vocabulary"
+      ],
+      "version_header": "2023-02-21",
+      "version_state": "unverified"
+    },
+    {
+      "capability_id": "funnels.pages_count",
+      "docs": "https://marketplace.gohighlevel.com/docs/ghl/funnels/get-pages-count-by-funnel-id/index.html",
+      "method": "GET",
+      "operation_id": "funnels.pages.count",
+      "optional_query": [],
+      "pagination": "none",
+      "path": "/funnels/page/count",
+      "query": [
+        {
+          "name": "locationId",
+          "placement": "query",
+          "required": true,
+          "value_kind": "string"
+        },
+        {
+          "name": "funnelId",
+          "placement": "query",
+          "required": true,
+          "value_kind": "string"
+        }
+      ],
+      "required_query": [
+        "locationId",
+        "funnelId"
+      ],
+      "response_shape": "object carrying the total under one of ('count', 'total', 'totalCount') or a bare integer; key unverified",
+      "scope_state": "unverified",
+      "total_field": "count (candidate key, unverified)",
+      "unresolved": [
+        "literal Version header value (2023-02-21 is a documentation label, unverified)",
+        "required Private Integration Token scope name",
+        "count response-envelope key"
+      ],
+      "version_header": "2023-02-21",
+      "version_state": "unverified"
+    }
+  ],
+  "owner_workflow": "WF24",
+  "reads_only": true
+}
