@@ -40,7 +40,7 @@
     "cross_sales_teaching_source"
   ],
   "decided": [
-    "entitlement_declaration_and_attestation",
+    "no_client_entitlement_declaration",
     "council_included_in_launch_planning",
     "native_converted_and_flow_checkout_mapping",
     "verified_offer_facts_only",

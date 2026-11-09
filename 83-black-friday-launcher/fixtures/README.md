@@ -39,13 +39,10 @@ The fixture also carries one offer relationship (`BUMP.included_in =
 exercised. No cross-sale teaching content exists and none is invented: the
 record says `teaching.state = "pending"`.
 
-## Entitlement attestations
+## No account declaration
 
-Both fixtures carry a TEST-ONLY attestation so the fail-closed gate is
-exercised, not bypassed. Elevation attests the `purchase` basis with a test
-reference at the owner-stated amount; 7FigurePreneur attests the
-`brand_management_membership` basis, which qualifies with **no** purchase
-reference at all. Neither is a real entitlement.
+Neither fixture carries an account-entitlement attestation, because the client is never asked to
+declare one. Both build with `entitlement.state = "unknown"` and nothing blocks on it.
 
 ## Provenance — no invented prices or level contents
 
