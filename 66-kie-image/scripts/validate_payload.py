@@ -317,9 +317,9 @@ def validate(payload, model_id_override=None):
     # GPT Image 2 (LEGACY route, retained by operator ruling 2026-09-09 for
     # aspect ratios 3:1, 1:3, 9:21 only) per-resolution exclusions -- rules
     # UNCHANGED from the original 2026-08-26 docs. Matched by EXACT id, not a
-    # "gpt-image-2" prefix: that prefix also matches the new
-    # gpt-image-2-5-sunburst-* ids, which carry a different (see below), not
-    # merged, rule set (operator ruling 2026-09-09, Ruling 3/6).
+    # "gpt-image-2" prefix: that prefix also matches the newer
+    # gpt-image-2-5-sunburst-* and gpt-image-2-6/sunburst-* ids, which carry a
+    # different (see below), not merged, rule set (operator ruling 2026-09-09, Ruling 3/6).
     if model.get("canonical_model_id") in (
             "gpt-image-2-text-to-image", "gpt-image-2-image-to-image"):
         excl = model.get("ratio_resolution_exclusions") or []
@@ -337,7 +337,8 @@ def validate(payload, model_id_override=None):
     # '1:1 cannot convert to 4K' rules are RETIRED here; not restated in the
     # 2.5 docs (Ruling 3).
     if model.get("canonical_model_id") in (
-            "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image"):
+            "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image",
+            "gpt-image-2-6/sunburst-text-to-image", "gpt-image-2-6/sunburst-image-to-image"):
         excl = model.get("ratio_resolution_exclusions") or []
         if res in ("2K", "4K") and ratio in excl:
             errors.append(

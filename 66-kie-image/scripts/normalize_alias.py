@@ -35,11 +35,17 @@ ALIAS_MAP = {
     # Owner correction 2026-10-06: names that carry version 2 are the legacy family, not the auto-latest default.
     "gpt-img2": "gpt image 2",
     "gpt-image 2.0": "gpt image 2",
-    "gpt image": "gpt image 2.5",
-    "gpt-image": "gpt image 2.5",
-    "openai image": "gpt image 2.5",
+    "gpt image": "gpt image 2.6",
+    "gpt-image": "gpt image 2.6",
+    "openai image": "gpt image 2.6",
     "gpt-img2.5": "gpt image 2.5",
     "gpt-image 2.5": "gpt image 2.5",
+    "gpt image 2.6": "gpt image 2.6",
+    "gpt-image 2.6": "gpt image 2.6",
+    "gpt-image-2.6": "gpt image 2.6",
+    "gpt image 2.6 sunburst": "gpt image 2.6",
+    "gpt-img2.6": "gpt image 2.6",
+    "sunburst": "gpt image 2.6",
     "nano banana light": "nano banana 2 lite",
     # Z-Image stays its own family -- never funneled into qwen.
     "z image": "z image",
@@ -48,6 +54,11 @@ ALIAS_MAP = {
 
 # Family name -> canonical KIE Market model IDs (registry models.json).
 FAMILY_OF = {
+    # GPT Image 2.6 Sunburst -- operator default since #2860 (same route shape as 2.5; KIE-066).
+    "gpt image 2.6": [
+        "gpt-image-2-6/sunburst-text-to-image",
+        "gpt-image-2-6/sunburst-image-to-image",
+    ],
     # GPT Image 2.5 Sunburst -- operator default (ruling 2026-09-09).
     "gpt image 2.5": [
         "gpt-image-2-5-sunburst-text-to-image",
@@ -132,15 +143,19 @@ def main(argv=None) -> int:
         # the 2.5 Sunburst default, not the retained legacy family.
         assert normalize_alias("gpt-img2") == "gpt image 2"
         assert normalize_alias("GPT-image 2.0") == "gpt image 2"
-        assert normalize_alias("gpt image") == "gpt image 2.5"
-        assert normalize_alias("OpenAI image") == "gpt image 2.5"
+        assert normalize_alias("gpt image") == "gpt image 2.6"
+        assert normalize_alias("OpenAI image") == "gpt image 2.6"
         assert normalize_alias("gpt-img2.5") == "gpt image 2.5"
         assert normalize_alias("GPT-image 2.5") == "gpt image 2.5"
+        assert normalize_alias("gpt-img2.6") == "gpt image 2.6"
+        assert normalize_alias("sunburst") == "gpt image 2.6"
         # Legacy family stays resolvable directly (not deleted, just unaliased).
         assert FAMILY_OF["gpt image 2"] == [
             "gpt-image-2-text-to-image", "gpt-image-2-image-to-image"]
         assert FAMILY_OF["gpt image 2.5"] == [
             "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image"]
+        assert FAMILY_OF["gpt image 2.6"] == [
+            "gpt-image-2-6/sunburst-text-to-image", "gpt-image-2-6/sunburst-image-to-image"]
         assert normalize_alias("nano banana light") == "nano banana 2 lite"
         # Z-Image guard: "z image" must NOT resolve into qwen.
         assert normalize_alias("z image") == "z image"

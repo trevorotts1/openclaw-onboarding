@@ -49,7 +49,7 @@
    "z-image": 1
   }
  },
- "catalog_total": 218,
+ "catalog_total": 220,
  "catalog_fetched_at": "2026-10-06T04:23:58Z",
  "models": [
   {
@@ -11657,6 +11657,103 @@
    },
    "verbatim_fields": []
   },
+ {
+   "id": "gpt-image-2-6/sunburst-image-to-image",
+   "provider": "OpenAI",
+   "title": "Gpt Image 2.6 Sunburst Image to Image",
+   "taskType": [
+    "Image to Image"
+   ],
+   "family": "gpt-image",
+   "version": [
+    2,
+    6
+   ],
+   "variant": "sunburst",
+   "pricing": {
+    "raw": "GPT Image 2.6 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates. [carried forward UNCHANGED from gpt-image-2-5-sunburst (KIE docs 2026-09-09, maxLength 20000); no separate 2-6 published limit in repo (KIE-066 NOTE 2026-11-08)]",
+    "status": "ok",
+    "credits_min": 6.0,
+    "credits_max": 16.0,
+    "unit": "per-job",
+    "credits_estimate": 16.0
+   },
+   "schema": {
+    "readable": true,
+    "submit_path": "/api/v1/jobs/createTask",
+    "method": "post",
+    "kind": "createTask"
+   },
+   "schema_paths": [
+    {
+     "path": "/api/v1/jobs/createTask",
+     "method": "post",
+     "kind": "createTask"
+    }
+   ],
+   "callback_supported": true,
+   "required": [
+    "input_urls",
+    "prompt"
+   ],
+   "input_fields": {
+    "prompt": {
+     "type": "string",
+     "maxLength_described": 20000
+    },
+    "input_urls": {
+     "type": "array",
+     "maxItems": 16,
+     "items": {
+      "type": "string",
+      "format": "uri"
+     }
+    },
+    "aspect_ratio": {
+     "type": "string",
+     "enum": [
+      "auto",
+      "1:1",
+      "3:2",
+      "2:3",
+      "4:3",
+      "3:4",
+      "16:9",
+      "9:16",
+      "21:9",
+      "27:16",
+      "16:27",
+      "9:8",
+      "8:9"
+     ]
+    },
+    "resolution": {
+     "type": "string",
+     "enum": [
+      "1K",
+      "2K",
+      "4K"
+     ]
+    },
+    "background": {
+     "type": "string",
+     "enum": [
+      "transparent",
+      "opaque",
+      "auto"
+     ]
+    }
+   },
+   "branches": [],
+   "prompt_field": {
+    "name": "prompt",
+    "maxLength": 20000,
+    "verbatim": false,
+    "max_source": "description",
+    "limits_listed": []
+   },
+   "verbatim_fields": []
+  },
   {
    "id": "gpt-image-2-5-sunburst-text-to-image",
    "provider": "OpenAI",
@@ -11672,6 +11769,95 @@
    "variant": "sunburst",
    "pricing": {
     "raw": "GPT Image 2.5 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates.",
+    "status": "ok",
+    "credits_min": 6.0,
+    "credits_max": 16.0,
+    "unit": "per-job",
+    "credits_estimate": 16.0
+   },
+   "schema": {
+    "readable": true,
+    "submit_path": "/api/v1/jobs/createTask",
+    "method": "post",
+    "kind": "createTask"
+   },
+   "schema_paths": [
+    {
+     "path": "/api/v1/jobs/createTask",
+     "method": "post",
+     "kind": "createTask"
+    }
+   ],
+   "callback_supported": true,
+   "required": [
+    "prompt"
+   ],
+   "input_fields": {
+    "prompt": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 20000
+    },
+    "aspect_ratio": {
+     "type": "string",
+     "enum": [
+      "auto",
+      "1:1",
+      "3:2",
+      "2:3",
+      "4:3",
+      "3:4",
+      "16:9",
+      "9:16",
+      "21:9",
+      "27:16",
+      "16:27",
+      "9:8",
+      "8:9"
+     ]
+    },
+    "resolution": {
+     "type": "string",
+     "enum": [
+      "1K",
+      "2K",
+      "4K"
+     ]
+    },
+    "background": {
+     "type": "string",
+     "enum": [
+      "transparent",
+      "opaque",
+      "auto"
+     ]
+    }
+   },
+   "branches": [],
+   "prompt_field": {
+    "name": "prompt",
+    "maxLength": 20000,
+    "verbatim": false,
+    "max_source": "schema",
+    "limits_listed": []
+   },
+   "verbatim_fields": []
+  },
+ {
+   "id": "gpt-image-2-6/sunburst-text-to-image",
+   "provider": "OpenAI",
+   "title": "Gpt Image 2.6 Sunburst Text to Image",
+   "taskType": [
+    "Text to Image"
+   ],
+   "family": "gpt-image",
+   "version": [
+    2,
+    6
+   ],
+   "variant": "sunburst",
+   "pricing": {
+    "raw": "GPT Image 2.6 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K.\nHigh-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates. [carried forward UNCHANGED from gpt-image-2-5-sunburst (KIE docs 2026-09-09, maxLength 20000); no separate 2-6 published limit in repo (KIE-066 NOTE 2026-11-08)]",
     "status": "ok",
     "credits_min": 6.0,
     "credits_max": 16.0,
