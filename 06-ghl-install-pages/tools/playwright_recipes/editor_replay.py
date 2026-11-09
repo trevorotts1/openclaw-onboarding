@@ -25,6 +25,7 @@ STATUSES = {
     'native_object_fields': {'OBJECT_FIELDS_SAVED_AND_REOPENED'},
     'native_dropdown_fields': {'DROPDOWN_FIELDS_SAVED_AND_REOPENED'},
     'native_large_text_fields': {'LARGETEXT_FIELDS_SAVED_AND_REOPENED'},
+    'native_contact_field_chain': {'CONTACT_FIELDS_SAVED_AND_REOPENED'},
     'quiz_short_answers': {'QUIZ_SHORT_ANSWERS_SAVED_AND_REOPENED'},
     'quiz_multiple_choices': {'QUIZ_MULTIPLE_CHOICES_SAVED_AND_REOPENED'},
     'quiz_written_answers': {'QUIZ_WRITTEN_ANSWERS_SAVED_AND_REOPENED'},
@@ -72,6 +73,7 @@ REQUIRED = {
     'native_object_fields': ('editor_url', 'fields', 'configuration_sha256', 'independent_readback', 'submission_verified'),
     'native_dropdown_fields': ('editor_url','fields','configuration_sha256','independent_readback','submission_verified','behavior_verified'),
     'native_large_text_fields': ('editor_url','fields','configuration_sha256','independent_readback','submission_verified','behavior_verified'),
+    'native_contact_field_chain': ('location_id','editor_url','configuration_sha256','api_fields','native_receipt','field_count','independent_readback','dependency_api_used','native_placement_required','behavior_verified','submission_verified'),
     'quiz_short_answers': ('kind','editor_url','configuration_sha256','question_count','target_page','independent_readback','behavior_verified','submission_verified','dependency_api_used'),
     'quiz_multiple_choices': ('kind','editor_url','configuration_sha256','question_count','target_page','independent_readback','behavior_verified','submission_verified','dependency_api_used'),
     'quiz_written_answers': ('kind','editor_url','configuration_sha256','question_count','target_page','independent_readback','behavior_verified','submission_verified','dependency_api_used'),
@@ -91,7 +93,7 @@ REQUIRED = {
     'native_course_text_blocks': ('editor_url','course_id','template_id','configuration_sha256','independent_readback','functional_verified','activation_performed','added_block_ids','block_ids','block_count'),
     'native_course_section_media': ('editor_url','course_id','template_id','configuration_sha256','independent_readback','functional_verified','activation_performed','images'),
     'native_course_image_blocks': ('editor_url','course_id','template_id','configuration_sha256','independent_readback','functional_verified','activation_performed','added_block_ids','block_ids','block_count','images'),
-    'native_course_theme_media': ('editor_url', 'course_id', 'template_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed', 'source_sha256', 'background_url_sha256'),
+    'native_course_theme_media': ('editor_url', 'course_id', 'template_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed', 'background_url_sha256'),
     'native_course_block_media': ('editor_url', 'course_id', 'template_id', 'block_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed', 'source_sha256', 'image_url_sha256'),
     'native_condition_stack': ('kind', 'editor_url', 'configuration_sha256', 'rule_count', 'independent_readback', 'behavior_verified', 'submission_verified'),
     'native_order_confirmation': ('editor_url', 'form_id', 'product_id', 'price_id', 'price_identity', 'configuration_sha256', 'independent_readback', 'conditional_precedence_present', 'conditional_precedence_acknowledged', 'payment_verified', 'behavior_verified', 'submission_verified'),
@@ -173,6 +175,11 @@ def _operation(value):
 
 def _result(step, value, job):
     action = step['action']
+    if action == 'native_contact_field_chain':
+        from playwright_recipes.contact_field_frontdoor import validate_receipt
+        if any(step['payload'][key] != job[key] for key in ('location_id','location_name','start_url')):
+            _fail()
+        return validate_receipt(value, step)
     if not isinstance(value, Mapping) or action not in REQUIRED:
         _fail()
     if any(key not in value for key in REQUIRED[action]):
@@ -192,6 +199,10 @@ def _result(step, value, job):
     text_blocks = None
     section_media = None
     image_blocks = None
+    background_media = None
+    if action == 'native_course_theme_media':
+        from playwright_recipes.course_theme_media import validate_receipt
+        background_media = validate_receipt(dict(value),step)
     if action == 'native_course_image_blocks':
         from playwright_recipes.course_image_blocks import validate_receipt
         image_blocks = validate_receipt(dict(value),step)
@@ -217,6 +228,7 @@ def _result(step, value, job):
     extra = {
         'html': {'element_id', 'section_id'}, 'native_form_css': {'render_checks'},
         'meeting': {'previous_room_identity'},
+        'native_course_theme_media': {'source_sha256','media_operation','transparency_percentage'},
         'community': {'requested_slug_sha256', 'observed_slug_sha256', 'identity_source', 'group_status', 'portal_url'},
     }.get(action, set())
     # A familiar field on an unrelated handler is still an arbitrary extra.
@@ -359,14 +371,9 @@ def _result(step, value, job):
                 or value['functional_verified'] is not False or value['activation_performed'] is not False):
             _fail()
     if action == 'native_course_theme_media':
-        from playwright_recipes.course_theme_media import configuration_hash
-        plan = step['payload']
-        if (value['course_id'] != plan['course_id'] or value['template_id'] != plan['template_id']
-                or value['configuration_sha256'] != configuration_hash(plan)
-                or value['source_sha256'] != plan['background_image']['sha256']
-                or value['independent_readback'] != 'VERIFIED'
-                or value['functional_verified'] is not False or value['activation_performed'] is not False):
-            _fail()
+        if 'media_operation' in background_media:
+            safe['media_operation']=background_media['media_operation']
+            safe['transparency_percentage']=background_media['transparency_percentage']
     if action == 'native_course_image_blocks':
         safe['images'] = image_blocks['images']
         safe['added_block_ids'] = image_blocks['added_block_ids']

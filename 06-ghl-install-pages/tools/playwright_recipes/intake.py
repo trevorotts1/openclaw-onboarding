@@ -24,7 +24,7 @@ FIELDS = {
         'contact_fields', 'checkout_options', 'content', 'theme_inputs', 'legal_copy',
         'product_binding', 'product_id', 'price_id', 'charge', 'execute_payment'},
     'forms.create': {'name', 'required', 'allow_creation', 'radius'},
-    'forms.configure': {'fields', 'add_fields', 'address_fields', 'consent', 'object_fields', 'dropdown_fields', 'large_text_fields', 'field_dependencies', 'integration'},
+    'forms.configure': {'fields', 'add_fields', 'address_fields', 'consent', 'object_fields', 'dropdown_fields', 'large_text_fields', 'field_dependencies', 'integration', 'contact_field_plan'},
     'forms.style': {'custom_css', 'radius', 'css_key', 'expect_styles'},
     'forms.settings': {'settings', 'schedule', 'tracking'},
     'forms.submission': {'submission'}, 'forms.notifications': {'notifications'},
@@ -36,7 +36,7 @@ FIELDS = {
     'communities.configure': {'portal_url', 'group_name', 'channels', 'details', 'access', 'course_associations', 'api_capability', 'branding'},
     'meetings.setup': {'meeting'}, 'meetings.update': {'meeting'},
     'meetings.integrate': {'integration_mode', 'calendar_id', 'calendar_name', 'staff_id', 'connection_staff_label', 'expected_staff_locations', 'staff_dependency', 'portal_url', 'group_name', 'group_id', 'event_id', 'allow_room_creation', 'expected'},
-    'courses.configure_ui': {'course_id', 'template_id', 'expected_template_title', 'changes', 'expected_values', 'custom_blocks', 'background_image', 'custom_block_image', 'text_blocks', 'theme_images', 'image_blocks'},
+    'courses.configure_ui': {'course_id', 'template_id', 'expected_template_title', 'changes', 'expected_values', 'custom_blocks', 'background_image', 'background_transparency', 'custom_block_image', 'text_blocks', 'theme_images', 'image_blocks'},
     'funnels.split_variant': set(),
 }
 REQUIRED = {
@@ -167,7 +167,7 @@ def validate_intake(operation, data):
                 from playwright_recipes.course_text_blocks import validate_inputs
             elif 'custom_blocks' in data:
                 from playwright_recipes.course_blocks import validate_inputs
-            elif 'background_image' in data:
+            elif 'background_image' in data or 'background_transparency' in data:
                 from playwright_recipes.course_theme_media import validate_inputs
             elif 'custom_block_image' in data:
                 from playwright_recipes.course_block_media import validate_inputs
@@ -193,6 +193,11 @@ def validate_intake(operation, data):
         from playwright_recipes.form_embed import validate
         validate({'integration':data['integration']})
     if operation == 'forms.configure':
+        if 'contact_field_plan' in data:
+            if set(data) - COMMON - {'contact_field_plan'}:
+                raise Stop('Contact field dependency creation and placement require their own independently journaled job')
+            from playwright_recipes.contact_field_frontdoor import payload_from_inputs
+            payload_from_inputs(data)
         for key in ('fields', 'add_fields', 'address_fields', 'object_fields'):
             if key in data and (not isinstance(data[key], list) or not data[key]):
                 raise Stop(key + ' must be a nonempty list when supplied')

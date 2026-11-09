@@ -25,21 +25,21 @@ else:
 _ROW_DELETE_PATH='M16 6v-.8c0-1.12 0-1.68-.218-2.108a2 2 0 00-.874-.874C14.48 2 13.92 2 12.8 2h-1.6c-1.12 0-1.68 0-2.108.218a2 2 0 00-.874.874C8 3.52 8 4.08 8 5.2V6M3 6h18m-2 0v11.2c0 1.68 0 2.52-.327 3.162a3 3 0 01-1.311 1.311C16.72 22 15.88 22 14.2 22H9.8c-1.68 0-2.52 0-3.162-.327a3 3 0 01-1.311-1.311C5 19.72 5 18.88 5 17.2V6'
 
 
-def _rules(rules,*,reject_conflicts=True):
-    if not isinstance(rules,list) or not 1<=len(rules)<=50:
-        raise Stop('Native condition stacks require 1 to 50 ordered rules')
+def _rules(rules,*,reject_conflicts=True,allow_empty=False):
+    minimum=0 if allow_empty else 1
+    if not isinstance(rules,list) or not minimum<=len(rules)<=50:
+        raise Stop('Native condition stacks require '+str(minimum)+' to 50 ordered rules')
     normalized=[];seen=set()
     for rule in rules:
-        if not isinstance(rule,dict) or set(rule)!={'match','clauses','effect','target'}:
+        if (not isinstance(rule,dict) or set(rule)-{'match','connectors','clauses','effect','target'}
+                or not {'match','clauses','effect','target'}.issubset(rule)):
             raise Stop('Every condition stack rule needs its complete predicate, effect and one target')
         valid=group.validate({'action':'native_condition_group',**rule},minimum_clauses=1)
-        predicate=tuple(sorted((clause['if_field'],clause['operator'],clause.get('value',''))
-                               for clause in valid['clauses']))
-        identity=(('single' if len(predicate)==1 else valid['match']),predicate,valid['target'])
+        identity=(*group._predicate_identity(valid),valid['target'])
         if reject_conflicts and identity in seen:
             raise Stop('Duplicate or conflicting condition predicates for the same target require reconciliation')
         seen.add(identity)
-        normalized.append({key:valid[key] for key in ('match','clauses','effect','target')})
+        normalized.append({key:valid[key] for key in ('match','clauses','effect','target','connectors') if key in valid})
     return normalized
 
 
@@ -49,9 +49,9 @@ def validate(step):
         raise Stop('Unsupported native condition stack')
     value={**deepcopy(step),'rules':_rules(step.get('rules'))}
     if 'expected_rules' in step:
-        value['expected_rules']=_rules(step['expected_rules'],reject_conflicts=False)
-        if len(value['expected_rules'])!=len(value['rules']):
-            raise Stop('Native condition edits require equal complete previous and desired rule counts')
+        value['expected_rules']=_rules(step['expected_rules'],reject_conflicts=False,allow_empty=True)
+        if len(value['expected_rules'])>len(value['rules']):
+            raise Stop('Native condition card removal requires a separately captured delete lifecycle')
     return value
 
 
@@ -87,8 +87,7 @@ def _author(frame,dialog,rule,prefix,identity):
             joins=modal.locator('.n-tabs')
             if joins.count()!=index+1:
                 raise Stop('Native condition row append connector count changed')
-            connector=group._one(joins.nth(index).locator('[data-name="'+
-                ('and' if rule['match']=='all' else 'or')+'"]'),
+            connector=group._one(joins.nth(index).locator('[data-name="'+group._connectors(rule)[index]+'"]'),
                 'Native condition append connector is ambiguous')
             click(connector)
             wait_until(lambda:modal.locator('[id^="selectedField-"]').count()==index+2,
@@ -142,7 +141,7 @@ def _edit(frame,dialog,index,before_rule,rule,current,identity):
             joins=modal.locator('.n-tabs')
             if joins.count()!=count:raise Stop('Native condition edit connector count changed')
             connector=joins.nth(row)
-            wanted='and' if rule['match']=='all' else 'or'
+            wanted=group._connectors(rule)[row]
             active=group._one(connector.locator('.n-tabs-tab--active'),'Native edited connector is ambiguous')
             appending=row==count-1
             if appending or active.get_attribute('data-name')!=wanted:
@@ -176,6 +175,7 @@ def _remove_tail(modal,before_rule,count,identity):
     if type(count) is not int or count<2:
         raise Stop('Native predicate removal never deletes the initial If row')
     current={**deepcopy(before_rule),'clauses':deepcopy(before_rule['clauses'][:count])}
+    if 'connectors' in current:current['connectors']=current['connectors'][:count-1]
     group._modal_state(modal,current)
     source=group._one(modal.locator('#selectedField-'+str(count-1)),
                       'Native tail predicate source changed')
@@ -200,6 +200,7 @@ def _remove_tail(modal,before_rule,count,identity):
                and modal.locator('#inputValue-'+str(count-1)).count()==0,
                'Native tail predicate did not remove exactly one complete row')
     expected={**deepcopy(before_rule),'clauses':deepcopy(before_rule['clauses'][:count-1])}
+    if 'connectors' in expected:expected['connectors']=expected['connectors'][:count-2]
     group._modal_state(modal,expected)
     return count-1
 
@@ -235,6 +236,10 @@ def configure(page,step):
         for index,(previous,rule) in enumerate(zip(plan['expected_rules'],plan['rules'])):
             if current[index]!=wanted[index]:
                 current=_edit(frame,dialog,index,previous,rule,current,identity)
+        for rule in plan['rules'][len(plan['expected_rules']):]:
+            if group._inventory(dialog)!=current:
+                raise Stop('Native condition stack changed before an expected-inventory append')
+            current=_author(frame,dialog,rule,current,identity)
     else:
         if len(before)>len(wanted) or before!=wanted[:len(before)]:
             raise Stop('Existing native condition stack is not the exact authored prefix; reconcile before writing')

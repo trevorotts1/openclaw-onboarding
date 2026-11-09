@@ -19,7 +19,7 @@ def edit_plan():
 
 class EditSchemaTests(unittest.TestCase):
     def test_expected_card_count_mismatch_refuses_before_browser(self):
-        mismatch=edit_plan();mismatch['expected_rules'].pop()
+        mismatch=edit_plan();mismatch['rules'].pop()
         for data in (mismatch,):
             page=Mock()
             with self.subTest(data=data),self.assertRaises(Stop):native.configure(page,data)

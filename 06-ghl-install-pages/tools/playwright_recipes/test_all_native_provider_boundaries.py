@@ -62,6 +62,13 @@ def native_cases(root):
  yield 'course_section_media','courses.configure_ui',section_images(str(asset),hashlib.sha256(asset.read_bytes()).hexdigest())
  from test_course_image_blocks import inputs as image_blocks
  yield 'course_image_blocks','courses.configure_ui',image_blocks()
+ from test_contact_field_dependencies import large
+ yield 'contact_field_chain','forms.configure',{
+  'location_id':'LOC','location_name':'Fixture Account',
+  'start_url':'https://app.convertandflow.com/v2/location/LOC/form-builder-v2/FORM',
+  'contact_field_plan':{'expected_form_name':'Existing form','fields':[large()],
+   'native_bindings':[{'field_key':'contact.audience','native_query_key':'audience:_who?',
+    'expected_label':'Audience','expected_placeholder':'Describe your audience. '}]}}
  profile={'capture_source':'fixture exact UI controls','steps':[{'action':'expect_text','target':{'by':'role','role':'heading','value':'Approved fixture'},'value':'Approved fixture'}]}
  for op in ('forms.configure','courses.configure_ui','communities.configure','funnels.split_variant','meetings.integrate'):
   yield op+'_options',op,{**base,'options':profile}
@@ -109,8 +116,8 @@ class CompleteNativeProviderBoundaries(unittest.TestCase):
                     and node.func.id=='add' and node.args):
                 named |= literal_action(node.args[0])
         self.assertTrue(named <= covered,named-covered)
-        self.assertEqual(len(covered),56,'Update the bounded fixtures for newly added dynamic compiler actions')
-        self.assertEqual(len(rows),69)
+        self.assertEqual(len(covered),57,'Update the bounded fixtures for newly added dynamic compiler actions')
+        self.assertEqual(len(rows),70)
 
     def test_no_current_native_job_delegates_to_status_only_api_or_extension_callback(self):
         with tempfile.TemporaryDirectory() as directory:

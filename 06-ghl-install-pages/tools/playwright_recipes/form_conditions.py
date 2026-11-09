@@ -1,4 +1,4 @@
-"""Native homogeneous AND/OR Show/Hide groups captured November 9, 2026.
+"""Native ordered AND/OR Show/Hide groups captured November 9, 2026.
 
 The owner runner supplies tenant checks and the intent-before-write journal.
 This handler creates one rule only when the entire existing condition inventory
@@ -30,11 +30,11 @@ OUTCOME = '.flex.text-xs.leading-5.text-gray-600'
 
 def validate(step, *, minimum_clauses=2):
     if (not isinstance(step,dict)
-            or set(step) - {'id','action','clauses','match','effect','target'}
+            or set(step) - {'id','action','clauses','match','connectors','effect','target'}
             or step.get('action','native_condition_group') != 'native_condition_group'):
         raise Stop('Unsupported native form condition group')
-    if not isinstance(step.get('match'),str) or step['match'] not in ('all','any'):
-        raise Stop('Condition group match must be all or any')
+    if not isinstance(step.get('match'),str) or step['match'] not in ('all','any','mixed'):
+        raise Stop('Condition group match must be all, any or explicit mixed')
     if not isinstance(step.get('effect'),str) or step['effect'] not in ('Hide Field','Show Field'):
         raise Stop('Condition groups support captured single-field Show/Hide effects')
     if not isinstance(step.get('target'),str) or step['target'] not in TARGETS:
@@ -43,6 +43,14 @@ def validate(step, *, minimum_clauses=2):
     if (type(minimum_clauses) is not int or minimum_clauses not in (1,2)
             or not isinstance(clauses,list) or not minimum_clauses <= len(clauses) <= 20):
         raise Stop('A native condition requires '+str(minimum_clauses)+' to 20 explicit clauses')
+    if step['match']=='mixed':
+        joins=step.get('connectors')
+        if (not isinstance(joins,list) or len(joins)!=len(clauses)-1
+                or any(not isinstance(join,str) or join not in ('and','or') for join in joins)
+                or set(joins)!={'and','or'}):
+            raise Stop('Mixed conditions require one ordered and/or connector between each clause and both connector types')
+    elif 'connectors' in step:
+        raise Stop('Explicit connectors require match=mixed; all/any must not carry ignored connector data')
     seen = set()
     for clause in clauses:
         if (not isinstance(clause,dict)
@@ -67,6 +75,7 @@ def validate(step, *, minimum_clauses=2):
 def configuration_hash(step):
     valid = validate(step)
     payload = {key:valid[key] for key in ('clauses','match','effect','target')}
+    if 'connectors' in valid:payload['connectors']=valid['connectors']
     return hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
@@ -101,9 +110,23 @@ def _tokens(node):
     return node.locator('span').evaluate_all('nodes => nodes.map(n => n.textContent.trim())')
 
 
+def _connectors(plan):
+    """Native edge labels, in source-row order; no Boolean precedence inferred."""
+    return (list(plan['connectors']) if plan['match']=='mixed' else
+            [('and' if plan['match']=='all' else 'or')]*(len(plan['clauses'])-1))
+
+
+def _predicate_identity(plan):
+    clauses=tuple((clause['if_field'],clause['operator'],clause.get('value',''))
+                  for clause in plan['clauses'])
+    if plan['match']=='mixed':
+        return ('mixed',clauses,tuple(_connectors(plan)))
+    return (('single' if len(clauses)==1 else plan['match']),tuple(sorted(clauses)))
+
+
 def _expected_rows(plan):
-    join = 'And' if plan['match']=='all' else 'Or'
-    return [[('If' if index==0 else join),clause['if_field'],clause['operator']]
+    joins = _connectors(plan)
+    return [[('If' if index==0 else joins[index-1].title()),clause['if_field'],clause['operator']]
             + ([clause['value']] if 'value' in clause else [])
             for index,clause in enumerate(plan['clauses'])]
 
@@ -162,11 +185,11 @@ def _modal_state(modal,plan):
     joins = modal.locator('.n-tabs')
     if joins.count()!=count:
         raise Stop('Native compound connector count changed')
-    wanted = 'and' if plan['match']=='all' else 'or'
+    wanted = _connectors(plan)
     for index in range(count):
         active = joins.nth(index).locator('.n-tabs-tab--active')
         if (active.count()!=1 or active.get_attribute('data-name') !=
-                ('then' if index==count-1 else wanted)):
+                ('then' if index==count-1 else wanted[index])):
             raise Stop('Native compound AND/OR connector differs from the authored match mode')
     if (_selected(modal.locator('#showHideFieldType'))!=plan['effect']
             or _selected(modal.locator('#selectedFieldShowHide'))!=plan['target']):
@@ -242,8 +265,7 @@ def configure(page,step):
                 joins = modal.locator('.n-tabs')
                 if joins.count()!=index+1:
                     raise Stop('Native compound append connector changed')
-                choice = joins.nth(index).locator('[data-name="'+
-                    ('and' if plan['match']=='all' else 'or')+'"]')
+                choice = joins.nth(index).locator('[data-name="'+_connectors(plan)[index]+'"]')
                 click(_one(choice,'Native compound append option is ambiguous'))
                 wait_until(lambda:modal.locator('[id^="selectedField-"]').count()==index+2,
                            'Native compound row did not append once')
