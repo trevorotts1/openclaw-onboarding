@@ -1,0 +1,353 @@
+{
+  "$schema_version": "1.0.0",
+  "contract_id": "WF16-CP01",
+  "contract_version": "1.0.0",
+  "workflow_id": "WF16",
+  "revision": "3.0",
+  "authored_at": "2026-11-08",
+  "purpose": "Frozen alias and pointer contract for WF17 (Command Center routing/context) and any later consumer. It states which existing canonical department owns each GHL business outcome, which platform names are aliases rather than departments, and which skill/SOP pointers a dispatched specialist must receive.",
+  "binding_sources": {
+    "skill_department_map": "23-ai-workforce-blueprint/skill-department-map.json",
+    "sop_cluster": "universal-sops/ghl-hybrid-operations/",
+    "role_library_index": "23-ai-workforce-blueprint/templates/role-library/_index.json"
+  },
+  "canonical_departments": {
+    "crm": {
+      "library_dir": "crm",
+      "label": "CRM / Convert and Flow",
+      "primary_for": [
+        "workflow builds and edits",
+        "platform administration",
+        "integrations",
+        "monitoring reads",
+        "native AI provisioning",
+        "knowledge base transport",
+        "widget provisioning",
+        "Projects provisioning"
+      ]
+    },
+    "courses": {
+      "library_dir": "courses",
+      "label": "Courses",
+      "primary_for": [
+        "learning outcomes",
+        "curriculum",
+        "lesson content",
+        "assessments",
+        "course production acceptance",
+        "live-course sessions (with Skill 6 Meeting Rooms)"
+      ]
+    },
+    "community-builder": {
+      "library_dir": "community-builder",
+      "label": "Community Builder",
+      "primary_for": [
+        "group and channel structure",
+        "moderation",
+        "member operations",
+        "learning association",
+        "member experience",
+        "community publishing handoff"
+      ]
+    },
+    "social-media": {
+      "library_dir": "social-media",
+      "label": "Social Media",
+      "primary_for": [
+        "content calendar",
+        "brand-level publishing strategy",
+        "approved publishing handoff"
+      ]
+    },
+    "web-development": {
+      "library_dir": "web-development",
+      "label": "Web Development",
+      "primary_for": [
+        "page and form delivery",
+        "widget placement on a page"
+      ]
+    },
+    "funnels": {
+      "library_dir": "funnels",
+      "label": "Funnels",
+      "primary_for": [
+        "funnel build and pre-ship QA"
+      ]
+    },
+    "sales": {
+      "library_dir": "sales",
+      "label": "Sales",
+      "primary_for": [
+        "lead follow-up and closing"
+      ]
+    }
+  },
+  "platform_aliases": {
+    "rule": "These are CONTEXTUAL PLATFORM ALIASES for the crm department. They are never department ids, never a reason to route by keyword, and never a new workspace. Classify the business outcome first; an alias only tells you the platform, not the owner.",
+    "canonical_dept": "crm",
+    "aliases": [
+      "Convert and Flow",
+      "Convert & Flow",
+      "GoHighLevel",
+      "GHL"
+    ],
+    "case_insensitive": true,
+    "never_create_department_ids": [
+      "ghl",
+      "gohighlevel",
+      "go-high-level",
+      "convert-and-flow",
+      "convert-flow",
+      "ghl-hybrid"
+    ],
+    "display_label": "CRM / Convert and Flow",
+    "stable_ids_unchanged": [
+      "crm",
+      "courses",
+      "community-builder"
+    ]
+  },
+  "pointer_rules": [
+    {
+      "intent": "Build a GHL workflow / automation with a trigger and waits",
+      "business_owner": "crm",
+      "primary_skill": "44",
+      "secondary_skills": [
+        "6"
+      ],
+      "context_skills": [
+        "29",
+        "36"
+      ],
+      "sops": [
+        "SOP-GHL-01-CAPABILITY-AND-ROUTING.md",
+        "SOP-GHL-02-WORKFLOW-BUILD-AND-EDIT.md"
+      ]
+    },
+    {
+      "intent": "Create a course with modules and lessons and attach media",
+      "business_owner": "courses",
+      "primary_skill": "6",
+      "secondary_skills": [
+        "44"
+      ],
+      "context_skills": [
+        "29",
+        "36"
+      ],
+      "sops": [
+        "SOP-GHL-03-COURSE-PRODUCTION.md"
+      ]
+    },
+    {
+      "intent": "Create a private community / channels",
+      "business_owner": "community-builder",
+      "primary_skill": "6",
+      "secondary_skills": [
+        "44"
+      ],
+      "context_skills": [],
+      "sops": [
+        "SOP-GHL-04-COMMUNITY-AND-LEARNING.md"
+      ]
+    },
+    {
+      "intent": "Attach an existing course to the group's Learning tab",
+      "business_owner": "community-builder",
+      "coordinating_owner": "courses",
+      "primary_skill": "6",
+      "secondary_skills": [
+        "44"
+      ],
+      "context_skills": [],
+      "sops": [
+        "SOP-GHL-04-COMMUNITY-AND-LEARNING.md",
+        "SOP-GHL-03-COURSE-PRODUCTION.md"
+      ]
+    },
+    {
+      "intent": "Publish a post in the members-only channel / post a lesson announcement",
+      "business_owner": "community-builder",
+      "coordinating_owner": "social-media",
+      "primary_skill": "35",
+      "secondary_skills": [
+        "6"
+      ],
+      "context_skills": [],
+      "sops": [
+        "SOP-GHL-05-COMMUNITY-PUBLISHING.md"
+      ]
+    },
+    {
+      "intent": "Create a sales page for a course",
+      "business_owner": "funnels",
+      "alternate_owner": "web-development",
+      "primary_skill": "56",
+      "secondary_skills": [
+        "49",
+        "6"
+      ],
+      "context_skills": [],
+      "sops": []
+    },
+    {
+      "intent": "Follow up and close a CRM lead",
+      "business_owner": "sales",
+      "primary_skill": null,
+      "secondary_skills": [],
+      "context_skills": [
+        "44"
+      ],
+      "sops": []
+    },
+    {
+      "intent": "Show the status of an existing build",
+      "business_owner": "existing-task-lookup",
+      "primary_skill": null,
+      "secondary_skills": [],
+      "context_skills": [],
+      "sops": [],
+      "rule": "look up the existing task; never start a duplicate build"
+    },
+    {
+      "intent": "Set up a native GHL Voice AI receptionist",
+      "business_owner": "crm",
+      "behavior_owner": "conversational-ai-system",
+      "primary_skill": "44",
+      "secondary_skills": [
+        "38"
+      ],
+      "context_skills": [
+        "29",
+        "36"
+      ],
+      "sops": [
+        "SOP-GHL-08-NATIVE-AI.md",
+        "SOP-GHL-01-CAPABILITY-AND-ROUTING.md"
+      ]
+    },
+    {
+      "intent": "Make a knowledge base from approved support files",
+      "business_owner": "crm",
+      "behavior_owner": "conversational-ai-system",
+      "primary_skill": "44",
+      "secondary_skills": [
+        "38"
+      ],
+      "context_skills": [],
+      "sops": [
+        "SOP-GHL-09-KNOWLEDGE-LIFECYCLE.md"
+      ]
+    },
+    {
+      "intent": "Put a native chat widget on the website",
+      "business_owner": "web-development",
+      "coordinating_owner": "crm",
+      "primary_skill": "6",
+      "secondary_skills": [
+        "44"
+      ],
+      "context_skills": [],
+      "sops": [
+        "SOP-GHL-10-WIDGET-INSTALLATION.md"
+      ]
+    },
+    {
+      "intent": "Set up a room for the live sessions in a course",
+      "business_owner": "courses",
+      "primary_skill": "6",
+      "secondary_skills": [],
+      "context_skills": [],
+      "sops": [
+        "SOP-GHL-07-MEETING-ROOMS.md",
+        "SOP-GHL-03-COURSE-PRODUCTION.md"
+      ]
+    },
+    {
+      "intent": "Mirror a verified client checklist into HighLevel Projects",
+      "business_owner": "crm",
+      "coordinating_owner": "command-center",
+      "primary_skill": "44",
+      "secondary_skills": [],
+      "context_skills": [],
+      "sops": [
+        "SOP-GHL-11-PROJECTS-AND-SYNC.md"
+      ],
+      "rule": "one-way, opt-in; Command Center keeps completion authority"
+    },
+    {
+      "intent": "Create a lead-generation quiz, not a course quiz",
+      "business_owner": "web-development",
+      "coordinating_owner": "crm",
+      "primary_skill": "6",
+      "secondary_skills": [
+        "44"
+      ],
+      "context_skills": [],
+      "sops": [
+        "SOP-GHL-13-MARKETING-QUIZZES.md"
+      ]
+    },
+    {
+      "intent": "Show which automation steps failed yesterday",
+      "business_owner": "crm",
+      "primary_skill": "44",
+      "secondary_skills": [],
+      "context_skills": [
+        "29"
+      ],
+      "sops": [
+        "SOP-GHL-12-WORKFLOW-MONITORING.md"
+      ],
+      "rule": "read-only; never create a workflow"
+    }
+  ],
+  "transport_pointer": {
+    "order": [
+      "public_rest",
+      "official_mcp_when_exact_operation_discovered",
+      "existing_private_fallback",
+      "skill6_managed_browser"
+    ],
+    "one_route_per_mutation": true,
+    "reconcile_before_retry": true,
+    "receipt_envelope": "hybrid-operation-receipt.v1",
+    "outcomes": [
+      "planned",
+      "submitted",
+      "processing",
+      "verified",
+      "failed",
+      "blocked",
+      "unknown_outcome",
+      "not_requested"
+    ]
+  },
+  "sop_cluster": {
+    "path": "universal-sops/ghl-hybrid-operations/",
+    "files": [
+      "README.md",
+      "SOP-GHL-01",
+      "SOP-GHL-02",
+      "SOP-GHL-03",
+      "SOP-GHL-04",
+      "SOP-GHL-05",
+      "SOP-GHL-06",
+      "SOP-GHL-07",
+      "SOP-GHL-08",
+      "SOP-GHL-09",
+      "SOP-GHL-10",
+      "SOP-GHL-11",
+      "SOP-GHL-12",
+      "SOP-GHL-13"
+    ],
+    "note": "One cluster only. universal-sops/ghl-operations/ must not be created."
+  },
+  "consumer_requirements": [
+    "Resolve aliases contextually to the crm dept; never route solely because the word GHL appears.",
+    "Honor an explicit valid owner-department choice and the existing JEV/opt-out policy.",
+    "Attach the owning skill pointer plus the matching SOP pointer to the dispatched specialist.",
+    "Do not create or rename departments, workspaces or database rows for a display label.",
+    "Do not widen this contract silently: a change is WF16-CP02 with a migration note and consumer list."
+  ]
+}
