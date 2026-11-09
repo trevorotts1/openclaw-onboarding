@@ -153,6 +153,33 @@
         }
       }
     },
+    "version_state": {
+      "enum": ["frozen", "unverified"],
+      "description": "Whether the row's Version literal is settled. unverified records a documentation label or no literal without claiming a live header contract."
+    },
+    "documented_query": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "description": "Query parameter names the operation documents, required or optional."
+    },
+    "query_constraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "constraint"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "constraint": { "type": "string", "minLength": 1 }
+        }
+      },
+      "description": "Named bounds/grammar for documented query parameters, transcribed only where the source states them."
+    },
+    "identity_detail": {
+      "type": ["string", "null"],
+      "description": "Identity detail not carried by tenant_binding (for example an agency companyId the typed adapter writes itself). Never a credential value."
+    },
     "outcomes": {
       "type": "array",
       "items": { "$ref": "#/$defs/outcome" },
@@ -193,6 +220,7 @@
     "token_class must agree with token_class_derived(auth_kinds).",
     "effect=write requires approval_class != none for a destructive route and requires the registry write flag.",
     "scopes_resolved=false is required whenever scopes is empty.",
+    "version_state=unverified may carry version=null only when version is in unresolved_fields and a blocker is set; a documented row otherwise requires a literal version.",
     "implementation must agree with route_class through TRANSPORT_BY_ROUTE."
   ],
   "$defs": {

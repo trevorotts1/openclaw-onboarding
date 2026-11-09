@@ -68,6 +68,7 @@ _WORKFLOW_FAMILY = {
     "workflows.status.publish",
     "workflows.definition.delete",
     "workflows.logs.list",
+    "workflows.logs",
     "workflows.logs.aggregate",
 }
 
@@ -104,6 +105,10 @@ class RegistryContractDocumentsTest(unittest.TestCase):
     """A18 / B01 / IG-ROUTE-06 -- one authority, one exported shape."""
 
     def test_every_registry_row_exports_one_valid_contract_document(self) -> None:
+        # Instrument control.  Two set comparisons below are satisfied by an
+        # empty registry (0 == 0), so an import that failed closed would pass
+        # this test while observing nothing.  Assert the corpus is real first.
+        self.assertGreater(len(OPERATIONS), 100)
         documents = contract_documents()
         self.assertEqual(len(documents), len(OPERATIONS))
         seen: set[str] = set()
@@ -293,9 +298,9 @@ class WorkflowReFreezeTest(unittest.TestCase):
             "workflows.step_types.list",
             "workflows.definition.validate",
             "workflows.search",
-            "agency.locations.create",
+            "locations.create",
             "courses.products.create",
-            "knowledge_bases.files.upload",
+            "knowledge_bases.sources.upload",
         ):
             row = OPERATIONS[operation_id]
             with self.subTest(operation_id=operation_id):
@@ -456,6 +461,374 @@ class SharedVocabularyTest(unittest.TestCase):
         instance["legacy_conversion"]["grants_widened"] = True
         with self.assertRaises(CONTRACTS.ContractError):
             CONTRACTS.validate("hybrid-operation-receipt.v1", instance)
+
+
+class ChangeRequestReconciliationTest(unittest.TestCase):
+    """WF00-CP03: every consumer-requested row is frozen with its exact id.
+
+    Each assertion is the consumer's published interface, not a new registry.
+    """
+
+    def test_wf05_public_location_create_uses_the_agency_binding(self) -> None:
+        row = OPERATIONS["locations.create"]
+        self.assertEqual((row.method, row.path_template), ("POST", "/locations"))
+        self.assertEqual(row.version, "2021-07-28")
+        # WF05's typed adapter writes the agency companyId itself; the generic
+        # adapter must not inject a location, so the row records binding "none"
+        # and names the body.companyId rule in identity_detail (WF05 CR allows
+        # exactly this representation).
+        self.assertEqual(row.tenant_binding, "none")
+        self.assertIn("body.companyId", row.identity_detail or "")
+        self.assertEqual(row.identity_placement, "none")
+        self.assertEqual(row.token_class, "agency_pit")
+        self.assertEqual(row.scopes_candidate, ("locations.write",))
+        self.assertEqual(row.readback_plan, "locations.get")
+        self.assertTrue(row.write)
+        self.assertEqual(row.resolved_availability, "tenant_restricted")
+
+    def test_wf06_course_family_ids_and_effects_are_exact(self) -> None:
+        expected = {
+            "courses.products.create": ("POST", "/courses/products", True),
+            "courses.products.get": ("GET", "UNKNOWN", False),
+            "courses.categories.create": ("POST", "UNKNOWN", True),
+            "courses.lessons.create": ("POST", "UNKNOWN", True),
+            "courses.imports.submit": (
+                "POST", "/courses/courses-exporter/public/import", True),
+            "courses.enrollments.create": ("POST", "/courses/enrollments", True),
+            "courses.product_enrollments.list": ("GET", "UNKNOWN", False),
+            "courses.offers.create": ("POST", "UNKNOWN", True),
+            "courses.offers.revoke": ("DELETE", "UNKNOWN", True),
+            "courses.quizzes.create": (
+                "POST",
+                "/courses/products/{productId}/lessons/{lessonId}/quiz", True),
+            "courses.quizzes.questions.upsert": (
+                "PUT",
+                "/courses/products/{productId}/quizzes/{quizId}/questions", True),
+        }
+        for operation_id, (method, path, write) in expected.items():
+            row = OPERATIONS[operation_id]
+            with self.subTest(operation_id=operation_id):
+                self.assertEqual((row.method, row.path_template), (method, path))
+                self.assertEqual(row.write, write)
+                if path == "UNKNOWN":
+                    self.assertEqual(row.route_class, "capability_gap")
+                    self.assertIsNone(row.doc_url)
+                else:
+                    self.assertIn("courses.write", row.scopes_candidate)
+        # A literal the evidence did not settle is never asserted.
+        self.assertIsNone(OPERATIONS["courses.products.create"].version)
+        self.assertEqual(
+            OPERATIONS["courses.products.create"].version_state, "unverified")
+        self.assertIn("version",
+                      OPERATIONS["courses.products.create"].unresolved_fields)
+        # The vendor spec settled the import literal; no CRUD default inherited.
+        self.assertEqual(OPERATIONS["courses.imports.submit"].version, "2021-07-28")
+        self.assertEqual(
+            OPERATIONS["courses.imports.submit"].doc_evidence,
+            "reopened_2026-11-08",
+        )
+
+    def test_wf10_community_ids_and_versions_are_exact(self) -> None:
+        members = OPERATIONS["social.community.users.list"]
+        self.assertEqual(
+            members.path_template,
+            "/social-media-posting/{locationId}/community/accounts/"
+            "{accountId}/users",
+        )
+        self.assertEqual(members.version, "2021-07-28")
+        self.assertIn("v3", members.version_alternates)
+        self.assertEqual(members.scopes_candidate,
+                         ("socialplanner/oauth.readonly",))
+        self.assertEqual(members.doc_url,
+                         "https://raw.githubusercontent.com/GoHighLevel/"
+                         "highlevel-api-docs/main/apps/social-media-posting.json")
+        validate_membership = OPERATIONS["social.community.group_users.validate"]
+        self.assertEqual(validate_membership.scopes_candidate,
+                         ("socialplanner/account.readonly",))
+        self.assertEqual(
+            validate_membership.path_template,
+            "/social-media-posting/{locationId}/community/groups/{groupId}/"
+            "users/{contactId}/validate",
+        )
+        comment = OPERATIONS["social.comments.community.create"]
+        self.assertEqual(comment.tenant_binding, "query.locationId")
+        self.assertEqual(comment.version, "v3")
+        self.assertEqual(comment.scopes_candidate,
+                         ("socialplanner/comments.write",))
+        self.assertEqual(comment.readback_plan, "social.comments.list")
+
+    def test_wf24_funnel_version_is_a_label_not_a_claim(self) -> None:
+        for operation_id, path, required in (
+            ("funnels.list", "/funnels/funnel/list",
+             ("locationId", "offset", "limit")),
+            ("funnels.pages.list", "/funnels/page",
+             ("locationId", "funnelId", "limit", "offset")),
+            ("funnels.pages.count", "/funnels/page/count",
+             ("locationId", "funnelId")),
+        ):
+            row = OPERATIONS[operation_id]
+            with self.subTest(operation_id=operation_id):
+                self.assertEqual(row.path_template, path)
+                self.assertEqual(row.version, "2023-02-21")
+                self.assertEqual(row.version_state, "unverified")
+                self.assertEqual(row.required_query, required)
+                self.assertIn("version.header", row.unresolved_fields)
+                self.assertIn("scopes", row.unresolved_fields)
+
+    def test_wf25_monitoring_rows_publish_the_wire_names(self) -> None:
+        canonical = OPERATIONS["workflows.logs.list"]
+        alias = OPERATIONS["workflows.logs"]
+        aggregate = OPERATIONS["workflows.logs.aggregate"]
+        for row in (canonical, alias):
+            self.assertEqual((row.method, row.path_template),
+                             ("GET", "/workflows/{workflowId}/logs"))
+            self.assertEqual(row.pagination, "cursor")
+            self.assertEqual(row.scopes_candidate, ("workflows.logs",))
+            self.assertIn("startDate", row.documented_query)
+            self.assertIn("referenceId", row.documented_query)
+            self.assertIn("referenceCreatedAt", row.documented_query)
+            self.assertIn("limit", [name for name, _ in row.query_constraints])
+        self.assertIn("groupBy", aggregate.documented_query)
+        self.assertIn("timezone", aggregate.documented_query)
+        limits = dict(aggregate.query_constraints)
+        self.assertIn("1000", limits["limit"])
+        self.assertIn("5000", limits["limit"])
+
+    def test_wf27_wf28_wf29_native_rows_are_additive_and_default_deny(self) -> None:
+        expected = {
+            "voiceAi.agents.list": ("GET", "/voice-ai/agents", False),
+            "voiceAi.agents.get": ("GET", "/voice-ai/agents/{agentId}", False),
+            "voiceAi.agents.create": ("POST", "/voice-ai/agents", True),
+            "voiceAi.agents.update": ("PATCH", "/voice-ai/agents/{agentId}", True),
+            "voiceAi.actions.get": ("GET", "/voice-ai/actions/{actionId}", False),
+            "voiceAi.actions.create": ("POST", "/voice-ai/actions", True),
+            "voiceAi.actions.update": ("PUT", "/voice-ai/actions/{actionId}", True),
+            "voiceAi.calls.list": ("GET", "/voice-ai/dashboard/call-logs", False),
+            "voiceAi.calls.get": ("GET",
+                                  "/voice-ai/dashboard/call-logs/{callId}", False),
+            "conversation_ai.agents.list": (
+                "GET", "/conversation-ai/agents/search", False),
+            "conversation_ai.agents.get": (
+                "GET", "/conversation-ai/agents/{agentId}", False),
+            "conversation_ai.agents.create": (
+                "POST", "/conversation-ai/agents", True),
+            "conversation_ai.agents.update": (
+                "PUT", "/conversation-ai/agents/{agentId}", True),
+            "agentStudio.agents.list": ("GET", "/agent-studio/agent", False),
+            "agentStudio.agents.create": ("POST", "/agent-studio/agent", True),
+            "agentStudio.agents.read": (
+                "GET", "/agent-studio/agent/{agentId}", False),
+            "agentStudio.agents.metadata.update": (
+                "PATCH", "/agent-studio/agent/{agentId}", True),
+            "agentStudio.versions.update": (
+                "PATCH", "/agent-studio/agent/versions/{versionId}", True),
+            "agentStudio.versions.promote": (
+                "POST", "/agent-studio/agent/versions/{versionId}/publish", True),
+            "agentStudio.agents.execute": (
+                "POST", "/agent-studio/agent/{agentId}/execute", True),
+        }
+        for operation_id, (method, path, write) in expected.items():
+            row = OPERATIONS[operation_id]
+            with self.subTest(operation_id=operation_id):
+                self.assertEqual((row.method, row.path_template), (method, path))
+                self.assertEqual(row.write, write)
+                self.assertEqual(row.version, "2021-04-15")
+                self.assertFalse(hasattr(row, "enabled"))
+
+    def test_wf30_knowledge_base_family_and_multipart_gap(self) -> None:
+        expected = {
+            "knowledge_bases.list": ("GET", "/knowledge-bases/", False),
+            "knowledge_bases.get": (
+                "GET", "/knowledge-bases/{knowledgeBaseId}", False),
+            "knowledge_bases.create": ("POST", "/knowledge-bases/", True),
+            "knowledge_bases.update": ("PUT", "/knowledge-bases/{id}", True),
+            "knowledge_bases.delete": (
+                "DELETE", "/knowledge-bases/{knowledgeBaseId}", True),
+            "knowledge_bases.crawler.discover": (
+                "POST", "/knowledge-bases/crawler", True),
+            "knowledge_bases.crawler.status": (
+                "GET", "/knowledge-bases/crawler/status", False),
+            "knowledge_bases.crawler.train": (
+                "POST", "/knowledge-bases/crawler/train", True),
+            "knowledge_bases.crawler.urls": (
+                "GET", "/knowledge-bases/crawler", False),
+            "knowledge_bases.crawler.delete_urls": (
+                "DELETE", "/knowledge-bases/crawler", True),
+            "knowledge_bases.faqs.list": ("GET", "/knowledge-bases/faqs", False),
+            "knowledge_bases.faqs.create": ("POST", "/knowledge-bases/faqs", True),
+            "knowledge_bases.faqs.update": (
+                "PUT", "/knowledge-bases/faqs/{id}", True),
+            "knowledge_bases.faqs.delete": (
+                "DELETE", "/knowledge-bases/faqs/{id}", True),
+        }
+        for operation_id, (method, path, write) in expected.items():
+            row = OPERATIONS[operation_id]
+            with self.subTest(operation_id=operation_id):
+                self.assertEqual((row.method, row.path_template), (method, path))
+                self.assertEqual(row.write, write)
+                self.assertEqual(row.version, "2021-04-15")
+        gap = OPERATIONS["knowledge_bases.sources.upload"]
+        self.assertEqual(gap.route_class, "capability_gap")
+        self.assertEqual(gap.request_media_type, "multipart/form-data")
+        self.assertEqual(gap.blocker, "B-NO-CONTRACT")
+        self.assertIsNone(gap.doc_url)
+        self.assertEqual(gap.path_template, "UNKNOWN")
+
+    def test_wf30_conversation_agent_attachment_rows_exist(self) -> None:
+        for operation_id in ("conversation_ai.agents.get",
+                             "conversation_ai.agents.update"):
+            self.assertIn(operation_id, OPERATIONS)
+        self.assertEqual(OPERATIONS["conversation_ai.agents.update"].method, "PUT")
+        self.assertEqual(
+            OPERATIONS["conversation_ai.agents.update"].readback_plan,
+            "conversation_ai.agents.get",
+        )
+
+    def test_wf30_rows_name_the_vendor_response_shape(self) -> None:
+        """CP04: the converge-reported rows carry a real vendor response shape.
+
+        Each pointer is a component of the vendor OpenAPI document the row
+        already cites, so a caller reads the shape instead of inferring it.
+        """
+        self.assertGreater(len(OPERATIONS), 100)
+        knowledge_base_responses = {
+            "knowledge_bases.list": "GetAllKnowledgeBasesPaginatedResponseDTO",
+            "knowledge_bases.get": "GetKnowledgeBaseByIdResponseDTO",
+            "knowledge_bases.create": "CreateKnowledgeBaseResponseDTO",
+            "knowledge_bases.update": "UpdateKnowledgeBaseResponseDTO",
+            "knowledge_bases.delete": "DeleteKnowledgeBaseResponseDTO",
+            "knowledge_bases.crawler.urls": "GetAllUrlsByKnowledgeBaseResponseDTO",
+            "knowledge_bases.crawler.discover": "DiscoverWebsiteResponseDTO",
+            "knowledge_bases.crawler.status": "CrawlingStatusResponseDTO",
+            "knowledge_bases.crawler.train": "TrainDiscoveredUrlsResponseDTO",
+            "knowledge_bases.crawler.delete_urls": "DeleteWebsiteUrlResponseDTO",
+            "knowledge_bases.faqs.list": "ListFaqsResponseDTO",
+            "knowledge_bases.faqs.create": "CreateFaqResponseDTO",
+            "knowledge_bases.faqs.update": "UpdateFaqResponseDTO",
+            "knowledge_bases.faqs.delete": "DeleteFaqResponseDTO",
+        }
+        for operation_id, schema in knowledge_base_responses.items():
+            row = OPERATIONS[operation_id]
+            with self.subTest(operation_id=operation_id):
+                self.assertEqual(
+                    row.response_schema_ref,
+                    f"apps/knowledge-base.json#/components/schemas/{schema}",
+                )
+                self.assertEqual(row.availability, "public")
+                self.assertNotIn("response_schema_ref", row.unresolved_fields)
+
+        knowledge_base_requests = {
+            "knowledge_bases.create": "CreateKnowledgeBaseDTO",
+            "knowledge_bases.update": "UpdateKnowledgeBaseDTO",
+            "knowledge_bases.crawler.discover": "DiscoverWebsiteRequestDTO",
+            "knowledge_bases.crawler.train": "TrainDiscoveredUrlsDTO",
+            "knowledge_bases.crawler.delete_urls": "DeleteWebsiteUrlRequestDTO",
+            "knowledge_bases.faqs.create": "AddFaqDTO",
+            "knowledge_bases.faqs.update": "UpdateFaqBodyDTO",
+        }
+        for operation_id, schema in knowledge_base_requests.items():
+            row = OPERATIONS[operation_id]
+            with self.subTest(operation_id=operation_id):
+                self.assertEqual(
+                    row.request_schema_ref,
+                    f"apps/knowledge-base.json#/components/schemas/{schema}",
+                )
+                self.assertTrue(row.write)
+                self.assertNotIn("request_schema_ref", row.unresolved_fields)
+
+        # Reads are not made to look like writes, and the two conversation
+        # agent rows carry their vendor shapes too.
+        for operation_id in ("knowledge_bases.list", "knowledge_bases.get",
+                             "knowledge_bases.crawler.urls",
+                             "knowledge_bases.crawler.status",
+                             "knowledge_bases.faqs.list",
+                             "conversation_ai.agents.get"):
+            with self.subTest(operation_id=operation_id):
+                self.assertFalse(OPERATIONS[operation_id].write)
+                self.assertIsNone(OPERATIONS[operation_id].request_schema_ref)
+        self.assertEqual(
+            OPERATIONS["conversation_ai.agents.get"].response_schema_ref,
+            "apps/conversation-ai.json#/components/schemas/EmployeeResponseDTO",
+        )
+        self.assertEqual(
+            OPERATIONS["conversation_ai.agents.update"].request_schema_ref,
+            "apps/conversation-ai.json#/components/schemas/UpdateEmployeeDto",
+        )
+        self.assertEqual(
+            OPERATIONS["conversation_ai.agents.update"].response_schema_ref,
+            "apps/conversation-ai.json#/components/schemas/EmployeeResponseDTO",
+        )
+
+    def test_wf30_upload_row_keeps_one_id_and_the_named_gap(self) -> None:
+        """CP04 id decision: one operation, one id, and no invented route.
+
+        The module calls ``knowledge_bases.sources.upload`` and the vendor
+        document defines no upload operation at all, so the frozen id stays
+        ``sources.upload``.  ``files.upload`` is not added as a second id for
+        the same concept: two ids would let a caller reach an unfrozen route
+        through whichever name matched.
+        """
+        row = OPERATIONS["knowledge_bases.sources.upload"]
+        self.assertEqual(row.path_template, "UNKNOWN")
+        self.assertEqual(row.availability, "feature_gap")
+        self.assertEqual(row.blocker, "B-NO-CONTRACT")
+        self.assertEqual(row.request_media_type, "multipart/form-data")
+        self.assertIn("path_template", row.unresolved_fields)
+        self.assertNotIn("knowledge_bases.files.upload", OPERATIONS)
+
+    def test_wf31_widget_rows_preserve_the_numeric_config_version(self) -> None:
+        expected = {
+            "chat_widgets.list": ("GET", "/chat-widget/list", False),
+            "chat_widgets.get": (
+                "GET", "/chat-widget/data/{locationId}/{id}", False),
+            "chat_widgets.create": ("POST", "/chat-widget/", True),
+            "chat_widgets.update": (
+                "PUT", "/chat-widget/data/{locationId}/{id}", True),
+            "chat_widgets.patch": (
+                "PATCH", "/chat-widget/data/{locationId}/{id}", True),
+            "chat_widgets.delete": (
+                "DELETE", "/chat-widget/{locationId}/{id}", True),
+            "chat_widgets.clone": ("POST", "/chat-widget/clone", True),
+            "chat_widgets.public_config": (
+                "GET", "/chat-widget/public/config/{id}", False),
+        }
+        for operation_id, (method, path, write) in expected.items():
+            row = OPERATIONS[operation_id]
+            with self.subTest(operation_id=operation_id):
+                self.assertEqual((row.method, row.path_template), (method, path))
+                self.assertEqual(row.write, write)
+                self.assertEqual(row.version, "v3")
+        row = OPERATIONS["chat_widgets.public_config"]
+        self.assertEqual(row.version, "v3")
+        self.assertNotEqual(row.version, "2")
+        self.assertIn("version", row.documented_query)
+        self.assertEqual(row.identity_placement, "path")
+
+    def test_no_two_rows_share_a_route_except_the_declared_logs_alias(self) -> None:
+        seen: dict[tuple[str, str], str] = {}
+        for operation_id, row in OPERATIONS.items():
+            if row.method in ("MCP", "UNKNOWN") or row.path_template == "UNKNOWN":
+                continue
+            key = (row.method, row.path_template)
+            if key in seen:
+                pair = frozenset({seen[key], operation_id})
+                allowed = {
+                    frozenset({"workflows.logs.list", "workflows.logs"}),
+                    frozenset({
+                        "conversations.messages.send",
+                        "conversations.messages.send_in_conversation",
+                    }),
+                    frozenset({
+                        "workflows.private.save",
+                        "workflows.private.publish",
+                    }),
+                }
+                self.assertIn(
+                    pair, allowed,
+                    f"undeclared duplicate route {key}: {sorted(pair)}",
+                )
+            else:
+                seen[key] = operation_id
 
 
 class FixturePackTest(unittest.TestCase):

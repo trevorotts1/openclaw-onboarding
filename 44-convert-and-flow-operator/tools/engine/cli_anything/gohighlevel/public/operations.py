@@ -173,6 +173,20 @@ class OperationRow:
     #: specification says not every official page was reopened (Section 34.1),
     #: so a row must not claim a fresh fetch it did not perform.
     doc_evidence: str = "frozen"
+    #: ``frozen`` when the evidence settled the Version literal; ``unverified``
+    #: when only a documentation label is known.  A documented row may carry no
+    #: literal (``version is None``) ONLY when this state is ``unverified``, the
+    #: field is named in ``unresolved_fields`` and a blocker exists.
+    version_state: str = "frozen"
+    #: Query parameter names the operation documents, required or optional.
+    documented_query: tuple[str, ...] = ()
+    #: Named bounds/grammar for documented query parameters, as
+    #: ``((name, constraint), ...)``.  Transcribed only where the page states it.
+    query_constraints: tuple[tuple[str, str], ...] = ()
+    #: Free-text, machine-readable detail about identity that is not carried by
+    #: the frozen ``tenant_binding`` (for example an agency companyId the typed
+    #: adapter writes into the body itself).  Never a credential value.
+    identity_detail: str | None = None
 
     def __post_init__(self) -> None:
         for field_name in ("required_query",):
@@ -335,6 +349,32 @@ class OperationRow:
                 operation_id=self.operation_id,
                 detail={"doc_evidence": str(self.doc_evidence)},
             )
+        if self.version_state not in VERSION_STATES:
+            raise ContractViolation(
+                "row_version_state_invalid",
+                operation_id=self.operation_id,
+                detail={"version_state": str(self.version_state)},
+            )
+        if not isinstance(self.documented_query, tuple) or any(
+            not isinstance(name, str) or not name.strip()
+            for name in self.documented_query
+        ):
+            raise ContractViolation(
+                "row_documented_query_invalid", operation_id=self.operation_id
+            )
+        if not isinstance(self.query_constraints, tuple):
+            raise ContractViolation(
+                "row_query_constraints_invalid", operation_id=self.operation_id
+            )
+        for entry in self.query_constraints:
+            if (
+                not isinstance(entry, tuple)
+                or len(entry) != 2
+                or not all(isinstance(value, str) and value.strip() for value in entry)
+            ):
+                raise ContractViolation(
+                    "row_query_constraints_invalid", operation_id=self.operation_id
+                )
 
     # -- derived declarations (never a second stored authority) -------------
 
@@ -437,6 +477,13 @@ class OperationRow:
             "outcomes": list(RECEIPT_OUTCOMES),
             "unresolved_fields": list(self.unresolved_fields),
             "doc_evidence": self.doc_evidence,
+            "version_state": self.version_state,
+            "documented_query": list(self.documented_query),
+            "query_constraints": [
+                {"name": name, "constraint": constraint}
+                for name, constraint in self.query_constraints
+            ],
+            "identity_detail": self.identity_detail,
         }
 
 
@@ -448,6 +495,9 @@ MEDIA_TYPES: frozenset[str] = frozenset(
 EFFECTS: frozenset[str] = frozenset({"read", "write", "non_persisting_write"})
 APPROVAL_CLASSES: frozenset[str] = frozenset({"none", "approval", "destructive"})
 PAGINATIONS: frozenset[str] = frozenset({"none", "cursor", "page", "offset", "unknown"})
+#: Whether a row's Version literal is settled.  ``unverified`` records a
+#: documentation label (or no label) without claiming a live header contract.
+VERSION_STATES: frozenset[str] = frozenset({"frozen", "unverified"})
 AVAILABILITIES: frozenset[str] = frozenset(
     {
         "public",
@@ -514,6 +564,10 @@ def _R(
     pagination: str = "none",
     availability: str | None = None,
     unresolved: tuple[str, ...] = (),
+    version_state: str = "frozen",
+    documented_query: tuple[str, ...] = (),
+    query_constraints: tuple[tuple[str, str], ...] = (),
+    identity_detail: str | None = None,
 ) -> OperationRow:
     return OperationRow(
         operation_id=operation_id,
@@ -543,6 +597,10 @@ def _R(
         pagination=pagination,
         availability=availability,
         unresolved_fields=unresolved,
+        version_state=version_state,
+        documented_query=documented_query,
+        query_constraints=query_constraints,
+        identity_detail=identity_detail,
     )
 
 
@@ -559,6 +617,19 @@ _LOCATIONS: tuple[OperationRow, ...] = (
     _R("locations.get", "GET", "/locations/{locationId}", "2021-07-28", "D", PUB,
        PIT_OR_OAUTH, "path.locationId", False, False, "A-UNVERIFIED",
        DOCS + "/ghl/locations/get-location", scopes=("locations.readonly",)),
+    # WF05 reconciliation: documented public sub-account create.  Agency Pro
+    # eligibility is a per-tenant account fact, never a default for every
+    # agency; the executing credential stays agency_pit and the agency
+    # companyId rides the body, never a location id.
+    _R("locations.create", "POST", "/locations", "2021-07-28", "D", PUB,
+       (AuthKind.agency_pit,), "none", True, True, "A-UNVERIFIED",
+       DOCS + "/ghl/locations/create-location", alternates=("v3",),
+       scopes=("locations.write",), approval_class="approval",
+       availability="tenant_restricted", readback="locations.get",
+       identity_detail=("agency companyId rides body.companyId and must equal the "
+                        "agency companyId, never a locationId; the typed adapter "
+                        "writes it and no location is injected"),
+       unresolved=("request_schema_ref", "response_schema_ref")),
 )
 
 # ---------------------------------------------------------------------------
@@ -929,20 +1000,29 @@ _CONTENT: tuple[OperationRow, ...] = (
     # exact required query schema and literal Version detail were NOT reopened
     # here, so `unresolved_fields` names them instead of guessing.  No
     # funnel/page authoring endpoint is inferred from these reads.
-    _R("funnels.list", "GET", "/funnels/funnel/list", "v3", "D", PUB,
-       PIT_OR_OAUTH, "query.locationId", False, False, "A-UNVERIFIED",
-       DOCS + "/ghl/funnels/get-funnels/", alternates=("2023-02-21",),
-       pagination="page", availability="public",
-       unresolved=("required_query", "scopes")),
-    _R("funnels.pages.list", "GET", "/funnels/page", "v3", "D", PUB,
-       PIT_OR_OAUTH, "query.locationId", False, False, "A-UNVERIFIED",
-       DOCS + "/ghl/funnels/get-pages-by-funnel-id",
-       alternates=("2023-02-21",), pagination="page",
-       unresolved=("required_query", "scopes")),
-    _R("funnels.pages.count", "GET", "/funnels/page/count", "v3", "D", PUB,
-       PIT_OR_OAUTH, "query.locationId", False, False, "B-NO-ADAPTER",
-       DOCS + "/ghl/funnels/get-pages-count-by-funnel-id",
-       availability="public", unresolved=("required_query", "scopes")),
+    _R("funnels.list", "GET", "/funnels/funnel/list", "2023-02-21", "D",
+       PUB, PIT_OR_OAUTH, "query.locationId", False, False, "A-UNVERIFIED",
+       DOCS + "/ghl/funnels/get-funnels/", alternates=("v3",),
+       version_state="unverified", pagination="page", availability="public",
+       required_query=("locationId", "offset", "limit"),
+       documented_query=("locationId", "offset", "limit", "type", "category",
+                         "parentId", "name"),
+       unresolved=("version.header", "scopes", "response_schema_ref")),
+    _R("funnels.pages.list", "GET", "/funnels/page", "2023-02-21", "D",
+       PUB, PIT_OR_OAUTH, "query.locationId", False, False, "A-UNVERIFIED",
+       DOCS + "/ghl/funnels/get-pages-by-funnel-id", alternates=("v3",),
+       version_state="unverified", pagination="page", availability="public",
+       required_query=("locationId", "funnelId", "limit", "offset"),
+       documented_query=("locationId", "funnelId", "limit", "offset", "name"),
+       unresolved=("version.header", "scopes", "response_schema_ref",
+                   "response.envelope_key")),
+    _R("funnels.pages.count", "GET", "/funnels/page/count", "2023-02-21",
+       "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
+       "A-UNVERIFIED", DOCS + "/ghl/funnels/get-pages-count-by-funnel-id",
+       alternates=("v3",), version_state="unverified", availability="public",
+       required_query=("locationId", "funnelId"),
+       documented_query=("locationId", "funnelId", "name"),
+       unresolved=("version.header", "scopes", "response.envelope_key")),
     _R("funnels.create", "POST", "/funnels/", None, "internal", S06, FIREBASE,
        "token-id", True, False, "B-INTERNAL", None),
     _R("funnels.steps.create", "POST", "/funnels/{funnelId}/steps", None,
@@ -1042,28 +1122,32 @@ _SOCIAL: tuple[OperationRow, ...] = (
        "/social-media-posting/comments/{platform}/{id}/like", "v3", "D", PUB,
        PIT, "body.locationId", True, True, "B-SOCIAL-SPEC", SOCIAL_V3_SPEC,
        readback="social.comments.list"),
-    # Community social rows (Document 1 section 11.2, scopes recorded there).
-    # The word "oauth" in a scope name does not prohibit a Private Integration
-    # token.  The member-list page renders inconsistently across docs views, so
-    # its response schema stays unresolved instead of being invented.
-    _R("social.community.accounts.users.list", "GET",
+    # Community social rows (Document 1 section 11.2, WF10 ids).  The word
+    # "oauth" in a scope name does not prohibit a Private Integration token.
+    # The member-list page renders inconsistently across documentation views,
+    # so its pagination parameter names and response schema stay unresolved.
+    _R("social.community.users.list", "GET",
        "/social-media-posting/{locationId}/community/accounts/{accountId}/users",
-       "v3", "D", PUB, PIT, "path.locationId", False, False, "B-SOCIAL-SPEC",
-       SOCIAL_V3_SPEC, scopes=("socialplanner/oauth.readonly",),
-       pagination="page", availability="public",
-       unresolved=("response_schema_ref",)),
-    _R("social.community.authors.validate", "GET",
+       "2021-07-28", "D", PUB, PIT, "path.locationId", False, False,
+       "B-SOCIAL-SPEC", SOCIAL_V2_SPEC, alternates=("v3",),
+       scopes=("socialplanner/oauth.readonly",), pagination="page",
+       availability="public",
+       unresolved=("response_schema_ref", "query.pagination_parameter_names")),
+    _R("social.community.group_users.validate", "GET",
        "/social-media-posting/{locationId}/community/groups/{groupId}/users/"
-       "{contactId}/validate", "v3", "D", PUB, PIT, "path.locationId", False,
-       False, "B-SOCIAL-SPEC", SOCIAL_V3_SPEC,
+       "{contactId}/validate", "2021-07-28", "D", PUB, PIT, "path.locationId",
+       False, False, "B-SOCIAL-SPEC", SOCIAL_V2_SPEC, alternates=("v3",),
        scopes=("socialplanner/account.readonly",), availability="public",
        unresolved=("response_schema_ref",)),
-    _R("social.community.comments.create", "POST",
+    _R("social.comments.community.create", "POST",
        "/social-media-posting/comments/community", "v3", "D", PUB, PIT,
        "query.locationId", True, True, "B-SOCIAL-SPEC", SOCIAL_V3_SPEC,
        scopes=("socialplanner/comments.write",), readback="social.comments.list",
-       availability="public", unresolved=("request_schema_ref",)),
+       availability="public",
+       unresolved=("request_schema_ref",
+                   "body.comment_fields_beyond_isParentThread_notifyAllGroupMembers")),
 )
+
 
 # ---------------------------------------------------------------------------
 # 5.7 Workflows and official MCP (GU-003-workflows-mcp)
@@ -1175,13 +1259,59 @@ _WORKFLOWS_MCP: tuple[OperationRow, ...] = (
        "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
        "B-WORKFLOW-BETA", DOCS + "/ghl/workflows/",
        scopes=("workflows.logs",), pagination="cursor",
-       availability="private_beta",
+       availability="private_beta", required_query=("locationId",),
+       documented_query=("locationId", "startDate", "endDate", "action",
+                         "referenceId", "referenceCreatedAt", "limit",
+                         "statuses", "types", "stepId", "removedReasons",
+                         "contactId", "executionId"),
+       query_constraints=(
+           ("startDate", "ISO 8601 UTC; send with endDate; at most 30 days apart"),
+           ("endDate", "ISO 8601 UTC; send with startDate; at most 30 days apart"),
+           ("action", "first (default) or next"),
+           ("referenceId", "nextCursor.referenceId; required with action=next"),
+           ("referenceCreatedAt", "nextCursor.referenceCreatedAt; required with action=next"),
+           ("limit", "1..100 records per page; default 15"),
+           ("retention", "logs are available for the last 60 days"),
+       ),
        unresolved=("doc_url.operation_slug", "response_schema_ref")),
+    # WF25 reads the monitoring row as ``workflows.logs`` while Document 1
+    # section 6.2 names ``workflows.logs.list``.  Both ids are declared and
+    # point at the same route and effect; they are one operation, never two.
+    _R("workflows.logs", "GET", "/workflows/{workflowId}/logs", "v3",
+       "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
+       "B-WORKFLOW-BETA", DOCS + "/ghl/workflows/",
+       scopes=("workflows.logs",), pagination="cursor",
+       availability="private_beta", required_query=("locationId",),
+       documented_query=("locationId", "startDate", "endDate", "action",
+                         "referenceId", "referenceCreatedAt", "limit",
+                         "statuses", "types", "stepId", "removedReasons",
+                         "contactId", "executionId"),
+       query_constraints=(
+           ("startDate", "ISO 8601 UTC; send with endDate; at most 30 days apart"),
+           ("endDate", "ISO 8601 UTC; send with startDate; at most 30 days apart"),
+           ("action", "first (default) or next"),
+           ("referenceId", "nextCursor.referenceId; required with action=next"),
+           ("referenceCreatedAt", "nextCursor.referenceCreatedAt; required with action=next"),
+           ("limit", "1..100 records per page; default 15"),
+           ("retention", "logs are available for the last 60 days"),
+       ),
+       unresolved=("operation_id.alias_of_workflows.logs.list",
+                   "doc_url.operation_slug", "response_schema_ref")),
     _R("workflows.logs.aggregate", "GET",
        "/workflows/{workflowId}/logs/aggregate", "v3", "D", PUB,
        PIT_OR_OAUTH, "query.locationId", False, False, "B-WORKFLOW-BETA",
        DOCS + "/ghl/workflows/", scopes=("workflows.logs",),
-       availability="private_beta",
+       availability="private_beta", required_query=("locationId",),
+       documented_query=("locationId", "startDate", "endDate", "groupBy",
+                         "statuses", "types", "stepId", "removedReasons",
+                         "timezone", "limit"),
+       query_constraints=(
+           ("startDate", "ISO 8601 UTC; send with endDate; at most 30 days apart"),
+           ("endDate", "ISO 8601 UTC; send with startDate; at most 30 days apart"),
+           ("groupBy", "status, type, stepId, removedReason, or one of week/day/hour"),
+           ("timezone", "IANA zone for bucket labels; startDate/endDate stay UTC"),
+           ("limit", "maximum grouped rows; default 1000, maximum 5000; overflow is refused 422"),
+       ),
        unresolved=("doc_url.operation_slug", "response_schema_ref")),
     _R("workflows.restore", UNKNOWN, UNKNOWN, None, "undocumented", GAP,
        NO_AUTH, "n/a", False, False, "B-RESTORE-NONE", None),
@@ -1240,15 +1370,10 @@ _WORKFLOWS_MCP: tuple[OperationRow, ...] = (
 # ---------------------------------------------------------------------------
 AGENCY_AUTH: tuple[AuthKind, ...] = (AuthKind.agency_pit,)
 
-_AGENCY: tuple[OperationRow, ...] = (
-    _R("agency.locations.create", "POST", "/locations", "2021-07-28", "D",
-       PUB, AGENCY_AUTH, "none", True, True, "A-UNVERIFIED",
-       DOCS + "/ghl/locations/create-location", scopes=("locations.write",),
-       approval_class="approval", availability="tenant_restricted",
-       readback="locations.get",
-       unresolved=("version", "request_schema_ref", "response_schema_ref",
-                   "agency_company_id_in_body")),
-)
+_AGENCY: tuple[OperationRow, ...] = ()
+# WF05 reconciliation: the documented public sub-account create is frozen as
+# ``locations.create`` above.  No second agency row is declared here.
+
 
 # ---------------------------------------------------------------------------
 # 5.9 Courses (Document 1 sections 8.2-8.7)
@@ -1262,141 +1387,362 @@ _AGENCY: tuple[OperationRow, ...] = (
 # Course ids are never commerce product ids.
 # ---------------------------------------------------------------------------
 _COURSES: tuple[OperationRow, ...] = (
-    _R("courses.products.create", "POST", "/courses/products", "v3", "D",
-       PUB, PIT_OR_OAUTH, "query.locationId", True, False, "A-UNVERIFIED",
-       DOCS + "/ghl/courses/", availability="public",
-       readback="courses.products.read",
-       unresolved=("scopes", "doc_url.operation_slug", "request_schema_ref",
-                   "response_schema_ref")),
-    _R("courses.products.read", "GET", "/courses/products/{courseId}", "v3",
-       "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
-       "A-UNVERIFIED", DOCS + "/ghl/courses/", availability="public",
-       unresolved=("scopes", "doc_url.operation_slug", "response_schema_ref")),
-    _R("courses.import.create", "POST",
-       "/courses/courses-exporter/public/import", "v3", "D", PUB,
-       PIT_OR_OAUTH, "query.locationId", True, True, "B-COURSE-IMPORT",
-       DOCS + "/ghl/courses/", scopes=("courses.write",),
-       approval_class="approval", availability="public",
-       effect="write", pagination="none",
+    # WF06 exact ids.  Paths Document 1 section 8.3 states literally are
+    # frozen; a Version literal it did not publish stays ``None`` with
+    # ``version_state="unverified"`` and the field named unresolved, so a caller
+    # refuses rather than inheriting a CRUD default.  Category/lesson/offer and
+    # product-enrollment paths are named gaps, never guessed.  The lesson-quiz
+    # contract is inherited source evidence, not re-verified here (Document 1
+    # line 2702).  Course ids are never commerce product ids.
+    _R("courses.products.create", "POST", "/courses/products", None, "D", PUB,
+       PIT_OR_OAUTH, "query.locationId", True, False,
+       "B-COURSE-VERSION-UNVERIFIED", DOCS + "/ghl/courses/",
+       version_state="unverified", scopes=("courses.write",),
+       readback="courses.products.get", availability="public",
        unresolved=("version", "request_schema_ref", "response_schema_ref")),
-    _R("courses.lessons.quiz.create", "POST",
-       "/courses/products/{productId}/lessons/{lessonId}/quiz", "v3", "D",
-       PUB, PIT_OR_OAUTH, "query.locationId", True, False,
-       "B-COURSE-QUIZ-INHERITED", DOCS + "/ghl/courses/",
-       scopes=("courses.write",), availability="public",
-       unresolved=("request_schema_ref", "response_schema_ref")),
-    _R("courses.quizzes.questions.upsert", "PUT",
-       "/courses/products/{productId}/quizzes/{quizId}/questions", "v3", "D",
-       PUB, PIT_OR_OAUTH, "query.locationId", True, False,
-       "B-COURSE-QUIZ-INHERITED", DOCS + "/ghl/courses/",
-       scopes=("courses.write",), availability="public",
-       unresolved=("request_schema_ref", "response_schema_ref")),
-    _R("courses.enrollments.create", "POST", "/courses/enrollments", "v3",
-       "D", PUB, PIT_OR_OAUTH, "body.locationId", True, True, "A-UNVERIFIED",
-       DOCS + "/ghl/courses/", approval_class="approval",
-       availability="public", unresolved=("scopes", "request_schema_ref")),
-    # Named gaps: the contract requests these operations but the exact public
-    # path was not settled by the evidence this lane read.  A future owner
-    # sends the reconciled path/scope through a change request; nothing here
-    # may be dispatched, because no route is declared.
+    _R("courses.products.get", "GET", UNKNOWN, None, "undocumented", GAP,
+       NO_AUTH, "unknown", False, False, "B-COURSE-PATH-UNVERIFIED", None,
+       availability="feature_gap", version_state="unverified",
+       unresolved=("path_template", "version", "response_schema_ref")),
     _R("courses.categories.create", "POST", UNKNOWN, None, "undocumented", GAP,
        NO_AUTH, "unknown", True, False, "B-COURSE-PATH-UNVERIFIED", None,
-       availability="feature_gap",
-       unresolved=("method", "path_template", "version", "scopes",
-                   "request_schema_ref")),
+       availability="feature_gap", version_state="unverified",
+       unresolved=("path_template", "version", "scopes", "request_schema_ref")),
     _R("courses.lessons.create", "POST", UNKNOWN, None, "undocumented", GAP,
        NO_AUTH, "unknown", True, False, "B-COURSE-PATH-UNVERIFIED", None,
-       availability="feature_gap",
-       unresolved=("method", "path_template", "version", "scopes",
-                   "request_schema_ref")),
-    _R("courses.offers.create", "POST", UNKNOWN, None, "undocumented", GAP,
-       NO_AUTH, "unknown", True, False, "B-COURSE-PATH-UNVERIFIED", None,
-       availability="feature_gap",
-       unresolved=("method", "path_template", "version", "scopes",
-                   "request_schema_ref")),
-    _R("courses.enrollments.products.list", "GET", UNKNOWN, None,
+       availability="feature_gap", version_state="unverified",
+       unresolved=("path_template", "version", "scopes", "request_schema_ref")),
+    _R("courses.imports.submit", "POST",
+       "/courses/courses-exporter/public/import", "2021-07-28", "D", PUB,
+       PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
+       "https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/apps/courses.json",
+       scopes=("courses.write",), availability="public", pagination="none",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("courses.enrollments.create", "POST", "/courses/enrollments", None, "D",
+       PUB, PIT_OR_OAUTH, "body.locationId", True, False,
+       "B-COURSE-VERSION-UNVERIFIED", DOCS + "/ghl/courses/",
+       version_state="unverified", scopes=("courses.write",),
+       availability="public", unresolved=("version", "request_schema_ref")),
+    _R("courses.product_enrollments.list", "GET", UNKNOWN, None,
        "undocumented", GAP, NO_AUTH, "unknown", False, False,
        "B-COURSE-PATH-UNVERIFIED", None, availability="feature_gap",
-       pagination="cursor",
-       unresolved=("path_template", "version", "scopes", "response_schema_ref")),
+       pagination="cursor", version_state="unverified",
+       unresolved=("path_template", "version", "cursor_parameter_names",
+                   "response_schema_ref")),
+    _R("courses.offers.create", "POST", UNKNOWN, None, "undocumented", GAP,
+       NO_AUTH, "unknown", True, False, "B-COURSE-PATH-UNVERIFIED", None,
+       availability="feature_gap", version_state="unverified",
+       unresolved=("path_template", "version", "offer_body_schema")),
+    _R("courses.offers.revoke", "DELETE", UNKNOWN, None, "undocumented", GAP,
+       NO_AUTH, "unknown", True, True, "B-COURSE-PATH-UNVERIFIED", None,
+       availability="feature_gap", version_state="unverified",
+       unresolved=("path_template", "method_and_body", "version")),
+    _R("courses.quizzes.create", "POST",
+       "/courses/products/{productId}/lessons/{lessonId}/quiz", None, "D", PUB,
+       PIT_OR_OAUTH, "query.locationId", True, False,
+       "B-COURSE-VERSION-UNVERIFIED", DOCS + "/ghl/courses/",
+       version_state="unverified", scopes=("courses.write",),
+       availability="public",
+       unresolved=("version", "request_schema_ref", "response_schema_ref")),
+    _R("courses.quizzes.questions.upsert", "PUT",
+       "/courses/products/{productId}/quizzes/{quizId}/questions", None, "D",
+       PUB, PIT_OR_OAUTH, "query.locationId", True, False,
+       "B-COURSE-VERSION-UNVERIFIED", DOCS + "/ghl/courses/",
+       version_state="unverified", scopes=("courses.write",),
+       availability="public",
+       unresolved=("version", "request_schema_ref", "response_schema_ref")),
 )
 
-# ---------------------------------------------------------------------------
-# 5.10 Monitoring and native AI families (Document 1 section 21.4)
-#
-# Vendor-contract candidates recorded from the source matrix.  Recording a row
-# is not permission to execute it and is not tenant activation: every row stays
-# default-deny.  Scope names are transcribed, never derived by swapping
-# `.write` for `.readonly`; voice agents, actions and dashboard use distinct
-# permissions.  Request/response schemas were not captured, so they stay null
-# and are named as unresolved.  Projects API access is a location-specific
-# private beta and its UI availability is a separate fact.
-# ---------------------------------------------------------------------------
+
+# Vendor machine-readable contracts retrieved 2026-11-08.  The marketplace
+# pages render an application shell; these raw OpenAPI documents are the
+# documentation source the marketplace renders, and every literal below is
+# transcribed from them.  Retrieval is not a live API call and never enables a
+# tenant.
+_VOICE_DOC = "https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/apps/voice-ai.json"
+_CONVERSATION_DOC = "https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/apps/conversation-ai.json"
+_STUDIO_DOC = "https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/apps/agent-studio.json"
+_KB_DOC = "https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/apps/knowledge-base.json"
+_WIDGET_DOC = "https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/apps/v3/chat-widget-v3.json"
+# Schema pointers are file-relative, mirroring the vendor documents' own
+# citation style (they already write "../common/common-schemas.json#/...").
+_KB_SPEC = "apps/knowledge-base.json"
+_CONVERSATION_SPEC = "apps/conversation-ai.json"
+
 _NATIVE_FAMILIES: tuple[OperationRow, ...] = (
-    _R("voice.agents.create", "POST", "/voice-ai/agents", "v3", "D", PUB,
-       PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
-       DOCS + "/ghl/voice-ai/create-agent/",
-       scopes=("voice-ai-agents.write",), availability="public",
-       unresolved=("request_schema_ref", "response_schema_ref")),
-    _R("voice.actions.create", "POST", "/voice-ai/actions", "v3", "D", PUB,
-       PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
-       DOCS + "/ghl/voice-ai/", scopes=("voice-ai-agent-goals.write",),
-       availability="public",
-       unresolved=("doc_url.operation_slug", "request_schema_ref",
-                   "response_schema_ref")),
-    _R("voice.call_logs.list", "GET", "/voice-ai/dashboard/call-logs", "v3",
+    # -- Native Voice AI (WF27; apps/voice-ai.json, Version 2021-04-15) --------
+    _R("voiceAi.agents.list", "GET", "/voice-ai/agents", "2021-04-15", "D",
+       PUB, PIT_OR_OAUTH, "query.locationId", False, False, "A-UNVERIFIED",
+       _VOICE_DOC, scopes=("voice-ai-agents.readonly",),
+       availability="public", pagination="page",
+       required_query=("locationId",),
+       documented_query=("locationId", "page", "pageSize", "query"),
+       unresolved=("response_schema_ref",)),
+    _R("voiceAi.agents.get", "GET", "/voice-ai/agents/{agentId}", "2021-04-15",
        "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
-       "A-UNVERIFIED", DOCS + "/ghl/voice-ai/",
-       scopes=("voice-ai-dashboard.readonly",), pagination="cursor",
-       availability="public",
-       unresolved=("doc_url.operation_slug", "response_schema_ref")),
-    _R("voice.call_logs.get", "GET",
-       "/voice-ai/dashboard/call-logs/{callId}", "v3", "D", PUB,
-       PIT_OR_OAUTH, "query.locationId", False, False, "A-UNVERIFIED",
-       DOCS + "/ghl/voice-ai/", scopes=("voice-ai-dashboard.readonly",),
-       availability="public",
-       unresolved=("doc_url.operation_slug", "response_schema_ref")),
-    _R("conversation.agents.create", "POST", "/conversation-ai/agents", "v3",
-       "D", PUB, PIT_OR_OAUTH, "body.locationId", True, False,
-       "A-UNVERIFIED", DOCS + "/ghl/conversation-ai/create-agent/",
-       scopes=("conversation-ai.write",), availability="public",
+       "A-UNVERIFIED", _VOICE_DOC, scopes=("voice-ai-agents.readonly",),
+       availability="public", required_query=("locationId",),
+       unresolved=("response_schema_ref",)),
+    _R("voiceAi.agents.create", "POST", "/voice-ai/agents", "2021-04-15", "D",
+       PUB, PIT_OR_OAUTH, "body.locationId", True, True, "A-UNVERIFIED",
+       _VOICE_DOC, scopes=("voice-ai-agents.write",), approval_class="approval",
+       availability="public", readback="voiceAi.agents.list",
        unresolved=("request_schema_ref", "response_schema_ref")),
-    _R("studio.agents.create", "POST", "/agent-studio/agent", "v3", "D", PUB,
-       PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
-       DOCS + "/ghl/agent-studio/create-agent/",
-       scopes=("agent-studio.write",), availability="public",
-       unresolved=("request_schema_ref", "response_schema_ref")),
-    _R("studio.versions.publish", "POST",
-       "/agent-studio/agent/versions/{versionId}/publish", "v3", "D", PUB,
-       PIT_OR_OAUTH, "body.locationId", True, True, "A-UNVERIFIED",
-       DOCS + "/ghl/agent-studio/", scopes=("agent-studio.write",),
+    _R("voiceAi.agents.update", "PATCH", "/voice-ai/agents/{agentId}",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "query.locationId", True, True,
+       "A-UNVERIFIED", _VOICE_DOC, scopes=("voice-ai-agents.write",),
        approval_class="approval", availability="public",
-       unresolved=("doc_url.operation_slug", "request_schema_ref")),
-    _R("studio.agents.execute", "POST",
-       "/agent-studio/agent/{agentId}/execute", "v3", "D", PUB,
-       PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
-       DOCS + "/ghl/agent-studio/", scopes=("agent-studio.write",),
+       required_query=("locationId",), readback="voiceAi.agents.get",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("voiceAi.actions.get", "GET", "/voice-ai/actions/{actionId}",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
+       "A-UNVERIFIED", _VOICE_DOC, scopes=("voice-ai-agent-goals.readonly",),
+       availability="public", required_query=("locationId",),
+       unresolved=("response_schema_ref",)),
+    _R("voiceAi.actions.create", "POST", "/voice-ai/actions", "2021-04-15", "D",
+       PUB, PIT_OR_OAUTH, "body.locationId", True, True, "A-UNVERIFIED",
+       _VOICE_DOC, scopes=("voice-ai-agent-goals.write",),
+       approval_class="approval", availability="public",
+       readback="voiceAi.actions.get",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("voiceAi.actions.update", "PUT", "/voice-ai/actions/{actionId}",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "body.locationId", True, True,
+       "A-UNVERIFIED", _VOICE_DOC, scopes=("voice-ai-agent-goals.write",),
+       approval_class="approval", availability="public",
+       readback="voiceAi.actions.get",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("voiceAi.calls.list", "GET", "/voice-ai/dashboard/call-logs",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
+       "A-UNVERIFIED", _VOICE_DOC, scopes=("voice-ai-dashboard.readonly",),
+       availability="public", pagination="page", required_query=("locationId",),
+       documented_query=("locationId", "agentId", "contactId", "callType",
+                         "startDate", "endDate", "actionType", "sortBy", "sort",
+                         "page", "pageSize"),
+       unresolved=("response_schema_ref",)),
+    _R("voiceAi.calls.get", "GET", "/voice-ai/dashboard/call-logs/{callId}",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
+       "A-UNVERIFIED", _VOICE_DOC, scopes=("voice-ai-dashboard.readonly",),
+       availability="public", required_query=("locationId",),
+       unresolved=("response_schema_ref",)),
+    # -- Native Conversation AI (WF28/WF30; apps/conversation-ai.json) --------
+    _R("conversation_ai.agents.list", "GET", "/conversation-ai/agents/search",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "implicit-pit", False, False,
+       "A-UNVERIFIED", _CONVERSATION_DOC, scopes=("conversation-ai.readonly",),
+       availability="public", pagination="cursor",
+       documented_query=("startAfter", "limit", "query"),
+       unresolved=("response_schema_ref",)),
+    _R("conversation_ai.agents.get", "GET",
+       "/conversation-ai/agents/{agentId}", "2021-04-15", "D", PUB,
+       PIT_OR_OAUTH, "implicit-pit", False, False, "A-UNVERIFIED",
+       _CONVERSATION_DOC, scopes=("conversation-ai.readonly",),
        availability="public",
-       unresolved=("doc_url.operation_slug", "request_schema_ref",
-                   "response_schema_ref")),
-    _R("knowledge_bases.create", "POST", "/knowledge-bases", "v3", "D", PUB,
-       PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
-       DOCS + "/ghl/knowledge-base/create-knowledge-base/",
+       resp_schema=_CONVERSATION_SPEC + "#/components/schemas/EmployeeResponseDTO"),
+    _R("conversation_ai.agents.create", "POST", "/conversation-ai/agents",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "implicit-pit", True, True,
+       "A-UNVERIFIED", _CONVERSATION_DOC, scopes=("conversation-ai.write",),
+       approval_class="approval", availability="public",
+       readback="conversation_ai.agents.list",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("conversation_ai.agents.update", "PUT",
+       "/conversation-ai/agents/{agentId}", "2021-04-15", "D", PUB,
+       PIT_OR_OAUTH, "implicit-pit", True, True, "A-UNVERIFIED",
+       _CONVERSATION_DOC, scopes=("conversation-ai.write",),
+       approval_class="approval", availability="public",
+       readback="conversation_ai.agents.get",
+       req_schema=_CONVERSATION_SPEC + "#/components/schemas/UpdateEmployeeDto",
+       resp_schema=_CONVERSATION_SPEC + "#/components/schemas/EmployeeResponseDTO"),
+    # -- Agent Studio Flow Agents (WF29; apps/agent-studio.json) --------------
+    _R("agentStudio.agents.list", "GET", "/agent-studio/agent", "2021-04-15",
+       "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
+       "A-UNVERIFIED", _STUDIO_DOC, scopes=("agent-studio.readonly",),
+       availability="public", pagination="offset",
+       required_query=("locationId", "limit", "offset"),
+       documented_query=("locationId", "isPublished", "limit", "offset",
+                         "source"),
+       unresolved=("response_schema_ref",)),
+    _R("agentStudio.agents.create", "POST", "/agent-studio/agent",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "body.locationId", True, True,
+       "A-UNVERIFIED", _STUDIO_DOC, scopes=("agent-studio.write",),
+       approval_class="approval", availability="public",
+       readback="agentStudio.agents.list",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("agentStudio.agents.read", "GET", "/agent-studio/agent/{agentId}",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
+       "A-UNVERIFIED", _STUDIO_DOC, scopes=("agent-studio.readonly",),
+       availability="public", required_query=("locationId",),
+       unresolved=("response_schema_ref",)),
+    _R("agentStudio.agents.metadata.update", "PATCH",
+       "/agent-studio/agent/{agentId}", "2021-04-15", "D", PUB,
+       PIT_OR_OAUTH, "none", True, True, "A-UNVERIFIED", _STUDIO_DOC,
+       scopes=("agent-studio.write",), approval_class="approval",
+       availability="public", unresolved=("request_schema_ref",
+                                           "response_schema_ref")),
+    _R("agentStudio.versions.update", "PATCH",
+       "/agent-studio/agent/versions/{versionId}", "2021-04-15", "D", PUB,
+       PIT_OR_OAUTH, "none", True, True, "A-UNVERIFIED", _STUDIO_DOC,
+       scopes=("agent-studio.write",), approval_class="approval",
+       availability="public", unresolved=("request_schema_ref",
+                                           "response_schema_ref")),
+    _R("agentStudio.versions.promote", "POST",
+       "/agent-studio/agent/versions/{versionId}/publish", "2021-04-15", "D",
+       PUB, PIT_OR_OAUTH, "none", True, True, "A-UNVERIFIED", _STUDIO_DOC,
+       scopes=("agent-studio.write",), approval_class="approval",
+       availability="public", readback="agentStudio.agents.read",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("agentStudio.agents.execute", "POST",
+       "/agent-studio/agent/{agentId}/execute", "2021-04-15", "D", PUB,
+       PIT_OR_OAUTH, "body.locationId", True, True, "A-UNVERIFIED",
+       _STUDIO_DOC, scopes=("agent-studio.write",), approval_class="approval",
+       availability="public", unresolved=("request_schema_ref",
+                                           "response_schema_ref")),
+    # -- Knowledge Bases (WF30; apps/knowledge-base.json, Version 2021-04-15) -
+    _R("knowledge_bases.list", "GET", "/knowledge-bases/", "2021-04-15", "D",
+       PUB, PIT_OR_OAUTH, "query.locationId", False, False, "A-UNVERIFIED",
+       _KB_DOC, scopes=("knowledge-bases.readonly",), availability="public",
+       pagination="cursor", required_query=("locationId",),
+       documented_query=("locationId", "query", "limit",
+                         "lastKnowledgeBaseId"),
+       resp_schema=_KB_SPEC + "#/components/schemas/GetAllKnowledgeBasesPaginatedResponseDTO"),
+    _R("knowledge_bases.get", "GET", "/knowledge-bases/{knowledgeBaseId}",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "path.knowledgeBaseId", False,
+       False, "A-UNVERIFIED", _KB_DOC, scopes=("knowledge-bases.readonly",),
+       availability="public",
+       resp_schema=_KB_SPEC + "#/components/schemas/GetKnowledgeBaseByIdResponseDTO"),
+    _R("knowledge_bases.create", "POST", "/knowledge-bases/", "2021-04-15", "D",
+       PUB, PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
+       _KB_DOC, scopes=("knowledge-bases.write",), availability="public",
+       readback="knowledge_bases.get",
+       req_schema=_KB_SPEC + "#/components/schemas/CreateKnowledgeBaseDTO",
+       resp_schema=_KB_SPEC + "#/components/schemas/CreateKnowledgeBaseResponseDTO"),
+    _R("knowledge_bases.update", "PUT", "/knowledge-bases/{id}", "2021-04-15",
+       "D", PUB, PIT_OR_OAUTH, "path.id", True, False, "A-UNVERIFIED",
+       _KB_DOC, scopes=("knowledge-bases.write",), availability="public",
+       readback="knowledge_bases.get",
+       req_schema=_KB_SPEC + "#/components/schemas/UpdateKnowledgeBaseDTO",
+       resp_schema=_KB_SPEC + "#/components/schemas/UpdateKnowledgeBaseResponseDTO"),
+    _R("knowledge_bases.delete", "DELETE",
+       "/knowledge-bases/{knowledgeBaseId}", "2021-04-15", "D", PUB,
+       PIT_OR_OAUTH, "path.knowledgeBaseId", True, True, "A-UNVERIFIED",
+       _KB_DOC, scopes=("knowledge-bases.write",), approval_class="destructive",
+       availability="public",
+       resp_schema=_KB_SPEC + "#/components/schemas/DeleteKnowledgeBaseResponseDTO"),
+    _R("knowledge_bases.crawler.discover", "POST", "/knowledge-bases/crawler",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "body.locationId", True, False,
+       "A-UNVERIFIED", _KB_DOC, scopes=("knowledge-bases.write",),
+       availability="public", readback="knowledge_bases.crawler.status",
+       req_schema=_KB_SPEC + "#/components/schemas/DiscoverWebsiteRequestDTO",
+       resp_schema=_KB_SPEC + "#/components/schemas/DiscoverWebsiteResponseDTO"),
+    _R("knowledge_bases.crawler.status", "GET",
+       "/knowledge-bases/crawler/status", "2021-04-15", "D", PUB,
+       PIT_OR_OAUTH, "query.locationId", False, False, "A-UNVERIFIED",
+       _KB_DOC, scopes=("knowledge-bases.readonly",), availability="public",
+       required_query=("locationId", "operationId", "knowledgeBaseId"),
+       resp_schema=_KB_SPEC + "#/components/schemas/CrawlingStatusResponseDTO"),
+    _R("knowledge_bases.crawler.train", "POST",
+       "/knowledge-bases/crawler/train", "2021-04-15", "D", PUB,
+       PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED", _KB_DOC,
        scopes=("knowledge-bases.write",), availability="public",
-       unresolved=("request_schema_ref", "response_schema_ref")),
-    # Multipart declaration point for the central transport (Document 1 21.2,
-    # V04: PDF/DOC/DOCX, 10 MB).  The exact upload path and its Version were
-    # not captured, so no route is declared and nothing can be dispatched.
-    _R("knowledge_bases.files.upload", "POST", UNKNOWN, None, "undocumented",
-       GAP, NO_AUTH, "unknown", True, False, "B-KB-UPLOAD-PATH", None,
-       media="multipart/form-data", availability="feature_gap",
+       readback="knowledge_bases.crawler.status",
+       req_schema=_KB_SPEC + "#/components/schemas/TrainDiscoveredUrlsDTO",
+       resp_schema=_KB_SPEC + "#/components/schemas/TrainDiscoveredUrlsResponseDTO"),
+    _R("knowledge_bases.crawler.urls", "GET", "/knowledge-bases/crawler",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
+       "A-UNVERIFIED", _KB_DOC, scopes=("knowledge-bases.readonly",),
+       availability="public", pagination="page",
+       required_query=("knowledgeBaseId", "locationId"),
+       documented_query=("knowledgeBaseId", "locationId", "page",
+                         "pageLength", "query"),
+       resp_schema=_KB_SPEC + "#/components/schemas/GetAllUrlsByKnowledgeBaseResponseDTO"),
+    _R("knowledge_bases.crawler.delete_urls", "DELETE",
+       "/knowledge-bases/crawler", "2021-04-15", "D", PUB, PIT_OR_OAUTH,
+       "body.locationId", True, True, "A-UNVERIFIED", _KB_DOC,
+       scopes=("knowledge-bases.write",), approval_class="destructive",
+       availability="public",
+       req_schema=_KB_SPEC + "#/components/schemas/DeleteWebsiteUrlRequestDTO",
+       resp_schema=_KB_SPEC + "#/components/schemas/DeleteWebsiteUrlResponseDTO"),
+    _R("knowledge_bases.faqs.list", "GET", "/knowledge-bases/faqs",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
+       "A-UNVERIFIED", _KB_DOC, scopes=("knowledge-bases.readonly",),
+       availability="public", pagination="cursor",
+       required_query=("knowledgeBaseId", "locationId"),
+       documented_query=("knowledgeBaseId", "locationId", "limit", "lastFaqId"),
+       resp_schema=_KB_SPEC + "#/components/schemas/ListFaqsResponseDTO"),
+    _R("knowledge_bases.faqs.create", "POST", "/knowledge-bases/faqs",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "body.locationId", True, False,
+       "A-UNVERIFIED", _KB_DOC, scopes=("knowledge-bases.write",),
+       availability="public", readback="knowledge_bases.faqs.list",
+       req_schema=_KB_SPEC + "#/components/schemas/AddFaqDTO",
+       resp_schema=_KB_SPEC + "#/components/schemas/CreateFaqResponseDTO"),
+    _R("knowledge_bases.faqs.update", "PUT", "/knowledge-bases/faqs/{id}",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "path.id", True, False,
+       "A-UNVERIFIED", _KB_DOC, scopes=("knowledge-bases.write",),
+       availability="public", readback="knowledge_bases.faqs.list",
+       req_schema=_KB_SPEC + "#/components/schemas/UpdateFaqBodyDTO",
+       resp_schema=_KB_SPEC + "#/components/schemas/UpdateFaqResponseDTO"),
+    _R("knowledge_bases.faqs.delete", "DELETE", "/knowledge-bases/faqs/{id}",
+       "2021-04-15", "D", PUB, PIT_OR_OAUTH, "path.id", True, True,
+       "A-UNVERIFIED", _KB_DOC, scopes=("knowledge-bases.write",),
+       approval_class="destructive", availability="public",
+       resp_schema=_KB_SPEC + "#/components/schemas/DeleteFaqResponseDTO"),
+    # File sources: no published vendor operation exists in
+    # apps/knowledge-base.json.  The row declares the required multipart media
+    # type (so WF01 can never send guessed JSON) and NO route; WF30 refuses with
+    # ``file_upload_contract_unresolved`` until a documented operation exists.
+    _R("knowledge_bases.sources.upload", "POST", UNKNOWN, None,
+       "undocumented", GAP, NO_AUTH, "unknown", True, False, "B-NO-CONTRACT",
+       None, media="multipart/form-data", availability="feature_gap",
        unresolved=("method", "path_template", "version", "scopes",
-                   "request_schema_ref", "size_limit")),
-    _R("widgets.create", "POST", "/chat-widget", "v3", "D", PUB,
+                   "request_schema_ref", "size_limit", "media_type")),
+    # -- Chat Widgets (WF31; apps/v3/chat-widget-v3.json, Version v3) ---------
+    _R("chat_widgets.list", "GET", "/chat-widget/list", "v3", "D", PUB,
+       PIT_OR_OAUTH, "query.locationId", False, False, "A-UNVERIFIED",
+       _WIDGET_DOC, scopes=("chat-widget.readonly",), availability="public",
+       pagination="page", required_query=("locationId", "offset", "limit"),
+       documented_query=("locationId", "offset", "limit", "chatType",
+                         "excludeChatType", "voiceAiAgentId",
+                         "allInOneChatTypes"),
+       unresolved=("response_schema_ref",)),
+    _R("chat_widgets.get", "GET", "/chat-widget/data/{locationId}/{id}", "v3",
+       "D", PUB, PIT_OR_OAUTH, "path.locationId", False, False,
+       "A-UNVERIFIED", _WIDGET_DOC, scopes=("chat-widget.readonly",),
+       availability="public", unresolved=("response_schema_ref",)),
+    _R("chat_widgets.create", "POST", "/chat-widget/", "v3", "D", PUB,
        PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
-       DOCS + "/ghl/chat-widget/create-chat-widget/",
-       scopes=("chat-widget.write",), availability="public",
+       _WIDGET_DOC, scopes=("chat-widget.write",), availability="public",
+       readback="chat_widgets.list",
        unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("chat_widgets.update", "PUT", "/chat-widget/data/{locationId}/{id}",
+       "v3", "D", PUB, PIT_OR_OAUTH, "path.locationId", True, False,
+       "A-UNVERIFIED", _WIDGET_DOC, scopes=("chat-widget.write",),
+       availability="public", readback="chat_widgets.get",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("chat_widgets.patch", "PATCH",
+       "/chat-widget/data/{locationId}/{id}", "v3", "D", PUB, PIT_OR_OAUTH,
+       "path.locationId", True, False, "A-UNVERIFIED", _WIDGET_DOC,
+       scopes=("chat-widget.write",), availability="public",
+       readback="chat_widgets.get",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("chat_widgets.delete", "DELETE", "/chat-widget/{locationId}/{id}",
+       "v3", "D", PUB, PIT_OR_OAUTH, "path.locationId", True, True,
+       "A-UNVERIFIED", _WIDGET_DOC, scopes=("chat-widget.write",),
+       approval_class="destructive", availability="public",
+       unresolved=("response_schema_ref",)),
+    _R("chat_widgets.clone", "POST", "/chat-widget/clone", "v3", "D", PUB,
+       PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
+       _WIDGET_DOC, scopes=("chat-widget.write",), availability="public",
+       readback="chat_widgets.list",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("chat_widgets.public_config", "GET",
+       "/chat-widget/public/config/{id}", "v3", "D", PUB, NO_AUTH,
+       "path.id", False, False, "A-UNVERIFIED", _WIDGET_DOC,
+       availability="public", documented_query=("id", "version"),
+       query_constraints=((
+           "version",
+           "numeric widget configuration version in the body/schema, never "
+           "the HTTP Version header",
+       ),),
+       unresolved=("response_schema_ref", "query.version_requiredness")),
+    # -- Projects (Document 1 section 21.4; private beta, UI is separate) -----
     _R("projects.spaces.create", "POST", "/projects/spaces", "v3", "D", PUB,
        PIT_OR_OAUTH, "body.locationId", True, False, "B-PROJECTS-BETA",
        DOCS + "/ghl/projects/projects-api/",
@@ -1441,40 +1787,74 @@ _ROW_DOC_EVIDENCE: dict[str, str] = {
     "workflows.status.publish": "reopened_2026-11-07",
     "workflows.definition.delete": "reopened_2026-11-07",
     "workflows.logs.list": "reopened_2026-11-08",
+    "workflows.logs": "reopened_2026-11-08",
     "workflows.logs.aggregate": "reopened_2026-11-08",
     "funnels.list": "reopened_2026-11-08",
     "funnels.pages.list": "reopened_2026-11-08",
     "funnels.pages.count": "reopened_2026-11-08",
-    "voice.agents.create": "reopened_2026-11-08",
-    "widgets.create": "reopened_2026-11-08",
+    "courses.imports.submit": "reopened_2026-11-08",
+    "voiceAi.agents.list": "reopened_2026-11-08",
+    "voiceAi.agents.get": "reopened_2026-11-08",
+    "voiceAi.agents.create": "reopened_2026-11-08",
+    "voiceAi.agents.update": "reopened_2026-11-08",
+    "voiceAi.actions.get": "reopened_2026-11-08",
+    "voiceAi.actions.create": "reopened_2026-11-08",
+    "voiceAi.actions.update": "reopened_2026-11-08",
+    "voiceAi.calls.list": "reopened_2026-11-08",
+    "voiceAi.calls.get": "reopened_2026-11-08",
+    "conversation_ai.agents.list": "reopened_2026-11-08",
+    "conversation_ai.agents.get": "reopened_2026-11-08",
+    "conversation_ai.agents.create": "reopened_2026-11-08",
+    "conversation_ai.agents.update": "reopened_2026-11-08",
+    "agentStudio.agents.list": "reopened_2026-11-08",
+    "agentStudio.agents.create": "reopened_2026-11-08",
+    "agentStudio.agents.read": "reopened_2026-11-08",
+    "agentStudio.agents.metadata.update": "reopened_2026-11-08",
+    "agentStudio.versions.update": "reopened_2026-11-08",
+    "agentStudio.versions.promote": "reopened_2026-11-08",
+    "agentStudio.agents.execute": "reopened_2026-11-08",
+    "knowledge_bases.list": "reopened_2026-11-08",
+    "knowledge_bases.get": "reopened_2026-11-08",
+    "knowledge_bases.create": "reopened_2026-11-08",
+    "knowledge_bases.update": "reopened_2026-11-08",
+    "knowledge_bases.delete": "reopened_2026-11-08",
+    "knowledge_bases.crawler.discover": "reopened_2026-11-08",
+    "knowledge_bases.crawler.status": "reopened_2026-11-08",
+    "knowledge_bases.crawler.train": "reopened_2026-11-08",
+    "knowledge_bases.crawler.urls": "reopened_2026-11-08",
+    "knowledge_bases.crawler.delete_urls": "reopened_2026-11-08",
+    "knowledge_bases.faqs.list": "reopened_2026-11-08",
+    "knowledge_bases.faqs.create": "reopened_2026-11-08",
+    "knowledge_bases.faqs.update": "reopened_2026-11-08",
+    "knowledge_bases.faqs.delete": "reopened_2026-11-08",
+    "chat_widgets.list": "reopened_2026-11-08",
+    "chat_widgets.get": "reopened_2026-11-08",
+    "chat_widgets.create": "reopened_2026-11-08",
+    "chat_widgets.update": "reopened_2026-11-08",
+    "chat_widgets.patch": "reopened_2026-11-08",
+    "chat_widgets.delete": "reopened_2026-11-08",
+    "chat_widgets.clone": "reopened_2026-11-08",
+    "chat_widgets.public_config": "reopened_2026-11-08",
     "projects.spaces.create": "reopened_2026-11-08",
     "projects.tasks.create": "reopened_2026-11-08",
-    "knowledge_bases.create": "reopened_2026-11-08",
     "workflows.step_types.list": "revision3_spec",
     "workflows.definition.validate": "revision3_spec",
     "workflows.search": "revision3_spec",
-    "social.community.accounts.users.list": "revision3_spec",
-    "social.community.authors.validate": "revision3_spec",
-    "social.community.comments.create": "revision3_spec",
-    "agency.locations.create": "revision3_spec",
+    "social.community.users.list": "revision3_spec",
+    "social.community.group_users.validate": "revision3_spec",
+    "social.comments.community.create": "revision3_spec",
+    "locations.create": "revision3_spec",
     "courses.products.create": "revision3_spec",
-    "courses.products.read": "revision3_spec",
-    "courses.import.create": "revision3_spec",
-    "courses.lessons.quiz.create": "revision3_spec",
-    "courses.quizzes.questions.upsert": "revision3_spec",
-    "courses.enrollments.create": "revision3_spec",
+    "courses.products.get": "revision3_spec",
     "courses.categories.create": "revision3_spec",
     "courses.lessons.create": "revision3_spec",
+    "courses.enrollments.create": "revision3_spec",
+    "courses.product_enrollments.list": "revision3_spec",
     "courses.offers.create": "revision3_spec",
-    "courses.enrollments.products.list": "revision3_spec",
-    "voice.actions.create": "revision3_spec",
-    "voice.call_logs.list": "revision3_spec",
-    "voice.call_logs.get": "revision3_spec",
-    "conversation.agents.create": "revision3_spec",
-    "studio.agents.create": "revision3_spec",
-    "studio.versions.publish": "revision3_spec",
-    "studio.agents.execute": "revision3_spec",
-    "knowledge_bases.files.upload": "revision3_spec",
+    "courses.offers.revoke": "revision3_spec",
+    "courses.quizzes.create": "revision3_spec",
+    "courses.quizzes.questions.upsert": "revision3_spec",
+    "knowledge_bases.sources.upload": "revision3_spec",
 }
 
 _DOC_EVIDENCE_DATE: dict[str, str] = {
@@ -1562,11 +1942,20 @@ def validate(rows: tuple[OperationRow, ...]) -> None:
         if row.documented_level in ("D", "S"):
             # Official MCP tools are documented but send no Version header
             # (freeze section 5.7, "Ver = none").
+            # A row whose literal the evidence did not settle may record
+            # ``version=None`` ONLY as an explicit unverified gap: the state is
+            # ``unverified``, ``version`` is named unresolved, and a blocker
+            # exists.  Callers refuse before transport on that trio.
             if row.version is None and row.route_class != "official_mcp":
-                raise ContractViolation(
-                    "documented_row_without_version",
-                    operation_id=row.operation_id,
-                )
+                if not (
+                    row.version_state == "unverified"
+                    and "version" in row.unresolved_fields
+                    and row.blocker is not None
+                ):
+                    raise ContractViolation(
+                        "documented_row_without_version",
+                        operation_id=row.operation_id,
+                    )
             if row.doc_url is None:
                 raise ContractViolation(
                     "documented_row_without_doc_url",
@@ -1747,6 +2136,7 @@ __all__ = [
     "APPROVAL_CLASSES",
     "PAGINATIONS",
     "AVAILABILITIES",
+    "VERSION_STATES",
     "RECEIPT_OUTCOMES",
     "UNKNOWN",
     "TRANSPORT_BY_ROUTE",

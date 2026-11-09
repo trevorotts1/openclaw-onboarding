@@ -419,17 +419,20 @@ def _prompt_policy():
 
 
 def policy_band_numbers(max_chars):
-    """The strict band (floor = ceil(0.95 x max)) from the one policy service."""
+    """Owner rule 12 band from the one policy service: target 95 percent, hard floor 80 percent."""
     m = int(max_chars)
     pol = _prompt_policy()
     if pol is not None:
-        return pol.band_numbers(m)
+        band = dict(pol.band_numbers(m))
+        band.setdefault("hard_floor", -(-m * 80 // 100))
+        return band
     floor = -(-m * 95 // 100)
-    return {"max": m, "floor": floor, "target_min": floor, "target_max": m}
+    return {"max": m, "floor": floor, "target_min": floor, "target_max": m,
+            "hard_floor": -(-m * 80 // 100)}
 
 
 def prompt_budget(model: str | None):
-    """The model's strict recorded band: hard maximum, 95 percent floor, 95 percent target.
+    """The model's recorded rule 12 band: maximum, 95 percent target, 80 percent hard floor.
 
     The policy file records WHICH maximum governs this route; the band arithmetic comes
     from the one policy service. A model with no recorded maximum has no band (None), and
@@ -450,6 +453,7 @@ def prompt_budget(model: str | None):
             return None
         band = policy_band_numbers(cap)
         return {"max_chars": cap, "floor_chars": band["floor"],
+                "hard_floor_chars": band["hard_floor"],
                 "target_chars": band["target_min"],
                 "source": "prompt-budget-policy:%s" % entry.get("cap_status", "UNKNOWN")}
     return None
@@ -1241,6 +1245,7 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
         "composition_chars": len(comp_block),
         "prose_chars": len(body),
         "floor_chars": budget["floor_chars"] if budget else None,
+        "hard_floor_chars": budget["hard_floor_chars"] if budget else None,
         "target_chars": budget["target_chars"] if budget else None,
         "max_chars": budget["max_chars"] if budget else None,
     }
@@ -1263,23 +1268,32 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
     prompt = "\n\n".join(blocks + [body]).strip()
     sizes["chars"] = len(prompt)
     if budget:
-        deficit = budget["floor_chars"] - len(prompt)
+        hard_floor, target = budget["hard_floor_chars"], budget["target_chars"]
         if len(prompt) > budget["max_chars"]:
             raise ExecutorError(
                 f"{stage} section {index}: prompt is {len(prompt)} chars, over the "
                 f"{budget['max_chars']}-char model maximum; cut design prose, never "
                 "the verbatim copy")
+        deficit = target - len(prompt)
         if deficit > 0:
-            message = (f"{stage} section {index}: {len(prompt)} chars, {deficit} below the "
-                       f"{budget['floor_chars']}-char strict floor ({budget['target_chars']}-char "
-                       "target); add genuine specification, never repetition or whitespace")
-            if strict_floor:
-                # The PAID KIE path authors strictly: below 95 percent is a hard revision.
-                raise ExecutorError(f"prompt budget: {message}")
-            # A stub/local compose (no paid call) records the deficit. The last paid-submit
-            # boundary still refuses: KieProvider.generate freezes and re-checks the payload,
-            # and the Skill 74 adapter gates createTask (F18 item 5).
-            print(f"WARN prompt_budget {message}", file=sys.stderr)
+            below_floor = hard_floor - len(prompt)
+            if below_floor > 0:
+                # Owner rule 12 / Decision 1 (2026-10-15): below the 80 percent floor is the
+                # hard reject. The PAID KIE path refuses it; a local compose (no paid call)
+                # records it, and the paid-submit boundary refuses the payload anyway.
+                message = (f"{stage} section {index}: {len(prompt)} chars, {below_floor} below "
+                           f"the {hard_floor}-char 80 percent floor: add genuine specification "
+                           f"to reach {hard_floor}, and {deficit} chars to reach the "
+                           f"{target}-char target; never repetition or whitespace")
+                if strict_floor:
+                    raise ExecutorError(f"prompt budget: {message}")
+                print(f"WARN prompt_budget {message}", file=sys.stderr)
+            else:
+                # 80 to below 95 percent PASSES with a warn-and-expand ADD, on every path.
+                message = (f"{stage} section {index}: {len(prompt)} chars, {deficit} below the "
+                           f"{target}-char target; add genuine specification, never repetition "
+                           "or whitespace (warn and expand)")
+                print(f"WARN prompt_budget {message}", file=sys.stderr)
     return (prompt, sizes) if with_sizes else prompt
 
 def build_input(job: dict, request: dict) -> dict:

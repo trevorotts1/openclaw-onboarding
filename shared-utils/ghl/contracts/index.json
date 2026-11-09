@@ -1,6 +1,6 @@
 {
   "authority": "WF00/GHL-000 shared operation registry and contracts",
-  "checkpoint": "WF00-CP01",
+  "checkpoint": "WF00-CP04",
   "checksum_algorithm": "sha256",
   "contracts": [
     {
@@ -22,7 +22,7 @@
       ],
       "name": "operation-contract",
       "path": "shared-utils/ghl/contracts/operation-contract.schema.json",
-      "sha256": "a41a452c0e2c0d24a3d33c44817a10b614e572ebb3f898adea296b1ba314ec38",
+      "sha256": "e55b1f1db49d0a88ec97c65f593b526a76d004f028299193f2caba376aa34046",
       "status": "frozen",
       "version": "1.0.0"
     },
@@ -136,6 +136,7 @@
       "shared-utils/ghl/contracts/fixtures/valid/course-delivery-receipt.v1.json",
       "shared-utils/ghl/contracts/fixtures/valid/hybrid-operation-receipt.v1.json",
       "shared-utils/ghl/contracts/fixtures/valid/learning-association.v1.json",
+      "shared-utils/ghl/contracts/fixtures/valid/operation-contract.unverified-version.json",
       "shared-utils/ghl/contracts/fixtures/valid/operation-contract.workflows-search.json"
     ]
   },
@@ -199,6 +200,10 @@
       "projects_space_id",
       "projects_list_id",
       "projects_task_id"
+    ],
+    "version_states": [
+      "frozen",
+      "unverified"
     ]
   }
 }
