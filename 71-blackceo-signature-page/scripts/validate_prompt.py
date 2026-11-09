@@ -327,6 +327,26 @@ def load_policy(path=None):
                 "tripwire_chars": 2000}
 
 
+def _owner_cap_from_skill66(model):
+    """The 2.6 owner cap from its one recorded source (66-kie-image/models.json).
+
+    Rule 12 forbids a gate keeping a character band of its own, so this reads
+    the recorded number instead of restating it. Returns (cap, entry) or (None, None).
+    """
+    try:
+        sk66 = SKILL_ROOT.parent / "66-kie-image" / "models.json"
+        data = json.loads(sk66.read_text(encoding="utf-8"))
+        for m in data.get("models", []):
+            cid = m.get("canonical_model_id", "")
+            if model == cid or (model and m.get("family", "") and m["family"] in model):
+                cap = (m.get("owner_prompt_cap_chars") or m.get("live_schema_cap_chars"))
+                if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
+                    return cap, m
+    except Exception:
+        pass
+    return None, None
+
+
 def cap_for_model(model, policy):
     """Resolve the policy entry for a model id (longest prefix wins)."""
     best = None
@@ -339,9 +359,12 @@ def cap_for_model(model, policy):
         return best
     if model and "gpt-image-2-6" in model:
         # Fail to the law, never to 32,000: owner ruling 2026-11-08 caps every
-        # 2.6 route at 20,000 even if the policy file lookup misses.
-        return {"max_chars": 20000, "cap_status": "OWNER_RULED", "unit": "chars",
-                "source": "Owner ruling 2026-11-08 fallback: 20,000 (66-kie-image/models.json owner_prompt_cap_chars)."}
+        # 2.6 route at the recorded 66-kie-image owner cap even if the policy
+        # file lookup misses. Read from the one source, never restated here.
+        cap, _entry = _owner_cap_from_skill66(model)
+        if cap is not None:
+            return {"max_chars": cap, "cap_status": "OWNER_RULED", "unit": "chars",
+                    "source": "Owner ruling 2026-11-08 fallback (66-kie-image/models.json owner_prompt_cap_chars)."}
     return policy.get("default", {"max_chars": None, "cap_status": "UNKNOWN",
                                    "unit": "chars"})
 

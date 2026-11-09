@@ -458,10 +458,24 @@ def prompt_budget(model: str | None):
                 "source": "prompt-budget-policy:%s" % entry.get("cap_status", "UNKNOWN")}
     if model and "gpt-image-2-6" in model:
         # Fail to the law, never to 32,000: owner ruling 2026-11-08 caps every
-        # 2.6 route at 20,000 even if the policy file lookup misses.
-        return {"max_chars": 20000, "floor_chars": 19000, "hard_floor_chars": 16000,
-                "target_chars": 19000,
-                "source": "Owner ruling 2026-11-08 fallback: 20,000 (66-kie-image/models.json owner_prompt_cap_chars)."}
+        # 2.6 route at the recorded 66-kie-image owner cap even if the policy
+        # file lookup misses. Read from the one source, never restated here.
+        try:
+            sk66 = json.loads((SKILL_ROOT.parent / "66-kie-image" / "models.json")
+                              .read_text(encoding="utf-8"))
+            caps = [m.get("owner_prompt_cap_chars") or m.get("live_schema_cap_chars")
+                    for m in sk66.get("models", [])
+                    if "gpt-image-2-6" in str(m.get("canonical_model_id", ""))]
+            cap = next((c for c in caps if isinstance(c, int) and not isinstance(c, bool) and c > 0), None)
+        except (OSError, ValueError):
+            cap = None
+        if cap is None:
+            return None
+        band = policy_band_numbers(cap)
+        return {"max_chars": cap, "floor_chars": band["floor"],
+                "hard_floor_chars": band["hard_floor"],
+                "target_chars": band["target_min"],
+                "source": "Owner ruling 2026-11-08 fallback (66-kie-image/models.json owner_prompt_cap_chars)."}
     return None
 
 def prompt_cap(model: str | None):
