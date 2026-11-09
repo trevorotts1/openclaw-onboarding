@@ -1,5 +1,6 @@
 """Tenant and editor readiness without browser writes or real credentials."""
 import unittest
+from unittest.mock import Mock
 from skill6_playwright import assert_tenant, Stop
 
 BASE = 'https://app.convertandflow.com/v2/location/FIXTURE/'
@@ -22,6 +23,7 @@ class Workspace:
     def __init__(self, page):self.page=page
     def get_by_role(self, *args, **kwargs):return self
     def wait_for(self, **kwargs):self.page.workspace_waits += 1
+    def count(self):return 1
 
 
 class Page:
@@ -93,6 +95,27 @@ class EditorHydrationTests(unittest.TestCase):
         assert_tenant(page,job(page))
         self.assertEqual(page.workspace_waits,1)
         self.assertEqual(page.waits,[])
+
+    def test_current_shell_switcher_requires_exact_visible_account_label(self):
+        page = Mock(url=BASE+'dashboard')
+        workspace, group, switcher = Mock(), Mock(), Mock()
+        page.get_by_role.return_value = workspace
+        group.count.return_value = 0
+        workspace.get_by_role.side_effect = lambda role, **kw: group if role == 'group' else switcher
+        switcher.count.return_value = 1
+        switcher.is_visible.return_value = True
+        spec = {'location_id':'FIXTURE', 'location_name':'Fixture', 'start_url':page.url}
+        switcher.get_attribute.return_value = 'Switch account from Fixture'
+        assert_tenant(page, spec)
+        group.wait_for.assert_not_called()
+        for label in ('Switch account from Foreign', None):
+            switcher.get_attribute.return_value = label
+            with self.subTest(label=label), self.assertRaises(Stop):
+                assert_tenant(page, spec)
+        switcher.get_attribute.return_value = 'Switch account from Fixture'
+        switcher.count.return_value = 2
+        with self.assertRaises(Stop):
+            assert_tenant(page, spec)
 
 
 if __name__=='__main__':unittest.main()
