@@ -1746,7 +1746,7 @@ def _run_on_page(page, job, evidence_root, *, contact_field_capability=None):
             if step['action'] in ('native_contact_field_chain','native_dropdown_fields','native_large_text_fields',
                     'quiz_short_answers','quiz_multiple_choices','quiz_written_answers',
                     'native_condition_stack','native_condition_outcomes',
-                    'native_order_confirmation','native_course_theme_media','native_course_block_media','native_course_text_blocks','native_course_section_media','native_course_image_blocks') or (
+                    'native_order_confirmation','native_course_blocks','native_course_theme_media','native_course_block_media','native_course_text_blocks','native_course_section_media','native_course_image_blocks') or (
                     step['action'] == 'community' and result.get('status') in (
                         'GROUP_CREATED_SLUG_IDENTIFIED','GROUP_REUSED_IDENTITY_CONFIRMED')):
                 # Fresh execution and replay require the same complete, bound

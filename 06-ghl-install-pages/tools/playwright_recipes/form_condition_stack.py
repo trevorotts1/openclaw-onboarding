@@ -3,8 +3,9 @@
 Each native rule still has exactly one target. The full authored rule list is
 the contract: existing cards must be its exact prefix before missing cards are
 appended, or exactly match an explicit full expected_rules list before edits.
-Existing cards are never deleted or reordered. Complete independent saved
-readback is mandatory, including when all cards appear before Save.
+An explicit full expected inventory also permits captured tail-card removal;
+cards are never silently reordered. Complete independent saved readback is
+mandatory, including when all cards appear before Save.
 """
 from copy import deepcopy
 import hashlib
@@ -47,11 +48,9 @@ def validate(step):
     if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules'}
             or step.get('action','native_condition_stack')!='native_condition_stack'):
         raise Stop('Unsupported native condition stack')
-    value={**deepcopy(step),'rules':_rules(step.get('rules'))}
+    value={**deepcopy(step),'rules':_rules(step.get('rules'),allow_empty='expected_rules' in step)}
     if 'expected_rules' in step:
         value['expected_rules']=_rules(step['expected_rules'],reject_conflicts=False,allow_empty=True)
-        if len(value['expected_rules'])>len(value['rules']):
-            raise Stop('Native condition card removal requires a separately captured delete lifecycle')
     return value
 
 
@@ -64,6 +63,64 @@ def configuration_hash(step):
 
 def _expected(plan):
     return [group._expected(rule)[0] for rule in plan['rules']]
+
+
+def _empty_state(dialog):
+    """The measured loaded-empty drawer, never an inferred absent card list."""
+    if (dialog.locator(group.CARD).count()!=0
+            or dialog.get_by_text('No existing conditions yet',exact=True).count()!=1
+            or dialog.get_by_text("You're free to roam without the rules - at least for now",exact=True).count()!=1):
+        raise Stop('Native cleared condition inventory lacks its positive loaded-empty state')
+    image=group._one(dialog.get_by_role('img',name='No conditions yet',exact=True),
+                     'Native cleared condition empty-state image is unavailable or ambiguous')
+    if image.get_attribute('src')!='/assets/no-conditions-13c5d8b2.png':
+        raise Stop('Native cleared condition empty-state image changed')
+
+
+def _delete_tail(frame,dialog,current,identity):
+    """Delete exactly the inventoried final card through its captured confirmation."""
+    identity()
+    if not current or group._inventory(dialog)!=current:
+        raise Stop('Native condition cards changed before the requested tail-card removal')
+    # Binding the original drawer by its own save-close descendant keeps it
+    # distinct from the second role=dialog introduced by Delete Condition.
+    dialogs=frame.get_by_role('dialog')
+    drawer=group._one(dialogs.filter(has=frame.locator('#conditional-logic-save-close')),
+                      'Native condition delete drawer owner is unavailable or ambiguous')
+    if group._inventory(drawer)!=current:
+        raise Stop('Native condition delete drawer differs from the inventoried full stack')
+    cards=drawer.locator(group.CARD)
+    remove=group._one(cards.nth(len(current)-1).locator('#delete-condition'),
+                      'Native tail-card Delete control changed')
+    click(remove)
+    heading=frame.get_by_role('heading',name='Delete Condition',exact=True)
+    wait_until(lambda:dialogs.count()==2 and heading.count()==1,
+               'Native condition Delete confirmation did not appear exactly once')
+    confirm=group._one(dialogs.filter(has=heading),
+                       'Native condition Delete confirmation owner is ambiguous')
+    if (confirm.get_by_text('Are you sure you want to delete this condition?',exact=True).count()!=1
+            or confirm.locator('#modal-header-modal-close-btn').count()!=1):
+        raise Stop('Native condition Delete confirmation text or close control changed')
+    cancel=group._one(confirm.locator('#modal-footer-btn-negative-action'),
+                      'Native condition Delete Cancel control changed')
+    delete=group._one(confirm.locator('#modal-footer-btn-positive-action'),
+                      'Native condition Delete confirmation button changed')
+    if (cancel.inner_text().strip()!='Cancel' or delete.inner_text().strip()!='Delete'
+            or not delete.is_enabled()):
+        raise Stop('Native condition Delete confirmation buttons are unavailable or changed')
+    # Opening a confirmation does not authorize deleting a concurrently
+    # changed card. Recheck the complete protected inventory before confirm.
+    identity()
+    if group._inventory(drawer)!=current:
+        raise Stop('Native condition cards changed before Delete confirmation')
+    click(delete)
+    expected=deepcopy(current[:-1])
+    wait_until(lambda:dialogs.count()==1 and drawer.locator(group.CARD).count()==len(expected),
+               'Native condition Delete did not remove exactly one tail card and close confirmation')
+    if group._inventory(drawer)!=expected:
+        raise Stop('Native condition Delete changed a retained card or removed the wrong card')
+    if not expected:_empty_state(drawer)
+    return expected
 
 
 def _author(frame,dialog,rule,prefix,identity):
@@ -233,6 +290,8 @@ def configure(page,step):
         expected=_expected({'rules':plan['expected_rules']})
         if before!=expected:
             raise Stop('Native condition edit inventory differs from the complete expected previous stack')
+        while len(current)>len(wanted):
+            current=_delete_tail(frame,dialog,current,identity)
         for index,(previous,rule) in enumerate(zip(plan['expected_rules'],plan['rules'])):
             if current[index]!=wanted[index]:
                 current=_edit(frame,dialog,index,previous,rule,current,identity)
@@ -249,6 +308,7 @@ def configure(page,step):
             current=_author(frame,dialog,rule,current,identity)
     if group._inventory(dialog)!=wanted:
         raise Stop('Native full condition stack differs before drawer Save')
+    if not wanted:_empty_state(dialog)
     identity()
     click(group._one(dialog.locator('#conditional-logic-save-close'),
                      'Native Conditions save-close control changed'))
@@ -267,7 +327,8 @@ def configure(page,step):
     frame=form_builder(page)
     dialog=open_conditions()
     if group._inventory(dialog)!=wanted:
-        raise Stop('Native condition stack did not persist after independent reopen; do not repeat the append')
+        raise Stop('Native condition stack did not persist after independent reopen; do not repeat the write')
+    if not wanted:_empty_state(dialog)
     click(group._one(dialog.locator('#conditional-logic-save-close'),
                      'Reopened native Conditions save-close changed'))
     dialog.wait_for(state='hidden',timeout=45000)

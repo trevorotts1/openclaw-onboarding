@@ -15,7 +15,7 @@ or unexpected card/connector drift requires reconciliation rather than another
 automatic append.
 
 This extends the existing same-count edit contract to growth. Shrinking the
-card count and clearing all cards still require capture of the native scoped
-Delete control's complete lifecycle; they refuse before browser access. This
-does not add card reordering, arbitrary outcome edits, native submissions or
-respondent behavior verification.
+card count and clearing all cards use the separately captured scoped Delete
+confirmation flow documented in `form-condition-stack-contraction.md` and also
+require the full expected inventory. This does not add native card reordering,
+arbitrary outcome edits, submissions or respondent behavior verification.

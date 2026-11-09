@@ -30,11 +30,10 @@ class StackGrowthTests(unittest.TestCase):
         self.assertEqual(native.validate(data),data)
         self.assertNotEqual(native.configuration_hash(data),native.configuration_hash({'rules':[rule()]}))
 
-    def test_card_removal_still_refuses_before_any_browser_access(self):
+    def test_contraction_requires_an_explicit_complete_before_inventory(self):
         data={'expected_rules':[rule('Phone'),rule('Email')],'rules':[rule('Phone')]}
-        page=Mock()
-        with self.assertRaisesRegex(runner.Stop,'delete lifecycle'):native.configure(page,data)
-        self.assertFalse(page.mock_calls)
+        self.assertEqual(native.validate(data),data)
+        with self.assertRaises(runner.Stop):native.validate({'rules':[]})
 
     def exercise(self,*,drift_before=False,drift_after_edit=False,lost=False,empty=False):
         data={'expected_rules':[],'rules':[rule()]} if empty else plan()

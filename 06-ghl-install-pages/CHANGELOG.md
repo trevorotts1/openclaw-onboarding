@@ -1,3 +1,24 @@
+## [v27.1.99] - 2026-11-09
+
+- Add explicit ordered mixed AND/OR form predicates while retaining legacy all/any
+  hashes. Grow, contract or clear fully inventoried Show/Hide card stacks through
+  measured native controls, exact prefix checks and positive empty-state proof.
+- Add inactive-course background transparency using captured one-point arrow
+  controls and exact percentage/image/theme/body preservation. Bind fresh media
+  completion to the same changed-image proof required by completed replay.
+- Route documented Contact LARGE_TEXT dependencies and exact existing Dropdown
+  reuse through the named forms.configure host. Keep capability freshness outside
+  authored hashes and retain separate outer, API and native placement journals.
+- Delete one explicitly inventoried inactive-course Custom Block through the
+  captured target-bound confirmation and exact retained sidebar/preview checks,
+  then independently reopen after one Save. No arbitrary block removal is added.
+- Record eleven reviewed feature additions since the frozen operation audit, including
+  six new control capabilities in this batch. Keep the original 21 built, 11
+  partial and one generic classification distinct from current feature progress.
+- Preserve native functional, submission/payment, learner/access and publication
+  proof as pending. Video, Picture Choice, split creation/allocation and remaining
+  uncaptured controls are not claimed complete. Repository release stays unchanged.
+
 ## [v27.1.98] - 2026-11-09
 
 - Add captured quiz Multi Dropdown through the existing multiple-choice native

@@ -203,6 +203,10 @@ def _result(step, value, job):
     if action == 'native_course_theme_media':
         from playwright_recipes.course_theme_media import validate_receipt
         background_media = validate_receipt(dict(value),step)
+    block_deletion = None
+    if action == 'native_course_blocks' and 'deletion' in step.get('payload',{}).get('custom_blocks',{}):
+        from playwright_recipes.course_block_delete import validate_receipt
+        block_deletion = validate_receipt(dict(value),step)
     if action == 'native_course_image_blocks':
         from playwright_recipes.course_image_blocks import validate_receipt
         image_blocks = validate_receipt(dict(value),step)
@@ -229,6 +233,7 @@ def _result(step, value, job):
         'html': {'element_id', 'section_id'}, 'native_form_css': {'render_checks'},
         'meeting': {'previous_room_identity'},
         'native_course_theme_media': {'source_sha256','media_operation','transparency_percentage'},
+        'native_course_blocks': {'removed_block_ids'},
         'community': {'requested_slug_sha256', 'observed_slug_sha256', 'identity_source', 'group_status', 'portal_url'},
     }.get(action, set())
     # A familiar field on an unrelated handler is still an arbitrary extra.
@@ -386,19 +391,22 @@ def _result(step, value, job):
     if action == 'native_course_blocks':
         from playwright_recipes.course_blocks import configuration_hash, validate_inputs
         plan = validate_inputs(step['payload'])
-        before = [row['id'] for row in plan['custom_blocks']['expected_inventory']]
+        config=plan['custom_blocks']
+        removed=[config['deletion']['id']] if block_deletion is not None else []
+        before = [row['id'] for row in config['expected_inventory'] if row['id'] not in removed]
         added, identities = value['added_block_ids'], value['block_ids']
         if (value['course_id'] != plan['course_id'] or value['template_id'] != plan['template_id']
                 or value['configuration_sha256'] != configuration_hash(plan)
                 or value['independent_readback'] != 'VERIFIED'
                 or value['functional_verified'] is not False or value['activation_performed'] is not False
-                or not isinstance(added, list) or len(added) != len(plan['custom_blocks']['append'])
+                or not isinstance(added, list) or len(added) != len(config.get('append',[]))
                 or not isinstance(identities, list)
                 or any(not isinstance(identity, str) or not ID_PATTERN.fullmatch(identity) for identity in identities)
                 or identities != before + added or len(set(identities)) != len(identities)):
             _fail()
         safe['added_block_ids'] = added
         safe['block_ids'] = identities
+        if block_deletion is not None:safe['removed_block_ids']=block_deletion['removed_block_ids']
     if action == 'native_fields':
         fields = [field['field'] for field in step.get('fields', [])]
         if value['fields'] != fields:

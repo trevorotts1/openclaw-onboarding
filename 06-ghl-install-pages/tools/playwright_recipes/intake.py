@@ -83,8 +83,9 @@ def condition_request(value):
         condition['effect'] = effect
     if 'rules' in condition:
         rules = condition['rules']
-        if not isinstance(rules,list) or not rules or any(not isinstance(rule,dict) for rule in rules):
-            raise Stop('Native conditions require a complete nonempty ordered rule list')
+        if (not isinstance(rules,list) or not rules and 'expected_rules' not in condition
+                or any(not isinstance(rule,dict) for rule in rules)):
+            raise Stop('Native conditions require a complete ordered rule list; clearing also needs the full expected inventory')
         outcomes = any(rule.get('effect') not in ('Hide Field','Show Field') for rule in rules)
         if outcomes:
             from playwright_recipes.form_condition_outcomes import validate
