@@ -14,6 +14,16 @@ All notable changes to this skill wrapper are documented here.
 ---
 
 
+## [v27.1.86] - 2026-11-08 - KIE GPT Image 2.6 Sunburst reaches the media tools
+
+- `tools/_kie_prompt_enforcer_embedded.py`, `tools/gates.json` and `tools/ghl_media.py` carry
+  the GPT Image 2.6 `sunburst` model ids in slash form (`gpt-image-2-6/sunburst-text-to-image`,
+  `gpt-image-2-6/sunburst-image-to-image`), the 16-value aspect-ratio enum and the owner prompt
+  cap of 20,000. The hyphen form returns HTTP 422, so no hyphen id is emitted anywhere.
+- Version bumped to v27.1.86 because main independently reached v27.1.85 with its own Skill 06
+  QC change; this patch keeps the G3 skill-version-bump guard honest over the migration diff.
+- Risk: LOW. Model ids and their gates only; no route, scope or credential changed.
+
 ## [v27.1.77] - 2026-10-26 - oct-25 fix batch: l13-l19 Skill 6 maintenance-cron and QC hardening
 
 - `update-skills.sh` ran only the FIRST `scripts/install-*.sh` it found, so the page-inventory, routing-drift and selector-drift maintenance jobs were never registered on any box. New aggregate installer `scripts/install-skill6-maintenance-crons.sh` names all four installers explicitly, consumes (never forwards) the `--idempotent` flag, and reports REGISTERED / ABSENT / UNKNOWN per job from `openclaw cron list --all --json`. New `scripts/lib-cron-presence.sh`: presence is judged on `--all` listings (a disabled job is a TOMBSTONE - reported, never re-enabled or duplicated), new jobs get `--no-deliver`, and an existing job announcing is repaired in place with `openclaw cron edit`. Tests: `tests/test_skill6_cron_installers_full_visibility.py`, `tests/unit/skill6-maintenance-installers-all-run.test.sh`.

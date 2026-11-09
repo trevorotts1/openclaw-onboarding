@@ -17,7 +17,9 @@
 - Versions: Skill 71 to v1.3.21 (all three carriers: `SKILL.md`, `skill-version.txt`, `VERSION`),
   Skill 54 to v2.0.7 with its manifest `skill_version` reconciled from the stale v2.0.5, and
   Skill 49 to v2.1.39 (registry-hash restamp: its two AGNES gate fixtures carry the updated
-  `KNOWN_ENTRY_HASH` and the SF prover pin is minted by the pin workflow, never hand-edited).
+  `KNOWN_ENTRY_HASH` and the SF prover pin is minted by the pin workflow, never hand-edited),
+  and Skill 06 to v27.1.86 — main independently reached v27.1.85 with its own Skill 06 QC
+  change, so the migration's media-tool edits take the next patch to keep G3 honest.
 
 ## [v27.1.71]  -  2026-11-05  -  Presentation intake asks one actual question at a time
 
