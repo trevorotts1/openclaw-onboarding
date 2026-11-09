@@ -11,6 +11,16 @@ check_package runs ``violations(manifest, root, skill_root)`` from every module 
   report is only a list of where to look: every stage is re-read from the run's own gate state, with
   the artifact hashes it recorded at close, so a hand-edited report proves nothing.
 
+F17 item 7, TWO SEPARATE PAGES ARE TWO INSTANCES. A page is bound by its OWN identity (role + page
+kind + role instance, ``page_designs.page_key``), never by its role:
+
+* a planned page with no run is NAMED as missing, with its page identity and its role — a count of
+  folders is never proof that every planned page was designed;
+* one role-level report row cannot stand for two planned page instances of that role (the signature
+  sales page and the signature opt-in page share the role ``landing`` and are two pages);
+* one page run's stage receipt is one page instance's receipt: two page identities citing the same
+  run folder, and a row whose own intake says a different page, are both refused.
+
 ponytail: the closure read trusts the run's state.json plus its recorded artifact hashes; a forged
 state file with forged hashes passes. U-images-04 binds the design gate to the gate's own files.
 """
@@ -20,18 +30,129 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 _SKILL_ROOT = Path(__file__).resolve().parents[2]
 if str(_SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(_SKILL_ROOT))
 
-from launcher_core import graphics_hooks, image_stages  # noqa: E402
+from launcher_core import graphics_hooks, image_stages, page_designs  # noqa: E402
 
 CODE = "AF-LAUNCH-IMAGE-STAGES"
 CODE_BINDING = "AF-LAUNCH-HOSTING-BINDING"
 # What a launch leaves in the package root: the stage report, the layout-proof approval, the dispatch report.
 LAUNCH_MARKS = (image_stages.REPORT_REL, image_stages.LAYOUT_APPROVAL_REL, "dispatch-report.json")
+
+
+def _name(entry: Dict[str, Any]) -> str:
+    """A report row's display name: its own page label, else its run folder."""
+    return str(entry.get("page") or Path(str(entry.get("run_dir") or "")).name or "?")
+
+
+def _runs_for(piece: Dict[str, Any], rows: List[Dict[str, Any]],
+              per_role: Dict[str, int]) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """The report row(s) this package piece is proved by, or the reason it is not proved at all.
+
+    The piece's own page identity wins. A row that carries no identity is a role-level row, and a
+    role-level row proves only a role the launch planned once: it can never stand in for two page
+    instances of one role, which is how one landing run used to answer for both landing pages.
+    """
+    key = page_designs.page_key(piece)
+    role = str(piece.get("role") or "")
+    mine = [row for row in rows if str(row.get("page_key") or "") == key]
+    if mine:
+        return mine, None
+    if per_role.get(role, 0) > 1:
+        return [], (f"page {key} (role {role}) is covered only by a role-level row in "
+                    f"{image_stages.REPORT_REL}; one role-level row cannot stand for two planned page "
+                    f"instances of {role}")
+    mine = [row for row in rows if not row.get("page_key") and str(row.get("role") or "") == role]
+    if mine:
+        return mine, None
+    return [], f"page {key} (role {role or '?'}) has no page run in {image_stages.REPORT_REL}"
+
+
+def _page_rows(report: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [row for row in report.get("pages") or [] if isinstance(row, dict)]
+
+
+def _set_violations(report: Dict[str, Any], rows: List[Dict[str, Any]]) -> List[str]:
+    """The planned page set: named missing pages, one run per identity, and a run that stays its own."""
+    fails: List[str] = []
+    state = report.get("expected_pages_state")
+    if state is not None and state != "known":
+        fails.append(f"{CODE}: {image_stages.REPORT_REL} says the planned page set is {state!r} "
+                     f"({report.get('reason') or 'no reason recorded'}); a directory listing of run folders "
+                     "cannot prove every planned page was designed, so completeness is unverified")
+    for row in rows:
+        if row.get("status") == "missing_page":
+            key = row.get("page_key") or row.get("role")
+            fails.append(f"{CODE}: page {key} (role {row.get('role') or '?'}) is missing: "
+                         f"{row.get('reason') or 'the launch plans this page and no run folder was found'}")
+    claims: Dict[str, List[str]] = {}
+    for row in rows:
+        declared = str(row.get("run_dir") or "").strip()
+        if not declared:  # a row that names no run proves nothing about which page it is
+            continue
+        claims.setdefault(str(Path(declared).resolve()), []).append(
+            str(row.get("page_key") or row.get("role") or _name(row)))
+    for run_dir, identities in sorted(claims.items()):
+        holders = sorted(set(identities))
+        if len(holders) > 1:
+            fails.append(f"{CODE}: pages {holders[0]} and {holders[1]} cite the same page run "
+                         f"({Path(run_dir).name!r}); one run's stage receipt is one page instance's "
+                         "receipt and is never transferable to another page")
+    for row in rows:
+        key, declared = row.get("page_key"), str(row.get("run_dir") or "").strip()
+        if not key or not declared:
+            continue
+        run = Path(declared)
+        if not run.is_dir():
+            continue
+        actual = image_stages.page_key_for_run(run)
+        if actual != str(key):
+            fails.append(f"{CODE}: page {key} (role {row.get('role') or '?'}) is bound to run "
+                         f"{run.name!r}, whose own intake declares {actual}; a run's receipt belongs to "
+                         "the page it was drawn for")
+    return fails
+
+
+def _stage_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
+    path = Path(root) / image_stages.REPORT_REL
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+        rows = _page_rows(report)
+        if not rows:
+            raise ValueError("no pages")
+    except (OSError, ValueError, AttributeError, TypeError):
+        return [f"{CODE}: {image_stages.REPORT_REL} is missing or lists no page; the post-dispatch image "
+                "stages never ran, so this package holds layout proofs only "
+                "(python3 -m launcher_core.image_stages --run-dir <launch run folder>)"]
+    fails: List[str] = _set_violations(report, rows)
+    pieces = [piece for piece in manifest.get("pieces") or [] if isinstance(piece, dict)]
+    per_role: Dict[str, int] = {}
+    for piece in pieces:
+        role = str(piece.get("role") or "")
+        per_role[role] = per_role.get(role, 0) + 1
+    seen: List[Path] = []
+    for piece in pieces:
+        mine, why = _runs_for(piece, rows, per_role)
+        if why:
+            fails.append(f"{CODE}: {why}")
+            continue
+        for row in mine:
+            run = Path(str(row.get("run_dir") or ""))
+            if not run.is_dir():
+                fails.append(f"{CODE}: page {_name(row)} (role {row.get('role') or '?'}) run folder "
+                             f"{str(run)!r} does not exist")
+                continue
+            if run.resolve() not in seen:
+                seen.append(run.resolve())
+                for stage in image_stages.STAGES:
+                    if not image_stages.stage_closed(run, stage):
+                        fails.append(f"{CODE}: page {_name(row)} stage {stage} is not closed by "
+                                     "stage_gate.py")
+    return fails
 
 
 def _hosting_binding_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
@@ -46,10 +167,21 @@ def _hosting_binding_violations(manifest: Dict[str, Any], root: Path) -> List[st
     if manifest.get("test_only") is True:
         return []
     runs = image_stages.discover_page_runs(root)
+    pieces = [piece for piece in manifest.get("pieces") or [] if isinstance(piece, dict)]
+    per_role: Dict[str, int] = {}
+    for piece in pieces:
+        role = str(piece.get("role") or "")
+        per_role[role] = per_role.get(role, 0) + 1
     fails: List[str] = []
-    for piece in manifest.get("pieces") or []:
-        role = str((piece or {}).get("role") or "")
-        mine = [run for run in runs if image_stages.page_role(run) == role]
+    for piece in pieces:
+        key, role = page_designs.page_key(piece), str(piece.get("role") or "")
+        mine = [run for run in runs if image_stages.page_key_for_run(run) == key]
+        if not mine and per_role.get(role, 0) == 1:  # a role-level run, one instance of that role
+            mine = [run for run in runs if image_stages.page_role(run) == role]
+        if not mine and per_role.get(role, 0) > 1:
+            fails.append(f"{CODE_BINDING}: page {key} (role {role}) has no page run of its own, so its "
+                         "hosted binding cannot be admitted; another page of this role is not it")
+            continue
         for run in mine:
             decision = image_stages.hosted_admission(root, run)
             if decision.get("state") == "pass":
@@ -57,39 +189,8 @@ def _hosting_binding_violations(manifest: Dict[str, Any], root: Path) -> List[st
             refused = decision.get("refused") or []
             detail = (refused[0].get("problems") if isinstance(refused[0], dict) else str(refused[0])) \
                 if refused else decision.get("reason") or decision.get("state")
-            fails.append(f"{CODE_BINDING}: page {role} has no admitted hosting binding "
+            fails.append(f"{CODE_BINDING}: page {key} has no admitted hosting binding "
                          f"({decision.get('state')}): {detail}")
-    return fails
-
-
-def _stage_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
-    path = Path(root) / image_stages.REPORT_REL
-    try:
-        report = json.loads(path.read_text(encoding="utf-8"))
-        pages = report["pages"]
-        if not isinstance(pages, list) or not pages:
-            raise ValueError("no pages")
-    except (OSError, ValueError, KeyError, TypeError):
-        return [f"{CODE}: {image_stages.REPORT_REL} is missing or lists no page; the post-dispatch image "
-                "stages never ran, so this package holds layout proofs only "
-                "(python3 -m launcher_core.image_stages --run-dir <launch run folder>)"]
-    fails: List[str] = []
-    roles = {str(p.get("role")) for p in pages if isinstance(p, dict)}
-    for piece in manifest.get("pieces") or []:
-        if str(piece.get("role")) not in roles:
-            fails.append(f"{CODE}: {piece.get('role')} has no page run in {image_stages.REPORT_REL}")
-    if len(pages) < len(manifest.get("pieces") or []):
-        fails.append(f"{CODE}: {image_stages.REPORT_REL} lists {len(pages)} page run(s) for "
-                     f"{len(manifest.get('pieces') or [])} package pieces")
-    for page in pages:
-        run = Path(str((page or {}).get("run_dir") or ""))
-        name = (page or {}).get("page") or run.name
-        if not run.is_dir():
-            fails.append(f"{CODE}: page {name} run folder {str(run)!r} does not exist")
-            continue
-        for stage in image_stages.STAGES:
-            if not image_stages.stage_closed(run, stage):
-                fails.append(f"{CODE}: page {name} stage {stage} is not closed by stage_gate.py")
     return fails
 
 
