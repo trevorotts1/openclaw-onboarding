@@ -5,6 +5,13 @@ product/price binding, exact unselected bump attachments, Required/Hidden field
 states and native accept/decline target bindings. This is separate from the
 visible appearance/configuration handler in `checkout.configure_ui`.
 
+Native checkout UI jobs now inventory every requested mode, product display,
+contact field, checkout switch, content textbox and input-theme control before
+the first value edit. A missing or ambiguous later control stops the batch before
+earlier mode/switch/field values change. An enabled Terms editor is also checked
+during preflight; a disabled editor can only be checked immediately after its
+explicit switch exposes it. This does not imply payment or split-test proof.
+
 Native field-state updates now preserve every existing sibling field and
 unrequested property on the edited field. The first post-write native read
 compares the entire merged field-state map, rather than only the last edited

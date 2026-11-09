@@ -1,3 +1,71 @@
+## [v27.1.95] - 2026-11-09
+
+- Build ordered native Redirect to URL, Display custom message and Disqualify
+  lead condition outcomes with complete prior-card and rich-markup preservation.
+  Edit existing Show/Hide stacks against an explicit complete previous inventory;
+  retain card count and refuse uncaptured clause removal.
+- Create captured quiz Short Answer, Long Answer, Number, Multiple Choice,
+  Single Choice and Yes/No questions on exact inventoried pages. Preserve prior
+  question properties, Radio IDs/options/categories/scores and sibling bindings.
+  Bind populated-canvas insertion to the measured pointer rail and reselect the
+  exact newly appended widget after the native drawer clears activation.
+- Preserve measured Radio Query Keys independently of API field keys. Refuse
+  preexisting Dropdown/Large Text adoption without a native API-ID link; replay
+  exact completed new insertions from their original durable journal.
+- Require the same exact receipt validation before first-run completion and
+  completed replay for the new question and condition paths. A familiar status,
+  missing proof flags, foreign owner or changed plan cannot bless a write.
+- Classify every registered editor schema as native by default. Broad API
+  operation capabilities and generic browser callback statuses cannot replace
+  its compiled leaf and native journal. Canonical API operations retain their
+  existing adapters. A caller-owned compatible Page can run the same leaf over
+  a measured OpenClaw, Agent Browser or computer-use transport; native acceptance
+  remains pending. Keep this Skill6 version independent of repository-wide
+  release metadata and manifests.
+- Keep functional, submission, payment, notification and generated-room proof
+  pending. Uncaptured controls, unsupported schema mutations, answer routing,
+  course Live Sessions availability and remaining split allocation are separate
+  open requirements; this checkpoint does not replace the complete audit count.
+
+## [v27.1.94] - 2026-11-09
+
+- Continue guarded native controls: community Branding and existing Event Live Room association, exact active-group reuse and scoped newly-created inactive groups; inactive course Custom Block image uploads; ordered form condition stacks; single-price payment-owned Order Confirmation; existing API Dropdown/Large Text placement; new quiz Short Answers and Header name/layout controls.
+- Bind every new native action through intake, compiler, exact parent identity, durable write intent and retained completion validation. Portal handlers refuse ordinary app execution before session seeding. Catalog 401/403 is terminal. Question jobs are separate to prevent discarded requests or writes before later preflight.
+- Preserve pending functional/submission/payment/notification proof. Native empty community-course inventories, other payment contracts, uncaptured question types/effects, course Live Sessions and split allocation remain open. Broad catalog counts remain provisional pending a complete capability audit.
+- Fix the existing Mac auth guard process storm while preserving all14 forbidden patterns, read-only allowances, sentinels and the60-second test deadline. New regression counts actual processes and keeps mutation refusals.
+- Draft source checkpoint: reviewed-ready controls are integrated; new question inventory preservation continues peer review. No live Python acceptance, client deployment, submission, payment, event publication or meeting start is claimed.
+
+## [v27.1.93] - 2026-11-09
+
+- Add native per-appointment Meeting Room calendar location controls, bound to
+  exact staff/calendar IDs and a complete unambiguous location user inventory.
+- Upload approved immutable PNG backgrounds into inactive course templates;
+  preserve transparency, active theme, Custom Blocks and other theme settings.
+- Configure four native form embed layouts/Advanced controls and export exact
+  revalidated code twice; retain code on replay without claiming installation.
+- Provision authored Radio definitions through a measured Skill44 fallback and
+  chain exact existing-survey placement with separate uncertain-write journals.
+- Attach Private courses in authenticated community Learning with exact API and
+  native card IDs; refuse unknown zero-card absence rather than infer empty state.
+- Bind newly created community name/slug through the native creation redirect,
+  then independently reopen the group list; retain missing portal/discovery proof.
+- Keep native functional/submission/notification and generated-room proof pending.
+
+## [v27.1.92] - 2026-11-09
+
+- Add native homogeneous AND/OR form conditions, Address child properties and
+  Facebook Pixel/event settings with expected-state checks and reopened readback.
+- Add inactive-theme Custom Block append/edit, bound to exact native/generated
+  block identities while preserving existing media and sibling rich content.
+- Add exact existing-room co-host roster reconciliation, preserving security
+  settings and refusing uncaptured empty rosters. Bind replay to the full plan.
+- Edit any captured existing quiz tier layout without inferring tier creation.
+- Upload approved PNG course media through the existing API rail, preserve
+  appearance siblings and retain pending visual/learner proof through the host.
+- Preflight every native checkout target before editing the first value, and
+  accept complete mixed API inventories for existing object-field placement.
+- Preserve remaining build gaps and separately pending native acceptance.
+
 ## [v27.1.91] - 2026-11-09
 
 - Add captured native form consent, Address Query Keys, existing Radio placement,

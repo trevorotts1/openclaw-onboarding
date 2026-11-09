@@ -37,6 +37,11 @@ GIB = 1024 ** 3
 OWNER = "424242424"
 
 
+def standalone_call(name):
+    """Match an exact shell invocation with optional horizontal indentation."""
+    return re.compile(r"^[ \t]*" + re.escape(name) + r"[ \t]*$", re.MULTILINE)
+
+
 def tree_hash(root: Path) -> str:
     h = hashlib.sha256()
     for p in sorted(root.rglob("*")):
@@ -346,6 +351,44 @@ class Cli(Base):
 
 
 class Wiring(unittest.TestCase):
+    def assert_preflight_order(self, sh):
+        calls = []
+        for name in ("fleet_standing_gate", "fleet_preflight_checks"):
+            match = standalone_call(name).search(sh)
+            self.assertIsNotNone(match, f"Missing standalone {name} invocation")
+            calls.append(match.start())
+        extraction = sh.find('TEMP_EXTRACT="/tmp/openclaw-onboarding-update"')
+        self.assertNotEqual(extraction, -1, "Missing update extraction boundary")
+        self.assertLess(calls[0], calls[1])
+        self.assertLess(calls[1], extraction)
+
+    def test_wiring_accepts_top_level_and_function_body_indentation_only(self):
+        for indent in ("", "  ", "\t"):
+            sh = "main() {\n" + "\n".join(indent + line for line in (
+                "fleet_standing_gate", "fleet_preflight_checks",
+                'TEMP_EXTRACT="/tmp/openclaw-onboarding-update"')) + "\n}\n"
+            with self.subTest(indent=indent):
+                self.assert_preflight_order(sh)
+
+    def test_wiring_still_refuses_missing_or_reordered_gate_preflight_and_extraction(self):
+        lines = ["fleet_standing_gate", "fleet_preflight_checks",
+                 'TEMP_EXTRACT="/tmp/openclaw-onboarding-update"']
+        invalid = [lines[:index] + lines[index + 1:] for index in range(3)]
+        invalid.extend(([lines[1], lines[0], lines[2]],
+                        [lines[0], lines[2], lines[1]],
+                        [lines[2], lines[0], lines[1]]))
+        for lines_ in invalid:
+            with self.subTest(lines=lines_), self.assertRaises(AssertionError):
+                self.assert_preflight_order("\n".join("  " + line for line in lines_))
+
+    def test_comments_definitions_and_longer_identifiers_are_not_call_evidence(self):
+        for invalid in ("# fleet_standing_gate", "fleet_standing_gate() { :; }",
+                        "fleet_standing_gate_extra"):
+            sh = "\n".join((invalid, "  fleet_preflight_checks",
+                            '  TEMP_EXTRACT="/tmp/openclaw-onboarding-update"'))
+            with self.subTest(invalid=invalid), self.assertRaises(AssertionError):
+                self.assert_preflight_order(sh)
+
     def test_runner_parses_the_marker_and_counts_client_skills_apart(self):
         self.assertEqual(runner._preflight_reasons("x\nFLEET-PREFLIGHT-PAUSED: storage, memory pressure\n"), "storage, memory pressure")
         self.assertEqual(runner._preflight_reasons("nothing"), "")
@@ -369,8 +412,7 @@ class Wiring(unittest.TestCase):
 
     def test_update_skills_runs_the_preflight_after_the_gate_and_before_install(self):
         sh = (REPO / "update-skills.sh").read_text()
-        a, b, c = (sh.index(x) for x in ("\nfleet_standing_gate\n", "\nfleet_preflight_checks\n", "TEMP_EXTRACT=\"/tmp/openclaw-onboarding-update\""))
-        self.assertLess(a, b); self.assertLess(b, c)
+        self.assert_preflight_order(sh)
         self.assertIn("FLEET-PREFLIGHT-PAUSED", (REPO / "shared-utils/fleet_preflight.py").read_text())
 
 
@@ -380,7 +422,9 @@ class ShellBlock(Base):
     def run_block(self, helper=True, **env):
         sh = (REPO / "update-skills.sh").read_text()
         blk = sh[sh.index("#=== BEGIN FLEET-PREFLIGHT-V1 ==="):sh.index("#=== END FLEET-PREFLIGHT-V1 ===")]
-        blk = blk.replace("\nfleet_preflight_checks\n", "\n")   # the call site; invoked below
+        # Keep a surrounding --help conditional syntactically valid while
+        # replacing its call: this harness invokes the function exactly once.
+        blk = standalone_call("fleet_preflight_checks").sub(":", blk, count=1)
         f = self.box.tmp / "blk.sh"
         f.write_text(blk + '\nfleet_preflight_checks\necho __AFTER__\n')
         if helper:
@@ -411,6 +455,7 @@ class ShellBlock(Base):
     def test_bypass(self):
         r = self.run_block(FLEET_PREFLIGHT_FREE_BYTES="1", FLEET_PREFLIGHT_BYPASS="1")
         self.assertIn("__AFTER__", r.stdout)
+        self.assertEqual(r.stdout.count("[preflight] bypassed"), 1)
 
 
 if __name__ == "__main__":
