@@ -1,13 +1,3 @@
-## [Unreleased]  -  2026-11-08  -  KIE GPT Image 2.6 moves to slash model ids, a 16-value ratio enum and an owner prompt cap of 20,000
-
-- KIE model ids migrate to slash form across the tree: `gpt-image-2-6/sunburst-text-to-image` and `gpt-image-2-6/sunburst-image-to-image`. The hyphen form returns HTTP 422 "The model name you specified is not supported" on a live probe, so every dispatch, registry, selector and gate now emits the slash form.
-- The 2.6 `aspect_ratio` enum is the vendor's 2026-11-08 set of exactly sixteen values: auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3. The 2.5-era 27:16, 16:27, 9:8 and 8:9 are not members at any resolution and are absent from `66-kie-image/models.json`.
-- Owner ruling 2026-11-08: the governing prompt cap for GPT Image 2.6 is 20,000 characters. `owner_prompt_cap_chars` outranks the vendor schema at limit resolution in both the Skill 66 validator and the Skill 74 adapter, so the reported source is `owner-ruling:66-kie-image`. The captured vendor schema in `~/.openclaw/cache/kie-live-adapter/schema/` still records maxLength 32,000 and was deliberately left unaltered: the vendor figure is provenance, never permission. A prompt at 19,500 passes, 20,100 is rejected with exactly 100 characters to cut, and 30,000 is rejected with exactly 10,000 to cut.
-- Ratio routing stops substituting: 3:1, 1:3, 9:21, 5:4, 4:5, 2:1 and 1:2 are served natively, so the substitution table and the ratio-based legacy detour are gone. `gpt-image-2` stays reachable by explicit pin only.
-- Skill 38's visual workflow protocol names the new family, so bumps Skill 38 to v2.0.225. The excluded-historical set stays untouched by the id migration: `evidence/`, `PROCESS-CERTIFICATE`, `provenance/calls.json`, and past CHANGELOG entries keep their original wording.
-- Migration: repository changes only; this draft has not been merged, deployed or rolled onto any client box.
-- Risk: MEDIUM. The cap tightens from the vendor's published 32,000 to the owner's 20,000, so prompts that were legal under the larger figure are now rejected on the ceiling. The gate names the exact characters to cut, and no floor or band was widened to accommodate them.
-
 ## [v27.1.71]  -  2026-11-05  -  Presentation intake asks one actual question at a time
 
 - The mini app and conversational agent now request one independent answer per question. Canonical per-field prompts replace the merged ask sequence; the historical 23-turn target never authorizes batching. Quick and in-depth retain separate pacing and build-mode decisions.
