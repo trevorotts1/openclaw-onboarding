@@ -7,9 +7,9 @@ description: >
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
-version: v2.2.9
+version: v2.2.10
 metadata:
-  version: "2.2.7"
+  version: "2.2.10"
   priority: HIGH
 ---
 
@@ -167,7 +167,8 @@ chars to CUT), 80-95% warns. Unknown limit: UNKNOWN, no floor. Verbatim content
     not restated in the 2.5 docs. 5:4, 4:5, 2:1, 1:2 are served via an
     operator-approved substitution (5:4→4:3, 4:5→3:4, 2:1→16:9, 1:2→9:16);
     3:1, 1:3, 9:21 are not served at all and route to the legacy model instead.
-  `validate_payload.py` enforces both rule sets, keyed by exact model id.
+  `validate_payload.py` enforces each rule set by exact model id; GPT Image 2.6
+  is validated by enum membership alone (it publishes no per-ratio exclusions).
 - **Wan bbox/n rules:** each input image supports up to 2 boxes; `n` 1–4
   (1–12 with `enable_sequential`); input images min 240 px per side, max 10 MB.
 - **Credential:** `KIE_API_KEY` env var; never echo/cat/log the value.
