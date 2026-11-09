@@ -1,3 +1,9 @@
+## [1.3.27] - 2026-11-09 - MCK-001 QC repair: trailing newlines, type-only sections get no photos
+
+- `skill-version.txt`, `VERSION`: restore the trailing newline (newline guard); roll to 1.3.27 with `SKILL.md` frontmatter to match.
+- `scripts/stage_executor.py` `planned_slot_ids`: key presence (not truthiness) separates "no plan" (`None` → every generated photo is the page's raw material) from "plan says no image" (`[]` → type-only section gets zero files). Fixes sections 6, 7, 11 receiving every generated image.
+- Tests: `tests/test_mockup_slot_coverage_floor.py::GeneratedImageRefTests::test_type_only_section_gets_no_generated_images`.
+
 ## [1.3.25] - 2026-11-09 - GPT Image 2.6 cap reads the 66 owner cap, fails to 20,000
 
 - `references/prompt-budget-policy.json`: 2.6 entry is `OWNER_RULED`, one source `66-kie-image/models.json` `owner_prompt_cap_chars`. `cap_for_model` and `stage_executor.prompt_budget` fail to 20,000 on lookup miss, never 32,000.
