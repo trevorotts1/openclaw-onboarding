@@ -38,6 +38,7 @@ import lane83_fake_consumer  # noqa: E402  only for its marker constants: proves
 import test_lane83_dispatch as dispatch_tests  # noqa: E402  run_dispatch carries the approval and plan choices
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402  (its path is added by test_lane83_dispatch)
 from launcher_core import checks, cli, page_designs  # noqa: E402
+from path_compare import canonical  # noqa: E402  FIX-06: path identity, not spelling
 
 S71 = REPO_ROOT / "71-blackceo-signature-page"
 COPY_EXAMPLES = S71 / "tests" / "fixtures" / "copy_examples"
@@ -196,7 +197,9 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
                         # the 14 production stages are closed by an agent-driven process, never in an offline run:
                         # the landing lane is a declared draft, so the bridge places its result with the gate open
                         "draft": True,
-                        "brand_file": str(self.brand_file), "image_inputs": str(out / "image_inputs.json"),
+                        # FIX-06 cause 1: the bridge config records the resolved form; launch_bridge compares it to the
+                        # resolved image_inputs path, so one spelling on both sides is the identity check.
+                        "brand_file": str(self.brand_file), "image_inputs": str(canonical(out / "image_inputs.json")),
                         "manuscript": str(COPY_EXAMPLES / "standard-path-b.md")}}))
         return {
             "bridge_config": str(bridge),

@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from launcher_core import checks, cli, graphics_hooks, image_stages  # noqa: E402
 from launcher_core.image_stages import STAGES, page_role  # noqa: E402
 from test_lane83_designs import Base  # noqa: E402  (a real stub-provider package, no tests of its own)
+from path_compare import same_path  # noqa: E402  FIX-06: path identity, not spelling
 
 RULE_FILE = SKILL_ROOT / "launcher_core" / "check_rules" / "image_qc.py"
 SKILL71 = SKILL_ROOT.parent / "71-blackceo-signature-page"
@@ -111,7 +112,11 @@ class FakeSkill71:
                 write(run / "final-mockups" / "stage-executor-record.json", "{}")
             return 0, ""
         if script == "design_board.py":
-            return (0, "") if run in self.client_approved else (1, "no recorded client approval")
+            # FIX-06 cause 2: the approved set holds resolved paths and this run arrives as the caller
+            # spelled it; compare filesystem identity, otherwise the same run reads as unapproved and the
+            # board stays open.
+            approved = any(same_path(run, known) for known in self.client_approved)
+            return (0, "") if approved else (1, "no recorded client approval")
         if script == "build_production_request.py":
             write(Path(args[args.index("--out") + 1]), "{}")
             return 0, ""

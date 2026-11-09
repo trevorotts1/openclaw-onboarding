@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import substrate  # noqa: E402
 from launcher_core import checks, image_stages, launch_bridge, package, page_designs  # noqa: E402
 from test_page_designs_real import write_stage_state  # noqa: E402
+from path_compare import artifact_identity  # noqa: E402  FIX-06: artifact identity, not path spelling
 
 S71 = "71-blackceo-signature-page/scripts"
 combine = substrate.load(f"{S71}/combine_review_pdf.py", "seam_combine_review_pdf", S71)
@@ -158,10 +159,12 @@ class PaidRunDesignsSeamTests(unittest.TestCase):
 
                 piece = json.loads(piece_path.read_text(encoding="utf-8"))
                 self.assertEqual(paid.kinds(piece["artifacts"]), set(page_designs.KINDS))
-                self.assertEqual({(a["path"], a["sha256"]) for a in piece["artifacts"]},
-                                 {(a["path"], a["sha256"]) for a in paid.artifacts(relative)})
+                # FIX-06 cause 3: the refresh lists the resolved run, the piece was recorded from the
+                # caller's spelling; identity is (canonical path, sha256), so only a different file differs.
+                self.assertEqual(artifact_identity(piece["artifacts"]),
+                                 artifact_identity(paid.artifacts(relative)))
                 # package._bind_piece: every artifact of the piece is one the dispatch's stored result lists
-                have = lambda doc: {(a["path"], a["sha256"]) for a in doc["artifacts"]}  # noqa: E731
+                have = lambda doc: artifact_identity(doc["artifacts"])  # noqa: E731
                 self.assertLessEqual(have(piece), have(json.loads(stored.read_text(encoding="utf-8"))))
                 self.assertEqual(have(piece), have(json.loads(manifest.read_text(encoding="utf-8"))["results"][0]))
                 # a second pass changes nothing
@@ -220,8 +223,8 @@ class LandingLaneRefreshTests(unittest.TestCase):
         self.assertEqual(image_stages.refresh_pieces(self.launch, sales.run), ["landing"])
         self.assertEqual(self.kinds_of(self.piece("landing"), "sales-page") & set(checks.SECTION_KINDS), set(checks.SECTION_KINDS))
         stored = json.loads((self.launch / "dispatch" / "result-landing.json").read_text(encoding="utf-8"))
-        self.assertLessEqual({(a["path"], a["sha256"]) for a in self.piece("landing")["artifacts"]},
-                             {(a["path"], a["sha256"]) for a in stored["artifacts"]})
+        self.assertLessEqual(artifact_identity(self.piece("landing")["artifacts"]),
+                             artifact_identity(stored["artifacts"]))
 
     def test_landing_plus_sales_lane_matches_each_file_to_its_own_run_and_every_file_stays_findable(self):
         sales, opt = self.run_of("sales-run", "sales"), self.run_of("optin-run", "opt_in")
