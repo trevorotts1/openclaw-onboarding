@@ -211,6 +211,62 @@ def src_matches(slot, src):
     return False
 
 
+def planned_slot_ids(document):
+    """The slot ids a page request or copy spec PLANS, in page order.
+
+    Reads both shapes the pipeline uses: a page request's
+    ``sections[].slots[]`` and a copy spec's ``sections[].default_slots[]``.
+    An entry's id is ``slot_id``, else ``id``. A duplicate id is an error: one
+    planned slot is one picture, and two slots that share an id can never be
+    told apart in the rendered page or the image map.
+    """
+    sections = document.get("sections") if isinstance(document, dict) else document
+    if not isinstance(sections, list):
+        raise ImageSlotError("planned slots: expected a page request / copy spec with a sections list")
+    planned = []
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        for key in ("slots", "default_slots"):
+            for entry in section.get(key) or []:
+                if not isinstance(entry, dict):
+                    continue
+                slot_id = str(entry.get("slot_id") or entry.get("id") or "").strip()
+                if not slot_id:
+                    continue
+                if slot_id in planned:
+                    raise ImageSlotError("planned slots: %s is planned twice; one slot, one picture" % slot_id)
+                planned.append(slot_id)
+    return planned
+
+def check_planned_coverage(planned, rendered):
+    """The reverse pass: every PLANNED slot must appear in the rendered page.
+
+    ``check_page_images`` walks the images a page happened to render, so a page
+    that leaves most of its plan out still passes it. This walks the plan and
+    reports each planned slot no rendered image carries. A miss is an error,
+    never a warning: a twelve-slot page rendered with two pictures is the
+    defect this floor exists for, and the client must not be shown it.
+
+    ``rendered`` items are slot ids or dicts carrying ``slot`` / ``slot_id`` /
+    ``id`` (the generation record's entry shape).
+    """
+    seen = set()
+    for item in rendered:
+        if isinstance(item, dict):
+            value = item.get("slot") or item.get("slot_id") or item.get("id")
+        else:
+            value = item
+        if value:
+            seen.add(str(value).strip())
+    planned = [str(s).strip() for s in planned]
+    missing = [s for s in planned if s not in seen]
+    total = len(planned)
+    return ["planned image slot %s is missing from the rendered page "
+            "(%d of %d planned slot(s) rendered; every planned slot must carry "
+            "real photography)" % (slot_id, total - len(missing), total)
+            for slot_id in missing]
+
 def check_page_images(slots, images, fetch):
     """Errors for rendered content images that break the slot contract.
 
