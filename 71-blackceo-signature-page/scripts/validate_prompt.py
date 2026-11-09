@@ -337,6 +337,11 @@ def cap_for_model(model, policy):
                 best = entry
     if best is not None:
         return best
+    if model and "gpt-image-2-6" in model:
+        # Fail to the law, never to 32,000: owner ruling 2026-11-08 caps every
+        # 2.6 route at 20,000 even if the policy file lookup misses.
+        return {"max_chars": 20000, "cap_status": "OWNER_RULED", "unit": "chars",
+                "source": "Owner ruling 2026-11-08 fallback: 20,000 (66-kie-image/models.json owner_prompt_cap_chars)."}
     return policy.get("default", {"max_chars": None, "cap_status": "UNKNOWN",
                                    "unit": "chars"})
 

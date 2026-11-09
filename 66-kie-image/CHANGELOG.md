@@ -1,3 +1,7 @@
+## [2.2.10] - 2026-11-09 - GPT Image 2.6 owner cap 20,000 recorded in models.json
+
+- `models.json`: `owner_prompt_cap_chars: 20000` on both 2.6 sunburst entries (t2i + i2i). The existing `policy_owner_cap` precedence in the 74 adapter and 66 validator now resolves max 20000 with `limit_source` owner-ruling.
+
 ## [2.2.9] - 2026-11-09 - 2.6 named as the ratio-rule default; remaining 2.5 default claims corrected
 
 - `models.json` `owner_preferred_default` / `_note`: 2.6 Sunburst is the current default since #2860; Ruling 6 is retained as history and 2.5 is retained by operator ruling 2026-09-09. `SKILL.md`: the `(default)` ratio-rule label moved to 2.6, with the 2.5 ratio facts kept attached to 2.5. Two stale comments in `normalize_alias.py` and `select_image_model.py` corrected. No executable logic changed; both self-tests pass.
