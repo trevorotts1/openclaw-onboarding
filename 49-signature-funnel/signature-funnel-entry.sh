@@ -21,10 +21,17 @@
 #                    re-checked by scripts/kie74_receipt.py --check); anything else that
 #                    names the createTask route or a KIE client script is a bypass.
 #                    (Authorship + build MUST go through the delegated adapters.)
-#   5. NONCE       — write a run-scoped 0600 front-door nonce; export SF_RUN_NONCE.
-#   6. ORCHESTRATE — run_signature_funnel.py with the nonce (the no-skip state
-#                    machine); it emits the signed PROCESS-CERTIFICATE only on
-#                    all-phases-pass.
+#   5. MODEL-TIER  — verify the HARNESS-minted, operator-key-signed authoring-model
+#                    receipt (minting it from SF_ROUTING_RECORD when the harness
+#                    supplied one). An env-reported receipt is refused.
+#   6. ORCHESTRATE — run_signature_funnel.py (the no-skip state machine). It
+#                    authorizes on the OPERATOR KEY only, so a caller-supplied
+#                    --nonce / --nonce-file / SF_RUN_NONCE is refused with
+#                    AF-FUN-FRONT-DOOR; this shell mints and forwards none. It emits
+#                    the signed PROCESS-CERTIFICATE only on all-phases-pass.
+#
+#   Bare invocation (no arguments) prints this usage and exits 0; every real mode
+#   still runs every gate above, fail-closed.
 #
 # Usage:
 #   bash signature-funnel-entry.sh --run-dir <RUN_DIR>
@@ -126,42 +133,21 @@ step_bypass_scan() {
   "$PY" "$FRONT_DOOR" bypass-scan --run-dir "$rd" >/dev/null || exit 1
 }
 
-step_nonce() {
-  local rd="$1"
-  local nonce; nonce="$("$PY" -c 'import secrets; print(secrets.token_hex(32))')"
-  local nf="$rd/.sf_run_nonce"
-  ( umask 077; printf '%s' "$nonce" > "$nf" )
-  chmod 600 "$nf"
-  printf '%s' "$nonce"
-}
-
-# FIX-XC-09e — resolve the CLIENT's own execution-tier authoring model (role=content),
-# record routing/model-content-receipt.json, and gate it (fail-closed) via prove_sf_cert
-# --model-receipt. The client's OWN strongest model writes the copy.
+# FIX-XC-09e / A6 — the CLIENT's own execution-tier authoring model (role=content) must be
+# recorded in routing/model-content-receipt.json and gated (fail-closed) via prove_sf_cert
+# --model-receipt. prove_sf_cert accepts ONLY a harness-minted, operator-key-signed receipt
+# (resolved_from=harness-routing-record + harness_sig): a receipt this shell wrote from
+# SF_CONTENT_* environment values is env-reported and is refused as AF-FUN-MODEL-TIER.
+# So the shell mints from the harness routing record when one is supplied, and otherwise
+# verifies the receipt the harness already wrote. It never invents one.
 step_model_receipt() {
   local rd="$1"
-  "$PY" - "$rd" <<'PYEOF'
-import json, os, sys, datetime
-rd = sys.argv[1]
-# Client-chain resolver seam: reuse model_router.select(role="content") semantics against the
-# CLIENT's providers. Operator/orchestrator supplies the resolved id via env.
-model = os.environ.get("SF_CONTENT_MODEL", "")
-provider = os.environ.get("SF_CONTENT_PROVIDER", "")
-tier = os.environ.get("SF_CONTENT_TIER", "content")
-receipt = {
-    "role": "content",
-    "resolved_from": "client-provider-chain" if model else "unresolved",
-    "model": model,
-    "provider": provider.lower(),
-    "tier": tier,
-    "resolved_at": datetime.datetime.utcnow().isoformat() + "Z",
-}
-os.makedirs(os.path.join(rd, "routing"), exist_ok=True)
-with open(os.path.join(rd, "routing", "model-content-receipt.json"), "w", encoding="utf-8") as fh:
-    json.dump(receipt, fh, indent=2)
-PYEOF
+  if [ -n "${SF_ROUTING_RECORD:-}" ]; then
+    "$PY" "$SCRIPTS_DIR/prove_sf_cert.py" --mint-model-receipt "$SF_ROUTING_RECORD" --run-dir "$rd" \
+      || die "MODEL-TIER" "the harness routing record could not be minted (the operator key is required)"
+  fi
   "$PY" "$SCRIPTS_DIR/prove_sf_cert.py" --model-receipt "$rd/routing/model-content-receipt.json" \
-    || die "MODEL-TIER" "content-authoring model receipt failed the execution-tier gate — set SF_CONTENT_MODEL + SF_CONTENT_PROVIDER (+ SF_CONTENT_TIER) to the CLIENT's own strongest model"
+    || die "MODEL-TIER" "content-authoring model receipt failed the execution-tier gate — the HARNESS must mint it from its routing record (prove_sf_cert.py --mint-model-receipt); an env-reported model is refused"
 }
 
 # Launch mode: same front-door integrity guards (deps / version / hash-pin /
@@ -202,10 +188,10 @@ run_pipeline() {
   step_hashpin
   step_bypass_scan "$rd"
   step_model_receipt "$rd"
-  local nonce; nonce="$(step_nonce "$rd")"
-  export SF_RUN_NONCE="$nonce"
-  echo "== signature-funnel-entry :: front door cleared (deps/version/hash-pin/bypass/model-tier/nonce) =="
-  "$PY" "$SKILL_DIR/run_signature_funnel.py" --run-dir "$rd" --nonce "$nonce"
+  echo "== signature-funnel-entry :: front door cleared (deps/version/hash-pin/bypass/model-tier) =="
+  # A6: the runner refuses a caller-supplied nonce (AF-FUN-FRONT-DOOR). The operator key is
+  # the authorization, so this shell mints none and forwards none.
+  env -u SF_RUN_NONCE "$PY" "$SKILL_DIR/run_signature_funnel.py" --run-dir "$rd"
 }
 
 self_test() {
@@ -267,6 +253,12 @@ write_pin() {
 }
 
 main() {
+  # A6 proof (d): the documented door is USABLE when invoked exactly as documented. Bare
+  # invocation is self-describing and exits 0; every real mode below still runs every gate.
+  if [ "$#" -eq 0 ]; then
+    grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'
+    exit 0
+  fi
   local mode="" rd="" req_mode="" rotation=""
   while [ $# -gt 0 ]; do
     case "$1" in
