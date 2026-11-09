@@ -1,3 +1,7 @@
+## [v2.1.48] - 2026-11-09 - RES-002: VERSION record brought back into lockstep (no behaviour change)
+
+- `VERSION` was still `v2.1.41` while `skill-version.txt` and the `SKILL.md` frontmatter had rolled to `v2.1.47`; the G3 lockstep rolls (`190462876`, `52c6516a4`) updated the other records but missed this one. All Skill 49 version records now read `v2.1.48`. No functional change.
+
 ## [v2.1.47] - 2026-11-09 - G3 lockstep roll for the Skill 83 version-parity completion (no Skill 49 behaviour change)
 
 - Version bumped because the bot-minted `scripts/SF-PROVER-PIN.sha256` changed when Skill 83 `launcher_core/constants.py` carried its version. No functional change in Skill 49.

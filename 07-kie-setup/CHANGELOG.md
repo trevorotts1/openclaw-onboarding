@@ -1,3 +1,7 @@
+## [v7.2.8] - 2026-11-09 - RES-003: docs-port test pins the live skill versions (no behaviour change)
+
+- `tests/test_official_docs_port.py` still pinned `SKILL_VERSIONS` to 7.2.4 / 1.1.12 / 2.2.6 / 2.3.6, so `test_skill_version_files` and `test_skill_md_frontmatter` failed against the live 7.2.8 / 1.1.14 / 2.2.10 / 2.3.7. The pins now track the live versions. Test-only change.
+
 ## [v7.2.7] - 2026-11-09 - GPT Image 2.6 named as the Presentations pin (2.5 claim corrected)
 
 - `SKILL.md` line 90 named GPT-Image-2.5 as the Presentations-pinned model; Presentations pins `gpt-image-2-6/sunburst-*`, so the sentence now names GPT-Image-2.6. Text only, no behaviour change.
