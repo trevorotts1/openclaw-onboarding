@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unittest
 
-from fakes import K
+from fakes import K, make
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "scripts"))
@@ -78,6 +78,57 @@ class OwnerCapResolution(unittest.TestCase):
     def test_generator_omits_the_key_when_no_owner_rules(self):
         row = B.base_row("gpt-image-2/sunburst-text-to-image", {}, None)
         self.assertNotIn("owner_prompt_cap_chars", row)
+
+
+class LimitsPrecedence(unittest.TestCase):
+    """The resolution path, not just the helper: a vendor 32,000 must lose to the family cap."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = os.path.join(self._tmp.name, "skills")
+        os.makedirs(os.path.join(root, "66-kie-image"))
+        with open(os.path.join(root, "66-kie-image", "models.json"), "w") as f:
+            json.dump({"models": [{
+                "canonical_model_id": "gpt-image-2-6/sunburst-text-to-image",
+                "modality": "image",
+                "owner_prompt_cap_chars": CAP,
+            }]}, f)
+        self._old = os.environ.get("KIE_POLICY_ROOT")
+        os.environ["KIE_POLICY_ROOT"] = root
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        if self._old is None:
+            os.environ.pop("KIE_POLICY_ROOT", None)
+        else:
+            os.environ["KIE_POLICY_ROOT"] = self._old
+
+    def _adapter(self, prompt_max):
+        body = {"type": "object", "required": ["model", "input"], "properties": {
+            "model": {"type": "string"},
+            "input": {"type": "object", "required": ["prompt"],
+                      "properties": {"prompt": {"type": "string", "maxLength": prompt_max}}}}}
+        doc = {"paths": {K.JOB_PATH: {"post": {"requestBody": {
+            "content": {"application/json": {"schema": body}}}}}}}
+        return make(self._tmp.name, [["GET", "/schema",
+                                      [(200, {"code": 200, "data": {"openapi": doc}})]]])[0]
+
+    def test_sibling_route_resolves_to_the_owner_cap_not_the_vendor_schema(self):
+        d = self._adapter(32000).cmd_prompt_budget("gpt-image-2-6/flare-text-to-image")["data"]
+        self.assertEqual(d["max"], CAP)
+        self.assertEqual(d["limit_source"], "owner-ruling:66-kie-image")
+
+    def test_every_2_6_route_resolves_to_20000(self):
+        a = self._adapter(32000)
+        for route in ("gpt-image-2-6/flare-image-to-image", "gpt-image-2-6/flare-text-to-image",
+                      "gpt-image-2-6/sunburst-image-to-image", "gpt-image-2-6/sunburst-text-to-image"):
+            self.assertEqual(a.cmd_prompt_budget(route)["data"]["max"], CAP, route)
+
+    def test_19500_is_not_below_floor(self):
+        d = self._adapter(32000).cmd_prompt_budget("gpt-image-2-6/flare-text-to-image", True,
+                                                   "x" * 19500)["data"]
+        self.assertEqual((d["status"], d["exit_code"]), ("PASS", 0))
 
 
 if __name__ == "__main__":

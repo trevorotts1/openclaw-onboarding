@@ -1489,8 +1489,10 @@ class Adapter:
         pol, owner, confirmed, n43 = policy_limit(model)
         # OWNER CAP PRECEDENCE (Trevor 2026-11-08): an owner-declared cap outranks the live
         # vendor schema for prompt length. The vendor figure is kept in the note for provenance
-        # and in models.json; it is never rewritten or deleted.
-        ocap, oowner = policy_owner_cap(model)
+        # and in models.json; it is never rewritten or deleted. The family fallback is what makes
+        # a sibling route (flare vs sunburst) inherit the one family ruling instead of falling
+        # back to the vendor's 32,000.
+        ocap, oowner = policy_owner_cap_family(model)
         if ocap is not None:
             if mx is not None and mx != ocap:
                 notes.append("OWNER RULING (2026-11-08): %s declares owner_prompt_cap_chars %d; %s publishes %d; "
