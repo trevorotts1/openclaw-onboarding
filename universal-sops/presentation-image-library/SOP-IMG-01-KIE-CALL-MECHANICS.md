@@ -106,7 +106,7 @@ The operator rated 2.5's rendering of these three too weak to substitute (candid
 
 **UNCHANGED on BOTH routes (2.5 and legacy):** the endpoints (`POST /api/v1/jobs/createTask`, `GET /api/v1/jobs/recordInfo`), the `Authorization: Bearer $KIE_API_KEY` header, the response envelope (`code`/`msg`/`data.taskId`; state `waiting`|`success`|`fail`; `resultJson.resultUrls[]`), `callBackUrl` semantics, and the I2I reference field `input_urls` (≤30 MB/file, `image/jpeg|png|webp|jpg`) — never `image_input` (that field belongs to Nano Banana 2; see §5 rule 2).
 
-The curl and JSON examples in §4 and §5 below show the DEFAULT (2.5) route. A legacy-route call has the identical shape — same endpoints, same headers, same envelope, same `input_urls` mechanics — with only the `model` string swapped to the legacy id above and the 25,000-char cap applied instead of 20,000.
+The curl and JSON examples in §4 and §5 below show the DEFAULT (2.6) route. A legacy-route call has the identical shape — same endpoints, same headers, same envelope, same `input_urls` mechanics — with only the `model` string swapped to the legacy id above and the 25,000-char cap applied instead of 20,000.
 
 ---
 
