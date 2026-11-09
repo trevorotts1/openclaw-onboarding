@@ -37,7 +37,7 @@ expensive models for simple tasks.
 2. **Backup protocol** - Always back up your config before making changes (mandatory)
 3. **Model ID format** - The exact format OpenClaw requires (openrouter/author/slug)
 4. **The 5 model tiers** - Thinking, Execution, Creative, Emergency Fallback, and Research
-5. **22 pre-configured models** - Full specs, pricing, context windows, and max output for each (including MiMo V2 Pro, MiMo V2 Omni, MiniMax M2.7, Perplexity Sonar)
+5. **22 pre-configured models** - Full specs, pricing, context windows, and max output for each (including MiMo V2 Pro, MiMo V2 Omni)
 6. **27 strict rules** - Config safety rules the agent must follow (no guessing, no skipping backups, no unauthorized changes)
 7. **Temperature and reasoning settings** - What each model should be set to
 8. **Intelligent Model Routing** - A decision framework that teaches the agent to pick the right model for each task automatically
@@ -76,8 +76,9 @@ expensive models for simple tasks.
 
 - **Never use openrouter/auto.** It picks models unpredictably and breaks configs.
 
-- **MiniMax M2.7 is the recommended primary model.** It supports tool calls, has opt-in reasoning (pass reasoning: true), 204K context, and 131K max output. Costs $0.30 per million input tokens.
-  reasoning enabled by default, and costs $0.30 per million input tokens.
+- **The client chooses the primary model.** This guide never prescribes one by
+  name; it sets up whichever model the client selects on their own OpenRouter key.
+  Confirm that model supports tool calls before making it primary.
 
 - **Kimi K2.5 cannot do tool calls.** It is for code generation and chat only. Sending
   it a task that requires calling tools will fail silently.
