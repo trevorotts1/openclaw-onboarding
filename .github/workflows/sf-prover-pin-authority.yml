@@ -8,12 +8,15 @@ name: SF prover pin authority
 # prover and re-run --write-pin would certify its own edit, so the pin has ONE minting path: this workflow.
 #
 #   verify  pull_request / tag push : recompute the pin from the proposed tree and FAIL on mismatch. The
-#                                     verifier is the BASE branch's front_door.py (a PR cannot weaken the
-#                                     checker that judges it). A base without front_door.py (the PR that
-#                                     introduces it) cannot be compared against the legacy pin: that PR runs
-#                                     the bypass scan only and warns; its pin comes from the mint job after
-#                                     merge. A PR whose net diff edits the pin file fails unless every commit
-#                                     touching it is bot-authored, bot-committed and touches only the pin.
+#                                     PR's OWN front_door.py judges the PR tree (a spec change that adds
+#                                     pinned files mints a new pin the PR verifier reproduces, so an honest
+#                                     composition change passes). The BASE verifier additionally rechecks the
+#                                     BASE tree against the BASE pin (the PR cannot quietly alter what the old
+#                                     spec asserts). A base without front_door.py (the PR that introduces it)
+#                                     skips the base check with a warning and still runs the PR check; its pin
+#                                     comes from the mint job after merge. A PR whose net diff edits the pin
+#                                     file fails unless every commit touching it is bot-authored, bot-committed
+#                                     and touches only the pin.
 #   mint    push to main / manual   : the merge is the authority. Recompute, and commit the pin as
 #                                     github-actions[bot] when it changed. `mint-pin --ci` refuses to run
 #                                     anywhere else, and the local `--write-pin` needs a signed pin_rotation
@@ -82,14 +85,44 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          verifier="trusted/49-signature-funnel/scripts/front_door.py"
-          if [ ! -f "$verifier" ]; then
-            echo "::warning::bootstrap: pin is minted by the push-to-main mint job"
-            python3 tree/49-signature-funnel/scripts/front_door.py --skill-dir tree/49-signature-funnel bypass-scan
+          base_verifier="trusted/49-signature-funnel/scripts/front_door.py"
+          pr_verifier="tree/49-signature-funnel/scripts/front_door.py"
+          pr_bootstrap=0
+          base_bootstrap=0
+          # (a) The PR's OWN verifier must reproduce the pin declared on the PR tree. A spec change
+          # that adds pinned files mints a new pin the PR verifier reproduces, so an honest
+          # composition change passes here where the old base-only recompute failed by construction.
+          if [ ! -f "$pr_verifier" ]; then
+            echo "::warning::bootstrap: no front_door.py on the PR tree; pin is minted by the push-to-main mint job"
+            pr_bootstrap=1
+          else
+            python3 "$pr_verifier" --skill-dir tree/49-signature-funnel hashpin
+          fi
+          # (b) The BASE verifier must still reproduce the pin declared on the BASE tree. This proves
+          # the PR did not quietly alter what the old spec asserts: if the PR weakened the shared
+          # checker (or the base pin), the base tree no longer matches the base pin here.
+          if [ ! -f "$base_verifier" ]; then
+            echo "::warning::bootstrap: no front_door.py on the base tree; skipping the base-tree recheck"
+            base_bootstrap=1
+          else
+            python3 "$base_verifier" --skill-dir trusted/49-signature-funnel hashpin
+          fi
+          # A tree without ANY verifier (the PR that introduces front_door.py) cannot be compared
+          # against a pin: warn and let the mint job certify after merge.
+          if [ "$pr_bootstrap" = 1 ] && [ "$base_bootstrap" = 1 ]; then
+            echo "::warning::bootstrap: neither tree has a verifier; pin is minted by the push-to-main mint job"
             exit 0
           fi
-          python3 "$verifier" --skill-dir tree/49-signature-funnel hashpin
-          python3 "$verifier" --skill-dir tree/49-signature-funnel bypass-scan
+          # The bypass scan sees the proposed code: prefer the PR tree's scanner, fall back to the
+          # base verifier only when the PR deleted its own (the base hashpin above still gates).
+          scanner="$pr_verifier"
+          [ -f "$scanner" ] || scanner="$base_verifier"
+          python3 "$scanner" --skill-dir tree/49-signature-funnel bypass-scan
+          # ponytail: two hashpin gates (PR-own + base) plus the unchanged bot-mint authorship rule below are
+          # the ceiling that fits in one workflow. A compromised PR verifier could certify its own weakened
+          # tree, so do not rely on (a) alone: the base-tree recheck (b) plus the bot-mint authorship rule
+          # (c) are what keep a weakened spec from passing. Upgrade path: an external allow-list of
+          # verifier changes reviewed by the operator before the PR verifier is trusted.
 
       - name: Refuse a hand-edited pin file
         if: github.event_name == 'pull_request'
