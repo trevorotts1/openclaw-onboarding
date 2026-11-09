@@ -126,12 +126,13 @@ def test_ig_route_06_registry_capability_router_client_agree():
         assert reg.capability_id == spec.capability_id, op
         row = _frozen_row(reg.public_operation_id)
         assert row is not None, op
-        if (str(row.method).upper(), str(row.path_template)) == (spec.method, spec.path):
-            assert reg.status == router.ROUTABLE, (op, reg.status, reg.reason)
-        else:
-            assert reg.status == router.DECLARED, (op, reg.status, reg.reason)
-            assert spec.path in reg.reason, reg.reason
-            assert "WF00" in reg.reason, reg.reason
+        # WF00-CP01 landed the corrected rows: registry, inventory, router and
+        # the Skill 6 client must now describe one route, with no pending change
+        # request. A regression to the old shape fails here instead of passing.
+        assert (str(row.method).upper(), str(row.path_template)) == (
+            spec.method, spec.path,
+        ), (op, row.method, row.path_template)
+        assert reg.status == router.ROUTABLE, (op, reg.status, reg.reason)
 
         mirror = client.RECONCILED_FUNNEL_READS[op]
         assert mirror["method"] == spec.method and mirror["path"] == spec.path, op
@@ -218,25 +219,41 @@ def test_count_pages_raises_on_unknown_envelope():
 # ---------------------------------------------------------------------------
 # Skill 6 bridge: refuses a stale frozen row before transport
 # ---------------------------------------------------------------------------
-def test_public_client_refuses_stale_frozen_row_before_transport():
+def test_public_client_refuses_stale_frozen_row_before_transport(monkeypatch):
     spec = contract.contract("funnels.list")
     row = _frozen_row("funnels.list")
-    stale = (str(row.method).upper(), str(row.path_template)) != (
+    assert (str(row.method).upper(), str(row.path_template)) == (
         spec.method, spec.path,
-    )
-    if stale:
-        class _NoCall:
-            def __call__(self, req, timeout):  # pragma: no cover
-                raise AssertionError("stale-row refusal must happen before transport")
+    ), (row.method, row.path_template)
 
-        with pytest.raises(client.PublicRouteError) as excinfo:
-            client.list_funnels(
-                "loc-1", _FIXTURE_PIT, opener=_NoCall(), capability=object()
-            )
-        assert excinfo.value.rule == "reconciled_path_mismatch"
-    else:
-        # Once WF00 lands the corrected row the guard is a no-op.
-        client.assert_reconciled_funnel_row("funnels.list")
+    # The WF00-CP01 row correction landed, so the live guard is a no-op.
+    client.assert_reconciled_funnel_row("funnels.list")
+
+    # Negative control on the same instrument: a stale row still refuses, and
+    # it refuses before any transport call.
+    class _StaleRow:
+        method = "GET"
+        path_template = "/funnels/"
+
+    registry = client.engine()["OPERATIONS"]
+
+    class _StaleRegistry:
+        def get(self, operation_id):
+            if operation_id == "funnels.list":
+                return _StaleRow()
+            return registry.get(operation_id)
+
+    monkeypatch.setitem(client.engine(), "OPERATIONS", _StaleRegistry())
+
+    class _NoCall:
+        def __call__(self, req, timeout):  # pragma: no cover
+            raise AssertionError("stale-row refusal must happen before transport")
+
+    with pytest.raises(client.PublicRouteError) as excinfo:
+        client.list_funnels(
+            "loc-1", _FIXTURE_PIT, opener=_NoCall(), capability=object()
+        )
+    assert excinfo.value.rule == "reconciled_path_mismatch"
 
 
 # ---------------------------------------------------------------------------
