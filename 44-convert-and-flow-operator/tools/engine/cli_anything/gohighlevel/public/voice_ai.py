@@ -37,7 +37,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import secrets
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
@@ -347,8 +346,6 @@ class VoiceAgentSpec:
             "escalationDestination": dict(self.escalation_destination),
             "allowedCallPurposes": list(self.allowed_call_purposes),
         }
-        if self.knowledge_source_ids:
-            body["knowledgeSourceIds"] = list(self.knowledge_source_ids)
         if self.voice is not None:
             body["voice"] = dict(self.voice)
         body.update(dict(self.extra))
@@ -1356,10 +1353,25 @@ class VoiceAiAdapter:
             return result, None
         # The read-back is shallow/short-circuit; settle the pending row, then
         # let the name search decide.  Exactly like the workflow create path.
-        self._public.reconcile(result)
+        settled = self._public.reconcile(result)
+        if settled.status is Status.unavailable:
+            # The read-back stayed unreadable and the pending row remains; the
+            # outcome is still unknown and no success may be claimed.
+            return result, None
         listed, listed_payload = self.list_agents(tenant=tenant, attempt=attempt)
-        found = _find_agent_by_name(listed_payload, spec.name) if listed.status is Status.ok else None
+        if listed.status is not Status.ok:
+            return result, None
+        created_id = _agent_identity(payload)
+        found = (
+            _find_agent_by_id(listed_payload, created_id)
+            if created_id
+            else _find_agent_by_name(listed_payload, spec.name)
+        )
         if found is None:
+            return result, None
+        if not created_id and _count_agents_by_name(listed_payload, spec.name) != 1:
+            # Duplicate display names stay distinct ids; an ambiguous name
+            # read-back proves nothing about WHICH agent was created.
             return result, None
         settled = replace(result, status=Status.ok, error=None)
         return self._enrich_agent(settled, found, spec.name), found
@@ -1584,6 +1596,23 @@ def _find_agent_by_name(payload: Any, name: str) -> Mapping[str, Any] | None:
         if isinstance(row, Mapping) and str(row.get("name") or "").strip() == wanted:
             return row
     return None
+
+
+def _find_agent_by_id(payload: Any, agent_id: str) -> Mapping[str, Any] | None:
+    wanted = str(agent_id).strip()
+    for row in _agent_rows(payload) or ():
+        if isinstance(row, Mapping) and _agent_identity(row) == wanted:
+            return row
+    return None
+
+
+def _count_agents_by_name(payload: Any, name: str) -> int:
+    wanted = str(name).strip()
+    return sum(
+        1
+        for row in (_agent_rows(payload) or ())
+        if isinstance(row, Mapping) and str(row.get("name") or "").strip() == wanted
+    )
 
 
 def _agent_identity(payload: Any) -> str | None:

@@ -403,6 +403,30 @@ def test_ig_ai_08_caller_input_cannot_mutate_admin_state() -> None:
     assert "rules" in exc.value.detail
 
 
+def test_provisioning_refuses_an_unapproved_replacement() -> None:
+    """A same-name agent is a replacement, not a silent addition."""
+
+    provider = select_provider(PROVIDER_NATIVE, reason="operator selected native")
+    with pytest.raises(VoiceGuardRefusal) as exc:
+        plan_provisioning(
+            tenant=fake_tenant(),
+            spec=agent_spec(),
+            provider=provider,
+            existing_agent_names=(("agent_old", "Front Desk"),),
+        )
+    assert exc.value.rule == "voice_agent_replacement_unapproved"
+    plan = plan_provisioning(
+        tenant=fake_tenant(),
+        spec=agent_spec(),
+        provider=provider,
+        existing_agent_names=(("agent_old", "Front Desk"),),
+        allow_replace=True,
+    )
+    assert plan.agent_step == "update_agent"
+    assert plan.replacement_agent_id == "agent_old"
+    assert plan.steps[-1] == "activate_route_with_rollback"
+
+
 # ---------------------------------------------------------------------------
 # contract-pending and capability gates
 # ---------------------------------------------------------------------------

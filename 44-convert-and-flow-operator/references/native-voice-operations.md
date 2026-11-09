@@ -116,7 +116,9 @@ stay distinct ids.
 
 Defaults: 2 test calls, 180 s, USD 5.00, 0 retries, 3 actions per test. A test
 also requires: the agent bound in the observed phone state, an allowlisted
-destination, and every planned action allowlisted. `verify_controlled_test`
+destination, and every planned action allowlisted. Transfer/calendar
+allowlists come from the operator-configured `GuardLimits` given to the
+adapter; an empty allowlist refuses, it does not default to allow. `verify_controlled_test`
 accepts only a `trial` call for the same tenant and agent, with a contact id,
 action evidence when actions were planned, and one recorded business outcome
 (`booking_created`, `transfer_delivered`, `field_updated`,
