@@ -96,7 +96,7 @@
       "preflight": {
         "required": true,
         "checker": "_chk_media_ledger",
-        "label": "ledger.py drove the media jobs (GPT Image 2.5 sunburst generate -> Gemini QC -> SeedDream edit -> QC2 -> strip-text fallback; >=2-image assembly floor honored). NO n8n data table; local SQLite only. Every fail/timeout branch alerted the configured channel. AF-SM-MEDIA-LEDGER / AF-SM-CAROUSEL-FLOOR."
+        "label": "ledger.py drove the media jobs (GPT Image 2.6 sunburst generate -> Gemini QC -> SeedDream edit -> QC2 -> strip-text fallback; >=2-image assembly floor honored). NO n8n data table; local SQLite only. Every fail/timeout branch alerted the configured channel. AF-SM-MEDIA-LEDGER / AF-SM-CAROUSEL-FLOOR."
       },
       "gate_codes": ["AF-SM-MEDIA-LEDGER", "AF-SM-CAROUSEL-FLOOR"]
     },
@@ -236,7 +236,7 @@
       "preflight": {
         "required": true,
         "checker": "_chk_podcast",
-        "label": "prompt 17 wrote the 1,500-2,000-word [emotion]-tagged script; Fish-Audio drama-3 TTS; ffprobe 600-900 s / >=128 kbps; exactly 1400x1400 JPEG cover (prompt 14; the GPT Image 2.5 Sunburst 2K output is resized). prove_bands.py (kind podcast) PASS. Unconfigured Fish-Audio/Podbean -> {\"deferred\":true} = PODCAST_DEFERRED labeled skip, NEVER a band failure. Podbean = local API call (no n8n). AF-SM-PODCAST-SCRIPT / AF-SM-PODCAST-DURATION / AF-SM-PODCAST-COVER."
+        "label": "prompt 17 wrote the 1,500-2,000-word [emotion]-tagged script; Fish-Audio drama-3 TTS; ffprobe 600-900 s / >=128 kbps; exactly 1400x1400 JPEG cover (prompt 14; the GPT Image 2.6 Sunburst 2K output is resized). prove_bands.py (kind podcast) PASS. Unconfigured Fish-Audio/Podbean -> {\"deferred\":true} = PODCAST_DEFERRED labeled skip, NEVER a band failure. Podbean = local API call (no n8n). AF-SM-PODCAST-SCRIPT / AF-SM-PODCAST-DURATION / AF-SM-PODCAST-COVER."
       },
       "gate_codes": ["AF-SM-PODCAST-SCRIPT", "AF-SM-PODCAST-DURATION", "AF-SM-PODCAST-COVER"]
     },

@@ -47,7 +47,7 @@ BOARD = next(e for e in LIB["references"] if e["kind"] == "design-board")
 SECTION = {"section_id": "S01", "section_name": "Hero",
            "copy": "Everything your client needs. CTA: BOOK NOW.",
            "slots": [{"slot_id": "IMG-001", "aspect_ratio": "3:4", "art_direction": "Desk."}]}
-REQUEST = {"model": "gpt-image-2-5-sunburst-image-to-image", "style": "warm editorial",
+REQUEST = {"model": "gpt-image-2-6/sunburst-image-to-image", "style": "warm editorial",
            "stage_prompts": {"visual-mockup": "Mockup {section_name} at {width}px. {copy}"}}
 
 

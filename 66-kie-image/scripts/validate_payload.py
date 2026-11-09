@@ -236,8 +236,10 @@ def validate(payload, model_id_override=None):
         checked["prompt_chars"] = len(str(inp["prompt"]).strip())
 
     # ---- prompt / negative_prompt char caps (registry-driven) --------------
-    # KIE's live schema (live_schema_cap_chars) supersedes the N43 owner-confirmed 25,000 as of 2026-10-05
-    vcap = model.get("live_schema_cap_chars") or model.get("vendor_hard_cap_chars")
+    # An owner-declared cap outranks the vendor schema (owner ruling 2026-11-08); otherwise KIE's
+    # live schema supersedes the N43 owner-confirmed 25,000 as of 2026-10-05.
+    vcap = (model.get("owner_prompt_cap_chars") or model.get("live_schema_cap_chars")
+            or model.get("vendor_hard_cap_chars"))
     if vcap is not None and "prompt" in inp:
         plen = len(str(inp["prompt"]).strip())
         if plen > vcap:
@@ -318,7 +320,7 @@ def validate(payload, model_id_override=None):
     # aspect ratios 3:1, 1:3, 9:21 only) per-resolution exclusions -- rules
     # UNCHANGED from the original 2026-08-26 docs. Matched by EXACT id, not a
     # "gpt-image-2" prefix: that prefix also matches the new
-    # gpt-image-2-5-sunburst-* ids, which carry a different (see below), not
+    # gpt-image-2-6/sunburst-* ids, which carry a different (see below), not
     # merged, rule set (operator ruling 2026-09-09, Ruling 3/6).
     if model.get("canonical_model_id") in (
             "gpt-image-2-text-to-image", "gpt-image-2-image-to-image"):
@@ -332,17 +334,11 @@ def validate(payload, model_id_override=None):
         if ratio == "1:1" and res == "4K":
             errors.append("GPT Image 2 (legacy): 1:1 aspect ratio cannot be converted to 4K images")
 
-    # GPT Image 2.5 Sunburst (operator default, ruling 2026-09-09) per-resolution
-    # exclusions -- a NEW, separate rule set. The legacy 'auto -> 1K only' and
-    # '1:1 cannot convert to 4K' rules are RETIRED here; not restated in the
-    # 2.5 docs (Ruling 3).
-    if model.get("canonical_model_id") in (
-            "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image"):
-        excl = model.get("ratio_resolution_exclusions") or []
-        if res in ("2K", "4K") and ratio in excl:
-            errors.append(
-                "GPT Image 2.5: aspect ratio %s is 1K-only (2K/4K excluded: 27:16, 16:27, 9:8, "
-                "8:9); %s requested" % (ratio, res))
+    # GPT Image 2.6 Sunburst (operator default, ruling 2026-09-09) has NO per-resolution
+    # exclusions: the vendor 2.6 aspect_ratio enum is one flat list (checked 2026-11-08), and
+    # the legacy 'auto -> 1K only' and '1:1 cannot convert to 4K' rules are RETIRED here.
+    # 27:16, 16:27, 9:8 and 8:9 are not enum members at any resolution; the enum check above
+    # rejects them on every resolution.
 
     # ---- Wan ---------------------------------------------------------------
     if model.get("canonical_model_id", "").startswith("wan/"):
@@ -489,35 +485,61 @@ def selftest():
          _base("gpt-image-2-text-to-image", {"aspect_ratio": "auto", "resolution": "2K"}), False,
          expect_err_contains="auto")
 
-    # GPT Image 2.5 Sunburst resolution/ratio rules (operator ruling 2026-09-09,
-    # NEW rule set -- separate from and NOT merged with the legacy rules above)
-    case("gpt-image-2.5 4K with 9:8 FAIL",
-         _base("gpt-image-2-5-sunburst-text-to-image", {"aspect_ratio": "9:8", "resolution": "4K"}), False,
-         expect_err_contains="1K-only")
-    case("gpt-image-2.5 2K with 16:27 FAIL",
-         _base("gpt-image-2-5-sunburst-text-to-image", {"aspect_ratio": "16:27", "resolution": "2K"}), False,
-         expect_err_contains="1K-only")
-    case("gpt-image-2.5 1K with 9:8 OK",
-         _base("gpt-image-2-5-sunburst-text-to-image", {"aspect_ratio": "9:8", "resolution": "1K"}), True)
-    case("gpt-image-2.5 4K with 16:9 OK",
-         _base("gpt-image-2-5-sunburst-text-to-image", {"aspect_ratio": "16:9", "resolution": "4K"}), True)
-    # Legacy-only rules are RETIRED on 2.5: auto at 2K, and 1:1 at 4K, are fine.
-    case("gpt-image-2.5 auto with 2K OK (legacy rule retired)",
-         _base("gpt-image-2-5-sunburst-text-to-image", {"aspect_ratio": "auto", "resolution": "2K"}), True)
-    case("gpt-image-2.5 1:1 to 4K OK (legacy rule retired)",
-         _base("gpt-image-2-5-sunburst-text-to-image", {"aspect_ratio": "1:1", "resolution": "4K"}), True)
-    # 3:1/1:3/9:21 are not in the 2.5 enum at all -- a payload built against the
-    # 2.5 model with one of these ratios is a misroute (those route to the
-    # retained legacy model upstream in the selector) and fails the plain enum
-    # check, not the 2.5-specific 1K-only rule.
-    case("gpt-image-2.5 with 3:1 FAIL (not in 2.5 enum; belongs on legacy route)",
-         _base("gpt-image-2-5-sunburst-text-to-image", {"aspect_ratio": "3:1"}), False,
+    # GPT Image 2.6 Sunburst aspect-ratio MEMBERSHIP (vendor 2.6 OpenAPI enum, checked 2026-11-08).
+    # 27:16, 16:27, 9:8 and 8:9 are not enum members at ANY resolution -- the 2.5 1K-only list was
+    # never a 2.6 membership claim. 2.6 has no per-resolution exclusions.
+    case("gpt-image-2-6 4K with 9:8 FAIL (not an enum member)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "9:8", "resolution": "4K"}), False,
          expect_err_contains="not in exposed enum")
-    case("gpt-image-2.5 i2i 16 refs OK (carried forward unchanged from legacy)",
-         _base("gpt-image-2-5-sunburst-image-to-image", {"input_urls": _refs(16)}), True)
-    case("gpt-image-2.5 i2i 17 refs FAIL (carried forward unchanged from legacy)",
-         _base("gpt-image-2-5-sunburst-image-to-image", {"input_urls": _refs(17)}), False,
+    case("gpt-image-2-6 2K with 16:27 FAIL (not an enum member)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "16:27", "resolution": "2K"}), False,
+         expect_err_contains="not in exposed enum")
+    case("gpt-image-2-6 1K with 9:8 FAIL (not a member at any resolution)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "9:8", "resolution": "1K"}), False,
+         expect_err_contains="not in exposed enum")
+    case("gpt-image-2-6 4K with 16:9 OK",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "16:9", "resolution": "4K"}), True)
+    # Legacy-only rules are RETIRED on 2.5: auto at 2K, and 1:1 at 4K, are fine.
+    case("gpt-image-2-6 auto with 2K OK (legacy rule retired)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "auto", "resolution": "2K"}), True)
+    case("gpt-image-2-6 1:1 to 4K OK (legacy rule retired)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "1:1", "resolution": "4K"}), True)
+    # 3:1/1:3/9:21 ARE served by 2.6 natively (vendor 2.6 OpenAPI enum; live probe
+    # 2026-11-08 created a 3:1 task, HTTP 200). The legacy gpt-image-2 route is a
+    # fallback, not a requirement.
+    case("gpt-image-2-6 with 3:1 OK (served natively since 2026-11-08)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "3:1"}), True)
+    case("gpt-image-2-6 with 9:21 OK (served natively since 2026-11-08)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "9:21"}), True)
+    case("gpt-image-2-6 i2i 16 refs OK (carried forward unchanged from legacy)",
+         _base("gpt-image-2-6/sunburst-image-to-image", {"input_urls": _refs(16)}), True)
+    case("gpt-image-2-6 i2i 17 refs FAIL (carried forward unchanged from legacy)",
+         _base("gpt-image-2-6/sunburst-image-to-image", {"input_urls": _refs(17)}), False,
          expect_err_contains="exceeds published maximum 16")
+    # Native ratios at every resolution, the per-task format split, and the owner-ruled prompt cap.
+    _reg, _by_id_26 = load_registry()
+    cap26 = _by_id_26["gpt-image-2-6/sunburst-text-to-image"]["owner_prompt_cap_chars"]
+    case("gpt-image-2-6 27:16 FAIL (not an enum member)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "27:16"}), False,
+         expect_err_contains="not in exposed enum")
+    case("gpt-image-2-6 3:1 at 4K OK (no 1K-only rule remains)",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "3:1", "resolution": "4K"}), True)
+    case("gpt-image-2-6 9:21 at 4K OK",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "9:21", "resolution": "4K"}), True)
+    case("gpt-image-2-6 1:3 OK",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"aspect_ratio": "1:3"}), True)
+    case("gpt-image-2-6 t2i svg OK",
+         _base("gpt-image-2-6/sunburst-text-to-image", {"output_format": "svg"}), True)
+    case("gpt-image-2-6 i2i webp OK",
+         _base("gpt-image-2-6/sunburst-image-to-image", {"input_urls": _refs(1), "output_format": "webp"}), True)
+    case("gpt-image-2-6 i2i gif FAIL",
+         _base("gpt-image-2-6/sunburst-image-to-image", {"input_urls": _refs(1), "output_format": "gif"}), False,
+         expect_err_contains="not in exposed enum")
+    case("gpt-image-2-6 prompt at owner cap %d OK" % cap26,
+         _base("gpt-image-2-6/sunburst-text-to-image", {"prompt": "x" * cap26}), True)
+    case("gpt-image-2-6 prompt %d above owner cap FAIL" % (cap26 + 1),
+         _base("gpt-image-2-6/sunburst-text-to-image", {"prompt": "x" * (cap26 + 1)}), False,
+         expect_err_contains="hard cap")
 
     # Wan n / bbox
     case("wan n=4 OK", _base("wan/2-7-image", {"n": 4}), True)

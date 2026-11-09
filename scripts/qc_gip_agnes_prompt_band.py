@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """qc_gip_agnes_prompt_band.py -- QC gate that checks image-prompt length against KIE
-prompt rule 12 (owner order 2026-10-05) for GPT-image-2.5 and Agnes Image prompts.
+prompt rule 12 (owner order 2026-10-05) for GPT-Image 2.6 and Agnes Image prompts.
 
 This is a unified pre-commit / CI gate covering both scopes:
-  1. Graphics department GIP prompts (GPT-image-2.5 T2I/I2I)
+  1. Graphics department GIP prompts (GPT-Image 2.6 T2I/I2I)
   2. Agnes skills 63/64 prompts (Agnes Image 2.1 Flash)
 
 THE RULE (rule 12, 07-kie-setup/references/kie-common-rules.md):
@@ -26,7 +26,7 @@ USAGE
     python3 scripts/qc_gip_agnes_prompt_band.py --file prompt.txt --style-ref  # style-ref check
     python3 scripts/qc_gip_agnes_prompt_band.py --dir <prompts_dir>  # gate a directory
     python3 scripts/qc_gip_agnes_prompt_band.py --file prompt.txt --json  # machine-readable output
-    python3 scripts/qc_gip_agnes_prompt_band.py --file prompt.txt --model <KIE model id>  # default: the pinned GPT Image 2.5 text-to-image id
+    python3 scripts/qc_gip_agnes_prompt_band.py --file prompt.txt --model <KIE model id>  # default: the pinned GPT Image 2.6 text-to-image id
 
 EXIT CODES
     0 -- all checks pass
@@ -67,7 +67,7 @@ EXIT_FAILCLOSED = 3
 
 # The length band is not defined here: it is KIE prompt rule 12, enforced by the shared
 # enforcer (limits from Skill 74 prompt-budget). Only the default model id is named.
-DEFAULT_MODEL = "gpt-image-2-5-sunburst-text-to-image"
+DEFAULT_MODEL = "gpt-image-2-6/sunburst-text-to-image"
 
 # Logo-related tokens -- a prompt containing any of these + NOT declaring I2I intent
 # is a violation of the "image-to-image for logos" rule.
@@ -148,7 +148,7 @@ def check_style_ref_directive(prompt_text: str,
         problems.append(("AF-QC-STYLE-REF-DIRECTIVE",
                          "style reference images attached but the style-reference-only "
                          "directive is ABSENT (MODEL-SPECS section 4, MANDATORY for "
-                         "GPT-Image 2.5 I2I / Agnes I2I). Add: 'Use the attached images "
+                         "GPT-Image 2.6 I2I / Agnes I2I). Add: 'Use the attached images "
                          "only as style reference for color grading, lighting, and "
                          "composition -- do not copy their subjects, faces, or text.'"))
     return problems
@@ -221,7 +221,7 @@ def _rich_prompt(chars: int = 19500, with_style_ref: bool = True) -> str:
 
 def _self_test() -> int:
     failures: List[str] = []
-    mx = 20000  # GPT Image 2.5 maxLength per Skill 74 prompt-budget; the fixtures are percentages of it
+    mx = 20000  # GPT Image 2.6 maxLength per Skill 74 prompt-budget; the fixtures are percentages of it
 
     def expect(name: str, chars: int, want_pass: bool, **kw) -> None:
         passed, probs = gate_prompt(_rich_prompt(chars, kw.pop("style", True)), **kw)
@@ -337,7 +337,7 @@ def _gate_files(paths: List[Path], logo_check: bool = False,
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(
         description="QC gate: enforce KIE prompt rule 12 (95-100 percent of the model max, "
-                    "floor 80 percent) for GPT-image-2.5 and Agnes Image prompts, plus logo "
+                    "floor 80 percent) for GPT-Image 2.6 and Agnes Image prompts, plus logo "
                     "image-to-image rule and style-reference-only directive.")
     ap.add_argument("--model", default=DEFAULT_MODEL,
                     help="KIE model id whose maxLength sets the band (default: %(default)s)")
