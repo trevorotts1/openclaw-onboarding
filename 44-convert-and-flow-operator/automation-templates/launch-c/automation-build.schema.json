@@ -123,12 +123,17 @@
         },
         "allow_reentry": {
           "type": ["boolean", "null"],
-          "description": "The native reentry boolean derived from settings.reentry: true for allow, false for block, null when the plan declares none. True/false is APPLIED to the workflow settings and read back after the save; null applies nothing."
+          "description": "Allow Reentry, carried from the launch plan's automation settings.reentry (allow -> true, block -> false). The builder applies it on the workflow settings object and reads it back after the save; null means the plan did not decide, and an unproven setting is never reported as applied."
         },
         "allow_enrollment": {
           "type": ["string", "null"],
           "enum": ["single", "successive", null],
           "description": "settings.enrollment as declared, or null when the plan declares none. Recorded, never invented into a provider payload the rail has not verified."
+        },
+        "enrollment": {
+          "type": ["string", "null"],
+          "enum": ["single", "successive", "unknown", null],
+          "description": "Enrolment mode, carried from the launch plan's automation settings.enrollment. successive keeps a SECOND purchase's fulfilment, deduplicated by the native event/transaction/line identity, and is refused when the same unit declares reentry blocked. Read by the installable compiler's purchase_identity."
         },
         "purchase_identity": {
           "type": ["object", "null"],
