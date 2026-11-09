@@ -13,6 +13,7 @@ refused while an unreconciled ``unknown_outcome`` exists.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import secrets
@@ -638,7 +639,14 @@ class PublicGhlAdapter:
                 )
             # Enabled by record is not verified by tenant: the receipt says
             # which state authorized the dispatch and never upgrades it.
-            capability_evidence = _capability_evidence(capability)
+            capability_evidence = _capability_evidence(
+                capability,
+                request_media_type=media_type,
+                principal=self._auth.kind.value + "@" + self._auth.source,
+                grant_fingerprint=grant_fingerprint(
+                    auth=self._auth, scopes=tuple(str(s) for s in scopes)
+                ),
+            )
 
         if self._quota is not None:
             allowed, retry_after = self._quota.reserve(self._monotonic())
@@ -1591,8 +1599,20 @@ def _browser_cleanup_error(outcome: Mapping[str, Any]) -> str | None:
     return None
 
 
-def _capability_evidence(capability: Capability) -> dict[str, Any]:
-    """The descriptor's honest state; never a claim of tenant capability."""
+def _capability_evidence(
+    capability: Capability,
+    *,
+    request_media_type: str = JSON_MEDIA_TYPE,
+    principal: str | None = None,
+    grant_fingerprint: str | None = None,
+    expires_at: str | None = None,
+) -> dict[str, Any]:
+    """The descriptor's honest state; never a claim of tenant capability.
+
+    The binding fields the record must carry travel with it: who acted, which
+    effective grant (a non-secret fingerprint), which request media type, and
+    when the evidence expires.  An absent fact stays ``None``.
+    """
 
     return {
         "operation_id": capability.operation_id,
@@ -1600,58 +1620,25 @@ def _capability_evidence(capability: Capability) -> dict[str, Any]:
         "activation": capability.activation,
         "tenant_verified": capability.tenant_verified(),
         "provisional": bool(capability.provisional),
+        "principal": principal,
+        "effective_grant_fingerprint": grant_fingerprint,
+        "request_media_type": request_media_type,
+        "expires_at": expires_at,
+        "invalidation_reason": (
+            capability.activation_blocked.reason
+            if capability.activation_blocked is not None and not capability.enabled
+            else None
+        ),
     }
 
 
-def capability_evidence_v2(
-    record: CapabilityRecordV2 | None,
-    *,
-    principal: str | None = None,
-    request_media_type: str = "application/json",
-) -> dict[str, Any]:
-    """The v2 evidence block for a receipt: independent dimensions only."""
+def grant_fingerprint(*, auth: AuthContext, scopes: tuple[str, ...]) -> str:
+    """A NON-SECRET fingerprint of (credential class, source label, scopes)."""
 
-    if record is None:
-        return {
-            "record_version": 2,
-            "operation_id": None,
-            "principal": principal,
-            "request_media_type": request_media_type,
-            "documented": False,
-            "adapter_built": False,
-            "offline_tests_passed": False,
-            "availability": "unknown",
-            "scope_state": "unverified",
-            "read_probe": {"state": "not_run", "receipt_id": None},
-            "write_canary": {"state": "not_run", "receipt_id": None},
-            "enabled": False,
-            "read_admitted": False,
-            "write_admitted": False,
-            "effective_grant_fingerprint": None,
-            "expires_at": None,
-            "invalidation_reason": None,
-            "checked_at": None,
-        }
-    return {
-        "record_version": int(record.record_version),
-        "operation_id": record.operation_id,
-        "principal": principal or record.principal,
-        "request_media_type": request_media_type or record.request_media_type,
-        "documented": bool(record.documented),
-        "adapter_built": bool(record.adapter_built),
-        "offline_tests_passed": bool(record.offline_tests_passed),
-        "availability": record.availability,
-        "scope_state": record.scope_state,
-        "read_probe": dict(record.read_probe),
-        "write_canary": dict(record.write_canary),
-        "enabled": bool(record.enabled),
-        "read_admitted": record.read_admitted(),
-        "write_admitted": record.write_admitted(),
-        "effective_grant_fingerprint": record.effective_grant_fingerprint,
-        "expires_at": record.expires_at,
-        "invalidation_reason": record.invalidation_reason,
-        "checked_at": record.checked_at,
-    }
+    material = canonical_json(
+        {"kind": auth.kind.value, "source": auth.source, "scopes": sorted(scopes)}
+    ).encode("utf-8")
+    return hashlib.sha256(material).hexdigest()
 
 
 def _format_path(template: str, values: Mapping[str, str]) -> str:

@@ -364,8 +364,20 @@ class AdapterReachesTransportTest(_RecordCase):
         )
 
         self.assertIs(result.status, Status.ok)
+        capability = result.evidence["capability"]
+        # The frozen descriptor fields still say exactly what they said before.
         self.assertEqual(
-            result.evidence["capability"],
+            {
+                key: capability[key]
+                for key in (
+                    "operation_id",
+                    "enabled",
+                    "activation",
+                    "tenant_verified",
+                    "provisional",
+                    "observed_http_status",
+                )
+            },
             {
                 "operation_id": "contacts.search",
                 "enabled": True,
@@ -375,6 +387,14 @@ class AdapterReachesTransportTest(_RecordCase):
                 "observed_http_status": 200,
             },
         )
+        # Additive binding fields required by Document 1 section 5.2: who acted,
+        # which effective grant (a non-secret fingerprint), the real request
+        # media type, and the expiry the record carries.
+        self.assertEqual(capability["request_media_type"], "application/json")
+        self.assertTrue(capability["principal"].startswith("location_pit@"))
+        self.assertEqual(len(capability["effective_grant_fingerprint"]), 64)
+        self.assertIsNone(capability["expires_at"])
+        self.assertIsNone(capability["invalidation_reason"])
 
     def test_a_verified_record_is_the_only_one_that_reports_the_tenant(self) -> None:
         path = self.write_record(
