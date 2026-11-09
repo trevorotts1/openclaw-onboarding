@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""prompt_policy.py - THE canonical prompt-policy service (F18, 2026-11-07).
+"""prompt_policy.py - THE canonical prompt-policy service (owner rule 12, 2026-10-05;
+Decision 1, 2026-10-15; Q1, 2026-10-17).
 
 Every gate that measures a prompt, freezes a provider payload, or enforces a copy
 profile calls THIS module. No gate keeps a second band, a second counter or a second
-freeze. The band is the strict production band:
+freeze. The band is owner rule 12:
 
     ratio = counted_code_points / verified_provider_max
     95 <= ratio*100 <= 100      PASS
@@ -63,7 +64,7 @@ import unicodedata
 
 POLICY_VERSION = "prompt-policy/2.0.0"
 
-# The strict production band. Percentages only: never a model maximum.
+# Owner rule 12 band. Percentages only: never a model maximum.
 FLOOR_PERCENT = 95          # integral lower bound: ceil(0.95 * verified maximum)
 TARGET_PERCENT = 95         # the target range starts at the same bound
 CEILING_PERCENT = 100
@@ -77,7 +78,7 @@ _FRONT_MATTER = re.compile(r"\A---[ \t]*\n.*?\n---[ \t]*(?:\n|\Z)", re.S)
 
 
 class PromptPolicyError(ValueError):
-    """The prompt is outside the strict production band."""
+    """The prompt is outside the owner rule 12 band."""
 
     def __init__(self, verdict):
         self.verdict = verdict
@@ -228,7 +229,7 @@ def evaluate(text, *, model=None, provider=None, max_chars=None, max_source=None
              limit=None, fallback_max=None, adapter_path=None, band_override=None,
              separate_limit=None, token_count=None, anatomy=None, review_ref=None,
              schema_version=None):
-    """Judge one prompt against the strict production band.
+    """Judge one prompt against the owner rule 12 band.
 
     kind: "descriptive" (band) or "verbatim"/ceiling_only (ceiling only).
     limit: a pre-resolved dict from resolve_limit(); else one is resolved.

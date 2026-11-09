@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """kie_prompt_enforcer.py - compatibility surface for the ONE canonical prompt policy.
 
-F18 (2026-11-07): the band, the counter and the freeze live in
+Owner rule 12 (2026-10-05; Decision 1, 2026-10-15; Q1, 2026-10-17): the band, the counter and the freeze live in
 `shared-utils/prompt_policy.py`. This module is a thin adapter kept so every existing
 caller (`KPE.check`, `require`, `problems`, `budget_for`, `rewrite_to_band`,
 `check_count`) keeps working while there is still exactly ONE validator. It holds no
 band of its own.
 
-Strict production band (policy 2.0.0): 95-100 percent PASSES; below 95 percent FAILS
-and must be revised; below 80 percent is a particularly clear hard failure; above the
-documented maximum FAILS; an UNKNOWN maximum REFUSES a pass. The old 80-to-below-95
-warning-only path is removed.
+Owner rule 12 band (2026-10-05; Decision 1, 2026-10-15; Q1, 2026-10-17):
+95-100 percent PASSES; 80 to below 95 percent PASSES with a warn-and-expand message
+naming the characters to ADD; below 80 percent FAILS hard; above the documented
+maximum FAILS; an UNKNOWN maximum REFUSES a pass. F18's strict 95 percent reading is
+withdrawn.
 
 Numbers come from the existing Skill 74 adapter (`kie_live_adapter.py prompt-budget`):
 live schema first, registry snapshot second, policy owner third, and a caller-supplied

@@ -4,7 +4,7 @@
 Two halves:
   * the enforcer itself (shared-utils/kie_prompt_enforcer.py, a thin surface over the ONE
     canonical policy shared-utils/prompt_policy.py): 79 percent rejected naming the chars to
-    ADD, 94 percent rejected (the removed warning-only path), 96 and 100 percent pass, 101
+    ADD, 80 to below 95 percent PASSES with a warn-and-expand naming the chars to ADD, 101
     percent rejected naming the chars to CUT, verbatim fields exempt from the floor, an
     UNKNOWN limit REFUSES a pass, the 3-try rewrite loop and its escalation, fail closed
     without the adapter. It runs the REAL Skill 74 adapter against its registry snapshot
@@ -44,7 +44,7 @@ class TestEnforcer(unittest.TestCase):
         v = K.check(M, "x" * (MAX * 79 // 100))
         self.assertFalse(v["ok"])
         self.assertEqual(v["status"], "BELOW_FLOOR")
-        self.assertEqual(v["add"], 3200)  # to the strict 95 percent floor, not the old 80 percent
+        self.assertEqual(v["add"], 3200)  # to the 95 percent target above the 80 percent floor
         self.assertIn("ADD at least 3200", v["message"])
 
     def test_owner_rule_12_80_to_95_percent_warns_and_expands(self):
