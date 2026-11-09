@@ -251,7 +251,7 @@ test('config: an unsafe value fails precisely, with its field path', () => {
       err instanceof PersistenceError && /diagnostics\.payload_ttl_hours/.test(err.message),
   );
   assert.throws(
-    () => parsePersistenceConfig({ settings: { max_session_provider_requests: 51 } }),
+    () => parsePersistenceConfig({ settings: { max_session_provider_requests: 101 } }),
     (err: unknown) =>
       err instanceof PersistenceError &&
       /settings\.max_session_provider_requests/.test(err.message),

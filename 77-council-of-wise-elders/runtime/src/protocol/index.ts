@@ -7,6 +7,7 @@
 export * from './errors.js';
 export * from './opening.js';
 export * from './challenge.js';
+export * from './consensus.js';
 export * from './ratification.js';
 export * from './verdict.js';
 export * from './session-controls.js';

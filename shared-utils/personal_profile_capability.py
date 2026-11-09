@@ -8,6 +8,47 @@ the refusal path and the truth guard. Nothing here guesses: a channel/account
 type is unattended only when the declaration says so, and a personal profile is
 always assisted (or unavailable), never automated.
 
+Provenance, not shape (B-27). A capability, a status claim or an operator
+receipt binds only when it carries the marker minted here: an HMAC-SHA256 over
+the WHOLE record, produced by prepare_assisted_placement() and renewed by
+record_operator_confirmation(). The MAC key is an installation signing key
+generated with os.urandom() and kept outside the repository in a 0600 file (see
+_installation_seal_key); it is NOT derived from the capability declaration or
+from any other shipped byte, and NOTHING a caller hands in or this process
+inherits can become it — no environment variable holds or names the key, the key
+path is not `$HOME`-relative, and no argument or shipped byte selects it — so an
+outside caller holding only the checkout cannot recompute it. Because the MAC covers every field of the record except the
+marker itself, a marker copied from a sanctioned record does not fit any edited,
+extended or truncated record — including the operator instruction, the
+capability reference, the rendered labels, the receipt body, the route/status
+and the publication flags. _require_sanctioned() refuses a confirmation that
+lacks a fitting marker, _truth_of() refuses an unsealed operator-confirmed
+record instead of labelling it verified, and every record is resolved against
+the declaration, so an undeclared channel, account type or action cannot be
+rendered at all.
+
+Ceiling, stated honestly: exactly two signing paths survive this module, and
+every unforgeability claim below names both in its own sentence. (1) A caller
+that can READ the installation's key file can sign — a 0600 file outside the
+checkout, under the operating system account's own home. (2) A caller that can
+execute code INSIDE this process can sign, because code in the process can
+rewrite this module, including where it looks for that key file. Neither path is
+reachable from outside the process: the key path is read from the operating
+system's account database and is NOT `$HOME`-relative, and no environment
+variable, argument or other inherited value holds, names or relocates the key.
+What is closed is the case that matters here — a caller that has the repository
+bytes (or any other public material) and hands in a dict. The upgrade is an
+operator-held signer outside this process when unattended coverage is proved (see
+policy.unattended_coverage).
+
+Coverage honesty (B-04). The only test behind this contract is NARROW: it reads
+the declaration and exercises the assisted prepare/confirm/status/guard paths
+in-process and through the CLI. No public monitoring of any channel or account is
+run, observed or claimed here, so unattended coverage is UNPROVED and
+_truth_of() refuses every unattended publication claim rather than asserting one.
+The proof that would be required, and the owner who must decide to fund it, are
+declared in policy.unattended_coverage and reported by unattended_coverage().
+
 Assisted contract:
   1. request_placement(unattended=True) on a personal profile is REFUSED with a
      plain limitation and an explicit assisted offer. No silent downgrade and no
@@ -19,7 +60,9 @@ Assisted contract:
      the operator explicitly confirms. The receipt is the only proof, and it is
      proof only for a placement whose id recomputes from that placement's own
      (channel, account_type, action, placement) — a carried placement_id is never
-     trusted on its own.
+     trusted on its own. The record it returns is sealed with the installation
+     signing key, and the seal covers every field, so the record cannot be
+     edited after the fact without the marker ceasing to fit.
   4. status_surface() reports awaiting-operator / operator-confirmed and never
      published-by-system for an assisted placement.
   5. assert_truthful_publication() raises UntruthfulPublication when a record
@@ -38,6 +81,7 @@ from __future__ import annotations
 import copy
 import datetime as _dt
 import hashlib
+import hmac
 import json
 import os
 from typing import Any, Optional
@@ -65,6 +109,303 @@ class UntruthfulPublication(CapabilityError):
 
 def _cap_path(path: Optional[str] = None) -> str:
     return os.path.abspath(path or CAPABILITIES_PATH)
+
+
+# --- provenance marker (B-27) ------------------------------------------------
+#
+# The marker is an HMAC-SHA256 over the WHOLE record (every key except
+# "provenance" itself), keyed by an installation signing key that is generated
+# with os.urandom() and stored outside the repository in a 0600 file. It is
+# minted ONLY by prepare_assisted_placement() and record_operator_confirmation(),
+# and it travels with the record (so a prepared package read back from disk still
+# verifies in another process, as long as that process resolves the same key).
+#
+# Why an outside caller cannot reconstruct it: the key is 32 random bytes that
+# appear in no repository byte, are not derived from the capability declaration
+# or from this source, and are not selectable by anything outside this process.
+# Two channels had to be shut for that to be true. DERIVATION: shipped material
+# does not determine the key, so sha256(domain + declaration) no longer computes
+# a marker the module accepts. INJECTION: nothing the process inherits names,
+# holds or relocates the key — the path comes from the operating system account
+# database, never from $HOME, and no environment variable is read at all — so the
+# attack that replaced derivation (hand the module a key through the environment,
+# then mint a marker with stdlib hashlib + hmac) has no hook left. Because the
+# payload is the whole record, a marker copied from a sanctioned record does not
+# fit an edited, extended or truncated record: the operator instruction,
+# capability reference, labels, receipt, route, status and publication flags are
+# all inside the MAC.
+#
+# ponytail: the ceiling is exactly the two signing paths the docstring names —
+# reading the operator's key file, or running code inside this process. The
+# ceiling is a caller that has the checkout and a dict, which is the reproduced
+# B-27 attack; the upgrade is an operator-held signer outside this process when
+# unattended coverage is proved (see policy.unattended_coverage).
+
+_SEAL_ALGORITHM = "hmac-sha256"
+_SEAL_VERSION = 2
+_SEAL_KEY_BYTES = 32
+_SEAL_KEY_DIR = os.path.join(".openclaw", "state", "personal-profile-capability")
+_SEAL_KEY_NAME = "seal.key"
+_SEAL_KEY_CACHE: dict = {}
+
+# The installation key file, or None to resolve it from the account database.
+# Assigning this name is the ONLY way to relocate the key, and it takes code
+# already running inside this process (the test suite does exactly that). An
+# outside caller hands in data — a dict, a file, an inherited environment — and
+# none of those reach here.
+_SEAL_KEY_PATH: Optional[str] = None
+
+
+def _account_home() -> str:
+    """The home directory of the account running this process, read from the OS.
+
+    Deliberately NOT a home directory taken from the process environment: that
+    value is inherited from outside this process, so a caller who can set it
+    could relocate the key file and then mint markers under a key of their own
+    choosing — which is the injection attack this module must not have a hook
+    for. The account database is not reachable that way. Fails closed when the
+    platform has none.
+    """
+    getuid = getattr(os, "getuid", None)
+    if getuid is None:
+        raise CapabilityError(
+            "cannot resolve the installation signing key: this platform reports "
+            "no uid, and this module refuses to take a home directory from the "
+            "process environment"
+        )
+    try:
+        import pwd
+    except ImportError as exc:
+        raise CapabilityError(
+            "cannot resolve the installation signing key: this platform has no "
+            "account database (pwd), and this module refuses to take a home "
+            "directory from the process environment"
+        ) from exc
+    try:
+        home = pwd.getpwuid(getuid()).pw_dir
+    except (KeyError, OSError) as exc:
+        raise CapabilityError(
+            "cannot resolve the installation signing key: the account database "
+            f"gives no home directory for uid {getuid()}: {exc}"
+        ) from exc
+    if not isinstance(home, str) or not home.strip():
+        raise CapabilityError(
+            "cannot resolve the installation signing key: the account database "
+            f"gives an empty home directory for uid {getuid()}"
+        )
+    return home
+
+
+def _seal_key_path() -> str:
+    """The ONE place the signing key lives. Fixed: nothing a caller hands in moves it.
+
+    There is no environment hook, no argument and no shipped byte that can name
+    or relocate this file; ``_SEAL_KEY_PATH`` is the only way to move it, and
+    setting that takes code already running inside this process.
+    """
+    if _SEAL_KEY_PATH is not None:
+        return _SEAL_KEY_PATH
+    return os.path.join(_account_home(), _SEAL_KEY_DIR, _SEAL_KEY_NAME)
+
+
+def _decode_seal_key(raw: bytes, where: str) -> bytes:
+    text = raw.strip()
+    if len(text) == 2 * _SEAL_KEY_BYTES:
+        try:
+            key = bytes.fromhex(text.decode("ascii"))
+        except (UnicodeDecodeError, ValueError):
+            key = b""
+        if len(key) == _SEAL_KEY_BYTES:
+            return key
+    if len(raw) == _SEAL_KEY_BYTES:
+        return raw
+    raise CapabilityError(
+        f"{where} does not hold a {_SEAL_KEY_BYTES}-byte provenance signing key "
+        "(64 hex characters or 32 raw bytes)"
+    )
+
+
+def _create_seal_key(path: str) -> bytes:
+    """Mint the installation key once, 0600, outside the repository."""
+    directory = os.path.dirname(path)
+    try:
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+    except OSError as exc:
+        raise CapabilityError(
+            f"no provenance signing key exists and its directory {directory} cannot "
+            f"be created: {exc}. The key is installation state owned by the account "
+            "that runs this module; give that account a writable home directory, or "
+            "run under the account that owns the installation. This module has no "
+            "environment override to fall back on."
+        ) from exc
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        try:
+            with open(path, "rb") as handle:
+                return _decode_seal_key(handle.read(), path)
+        except OSError as exc:
+            raise CapabilityError(
+                f"cannot read the provenance signing key {path}: {exc}"
+            ) from exc
+    except OSError as exc:
+        raise CapabilityError(
+            f"no provenance signing key exists and one cannot be created at {path}: "
+            f"{exc}. The key is installation state owned by the account that runs "
+            "this module; that account must be able to create the file there. This "
+            "module has no environment override to fall back on."
+        ) from exc
+    key = os.urandom(_SEAL_KEY_BYTES)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(key.hex().encode("ascii") + b"\n")
+    except OSError as exc:
+        raise CapabilityError(
+            f"cannot write the provenance signing key {path}: {exc}"
+        ) from exc
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return key
+
+
+def _installation_seal_key() -> bytes:
+    """The installation signing key — never derived, never injected.
+
+    Exactly one source: the operator key file at
+    ``<account home>/.openclaw/state/personal-profile-capability/seal.key``,
+    created with os.urandom() and mode 0600 on first use. There is no second
+    source. Nothing handed to this process can become the key or name the file:
+    the two environment hooks this module used to read (an inline hex key and a
+    caller-chosen key file path) are GONE, because a caller who can set the
+    process environment is a caller of exactly the class this module defends
+    against, and either hook let that caller pick the key and then mint a fitting
+    marker with stdlib hashlib + hmac while reading no repository byte and no key
+    file. The path is not ``$HOME``-relative either, for the same reason.
+
+    There is no fallback to material that ships in the repository and no fallback
+    to anything inherited: if the key file cannot be read the module fails closed
+    rather than minting something an outside caller could reconstruct.
+    """
+    path = _seal_key_path()
+    cached = _SEAL_KEY_CACHE.get(path)
+    if cached:
+        return cached
+    if os.path.exists(path):
+        try:
+            with open(path, "rb") as handle:
+                key = _decode_seal_key(handle.read(), path)
+        except OSError as exc:
+            raise CapabilityError(
+                f"cannot read the provenance signing key {path}: {exc}"
+            ) from exc
+    else:
+        key = _create_seal_key(path)
+    _SEAL_KEY_CACHE[path] = key
+    return key
+
+
+def _seal_payload(record: dict) -> bytes:
+    """Canonical bytes for EVERY field the record renders or acts on.
+
+    The payload is the whole record minus the marker itself. There is no
+    allow-list to fall out of date: a field that is added, removed or edited
+    changes the MAC, so a marker copied onto an edited record no longer fits.
+    Serialisation is strict (no ``default=str``), so a record carrying a value
+    that cannot be canonically represented is refused rather than coerced into
+    colliding with another value.
+    """
+    if not isinstance(record, dict):
+        raise CapabilityError("a placement record must be an object")
+    body = {key: value for key, value in record.items() if key != "provenance"}
+    for key in body:
+        if not isinstance(key, str):
+            raise CapabilityError("placement record keys must be strings")
+    try:
+        return json.dumps(
+            body,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise CapabilityError(
+            f"placement record is not canonically serialisable: {exc}"
+        ) from exc
+
+
+def _seal(record: dict, path: Optional[str] = None) -> dict:
+    """Stamp a record with the provenance marker (constructor-side only)."""
+    mac = hmac.new(
+        _installation_seal_key(), _seal_payload(record), hashlib.sha256
+    ).hexdigest()
+    record["provenance"] = {
+        "algorithm": _SEAL_ALGORITHM,
+        "version": _SEAL_VERSION,
+        "mac": mac,
+    }
+    return record
+
+
+def _is_sanctioned(record: Any, path: Optional[str] = None) -> bool:
+    """True only when the record carries a marker that fits its own bytes."""
+    if not isinstance(record, dict):
+        return False
+    provenance = record.get("provenance")
+    if not isinstance(provenance, dict):
+        return False
+    if provenance.get("algorithm") != _SEAL_ALGORITHM:
+        return False
+    if provenance.get("version") != _SEAL_VERSION:
+        return False
+    mac = provenance.get("mac")
+    if not isinstance(mac, str) or len(mac) != 64:
+        return False
+    try:
+        payload = _seal_payload(record)
+    except CapabilityError:
+        return False
+    expected = hmac.new(_installation_seal_key(), payload, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(mac, expected)
+
+
+def _require_sanctioned(record: Any, path: Optional[str] = None, what: str = "this package") -> None:
+    if not _is_sanctioned(record, path):
+        raise CapabilityError(
+            f"{what} carries no sanctioned provenance marker, so it cannot mint "
+            "authority. A placement id is minted only by "
+            "prepare_assisted_placement(), and an operator receipt only by "
+            "record_operator_confirmation(); the marker is an HMAC over the whole "
+            "record keyed by this installation's signing key, which is read from "
+            "one operator key file and is never a value this process inherits or a "
+            "caller hands in, so a hand-built dict, a hand-edited file, or a record "
+            "whose bytes differ from the sealed ones cannot carry a marker that "
+            "fits — unless its author can read that key file or run code inside "
+            "this process, which are the only two signing paths this module has."
+        )
+
+
+def _resolve_declared(caps: dict, channel: Any, account_type: Any) -> dict:
+    """Resolve a record's channel + account type against the declaration."""
+    channel_id = channel.strip().lower() if isinstance(channel, str) else ""
+    account_id = account_type.strip().lower() if isinstance(account_type, str) else ""
+    channel_block = (caps.get("channels") or {}).get(channel_id)
+    if channel_block is None:
+        raise CapabilityError(
+            f"record names no declared channel '{channel}' (declared: "
+            f"{sorted(caps.get('channels') or {})}); an undeclared channel cannot "
+            "carry a capability or a status claim"
+        )
+    account = (channel_block.get("account_types") or {}).get(account_id)
+    if account is None:
+        raise CapabilityError(
+            f"record names no declared account type '{account_type}' for channel "
+            f"'{channel_id}' (declared: {sorted(channel_block['account_types'])}); "
+            "an undeclared account type cannot carry a capability or a status claim"
+        )
+    return account
 
 
 def load_capabilities(path: Optional[str] = None) -> dict:
@@ -106,6 +447,31 @@ def _validate_capabilities(caps: dict) -> None:
         raise CapabilityError("policy.no_system_publication_without_receipt must be true")
     if not policy.get("refusal_language") or not policy.get("assisted_offer_language"):
         raise CapabilityError("policy refusal/offer language must be present")
+
+    coverage = policy.get("unattended_coverage")
+    if not isinstance(coverage, dict):
+        raise CapabilityError(
+            "policy.unattended_coverage must be declared: what is NOT proved about "
+            "unattended publication, the proof required, and the owner who decides it"
+        )
+    if not str(coverage.get("status") or "").strip():
+        raise CapabilityError("policy.unattended_coverage.status must be declared")
+    proof = coverage.get("required_proof")
+    if not isinstance(proof, list) or not proof or not all(
+        isinstance(item, str) and item.strip() for item in proof
+    ):
+        raise CapabilityError(
+            "policy.unattended_coverage.required_proof must list the proof required "
+            "before an unattended publication could be claimed"
+        )
+    decision = coverage.get("owner_decision")
+    if not isinstance(decision, dict):
+        raise CapabilityError("policy.unattended_coverage.owner_decision must be declared")
+    for field in ("owner", "decision", "status"):
+        if not str(decision.get(field) or "").strip():
+            raise CapabilityError(
+                f"policy.unattended_coverage.owner_decision.{field} must be declared"
+            )
 
     channels = caps.get("channels")
     if not isinstance(channels, dict) or not channels:
@@ -198,9 +564,15 @@ def _refusal(
     action: str,
     reason_code: str,
     reason: str,
-    capability: dict,
     offer_assisted: bool,
+    path: Optional[str] = None,
 ) -> dict:
+    """Build a refusal. The capability block is resolved HERE, from the declaration.
+
+    It is never accepted as a caller argument: a refusal that echoed a caller's own
+    capability dict would mint an authority the declaration never granted.
+    """
+    capability = get_capability(channel, account_type, path)
     offer = None
     if offer_assisted:
         offer = {
@@ -255,8 +627,8 @@ def request_placement(
                 f"Action '{action_id}' is not declared for {capability['channel_label']} "
                 f"{capability['label']}. The declaration covers: {sorted(known_actions)}."
             ),
-            capability,
             offer_assisted=bool(capability["operator_action"]),
+            path=path,
         )
 
     if action_id in capability["unavailable"] or capability["mode"] == "unavailable":
@@ -270,8 +642,8 @@ def request_placement(
                 f"{capability['label']} cannot perform '{action_id}' in this system. "
                 f"{capability['notes']}"
             ).strip(),
-            capability,
             offer_assisted=False,
+            path=path,
         )
 
     if unattended:
@@ -291,8 +663,8 @@ def request_placement(
             action_id,
             "unattended_not_supported",
             caps["policy"]["refusal_language"],
-            capability,
             offer_assisted=action_id in capability["operator_action"],
+            path=path,
         )
 
     if action_id in capability["operator_action"] or capability["mode"] == "assisted":
@@ -402,7 +774,7 @@ def prepare_assisted_placement(
     """Prepare the exact placement and the one-step operator handoff."""
     capability = get_capability(channel, account_type, path)
     action_id = (action or "post").strip().lower()
-    if capability["mode"] not in ("assisted", "unattended"):
+    if capability["mode"] != "assisted":
         raise CapabilityError(
             f"{capability['channel']}/{capability['account_type']} is "
             f"'{capability['mode']}' and has no assisted placement route"
@@ -428,7 +800,7 @@ def prepare_assisted_placement(
         "placement": clean,
     }
     placement_id = _placement_provenance(package)
-    return {
+    result = {
         "placement_id": placement_id,
         "channel": package["channel"],
         "channel_label": package["channel_label"],
@@ -450,6 +822,8 @@ def prepare_assisted_placement(
             "source_urls": capability["source_urls"],
         },
     }
+    # The only place an awaiting-operator package becomes authoritative.
+    return _seal(result, path)
 
 
 def _now_utc() -> str:
@@ -461,7 +835,7 @@ def _now_utc() -> str:
     )
 
 
-def _valid_receipt(receipt: Any, record: Any) -> bool:
+def _valid_receipt(receipt: Any, record: Any, path: Optional[str] = None) -> bool:
     """A receipt is proof only when it binds to a placement that is REAL.
 
     Real means provenance, not self-consistency: the record's placement_id must
@@ -473,7 +847,7 @@ def _valid_receipt(receipt: Any, record: Any) -> bool:
     """
     if not isinstance(receipt, dict) or not isinstance(record, dict):
         return False
-    caps = load_capabilities()
+    caps = load_capabilities(path)
     for field in caps["policy"]["receipt_required_fields"]:
         value = receipt.get(field)
         if value is None or (isinstance(value, str) and not value.strip()):
@@ -519,6 +893,7 @@ def record_operator_confirmation(
             f"placement {package.get('placement_id')} is '{package.get('status')}', "
             "not awaiting-operator"
         )
+    _require_sanctioned(package)
     name = (operator or "").strip()
     if not name:
         raise CapabilityError(
@@ -557,28 +932,35 @@ def record_operator_confirmation(
     confirmed["receipt"] = receipt
     confirmed["status"] = "operator-confirmed"
     confirmed["published_by_system"] = False
+    # The only place an operator receipt becomes authoritative.
+    _seal(confirmed)
     _truth_of(confirmed)
     return confirmed
 
 
-def _is_personal_record(record: dict) -> bool:
-    """The ONE predicate for "this record is a personal profile / personal account"."""
-    return bool(record.get("personal_profile")) or record.get("account_type") == "personal"
-
-
-def _reject_personal_on_unattended(record: dict) -> None:
+def _reject_personal_on_unattended(record: dict, personal: Optional[bool] = None) -> None:
     """The ONE honesty rule the read path and the guard must both enforce.
 
     PROFILE-CAPABILITIES.md lists "a personal profile record uses the unattended
     route at all" as fail closed. This is its only implementation: status_surface
     and assert_truthful_publication both call it, so the two cannot drift apart.
+    `personal` is the resolved verdict (record flag, account_type, or the
+    declaration's own personal_profile) so a renamed account type cannot launder
+    a personal profile past the rule.
     """
-    if record.get("route") == "unattended" and _is_personal_record(record):
+    if personal is None:
+        personal = _is_personal_record(record)
+    if record.get("route") == "unattended" and personal:
         raise UntruthfulPublication(
             f"record {record.get('placement_id')} is a personal profile on the "
             "unattended route; a personal profile can never use the unattended "
             "publication route"
         )
+
+
+def _is_personal_record(record: dict) -> bool:
+    """The ONE predicate for "this record is a personal profile / personal account"."""
+    return bool(record.get("personal_profile")) or record.get("account_type") == "personal"
 
 
 def _truth_of(record: dict, path: Optional[str] = None) -> dict:
@@ -600,9 +982,36 @@ def _truth_of(record: dict, path: Optional[str] = None) -> dict:
     placement_id = record.get("placement_id")
     receipt = record.get("receipt") if isinstance(record.get("receipt"), dict) else None
 
-    _reject_personal_on_unattended(record)
+    if route not in ("assisted", "unattended"):
+        raise UntruthfulPublication(
+            f"record {placement_id} has no declared route; publication "
+            "cannot be claimed"
+        )
 
-    if route == "assisted" or _is_personal_record(record):
+    # The declaration is the only source of capability. An undeclared channel,
+    # account type or action is refused before any claim is rendered, so a
+    # hand-built record cannot invent a capability the declaration never granted.
+    declared = _resolve_declared(caps, channel, account_type)
+    personal = _is_personal_record(record) or bool(declared.get("personal_profile"))
+    _reject_personal_on_unattended(record, personal)
+
+    if route == "assisted":
+        if declared.get("mode") != "assisted":
+            raise CapabilityError(
+                f"record {placement_id} claims the assisted route for "
+                f"{channel}/{account_type}, but the declaration gives that account "
+                f"type mode '{declared.get('mode')}'; a route the declaration does "
+                "not grant cannot be rendered"
+            )
+        action = record.get("action")
+        if isinstance(action, str) and action.strip():
+            action_id = action.strip().lower()
+            if action_id not in declared.get("operator_action", []):
+                raise CapabilityError(
+                    f"record {placement_id} claims action '{action_id}' for "
+                    f"{channel}/{account_type}, which the declaration does not list "
+                    f"as an operator action (declared: {declared.get('operator_action')})"
+                )
         forbidden = policy["assisted_forbidden_statuses"]
         if status in forbidden:
             raise UntruthfulPublication(
@@ -621,8 +1030,31 @@ def _truth_of(record: dict, path: Optional[str] = None) -> dict:
                 "assisted/personal placement requires an operator receipt and may "
                 "never be reported as published by the system"
             )
+        # A claim must bind to a placement its own inputs can reproduce.
+        try:
+            provenance = _placement_provenance(record)
+        except CapabilityError as exc:
+            raise UntruthfulPublication(
+                f"record {placement_id} cannot reproduce its own placement, so its "
+                f"status claim proves nothing: {exc}"
+            ) from exc
+        if provenance != placement_id:
+            raise UntruthfulPublication(
+                f"record {placement_id} does not recompute to its own placement "
+                f"(digest '{provenance}'); a status claim is proof only for the "
+                "placement it can be derived from"
+            )
         if status == "operator-confirmed":
-            if not _valid_receipt(receipt, record):
+            if not _is_sanctioned(record, path):
+                raise UntruthfulPublication(
+                    f"record {placement_id} is operator-confirmed without the "
+                    "sanctioned provenance marker; an operator receipt is minted only "
+                    "by record_operator_confirmation(), and a hand-built dict cannot "
+                    "be rendered as a verified approval unless its author can read "
+                    "the installation key file or run code inside this process — the "
+                    "only two signing paths"
+                )
+            if not _valid_receipt(receipt, record, path):
                 raise UntruthfulPublication(
                     f"record {placement_id} is operator-confirmed without a "
                     "valid operator receipt"
@@ -643,30 +1075,40 @@ def _truth_of(record: dict, path: Optional[str] = None) -> dict:
             "status": status,
             "label": allowed[status],
             "claim": claim,
+            "provenance": "sanctioned" if _is_sanctioned(record, path) else "unverified",
             "published_by_system": False,
             "receipt": receipt,
         }
 
-    if route == "unattended":
-        if status != "published-by-system":
+    # Unattended. The declaration may grant the route, but this contract collects
+    # and verifies NO public-monitor evidence, so an unattended publication is
+    # never claimed. Refusing here is what keeps "published-by-system" honest.
+    if declared.get("mode") != "unattended":
+        raise CapabilityError(
+            f"record {placement_id} claims the unattended route for "
+            f"{channel}/{account_type}, but the declaration gives that account type "
+            f"mode '{declared.get('mode')}'; a route the declaration does not grant "
+            "cannot be rendered"
+        )
+    action = record.get("action")
+    if isinstance(action, str) and action.strip():
+        action_id = action.strip().lower()
+        if action_id not in declared.get("unattended", []):
             raise CapabilityError(
-                f"unattended placement status '{status}' is not supported"
+                f"record {placement_id} claims unattended action '{action_id}' for "
+                f"{channel}/{account_type}, which the declaration does not list as "
+                f"unattended (declared: {declared.get('unattended')})"
             )
-        return {
-            "placement_id": placement_id,
-            "channel": channel,
-            "account_type": account_type,
-            "route": "unattended",
-            "status": status,
-            "label": "Published by the system through the declared unattended path.",
-            "claim": "published-by-system",
-            "published_by_system": True,
-            "receipt": receipt,
-        }
-
+    coverage = policy["unattended_coverage"]
+    decision = coverage["owner_decision"]
     raise UntruthfulPublication(
-        f"record {placement_id} has no declared route; publication "
-        "cannot be claimed"
+        f"record {placement_id} claims '{status}' on the unattended route, but no "
+        f"public-monitor evidence exists for {channel}/{account_type} in this "
+        f"contract: coverage is '{coverage['status']}', so no system publication may "
+        "be reported. Required proof before the claim is allowed: "
+        f"{'; '.join(coverage['required_proof'])}. Owner who must decide it: "
+        f"{decision['owner']} (decision: {decision['decision']}; status: "
+        f"{decision['status']})."
     )
 
 
@@ -679,6 +1121,26 @@ def assert_truthful_publication(record: dict, path: Optional[str] = None) -> boo
     """Guard: a publication claim without an operator receipt is a failure."""
     _truth_of(record, path)
     return True
+
+
+def unattended_coverage(path: Optional[str] = None) -> dict:
+    """Report what is NOT proved about unattended publication.
+
+    This never returns a monitoring claim. It states the coverage status, the
+    proof that would be required, and the owner who must decide it, straight from
+    the declaration, so a consumer cannot mistake "declared unattended" for
+    "observed and monitored".
+    """
+    caps = load_capabilities(path)
+    coverage = copy.deepcopy(caps["policy"]["unattended_coverage"])
+    coverage["monitoring"] = False
+    coverage["claim"] = "coverage-unproved"
+    coverage["note"] = (
+        "No public monitor runs in this contract. An unattended publication may "
+        "not be reported until the required proof exists and the named owner "
+        "approves it."
+    )
+    return coverage
 
 
 def capability_summary(path: Optional[str] = None) -> dict:
@@ -710,5 +1172,6 @@ def capability_summary(path: Optional[str] = None) -> dict:
         "forbidden_assisted_statuses": list(
             caps["policy"]["assisted_forbidden_statuses"]
         ),
+        "unattended_coverage": unattended_coverage(path),
         "records": rows,
     }

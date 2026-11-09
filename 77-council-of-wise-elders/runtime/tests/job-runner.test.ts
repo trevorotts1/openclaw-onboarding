@@ -88,6 +88,7 @@ import {
   type OperationDispatchContext,
   type OperationDispatchResult,
   type OperationExecutorPort,
+  type OperationOutcome,
   type RunnerTimers,
 } from '../src/queue/index.js';
 
@@ -1432,4 +1433,111 @@ test('W35: a harness that never starts is retried once with a fresh call and the
   assert.equal(snap.envelope_breakdown.transport_retries, 1);
   assert.equal(snap.consumed.provider_requests, 1, 'the never-started attempt was released, not counted');
   assert.ok(op.operationId);
+});
+
+// ------------------------------------------------- W77S-MODES: claimWave
+
+/**
+ * W77S-MODES lane C. A wave claims up to `limit` queued operations under
+ * ONE session lease-epoch bump, so every claim in the wave submits the
+ * same epoch to the budget service and the card commit fence. Here nine
+ * operations run as three waves of three against one shared, deliberately
+ * tight capacity service: every card must commit with no fencing, no
+ * PERSISTENCE_STATE_CONFLICT, no lost settle, and peak dispatch
+ * concurrency exactly at the limit.
+ */
+test('W77S claimWave: a wave of 9 commits every card with one shared lease epoch', async () => {
+  const setup = setupRunningSession('w77s-wave');
+  const { ctx, worker } = setup;
+  const sessionId = setup.session.spec.session_id;
+  const seats = setup.session.spec.seat_ids;
+  assert.equal(seats.length, 9);
+
+  let inFlight = 0;
+  let peak = 0;
+  const executor = new FakeExecutor(async (dispatchCtx) => {
+    inFlight += 1;
+    peak = Math.max(peak, inFlight);
+    try {
+      // A real delay inside the async dispatch: the runner's own waits
+      // use the manual timers, so only the fake transport overlaps.
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return await fixtureResult(dispatchCtx);
+    } finally {
+      inFlight -= 1;
+    }
+  });
+  // Two slots only: without the wave raise, the third admission would be
+  // deferred and the wave could never run as a unit.
+  const capacity = new RuntimeCapacity({ total_slots: 2, private_reserved_slots: 0 });
+  const runner = makeRunner(ctx, executor, { capacity });
+
+  const operations = seats.map((seat, index) =>
+    enqueueSeatOperation(runner, setup, seat, `w77s-wave-${index}`),
+  );
+
+  const outcomes: OperationOutcome[] = [];
+  const waveSizes: number[] = [];
+  for (let guard = 0; guard < 10; guard += 1) {
+    const wave = runner.claimWave(worker, sessionId, 'worker-1', 3);
+    if (wave.length === 0) break;
+    waveSizes.push(wave.length);
+    assert.ok(wave.length <= 3, 'never more claims than the limit');
+    const epochs = new Set(wave.map((claim) => claim.session_lease_epoch));
+    assert.equal(epochs.size, 1, 'one lease-epoch bump per wave');
+    const waveOutcomes = await Promise.all(
+      wave.map((claim) => runner.executeClaimedOperation(worker, claim)),
+    );
+    outcomes.push(...waveOutcomes);
+  }
+
+  assert.deepEqual(waveSizes, [3, 3, 3], 'nine operations in three waves of three');
+  assert.equal(outcomes.length, 9);
+  assert.deepEqual(
+    outcomes.map((outcome) => outcome.status),
+    Array.from({ length: 9 }, () => 'committed'),
+    'no fencing, no deferred settle, no lost commit',
+  );
+  assert.equal(peak, 3, 'observed peak concurrency equals the limit');
+  assert.equal(capacity.usage().total_slots, 3, 'the wave raised the capacity slots it needed');
+
+  const cards = ctx.repositories.listCards(worker, sessionId);
+  assert.equal(cards.length, 9, 'every card is committed');
+  assert.deepEqual(
+    [...new Set(cards.map((card) => card.seat_id))].length,
+    9,
+    'nine distinct seats',
+  );
+  for (const operation of operations) {
+    assert.equal(attemptRow(ctx, worker, operation.operationId)?.status, 'accepted');
+    assert.equal(
+      runner.listSessionJobs(worker, sessionId).find((job) => job.id === operation.jobId)?.state,
+      'succeeded',
+    );
+  }
+  const snapshot = ctx.budget.snapshot(worker, sessionId, setup.grantId);
+  assert.equal(snapshot.consumed.provider_requests, 9, 'every paid request settled');
+});
+
+test('W77S claimWave: no wave while a live lease is held, and never more than the limit', () => {
+  const setup = setupRunningSession('w77s-wave-lease');
+  const { ctx, worker } = setup;
+  const sessionId = setup.session.spec.session_id;
+  const executor = new FakeExecutor();
+  const runner = makeRunner(ctx, executor);
+  assert.deepEqual(runner.claimWave(worker, sessionId, 'worker-1', 3), [], 'nothing queued');
+
+  for (const [index, seat] of setup.session.spec.seat_ids.slice(0, 4).entries()) {
+    enqueueSeatOperation(runner, setup, seat, `w77s-lease-${index}`);
+  }
+  const first = runner.claimWave(worker, sessionId, 'worker-1', 2);
+  assert.equal(first.length, 2, 'the limit is honoured');
+  assert.deepEqual(
+    runner.claimWave(worker, sessionId, 'worker-1', 2),
+    [],
+    'a live lease blocks the next wave: claiming it would fence the in-flight settle',
+  );
+  for (const claim of first) assert.ok(runner.releaseClaim(worker, claim));
+  assert.equal(runner.claimWave(worker, sessionId, 'worker-1', 2).length, 2, 'released work is claimable again');
+  assert.deepEqual(runner.claimWave(worker, sessionId, 'worker-1', 0), []);
 });

@@ -364,6 +364,93 @@ def test_presentation_shows_every_element_and_three_approval_actions():
     assert "the story turn" in text.lower() or "The turn" in text
 
 
+# --------------------------------------------------------------------------- #
+# 6. the whole reply decides: approval, rejection or revision request
+# --------------------------------------------------------------------------- #
+
+NOT_APPROVALS = [
+    # a substring hit anywhere in the reply is not an approval
+    "the villain's name is perfect as is, but make the story longer",
+    "love it, but the second verse needs work",
+    "lgtm, but move the call to action earlier",
+    "perfect but the middle drags",
+    "approved, but I hate the villain",
+    # an affirmative first word is not an approval
+    "go back and revise",
+    "ok but can we make it shorter",
+    "start over from the beginning",
+    "go fix the middle section first",
+    # an all/both/everything flag never sets an approval
+    "all of this is wrong",
+    "everything is wrong",
+    "both are wrong",
+    "both approved, but the story is wrong",
+    "all approved, but make it better",
+    "everything approved, though it drags in the middle",
+    # a negated or conditional affirmative is never an approval
+    "this is not approved",
+    "approved if you change the ending",
+    "I approve unless the budget goes over",
+    "no changes to the approval, but I do not like the story",
+    "no good",
+    "I approve nothing",
+    "I do not disapprove",
+    "should I approve this?",
+    "approve everything except the ending",
+    "I approve option 2",
+    "approve the foley",
+    "my friend said approve it",
+    'the note said "approve it"',
+    "yes, but please change the chorus first",
+    "not yet, ask me tomorrow",
+    "no, do not make it",
+]
+
+BARE_APPROVALS = [
+    "yes", "y", "yeah", "ok", "okay", "approved", "approve", "I approve",
+    "looks good", "looks good, go ahead", "go ahead", "ship it", "lgtm",
+    "yes, approved", "approved, no changes", "approve both", "no changes",
+    "as is", "good to go", "sounds good", "perfect", "yes please",
+    "let's do it", "do it", "proceed", "approve lyrics", "yes, rev 1",
+]
+
+
+def test_whole_reply_decides_no_substring_no_first_word_no_all_flag():
+    """S75-T12 round 5: a bare approval or nothing. A substring hit anywhere in
+    the reply, an affirmative first word, or an all/both/everything flag must
+    never record a decision -- and a plainly approving reply must still land."""
+    for i, text in enumerate(NOT_APPROVALS):
+        assert AE.is_affirmative(text) is False, text
+        run = make_run()
+        SA.request_approval(run, TITLE, STORY, SHEET, LYRICS, context=ctx(),
+                            message_id="pres-1")
+        read = AE.interpret_reply(text, SA.record_for(run), ctx())
+        assert read["intent"] not in ("approve", "already-approved"), (text, read["intent"])
+        r = reply(run, text, context=ctx(reply_to_message_id="msg-%d" % i))
+        assert r["status"] != "approved", (text, r)
+        assert AE.decisions(AE.ensure_record(SA.record_for(run))) == [], text
+    for text in BARE_APPROVALS:
+        assert AE.is_affirmative(text) is True, text
+        run = make_run()
+        SA.request_approval(run, TITLE, STORY, SHEET, LYRICS, context=ctx(),
+                            message_id="pres-1")
+        assert AE.interpret_reply(text, SA.record_for(run), ctx())["intent"] == "approve", text
+
+
+def test_a_viewing_preference_answer_never_opens_the_artifact_gate():
+    """The recovery question is answered with the same parser, so a "yes" that
+    also asks to see the work is an ANSWER. It must still never approve the
+    presented artifacts: every approval path refuses a preference reply."""
+    assert AE.is_affirmative("yes, show me first") is True
+    for text in ("yes, show me first", "ok, let me see it first"):
+        run = make_run()
+        SA.request_approval(run, TITLE, STORY, SHEET, LYRICS, context=ctx(),
+                            message_id="pres-1")
+        r = reply(run, text, context=ctx(reply_to_message_id="msg-9"))
+        assert r["status"] != "approved", (text, r)
+        assert AE.decisions(AE.ensure_record(SA.record_for(run))) == [], text
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in sorted(globals().items()):

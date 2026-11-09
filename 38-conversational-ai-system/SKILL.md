@@ -1,7 +1,7 @@
 ---
 name: conversational-ai-system
 description: Communication-driven funnel system (v5.14) that builds GHL conversation playbooks — appointment booking, brainstorm Q&A, and multi-phase qualification flows — using GHL Workflow AI nodes and OpenClaw playbooks. Differentiates from CloseBot with friendly proactive engagement over scripted pitching.
-version: v2.0.225
+version: v2.0.224
 ---
 
 # Skill 38: Conversational AI System
@@ -152,3 +152,5 @@ upstream is Skill 23: read its `INSTRUCTIONS.md → "Moment 3.8"`, then build th
 After skills 05, 10, 19, 29 are installed AND the operator is ready to wire up the full conversational AI brain. Estimated install time: 60-90 minutes (per v5.14 playbook).
 
 > **Relationship lattice (GK-27):** see `docs/CONTENT-CONVERSATION-LATTICE.md` for the canonical statement that this skill owns ALL inbound conversations and how its build path relates to Skill 44.
+
+> **Interactive workflow owner (T-19):** see `launch/interactive-owner-contract.md` for the single-responder contract that binds rendered controls, provider callbacks, free text and stale taps to this skill's inbound path by default (`openclaw_inbound`), and refuses any contract that names two responders. Machine gate: `scripts/qc-interactive-owner.sh`.

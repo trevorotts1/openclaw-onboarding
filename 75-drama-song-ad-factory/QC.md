@@ -272,19 +272,22 @@ to self-approve a run.
   speaking face that is not a lip-sync clip of that character's own line fails
   `FACE_SPEAKS_NO_LIPSYNC`; a lip-sync clip whose speaker is not on screen fails
   `LIPSYNC_WRONG_FACE`.
-- Run `face_speaks.check_coverage_band(ad_length_s, lipsync_s, lines)`: lip-sync
-  covers **25-30%** of the selected duration with a **35% hard maximum**
-  (approved direction 2026-10-23, superseding the 2026-10-08 30-40 s order), in
-  4-6 s clips with no clip over 6 s and never fewer than 3 clips, with a
-  5-point grace; below the band or under the clip count fails
-  `LIPSYNC_COVERAGE_BELOW_BAND`, and a plan over the 35% maximum fails
-  `LIPSYNC_OVER_CAP` in `lipsync_clips.check_clips`. The planner
-  (`plan_lipsync_lines`) picks the lines (every sung hook, the spoken opener and
-  closing first, each cut to 6 s) and the first clip must start inside the
-  opening 12 s (`lipsync_clips.check_opening`), or
-  `LIPSYNC_OPENING_NOT_ARTICULATED`. A duration whose bounds cannot all hold
-  (the 3-clip / 4-s floor outside the 35% maximum) fails
-  `LIPSYNC_DURATION_CONFLICT` and is never re-planned silently.
+- Run `face_speaks.check_coverage_band(ad_length_s, lipsync_s, lines)`: it
+  measures the **25-30%** target share of the selected duration (approved
+  direction 2026-10-23, superseding the 2026-10-08 30-40 s order) -- a 15-18 s
+  band at 60 s, scaled with length -- against a clip floor that never drops
+  below 3 (3 at 60 s), each clip 4-6 s with no clip over 6 s, and a 5-point
+  grace. It fails `LIPSYNC_COVERAGE_BELOW_BAND` only below the band minus that
+  grace (3 s at 60 s) or under that clip floor; a plan above the band is
+  reported in `evidence` (`in_band` false), never failed here. The **35% hard
+  maximum** is a separate bound this measurement does not enforce: a plan over
+  it fails `LIPSYNC_OVER_CAP` in `lipsync_clips.check_clips`, and the card
+  guard refuses anything that crosses it. The planner (`plan_lipsync_lines`)
+  picks the lines (every sung hook, the spoken opener and closing first, each
+  cut to 6 s) and the first clip must start inside the opening 12 s
+  (`lipsync_clips.check_opening`), or `LIPSYNC_OPENING_NOT_ARTICULATED`. A
+  duration whose bounds cannot all hold (the 3-clip / 4-s floor outside the 35%
+  maximum) fails `LIPSYNC_DURATION_CONFLICT` and is never re-planned silently.
 - The historical FREE / no-lip-sync route stays explicit
   (`lipsync_clips.ROUTE_NO_LIPSYNC`, zero paid Kling jobs, owner opt-in); it is
   never the default and never a reason to drop lip-sync from an ordinary run.

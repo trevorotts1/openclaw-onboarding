@@ -1,0 +1,163 @@
+citation check at pin 9488ccbc8cd57a90dec6bd30a15ba4eba2cc4865
+citations: 80   mismatches: 0
+
+G1     OK       ONBOARDING-TRIGGERS.md:3
+        This document shows you exactly how to start a fresh OpenClaw install or run an update on an existing install. There are **8 different ways to do it**, depending on (1) what kind of machine you have, (2) whether this is 
+G1     OK       install.sh:8
+        #  Run via: curl -fSL --progress-bar https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/install.sh | bash
+G2     OK       install.sh:3077
+        collect_onboarding_identity() {
+G2     OK       install.sh:3106
+        collect_onboarding_identity || exit 8
+G2     OK       scripts/onboarding-identity.py:16
+        QUESTIONS = {'ownerName': 'What is the name of the client or owner of this ZHC?',
+G2     OK       scripts/onboarding-identity.py:143
+        return 8 if result['status'] == 'needs-input' else 0
+G3     OK       shared-utils/client_intake/engine.py:2
+        """Client intake engine: one question bank, one answers file per run, the same in every harness.
+G3     OK       shared-utils/client_intake/engine.py:333
+        def next_question(doc, bank=None):
+G3     OK       shared-utils/client_intake/engine.py:829
+        def finalize(doc, bank=None):
+G4     OK       38-conversational-ai-system/tools/acquisition_brief.py:2
+        """Guided business, audience and offer discovery for Skill 38 (T-06).
+G4     OK       38-conversational-ai-system/tools/acquisition_brief.py:310
+        class AcquisitionBrief:
+G5     OK       38-conversational-ai-system/tools/bootstrap_engine.py:4
+        Contract basis: Purple-Billboard TODO T-36 ("client-bootstrap-engine") and
+G5     OK       38-conversational-ai-system/tools/bootstrap_engine.py:460
+        def plan(self, specs: Sequence[ResourceSpec]) -> Plan:
+G5     OK       38-conversational-ai-system/tools/bootstrap_engine.py:562
+        def run(
+J1     OK       35-social-media-planner/scripts/run-publishing-cycle.sh:14
+        #  Usage:
+J2     OK       35-social-media-planner/scripts/weekly-batch.sh:6
+        #  Cron-driven weekly batch (`0 9 * * 1`) that reads
+J3     OK       57-social-media-in-a-box/social-media-entry.sh:53
+        --mode MODE     engine : week | day | carousel | video | podcast-cover | plan | clean
+J4     OK       38-conversational-ai-system/schemas/approval-manifest.schema.json:3
+        "title": "Revisioned monthly approval manifest, one joined 30-day campaign",
+J4     OK       38-conversational-ai-system/tools/pb_contracts.py:393
+        def semantic_approval(doc):
+J4     OK       38-conversational-ai-system/tools/pb_contracts.py:1036
+        def approval_errors(action, manifest_path):
+J5     OK       38-conversational-ai-system/tools/direct_fulfillment.py:118
+        """The immutable original promise. Hosting location is not identity."""
+J5     OK       38-conversational-ai-system/tools/pb_contracts.py:68
+        "keyword",
+J5     OK       38-conversational-ai-system/tools/pb_contracts.py:69
+        "promised_item_version",
+R1     OK       35-social-media-planner/config/profile-capabilities.json:2
+        "$schema_note": "T-22 honest personal-profile capability declaration and assisted contract. ONE machine-readable source consumed by shared-utils/personal_profile_capability.py, the profile_capability.py CLI, the status s
+R1     OK       shared-utils/personal_profile_capability.py:154
+        def get_capability(
+R1     OK       shared-utils/personal_profile_capability.py:226
+        def request_placement(
+R2     OK       35-social-media-planner/scripts/comment_reader.py:75
+        CHANNEL_COMMENT_SURFACE = {
+R2     OK       35-social-media-planner/scripts/comment_reader.py:221
+        if channel not in CHANNEL_COMMENT_SURFACE:
+R3     OK       38-conversational-ai-system/tools/pb_contracts.py:980
+        if action["purpose"] == "COMMENT_PRIVATE_OPENER" and gate["inbound_dm_window"]:
+R3     OK       35-social-media-planner/references/playbook.md:1042
+        Every single social media post gets a comment below it. The post itself contains BOTH a DM call-to-action (primary — e.g. "Send us a message to talk with an [Brand Name] specialist") AND a line like "the link is in the c
+F1     OK       38-conversational-ai-system/tools/asset_registry.py:372
+        class AssetRegistry:
+F1     OK       38-conversational-ai-system/tools/asset_registry.py:584
+        def record_present(
+F2     OK       38-conversational-ai-system/tools/direct_fulfillment.py:462
+        def fulfill(store: DurableStore, ledger: FulfillmentLedger,
+F2     OK       38-conversational-ai-system/tools/direct_fulfillment.py:632
+        def record_delivery_proof(store: DurableStore, item: PromisedItem,
+C1     OK       38-conversational-ai-system/tools/tenant_identity.py:48
+        CHANNEL_IDENTIFIER_TYPES = {
+C1     OK       38-conversational-ai-system/tools/tenant_identity.py:109
+        reminder_total       INTEGER NOT NULL DEFAULT 0,
+C2     OK       38-conversational-ai-system/tools/collection_lock.py:501
+        class CaptureStore:
+C2     OK       38-conversational-ai-system/tools/collection_lock.py:530
+        def begin(
+C3     OK       38-conversational-ai-system/tools/consent_gate.py:85
+        SCOPE_OFFER = "offer"
+C3     OK       38-conversational-ai-system/tools/consent_gate.py:299
+        def human_takeover(self, tenant_id: str, canonical_contact_id: str, *,
+C3     OK       38-conversational-ai-system/tools/consent_gate.py:325
+        def human_release(self, tenant_id: str, canonical_contact_id: str, *,
+C4     OK       38-conversational-ai-system/schemas/collection-state.schema.json:72
+        "capture_budget": {
+C4     OK       38-conversational-ai-system/schemas/collection-state.schema.json:79
+        "max_sms_email_asks": {
+C5     OK       38-conversational-ai-system/tools/pb_contracts.py:341
+        # Section 8: three distinct slots, in order.
+C5     OK       38-conversational-ai-system/tools/pb_contracts.py:342
+        slots = doc["reminder_slots"]
+C5     OK       38-conversational-ai-system/tools/pb_contracts.py:358
+        errs.append("$.reminder_slots: due_at must increase across slots")
+C6     OK       38-conversational-ai-system/protocols/intelligent-followup-protocol.md:1
+        # Intelligent Follow-up Protocol
+O1     OK       38-conversational-ai-system/tools/consent_gate.py:85
+        SCOPE_OFFER = "offer"
+O2     OK       38-conversational-ai-system/protocols/smart-booking-protocol.md:37
+        `caf calendars book` first, Tier 3 `POST /calendars/events/appointments` as the
+O3     OK       38-conversational-ai-system/tools/pb_contracts.py:74
+        LIFECYCLE_LADDER = ["NOT_INSTALLED", "ADOPTING", "RUNNING", "PAUSED_RESUMABLE", "CLOSING", "CLOSED"]
+D-11   OK       38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh:192
+        if [[ "$HAS_MAPPING" == "true" ]]; then
+D-11   OK       38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh:197
+        # every re-run — an upgraded box kept the broken body forever.
+D-11   OK       38-conversational-ai-system/scripts/15-configure-hooks-mappings.sh:199
+        MERGED_MAPPING="$(s38_merge_mapping_body "$EXISTING_MAPPING" "$NEW_MAPPING" "$CONFIGURED_AGENT_IDS")"
+D-11   OK       38-conversational-ai-system/scripts/repair/repair-inbound-hooks.py:130
+        res = migrate_mapping_body(cfg_path, m)
+D-12   OK       38-conversational-ai-system/scripts/24-self-test-hook.sh:157
+        # scripts/lib-hook-mapping-contract.sh. This used to be a private python snippet
+D-12   OK       38-conversational-ai-system/scripts/24-self-test-hook.sh:160
+        # passed a mapping this one refused. One predicate now, per mapping id (G-03/G-04/G-05).
+D-12   OK       38-conversational-ai-system/scripts/lib-hook-mapping-contract.sh:12
+        # PBB-017 GROUND TRUTH — `model` is NOT required (evidence, not preference):
+D-12   OK       38-conversational-ai-system/scripts/lib-hook-mapping-contract.sh:32
+        #                    (`model` is an OPTIONAL override — see PBB-017 above)
+D-13   OK       38-conversational-ai-system/scripts/24-self-test-hook.sh:334
+        if [ "$CODE" = "200" ] && printf '%s' "$RESP_BODY" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+D-13   OK       38-conversational-ai-system/scripts/24-self-test-hook.sh:371
+        if [ "${CREATE_TEMP_CONTACT:-0}" = "1" ] && [ -n "$SECRETS_ENV" ]; then
+D-13   OK       38-conversational-ai-system/tools/direct_fulfillment.py:20
+        EVIDENCE.  Provider admission is labelled accepted/sent, never "delivered".
+D-15   OK       38-conversational-ai-system/launch/qc-launch-conversation-ai.sh:2
+        # qc-launch-conversation-ai.sh — launch Conversation-AI completion gate.
+G5     OK       38-conversational-ai-system/CHANGELOG.md:66
+        Adds one stdlib-only module, `tools/bootstrap_engine.py` (the T-36 `client-bootstrap-engine`), which provisions the objects a guided setup asks for into one target root. `plan()` is a pure scoped diff and writes nothing,
+J4     OK       38-conversational-ai-system/schemas/approval-manifest.schema.json:4
+        "description": "Purple Billboard DATA-CONTRACTS section 10 and DEC-02. One client approval covers one joined 30-day campaign of exact placements. A mutation invalidates that placement only, so the manifest carries per-pl
+J5     OK       38-conversational-ai-system/tools/direct_fulfillment.py:136
+        "not_approved: the original promised item is not approved")
+R3     OK       38-conversational-ai-system/schemas/outbound-action.schema.json:788
+        "COMMENT_PRIVATE_OPENER",
+R3     OK       38-conversational-ai-system/tools/tests/fixtures/pb-contracts/outbound/person-comment-opener.json:4
+        "logical_intent_key": "cycle-2026-11/contact-77/COMMENT_PRIVATE_OPENER",
+C4     OK       38-conversational-ai-system/tools/pb_contracts.py:333
+        budget = doc["capture_budget"]
+C4     OK       38-conversational-ai-system/tools/pb_contracts.py:336
+        if budget["sms_email_asks_used"] > budget["max_sms_email_asks"]:
+C4     OK       38-conversational-ai-system/tools/pb_contracts.py:338
+        if budget["reminders_used"] < doc["reminders_accepted"]:
+C5     OK       38-conversational-ai-system/tools/pb_contracts.py:345
+        errs.append("$.reminder_slots: duplicate slot number %s" % sorted(numbers))
+C5     OK       38-conversational-ai-system/tools/pb_contracts.py:347
+        errs.append("$.reminder_slots: slot numbers must be listed in order")
+C6     OK       38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:157
+        FUP="$SKILL_DIR/protocols/intelligent-followup-protocol.md"
+C6     OK       38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:219
+        "$SKILL_DIR/protocols/intelligent-followup-protocol.md"
+D-13   OK       38-conversational-ai-system/scripts/24-self-test-hook.sh:388
+        ok "GHL Conversations API send returned $SCODE with a messageId"
+D-15   OK       38-conversational-ai-system/launch/README.md:87
+        | `qc-launch-conversation-ai.sh` | Offline gate over one evidence bundle (or a directory of them) |
+D-15   OK       38-conversational-ai-system/launch/conversation-runtime-contract.md:4
+        `qc-launch-conversation-ai.sh --bundle <evidence.json>`. The playbooks in this
+C6     OK       38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:163
+        fail "intelligent-followup-protocol.md applies a BARE agent-created tag \`${bare}…\` — must be ZHC-${bare}…"
+C6     OK       38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:167
+        [ "$fup_bare" -eq 0 ] && pass "intelligent-followup-protocol.md: all agent-created follow-up tags are ZHC- prefixed (no bare stalled-sales/cold-lead-released/followup-opted-out/followup-cadence-N)"
+C6     OK       38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh:169
+        fail "protocols/intelligent-followup-protocol.md MISSING (cannot check F29 follow-up tags)"

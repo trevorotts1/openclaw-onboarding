@@ -71,6 +71,46 @@ const MODE_PATHS: Record<SessionMode, Partial<Record<SessionState, SessionState[
     CONSULTING: ['VERIFYING'],
     VERIFYING: ['COMPLETED'],
   },
+  // Council sizes (W77S-MODES). No separate ratification pass: the verdict
+  // is composed from the last completed round's advisor cards, so these
+  // paths never enter ROUND_3. Each extra challenge pass re-enters
+  // CRUX_REVIEW -> ROUND_2; the pass number lives in the job descriptor
+  // round and the card's round, never in a new state value.
+  light: {
+    DRAFT: ['READY'],
+    READY: ['QUEUED'],
+    QUEUED: ['PREPARING'],
+    PREPARING: ['ROUND_1'],
+    ROUND_1: ['CRUX_REVIEW'],
+    CRUX_REVIEW: ['ROUND_2'],
+    ROUND_2: ['DRAFT_RESOLUTION'],
+    DRAFT_RESOLUTION: ['VERIFYING'],
+    VERIFYING: ['COMPLETED'],
+  },
+  medium: {
+    DRAFT: ['READY'],
+    READY: ['QUEUED'],
+    QUEUED: ['PREPARING'],
+    PREPARING: ['ROUND_1'],
+    // A round-1 consensus stop may go straight to the resolution.
+    ROUND_1: ['CRUX_REVIEW', 'DRAFT_RESOLUTION'],
+    CRUX_REVIEW: ['ROUND_2'],
+    // Re-entry: another challenge pass, or stop and compose the verdict.
+    ROUND_2: ['CRUX_REVIEW', 'DRAFT_RESOLUTION'],
+    DRAFT_RESOLUTION: ['VERIFYING'],
+    VERIFYING: ['COMPLETED'],
+  },
+  heavy: {
+    DRAFT: ['READY'],
+    READY: ['QUEUED'],
+    QUEUED: ['PREPARING'],
+    PREPARING: ['ROUND_1'],
+    ROUND_1: ['CRUX_REVIEW', 'DRAFT_RESOLUTION'],
+    CRUX_REVIEW: ['ROUND_2'],
+    ROUND_2: ['CRUX_REVIEW', 'DRAFT_RESOLUTION'],
+    DRAFT_RESOLUTION: ['VERIFYING'],
+    VERIFYING: ['COMPLETED'],
+  },
 };
 
 /** States from which work is actively executing or awaiting execution. */

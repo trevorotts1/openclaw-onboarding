@@ -291,7 +291,14 @@ class VocabDriftTests(unittest.TestCase):
     """
     PLAN_LOOKS = ["Lifelike 3D", "2D Hand-Painted", "Sketch to Life",
                   "Canvas to Life", "Canvas to 3D"]          # D29 / plan 4.1
-    PLAN_MUSICS = ["Soul Ballad", "R&B Flow", "Soul Rise"]    # D18 / D30
+    PLAN_MUSICS = [
+    "Soul Ballad", "R&B Flow", "Soul Rise",            # D18 / D30 (first three)
+    "Melodic Rap", "Trap Rap", "Pop Rap",              # S75-T20
+    "Acoustic Pop", "Folk Storytelling", "Country Pop", "Pop Rock",
+    "Reggaeton", "Cinematic Orchestral Song", "Musical Theater",
+    "Contemporary Gospel", "Urban Gospel", "Alternative R&B", "Afro-Soul",
+    "Country Rap",
+]   # S75-CATALOG: the owner-approved eighteen (MUSIC-AND-VIDEO-UX.md sec 2)
     PLAN_VOICES = ["All Suno", "Velvet Voiceover"]            # D27 / D31
 
     def test_menus_match_owner_decision_literals(self):
@@ -306,7 +313,7 @@ class VocabDriftTests(unittest.TestCase):
     def test_menus_match_sibling_vocabularies(self):
         try:
             from choice_card.looks import LOOK_LABELS, LOOK_ORDER
-            from music_styles import music_styles as MS
+            import music_styles as MS          # the 18-style catalog of record
             from voice_velvet_echo.velvet_voiceover import voice_options
         except ImportError as exc:
             self.skipTest("sibling vocab not in this tree (%s)" % exc)

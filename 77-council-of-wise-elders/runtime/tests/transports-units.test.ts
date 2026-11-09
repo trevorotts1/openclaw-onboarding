@@ -14,6 +14,11 @@ import {
 import { TransportDiagnosticSink } from '../src/providers/diagnostics.js';
 import { isTransportError } from '../src/providers/errors.js';
 import {
+  DEFAULT_OLLAMA_BASE_URL,
+  createOllamaTransport,
+  ollamaCompatibleBaseUrl,
+} from '../src/providers/ollama.js';
+import {
   parseChatCompletionEnvelope,
   parseRetryAfterMs,
 } from '../src/providers/http-core.js';
@@ -423,4 +428,37 @@ test('envelope: hidden-reasoning content never enters the parsed text', () => {
   });
   const parsed = parseChatCompletionEnvelope(body, body.length, 'f'.repeat(64), null);
   assert.equal(parsed.text, 'visible');
+});
+
+// ------------------------------------------- W77S-MODES: Ollama profile
+
+test('W77S: the Ollama profile serves the configured endpoint with /v1 appended once', async () => {
+  assert.equal(ollamaCompatibleBaseUrl('http://127.0.0.1:11434'), 'http://127.0.0.1:11434/v1');
+  assert.equal(ollamaCompatibleBaseUrl('http://127.0.0.1:11434/'), 'http://127.0.0.1:11434/v1');
+  assert.equal(ollamaCompatibleBaseUrl('http://127.0.0.1:11434/v1'), 'http://127.0.0.1:11434/v1');
+  assert.equal(ollamaCompatibleBaseUrl('https://ollama.com'), 'https://ollama.com/v1');
+  assert.equal(ollamaCompatibleBaseUrl(null), DEFAULT_OLLAMA_BASE_URL);
+  assert.equal(ollamaCompatibleBaseUrl('   '), DEFAULT_OLLAMA_BASE_URL);
+
+  // The local daemon and a TLS Ollama Cloud endpoint both compose through
+  // the same OpenAI-compatible profile; nothing is pulled, unloaded or
+  // reconfigured.
+  const binding = {
+    selection: selection({ routeId: 'ollama-configured', providerSlug: 'ollama' }),
+    credentialResolver: async () => null,
+  };
+  assert.ok(createOllamaTransport({ ...binding, baseUrl: 'http://127.0.0.1:11434' }));
+  assert.ok(createOllamaTransport({ ...binding, baseUrl: 'https://ollama.com' }));
+  // Plain http to a remote host still needs the explicit opt-in.
+  assert.throws(
+    () => createOllamaTransport({ ...binding, baseUrl: 'http://ollama.example.test' }),
+    (error: unknown) => isTransportError(error) && error.code === 'TRANSPORT_CONFIG_INVALID',
+  );
+  assert.ok(
+    createOllamaTransport({
+      ...binding,
+      baseUrl: 'http://ollama.example.test',
+      allowInsecureRemoteHttp: true,
+    }),
+  );
 });

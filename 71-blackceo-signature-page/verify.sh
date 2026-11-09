@@ -139,11 +139,14 @@ fi
 
 front_ver="$(awk 'BEGIN{x=0} /^---$/{x++; next} x==1 && /^version:/{sub(/^version:[[:space:]]*/,""); print; exit}' "$ROOT/SKILL.md" | tr -d '"\r')"
 file_ver="$(tr -d 'vV\r[:space:]' < "$ROOT/skill-version.txt")"
+pkg_ver="$(tr -d 'vV\r[:space:]' < "$ROOT/VERSION")"
 front_ver="${front_ver#v}"
-if [ "$front_ver" = "$file_ver" ] && [ -n "$front_ver" ]; then
-  echo "[PASS] version lockstep $front_ver"
+# Three-stamp lockstep (finding 43): VERSION counts too, and this block runs
+# on every path — run_tests.py is NOT RUN in a lone-directory install.
+if [ "$front_ver" = "$file_ver" ] && [ "$file_ver" = "$pkg_ver" ] && [ -n "$front_ver" ]; then
+  echo "[PASS] version lockstep $front_ver (SKILL.md, skill-version.txt, VERSION)"
 else
-  echo "[FAIL] SKILL.md version '$front_ver' != skill-version.txt '$file_ver'" >&2
+  echo "[FAIL] version stamps disagree: SKILL.md '$front_ver' skill-version.txt '$file_ver' VERSION '$pkg_ver'" >&2
   fail=1
 fi
 
