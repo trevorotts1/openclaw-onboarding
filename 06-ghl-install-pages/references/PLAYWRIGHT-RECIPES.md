@@ -48,12 +48,15 @@ The code lives in `tools/playwright_recipes/`:
 | `checkout_ui.py` | Native checkout layout, contact fields, display switches and content |
 | `pages_checkout.py` | Exact code targets and contract-bound native payment component adapter |
 | `delivery.py` | Course and permanent calendar-link API execution through existing credentials |
+| `course_outline.py` | Existing draft module/lesson API updates with exact target/version receipts |
+| `form_schedule.py` | Native open/close scheduling, time zone and outside-window page/link settings |
+| `intake.py` | Reject missing, ignored and contradictory inputs before browser work |
 | `meetings.py` | Room creation/update, persisted identity and security checks |
 | `checkpoint.py` | Dated source backups with a per-file integrity manifest |
 | `test_*.py` | Validation, routing, recovery, provider and opt-in Chromium contracts |
 
 There is one maintained executor, with multiple named recipes. Names below are
-32 named entry points in the catalog. Shared handlers avoid copying browser programs.
+33 named entry points in the catalog. Shared handlers avoid copying browser programs.
 
 | Recipe | Best use | Current coverage |
 | --- | --- | --- |
@@ -73,12 +76,12 @@ There is one maintained executor, with multiple named recipes. Names below are
 | `14_create_survey` / `surveys.create` | Native survey and standard-field placement | Native field placed/saved; branches need profiles |
 | `15_create_marketing_quiz` / `quizzes.create` | Lead quiz, scoring and result pages | Native question path exercised; scoring/result profiles needed |
 | `16_create_community` / `communities.create` | Native group creation | Group created, then retained inactive |
-| `17_configure_community` / `communities.configure` | Channels, privacy, branding, course links | Portal password expired; profile capture blocked |
+| `17_configure_community` / `communities.configure` | Channels, privacy, branding, course links | Classic channels/details captured; current new portal access returns Forbidden |
 | `18_create_course` / `courses.create` | Course, outline, lesson content and quizzes via Courses v3 | Concrete API provider; location/version/scope capability and independent read-back required |
 | `19_configure_course_ui` / `courses.configure_ui` | Genuinely UI-only course settings | Recorded profile required |
 | `20_setup_meeting_room` / `meetings.setup` | Personal room and explicit security choices | Concrete create/reuse with independent reader; native fixture created and reopened |
 | `21_integrate_meeting_room` / `meetings.integrate` | Explicit permanent calendar room link | Registered API provider with persisted read-back; dynamic appointment rooms and other associations remain uncaptured |
-| `22_configure_form_settings` / `forms.settings` | Seven ordinary native form switches | Concrete save/reopen path; scheduling values remain unsupported |
+| `22_configure_form_settings` / `forms.settings` | Seven ordinary switches and native form scheduling | Captured time-zone/open/close/outside-window save/reopen; actual visitor behavior pending |
 | `23_update_course` / `courses.update` | Existing course content and styling | Concrete API update and read-back; live client proof pending |
 | `24_create_lesson_quiz` / `courses.lesson_quiz.create` | Course lesson quiz and questions | Courses API, separate from marketing quiz; live attempt proof pending |
 | `25_configure_form_condition` / `forms.conditions` | Native Hide/Show Field conditions | Three-level save and exact persisted card check; other effects require capture |
@@ -89,6 +92,8 @@ There is one maintained executor, with multiple named recipes. Names below are
 | `30_configure_native_checkout_ui` / `checkout.configure_ui` | Layout, contact fields, display switches, 37 text fields and input style | Concrete save/reopen path; stays pending payment verification |
 | `31_configure_form_submission` / `forms.submission` | Native On Submit plain message or HTTPS redirect | Exact saved-mode/value read-back; conditional precedence requires acknowledgment; behavior remains unverified |
 | `32_configure_form_notifications` / `forms.notifications` | Native email notifications and auto responder | Authored subjects/sender/recipients, recipient replacement handshake, inner/outer save and list-reopen checks; actual mail delivery remains unverified |
+
+| `33_update_course_outline` / `courses.lessons` | Existing draft module/lesson content and metadata | API-first version/parent preflight and independent read-back; learner proof pending |
 
 **Evidence limit:** LIVE_PATH means the control sequence was exercised through
 the connected browser. The package and four actual Chromium fixtures passed on Mac and Linux CI.
@@ -264,3 +269,48 @@ owns `calendars.get` and `calendars.update`; default deny and read-back still
 apply. A permanent link cannot silently substitute for native dynamic room
 generation. Any authenticated invite is transient input; receipts retain only
 its hash and safe mode flags. Supply no secret in a public input example.
+
+## Captured form scheduling
+
+`forms.settings` accepts `schedule`, `settings`, or both. For example, the schedule
+below uses an explicit IANA zone, local dates and 24-hour local times. The compiler
+rejects nonexistent or ambiguous DST times and a close preceding the open.
+
+```json
+{"schedule":{"enabled":true,"time_zone":"America/New_York",
+ "opens":{"mode":"at","date":"2030-01-15","time":"09:00"},
+ "closes":{"mode":"at","date":"2030-01-16","time":"17:00"},
+ "before":{"mode":"redirect","url":"https://example.com/not-open"},
+ "after":{"mode":"message","message":"This form is closed."}}}
+```
+
+Disable with exactly `{"schedule":{"enabled":false}}`. Omitted outside-window
+settings and the ordinary switches are preserved. A saved/reopened receipt binds
+the canonical schedule hash and keeps submission/visitor behavior unverified.
+These examples are operation-specific fields; common location/name/start URL inputs
+are still required by the host. Do not run fixture dates against a customer form.
+
+## Existing draft course outline updates
+
+Use `courses.lessons` through `host.py`, with the actual location/version/scope
+capability. Supply `product_id` plus `category_changes` and/or `lesson_changes`.
+Every edit requires the exact existing target and its inventoried
+`expected_updated_at`. A lesson edit also requires its `category_id`.
+
+```json
+{"product_id":"course-from-inventory","publish":false,
+ "category_changes":[{"category_id":"module-from-inventory",
+ "expected_updated_at":"2026-11-09T00:00:00Z",
+ "changes":{"title":"Updated draft module"}}],
+ "lesson_changes":[{"category_id":"module-from-inventory",
+ "lesson_id":"lesson-from-inventory",
+ "expected_updated_at":"2026-11-09T00:00:00Z",
+ "changes":{"title":"Updated draft lesson","description":"Approved content"}}]}
+```
+
+The implementation reads every target and parent before writing, checks versions
+again immediately before each update, preserves known writable siblings, and
+reads each result independently. Quiz/assignment transitions, publication,
+enrollment, moving modules and access/drip/lock rules are outside this operation.
+The receipt stays pending learner verification. Official MCP execution requires
+an actual installed callback; it never silently substitutes the HTTP transport.
