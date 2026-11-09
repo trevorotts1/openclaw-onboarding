@@ -217,12 +217,17 @@ def evaluate_prompt(record: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], Opti
         if not receipt["verdict"]["ok"]:
             status = receipt["verdict"]["status"]
             code = "AF-FUN-PROMPT-CEILING" if status == "ABOVE_MAX" else "AF-FUN-PROMPT-FLOOR"
-            fails.append((code, f"{who}: {receipt['verdict']['message']}; NOT sent to Kie"))
+            # A3: this prover is the P2-PROMPTS phase over ledgers already on disk, so it cannot
+            # claim a prompt "was not sent". The submit path (Skill 74, _prompt_gate) refuses the
+            # same band before its HTTP call, which is what makes the prompt unsubmittable.
+            fails.append((code, f"{who}: {receipt['verdict']['message']}; the Kie submit path "
+                                "refuses this prompt before its HTTP call"))
     else:
         verdict = KPE.check(model, stripped)
         if not verdict["ok"]:
             code = "AF-FUN-PROMPT-CEILING" if verdict["status"] == "ABOVE_MAX" else "AF-FUN-PROMPT-FLOOR"
-            fails.append((code, f"{who}: {verdict['message']}; NOT sent to Kie"))
+            fails.append((code, f"{who}: {verdict['message']}; the Kie submit path "
+                                "refuses this prompt before its HTTP call"))
         receipt = {"final_prompt_sha256": verdict.get("prompt_sha256"),
                    "count": verdict.get("count"), "max": verdict.get("max"),
                    "ratio": verdict.get("ratio"),
@@ -290,6 +295,13 @@ def verify(ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
         got, receipt = evaluate_prompt(rec)
         violations.extend(got)
         if receipt:
+            # A4: the owner rule's 80-to-below-95 percent band PASSES with a warn-and-expand
+            # warning naming the characters to ADD. That verdict was dropped here (the string
+            # "warning" appeared zero times in this file). SURFACE it (ledger ruling G-9: the
+            # UNIT says surface only, so this does not fail the prompt closed).
+            for warning in (receipt.get("verdict") or {}).get("warnings") or []:
+                notes.append("WARNING (prompt policy) %s section %s: %s"
+                             % (rec.get("page_type", "?"), rec.get("section", "?"), warning))
             payload_sha = (POLICY.payload_sha256(
                 {"model": str(rec.get("model") or IMAGE_MODEL_DEFAULT),
                  "input": {"prompt": receipt.get("prompt")}})
@@ -508,7 +520,8 @@ def _report(violations, notes) -> None:
     if not violations:
         print("PASS: every image prompt clears the two-floor gate (KIE rule 12 length band).")
         return
-    print(f"FAIL: {len(violations)} prompt violation(s) — the failing prompt is NOT sent to Kie.")
+    print(f"FAIL: {len(violations)} prompt violation(s) — the Kie submit path refuses a failing "
+          "prompt before its HTTP call.")
     for code, msg in violations:
         print(f"  VIOLATION [{code}] {msg}")
 
