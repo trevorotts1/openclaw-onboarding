@@ -26,20 +26,17 @@ sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
 from hermetic_child_env import hermetic_env  # noqa: E402
 from launcher_core import (  # noqa: E402
-    checks, checkout, council, dependencies, entitlement, intake, package, route,
+    checks, checkout, council, dependencies, intake, package, route,
 )
 from launcher_core.constants import JOURNEY_MODES, SEAM_IDS  # noqa: E402
 
 
-def _base_intake_raw(mode: str = "single_simple", basis: str = "purchase") -> dict:
+def _base_intake_raw(mode: str = "single_simple") -> dict:
     offers = [{"offer_id": "main-1", "name": "Launch", "role": "main",
                "price": {"amount_minor": 49700, "currency": "USD"}}]
     if mode in ("multiple_options", "folded_levels"):
         offers.append({"offer_id": "main-2", "name": "Launch Plus", "role": "main",
                        "price": {"amount_minor": 99700, "currency": "USD"}})
-    attestation = {"basis": basis, "evidence_ref": "TEST-ONLY-EVIDENCE", "attested_by": "operator"}
-    if basis == "purchase":
-        attestation.update(purchase_reference="TEST-ONLY-PURCHASE-REFERENCE", amount_minor=49700, currency="USD")
     return {
         "schema_version": "1.0",
         "tenant_id": "tenant-a",
@@ -50,7 +47,6 @@ def _base_intake_raw(mode: str = "single_simple", basis: str = "purchase") -> di
         "brand": {"ref": "brand-a", "hash": "a" * 64},
         "copy_profile": "signature_12_section",
         "approval": {"ref": "approval-1", "hash": "b" * 64},
-        "entitlement_attestation": attestation,
         "offers": offers,
     }
 
@@ -109,116 +105,6 @@ def pieces_for(run_dir: Path, graph: dict, normalized: dict) -> dict:
             "test_only": True,
         }
     return pieces
-
-
-class EntitlementGateTests(unittest.TestCase):
-    def test_brand_management_membership_qualifies_without_a_purchase(self):
-        result = intake.validate(base_intake(basis="brand_management_membership"))
-        self.assertTrue(result["entitlement"]["qualifies"])
-        self.assertFalse(result["entitlement"]["requires_purchase"])
-        self.assertIsNone(result["entitlement"]["purchase_reference"])
-        self.assertEqual(result["entitlement"]["billing"], "none")
-
-    def test_zhc_with_brand_management_qualifies(self):
-        result = intake.validate(base_intake(basis="zhc_with_brand_management"))
-        self.assertTrue(result["entitlement"]["qualifies"])
-
-    def test_school_of_ai_alone_does_not_qualify(self):
-        with self.assertRaises(intake.IntakeError) as ctx:
-            intake.validate(base_intake(basis="school_of_ai_membership"))
-        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ENTITLEMENT-NOT-QUALIFIED")
-
-    def test_zhc_alone_does_not_qualify(self):
-        with self.assertRaises(intake.IntakeError) as ctx:
-            intake.validate(base_intake(basis="zhc"))
-        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ENTITLEMENT-NOT-QUALIFIED")
-
-    def test_unknown_basis_fails_closed(self):
-        with self.assertRaises(intake.IntakeError) as ctx:
-            intake.validate(base_intake(basis="friend_of_the_founder"))
-        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ENTITLEMENT-UNKNOWN")
-
-    def test_missing_attestation_fails_closed(self):
-        payload = base_intake()
-        del payload["entitlement_attestation"]
-        with self.assertRaises(intake.IntakeError) as ctx:
-            intake.validate(payload)
-        self.assertEqual(ctx.exception.code, "AF-LAUNCH-INTAKE-MISSING")
-        self.assertEqual(ctx.exception.field, "entitlement_attestation")
-
-    def test_purchase_without_a_reference_is_refused(self):
-        payload = base_intake()
-        del payload["entitlement_attestation"]["purchase_reference"]
-        with self.assertRaises(intake.IntakeError) as ctx:
-            intake.validate(payload)
-        self.assertEqual(ctx.exception.code,
-                         "AF-LAUNCH-ENTITLEMENT-PURCHASE-UNVERIFIED")
-
-    def test_membership_may_not_claim_a_purchase(self):
-        payload = base_intake(basis="brand_management_membership")
-        payload["entitlement_attestation"]["purchase_reference"] = "order-9"
-        with self.assertRaises(intake.IntakeError) as ctx:
-            intake.validate(payload)
-        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ENTITLEMENT-ATTESTATION")
-
-    def test_a_contradicting_purchase_price_is_refused(self):
-        payload = base_intake()
-        payload["entitlement_attestation"].update(
-            {"amount_minor": 100, "currency": "USD"})
-        with self.assertRaises(intake.IntakeError) as ctx:
-            intake.validate(payload)
-        self.assertEqual(ctx.exception.code,
-                         "AF-LAUNCH-ENTITLEMENT-PRICE-CONTRADICTION")
-
-    def test_declaration_is_carried_and_digested(self):
-        declaration = entitlement.load_declaration()
-        self.assertTrue(declaration["no_billing"])
-        self.assertFalse(declaration["creates_entitlements"])
-        record = entitlement.declaration_record()
-        self.assertEqual(record["path"], "entitlement-declaration.json")
-        self.assertEqual(len(record["sha256"]), 64)
-
-    def test_a_silently_flipped_rule_is_caught(self):
-        declaration = json.loads(entitlement.declaration_path().read_text(encoding="utf-8"))
-        for rule in declaration["rules"]:
-            if rule["basis"] == "brand_management_membership":
-                rule["requires_purchase"] = True
-        with tempfile.TemporaryDirectory() as tmp:
-            fake = Path(tmp) / "entitlement-declaration.json"
-            fake.write_text(json.dumps(declaration), encoding="utf-8")
-            with mock.patch.object(entitlement, "declaration_path", return_value=fake):
-                with self.assertRaises(entitlement.EntitlementError) as ctx:
-                    entitlement.load_declaration()
-        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ENTITLEMENT-DECLARATION")
-
-    def test_missing_declaration_fails_closed(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.object(entitlement, "declaration_path",
-                                   return_value=Path(tmp) / "nope.json"):
-                with self.assertRaises(entitlement.EntitlementError) as ctx:
-                    entitlement.load_declaration()
-        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ENTITLEMENT-DECLARATION")
-
-    def test_no_billing_api_is_imported_or_called(self):
-        source = Path(entitlement.__file__).read_text(encoding="utf-8")
-        for forbidden in ("stripe", "requests", "urllib", "subprocess", "charge("):
-            self.assertNotIn(forbidden, source)
-
-    def test_the_gate_labels_its_evidence_a_caller_attestation_not_purchase_proof(self):
-        """The gate reads no payment system; the operator must be told so.
-
-        Every qualifying basis, not just purchase: the label rides every result.
-        """
-        # U-launcher-core-06: the gate now reads the client's GHL contact record back, so the evidence is a
-        # read-back, and only a purchase basis (a paid order resolved at the declared price) proves a purchase.
-        for basis in ("purchase", "brand_management_membership",
-                      "zhc_with_brand_management"):
-            result = intake.validate(base_intake(basis=basis))["entitlement"]
-            self.assertEqual(result["evidence_kind"], "ghl_contact_readback", basis)
-            self.assertIs(result["proves_purchase"], basis == "purchase", basis)
-            boundary = result["attestation_boundary"].lower()
-            self.assertIn("read-only ghl lookup", boundary, basis)
-            self.assertIn("never trusted", boundary, basis)  # attested_by is recorded, not believed
 
 
 class DocumentationTests(unittest.TestCase):
@@ -432,13 +318,13 @@ class OfferFactTests(unittest.TestCase):
         facts = intake.offer_facts(normalized)
         self.assertEqual(facts[0]["price"]["provenance"], "supplied")
         self.assertEqual(facts[0]["level"]["provenance"], "unknown")
-        self.assertEqual(facts[0]["entitlement"]["provenance"], "attested")
+        self.assertEqual(facts[0]["entitlement"]["provenance"], "unknown")
 
     def test_operational_defaults_never_touch_commercial_facts(self):
         normalized = intake.validate(base_intake())
         for field, provenance in normalized["provenance"].items():
             root = field.split("[", 1)[0].split(".", 1)[0]
-            if root in ("offers", "entitlement_attestation", "level"):
+            if root in ("offers", "level"):
                 self.assertFalse(provenance.startswith("default:"), field)
 
 
@@ -547,7 +433,7 @@ class PackageRecordTests(unittest.TestCase):
 
     def test_package_records_every_decided_requirement(self):
         manifest = self.out["manifest"]
-        self.assertTrue(manifest["entitlement"]["qualifies"])
+        self.assertEqual(manifest["entitlement"]["state"], "unknown")
         self.assertEqual(manifest["entitlement"]["billing"], "none")
         self.assertEqual(manifest["council"]["status"], "advice_returned")
         self.assertIs(manifest["council"]["blocks_build"], False)
@@ -642,16 +528,6 @@ class PackageRecordTests(unittest.TestCase):
                          ("per_offer_instances", "combined_single_offer", "resolved"))
         self.assertIs(manifest["checkout"]["delivery_blocked"], False)
 
-    def test_the_manifest_carries_the_attestation_boundary_the_buyer_reads(self):
-        """The label must survive assembly, the surface a buyer actually reads."""
-        entitlement = self.out["manifest"]["entitlement"]
-        self.assertEqual(entitlement["evidence_kind"], "ghl_contact_readback")
-        self.assertIs(entitlement["proves_purchase"], True)  # a purchase basis, resolved to a paid order on read-back
-        self.assertIn("Verified by read-only GHL lookup", entitlement["attestation_boundary"])
-        on_disk = json.loads(self.manifest_path.read_text(encoding="utf-8"))
-        self.assertEqual(on_disk["entitlement"]["attestation_boundary"],
-                         entitlement["attestation_boundary"])
-
     def test_clean_package_passes_every_check(self):
         # The folded_levels fixture built in setUp is deliberately not clean:
         # its Skill 79 mode is unresolved (L25-BF-41) and is asserted blocked in
@@ -671,13 +547,6 @@ class PackageRecordTests(unittest.TestCase):
     def test_a_defaulted_level_fails_the_build_check(self):
         manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
         manifest["offer_facts"][0]["level"]["provenance"] = "default: assumed"
-        self.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        fails = checks.check_package(self.manifest_path, self.run_dir)
-        self.assertTrue(any(f.startswith("AF-LAUNCH-OFFER-DEFAULTED") for f in fails), fails)
-
-    def test_a_defaulted_entitlement_fails_the_build_check(self):
-        manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
-        manifest["offer_facts"][0]["entitlement"]["provenance"] = "default: assumed"
         self.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         fails = checks.check_package(self.manifest_path, self.run_dir)
         self.assertTrue(any(f.startswith("AF-LAUNCH-OFFER-DEFAULTED") for f in fails), fails)

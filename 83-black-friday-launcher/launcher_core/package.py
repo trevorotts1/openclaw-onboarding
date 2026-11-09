@@ -666,9 +666,8 @@ def _bind_dispatch(root: Path, intake: Dict[str, Any], route: Dict[str, Any],
     snapshot_path = root / INTAKE_SNAPSHOT_REL
     if strict and not snapshot_path.is_file():
         raise PackageError("AF-LAUNCH-PKG-INTAKE-MISSING",
-                           "the dispatch run carries no intake-at-dispatch.json, so the entitlement "
-                           "basis and approval it was dispatched with cannot be proven; re-dispatch "
-                           "the run")
+                           "the dispatch run carries no intake-at-dispatch.json, so the intake "
+                           "it was dispatched with cannot be proven; re-dispatch the run")
     if snapshot_path.is_file():
         try:
             snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
@@ -1472,7 +1471,6 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             "skill_entry": "SKILL.md",
             "cli": "launcher_core/cli.py",
             "decisions": "DECISIONS-PENDING.md",
-            "entitlement_declaration": "entitlement-declaration.json",
         },
         "dependencies": {
             "checkout_contract": {"path": checkout_module.contract_ref(),
@@ -1546,10 +1544,10 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         "receipt_evidence": evidence,
         "approvals": {"launch_plan_build": intake["approval"]["ref"]},
         "entitlement": {
+            "state": intake["entitlement"].get("state", "unknown"),
             "basis": intake["entitlement"]["basis"],
             "requires_purchase": intake["entitlement"]["requires_purchase"],
             "billing": "none",
-            "declaration_sha256": intake["entitlement"]["declaration"]["sha256"],
         },
         "council": {
             "step": council["step"],

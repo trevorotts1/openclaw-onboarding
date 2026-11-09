@@ -15,14 +15,6 @@
     "ref": "TEST-ONLY-APPROVAL",
     "hash": "c28ba6b9d0cc7c0962eeedf2cfaf2128fefd83251855a35d9d044fc3cfb14b2f"
   },
-  "entitlement_attestation": {
-    "basis": "purchase",
-    "evidence_ref": "TEST-ONLY-EVIDENCE",
-    "attested_by": "TEST-ONLY-ATTESTER",
-    "purchase_reference": "TEST-ONLY-PURCHASE-REFERENCE",
-    "amount_minor": 49700,
-    "currency": "USD"
-  },
   "checkout_terms": {
     "guarantee_ref": "TEST-ONLY-GUARANTEE-REF",
     "guarantee_text": "TEST ONLY guarantee text. Not a real policy.",

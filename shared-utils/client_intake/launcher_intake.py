@@ -397,13 +397,16 @@ def _guard_system(system: Dict[str, Any]) -> None:
 def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_sha256: Optional[str] = None,
                        answers_path: Optional[Path] = None, intake_module: Any = None) -> Dict[str, Any]:
     """The Skill 83 intake from the answers, with provenance. `system` carries what no answer can: tenant_id,
-    location_id, launch_id, [revision], brand {ref, hash}, approval {ref, hash}, entitlement_attestation, and
+    location_id, launch_id, [revision], brand {ref, hash}, approval {ref, hash}, and
     optionally brand_file, test_only, locale, extra_root / extra_offer (fields a newer intake requires, never
     ones the answers build). A field is emitted only when Skill 83's intake (`intake_module`, default the
-    sibling skill) declares it, so the result validates before and after that intake grows."""
+    sibling skill) declares it, so the result validates before and after that intake grows.
+
+    There is no account-entitlement step: the client is never asked to declare a membership or a purchase,
+    and no answers value is required for one."""
     if (doc.get("meta") or {}).get("mode") == "legacy" or doc.get("schema") != "client-intake-answers/v1":
         _fail("AF-LAUNCH-ANSWERS-SCHEMA", "answers-file", "not a client-intake-answers/v1 launch answers file")
-    for key in ("tenant_id", "location_id", "launch_id", "brand", "approval", "entitlement_attestation"):
+    for key in ("tenant_id", "location_id", "launch_id", "brand", "approval"):
         if not system.get(key):
             _fail("AF-LAUNCH-ANSWERS-SYSTEM", f"system.{key}", "comes from verified account access, not from the interview")
     _guard_system(system)
@@ -412,8 +415,6 @@ def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_s
         _fail("AF-LAUNCH-ANSWERS-SYSTEM", "answers_file", "Skill 83 records the answers file path; build from the file, not from a parsed copy")
     if _provided(doc, "plan_approval") != "approve":
         _fail("AF-LAUNCH-ANSWERS-APPROVAL", "answers-file:plan_approval", "the client has not approved this plan")
-    if _provided(doc, "entitlement") != "attested":
-        _fail("AF-LAUNCH-ANSWERS-ENTITLEMENT", "answers-file:entitlement", "the right to run this launch is not confirmed")
     mode, offers, sources = derive_offers(doc)
     direction = creative_direction(doc)
     extra = system.get("extra_offer") or {}
@@ -426,7 +427,7 @@ def to_launcher_intake(doc: Dict[str, Any], system: Dict[str, Any], *, answers_s
         "schema_version": "1.0", "tenant_id": system["tenant_id"], "location_id": system["location_id"],
         "launch_id": system["launch_id"], "revision": system.get("revision", 1), "journey_mode": mode,
         "brand": system["brand"], "copy_profile": _provided(doc, "copy_profile"), "approval": system["approval"],
-        "entitlement_attestation": system["entitlement_attestation"], "offers": offers,
+        "offers": offers,
     }
     if _declared(mod, "answers_file"):
         intake["answers_file"] = str(answers_path)
