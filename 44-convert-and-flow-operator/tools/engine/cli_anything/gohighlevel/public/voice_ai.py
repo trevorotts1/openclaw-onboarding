@@ -1344,6 +1344,20 @@ class VoiceAiAdapter:
         )
         payload = self._payload_at(mark)
         if result.status is Status.ok:
+            if _agent_identity(payload) is None:
+                # The create response carried no id, so the name read-back
+                # must prove WHICH agent was created.  First check the payload
+                # the mandatory read-back already returned: duplicate display
+                # names stay distinct ids, so an ambiguous match proves
+                # nothing and no success may be claimed (unknown_outcome,
+                # never a fake ok).
+                readback_payload = self._payload_at(mark + 1) or {}
+                if _count_agents_by_name(readback_payload, spec.name) != 1:
+                    return replace(result, status=Status.unknown_outcome, error=None), None
+                found = _find_agent_by_name(readback_payload, spec.name)
+                if found is None:
+                    return replace(result, status=Status.unknown_outcome, error=None), None
+                return self._enrich_agent(result, found, spec.name), found
             return self._enrich_agent(result, payload, spec.name), payload
         if not (
             result.status is Status.unknown_outcome

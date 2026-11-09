@@ -149,6 +149,50 @@ def test_b09_create_agent_settles_a_shallow_readback_by_name_search() -> None:
     assert result.evidence["voice_ai"]["agent_id"] == "agent_synthetic_1"
 
 
+def test_b09_create_agent_without_id_refuses_an_ambiguous_name() -> None:
+    """B09: no id + two same-name rows proves nothing; refuse, never fake ok."""
+
+    adapter, transport = make_voice_adapter(
+        [
+            resp(200, _body({"ok": True})),  # create carries no id
+            resp(200, _body({"agents": [
+                {"id": "a1", "name": "Front Desk"},
+                {"id": "a2", "name": "Front Desk"},
+            ]})),  # mandatory name read-back is ambiguous
+        ]
+    )
+    result, payload = adapter.create_agent(
+        tenant=fake_tenant(),
+        spec=agent_spec(),
+        idempotency_key=issue_key(AGENTS_CREATE),
+        approval=approval(),
+    )
+    assert result.status.value == "unknown_outcome"
+    assert payload is None
+    assert transport.call_count == 2
+
+
+def test_b09_create_agent_without_id_settles_a_unique_name() -> None:
+    """B09: no id + exactly one same-name row settles from the read-back."""
+
+    adapter, transport = make_voice_adapter(
+        [
+            resp(200, _body({"ok": True})),  # create carries no id
+            resp(200, _body({"agents": [{"id": "a9", "name": "Front Desk"}]})),
+        ]
+    )
+    result, payload = adapter.create_agent(
+        tenant=fake_tenant(),
+        spec=agent_spec(),
+        idempotency_key=issue_key(AGENTS_CREATE),
+        approval=approval(),
+    )
+    assert result.status.value == "ok"
+    assert payload == {"id": "a9", "name": "Front Desk"}
+    assert result.evidence["voice_ai"]["operationally_active"] is False
+    assert transport.call_count == 2
+
+
 def test_b09_phone_assignment_is_a_separate_handoff() -> None:
     """B09: routing is handed to its owner; the adapter never changes it."""
 
