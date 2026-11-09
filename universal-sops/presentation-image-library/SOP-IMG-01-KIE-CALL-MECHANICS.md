@@ -66,47 +66,37 @@ There is no "image-to-text/JSON" Kie.ai endpoint to call. An agent that tries to
 
 ---
 
-## 2A. MODEL AND ASPECT-RATIO ROUTING (RULING 6 — TWO-MODEL SYSTEM, operator ruling 2026-09-09)
+## 2A. MODEL AND ASPECT-RATIO ROUTING (GPT Image 2.6 Sunburst — single default; supersedes the 2026-09-09 two-model ruling)
 
-As of 2026-09-09 this is a TWO-MODEL system, not a straight swap from GPT-Image-2 to GPT Image 2.6 Sunburst. Every Presentations Kie call routes to exactly ONE of the two models below, selected by the requested aspect ratio. Get the routing wrong and either the render fails validation or the wrong prompt-char-cap gets applied.
+GPT Image 2.6 Sunburst is the single default for every Presentations Kie image call — text-to-image and image-to-image alike — and it serves every requested aspect ratio natively. There is no ratio-based routing, no mandatory legacy route, and no approved substitution.
 
-**DEFAULT — GPT Image 2.6 Sunburst (`gpt-image-2-6/sunburst-*`):** use for every ratio EXCEPT the three legacy ratios below.
+**GPT Image 2.5 is RETAINED but legacy-only:** never the default and never selected by ratio; it is reachable only by an explicit call.
+
+**DEFAULT — GPT Image 2.6 Sunburst (`gpt-image-2-6/sunburst-*`):** use for every ratio.
 - Mode A: `gpt-image-2-6/sunburst-text-to-image`
 - Mode B: `gpt-image-2-6/sunburst-image-to-image`
 
-**2.5 supported aspect ratios — EXACTLY these 13, nothing else:**
-`auto, 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4, 21:9, 27:16, 16:27, 9:8, 8:9`
-- **1K-ONLY (2K and 4K REJECTED for these four):** `27:16`, `16:27`, `9:8`, `8:9`.
-- 2K and 4K are available for every other ratio in the list.
+**2.6 supported aspect ratios — EXACTLY these 16, nothing else:**
+`auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3`
+- `3:1`, `1:3`, and `9:21` ARE served natively by 2.6 at the requested ratio — there is no legacy dispatch for them.
+- `5:4`, `4:5`, `2:1`, and `1:2` ARE served natively by 2.6 at the requested ratio — no substitute ratio is used.
+- No per-ratio resolution exclusions are published for 2.6; 1K, 2K and 4K are available for every ratio in the list.
 
-**2.5 prompt cap: 20,000 chars** (`prompt_max_chars: 20000`, DOCS marker 2026-09-09). This cap applies to the 2.5 model ONLY — see the legacy-route cap below, which is a different number.
+**2.6 prompt cap: 20,000 chars** (`prompt_max_chars: 20000`). This cap applies to the 2.6 default route — see the retained-2.5 cap below, which is a different number.
 
-**APPROVED SUBSTITUTIONS — these four route to 2.5 under a substitute ratio (operator-blessed):**
+**GPT Image 2.5 legacy ratio set (explicit 2.5 calls only):** `auto, 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4, 21:9, 27:16, 16:27, 9:8, 8:9`, with `27:16`, `16:27`, `9:8`, and `8:9` at 1K only. No Presentations call routes to 2.5 as of the 2026-11-09 migration.
 
-| Requested | Renders on 2.5 as |
-|---|---|
-| `5:4` | `4:3` |
-| `4:5` | `3:4` |
-| `2:1` | `16:9` |
-| `1:2` | `9:16` |
+**NO APPROVED SUBSTITUTIONS.** Every ratio the caller requests is served by 2.6 at that same ratio; silently picking a different ratio is a defect.
 
-**LEGACY ROUTE — MANDATORY for these three ratios, no exceptions:**
+**NO LEGACY ROUTE.** `3:1`, `1:3`, and `9:21` route to 2.6 like every other ratio, via the SAME canonical call lifecycle (§3) and the SAME canonical renderer.
 
-| Ratio | Model (Mode A / Mode B) |
-|---|---|
-| `3:1` | `gpt-image-2-text-to-image` / `gpt-image-2-image-to-image` |
-| `1:3` | `gpt-image-2-text-to-image` / `gpt-image-2-image-to-image` |
-| `9:21` | `gpt-image-2-text-to-image` / `gpt-image-2-image-to-image` |
+**Retained-2.5 prompt cap: 25,000 chars — OWNER_CONFIRMED 2026-08-27.** That confirmation was made against `gpt-image-2` and stays in force for explicit 2.5 calls only. Never apply the 20,000 figure to a 2.5 call, and never apply 25,000 to a 2.6 call.
 
-The operator rated 2.5's rendering of these three too weak to substitute (candidates 21:9, 9:16, and 16:27 were each considered and rejected). Do NOT send `3:1`, `1:3`, or `9:21` to the 2.5 model. Do NOT silently pick a different ratio for these three — each keeps its own requested ratio and routes to the legacy model as-is, via the SAME canonical call lifecycle (§3) and the SAME canonical renderer.
+**A ratio outside the 16-ratio list above** is a HARD-FAIL — reject outright, no warn-only, no silent substitution.
 
-**Legacy-route prompt cap: 25,000 chars — OWNER_CONFIRMED 2026-08-27.** That confirmation was made against `gpt-image-2` and stays in force for the legacy route only. Never apply the 20,000 figure to a legacy-route call, and never apply 25,000 to a 2.5 call.
+**UNCHANGED on every route (2.6 default and explicit 2.5):** the endpoints (`POST /api/v1/jobs/createTask`, `GET /api/v1/jobs/recordInfo`), the `Authorization: Bearer $KIE_API_KEY` header, the response envelope (`code`/`msg`/`data.taskId`; state `waiting`|`success`|`fail`; `resultJson.resultUrls[]`), `callBackUrl` semantics, and the I2I reference field `input_urls` (≤30 MB/file, `image/jpeg|png|webp|jpg`) — never `image_input` (that field belongs to Nano Banana 2; see §5 rule 2).
 
-**A ratio in NEITHER list above** (not one of the 13 allowed-on-2.5 ratios, not one of the three legacy ratios) is still a HARD-FAIL — reject outright, no warn-only, no silent substitution.
-
-**UNCHANGED on BOTH routes (2.5 and legacy):** the endpoints (`POST /api/v1/jobs/createTask`, `GET /api/v1/jobs/recordInfo`), the `Authorization: Bearer $KIE_API_KEY` header, the response envelope (`code`/`msg`/`data.taskId`; state `waiting`|`success`|`fail`; `resultJson.resultUrls[]`), `callBackUrl` semantics, and the I2I reference field `input_urls` (≤30 MB/file, `image/jpeg|png|webp|jpg`) — never `image_input` (that field belongs to Nano Banana 2; see §5 rule 2).
-
-The curl and JSON examples in §4 and §5 below show the DEFAULT (2.6) route. A legacy-route call has the identical shape — same endpoints, same headers, same envelope, same `input_urls` mechanics — with only the `model` string swapped to the legacy id above and the 25,000-char cap applied instead of 20,000.
+The curl and JSON examples in §4 and §5 below show the DEFAULT (2.6) route. An explicit legacy-2.5 call has the identical shape — same endpoints, same headers, same envelope, same `input_urls` mechanics — with only the `model` string swapped to the legacy id and the 25,000-char cap applied instead of 20,000.
 
 ---
 
