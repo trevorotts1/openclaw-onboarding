@@ -105,6 +105,10 @@ class RegistryContractDocumentsTest(unittest.TestCase):
     """A18 / B01 / IG-ROUTE-06 -- one authority, one exported shape."""
 
     def test_every_registry_row_exports_one_valid_contract_document(self) -> None:
+        # Instrument control.  Two set comparisons below are satisfied by an
+        # empty registry (0 == 0), so an import that failed closed would pass
+        # this test while observing nothing.  Assert the corpus is real first.
+        self.assertGreater(len(OPERATIONS), 100)
         documents = contract_documents()
         self.assertEqual(len(documents), len(OPERATIONS))
         seen: set[str] = set()
@@ -679,6 +683,98 @@ class ChangeRequestReconciliationTest(unittest.TestCase):
             OPERATIONS["conversation_ai.agents.update"].readback_plan,
             "conversation_ai.agents.get",
         )
+
+    def test_wf30_rows_name_the_vendor_response_shape(self) -> None:
+        """CP04: the converge-reported rows carry a real vendor response shape.
+
+        Each pointer is a component of the vendor OpenAPI document the row
+        already cites, so a caller reads the shape instead of inferring it.
+        """
+        self.assertGreater(len(OPERATIONS), 100)
+        knowledge_base_responses = {
+            "knowledge_bases.list": "GetAllKnowledgeBasesPaginatedResponseDTO",
+            "knowledge_bases.get": "GetKnowledgeBaseByIdResponseDTO",
+            "knowledge_bases.create": "CreateKnowledgeBaseResponseDTO",
+            "knowledge_bases.update": "UpdateKnowledgeBaseResponseDTO",
+            "knowledge_bases.delete": "DeleteKnowledgeBaseResponseDTO",
+            "knowledge_bases.crawler.urls": "GetAllUrlsByKnowledgeBaseResponseDTO",
+            "knowledge_bases.crawler.discover": "DiscoverWebsiteResponseDTO",
+            "knowledge_bases.crawler.status": "CrawlingStatusResponseDTO",
+            "knowledge_bases.crawler.train": "TrainDiscoveredUrlsResponseDTO",
+            "knowledge_bases.crawler.delete_urls": "DeleteWebsiteUrlResponseDTO",
+            "knowledge_bases.faqs.list": "ListFaqsResponseDTO",
+            "knowledge_bases.faqs.create": "CreateFaqResponseDTO",
+            "knowledge_bases.faqs.update": "UpdateFaqResponseDTO",
+            "knowledge_bases.faqs.delete": "DeleteFaqResponseDTO",
+        }
+        for operation_id, schema in knowledge_base_responses.items():
+            row = OPERATIONS[operation_id]
+            with self.subTest(operation_id=operation_id):
+                self.assertEqual(
+                    row.response_schema_ref,
+                    f"apps/knowledge-base.json#/components/schemas/{schema}",
+                )
+                self.assertEqual(row.availability, "public")
+                self.assertNotIn("response_schema_ref", row.unresolved_fields)
+
+        knowledge_base_requests = {
+            "knowledge_bases.create": "CreateKnowledgeBaseDTO",
+            "knowledge_bases.update": "UpdateKnowledgeBaseDTO",
+            "knowledge_bases.crawler.discover": "DiscoverWebsiteRequestDTO",
+            "knowledge_bases.crawler.train": "TrainDiscoveredUrlsDTO",
+            "knowledge_bases.crawler.delete_urls": "DeleteWebsiteUrlRequestDTO",
+            "knowledge_bases.faqs.create": "AddFaqDTO",
+            "knowledge_bases.faqs.update": "UpdateFaqBodyDTO",
+        }
+        for operation_id, schema in knowledge_base_requests.items():
+            row = OPERATIONS[operation_id]
+            with self.subTest(operation_id=operation_id):
+                self.assertEqual(
+                    row.request_schema_ref,
+                    f"apps/knowledge-base.json#/components/schemas/{schema}",
+                )
+                self.assertTrue(row.write)
+                self.assertNotIn("request_schema_ref", row.unresolved_fields)
+
+        # Reads are not made to look like writes, and the two conversation
+        # agent rows carry their vendor shapes too.
+        for operation_id in ("knowledge_bases.list", "knowledge_bases.get",
+                             "knowledge_bases.crawler.urls",
+                             "knowledge_bases.crawler.status",
+                             "knowledge_bases.faqs.list",
+                             "conversation_ai.agents.get"):
+            with self.subTest(operation_id=operation_id):
+                self.assertFalse(OPERATIONS[operation_id].write)
+                self.assertIsNone(OPERATIONS[operation_id].request_schema_ref)
+        self.assertEqual(
+            OPERATIONS["conversation_ai.agents.get"].response_schema_ref,
+            "apps/conversation-ai.json#/components/schemas/EmployeeResponseDTO",
+        )
+        self.assertEqual(
+            OPERATIONS["conversation_ai.agents.update"].request_schema_ref,
+            "apps/conversation-ai.json#/components/schemas/UpdateEmployeeDto",
+        )
+        self.assertEqual(
+            OPERATIONS["conversation_ai.agents.update"].response_schema_ref,
+            "apps/conversation-ai.json#/components/schemas/EmployeeResponseDTO",
+        )
+
+    def test_wf30_upload_row_keeps_one_id_and_the_named_gap(self) -> None:
+        """CP04 id decision: one operation, one id, and no invented route.
+
+        The module calls ``knowledge_bases.sources.upload`` and the vendor
+        document defines no upload operation at all, so the frozen id stays
+        ``sources.upload``.  ``files.upload`` is not added as a second id for
+        the same concept: two ids would let a caller reach an unfrozen route
+        through whichever name matched.
+        """
+        row = OPERATIONS["knowledge_bases.sources.upload"]
+        self.assertEqual(row.path_template, "UNKNOWN")
+        self.assertEqual(row.availability, "feature_gap")
+        self.assertEqual(row.blocker, "B-NO-CONTRACT")
+        self.assertEqual(row.request_media_type, "multipart/form-data")
+        self.assertIn("path_template", row.unresolved_fields)
+        self.assertNotIn("knowledge_bases.files.upload", OPERATIONS)
 
     def test_wf31_widget_rows_preserve_the_numeric_config_version(self) -> None:
         expected = {
