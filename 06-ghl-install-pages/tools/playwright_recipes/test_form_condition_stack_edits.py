@@ -18,8 +18,8 @@ def edit_plan():
 
 
 class EditSchemaTests(unittest.TestCase):
-    def test_expected_card_count_mismatch_refuses_before_browser(self):
-        mismatch=edit_plan();mismatch['expected_rules'].pop()
+    def test_malformed_expected_inventory_refuses_before_browser(self):
+        mismatch=edit_plan();mismatch['expected_rules']={'unknown':'inventory'}
         for data in (mismatch,):
             page=Mock()
             with self.subTest(data=data),self.assertRaises(Stop):native.configure(page,data)

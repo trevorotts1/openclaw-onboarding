@@ -1,8 +1,9 @@
-"""Captured inactive course-theme Custom Block append and editing.
+"""Captured inactive course-theme Custom Block append, editing and deletion.
 
 Body block IDs, editor inputs, native radio labels and preview bindings were
 captured November 9, 2026. The handler edits plain authored text/HTTPS links;
-it never activates a template, publishes, uploads media or deletes a block.
+an exclusive explicit deletion delegates to its captured confirmation handler.
+It never activates a template, publishes a course or uploads media.
 """
 from copy import deepcopy
 import hashlib
@@ -70,7 +71,7 @@ def validate_inputs(inputs):
     theme.validate_inputs({**base, 'expected_values':{'template_title':plan.get('expected_template_title')},
         'changes':{'template_title':plan.get('expected_template_title')}})
     config=plan.get('custom_blocks')
-    if (not isinstance(config,dict) or set(config)-{'expected_inventory','updates','append'}
+    if (not isinstance(config,dict) or set(config)-{'expected_inventory','updates','append','deletion'}
             or not isinstance(config.get('expected_inventory'),list)):
         raise Stop('Custom Blocks require their complete inventoried native ID/type order')
     identities=[]
@@ -83,6 +84,24 @@ def validate_inputs(inputs):
         raise Stop('Native block IDs must be unique with one captured Category Block')
     if any((row['id']=='categoryBlock') != (row['type']=='Category Block') for row in config['expected_inventory']):
         raise Stop('Category Block inventory identity differs from its captured type')
+    if 'deletion' in config:
+        deletion=config['deletion']
+        if (set(config)!={'expected_inventory','deletion'} or not isinstance(deletion,dict)
+                or set(deletion)!={'action','id','expected','expected_content_html','expected_media_url'}
+                or deletion.get('action')!='delete' or not isinstance(deletion.get('id'),str)
+                or {'id':deletion['id'],'type':'Custom Block'} not in config['expected_inventory']):
+            raise Stop('Custom Block deletion requires an exclusive explicit delete action and existing Custom UUID')
+        deletion['expected']=_values(deletion['expected'],complete=True)
+        html=deletion['expected_content_html']
+        if (not isinstance(html,str) or len(html)>200000
+                or any(ord(char)<32 and char not in '\n\r\t' for char in html)):
+            raise Stop('Custom Block deletion requires its exact inventoried rich HTML')
+        if __package__:
+            from .course_media import _url
+        else:
+            from course_media import _url
+        _url(deletion['expected_media_url'])
+        return plan
     updates=config.get('updates',[]);appends=config.get('append',[])
     if not isinstance(updates,list) or not isinstance(appends,list) or not (updates or appends):
         raise Stop('Custom Blocks require an authored update or append')
@@ -121,6 +140,11 @@ def _one(control,message):
 
 def _inventory(page,plan):
     theme._panel(page,plan,'Body')
+    return _visible_inventory(page)
+
+
+def _visible_inventory(page):
+    """Read the already-open Body without clicking behind a native dialog."""
     rows=page.locator('.sortable-item')
     result=[]
     for index in range(rows.count()):
@@ -183,6 +207,11 @@ def _selected(page,identity):
 
 def _read_block(page,plan,identity):
     _open_block(page,plan,identity)
+    return _read_selected_block(page,identity)
+
+
+def _read_selected_block(page,identity):
+    if not _selected(page,identity):raise Stop('Custom Block selected inspector changed UUID')
     content=_one(page.locator('div[contenteditable="true"].tiptap.ProseMirror.general-courses-editor'),
         'Native Custom Block Content editor changed')
     state={'heading':_text(_input(page,2500).input_value(),'heading'),
@@ -251,6 +280,12 @@ def _write_block(page,plan,identity,changes):
 
 def configure(page,step):
     plan=validate(step);config=plan['custom_blocks']
+    if 'deletion' in config:
+        if __package__:
+            from .course_block_delete import configure as delete
+        else:
+            from course_block_delete import configure as delete
+        return delete(page,step)
     before_active=theme._open(page,plan,plan['expected_template_title'])
     protected_theme=theme._snapshot(page,plan)
     inventory=_inventory(page,plan)

@@ -10,7 +10,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v27.1.98"
+  version: "v27.1.99"
   priority: HIGH
 ---
 
@@ -27,7 +27,7 @@ drives the browser, pastes the code, and handles all the clicks and navigation.
 > use a ready **Playwright recipe first**, then the current OpenClaw Chrome
 > extension, then managed Agent Browser, then enabled computer use. Consult
 > `tools/playwright_recipes/route.py` using current per-location capability
-> receipts. Read `references/PLAYWRIGHT-BUILD-STATUS.json` for exact remaining feature gaps and `references/PLAYWRIGHT-RECIPES.md` for named recipes, intake,
+> receipts. Read `references/PLAYWRIGHT-BUILD-STATUS.json` for its current_feature_progress control-by-control update, frozen operation audit and `references/PLAYWRIGHT-RECIPES.md` for named recipes, intake,
 > invocation, recovery and the honest coverage table. Native form scheduling and
 > existing draft course outline edits have dedicated handlers; retain their pending
 > functional verification. A PROFILE recipe is

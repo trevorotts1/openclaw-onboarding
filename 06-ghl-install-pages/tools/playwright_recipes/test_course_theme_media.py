@@ -45,7 +45,7 @@ class CourseThemeMediaTests(unittest.TestCase):
     def setUp(self):
         self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
         self.file=Path(self.directory.name)/'source.png';self.file.write_bytes(b'\x89PNG\r\n\x1a\nAPPROVED_BYTES')
-        self.plan=inputs(self.file);self.page=Page()
+        self.plan=inputs(self.file);self.page=Page();self.page.url=media.theme.editor_url(self.plan)
         self.stack=ExitStack();self.addCleanup(self.stack.close)
         self.open=self.stack.enter_context(patch.object(media.theme,'_open',return_value=('active','Default Theme')))
         self.stack.enter_context(patch.object(media.theme,'_identity'))
@@ -87,7 +87,7 @@ class CourseThemeMediaTests(unittest.TestCase):
     def test_lost_save_or_protected_body_change_never_reports_success(self):
         self.page.lose_save=True
         with self.assertRaisesRegex(Stop,'independent reopen'):self.run_background()
-        self.page=Page()
+        self.page=Page();self.page.url=media.theme.editor_url(self.plan)
         def collateral(page,plan,path,size):
             page.background['url']='https://example.com/new.png';page.dirty=True
             page.protected['body_inventory'].append({'id':'unexpected','type':'Custom Block'})

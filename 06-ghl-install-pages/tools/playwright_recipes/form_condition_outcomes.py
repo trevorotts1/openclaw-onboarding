@@ -53,10 +53,13 @@ def _rule(value):
     if not isinstance(effect,str) or effect not in EFFECTS:
         raise Stop('Native condition effect was not captured')
     predicate=group.validate({'action':'native_condition_group','match':value['match'],
-        'clauses':value['clauses'],'effect':'Hide Field','target':'Phone'},minimum_clauses=1)
+        'clauses':value['clauses'],'effect':'Hide Field','target':'Phone',
+        **({'connectors':value['connectors']} if 'connectors' in value else {})},minimum_clauses=1)
     result={'match':predicate['match'] if len(predicate['clauses'])>1 else 'all',
             'clauses':predicate['clauses'],'effect':effect}
     required={'match','clauses','effect'}
+    if 'connectors' in predicate:
+        required.add('connectors');result['connectors']=predicate['connectors']
     if effect in ('Show Field','Hide Field'):
         required.add('target')
         if not isinstance(value.get('target'),str) or value['target'] not in group.TARGETS:
@@ -90,12 +93,10 @@ def validate(step):
     normalized=[];seen=set()
     for value in rules:
         rule=_rule(value)
-        predicate=tuple(sorted((clause['if_field'],clause['operator'],clause.get('value',''))
-                               for clause in rule['clauses']))
         # Show/Hide on the same target is one conflict domain. Other native
         # effects are distinct; retain their explicit authored order.
         target=('field',rule['target']) if rule['effect'] in ('Show Field','Hide Field') else ('outcome',rule['effect'])
-        identity=(rule['match'],predicate,target)
+        identity=(*group._predicate_identity(rule),target)
         if identity in seen:
             raise Stop('Duplicate/conflicting predicates for the same native effect require reconciliation')
         seen.add(identity);normalized.append(rule)
@@ -129,7 +130,7 @@ def _predicate(card):
         if len(tokens)==4:clause['value']=tokens[3]
         clauses.append(clause)
     if len(set(joins))>1:
-        raise Stop('Mixed nested native AND/OR groups require a separate captured implementation')
+        return {'match':'mixed','connectors':[join.lower() for join in joins],'clauses':clauses}
     return {'match':'any' if joins and joins[0]=='Or' else 'all','clauses':clauses}
 
 
@@ -236,7 +237,7 @@ def _predicate_modal(modal,rule):
     if joins.count()!=count:raise Stop('Native outcome connector count differs')
     for index in range(count):
         selected=_one(joins.nth(index).locator('.n-tabs-tab--active'),'Native outcome connector is ambiguous')
-        if selected.get_attribute('data-name')!=('then' if index==count-1 else 'and' if rule['match']=='all' else 'or'):
+        if selected.get_attribute('data-name')!=('then' if index==count-1 else group._connectors(rule)[index]):
             raise Stop('Native outcome AND/OR connector differs')
 
 
@@ -261,7 +262,7 @@ def _author(frame,dialog,rule,prefix,identity):
         if index<len(rule['clauses'])-1:
             joins=modal.locator('.n-tabs')
             if joins.count()!=index+1:raise Stop('Native outcome append connector count changed')
-            choice=joins.nth(index).locator('[data-name="'+('and' if rule['match']=='all' else 'or')+'"]')
+            choice=joins.nth(index).locator('[data-name="'+group._connectors(rule)[index]+'"]')
             click(_one(choice,'Native outcome append connector is ambiguous'))
             wait_until(lambda:modal.locator('[id^="selectedField-"]').count()==index+2,
                        'Native outcome predicate did not append exactly once')

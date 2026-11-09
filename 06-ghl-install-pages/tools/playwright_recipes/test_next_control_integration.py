@@ -1,6 +1,7 @@
 """Second native-control batch joins exact inputs to execution and saved replay."""
 from copy import deepcopy
 import hashlib
+import json
 from pathlib import Path
 import tempfile
 import time
@@ -120,10 +121,26 @@ class NativeBackgroundIntegrationTests(unittest.TestCase):
         self.assertEqual(editor_replay._result(step,receipt,job)['source_sha256'],receipt['source_sha256'])
         for change in ({'source_sha256':'0'*64},{'configuration_sha256':'0'*64},
                        {'course_id':'OTHER'},{'template_id':'OTHER'},{'background_url_sha256':'bad'},
+                       {'background_url_sha256':hashlib.sha256(step['payload']['background_image']['expected_url'].encode()).hexdigest()},
                        {'functional_verified':True},{'activation_performed':True},
                        {'independent_readback':'REQUIRED'}):
             with self.subTest(change=change),self.assertRaises(runner.Stop):
                 editor_replay._result(step,{**receipt,**change},job)
+
+    def test_background_fresh_completion_refuses_unbound_source_without_repeating_upload(self):
+        from playwright_recipes import course_theme_media
+        job=self.job();step=job['steps'][0];valid=self.result(step)
+        invalid=[{'status':valid['status']},{**valid,'source_sha256':'0'*64},
+            {**valid,'background_url_sha256':hashlib.sha256(step['payload']['background_image']['expected_url'].encode()).hexdigest()}]
+        for receipt in invalid:
+            with self.subTest(receipt=receipt),tempfile.TemporaryDirectory() as root, \
+                    patch.object(runner,'assert_tenant'),patch.object(course_theme_media,'configure',return_value=receipt) as writer:
+                for _ in range(2):
+                    with self.assertRaises(runner.Stop):runner.run_on_page(object(),job,root)
+                writer.assert_called_once()
+                state=json.loads(Path(root,'state.json').read_text())
+                self.assertEqual(state['current_step_status'],'INTENT_RECORDED')
+                self.assertEqual(state['results'],[])
 
 class CreatedCommunityIntegrationTests(unittest.TestCase):
     def job(self):
