@@ -1,3 +1,7 @@
+## [v2.1.46] - 2026-11-09 - BWX-020 recut: the plan's reentry/enrolment decision reaches the build
+
+`plan_reader` refuses a `settings` block outside the shared contract vocabulary instead of reading a typo as "not declared", blocks `successive` delivery with reentry blocked, and emits `enrollment` on the build document so the installable compiler can state why an order-level purchase basis will not do. `launch_step_compiler.purchase_identity()` carries that reason and `compile_installable()` passes `enrollment` through; the build schema gains the additive `enrollment` property. Recut of #2855's delta (merge train #2889 was closed unlanded) onto current main. `skill-version.txt` and the `SKILL.md` frontmatter move v2.1.45 -> v2.1.46 for G3.
+
 ## [v2.1.45] - 2026-11-08 - merge union: F05 enrolment readback and Skill 6 calendar registration both kept
 
 The batch merge of `origin/main` (`a89a789a2`, #2877) into the W26 content fold hit the same two files from both sides: this changelog and `tools/engine/tests/test_build_from_automation.py`. Both sides are kept: the F05 `allowMultiple` enrolment readback entry and the Calendars v3 registration entry, both below, stand, and the build stub keeps the head-side comment and signature the F11 browser capability needs. No engine, CLI, template, guard or QC script behaviour changed by this merge. `skill-version.txt` and the `SKILL.md` frontmatter move v2.1.44 -> v2.1.45 for G3.

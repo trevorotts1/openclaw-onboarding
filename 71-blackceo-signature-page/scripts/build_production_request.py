@@ -299,10 +299,24 @@ def section_fragments(stage, section, index, sections, spec, table, kind=None):
         out.append("PURPOSE: " + "; ".join(purpose) + ".")
     if spec.get("layout_reference") and stage not in exe.wireframe_spec.WIREFRAME_STAGES:
         out.append("PAGE LAYOUT: " + spec["layout_reference"])  # the wireframe block carries it for wireframes
-    # first, so the run's planned slots win the budget the new contract blocks left
-    if row.get("slots") and section.get("slots"):  # the run's IMAGE SLOTS list governs; no plan, no canon
-        out.append("SLOT CANON: the usual slots for this kind of section are " + row["slots"].rstrip(".") +
-                   ". Each planned slot keeps its stated ratio and is drawn once.")
+    # first, so the run's planned slots win the budget the new contract blocks left.
+    # The canon names the section's OWN planned slots (id, ratio, art direction) rather than
+    # pasting the skeleton table's prose cell: that cell carries private labels on sections 1
+    # and 12 (the CTA BUTTON marker, the founder-letter parts), which the private-text screen
+    # would drop whole, leaving the hero and the founder portrait unannounced.
+    landing_form = spec.get("copy_version") in ("standard", "long-form") and not spec.get("form")
+    if section.get("slots") and landing_form:  # the landing plan governs; other forms keep their own layout
+        planned = []
+        for slot in section["slots"]:
+            if not isinstance(slot, dict):
+                continue
+            direction = str(slot.get("art_direction") or "").strip().rstrip(".")
+            planned.append("%s (%s)%s" % (slot.get("slot_id") or "slot",
+                                          slot.get("aspect_ratio") or "planned ratio",
+                                          " " + direction if direction else ""))
+        if planned:
+            out.append("SLOT CANON: " + "; ".join(planned) +
+                       ". Draw each slot once at that ratio; zero placeholders.")
     out.append("PAGE ORDER: " + ", ".join(f"{i}. {name}" for i, name in enumerate(names, 1)) +
                ". The numbered sections never merge and never renumber.")
     if lines:
@@ -531,7 +545,13 @@ def sections_from_manuscript(text: str, spec: dict, slots: dict, style_id=None, 
                                   or ROLE_NAMES.get(sid)),
                  "copy": copy,
                  "cta": None if (per_card or len(buttons) > 1) else (buttons[0] if buttons else None),
-                 "slots": slots.get(sid) or (spec_slots(spec_section, style_id) if role_page else [])}
+                 # Every copy spec that carries image slots declares them as `default_slots`
+                 # on its section (standard/long-form v6: one row per section of the
+                 # section-image-prompt.md skeleton table; page roles: thank-you). The
+                 # fallback is not gated on `page_role`: a landing spec that leaves its
+                 # slots empty is exactly how a page plans no image and ships a mockup
+                 # with two pictures in it.
+                 "slots": slots.get(sid) or spec_slots(spec_section, style_id)}
         if per_card or len(buttons) > 1:  # one per package card, or the page type's own utility actions
             entry["cta_labels"] = buttons
             if utility:
