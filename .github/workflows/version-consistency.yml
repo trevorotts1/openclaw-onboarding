@@ -110,6 +110,20 @@ jobs:
         shell: bash
         run: bash tests/unit/check-doc-currency-guards.test.sh
 
+      # KIE image-model defaults: the GPT Image 2.5 -> 2.6 migration is a
+      # BEHAVIOUR change (the selector resolves 2.6) plus a DOCUMENTATION and
+      # model-registry change. Only the behaviour part was covered; the 13
+      # stale sites found on 2026-11-09 (5 files + 2 registry rows) survived a
+      # full migration because no gate counted them. This counts DEFECTS, not
+      # edited files, and its self-test proves a stale fixture fails.
+      - name: "KIE image-model defaults guard (scripts/check-kie-image-defaults.py)"
+        shell: bash
+        run: python3 scripts/check-kie-image-defaults.py
+
+      - name: "Self-test: check-kie-image-defaults.py (tests/unit/check-kie-image-defaults.test.sh)"
+        shell: bash
+        run: bash tests/unit/check-kie-image-defaults.test.sh
+
       - name: "Fix 9: exactly one presentation-intake wrangler.toml (deployed-r2) - no name collision"
         shell: bash
         run: |
