@@ -1,0 +1,19 @@
+{
+  "approval_ref": "APPROVAL_REFERENCE",
+  "course_product_id": "RESOLVED_COURSE_ID",
+  "desired_access": {
+    "mode": "all_members",
+    "policy_ref": "APPROVED_POLICY"
+  },
+  "existing_association": null,
+  "group_ref": {
+    "group_id": null,
+    "group_slug": "approved-group-slug",
+    "portal_host": "approved-client-portal.example"
+  },
+  "location_id": "SYNTHETIC_LOCATION",
+  "operation": "attach",
+  "relationship_receipt_ref": null,
+  "schema_version": "1.0.0",
+  "unknowns": []
+}
