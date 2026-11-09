@@ -1,3 +1,8 @@
+## [v27.1.87] - 2026-11-08
+
+- Carry the recovered Playwright recipes forward onto the current main line.
+  No behavioural change beyond the recipe content already described in v27.1.85.
+
 ## [v27.1.85] - 2026-11-08
 
 - Recover the shared Playwright recipe package and API-first operation router.
