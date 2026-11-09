@@ -152,6 +152,65 @@ _SURVEY_JOB_TYPES: frozenset = frozenset({"survey", "quiz"})
 # survey/Slides wrapper.
 _FORM_JOB_TYPES: frozenset = frozenset({"form"})
 
+# ── WF07 construction registration (doc 1 s19 WF07: "central construction call
+# sites") ────────────────────────────────────────────────────────────────────
+# Course CRUD/outline and Community/group/channel authoring are DISTINCT job
+# families (doc 1 D02). They are registered here, once, rather than being
+# inferred by each agent at call time.
+_COURSE_JOB_TYPES: frozenset = frozenset({"course", "courses", "membership_course"})
+_COMMUNITY_JOB_TYPES: frozenset = frozenset({"community", "community_group", "group"})
+_CHANNEL_JOB_TYPES: frozenset = frozenset({"channel"})
+
+#: Route hooks submitted by other family lanes (WF24-WF34). A hook maps a job
+#: type to a callable ``(task, evidence_root) -> build_result``. Registered
+#: hooks win over the built-in families below so a family owner can extend the
+#: dispatcher WITHOUT editing it (the "apply each received change request" seam).
+CONSTRUCTION_ROUTE_HOOKS: dict = {}
+
+
+def register_construction_route(job_types, resolver, *, owner: str = "") -> dict:
+    """Register one construction route hook for a family (WF24-WF34 seam).
+
+    ``job_types`` may be a single string or an iterable of strings. Re-claiming a
+    job type replaces the previous hook and is recorded with its owner, so a
+    route change is auditable rather than silently last-writer-wins.
+    """
+    if isinstance(job_types, str):
+        job_types = [job_types]
+    registered = []
+    for jt in job_types:
+        key = str(jt).strip().lower()
+        if not key:
+            continue
+        CONSTRUCTION_ROUTE_HOOKS[key] = {"resolver": resolver, "owner": str(owner or "")}
+        registered.append(key)
+    return {"registered": registered, "owner": str(owner or "")}
+
+
+def _course_builder(task: dict, evidence_root: str) -> dict:
+    """Dispatcher adapter for the WF07 course coordinator.
+
+    The dispatcher calls ``builder(task, evidence_root)``; the coordinator needs
+    its injected seams. They ride on the task dict so a family owner can supply
+    them without the dispatcher knowing their shapes. ``dry_run`` defaults to
+    FALSE here (a dispatched job is a real build).
+    """
+    import ghl_course_builder as _gcb  # lazy — avoids the builder's import cycle
+    return _gcb.build_course(
+        task, evidence_root,
+        dry_run=bool(task.get("dry_run", False)),
+        adapter=task.get("public_adapter"),
+        media_binder=task.get("media_binder"),
+        association=task.get("association"),
+        execution_mode=task.get("execution_mode") or "",
+    )
+
+
+def _community_builder(task: dict, evidence_root: str) -> dict:
+    import ghl_community_builder as _gcb  # lazy — same cycle rationale
+    return _gcb.build_community(task, evidence_root,
+                                dry_run=bool(task.get("dry_run", False)))
+
 
 def _emit_fab_artifact(evidence_root: str, task: dict, build: dict) -> dict:
     """Producer: emit build/fab-artifact.json from the REAL build so the FAB-QC gate FIRES.
@@ -351,28 +410,38 @@ def _resolve_step0(
 def _resolve_builder_for_task(task: dict) -> "Callable[[dict, str], dict] | None":
     """Return the auto-registered builder for this task's job_type, or None.
 
-    Registration mapping (Wiring-Map §4 / PRD §5.B):
-      job_type in {survey, quiz}  →  ghl_survey_builder.build_survey
-      job_type == 'form'          →  ghl_form_builder.build_form
-      any other job_type          →  None  (caller must inject the builder)
+    Registration mapping (Wiring-Map §4 / PRD §5.B, extended by WF07):
+      job_type in {survey, quiz}            →  ghl_survey_builder.build_survey
+      job_type == 'form'                    →  ghl_form_builder.build_form
+      job_type in {course, courses, ...}    →  ghl_course_builder.build_course (API-first)
+      job_type in {community, group}        →  ghl_community_builder.build_community
+      job_type == 'channel'                 →  ghl_community_builder.build_community
+      any registered CONSTRUCTION_ROUTE_HOOK → that hook's resolver
+      any other job_type                    →  None  (caller must inject the builder)
 
-    Mirrors the _resolve_step0 pattern: optional, lazy, never blocks a build.
-    Uses a lazy (deferred) import of ghl_survey_builder to avoid the circular
-    import that arises at module-load time (ghl_survey_builder itself imports
-    RateGovernor / SessionKeepalive from this module). By call time v2_dispatcher
-    is fully initialized and the import resolves cleanly.
-    A result of None propagates to a STATE_FAILED in dispatch_one only when
-    the caller also provided builder=None.
+    A registered hook wins over the built-ins so a family lane (WF24-WF34) can
+    extend dispatch through :func:`register_construction_route` without editing
+    this file. Uses lazy imports (the builders import RateGovernor / SessionKeepalive
+    from this module, so a top-level import would be circular).
     """
     job_type = (
         task.get("job_type") or task.get("build_type") or task.get("type") or ""
     ).lower().strip()
+
+    hook = CONSTRUCTION_ROUTE_HOOKS.get(job_type)
+    if hook and callable(hook.get("resolver")):
+        return hook["resolver"]
+
     if job_type in _FORM_JOB_TYPES:
         try:
             import ghl_form_builder as _gfb_lazy  # lazy — safe post-init  # noqa: PLC0415
             return _gfb_lazy.build_form
         except Exception:  # noqa: BLE001
             return None
+    if job_type in _COURSE_JOB_TYPES:
+        return _course_builder
+    if job_type in _COMMUNITY_JOB_TYPES or job_type in _CHANNEL_JOB_TYPES:
+        return _community_builder
     if job_type not in _SURVEY_JOB_TYPES:
         return None
     try:

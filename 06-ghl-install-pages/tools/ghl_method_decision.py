@@ -174,7 +174,12 @@ OBJECT_TYPE_OPERATION_CLASS: Dict[str, str] = {
     "form": "visual_builder_write",
     "survey": "visual_builder_write",
     "community": "visual_builder_write",
+    "community_group": "visual_builder_write",
     "course": "visual_builder_write",
+    # course CRUD parts are recorded separately from Community authoring (D02);
+    # both remain builder writes with no closer step-1 class.
+    "course_module": "visual_builder_write",
+    "course_lesson": "visual_builder_write",
     "channel": "visual_builder_write",
 }
 
@@ -184,7 +189,10 @@ LADDER_SURFACE_OPERATION_CLASS: Dict[str, str] = {
     "form": "visual_builder_write",
     "survey": "visual_builder_write",
     "community": "visual_builder_write",
+    "community_group": "visual_builder_write",
     "course": "visual_builder_write",
+    "course_module": "visual_builder_write",
+    "course_lesson": "visual_builder_write",
     "workflow": "workflow_write",
     "media": "media_upload",
     "pipeline": "crm_product_write",

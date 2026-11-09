@@ -106,6 +106,39 @@ ROUTER_VERSION = "v1.0.0"
 #                 (multipart/readback/internal shape); the reason lives in
 #                 ghl_route_gaps.py. Never a live route by declaration alone.
 PUBLIC_OPERATION_ROUTES = {
+    # WF07 / doc 1 D02: course CRUD is a PUBLIC-API family. Community/group/
+    # channel authoring is NOT — it stays browser-only and is routed separately.
+    #
+    # ``pending_registry`` names the operation rows WF07 needs but that do not
+    # exist in the central registry (``public/operations.py``, sole writer WF00)
+    # yet. Naming an operation the registry does not contain would be a claim the
+    # router cannot back, so these are carried separately until WF00 lands the
+    # rows (change request GHL-007 -> WF00). ``public_operation_route`` never
+    # returns them as routed.
+    "course": {
+        "routed": (),
+        "declared": (),
+        "pending_registry": (
+            "courses.products.create", "courses.products.get",
+            "courses.products.update", "courses.categories.create",
+            "courses.categories.update", "courses.lessons.create",
+            "courses.lessons.update", "courses.lessons.list",
+            "courses.sequencing.apply",
+        ),
+    },
+    "course_module": {
+        "routed": (),
+        "declared": (),
+        "pending_registry": ("courses.categories.create", "courses.categories.update",
+                             "courses.sequencing.apply"),
+    },
+    "course_lesson": {
+        "routed": (),
+        "declared": (),
+        "pending_registry": ("courses.lessons.create", "courses.lessons.update",
+                             "courses.lessons.list", "courses.sequencing.apply",
+                             "courses.lessons.content.attach"),
+    },
     "media": {
         "routed": ("media.files.list",),
         "declared": ("media.upload", "media.folders.create"),
@@ -155,8 +188,10 @@ PUBLIC_OPERATION_ROUTES = {
                      "contacts.update", "contacts.search", "contacts.delete"),
     },
     # Authoring-only object types: no public operation row exists at all.
+    # Course/Community are SPLIT on purpose (doc 1 D02): course CRUD has public
+    # routes; Community/group/channel authoring does not.
     "community": {"routed": (), "declared": ()},
-    "course": {"routed": (), "declared": ()},
+    "community_group": {"routed": (), "declared": ()},
     "channel": {"routed": (), "declared": ()},
 }
 
@@ -171,6 +206,13 @@ def public_operation_route(object_type: str) -> Dict[str, tuple]:
     if entry is None:
         return {"routed": (), "declared": ()}
     return {"routed": tuple(entry["routed"]), "declared": tuple(entry["declared"])}
+
+
+def pending_registry_operations(object_type: str) -> tuple:
+    """Operation rows this object type NEEDS but the central registry does not
+    contain yet (change request filed to WF00). Never a live route."""
+    entry = PUBLIC_OPERATION_ROUTES.get(str(object_type)) or {}
+    return tuple(entry.get("pending_registry") or ())
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +250,7 @@ class Rail:
     MCP_OFFICIAL = "mcp_official"
     # "mcp_community" removed with Tier 2 (GU-009/GU-010): the community MCP is a
     # retired transport, not a rail. Do not re-add it as a fallback.
+    PUBLIC_ADAPTER = "public_adapter"        # frozen typed public adapter (WF00/WF06)
     REST_SERVICES = "rest_services"          # raw HTTPS services.leadconnectorhq.com
     REST_IN_BROWSER = "rest_in_browser"      # builder-origin autosave via seeded eval
     BROWSER = "browser"                      # agent-browser click-path (builders)
@@ -494,15 +537,72 @@ def _matrix() -> Dict[str, ObjectRoute]:
         "never be read as one.",
     )
 
+    # ── D02 SPLIT ────────────────────────────────────────────────────────────
+    # Course CRUD is a PUBLIC-API family (doc 1 s8), so the course rails lead with
+    # the typed public adapter and keep the managed browser as an EXPLICIT
+    # fallback. Community/group/channel authoring has no public create contract
+    # and remains browser-only — the two must never share a rail list.
     m["course"] = ObjectRoute(
         "course",
         [
+            R(Rail.PUBLIC_ADAPTER, Tier.REST, Token.LOCATION_PIT,
+              "public Courses adapter — POST/GET /courses/products "
+              "(tools/ghl_public_client.py bridge)", True,
+              "API-first: outline build requires no browser capability probe"),
             R(Rail.BROWSER, Tier.BROWSER, Token.FIREBASE_TOKEN_ID,
-              "ghl_course_builder.py (Memberships → Products/outline)", True),
+              "ghl_course_builder.py --execution-mode browser (Memberships → "
+              "Products/outline) — explicit fallback only", True,
+              "managed browser preserved; never the default when the public "
+              "adapter is available"),
+        ],
+        idempotency_key="logical_key_manifest",
+        create_api_exists=True,
+        verify="GET the course product/categories/lessons and compare the logical-key "
+               "manifest (recorded IDs, never titles)",
+        note="Course CRUD only. Community group/channel/Learning association is a "
+             "SEPARATE object type (doc 1 D02).",
+    )
+
+    m["course_module"] = ObjectRoute(
+        "course_module",
+        [
+            R(Rail.PUBLIC_ADAPTER, Tier.REST, Token.LOCATION_PIT,
+              "POST /courses/categories (parent-before-child)", True),
+            R(Rail.BROWSER, Tier.BROWSER, Token.FIREBASE_TOKEN_ID,
+              "course builder UI add-module control", True,
+              "explicit fallback only"),
+        ],
+        idempotency_key="module_key",
+        create_api_exists=True,
+        verify="GET categories; parentCategory + sequenceNo read back",
+    )
+
+    m["course_lesson"] = ObjectRoute(
+        "course_lesson",
+        [
+            R(Rail.PUBLIC_ADAPTER, Tier.REST, Token.LOCATION_PIT,
+              "POST /courses/lessons (categoryId resolved)", True),
+            R(Rail.BROWSER, Tier.BROWSER, Token.FIREBASE_TOKEN_ID,
+              "course builder UI add-lesson control", True,
+              "explicit fallback only"),
+        ],
+        idempotency_key="lesson_key",
+        create_api_exists=True,
+        verify="GET lessons; categoryId + visibility + sequenceNo read back",
+    )
+
+    m["community_group"] = ObjectRoute(
+        "community_group",
+        [
+            R(Rail.BROWSER, Tier.BROWSER, Token.FIREBASE_TOKEN_ID,
+              "ghl_community_builder.py group create/update/access", True),
         ],
         idempotency_key="zhc_name_search",
         create_api_exists=False,
-        verify="Memberships list row + course preview render_check",
+        verify="group slug + white-label portal host identity; member-visible render",
+        note="Community GROUP authoring only. Deliberately separate from `course` "
+             "(doc 1 D02): a group association is not course CRUD and has no "
+             "public create contract.",
     )
 
     m["channel"] = ObjectRoute(
@@ -553,6 +653,8 @@ _ALIASES = {
     "customvalue": "custom_value", "value": "custom_value",
     "location": "subaccount", "sub_account": "subaccount", "sub-account": "subaccount",
     "trigger": "workflow_trigger", "wf": "workflow",
+    "category": "course_module", "module": "course_module",
+    "lesson": "course_lesson",
 }
 
 
@@ -962,19 +1064,37 @@ def _selftest() -> int:
     import tempfile
     errors: List[str] = []
 
-    # 1. Every object type routes; browser-only objects have create_api_exists=False.
+    # 1. Every object type routes; authoring-only objects have create_api_exists=False.
     for t in ("custom_field", "custom_value", "tag", "form", "survey", "funnel",
-              "community", "course", "channel", "workflow", "media", "snapshot",
+              "community", "community_group", "course", "course_module",
+              "course_lesson", "channel", "workflow", "media", "snapshot",
               "subaccount", "product", "contact", "workflow_trigger", "page",
               "website"):
         r = route(t)
         if not r.rails:
             errors.append(f"{t}: no rails")
-    for browser_only in ("form", "survey", "community", "course", "channel"):
+    for browser_only in ("form", "survey", "community", "community_group", "channel"):
         if route(browser_only).create_api_exists:
             errors.append(f"{browser_only}: should have NO create API")
         if route(browser_only).rails[0].rail != Rail.BROWSER:
             errors.append(f"{browser_only}: primary rail must be browser")
+
+    # 1b. D02 SPLIT: course CRUD leads with the public adapter; Community group /
+    # channel authoring does NOT. A regression that re-merges them trips this.
+    for api_first in ("course", "course_module", "course_lesson"):
+        r = route(api_first)
+        if not r.create_api_exists:
+            errors.append(f"{api_first}: public create API must be declared")
+        if r.rails[0].rail != Rail.PUBLIC_ADAPTER:
+            errors.append(f"{api_first}: primary rail must be the public adapter")
+        if not any(s.rail == Rail.BROWSER for s in r.rails):
+            errors.append(f"{api_first}: managed-browser fallback must be preserved")
+        if not pending_registry_operations(api_first):
+            errors.append(f"{api_first}: no public operation rows named for WF00")
+    for browser_only in ("community", "community_group", "channel"):
+        if public_operation_route(browser_only)["routed"] or \
+                public_operation_route(browser_only)["declared"]:
+            errors.append(f"{browser_only}: must not declare public course operations")
 
     # 2. API-first objects lead with a non-browser rail.
     for api_first in ("custom_field", "custom_value", "tag", "media"):
