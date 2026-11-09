@@ -1,11 +1,10 @@
 # CHANGELOG
 
-## 1.3.21 - 2026-11-08 - F16: 2.6 serves every ratio natively; the shared brand record governs the style answer
+## 1.3.21 - 2026-11-09 - F16 S2 policy work: one style vocabulary, brand hash binding, creative-direction precedence (BLD-004)
 
-- `scripts/stage_gate.py`: GPT Image 2.6 serves every enum ratio natively, so `_ratio_problem()` no longer substitutes or reroutes a ratio. A generated ratio that differs from the requested one is drift on every `model_source`, `legacy-ratio-route` included. `N43_SUBSTITUTIONS` and `N43_LEGACY_ONLY` remain only because `scripts/check-skill71-parity.py` reads them into the generated 999 policy.
-- `scripts/write_intake.py`: the `design_style` answer now comes from the one shared brand record (`shared-utils/client_intake/brand_record.py`). An accepted recommendation is recorded as `recommended_accepted` and never as the client's own choice; when the shared module is not installed the refusal is explicit instead of a second copy of the vocabulary.
-- tests: `tests/test_stage_gate.py`, `tests/test_f16_intake_provenance.py`.
-- Version bumped to 1.3.21 (`skill-version.txt`, `SKILL.md` frontmatter).
+- `scripts/write_intake.py`: style source resolves in the shared vocabulary (`recommended_accepted` for an accepted proposal, never `client_choice`; unproven stays `client_choice`, unconfirmed default stays `default_to_confirm`); brand hash binding (`--brand-sha256`/`--brand-version` refuse on mismatch/unreadable); creative-direction precedence (`--creative-direction-kind`/`--creative-direction-grade-mode`/`--creative-direction-approval-ref`); palette status in the one vocabulary (`unknown` when missing/unrecognized, never omitted).
+- `scripts/stage_gate.py`: F16 rule updates. Tests: `tests/test_f16_intake_provenance.py`, `tests/test_stage_gate.py`.
+- Version bumped to 1.3.21 (`VERSION`, `skill-version.txt`, `SKILL.md` frontmatter) for the G3 content-change gate.
 
 ## 1.3.18 - 2026-11-08 - one prompt-band rule: owner rule 12 governs (POL-001)
 
