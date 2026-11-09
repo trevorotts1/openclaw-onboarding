@@ -4,6 +4,25 @@ Version stamped above `main` (v2.1.40) so G3 sees the bump for the folded conten
 
 # Changelog — Signature Funnel (Skill 49)
 
+## v2.1.39 - 2026-11-09 - FIX-16 Branch A: the pin certifies the Skill 71 page-build tree
+
+- `scripts/front_door.py` (`_PIN_SPEC`, `_skill_dirs`): the composition now covers Skill 71 — every non-test
+  `scripts/*.py` plus the reference JSON those scripts read (`references/*.json`, `references/copy-specs`,
+  `references/copy-specs/roles`, `references/style-traits`). Two boxes can no longer present the same pin
+  digest while running different Skill 71 page-build code. The tree is required: a missing
+  `71-blackceo-signature-page` fails closed as `ABORT [HASH-PIN]: pinned tree missing: 71`.
+- The string/AST bypass scan keeps its existing scope (49, 83, shared contract/launch): Skill 71's builders
+  legitimately import `urllib.request` (browser bootstrap, run events), so scanning that tree would fire on
+  approved code. Composition and scan scope are separate decisions and are documented as such.
+- Tests (`test_front_door.py`): the copied fixture now includes Skill 71; five focused tests cover the
+  generated list, an edit and a new file both tripping HASH-PIN, Skill 71 test files staying unpinned, the
+  missing-tree fail-closed path, and the pinned-but-not-string-scanned boundary.
+- `scripts/SF-PROVER-PIN.sha256` is deliberately untracked by this change: the widened digest is minted by
+  the `sf-prover-pin-authority` workflow (or an operator `--write-pin` rotation record) after the change
+  lands. Until that re-mint, `HASH-PIN` is red on this tree by design (FIX-01 Stage B runs after the mint).
+- Documentation: `LAUNCH_MODE.md` pin paragraph and the `signature-funnel-entry.sh` header name the widened
+  composition. Version bumped to v2.1.39 (lockstep `skill-version.txt` + `SKILL.md`).
+
 ## v2.1.36 - 2026-11-08 - launch-path pin re-minted for the contract wording (F05/BLD-015)
 
 - `scripts/SF-PROVER-PIN.sha256` was minted by the `sf-prover-pin-authority` mint job for this tree. The only launch-path change in the pull request is the description wording of `shared-utils/signature_launch_contract/launch-plan.schema.json`: no prover, validator, wrapper, route, page type or launcher file changed, and `hashpin` plus `bypass-scan` both pass on the minted pin.
