@@ -7536,6 +7536,11 @@ PYEOF
   echo "  Installing skills to $SKILLS_DIR..."
   NEW_SKILLS_CSV=""
   SKIPPED_COUNT=0
+  # Skills this run deliberately did NOT install (operator-approved preserve
+  # paths, e.g. the Skill 75 refuse gate). Handed to the single-root assertion
+  # below so it never reports a preserved old copy as a failed deployment while
+  # still failing on a duplicate tree. Empty = nothing preserved.
+  _SRT_SKIP=""
   for SKILL_DIR in "$EXTRACTED_DIR"/[0-9]*/; do
     [ -d "$SKILL_DIR" ] || continue
     SKILL_NAME=$(basename "$SKILL_DIR")
@@ -7627,6 +7632,7 @@ PYEOF
     fi
     if [ "$_x11_rc" = "20" ]; then
       echo "  ✗ [x11-gate] skill $SKILL_NAME NOT updated (refuse mode); existing copy left intact"
+      _SRT_SKIP="${_SRT_SKIP}${_SRT_SKIP:+,}$SKILL_NAME"
     else
       if [ "$_x11_rc" != "0" ]; then
         _x11_keep="$(mktemp -d "${TMPDIR:-/tmp}/oc-x11-keep.XXXXXX" 2>/dev/null || true)"
@@ -10587,6 +10593,49 @@ if isinstance(n, int) and n > 0:
   else
     echo "  ⚠️  provision-claude-settings.sh not found on this box — subagent concurrency left at platform defaults (advisory)." >&2
   fi
+
+  # >>> FIX11-SINGLE-ROOT-ASSERTION-BEGIN (extracted verbatim by tests/unit/single-root-deployment-assertion.test.sh) >>>
+  # ----------------------------------------------------------
+  # SINGLE-ROOT DEPLOYMENT ASSERTION (FIX-11 step 5, FIX-10 invariant).
+  # The copy loop above installs ONE tree per skill into $SKILLS_DIR, but a
+  # second tree can already exist in the shadow root beside it
+  # (<home>/.agents/skills) and the loader may select that one. Two trees of
+  # one skill can carry different versions and different bytes, so every later
+  # diagnosis is ambiguous until exactly one tree exists per skill.
+  #
+  # scripts/assert-skill-single-tree.py asserts, for every skill the release
+  # ships: EXACTLY ONE installed tree, and its version == the released version
+  # (skill-version.txt in the release tree). The shadow root is derived from
+  # $SKILLS_DIR, so this check sees it without being told. It is READ-ONLY by
+  # design: it never deletes, moves, symlinks or copies anything. Convergence
+  # (removing a duplicate) stays an operator-instructed box operation.
+  #
+  # GATING: a failure is a content/integrity failure, so it joins
+  # _STEP_GATE_FAILS and withholds the version stamp exactly like A3. "Could
+  # not check" (rc 2, timeout, or the helper missing) is ALSO a gate failure:
+  # an unverifiable deployment is never reported as clean.
+  # ----------------------------------------------------------
+  _SRT_ONLY_ARG=""
+  [ -n "${ONLY_SKILLS:-}" ] && _SRT_ONLY_ARG="--only=$(printf '%s' "$ONLY_SKILLS" | tr -d '[:space:]')"
+  if ! command -v python3 >/dev/null 2>&1; then
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - single-root deployment assertion (FIX-11 step 5): python3 unavailable, deployment unverified\n"
+  elif [ ! -f "$EXTRACTED_DIR/scripts/assert-skill-single-tree.py" ]; then
+    echo "TOOLING-FAILURE: scripts/assert-skill-single-tree.py is absent from the bundle" >&2
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - single-root deployment assertion (FIX-11 step 5): helper absent from the bundle, deployment unverified\n"
+  else
+    _SRT_SECS="$(oc_bounded_seconds "${OPENCLAW_SINGLE_TREE_TIMEOUT_SECONDS:-60}" 60)"
+    _SRT_RC=0
+    _SRT_SKIP_ARG=""
+    [ -n "${_SRT_SKIP:-}" ] && _SRT_SKIP_ARG="--skip=$_SRT_SKIP"
+    _SRT_OUT="$(oc_bounded_run "$_SRT_SECS" installer python3 "$EXTRACTED_DIR/scripts/assert-skill-single-tree.py" --release "$EXTRACTED_DIR" --root "$SKILLS_DIR" $_SRT_ONLY_ARG $_SRT_SKIP_ARG 2>&1)" || _SRT_RC=$?
+    printf '%s\n' "$_SRT_OUT"
+    if [ "$_SRT_RC" = "124" ]; then
+      _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - single-root deployment assertion (FIX-11 step 5): TIMED OUT after ${_SRT_SECS}s, deployment unverified\n"
+    elif [ "$_SRT_RC" != "0" ]; then
+      _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - single-root deployment assertion (FIX-11 step 5, scripts/assert-skill-single-tree.py) rc=${_SRT_RC}: more than one installed tree for one skill, or an installed version that is not the released version (rc 1), or the check could not run (rc 2) — see the FAIL/TOOLING-FAILURE lines above\n"
+    fi
+  fi
+  # <<< FIX11-SINGLE-ROOT-ASSERTION-END <<<
 
   if [ -n "$_STEP_GATE_FAILS" ]; then
     echo ""
