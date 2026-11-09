@@ -1,5 +1,15 @@
 # GHL Voice AI API Reference
 
+
+> **Hybrid contract layer (revision 3.0).** The endpoint blocks below are inherited enumeration. No `voice_ai.*` registry row exists on this branch; the index classifies native Voice AI as a **documented-unimplemented** gap owned by **WF27**. Do not call these paths as though they were registered adapters.
+>
+> **Native is not self-hosted, and an agent is not a phone.** Skill 38 owns approved voice behavior and the existing self-hosted option; Skill 44 will own native agent/action creation and call-log reads once WF27 lands; Skill 6 owns any genuinely UI-only phone assignment. Creating an agent does not assign a number or activate inbound routing.
+>
+> **Three permissions, not one:** `voice-ai-agents.*` (agents), `voice-ai-agent-goals.*` (actions), `voice-ai-dashboard.readonly` (call logs). Never derive a read scope from the write scope.
+>
+> **Minimal synthetic contract (shape only):** `{"locationId":"SYNTHETIC_LOCATION","name":"ZHC Voice Agent"}`. Failure to test: creating a second agent when the intended state is an update, or reporting an agent id as a working phone route. Readback: `GET /voice-ai/agents/{agentId}?locationId=...` plus the specific call log and the business result (booking exists / handoff reached / field changed). Live activation and outbound calls require recorded authorization and a tested rollback.
+
+
 > **Scope of this file:** All endpoints under the `voice-ai` module — Voice AI agents, agent actions, and the call-log/transcript dashboard.
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.

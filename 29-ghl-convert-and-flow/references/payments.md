@@ -1,6 +1,12 @@
 # GHL Payments, Invoices + Subscriptions API Reference
 
-> **Scope of this file:** Invoices module (41 endpoints) and Payments module (24 endpoints).
+
+> **Hybrid contract layer (revision 3.0).** The endpoint blocks below are an inherited enumeration, not the implementation authority. Use `ghl-hybrid-capability-index.json` for the exact row: on this branch the family carries seven `invoices.*`, four `orders.*`, two `subscriptions.*`, five `coupons.*`, two `transactions.*` and seven `products.*` rows, all `v3` with `2021-07-28` as the only documented alternate. The old "41 invoices / 24 payments" counts are historical and are not repeated as current facts. `products.create` (`B-PRODUCT-422`) and `products.prices.create` (`B-PRICE-KEY`) are implemented with a known write caveat; read the row before composing a body. Approval-gated writes: invoice send/void/record-payment, order fulfillment/record-payment, product/price create, coupon delete.
+>
+> **Commercial safety.** Creating a product or price needs the owner's recorded approval; `amount` is a decimal in major units in the current adapter contract, and a created price must be read back before use. A public enrollment is not payment proof. Never let a `status:"PLANNED"` object stand in for a created one.
+
+
+> **Scope of this file:** invoices, estimates, orders, transactions, subscriptions, coupons, products and payment integrations. Endpoint counts are not restated as current facts; read the registry rows through the capability index.
 > Covers: invoices, invoice items, schedules, templates, orders, order fulfillments, transactions, subscriptions, coupons, custom provider integrations, payment integrations.
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
@@ -1725,4 +1731,3 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/transactions/{
   - Missing required path/query/body fields
   - Missing `Version` header when required
   - Invalid/expired token or wrong token type for endpoint security
-

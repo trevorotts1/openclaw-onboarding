@@ -1,295 +1,56 @@
-# agency-api.md — Agency-level (company-scoped) GoHighLevel API Reference
-
-> **Scope of this file:** operations that act at the AGENCY/company level rather than inside
-> a single sub-account — OAuth token management, sub-account provisioning, the SaaS
-> configurator and billing, agency users, companies, and snapshots.
->
-> **This file is the repo-managed source of truth for agency-level API guidance.** A file
-> named `GoHighLevel-Agency-API-Reference.md` may exist on a box under
-> `~/Downloads/openclaw-master-files/apis/`. That copy is **agent-authored TYP content with
-> no repo source** — it is not published by `update-skills.sh` and it carries three known
-> errors this file corrects (SaaS Version, the MCP section, and no v3 awareness). **Where
-> the two disagree, this file wins.**
->
-> **Verified against** `https://github.com/GoHighLevel/highlevel-api-docs` (`apps/oauth.json`,
-> `saas-api.json`, `users.json`, `locations.json`, `companies.json`, `snapshots.json`,
-> `marketplace.json`, and the `apps/v3/` equivalents), plus live read-only GET probes against
-> operator-owned accounts, all on **2026-08-03**.
-
----
-
-## 1. Global rules
-
-**Base URL:** `https://services.leadconnectorhq.com` — same host for both generations.
-
-### Version header
-
-**HighLevel runs five concurrently-supported versions** — `v3` (June 11, 2026),
-`2023-02-21`, `2021-07-28`, `2021-04-15` and `legacy` — each "Supported until: **TBD**".
-Nothing here is deprecated on a clock. Source:
-`https://marketplace.gohighlevel.com/docs/Versioning/`.
-
-| Surface | Version to send |
-|---|---|
-| locations, oauth, users, companies, snapshots, marketplace | `2021-07-28` |
-| **SaaS (all `/saas/*` and `/saas-api/*`)** | **`2023-02-21`** — documented and working |
-| `POST /users/` | `2023-02-21` **or** `2021-07-28` — both documented, both work |
-| pipeline CRUD, calendar services, chat-widget, brand voices, social queues, new emails surface | `v3` |
-| any v3-form path (`/oauth/location-token`, `/oauth/installed-locations`) | `v3` |
-
-> **`2023-02-21` for SaaS is CORRECT — do not "fix" it to `2021-04-15`.**
-> HighLevel publishes a full SaaS documentation set under `2023-02-21`
-> (`https://marketplace.gohighlevel.com/docs/2023-02-21/ghl/saas/saas/index.html`), and it is
-> a first-class row in the Versioning table. **PROVEN live 2026-08-03:**
-> `GET /saas-api/public-api/agency-plans/{companyId}` returns **200** under `2023-02-21`.
->
-> The GitHub `saas-api.json` declares `2021-04-15`, and an audit on 2026-08-03 briefly used
-> that to call the `2023-02-21` guidance wrong. **That was itself wrong and was reverted the
-> same day** — `saas-api.json` was last synced **2025-08-13**, the stalest file in the spec
-> repo. The only deliberate forward move for SaaS is `2023-02-21` → **`v3`**, with a live
-> re-test.
-
-Omitting the header is a **401** (`"version header was not found."`); sending a value
-HighLevel does not publish is a **401** (`"version header is invalid"`). Both PROVEN live.
-
-> ⚠ **The GitHub spec repo lags the live docs** (last commit 2026-06-19; most specs synced
-> 2026-05-01; `saas-api.json` 2025-08-13) while the changelog runs to 2026-07-30. Check
-> `https://marketplace.gohighlevel.com/docs` before declaring anything wrong.
-
-Full generation rules and the per-operation table: **`references/api-generations.md`**.
-
-### Agency token vs location token
-- An **agency (company-scoped) PIT or OAuth token** reaches `/locations/*` provisioning,
-  `/saas/*`, `/users/*` at agency level, `/companies/*`, `/snapshots/*` and `/oauth/*`.
-- A **location-scoped PIT** cannot perform agency operations, and an agency PIT **401s on
-  media uploads**. Mint the right one for the job.
-- Some agency calls need a **location token minted from the agency token** — see §2.2.
-
-### Plan requirements
-Sub-account creation and the SaaS configurator require the agency to be on **Agency Pro**.
-Under a lower plan these endpoints return 403 regardless of scopes.
-
-### Rate limits
-100 requests / 10 seconds burst and 200,000 / day, **per app per resource** (location or
-company). Response headers (all six confirmed live 2026-08-03):
-`X-RateLimit-Limit-Daily`, `X-RateLimit-Daily-Remaining`, `X-RateLimit-Interval-Milliseconds`,
-`X-RateLimit-Max`, `X-RateLimit-Remaining`, **`X-RateLimit-Daily-Reset`**.
-
-> `X-RateLimit-Daily-Reset` is **not** in HighLevel's published header list but **is** sent
-> on live responses — confirmed by direct observation 2026-08-03. Skills 36 and 44 rely on
-> it; that reliance is sound.
-
-**All tiers share one bucket.** Switching from MCP to REST does not buy more quota.
-
----
-
-## 2. Authentication and token management
-
-### 2.1 Get / refresh an access token
-```
-POST /oauth/token          Version: 2021-07-28
-```
-Form-encoded: `client_id`, `client_secret`, `grant_type`, `code` (or `refresh_token`),
-`user_type`, `redirect_uri`. Response carries `access_token` (24h) and `refresh_token`
-(1 year, rotates on use — persist the new one every time).
-
-> **v3 changes the body to camelCase**: `clientId`, `clientSecret`, `grantType`,
-> `refreshToken`; the response field becomes `accessToken`, and the `Version` header becomes
-> **required** on this call.
-
-### 2.2 Mint a location token from an agency token — **PATH RENAMED IN v3**
-
-| Generation | Path | `Version` |
-|---|---|---|
-| v2 | `POST /oauth/locationToken` | `2021-07-28` |
-| v3 | `POST /oauth/location-token` | `v3` |
-
-```bash
-curl --request POST 'https://services.leadconnectorhq.com/oauth/locationToken' \
-  -H 'Authorization: Bearer <AGENCY_ACCESS_TOKEN>' \
-  -H 'Version: 2021-07-28' \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  --data-urlencode 'companyId=<COMPANY_ID>' \
-  --data-urlencode 'locationId=<LOCATION_ID>'
-```
-HighLevel lists the old path as **removed without deprecation** in v3. The v2 form still
-works today. **Never pair a hyphenated path with a v2 Version — that is a hard 404.**
-
-### 2.3 List installed locations — **PATH RENAMED IN v3, and this one is PROVEN gated**
-
-| Generation | Path | Behaviour (PROVEN 2026-08-03) |
-|---|---|---|
-| v2 | `GET /oauth/installedLocations` | resolves under **both** `2021-07-28` and `v3` |
-| v3 | `GET /oauth/installed-locations` | **404 `Cannot GET` under `2021-07-28`**; resolves only under `v3` |
-
-```bash
-curl --request GET \
-  'https://services.leadconnectorhq.com/oauth/installedLocations?companyId=<COMPANY_ID>&limit=20' \
-  -H 'Authorization: Bearer <AGENCY_ACCESS_TOKEN>' \
-  -H 'Version: 2021-07-28'
-```
-Scope: `oauth.readonly`. **Recommendation:** stay on the camelCase form — it is the only one
-that works under every published version.
-
----
-
-## 3. Sub-account (location) management — `Version: 2021-07-28`
-
-| Operation | Call |
-|---|---|
-| Search / list | `GET /locations/search?companyId=&limit=&skip=` |
-| Get one | `GET /locations/{locationId}` |
-| Create | `POST /locations/` (accepts `snapshotId` — see §6) |
-| Update | `PUT /locations/{locationId}` |
-| Delete | `DELETE /locations/{locationId}?deleteTwilioAccount=` |
-
-Scopes: `locations.readonly`, `locations.write`.
-
-> **v3 adds** `GET /locations/{locationId}/conversationChannels/{type}` and
-> `GET,PUT /locations/{locationId}/permissions` (32 ops vs 29). Require `Version: v3`.
-
----
-
-## 4. SaaS configurator and billing — `Version: 2023-02-21`
-
-All 22 operations. Requires Agency Pro.
-
-| Operation | Call |
-|---|---|
-| Pause / unpause a sub-account | `POST /saas/pause/{locationId}` — body `{"paused": true\|false}` |
-| Enable SaaS for one sub-account | `POST /saas/enable-saas/{locationId}` |
-| Bulk enable | `POST /saas/bulk-enable-saas` |
-| Disable SaaS | `POST /saas/bulk-disable-saas` |
-| Update rebilling | `POST /saas/update-rebilling` |
-| Agency plans | `GET /saas-api/public-api/agency-plans/{companyId}` |
-| One SaaS plan | `GET /saas-api/public-api/saas-plan/{planId}` |
-| Location subscription | `GET /saas-api/public-api/location-subscription/{locationId}` |
-| Update subscription | `POST /saas-api/public-api/update-saas-subscription/{locationId}` |
-| SaaS locations (paginated) | `GET /saas-api/public-api/locations?companyId=` |
-| Locations by Stripe ID | `GET /saas-api/public-api/locations-by-stripe-id` |
-| Wallet balance | `GET /saas-api/public-api/companies/{companyId}/locations/{locationId}/wallet-balance` |
-| Complimentary credits | `POST .../wallet-balance/complimentary-credits` |
-
-Scopes: `saas/location.read`, `saas/location.write`, `saas/company.write`.
-
-> **Unpausing.** There is no separate resume endpoint. `POST /saas/pause/{locationId}` takes
-> a `paused` boolean, so sending `"paused": false` is the obvious unpause. **This is
-> untested** — it was not probed, because this audit made no write calls. Verify with one
-> controlled call before relying on it. Do not document it as confirmed.
-
-> **Deprecated/current split.** The live SaaS docs publish **two parallel sets** — eleven
-> endpoints exist in both a `-deprecated` and a current form (e.g. `bulk-enable-saas-deprecated`,
-> `get-saas-locations-deprecated`). Check which form your URL maps to before relying on it.
-> Source: `https://marketplace.gohighlevel.com/docs/ghl/saas/saas`
->
-> **v3 (`saas-v3`, 25 ops)** adds `allow-attach-rebilling/{locationId}` and brings the two
-> wallet-balance endpoints into the spec. ⚠ HighLevel's changelog (2026-06-26) calls
-> `allow-attach-rebilling` a **GET**; `saas-v3.json` declares it **POST**. Two HighLevel
-> sources conflict — verify with a live call before using it.
-
----
-
-## 5. Agency users — `Version: 2021-07-28`
-
-| Operation | Call |
-|---|---|
-| List | `GET /users/?locationId=` |
-| Search | `GET /users/search` |
-| Filter by email | `POST /users/search/filter-by-email` |
-| Create | `POST /users/` |
-| Get / update / delete | `GET,PUT,DELETE /users/{userId}` |
-
-Scopes: `users.readonly`, `users.write`.
-
-> **Both `2023-02-21` and `2021-07-28` are valid for `POST /users/`.** Skill 44 uses
-> `2023-02-21` (documented verbatim at
-> `https://marketplace.gohighlevel.com/docs/2023-02-21/ghl/users/create-user/index.html`);
-> this reference uses `2021-07-28` (the value in `users.json`). **That is not a
-> contradiction** — HighLevel documents this endpoint under multiple supported versions, and
-> PROVEN live 2026-08-03 `GET /users/` returns 200 under all four.
->
-> **v3 drops `GET /users/`** in favour of `GET /users/search`. PROVEN: `GET /users/` still
-> returns 200 under `Version: v3` today; do not rely on that persisting.
-
----
-
-## 6. Companies and snapshots — `Version: 2021-07-28`
-
-**Companies:** `GET /companies/{companyId}` — scope `companies.readonly`.
-
-**Snapshots** (4 ops, scope `snapshots.readonly`) — the missing half of the provisioning
-flow. Sub-account create accepts a `snapshotId`, and these are how you find one and confirm
-it loaded:
-
-| Operation | Call |
-|---|---|
-| List snapshots | `GET /snapshots/?companyId=` |
-| Share link | `POST /snapshots/share/link` |
-| Load status | `GET /snapshots/snapshot-status/{snapshotId}` |
-| Load status for one location | `GET /snapshots/snapshot-status/{snapshotId}/location/{locationId}` |
-
-**Marketplace billing** (scopes `charges.readonly|write`):
-`GET,POST /marketplace/billing/charges`, `GET /marketplace/billing/charges/has-funds`,
-`DELETE,GET /marketplace/billing/charges/{chargeId}`,
-`DELETE,GET /marketplace/app/{appId}/installations`,
-`GET /marketplace/app/{appId}/rebilling-config/location/{locationId}`.
-
----
-
-## 7. Known limitations — do not assume otherwise
-
-- **Workflows are read-only.** `GET /workflows/` is the ONLY workflow operation in **both**
-  the v2 and v3 specs. There is no public create/edit endpoint. Workflow builds go through
-  the internal Firebase-token path documented in skill 44 — that architecture remains
-  necessary and correct.
-- **The public API cannot create a location** in the way skill 44 needs; create-location uses
-  the internal `backend.leadconnectorhq.com` path with a Firebase ID token, not a Bearer PIT.
-- **Opportunities pipeline writes** are announced but absent from both published specs.
-  `GET /opportunities/pipelines/{pipelineId}` is **PROVEN live** despite being undocumented;
-  the write operations were not probed. See `references/opportunities.md`.
-- **Agency PITs 401 on media uploads** — use a location PIT (`references/medias.md`).
-
----
-
-## 8. MCP at the agency level — CORRECTED
-
-> **Correction.** Older agency documentation stated that the official MCP *"has no
-> agency-level tools"* and that a unified orchestrator with OAuth was *"a roadmap to grow it
-> toward 250 or more tools ... but no agency tools exist today."* **That roadmap shipped.**
-
-HighLevel now publishes two official MCP endpoints:
-
-| | `/mcp/{client}/v2` — **recommended** | `/mcp/` — the original endpoint |
-|---|---|---|
-| URL | `https://services.leadconnectorhq.com/mcp/anthropic/v2` (Claude, live today) | `https://services.leadconnectorhq.com/mcp/` |
-| Coverage | the full operation catalog — hundreds of operations across **40 domains** | a focused set of core tools, narrower scope |
-| Shape | **6 unified meta-tools** | one tool per operation |
-| Auth | OAuth (recommended) or PIT | OAuth or PIT |
-| **Agency** | **connect once, work across many sub-accounts**; `list_locations` enumerates them | one sub-account per connection |
-
-The 6 meta-tools: `search`, `fetch`, `search_operations`, `describe_operation`,
-`execute_operation`, `list_locations`.
-
-**So agency-level MCP tooling now exists** — `list_locations` plus agency-wide connections.
-For agency work, prefer `/mcp/anthropic/v2`.
-
-Accuracy notes: HighLevel does **not** label `/mcp/` "legacy" — its wording is "the original
-endpoint", and it remains supported for any non-Claude MCP client. HighLevel publishes **no
-fixed tool count** for it, so do not cite one. The dual-`Accept` requirement
-(`application/json, text/event-stream`) is documented for the original endpoint only.
-
-Full guidance: skill 36 (`36-ghl-mcp-setup/SKILL.md` → "Which official MCP endpoint").
-Source: `https://marketplace.gohighlevel.com/docs/other/mcp` (verified 2026-08-03).
-
----
-
-## 9. Sources
-
-- OpenAPI specs (v2): `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps`
-- OpenAPI specs (v3): `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps/v3`
-- OAuth flow, rate limits, token lifetimes:
-  `https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/docs/oauth/Authorization.md`
-- Scopes: `https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/docs/oauth/Scopes.md`
-- MCP: `https://marketplace.gohighlevel.com/docs/other/mcp`
-- Changelog: `https://marketplace.gohighlevel.com/docs/Changelog/`
-- Live read-only GET probes against operator-owned accounts, 2026-08-03 (no write calls made).
+# agency-api.md — agency/company-scoped operations
+
+> Scope: OAuth token management, sub-account provisioning, SaaS configuration/billing, agency users, companies, snapshots and marketplace billing. This file is the repo-managed source of truth for agency guidance; a box-local `GoHighLevel-Agency-API-Reference.md` is agent-authored and is not a repo source.
+
+## Owner facts vs measured entitlements
+
+Trevor owns the HighLevel agency and states he has **Agency Pro**. Record that as an owner-supplied account fact. It is not a measured entitlement of every staff user or client account. No customer plan or service is secretly activated because of this fact.
+
+## Token and tenant
+
+- Agency PIT/OAuth reaches `/locations/*` provisioning, `/saas/*`, agency `/users/*`, `/companies/*`, `/snapshots/*`, `/oauth/*`.
+- Location PIT cannot perform agency operations.
+- Agency PIT 401s on media; use a location PIT for media and course content.
+- Do not cross token contexts to make a failing call pass.
+
+## Operations (check the registry row for the exact literal)
+
+| Operation | Call | Version | Scope |
+|---|---|---|---|
+| Get/refresh token | `POST /oauth/token` | row (`2021-07-28`; v3 camelCase body) | OAuth app |
+| Mint location token | `POST /oauth/locationToken` (v2) / `location-token` (v3) | matching literal | `oauth.write` |
+| List installed locations | `GET /oauth/installedLocations` (works both) / `installed-locations` (v3 only) | matching literal | `oauth.readonly` |
+| Locations search/get/update | `GET /locations/...`, `PUT /locations/{id}` | `2021-07-28` | `locations.readonly|write` |
+| Create location | internal `POST backend.leadconnectorhq.com/locations/` with `token-id` | `2021-07-28` | Firebase; not a PIT |
+| Add user | `POST /users/` (agency PIT) | registry row (`2021-07-28` on the current row; `2023-02-21` is also documented historically) | `users.write` |
+| SaaS configurator/billing | `/saas/*`, `/saas-api/*` | `2023-02-21` (deliberate forward move: `v3`) | `saas/*` |
+| Companies | `GET /companies/{companyId}` | `2021-07-28` | `companies.readonly` |
+| Snapshots | `GET /snapshots/`, status, share link | `2021-07-28` | `snapshots.readonly` |
+| Marketplace billing | `/marketplace/billing/charges*` | `2021-07-28` | `charges.*` |
+
+**Create location is the one operation with no public equivalent.** It uses the internal Firebase id-token (`token-id: <id-token>`), never `Authorization: Bearer`. The official public API cannot create a location. The OAuth marketplace-app route is a dead end (`error.noAppVersionIdFound`); do not use it for provisioning.
+
+**`companyId` is the agency Firestore document id**, not the UI `relationNumber`.
+
+## Agency Pro gating
+
+Sub-account creation and the SaaS configurator require Agency Pro. Under a lower plan they return 403 regardless of scopes. That is an account fact, not a code bug.
+
+## SaaS split
+
+The live SaaS docs publish parallel `-deprecated` and current forms for several endpoints. Check which URL maps to which. Unpause: `POST /saas/pause/{locationId}` accepts `"paused": false`; this is a reasoned candidate, not a proven operation — verify before relying on it.
+
+## Rate limits
+
+Per app per resource: 100 requests / 10 seconds and 200,000 / day. Headers observed: `X-RateLimit-Limit-Daily`, `X-RateLimit-Daily-Remaining`, `X-RateLimit-Interval-Milliseconds`, `X-RateLimit-Max`, `X-RateLimit-Remaining`, `X-RateLimit-Daily-Reset`. All tiers share one bucket; switching transport does not buy quota.
+
+## MCP at agency level
+
+The client-specific hosted MCP endpoints exist and an agency-scoped connection can enumerate locations. `list_locations` is the operation; agency MCP does not make a beta-gated public operation production-ready.
+
+## Known limitations
+
+- A workflow definition write remains beta/staging; the internal Firebase path is the proven fallback.
+- Opportunities pipeline writes are registry rows; delete is an irreversible cascade.
+- The public API cannot create a location.
+- Do not promise SaaS, snapshot or marketplace behavior that the tenant's plan/scope has not proven.

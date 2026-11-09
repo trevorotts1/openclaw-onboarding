@@ -1,5 +1,11 @@
 # GHL Media Library — Upload Reference (Tier 3)
 
+
+> **Hybrid contract layer (revision 3.0).** The registry row `media.upload` (`POST /medias/upload-file`) is the authority; at this branch base it records `version: v3` and `write: true`. The historical examples below use `2021-07-28` and are kept as historical evidence — if the row and an example disagree, the row wins and the example is not proof. Multipart is an additive transport capability owned by **WF01**: a typed multipart request must carry the real boundary/fields, must never forward the GHL Bearer token to an asset host or across unapproved redirects, and must treat a reset/timeout after submission as `unknown_outcome` (reconcile before re-uploading). `media.folders.create` is a registry row; the old note that folder creation is broken is historical and must be re-tested before being repeated as current. Upload acceptance is not readiness: hash the actual bytes and record the provider file id.
+>
+> **Never** base64-encode a file into an invented JSON key to avoid multipart. If the request media type is not implemented, fail before transport.
+
+
 Carved from the proven skill 28/35/37 implementations. This is the authoritative
 Tier-3 media upload reference. The Convert and Flow CLI (Tier 0, skill 44) has NO
 media commands — media uploads ALWAYS route to Tier 3 (this endpoint).
@@ -28,9 +34,11 @@ self-test).
 ## 3. Required Headers
 
 ```
-Version: 2021-07-28
-Content-Type: multipart/form-data   (set automatically by curl -F)
+Version: <the registry row's literal>   # at this branch base media.upload records v3
+Content-Type: multipart/form-data       # constructed by the HTTP implementation, not hand-set
 ```
+
+The historical examples below send `2021-07-28`. They are retained as historical evidence; the registry row wins until WF00 records a verified alternate.
 
 ## 4. Multipart Form Fields
 

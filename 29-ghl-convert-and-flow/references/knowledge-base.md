@@ -1,5 +1,15 @@
 # GHL Knowledge Base API Reference
 
+
+> **Hybrid contract layer (revision 3.0).** The endpoint blocks below are inherited enumeration. No `knowledge_bases.*` registry row exists on this branch; the index classifies KB lifecycle as a **documented-unimplemented** gap owned by **WF30**, with multipart transport owned by **WF01**.
+>
+> **Lifecycle, not one checkpoint:** approved sources → tenant-bound KB exists → sources accepted → crawl/upload complete → selected content trained/indexed → correct native agent attached → factual retrieval passes. "KB created" proves none of the later states.
+>
+> **Ingestion rules:** accepted file types and size (PDF/DOC/DOCX, 10 MB in the reviewed reference) must be validated before upload and revalidated at implementation time. Crawler discovery/preview is not ingestion; training is not retrieval. A processing response is pending/unknown, not failed-and-recreate. Never upload the repo, hidden prompts, credentials, QC instructions or another client's data.
+>
+> **Failure/readback:** fail on an unsupported type or oversize file before transport; fail on reporting a source update as trained without an index/readiness read. Readback: re-read the KB, source fingerprints, training/index state, agent attachment and a known-answer retrieval test. Never delete an existing KB to free capacity.
+
+
 > **Scope of this file:** All endpoints under the `knowledge-bases` module — knowledge bases, the web crawler, and FAQs. Feeds both Conversation AI and Voice AI.
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.

@@ -1,5 +1,15 @@
 # GHL Conversation AI API Reference
 
+
+> **Hybrid contract layer (revision 3.0).** The endpoint blocks below are inherited enumeration. No `conversation_ai.*` registry row exists on this branch; the index classifies native Conversation AI as a **documented-unimplemented** gap owned by **WF28**.
+>
+> **Single responder.** Native Conversation AI, workflow AI steps and the existing Skill 38 brain are not interchangeable. A per-location/channel routing record must name the primary responder, mode (`off` / `suggestive` / `auto-pilot`), handoff trigger, which workflows may send, the contact/thread identity and allowed knowledge/actions. Two agents replying to one input is a failure unless the approved design says otherwise.
+>
+> **Channel and prompt facts:** the create contract lists `IG`, `FB`, `SMS`, `WebChat`, `WhatsApp`, `Live_Chat`, `Email`. A nonempty `fullPrompt` is the effective generation instruction instead of personality/goal/instructions — test the effective prompt, not just saved fields. Reject unsupported channels instead of coercing them.
+>
+> **Failure/readback:** fail if an existing production primary agent is turned off without an approved transition; fail if a preview answer is reported as delivered. Read back settings, then verify the actual thread and message identity with an allowlisted contact.
+
+
 > **Scope of this file:** All endpoints under the `conversation-ai` module — the API layer that configures the conversational agent itself: agents, agent actions, and follow-up settings.
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.

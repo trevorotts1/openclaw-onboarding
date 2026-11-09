@@ -1,5 +1,15 @@
 # GHL AI Agent Studio API Reference
 
+
+> **Hybrid contract layer (revision 3.0).** The endpoint blocks below are inherited enumeration. No `agent_studio.*` registry row exists on this branch; the index classifies Flow Agents as a **documented-unimplemented** gap owned by **WF29**.
+>
+> **Lifecycle is staged.** Create produces a staging version; `PATCH /agent-studio/agent/versions/{versionId}` edits that version; `POST .../publish` promotes the exact reviewed version; `POST /agent-studio/agent/{agentId}/execute` runs it. Deprecated `public-api/agents*` operations are not the current route. Do not confuse AI Agent Studio with Client App Builder or any other "Studio" product.
+>
+> **Execution isolation.** `executionId` is bound to the location, agent, promoted version policy and conversation/contact identity. Never share a session across clients or unrelated customers; never pass internal instructions or another client's data as agent input.
+>
+> **Failure/readback:** fail if a UI agent name or a 200 execute response is reported as a working graph. Read back the staging graph, promoted identity, execution output and downstream CRM/task effects. Keep the previously active version for rollback.
+
+
 > **Scope of this file:** All endpoints under the `agent-studio` module — the full AI agent lifecycle: create, version, publish, execute, delete.
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.

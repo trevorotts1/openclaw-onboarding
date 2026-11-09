@@ -1,242 +1,93 @@
-# GHL API Skill - Usage Instructions
+# Skill 29 — Usage Instructions
 
-> How to use this skill to answer GHL questions and execute API calls.
-> This file describes the complete workflow from user question to API execution.
+> How to answer a GHL question and execute the right call without guessing. The registry row is the contract; this file is the procedure.
 
----
+## Step 1 — classify the request
 
-## The Core Principle: Read-First, No-Memorize
+Match the task to a domain family, then open the one reference. Do not read every file, and never paste this skill or the document spec into a core file.
 
-The GHL API has 413 endpoints. Memorizing them wastes context window space.
-This skill's approach: **identify the domain, read the reference file, build the call, execute.**
-
-Never guess at endpoint syntax. Never invent parameters. Always read the reference file first.
-
----
-
-## The Gemini Engine-First Workflow (4 Steps)
-
-### Step 1 - Identify the Domain
-
-When a user asks a GHL question, classify it into a domain:
-
-| User Says | Domain | Reference File |
-|-----------|--------|---------------|
-| "add a contact", "save a contact", "find a contact", "update contact tags" | contacts | `references/contacts.md` |
-
-### Contact write decision table — read BEFORE building any contact call
-
-Generic "add/save this person" is NOT a create. Route first:
-
-| Intent | Meaning | Call |
+| Request | Family | Reference |
 |---|---|---|
-| Generic add/save ("add this person", "save this contact") | Record may or may not exist | POST /contacts/upsert with match keys (email and/or phone). Omit createNewIfDuplicateAllowed unless the owner explicitly asked for a new record. |
-| Explicit new record ("create a NEW contact", "add them as a new contact even if duplicate") | New row even if a match exists | POST /contacts/ (or upsert with createNewIfDuplicateAllowed=true on explicit request only) |
-| Known contactId ("update contact <id>") | Exact record targeted | GET /contacts/{contactId} first, then PUT only the supplied fields |
+| Course/module/lesson/offer/enrollment/import | courses | `references/courses.md` |
+| Workflow read/build/publish/enroll | workflows | `references/workflows.md` |
+| Group/channel/Learning/member | communities | `references/communities.md` |
+| Post/schedule/comment/member author | social-planner | `references/social-planner.md` |
+| Logs/statistics/runtime proof | workflow-monitoring | `references/workflow-monitoring.md` |
+| Room setup/join links | meeting-rooms | `references/meeting-rooms.md` |
+| Voice agent/action/call log | voice-ai | `references/voice-ai.md` |
+| Conversation AI/responder | conversation-ai | `references/conversation-ai.md` |
+| Studio graph/promote/execute | agent-studio | `references/agent-studio.md` |
+| KB source/train/attach/retrieve | knowledge-base | `references/knowledge-base.md` |
+| Widget create/embed/thread | chat-widgets | `references/chat-widgets.md` |
+| Projects space/list/task | projects | `references/projects.md` |
+| Invoice/payment/order/subscription | payments | `references/payments.md` |
+| Calendar/appointment/services | calendars | `references/calendars.md` |
 
-Upsert matching is resolved by HighLevel's Upsert endpoint according to the
-Location-level Allow Duplicate Contact configuration and its configured matching
-priority — never claim it "matches on email/phone" as a fixed rule.
-| "send an SMS", "reply to message", "get conversations" | conversations | `references/conversations.md` |
-| "move deal to closed", "create opportunity", "check pipeline" | opportunities | `references/opportunities.md` |
-| "book appointment", "get available slots", "cancel booking" | calendars | `references/calendars.md` |
-| "add to workflow", "trigger campaign" | campaigns | `references/campaigns.md` |
-| "get location info", "update sub-account", "custom fields" | locations | `references/locations.md` |
-| "create invoice", "send invoice", "record payment", "subscription" | payments | `references/payments.md` |
-| "buy phone number", "list phone numbers" | phone-numbers | `references/phone-numbers.md` |
-| "add user", "update permissions", "team member" | users | `references/users.md` |
-| "webhook event", "inbound trigger", "what fired" | webhooks | `references/webhooks.md` |
+## Step 2 — look up the operation in the index
 
----
+Open `references/ghl-hybrid-capability-index.json` and find the operation id. Read `classification` before anything else:
 
-### Step 2 - Read the Reference File
+- `implemented` → the registered rail is the intended route; still check the row's `blocker` and `required_query`.
+- `beta-gated` → the operation is a documented staging/beta contract. Do not present it as production-available. Record `beta_not_enabled` and use the approved fallback.
+- `documented-unimplemented` → the vendor contract may exist but this branch has no adapter row. Stop; do not call it. Use the documented fallback or report the gap.
+- `browser-backed` → managed browser only, with captured/runtime selectors.
+- `internal-only` → approved private path, not "public API".
+- `unresolved` / `retired` / `excluded` → do not execute; report the classification.
 
-Read ONLY the specific reference file. Do not read the 430K master.
+If the family has no row, read `documented_unregistered` for its labelled gap.
 
-```
-read references/contacts.md
-```
+## Step 3 — build the request
 
-Safe non-destructive payload rule: send ONLY supplied fields plus locationId
-(and match keys for upsert). Never send empty/null/blank values — they can wipe
-data. Never put a `tags` array in an upsert or update body (use the dedicated tag
-endpoint). Verify after every write: capture the returned contact ID, GET the
-record, confirm intended fields. A succeeded write with a failed read-back is
-reported "WRITE SUCCEEDED — VERIFICATION INCOMPLETE" — never re-fire the write
-to "check" (it can duplicate).
+Take from the row, not memory: method, path template, `version`, tenant binding, required query, auth class. Substitute only synthetic/real ids; never invent a field.
 
-Scan the file for:
-- The endpoint that matches the task (e.g., `POST /contacts/upsert` for a generic add/save; `POST /contacts/` ONLY for an explicitly requested new record)
-- Required scopes (must be enabled in your Private Integration)
-- Required headers (Authorization + Version always, others per endpoint)
-- Required path params (e.g., `{contactId}`)
-- Required query params (e.g., `locationId`)
-- Required body fields
-- The cURL template provided
+Request rules:
+- Send only supplied fields plus the documented tenant field. Never send empty/null/blank values that can wipe data.
+- Contact writes: generic add/save → `POST /contacts/upsert` with match keys; explicit NEW → `POST /contacts/`; known id → read then PUT only supplied fields. Never put a `tags` array in an upsert/update body.
+- Every write ends with the row's `readback_plan` (or the reference's readback): capture id, GET, confirm intended fields. A succeeded write with failed readback is "WRITE SUCCEEDED — VERIFICATION INCOMPLETE"; never re-fire to check.
+- Pagination: use the endpoint's own style — cursor, search-after, or skip/limit. Never reuse one paginator across a module.
+- Opaque cursors and revisions are carried verbatim, never reconstructed.
 
----
+## Step 4 — execute and classify the response
 
-### Step 3 - Build the API Call
+| Status | Meaning | Action |
+|---|---|---|
+| 200/201 | accepted | read back before calling it complete |
+| 400/422 | bad request / stale revision | fix the stated field; re-read stale graph and reapply intent |
+| 401 | credential | run the resolver; never emit an empty Bearer |
+| 403 | scope/role/tenant | classify exact cause; record; repair authorization; never switch tenant |
+| 404 | missing object vs wrong route vs unsupported | distinguish before creating anything |
+| 409 | conflict/published | preserve live state; draft transition needs authorization |
+| 429 | rate limit | stop, surface reset, do not tier-hop |
+| 5xx/timeout after write | ambiguous | mark `unknown_outcome`; reconcile by ids/fingerprints/reads |
 
-Take the cURL template from the reference file and substitute real values:
+Explicit beta denial (`WORKFLOW_API_NOT_ENABLED_FOR_LOCATION`) → `beta_not_enabled`; select the approved private fallback; queue the access request separately. It is not a bad token.
 
-Generic add/save — upsert (DEFAULT for "add/save this person"):
+## Step 5 — one minimal example per family
 
-```bash
-# Template (from reference file) — match keys + only the fields the owner gave
-curl --request POST 'https://services.leadconnectorhq.com/contacts/upsert' \
-  -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-07-28' \
-  -H 'Content-Type: application/json' \
-  -d '{"email": "john@example.com", "firstName": "John", "lastName": "Smith", "locationId": "<locationId>"}'
+Every reference carries one minimal request, one meaningful failure and one readback with **synthetic** ids. Follow those shapes. They prove DTO separation, not live readiness or supported rich formatting.
 
-# Substituted (ready to run)
-curl --request POST 'https://services.leadconnectorhq.com/contacts/upsert' \
-  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-07-28' \
-  -H 'Content-Type: application/json' \
-  -d "{\"email\": \"john@example.com\", \"firstName\": \"John\", \"lastName\": \"Smith\", \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\"}"
-```
+## Step 6 — report
 
-Explicit new record — create (ONLY when the owner explicitly asked for a NEW
-record even if a match exists):
+Report: operation id, selected rail, version, location scope (not a secret), outcome, readback state, evidence path, and any activation gap. Do not report an adapter as a live capability, and do not report a plan as a delivery.
 
-```bash
-curl --request POST 'https://services.leadconnectorhq.com/contacts/' \
-  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-07-28' \
-  -H 'Content-Type: application/json' \
-  -d "{\"firstName\": \"John\", \"lastName\": \"Smith\", \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\"}"
-```
+## Contacts — write routing (unchanged and binding)
 
-Every write ends with a read-back: capture the returned contact ID, GET
-`/contacts/{contactId}`, confirm intended fields.
+| Intent | Call |
+|---|---|
+| Generic "add/save this person" | `POST /contacts/upsert` (match keys; omit createNewIfDuplicateAllowed) |
+| Explicit "create a NEW contact" | `POST /contacts/` |
+| Known contactId "update" | GET then PUT only supplied fields; `--tag` refused destructive |
 
-Substitution rules:
-- `<PRIVATE_INTEGRATION_TOKEN>` becomes `$GOHIGHLEVEL_API_KEY`
-- `<locationId>` or similar becomes `$GOHIGHLEVEL_LOCATION_ID`
-- Path params like `{contactId}` are substituted with the actual ID from a previous lookup
+Upsert matching is resolved by HighLevel's Location-level Allow Duplicate Contact configuration; never claim a fixed email/phone rule.
 
-Before running any call, load credentials with the resolver in SKILL.md "Credentials"
-(it sources `~/.openclaw/secrets/.env`, maps legacy aliases to the canonical names, and
-fails loud if a credential is unresolved — so you never send an empty Bearer token).
+## Safety checklist before a destructive call
 
----
+- [ ] Correct object id and tenant.
+- [ ] Explicit instruction for delete/void/cancel/release.
+- [ ] Phone release: Trevor-only.
+- [ ] Billing/payment change: Trevor-only.
+- [ ] Readback plan ready.
 
-### Step 4 - Execute and Handle Response
+## Testing a documentation change
 
-Execute the call and capture the response:
-
-```bash
-RESPONSE=$(curl -s \
-  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-07-28' \
-  -H 'Content-Type: application/json' \
-  --request POST 'https://services.leadconnectorhq.com/contacts/upsert' \
-  -d "{\"email\": \"john@example.com\", \"firstName\": \"John\", \"lastName\": \"Smith\", \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\"}")
-
-echo "$RESPONSE" | python3 -m json.tool
-```
-
-**Response handling:**
-- 200/201: Success - extract the `id` field if needed for chaining calls
-- 400: Bad request - check required fields in the reference file
-- 401: Auth problem - run the credential resolver (SKILL.md "Credentials"); confirm `$GOHIGHLEVEL_API_KEY` resolved to a valid, non-expired LOCATION PIT. Never fire an empty `Authorization: Bearer `
-- 403: Wrong scope - check the scope listed in the reference file, add it to your Private Integration
-- 404: Record not found - verify the ID you passed is correct
-- 429: Rate limited - wait and retry with backoff
-
----
-
-## Multi-Step Workflows
-
-Many GHL tasks require chaining multiple API calls. Always capture IDs from earlier steps.
-
-### Example: Contact Lookup then Send SMS
-
-```bash
-# Step 1: Find the contact by email
-CONTACT=$(curl -s \
-  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-07-28' \
-  "https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&email=jane@example.com")
-
-CONTACT_ID=$(echo "$CONTACT" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['contacts'][0]['id'])" 2>/dev/null)
-
-echo "Contact ID: $CONTACT_ID"
-
-# Step 2: Get or create a conversation for this contact
-# Step 3: Send the message to the conversation
-# (Read references/conversations.md for those endpoints)
-```
-
-### Example: Create Opportunity in Pipeline
-
-```bash
-# Step 1: Get pipeline ID from opportunities reference
-# Step 2: Get stage IDs for the pipeline
-# Step 3: Create the opportunity with contact ID + pipeline ID + stage ID
-```
-
----
-
-## Scope Troubleshooting
-
-Every endpoint lists its required scope. If you get a 403, the scope is missing.
-
-To fix:
-1. Note the scope listed in the reference file (e.g., `contacts.write`)
-2. Go to GHL Settings > Integrations > Private Integrations
-3. Edit your integration
-4. Find the scope in the list and enable it
-5. Save - the same token now has the new scope (no need to regenerate)
-6. Retry the API call
-
----
-
-## Working with Pagination
-
-Most GHL list endpoints return paginated results. Pattern:
-
-```bash
-# First page (skip=0, limit=20)
-curl -s \
-  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-07-28' \
-  "https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=20&skip=0"
-
-# Next page (skip=20)
-"https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=20&skip=20"
-```
-
-Use the `total` count in the response to calculate how many pages exist.
-
----
-
-## Safety Checklist Before Any Destructive Call
-
-Before running DELETE, void, or cancel endpoints:
-
-- [ ] Confirm the ID you are passing is the correct record
-- [ ] Confirm Trevor has given explicit instruction for this action
-- [ ] For phone number release: Trevor-only - flag and wait
-- [ ] For billing/payment changes: Trevor-only - flag and wait
-- [ ] For contact delete: confirm with Trevor before executing
-
----
-
-## Secrets Handling
-
-Never hardcode the API key in scripts or documents.
-
-Good:
-```bash
-curl -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" ...
-```
-
-Bad:
-```bash
-curl -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6..." ...
-```
-
-Store the key in `~/.openclaw/secrets/.env` (chmod 600) as `GOHIGHLEVEL_API_KEY`, or as a shell environment variable only.
+Run the A18 test and the affected family test selection. A docs change that edits a route must regenerate `ghl-hybrid-capability-index.json` in the same commit; the test fails on a hash mismatch.

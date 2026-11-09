@@ -1,5 +1,13 @@
 # GHL Calendars + Appointments API Reference
 
+
+> **Hybrid contract layer (revision 3.0).** The endpoint blocks below are inherited enumeration; the registry rows are the authority. On this branch: `calendars.list/get/create` and `calendars.free_slots` are `v3`; `appointments.create` is `v3` with `B-SLOT`; `appointments.update` is `v3` with `B-NO-ADAPTER`; `events.delete` is `v3`, approval-gated, with `B-DELETE-BODY`; `calendars.services.*` rows are `v3` with `B-NO-CONTRACT`. Where an inherited block shows `2021-04-15`, treat it as historical and take the registry literal.
+>
+> **Meeting Room boundary.** A calendar "meeting location" field, a physical calendar resource or a pasted room URL is not a video-room API. Meeting Room configuration is UI-only (`meeting-rooms.md`, WF26). Calendar integration can be tested through real appointments (two links distinct where unique-per-appointment is chosen; reschedule/cancel behavior observed, not presumed). Do not invalidate or replace existing Zoom links without approved migration.
+>
+> **Time discipline.** Preserve the tenant's real availability source, timezone, duration, lead time, buffers and working hours; verify daylight-saving transitions for recurring events.
+
+
 > **Scope of this file:** All endpoints under the `calendars` module (calendars, appointments, slots, groups, resources).
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
@@ -899,4 +907,3 @@ curl --request DELETE 'https://services.leadconnectorhq.com/calendars/{calendarI
   - Missing required path/query/body fields
   - Missing `Version` header when required
   - Invalid/expired token or wrong token type for endpoint security
-
