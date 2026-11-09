@@ -29,6 +29,18 @@ REST call.
 > Every band below is machine-enforced by a fail-closed prover, never advisory. The provers measure
 > STRIPPED text and IGNORE any self-reported count.
 
+## Reading rule (BINDING — applies before any step of this skill runs)
+
+**READ EVERYTHING BEFORE YOU TOUCH ANYTHING.** Read this entire file from top to bottom before executing
+a single step. This is the wording already proven at `06-ghl-install-pages/INSTALL.md:72`; it governs this
+skill and every skill on its delivery path, and it is not optional.
+
+**Read each declared dependency WHOLE.** Every file this skill names — `MASTERDOC.md`, the scripts in the
+phase spine, `structure/funnel_structure.json`, `structure/page_types.json`, the SOPs in
+`universal-sops/funnel-craft/` — must be read from top to bottom before you act on it. Read order is not
+completeness: knowing WHICH file comes first is not knowing WHAT it says. A dependency you have not read
+whole is a dependency you cannot claim to have followed.
+
 ## What this skill produces / owns
 
 - `MASTERDOC.md` — the anonymized canonical funnel IP (12 section names + bands, upsell/downsell/OTO2
