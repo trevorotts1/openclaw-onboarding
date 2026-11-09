@@ -206,8 +206,18 @@ class P7ToolRunTests(Tmp):
 
 class VisualDirectionTests(Tmp):
     def test_stage_names_match_the_tool_that_writes_them(self):
+        """Fix plan B3: the GATE must be a strict superset of the tool's draw stages.
+
+        This test used to assert equality, which encoded the defect: the gate mirrored
+        legacy_downsell_images.STAGES (three), so a run with no final mockups certified.
+        final-mockups is drawn by the client-gated Skill 71 path, not by this tool, so the
+        gate requires one stage the tool does not write — and that stage is exactly the one.
+        """
         import legacy_downsell_images
-        self.assertEqual(build.VISUAL_STAGES, legacy_downsell_images.STAGES)
+        self.assertEqual(build.VISUAL_STAGES,
+                         tuple(legacy_downsell_images.STAGES) + ("final-mockups",))
+        self.assertNotIn("final-mockups", legacy_downsell_images.STAGES)
+        self.assertIn("final-mockups", build.VISUAL_STAGES)
 
     def test_a_funnel_with_no_wireframe_or_mockup_set_fails(self):
         rd = self.run_dir(5)
