@@ -183,6 +183,7 @@ RC="$(run_gate "$WORK/o.txt" "${COMMON_ARGS[@]}" --repo "$R" --base "$B1" --head
   --transcript "$WORK/t.txt" --pr 3001 --allow-unmerged --qc-verdict-text "CONFIRMED")"
 assert_rc "L10 missing: exit" 1 "$RC"
 assert_has "L10 missing FAIL named" "$(cat "$WORK/o.txt")" "L10 FAIL"
+assert_has "L10 missing names the open-PR check" "$(cat "$WORK/o.txt")" "no 'gh pr list --state open' in the transcript"
 
 # ── 7. L10 out of order ─────────────────────────────────────────────────────
 { echo "\$ git log --oneline -5 origin/main -- note.txt"; echo "\$ gh pr list --state open"; echo "\$ cd $CLONE"; } > "$WORK/t.txt"

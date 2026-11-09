@@ -242,7 +242,7 @@ CHANGED="$(git -C "$REPO" diff --name-only "${BASE}" "${HEAD}" 2>/dev/null || tr
 MISSING=""
 OUT_OF_ORDER=""
 if [ -z "$PR_LIST_LINE" ]; then
-  MISSING="no 'gh pr list --state open'"
+  verdict L10 FAIL "no 'gh pr list --state open' in the transcript"
 else
   while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -256,14 +256,14 @@ else
   done <<EOF
 $CHANGED
 EOF
-fi
-if [ -n "$MISSING" ] || [ -n "$OUT_OF_ORDER" ]; then
-  reason=""
-  [ -n "$MISSING" ] && reason="missing 'git log --oneline -5 origin/main -- <file>' for:$MISSING"
-  [ -n "$OUT_OF_ORDER" ] && reason="$reason; open-PR check runs AFTER the per-file log check for:$OUT_OF_ORDER"
-  verdict L10 FAIL "$reason"
-else
-  verdict L10 PASS "open-PR check at line $PR_LIST_LINE precedes the per-file log check for $(printf '%s\n' "$CHANGED" | grep -c . ) file(s)"
+  if [ -n "$MISSING" ] || [ -n "$OUT_OF_ORDER" ]; then
+    reason=""
+    [ -n "$MISSING" ] && reason="no 'git log --oneline -5 ... -- <file>' for:$MISSING"
+    [ -n "$OUT_OF_ORDER" ] && reason="$reason; open-PR check runs AFTER the per-file log check for:$OUT_OF_ORDER"
+    verdict L10 FAIL "$reason"
+  else
+    verdict L10 PASS "open-PR check at line $PR_LIST_LINE precedes the per-file log check for $(printf '%s\n' "$CHANGED" | grep -c . ) file(s)"
+  fi
 fi
 
 # ── L11: ONE PR ──────────────────────────────────────────────────────────────
