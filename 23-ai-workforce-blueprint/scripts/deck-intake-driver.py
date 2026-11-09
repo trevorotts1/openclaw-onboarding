@@ -1564,10 +1564,12 @@ def cmd_selftest() -> None:
                   "recipient_name, and existing_content overrides creation_mode "
                   "(AF-MODE-UNSET never triggers)")
 
-    # Signature-mode coverage runs through the SAME --selftest entrypoint so any
-    # CI / verify path that exercises the driver also exercises the SP one-block
-    # gate wiring. It self-skips when skill 51 is not co-located.
-    if not signature_selftest():
+    # Signature-mode coverage delegates to the canonical driver (Fix 31:
+    # SIGNATURE MODE IS RETIRED) so this selftest never drifts from the ONE
+    # signature implementation again. The retired local signature_selftest()
+    # below predates the AF-SP-PROVENANCE gate and can no longer pass the
+    # prover; the canonical --selftest is the wiring proof for this entrypoint.
+    if delegate_signature_mode(["--selftest"], None) != 0:
         print("[deck-intake-driver] --selftest: FAILED (signature mode)", file=sys.stderr)
         sys.exit(1)
 
