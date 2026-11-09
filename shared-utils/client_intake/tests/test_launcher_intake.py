@@ -32,11 +32,10 @@ SKILL71 = _skill("71-blackceo-signature-page") / "scripts"
 sys.path.insert(0, str(SKILL83))
 sys.path.insert(0, str(SKILL83 / "fixtures"))
 intake83 = importlib.import_module("launcher_core.intake")
-from test_only_readback import test_only_transport as offline_readback  # noqa: E402  (the offline GHL read-back every 83 test installs)
 
 ELEVATION = json.loads((PKG / "fixtures" / "answers.elevation.json").read_text())
 _FIX83 = json.loads((SKILL83 / "fixtures" / "elevation" / "intake.json").read_text())
-SYSTEM = {k: _FIX83[k] for k in ("tenant_id", "location_id", "launch_id", "brand", "approval", "entitlement_attestation")}
+SYSTEM = {k: _FIX83[k] for k in ("tenant_id", "location_id", "launch_id", "brand", "approval")}
 HOUSE = "House look (recommended)"
 
 
@@ -51,12 +50,10 @@ def _say(text):  # stores a CLIENT message in the transcript seam, returns its i
 
 def setUpModule():
     e.TRANSCRIPT_LOOKUP = _SAID.get
-    intake83.entitlement.set_transport(offline_readback())  # 83 reads the contact record back; offline here
 
 
 def tearDownModule():
     e.TRANSCRIPT_LOOKUP = None
-    intake83.entitlement.set_transport(None)
 
 
 _ANSWERS_DIR = tempfile.TemporaryDirectory()  # the answers files the 83 intake reads its provenance from
@@ -64,10 +61,10 @@ _ANSWERS_DIR = tempfile.TemporaryDirectory()  # the answers files the 83 intake 
 
 def elevation(direction=HOUSE):
     """The Elevation answers with the answers a launch intake also needs, asked the way a client answers.
-    The entitlement cites the client's own message; the checkout terms are the client's own wording."""
+    The checkout terms are the client's own wording. No account-entitlement answer exists to record."""
     doc = copy.deepcopy(ELEVATION)
     doc["meta"]["mode"] = "bf"
-    for qid, text in (("entitlement", "Yes, it is included"), ("plan_approval", "Approve this plan"),
+    for qid, text in (("plan_approval", "Approve this plan"),
                       ("visual_direction", direction)):
         r = e.record(doc, qid, text, source_message_ref=_say(text) if qid in e.CITED_QUESTIONS else None)
         assert r.get("ok"), (qid, r)
@@ -161,9 +158,6 @@ class ElevationBuildsAValidIntake(unittest.TestCase):
         doc = elevation()
         e.record(doc, "plan_approval", "I want a change")
         refused(self, "AF-LAUNCH-ANSWERS-APPROVAL", built, doc)
-        doc = elevation()
-        del doc["answers"]["entitlement"]
-        refused(self, "AF-LAUNCH-ANSWERS-MISSING", built, doc)
         refused(self, "AF-LAUNCH-ANSWERS-SYSTEM", li.to_launcher_intake, elevation(), {})
 
     def test_a_second_downsell_is_refused_by_name(self):  # PRD-30

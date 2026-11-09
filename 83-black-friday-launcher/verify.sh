@@ -47,10 +47,7 @@ PREFLIGHT
 echo "== open and decided seams =="
 "$PY" -m launcher_core.cli seams
 
-# unittest never loads conftest.py, so the offline GHL read-back that every TEST-ONLY fixture needs (PRD-12)
-# is installed here, exactly as conftest.py installs it for pytest: once before any setUpClass, and again
-# around every test (test_entitlement_readback resets the seam itself). Fixtures name TEST-ONLY references
-# only; the transport resolves those and nothing else, and no test is skipped.
+# unittest never loads conftest.py, so the suite runs through a plain discovery here.
 run_unittest() {
     "$PY" - "$HERE" "$@" <<'RUNNER'
 import sys
@@ -58,22 +55,6 @@ import unittest
 
 here, argv = sys.argv[1], sys.argv[2:]
 sys.path[:0] = [here, here + "/fixtures"]
-from launcher_core import entitlement
-from test_only_readback import test_only_transport
-
-entitlement.set_transport(test_only_transport())
-_run = unittest.TestCase.run
-
-
-def run(self, result=None):
-    entitlement.set_transport(test_only_transport())
-    try:
-        return _run(self, result)
-    finally:
-        entitlement.set_transport(test_only_transport())
-
-
-unittest.TestCase.run = run
 unittest.main(module=None, argv=["unittest", "discover", *argv], exit=True)
 RUNNER
 }

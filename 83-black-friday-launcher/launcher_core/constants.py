@@ -23,7 +23,7 @@ from pathlib import Path
 SKILL_NUMBER = "83"
 SKILL_DIR_NAME = SKILL_NUMBER + "-black-friday-launcher"
 SKILL_NAME = "black-friday-launcher"
-SKILL_VERSION = "0.2.25"
+SKILL_VERSION = "0.2.26"
 
 # The Launcher's own tree, derived from this file's location and never from a
 # directory name, so the skill works under either naming convention.
@@ -85,15 +85,6 @@ JOURNEY_MODES = ("single_simple", "multiple_options", "folded_levels")
 # extra route nodes and never as invented teaching content.
 OFFER_RELATION_KEYS = ("complements", "included_in", "requires")
 CROSS_SALE_TEACHING_STATE = "pending"  # owner is supplying the teaching; not in hand
-
-ENTITLEMENT_DECLARATION = "entitlement-declaration.json"
-ENTITLEMENT_BASES = (
-    "brand_management_membership",
-    "purchase",
-    "school_of_ai_membership",
-    "zhc",
-    "zhc_with_brand_management",
-)
 
 COUNCIL_SKILL_SLUG = "council-of-wise-elders"
 COUNCIL_ENTRY_POINT = "scripts/doctor.mjs"
@@ -204,12 +195,11 @@ def resolve_ref(rel_path: str, root: Path | str | None = None) -> Path:
 # Owner decisions implemented in LAUNCH-02b. No seam value lives here.
 DECIDED = (
     {
-        "id": "entitlement_declaration_and_attestation",
-        "decision": "entitlement is a declaration the skill carries plus a "
-                    "fail-closed attestation gate; Brand Management membership "
-                    "qualifies without a purchase, others buy at the owner's "
-                    "stated price, School of AI alone and ZHC alone do not qualify",
-        "coded_in": "launcher_core/entitlement.py + entitlement-declaration.json",
+        "id": "no_client_entitlement_declaration",
+        "decision": "the client is never asked to declare a membership or a "
+                    "purchase; no page build is refused or deferred for want of "
+                    "it, no plan is invented, and the state stays unknown",
+        "coded_in": "launcher_core/intake.py",
     },
     {
         "id": "council_included_in_launch_planning",

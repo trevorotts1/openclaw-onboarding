@@ -20,7 +20,7 @@ SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT))
 sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
 
-from launcher_core import checkout, checks, council, entitlement, intake, package, route  # noqa: E402
+from launcher_core import checkout, checks, council, intake, package, route  # noqa: E402
 from launcher_core.check_rules import checkout as rule  # noqa: E402
 import test_only_readback  # noqa: E402
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
@@ -90,9 +90,6 @@ def raw_intake(mode: str = "single_simple", rich: bool = True, bump: bool = Fals
         "launch_id": "bf-2026", "revision": 1, "journey_mode": mode,
         "brand": {"ref": "brand-a", "hash": "a" * 64}, "copy_profile": "signature_12_section",
         "approval": {"ref": "approval-1", "hash": "b" * 64},
-        "entitlement_attestation": {"basis": "purchase", "evidence_ref": "TEST-ONLY-EVIDENCE",
-                                    "attested_by": "operator", "purchase_reference": "TEST-ONLY-PURCHASE-REFERENCE",
-                                "amount_minor": 49700, "currency": "USD"},
         "offers": offers,
     }
     payload["answers_file"] = write_answers(offers)
@@ -414,11 +411,6 @@ class PerOfferRealisationTests(unittest.TestCase):
 class WorkedExampleRealisationTests(unittest.TestCase):
     """CARRIED 49 (DECISIONS-NEEDED[4]): every several-mains worked example is one native
     combined_single_offer order form per main price choice, judged by the instances."""
-
-    @classmethod
-    def setUpClass(cls):
-        entitlement.set_transport(test_only_readback.test_only_transport())
-        cls.addClassCleanup(entitlement.set_transport, None)
 
     def mapping(self, fixture, readback):
         payload = json.loads((SKILL_ROOT / "fixtures" / fixture / "intake.json").read_text(encoding="utf-8"))

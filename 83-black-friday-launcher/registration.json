@@ -9,7 +9,7 @@
     "directory": "83-black-friday-launcher",
     "directory_source": "launcher_core/constants.py:SKILL_DIR_NAME",
     "entry": "SKILL.md",
-    "version": "0.2.25",
+    "version": "0.2.26",
     "status": "enabled-in-999"
   },
   "number_assignment": {
@@ -65,13 +65,13 @@
   },
   "entitlements": {
     "status": "decided",
-    "decision": "entitlement_declaration_and_attestation",
-    "declaration": "entitlement-declaration.json",
-    "gate": "launcher_core/entitlement.py:gate (fail-closed; unknown state never builds)",
+    "decision": "no_client_entitlement_declaration",
+    "ask_client": false,
+    "blocks_build": false,
+    "note": "The client is never asked to declare a membership or a purchase, and no build is refused or deferred for want of one. The state is recorded unknown. No entitlement is created and no billing API is called.",
     "enforced_in_code": true,
     "creates_entitlements": false,
-    "calls_billing_api": false,
-    "owner_stated_rules_source": "owner decision recorded in RECOVERY_2026-10-18 (LAUNCH-02b)"
+    "calls_billing_api": false
   },
   "distribution": {
     "status": "open_decision",
