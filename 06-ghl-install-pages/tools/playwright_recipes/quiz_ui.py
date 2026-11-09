@@ -1,4 +1,4 @@
-"""Native marketing quiz properties, categories, scores and three result tiers.
+"""Native marketing quiz properties, categories, scores and existing result tiers.
 
 Selectors/counts were captured in quiz-builder-app on 2026-11-08. No survey or
 course-quiz selector is reused. Existing choice-question text, placeholder,
@@ -18,7 +18,7 @@ class QuizError(ValueError):
 def validate(step):
     if not isinstance(step, dict):
         raise QuizError('Quiz configuration must be an object')
-    if set(step) - {'id', 'action', 'categories', 'category_changes', 'expected_question_count', 'questions', 'tiers', 'expected_tier_labels'}:
+    if set(step) - {'id', 'action', 'categories', 'category_changes', 'expected_question_count', 'questions', 'tiers', 'expected_tier_labels', 'expected_tiers'}:
         raise QuizError('Unsupported native quiz configuration option')
     categories = step.get('categories', [])
     if not isinstance(categories, list) or any(not isinstance(x, str) or not x.strip() for x in categories):
@@ -119,11 +119,18 @@ def validate(step):
                 raise QuizError('Query Key swaps require a separately reconciled intermediate edit')
     tiers = step.get('tiers')
     if tiers is not None:
-        if not isinstance(tiers, list) or len(tiers) != 3:
-            raise QuizError('Only the captured three-tier layout is implemented')
+        if not isinstance(tiers, list) or not 1 <= len(tiers) <= 101:
+            raise QuizError('Supply one existing native row for every desired integer-percent tier')
         existing = step.get('expected_tier_labels')
-        if not isinstance(existing, list) or len(existing) != 3 or any(not isinstance(x, str) or not x for x in existing):
-            raise QuizError('Supply the three current tier labels as identity guards')
+        if (not isinstance(existing, list) or len(existing) != len(tiers)
+                or any(not isinstance(x, str) or not x.strip() for x in existing)
+                or len(existing) != len(set(existing))):
+            raise QuizError('Supply every unique current tier label in the exact existing row order')
+        expected_tiers = step.get('expected_tiers')
+        if expected_tiers is not None:
+            _validate_tier_ranges(expected_tiers, existing, 'Existing')
+        elif len(tiers) != 3:
+            raise QuizError('Non-three-tier layouts require the complete expected_tiers range inventory')
         previous = -1
         labels = []
         for tier in tiers:
@@ -140,7 +147,25 @@ def validate(step):
             raise QuizError('Tier ranges must end at 100 and labels must be unique')
     if not categories and not category_changes and not questions and tiers is None:
         raise QuizError('No native quiz changes requested')
+    if tiers is None and ('expected_tier_labels' in step or 'expected_tiers' in step):
+        raise QuizError('Expected tier inventory requires an authored tiers request')
     return deepcopy(step)
+
+
+def _validate_tier_ranges(tiers, labels, prefix):
+    if not isinstance(tiers, list) or len(tiers) != len(labels):
+        raise QuizError(prefix + ' tier inventory must have one complete row per label')
+    previous = -1
+    for tier, label in zip(tiers, labels):
+        if not isinstance(tier, dict) or set(tier) != {'label', 'from', 'to'} or tier['label'] != label:
+            raise QuizError(prefix + ' tier labels/order differ from the exact row inventory')
+        low, high = tier['from'], tier['to']
+        if (type(low) is not int or type(high) is not int or not 0 <= low <= high <= 100
+                or low != previous + 1):
+            raise QuizError(prefix + ' tier ranges must cover 0 through 100 without gaps or overlap')
+        previous = high
+    if previous != 100:
+        raise QuizError(prefix + ' tier ranges must end at 100')
 
 
 def configure(page, step):
@@ -346,11 +371,12 @@ def configure(page, step):
         labels = popup.get_by_role('textbox', name='Label', exact=True)
         ranges = popup.get_by_role('textbox', name='', exact=True)
         expected_labels = [t['label'] for t in step['tiers']] if read_only else step['expected_tier_labels']
-        if labels.count() != 3 or ranges.count() != 6:
-            raise Stop('Only the captured three-tier result layout can be changed')
-        if [labels.nth(i).input_value() for i in range(3)] != expected_labels:
+        count = len(expected_labels)
+        if labels.count() != count or ranges.count() != count * 2:
+            raise Stop('Native tier row/range inventory differs; this operation never creates or removes tiers')
+        if [labels.nth(i).input_value() for i in range(count)] != expected_labels:
             raise Stop('Existing tier labels differ from the expected template')
-        if ranges.nth(0).is_enabled() or ranges.nth(5).is_enabled() or ranges.nth(0).input_value() != '0' or ranges.nth(5).input_value() != '100':
+        if ranges.nth(0).is_enabled() or ranges.nth(count * 2 - 1).is_enabled() or ranges.nth(0).input_value() != '0' or ranges.nth(count * 2 - 1).input_value() != '100':
             raise Stop('Tier endpoint guards changed')
         observed_ranges = []
         for index, tier in enumerate(step['tiers']):
@@ -366,6 +392,11 @@ def configure(page, step):
                     if not 0 <= current <= 100:
                         raise Stop('Existing quiz tier range is outside the captured percentage scale')
                     observed_ranges.append(current)
+                    if step.get('expected_tiers') is not None and current != step['expected_tiers'][index][key]:
+                        raise Stop('Existing native tier ranges differ from the inventoried previous values')
+                    if (index * 2 + endpoint not in (0, count * 2 - 1)
+                            and not control.is_enabled()):
+                        raise Stop('Native interior tier endpoint is not editable')
                     continue
                 if not read_only and control.is_enabled():
                     fill(control, str(tier[key]))
@@ -373,7 +404,7 @@ def configure(page, step):
                     raise Stop('Quiz result tier value differs from request')
         if preflight and any(observed_ranges[index * 2] > observed_ranges[index * 2 + 1]
                 or (index and observed_ranges[index * 2] != observed_ranges[index * 2 - 1] + 1)
-                for index in range(3)):
+                for index in range(count)):
             raise Stop('Existing quiz tier ranges overlap, contain gaps or reverse their endpoints')
         click(popup.get_by_role('button', name='Cancel' if read_only or preflight else 'Save', exact=True))
         popup.wait_for(state='hidden', timeout=45000)

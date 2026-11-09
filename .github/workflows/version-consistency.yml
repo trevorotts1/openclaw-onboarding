@@ -41,6 +41,15 @@ name: Version consistency
 # Security note: this workflow consumes only repo file content (no
 # untrusted GitHub event fields like PR title/body/commit message),
 # so there is no injection surface in the run: blocks.
+#
+# NO `paths:` / `paths-ignore:` ON EITHER TRIGGER, AND DO NOT ADD ANY. Five of
+# main's eight required status contexts are reported from jobs in this file
+# (G1, G1b, G2, G3 and the version-marker check). A path-filtered workflow is
+# not skipped job-by-job -- GitHub SKIPS THE WHOLE WORKFLOW when a PR's diff
+# misses the filter, so all five required contexts never appear and the PR hangs
+# at "Expected - Waiting for status to be reported" with ZERO failing checks.
+# scripts/ci/required_context_behaviors.py enforces this (it runs from
+# qc-static.yml, which is itself one of the eight).
 
 on:
   push:
@@ -538,6 +547,14 @@ jobs:
             # (that would be the bump itself — not a violation).
             BASENAME=$(basename "$f")
             if [ "$BASENAME" = "skill-version.txt" ]; then
+              continue
+            fi
+
+            # Generated prover pin (minted by the mint workflow, e.g.
+            # 49-signature-funnel/scripts/SF-PROVER-PIN.sha256): not skill
+            # content, so a pin-only change must not require a version bump.
+            # Any other file under the skill dir still counts.
+            if [[ "$f" == */scripts/SF-PROVER-PIN.sha256 ]]; then
               continue
             fi
 
