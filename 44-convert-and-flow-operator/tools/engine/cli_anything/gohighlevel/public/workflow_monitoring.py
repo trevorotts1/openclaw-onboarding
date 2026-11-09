@@ -137,10 +137,10 @@ _RFC3339 = re.compile(
 )
 
 
-def _refuse(rule: str, **detail: Any) -> None:
+def _refuse(rule_name: str, **detail: Any) -> None:
     """One refusal shape: a machine rule plus non-secret detail names."""
 
-    raise ContractViolation(rule, detail=detail)
+    raise ContractViolation(rule_name, detail=detail)
 
 
 # ---------------------------------------------------------------------------
