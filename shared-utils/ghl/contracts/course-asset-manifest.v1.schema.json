@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://blackceo.local/ghl/contracts/course-asset-manifest.v1.schema.json",
+  "title": "GHL Course Asset Manifest v1",
+  "description": "Shared course-media handoff package (Document 1 section 10.3). KIE creates the file; this manifest says which approved file belongs to which lesson, whether generation actually finished, where a durable copy lives, and whether GHL attached it. A queued generation is not completed; a provider URL is not proof that bytes are downloadable, correctly typed and persisted. Required fields vary by asset type: an image never carries an invented audio duration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "asset_key",
+    "course_key",
+    "lesson_key",
+    "role",
+    "provider",
+    "generation_state",
+    "ghl_binding"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "asset_key": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+      "description": "Stable logical key, e.g. launch101:welcome:intro:video."
+    },
+    "course_key": { "type": "string", "minLength": 1 },
+    "module_key": { "type": ["string", "null"] },
+    "lesson_key": { "type": "string", "minLength": 1 },
+    "role": {
+      "enum": [
+        "lesson_video",
+        "lesson_audio",
+        "lesson_image",
+        "lesson_document",
+        "course_poster",
+        "assessment_media",
+        "other"
+      ]
+    },
+    "provider": { "type": "string", "minLength": 1 },
+    "model_id": { "type": ["string", "null"] },
+    "provider_task_id": { "type": ["string", "null"] },
+    "generation_state": {
+      "enum": ["queued", "generating", "completed", "failed", "unknown"]
+    },
+    "local_path": { "type": ["string", "null"] },
+    "sha256": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      ]
+    },
+    "mime_type": { "type": ["string", "null"] },
+    "byte_size": { "type": ["integer", "null"], "minimum": 0 },
+    "duration_seconds": { "type": ["number", "null"], "minimum": 0 },
+    "width": { "type": ["integer", "null"], "minimum": 1 },
+    "height": { "type": ["integer", "null"], "minimum": 1 },
+    "durable_url": { "type": ["string", "null"] },
+    "storage_access": {
+      "enum": ["approved_for_destination", "private_pending", "unknown"]
+    },
+    "qc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["not_run", "passed", "failed", "unknown"] },
+        "receipt_ref": { "type": ["string", "null"] }
+      }
+    },
+    "ghl_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "content_id", "lesson_id"],
+      "properties": {
+        "state": {
+          "enum": ["not_started", "attached", "association_verified", "failed", "unknown"]
+        },
+        "content_id": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "operation-contract.schema.json#/$defs/typed_id" }
+          ]
+        },
+        "lesson_id": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "operation-contract.schema.json#/$defs/typed_id" }
+          ]
+        },
+        "route": { "enum": ["public_import", "public_native_content", "skill06_browser", "none", "unknown"] },
+        "receipt_ref": { "type": ["string", "null"] }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Separate proofs. A permanent URL proves only asset_persisted.",
+      "properties": {
+        "asset_persisted": { "type": "boolean" },
+        "native_content_ready": { "type": "boolean" },
+        "lesson_association_verified": { "type": "boolean" },
+        "learner_render_verified": { "type": "boolean" }
+      }
+    },
+    "unknowns": { "type": "array", "items": { "type": "string" } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "role": { "const": "lesson_video" } }, "required": ["role"] },
+      "then": {
+        "properties": {
+          "duration_seconds": { "type": "number", "minimum": 0 },
+          "mime_type": { "type": "string" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "role": { "const": "lesson_audio" } }, "required": ["role"] },
+      "then": {
+        "properties": {
+          "duration_seconds": { "type": "number", "minimum": 0 },
+          "mime_type": { "type": "string" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "generation_state": { "const": "completed" } }, "required": ["generation_state"] },
+      "then": {
+        "properties": {
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "byte_size": { "type": "integer", "minimum": 1 }
+        }
+      }
+    }
+  ],
+  "x-semantic-constraints": [
+    "sha256 is computed from the actual file bytes, never derived from a provider task id.",
+    "A completed generation requires a nonzero byte_size, a sha256 and a durable local or approved-storage reference.",
+    "ghl_binding.state=association_verified requires both content_id and lesson_id and a readback receipt reference.",
+    "Duplicate callbacks or retries update one asset record; they never upload again or create another lesson."
+  ]
+}

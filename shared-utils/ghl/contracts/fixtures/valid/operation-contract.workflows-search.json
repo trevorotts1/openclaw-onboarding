@@ -1,0 +1,49 @@
+{
+  "approval_class": "none",
+  "auth_kinds": [
+    "location_pit",
+    "oauth"
+  ],
+  "availability": "private_beta",
+  "availability_restriction": "B-WORKFLOW-BETA",
+  "consumes_write_quota": false,
+  "doc_retrieved_at": "2026-11-08",
+  "doc_url": "https://marketplace.gohighlevel.com/docs/ghl/workflows/",
+  "documented_level": "D",
+  "effect": "read",
+  "identity_binding": "query.locationId",
+  "identity_placement": "query",
+  "implementation": "public_rest",
+  "method": "POST",
+  "operation_id": "workflows.search",
+  "outcomes": [
+    "planned",
+    "submitted",
+    "processing",
+    "verified",
+    "failed",
+    "blocked",
+    "unknown_outcome",
+    "not_requested"
+  ],
+  "pagination": "page",
+  "path_template": "/workflows/search",
+  "query_enums": [],
+  "readback_operation": null,
+  "request_media_type": "application/json",
+  "request_schema_ref": null,
+  "required_query": [],
+  "response_schema_ref": null,
+  "route_class": "public_direct",
+  "schema_version": "1.0.0",
+  "scopes": [
+    "workflows.readonly"
+  ],
+  "scopes_resolved": true,
+  "token_class": "location_pit",
+  "unresolved_fields": [
+    "request_schema_ref"
+  ],
+  "version": "v3",
+  "version_alternates": []
+}

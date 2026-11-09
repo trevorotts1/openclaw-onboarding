@@ -93,7 +93,17 @@ _OPERATION_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$")
 # Blocker codes whose rows legitimately have no public contract URL
 # (freeze section 3.3: B-NO-CONTRACT, B-INTERNAL, B-RESTORE-NONE, B-NO-ADAPTER).
 _NO_URL_BLOCKERS: frozenset[str] = frozenset(
-    {"B-NO-CONTRACT", "B-INTERNAL", "B-RESTORE-NONE", "B-NO-ADAPTER"}
+    {
+        "B-NO-CONTRACT",
+        "B-INTERNAL",
+        "B-RESTORE-NONE",
+        "B-NO-ADAPTER",
+        # A named gap whose exact public path is not settled yet still has no
+        # operation page to cite; the row declares UNKNOWN rather than a URL
+        # that would imply a contract we did not verify.
+        "B-COURSE-PATH-UNVERIFIED",
+        "B-KB-UPLOAD-PATH",
+    }
 )
 
 
@@ -131,6 +141,29 @@ class OperationRow:
     #: Documented closed value sets for required query parameters, as
     #: ``((name, (allowed, ...)), ...)``.  The adapter refuses any other value.
     query_enums: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    # -- contract declarations (Document 1 section 5.1, additive) ----------
+    #: The operation's real request media type.  A typed JSON request and a
+    #: typed multipart request can never be confused; an unimplemented media
+    #: type is refused before transport, never disguised.
+    request_media_type: str = "application/json"
+    #: Effect of the operation itself, not inferred from the HTTP verb.
+    #: ``read`` / ``write`` / ``non_persisting_write`` (validation persists
+    #: nothing but consumes the write quota).
+    effect: str | None = None
+    #: True when a non-persisting call still consumes the write quota.
+    consumes_write_quota: bool = False
+    #: ``none`` / ``approval`` / ``destructive``.  ``None`` derives from the
+    #: frozen ``approval_required`` flag and the method.
+    approval_class: str | None = None
+    request_schema_ref: str | None = None
+    response_schema_ref: str | None = None
+    pagination: str = "none"
+    #: ``public`` / ``private_beta`` / ``feature_gap`` / ``tenant_restricted``
+    #: / ``internal`` / ``retired`` / ``unknown``.  ``None`` derives to
+    #: ``unknown``; documentation never activates a tenant.
+    availability: str | None = None
+    #: Declared fields the evidence did not settle.  Named, never guessed.
+    unresolved_fields: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for field_name in ("required_query",):
@@ -219,6 +252,209 @@ class OperationRow:
                 raise ContractViolation(
                     "row_scope_invalid", operation_id=self.operation_id
                 )
+        # -- additive contract declarations ---------------------------------
+        if self.request_media_type not in MEDIA_TYPES:
+            raise ContractViolation(
+                "row_media_type_invalid",
+                operation_id=self.operation_id,
+                detail={"media_type": str(self.request_media_type)},
+            )
+        if self.effect is not None and self.effect not in EFFECTS:
+            raise ContractViolation(
+                "row_effect_invalid",
+                operation_id=self.operation_id,
+                detail={"effect": str(self.effect)},
+            )
+        if not isinstance(self.consumes_write_quota, bool):
+            raise ContractViolation(
+                "row_write_quota_invalid", operation_id=self.operation_id
+            )
+        if self.resolved_effect == "read" and self.consumes_write_quota:
+            raise ContractViolation(
+                "row_read_consumes_write_quota", operation_id=self.operation_id
+            )
+        if self.effect == "write" and not self.write:
+            raise ContractViolation(
+                "row_effect_write_without_write_flag", operation_id=self.operation_id
+            )
+        if self.effect == "read" and self.write:
+            raise ContractViolation(
+                "row_effect_read_with_write_flag", operation_id=self.operation_id
+            )
+        if self.effect == "non_persisting_write" and self.write:
+            raise ContractViolation(
+                "row_non_persisting_marked_write", operation_id=self.operation_id
+            )
+        if self.effect == "non_persisting_write" and not self.consumes_write_quota:
+            raise ContractViolation(
+                "row_non_persisting_without_quota", operation_id=self.operation_id
+            )
+        if self.approval_class is not None and self.approval_class not in APPROVAL_CLASSES:
+            raise ContractViolation(
+                "row_approval_class_invalid",
+                operation_id=self.operation_id,
+                detail={"approval_class": str(self.approval_class)},
+            )
+        if self.resolved_approval_class == "destructive" and not self.approval_required:
+            raise ContractViolation(
+                "destructive_without_approval", operation_id=self.operation_id
+            )
+        if self.pagination not in PAGINATIONS:
+            raise ContractViolation(
+                "row_pagination_invalid",
+                operation_id=self.operation_id,
+                detail={"pagination": str(self.pagination)},
+            )
+        if self.availability is not None and self.availability not in AVAILABILITIES:
+            raise ContractViolation(
+                "row_availability_invalid",
+                operation_id=self.operation_id,
+                detail={"availability": str(self.availability)},
+            )
+        if not isinstance(self.unresolved_fields, tuple):
+            raise ContractViolation(
+                "row_unresolved_fields_invalid", operation_id=self.operation_id
+            )
+        for name in self.unresolved_fields:
+            if not isinstance(name, str) or not name.strip():
+                raise ContractViolation(
+                    "row_unresolved_fields_invalid", operation_id=self.operation_id
+                )
+
+    # -- derived declarations (never a second stored authority) -------------
+
+    @property
+    def resolved_effect(self) -> str:
+        return self.effect or ("write" if self.write else "read")
+
+    @property
+    def identity_placement(self) -> str:
+        """Where the tenant identity rides, derived from ``tenant_binding``."""
+
+        binding = self.tenant_binding
+        if binding.startswith("path."):
+            return "path"
+        if binding.startswith("query."):
+            return "query"
+        if binding.startswith("body."):
+            return "body"
+        if binding in ("implicit-pit", "token-id"):
+            return "token"
+        if binding == "connection scope":
+            return "connection"
+        if binding in ("n/a", "none"):
+            return "none"
+        return "unknown"
+
+    @property
+    def token_class(self) -> str:
+        kinds = {kind.value for kind in self.auth_kinds}
+        if not kinds:
+            return "none"
+        if len(kinds) > 1:
+            return "mixed"
+        return next(iter(kinds))
+
+    @property
+    def resolved_approval_class(self) -> str:
+        if self.approval_class is not None:
+            return self.approval_class
+        if not self.approval_required:
+            return "none"
+        return "destructive" if self.method.upper() == "DELETE" else "approval"
+
+    @property
+    def implementation(self) -> str:
+        return {
+            "public_direct": "public_rest",
+            "official_mcp": "official_mcp",
+            "skill44_private": "skill44_private",
+            "skill06_authoring": "skill06_browser",
+            "retired": "unresolved",
+            "capability_gap": "unresolved",
+            "excluded": "excluded",
+        }[self.route_class]
+
+    @property
+    def resolved_availability(self) -> str:
+        if self.availability is not None:
+            return self.availability
+        if self.route_class in ("capability_gap", "retired", "excluded"):
+            return "unknown"
+        return "unknown"
+
+    def as_contract(self) -> dict[str, object]:
+        """This row as the shared ``operation-contract`` JSON shape."""
+
+        return {
+            "schema_version": "1.0.0",
+            "operation_id": self.operation_id,
+            "method": self.method,
+            "path_template": self.path_template,
+            "version": self.version,
+            "version_alternates": list(self.version_alternates),
+            "identity_placement": self.identity_placement,
+            "identity_binding": self.tenant_binding,
+            "token_class": self.token_class,
+            "auth_kinds": [kind.value for kind in self.auth_kinds],
+            "scopes": list(self.scopes_candidate),
+            "scopes_resolved": bool(self.scopes_candidate),
+            "effect": self.resolved_effect,
+            "consumes_write_quota": self.consumes_write_quota,
+            "approval_class": self.resolved_approval_class,
+            "doc_url": self.doc_url,
+            "doc_retrieved_at": self.doc_fetch_date,
+            "request_media_type": self.request_media_type,
+            "request_schema_ref": self.request_schema_ref,
+            "response_schema_ref": self.response_schema_ref,
+            "pagination": self.pagination,
+            "readback_operation": self.readback_plan,
+            "availability": self.resolved_availability,
+            "availability_restriction": self.blocker,
+            "implementation": self.implementation,
+            "route_class": self.route_class,
+            "documented_level": self.documented_level,
+            "required_query": list(self.required_query),
+            "query_enums": [
+                {"name": name, "allowed": list(allowed)}
+                for name, allowed in self.query_enums
+            ],
+            "outcomes": list(RECEIPT_OUTCOMES),
+            "unresolved_fields": list(self.unresolved_fields),
+        }
+
+
+#: Request media types a row may declare.
+MEDIA_TYPES: frozenset[str] = frozenset(
+    {"application/json", "multipart/form-data", "unknown"}
+)
+#: Read/write effect vocabularies.  The verb is never the classifier.
+EFFECTS: frozenset[str] = frozenset({"read", "write", "non_persisting_write"})
+APPROVAL_CLASSES: frozenset[str] = frozenset({"none", "approval", "destructive"})
+PAGINATIONS: frozenset[str] = frozenset({"none", "cursor", "page", "offset", "unknown"})
+AVAILABILITIES: frozenset[str] = frozenset(
+    {
+        "public",
+        "private_beta",
+        "feature_gap",
+        "tenant_restricted",
+        "internal",
+        "retired",
+        "unknown",
+    }
+)
+#: The receipt outcome vocabulary shared with the contract schemas.  It is
+#: never pushed into the Command Center TaskStatus enum (Section 14 projection).
+RECEIPT_OUTCOMES: tuple[str, ...] = (
+    "planned",
+    "submitted",
+    "processing",
+    "verified",
+    "failed",
+    "blocked",
+    "unknown_outcome",
+    "not_requested",
+)
 
 
 def _R(
@@ -240,6 +476,15 @@ def _R(
     readback: str | None = None,
     required_query: tuple[str, ...] = (),
     query_enums: tuple[tuple[str, tuple[str, ...]], ...] = (),
+    media: str = "application/json",
+    effect: str | None = None,
+    consumes_write_quota: bool = False,
+    approval_class: str | None = None,
+    req_schema: str | None = None,
+    resp_schema: str | None = None,
+    pagination: str = "none",
+    availability: str | None = None,
+    unresolved: tuple[str, ...] = (),
 ) -> OperationRow:
     return OperationRow(
         operation_id=operation_id,
@@ -260,6 +505,15 @@ def _R(
         readback_plan=readback,
         required_query=required_query,
         query_enums=query_enums,
+        request_media_type=media,
+        effect=effect,
+        consumes_write_quota=consumes_write_quota,
+        approval_class=approval_class,
+        request_schema_ref=req_schema,
+        response_schema_ref=resp_schema,
+        pagination=pagination,
+        availability=availability,
+        unresolved_fields=unresolved,
     )
 
 
@@ -639,16 +893,27 @@ _CONTENT: tuple[OperationRow, ...] = (
        DOCS + "/ghl/surveys/get-surveys-submissions"),
     _R("surveys.write", UNKNOWN, UNKNOWN, None, "undocumented", S06, NO_AUTH,
        "unknown", True, False, "B-NO-CONTRACT", None),
-    _R("funnels.list", "GET", "/funnels/", "v3", "D", PUB, PIT_OR_OAUTH,
-       "query.locationId", False, False, "A-UNVERIFIED",
-       DOCS + "/ghl/funnels/get-funnels", alternates=("2023-02-21",)),
-    _R("funnels.pages.list", "GET", "/funnels/{funnelId}/pages", "v3", "D",
-       PUB, PIT_OR_OAUTH, "query.locationId", False, False, "A-UNVERIFIED",
+    # Funnel read paths reconciled 2026-11-08 (Document 1 section 21.3,
+    # rechecks V08-V10): the frozen rows carried the older
+    # /funnels/ and /funnels/{funnelId}/pages shapes.  The published contract
+    # is /funnels/funnel/list and /funnels/page[/count] with query ids.  The
+    # exact required query schema and literal Version detail were NOT reopened
+    # here, so `unresolved_fields` names them instead of guessing.  No
+    # funnel/page authoring endpoint is inferred from these reads.
+    _R("funnels.list", "GET", "/funnels/funnel/list", "v3", "D", PUB,
+       PIT_OR_OAUTH, "query.locationId", False, False, "A-UNVERIFIED",
+       DOCS + "/ghl/funnels/get-funnels/", alternates=("2023-02-21",),
+       pagination="page", availability="public",
+       unresolved=("required_query", "scopes")),
+    _R("funnels.pages.list", "GET", "/funnels/page", "v3", "D", PUB,
+       PIT_OR_OAUTH, "query.locationId", False, False, "A-UNVERIFIED",
        DOCS + "/ghl/funnels/get-pages-by-funnel-id",
-       alternates=("2023-02-21",)),
-    _R("funnels.pages.count", "GET", "/funnels/{funnelId}/pages/count", "v3",
-       "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
-       "B-NO-ADAPTER", DOCS + "/ghl/funnels/get-pages-count-by-funnel-id"),
+       alternates=("2023-02-21",), pagination="page",
+       unresolved=("required_query", "scopes")),
+    _R("funnels.pages.count", "GET", "/funnels/page/count", "v3", "D", PUB,
+       PIT_OR_OAUTH, "query.locationId", False, False, "B-NO-ADAPTER",
+       DOCS + "/ghl/funnels/get-pages-count-by-funnel-id",
+       availability="public", unresolved=("required_query", "scopes")),
     _R("funnels.create", "POST", "/funnels/", None, "internal", S06, FIREBASE,
        "token-id", True, False, "B-INTERNAL", None),
     _R("funnels.steps.create", "POST", "/funnels/{funnelId}/steps", None,
@@ -748,6 +1013,27 @@ _SOCIAL: tuple[OperationRow, ...] = (
        "/social-media-posting/comments/{platform}/{id}/like", "v3", "D", PUB,
        PIT, "body.locationId", True, True, "B-SOCIAL-SPEC", SOCIAL_V3_SPEC,
        readback="social.comments.list"),
+    # Community social rows (Document 1 section 11.2, scopes recorded there).
+    # The word "oauth" in a scope name does not prohibit a Private Integration
+    # token.  The member-list page renders inconsistently across docs views, so
+    # its response schema stays unresolved instead of being invented.
+    _R("social.community.accounts.users.list", "GET",
+       "/social-media-posting/{locationId}/community/accounts/{accountId}/users",
+       "v3", "D", PUB, PIT, "path.locationId", False, False, "B-SOCIAL-SPEC",
+       SOCIAL_V3_SPEC, scopes=("socialplanner/oauth.readonly",),
+       pagination="page", availability="public",
+       unresolved=("response_schema_ref",)),
+    _R("social.community.authors.validate", "GET",
+       "/social-media-posting/{locationId}/community/groups/{groupId}/users/"
+       "{contactId}/validate", "v3", "D", PUB, PIT, "path.locationId", False,
+       False, "B-SOCIAL-SPEC", SOCIAL_V3_SPEC,
+       scopes=("socialplanner/account.readonly",), availability="public",
+       unresolved=("response_schema_ref",)),
+    _R("social.community.comments.create", "POST",
+       "/social-media-posting/comments/community", "v3", "D", PUB, PIT,
+       "query.locationId", True, True, "B-SOCIAL-SPEC", SOCIAL_V3_SPEC,
+       scopes=("socialplanner/comments.write",), readback="social.comments.list",
+       availability="public", unresolved=("request_schema_ref",)),
 )
 
 # ---------------------------------------------------------------------------
@@ -788,41 +1074,86 @@ _WORKFLOWS_MCP: tuple[OperationRow, ...] = (
        "/contacts/{contactId}/workflow/{workflowId}", "v3", "D", PUB,
        PIT_OR_OAUTH, "query.locationId", True, True, "A-UNVERIFIED",
        DOCS + "/ghl/contacts/delete-contact-from-workflow/"),
-    # F11 reconciliation (2026-11-07), recorded WITHOUT re-freezing the rows.
-    # Re-read against the production contract (all five pages fetched
-    # 2026-11-07; each documents Version v3):
-    #   get-workflow-definition    GET  /workflows/{workflowId}/definition  v3
-    #   create-workflow            POST /workflows                          v3
-    #   update-workflow-definition PUT  /workflows/{workflowId}/definition  v3
-    #   update-workflow-status     PUT  /workflows/{workflowId}/status      v3
-    #   delete-workflow            DELETE /workflows/{workflowId}           v3
-    # All five now publish on the PRODUCTION marketplace and each documents
-    # Version v3; the freeze below still records staging-only v4 (level S,
-    # B-V4-S). The literals are left exactly as frozen on purpose: re-freezing
-    # a contract row is a ledger decision, not a build-lane edit, and six
-    # pinned contract tests plus evidence/W18 assert the frozen values. What
-    # this comment fixes is the claim a caller reads: these operations are not
-    # "staging-only" any more, they are production-documented at v3 and remain
-    # default-deny through the capability gate. Named blocker B-V4-S covers the
-    # re-freeze; the capability gate still admits nothing from this comment.
+    # F11 re-freeze (2026-11-08, Document 1 sections 4.3, 6.2): the five
+    # definition pages publish on the PRODUCTION marketplace at Version v3.
+    # The earlier frozen rows carried staging-only v4/level S; that
+    # interpretation is obsolete for these executable rows.  Every row keeps
+    # default-deny through the capability gate: re-freezing a contract never
+    # enables a tenant, and no read on one location activates another.
+    #
+    # Scopes are the five independent workflow permissions (Document 1 4.3):
+    # workflows.readonly / .write / .publish / .delete / .logs.  The literal
+    # operation-page slug was not captured for the added rows, so the section
+    # URL is recorded and `unresolved_fields` names the missing slug.
+    #
+    # Effect is not inferred from the verb: POST /workflows/search is a READ,
+    # and definition validate persists nothing while consuming write quota.
+    _R("workflows.step_types.list", "GET", "/workflows/step-types", "v3", "D",
+       PUB, PIT_OR_OAUTH, "query.locationId", False, False, "B-WORKFLOW-BETA",
+       DOCS + "/ghl/workflows/", scopes=("workflows.readonly",),
+       pagination="unknown", availability="private_beta",
+       unresolved=("doc_url.operation_slug", "response_schema_ref")),
+    _R("workflows.definition.validate", "POST",
+       "/workflows/definition/validate", "v3", "D", PUB, PIT_OR_OAUTH,
+       "query.locationId", False, False, "B-WORKFLOW-BETA",
+       DOCS + "/ghl/workflows/", scopes=("workflows.write",),
+       effect="non_persisting_write", consumes_write_quota=True,
+       approval_class="none", availability="private_beta",
+       req_schema="official:workflows/validate-request",
+       unresolved=("doc_url.operation_slug", "request_schema_ref",
+                   "response_schema_ref")),
+    _R("workflows.search", "POST", "/workflows/search", "v3", "D", PUB,
+       PIT_OR_OAUTH, "body.locationId", False, False, "B-WORKFLOW-BETA",
+       DOCS + "/ghl/workflows/", scopes=("workflows.readonly",),
+       effect="read", pagination="page", availability="private_beta",
+       unresolved=("doc_url.operation_slug", "request_schema_ref",
+                   "response_schema_ref")),
     _R("workflows.definition.read", "GET",
-       "/workflows/{workflowId}/definition", "v4", "S", PUB, PIT_OR_OAUTH,
-       "query.locationId", False, False, "B-V4-S",
-       STAGING_DOCS + "/ghl/workflows/get-workflow-definition/index.html"),
-    _R("workflows.definition.create", "POST", "/workflows/", "v4", "S", PUB,
-       PIT_OR_OAUTH, "query.locationId", True, True, "B-V4-S",
-       STAGING_DOCS + "/ghl/workflows/create-workflow/index.html"),
+       "/workflows/{workflowId}/definition", "v3", "D", PUB, PIT_OR_OAUTH,
+       "query.locationId", False, False, "B-WORKFLOW-BETA",
+       DOCS + "/ghl/workflows/", scopes=("workflows.readonly",),
+       availability="private_beta",
+       unresolved=("doc_url.operation_slug", "response_schema_ref")),
+    _R("workflows.definition.create", "POST", "/workflows", "v3", "D", PUB,
+       PIT_OR_OAUTH, "query.locationId", True, True, "B-WORKFLOW-BETA",
+       DOCS + "/ghl/workflows/", scopes=("workflows.write",),
+       approval_class="approval", availability="private_beta",
+       readback="workflows.definition.read",
+       unresolved=("doc_url.operation_slug", "request_schema_ref")),
     _R("workflows.definition.update", "PUT",
-       "/workflows/{workflowId}/definition", "v4", "S", PUB, PIT_OR_OAUTH,
-       "query.locationId", True, True, "B-V4-S",
-       STAGING_DOCS + "/ghl/workflows/update-workflow-definition/index.html"),
+       "/workflows/{workflowId}/definition", "v3", "D", PUB, PIT_OR_OAUTH,
+       "query.locationId", True, True, "B-WORKFLOW-BETA",
+       DOCS + "/ghl/workflows/", scopes=("workflows.write",),
+       approval_class="approval", availability="private_beta",
+       readback="workflows.definition.read",
+       unresolved=("doc_url.operation_slug", "request_schema_ref")),
     _R("workflows.status.publish", "PUT", "/workflows/{workflowId}/status",
-       "v4", "S", PUB, PIT_OR_OAUTH, "query.locationId", True, True, "B-V4-S",
-       STAGING_DOCS + "/ghl/workflows/update-workflow-status/index.html",
-       scopes=("workflows.publish",)),
+       "v3", "D", PUB, PIT_OR_OAUTH, "query.locationId", True, True,
+       "B-WORKFLOW-BETA", DOCS + "/ghl/workflows/",
+       scopes=("workflows.publish",), approval_class="approval",
+       availability="private_beta", readback="workflows.definition.read",
+       unresolved=("doc_url.operation_slug", "request_schema_ref")),
     _R("workflows.definition.delete", "DELETE", "/workflows/{workflowId}",
-       "v4", "S", PUB, PIT_OR_OAUTH, "query.locationId", True, True, "B-V4-S",
-       STAGING_DOCS + "/ghl/workflows/delete-workflow/index.html"),
+       "v3", "D", PUB, PIT_OR_OAUTH, "query.locationId", True, True,
+       "B-WORKFLOW-BETA", DOCS + "/ghl/workflows/",
+       scopes=("workflows.delete",), approval_class="destructive",
+       availability="private_beta",
+       unresolved=("doc_url.operation_slug",)),
+    # Workflow logs (Section 6.2 row list; contract details V11/V13): 30-day
+    # query windows, 60-day retention, opaque cursors, scope workflows.logs.
+    # Aggregate counts are event/cohort facts, never cohort-conversion proof.
+    _R("workflows.logs.list", "GET", "/workflows/{workflowId}/logs", "v3",
+       "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
+       "B-WORKFLOW-BETA", DOCS + "/ghl/workflows/",
+       scopes=("workflows.logs",), pagination="cursor",
+       availability="private_beta",
+       unresolved=("doc_url.operation_slug", "response_schema_ref")),
+    _R("workflows.logs.aggregate", "GET",
+       "/workflows/{workflowId}/logs/aggregate", "v3", "D", PUB,
+       PIT_OR_OAUTH, "query.locationId", False, False, "B-WORKFLOW-BETA",
+       DOCS + "/ghl/workflows/", scopes=("workflows.logs",),
+       availability="private_beta",
+       unresolved=("doc_url.operation_slug", "response_schema_ref")),
     _R("workflows.restore", UNKNOWN, UNKNOWN, None, "undocumented", GAP,
        NO_AUTH, "n/a", False, False, "B-RESTORE-NONE", None),
     _R("workflows.private.list", "GET", "/workflow/{loc}/list",
@@ -867,6 +1198,189 @@ _WORKFLOWS_MCP: tuple[OperationRow, ...] = (
 # unchanged.  Named blocker: B-WORKFLOWS-LIST-VERSION
 # (evidence/W23/f6-workflows-list-version.md).
 
+# ---------------------------------------------------------------------------
+# 5.8 Agency (Document 1 section 7.2)
+#
+# POST /locations is an Agency Pro operation: it needs an Agency Token and the
+# documented agency company context, never a sub-account PIT and never a
+# Command Center company UUID.  The plan category is an owner-supplied fact;
+# the executing credential and the live response are still unverified, so the
+# row stays default-deny.  The exact Version literal published beside this
+# operation was not captured, and the agency identity rides the token plus the
+# body `companyId`, so no location path/query binding exists.
+# ---------------------------------------------------------------------------
+AGENCY_AUTH: tuple[AuthKind, ...] = (AuthKind.agency_pit,)
+
+_AGENCY: tuple[OperationRow, ...] = (
+    _R("agency.locations.create", "POST", "/locations", "2021-07-28", "D",
+       PUB, AGENCY_AUTH, "none", True, True, "A-UNVERIFIED",
+       DOCS + "/ghl/locations/create-location", scopes=("locations.write",),
+       approval_class="approval", availability="tenant_restricted",
+       readback="locations.get",
+       unresolved=("version", "request_schema_ref", "response_schema_ref",
+                   "agency_company_id_in_body")),
+)
+
+# ---------------------------------------------------------------------------
+# 5.9 Courses (Document 1 sections 8.2-8.7)
+#
+# Only the paths the contract states literally are frozen as routes.  The
+# category, lesson and offer create paths and the product-enrollment read path
+# are NOT stated in the implementation contract this lane read, so they are
+# recorded as named capability gaps with UNKNOWN path -- never guessed.  The
+# lesson-quiz contract is inherited source evidence, not re-verified here
+# (Document 1 line 2702), so its request/response schemas stay unresolved.
+# Course ids are never commerce product ids.
+# ---------------------------------------------------------------------------
+_COURSES: tuple[OperationRow, ...] = (
+    _R("courses.products.create", "POST", "/courses/products", "v3", "D",
+       PUB, PIT_OR_OAUTH, "query.locationId", True, False, "A-UNVERIFIED",
+       DOCS + "/ghl/courses/", availability="public",
+       readback="courses.products.read",
+       unresolved=("scopes", "doc_url.operation_slug", "request_schema_ref",
+                   "response_schema_ref")),
+    _R("courses.products.read", "GET", "/courses/products/{courseId}", "v3",
+       "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
+       "A-UNVERIFIED", DOCS + "/ghl/courses/", availability="public",
+       unresolved=("scopes", "doc_url.operation_slug", "response_schema_ref")),
+    _R("courses.import.create", "POST",
+       "/courses/courses-exporter/public/import", "v3", "D", PUB,
+       PIT_OR_OAUTH, "query.locationId", True, True, "B-COURSE-IMPORT",
+       DOCS + "/ghl/courses/", scopes=("courses.write",),
+       approval_class="approval", availability="public",
+       effect="write", pagination="none",
+       unresolved=("version", "request_schema_ref", "response_schema_ref")),
+    _R("courses.lessons.quiz.create", "POST",
+       "/courses/products/{productId}/lessons/{lessonId}/quiz", "v3", "D",
+       PUB, PIT_OR_OAUTH, "query.locationId", True, False,
+       "B-COURSE-QUIZ-INHERITED", DOCS + "/ghl/courses/",
+       scopes=("courses.write",), availability="public",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("courses.quizzes.questions.upsert", "PUT",
+       "/courses/products/{productId}/quizzes/{quizId}/questions", "v3", "D",
+       PUB, PIT_OR_OAUTH, "query.locationId", True, False,
+       "B-COURSE-QUIZ-INHERITED", DOCS + "/ghl/courses/",
+       scopes=("courses.write",), availability="public",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("courses.enrollments.create", "POST", "/courses/enrollments", "v3",
+       "D", PUB, PIT_OR_OAUTH, "body.locationId", True, True, "A-UNVERIFIED",
+       DOCS + "/ghl/courses/", approval_class="approval",
+       availability="public", unresolved=("scopes", "request_schema_ref")),
+    # Named gaps: the contract requests these operations but the exact public
+    # path was not settled by the evidence this lane read.  A future owner
+    # sends the reconciled path/scope through a change request; nothing here
+    # may be dispatched, because no route is declared.
+    _R("courses.categories.create", "POST", UNKNOWN, None, "undocumented", GAP,
+       NO_AUTH, "unknown", True, False, "B-COURSE-PATH-UNVERIFIED", None,
+       availability="feature_gap",
+       unresolved=("method", "path_template", "version", "scopes",
+                   "request_schema_ref")),
+    _R("courses.lessons.create", "POST", UNKNOWN, None, "undocumented", GAP,
+       NO_AUTH, "unknown", True, False, "B-COURSE-PATH-UNVERIFIED", None,
+       availability="feature_gap",
+       unresolved=("method", "path_template", "version", "scopes",
+                   "request_schema_ref")),
+    _R("courses.offers.create", "POST", UNKNOWN, None, "undocumented", GAP,
+       NO_AUTH, "unknown", True, False, "B-COURSE-PATH-UNVERIFIED", None,
+       availability="feature_gap",
+       unresolved=("method", "path_template", "version", "scopes",
+                   "request_schema_ref")),
+    _R("courses.enrollments.products.list", "GET", UNKNOWN, None,
+       "undocumented", GAP, NO_AUTH, "unknown", False, False,
+       "B-COURSE-PATH-UNVERIFIED", None, availability="feature_gap",
+       pagination="cursor",
+       unresolved=("path_template", "version", "scopes", "response_schema_ref")),
+)
+
+# ---------------------------------------------------------------------------
+# 5.10 Monitoring and native AI families (Document 1 section 21.4)
+#
+# Vendor-contract candidates recorded from the source matrix.  Recording a row
+# is not permission to execute it and is not tenant activation: every row stays
+# default-deny.  Scope names are transcribed, never derived by swapping
+# `.write` for `.readonly`; voice agents, actions and dashboard use distinct
+# permissions.  Request/response schemas were not captured, so they stay null
+# and are named as unresolved.  Projects API access is a location-specific
+# private beta and its UI availability is a separate fact.
+# ---------------------------------------------------------------------------
+_NATIVE_FAMILIES: tuple[OperationRow, ...] = (
+    _R("voice.agents.create", "POST", "/voice-ai/agents", "v3", "D", PUB,
+       PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
+       DOCS + "/ghl/voice-ai/create-agent/",
+       scopes=("voice-ai-agents.write",), availability="public",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("voice.actions.create", "POST", "/voice-ai/actions", "v3", "D", PUB,
+       PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
+       DOCS + "/ghl/voice-ai/", scopes=("voice-ai-agent-goals.write",),
+       availability="public",
+       unresolved=("doc_url.operation_slug", "request_schema_ref",
+                   "response_schema_ref")),
+    _R("voice.call_logs.list", "GET", "/voice-ai/dashboard/call-logs", "v3",
+       "D", PUB, PIT_OR_OAUTH, "query.locationId", False, False,
+       "A-UNVERIFIED", DOCS + "/ghl/voice-ai/",
+       scopes=("voice-ai-dashboard.readonly",), pagination="cursor",
+       availability="public",
+       unresolved=("doc_url.operation_slug", "response_schema_ref")),
+    _R("voice.call_logs.get", "GET",
+       "/voice-ai/dashboard/call-logs/{callId}", "v3", "D", PUB,
+       PIT_OR_OAUTH, "query.locationId", False, False, "A-UNVERIFIED",
+       DOCS + "/ghl/voice-ai/", scopes=("voice-ai-dashboard.readonly",),
+       availability="public",
+       unresolved=("doc_url.operation_slug", "response_schema_ref")),
+    _R("conversation.agents.create", "POST", "/conversation-ai/agents", "v3",
+       "D", PUB, PIT_OR_OAUTH, "body.locationId", True, False,
+       "A-UNVERIFIED", DOCS + "/ghl/conversation-ai/create-agent/",
+       scopes=("conversation-ai.write",), availability="public",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("studio.agents.create", "POST", "/agent-studio/agent", "v3", "D", PUB,
+       PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
+       DOCS + "/ghl/agent-studio/create-agent/",
+       scopes=("agent-studio.write",), availability="public",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("studio.versions.publish", "POST",
+       "/agent-studio/agent/versions/{versionId}/publish", "v3", "D", PUB,
+       PIT_OR_OAUTH, "body.locationId", True, True, "A-UNVERIFIED",
+       DOCS + "/ghl/agent-studio/", scopes=("agent-studio.write",),
+       approval_class="approval", availability="public",
+       unresolved=("doc_url.operation_slug", "request_schema_ref")),
+    _R("studio.agents.execute", "POST",
+       "/agent-studio/agent/{agentId}/execute", "v3", "D", PUB,
+       PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
+       DOCS + "/ghl/agent-studio/", scopes=("agent-studio.write",),
+       availability="public",
+       unresolved=("doc_url.operation_slug", "request_schema_ref",
+                   "response_schema_ref")),
+    _R("knowledge_bases.create", "POST", "/knowledge-bases", "v3", "D", PUB,
+       PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
+       DOCS + "/ghl/knowledge-base/create-knowledge-base/",
+       scopes=("knowledge-bases.write",), availability="public",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    # Multipart declaration point for the central transport (Document 1 21.2,
+    # V04: PDF/DOC/DOCX, 10 MB).  The exact upload path and its Version were
+    # not captured, so no route is declared and nothing can be dispatched.
+    _R("knowledge_bases.files.upload", "POST", UNKNOWN, None, "undocumented",
+       GAP, NO_AUTH, "unknown", True, False, "B-KB-UPLOAD-PATH", None,
+       media="multipart/form-data", availability="feature_gap",
+       unresolved=("method", "path_template", "version", "scopes",
+                   "request_schema_ref", "size_limit")),
+    _R("widgets.create", "POST", "/chat-widget", "v3", "D", PUB,
+       PIT_OR_OAUTH, "body.locationId", True, False, "A-UNVERIFIED",
+       DOCS + "/ghl/chat-widget/create-chat-widget/",
+       scopes=("chat-widget.write",), availability="public",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+    _R("projects.spaces.create", "POST", "/projects/spaces", "v3", "D", PUB,
+       PIT_OR_OAUTH, "body.locationId", True, False, "B-PROJECTS-BETA",
+       DOCS + "/ghl/projects/projects-api/",
+       scopes=("projects/workspace.write",), availability="private_beta",
+       unresolved=("request_schema_ref", "response_schema_ref",
+                   "ui_availability")),
+    _R("projects.tasks.create", "POST", "/projects/lists/{listId}/tasks",
+       "v3", "D", PUB, PIT_OR_OAUTH, "body.locationId", True, False,
+       "B-PROJECTS-BETA", DOCS + "/ghl/projects/create-projects-list-task/",
+       scopes=("projects/tasks.write",), availability="private_beta",
+       unresolved=("request_schema_ref", "response_schema_ref")),
+)
+
 _ROWS: tuple[OperationRow, ...] = (
     _LOCATIONS
     + _CONTACTS
@@ -876,6 +1390,9 @@ _ROWS: tuple[OperationRow, ...] = (
     + _CONTENT
     + _SOCIAL
     + _WORKFLOWS_MCP
+    + _AGENCY
+    + _COURSES
+    + _NATIVE_FAMILIES
 )
 
 
@@ -1080,8 +1597,28 @@ def capability_map() -> dict[str, dict[str, object]]:
             "approvalRequired": row.approval_required,
             "tenantBinding": row.tenant_binding,
             "version": row.version,
+            "effect": row.resolved_effect,
+            "approvalClass": row.resolved_approval_class,
+            "identityPlacement": row.identity_placement,
+            "tokenClass": row.token_class,
+            "requestMediaType": row.request_media_type,
+            "pagination": row.pagination,
+            "availability": row.resolved_availability,
+            "implementation": row.implementation,
+            "unresolvedFields": list(row.unresolved_fields),
         }
     return mapping
+
+
+def contract_documents() -> tuple[dict[str, object], ...]:
+    """Every frozen row as the shared ``operation-contract`` JSON shape.
+
+    This is the published, hashable copy a consumer (for example the Command
+    Center) reads instead of reaching into Python internals.  It is derived
+    from the registry, never a second authority.
+    """
+
+    return tuple(row.as_contract() for row in _ROWS)
 
 
 __all__ = [
@@ -1091,6 +1628,12 @@ __all__ = [
     "DOC_FETCH_DATE",
     "SUPPORTED_VERSIONS",
     "MEDIA_FILE_TYPES",
+    "MEDIA_TYPES",
+    "EFFECTS",
+    "APPROVAL_CLASSES",
+    "PAGINATIONS",
+    "AVAILABILITIES",
+    "RECEIPT_OUTCOMES",
     "UNKNOWN",
     "TRANSPORT_BY_ROUTE",
     "BROWSER_ONLY_ROUTES",
@@ -1099,4 +1642,5 @@ __all__ = [
     "browser_route_required",
     "operation_routes_unresolved",
     "capability_map",
+    "contract_documents",
 ]

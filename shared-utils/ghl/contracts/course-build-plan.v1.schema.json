@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://blackceo.local/ghl/contracts/course-build-plan.v1.schema.json",
+  "title": "GHL Course Build Plan v1",
+  "description": "Internal course plan (Document 1 section 8.2). It expresses content and relationships without pretending to be a vendor DTO; Section 8.3 maps it to the public wire contract. Logical keys are the identity inside the plan: duplicate display titles are allowed when logical keys differ. The vendor `status` property is never invented; draft-only release is expressed through module/lesson visibility, offer/access and release actions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "location_id",
+    "course_key",
+    "title",
+    "source_approval_ref",
+    "release_intent",
+    "modules"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "run_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+    "location_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+    "course_key": { "$ref": "#/$defs/logical_key" },
+    "existing_course_product_id": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "operation-contract.schema.json#/$defs/typed_id" }
+      ]
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "poster_image_url": { "type": ["string", "null"] },
+    "source_approval_ref": { "type": "string", "minLength": 1 },
+    "release_intent": { "enum": ["draft_only", "release_approved"] },
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/module" }
+    },
+    "community": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "group_ref": {
+          "type": ["string", "null"],
+          "description": "Relative path to an approved group plan; a standalone course does not require a group."
+        },
+        "learning_access_policy_ref": { "type": ["string", "null"] }
+      }
+    },
+    "offer_plan_ref": { "type": ["string", "null"] },
+    "buyer_access_test_ref": { "type": ["string", "null"] },
+    "legacy_conversion": { "$ref": "hybrid-operation-receipt.v1.schema.json#/$defs/legacy_conversion" }
+  },
+  "x-semantic-constraints": [
+    "module_key is unique across the plan; lesson_key is unique within its module (the same lesson key may appear under different modules).",
+    "parent_module_key, when not null, must name a module_key in the same plan; the parent chain must be acyclic and must not point at itself.",
+    "description_ref must name a relative path that exists in the approved content set; a missing content reference rejects the plan.",
+    "asset_refs must name relative paths in the approved asset set; no cross-location object id may appear.",
+    "visibility must be one of the documented category/lesson vocabularies; the two vocabularies are not interchangeable.",
+    "Duplicate display titles are allowed when logical keys differ; a matching title is a reconciliation candidate, never permission to edit or delete an existing object."
+  ],
+  "$defs": {
+    "logical_key": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+    },
+    "visibility": { "enum": ["draft", "published", "hidden", "unknown"] },
+    "asset_ref": { "type": "string", "minLength": 1 },
+    "lesson": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lesson_key",
+        "title",
+        "position",
+        "visibility",
+        "required_for_delivery"
+      ],
+      "properties": {
+        "lesson_key": { "$ref": "#/$defs/logical_key" },
+        "title": { "type": "string", "minLength": 1 },
+        "position": { "type": "integer", "minimum": 1 },
+        "visibility": { "$ref": "#/$defs/visibility" },
+        "description_ref": { "type": ["string", "null"] },
+        "description_sha256": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          ]
+        },
+        "asset_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/asset_ref" },
+          "uniqueItems": true
+        },
+        "assessment_ref": { "type": ["string", "null"] },
+        "required_for_delivery": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "required_for_delivery": { "const": true } }, "required": ["required_for_delivery"] },
+          "then": {
+            "anyOf": [
+              { "required": ["description_ref"], "properties": { "description_ref": { "type": "string" } } },
+              { "required": ["asset_refs"], "properties": { "asset_refs": { "minItems": 1 } } },
+              { "required": ["assessment_ref"], "properties": { "assessment_ref": { "type": "string" } } }
+            ]
+          }
+        }
+      ]
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["module_key", "title", "position", "visibility", "lessons"],
+      "properties": {
+        "module_key": { "$ref": "#/$defs/logical_key" },
+        "parent_module_key": { "type": ["string", "null"] },
+        "title": { "type": "string", "minLength": 1 },
+        "position": { "type": "integer", "minimum": 1 },
+        "visibility": { "$ref": "#/$defs/visibility" },
+        "lessons": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/lesson" }
+        }
+      }
+    }
+  }
+}
