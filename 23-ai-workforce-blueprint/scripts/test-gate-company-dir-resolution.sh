@@ -209,7 +209,15 @@ def get_openclaw_paths():
     return {"company_dir": None, "company_root": None}
 PYSTUB3
 
-T3_OUT="$(SCRIPT_DIR="$T3_SCRIPTS_DIR" OPENCLAW_COMPANY_SLUG="" python3 "$QC_INFO" 2>/dev/null)"
+# Hermetic HOME: the resolver's Priority 0 live-tree check
+# (_live_departments_dir()) reads the REAL ~/.openclaw/workspace/departments
+# before the stub is ever consulted. On a box with a real workforce that tree
+# exists, so company_root is non-null and the assertion below fails — the test
+# measures the machine, not the stub. Point HOME at an empty dir so only the
+# stubbed detect_platform answers. (Also neutralises WORKFORCE_BUILD_STATE_FILE
+# leakage from the ambient environment.)
+mkdir -p "$TMP/empty-home"
+T3_OUT="$(SCRIPT_DIR="$T3_SCRIPTS_DIR" OPENCLAW_COMPANY_SLUG="" HOME="$TMP/empty-home" WORKFORCE_BUILD_STATE_FILE="" python3 "$QC_INFO" 2>/dev/null)"
 T3_BUG="$(python3 -c "import json; d=json.loads('$T3_OUT'); print(d.get('gate_bug',''))" 2>/dev/null || echo "")"
 T3_ROOT="$(python3 -c "import json; d=json.loads('$T3_OUT'); v=d.get('company_root'); print(v if v is not None else 'null')" 2>/dev/null || echo "null")"
 
