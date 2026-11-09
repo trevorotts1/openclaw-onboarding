@@ -34,12 +34,21 @@ class FakeTransport:
         if method=='POST':
             if self.fail_post: raise TimeoutError('request uncertain')
             self.counter+=1; out={'id':'id_'+str(self.counter),**body}
+            if path.endswith('/quiz'):
+                out['lessonId']=path.rsplit('/',2)[-2]
             self.objects[path+'/'+out['id'] if not path.endswith('/quiz') else path]=out
             return out
         if method=='PUT':
-            self.objects[path]=body
-            return body
-        return self.objects[path]
+            # The service retains the object's immutable identity on updates.
+            self.objects[path]={**self.objects.get(path,{}), **body}
+            return self.objects[path]
+        result=json.loads(json.dumps(self.objects[path]))
+        if method=='GET' and path.endswith('/questions'):
+            quiz_id=path.rsplit('/',2)[-2]
+            for index, question in enumerate(result['questions']):
+                question.setdefault('id','question_'+quiz_id+'_'+str(index+1))
+                question['quizId']=quiz_id
+        return result
 
 
 class DeliveryTests(unittest.TestCase):
@@ -121,7 +130,7 @@ class DeliveryTests(unittest.TestCase):
         class ExistingLesson(FakeTransport):
             def request(self,method,path,**kw):
                 if method=='GET' and path in ('/courses/products/p','/courses/products/p/lessons/l'):
-                    self.calls.append((method,path,kw['location_id'],None,None));return {'id':'parent'}
+                    self.calls.append((method,path,kw['location_id'],None,None));return {'id':path.rsplit('/',1)[-1]}
                 if method=='GET' and path.endswith('/quiz') and path not in self.objects:
                     self.calls.append((method,path,kw['location_id'],None,None));raise DeliveryApiError(404)
                 return super().request(method,path,**kw)
@@ -137,7 +146,7 @@ class DeliveryTests(unittest.TestCase):
             def request(self,method,path,**kw):
                 self.calls.append((method,path,kw['location_id'],None,None))
                 if path.endswith('/quiz'):raise DeliveryApiError(403)
-                return {'id':'parent'}
+                return {'id':path.rsplit('/',1)[-1]}
         api=Denied()
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(DeliveryApiError):run_lesson_quiz({'location_id':'fixture','product_id':'p','lesson_id':'l','quiz':quiz()},directory,capability=capability(),transport=api)

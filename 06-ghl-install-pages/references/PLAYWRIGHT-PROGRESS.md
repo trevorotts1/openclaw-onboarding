@@ -2,6 +2,34 @@
 
 Updated: November 8, 2026. Owner: Trevor Otts.
 
+## Current checkpoint — November 9, 2026
+
+This section supersedes older recovery counts and next-step lists below.
+
+- Batch 1 merged to main in PR #2877, merge commit
+  `a89a789a2d36199956f42c64aa78e94bf1ac3525`. Mac/Linux Chromium CI and
+  canonical authentication checks passed for that batch.
+- Batch 2 source review passed: 542 tests discovered, 535 passed, 7 optional
+  browser tests skipped locally. Its Mac/Linux Chromium CI runs separately.
+- Current source adds native form scheduling (IANA time zone, open/close windows,
+  before/after message or redirect), twelve simple built-in field property paths,
+  and existing draft course category/lesson edits through Courses v3.
+- Provider receipts bind the exact requested course, parent categories and lessons
+  before initial completion or replay. Generic recorded actions retain pending
+  independent read-back, and every action checks the requested editor identity.
+- Intake rejects unsupported, ignored or contradictory inputs before editor writes.
+  Successful form saves still do not prove submission behavior; course edits still
+  require learner proof. No final native Python client run is claimed.
+- Catalog: 33 named operations. This is an inventory count, not a completion
+  percentage. The 47-row acceptance matrix remains the completion contract.
+
+Remaining boundaries: native split traffic capture and uncertain variant intent;
+advanced/custom field dependencies and uncaptured controls; complete community
+portal controls where the current portal returns Forbidden; payment contracts and
+approved test-mode purchase journeys; genuinely UI-only course controls; dynamic
+meeting associations; final client Mac/VPS execution and functional receipts.
+Preserve uncertain journals and reconcile by independent read-back before retry.
+
 ## Start here in a new chat
 
 Read this file, PLAYWRIGHT-RECIPES.md, PLAYWRIGHT-REQUIREMENTS.md,
