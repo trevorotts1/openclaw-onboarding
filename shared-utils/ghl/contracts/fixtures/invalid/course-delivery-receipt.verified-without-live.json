@@ -1,0 +1,78 @@
+{
+  "build_state": "verified",
+  "business_delivery_verified": true,
+  "components": {
+    "assessment": {
+      "reason": "no assessment in approved plan",
+      "state": "not_requested"
+    },
+    "community": {
+      "reason": "standalone course",
+      "state": "not_requested"
+    },
+    "course_shell": {
+      "reason": null,
+      "receipt_ref": null,
+      "state": "verified",
+      "unknowns": []
+    },
+    "enrollment": {
+      "reason": "no buyer enrollment requested",
+      "state": "not_requested"
+    },
+    "learner_access": {
+      "receipt_ref": "SYNTHETIC_ACCESS_RECEIPT",
+      "state": "verified"
+    },
+    "learning_association": {
+      "reason": "standalone course",
+      "state": "not_requested"
+    },
+    "lessons": [
+      {
+        "content_bound": true,
+        "course_lesson_id": "SYNTHETIC_LESSON",
+        "lesson_key": "intro",
+        "module_key": "welcome",
+        "state": "verified",
+        "unknowns": [],
+        "visibility": "draft"
+      }
+    ],
+    "media_binding": {
+      "asset_persisted": true,
+      "assets": [
+        "launch101:welcome:intro:video"
+      ],
+      "learner_render_verified": true,
+      "lesson_association_verified": true,
+      "native_content_ready": true,
+      "reason": null,
+      "state": "verified"
+    },
+    "offer": {
+      "reason": "plan requests no offer",
+      "state": "not_requested"
+    },
+    "plan_object_identity": {
+      "reason": null,
+      "receipt_ref": null,
+      "state": "verified",
+      "unknowns": []
+    }
+  },
+  "course_key": "launch-101",
+  "course_product_id": "SYNTHETIC_COURSE",
+  "evidence_refs": [
+    "lanes/GHL-000-lane/evidence/delivery.json"
+  ],
+  "live_verification": "not_run",
+  "location_id": "SYNTHETIC_LOCATION",
+  "next_action": null,
+  "observed_at": "2026-11-08T12:05:00Z",
+  "outcome": "verified",
+  "receipt_id": "SYNTHETIC_DELIVERY",
+  "run_id": "SYNTHETIC_RUN",
+  "schema_version": "1.0.0",
+  "unknowns": []
+}

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://blackceo.local/ghl/contracts/learning-association.v1.schema.json",
+  "title": "GHL Learning Association v1",
+  "description": "Validated course-to-Community-group Learning relationship plan (Document 1 section 9.4). The input is a relationship plan, not a page URL. Attaching and detaching are relationships: detaching never deletes the course, and a group association, a course offer, a commerce product and an enrollment remain separate objects.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "location_id",
+    "course_product_id",
+    "group_ref",
+    "desired_access",
+    "operation",
+    "approval_ref"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "location_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+    "course_product_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+    "group_ref": { "$ref": "#/$defs/group_ref" },
+    "desired_access": { "$ref": "#/$defs/access" },
+    "operation": { "enum": ["attach", "detach", "verify"] },
+    "approval_ref": { "type": "string", "minLength": 1 },
+    "existing_association": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/association" }
+      ]
+    },
+    "relationship_receipt_ref": { "type": ["string", "null"] },
+    "unknowns": { "type": "array", "items": { "type": "string" } }
+  },
+  "x-semantic-constraints": [
+    "The group and the course must resolve in the same location; a cross-location reference rejects the plan.",
+    "An existing association with the same course and the same access policy produces an idempotent verified result without adding a second one.",
+    "operation=detach removes only the relationship and never calls course delete.",
+    "Ambiguous name-only matches must be resolved before any UI action; a matching title alone is not object identity."
+  ],
+  "$defs": {
+    "group_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["group_id", "group_slug", "portal_host"],
+      "properties": {
+        "group_id": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "operation-contract.schema.json#/$defs/typed_id" }
+          ]
+        },
+        "group_slug": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "operation-contract.schema.json#/$defs/typed_id" }
+          ]
+        },
+        "portal_host": { "type": "string", "minLength": 1 }
+      }
+    },
+    "access": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "policy_ref"],
+      "properties": {
+        "mode": {
+          "enum": ["all_members", "level_based", "time_based", "paid", "unknown"]
+        },
+        "policy_ref": { "type": "string", "minLength": 1 }
+      }
+    },
+    "association": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["course_product_id", "group_id", "access_mode"],
+      "properties": {
+        "course_product_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+        "group_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+        "access_mode": { "type": "string", "minLength": 1 },
+        "verified": { "type": "boolean" }
+      }
+    }
+  }
+}

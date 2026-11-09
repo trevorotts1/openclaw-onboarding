@@ -1,0 +1,53 @@
+{
+  "buyer_access_test_ref": null,
+  "community": {
+    "group_ref": null,
+    "learning_access_policy_ref": null,
+    "required": false
+  },
+  "course_key": "launch-101",
+  "description": "APPROVED_COURSE_DESCRIPTION",
+  "existing_course_product_id": null,
+  "location_id": "SYNTHETIC_LOCATION",
+  "modules": [
+    {
+      "lessons": [
+        {
+          "assessment_ref": null,
+          "asset_refs": [
+            "assets/welcome-intro-video.json"
+          ],
+          "description_ref": "approved-content/welcome-intro.md",
+          "description_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "lesson_key": "intro",
+          "position": 1,
+          "required_for_delivery": true,
+          "title": "Introduction",
+          "visibility": "draft"
+        },
+        {
+          "assessment_ref": null,
+          "asset_refs": [],
+          "description_ref": "approved-content/welcome-intro-2.md",
+          "description_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "lesson_key": "intro-2",
+          "position": 2,
+          "required_for_delivery": true,
+          "title": "Introduction",
+          "visibility": "draft"
+        }
+      ],
+      "module_key": "welcome",
+      "parent_module_key": null,
+      "position": 1,
+      "title": "Welcome",
+      "visibility": "published"
+    }
+  ],
+  "offer_plan_ref": null,
+  "release_intent": "draft_only",
+  "run_id": "SYNTHETIC_RUN",
+  "schema_version": "1.0.0",
+  "source_approval_ref": "APPROVAL_REFERENCE",
+  "title": "Launch 101"
+}

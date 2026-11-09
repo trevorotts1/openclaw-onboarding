@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://blackceo.local/ghl/contracts/course-delivery-receipt.v1.schema.json",
+  "title": "GHL Course Delivery Receipt v1",
+  "description": "Aggregate course-delivery receipt (Document 1 sections 8.4, 8.5, 17, 18). A filled course title with no content is not delivery. The receipt separates plan-to-object identity, content/media binding, assessments, offer/enrollment, group association, learner access and observed playback. Live verification is reported separately from offline implementation readiness; the reducer that may set business_delivery_verified is the only writer of that state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "run_id",
+    "location_id",
+    "course_key",
+    "outcome",
+    "build_state",
+    "components",
+    "evidence_refs",
+    "observed_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "receipt_id": { "type": "string", "minLength": 1 },
+    "run_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+    "location_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+    "course_key": { "type": "string", "minLength": 1 },
+    "course_product_id": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "operation-contract.schema.json#/$defs/typed_id" }
+      ]
+    },
+    "outcome": {
+      "enum": [
+        "planned",
+        "submitted",
+        "processing",
+        "verified",
+        "failed",
+        "blocked",
+        "unknown_outcome",
+        "not_requested"
+      ]
+    },
+    "build_state": { "enum": ["not_started", "in_progress", "implemented", "verified", "failed", "unknown"] },
+    "components": { "$ref": "#/$defs/components" },
+    "business_delivery_verified": { "type": "boolean" },
+    "live_verification": {
+      "enum": ["not_run", "pending", "passed", "failed", "unknown"],
+      "description": "Live learner proof and offline implementation readiness are separate facts."
+    },
+    "unknowns": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "next_action": { "type": ["string", "null"] },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "legacy_conversion": { "$ref": "hybrid-operation-receipt.v1.schema.json#/$defs/legacy_conversion" }
+  },
+  "x-semantic-constraints": [
+    "business_delivery_verified=true requires outcome=verified, live_verification=passed, and every required component in {verified, not_requested-with-reason}.",
+    "A required component in {planned, submitted, processing, failed, blocked, unknown} forbids business_delivery_verified.",
+    "A component marked not_requested carries a scope reason; a missing required implementation is never classified not_requested.",
+    "plan_object_identity verified requires every approved logical key mapped to a real id (no title-only identity)."
+  ],
+  "$defs": {
+    "state": {
+      "enum": [
+        "planned",
+        "submitted",
+        "processing",
+        "created",
+        "reused",
+        "attached",
+        "verified",
+        "failed",
+        "blocked",
+        "unknown",
+        "not_requested"
+      ]
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "$ref": "#/$defs/state" },
+        "receipt_ref": { "type": ["string", "null"] },
+        "reason": { "type": ["string", "null"] },
+        "unknowns": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "lesson_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lesson_key", "state"],
+      "properties": {
+        "lesson_key": { "type": "string", "minLength": 1 },
+        "course_lesson_id": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "operation-contract.schema.json#/$defs/typed_id" }
+          ]
+        },
+        "module_key": { "type": ["string", "null"] },
+        "state": { "$ref": "#/$defs/state" },
+        "visibility": { "enum": ["draft", "published", "hidden", "unknown"] },
+        "content_bound": { "type": "boolean" },
+        "unknowns": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["course_shell", "plan_object_identity", "lessons", "media_binding"],
+      "properties": {
+        "course_shell": { "$ref": "#/$defs/component" },
+        "plan_object_identity": { "$ref": "#/$defs/component" },
+        "lessons": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/lesson_result" }
+        },
+        "media_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state"],
+          "properties": {
+            "state": { "$ref": "#/$defs/state" },
+            "assets": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "asset_persisted": { "type": "boolean" },
+            "native_content_ready": { "type": "boolean" },
+            "lesson_association_verified": { "type": "boolean" },
+            "learner_render_verified": { "type": "boolean" },
+            "reason": { "type": ["string", "null"] }
+          }
+        },
+        "assessment": { "$ref": "#/$defs/component" },
+        "offer": { "$ref": "#/$defs/component" },
+        "enrollment": { "$ref": "#/$defs/component" },
+        "community": { "$ref": "#/$defs/component" },
+        "learning_association": { "$ref": "#/$defs/component" },
+        "learner_access": { "$ref": "#/$defs/component" }
+      }
+    }
+  }
+}

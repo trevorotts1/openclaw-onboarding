@@ -1,0 +1,41 @@
+{
+  "asset_key": "launch101:welcome:intro:video",
+  "byte_size": 123456,
+  "course_key": "launch-101",
+  "durable_url": null,
+  "duration_seconds": 42.5,
+  "generation_state": "completed",
+  "ghl_binding": {
+    "content_id": null,
+    "lesson_id": null,
+    "receipt_ref": null,
+    "route": "public_import",
+    "state": "association_verified"
+  },
+  "height": 1080,
+  "lesson_key": "intro",
+  "local_path": "approved-assets/welcome-intro.mp4",
+  "mime_type": "video/mp4",
+  "model_id": "RESOLVED_EXISTING_MODEL_SELECTION",
+  "module_key": "welcome",
+  "proof": {
+    "asset_persisted": true,
+    "learner_render_verified": false,
+    "lesson_association_verified": false,
+    "native_content_ready": false
+  },
+  "provider": "kie",
+  "provider_task_id": "REAL_TASK_ID",
+  "qc": {
+    "receipt_ref": "QC_RECEIPT",
+    "state": "passed"
+  },
+  "role": "lesson_video",
+  "schema_version": "1.0.0",
+  "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "storage_access": "private_pending",
+  "unknowns": [
+    "native ingestion not attempted"
+  ],
+  "width": 1920
+}

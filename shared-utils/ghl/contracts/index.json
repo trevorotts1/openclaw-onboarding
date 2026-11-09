@@ -1,0 +1,204 @@
+{
+  "authority": "WF00/GHL-000 shared operation registry and contracts",
+  "checkpoint": "WF00-CP01",
+  "checksum_algorithm": "sha256",
+  "contracts": [
+    {
+      "consumers": [
+        "WF00",
+        "WF01",
+        "WF02",
+        "WF06",
+        "WF10",
+        "WF18",
+        "WF24",
+        "WF25",
+        "WF27",
+        "WF28",
+        "WF29",
+        "WF30",
+        "WF31",
+        "WF32"
+      ],
+      "name": "operation-contract",
+      "path": "shared-utils/ghl/contracts/operation-contract.schema.json",
+      "sha256": "a41a452c0e2c0d24a3d33c44817a10b614e572ebb3f898adea296b1ba314ec38",
+      "status": "frozen",
+      "version": "1.0.0"
+    },
+    {
+      "consumers": [
+        "WF01",
+        "WF18",
+        "WF24"
+      ],
+      "name": "capability-record.v2",
+      "path": "shared-utils/ghl/contracts/capability-record.v2.schema.json",
+      "sha256": "35211aa632d94b4134d65d6caf563fe9f3739464514a42329206acfdb3f118e6",
+      "status": "frozen",
+      "version": "2.0.0"
+    },
+    {
+      "consumers": [
+        "WF01",
+        "WF02",
+        "WF06",
+        "WF07",
+        "WF10",
+        "WF18",
+        "WF20",
+        "WF25",
+        "WF26",
+        "WF27",
+        "WF28",
+        "WF29",
+        "WF30",
+        "WF31",
+        "WF32",
+        "WF33"
+      ],
+      "name": "hybrid-operation-receipt.v1",
+      "path": "shared-utils/ghl/contracts/hybrid-operation-receipt.v1.schema.json",
+      "sha256": "40a7dab8d1422653fc5a3116a8bc764e12ba4c4bc0e3a2cbacc23c198862d571",
+      "status": "frozen",
+      "version": "1.0.0"
+    },
+    {
+      "consumers": [
+        "WF06",
+        "WF07",
+        "WF13"
+      ],
+      "name": "course-build-plan.v1",
+      "path": "shared-utils/ghl/contracts/course-build-plan.v1.schema.json",
+      "sha256": "c015f7c5b7864edc5f50320207fec7f1ec0f438fcbba5543ef0efbaf4f27cde4",
+      "status": "frozen",
+      "version": "1.0.0"
+    },
+    {
+      "consumers": [
+        "WF08",
+        "WF12",
+        "WF07"
+      ],
+      "name": "course-asset-manifest.v1",
+      "path": "shared-utils/ghl/contracts/course-asset-manifest.v1.schema.json",
+      "sha256": "c055f4b69d1e73347f0a667b17506ee3f8f38e2c0b5df15f82ae1f4c8ee11e55",
+      "status": "frozen",
+      "version": "1.0.0"
+    },
+    {
+      "consumers": [
+        "WF07",
+        "WF09"
+      ],
+      "name": "learning-association.v1",
+      "path": "shared-utils/ghl/contracts/learning-association.v1.schema.json",
+      "sha256": "27c95c3956ee81ead1c1fad4dc4ffd252c590d79102830f20c7034de9cccb486",
+      "status": "frozen",
+      "version": "1.0.0"
+    },
+    {
+      "consumers": [
+        "WF07",
+        "WF13",
+        "WF18"
+      ],
+      "name": "course-delivery-receipt.v1",
+      "path": "shared-utils/ghl/contracts/course-delivery-receipt.v1.schema.json",
+      "sha256": "0d32d75dc38f454374cd1dcf2f7b267fddbda7ef8078653ad1e8e3873a6b98c9",
+      "status": "frozen",
+      "version": "1.0.0"
+    }
+  ],
+  "fixtures": {
+    "invalid": [
+      "shared-utils/ghl/contracts/fixtures/invalid/capability-record.v2.enabled-without-read.json",
+      "shared-utils/ghl/contracts/fixtures/invalid/course-asset-manifest.association-without-ids.json",
+      "shared-utils/ghl/contracts/fixtures/invalid/course-asset-manifest.completed-without-bytes.json",
+      "shared-utils/ghl/contracts/fixtures/invalid/course-asset-manifest.render-without-association.json",
+      "shared-utils/ghl/contracts/fixtures/invalid/course-build-plan.draft-only-publishes.json",
+      "shared-utils/ghl/contracts/fixtures/invalid/course-build-plan.duplicate-lesson-key.json",
+      "shared-utils/ghl/contracts/fixtures/invalid/course-build-plan.parent-cycle.json",
+      "shared-utils/ghl/contracts/fixtures/invalid/course-delivery-receipt.media-processing.json",
+      "shared-utils/ghl/contracts/fixtures/invalid/course-delivery-receipt.verified-without-live.json",
+      "shared-utils/ghl/contracts/fixtures/invalid/hybrid-operation-receipt.bare-product-id.json",
+      "shared-utils/ghl/contracts/fixtures/invalid/hybrid-operation-receipt.enum-outcome.json",
+      "shared-utils/ghl/contracts/fixtures/invalid/hybrid-operation-receipt.unknown-without-reconcile.json",
+      "shared-utils/ghl/contracts/fixtures/invalid/hybrid-operation-receipt.verified-without-match.json",
+      "shared-utils/ghl/contracts/fixtures/invalid/learning-association.no-group-identity.json",
+      "shared-utils/ghl/contracts/fixtures/invalid/operation-contract.read-with-write-quota.json"
+    ],
+    "valid": [
+      "shared-utils/ghl/contracts/fixtures/valid/capability-record.v2.json",
+      "shared-utils/ghl/contracts/fixtures/valid/course-asset-manifest.v1.json",
+      "shared-utils/ghl/contracts/fixtures/valid/course-build-plan.v1.json",
+      "shared-utils/ghl/contracts/fixtures/valid/course-delivery-receipt.v1.json",
+      "shared-utils/ghl/contracts/fixtures/valid/hybrid-operation-receipt.v1.json",
+      "shared-utils/ghl/contracts/fixtures/valid/learning-association.v1.json",
+      "shared-utils/ghl/contracts/fixtures/valid/operation-contract.workflows-search.json"
+    ]
+  },
+  "generated_at": "2026-11-08",
+  "registry_module": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py",
+  "schema_version": "1.0.0",
+  "validator_module": "shared-utils/ghl/contracts/validate.py",
+  "vocabularies": {
+    "availability": [
+      "public",
+      "private_beta",
+      "feature_gap",
+      "tenant_restricted",
+      "internal",
+      "retired",
+      "unknown"
+    ],
+    "media_types": [
+      "application/json",
+      "multipart/form-data",
+      "unknown"
+    ],
+    "outcomes": [
+      "planned",
+      "submitted",
+      "processing",
+      "verified",
+      "failed",
+      "blocked",
+      "unknown_outcome",
+      "not_requested"
+    ],
+    "typed_ids": [
+      "company_id",
+      "location_id",
+      "agency_company_id",
+      "commerce_product_id",
+      "commerce_price_id",
+      "course_product_id",
+      "course_category_id",
+      "course_lesson_id",
+      "course_offer_id",
+      "community_group_id",
+      "community_group_slug",
+      "community_channel_id",
+      "social_account_id",
+      "member_contact_id",
+      "workflow_id",
+      "cc_task_id",
+      "run_id",
+      "voice_agent_id",
+      "conversation_agent_id",
+      "studio_agent_id",
+      "studio_version_id",
+      "studio_execution_id",
+      "knowledge_base_id",
+      "knowledge_source_id",
+      "chat_widget_id",
+      "meeting_room_ref",
+      "host_user_id",
+      "projects_space_id",
+      "projects_list_id",
+      "projects_task_id"
+    ]
+  }
+}

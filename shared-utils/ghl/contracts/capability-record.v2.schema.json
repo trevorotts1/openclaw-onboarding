@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://blackceo.local/ghl/contracts/capability-record.v2.schema.json",
+  "title": "GHL Hybrid Capability Record v2",
+  "description": "Additive v2 capability record (Document 1 section 5.2). Separate facts replace one misleading `enabled` boolean: documentation, adapter existence, offline tests, account availability, authorization/scope evidence, a bounded read probe and a bounded write canary are independent dimensions. A read on one location never activates another location, and documentation never enables a tenant. v1 records are translated by `legacy_conversion` without widening any grant; the v1 `capabilities` map is not rewritten in place.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_version",
+    "location_id",
+    "recorded_at",
+    "capabilities"
+  ],
+  "properties": {
+    "record_version": { "const": 2 },
+    "location_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+    "recorded_at": { "type": "string", "format": "date" },
+    "authority": { "type": "string" },
+    "note": { "type": "string" },
+    "legacy_conversion": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Provenance of a v1 -> v2 translation. A v1 record is read, never rewritten; the translation is explicit and auditable.",
+      "required": ["from_record_version", "source_sha256", "converted_at", "grants_widened"],
+      "properties": {
+        "from_record_version": { "type": "integer", "minimum": 1, "maximum": 1 },
+        "source_path": { "type": ["string", "null"] },
+        "source_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "converted_at": { "type": "string", "format": "date-time" },
+        "grants_widened": { "const": false },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "description": "operation_id -> capability facts for this one location.",
+      "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$" },
+      "additionalProperties": { "$ref": "#/$defs/capability" }
+    }
+  },
+  "$defs": {
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "receipt_id"],
+      "properties": {
+        "state": { "enum": ["not_run", "passed", "failed", "unknown"] },
+        "receipt_id": { "type": ["string", "null"] },
+        "checked_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_version",
+        "location_id",
+        "operation_id",
+        "contract_revision",
+        "documented",
+        "adapter_built",
+        "offline_tests_passed",
+        "availability",
+        "scope_state",
+        "read_probe",
+        "write_canary",
+        "enabled",
+        "checked_at",
+        "expires_at",
+        "fallback_policy"
+      ],
+      "properties": {
+        "record_version": { "const": 2 },
+        "location_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+        "operation_id": { "$ref": "operation-contract.schema.json#/$defs/operation_id" },
+        "contract_revision": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "The operation-contract hash this capability was evaluated against."
+        },
+        "credential_ref": {
+          "type": ["string", "null"],
+          "description": "Alias only, e.g. location-pit:OWNER_MANAGED_ALIAS. Never a secret value."
+        },
+        "credential_fingerprint": { "type": ["string", "null"] },
+        "principal": {
+          "type": ["string", "null"],
+          "description": "Authenticated principal identity (token-derived), never a secret."
+        },
+        "effective_grant_fingerprint": { "type": ["string", "null"] },
+        "documented": { "type": "boolean" },
+        "adapter_built": { "type": "boolean" },
+        "offline_tests_passed": { "type": "boolean" },
+        "availability": {
+          "enum": [
+            "available",
+            "unavailable",
+            "beta_not_enabled",
+            "feature_disabled",
+            "tenant_restricted",
+            "unknown"
+          ]
+        },
+        "scope_state": {
+          "enum": ["verified", "unverified", "missing", "revoked"]
+        },
+        "read_probe": { "$ref": "#/$defs/probe" },
+        "write_canary": { "$ref": "#/$defs/probe" },
+        "request_media_type": {
+          "enum": ["application/json", "multipart/form-data", "unknown"]
+        },
+        "enabled": { "type": "boolean" },
+        "checked_at": { "type": ["string", "null"], "format": "date-time" },
+        "expires_at": { "type": ["string", "null"], "format": "date-time" },
+        "invalidation_reason": { "type": ["string", "null"] },
+        "fallback_policy": {
+          "enum": [
+            "none",
+            "authorized_private",
+            "managed_browser",
+            "authorized_private_then_managed_browser"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
+          "then": {
+            "properties": {
+              "documented": { "const": true },
+              "adapter_built": { "const": true },
+              "offline_tests_passed": { "const": true }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
+          "then": {
+            "description": "A write capability additionally requires a passed write canary; the JSON Schema cannot branch on whether the operation is a write, so the validator enforces that rule.",
+            "properties": { "availability": { "enum": ["available", "tenant_restricted"] } }
+          }
+        }
+      ]
+    }
+  },
+  "x-semantic-constraints": [
+    "A capability whose operation effect is write and enabled=true must carry write_canary.state=passed with a receipt_id.",
+    "A capability with scope_state in {missing,revoked} must have enabled=false.",
+    "checked_at/expires_at are per location/credential/contract; a credential rotation or docs-hash change invalidates only the rows bound to it, never the whole record.",
+    "v1 translation maps enabled+read_verified to read_probe.state=passed and leaves write_canary.state=not_run: it never widens a grant."
+  ]
+}

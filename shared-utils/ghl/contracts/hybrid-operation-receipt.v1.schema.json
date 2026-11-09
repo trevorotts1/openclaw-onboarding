@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://blackceo.local/ghl/contracts/hybrid-operation-receipt.v1.schema.json",
+  "title": "GHL Hybrid Operation Receipt v1",
+  "description": "One immutable logical-operation event (Document 1 section 5.5). The stable key is (company_id, location_id, run_id, operation_key); attempts have unique ids underneath it and event_sequence is a persisted increasing integer within the logical operation. Outcomes include unknown_outcome and not_requested and are never mapped onto the Command Center TaskStatus enum. Meeting/AI/KB/widget/Projects sub-results live inside this same envelope; there is no per-feature fork.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "attempt_id",
+    "event_sequence",
+    "run_id",
+    "operation_key",
+    "operation_id",
+    "company_id",
+    "location_id",
+    "skill",
+    "rail",
+    "outcome",
+    "build_state",
+    "request_hash",
+    "object_refs",
+    "readback",
+    "attempts",
+    "evidence_refs",
+    "observed_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "receipt_id": { "type": "string", "minLength": 1 },
+    "attempt_id": { "type": "string", "minLength": 1 },
+    "event_sequence": { "type": "integer", "minimum": 1 },
+    "run_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+    "operation_key": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable logical-operation key, e.g. course:launch101:lesson:welcome:intro:create."
+    },
+    "operation_id": { "$ref": "operation-contract.schema.json#/$defs/operation_id" },
+    "company_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+    "location_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+    "task_id": { "type": ["string", "null"] },
+    "skill": { "type": "string", "minLength": 1 },
+    "rail": { "enum": ["public_rest", "official_mcp", "skill44_private", "skill06_browser", "none"] },
+    "outcome": { "$ref": "#/$defs/outcome" },
+    "build_state": { "enum": ["not_started", "in_progress", "implemented", "verified", "failed", "unknown"] },
+    "requested_visibility": { "$ref": "#/$defs/visibility" },
+    "actual_visibility": { "$ref": "#/$defs/visibility" },
+    "request_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "content_hash": {
+      "type": ["string", "null"],
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Approved content is hashed separately from redacted diagnostics so redaction cannot invalidate matching."
+    },
+    "object_refs": {
+      "type": "object",
+      "description": "Domain-typed object references. Keys must be named typed identifiers, never a bare id/product_id/user_id.",
+      "propertyNames": { "$ref": "operation-contract.schema.json#/$defs/typed_id_name" },
+      "additionalProperties": { "$ref": "operation-contract.schema.json#/$defs/typed_id" }
+    },
+    "readback": { "$ref": "#/$defs/readback" },
+    "attempts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/attempt" }
+    },
+    "sub_results": { "$ref": "#/$defs/sub_results" },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "next_action": { "type": ["string", "null"] },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "legacy_conversion": { "$ref": "#/$defs/legacy_conversion" }
+  },
+  "x-semantic-constraints": [
+    "A re-delivered event keeps its original receipt_id and bytes; a later processing/verification update emits a new event and a new event_sequence.",
+    "Sequences are allocated by one writer per logical operation; a reducer retains attempt history and applies legal transitions instead of trusting arrival order.",
+    "outcome=verified requires readback.state=matched and at least one object ref or evidence ref.",
+    "outcome=unknown_outcome forbids a later duplicate write on another rail until reconciliation names the actual object.",
+    "Sub-results are optional and independent; a missing sub-result means not requested, never passed."
+  ],
+  "$defs": {
+    "outcome": {
+      "enum": [
+        "planned",
+        "submitted",
+        "processing",
+        "verified",
+        "failed",
+        "blocked",
+        "unknown_outcome",
+        "not_requested"
+      ]
+    },
+    "visibility": { "enum": ["draft", "published", "private", "not_applicable", "unknown"] },
+    "readback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "checked_fields"],
+      "properties": {
+        "state": { "enum": ["not_requested", "pending", "matched", "mismatched", "unknown"] },
+        "checked_fields": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "receipt_ref": { "type": ["string", "null"] }
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt_id", "rail", "outcome"],
+      "properties": {
+        "attempt_id": { "type": "string", "minLength": 1 },
+        "rail": { "enum": ["public_rest", "official_mcp", "skill44_private", "skill06_browser", "none"] },
+        "outcome": { "$ref": "#/$defs/outcome" },
+        "http_status": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
+        "request_fingerprint": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "response_fingerprint": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "started_at": { "type": ["string", "null"], "format": "date-time" },
+        "finished_at": { "type": ["string", "null"], "format": "date-time" },
+        "error": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "rule": { "type": "string" },
+            "provider_code": { "type": ["string", "null"] },
+            "message": { "type": ["string", "null"] },
+            "reconcilable": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "legacy_conversion": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Explicit, versioned conversion from a strict old launch binding instead of rewriting it in place.",
+      "required": ["from_schema_version", "converted", "grants_widened"],
+      "properties": {
+        "from_schema_version": { "type": "string", "minLength": 1 },
+        "converted": { "type": "boolean" },
+        "grants_widened": { "const": false },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "state": {
+      "enum": [
+        "planned",
+        "submitted",
+        "processing",
+        "configured",
+        "attached",
+        "verified",
+        "failed",
+        "blocked",
+        "unknown",
+        "not_requested"
+      ]
+    },
+    "sub_results": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Typed per-family results carried inside the one shared envelope.",
+      "properties": {
+        "meeting_room": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": { "$ref": "#/$defs/state" },
+            "meeting_room_ref": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+            "host_user_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+            "calendar_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+            "configuration_saved": { "type": "boolean" },
+            "reusable_link": { "type": "boolean" },
+            "guest_verified": { "type": "boolean" },
+            "recording_verified": { "type": "boolean" },
+            "transcript_verified": { "type": "boolean" },
+            "unknowns": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "voice_ai": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": { "$ref": "#/$defs/state" },
+            "voice_agent_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+            "phone_assigned": { "type": "boolean" },
+            "call_verified": { "type": "boolean" },
+            "call_id": { "type": ["string", "null"] },
+            "unknowns": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "conversation_ai": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": { "$ref": "#/$defs/state" },
+            "conversation_agent_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+            "channels": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+            "responder_owner": { "type": ["string", "null"] },
+            "duplicate_send_guarded": { "type": "boolean" },
+            "unknowns": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "studio": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": { "$ref": "#/$defs/state" },
+            "studio_agent_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+            "studio_version_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+            "studio_execution_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+            "promoted": { "type": "boolean" },
+            "executed": { "type": "boolean" },
+            "unknowns": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "knowledge_base": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": { "$ref": "#/$defs/state" },
+            "knowledge_base_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+            "knowledge_source_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+            "upload_accepted": { "type": "boolean" },
+            "ingestion_completed": { "type": "boolean" },
+            "training_completed": { "type": "boolean" },
+            "attached": { "type": "boolean" },
+            "retrieval_verified": { "type": "boolean" },
+            "unknowns": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "chat_widget": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": { "$ref": "#/$defs/state" },
+            "chat_widget_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+            "config_version": { "type": ["number", "null"] },
+            "installed": { "type": "boolean" },
+            "thread_verified": { "type": "boolean" },
+            "responder_verified": { "type": "boolean" },
+            "unknowns": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "projects": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": { "$ref": "#/$defs/state" },
+            "projects_space_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+            "projects_list_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+            "projects_task_id": { "$ref": "operation-contract.schema.json#/$defs/typed_id" },
+            "ui_available": { "type": ["boolean", "null"] },
+            "api_available": { "type": ["boolean", "null"] },
+            "projection_enabled": { "type": "boolean" },
+            "unknowns": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}
