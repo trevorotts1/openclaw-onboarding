@@ -5,7 +5,9 @@
       "id": "skill-05",
       "type": "skill",
       "label": "Skill 05 - GHL Setup",
-      "check": { "skill": "05-ghl-setup" },
+      "check": {
+        "skill": "05-ghl-setup"
+      },
       "severity": "required",
       "satisfy": "Install Skill 05 (GHL Setup) first. It is in the same onboarding package; re-run the installer or install Skill 05 on its own."
     },
@@ -13,7 +15,9 @@
       "id": "ghl-pit",
       "type": "credential",
       "label": "GoHighLevel Private Integration Token (PIT)",
-      "check": { "envVar": "GOHIGHLEVEL_API_KEY" },
+      "check": {
+        "envVar": "GOHIGHLEVEL_API_KEY"
+      },
       "severity": "required",
       "satisfy": "Add GOHIGHLEVEL_API_KEY=<your PIT> to ~/.openclaw/secrets/.env (chmod 600), then: openclaw config set env.vars.GOHIGHLEVEL_API_KEY \"$GOHIGHLEVEL_API_KEY\". Get the PIT from GHL Settings > Integrations > Private Integrations."
     },
@@ -21,9 +25,396 @@
       "id": "ghl-location",
       "type": "credential",
       "label": "GoHighLevel Location ID",
-      "check": { "envVar": "GOHIGHLEVEL_LOCATION_ID" },
+      "check": {
+        "envVar": "GOHIGHLEVEL_LOCATION_ID"
+      },
       "severity": "required",
       "satisfy": "Add GOHIGHLEVEL_LOCATION_ID=<your location id> to ~/.openclaw/secrets/.env, then: openclaw config set env.vars.GOHIGHLEVEL_LOCATION_ID \"$GOHIGHLEVEL_LOCATION_ID\"."
     }
-  ]
+  ],
+  "authorization_profiles": {
+    "schema": "onboarding-authorization-profile.v1",
+    "record_version": 1,
+    "derivation": "operation-derived",
+    "discovery_rule": "A family is reported enabled only from operation evidence for THIS authenticated connection and THIS location: search_operations finds the operation, describe_operation captures its request schema and required scopes, and the evidence record binds connection, location_id, granted scopes and schema/contract version. A no-match is a catalog result for (connection, location, captured_at); it is never proof of universal nonexistence and never permission to invent an operation id from a REST slug.",
+    "endpoint_rule": {
+      "mcp_client_url_suffix": "/v2",
+      "documented_clients": {
+        "claude": "https://services.leadconnectorhq.com/mcp/anthropic/v2",
+        "chatgpt_codex_openai": "https://services.leadconnectorhq.com/mcp/openai/v2/"
+      },
+      "auth": "OAuth for the documented MCP endpoints. The location Private Integration Token is the REST credential and is never an equivalent MCP auth path.",
+      "forbidden": [
+        "an invented /v3 MCP endpoint",
+        "an invented /mcp/projects server",
+        "a location Private Integration Token substituted for the OAuth grant"
+      ]
+    },
+    "connection_availability": {
+      "single_location": "One OAuth connection authorizes the locations shown by list_locations for THIS grant. Activity for one location is not evidence for another.",
+      "bulk_agency_wide": "An agency-wide bulk connection is a separate rollout condition, not the default. Where bulk is not offered, use the supported single-location connection; do not fan one grant across locations."
+    },
+    "enabled_layers": {
+      "repository_support": "Instructions, contracts and tests are shipped (this lane ships documentation and its checks; adapter code is owned by each family lane).",
+      "client_installation": "The client runtime carries the new modules and routes; installation/version and local route checks are the evidence.",
+      "account_availability": "The location/user has the feature, grant and entitlement; feature discovery, permissions and safe probes are the evidence.",
+      "operational_activation": "The configured asset actually performs the approved function; read-back, functional test and activation approval are the evidence."
+    },
+    "authorization_states": [
+      "installed",
+      "configured",
+      "available",
+      "authorized",
+      "tested",
+      "active",
+      "blocked"
+    ],
+    "evidence_fields": [
+      "connection_id",
+      "location_id",
+      "operation_id",
+      "schema_version",
+      "granted_scopes",
+      "captured_at"
+    ],
+    "beta_flags": {
+      "workflows": "The Workflows beta access form covers workflow operations only. An explicit WORKFLOW_API_NOT_ENABLED_FOR_LOCATION result is recorded as beta_not_enabled for that location; it is never reported as a bad token and never unlocks another family.",
+      "projects": "The Projects connection guide uses the same client-specific hosted MCP endpoints and OAuth. Projects API beta access, Projects UI/Labs availability and discovered Projects operations stay separate observations."
+    },
+    "profiles": [
+      {
+        "family": "courses",
+        "owner_lane": "WF06/WF07",
+        "connection_kind": "single-location",
+        "credential_class": "oauth-mcp-discovery-then-family-adapter",
+        "discovery": {
+          "query_intents": [
+            "create course",
+            "create lesson",
+            "import course"
+          ],
+          "discovered_operation_ids": [],
+          "discovery_state": "not_run"
+        },
+        "enabled_layers": {
+          "repository_support": "documented",
+          "client_installation": "unknown",
+          "account_availability": "unknown",
+          "operational_activation": "not_run"
+        },
+        "authorization_state": "unverified",
+        "blocked_reason": null,
+        "fallback": "shared public REST CLI for workers without injected MCP tools; managed browser only where no public operation exists"
+      },
+      {
+        "family": "course_assessments",
+        "owner_lane": "WF06/WF07",
+        "connection_kind": "single-location",
+        "credential_class": "oauth-mcp-discovery-then-family-adapter",
+        "discovery": {
+          "query_intents": [
+            "create course quiz",
+            "create assessment",
+            "create lesson quiz"
+          ],
+          "discovered_operation_ids": [],
+          "discovery_state": "not_run"
+        },
+        "enabled_layers": {
+          "repository_support": "documented",
+          "client_installation": "unknown",
+          "account_availability": "unknown",
+          "operational_activation": "not_run"
+        },
+        "authorization_state": "unverified",
+        "blocked_reason": null,
+        "fallback": "shared public REST CLI for workers without injected MCP tools; managed browser only where no public operation exists"
+      },
+      {
+        "family": "course_offers_and_enrollment",
+        "owner_lane": "WF06/WF07/WF13",
+        "connection_kind": "single-location",
+        "credential_class": "oauth-mcp-discovery-then-family-adapter",
+        "discovery": {
+          "query_intents": [
+            "create course offer",
+            "enroll contact in course",
+            "attach course"
+          ],
+          "discovered_operation_ids": [],
+          "discovery_state": "not_run"
+        },
+        "enabled_layers": {
+          "repository_support": "documented",
+          "client_installation": "unknown",
+          "account_availability": "unknown",
+          "operational_activation": "not_run"
+        },
+        "authorization_state": "unverified",
+        "blocked_reason": null,
+        "fallback": "shared public REST CLI for workers without injected MCP tools; managed browser only where no public operation exists"
+      },
+      {
+        "family": "workflow_authoring",
+        "owner_lane": "WF02/WF04",
+        "connection_kind": "single-location",
+        "credential_class": "oauth-mcp-discovery-then-family-adapter",
+        "discovery": {
+          "query_intents": [
+            "create workflow",
+            "update workflow",
+            "workflow validate"
+          ],
+          "discovered_operation_ids": [],
+          "discovery_state": "not_run"
+        },
+        "enabled_layers": {
+          "repository_support": "documented",
+          "client_installation": "unknown",
+          "account_availability": "unknown",
+          "operational_activation": "not_run"
+        },
+        "authorization_state": "unverified",
+        "blocked_reason": null,
+        "fallback": "shared public REST CLI for workers without injected MCP tools; managed browser only where no public operation exists",
+        "notes": "Public authoring existence is a discovery question. A no-match does not authorize a guessed write; the authorized Skill 44 internal Build API remains the only verified authoring path."
+      },
+      {
+        "family": "workflow_validation",
+        "owner_lane": "WF02",
+        "connection_kind": "single-location",
+        "credential_class": "oauth-mcp-discovery-then-family-adapter",
+        "discovery": {
+          "query_intents": [
+            "workflow validate"
+          ],
+          "discovered_operation_ids": [],
+          "discovery_state": "not_run"
+        },
+        "enabled_layers": {
+          "repository_support": "documented",
+          "client_installation": "unknown",
+          "account_availability": "unknown",
+          "operational_activation": "not_run"
+        },
+        "authorization_state": "unverified",
+        "blocked_reason": null,
+        "fallback": "shared public REST CLI for workers without injected MCP tools; managed browser only where no public operation exists"
+      },
+      {
+        "family": "workflow_logs_and_statistics",
+        "owner_lane": "WF25",
+        "connection_kind": "single-location",
+        "credential_class": "oauth-mcp-discovery-then-family-adapter",
+        "discovery": {
+          "query_intents": [
+            "workflow logs",
+            "workflow executions",
+            "workflow statistics"
+          ],
+          "discovered_operation_ids": [],
+          "discovery_state": "not_run"
+        },
+        "enabled_layers": {
+          "repository_support": "documented",
+          "client_installation": "unknown",
+          "account_availability": "unknown",
+          "operational_activation": "not_run"
+        },
+        "authorization_state": "unverified",
+        "blocked_reason": null,
+        "fallback": "shared public REST CLI for workers without injected MCP tools; managed browser only where no public operation exists"
+      },
+      {
+        "family": "meeting_rooms",
+        "owner_lane": "WF26",
+        "connection_kind": "single-location",
+        "credential_class": "oauth-mcp-discovery-then-family-adapter",
+        "discovery": {
+          "query_intents": [
+            "meeting room setup",
+            "create meeting room"
+          ],
+          "discovered_operation_ids": [],
+          "discovery_state": "not_run"
+        },
+        "enabled_layers": {
+          "repository_support": "documented",
+          "client_installation": "unknown",
+          "account_availability": "unknown",
+          "operational_activation": "not_run"
+        },
+        "authorization_state": "unverified",
+        "blocked_reason": null,
+        "fallback": "shared public REST CLI for workers without injected MCP tools; managed browser only where no public operation exists"
+      },
+      {
+        "family": "native_voice_ai",
+        "owner_lane": "WF27",
+        "connection_kind": "single-location",
+        "credential_class": "oauth-mcp-discovery-then-family-adapter",
+        "discovery": {
+          "query_intents": [
+            "create voice agent",
+            "voice ai action",
+            "assign phone number"
+          ],
+          "discovered_operation_ids": [],
+          "discovery_state": "not_run"
+        },
+        "enabled_layers": {
+          "repository_support": "documented",
+          "client_installation": "unknown",
+          "account_availability": "unknown",
+          "operational_activation": "not_run"
+        },
+        "authorization_state": "unverified",
+        "blocked_reason": null,
+        "fallback": "shared public REST CLI for workers without injected MCP tools; managed browser only where no public operation exists"
+      },
+      {
+        "family": "native_conversation_ai",
+        "owner_lane": "WF28",
+        "connection_kind": "single-location",
+        "credential_class": "oauth-mcp-discovery-then-family-adapter",
+        "discovery": {
+          "query_intents": [
+            "conversation ai",
+            "create conversation ai agent"
+          ],
+          "discovered_operation_ids": [],
+          "discovery_state": "not_run"
+        },
+        "enabled_layers": {
+          "repository_support": "documented",
+          "client_installation": "unknown",
+          "account_availability": "unknown",
+          "operational_activation": "not_run"
+        },
+        "authorization_state": "unverified",
+        "blocked_reason": null,
+        "fallback": "shared public REST CLI for workers without injected MCP tools; managed browser only where no public operation exists"
+      },
+      {
+        "family": "agent_studio_flow_agents",
+        "owner_lane": "WF29",
+        "connection_kind": "single-location",
+        "credential_class": "oauth-mcp-discovery-then-family-adapter",
+        "discovery": {
+          "query_intents": [
+            "agent studio",
+            "create flow agent",
+            "studio versions"
+          ],
+          "discovered_operation_ids": [],
+          "discovery_state": "not_run"
+        },
+        "enabled_layers": {
+          "repository_support": "documented",
+          "client_installation": "unknown",
+          "account_availability": "unknown",
+          "operational_activation": "not_run"
+        },
+        "authorization_state": "unverified",
+        "blocked_reason": null,
+        "fallback": "shared public REST CLI for workers without injected MCP tools; managed browser only where no public operation exists"
+      },
+      {
+        "family": "knowledge_bases",
+        "owner_lane": "WF30",
+        "connection_kind": "single-location",
+        "credential_class": "oauth-mcp-discovery-then-family-adapter",
+        "discovery": {
+          "query_intents": [
+            "knowledge base",
+            "kb ingestion",
+            "train knowledge base",
+            "attach knowledge base"
+          ],
+          "discovered_operation_ids": [],
+          "discovery_state": "not_run"
+        },
+        "enabled_layers": {
+          "repository_support": "documented",
+          "client_installation": "unknown",
+          "account_availability": "unknown",
+          "operational_activation": "not_run"
+        },
+        "authorization_state": "unverified",
+        "blocked_reason": null,
+        "fallback": "shared public REST CLI for workers without injected MCP tools; managed browser only where no public operation exists"
+      },
+      {
+        "family": "chat_widgets",
+        "owner_lane": "WF31",
+        "connection_kind": "single-location",
+        "credential_class": "oauth-mcp-discovery-then-family-adapter",
+        "discovery": {
+          "query_intents": [
+            "create chat widget",
+            "widget installation"
+          ],
+          "discovered_operation_ids": [],
+          "discovery_state": "not_run"
+        },
+        "enabled_layers": {
+          "repository_support": "documented",
+          "client_installation": "unknown",
+          "account_availability": "unknown",
+          "operational_activation": "not_run"
+        },
+        "authorization_state": "unverified",
+        "blocked_reason": null,
+        "fallback": "shared public REST CLI for workers without injected MCP tools; managed browser only where no public operation exists"
+      },
+      {
+        "family": "projects",
+        "owner_lane": "WF32",
+        "connection_kind": "single-location",
+        "credential_class": "oauth-mcp-discovery-then-family-adapter",
+        "discovery": {
+          "query_intents": [
+            "projects space create",
+            "projects list create",
+            "projects task create"
+          ],
+          "discovered_operation_ids": [],
+          "discovery_state": "not_run"
+        },
+        "enabled_layers": {
+          "repository_support": "documented",
+          "client_installation": "unknown",
+          "account_availability": "unknown",
+          "operational_activation": "not_run"
+        },
+        "authorization_state": "unverified",
+        "blocked_reason": null,
+        "fallback": "shared public REST CLI for workers without injected MCP tools; managed browser only where no public operation exists",
+        "notes": "UI/Labs availability, Projects API beta access, and the operations discovered for this exact OAuth connection are three separate observations. The Workflows beta form never enables Projects."
+      },
+      {
+        "family": "marketing_quiz_builder",
+        "owner_lane": "WF34",
+        "connection_kind": "single-location",
+        "credential_class": "oauth-mcp-discovery-then-family-adapter",
+        "discovery": {
+          "query_intents": [
+            "create marketing quiz",
+            "quiz builder"
+          ],
+          "discovered_operation_ids": [],
+          "discovery_state": "not_run"
+        },
+        "enabled_layers": {
+          "repository_support": "documented",
+          "client_installation": "unknown",
+          "account_availability": "unknown",
+          "operational_activation": "not_run"
+        },
+        "authorization_state": "unverified",
+        "blocked_reason": null,
+        "fallback": "shared public REST CLI for workers without injected MCP tools; managed browser only where no public operation exists"
+      }
+    ]
+  }
 }
