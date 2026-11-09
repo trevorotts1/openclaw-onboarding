@@ -1,0 +1,15 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Approved account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/quiz-builder-v2/QUIZ_FROM_INVENTORY",
+  "configuration": {
+    "result_page": {
+      "expected": {
+        "business_name_enabled": true
+      },
+      "changes": {
+        "business_name_enabled": false
+      }
+    }
+  }
+}

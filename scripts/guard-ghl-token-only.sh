@@ -206,9 +206,13 @@ scan_code() {
     local code="${codeln#*:}"
     [ -z "$code" ] && continue
     for pat in "${BANNED_PATTERNS[@]}"; do
-      if grep -Eq "$pat" <<<"$code"; then
+      # POSIX ERE is also Bash's built-in =~ dialect (including macOS Bash
+      # 3.2). Keep the same patterns/line boundaries without launching grep
+      # once per line and pattern: thousands of process starts make the Mac
+      # fixture exceed its guard deadline even when both scripts are clean.
+      if [[ "$code" =~ $pat ]]; then
         # Forgive read-only detection idioms (failed-seed STOP checks).
-        if grep -Eq "$ALLOW_REGEX" <<<"$code"; then
+        if [[ "$code" =~ $ALLOW_REGEX ]]; then
           continue
         fi
         red "  ✗ FAIL — $label:$lineno reintroduces auto UI-login / 2FA:"

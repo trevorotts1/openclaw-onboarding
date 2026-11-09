@@ -102,6 +102,7 @@ def req(capture):
 def readback(capture):
     """A read-back payload that satisfies every captured assertion."""
     payload = {k: "x" for k in capture["readback_keys"]}
+    payload["id"] = capture["variant_id"]
     payload[capture["variant_relation"]] = capture["control_id_before"]
     payload[capture["traffic_field"]] = capture["traffic_default"]
     return payload
@@ -555,6 +556,84 @@ class TestReuseShape:
         assert sv.reuse_decision(capture, rows, req,
                                  capture_path=bundle["capture_path"]
                                  )["action"] == "CREATE"
+
+
+class TestExactIdentityRefusals:
+    @pytest.mark.parametrize('variant_id',[None,'different-native-variant',True,[]])
+    def test_relation_and_traffic_cannot_substitute_for_the_variant_id(self,capture,readback,bundle,variant_id):
+        readback['id']=variant_id
+        ok,problems=sv.readback_passes(capture,readback,capture_path=bundle['capture_path'])
+        assert not ok
+        assert any('native variant identity' in problem for problem in problems)
+
+    def test_capture_readback_key_list_cannot_omit_relation_or_traffic_checks(self,tmp_path):
+        selectors=_selectors(readback_keys=['id','name','url'])
+        bundle_=sv.write_capture_bundle(str(tmp_path),selectors,ARTIFACT_BYTES,
+            company_id=COMPANY,captured_at=CAPTURED_AT,session_id='session',
+            candidate_revision=REV,reviewer='offline-reviewer',reviewed_at='2026-10-22T12:05:00Z')
+        cap=sv.load_capture(bundle_['capture_path'])
+        ok,problems=sv.readback_passes(cap,{'id':cap['variant_id'],'name':'B','url':'b'},
+                                      capture_path=bundle_['capture_path'])
+        assert not ok
+        assert any('not linked' in problem for problem in problems)
+        assert any('traffic must stay' in problem for problem in problems)
+
+    def test_false_is_not_a_native_numeric_zero_traffic_readback(self,tmp_path):
+        bundle_=sv.write_capture_bundle(str(tmp_path),_selectors(traffic_default=0),ARTIFACT_BYTES,
+            company_id=COMPANY,captured_at=CAPTURED_AT,session_id='session',
+            candidate_revision=REV,reviewer='offline-reviewer',reviewed_at='2026-10-22T12:05:00Z')
+        cap=sv.load_capture(bundle_['capture_path'])
+        actual={'id':cap['variant_id'],'name':'B','url':'b',cap['variant_relation']:cap['control_id_before'],
+                cap['traffic_field']:False}
+        assert sv.readback_passes(cap,actual,capture_path=bundle_['capture_path'])[0] is False
+
+    def matching(self,capture,req,**changes):
+        return {'id':capture['variant_id'],'name':req.name,'url':req.slug,
+                capture['variant_relation']:capture['control_id_before'],**changes}
+
+    @pytest.mark.parametrize('change',[
+        {'id':None},{'id':[]},{'id':''},{'name':None},{'url':False},{'variationOf':None}])
+    def test_incomplete_variant_inventory_never_infers_absence_or_falls_back_to_capture_id(self,capture,req,bundle,change):
+        with pytest.raises(sv.VariantRefused):
+            sv.reuse_decision(capture,[self.matching(capture,req,**change)],req,
+                              capture_path=bundle['capture_path'])
+
+    def test_multiple_matching_variants_are_ambiguous_not_first_match(self,capture,req,bundle):
+        rows=[self.matching(capture,req),self.matching(capture,req,id='other-native-id')]
+        with pytest.raises(sv.VariantRefused,match='multiple native variants'):
+            sv.reuse_decision(capture,rows,req,capture_path=bundle['capture_path'])
+
+    def test_repeated_native_id_and_occupied_captured_id_require_reconciliation(self,capture,req,bundle):
+        repeated=[self.matching(capture,req),self.matching(capture,req,name='C',url='c')]
+        # First row may match; later conflicting identity must still be inspected.
+        with pytest.raises(sv.VariantRefused,match='duplicate native ids'):
+            sv.reuse_decision(capture,repeated,req,capture_path=bundle['capture_path'])
+        with pytest.raises(sv.VariantRefused,match='occupied'):
+            sv.reuse_decision(capture,[self.matching(capture,req,name='C',url='c')],req,
+                              capture_path=bundle['capture_path'])
+
+    def test_one_matching_but_uncaptured_native_id_is_not_reused(self,capture,req,bundle):
+        with pytest.raises(sv.VariantRefused,match='exact captured native id'):
+            sv.reuse_decision(capture,[self.matching(capture,req,id='other-native-id')],req,
+                              capture_path=bundle['capture_path'])
+
+    @pytest.mark.parametrize('change',[{'location_id':'foreign'},{'step_id':'foreign'}])
+    def test_reuse_request_is_bound_to_the_captured_location_and_control(self,capture,req,bundle,change):
+        altered=sv.VariantRequest(**{**req.__dict__,**change})
+        with pytest.raises(sv.VariantRefused,match='captured location/control'):
+            sv.reuse_decision(capture,[],altered,capture_path=bundle['capture_path'])
+
+    @pytest.mark.parametrize('claim',[{'locationId':'foreign'},{'funnelId':'foreign'}])
+    def test_explicit_foreign_resource_claim_is_not_silently_ignored(self,capture,req,bundle,claim):
+        with pytest.raises(sv.VariantRefused,match='another'):
+            sv.reuse_decision(capture,[self.matching(capture,req,**claim)],req,
+                              capture_path=bundle['capture_path'])
+
+    @pytest.mark.parametrize('change',[{'name':True},{'funnel_id':{}},{'step_id':[]},
+        {'slug':'bad\\path'},{'slug':'b?query'},{'slug':'bad\tpath'},{'slug':'..'},{'is_control':0}])
+    def test_request_never_coerces_wrong_types_or_unsafe_path_segments(self,req,change):
+        with pytest.raises(sv.VariantRefused):
+            sv.VariantRequest(**{**req.__dict__,**change}).validate()
 
 
 # ── CLI / checklist script contracts ──────────────────────────────────────

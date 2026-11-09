@@ -1,0 +1,21 @@
+{
+  "action": "quiz_multiple_choices",
+  "payload": {
+    "location_id": "REPLACE_LOCATION_ID",
+    "location_name": "REPLACE_EXACT_ACCOUNT_NAME",
+    "start_url": "https://app.convertandflow.com/v2/location/REPLACE_LOCATION_ID/quiz-builder-v2/REPLACE_QUIZ_ID",
+    "expected_quiz_name": "REPLACE_EXACT_QUIZ_NAME",
+    "pages": [{"label": "Page 1", "questions": []}],
+    "target_page": 1,
+    "acknowledge_shared_field_options": true,
+    "questions": [{
+      "field_type": "SINGLE_OPTIONS",
+      "question": "Select your priority",
+      "placeholder": "Choose a priority",
+      "short_label": "Priority",
+      "query_key": "priority",
+      "required": true,
+      "options": ["Growth", "Clarity", "Time"]
+    }]
+  }
+}
