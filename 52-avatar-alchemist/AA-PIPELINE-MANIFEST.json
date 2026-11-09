@@ -127,7 +127,7 @@
       "36-image-prompts-39",
       "40-landing-image-prompts"
     ],
-    "length_rule": "KIE prompt rule 12 (owner order 2026-10-05): 95 to 100 percent of the image model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by shared-utils/kie_prompt_enforcer.py from the Skill 74 prompt-budget limit; no character numbers live in this manifest",
+    "length_rule": "KIE prompt rule 12 (owner order 2026-10-05): 95 to 100 percent of the image model maxLength (owner cap 20000 for GPT Image 2.6 -> floor band [16000,20000]), hard floor 80 percent, hard ceiling 100 percent, measured by shared-utils/kie_prompt_enforcer.py from the Skill 74 prompt-budget limit",
     "measure": "stripped",
     "note": "self-reported counts ignored; measured on markdown/whitespace-stripped text."
   },
@@ -1082,8 +1082,8 @@
       "floors": {
         "count_39": true,
         "char_band": [
-          5000,
-          19000
+          16000,
+          20000
         ],
         "unique_artist": true
       },
@@ -1189,8 +1189,8 @@
       ],
       "floors": {
         "char_band": [
-          5000,
-          19000
+          16000,
+          20000
         ]
       },
       "deliverable": "Landing_Page_Image_Prompts",

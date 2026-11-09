@@ -18,7 +18,8 @@ Gates (all offline Python; a single violation is fail-closed sys.exit(2)):
                 within the stripped-char cap.                     -> AF-AV-BOTMSG-CAP
   G-COUNT       exactly 39 image prompts / top-39 (3x13); headline doc 12+12+12;
                 each ad set >=10 ads.        -> AF-AV-COUNT-39 / -COUNT-HEADLINE / -ADCOUNT
-  G-IMG-BAND    image-prompt artifacts inside the STRIPPED-char band [5000,19000];
+  G-IMG-BAND    image-prompt artifacts inside the STRIPPED-char band [16000,20000]
+                (KIE prompt rule 12 at the GPT Image 2.6 owner cap);
                 no repeated artist token.       -> AF-AV-IMG-BAND / AF-AV-UNIQUE-ARTIST
   G-ADSET-CAT   each of 13 ad sets carries its restored R4 category signature (no
                 'category 2' drift).                             -> AF-AV-ADSET-CAT
@@ -330,8 +331,8 @@ def verify(manifest: Dict[str, Any], state: Dict[str, Any],
     models: Dict[str, str] = state.get("models", {})
     receipts = set(state.get("receipts", []))
     # Image prompt length is KIE prompt rule 12 (owner order 2026-10-05), set per model by the shared enforcer when a
-    # prompt is submitted to KIE; this gate keeps no character band of its own (the old 5,000-19,000 pair here was
-    # never read).
+    # prompt is submitted to KIE; the enforced band is read from the manifest floors (rule 12 at the owner cap),
+    # not from the retired 5,000-19,000 pair (never a live rule).
 
     # === G-STAGE: generation-completeness =================================
     for sid, spec in stages.items():
@@ -661,17 +662,21 @@ def _synth(manifest: Dict[str, Any], apply_repairs: bool = True) -> Dict[str, An
         if f.get("count_39"):
             for i in range(1, 40):
                 if f.get("char_band"):
+                    lo, hi = (int(f["char_band"][0]), int(f["char_band"][1])) if isinstance(f.get("char_band"), (list, tuple)) else (16000, 20000)
+                    per_lo, per_hi = max(0, (lo - 39 * 160) // 39), max(1, (hi - 39 * 160) // 39)
                     parts.append(f"{i}. Ad words here then a Midjourney prompt in the style of Artist{i}: "
                                  f"a disruptive scene, cinematic lighting, rule of thirds, --ar 1:1 --r 10 --c 25 --s 750. "
-                                 f"{_lorem(12)}\n")
+                                 f"{_fit_band('chars', per_lo, per_hi)}\n")
                 else:
                     parts.append(f"{i}. Ad Set {((i-1)//3)+1} selection {i} with suggested image information.\n")
         elif f.get("char_band"):
             parts.append("\n## Landing Page Image Prompts\n")
+            lo, hi = (int(f["char_band"][0]), int(f["char_band"][1])) if isinstance(f.get("char_band"), (list, tuple)) else (16000, 20000)
             for i in range(1, 13):
                 parts.append(f"{i}. Section {i} prompt in the style of Muralist{i}: African American subject, "
                              f"disruptive composition, ::4 facial expression, ::3 clothing, rule of thirds placement, "
-                             f"cinematic key lighting, 35mm lens, unique environment never repeated. {_lorem(90)}\n")
+                             f"cinematic key lighting, 35mm lens, unique environment never repeated. "
+                             f"{_fit_band('chars', max(0, lo // 12 - 120), max(1, hi // 12 - 100))}\n")
         if f.get("botdoc"):
             parts.append("\n# Intro Message Section\n<intro_message>\nHello {{contact.first_name}}, welcome.\n</intro_message>\n"
                          "\n# Role Section\n<role>\nYou are the booking assistant.\n</role>\n")

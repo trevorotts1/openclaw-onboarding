@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "_purpose": "Machine-checkable transcription of the 16 BINDING LAWS in SCOPE-LEDGER.md section 4 (GHL Hybrid v3.0 run, waves w61-w66). The ledger states each law as prose that 'applies to EVERY one of the 13 units' (16 x 13 = 208 application items). Prose cannot be enforced, so every law is restated here as a named check that scripts/check-binding-laws.py actually runs. Ledger item ids are '<unit>-L<n>'; this file owns the L<n> half only.",
+  "_why_this_exists": "Before this file, 14 of the 16 laws lived only in a prompt. A rule stated only in a prompt is verified by trusting a transcript, and a transcript is prose -- it can say anything. ledger-truth-gate.yml already records that exact failure for this repo: an unattended cron stamped whole units verified off prose alone. The two laws that DID have machinery (L5, L6) have it in .github/workflows/sf-prover-pin-authority.yml, and that pair is the model followed here.",
+  "_sources": {
+    "ledger": "SCOPE-LEDGER.md section 4 'Binding laws' (frozen 2026-11-09 8:01 AM Eastern)",
+    "measured_against": "origin/main 014aad4f27a7d269b98d5beb11395e4ad255eaaf",
+    "sibling_precedent": ".github/workflows/sf-prover-pin-authority.yml (L5, L6), scripts/check-tag-ancestry.py (ancestry idiom), .github/workflows/gate-added-paths-guard.yml (fail-closed + control job idiom)"
+  },
+  "_kinds": {
+    "tree": "Derivable from the repository alone: git objects, the base..head diff, commit authorship. Evaluated on every pull request. A violation fails the build.",
+    "evidence": "NOT derivable from the tree, because the law constrains what the lane DID, not what it committed (force-push, SSH, secrets in a transcript, QC by a different model). Evaluated against a per-law evidence file whose VALUES are validated -- presence alone is never enough. When no evidence directory is supplied the law is reported DEFERRED, never PASSED."
+  },
+  "units_in_ledger_order": [
+    "LAND-001",
+    "LAND-002",
+    "LAND-003",
+    "LAND-004",
+    "LAND-005",
+    "RES-001",
+    "RES-002",
+    "RES-003",
+    "RES-004",
+    "MOCK-001",
+    "ASM-001",
+    "PRMPT-001",
+    "INST-001"
+  ],
+  "pin_files": [
+    "49-signature-funnel/scripts/SF-PROVER-PIN.sha256",
+    "56-sales-page-assets/scripts/SPA-PROVER-PIN.sha256",
+    "03-agent-browser/agent-browser-cli.pin",
+    "03-agent-browser/references/onbox-agent-browser-skillmd.pin"
+  ],
+  "bot_emails": [
+    "41898282+github-actions[bot]@users.noreply.github.com"
+  ],
+  "bot_names": [
+    "github-actions[bot]",
+    "dependabot[bot]"
+  ],
+  "laws": [
+    {
+      "id": "L1",
+      "text": "No check deleted, skipped, xfailed or widened.",
+      "kind": "tree",
+      "check": "no_check_weakened",
+      "covers": "removed assert/pytest.raises lines, added skip/skipif/xfail markers, and thresholds moved in the permissive direction, in test paths only"
+    },
+    {
+      "id": "L2",
+      "text": "No force-push.",
+      "kind": "evidence",
+      "check": "no_force_push",
+      "evidence_fields": { "force_push_events": 0 }
+    },
+    {
+      "id": "L3",
+      "text": "No admin bypass (no --admin).",
+      "kind": "evidence",
+      "check": "no_admin_bypass",
+      "evidence_fields": { "admin_bypassed": false, "required_checks_green_at_merge": true }
+    },
+    {
+      "id": "L4",
+      "text": "No --no-verify.",
+      "kind": "evidence",
+      "check": "no_no_verify",
+      "evidence_fields": { "used_no_verify": false }
+    },
+    {
+      "id": "L5",
+      "text": "Pin never hand-written.",
+      "kind": "tree",
+      "check": "pin_not_hand_written",
+      "covers": "every commit in base..head touching a declared pin file must be authored AND committed by a declared bot identity, and must touch nothing else"
+    },
+    {
+      "id": "L6",
+      "text": "Authority workflow mints the pin once.",
+      "kind": "tree",
+      "check": "pin_minted_once",
+      "covers": "exactly one pin-mint commit per pin file per range; a second distinct mint commit is a violation"
+    },
+    {
+      "id": "L7",
+      "text": "No SSH.",
+      "kind": "evidence",
+      "check": "no_ssh",
+      "evidence_fields": { "ssh_invocations": 0 }
+    },
+    {
+      "id": "L8",
+      "text": "No fleet contact.",
+      "kind": "evidence",
+      "check": "no_fleet_contact",
+      "evidence_fields": { "fleet_targets_contacted": 0 }
+    },
+    {
+      "id": "L9",
+      "text": "No secret printed.",
+      "kind": "evidence",
+      "check": "no_secret_printed",
+      "evidence_fields": { "secrets_in_transcript": 0 }
+    },
+    {
+      "id": "L10",
+      "text": "Collision law: open PRs and `git log --oneline -5 origin/main -- <file>` checked before each file change; no duplicate vehicle.",
+      "kind": "evidence",
+      "check": "collision_law",
+      "evidence_fields": { "files_changed_without_collision_check": [] }
+    },
+    {
+      "id": "L11",
+      "text": "ONE PR per unit; a recut closes the old PR in the same run with a pointer.",
+      "kind": "evidence",
+      "check": "one_pr_per_unit",
+      "evidence_fields": { "open_prs_for_unit": 1, "closed_prs_all_link_replacement": true }
+    },
+    {
+      "id": "L12",
+      "text": "If BEHIND: recut from current origin/main; never merge main into a branch.",
+      "kind": "tree",
+      "check": "no_merge_commits",
+      "covers": "git rev-list --merges on the range must be empty"
+    },
+    {
+      "id": "L13",
+      "text": "Ancestry: `git merge-base --is-ancestor <commit> origin/main` returns 0, output pasted.",
+      "kind": "tree",
+      "check": "ancestry_from_base",
+      "covers": "the base ref must be an ancestor of head, i.e. the branch is on top of current origin/main and not a stale fork"
+    },
+    {
+      "id": "L14",
+      "text": "Work only in the assigned CLONE and TMPDIR.",
+      "kind": "evidence",
+      "check": "clone_tmpdir_only",
+      "evidence_fields": { "out_of_scope_paths_written": [] }
+    },
+    {
+      "id": "L15",
+      "text": "QC by Opus-Chain (non-DeepSeek), never the builder lane.",
+      "kind": "evidence",
+      "check": "qc_not_builder",
+      "evidence_fields": { "qc_lane_id": "", "builder_lane_id": "", "qc_model": "" }
+    },
+    {
+      "id": "L16",
+      "text": "QC returns CONFIRMED or FAILED naming each defect.",
+      "kind": "evidence",
+      "check": "qc_verdict",
+      "evidence_fields": { "verdict": "", "defects": [] }
+    }
+  ],
+  "_before_state_on_origin_main": {
+    "_note": "Direct git tree inspection of origin/main 014aad4f27a7. Only L5 and L6 have machinery; both are scoped to the Skill 49 pin file, which is the pin the authority workflow owns. Every other law is prose in a prompt and nothing in the tree reads it.",
+    "L1": { "status": "ABSENT", "found": "no guard anywhere scans a diff for removed asserts or added skip/xfail; `git grep -l xfail -- scripts/ .github/` returns nothing" },
+    "L2": { "status": "ABSENT", "found": "no workflow reads a PR timeline; `git grep -l 'HeadRefForcePushedEvent'` returns nothing" },
+    "L3": { "status": "ABSENT", "found": "no check reads branch-protection or an --admin flag" },
+    "L4": { "status": "ABSENT", "found": "no check reads --no-verify" },
+    "L5": { "status": "PRESENT", "file": ".github/workflows/sf-prover-pin-authority.yml", "line": 175, "quote": "name: Refuse a hand-edited pin file", "scope": "49-signature-funnel/scripts/SF-PROVER-PIN.sha256 only" },
+    "L6": { "status": "PRESENT", "file": ".github/workflows/sf-prover-pin-authority.yml", "line": 243, "quote": "name: Mint the pin as a PR (never a direct push to main)", "scope": "49-signature-funnel/scripts/SF-PROVER-PIN.sha256 only" },
+    "L7": { "status": "ABSENT", "found": "no check reads a transcript for ssh" },
+    "L8": { "status": "ABSENT", "found": "no check reads a transcript for fleet contact" },
+    "L9": { "status": "ABSENT", "found": "no secret-scan guard: `git grep -l -iE 'secret[- ]scan|gitleaks|trufflehog' -- scripts/ .github/` returns only scripts/ghl-mcp-autostart.sh, which is unrelated" },
+    "L10": { "status": "ABSENT", "found": "no check requires a collision check before a file change" },
+    "L11": { "status": "ABSENT", "found": "no check counts PRs per unit" },
+    "L12": { "status": "ABSENT", "found": "no check runs rev-list --merges on a PR range" },
+    "L13": { "status": "ABSENT", "found": "scripts/check-tag-ancestry.py enforces TAG-to-main ancestry (a tag is an ancestor of main), which is a different assertion from 'this unit commit is an ancestor of origin/main'; no check tests the lane range's base ancestry" },
+    "L14": { "status": "ABSENT", "found": "no check reads written paths against an assigned clone/TMPDIR" },
+    "L15": { "status": "ABSENT", "found": "QC-PROTOCOL.md states the rule in prose; nothing reads a QC lane or model id" },
+    "L16": { "status": "ABSENT", "found": "QC-PROTOCOL.md states the return format in prose; nothing validates a verdict" }
+  }
+}
