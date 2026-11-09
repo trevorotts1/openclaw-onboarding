@@ -859,14 +859,51 @@ def upload_media(
         fields["parentId"] = parent_id  # documented folder field is parentId
 
     body, content_type = _multipart_encode(fields, "file", png_path)
-    posted = _post_multipart_media(body, content_type, name, pit,
-                                   timeout=timeout, opener=opener)
+    url = GHL_SERVICES_ORIGIN.rstrip("/") + GHL_MEDIA_UPLOAD_PATH
+    req = urllib.request.Request(url, data=body, method="POST")
+    req.add_header("Authorization", f"Bearer {pit}")
+    req.add_header("Version", GHL_MEDIA_VERSION)
+    req.add_header("Content-Type", content_type)
+
+    _opener = opener or (lambda r, t: urllib.request.urlopen(r, timeout=t))
+    try:
+        resp = _opener(req, timeout)
+        code = resp.getcode()
+        raw = resp.read()
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace") if hasattr(exc, "read") else ""
+        raise RuntimeError(
+            f"media upload HTTP {exc.code} for {name!r}: {detail[:300]} "
+            "(media uploads REQUIRE the LOCATION PIT with medias.write scope; "
+            "the Agency PIT 401s)"
+        ) from exc
+
+    if not (200 <= int(code) < 300):
+        raise RuntimeError(f"media upload returned HTTP {code} for {name!r}: {raw[:300]}")
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"media upload {code} but body is not JSON for {name!r}: {raw[:300]}"
+        ) from exc
+
+    file_id = data.get("fileId") or data.get("id")
+    public_url = data.get("url") or data.get("fileUrl")
+    if not file_id or not public_url:
+        raise RuntimeError(
+            f"media upload {code} but response missing fileId/url for {name!r}: "
+            f"{json.dumps(data)[:300]} — refusing to fabricate a CDN URL"
+        )
+
     return {
-        "fileId": posted["fileId"],
-        "url": posted["url"],
+        "fileId": file_id,
+        "url": public_url,
         "name": name,
         "local_path": png_path,
-        "http": posted["http"],
+        "http": int(code),
     }
 
 
@@ -875,10 +912,12 @@ def _post_multipart_media(body: bytes, content_type: str, name: str, pit: str, *
                           opener: Callable[[urllib.request.Request, int], Any] | None = None) -> dict:
     """POST one already-encoded multipart body to the media upload endpoint.
 
-    Shared by ``upload_media`` (PNG rail) and ``upload_course_asset`` (validated
-    course-content rail) so the proven services.* + Bearer-LOCATION-PIT call
-    exists exactly once. FAIL-LOUD: a non-2xx, or a 2xx without ``fileId``/``url``,
-    raises and never fabricates a CDN URL."""
+    Used by ``upload_course_asset`` (validated course-content rail).
+    ``upload_media`` keeps its own inline transport on purpose: the repo's
+    raw-transport guard (test_ghl_public_routes) asserts that each declared
+    named-gap function owns exactly one raw Request/urlopen pair.
+    FAIL-LOUD: a non-2xx, or a 2xx without ``fileId``/``url``, raises and never
+    fabricates a CDN URL."""
     url = GHL_SERVICES_ORIGIN.rstrip("/") + GHL_MEDIA_UPLOAD_PATH
     req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Authorization", f"Bearer {pit}")
