@@ -205,6 +205,7 @@ SCRIPT_FILES=(
   "scripts/33-runtime-tool-gating-prover.sh"
   "scripts/qc-runtime-tool-gating.sh"
   "scripts/qc-followup-exclusion.sh"
+  "scripts/qc-responder-policy.sh"
 )
 for f in "${SCRIPT_FILES[@]}"; do
   if [ -f "$SKILL38_ROOT/$f" ]; then report_pass "$f"; else report_fail "MISSING: $f"; fi
@@ -1107,6 +1108,19 @@ if [ -f "$QC_INTERACTIVE" ]; then
   fi
 else
   report_fail "qc-interactive-owner.sh not found (looked in scripts/)"
+fi
+
+section "Single responder per channel (qc-responder-policy.sh)"
+QC_RESPONDER="$SCRIPT_DIR/qc-responder-policy.sh"
+[ -f "$QC_RESPONDER" ] || QC_RESPONDER="$SKILL38_ROOT/scripts/qc-responder-policy.sh"
+if [ -f "$QC_RESPONDER" ]; then
+  if bash "$QC_RESPONDER" >/dev/null 2>&1; then
+    report_pass "WF28 holds (routing record + exact seven-channel native map + native off/suggestive/auto-pilot + conversation-thread lease/dedupe + human takeover + opt-out + quiet hours + returning contact + policy cannot be widened by content)"
+  else
+    report_fail "qc-responder-policy.sh failed - two responders could answer one input, an unsupported channel was coerced, a hard limit was weakened, or the policy/tests are missing; run it directly for detail"
+  fi
+else
+  report_fail "qc-responder-policy.sh not found (looked in scripts/)"
 fi
 
 section "Purple follow-up ownership — the legacy 10-touch cadence is excluded (qc-followup-exclusion.sh)"

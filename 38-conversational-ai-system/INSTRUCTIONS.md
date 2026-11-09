@@ -179,6 +179,36 @@ Source: `references/v6.0-source-playbook.md` Step 10.
 
 Generates the agent-capabilities-playbook.md the operator references during day-to-day use.
 
+## Phase 6.5 — Native Conversation AI responder (optional, non-sending first)
+
+Use this only when the operator wants GHL's own Conversation AI agent on a
+channel. It is a separate responder, never a replacement for the brain.
+
+1. Record the decision first: `protocols/channel-responder-ownership.md`. Name
+   exactly one primary responder per channel, the native mode (`off`,
+   `suggestive`, `auto-pilot`), the human-handoff trigger, workflow send rules,
+   contact/thread identity, allowed actions and limits. A second responder is a
+   refusal; a record that weakens opt-out, quiet hours or client test mode is
+   refused.
+2. Inventory existing native agents (`caf conversation-ai inventory`). Do not
+   touch a production primary agent.
+3. Create the agent in mode `off` — the adapter refuses any other create mode —
+   then read back its settings (`caf conversation-ai get --agent-id <id>`) and
+   capture the returned snapshot/digest for rollback.
+4. Resolve the prompt: a non-empty `fullPrompt` overrides
+   personality/goal/instructions. Verify the EFFECTIVE prompt
+   (`caf conversation-ai effective-prompt --agent-id <id>`), not only saved text.
+5. Move to `suggestive` or `auto-pilot` only as a separate approved update.
+   Auto-pilot and primary-agent status are authorised separately, after the
+   allowlisted-contact test and an independent behaviour assessment.
+6. Test with an allowlisted contact, verify the real thread/message identity, and
+   record what was tested. Full detail:
+   `references/native-ghl-ai-provisioning.md`.
+
+Machine gate: `scripts/qc-responder-policy.sh` (offline; proves one responder,
+the exact channel map, the thread lease, takeover, opt-out, quiet hours and
+returning contacts).
+
 ## Phase 7 — Full QC + Hand-off (Step 11)
 
 Source: `references/v6.0-source-playbook.md` Step 11 (Checkpoint F).

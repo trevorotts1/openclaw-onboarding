@@ -39,6 +39,14 @@ the explicit fallback only — never a silent route switch, and never a substitu
 an unknown public-REST write. The community MCP transport is retired and is not a
 workflow-authoring route.
 
+**Production contract references (corrected):** the marketplace now publishes the
+workflow authoring pages at production URLs and each documents Version `v3`;
+`v4` is a staging-only literal and is never assumed. The registry rows still carry
+the frozen literals (a re-freeze is a ledger decision), so every write stays
+default-deny through the capability gate until its row and evidence are frozen.
+Do not "upgrade" a Version by substitution; the row's literal is the only
+authority.
+
 **When to use:**
 - Creating a new GHL automation from scratch.
 - Adding a new trigger or branch to an existing workflow (rebuild or patch).
@@ -241,6 +249,36 @@ truth for every GHL workflow state.
 
 ---
 
+## Native Conversation AI agent — a fourth, separate surface
+
+GHL also exposes a **native Conversation AI agent** (create schema documented by
+the vendor: operational modes `off`, `suggestive`, `auto-pilot`; channels `IG`,
+`FB`, `SMS`, `WebChat`, `WhatsApp`, `Live_Chat`, `Email`; a non-empty
+`fullPrompt` is the effective generation instruction instead of the separate
+personality/goal/instructions fields).
+
+It is **not** Layer 0, 1 or 2, and it does not replace any of them:
+
+- it runs inside GHL, with its own knowledge sources and modes;
+- it does not have the OpenClaw brain's protocols, conversation logs or typed
+  knowledge bases;
+- it is never a workflow authoring route, and a workflow AI step is never a
+  responder.
+
+Which component answers a channel is decided by the operator's routing record,
+not by which one is enabled:
+
+- `protocols/channel-responder-ownership.md` — the record, the exact channel map,
+  the modes, the handoff, the lease and the refusals;
+- `references/native-ghl-ai-provisioning.md` — non-sending-first provisioning,
+  `fullPrompt` precedence, primary-agent protection and rollback;
+- `tools/responder_policy.py` + `scripts/qc-responder-policy.sh` — the
+  executable proof.
+
+One responder per channel. Two responding agents to one input is a failure.
+
+---
+
 ## Cross-References
 
 - **Skill 36 (`36-ghl-mcp-setup/`)** — MCP setup. The **community MCP transport is
@@ -267,7 +305,10 @@ truth for every GHL workflow state.
 
 ---
 
-*Last updated: 2026-10-18 — workflow authoring routes through the capability-gated
-public V4 adapter (explicit private fallback); community MCP retired. Skill 38 v1.7.0
-CAF-first (Option 1) remains primary; Build-with-AI (Option 2) remains the fallback.
-Human=final verifier on both paths.*
+*Last updated: 2026-11-08 — added the native Conversation AI agent as a separate
+surface with single-responder ownership; corrected the workflow authoring contract
+to production v3 with staging v4 recorded as a frozen row literal. Workflow
+authoring still routes through the capability-gated public adapter (explicit
+private fallback); community MCP retired. Skill 38 CAF-first (Option 1) remains
+primary; Build-with-AI (Option 2) remains the fallback. Human=final verifier on
+both paths.*
