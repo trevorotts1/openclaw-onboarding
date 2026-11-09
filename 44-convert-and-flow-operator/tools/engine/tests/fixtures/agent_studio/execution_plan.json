@@ -1,0 +1,4 @@
+{
+  "payload": {"locationId": "loc_synthetic_0001", "message": {"text": "synthetic input"}},
+  "output_expect": {"executionId": "exec_synthetic_0001", "status": "completed"}
+}

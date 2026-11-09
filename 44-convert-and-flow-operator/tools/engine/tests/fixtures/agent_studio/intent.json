@@ -1,0 +1,4 @@
+{
+  "nodes": [{"id": "node_start", "type": "start", "tool": "conversation.greet.warm"}],
+  "variables": [{"name": "topic"}, {"name": "channel"}]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "agent_synthetic_0001",
+  "locationId": "loc_synthetic_0001",
+  "name": "Synthetic Flow Agent",
+  "status": "active",
+  "versions": [
+    {"id": "ver_synthetic_production_0001", "status": "staging", "nodes": [], "edges": []},
+    {
+      "id": "ver_synthetic_staging_0001",
+      "status": "production",
+      "entryNodeId": "node_start",
+      "nodes": [
+        {"id": "node_start", "type": "start", "tool": "conversation.greet"},
+        {"id": "node_lookup", "type": "tool", "tool": "crm.contact.lookup"}
+      ],
+      "edges": [{"source": "node_start", "target": "node_lookup"}],
+      "variables": [{"name": "topic"}, {"name": "channel"}],
+      "configuration": {"locale": "en-US"}
+    }
+  ]
+}
