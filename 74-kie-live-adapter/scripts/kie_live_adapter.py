@@ -485,12 +485,14 @@ def registry_input_schema(entry):
     return s
 
 
-def _policy_rows(model_id, here=None):
+def _policy_rows(model_id, here=None, prefix=False):
     """Yield (owner, entry) for model_id from the policy-owner catalogs 66/67/68.
 
     Owner order first, then roots; per root the first existing file of the pair
     (owner, alt) wins. One walker so the limit and the band never disagree
-    about which row they read (U15c).
+    about which row they read (U15c). With ``prefix`` the walker yields every row
+    whose canonical id is model_id or sits under it (``<model_id>/...``), which is
+    how a family-level owner ruling reaches its individual routes.
     """
     here = here or os.path.dirname(os.path.abspath(__file__))
     roots = [os.path.join(here, "..", ".."), os.environ.get("OPENCLAW_SKILLS_DIR") or "",
@@ -509,7 +511,8 @@ def _policy_rows(model_id, here=None):
                 except (OSError, ValueError):
                     continue
                 for e in d.get("models") or d.get("entries") or []:
-                    if e.get("canonical_model_id") == model_id:
+                    cid = e.get("canonical_model_id") or ""
+                    if (cid.startswith(model_id + "/") if prefix else cid == model_id):
                         yield owner, e
                 break
 
@@ -541,6 +544,24 @@ def policy_owner_cap(model_id, here=None):
         if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
             return cap, owner
         return None, None
+    return None, None
+
+def policy_owner_cap_family(model_id, here=None):
+    """Owner-declared cap for a route: its exact row first, then its family prefix.
+
+    The owner ruling is recorded once (Skill 66, 2026-11-08): 20,000 for the
+    gpt-image-2-6 family. A route id that has no row of its own still inherits
+    the family cap, so a sibling route can never quietly fall back to the
+    vendor figure merely because it was added after the ruling.
+    """
+    cap, owner = policy_owner_cap(model_id, here)
+    if cap is not None:
+        return cap, owner
+    family = model_id.rsplit("/", 1)[0]
+    for owner, e in _policy_rows(family, here, prefix=True):
+        cap = e.get("owner_prompt_cap_chars")
+        if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
+            return cap, owner
     return None, None
 
 def policy_band(model_id, here=None):
@@ -1468,8 +1489,10 @@ class Adapter:
         pol, owner, confirmed, n43 = policy_limit(model)
         # OWNER CAP PRECEDENCE (Trevor 2026-11-08): an owner-declared cap outranks the live
         # vendor schema for prompt length. The vendor figure is kept in the note for provenance
-        # and in models.json; it is never rewritten or deleted.
-        ocap, oowner = policy_owner_cap(model)
+        # and in models.json; it is never rewritten or deleted. The family fallback is what makes
+        # a sibling route (flare vs sunburst) inherit the one family ruling instead of falling
+        # back to the vendor figure.
+        ocap, oowner = policy_owner_cap_family(model)
         if ocap is not None:
             if mx is not None and mx != ocap:
                 notes.append("OWNER RULING (2026-11-08): %s declares owner_prompt_cap_chars %d; %s publishes %d; "

@@ -66,9 +66,16 @@ def pricing_block(raw, status):
 
 
 def base_row(model_id, meta, pricing):
-    return {"id": model_id, "provider": meta.get("provider"), "title": meta.get("title"),
-            "taskType": meta.get("taskType") or [], "family": K.family_of(model_id),
-            "version": K.version_of(model_id), "variant": K.variant_of(model_id), "pricing": pricing}
+    row = {"id": model_id, "provider": meta.get("provider"), "title": meta.get("title"),
+           "taskType": meta.get("taskType") or [], "family": K.family_of(model_id),
+           "version": K.version_of(model_id), "variant": K.variant_of(model_id), "pricing": pricing}
+    # Owner ruling 2026-11-08: the owner cap travels with the row so the vendor's
+    # vendor figure can never outrank it in the snapshot. Read from the policy owner,
+    # never restated as a literal here.
+    cap, _owner = K.policy_owner_cap_family(model_id)
+    if cap is not None:
+        row["owner_prompt_cap_chars"] = cap
+    return row
 
 
 def build_live(ad, limit=None, ids=None, log=print):
