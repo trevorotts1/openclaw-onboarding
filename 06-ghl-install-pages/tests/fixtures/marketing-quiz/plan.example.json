@@ -1,0 +1,139 @@
+{
+  "_doc": "Synthetic example marketing-quiz plan. It is the canonical WF34-CP01 plan: every field is fake, the location is a test location, and NOTHING here is live evidence. Widgets/fields use the zhc_ idempotent prefix so Skill 44 reuses rather than duplicates.",
+  "schema": "skill6-marketing-quiz-plan/1",
+  "quiz_name": "ZHC Growth Stage Quiz",
+  "location_id": "LOC_TEST_0001",
+  "rail": "managed_browser",
+  "business_name": "[BUSINESS NAME]",
+  "page_gates": {
+    "wireframes": {"desktop": "wireframes/quiz-desktop.png", "mobile": "wireframes/quiz-mobile.png"},
+    "mockups": {"desktop": "mockups/quiz-desktop.png", "mobile": "mockups/quiz-mobile.png"},
+    "design_style_intake": {"style": "hybrid", "approved": true},
+    "copy_budget": {"headline_max": 90, "body_max": 400, "image_prompt_max": 600},
+    "native_full_width": true,
+    "seo": {
+      "title": "Growth Stage Quiz",
+      "description": "Answer five questions and get your growth stage.",
+      "canonical": "https://example.test/quiz/growth-stage"
+    },
+    "native_checkout": {"mode": "native", "bypassed": false}
+  },
+  "questions": [
+    {
+      "id": "q1",
+      "prompt": "Where are you now?",
+      "type": "single_choice",
+      "required": true,
+      "field_key": "zhc_quiz_q1_stage",
+      "choices": [
+        {"id": "a", "label": "Just an idea", "score": 0},
+        {"id": "b", "label": "Offer is live", "score": 2},
+        {"id": "c", "label": "Already scaling", "score": 4}
+      ]
+    },
+    {
+      "id": "q2",
+      "prompt": "How do you get clients?",
+      "type": "single_choice",
+      "required": true,
+      "field_key": "zhc_quiz_q2_channel",
+      "choices": [
+        {"id": "a", "label": "Referrals only", "score": 0},
+        {"id": "b", "label": "Content and outreach", "score": 2},
+        {"id": "c", "label": "Paid ads", "score": 4}
+      ],
+      "branch": {"when_choice": "c", "goto": "q4"}
+    },
+    {
+      "id": "q3",
+      "prompt": "What is your team size?",
+      "type": "single_choice",
+      "required": true,
+      "field_key": "zhc_quiz_q3_team",
+      "choices": [
+        {"id": "a", "label": "Just me", "score": 0},
+        {"id": "b", "label": "Two to five", "score": 1}
+      ]
+    },
+    {
+      "id": "q4",
+      "prompt": "What is your monthly revenue?",
+      "type": "single_choice",
+      "required": true,
+      "field_key": "zhc_quiz_q4_revenue",
+      "choices": [
+        {"id": "a", "label": "Under 1k", "score": 0},
+        {"id": "b", "label": "1k to 10k", "score": 2},
+        {"id": "c", "label": "10k plus", "score": 3}
+      ]
+    },
+    {
+      "id": "q5",
+      "prompt": "Where should we send your result?",
+      "type": "email",
+      "required": true
+    }
+  ],
+  "outcomes": [
+    {
+      "key": "starter",
+      "title": "Starter",
+      "result_copy": "You are pre-offer. Nail one paid promise before you spend on ads.",
+      "score_min": 0,
+      "score_max": 3,
+      "tags": ["zhc_quiz_starter"],
+      "result_page": {"path": "pages/result-starter.html"}
+    },
+    {
+      "key": "builder",
+      "title": "Builder",
+      "result_copy": "You have proof. Systemise delivery before you scale acquisition.",
+      "score_min": 4,
+      "score_max": 7,
+      "tags": ["zhc_quiz_builder"],
+      "result_page": {"path": "pages/result-builder.html"}
+    },
+    {
+      "key": "operator",
+      "title": "Operator",
+      "result_copy": "You are running paid acquisition. Protect margin and lead the team.",
+      "score_min": 8,
+      "score_max": 11,
+      "tags": ["zhc_quiz_operator"],
+      "router": {"question_id": "q2", "choice_id": "c"},
+      "result_page": {"path": "pages/result-operator.html"}
+    }
+  ],
+  "capture": {
+    "required": true,
+    "consent": {
+      "required": true,
+      "text": "I agree to be contacted about my result.",
+      "field_key": "zhc_quiz_consent"
+    },
+    "fields": [
+      {"field_key": "zhc_quiz_email", "source": "Email", "required": true},
+      {"field_key": "zhc_quiz_first_name", "source": "First Name", "required": false}
+    ]
+  },
+  "field_tag_mapping": {
+    "outcome_field_key": "zhc_quiz_outcome",
+    "score_field_key": "zhc_quiz_score",
+    "custom_fields": [
+      {"field_key": "zhc_quiz_outcome", "data_type": "text"},
+      {"field_key": "zhc_quiz_score", "data_type": "number"}
+    ],
+    "tags": [{"tag": "zhc_quiz_lead"}]
+  },
+  "followup_workflows": [
+    {"key": "wf_quiz_starter", "outcome": "starter", "approved": true},
+    {"key": "wf_quiz_builder", "outcome": "builder", "approved": true},
+    {"key": "wf_quiz_operator", "outcome": "operator", "approved": true}
+  ],
+  "render_checks": {
+    "viewports": ["desktop", "mobile"],
+    "require_hydrated_dom": true,
+    "require_native_full_width": true,
+    "require_empty_console_errors": true
+  }
+}

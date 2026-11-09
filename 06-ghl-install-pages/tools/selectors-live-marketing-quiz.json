@@ -1,0 +1,101 @@
+{
+  "_doc": "DEDICATED selector file for the STANDALONE MARKETING QUIZ coordinator (Skill 06 / WF34). Code and doc MUST NOT diverge: every anchor here is either (a) the LOCKED survey anchor it delegates to, transcribed from SELECTORS-LIVE-survey.md, or (b) an explicitly runtime_capture anchor whose 'find' entry is a visible-text/role SEARCH SEED that the operator resolves at runtime. NO invented CSS may ship as fact. A marketing quiz uses the SAME managed survey rail as a survey (the survey builder is the form builder plus a Slides wrapper); what is quiz-specific is scoring/outcome/result-copy/consent, which live in references/marketing-quiz-build.md, not in a new clicker.",
+  "version": "v0.1.0",
+  "schema_version": 1,
+  "captured": "2026-11-08",
+  "status": "PENDING-LIVE-CAPTURE",
+  "verified_live": false,
+  "generated_from": [
+    "SELECTORS-LIVE-survey.md",
+    "SELECTORS-LIVE-form.md"
+  ],
+  "anchor_kinds": {
+    "role_name": "getByRole(role, {name}) -- accessible-name anchor, highest confidence",
+    "placeholder": "getByPlaceholder(text) -- input placeholder anchor",
+    "text": "getByText(text) -- visible-text anchor (StaticText / no-ref surfaces)",
+    "route": "URL path expression checked after navigation (never a CSS selector)",
+    "runtime_capture": "MUST capture at runtime: snapshot the live DOM, pick the @ref. The 'find' entry is a hint only."
+  },
+  "objects": {
+    "marketing_quiz": {
+      "doc": "references/marketing-quiz-build.md",
+      "route_list": "/v2/location/<LOCATION_ID>/survey-builder/main",
+      "route_builder": "/v2/location/<LOCATION_ID>/survey-builder-v2/<QUIZ_ID>",
+      "route_public": "/widget/survey/<QUIZ_ID>",
+      "delegated_rail": "ghl_survey_builder.build_survey (the ONE managed clicker)",
+      "anchors": [
+        {"id": "quiz.nav.surveys_link", "target": "Sites secondary nav -> Surveys", "section": "1",
+         "primary": {"kind": "role_name", "role": "link", "name": "Surveys"}, "fallbacks": [],
+         "confidence": 9.5, "runtime_capture": false, "verified_live": true,
+         "provenance": "SELECTORS-LIVE-survey.md section 1 (LOCKED)"},
+
+        {"id": "quiz.list.add_survey", "target": "Survey list: Add survey (NOT 'Create survey')", "section": "2",
+         "primary": {"kind": "role_name", "role": "button", "name": "Add survey"}, "fallbacks": [],
+         "confidence": 9.5, "runtime_capture": false, "verified_live": true,
+         "provenance": "SELECTORS-LIVE-survey.md section 2 (LOCKED)"},
+
+        {"id": "quiz.list.start_scratch", "target": "Create-new-survey modal: Start from Scratch radio", "section": "3",
+         "primary": {"kind": "text", "text": "Start from Scratch"}, "fallbacks": [],
+         "confidence": 8.5, "runtime_capture": false, "verified_live": true,
+         "provenance": "SELECTORS-LIVE-survey.md section 3 (LOCKED)"},
+
+        {"id": "quiz.list.create_confirm", "target": "Create-new-survey modal: Create", "section": "3",
+         "primary": {"kind": "role_name", "role": "button", "name": "Create"}, "fallbacks": [],
+         "confidence": 9.5, "runtime_capture": false, "verified_live": true,
+         "provenance": "SELECTORS-LIVE-survey.md section 3 (LOCKED)"},
+
+        {"id": "quiz.builder.title", "target": "Builder title / rename target for the quiz name", "section": "4",
+         "primary": {"kind": "runtime_capture", "find": ["title", "name", "heading"],
+                     "note": "the survey-builder title control; resolve the @ref at runtime"},
+         "fallbacks": [], "confidence": 6, "runtime_capture": true, "verified_live": false,
+         "provenance": "not yet captured for a marketing quiz; survey-builder chrome is LIVE but the title control has no locked anchor"},
+
+        {"id": "quiz.builder.add_slide", "target": "Builder: add a question slide", "section": "4",
+         "primary": {"kind": "runtime_capture", "find": ["Add slide", "New slide", "Add"],
+                     "note": "slide creation is driven by ghl_survey_builder; do not hardcode CSS"},
+         "fallbacks": [], "confidence": 6, "runtime_capture": true, "verified_live": false,
+         "provenance": "delegated to ghl_survey_builder slide planning"},
+
+        {"id": "quiz.builder.conditional_logic", "target": "Per-slide Jump-To / conditional logic control", "section": "4",
+         "primary": {"kind": "runtime_capture", "find": ["Jump to", "Conditional logic", "Logic"],
+                     "note": "branch wiring is delegated to ghl_survey_builder; resolve at runtime"},
+         "fallbacks": [], "confidence": 6, "runtime_capture": true, "verified_live": false,
+         "provenance": "delegated; survey branching already validated live in the survey lane"},
+
+        {"id": "quiz.builder.capture_slide", "target": "Contact capture slide with the consent (T & C) checkbox", "section": "4",
+         "primary": {"kind": "runtime_capture", "find": ["Contact Capture", "T & C", "Consent"],
+                     "note": "plain marketing-consent checkbox; NOT A2P/10DLC"},
+         "fallbacks": [], "confidence": 6, "runtime_capture": true, "verified_live": false,
+         "provenance": "delegated to ghl_survey_builder capture slide"},
+
+        {"id": "quiz.builder.save", "target": "Builder chrome: Save", "section": "4",
+         "primary": {"kind": "role_name", "role": "button", "name": "Save"}, "fallbacks": [],
+         "confidence": 9.5, "runtime_capture": false, "verified_live": true,
+         "provenance": "SELECTORS-LIVE-survey.md section 4 (LOCKED, shared with forms)"},
+
+        {"id": "quiz.result.page_copy", "target": "Results page: per-outcome result copy block", "section": "5",
+         "primary": {"kind": "runtime_capture", "find": ["Result", "Your result", "Text"],
+                     "note": "result pages are built by the page builder; copy is bound per outcome"},
+         "fallbacks": [], "confidence": 6, "runtime_capture": true, "verified_live": false,
+         "provenance": "page builder owns the surface; copy contract is marketing-quiz-build.md"},
+
+        {"id": "quiz.integrate.tags", "target": "Integrate panel (embed/id capture) and tag/workflow handoff", "section": "4",
+         "primary": {"kind": "role_name", "role": "button", "name": "Integrate"}, "fallbacks": [],
+         "confidence": 9.5, "runtime_capture": false, "verified_live": true,
+         "provenance": "SELECTORS-LIVE-survey.md section 4 (LOCKED, shared with forms); tag attachment is a Skill 44 workflow, never a native setting"},
+
+        {"id": "quiz.verify.preview", "target": "Builder chrome: Preview (hydrated DOM + mobile render)", "section": "4",
+         "primary": {"kind": "role_name", "role": "button", "name": "Preview"}, "fallbacks": [],
+         "confidence": 9.5, "runtime_capture": false, "verified_live": true,
+         "provenance": "SELECTORS-LIVE-survey.md section 4 (LOCKED)"},
+
+        {"id": "quiz.verify.submit", "target": "Public quiz page: submit action for a synthetic contact", "section": "5",
+         "primary": {"kind": "runtime_capture", "find": ["Submit", "Get my result", "See my result"],
+                     "note": "the public /widget/survey/<id> page; the submit control has no locked anchor"},
+         "fallbacks": [], "confidence": 6, "runtime_capture": true, "verified_live": false,
+         "provenance": "public widget route is LIVE; the submit control label varies per quiz copy"}
+      ]
+    }
+  },
+  "_shared_gate_note": "This file is WF34-owned and DEDICATED to marketing quizzes. Any shared gate or shared Community/course selector change goes to WF09, and any central construction/route registration goes to WF07 — never edited from this lane."
+}

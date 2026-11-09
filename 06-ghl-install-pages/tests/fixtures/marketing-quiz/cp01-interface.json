@@ -1,0 +1,223 @@
+{
+  "checkpoint_id": "WF34-CP01",
+  "workflow_id": "WF34",
+  "contract": "BCM-GHL-HYBRID-2026-11-08",
+  "revision": "3.0",
+  "plan_schema": "skill6-marketing-quiz-plan/1",
+  "fixture_schema": "skill6-marketing-quiz-fixture/1",
+  "rail": "managed_browser",
+  "course_quiz_substitution": "refused",
+  "score_band": {
+    "min": 0,
+    "max": 11
+  },
+  "outcome_mapping": [
+    {
+      "outcome": "starter",
+      "score_min": 0,
+      "score_max": 3,
+      "router": null,
+      "followup_workflows": [
+        "wf_quiz_starter"
+      ]
+    },
+    {
+      "outcome": "builder",
+      "score_min": 4,
+      "score_max": 7,
+      "router": null,
+      "followup_workflows": [
+        "wf_quiz_builder"
+      ]
+    },
+    {
+      "outcome": "operator",
+      "score_min": 8,
+      "score_max": 11,
+      "router": {
+        "question_id": "q2",
+        "choice_id": "c"
+      },
+      "followup_workflows": [
+        "wf_quiz_operator"
+      ]
+    }
+  ],
+  "boundary_answers": [
+    {
+      "outcome": "starter",
+      "boundary": "min",
+      "score": 0,
+      "answers": {
+        "q1": "a",
+        "q2": "a",
+        "q3": "a",
+        "q4": "a",
+        "q5": "synthetic-fixture@example.test"
+      }
+    },
+    {
+      "outcome": "starter",
+      "boundary": "max",
+      "score": 3,
+      "answers": {
+        "q1": "a",
+        "q2": "a",
+        "q3": "a",
+        "q4": "c",
+        "q5": "synthetic-fixture@example.test"
+      }
+    },
+    {
+      "outcome": "builder",
+      "boundary": "min",
+      "score": 4,
+      "answers": {
+        "q1": "a",
+        "q2": "a",
+        "q3": "b",
+        "q4": "c",
+        "q5": "synthetic-fixture@example.test"
+      }
+    },
+    {
+      "outcome": "builder",
+      "boundary": "max",
+      "score": 7,
+      "answers": {
+        "q1": "b",
+        "q2": "b",
+        "q3": "a",
+        "q4": "c",
+        "q5": "synthetic-fixture@example.test"
+      }
+    },
+    {
+      "outcome": "operator",
+      "boundary": "min",
+      "score": 8,
+      "answers": {
+        "q1": "b",
+        "q2": "b",
+        "q3": "b",
+        "q4": "c",
+        "q5": "synthetic-fixture@example.test"
+      }
+    },
+    {
+      "outcome": "operator",
+      "boundary": "max",
+      "score": 11,
+      "answers": {
+        "q1": "c",
+        "q2": "c",
+        "q4": "c",
+        "q5": "synthetic-fixture@example.test"
+      }
+    }
+  ],
+  "capture_policy": {
+    "required": true,
+    "fields": [
+      {
+        "field_key": "zhc_quiz_email",
+        "source": "Email",
+        "required": true
+      },
+      {
+        "field_key": "zhc_quiz_first_name",
+        "source": "First Name",
+        "required": false
+      }
+    ],
+    "consent_required": true,
+    "consent_text": "I agree to be contacted about my result.",
+    "consent_field_key": "zhc_quiz_consent"
+  },
+  "dependent_fields": {
+    "schema_version": "1.0",
+    "generated_at": "2026-11-09T00:35:40Z",
+    "owner_skill": "44-convert-and-flow-operator",
+    "idempotency": {
+      "live_get_required": true,
+      "rule": "GET existing custom fields + tags; REUSE any matching zhc_ key; only CREATE the remainder. Never duplicate."
+    },
+    "custom_fields": [
+      {
+        "field_key": "zhc_quiz_q1_stage",
+        "action": "create"
+      },
+      {
+        "field_key": "zhc_quiz_q2_channel",
+        "action": "create"
+      },
+      {
+        "field_key": "zhc_quiz_q3_team",
+        "action": "create"
+      },
+      {
+        "field_key": "zhc_quiz_q4_revenue",
+        "action": "create"
+      },
+      {
+        "field_key": "zhc_quiz_email",
+        "action": "create"
+      },
+      {
+        "field_key": "zhc_quiz_first_name",
+        "action": "create"
+      },
+      {
+        "field_key": "zhc_quiz_outcome",
+        "action": "create"
+      },
+      {
+        "field_key": "zhc_quiz_score",
+        "action": "create"
+      },
+      {
+        "field_key": "zhc_quiz_consent",
+        "action": "create"
+      }
+    ],
+    "tags": [
+      {
+        "tag": "zhc_quiz_lead",
+        "action": "create"
+      },
+      {
+        "tag": "zhc_quiz_starter",
+        "action": "create"
+      },
+      {
+        "tag": "zhc_quiz_builder",
+        "action": "create"
+      },
+      {
+        "tag": "zhc_quiz_operator",
+        "action": "create"
+      }
+    ],
+    "tag_attachment": {
+      "method": "workflow",
+      "owner_skill": "44-convert-and-flow-operator",
+      "trigger": "Quiz submitted (native survey)",
+      "action": "Add Contact Tag",
+      "tags": [
+        "zhc_quiz_lead",
+        "zhc_quiz_starter",
+        "zhc_quiz_builder",
+        "zhc_quiz_operator"
+      ],
+      "note": "Built AFTER the native quiz id exists; a native survey has no 'add tag' setting."
+    }
+  },
+  "consumers": [
+    "WF07",
+    "WF09",
+    "WF22",
+    "WF23"
+  ],
+  "fixture_sha256": "814d75e21edf9f495c1e95cb229e4aa16805c8012151a4678f020f6c3fc9897b",
+  "note": "Outcome is router-answer first, then the contiguous score band. Weighted scoring is computed by this coordinator and persisted as zhc_quiz_outcome/zhc_quiz_score; GHL surveys do not score natively."
+}

@@ -1,0 +1,126 @@
+{
+  "_doc": "SYNTHETIC acceptance fixture for WF34 (Standalone marketing quiz). trust=FAKE is mandatory: this file is NEVER live proof. The browser block is a fake managed-browser outcome (hydrated DOM, native full width, zero console errors, rendered result copy). The crm block is a fake CRM state. Every expectation is authored here INDEPENDENTLY of the builder so a regression in the coordinator shows up as a contradiction rather than a self-fulfilling pass. No real contact, student or customer data. Location is a test location.",
+  "schema": "skill6-marketing-quiz-fixture/1",
+  "trust": "FAKE",
+  "location_id": "LOC_TEST_0001",
+  "crm": {
+    "contacts": [],
+    "fields": [],
+    "tags": [],
+    "enrollments": []
+  },
+  "browser": {
+    "routes": {
+      "quiz_list": "/v2/location/LOC_TEST_0001/survey-builder/main",
+      "quiz_builder": "/v2/location/LOC_TEST_0001/survey-builder-v2/SYNTH_QUIZ_0001",
+      "quiz_public": "/widget/survey/SYNTH_QUIZ_0001"
+    },
+    "native_object": {"id": "SYNTH_QUIZ_0001", "name": "ZHC Growth Stage Quiz"},
+    "render": {
+      "desktop": {
+        "hydrated_dom": true,
+        "native_full_width": true,
+        "console_errors": [],
+        "screenshot": "shots/quiz-desktop.png"
+      },
+      "mobile": {
+        "hydrated_dom": true,
+        "native_full_width": true,
+        "console_errors": [],
+        "screenshot": "shots/quiz-mobile.png"
+      }
+    },
+    "result_copy_rendered": {
+      "starter": "You are pre-offer. Nail one paid promise before you spend on ads.",
+      "builder": "You have proof. Systemise delivery before you scale acquisition.",
+      "operator": "You are running paid acquisition. Protect margin and lead the team."
+    }
+  },
+  "submissions": [
+    {
+      "name": "starter min boundary (score 0)",
+      "answers": {"q1": "a", "q2": "a", "q3": "a", "q4": "a", "q5": "synthetic@example.test"},
+      "consent": true,
+      "capture": {"zhc_quiz_email": "synthetic-starter-min@example.test"},
+      "expected_outcome": "starter",
+      "expected_score": 0,
+      "expected_effect": {
+        "tags": ["zhc_quiz_lead", "zhc_quiz_starter"],
+        "workflows": ["wf_quiz_starter"],
+        "fields": {"zhc_quiz_outcome": "starter", "zhc_quiz_score": 0, "zhc_quiz_consent": true}
+      }
+    },
+    {
+      "name": "starter max boundary (score 3)",
+      "answers": {"q1": "b", "q2": "a", "q3": "b", "q4": "a", "q5": "synthetic@example.test"},
+      "consent": true,
+      "capture": {"zhc_quiz_email": "synthetic-starter-max@example.test"},
+      "expected_outcome": "starter",
+      "expected_score": 3,
+      "expected_effect": {
+        "tags": ["zhc_quiz_lead", "zhc_quiz_starter"],
+        "workflows": ["wf_quiz_starter"],
+        "fields": {"zhc_quiz_outcome": "starter", "zhc_quiz_score": 3}
+      }
+    },
+    {
+      "name": "builder min boundary (score 4)",
+      "answers": {"q1": "b", "q2": "b", "q3": "a", "q4": "a", "q5": "synthetic@example.test"},
+      "consent": true,
+      "capture": {"zhc_quiz_email": "synthetic-builder-min@example.test"},
+      "expected_outcome": "builder",
+      "expected_score": 4,
+      "expected_effect": {
+        "tags": ["zhc_quiz_lead", "zhc_quiz_builder"],
+        "workflows": ["wf_quiz_builder"],
+        "fields": {"zhc_quiz_outcome": "builder", "zhc_quiz_score": 4}
+      }
+    },
+    {
+      "name": "builder max boundary (score 7)",
+      "answers": {"q1": "b", "q2": "b", "q3": "b", "q4": "b", "q5": "synthetic@example.test"},
+      "consent": true,
+      "capture": {"zhc_quiz_email": "synthetic-builder-max@example.test"},
+      "expected_outcome": "builder",
+      "expected_score": 7,
+      "expected_effect": {
+        "tags": ["zhc_quiz_lead", "zhc_quiz_builder"],
+        "workflows": ["wf_quiz_builder"],
+        "fields": {"zhc_quiz_outcome": "builder", "zhc_quiz_score": 7}
+      }
+    },
+    {
+      "name": "operator min boundary (score 8)",
+      "answers": {"q1": "b", "q2": "b", "q3": "b", "q4": "c", "q5": "synthetic@example.test"},
+      "consent": true,
+      "capture": {"zhc_quiz_email": "synthetic-operator-min@example.test"},
+      "expected_outcome": "operator",
+      "expected_score": 8,
+      "expected_effect": {
+        "tags": ["zhc_quiz_lead", "zhc_quiz_operator"],
+        "workflows": ["wf_quiz_operator"],
+        "fields": {"zhc_quiz_outcome": "operator", "zhc_quiz_score": 8}
+      }
+    },
+    {
+      "name": "operator max boundary via paid-ads branch (score 11, q3 skipped)",
+      "answers": {"q1": "c", "q2": "c", "q4": "c", "q5": "synthetic@example.test"},
+      "consent": true,
+      "capture": {"zhc_quiz_email": "synthetic-operator-max@example.test"},
+      "expected_outcome": "operator",
+      "expected_score": 11,
+      "expected_effect": {
+        "tags": ["zhc_quiz_lead", "zhc_quiz_operator"],
+        "workflows": ["wf_quiz_operator"],
+        "fields": {"zhc_quiz_outcome": "operator", "zhc_quiz_score": 11}
+      }
+    }
+  ],
+  "_negative_cases": {
+    "_doc": "Cases the suite must REFUSE. They are documented here so the acceptance fixture states the whole contract; the tests drive them directly.",
+    "no_consent": "a submission with consent=false must raise ConsentRequired and create NO contact",
+    "missing_required_capture": "a submission with no capture values must raise CaptureIncomplete",
+    "course_quiz_endpoint": "any plan whose rail/endpoint names a course lesson quiz must be refused",
+    "non_fake_fixture": "trust != FAKE must be refused as proof"
+  }
+}
