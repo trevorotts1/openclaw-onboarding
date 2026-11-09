@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -47,8 +48,13 @@ DEFAULT_STUB_IMAGE_CAP = 400
 # ponytail: static table; swap for a live Skill 74 price lookup if per-model budgets are needed.
 IMAGE_PRICE_MINOR: Dict[str, Dict[str, int]] = {"kie": {"USD": 8}}
 PAID_APPROVAL_KIND = "paid_asset_budget"
-STYLE_SOURCES = ("client_choice", "default_to_confirm")
-CONFIRMED_PALETTE_STATUSES = ("provided", "client-confirmed", "client_confirmed")
+# F16 item 4: ONE style-source vocabulary, owned by the shared brand record module
+# (shared-utils/client_intake/brand_record.py) so shared intake, 83, 49 and 71 cannot drift.
+# `default_to_confirm` is a PROPOSAL, never a recorded decision; absence is `unknown`.
+STYLE_SOURCES = ("client_choice", "recommended_accepted", "default_to_confirm", "unknown")
+# Only a decision the client actually recorded may be paid for (IMG-08).
+PAID_STYLE_SOURCES = ("client_choice", "recommended_accepted")
+CONFIRMED_PALETTE_STATUSES = ("provided",)
 
 UNKNOWN_WORDS = ("unknown", "not sure", "i'm not sure", "im not sure", "i don't know",
                  "i dont know", "help", "help me")
@@ -138,8 +144,9 @@ def validate_raw(raw: Any) -> Dict[str, Any]:
         return {}
     if not isinstance(raw, dict):
         raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-SHAPE", "image_plan", "must be an object")
-    allowed = {"design_style", "design_style_source", "brand_file", "brand_owner", "image_cap",
-               "image_cap_minor", "image_currency", "creative_direction",
+    allowed = {"design_style", "design_style_source", "brand_file", "brand_owner", "brand_sha256",
+               "brand_version", "image_cap", "image_cap_minor", "image_currency", "creative_direction",
+               "creative_direction_kind", "creative_direction_blend", "creative_direction_approval_ref",
                "image_provider", "paid_render_approval_ref", "design_prose_ref", "visual_bible_ref"}
     extra = sorted(set(raw) - allowed)
     if extra:
@@ -154,6 +161,21 @@ def validate_raw(raw: Any) -> Dict[str, Any]:
         raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-CAP", "image_plan.image_currency",
                              "must be a 3-letter uppercase currency code such as USD")
     return dict(raw)
+
+
+def _brand_record() -> Any:
+    """The shared brand record module (F16 S2): the one style-source vocabulary, palette-status
+    normalizer, brand digest and creative-direction precedence. Loaded from the repository beside
+    this skill the same way the approval verifier is; never a second copy of any of it."""
+    path = Path(__file__).resolve().parents[2] / "shared-utils" / "client_intake" / "brand_record.py"
+    spec = importlib.util.spec_from_file_location("launcher_brand_record", path) if path.is_file() else None
+    if spec is None or spec.loader is None:
+        raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-BRAND", "image_plan",
+                             "The shared brand record module is not installed here, so the plan cannot prove "
+                             "which brand and style it draws. Nothing has been sent and nothing has been spent.")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _approval_verify() -> Callable[..., Dict[str, Any]]:
@@ -197,22 +219,26 @@ def _verify_paid_budget(approval_id: str, plan_hash: Optional[str], cap_minor: i
             "has been spent.")
 
 
-def _check_palette(brand_file: str) -> None:
-    """A paid run draws in the client's colors: a suggested or defaulted palette is never paid for (IMG-09)."""
-    try:
-        brand = json.loads(Path(brand_file).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        brand = None
-    if not isinstance(brand, dict):
+def _check_palette(brand: Dict[str, Any]) -> None:
+    """A paid run draws in the client's colors: a suggested, defaulted or UNSTATED palette is never
+    paid for (IMG-09).
+
+    F16 item 8: a missing or unrecognized `palette_status` is `unknown`, not `provided`. A file made
+    before the field existed therefore proves nothing about the client's colors and is refused at this
+    spend boundary rather than assumed confirmed.
+    """
+    if brand.get("state") == "unreadable":
         raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-BRAND", "image_plan.brand_file",
                              "I cannot read your brand file, so I cannot check your colors before spending. "
                              "Nothing has been sent and nothing has been spent.")
-    status = brand.get("palette_status", "provided")  # files made before the field existed are provided
+    status = brand.get("palette_status", "unknown")
     if status not in CONFIRMED_PALETTE_STATUSES:
+        why = ("it records no palette status, so nobody has confirmed these colors"
+               if status == "unknown" else f"it is {status!r}, so you have not confirmed these colors")
         raise ImagePlanError(
             "AF-LAUNCH-IMAGE-PLAN-BRAND", "image_plan.brand_file.palette_status",
-            f"Your colors are still {status!r}: you have not confirmed them. I will not pay for pictures in "
-            "colors that are not yours. Tell me OK to the palette (or give me your own) and I will go on. "
+            f"Your brand file cannot be paid against: {why}. I will not pay for pictures in colors that "
+            "are not yours. Tell me OK to the palette (or give me your own) and I will go on. "
             "Nothing has been sent and nothing has been spent.")
 
 
@@ -249,12 +275,40 @@ def resolve(raw: Optional[Dict[str, Any]], *, test_only: bool,
             "AF-LAUNCH-IMAGE-PLAN-OWNER", "image_plan.brand_owner",
             "I need to know whose brand this is, so no page is ever drawn with another client's look.")
 
-    # Design style: defaultable, flagged.
+    # The brand record (F16 item 6): the plan's own brand hash, checked against the file in hand.
+    # The hash is the producer's: engine.brand_provenance(...)["brand_file_sha256"], the SHA-256 of
+    # the brand file's bytes. Nothing here invents a second identity.
+    br = _brand_record()
+    plan_brand_sha = _clean_str(raw.get("brand_sha256"))
+    if plan_brand_sha is not None and not re.fullmatch(r"[0-9a-f]{64}", plan_brand_sha):
+        raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-BRAND", "image_plan.brand_sha256",
+                             "must be the plan's 64-character lowercase hex SHA-256 of the brand file. "
+                             "Nothing has been sent and nothing has been spent.")
+    brand = br.brand_record(brand_file, plan_brand_sha256=plan_brand_sha,
+                            version=raw.get("brand_version"), owner=brand_owner)
+    if brand["state"] == "mismatch":
+        raise ImagePlanError(
+            "AF-LAUNCH-IMAGE-PLAN-BRAND", "image_plan.brand_sha256",
+            "The brand file in hand is not the one this plan was built from: its SHA-256 "
+            f"{brand['brand_sha256']} does not match the plan's {brand['plan_brand_sha256']}. A stale pin or a "
+            "substituted file is never drawn. Nothing has been sent and nothing has been spent.")
+
+    # The creative direction's precedence, resolved ONCE before any prompt is assembled (F16 item 11).
+    policy = br.creative_direction_policy(kind=raw.get("creative_direction_kind"),
+                                          blend=raw.get("creative_direction_blend"),
+                                          approval_ref=raw.get("creative_direction_approval_ref"))
+    for conflict in policy["conflicts"]:
+        to_confirm.append(_confirm("creative_direction", policy["grade_mode"], conflict,
+                                   "Approve the blend in Command Center (it then supplies the grade), or name "
+                                   "the style without one and the house grade stays on."))
+
+    # Design style: defaultable, flagged. Absence is `unknown` - never a choice nobody made.
     style = raw.get("design_style")
-    source = _clean_str(raw.get("design_style_source")) or "client_choice"
-    if source not in STYLE_SOURCES:
+    raw_source = raw.get("design_style_source")
+    if raw_source is not None and not br.is_known_style_source(raw_source):
         raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-STYLE", "image_plan.design_style_source",
-                             f"{source!r} is not one of {list(STYLE_SOURCES)!r}.")
+                             f"{raw_source!r} is not one of {list(STYLE_SOURCES)!r}.")
+    source = br.normalize_style_source(raw_source)
     if style is None or _is_unknown(style):
         style, source = DEFAULT_DESIGN_STYLE, "default_to_confirm"
         to_confirm.append(_confirm(
@@ -343,12 +397,16 @@ def resolve(raw: Optional[Dict[str, Any]], *, test_only: bool,
                 f"{cap} pictures cost more than your budget: {cap_minor} minor {currency} pays for at most "
                 f"{ceiling}. Nothing has been spent.")
         cap = ceiling if cap is None else cap
-        if source != "client_choice":  # a defaulted look is not paid for (IMG-08); test_only runs may default
+        # A proposal or an absence is not a decision: only a recorded choice (or a recommendation the
+        # client accepted) may be paid for (IMG-08, F16 items 3-4); test_only runs may default.
+        if source not in PAID_STYLE_SOURCES:
             raise ImagePlanError(
                 "AF-LAUNCH-IMAGE-PLAN-STYLE", "image_plan.design_style",
-                "You have not picked your look yet (the style was only a starting point). Tell me A (Block), "
-                "B (Circle) or C (Hybrid) and I will go on. Nothing has been sent and nothing has been spent.")
-        _check_palette(brand_file)
+                "You have not picked your look yet (the style was only a starting point or nobody recorded "
+                "it). Tell me A (Block), B (Circle) or C (Hybrid) and I will go on; if you accepted my "
+                "recommendation, say yes so it is recorded as your choice. "
+                "Nothing has been sent and nothing has been spent.")
+        _check_palette(brand)
         _verify_paid_budget(approval, plan_hash, cap_minor, currency)
         executor, allow_paid = "kie", True
 
@@ -357,6 +415,11 @@ def resolve(raw: Optional[Dict[str, Any]], *, test_only: bool,
         "design_style_source": source,
         "brand_file": brand_file,
         "brand_owner": brand_owner,
+        # The plan's own brand hash (None when the plan recorded none - honest, never a fresh hash
+        # dressed up as the plan's), and what the file in hand proved.
+        "brand_sha256": brand["plan_brand_sha256"],
+        "brand_record_state": brand["state"],
+        "brand_palette_status": brand["palette_status"],
         "image_cap": cap,
         "image_provider": provider,
         "paid_render_approval_ref": approval,
@@ -364,6 +427,9 @@ def resolve(raw: Optional[Dict[str, Any]], *, test_only: bool,
         "image_currency": currency if not test_only else None,
         "image_price_minor": price,
         "creative_direction": _clean_str(raw.get("creative_direction")),
+        "creative_direction_source": policy["style_state"],
+        "creative_direction_grade_mode": policy["grade_mode"],
+        "creative_direction_grade_owner": policy["grade_owner"],
         "design_prose_ref": _clean_str(raw.get("design_prose_ref")),
         "visual_bible_ref": _clean_str(raw.get("visual_bible_ref")),
         "test_only": bool(test_only),
@@ -380,8 +446,10 @@ C3_KEYS = ("design_style", "brand_file", "brand_owner", "image_cap", "image_prov
 
 
 # Carried when Skill 49's page_set accepts them (it refuses any key it does not list): the style's source
-# (IMG-08) and the client's creative direction (IMG-07).
-C3_CARRIED_KEYS = ("design_style_source", "creative_direction")
+# (IMG-08), the client's creative direction (IMG-07), the plan's brand hash and the resolved grade mode
+# (F16 items 6 and 11) so every page and every rendered image obeys the SAME approved brand/style.
+C3_CARRIED_KEYS = ("design_style_source", "creative_direction", "creative_direction_source",
+                   "creative_direction_grade_mode", "brand_sha256")
 
 
 def _c3_keys() -> Tuple[str, ...]:
