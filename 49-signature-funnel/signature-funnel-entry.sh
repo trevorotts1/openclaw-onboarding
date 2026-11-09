@@ -21,10 +21,12 @@
 #                    re-checked by scripts/kie74_receipt.py --check); anything else that
 #                    names the createTask route or a KIE client script is a bypass.
 #                    (Authorship + build MUST go through the delegated adapters.)
-#   5. NONCE       — write a run-scoped 0600 front-door nonce; export SF_RUN_NONCE.
-#   6. ORCHESTRATE — run_signature_funnel.py with the nonce (the no-skip state
-#                    machine); it emits the signed PROCESS-CERTIFICATE only on
-#                    all-phases-pass.
+#   5. ORCHESTRATE — run_signature_funnel.py (the no-skip state machine). The
+#                    orchestrator authorizes on the OPERATOR KEY only: a caller-supplied
+#                    --nonce / --nonce-file / SF_RUN_NONCE is refused with
+#                    AF-FUN-FRONT-DOOR (a value the caller wrote proves nothing), so this
+#                    shell no longer mints or forwards one. It emits the signed
+#                    PROCESS-CERTIFICATE only on all-phases-pass.
 #
 # Usage:
 #   bash signature-funnel-entry.sh --run-dir <RUN_DIR>
@@ -126,39 +128,27 @@ step_bypass_scan() {
   "$PY" "$FRONT_DOOR" bypass-scan --run-dir "$rd" >/dev/null || exit 1
 }
 
-step_nonce() {
-  local rd="$1"
-  local nonce; nonce="$("$PY" -c 'import secrets; print(secrets.token_hex(32))')"
-  local nf="$rd/.sf_run_nonce"
-  ( umask 077; printf '%s' "$nonce" > "$nf" )
-  chmod 600 "$nf"
-  printf '%s' "$nonce"
-}
-
 # FIX-XC-09e — resolve the CLIENT's own execution-tier authoring model (role=content),
 # record routing/model-content-receipt.json, and gate it (fail-closed) via prove_sf_cert
 # --model-receipt. The client's OWN strongest model writes the copy.
 step_model_receipt() {
   local rd="$1"
-  "$PY" - "$rd" <<'PYEOF'
-import json, os, sys, datetime
+  SF_SCRIPTS_DIR="$SCRIPTS_DIR" "$PY" - "$rd" <<'PYEOF'
+import os, sys
 rd = sys.argv[1]
-# Client-chain resolver seam: reuse model_router.select(role="content") semantics against the
-# CLIENT's providers. Operator/orchestrator supplies the resolved id via env.
+sys.path.insert(0, os.environ["SF_SCRIPTS_DIR"])
+import prove_sf_cert
+# Client-chain resolver seam: the operator/harness supplies the resolved id via env; the
+# receipt is MINTED and SIGNED with the operator key, because an unsigned, self-reported
+# model is refused by the execution-tier gate (AF-FUN-MODEL-TIER).
 model = os.environ.get("SF_CONTENT_MODEL", "")
 provider = os.environ.get("SF_CONTENT_PROVIDER", "")
 tier = os.environ.get("SF_CONTENT_TIER", "content")
-receipt = {
-    "role": "content",
-    "resolved_from": "client-provider-chain" if model else "unresolved",
-    "model": model,
-    "provider": provider.lower(),
-    "tier": tier,
-    "resolved_at": datetime.datetime.utcnow().isoformat() + "Z",
-}
-os.makedirs(os.path.join(rd, "routing"), exist_ok=True)
-with open(os.path.join(rd, "routing", "model-content-receipt.json"), "w", encoding="utf-8") as fh:
-    json.dump(receipt, fh, indent=2)
+key, why = prove_sf_cert.load_operator_key(rd)
+if key is None:
+    print(f"no operator key: {why}")
+    sys.exit(1)
+prove_sf_cert.mint_model_receipt(rd, {"model": model, "provider": provider.lower(), "tier": tier}, key)
 PYEOF
   "$PY" "$SCRIPTS_DIR/prove_sf_cert.py" --model-receipt "$rd/routing/model-content-receipt.json" \
     || die "MODEL-TIER" "content-authoring model receipt failed the execution-tier gate — set SF_CONTENT_MODEL + SF_CONTENT_PROVIDER (+ SF_CONTENT_TIER) to the CLIENT's own strongest model"
@@ -202,10 +192,9 @@ run_pipeline() {
   step_hashpin
   step_bypass_scan "$rd"
   step_model_receipt "$rd"
-  local nonce; nonce="$(step_nonce "$rd")"
-  export SF_RUN_NONCE="$nonce"
-  echo "== signature-funnel-entry :: front door cleared (deps/version/hash-pin/bypass/model-tier/nonce) =="
-  "$PY" "$SKILL_DIR/run_signature_funnel.py" --run-dir "$rd" --nonce "$nonce"
+  echo "== signature-funnel-entry :: front door cleared (deps/version/hash-pin/bypass/model-tier) =="
+  # The orchestrator refuses caller-supplied nonces; the operator key is the authorization.
+  env -u SF_RUN_NONCE "$PY" "$SKILL_DIR/run_signature_funnel.py" --run-dir "$rd"
 }
 
 self_test() {
@@ -267,6 +256,11 @@ write_pin() {
 }
 
 main() {
+  # No arguments: the documented door is USABLE and self-describing; print usage and exit 0.
+  if [ "$#" -eq 0 ]; then
+    grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'
+    exit 0
+  fi
   local mode="" rd="" req_mode="" rotation=""
   while [ $# -gt 0 ]; do
     case "$1" in
