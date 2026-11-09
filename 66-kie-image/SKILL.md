@@ -7,7 +7,7 @@ description: >
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
-version: v2.2.10
+version: v2.2.11
 metadata:
   version: "2.2.7"
   priority: HIGH
@@ -89,8 +89,9 @@ Key cap facts (full matrix: `references/models.md`):
 
 - GPT Image 2 (legacy): operator-confirmed 25,000 chars (`OWNER_CONFIRMED`,
   2026-08-27 — authoritative for GPT Image 2 only; docs page's "maximum
-  20,000 characters" is stale; warn-only, never hard-fail; house band
-  5,000–19,000 with ~9,000 target is legal).
+  20,000 characters" is stale; warn-only, never hard-fail; the shared
+  prompt-policy band governs: 95-100 percent of the verified cap, 80 percent
+  hard floor — `shared-utils/prompt_policy.py`).
 - GPT Image 2.6 (default today since #2860; caps carried forward from 2.5, KIE-066 NOTE): 20,000 chars per KIE
   docs dated 2026-09-09 (`DOCS`, NOT owner-confirmed — the GPT Image 2 25,000
   confirmation does not carry forward and has not been retested on 2.5).
