@@ -64,6 +64,57 @@ not); call it transitional. Do not infer its tool count.
 This repository asserts levels 1 and 2 only. Any statement that a box "has official MCP" is
 level 4 and must carry that box's own capture.
 
+### Operation discovery — the four documented tools
+
+Discovery is a flow, not a guess. Use these tools in this order on a client-specific `/v2`
+connection:
+
+1. `list_locations` — establish WHICH location this OAuth grant can see. Each request is
+   independent; there is no session id to carry forward.
+2. `search_operations` — find the exact intent in the operation catalog (create course,
+   create lesson, import course, workflow validate/create/update/logs, Community post,
+   create group, create channel, attach course, member access, Meeting Room setup, native
+   Voice/Conversation AI, Studio versions, KB ingestion, widget creation, Projects
+   spaces/lists/tasks).
+3. `describe_operation` — capture the request schema, required scopes and version for the
+   matched operation. Never call `execute_operation` from a guessed body.
+4. `execute_operation` — run only the operation `describe_operation` returned, bound to the
+   location from step 1.
+
+**Evidence binding (required for every discovery record).** Record the operation together with
+the authenticated connection identity, the target `location_id`, the granted scopes as
+described, the schema/contract version, and the capture time. A no-match from
+`search_operations` is a catalog result for that connection, location and date — it is not
+proof of universal nonexistence, and it is never permission to invent an operation id from a
+REST slug.
+
+**Endpoint rule.** The MCP client URL stays on the documented `/v2` family. There is no
+`/mcp/.../v3` and no `/mcp/projects` endpoint; extending discovery for Projects means the same
+connection-specific `/v2` endpoints and OAuth, not a second invented server.
+
+**Connection availability.** A single-location connection is the supported default. An
+agency-wide bulk connection is a separate rollout condition. Where bulk is not offered, use the
+single-location connection; never treat one location's grant as another location's
+availability.
+
+**Account-scoped, not repo-wide.** UI/Labs availability, API beta access and the operations
+discovered for a particular OAuth connection are separate observations. The Workflows beta
+access form covers workflow operations only; it does not enable Projects.
+
+**Workers without injected tools.** A spawned sub-agent receives no MCP tool injection. Workers
+use the shared REST CLI (`caf` / `convertandflow` / `ghl`, owned by Skill 44) — never
+`ghl-mcp__*` tools — and use public REST only when the CLI does not cover the call.
+
+**Onboarding inventory.** The fourteen capability families, their operation-derived
+authorization profiles, the four meanings of "enabled" (repository support, client
+installation, account availability, operational activation) and the per-family state
+vocabulary live in `PREREQS.json` → `authorization_profiles`. Report the layers separately;
+never answer "enabled" when only repository support is true.
+
+**No new credential minting.** This skill registers no token creator and instructs no one to
+create a second credential system. The existing secret resolver and the existing Firebase token
+flow are reused as-is.
+
 ### Tier 2 is RETIRED — verify it is OFF
 
 The self-hosted community MCP (`ghl-community-mcp`, historically described as the

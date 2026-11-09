@@ -65,6 +65,19 @@ QC fails if:
 | **3. Account / tenant grant** | This account actually authorizes the connection and scopes | **No** — needs an authorized OAuth connect |
 | **4. Actually observed on this box** | `tools/list` plus one real call, captured here | **No** — needs this box's receipt |
 
+### Operation discovery and authorization evidence
+
+- [ ] Discovery follows the documented order: `list_locations` → `search_operations` → `describe_operation` → `execute_operation`
+- [ ] Every recorded operation is bound to the authenticated connection, the target location, the granted scopes and the operation schema/contract version
+- [ ] A no-match is recorded as a catalog result for (connection, location, date) — never proof of nonexistence and never a reason to invent an operation id
+- [ ] The MCP client URL is the documented `/v2` family for every family, including Projects; no `/mcp/.../v3` and no `/mcp/projects`
+- [ ] The connection is OAuth. The location PIT is recorded as the REST credential only; it is never presented as an equivalent MCP auth path
+- [ ] Single-location connection vs agency-wide bulk availability is stated; no claim that one grant covers another location
+- [ ] Projects API beta access, Projects UI/Labs availability and the discovered Projects operations are recorded separately; the Workflows beta form is never treated as enabling Projects
+- [ ] A worker/sub-agent route is documented as the shared REST CLI (`caf`) with no MCP tool injection
+- [ ] `PREREQS.json` → `authorization_profiles` lists all fourteen families, the four meanings of enabled, and honest per-family states
+- [ ] No new token creator is introduced; the existing secret resolver and Firebase token flow are reused
+
 ### Tier 2 — RETIRED Community MCP (verify OFF)
 
 There is no healthy community MCP. The pass condition is **absence**:
@@ -117,6 +130,15 @@ bash    "$MASTER_FILES_DIR/36-ghl-mcp-setup/qc-ghl-mcp-setup.sh"
 ```
 
 Exit code 0 = setup complete. Any non-zero exit = fix the failed items and re-run.
+
+The documentation contract itself has a focused check — run it whenever this skill's guidance
+changes:
+
+```bash
+python3 -m pytest -q 36-ghl-mcp-setup/tests/test_mcp_discovery_contract.py
+```
+
+A selection that collects zero tests is a failure, not a pass.
 
 The script:
 - Uses canonical Mac paths (`~/.openclaw/...`, `~/Downloads/...`)

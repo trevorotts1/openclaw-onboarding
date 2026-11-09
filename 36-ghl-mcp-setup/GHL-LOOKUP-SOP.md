@@ -52,6 +52,14 @@ Orchestrator: execute_operation {operationId: "contacts.search"} → pass contac
 Sub-agent:    call `caf contacts get <contactId>` (CLI) OR public REST (Tier 3)
 ```
 
+**Discovery evidence binding (binding on every MCP lookup).** Discover the operation first:
+`list_locations` → `search_operations` → `describe_operation` → `execute_operation`. Record the
+operation id together with the authenticated connection identity, the target `location_id`, the
+granted scopes, the schema/contract version and the capture time. A no-match from
+`search_operations` is a catalog result for that connection, location and date — never proof of
+universal nonexistence and never permission to invent an operation id from a REST slug. A
+successful connection is not an operation receipt.
+
 ---
 
 ## RULE 2: Lookup model: the client's choice, or their configured default model (direct, low-cost; never a metered `:cloud` model)
@@ -281,6 +289,14 @@ Task: product / invoice / subscription / billing
   → The retired community MCP is never a route
 ```
 
+**MCP no-match is a routing answer, not a capability verdict.** When `search_operations` returns
+no match for the intent, record the no-match against this connection/location/date and take the
+verified public REST route for that operation. Never write the failure up as "the API does not
+have this", and never invent an operation id from a REST slug to make the MCP path look usable.
+`execute_operation` runs only an operation `describe_operation` returned. The MCP client URL
+stays `/v2`; there is no `/mcp/.../v3` and no `/mcp/projects`. The Workflows beta form covers
+workflow operations only and never enables Projects.
+
 ---
 
 ## RULE 7 — Disclosure header is mandatory on every GHL response
@@ -328,6 +344,11 @@ correct before proceeding:
   the operation row on the operation's official page `https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/` (GHL modernization contract ledger, 2026-10-18). Do not hardcode one
   value for every module; wrong version causes intermittent 400/401. Check
   `29-ghl-convert-and-flow/references/<module>.md` too.
+- **Treating one location's discovery as another location's availability** — a successful
+  `list_locations`/`search_operations` on one connection proves nothing for a different
+  location. Record evidence per connection and per location.
+- **Claiming a Workflows beta form enables Projects** — they are separate beta observations.
+- **Inventing an MCP endpoint for a new family** — no `/mcp/projects`, no `/mcp/.../v3`.
 
 ---
 
@@ -344,6 +365,9 @@ GHL LOOKUP SOP (skill 36 / 2026-06-14):
 - BUILD = Skill 44 internal Build API (Firebase token) → Tier 4 = Skill 6 GATED managed builder (ghl_workflow_builder.py via browser_manager.sh), NOT bare agent-browser; genuinely dead token → ghl_auth.py Tier-2 self-heal, NOT Tier 4; NEVER build via MCP
 - Funnel page content = browser-only (Tier 4) always
 - No metered :cloud model for lookups: the client's selected direct model, their configured default, or a free fallback
+- MCP discovery order: list_locations → search_operations → describe_operation → execute_operation; evidence bound to connection + location + scopes + schema version; a no-match is a catalog result, never a capability verdict
+- MCP client URL stays /v2 for every family; no /mcp/.../v3, no /mcp/projects; Workflows beta never enables Projects
+- Single-location connection is the default; bulk agency-wide is a separate rollout condition
 - Disclosure required: [GHL tier used: N — tool_name]
 - Community MCP is RETIRED: verify registration, unit, listener and env var are absent; never a route
 Full ref: 36-ghl-mcp-setup/GHL-LOOKUP-SOP.md

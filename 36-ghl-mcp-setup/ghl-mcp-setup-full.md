@@ -460,6 +460,71 @@ It returns `event: message\ndata: {...}` (SSE-framed) but does NOT issue an `Mcp
 
 ---
 
+## 5A. OPERATION DISCOVERY CONTRACT — FOUR DOCUMENTED TOOLS
+
+Discovery is a flow with four documented tools. Run it on the client-specific `/v2` connection
+for the client this box actually runs:
+
+```text
+list_locations      {}                                  -> location ids THIS grant can see
+search_operations   {"query": "<exact intent>"}         -> catalog matches, or an honest no-match
+describe_operation  {"operationId": "<from step 2>"}    -> request schema, scopes, version
+execute_operation   {"operationId": "...", "arguments": <exactly the step-3 schema>}
+```
+
+Search exact intents, not family guesses: create course, create lesson, import course, workflow
+validate/create/update/logs, Community post, create group, create channel, attach course, member
+access, Meeting Room setup, native Voice/Conversation AI, Studio versions, KB ingestion, widget
+creation, Projects spaces/lists/tasks.
+
+### Evidence binding — per operation, not per connection
+
+A successful connection is not an operation receipt. Record one record per discovered operation
+bound to: the authenticated connection identity, the target `location_id`, the granted scopes
+reported for the operation, the schema/contract version from `describe_operation`, and the
+capture time. Then a second location's discovery is never assumed; a changed credential or grant
+invalidates the cached evidence for that connection.
+
+### No-match semantics
+
+`search_operations` returning nothing is a catalog result for that (connection, location, date).
+It is not proof the platform lacks the operation, and it is never permission to invent an
+operation id from a REST slug. Record it, then take the verified public REST route for that
+operation or report a capability gap.
+
+### Endpoint and transport rules
+
+- The MCP client URL stays on the documented `/v2` family for every family, including Projects.
+  There is no `/mcp/.../v3` and no `/mcp/projects`.
+- Auth is OAuth. A location PIT bearer sent to an MCP endpoint is an unverified compatibility
+  mode, never an equivalent auth path. The PIT remains the REST (Tier 0/3) credential.
+- Single-location connection is the supported default. Agency-wide bulk installation is a
+  separate rollout condition; where bulk is not offered, use the single-location connection.
+
+### Beta flags are per family
+
+The Workflows beta access form covers workflow operations only; it does not enable Projects.
+Projects API beta access, Projects UI/Labs availability and the Projects operations discovered
+for this connection are three separate observations. `WORKFLOW_API_NOT_ENABLED_FOR_LOCATION` is
+recorded as `beta_not_enabled` for that location — not a bad token, not retried with guessed
+versions, and never a reason to switch transport to escape the gate.
+
+### Workers without injected tools
+
+A spawned sub-agent receives no MCP tool injection. Workers use the shared REST CLI (`caf` /
+`convertandflow` / `ghl`, Skill 44) and public REST only where the CLI does not cover the call.
+Never instruct a sub-agent to call `ghl-mcp__*` or `execute_operation`.
+
+### Onboarding authorization profiles
+
+The fourteen capability families and the four meanings of "enabled" — repository support,
+client installation, account availability, operational activation — are configured in
+`PREREQS.json` → `authorization_profiles`. Report the layers separately; "enabled" is never a
+single boolean. No new token creator is introduced anywhere in this flow: the existing secret
+resolver and Firebase token flow are reused.
+
+---
+
 ## 6. PHASE 5 — VERIFY THE RETIRED COMMUNITY MCP IS OFF (do not install)
 
 The community MCP is **retired from the update and install paths**. Fresh installs omit it;
@@ -583,10 +648,15 @@ If the skill is missing, fetch the latest GHL API v2 master reference from `http
 ```bash
 curl -sS "https://services.leadconnectorhq.com/products/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=100" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H "Version: 2021-04-15"
+  -H "Version: v3"
 ```
 
-Note: products module uses `Version: 2021-04-15`. Most others use `2021-07-28`. Always check `references/[module].md` per call.
+**The `Version` literal belongs to the operation, not to a module or the API as a whole.** The
+literal above is the frozen value for `products.list` in this skill's registry cross-check
+(`GHL-LOOKUP-SOP.md` RULE 3). Do not carry it to another operation and do not assume one global
+value: read the `Ver` column on the operation's own page
+`https://marketplace.gohighlevel.com/docs/ghl/<module>/<operation-slug>/` and cross-check
+`references/[module].md` per call. A wrong literal returns 400 or 401.
 
 ### Tier 4 — Browser (agent-browser FIRST, Playwright fallback)
 

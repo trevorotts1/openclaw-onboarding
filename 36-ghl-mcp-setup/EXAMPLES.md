@@ -96,6 +96,103 @@ curl -sS -X POST "https://services.leadconnectorhq.com/mcp/" \
 Record the names. Anything beyond the four documented tools is a legacy surface. Do not gate setup
 on a count.
 
+## Discovery evidence — one record per operation
+
+A successful connection is not an operation receipt. Capture one record per discovered
+operation. The template below uses synthetic values; replace every `SYNTHETIC_*` value with
+your own capture and never write a credential into it.
+
+```json
+{
+  "schema_version": "1.0.0",
+  "connection_id": "SYNTHETIC_CONNECTION_ID",
+  "client": "claude",
+  "mcp_url": "https://services.leadconnectorhq.com/mcp/anthropic/v2",
+  "auth": "oauth",
+  "location_id": "SYNTHETIC_LOCATION",
+  "operation_id": "SYNTHETIC_OPERATION_ID_FROM_search_operations",
+  "request_schema_captured": true,
+  "granted_scopes": ["AS_REPORTED_BY_describe_operation"],
+  "operation_schema_version": "SYNTHETIC",
+  "captured_at": "RFC3339_TIMESTAMP",
+  "result": "match"
+}
+```
+
+Rules that keep the record honest:
+
+- `operation_id` comes from `search_operations`, never from a REST slug and never from memory.
+- `request_schema_captured` is true only after `describe_operation` returned a schema.
+- `granted_scopes` is what the operation reported for THIS connection — not a docs list and not
+  another location's grant.
+- `location_id` comes from `list_locations` on this connection.
+- The record asserts nothing about any other location.
+
+### Single-location versus bulk connection
+
+```text
+single-location (default): list_locations → target location → operations bound to it
+bulk / agency-wide:        separate rollout condition, not offered on every account
+```
+
+When the connection does not offer bulk, use the supported single-location connection. Do not
+run the same operation against a second location on one grant.
+
+### No match is a catalog result, not a capability verdict
+
+```text
+search_operations {"query": "webhook delivery log"}   -> no match
+```
+
+Record the no-match for this connection, location and date:
+
+```json
+{"connection_id":"SYNTHETIC_CONNECTION_ID","location_id":"SYNTHETIC_LOCATION",
+ "query":"webhook delivery log","result":"no_match","captured_at":"RFC3339_TIMESTAMP"}
+```
+
+Then route the read through the verified public REST operation if the registry has one;
+otherwise report a capability gap. The no-match is not proof of universal nonexistence. Never
+invent an operation id from a REST slug, and never write the no-match up as "the platform does
+not have this".
+
+### Projects discovery — separate from the Workflows beta
+
+```text
+list_locations {}
+search_operations   {"query": "projects space create"}
+describe_operation  {"operationId": "<only if the previous step returned one>"}
+```
+
+- If `search_operations` matches nothing, record the no-match for THIS connection and location.
+  Projects API beta access, Projects UI/Labs availability and the operations discovered for this
+  connection are three separate observations.
+- The Projects connection guide uses the same client-specific hosted `/v2` endpoints and OAuth.
+  Do not call `/mcp/projects` or `/mcp/.../v3`; they do not exist as documented endpoints.
+- The Workflows beta access form covers workflow operations only. It does not enable Projects.
+
+### Beta error classification
+
+```text
+WORKFLOW_API_NOT_ENABLED_FOR_LOCATION
+  -> record beta_not_enabled for THIS location
+  -> select the approved existing fallback for that operation
+  -> queue the access request separately
+```
+
+Not a bad token. Do not retry guessed versions. The MCP route does not bypass the beta gate.
+
+### Worker without injected MCP tools
+
+A spawned sub-agent receives no MCP tools. The worker route is the shared CLI:
+
+```bash
+caf contacts search "client@example.com"     # works in orchestrator AND sub-agent
+caf contacts get CONTACT_ID_HERE
+```
+
+Never hand a sub-agent `ghl-mcp__*` or `execute_operation`; it cannot call them.
+
 ## Public REST — concrete tasks
 
 ### Search contacts

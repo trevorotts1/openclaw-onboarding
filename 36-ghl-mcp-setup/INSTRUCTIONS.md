@@ -27,10 +27,11 @@ begin with this header on its own line:
 Examples:
 - `[GHL tier used: 0 — convertandflow contacts list]`
 - `[GHL tier used: 0 (workflow write, Firebase token healthy) — convertandflow workflows build]`
-- `[GHL tier used: 1 — locations_get-location]`
-- `[GHL tier used: 2 — ghl_list_products]`
-- `[GHL tier used: 2 (Tier 1 lacked tool: products) — ghl_list_products]`
-- `[GHL tier used: 3 (Tier 1+2 lacked tool: webhook_log) — raw API GET /hooks/]`
+- `[GHL tier used: 1 — execute_operation contacts.search]`
+- `[GHL tier used: 3 (Tier 1 lacked operation: products.list) — raw API GET /products/]`
+- `[GHL tier used: 3 (Tier 1 lacked operation: webhook_log) — raw API GET /hooks/]`
+
+Tier 2 never appears in a disclosure: the retired community MCP is not a route.
 
 If you fall through tiers, the header must show the chain so the audit is complete.
 
@@ -85,6 +86,63 @@ record back, confirm intended fields.
 
 **No tool count is a contract.** The documented catalog is four tools. Counts from the
 transitional endpoint are observations, not an interface — never gate a decision on one.
+
+### Discovery flow — the four documented tools, in order
+
+Run discovery against the client-specific `/v2` connection for the client this box actually
+runs. Each request is independent (the connection is stateless; there is no `Mcp-Session-Id`).
+
+```text
+1. list_locations      {}                                  -> the location ids THIS grant can see
+2. search_operations   {"query": "<exact intent>"}         -> catalog matches (or an honest no-match)
+3. describe_operation  {"operationId": "<from step 2>"}    -> request schema, required scopes, version
+4. execute_operation   {"operationId": "<from step 2>", "arguments": <exactly the step-3 schema>}
+```
+
+Search the exact intent rather than a family guess: create course, create lesson, import
+course, workflow validate/create/update/logs, Community post, create group, create channel,
+attach course, member access, Meeting Room setup, native Voice/Conversation AI, Studio
+versions, KB ingestion, widget creation, Projects spaces/lists/tasks.
+
+**Record evidence per operation, not per connection.** A successful connection is not an
+operation receipt. Write one record per discovered operation bound to:
+
+- the authenticated connection identity,
+- the target `location_id` from `list_locations`,
+- the granted scopes reported for the operation,
+- the schema/contract version from `describe_operation`,
+- the capture timestamp.
+
+**No-match is a catalog result.** If `search_operations` returns nothing, record "no match for
+connection + location + date" and move on. That is not proof the platform lacks the operation
+and it is never license to invent an operation id from a REST slug.
+
+**Never invent an endpoint.** The MCP client URL stays `/v2` for every family, including
+Projects. There is no `/mcp/.../v3` and no `/mcp/projects`. Projects discovery uses the same
+connection-specific hosted endpoints and OAuth.
+
+**Connection kinds.** The default is one single-location OAuth connection. Agency-wide bulk
+installation is a separate rollout condition; when bulk is not offered, use the supported
+single-location connection and never assume one location's grant covers another.
+
+**Beta flags are per family.** The Workflows beta access form covers workflow operations only.
+Projects API beta access, Projects UI/Labs availability and the Projects operations discovered
+for this connection are three separate observations. An explicit
+`WORKFLOW_API_NOT_ENABLED_FOR_LOCATION` result is recorded as `beta_not_enabled` for that
+location; it is never reported as a bad token and never unlocks Projects.
+
+**Workers without injected tools.** A spawned sub-agent has no MCP tool injection. Workers use
+the shared REST CLI (`caf` / `convertandflow` / `ghl`, Skill 44) and public REST only where the
+CLI does not cover the call. Never instruct a sub-agent to call `ghl-mcp__*` or
+`execute_operation`.
+
+**Onboarding authorization profiles.** The fourteen capability families and the four meanings of
+"enabled" (repository support, client installation, account availability, operational
+activation) are configured in `PREREQS.json` → `authorization_profiles`. Report those layers
+separately; "enabled" is never a single boolean.
+
+**No new credential creator.** This skill reuses the existing secret resolver and Firebase token
+flow. It never mints, rotates, or introduces a second credential system.
 
 ### Four evidence levels for MCP — do not collapse them
 
