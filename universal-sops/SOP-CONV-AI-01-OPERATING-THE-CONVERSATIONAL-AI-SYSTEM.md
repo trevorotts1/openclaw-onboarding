@@ -1,6 +1,7 @@
 # SOP-CONV-AI-01: OPERATING THE CONVERSATIONAL AI SYSTEM
 
 **Cluster:** Universal SOPs (`universal-sops/`)
+**Canonical GHL operations cluster:** the GHL-hybrid procedures live in the single `universal-sops/ghl-hybrid-operations/` cluster (its README is the index). This SOP points into `SOP-GHL-08-NATIVE-AI.md` for native provisioning and keeps no second copy; do not create a parallel `universal-sops/ghl-operations/` cluster.
 **Master authority:** `38-conversational-ai-system/SKILL.md` + `38-conversational-ai-system/INSTRUCTIONS.md` (the install + operate manual) + `38-conversational-ai-system/protocols/` (the behavioral protocols)
 **Owning department:** Communications
 **Consuming departments:** Sales, Customer Support (the same trio whose presence fires the Skill 23 to Skill 38 handoff)
@@ -47,19 +48,51 @@ to 30 minutes. The Operator captures the answers as the build input.
 
 The Conversational AI Operator builds the Conversation Workflow via `scripts/09-install-conversation-workflows.sh`,
 which produces THE TRINITY (Parts 1 to 3) and then invokes `scripts/31-generate-workflow-visual.sh` for
-Part 4 THE VISUAL. The GHL workflow itself is built along the Tier ladder:
+Part 4 THE VISUAL.
 
-- Option 1 PRIMARY (Skill 44, convert-and-flow-operator, Tier 0 caf-direct): `caf workflows build`, used
-  when a healthy Firebase refresh token is present, followed by the mandatory 12-point post-build
-  verification.
-- Option 2 FALLBACK (Skill 41, build-with-ai-playbook): the standardized 8-section Layer 0 prompt pasted
-  into Automations Build using AI, used when the Firebase token is absent or expired. The same 12-point
-  verification is mandatory here too.
+**Route selection is operation-aware and public-first.** Before choosing a transport, resolve the
+operation in the frozen registry
+(`44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py`) and read
+the current per-`(operation_id, tenant)` capability evidence. Then take the cheapest route the
+evidence actually proves:
+
+1. `public_direct` — the registered public REST row is the preferred route whenever the row exists and
+   the capability record allows this location (for example `workflows.list`, `workflows.enroll`,
+   `workflows.definition.read`, `workflows.definition.create`, `workflows.definition.update`,
+   `workflows.status.publish`, `contacts.*`, `custom_fields.*`, `tags.*`, `custom_values.*`).
+   Version is a property of the row; never prepend `/v3` and never substitute one version globally.
+2. `official_mcp` — only an operation actually discovered and authorized in this session, never a
+   family listing, a catalog entry, or the existence of an MCP server.
+3. `skill44_private` — the existing authorized Firebase/internal rail (`caf workflows …`) for a
+   documented public gap or for rows whose class is `skill44_private` (for example
+   `workflows.private.*` and the internal export/read path). A healthy Firebase refresh token is
+   required. It is a supported rail, never a privileged default.
+4. `skill06_authoring` — the managed UI, because the row declares no public contract.
+
+`workflows.definition.create`, `workflows.definition.update`, and `workflows.status.publish` are
+public rows whose evidence is staging-level (`B-V4-S`) and whose calls require approval. A tenant
+that has not enabled the public Workflow API records `beta_not_enabled` and uses the approved
+private or managed rail instead. On every rail the mandatory 12-point post-build verification runs,
+and a workflow is never declared done on a 2xx alone.
+
+**Compile-time versus native runtime.** A Build-with-AI prompt (Skill 41), the skill's Layer 0
+instructions, and this SOP describe compile-time artifacts: what to build and which settings to set.
+They do not configure or prove native runtime behavior (a native Conversation AI responder, a voice
+agent, or knowledge retrieval). Native runtime is configured through its own operation row and is
+proven by its own activation evidence.
+
+**Responder ownership.** Record which responder actually answers a contact: the local/self-hosted
+brain (Skill 38 playbook plus the OpenClaw runtime), a native GHL Conversation AI agent, or a
+native/local mix with an explicit handoff. One logical conversation has exactly one primary
+responder, so a native and a local responder can never both send. A saved "enabled" switch is not
+activation evidence; activation evidence is the observed active responder for the location and
+channel, plus any phone assignment and agent version, captured in a receipt. Opt-out, quiet hours,
+and human takeover stay enforced on whichever responder is primary.
 
 The Operator records the workflow in the registry (`templates/registry.md` format), including the Tools
 column and the Visual column, and keeps registry hygiene: every registered row has its playbook, its
-Build-with-AI prompt, and its truth diagram. Part 4 regenerates on every workflow change per the staleness
-rule in `protocols/workflow-visual-protocol.md`.
+Build-with-AI prompt, and its truth diagram. Part 4 regenerates on every workflow change per the
+staleness rule in `protocols/workflow-visual-protocol.md`.
 
 ## 4. QC gates and the rubric (role: AI QC Specialist)
 
@@ -113,8 +146,11 @@ change ships. Maintenance is silent to the client and operator-verbose only.
 When a build cannot complete, the Conversational AI Operator escalates rather than shipping half-built.
 Concrete escalation paths:
 
-- No Firebase token or an Option 1 caf failure: fall back to Option 2 (Skill 41 Build-with-AI paste) and
-  flag the operator to grab the Convert-and-Flow token so future builds go Option 1.
+- The selected route is unavailable or fails: record the exact condition, re-read the registry row and
+  the capability evidence, and move to the next approved route for that operation in this order:
+  `public_direct` → `official_mcp` (only when the exact operation was discovered) → authorized
+  `skill44_private` → `skill06_authoring`. A missing Firebase token moves a workflow-definition build
+  to the managed authoring rail and raises the token nudge; it never licenses a fabricated build.
 - A gate FAILs three times: the third attempt escalates to a heavy-reasoning pass; a fourth failure marks
   the workflow BLOCKED with a written diagnosis and the Operator escalates to the operator.
 - A runtime dependency is unmet (for example the model-failover preflight `scripts/32-verify-model-failover-support.sh`
