@@ -60,6 +60,8 @@ TENANT = fake_tenant()
 WORKFLOW_ID = "wf_synthetic_0001"
 OTHER_WORKFLOW_ID = "wf_synthetic_9999"
 APPROVAL = ApprovalRef(ref="approval-synthetic-v4")
+#: A delete needs an approval explicitly scoped to destruction.
+DELETION_APPROVAL = ApprovalRef(ref="approval-synthetic-v4; scope:deletion")
 NEW_NAME = "Synthetic Created Flow"
 NEW_ID = "wf_synthetic_0002"
 
@@ -250,7 +252,7 @@ class DeleteReadbackProvesAbsence(unittest.TestCase):
         adapter = _adapter(transport, _gate(READ, DELETE))
 
         result = adapter.delete_workflow(
-            tenant=TENANT, workflow_id=WORKFLOW_ID, approval=APPROVAL
+            tenant=TENANT, workflow_id=WORKFLOW_ID, approval=DELETION_APPROVAL
         )
 
         self.assertIs(result.status, Status.ok, result.error)
@@ -285,7 +287,7 @@ class DeleteReadbackProvesAbsence(unittest.TestCase):
         adapter = _adapter(transport, _gate(READ, DELETE))
 
         result = adapter.delete_workflow(
-            tenant=TENANT, workflow_id=WORKFLOW_ID, approval=APPROVAL
+            tenant=TENANT, workflow_id=WORKFLOW_ID, approval=DELETION_APPROVAL
         )
 
         self.assertIsNot(result.status, Status.ok)
@@ -308,7 +310,7 @@ class DeleteReadbackProvesAbsence(unittest.TestCase):
         adapter = _adapter(transport, _gate(READ, DELETE))
 
         result = adapter.delete_workflow(
-            tenant=TENANT, workflow_id=WORKFLOW_ID, approval=APPROVAL
+            tenant=TENANT, workflow_id=WORKFLOW_ID, approval=DELETION_APPROVAL
         )
 
         self.assertIs(result.status, Status.unknown_outcome)

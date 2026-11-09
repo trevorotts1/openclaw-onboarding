@@ -51,7 +51,6 @@ from cli_anything.gohighlevel.public.operations import OPERATIONS  # noqa: E402
 from cli_anything.gohighlevel.public.readback import ReadbackRegistry  # noqa: E402
 from cli_anything.gohighlevel.public.result import Status  # noqa: E402
 from cli_anything.gohighlevel.public.workflow_v4 import (  # noqa: E402
-    WorkflowGap,
     WorkflowV4Adapter,
 )
 from cli_anything.gohighlevel.public.workflow_v4_intent import (  # noqa: E402
@@ -406,17 +405,58 @@ class IntentNeverDropsAStep(unittest.TestCase):
 
 
 class RestoreReadsFreshRevision(unittest.TestCase):
-    def test_restore_without_a_documented_operation_is_a_named_gap(self) -> None:
+    def test_restore_is_a_fresh_update_and_never_replays_the_snapshot(self) -> None:
+        prior = {
+            "version": 21,
+            "name": "Synthetic Restore Flow",
+            "source": "synthetic",
+            "triggers": [],
+            "actions": [{"id": "act_a", "type": "sms", "name": "A"}],
+            "edges": [],
+        }
+        after = copy.deepcopy(prior)
+        after["version"] = 22
+        snapshot = {"status": "draft", "definition": copy.deepcopy(prior)}
+        snapshot["definition"]["version"] = 7  # historical revision
+
+        transport = FakeTransport(
+            [
+                _json_response(_payload(prior)),   # restore's fresh read
+                _json_response(_payload(prior)),   # update's own read
+                resp(200, b"{}"),                  # the PUT
+                _json_response(_payload(after)),   # in-write read-back
+                _json_response(_payload(after)),   # verification read
+            ]
+        )
+        adapter = _adapter(transport, _gate(READ, UPDATE))
+
+        result = adapter.restore_workflow(
+            tenant=TENANT,
+            workflow_id=WORKFLOW_ID,
+            snapshot=snapshot,
+            approval=APPROVAL,
+        )
+
+        self.assertIs(result.status, Status.ok, result.error)
+        self.assertEqual(transport.requests[2]["body"]["version"], 21)
+        self.assertNotEqual(transport.requests[2]["body"]["version"], 7)
+        self.assertFalse(
+            any("restore" in item["url"] for item in transport.requests),
+            "no restore endpoint exists; it must be a fresh update",
+        )
+        self.assertFalse(
+            result.evidence["workflow_v4"]["restore"]["replayed_snapshot_revision"]
+        )
+
+    def test_restore_without_a_snapshot_is_refused_before_transport(self) -> None:
         transport = FakeTransport()
         adapter = _adapter(transport, _gate(READ, UPDATE))
-        with self.assertRaises(WorkflowGap) as caught:
+        with self.assertRaises(ContractViolation) as caught:
             adapter.restore_workflow(
-                tenant=TENANT, workflow_id=WORKFLOW_ID
+                tenant=TENANT, workflow_id=WORKFLOW_ID, snapshot={},
+                approval=APPROVAL,
             )
-        self.assertEqual(
-            caught.exception.rule, "workflow_restore_has_no_documented_operation"
-        )
-        self.assertIn("fresh approved update", caught.exception.detail["unblock"])
+        self.assertEqual(caught.exception.rule, "restore_snapshot_invalid")
         self.assertEqual(transport.call_count, 0)
 
     def test_restore_as_update_reads_the_current_revision_before_writing(self) -> None:

@@ -50,7 +50,9 @@ from cli_anything.gohighlevel.public.result import (  # noqa: E402
 from cli_anything.gohighlevel.public.workflow_v4 import (  # noqa: E402
     GAP_RULES,
     OPERATION_MAP,
+    UPDATE_OPERATION,
     WorkflowV4Adapter,
+    validate_operation_map,
 )
 
 TENANT = fake_tenant()
@@ -141,10 +143,12 @@ class DisabledByDefault(unittest.TestCase):
             self.assertIsNotNone(capability.activation_blocked, key)
             self.assertFalse(capability.write_ready() if key in WRITE_KEYS else False)
 
-    def test_v4_write_rows_are_v4_and_approval_guarded(self) -> None:
+    def test_write_rows_are_public_approval_guarded(self) -> None:
+        # Version-neutral: the ADAPTER carries no wire literal; the row does.
         for operation_id in WRITE_IDS:
             row = OPERATIONS[operation_id]
-            self.assertEqual(row.version, "v4", operation_id)
+            self.assertIsInstance(row.version, str, operation_id)
+            self.assertTrue(row.version.strip(), operation_id)
             self.assertTrue(row.write, operation_id)
             self.assertTrue(row.approval_required, operation_id)
             self.assertEqual(row.route_class, "public_direct", operation_id)
@@ -269,16 +273,24 @@ class DisabledByDefault(unittest.TestCase):
         self.assertEqual(self.transport.call_count, 0)
         self.assertEqual(self.transport.requests, [])
 
-    def test_restore_is_a_named_gap_not_a_row(self) -> None:
-        self.assertIn("restore", GAP_RULES)
+    def test_restore_is_an_update_and_invents_no_endpoint(self) -> None:
+        # Restore travels on the documented UPDATE contract; no restore row and
+        # no restore endpoint exists anywhere in the registry.
+        self.assertEqual(OPERATION_MAP["restore"], UPDATE_OPERATION)
         self.assertNotIn("workflows.restore", WRITE_IDS)
+        # The registry records a restore GAP row (no method/path); the adapter
+        # must never issue it.
+        restore_row = OPERATIONS["workflows.restore"]
+        self.assertEqual(restore_row.route_class, "capability_gap")
+        self.assertFalse(restore_row.write)
         with self.assertRaises(ContractViolation) as caught:
             self.adapter.restore_workflow(
-                tenant=TENANT, workflow_id="wf_synthetic_0001"
+                tenant=TENANT,
+                workflow_id="wf_synthetic_0001",
+                snapshot={},
+                approval=APPROVAL,
             )
-        self.assertEqual(
-            caught.exception.rule, "workflow_restore_has_no_documented_operation"
-        )
+        self.assertEqual(caught.exception.rule, "restore_snapshot_invalid")
         self.assertEqual(self.transport.call_count, 0)
 
     # -- no V4 sweep -----------------------------------------------------
@@ -312,23 +324,56 @@ class DisabledByDefault(unittest.TestCase):
             for operation_id in WRITE_IDS:
                 self.assertNotIn(operation_id, text, f"{path.name}: {operation_id}")
 
-    def test_v4_version_is_confined_to_the_frozen_rows(self) -> None:
-        v4_rows = {
-            operation_id
-            for operation_id, row in OPERATIONS.items()
-            if row.version == "v4"
+    def test_adapter_carries_no_wire_version_literal(self) -> None:
+        # The adapter is version-neutral: no quoted version literal may appear
+        # in it.  The registry row is the only Version authority.
+        source = (
+            _package_dir() / "workflow_v4.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn('"v4"', source)
+        self.assertNotIn("'v4'", source)
+        self.assertNotIn('"v3"', source)
+        self.assertNotIn("'v3'", source)
+        versions = {
+            OPERATIONS[operation_id].version
+            for operation_id in WRITE_IDS
         }
-        expected = {value for value in OPERATION_MAP.values() if value is not None}
-        self.assertEqual(v4_rows, expected)
+        self.assertEqual(len(versions), 1, "one definition family, one wire version")
+        self.assertTrue(next(iter(versions)).strip())
 
     def test_operation_map_writes_are_exactly_the_four_frozen_keys(self) -> None:
-        mapped_writes = {
+        # Rows that EXIST must agree with the map; rows that have not landed
+        # are named by validate_operation_map (WF00-CP01), never invented.
+        mapped_writes = set()
+        for key in WRITE_KEYS:
+            operation_id = OPERATION_MAP.get(key)
+            if operation_id is not None and operation_id in OPERATIONS:
+                self.assertTrue(OPERATIONS[operation_id].write, operation_id)
+                mapped_writes.add(key)
+        self.assertEqual(mapped_writes, set(WRITE_KEYS))
+        # Every mapped write that is NOT one of the four surfaces is an alias
+        # riding an existing contract, never a second wire operation.
+        aliases = {
             key
             for key, operation_id in OPERATION_MAP.items()
-            if operation_id is not None and OPERATIONS[operation_id].write
+            if operation_id is not None
+            and operation_id in OPERATIONS
+            and OPERATIONS[operation_id].write
+            and key not in WRITE_KEYS
         }
-        self.assertEqual(mapped_writes, set(WRITE_KEYS))
-        self.assertEqual(set(GAP_RULES), {"validation.read", "restore"})
+        self.assertEqual(aliases, {"restore"})
+        self.assertEqual(OPERATION_MAP["restore"], UPDATE_OPERATION)
+        self.assertEqual(set(GAP_RULES), {"validation.read"})
+        missing = validate_operation_map(OPERATIONS)
+        self.assertNotIn("workflows.definition.read", missing)
+        self.assertNotIn("workflows.definition.update", missing)
+        # The v3 rows WF00 must add are reported, not silently dropped.
+        for operation_id in (
+            "workflows.step_types.list",
+            "workflows.definition.validate",
+            "workflows.search",
+        ):
+            self.assertIn(operation_id, missing)
 
 
 if __name__ == "__main__":
