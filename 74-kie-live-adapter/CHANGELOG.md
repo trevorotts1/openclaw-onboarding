@@ -1,4 +1,8 @@
 # Changelog - Skill 74 KIE Live Adapter
+## [1.1.15] - 2026-11-09 - G3 lockstep bump for the GPT Image 2.6 owner-cap change (no behaviour change)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 1.1.14 -> 1.1.15 so this pull request's skill content change carries a version above main. No functional change.
+
 ## [1.1.14] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 
 - Version bumped so the folded content carries the version G3 requires above main. No functional change.
