@@ -87,10 +87,10 @@
     },
     "forms.configure": {
       "name": "12_configure_form_options",
-      "action": "native_fields_or_options",
+      "action": "native_field_placement_or_fields_or_options",
       "implemented": true,
       "proof": "PROFILE",
-      "use": "Captured standard field properties with independent reopen; advanced choices still need profiles"
+      "use": "Captured native built-in placement by query identity plus standard-field properties with independent reopen; custom schemas and advanced choices remain capture/dependency gated"
     },
     "forms.style": {
       "name": "13_polish_form_css",
@@ -125,7 +125,12 @@
       "action": "options",
       "implemented": true,
       "proof": "PROFILE",
-      "use": "Recorded channels, privacy, branding and course links after portal authentication; current portal password is expired"
+      "use": "Native channels and authored group-description settings through an authenticated caller-owned portal context; same-session identity capture required. Inactive groups cannot create channels. Other privacy/branding/course settings need profiles.",
+      "specific_handlers": [
+        "community_channels",
+        "community_details"
+      ],
+      "live_identity_status": "CAPTURE_REQUIRED"
     },
     "courses.create": {
       "name": "18_create_course",

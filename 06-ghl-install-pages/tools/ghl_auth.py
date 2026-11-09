@@ -707,7 +707,8 @@ def bridge_seed_into_context(context, seed, *,
                              expected_location_id=None,
                              expected_company_id=None,
                              identity_fetcher=None,
-                             app_origin=None) -> dict:
+                             app_origin=None,
+                             activation_target=None) -> dict:
     """The MINIMUM Playwright-context bridge for a seed minted by
     seed-ghl-auth.py (plan §9.4 — no new password/2FA implementation, no copied
     Firebase semantics, no parallel secret store).
@@ -723,6 +724,11 @@ def bridge_seed_into_context(context, seed, *,
 
     Never drives a login form, never opens a login popup, never falls back to
     password/2FA (D7 hard rule — night mode is implicit here)."""
+    if activation_target is not None:
+        from ghl_auth_activation import validate_target
+        validate_target(activation_target, expected_location_id, app_origin)
+        if identity_fetcher is not None:
+            raise AuthBridgeError("REFUSE (P4 activation): a post-seed activation cannot replace actual seeding with identity_fetcher.")
     seed = dict(seed or {})
     secrets = []
     try:
@@ -768,13 +774,26 @@ def bridge_seed_into_context(context, seed, *,
             {"ok": False, "state": "SESSION_EXPIRED", "redacted": True},
             page=page)
 
+    if activation_target is not None:
+        # Optional same-SPA activation runs AFTER the canonical real seed, not
+        # instead of it. Its protected workspace/object proof supplies location
+        # identity; routing to a location by itself is never accepted as proof.
+        from ghl_auth_activation import activate_and_verify_location
+        raw_identity = activate_and_verify_location(
+            page, raw_identity, activation_target,
+            expected_location_id=expected_location_id,
+            expected_company_id=expected_company_id, app_origin=app_origin)
+
     identity = validate_location_identity(
         raw_identity,
         expected_location_id=expected_location_id,
         expected_company_id=expected_company_id,
     )
+    receipt = {"ok": True, "state": "OK", "identity": identity, "redacted": True}
+    if activation_target is not None:
+        receipt["activation_proof"] = raw_identity["activation_proof"]
     return BridgeReceipt(
-        {"ok": True, "state": "OK", "identity": identity, "redacted": True},
+        receipt,
         page=page)
 
 
@@ -784,7 +803,8 @@ def mint_and_bridge(context, session, out, *,
                     expected_company_id=None,
                     seed_runner=None,
                     identity_fetcher=None,
-                    app_origin=None) -> dict:
+                    app_origin=None,
+                    activation_target=None) -> dict:
     """resolve -> mint (the EXISTING seed-ghl-auth.py Tier-1 chain) -> bridge
     into the owned Playwright context -> validate identity. Exactly ONE
     expired-auth re-seed is permitted (the re-mint reuses the same token-only
@@ -800,6 +820,11 @@ def mint_and_bridge(context, session, out, *,
     env = env if env is not None else os.environ
     expected_location_id = (expected_location_id if expected_location_id is not None
                             else resolve_location_id(env)[0] or None)
+    if activation_target is not None:
+        from ghl_auth_activation import validate_target
+        validate_target(activation_target, expected_location_id, app_origin)
+        if identity_fetcher is not None:
+            raise AuthBridgeError("REFUSE (P4 activation): actual seeding is required before location activation.")
     pit_value, pit_source = resolve_location_pit(env)
     resolution = _resolve_refresh(env_arg)
     assert_credentials_not_substituted(
@@ -838,7 +863,8 @@ def mint_and_bridge(context, session, out, *,
             context, seed,
             expected_location_id=expected_location_id,
             expected_company_id=expected_company_id,
-            identity_fetcher=identity_fetcher, app_origin=app_origin)
+            identity_fetcher=identity_fetcher, app_origin=app_origin,
+            **({"activation_target": activation_target} if activation_target is not None else {}))
 
     reseed_state = {"count": 0}
 

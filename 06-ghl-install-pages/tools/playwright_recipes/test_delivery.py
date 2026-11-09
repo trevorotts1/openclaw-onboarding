@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from delivery import run_course, validate_course, validate_quiz, Skill44Transport, course_executor, run_lesson_quiz, DeliveryApiError, run_course_update, configure_community_channels, validate_api_inputs, RegisteredCalendarDispatcher, meeting_calendar_executor, validate_calendar_integration, CalendarHttpTransport
 from skill6_playwright import Stop
 
@@ -215,47 +215,27 @@ class DeliveryTests(unittest.TestCase):
 
 
 class CommunityChannelTests(unittest.TestCase):
-    class Page:
-        def __init__(self):
-            self.url='https://portal.example/communities/groups/demo/home'
-            self.fields={};self.saved={};self.clicks=[];self.password=False
-        def get_by_text(self,name,exact=True):return CommunityChannelTests.Control(self,'text',name)
-        def get_by_role(self,role,name,exact=True):return CommunityChannelTests.Control(self,'button',name)
-        def get_by_placeholder(self,name,exact=True):return CommunityChannelTests.Control(self,'placeholder',name)
-    class Control:
-        def __init__(self,page,kind,name):self.page,self.kind,self.name=page,kind,name
-        def wait_for(self,**kw):pass
-        def count(self):
-            if self.kind=='text':return int(self.name in self.page.saved)
-            if self.name=='Password':return int(self.page.password)
-            return 1
-        def fill(self,value,**kw):self.page.fields[self.name]=value
-        def click(self,**kw):
-            self.page.clicks.append(self.name)
-            if self.name=='CREATE CHANNEL':
-                name=self.page.fields['e.g Marketing Reports']
-                self.page.saved[name]=self.page.fields['Enter Description']
-                self.page.url='https://portal.example/communities/groups/demo/channels/'+name
+    def test_legacy_front_door_requires_authenticated_portal_context(self):
+        page = Mock()
+        with self.assertRaises(Stop):
+            configure_community_channels(page, {'portal_url':'https://portal.example/communities/groups/demo/home',
+                                               'channels':[{'name':'Introductions','description':'Say hello'}]})
+        page.get_by_role.assert_not_called()
 
-    def test_locked_channel_controls_create_with_honest_readback_status(self):
-        page=self.Page()
-        result=configure_community_channels(page,{'portal_url':page.url,
-            'channels':[{'name':'Introductions','description':'Say hello'}]})
-        self.assertEqual(page.clicks,['Add Channel','CREATE CHANNEL'])
-        self.assertEqual(page.saved,{'Introductions':'Say hello'})
-        self.assertEqual(result['independent_readback'],'REQUIRED')
-        self.assertEqual(result['status'],'CHANNELS_SAVE_SUBMITTED')
+    def test_legacy_front_door_requires_protected_evidence_root(self):
+        page = Mock()
+        with self.assertRaises(Stop):
+            configure_community_channels(page, {}, portal_context=object())
+        page.get_by_role.assert_not_called()
 
-    def test_unverified_privacy_or_wrong_portal_never_mutates(self):
-        for change in ({'privacy':'private'},{'portal_url':'https://other.example/communities/groups/demo/home'}):
-            page=self.Page();step={'portal_url':page.url,'channels':[{'name':'A','description':'D'}],**change}
-            with self.assertRaises(Stop):configure_community_channels(page,step)
-            self.assertEqual(page.clicks,[])
-
-    def test_expired_portal_does_not_attempt_login_or_create(self):
-        page=self.Page();page.password=True
-        with self.assertRaises(Stop):configure_community_channels(page,{'portal_url':page.url,'channels':[{'name':'A','description':'D'}]})
-        self.assertEqual(page.clicks,[])
+    def test_legacy_front_door_forwards_to_the_one_maintained_adapter(self):
+        import community_portal
+        page, context, step = object(), object(), {'authored':'fixture'}
+        expected = {'status':'NEEDS_VERIFICATION'}
+        with patch.object(community_portal, 'run_channels', return_value=expected) as run:
+            result = configure_community_channels(page, step, portal_context=context, evidence_root='/fixture')
+        self.assertIs(result, expected)
+        run.assert_called_once_with(page, step, '/fixture', portal_context=context)
 
 
 class CalendarProviderTests(unittest.TestCase):

@@ -24,8 +24,12 @@ from urllib.parse import urlencode, urlsplit
 
 if __package__:
     from .skill6_playwright import Stop, secure_json, sha, click, fill, wait_until
+    from .evidence_lease import guard_delivery, journal_present, open_lease
+    from .receipt_validation import replay_delivery
 else:
     from skill6_playwright import Stop, secure_json, sha, click, fill, wait_until
+    from evidence_lease import guard_delivery, journal_present, open_lease
+    from receipt_validation import replay_delivery
 
 class DeliveryApiError(Stop):
     def __init__(self, status=None, error_type='RequestError'):
@@ -204,13 +208,14 @@ def _matches(expected, actual):
     return expected == actual
 
 
+@guard_delivery('course')
 def run_course(inputs, evidence_root, *, capability, transport=None):
     """Lease this evidence root across direct and host callers before a write."""
     validate_course(inputs)
     root = Path(evidence_root).resolve()
     root.mkdir(parents=True,exist_ok=True,mode=0o700)
     os.chmod(root,0o700)
-    fd = os.open(root/'delivery.lock',os.O_CREAT|os.O_RDWR,0o600)
+    fd = open_lease(root/'delivery.lock')
     try:
         try:
             fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -233,15 +238,19 @@ def _run_course(inputs, evidence_root, *, capability, transport=None):
     root = Path(evidence_root)
     state_file = root/'delivery-state.json'
     digest = sha(json.dumps(plan,sort_keys=True))
-    if state_file.exists():
-        old = json.loads(state_file.read_text())
-        if old.get('fingerprint')!=digest:
-            raise Stop('Delivery evidence belongs to a different plan')
-        if old.get('status')=='API_STEPS_COMPLETE':
-            return {**old,'status':'ALREADY_EXECUTED'}
-        raise Stop('Interrupted API delivery: reconcile saved object IDs before replay')
+    if journal_present(state_file):
+        counts = {'course':1}
+        for module in plan['modules']:
+            counts['category'] = counts.get('category',0) + 1
+            for lesson in module['lessons']:
+                counts['lesson'] = counts.get('lesson',0) + 1
+                if lesson['quiz']:
+                    counts['quiz'] = counts.get('quiz',0) + 1
+        return replay_delivery(state_file,operation='courses.create',location_id=loc,
+                               fingerprint=digest,expected_counts=counts)
     api = transport or Skill44Transport()
-    state = {'fingerprint':digest,'location_id':loc,'status':'RUNNING','objects':[]}
+    state = {'fingerprint':digest,'operation':'courses.create','location_id':loc,
+             'status':'RUNNING','objects':[],'verification_required':True}
     def request(method,path,body=None,query=None):
         return api.request(method,path,location_id=loc,body=body,query=query)
     def create(kind,path,body,read_path):
@@ -309,47 +318,20 @@ def _run_course(inputs, evidence_root, *, capability, transport=None):
         raise
 
 
-def configure_community_channels(page, step):
-    """Native channel creation using Phase B LOCKed portal selectors.
+def configure_community_channels(page, step, *, portal_context=None, evidence_root=None):
+    """Compatibility front door for the maintained authenticated portal adapter.
 
-    The caller supplies the exact authenticated portal/group URL; never follows
-    a guessed portal, changes credentials, or alters visibility/membership.
+    Bare portal URL/name visibility is not authenticated account/location proof.
+    Keep one channel implementation and require the same caller-owned context
+    and protected journal used by host.run_recipe.
     """
-    if any(step.get(key) is not None for key in ('privacy','branding','courses','members','visibility')):
-        raise Stop('Requested community settings need their separately captured controls')
-    expected=_text(step.get('portal_url'),'portal_url')
-    u=urlsplit(expected)
-    if u.scheme!='https' or u.username or u.password or not re.fullmatch(r'/communities/groups/[a-z0-9-]+/home/?',u.path):
-        raise Stop('Supply the exact verified HTTPS community group home URL')
-    channels=step.get('channels')
-    if not isinstance(channels,list) or not channels:
-        raise Stop('channels must be a nonempty list')
-    names=[]
-    for channel in channels:
-        if not isinstance(channel,dict) or set(channel)-{'name','description'}:
-            raise Stop('Invalid channel fields')
-        names.append(_text(channel.get('name'),'channel.name'))
-        _text(channel.get('description'),'channel.description')
-    if len(set(names))!=len(names):
-        raise Stop('Duplicate channel names')
-    if page.url.rstrip('/')!=expected.rstrip('/'):
-        raise Stop('Community portal/account context differs; no navigation or login attempted')
-    if page.get_by_placeholder('Password',exact=True).count():
-        raise Stop('Community portal authentication required')
-    outcomes=[]
-    for channel in channels:
-        existing=page.get_by_text(channel['name'],exact=True)
-        if existing.count():
-            raise Stop('Existing channel needs description inventory before reuse')
-        click(page.get_by_role('button',name='Add Channel',exact=True))
-        fill(page.get_by_placeholder('e.g Marketing Reports',exact=True),channel['name'])
-        fill(page.get_by_placeholder('Enter Description',exact=True),channel['description'])
-        click(page.get_by_role('button',name='CREATE CHANNEL',exact=True))
-        wait_until(lambda:page.get_by_text(channel['name'],exact=True).count()>0,'Channel name did not persist in portal')
-        if urlsplit(page.url).netloc!=u.netloc or '/communities/groups/'+u.path.split('/')[3]+'/' not in urlsplit(page.url).path:
-            raise Stop('Channel creation left expected group')
-        outcomes.append({'name':channel['name'],'url':page.url})
-    return {'status':'CHANNELS_SAVE_SUBMITTED','channels':outcomes,'independent_readback':'REQUIRED','privacy_branding':'requires separately captured settings controls'}
+    if portal_context is None or evidence_root is None:
+        raise Stop('Community channels require authenticated same-page portal context and evidence root')
+    if __package__:
+        from .community_portal import run_channels
+    else:
+        from community_portal import run_channels
+    return run_channels(page, step, evidence_root, portal_context=portal_context)
 
 
 def validate_api_inputs(operation, inputs, route):
@@ -390,6 +372,7 @@ def course_executor(*, operation, inputs, route, evidence_root):
     return runner(inputs,evidence_root,capability=inputs.get('api_capability'))
 
 
+@guard_delivery('course')
 def run_lesson_quiz(inputs, evidence_root, *, capability, transport=None):
     """Create a quiz for an existing lesson, preserving any different existing quiz."""
     loc=_id(inputs.get('location_id'),'location_id')
@@ -399,17 +382,15 @@ def run_lesson_quiz(inputs, evidence_root, *, capability, transport=None):
     _capability(capability,loc)
     root=Path(evidence_root).resolve();root.mkdir(parents=True,exist_ok=True,mode=0o700)
     os.chmod(root,0o700)
-    fd=os.open(root/'delivery.lock',os.O_CREAT|os.O_RDWR,0o600)
+    fd=open_lease(root/'delivery.lock')
     try:
         try: fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError: raise Stop('Course delivery evidence root is already leased') from None
         state_path=root/'delivery-state.json'
         digest=sha(json.dumps({'location':loc,'product':product,'lesson':lesson,'quiz':quiz},sort_keys=True))
-        if state_path.exists():
-            old=json.loads(state_path.read_text())
-            if old.get('fingerprint')!=digest: raise Stop('Quiz evidence belongs to a different plan')
-            if old.get('status')=='API_STEPS_COMPLETE': return {**old,'status':'ALREADY_EXECUTED'}
-            raise Stop('Interrupted quiz delivery requires reconciliation')
+        if journal_present(state_path):
+            return replay_delivery(state_path,operation='courses.lesson_quiz.create',
+                location_id=loc,fingerprint=digest,expected_counts={'quiz':1})
         api=transport or Skill44Transport()
         def request(method,path,body=None):
             return api.request(method,path,location_id=loc,body=body)
@@ -422,7 +403,8 @@ def run_lesson_quiz(inputs, evidence_root, *, capability, transport=None):
         except DeliveryApiError as exc:
             if exc.http_status!=404: raise
             current=None
-        state={'fingerprint':digest,'location_id':loc,'status':'RUNNING','objects':[]}
+        state={'fingerprint':digest,'operation':'courses.lesson_quiz.create','location_id':loc,
+               'status':'RUNNING','objects':[],'verification_required':True}
         if current is not None:
             if not _matches(quiz['body'],current):
                 raise Stop('Existing lesson quiz differs; explicit update operation required')
@@ -457,6 +439,7 @@ def run_lesson_quiz(inputs, evidence_root, *, capability, transport=None):
     finally: os.close(fd)
 
 
+@guard_delivery('course')
 def run_course_update(inputs,evidence_root,*,capability,transport=None):
     """Apply only explicit documented course appearance/content changes by API."""
     loc=_id(inputs.get('location_id'),'location_id')
@@ -469,24 +452,23 @@ def run_course_update(inputs,evidence_root,*,capability,transport=None):
     if 'title' not in changes: cooked.pop('title')
     _capability(capability,loc)
     root=Path(evidence_root).resolve();root.mkdir(parents=True,exist_ok=True,mode=0o700);os.chmod(root,0o700)
-    fd=os.open(root/'delivery.lock',os.O_CREAT|os.O_RDWR,0o600)
+    fd=open_lease(root/'delivery.lock')
     try:
         try: fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError: raise Stop('Course delivery evidence root is already leased') from None
         state_path=root/'delivery-state.json'
         digest=sha(json.dumps({'operation':'courses.update','location':loc,'product':product,'changes':cooked},sort_keys=True))
-        if state_path.exists():
-            old=json.loads(state_path.read_text())
-            if old.get('fingerprint')!=digest: raise Stop('Course update evidence belongs to another plan')
-            if old.get('status')=='API_STEPS_COMPLETE': return {**old,'status':'ALREADY_EXECUTED'}
-            raise Stop('Interrupted course update requires reconciliation')
+        if journal_present(state_path):
+            return replay_delivery(state_path,operation='courses.update',location_id=loc,
+                fingerprint=digest,expected_counts={'course':1},expected_ids={'course':product})
         api=transport or Skill44Transport()
         path='/courses/products/'+product
         current=api.request('GET',path,location_id=loc)
         expected=inputs.get('expected_updated_at')
         if expected is not None and current.get('updatedAt')!=expected:
             raise Stop('Course changed since inventory; refresh before updating')
-        state={'fingerprint':digest,'location_id':loc,'objects':[{'kind':'course','id':product}],
+        state={'fingerprint':digest,'operation':'courses.update','location_id':loc,
+               'verification_required':True,'objects':[{'kind':'course','id':product}],
                'status':'RUNNING','current_step_status':'INTENT_RECORDED'}
         secure_json(state_path,state)
         try:
@@ -614,6 +596,7 @@ def validate_calendar_integration(inputs, route):
     return {'location_id':loc,'calendar_id':inputs['calendar_id'],'room':deepcopy(room)}
 
 
+@guard_delivery('calendar')
 def meeting_calendar_executor(*, operation, inputs, route, evidence_root, dispatcher=None):
     """Host provider for static permanent-room links, with durable no-replay state."""
     if operation!='meetings.integrate':raise Stop('Unsupported calendar integration operation')
@@ -625,18 +608,18 @@ def meeting_calendar_executor(*, operation, inputs, route, evidence_root, dispat
     else:
         from meetings import integrate_calendar
     root=Path(evidence_root).resolve();root.mkdir(parents=True,exist_ok=True,mode=0o700);os.chmod(root,0o700)
-    fd=os.open(root/'calendar-delivery.lock',os.O_CREAT|os.O_RDWR,0o600)
+    fd=open_lease(root/'calendar-delivery.lock')
     try:
         try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:raise Stop('Calendar integration run is already leased') from None
         state_path=root/'calendar-delivery-state.json'
         digest=sha(json.dumps({k:inputs.get(k) for k in ('location_id','calendar_id','room','member_id','replace_index','private_invite_url')},sort_keys=True))
-        if state_path.exists():
-            old=json.loads(state_path.read_text())
-            if old.get('fingerprint')!=digest:raise Stop('Calendar evidence belongs to a different plan')
-            if old.get('status')=='API_STEPS_COMPLETE':return {**old,'status':'ALREADY_EXECUTED'}
-            raise Stop('Interrupted calendar integration requires reconciliation')
-        state={'fingerprint':digest,'location_id':inputs['location_id'],'status':'RUNNING',
+        if journal_present(state_path):
+            return replay_delivery(state_path,operation='meetings.integrate',
+                location_id=inputs['location_id'],fingerprint=digest,
+                expected_counts={'calendar':1},expected_ids={'calendar':inputs['calendar_id']})
+        state={'fingerprint':digest,'operation':'meetings.integrate','location_id':inputs['location_id'],
+            'verification_required':True,'status':'RUNNING',
             'current_step_status':'INTENT_RECORDED','objects':[{'kind':'calendar','id':inputs['calendar_id']}]}
         secure_json(state_path,state)
         api=dispatcher or RegisteredCalendarDispatcher(inputs['location_id'],capability_record=inputs.get('capability_record'))

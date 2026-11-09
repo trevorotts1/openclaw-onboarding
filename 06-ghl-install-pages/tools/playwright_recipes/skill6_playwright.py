@@ -91,11 +91,22 @@ def validate_job(job, base):
         raise Stop("start_url must belong to location_id")
     if not job.get("location_name"):
         raise Stop("location_name is required for the visible account check")
+    if 'auth_activation' in job:
+        activation = job['auth_activation']
+        if not isinstance(activation, dict) or set(activation) - {'expected_builder_title'}:
+            raise Stop('Auth activation must be an explicit captured-profile contract')
+        from ghl_auth import AuthBridgeError
+        from ghl_auth_activation import validate_target
+        try:
+            validate_target({**activation, 'location_name': job['location_name'],
+                             'start_url': job['start_url']}, loc)
+        except AuthBridgeError as exc:
+            raise Stop(str(exc)) from None
     steps = job.get("steps", [])
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_fields", "native_condition", "quiz_configuration", "survey_configuration", "form", "form_css", "native_form_css", "form_submission", "form_notifications", "form_settings", "community", "assessment", "meeting", "options"}
+    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_fields", "native_field_placement", "native_condition", "quiz_configuration", "survey_configuration", "form", "form_css", "native_form_css", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "assessment", "meeting", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -105,12 +116,21 @@ def validate_job(job, base):
         keys.add(s["id"])
         if not isinstance(s.get('action'),str) or s.get("action") not in allowed:
             raise Stop("Unknown or uncaptured action: " + str(s.get("action")))
+        if s['action']=='native_field_placement':
+            from playwright_recipes.field_placement import validate
+            validate(s)
         if s['action'] in ('native_fields','native_condition'):
             from playwright_recipes.assessments import validate_fields, validate_condition
             (validate_fields if s['action']=='native_fields' else validate_condition)(s)
         if s['action']=='form_submission':
             from playwright_recipes.form_submission import validate
             validate(s)
+        if s['action'] in ('community_channels', 'community_details'):
+            from playwright_recipes.community_portal import validate_inputs, validate_details_inputs
+            validator = validate_details_inputs if s['action'] == 'community_details' else validate_inputs
+            payload = validator(s.get('payload'))
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Community payload belongs to a different app location')
         if s['action']=='form_notifications':
             from playwright_recipes.form_notifications import validate_notifications
             s['_context'] = {k:job[k] for k in ('location_id','location_name','start_url')}
@@ -405,64 +425,214 @@ def exact_search(page, area, name):
     search = page.get_by_role("textbox", name=f"Search for {area}", exact=True)
     fill(search, name)
     cell = page.get_by_role("gridcell", name=name, exact=True)
-    # The search is debounced. Never infer absence from a transient empty tree.
-    def settled():
-        if cell.count():
-            return True
-        text = page.locator("body").inner_text()
-        if page.get_by_text('No items found',exact=True).count() and ('Your search “'+name+'” did not match any items.') in text:
-            return True
-        return bool(re.search(r"(?:0\s*[-–]\s*0\s+of\s+0|No (?:forms|funnels|websites|results).*found)", text, re.I))
-    wait_until(settled, "Search absence could not be proven; refusing duplicate creation")
-    if cell.count() > 1:
-        raise Stop("Duplicate names; supply an explicit target through the existing inventory router")
-    return cell if cell.count() else None
+    # A debounced list can retain the previous query's empty-state or initial
+    # rows after fill. Only exact visible evidence for this current query can
+    # establish absence; generic zero counts never authorize a create.
+    def current_result():
+        if search.count() != 1 or search.input_value() != name:
+            return None
+        count = cell.count()
+        if count > 1:
+            raise Stop("Duplicate names; supply an explicit target through the existing inventory router")
+        if count:
+            return 'found' if cell.is_visible() else None
+        native_empty = page.get_by_text("No results found for '" + name + "'", exact=True)
+        form_empty = page.get_by_text('No items found', exact=True)
+        form_query = page.get_by_text('Your search “' + name + '” did not match any items. Please try again.', exact=True)
+        if visible(native_empty) or (visible(form_empty) and visible(form_query)):
+            # Recheck the textbox after reading the empty-state. Hydration or
+            # user input must not turn stale absence into permission to create.
+            return 'absent' if search.count() == 1 and search.input_value() == name else None
+        return None
+    wait_until(lambda: current_result() is not None,
+               "Search absence could not be proven; refusing duplicate creation")
+    result = current_result()
+    if result is None:
+        raise Stop('Search changed before its result could be bound; reconcile before creation')
+    return cell if result == 'found' else None
+
+
+_FRESH_CONTAINER = object()
+
+
+class _FreshContainerContext:
+    def __init__(self, page, surface, url):
+        self.page, self.surface, self.url = page, surface, url
+        self.used = False
+        self.proof = _FRESH_CONTAINER
+
+
+class _ContainerOutcome(dict):
+    """Minimal serializable receipt plus nonserializable in-memory provenance."""
+    def __init__(self, value, *, fresh_container=None):
+        super().__init__(value)
+        self.fresh_container = fresh_container
 
 
 def ensure_container(page, step):
     area = "funnels" if step["surface"] == "funnel" else "websites"
     cell = exact_search(page, area, step["name"])
+    created = False
     if cell is not None:
         click(cell.get_by_text(step["name"], exact=True))
     else:
         if not step.get("allow_creation"):
             raise Stop("Container is absent and creation was not requested")
         noun = step["surface"]
-        click(page.get_by_role("button", name=f"New {noun}", exact=True))
+        create = page.get_by_role("button", name=f"New {noun}", exact=True)
+        # Empty search results render a duplicate New website/funnel action.
+        # The captured toolbar ID and exact name must identify one control.
+        create = page.locator('#create-new-button').and_(create)
+        click(create)
         dialog = page.get_by_role("dialog")
         fill(dialog.get_by_role("textbox", name=f"e.g. Sales {noun}", exact=True), step["name"])
         click(dialog.get_by_role("button", name="Create", exact=True))
+        created = True
     page.get_by_role("button", name="Share " + step["surface"], exact=True).wait_for(state="visible", timeout=45000)
-    return {"container_url": page.url, "name": step["name"]}
+    return _ContainerOutcome({"container_url": page.url, "name": step["name"]},
+        fresh_container=_FreshContainerContext(page, step['surface'], page.url) if created else None)
 
 
-def ensure_page(page, step):
-    surface = step["surface"]
-    if surface == "website":
-        found = page.get_by_role("heading", name=step["name"], exact=True)
+def _funnel_page_target(page, name, *, fresh_container=None):
+    """Select one captured navigation card, then verify its independent detail.
+
+    The page name appears twice in the native panel: navigation and detail.
+    Whole-panel text counts cannot distinguish duplicate steps from that normal
+    shape. Keep the navigation inventory and the selected detail separate.
+    """
+    url = urlparse(page.url)
+    prefix = re.match(r'(/v2/location/[A-Za-z0-9_-]+/funnels-websites/funnels/[A-Za-z0-9_-]+)(?:/|$)', url.path)
+    if not prefix or url.query or url.fragment:
+        raise Stop('Funnel page inventory requires the captured container route')
+    listing = page.locator('.steps-list')
+    if listing.count() != 1:
+        raise Stop('Captured funnel page inventory is unavailable; reconcile before creation')
+    inventory = page.locator('.steps-list #step-container')
+    if not inventory.count():
+        _fresh_empty_funnel(page, fresh_container)
+        return None
+    if not listing.is_visible():
+        raise Stop('Captured funnel page inventory is unavailable; reconcile before creation')
+    cards = inventory.filter(has=page.get_by_text(name, exact=True))
+    if cards.count() > 1:
+        raise Stop('Duplicate funnel page names require explicit inventory reconciliation')
+    if not cards.count():
+        if page.get_by_text(name, exact=True).count():
+            raise Stop('Funnel page name exists outside the captured navigation inventory')
+        return None
+    click(cards)
+    detail = page.locator('#funnel-step-details')
+    title = detail.get_by_text(name, exact=True)
+    try:
+        title.wait_for(state='visible', timeout=45000)
+    except Exception:
+        raise Stop('Selected funnel page detail did not confirm the requested page') from None
+    current = urlparse(page.url)
+    selected = re.fullmatch(re.escape(prefix.group(1))
+        + r'/steps/([A-Za-z0-9_-]+)/overview/?', current.path)
+    if (current.scheme != url.scheme or current.netloc != url.netloc
+            or current.query or current.fragment or not selected):
+        raise Stop('Funnel page selection changed location or container')
+    if detail.count() != 1 or title.count() != 1:
+        raise Stop('Selected funnel page detail is missing or ambiguous')
+    edits = detail.get_by_role('button', name='Edit', exact=True)
+    if edits.count() != 1:
+        raise Stop('Selected funnel page has ambiguous variant Edit controls; capture required')
+    return edits
+
+
+def _fresh_context(page, context, surface):
+    # Only this invocation's actual Create outcome can attest a new container.
+    # A JSON flag, persisted receipt or another Page cannot provide this proof.
+    if (not isinstance(context, _FreshContainerContext)
+            or context.proof is not _FRESH_CONTAINER or context.used
+            or context.page is not page or context.surface != surface
+            or context.url != page.url):
+        raise Stop('Empty ' + surface + ' inventory requires a fresh native creation proof or reconciliation')
+
+
+def _fresh_empty_funnel(page, context):
+    _fresh_context(page, context, 'funnel')
+    root = page.locator('#steps-tab')
+    sidebar = root.locator('#steps-sidebar.steps-sidebar')
+    listing = sidebar.locator('.steps-list')
+    add = sidebar.locator('#add-step').and_(
+        sidebar.get_by_role('button', name='Add new step or import', exact=True))
+    empty = root.locator('.funnel-step-details').get_by_text(
+        'Get started by adding a new step!', exact=True)
+    if (root.count() != 1 or sidebar.count() != 1 or listing.count() != 1
+            or listing.evaluate('el => el.children.length') != 0
+            or add.count() != 1 or not add.is_visible()
+            or empty.count() != 1 or not empty.is_visible()):
+        raise Stop('Captured empty funnel inventory changed; reconcile before creation')
+
+
+def _fresh_empty_website(page, context):
+    _fresh_context(page, context, 'website')
+    root = page.locator('#steps-tab .hl_funnels--website-pages')
+    if root.count() != 1 or not root.is_visible():
+        raise Stop('Captured empty website container is unavailable or ambiguous')
+    add = root.locator('#add-step').and_(root.get_by_role('button', name='Add new page', exact=True))
+    grid = root.locator('div.flex.flex-wrap[ghostclass="webinar-drag-ghost"]')
+    if (add.count() != 1 or not add.is_visible() or grid.count() != 1
+            or grid.evaluate('el => el.children.length') != 0):
+        raise Stop('Captured empty website inventory changed; reconcile before creation')
+
+
+def _website_page_target(page, name, *, fresh_container=None):
+    """Bind Edit to the captured website card containing the exact heading."""
+    url = urlparse(page.url)
+    if (not re.fullmatch(r'/v2/location/[A-Za-z0-9_-]+/funnels-websites/websites/[A-Za-z0-9_-]+/pages/?', url.path)
+            or url.query or url.fragment):
+        raise Stop('Website page inventory requires the captured container route')
+    inventory = page.locator('.page-card')
+    if not inventory.count():
+        _fresh_empty_website(page, fresh_container)
+        return None
+    heading = page.get_by_role('heading', name=name, exact=True)
+    cards = inventory.filter(has=heading)
+    if cards.count() > 1:
+        raise Stop('Duplicate website page names require explicit inventory reconciliation')
+    if not cards.count():
+        if heading.count():
+            raise Stop('Website page name exists outside the captured card inventory')
+        return None
+    if cards.get_by_role('heading', name=name, exact=True).count() != 1:
+        raise Stop('Website page card has an ambiguous name')
+    edits = cards.get_by_role('button', name='Edit', exact=True)
+    if edits.count() != 1:
+        raise Stop('Website page card has an ambiguous Edit control')
+    return edits
+
+
+def ensure_page(page, step, *, fresh_container=None):
+    surface = step['surface']
+    if surface == 'funnel':
+        edit = _funnel_page_target(page, step['name'], fresh_container=fresh_container)
     else:
-        found = page.get_by_role("tabpanel").get_by_text(step["name"], exact=True)
-    if found.count():
-        # Existing multi-page targets require a scoped card; do not pick the first Edit.
-        edits = page.get_by_role("button", name="Edit", exact=True)
-        if edits.count() != 1:
-            raise Stop("Multiple pages: the inventory router must open the exact page before installation")
-        click(edits)
+        edit = _website_page_target(page, step['name'], fresh_container=fresh_container)
+    if edit is not None:
+        click(edit)
     else:
-        if not step.get("allow_creation"):
-            raise Stop("Page absent and creation was not requested")
-        click(page.get_by_role("button", name="Add new step or import" if surface == "funnel" else "Add new page", exact=True))
-        dialog = page.get_by_role("dialog")
-        fill(dialog.get_by_role("textbox", name="Name for page", exact=True), step["name"])
-        fill(dialog.get_by_role("textbox", name="Path", exact=True), step["path"])
-        click(dialog.get_by_role("button", name="Create funnel step" if surface == "funnel" else "Create new page", exact=True))
-        blank = page.get_by_role("button", name="Create from blank", exact=True)
+        if not step.get('allow_creation'):
+            raise Stop('Page absent and creation was not requested')
+        if isinstance(fresh_container, _FreshContainerContext):
+            fresh_container.used = True
+        add_name = 'Add new step or import' if surface == 'funnel' else 'Add new page'
+        add = page.locator('#steps-tab #add-step').and_(
+            page.get_by_role('button', name=add_name, exact=True))
+        click(add)
+        dialog = page.get_by_role('dialog')
+        fill(dialog.get_by_role('textbox', name='Name for page', exact=True), step['name'])
+        fill(dialog.get_by_role('textbox', name='Path', exact=True), step['path'])
+        click(dialog.get_by_role('button', name='Create funnel step' if surface == 'funnel' else 'Create new page', exact=True))
+        blank = page.get_by_role('button', name='Create from blank', exact=True)
         click(blank)
-    builder(page).get_by_role("button", name="Back", exact=True).wait_for(state="visible", timeout=45000)
-    ai = builder(page).get_by_role("button", name="Close Ask AI", exact=True)
+    builder(page).get_by_role('button', name='Back', exact=True).wait_for(state='visible', timeout=45000)
+    ai = builder(page).get_by_role('button', name='Close Ask AI', exact=True)
     if visible(ai):
         click(ai)
-    return {"editor_url": page.url}
+    return {'editor_url': page.url}
 
 
 def full_width(frame, section_id=None):
@@ -890,6 +1060,11 @@ def native_fields(page, step):
     return configure_fields(page, step)
 
 
+def native_field_placement(page, step):
+    from playwright_recipes.field_placement import configure
+    return configure(page, step)
+
+
 def native_condition(page, step):
     from playwright_recipes.assessments import configure_condition
     return configure_condition(page, step)
@@ -1013,21 +1188,73 @@ def community(page, step):
     return {"status":"GROUP_RETAINED_INACTIVE" if step.get("inactive", True) else "GROUP_CREATED", "name":step["name"], "slug":step["slug"], "discovery":False, "channels":"NOT_CONFIGURED", "deleted":False}
 
 
+def community_channels(page, step, *, portal_context=None, evidence_root=None):
+    """Explicit portal handler; global app/tenant guards are not relaxed."""
+    if portal_context is None or evidence_root is None:
+        raise Stop('Community channels require the authenticated portal host context')
+    from playwright_recipes.community_portal import run_channels
+    return run_channels(page, step['payload'], evidence_root,
+                        portal_context=portal_context)
+
+
+def community_details(page, step, *, portal_context=None, evidence_root=None):
+    """Save authored portal details through the same authenticated host boundary."""
+    if portal_context is None or evidence_root is None:
+        raise Stop('Community details require the authenticated portal host context')
+    from playwright_recipes.community_portal import run_details
+    return run_details(page, step['payload'], evidence_root,
+                       portal_context=portal_context)
+
+
 def _text_equals(locator, text):
     return (locator.inner_text()).strip() == text
+
+
+_EDITOR_FOREIGN_JOURNALS = (
+    'provider-state.json', 'community-portal-state.json', 'auth-stop.json',
+    'delivery-state.json', 'calendar-delivery-state.json',
+    'community-details-state.json',
+)
+
+
+def _reject_foreign_editor_journals(root):
+    from playwright_recipes.evidence_lease import journal_present
+    if (root / 'state.json').is_symlink():
+        raise Stop('Evidence journal is a symlink; reconciliation required')
+    # Foreign fingerprints never authorize an editor replay, even when their
+    # bytes are malformed or report completion. A dangling journal symlink is
+    # also retained evidence, not permission to start a different lane.
+    if any(journal_present(root / name) for name in _EDITOR_FOREIGN_JOURNALS):
+        raise Stop('Existing provider, API or portal outcome requires reconciliation before editor execution')
 
 
 def run_on_page(page, job, evidence_root):
     root = Path(evidence_root).resolve()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    fd = os.open(root / '.runner.lock', os.O_RDWR | os.O_CREAT, 0o600)
+    from playwright_recipes.evidence_lease import open_lease
+    _reject_foreign_editor_journals(root)
+    fd = open_lease(root / '.runner.lock')
+    provider_fd = None
     try:
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise Stop('This run is already executing; no concurrent writes allowed') from None
+        provider_fd = open_lease(root / 'provider.lock')
+        try:
+            fcntl.flock(provider_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Stop('A provider owns this evidence root; no editor write allowed') from None
+        # Different lanes have different job fingerprints. A provider or portal
+        # journal cannot authorize blindly replaying this job in the GHL editor,
+        # even when its last reported outcome was completed or pending.
+        _reject_foreign_editor_journals(root)
+        if (root / 'handoff.json').exists() and not (root / 'state.json').exists():
+            raise Stop('Editor recovery handoff has no journal; reconciliation required before execution')
         return _run_on_page(page, job, root)
     finally:
+        if provider_fd is not None:
+            os.close(provider_fd)
         os.close(fd)
 
 
@@ -1044,17 +1271,17 @@ def _run_on_page(page, job, evidence_root):
     os.chmod(root, 0o700)
     state_path = root / "state.json"
     fingerprint = sha(json.dumps(job, sort_keys=True))
+    from playwright_recipes.evidence_lease import journal_present
+    from playwright_recipes.editor_replay import completed_editor_replay
+    if journal_present(state_path):
+        replay = completed_editor_replay(state_path, job, fingerprint)
+        assert_tenant(page, job)
+        return replay
     assert_tenant(page, job)
-    if state_path.exists():
-        old = json.loads(state_path.read_text())
-        if old.get("fingerprint") != fingerprint:
-            raise Stop("Evidence belongs to a different job")
-        if old.get("status") in ("EDITOR_STEPS_COMPLETE","NEEDS_VERIFICATION"):
-            return {**old,'status':'ALREADY_EXECUTED','meaning':'No writes repeated. Reconcile existing outputs before a new build.'}
-        raise Stop("An interrupted job exists: reconcile recorded objects before any replay")
     results = []
+    fresh_container = None
     state = {"fingerprint":fingerprint, "location_id":job["location_id"], "status":"RUNNING", "results":results}
-    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_fields":native_fields, "native_condition":native_condition, "quiz_configuration":quiz_configuration, "survey_configuration":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
+    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_condition":native_condition, "quiz_configuration":quiz_configuration, "survey_configuration":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
     for step in job["steps"]:
         assert_tenant(page, job)
         state["current_step"] = step["id"]
@@ -1064,17 +1291,25 @@ def _run_on_page(page, job, evidence_root):
             if step["action"] == "navigate":
                 navigate(page, step["area"])
                 result = {"area":step["area"]}
+                fresh_container = None
+            elif step["action"] == "page":
+                result = ensure_page(page, step, fresh_container=fresh_container)
+                fresh_container = None
             else:
                 result = handlers[step["action"]](page, step)
+                fresh_container = (result.fresh_container
+                    if step["action"] == "container" and isinstance(result, _ContainerOutcome)
+                    else None)
             if not isinstance(result, dict):
                 raise Stop('Handler returned no structured outcome')
             status = result.get('status')
             completed = {
                 'RENDERED', 'SEO_RENDERED', 'COMPONENT_SAVED', 'SAVED_AND_REOPENED',
-                'FORM_CSS_RENDERED', 'FORM_SETTINGS_PERSISTED', 'ASSESSMENT_REUSED',
+                'FORM_CSS_RENDERED', 'NATIVE_FORM_CSS_SAVED_AND_REOPENED', 'FORM_SETTINGS_PERSISTED', 'ASSESSMENT_REUSED',
                 'ASSESSMENT_SAVE_SUBMITTED', 'ROOM_SAVE_SUBMITTED',
                 'RECORDED_OPTIONS_EXECUTED', 'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED',
-                'FIELD_PROPERTIES_SAVED_AND_REOPENED', 'CONDITION_SAVE_SUBMITTED', 'CONDITION_SAVED_AND_REOPENED',
+                'FIELD_PROPERTIES_SAVED_AND_REOPENED', 'BUILTIN_FIELDS_SAVED_AND_REOPENED',
+                'BUILTIN_FIELDS_REUSED_AND_REOPENED', 'CONDITION_SAVE_SUBMITTED', 'CONDITION_SAVED_AND_REOPENED',
                 'QUIZ_CONFIGURATION_SAVED_AND_REOPENED', 'CONDITION_ALREADY_PRESENT',
                 'FORM_SUBMISSION_SAVED_AND_REOPENED', 'NOTIFICATION_SETTINGS_SAVED_AND_REOPENED',
                 'SURVEY_RULE_SAVED_AND_REOPENED', 'SURVEY_RULE_ALREADY_PRESENT',
@@ -1112,7 +1347,19 @@ def _run_on_page(page, job, evidence_root):
 
 
 def execute(job, root):
+    # Refuse a retained foreign intent before opening/seeding a browser. The
+    # locked run_on_page entry rechecks this after authentication as well.
+    _reject_foreign_editor_journals(Path(root).resolve())
+    from playwright_recipes.evidence_lease import journal_present
+    state_path = Path(root).resolve() / 'state.json'
+    if journal_present(state_path):
+        from playwright_recipes.editor_replay import completed_editor_replay
+        completed_editor_replay(state_path, job, sha(json.dumps(job, sort_keys=True)))
+    if any(step.get('action') in ('community_channels', 'community_details') for step in job.get('steps', [])):
+        raise Stop('Community portal jobs require caller-owned page/context through host.run_recipe')
     endpoint = os.environ.get("GHL_MANAGED_CDP_URL", "")
+    if endpoint and 'auth_activation' in job:
+        raise Stop('Auth activation requires the fresh owned managed context, not an attached browser')
     if not endpoint:
         # Use the existing host lifecycle and Firebase bridge. No new credential
         # parser, login implementation, process pool, or per-iteration browser.
@@ -1129,11 +1376,17 @@ def execute(job, root):
             with PlaywrightSession(session='skill6-'+job['location_id']) as managed:
                 page=managed.pages[0] if managed.pages else managed.new_page()
                 page.goto(job['start_url'],wait_until='commit',timeout=45000)
-                receipt=mint_and_bridge(page.context,managed.session,str(seed_path),expected_location_id=job['location_id'],app_origin=origin)
+                activation = ({**job['auth_activation'], 'location_name': job['location_name'],
+                               'start_url': job['start_url']} if 'auth_activation' in job else None)
+                receipt=mint_and_bridge(page.context,managed.session,str(seed_path),expected_location_id=job['location_id'],app_origin=origin,
+                    **({'activation_target': activation} if activation is not None else {}))
                 if not receipt.get('ok') or receipt.page is None:
                     raise Stop('Token bridge did not establish the expected account')
                 page=receipt.page
-                page.goto(job['start_url'],wait_until='domcontentloaded',timeout=45000)
+                if activation is None:
+                    page.goto(job['start_url'],wait_until='domcontentloaded',timeout=45000)
+                elif receipt.get('activation_proof', {}).get('target_verified') is not True or page.url != job['start_url']:
+                    raise Stop('Canonical activation did not verify this exact protected target')
                 managed.assert_alive()
                 return run_on_page(page,job,root)
         finally:

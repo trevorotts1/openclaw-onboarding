@@ -15,6 +15,9 @@ from datetime import datetime, timezone
 # Exact repository integration sources only. Never include a directory tree,
 # client store, browser state, transcript, workforce file or arbitrary profile.
 INTEGRATION_SOURCES = (
+    '06-ghl-install-pages/tools/ghl_auth.py',
+    '06-ghl-install-pages/tools/ghl_auth_activation.py',
+    '06-ghl-install-pages/references/PLAYWRIGHT-AUTH-ACTIVATION.md',
     '44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py',
     '44-convert-and-flow-operator/tools/engine/tests/test_capability_breadth.py',
     '44-convert-and-flow-operator/tools/engine/tests/test_build_from_automation.py',
@@ -28,6 +31,7 @@ INTEGRATION_SOURCES = (
 REPOSITORY_DEPENDENCIES = (
     '06-ghl-install-pages/tools/browser_manager.py',
     '06-ghl-install-pages/tools/ghl_auth.py',
+    '06-ghl-install-pages/tools/ghl_auth_activation.py',
     '06-ghl-install-pages/tools/order_components.py',
     '44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/adapter.py',
     '44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/transport.py',
@@ -62,9 +66,11 @@ def snapshot(destination=None):
         'requires_existing_repository': True,
         'standalone_installation': False,
         'required_existing_sources': list(REPOSITORY_DEPENDENCIES),
+        'bundled_required_sources': [relative for relative in REPOSITORY_DEPENDENCIES if relative in integrations['included']],
+        'unbundled_required_sources': [relative for relative in REPOSITORY_DEPENDENCIES if relative not in integrations['included']],
         'present_in_source_tree': [relative for relative in REPOSITORY_DEPENDENCIES if (repo / relative).is_file()],
         'missing_from_source_tree': [relative for relative in REPOSITORY_DEPENDENCIES if not (repo / relative).is_file()],
-        'meaning': 'These dependencies are not bundled; restore into the existing Skill 6/44 repository and run its runtime preflight.',
+        'meaning': 'Allowlisted bundled dependencies are identified separately; restore the remaining dependencies from the existing Skill 6/44 repository and run its runtime preflight.',
     }
     contents = {}
     for path in files:

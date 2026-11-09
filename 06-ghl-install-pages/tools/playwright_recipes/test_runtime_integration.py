@@ -175,6 +175,367 @@ class HostRuntimeTests(unittest.TestCase):
         self.assertEqual(route.decide('invented.write','LOC_TEST',probes)['lane'], 'STOP_UNKNOWN_OPERATION')
 
 
+class BrowserProviderRuntimeTests(unittest.TestCase):
+    """Measured fallback lanes execute supplied host tools, never shell guesses."""
+    def inputs(self):
+        return {'location_id':'LOC_TEST', 'location_name':'Fixture',
+                'start_url':'https://app.convertandflow.com/v2/location/LOC_TEST/dashboard',
+                'settings':{'save_progress':False}}
+
+    def probes(self, lane):
+        state = {'available':True}
+        if lane == 'openclaw_extension':
+            state['current'] = True
+        if lane == 'computer_use':
+            state['enabled'] = True
+        return {'lanes':{'playwright':{'available':False}, lane:state}}
+
+    def result(self, **changes):
+        return {'status':'EDITOR_STEPS_COMPLETE', 'location_id':'LOC_TEST',
+                'objects':[{'kind':'form','id':'form_fixture'}], **changes}
+
+    def test_all_three_measured_browser_callbacks_execute_once_and_sanitize_receipts(self):
+        for lane in ('openclaw_extension','agent_browser','computer_use'):
+            with self.subTest(lane=lane), tempfile.TemporaryDirectory() as directory:
+                callback = Mock(return_value=self.result(private_response='FAKE_SECRET_NOT_FOR_LOGS'))
+                first = host.run_recipe('forms.settings', self.inputs(), self.probes(lane),
+                    directory, input_dir='.', executors={lane:callback})
+                replay = host.run_recipe('forms.settings', self.inputs(), self.probes(lane),
+                    directory, input_dir='.', executors={lane:callback})
+                self.assertEqual(first['status'], 'EDITOR_STEPS_COMPLETE')
+                self.assertTrue(first['browser_used'])
+                self.assertEqual(first['route']['lane'], lane)
+                self.assertEqual(callback.call_count, 1)
+                self.assertEqual(callback.call_args.kwargs['operation'], 'forms.settings')
+                self.assertEqual(callback.call_args.kwargs['route']['lane'], lane)
+                self.assertEqual(replay['status'], 'ALREADY_EXECUTED')
+                self.assertFalse(replay['browser_used'])
+                state = Path(directory, 'provider-state.json')
+                self.assertNotIn('FAKE_SECRET_NOT_FOR_LOGS', state.read_text())
+                self.assertNotIn('FAKE_SECRET_NOT_FOR_LOGS', json.dumps(first))
+                self.assertEqual(state.stat().st_mode & 0o777, 0o600)
+
+    def test_outdated_extension_is_never_invoked_and_next_measured_lane_executes(self):
+        probes = self.probes('agent_browser')
+        probes['lanes']['openclaw_extension'] = {'available':True, 'current':False}
+        extension, agent = Mock(), Mock(return_value=self.result())
+        with tempfile.TemporaryDirectory() as directory:
+            result = host.run_recipe('forms.settings', self.inputs(), probes, directory,
+                input_dir='.', executors={'openclaw_extension':extension,'agent_browser':agent})
+        extension.assert_not_called()
+        agent.assert_called_once()
+        self.assertEqual(result['route']['lane'], 'agent_browser')
+
+    def test_missing_browser_callback_remains_handoff_without_intent_or_browser_use(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = host.run_recipe('forms.settings', self.inputs(), self.probes('agent_browser'),
+                directory, input_dir='.')
+            self.assertEqual(result['status'], 'HANDOFF_REQUIRED')
+            self.assertFalse(result['browser_used'])
+            self.assertFalse(Path(directory, 'provider-state.json').exists())
+
+    def test_browser_false_or_required_verification_stays_pending_across_replay(self):
+        flags = ({'functional_verified':False}, {'behavior_verified':False},
+                 {'submission_verified':False}, {'payment_verified':False},
+                 {'checkout_ready':False}, {'independent_readback':'REQUIRED'},
+                 {'behavior_verification':'REQUIRED'}, {'status':'NEEDS_VERIFICATION'})
+        for flag in flags:
+            with self.subTest(flag=flag), tempfile.TemporaryDirectory() as directory:
+                callback = Mock(return_value=self.result(**flag))
+                for index in range(2):
+                    result = host.run_recipe('forms.settings', self.inputs(), self.probes('agent_browser'),
+                        directory, input_dir='.', executors={'agent_browser':callback})
+                    self.assertEqual(result['status'], 'NEEDS_VERIFICATION')
+                    self.assertEqual(result['browser_used'], index == 0)
+                self.assertEqual(callback.call_count, 1)
+
+    def test_uncertain_browser_write_blocks_its_replay_and_any_next_lane(self):
+        extension = Mock(side_effect=RuntimeError('FAKE_SECRET_MUST_NOT_LEAK'))
+        agent = Mock(return_value=self.result())
+        executors = {'openclaw_extension':extension,'agent_browser':agent}
+        with tempfile.TemporaryDirectory() as directory:
+            first = host.run_recipe('forms.settings', self.inputs(), self.probes('openclaw_extension'),
+                directory, input_dir='.', executors=executors)
+            second = host.run_recipe('forms.settings', self.inputs(), self.probes('openclaw_extension'),
+                directory, input_dir='.', executors=executors)
+            next_lane = host.run_recipe('forms.settings', self.inputs(), self.probes('agent_browser'),
+                directory, input_dir='.', executors=executors)
+            for result in (first, second, next_lane):
+                self.assertEqual(result['status'], 'PROVIDER_RECONCILIATION_REQUIRED')
+            self.assertTrue(first['browser_used'])
+            self.assertFalse(second['browser_used'])
+            self.assertFalse(next_lane['browser_used'])
+            self.assertNotIn('FAKE_SECRET_MUST_NOT_LEAK', Path(directory, 'provider-state.json').read_text())
+        extension.assert_called_once()
+        agent.assert_not_called()
+
+    def test_auth_refusal_never_invokes_any_browser_callback(self):
+        probes = self.probes('openclaw_extension')
+        probes['api_capabilities'] = {'forms.settings':{'location_id':'LOC_TEST',
+            'observed_at':time.time(), 'http_status':403}}
+        callback = Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            result = host.run_recipe('forms.settings', self.inputs(), probes, directory,
+                input_dir='.', executors={'openclaw_extension':callback,'STOP_AUTH':callback})
+        callback.assert_not_called()
+        self.assertEqual(result['route']['lane'], 'STOP_AUTH')
+
+    def test_wrong_location_callback_never_completes_or_repeats(self):
+        callback = Mock(return_value=self.result(location_id='OTHER'))
+        with tempfile.TemporaryDirectory() as directory:
+            for index in range(2):
+                result = host.run_recipe('forms.settings', self.inputs(), self.probes('agent_browser'),
+                    directory, input_dir='.', executors={'agent_browser':callback})
+                self.assertEqual(result['status'], 'PROVIDER_RECONCILIATION_REQUIRED')
+                self.assertEqual(result['browser_used'], index == 0)
+        callback.assert_called_once()
+
+    def test_held_browser_provider_lease_stops_before_any_callback(self):
+        callback = Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            with open(Path(directory, 'provider.lock'), 'w') as lock:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                result = host.run_recipe('forms.settings', self.inputs(), self.probes('agent_browser'),
+                    directory, input_dir='.', executors={'agent_browser':callback})
+            self.assertFalse(result['browser_used'])
+            self.assertEqual(result['status'], 'PROVIDER_RECONCILIATION_REQUIRED')
+        callback.assert_not_called()
+
+    def test_browser_callback_cannot_claim_an_api_lane_outcome(self):
+        callback = Mock(return_value=self.result(status='API_STEPS_COMPLETE'))
+        with tempfile.TemporaryDirectory() as directory:
+            result = host.run_recipe('forms.settings', self.inputs(), self.probes('agent_browser'),
+                directory, input_dir='.', executors={'agent_browser':callback})
+        self.assertEqual(result['status'], 'PROVIDER_RECONCILIATION_REQUIRED')
+
+    def test_editor_intent_or_unbound_completed_journal_blocks_cross_lane_writes(self):
+        journals = (
+            {'location_id':'LOC_TEST','status':'NEEDS_BROWSER_RECOVERY',
+             'current_step':'form_settings1','current_step_status':'INTENT_RECORDED'},
+            {'location_id':'LOC_TEST','status':'RUNNING','current_step_status':'FINISHED'},
+            {'location_id':'LOC_TEST','status':'EDITOR_STEPS_COMPLETE','results':[]},
+            {'location_id':'LOC_TEST','status':'NEEDS_VERIFICATION','results':[]},
+            {'location_id':'OTHER','status':'RUNNING'},
+            {}, [],
+        )
+        for journal in journals:
+            with self.subTest(journal=journal), tempfile.TemporaryDirectory() as directory:
+                state = Path(directory, 'state.json')
+                raw = json.dumps(journal)
+                state.write_text(raw)
+                callback = Mock(return_value=self.result())
+                result = host.run_recipe('forms.settings', self.inputs(), self.probes('agent_browser'),
+                    directory, input_dir='.', executors={'agent_browser':callback})
+                callback.assert_not_called()
+                self.assertEqual(result['status'], 'PROVIDER_RECONCILIATION_REQUIRED')
+                self.assertFalse(result['browser_used'])
+                self.assertEqual(result['state_file'], str(state))
+                self.assertEqual(state.read_text(), raw)
+                self.assertFalse(Path(directory, 'provider-state.json').exists())
+
+    def test_unreadable_editor_state_and_handoff_missing_state_fail_closed(self):
+        for file_name, raw in (('state.json','{truncated'), ('handoff.json','{}')):
+            with self.subTest(file=file_name), tempfile.TemporaryDirectory() as directory:
+                marker = Path(directory, file_name)
+                marker.write_text(raw)
+                callback = Mock(return_value=self.result())
+                result = host.run_recipe('forms.settings', self.inputs(), self.probes('agent_browser'),
+                    directory, input_dir='.', executors={'agent_browser':callback})
+                callback.assert_not_called()
+                self.assertEqual(result['status'], 'PROVIDER_RECONCILIATION_REQUIRED')
+                self.assertEqual(result['state_file'], str(marker))
+                self.assertEqual(marker.read_text(), raw)
+
+    def test_active_editor_lease_blocks_provider_even_before_editor_intent_exists(self):
+        callback = Mock(return_value=self.result())
+        with tempfile.TemporaryDirectory() as directory:
+            with open(Path(directory, '.runner.lock'), 'w') as lock:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                result = host.run_recipe('forms.settings', self.inputs(), self.probes('agent_browser'),
+                    directory, input_dir='.', executors={'agent_browser':callback})
+                callback.assert_not_called()
+                self.assertFalse(Path(directory, 'provider-state.json').exists())
+                self.assertFalse(result['browser_used'])
+                self.assertEqual(result['status'], 'PROVIDER_RECONCILIATION_REQUIRED')
+
+    def test_editor_uncertainty_also_blocks_an_api_provider(self):
+        inputs = HostRuntimeTests().inputs()
+        probes = HostRuntimeTests().probes()
+        callback = Mock(return_value={'status':'API_STEPS_COMPLETE',
+            'location_id':'LOC_TEST','objects':[{'kind':'course','id':'course_fixture'}]})
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, 'state.json').write_text(json.dumps({
+                'location_id':'LOC_TEST','status':'NEEDS_BROWSER_RECOVERY',
+                'current_step_status':'INTENT_RECORDED'}))
+            result = host.run_recipe('courses.create', inputs, probes, directory,
+                input_dir='.', executors={'public_api':callback})
+            callback.assert_not_called()
+            self.assertEqual(result['status'], 'PROVIDER_RECONCILIATION_REQUIRED')
+
+    def test_portal_journal_blocks_a_generic_provider(self):
+        callback = Mock(return_value=self.result())
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory, 'community-portal-state.json')
+            state.write_text('{unresolved')
+            result = host.run_recipe('forms.settings', self.inputs(), self.probes('agent_browser'),
+                directory, input_dir='.', executors={'agent_browser':callback})
+            callback.assert_not_called()
+            self.assertEqual(result['state_file'], str(state))
+            self.assertEqual(state.read_text(), '{unresolved')
+
+    def test_provider_and_portal_journals_block_playwright_before_editor_work(self):
+        import skill6_playwright as core
+        for name in ('provider-state.json','community-portal-state.json'):
+            with self.subTest(journal=name), tempfile.TemporaryDirectory() as directory:
+                state = Path(directory, name)
+                state.write_text('{unresolved')
+                with patch.object(core, '_run_on_page') as editor:
+                    with self.assertRaises(core.Stop):
+                        core.run_on_page(Mock(), {'location_id':'LOC_TEST'}, directory)
+                    editor.assert_not_called()
+                self.assertEqual(state.read_text(), '{unresolved')
+                self.assertFalse(Path(directory, 'state.json').exists())
+
+    def test_legacy_provider_lease_blocks_editor_before_journal_exists(self):
+        import skill6_playwright as core
+        with tempfile.TemporaryDirectory() as directory:
+            with open(Path(directory, 'provider.lock'), 'w') as lock:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with patch.object(core, '_run_on_page') as editor:
+                    with self.assertRaises(core.Stop):
+                        core.run_on_page(Mock(), {'location_id':'LOC_TEST'}, directory)
+                    editor.assert_not_called()
+
+    def test_fresh_auth_request_cannot_silently_use_supplied_context(self):
+        for activation in ({}, None, False, {'expected_builder_title':'Fixture'}):
+            for supplied in ({'page':Mock()}, {'portal_context':Mock()}):
+                with self.subTest(activation=activation, supplied=tuple(supplied)), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory, 'must-not-be-created')
+                    callback = Mock()
+                    result = host.run_recipe('forms.settings',
+                        {**self.inputs(),'auth_activation':activation}, self.probes('agent_browser'),
+                        root, input_dir='.', executors={'agent_browser':callback}, **supplied)
+                    callback.assert_not_called()
+                    self.assertEqual(result['status'], 'STOP_INVALID_INPUT')
+                    self.assertFalse(root.exists())
+
+    def test_fresh_auth_request_cannot_be_ignored_by_a_fallback_lane(self):
+        callback = Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory, 'must-not-be-created')
+            result = host.run_recipe('forms.settings',
+                {**self.inputs(),'auth_activation':{}}, self.probes('agent_browser'),
+                root, input_dir='.', executors={'agent_browser':callback})
+            callback.assert_not_called()
+            self.assertEqual(result['status'], 'STOP_FRESH_ACTIVATION_REQUIRED')
+            self.assertFalse(root.exists())
+
+    def test_check_mode_reports_fresh_auth_fallback_refusal_without_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'inputs.json').write_text(json.dumps({**self.inputs(),'auth_activation':{}}))
+            (root/'probes.json').write_text(json.dumps(self.probes('agent_browser')))
+            result = subprocess.run([sys.executable, host.__file__, '--operation','forms.settings',
+                '--inputs',str(root/'inputs.json'),'--probes',str(root/'probes.json'),
+                '--evidence-root',str(root/'evidence'),'--check'], capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertEqual(json.loads(result.stdout)['status'], 'STOP_FRESH_ACTIVATION_REQUIRED')
+            self.assertFalse((root/'evidence').exists())
+
+    def test_cross_lane_refusal_preserves_original_route_and_recovery_handoff(self):
+        import skill6_playwright as core
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            route_text = json.dumps({'lane':'agent_browser','operation':'forms.settings','location_id':'LOC_TEST'})
+            original_handoff = json.dumps({'status':'NEEDS_BROWSER_RECOVERY','error_type':'RecordedOriginalFailure'})
+            (root/'route.json').write_text(route_text)
+            (root/'handoff.json').write_text(original_handoff)
+            (root/'provider-state.json').write_text('{unresolved')
+            probes = {'lanes':{'playwright':{'available':True}}}
+            with patch.object(core, '_run_on_page') as editor:
+                result = host.run_recipe('forms.settings', self.inputs(), probes, root,
+                    input_dir='.', page=Mock())
+                editor.assert_not_called()
+            self.assertEqual(result['status'], 'NEEDS_BROWSER_RECOVERY')
+            self.assertEqual(result['state_file'], str(root/'provider-state.json'))
+            self.assertEqual((root/'route.json').read_text(), route_text)
+            self.assertEqual((root/'handoff.json').read_text(), original_handoff)
+
+    def test_recovery_handoff_without_core_journal_blocks_editor_before_work(self):
+        import skill6_playwright as core
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, 'handoff.json').write_text('{preserved')
+            with patch.object(core, '_run_on_page') as editor:
+                with self.assertRaises(core.Stop):
+                    core.run_on_page(Mock(), {'location_id':'LOC_TEST'}, directory)
+                editor.assert_not_called()
+            self.assertFalse(Path(directory, 'state.json').exists())
+
+    def test_canonical_browser_identity_refusal_is_terminal_and_preserves_evidence(self):
+        from ghl_auth import AuthBridgeError
+        probes = {'lanes':{'playwright':{'available':True},
+            'openclaw_extension':{'available':True,'current':True},
+            'agent_browser':{'available':True},
+            'computer_use':{'available':True,'enabled':True}}}
+        for kind in ('wrong_tenant','missing_location','activation_read_unconfirmed'):
+            for activation in (False, True):
+                with self.subTest(kind=kind, activation=activation), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    old_state = '{"location_id":"LOC_TEST","status":"NEEDS_BROWSER_RECOVERY","current_step_status":"INTENT_RECORDED"}'
+                    old_handoff = '{"status":"NEEDS_BROWSER_RECOVERY","error_type":"EarlierFailure"}'
+                    (root/'state.json').write_text(old_state)
+                    (root/'handoff.json').write_text(old_handoff)
+                    inputs = self.inputs()
+                    if activation:
+                        inputs['auth_activation'] = {}
+                    callbacks = {lane:Mock() for lane in ('openclaw_extension','agent_browser','computer_use')}
+                    failure = AuthBridgeError('REFUSE: '+kind+' FAKE_SECRET_DO_NOT_LOG')
+                    with patch.object(host, 'execute', side_effect=failure) as execute, patch.object(host, 'recovery') as recovery:
+                        first = host.run_recipe('forms.settings', inputs, probes, root,
+                            input_dir='.', executors=callbacks)
+                        self.assertEqual(first['status'], 'STOP_AUTH')
+                        self.assertEqual(first['route']['lane'], 'STOP_AUTH')
+                        self.assertEqual(first['reason'], 'AUTH_IDENTITY_UNCONFIRMED')
+                        self.assertTrue(first['browser_used'])
+                        recovery.assert_not_called()
+                        execute.assert_called_once()
+                    auth_receipt = (root/'auth-stop.json').read_text()
+                    self.assertNotIn('FAKE_SECRET_DO_NOT_LOG', auth_receipt)
+                    self.assertNotIn('FAKE_SECRET_DO_NOT_LOG', json.dumps(first))
+                    self.assertEqual((root/'state.json').read_text(), old_state)
+                    self.assertEqual((root/'handoff.json').read_text(), old_handoff)
+                    self.assertEqual((root/'auth-stop.json').stat().st_mode & 0o777, 0o600)
+                    later = host.run_recipe('forms.settings', self.inputs(), self.probes('openclaw_extension'),
+                        root, input_dir='.', executors=callbacks)
+                    self.assertEqual(later['status'], 'STOP_AUTH_CONTEXT')
+                    self.assertEqual((root/'auth-stop.json').read_text(), auth_receipt)
+                    for callback in callbacks.values():
+                        callback.assert_not_called()
+
+    def test_invalid_fresh_activation_contract_stops_before_execution_or_lane_recovery(self):
+        inputs = {**self.inputs(), 'auth_activation':{'unrecorded_contract':True}}
+        with tempfile.TemporaryDirectory() as directory, patch.object(host, 'execute') as execute, patch.object(host, 'recovery') as recovery:
+            result = host.run_recipe('forms.settings', inputs,
+                {'lanes':{'playwright':{'available':True}}}, directory, input_dir='.')
+            self.assertEqual(result['status'], 'STOP_AUTH_CONTEXT')
+            self.assertEqual(result['reason'], 'AUTH_ACTIVATION_CONTRACT_UNVERIFIED')
+            execute.assert_not_called()
+            recovery.assert_not_called()
+            self.assertFalse(Path(directory, 'state.json').exists())
+
+    def test_supplied_page_canonical_auth_refusal_does_not_select_another_identity(self):
+        from ghl_auth import AuthBridgeError
+        callbacks = {'openclaw_extension':Mock(), 'agent_browser':Mock(), 'computer_use':Mock()}
+        with tempfile.TemporaryDirectory() as directory, patch.object(host, 'run_on_page', side_effect=AuthBridgeError('REFUSE: same-session identity unconfirmed')), patch.object(host, 'recovery') as recovery:
+            result = host.run_recipe('forms.settings', self.inputs(),
+                {'lanes':{'playwright':{'available':True}}}, directory, input_dir='.',
+                page=Mock(), executors=callbacks)
+            self.assertEqual(result['status'], 'STOP_AUTH')
+            recovery.assert_not_called()
+            for callback in callbacks.values():
+                callback.assert_not_called()
+
+
 class PreflightRuntimeTests(unittest.TestCase):
     def test_pip_without_browser_cannot_report_ready(self):
         runtime = {'package_installed':True,'driver_usable':True,

@@ -1,0 +1,11 @@
+{
+  "location_id": "FIXTURE",
+  "location_name": "Fixture Account",
+  "start_url": "https://app.convertandflow.com/v2/location/FIXTURE/form-builder-v2/FIXTURE_FORM",
+  "add_fields": [
+    "Website",
+    "Organization",
+    "Full Name",
+    "Date of birth"
+  ]
+}

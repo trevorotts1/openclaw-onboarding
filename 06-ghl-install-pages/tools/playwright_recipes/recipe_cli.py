@@ -12,6 +12,8 @@ else:
 
 def compile_recipe(operation, data):
     base={k:data[k] for k in ('location_id','location_name','start_url')}
+    if 'auth_activation' in data:
+        base['auth_activation'] = data['auth_activation']
     steps=[]
     def add(action,**kw):
         steps.append({'id':kw.pop('id',action+str(len(steps)+1)),'action':action,**kw})
@@ -60,8 +62,11 @@ def compile_recipe(operation, data):
         if not isinstance(data.get('submission'), dict) or 'action' in data['submission']:
             raise Stop('Native form submission must be a configuration object without an executor action override')
         add('form_submission', **data['submission'])
-    elif operation=='forms.configure' and data.get('fields'):
-        add('native_fields', fields=data['fields'])
+    elif operation=='forms.configure' and ('add_fields' in data or data.get('fields')):
+        if 'add_fields' in data:
+            add('native_field_placement', add_fields=data['add_fields'])
+        if data.get('fields'):
+            add('native_fields', fields=data['fields'])
     elif operation=='forms.conditions':
         if not isinstance(data.get('condition'), dict):
             raise Stop('Native form condition must be a configuration object')
@@ -90,6 +95,10 @@ def compile_recipe(operation, data):
             raise Stop('A production marketing quiz needs a captured scoring/result/options profile')
     elif operation=='communities.create':
         add('community',**data['community'])
+    elif operation=='communities.configure' and 'details' in data:
+        add('community_details', payload=data)
+    elif operation=='communities.configure' and 'channels' in data:
+        add('community_channels', payload=data)
     elif operation in ('meetings.setup','meetings.update'):
         details = dict(data['meeting'])
         if operation == 'meetings.update':

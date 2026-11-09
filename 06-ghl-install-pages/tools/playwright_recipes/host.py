@@ -10,34 +10,51 @@ import hashlib
 import json
 import re
 import os
-import fcntl
 from collections.abc import Mapping
+
+
+BROWSER_PROVIDERS = frozenset(('openclaw_extension', 'agent_browser', 'computer_use'))
 
 if __package__:
     from .recipe_cli import compile_recipe
+    from .evidence_lease import evidence_lease, journal_present, read_journal
+    from .receipt_validation import minimal_objects, pending_proof
     from .route import decide, recovery
     from .skill6_playwright import Stop, execute, run_on_page, secure_json, validate_job
 else:
     from recipe_cli import compile_recipe
+    from evidence_lease import evidence_lease, journal_present, read_journal
+    from receipt_validation import minimal_objects, pending_proof
     from route import decide, recovery
     from skill6_playwright import Stop, execute, run_on_page, secure_json, validate_job
 
 
+def _terminal_auth_stop(operation, inputs, root, error_type, *, contract=False, browser_used=None):
+    """Record a value-free terminal refusal; another lane cannot change identity."""
+    status = 'STOP_AUTH_CONTEXT' if contract else 'STOP_AUTH'
+    reason = 'AUTH_ACTIVATION_CONTRACT_UNVERIFIED' if contract else 'AUTH_IDENTITY_UNCONFIRMED'
+    receipt = {'status':status, 'operation':operation,
+        'location_id':inputs['location_id'], 'browser_used':not contract if browser_used is None else browser_used,
+        'error_type':error_type, 'reason':reason,
+        'route':{'lane':status, 'operation':operation,
+                 'location_id':inputs['location_id'], 'reason':reason},
+        'state_file':str(root/'auth-stop.json'),
+        'instruction':'Preserve existing evidence. Confirm the same-session account and location before an explicitly reconciled new run; do not switch identities or execution lanes.'}
+    if not journal_present(root/'auth-stop.json'):
+        secure_json(root/'auth-stop.json', receipt)
+    return receipt
+
+
 def _execute_provider(operation, inputs, route, root, executor):
-    """One writer per evidence root, including caller-injected provider paths."""
-    fd = os.open(root / 'provider.lock', os.O_WRONLY | os.O_CREAT, 0o600)
-    try:
-        os.fchmod(fd, 0o600)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise Stop('Provider evidence root is already leased') from None
-        return _execute_provider_owned(operation, inputs, route, root, executor)
-    finally:
-        os.close(fd)
+    """Share the editor lease so changing lanes cannot introduce a second writer."""
+    replay_only = journal_present(root / 'provider-state.json')
+    kind = 'provider_replay' if replay_only else 'provider'
+    with evidence_lease(root, inputs['location_id'], kind=kind):
+        return _execute_provider_owned(operation, inputs, route, root, executor,
+                                       replay_only=replay_only)
 
 
-def _execute_provider_owned(operation, inputs, route, root, executor):
+def _execute_provider_owned(operation, inputs, route, root, executor, *, replay_only=False):
     """Execute only the installed provider callback, journaling before its write.
 
     This callback is supplied by the authenticated host. The adapter never
@@ -45,21 +62,41 @@ def _execute_provider_owned(operation, inputs, route, root, executor):
     reconciled from the saved intent rather than repeated automatically.
     """
     path = root / 'provider-state.json'
+    uses_browser = route['lane'] in BROWSER_PROVIDERS
     fingerprint = hashlib.sha256(json.dumps(
         {'operation': operation, 'inputs': inputs, 'route': route},
         sort_keys=True).encode()).hexdigest()
-    if path.exists():
-        prior = json.loads(path.read_text())
-        if prior.get('fingerprint') != fingerprint:
+    if journal_present(path):
+        prior = read_journal(path)
+        if (not isinstance(prior, Mapping) or prior.get('fingerprint') != fingerprint
+                or prior.get('operation') != operation
+                or prior.get('location_id') != inputs['location_id']):
             raise Stop('Provider evidence belongs to another job')
-        if prior.get('status') == 'PROVIDER_NEEDS_VERIFICATION' or (prior.get('status') == 'PROVIDER_STEPS_COMPLETE' and prior.get('outcome', {}).get('status') == 'NEEDS_VERIFICATION'):
-            return {'status': 'NEEDS_VERIFICATION', 'route': route,
-                    'browser_used': False, 'result': prior['outcome'],
-                    'replayed': True}
-        if prior.get('status') == 'PROVIDER_STEPS_COMPLETE':
-            return {'status': 'ALREADY_EXECUTED', 'route': route,
-                    'browser_used': False, 'result': prior['outcome']}
-        raise Stop('Interrupted provider operation requires reconciliation')
+        if prior.get('status') not in ('PROVIDER_NEEDS_VERIFICATION', 'PROVIDER_STEPS_COMPLETE'):
+            raise Stop('Interrupted provider operation requires reconciliation')
+        saved = prior.get('outcome')
+        if (not isinstance(saved, Mapping)
+                or saved.get('location_id') != inputs['location_id']
+                or saved.get('status') not in ('EDITOR_STEPS_COMPLETE', 'NEEDS_VERIFICATION',
+                                                'API_STEPS_COMPLETE', 'ALREADY_EXECUTED')
+                or saved.get('verification_required') is not True
+                or (uses_browser and saved.get('status') == 'API_STEPS_COMPLETE')):
+            raise Stop('Saved provider outcome is malformed or belongs to another location')
+        objects = minimal_objects(operation, saved.get('objects'))
+        pending = prior['status'] == 'PROVIDER_NEEDS_VERIFICATION' or pending_proof(saved)
+        # A journal may predate today's outcome whitelist. Validate its binding,
+        # then return only minimal identities/status, never arbitrary saved data.
+        outcome = {'status': 'NEEDS_VERIFICATION' if pending else saved['status'],
+                   'location_id': inputs['location_id'],
+                   'objects': [{'kind': obj['kind'], 'id': obj['id']} for obj in objects],
+                   'verification_required': True}
+        return {'status': 'NEEDS_VERIFICATION' if pending else 'ALREADY_EXECUTED',
+                'route': route, 'browser_used': False, 'result': outcome,
+                'replayed': True}
+    if replay_only:
+        raise Stop('Provider replay journal disappeared; reconciliation required')
+    if any(journal_present(root / name) for name in ('delivery-state.json', 'calendar-delivery-state.json')):
+        raise Stop('Direct API outcome must be reconciled before provider execution')
     state = {'fingerprint': fingerprint, 'operation': operation,
              'location_id': inputs['location_id'], 'status': 'PROVIDER_INTENT_RECORDED'}
     secure_json(path, state)
@@ -71,23 +108,24 @@ def _execute_provider_owned(operation, inputs, route, root, executor):
         status = result.get('status')
         if status not in ('EDITOR_STEPS_COMPLETE', 'NEEDS_VERIFICATION', 'API_STEPS_COMPLETE', 'ALREADY_EXECUTED'):
             raise Stop('Provider did not return a recognized completion status')
+        if uses_browser and status == 'API_STEPS_COMPLETE':
+            raise Stop('Browser provider must report its actual editor outcome')
+        # A host callback cannot turn explicit missing functional/read-back
+        # evidence into completion merely by selecting a stronger status label.
+        if any(result.get(key) is False for key in (
+            'behavior_verified', 'submission_verified', 'payment_verified',
+            'functional_verified', 'checkout_ready')) or any(
+                result.get(key) == 'REQUIRED' for key in (
+                    'independent_readback', 'behavior_verification')):
+            status = 'NEEDS_VERIFICATION'
         # Do not persist arbitrary API responses, credential strings or logs.
-        objects = result.get('objects', [])
-        allowed_kinds = {'course','category','lesson','quiz','question','page','form',
-                         'website','funnel','room','community','channel','calendar'}
-        if not isinstance(objects, list) or any(
-            not isinstance(obj, Mapping) or obj.get('kind') not in allowed_kinds or
-            not isinstance(obj.get('id'), str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', obj['id'])
-            for obj in objects):
-            raise Stop('Provider object identity receipt malformed')
-        if operation.endswith('.create') and not objects:
-            raise Stop('Create completion requires concrete object identities')
+        objects = minimal_objects(operation, result.get('objects', []))
         outcome = {'status': status, 'location_id': inputs['location_id'],
                    'objects': [{'kind':obj['kind'], 'id':obj['id']} for obj in objects],
                    'verification_required': True}
         state.update(status='PROVIDER_NEEDS_VERIFICATION' if status == 'NEEDS_VERIFICATION' else 'PROVIDER_STEPS_COMPLETE', outcome=outcome)
         secure_json(path, state)
-        return {'status': status, 'route': route, 'browser_used': False,
+        return {'status': status, 'route': route, 'browser_used': uses_browser,
                 'result': outcome}
     except Exception as exc:
         state.update(status='PROVIDER_RECONCILIATION_REQUIRED', error_type=type(exc).__name__)
@@ -101,7 +139,8 @@ def _recipe_readiness(operation, inputs, probes, input_dir):
     native = operation in ('checkout.configure_native','checkout.one_click_upsell') and bool(inputs.get('adapter_capture'))
     recorded = bool(inputs.get('options'))
     ui = operation == 'checkout.configure_ui'
-    if not native and not recorded and not ui:
+    portal = operation == 'communities.configure' and ('channels' in inputs or 'details' in inputs)
+    if not native and not recorded and not ui and not portal:
         return observed, None
     # A receipt for another input/profile cannot bless this specific capture.
     profiles = observed.get('recorded_profiles', [])
@@ -129,10 +168,19 @@ def _recipe_readiness(operation, inputs, probes, input_dir):
         return observed, type(exc).__name__
 
 
-def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None, executors=None):
+def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None, executors=None, portal_context=None):
     if not isinstance(inputs, Mapping) or not isinstance(inputs.get('location_id'), str) or not inputs['location_id']:
         return {'status': 'STOP_INVALID_INPUT', 'browser_used': False,
                 'reason': 'A location-bound input mapping is required'}
+    if 'auth_activation' in inputs and (page is not None or portal_context is not None):
+        return {'status': 'STOP_INVALID_INPUT', 'browser_used': False,
+                'reason': 'Fresh authentication activation cannot use a supplied browser or portal context'}
+    auth_stop = Path(evidence_root).resolve()/'auth-stop.json'
+    if journal_present(auth_stop):
+        return {'status':'STOP_AUTH_CONTEXT', 'browser_used':False,
+                'reason':'AUTH_IDENTITY_RECONCILIATION_REQUIRED',
+                'route':{'lane':'STOP_AUTH_CONTEXT','operation':operation},
+                'state_file':str(auth_stop)}
     if not isinstance(probes, Mapping):
         return {'status': 'STOP_INVALID_PROBE', 'browser_used': False}
     if executors is not None and not isinstance(executors, Mapping):
@@ -140,10 +188,16 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
                 'reason': 'Installed executors must be a provider mapping'}
     observed, capture_error = _recipe_readiness(operation, inputs, probes, input_dir)
     route = decide(operation, inputs['location_id'], observed, inputs=inputs)
+    if 'auth_activation' in inputs and route['lane'] != 'playwright':
+        return {'status':'STOP_FRESH_ACTIVATION_REQUIRED', 'route':route,
+                'browser_used':False,
+                'reason':'Fresh managed authentication activation cannot be delegated to another execution lane'}
     root = Path(evidence_root).resolve()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(root, 0o700)
-    secure_json(root / 'route.json', route)
+    journals = ('state.json', 'provider-state.json', 'community-portal-state.json', 'community-details-state.json', 'handoff.json', 'auth-stop.json')
+    if not any(journal_present(root / name) for name in journals):
+        secure_json(root / 'route.json', route)
     if route['lane'] != 'playwright':
         provider = (executors or {}).get(route['lane'])
         if provider is None and operation in ('courses.create','courses.update','courses.lesson_quiz.create') and route['lane'] in ('public_api','skill44') and inputs.get('api_capability'):
@@ -160,28 +214,72 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
             else:
                 from delivery import meeting_calendar_executor
             provider = meeting_calendar_executor
-        if route['lane'] in ('public_api', 'official_mcp', 'skill44') and callable(provider):
+        if route['lane'] in ('public_api', 'official_mcp', 'skill44', *BROWSER_PROVIDERS) and callable(provider):
+            invoked = False
+            def execute_tracked(**kwargs):
+                nonlocal invoked
+                invoked = True
+                return provider(**kwargs)
             try:
-                return _execute_provider(operation, inputs, route, root, provider)
+                return _execute_provider(operation, inputs, route, root, execute_tracked)
             except Exception as exc:
+                from ghl_auth import AuthBridgeError
+                if isinstance(exc, AuthBridgeError):
+                    return _terminal_auth_stop(operation, inputs, root, type(exc).__name__,
+                        browser_used=invoked and route['lane'] in BROWSER_PROVIDERS)
+                blocked_state = root / 'state.json'
+                if not journal_present(blocked_state):
+                    blocked_state = next((root / name for name in (
+                        'handoff.json', 'community-portal-state.json', 'community-details-state.json', 'provider-state.json',
+                        'delivery-state.json', 'calendar-delivery-state.json')
+                        if journal_present(root / name)), root / 'provider-state.json')
                 return {'status': 'PROVIDER_RECONCILIATION_REQUIRED', 'route': route,
-                        'browser_used': False, 'error_type': type(exc).__name__,
-                        'state_file': str(root / 'provider-state.json')}
+                        'browser_used': invoked and route['lane'] in BROWSER_PROVIDERS,
+                        'error_type': type(exc).__name__,
+                        'state_file': str(blocked_state)}
         return {'status': 'NEEDS_BROWSER_RECOVERY' if capture_error else 'HANDOFF_REQUIRED', 'route': route, 'browser_used': False, **({'error_type':capture_error} if capture_error else {})}
     try:
-        job = validate_job(compile_recipe(operation, inputs), Path(input_dir))
+        try:
+            job = validate_job(compile_recipe(operation, inputs), Path(input_dir))
+        except Exception as exc:
+            if 'auth_activation' in inputs:
+                return _terminal_auth_stop(operation, inputs, root, type(exc).__name__, contract=True)
+            raise
+        if operation == 'communities.configure' and ('channels' in inputs or 'details' in inputs):
+            if page is None or portal_context is None:
+                return {'status': 'PORTAL_CONTEXT_REQUIRED', 'route': route,
+                        'browser_used': False,
+                        'reason': 'Supply an authenticated caller-owned portal Page and same-session identity context; no login or token seed attempted'}
+            if __package__:
+                from .skill6_playwright import community_channels, community_details
+            else:
+                from skill6_playwright import community_channels, community_details
+            handler = community_details if 'details' in inputs else community_channels
+            result = handler(page, job['steps'][0],
+                                        portal_context=portal_context,
+                                        evidence_root=root)
+            return {'status': result['status'], 'route': route,
+                    'browser_used': True, 'result': result}
         result = run_on_page(page, job, root) if page is not None else execute(job, root)
         return {'status': result['status'], 'route': route, 'result': result}
     except Exception as exc:
         # Raw errors may quote client text or credentials. Persist type only.
+        from ghl_auth import AuthBridgeError
+        if isinstance(exc, AuthBridgeError):
+            return _terminal_auth_stop(operation, inputs, root, type(exc).__name__)
+        expected_state = root / ('community-details-state.json' if operation == 'communities.configure' and 'details' in inputs else 'community-portal-state.json' if operation == 'communities.configure' and 'channels' in inputs else 'state.json')
+        blocked_state = next((root / name for name in (
+            'state.json', 'provider-state.json', 'community-portal-state.json', 'community-details-state.json')
+            if journal_present(root / name)), expected_state)
         handoff = {
             'status': 'NEEDS_BROWSER_RECOVERY', 'operation': operation,
             'location_id': inputs['location_id'], 'error_type': type(exc).__name__,
             'route': recovery(operation, inputs['location_id'], observed, inputs=inputs),
-            'state_file': str(root / 'state.json'),
+            'state_file': str(blocked_state),
             'instruction': 'Inspect recorded objects and the failed step. Do not rerun a create/save until its persisted outcome is reconciled.',
         }
-        secure_json(root / 'handoff.json', handoff)
+        if not journal_present(root / 'handoff.json'):
+            secure_json(root / 'handoff.json', handoff)
         return handoff
 
 
@@ -201,6 +299,10 @@ def main(argv=None):
         if args.check:
             observed, capture_error = _recipe_readiness(args.operation, inputs, probes, args.inputs.resolve().parent)
             selected = decide(args.operation, inputs['location_id'], observed, inputs=inputs)
+            if 'auth_activation' in inputs and selected['lane'] != 'playwright':
+                print(json.dumps({'status':'STOP_FRESH_ACTIVATION_REQUIRED',
+                                  'route':selected, 'browser_used':False}))
+                return 2
             if capture_error and selected['lane'] not in ('public_api','skill44','official_mcp'):
                 print(json.dumps({'status':'STOP_INVALID_CAPTURE', 'route':selected,
                                   'error_type':capture_error, 'browser_used':False}))
@@ -208,7 +310,7 @@ def main(argv=None):
             status = 'ROUTE_VALIDATED_ONLY'
             if selected['lane'] == 'playwright':
                 validate_job(compile_recipe(args.operation, inputs), args.inputs.resolve().parent)
-                status = 'VALIDATED_ONLY'
+                status = 'PORTAL_CONTEXT_REQUIRED' if args.operation == 'communities.configure' and ('channels' in inputs or 'details' in inputs) else 'VALIDATED_ONLY'
             elif selected['lane'] in ('public_api','skill44','official_mcp') and args.operation in ('courses.create','courses.update','courses.lesson_quiz.create'):
                 if __package__:
                     from .delivery import validate_api_inputs
@@ -229,7 +331,7 @@ def main(argv=None):
                 status = selected['lane']
             print(json.dumps({'status':status, 'route':selected,
                               'browser_used':False}))
-            return 2 if selected['lane'].startswith('STOP_') or status == 'API_PROBE_REQUIRED' else 0
+            return 2 if selected['lane'].startswith('STOP_') or status in ('API_PROBE_REQUIRED', 'PORTAL_CONTEXT_REQUIRED') else 0
         result = run_recipe(args.operation, inputs, probes, args.evidence_root,
                             input_dir=args.inputs.resolve().parent)
         # Print a small named receipt; provider payloads never reach stdout.
