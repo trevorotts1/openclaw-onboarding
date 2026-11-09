@@ -711,19 +711,21 @@ class StageGateTest(unittest.TestCase):
         self.assertIn("preflight_ok must be true", out)
 
     def test_i6_n43_ratio_rule(self):
+        # 2.6 serves every enum ratio natively: drift is rejected on any source.
         t = kie_transport(KIE_FILES)
-        t["tasks"][0].update(requested_ratio="4:5", generated_ratio="4:5")   # default route must send 3:4
-        t["tasks"][1].update(requested_ratio="3:1", generated_ratio="3:1")   # legacy-only ratio on the default source
+        t["tasks"][0].update(requested_ratio="4:5", generated_ratio="3:4")   # the retired 2.5 substitution
+        t["tasks"][1].update(requested_ratio="3:1", generated_ratio="1:3",
+                              model_source="legacy-ratio-route")              # no source exemption
         proc = self.close_image_qc(transport=t)
         out = proc.stdout + proc.stderr
         self.assertEqual(proc.returncode, 1)
-        self.assertIn("N43 ratio rule violated: requested 4:5, generated 4:5, expected 3:4", out)
-        self.assertIn("N43 sends 3:1 to the legacy route only", out)
+        self.assertIn("generated ratio '3:4' must equal requested ratio '4:5'", out)
+        self.assertIn("generated ratio '1:3' must equal requested ratio '3:1'", out)
 
     def test_i7_n43_ratio_rule_passes_when_followed(self):
         t = kie_transport(KIE_FILES)
-        t["tasks"][0].update(requested_ratio="4:5", generated_ratio="3:4")
-        t["tasks"][1].update(requested_ratio="3:1", generated_ratio="3:1", model_source="legacy-ratio-route")
+        t["tasks"][0].update(requested_ratio="4:5", generated_ratio="4:5")
+        t["tasks"][1].update(requested_ratio="3:1", generated_ratio="3:1")   # native on the default source
         proc = self.close_image_qc(transport=t)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 

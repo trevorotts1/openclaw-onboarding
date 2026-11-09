@@ -270,7 +270,7 @@ PROVIDERS = [
     },
     {
         "id": "kie",
-        "label": "IMAGE tier (S7 covers, GPT-image-2.5 portrait)",
+        "label": "IMAGE tier (S7 covers, GPT-Image 2.6 portrait)",
         "env_aliases": ["KIE_API_KEY"],
         "required": True,
         "auth": "bearer",

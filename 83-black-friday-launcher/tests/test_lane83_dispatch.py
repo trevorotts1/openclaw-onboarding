@@ -358,7 +358,8 @@ class DispatchTests(unittest.TestCase):
     def test_a_paid_run_hands_skill_49_the_cap_ledger_inputs_and_the_kie_limiter(self):
         brand = Path(self.tmp.name) / "brand.json"
         brand.write_text(json.dumps({"palette_status": "provided"}), encoding="utf-8")
-        doc = payload("elevation", brand_file=str(brand), design_style="B", image_cap=9, image_cap_minor=72,
+        doc = payload("elevation", brand_file=str(brand), design_style="B",
+                      design_style_source="client_choice", image_cap=9, image_cap_minor=72,
                       image_currency="USD", paid_render_approval_ref="TEST-APPROVAL-REF")
         doc["test_only"] = False
         sentinel = object()
