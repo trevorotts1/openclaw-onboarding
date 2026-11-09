@@ -64,11 +64,15 @@ def _nonempty_str(value: Any) -> bool:
 def checkout_mode_violations(checkout: Dict[str, Any]) -> List[str]:
     """Production delivery requires a resolved Skill 79 checkout mode.
 
-    ``folded_levels`` has no mode in the Skill 79 contract, so its mapping
-    records ``checkout_mode=None`` with ``checkout_mode_state="contract_gap"``.
-    That is a blocker, never a pass: a package whose order form has no mode has
-    no deliverable checkout, and "builds green offline" is not a deployable
-    three-level checkout. The contract is not invented here — the mode stays
+    ``folded_levels`` IS mapped: it and ``multiple_options`` compile to
+    ``combined_single_offer`` with one native order form per main price choice
+    (``checkout_instances``), and the mapping records that as
+    ``checkout_mode_state="resolved"``. The obsolete "folded_levels has no mode"
+    claim is not repeated here: capability results come from the mapping, not from
+    stale documentation (F22 item 6). Any launch whose mapping still records a
+    non-resolved state is a blocker, never a pass — a package whose order form has
+    no mode has no deliverable checkout, and "builds green offline" is not a
+    deployable checkout. The contract is not invented here; the mode stays
     unresolved until Skill 79 names one.
     """
     mode = checkout.get("checkout_mode")
