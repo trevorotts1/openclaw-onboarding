@@ -105,6 +105,21 @@ class EntitlementReadbackTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 CM.LiveReadTransport("t", "l").request(verb, "/contacts/c1", {})
 
+    def test_a_known_non_member_is_refused_as_not_member(self):
+        """DEC-002: a known basis is NOT-MEMBER; the record is read first."""
+        for basis in ("school_of_ai_membership", "zhc"):
+            t = fake(contact_tags=())
+            refused(self, {**MEMBER, "basis": basis}, t,
+                    "AF-LAUNCH-ENTITLEMENT-NOT-MEMBER")
+            self.assertTrue(t.requests, f"no lookup before the refusal for {basis}")
+
+    def test_an_unknown_basis_is_refused_as_not_qualified(self):
+        """NOT-QUALIFIED is reserved for a basis that cannot be established."""
+        t = fake()
+        refused(self, {**MEMBER, "basis": "friend_of_the_founder"}, t,
+                "AF-LAUNCH-ENTITLEMENT-NOT-QUALIFIED")
+        self.assertEqual(t.requests, [])
+
     def test_interview_yes_whatever_is_not_attested(self):
         for answer in ("yes whatever", "Yes", "Yes, it is included, I think", "yes, it is included",
                        " Yes, it is included", None):
