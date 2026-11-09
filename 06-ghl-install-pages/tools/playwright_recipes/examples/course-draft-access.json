@@ -1,0 +1,30 @@
+{
+  "product_id": "COURSE_FROM_INVENTORY",
+  "publish": false,
+  "category_changes": [
+    {
+      "category_id": "DRAFT_MODULE_FROM_INVENTORY",
+      "expected_updated_at": "2026-11-09T00:00:00Z",
+      "changes": {
+        "parentCategory": "DRAFT_PARENT_MODULE_FROM_INVENTORY",
+        "dripDays": 3,
+        "metadata": {
+          "dripUnit": "days",
+          "dripDate": null
+        },
+        "lockedByCategory": "PUBLISHED_UNLOCK_MODULE_FROM_INVENTORY"
+      }
+    }
+  ],
+  "lesson_changes": [
+    {
+      "lesson_id": "DRAFT_LESSON_FROM_INVENTORY",
+      "category_id": "DRAFT_SOURCE_MODULE_FROM_INVENTORY",
+      "expected_updated_at": "2026-11-09T00:00:00Z",
+      "changes": {
+        "categoryId": "DRAFT_DESTINATION_MODULE_FROM_INVENTORY",
+        "lockedByPost": "PUBLISHED_UNLOCK_LESSON_FROM_INVENTORY"
+      }
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 """Validate completed editor journals without reading a browser or replaying writes."""
 from collections.abc import Mapping
+import hashlib
 import re
 from urllib.parse import parse_qsl, urlsplit
 
@@ -19,16 +20,23 @@ STATUSES = {
     'native_form_css': {'NATIVE_FORM_CSS_SAVED_AND_REOPENED'},
     'native_fields': {'FIELD_PROPERTIES_SAVED_AND_REOPENED'},
     'native_field_placement': {'BUILTIN_FIELDS_SAVED_AND_REOPENED', 'BUILTIN_FIELDS_REUSED_AND_REOPENED'},
+    'native_address_fields': {'ADDRESS_FIELDS_SAVED_AND_REOPENED'},
+    'native_form_consent': {'CONSENT_SAVED_AND_REOPENED'},
+    'native_object_fields': {'OBJECT_FIELDS_SAVED_AND_REOPENED'},
+    'native_survey_object_fields': {'SURVEY_OBJECT_FIELDS_SAVED_AND_REOPENED'},
     'native_condition': {'CONDITION_ALREADY_PRESENT', 'CONDITION_SAVED_AND_REOPENED', 'CONDITION_SAVE_SUBMITTED'},
     'quiz_configuration': {'QUIZ_CONFIGURATION_SAVED_AND_REOPENED'},
+    'quiz_results': {'QUIZ_RESULTS_SAVED_AND_REOPENED'},
     'survey_configuration': {'SURVEY_RULE_ALREADY_PRESENT', 'SURVEY_RULE_SAVED_AND_REOPENED'},
+    'survey_rule_stack': {'SURVEY_RULE_STACK_SAVED_AND_REOPENED'},
     'assessment': {'ASSESSMENT_REUSED', 'ASSESSMENT_SAVE_SUBMITTED'},
     'form_settings': {'FORM_SETTINGS_PERSISTED'},
     'native_form_schedule': {'FORM_SCHEDULE_SAVED_AND_REOPENED'},
+    'native_course_theme': {'COURSE_THEME_SAVED_AND_REOPENED'},
     'form_submission': {'FORM_SUBMISSION_SAVED_AND_REOPENED'},
     'form_notifications': {'NOTIFICATION_SETTINGS_SAVED_AND_REOPENED'},
     'options': {'RECORDED_OPTIONS_EXECUTED'},
-    'community': {'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED'},
+    'community': {'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED', 'GROUP_CREATED_PENDING_IDENTITY'},
     'meeting': {'ROOM_CREATED_VERIFIED', 'ROOM_REUSED_VERIFIED', 'ROOM_UPDATED_VERIFIED'},
     'native_checkout': {'NATIVE_CONFIGURATION_READBACK_VERIFIED'},
     'native_checkout_ui': {'NATIVE_CHECKOUT_UI_READBACK_VERIFIED'},
@@ -40,12 +48,19 @@ REQUIRED = {
     'form_css': ('radius',), 'native_form_css': ('editor_url', 'css_sha256', 'submission_verified'),
     'native_fields': ('editor_url', 'fields', 'submission_verified'),
     'native_field_placement': ('editor_url', 'fields', 'submission_verified'),
+    'native_address_fields': ('editor_url', 'fields', 'configuration_sha256', 'independent_readback', 'submission_verified'),
+    'native_form_consent': ('editor_url', 'configuration_sha256', 'independent_readback', 'submission_verified', 'behavior_verified'),
+    'native_object_fields': ('editor_url', 'fields', 'configuration_sha256', 'independent_readback', 'submission_verified'),
+    'native_survey_object_fields': ('kind', 'editor_url', 'target_slide', 'field_count', 'configuration_sha256', 'independent_readback', 'submission_verified', 'behavior_verified'),
     'native_condition': ('kind', 'effect', 'if_field', 'operator', 'target', 'independent_readback', 'submission_verified', 'behavior_verified'),
     'quiz_configuration': ('kind', 'editor_url', 'questions', 'submission_verified'),
+    'quiz_results': ('kind', 'editor_url', 'configuration_sha256', 'independent_readback', 'behavior_verified', 'submission_verified'),
     'survey_configuration': ('kind', 'editor_url', 'source_slide', 'target_slide', 'independent_readback', 'submission_verified', 'behavior_verified'),
+    'survey_rule_stack': ('kind', 'editor_url', 'rule_count', 'configuration_sha256', 'independent_readback', 'submission_verified', 'behavior_verified'),
     'assessment': ('kind', 'editor_url', 'independent_readback'),
     'form_settings': ('settings', 'editor_url'),
     'native_form_schedule': ('editor_url', 'enabled', 'configuration_sha256', 'independent_readback', 'behavior_verified', 'submission_verified'),
+    'native_course_theme': ('editor_url', 'course_id', 'template_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed'),
     'form_submission': ('mode', 'editor_url', 'value_sha256', 'independent_readback', 'behavior_verified', 'submission_verified'),
     'form_notifications': ('enabled', 'configuration_sha256', 'recipient_count', 'independent_readback', 'behavior_verification'),
     'options': ('count', 'capture_source'), 'community': ('name', 'slug', 'discovery', 'deleted'),
@@ -56,10 +71,11 @@ REQUIRED = {
 BOOLEANS = frozenset(('behavior_verified', 'submission_verified', 'payment_verified',
     'functional_verified', 'checkout_ready', 'meeting_started', 'discovery', 'deleted',
     'products_missing', 'form_submitted', 'notifications_sent', 'legal_copy_saved', 'legal_acceptance',
-    'conditional_precedence_present', 'conditional_precedence_acknowledged'))
-COUNTS = frozenset(('count', 'radius', 'render_checks', 'recipient_count', 'questions', 'source_slide', 'target_slide'))
-IDS = frozenset(('element_id', 'section_id', 'component_id', 'page_id', 'calendar_id', 'slug'))
-HASHES = frozenset(('html_sha256', 'css_sha256', 'value_sha256', 'configuration_sha256'))
+    'conditional_precedence_present', 'conditional_precedence_acknowledged', 'activation_performed',
+    'native_name_seen_after_reload', 'slug_identity_verified', 'discovery_verified', 'group_activation_attempted'))
+COUNTS = frozenset(('count', 'radius', 'render_checks', 'recipient_count', 'questions', 'source_slide', 'target_slide', 'rule_count', 'field_count'))
+IDS = frozenset(('element_id', 'section_id', 'component_id', 'page_id', 'calendar_id', 'course_id', 'template_id', 'slug'))
+HASHES = frozenset(('html_sha256', 'css_sha256', 'value_sha256', 'configuration_sha256', 'requested_slug_sha256'))
 ID_PATTERN = re.compile(r'[A-Za-z0-9_-]{1,256}')
 
 
@@ -136,6 +152,7 @@ def _result(step, value, job):
     extra = {
         'html': {'element_id', 'section_id'}, 'native_form_css': {'render_checks'},
         'meeting': {'previous_room_identity'},
+        'community': {'requested_slug_sha256', 'group_status'},
     }.get(action, set())
     # A familiar field on an unrelated handler is still an arbitrary extra.
     allowed = set(REQUIRED[action]) | extra | BOOLEANS | {
@@ -163,11 +180,18 @@ def _result(step, value, job):
         safe[key] = value[key]
     for key in ('editor_url', 'container_url', 'form_url'):
         if key in value:
+            if action == 'native_course_theme' and key == 'editor_url':
+                from playwright_recipes.course_theme import editor_url
+                expected_url = editor_url(step['payload'])
+                if value[key] != expected_url:
+                    _fail()
+                safe[key] = expected_url
+                continue
             safe[key] = _url(value[key], job)
             if key != 'container_url':
                 family = ('page-builder' if action in ('page', 'html', 'native_checkout_ui')
-                    else 'quiz-builder-v2' if action == 'quiz_configuration' or (action == 'assessment' and step.get('kind') == 'quiz')
-                    else 'survey-builder-v2' if action == 'survey_configuration' or action == 'assessment'
+                    else 'quiz-builder-v2' if action in ('quiz_configuration', 'quiz_results') or (action == 'assessment' and step.get('kind') == 'quiz')
+                    else 'survey-builder-v2' if action in ('survey_configuration', 'survey_rule_stack', 'native_survey_object_fields') or action == 'assessment'
                     else 'form-builder-v2')
                 if '/' + family + '/' not in urlsplit(safe[key]).path:
                     _fail()
@@ -181,7 +205,7 @@ def _result(step, value, job):
                 _fail()
             safe[key] = value[key]
     if 'kind' in value:
-        if value['kind'] not in ('quiz', 'survey', 'form_condition', 'survey_condition'):
+        if value['kind'] not in ('quiz', 'quiz_results', 'survey', 'form_condition', 'survey_condition', 'survey_condition_stack', 'survey_object_fields'):
             _fail()
         safe['kind'] = value['kind']
     if 'mode' in value and value['mode'] is not None:
@@ -203,6 +227,22 @@ def _result(step, value, job):
     if action in ('native_condition', 'survey_configuration') and value['kind'] != (
             'form_condition' if action == 'native_condition' else 'survey_condition'):
         _fail()
+    if action == 'survey_rule_stack':
+        from playwright_recipes.survey_ui import configuration_hash
+        if (value['kind'] != 'survey_condition_stack'
+                or type(value['rule_count']) is not int or value['rule_count'] != len(step['rules'])
+                or value['configuration_sha256'] != configuration_hash(step)
+                or value['independent_readback'] != 'VERIFIED'
+                or value['submission_verified'] is not False or value['behavior_verified'] is not False):
+            _fail()
+    if action == 'quiz_results':
+        from playwright_recipes.quiz_results import configuration_hash
+        if (value['kind'] != 'quiz_results'
+                or value['configuration_sha256'] != configuration_hash(step)
+                or value['independent_readback'] != 'VERIFIED'
+                or value['behavior_verified'] is not False
+                or value['submission_verified'] is not False):
+            _fail()
     if action == 'form_settings':
         if value['settings'] != step.get('settings') or not isinstance(value['settings'], dict) or any(type(x) is not bool for x in value['settings'].values()):
             _fail()
@@ -217,11 +257,60 @@ def _result(step, value, job):
                 or value['submission_verified'] is not False):
             _fail()
         safe['enabled'] = value['enabled']
+    if action == 'native_course_theme':
+        from playwright_recipes.course_theme import configuration_hash
+        payload = step['payload']
+        if (value['course_id'] != payload['course_id']
+                or value['template_id'] != payload['template_id']
+                or value['configuration_sha256'] != configuration_hash(payload)
+                or value['independent_readback'] != 'VERIFIED'
+                or value['functional_verified'] is not False
+                or value['activation_performed'] is not False):
+            _fail()
     if action == 'native_fields':
         fields = [field['field'] for field in step.get('fields', [])]
         if value['fields'] != fields:
             _fail()
         safe['fields'] = fields
+    if action == 'native_address_fields':
+        from playwright_recipes.forms_advanced import configuration_hash
+        fields = [{'field':field['field'], 'query_key':field['query_key']}
+                  for field in step['address_fields']]
+        if (value['fields'] != fields or value['configuration_sha256'] != configuration_hash(step)
+                or value['independent_readback'] != 'VERIFIED' or value['submission_verified'] is not False):
+            _fail()
+        safe['fields'] = fields
+    if action == 'native_form_consent':
+        from playwright_recipes.forms_advanced import consent_configuration_hash
+        if (value['configuration_sha256'] != consent_configuration_hash(step)
+                or value['independent_readback'] != 'VERIFIED'
+                or value['submission_verified'] is not False or value['behavior_verified'] is not False):
+            _fail()
+    if action == 'native_object_fields':
+        from playwright_recipes.forms_advanced import object_fields_configuration_hash
+        fields, requested = value['fields'], step['payload']['object_fields']
+        if (not isinstance(fields, list) or len(fields) != len(requested)
+                or value['configuration_sha256'] != object_fields_configuration_hash(step)
+                or value['independent_readback'] != 'VERIFIED' or value['submission_verified'] is not False):
+            _fail()
+        clean = []
+        for field, intended in zip(fields, requested):
+            if (not isinstance(field, Mapping) or field.get('placement') not in ('added', 'reused')
+                    or any(field.get(key) != intended[key] for key in ('id', 'field_key', 'data_type'))):
+                _fail()
+            clean.append({**{key:intended[key] for key in ('id', 'field_key', 'data_type')},
+                          'placement':field['placement']})
+        safe['fields'] = clean
+    if action == 'native_survey_object_fields':
+        from playwright_recipes.survey_fields import configuration_hash
+        payload = step['payload']
+        if (value['kind'] != 'survey_object_fields'
+                or type(value['target_slide']) is not int or value['target_slide'] != payload['target_slide']
+                or type(value['field_count']) is not int or value['field_count'] != len(payload['object_fields'])
+                or value['configuration_sha256'] != configuration_hash(step)
+                or value['independent_readback'] != 'VERIFIED'
+                or value['submission_verified'] is not False or value['behavior_verified'] is not False):
+            _fail()
     if action == 'native_field_placement':
         from playwright_recipes.field_placement import CAPTURED_FIELDS
         requested = step.get('add_fields')
@@ -245,6 +334,23 @@ def _result(step, value, job):
     if action == 'options':
         if value['count'] != len(step.get('steps', [])) or value['capture_source'] != step.get('capture_source'):
             _fail()
+    if action == 'community':
+        if (value.get('name') != step.get('name') or value.get('slug') != step.get('slug')
+                or value.get('discovery') is not False or value.get('deleted') is not False):
+            _fail()
+        safe['name'] = step['name']
+        if value['status'] == 'GROUP_CREATED_PENDING_IDENTITY':
+            if (step.get('allow_creation') is not True or step.get('inactive', True) is not False
+                    or value.get('requested_slug_sha256') != hashlib.sha256(step['slug'].encode()).hexdigest()
+                    or value.get('native_name_seen_after_reload') is not True
+                    or value.get('group_status') != 'Active'
+                    or value.get('slug_identity_verified') is not False
+                    or value.get('discovery_verified') is not False
+                    or value.get('functional_verified') is not False
+                    or value.get('group_activation_attempted') is not False
+                    or value.get('independent_readback') != 'REQUIRED'):
+                _fail()
+            safe['group_status'] = 'Active'
     if action == 'form_notifications':
         expected = {key:step[key]['enabled'] for key in ('email_notification', 'auto_responder') if key in step}
         if value['enabled'] != expected or any(type(x) is not bool for x in value['enabled'].values()):

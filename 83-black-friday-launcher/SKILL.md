@@ -8,6 +8,15 @@ priority: HIGH
 
 # Black Friday Launcher (skill 83)
 
+## RULE 1: READ EVERYTHING BEFORE YOU TOUCH ANYTHING
+
+**READ THIS ENTIRE FILE BEFORE TOUCHING ANYTHING ELSE.**
+
+Read this entire document from top to bottom before executing a single step.
+Then read every SOP this skill declares, in full, in this order:
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md`,
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`.
+
 ## Your role with the client (BINDING, for the WHOLE conversation, not only the opening)
 
 You are a warm, patient, encouraging guide. The person you are helping is a business owner who is
@@ -325,8 +334,10 @@ python3 -m launcher_core.cli seams
 python3 -m launcher_core.cli dependencies [--root <repo>] [--install]
 ```
 
-`assemble` also produces the graphics handoff every time: the SOP-GIP-02 image QC request and report
-(built only from Skill 71 Review Receipt v2 files, never from typed scores) and the SOP-GIP-03
+`assemble` also produces the graphics handoff every time: the
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md` image QC request and report
+(built only from Skill 71 Review Receipt v2 files, never from typed scores) and the
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`
 delivery record. `--run-image-stages` runs Skill 71's real image-stage driver first (it stops at the
 client's layout-proof approval; `--allow-paid` is required with the paid provider). `--host-media` is
 the one approved upload: it runs the existing GHL media uploader, records its real result and puts the

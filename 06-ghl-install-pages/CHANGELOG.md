@@ -1,3 +1,15 @@
+## [v27.1.91] - 2026-11-09
+
+- Add captured native form consent, Address Query Keys, existing Radio placement,
+  survey rule stacks and question placement, quiz properties/categories and
+  Header/CTA copy with independently bound saved-result recovery.
+- Add inactive course theme palette/fonts and existing draft outline move,
+  drip and lock-reference support; order moves to avoid temporary hierarchy cycles.
+- Add classic community access controls and read-only co-host preflight.
+- Preflight complete form-placement batches and preserve unrequested calendar
+  members/locations and checkout bumps through updates.
+- Track exact operation build coverage separately from pending native proof.
+
 ## [v27.1.90] - 2026-11-09
 
 - G3 lockstep roll: Skill 06 content touched by the ENT-001 gate-removal recut. No behaviour change.
