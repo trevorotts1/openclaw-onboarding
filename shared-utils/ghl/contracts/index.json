@@ -1,6 +1,6 @@
 {
   "authority": "WF00/GHL-000 shared operation registry and contracts",
-  "checkpoint": "WF00-CP03",
+  "checkpoint": "WF00-CP04",
   "checksum_algorithm": "sha256",
   "contracts": [
     {
