@@ -1,0 +1,38 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Approved account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/settings/calendars?section=calendars",
+  "calendar_id": "CALENDAR_FROM_INVENTORY",
+  "calendar_name": "EXACT_EXISTING_CALENDAR_NAME",
+  "staff_id": "STAFF_ID_FROM_API_AND_NATIVE_SELECT",
+  "connection_staff_label": "Exact Staff Name (Me)",
+  "expected_staff_locations": [
+    {
+      "staff_id": "STAFF_ID_FROM_API_AND_NATIVE_SELECT",
+      "staff_name": "Exact Staff Name",
+      "location_kind": "Custom",
+      "location_value": "https://example.invalid/current-location-from-inventory"
+    }
+  ],
+  "staff_dependency": {
+    "status": "VERIFIED",
+    "provider": "skill44",
+    "location_id": "LOCATION_FROM_INVENTORY",
+    "observed_at": 0,
+    "operation": "users.search",
+    "http_status": 200,
+    "users": [
+      {
+        "id": "STAFF_ID_FROM_API_AND_NATIVE_SELECT",
+        "name": "Exact Staff Name",
+        "roles": {
+          "locationIds": [
+            "LOCATION_FROM_INVENTORY"
+          ]
+        }
+      }
+    ],
+    "complete": true,
+    "total_count": 1
+  }
+}

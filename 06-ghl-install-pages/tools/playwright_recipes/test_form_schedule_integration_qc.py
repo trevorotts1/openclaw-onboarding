@@ -65,7 +65,7 @@ class FormScheduleIntegrationQcTests(unittest.TestCase):
                 result = host.run_recipe('forms.settings', {**inputs(), **change},
                     {'lanes': {'playwright': {'available': True}}}, root,
                     input_dir='.', page=page)
-            self.assertEqual(result['status'], 'NEEDS_BROWSER_RECOVERY')
+            self.assertEqual(result['status'], 'STOP_INVALID_INPUT')
             self.assertEqual(page.mock_calls, [])
             execute.assert_not_called()
 
