@@ -319,6 +319,19 @@ def _target_page(frame,plan,before,inventory_reader):
     return runtime,deepcopy(after)
 
 
+def _prewrite_delta(frame,plan,before,inventory_reader,question):
+    """Prove the appended index is new before touching any field properties."""
+    after=inventory_reader(frame,plan);owner=plan['target_page']-1
+    if len(after)!=len(before) or len(after[owner])!=len(before[owner])+1:
+        raise Stop('Native question insertion did not produce the exact new-owner widget delta')
+    for index,previous in enumerate(before):
+        current=after[index][:-1] if index==owner else after[index]
+        if current!=previous:
+            raise Stop('Native question insertion changed an old prefix or another page before property authoring')
+    if after[owner][-1]['field_type']!=question['field_type']:
+        raise Stop('Native appended widget type changed before property authoring')
+
+
 def _append_tile(frame,plan,tile_label,*,page=None):
     _close_properties(frame)
     dialog=frame.get_by_role('dialog')
@@ -443,7 +456,9 @@ def configure(page,step):
     for question in plan['questions']:
         identity()
         if _inventory(frame,runtime)!=desired:raise Stop('Quiz questions changed before the next insertion')
-        item=_append(frame,runtime,page=page);authored=_write_question(frame,item,question)
+        item=_append(frame,runtime,page=page)
+        _prewrite_delta(frame,runtime,desired,_inventory,question)
+        authored=_write_question(frame,item,question)
         desired[owner].append(authored)
         if _inventory(frame,runtime)!=desired:
             raise Stop('Short Answer insertion changed existing questions or a different page')

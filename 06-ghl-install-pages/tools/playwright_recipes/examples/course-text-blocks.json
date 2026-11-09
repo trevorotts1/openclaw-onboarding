@@ -1,0 +1,12 @@
+{
+  "location_id": "LOC",
+  "location_name": "Fixture Account",
+  "start_url": "https://app.example.com/v2/location/LOC/memberships/courses/course-creator-studio?view=manager&sub_view=customize&product_id=COURSE",
+  "course_id": "COURSE",
+  "template_id": "INACTIVE_TEMPLATE",
+  "expected_template_title": "Inventoried inactive template",
+  "text_blocks": {
+    "expected_inventory": [{"id": "categoryBlock", "type": "Category Block"}],
+    "append": [{"content": "Authored plain text for this course."}]
+  }
+}

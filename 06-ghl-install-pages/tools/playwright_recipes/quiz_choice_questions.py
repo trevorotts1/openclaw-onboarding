@@ -300,6 +300,7 @@ def configure(page,step):
         identity()
         if _inventory(frame,runtime)!=desired:raise Stop('Quiz questions changed before the next Multiple Choice insertion')
         item=_append(frame,runtime,question,page=page)
+        native._prewrite_delta(frame,runtime,desired,_inventory,question)
         _fresh_choice(item,question['field_type'],desired)
         desired[owner].append(_write_question(frame,item,question))
         if _inventory(frame,runtime)!=desired:

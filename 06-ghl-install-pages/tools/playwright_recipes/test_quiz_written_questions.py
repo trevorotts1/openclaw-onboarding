@@ -98,7 +98,7 @@ class Execution(unittest.TestCase):
             self.assertEqual(kwargs['default_key'],written.PROFILES[kind]['default_key'])
             new={**question,'_widget_inputs':[{'tag':'TEXTAREA' if kind=='LARGE_TEXT' else 'INPUT',
                 'name':None,'type':None,'value':'','placeholder':None}]}
-            state['inventory'][0].append(new)
+            state['inventory'][0][-1]=new
             if collateral:state['inventory'][0][0]['query_key']='Changed sibling'
             return deepcopy(new)
         def reopen(*args):
@@ -110,7 +110,11 @@ class Execution(unittest.TestCase):
             stack.enter_context(patch.object(written,'click',side_effect=lambda target:target.click()))
             stack.enter_context(patch.object(written,'wait_until',side_effect=lambda pred,reason:self.assertTrue(pred())))
             stack.enter_context(patch.object(choice,'_inventory',side_effect=lambda *args,**kwargs:deepcopy(state['inventory'])))
-            append=stack.enter_context(patch.object(written,'_append',return_value=object()))
+            def insert(*args,**kwargs):
+                profile=written.PROFILES[kind]
+                state['inventory'][0].append({**question(profile['tile']+' abc123',profile['default_key'],kind),'_widget_inputs':[]})
+                return object()
+            append=stack.enter_context(patch.object(written,'_append',side_effect=insert))
             stack.enter_context(patch.object(native,'_write_question',side_effect=write))
             stack.enter_context(patch.object(native,'reopen_editor',side_effect=reopen))
             try:result=written.configure(page,plan)

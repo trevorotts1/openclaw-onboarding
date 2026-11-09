@@ -45,3 +45,9 @@ waits within the normal bounded readiness budget; a wrong nonempty owner, URL,
 type, label or positive count is refused. A declared empty page still needs
 its captured visible drop placeholder, never zero nodes alone. After reopening,
 readiness uses the complete desired inventory including the newly added fields.
+
+Immediately after the single drag, a complete read-only inventory must prove
+the exact old prefix unchanged, every other page unchanged and exactly one new
+last widget of the requested type. This happens before any authored property
+write. A misplaced new field must never cause an old default-looking last field
+to be selected for authoring merely because its type/default key also matches.

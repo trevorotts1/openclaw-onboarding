@@ -71,7 +71,7 @@ class TextExecution(unittest.TestCase):
         def authored(_frame,_item,question):
             state['writes']+=1
             row={**deepcopy(question),'_widget_inputs':[{'tag':'INPUT','name':None,'type':None,'value':'','placeholder':question['placeholder']}]}
-            state['inventory'][0].append(row)
+            state['inventory'][0][-1]=row
             if collateral:state['inventory'][0][0]['placeholder']='Changed sibling'
             return deepcopy(row)
         def reopen(*args):
@@ -86,7 +86,12 @@ class TextExecution(unittest.TestCase):
             stack.enter_context(patch.object(text,'click',side_effect=lambda loc:loc.click()))
             stack.enter_context(patch.object(text,'wait_until',side_effect=lambda pred,reason:self.assertTrue(pred())))
             stack.enter_context(patch.object(text,'_inventory',side_effect=lambda frame,plan:deepcopy(state['inventory'])))
-            append=stack.enter_context(patch.object(text,'_append',return_value=object()))
+            def insert(*args,**kwargs):
+                row={**question('Short Answer def456','single_line','TEXT'),'_widget_inputs':[]}
+                if state.get('misplaced'):state['inventory'][0].insert(0,row)
+                else:state['inventory'][0].append(row)
+                return object()
+            append=stack.enter_context(patch.object(text,'_append',side_effect=insert))
             stack.enter_context(patch.object(text,'_write_question',side_effect=authored))
             stack.enter_context(patch.object(text,'reopen_editor',side_effect=reopen))
             receipt=text.configure(page,plan or step())
@@ -114,6 +119,14 @@ class TextExecution(unittest.TestCase):
         self.assertEqual(receipt['status'],'QUIZ_SHORT_ANSWERS_SAVED_AND_REOPENED')
         self.assertEqual(state['inventory'][0][0]['query_key'],'single_line')
         self.assertEqual(state['inventory'][0][1]['query_key'],'context')
+    def test_misplaced_new_default_text_cannot_author_the_old_default_text_at_last_index(self):
+        page,state,authored,reopen=self.surface();plan=step();state['misplaced']=True
+        old=question('Short Answer abc123','single_line','TEXT')
+        state['inventory'][0][0]={**old,'_widget_inputs':[]};plan['payload']['pages'][0]['questions']=[old]
+        with self.assertRaisesRegex(runner.Stop,'old prefix'):
+            self.execute(page,state,authored,reopen,plan)
+        self.assertEqual(state['writes'],0);self.assertEqual(state['saves'],0)
+        self.assertEqual(state['inventory'][0][1]['question'],'Short Answer abc123')
     def test_collateral_radio_choice_or_score_change_is_detected_before_save(self):
         for key,value in (('label','Changed option'),('category','Changed category'),
                           ('score','99'),('score_enabled',False)):

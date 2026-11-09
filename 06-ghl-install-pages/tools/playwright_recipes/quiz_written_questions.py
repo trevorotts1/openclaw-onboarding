@@ -80,6 +80,7 @@ def configure(page,step):
         identity()
         if inventory()!=desired:raise Stop('Native quiz changed before the next written-answer insertion')
         item=_append(frame,runtime,question,page=page)
+        native._prewrite_delta(frame,runtime,desired,choice._inventory,question)
         authored=native._write_question(frame,item,question,field_types=TYPES,new_kind=question['field_type'],
                                         default_key=PROFILES[question['field_type']]['default_key'],metadata_reader=choice._metadata)
         desired[owner].append(authored)
