@@ -62,9 +62,19 @@ REQUEST CONTRACT (matched to POST /api/tasks/ingest live endpoint):
   identical to today: the Command Center falls back to its own async
   resolvePersonaAndPin selector match exactly as before.
 
-  Fields intentionally OMITTED (the ingest route ignores them and the CC
-  TaskStatus enum does NOT include them):
+  Fields intentionally OMITTED from the legacy ingest BODY (the route ignores
+  them and the CC TaskStatus enum does NOT include them):
     task_type, stage, parent_task_id, depends_on, waiting_on_dependency.
+  WF20 carries ``parent_task_id`` on the durable EVENT (cc_board_outbox), not
+  in this body, so an old route keeps ignoring it while a current consumer can
+  bind the child to its existing parent.
+
+DURABLE OUTBOX (WF20)
+  Passing ``outbox_path=``/``CC_BOARD_OUTBOX`` (or ``evidence_root=``) turns
+  ingest_task into durable-before-delivery: one redacted event is committed to
+  SQLite first, a board timeout queues it and the build continues, and
+  ``cc_board.py --retry-pending`` re-sends only that event. Without any of
+  those, the direct POST below is byte-identical legacy behaviour.
   Only the 10-value TaskStatus enum values are valid status values on the server:
     backlog | in_progress | review | blocked | done (and assigned, which the
     Workforce-Engine v4.52.0 patch added). We do not set status in the POST —
@@ -94,7 +104,30 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+_TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+
+import cc_board_outbox  # noqa: E402  (WF20 durable producer outbox, same tools dir)
+
 _DEFAULT_TIMEOUT = 8
+
+# ---------------------------------------------------------------------------
+# WF20 (Document 1 s14.9 / Document 2 WF20) — durable producer outbox.
+#
+# Delivery is enabled explicitly so every EXISTING caller keeps byte-identical
+# legacy behaviour:
+#   * ``CC_BOARD_OUTBOX`` env (or an explicit ``outbox_path=``) -> that file;
+#   * ``evidence_root=`` given -> ``<evidence_root>/routing/board-outbox.sqlite3``.
+# With neither, ingest_task() posts directly exactly as before.
+#
+# A board timeout/5xx queues the event and the business work continues. Retrying
+# re-sends the EVENT (same idempotency key) and never re-runs the business
+# operation. An old Command Center version (404/405/2xx-without-task_id) is
+# detected, recorded as ``old_cc_version`` and left QUEUED — never a fake card.
+# ---------------------------------------------------------------------------
+OUTBOX_ENV_VAR = "CC_BOARD_OUTBOX"
+_OUTBOX_REL_PATH = ("routing", "board-outbox.sqlite3")
 
 # ---------------------------------------------------------------------------
 # U27 (Skill-6 board reconcile) — evidence-root layout constants.
@@ -230,6 +263,9 @@ def _write_board_ingest_receipt(
     department_slug: Optional[str] = None,
     source: Optional[str] = None,
     reason: str = "",
+    queued: bool = False,
+    event_id: Optional[str] = None,
+    attempts: Optional[int] = None,
 ) -> None:
     """U27 — close the SKILL.md:607-608 blindness: persist ONE receipt per
     ``ingest_task()`` call recording whether the board was even configured and
@@ -255,6 +291,9 @@ def _write_board_ingest_receipt(
             "department_slug": department_slug,
             "source": source,
             "reason": reason,
+            "queued": bool(queued),
+            "event_id": event_id,
+            "attempts": attempts,
         }
         with open(
             os.path.join(receipt_dir, _BOARD_INGEST_RECEIPT_FILENAME), "w", encoding="utf-8"
@@ -262,6 +301,322 @@ def _write_board_ingest_receipt(
             json.dump(record, f, indent=2)
     except OSError:
         pass  # receipt is best-effort; ingest_task()'s return value is unaffected
+
+
+
+
+# ---------------------------------------------------------------------------
+# WF20 — durable producer outbox plumbing (board delivery).
+# ---------------------------------------------------------------------------
+def resolve_outbox_path(
+    outbox_path: Optional[str] = None,
+    env: Optional[dict] = None,
+    evidence_root: Optional[str] = None,
+) -> Optional[str]:
+    """Resolve the durable outbox file. Explicit path/CC_BOARD_OUTBOX wins; an
+    ``evidence_root`` puts the outbox beside the run's routing receipts. None
+    means "legacy direct POST" (byte-identical behaviour for old callers)."""
+    env_map = env if env is not None else os.environ
+    explicit = (outbox_path or "").strip() or (env_map.get(OUTBOX_ENV_VAR) or "").strip()
+    if explicit:
+        return explicit
+    root = (evidence_root or "").strip()
+    if root:
+        return os.path.join(root, *_OUTBOX_REL_PATH)
+    return None
+
+
+def _outbox_for(path: str, env: Optional[dict] = None):
+    env_map = env if env is not None else os.environ
+
+    def _as_float(name: str, default: float) -> float:
+        try:
+            return float(env_map.get(name, "") or default)
+        except (TypeError, ValueError):
+            return default
+
+    return cc_board_outbox.BoardOutbox(
+        path,
+        backoff_base_s=_as_float(
+            "CC_BOARD_OUTBOX_BACKOFF_BASE", cc_board_outbox.DEFAULT_BACKOFF_BASE_S),
+        backoff_cap_s=_as_float(
+            "CC_BOARD_OUTBOX_BACKOFF_CAP", cc_board_outbox.DEFAULT_BACKOFF_CAP_S),
+    )
+
+
+def _interpret_ingest_response(status: int, body) -> tuple:
+    """Classify one ingest response: ('delivered', task_id) | ('retry', reason)
+    | ('dead', reason). An old Command Center version is RETRYABLE and queued,
+    never reported as a landed card."""
+    if 200 <= status < 300:
+        if isinstance(body, dict) and body.get("task_id"):
+            return "delivered", str(body["task_id"])
+        return "retry", "old_cc_version: 2xx response carried no task_id"
+    if status in (404, 405, 410):
+        return "retry", f"old_cc_version: HTTP {status} (route absent on this Command Center)"
+    if status in (408, 425, 429) or 500 <= status < 600:
+        return "retry", f"transient: HTTP {status}: {body}"
+    if 400 <= status < 500:
+        return "dead", f"rejected: HTTP {status}: {body}"
+    return "retry", f"unexpected: HTTP {status}: {body}"
+
+
+def _ingest_via_outbox(
+    *,
+    cfg: dict,
+    payload: dict,
+    key: str,
+    department_slug: str,
+    source: str,
+    outbox_file: str,
+    run_id: Optional[str],
+    operation_key: Optional[str],
+    family: Optional[str],
+    parent_task_id: Optional[str],
+    is_parent: bool,
+    evidence_root: Optional[str],
+    secret_values,
+    env: Optional[dict],
+) -> Optional[str]:
+    """Durable-before-delivery ingest. NEVER raises; None means "queued or
+    failed", and the business build continues."""
+    try:
+        ob = _outbox_for(outbox_file, env)
+    except (cc_board_outbox.OutboxError, OSError, ValueError) as exc:
+        _log(f"outbox {outbox_file!r} unavailable ({type(exc).__name__}: {exc}); "
+             "build continues unboarded.")
+        _write_board_ingest_receipt(
+            evidence_root, mission_control_url_set=True, ok=False, task_id=None,
+            department_slug=department_slug, source=source,
+            reason=f"outbox unavailable: {type(exc).__name__}: {exc}")
+        return None
+
+    rid = (run_id or "").strip() or f"adhoc:{key[:16]}"
+    op_key = (operation_key or "").strip() or f"board.ingest:{key}"
+    fam = (family or "").strip() or "board"
+    wire_source = cc_board_outbox.ENGINE_SOURCE if (is_parent or parent_task_id) else source
+    payload = dict(payload, source=wire_source)
+
+    try:
+        event = cc_board_outbox.build_event(
+            idempotency_key=key, request=payload, run_id=rid, operation_key=op_key,
+            family=fam, source=wire_source, parent_task_id=parent_task_id,
+            evidence_root=evidence_root, secret_values=secret_values,
+        )
+        stored, _created = ob.enqueue(event)
+    except (cc_board_outbox.OutboxError, OSError, ValueError) as exc:
+        _log(f"outbox enqueue refused ({type(exc).__name__}: {exc}); build continues.")
+        _write_board_ingest_receipt(
+            evidence_root, mission_control_url_set=True, ok=False, task_id=None,
+            department_slug=department_slug, source=source,
+            reason=f"outbox enqueue refused: {type(exc).__name__}: {exc}")
+        return None
+
+    url = f"{cfg['base_url']}{cc_board_outbox.BOARD_ENDPOINT}"
+    try:
+        ob.claim(key)
+    except cc_board_outbox.OutboxError as exc:
+        # Already acked (a replay): return the recorded card, never a new one.
+        receipt = ob.receipt(key)
+        if receipt["status"] == cc_board_outbox.STATUS_ACKED and receipt["ack_task_id"]:
+            return receipt["ack_task_id"]
+        _log(f"outbox claim refused ({exc}); build continues.")
+        return None
+    try:
+        status, body = _post_json(url, stored["request"], cfg)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        try:
+            receipt = ob.fail(key, f"{type(exc).__name__}: {exc}", retryable=True)
+        except (cc_board_outbox.OutboxError, OSError, ValueError):
+            receipt = ob.receipt(key)
+        _log(f"POST {url} failed ({type(exc).__name__}: {exc}); event queued; "
+             "build continues unregistered.")
+        _write_board_ingest_receipt(
+            evidence_root, mission_control_url_set=True, ok=False, task_id=None,
+            department_slug=department_slug, source=source,
+            reason=f"queued after POST failure: {type(exc).__name__}: {exc}",
+            queued=True, event_id=stored["event_id"], attempts=receipt.get("attempts"))
+        return None
+    except cc_board_outbox.OutboxError as exc:
+        # Already acked (a replay): return the recorded card, never a new one.
+        receipt = ob.receipt(key)
+        if receipt["status"] == cc_board_outbox.STATUS_ACKED and receipt["ack_task_id"]:
+            return receipt["ack_task_id"]
+        _log(f"outbox claim refused ({exc}); build continues.")
+        return None
+
+    verdict, detail = _interpret_ingest_response(status, body)
+    if verdict == "delivered":
+        receipt = ob.ack(key, detail)
+        if is_parent:
+            try:
+                ob.record_parent(rid, detail)
+            except (cc_board_outbox.OutboxError, OSError, ValueError):
+                pass  # parent mapping is a convenience; the card already landed
+        _log(f"task {'created'} via durable outbox: task_id={detail} "
+             f"department={department_slug} http={status}")
+        _write_board_ingest_receipt(
+            evidence_root, mission_control_url_set=True, ok=True, task_id=detail,
+            department_slug=department_slug, source=wire_source,
+            reason=f"created via outbox (http={status})", queued=False,
+            event_id=stored["event_id"], attempts=receipt.get("attempts"))
+        return detail
+
+    retryable = verdict != "dead"
+    try:
+        receipt = ob.fail(key, detail, retryable=retryable)
+    except (cc_board_outbox.OutboxError, OSError, ValueError):
+        receipt = ob.receipt(key)
+    _log(f"POST /api/tasks/ingest {verdict} (HTTP {status}): {detail}; "
+         f"event {'queued' if retryable else 'dead-lettered'}; build continues.")
+    _write_board_ingest_receipt(
+        evidence_root, mission_control_url_set=True, ok=False, task_id=None,
+        department_slug=department_slug, source=wire_source,
+        reason=detail, queued=retryable, event_id=stored["event_id"],
+        attempts=receipt.get("attempts"))
+    return None
+
+
+def flush_outbox(
+    outbox_path: str,
+    *,
+    env: Optional[dict] = None,
+    limit: int = 20,
+    now: Optional[float] = None,
+) -> dict:
+    """Retry due BOARD events only. Each retry re-sends the SAME event (same
+    idempotency key); no business operation is re-executed. ``projects_sync``
+    events are skipped: they keep their own mapped logical action for WF33.
+    NEVER raises."""
+    summary = {"checked": 0, "delivered": 0, "queued": 0, "dead_letter": 0,
+               "skipped_domains": 0, "board": "ok", "counts": {}}
+    cfg = board_config(env)
+    if cfg is None:
+        summary["board"] = "disabled"
+        return summary
+    try:
+        ob = _outbox_for(outbox_path, env)
+    except (cc_board_outbox.OutboxError, OSError, ValueError) as exc:
+        summary["board"] = f"unavailable: {type(exc).__name__}: {exc}"
+        return summary
+
+    url = f"{cfg['base_url']}{cc_board_outbox.BOARD_ENDPOINT}"
+    try:
+        due = ob.due(now=now)
+        summary["checked"] = len(due)
+        for event in due[: max(0, int(limit))]:
+            if event["domain"] != "board":
+                summary["skipped_domains"] += 1
+                continue
+            key = event["idempotency_key"]
+            try:
+                ob.claim(key)
+            except cc_board_outbox.OutboxError:
+                summary["queued"] += 1
+                continue
+            try:
+                status, body = _post_json(url, event["request"], cfg)
+            except (urllib.error.URLError, OSError, ValueError) as exc:
+                receipt = ob.fail(key, f"{type(exc).__name__}: {exc}", retryable=True)
+                summary["queued"] += 1
+                _write_board_ingest_receipt(
+                    event.get("evidence_root"), mission_control_url_set=True, ok=False,
+                    task_id=None, department_slug=event["request"].get("department_slug"),
+                    source=event["request"].get("source"),
+                    reason=f"retry queued: {type(exc).__name__}: {exc}",
+                    queued=True, event_id=event["event_id"],
+                    attempts=receipt.get("attempts"))
+                continue
+
+            verdict, detail = _interpret_ingest_response(status, body)
+            if verdict == "delivered":
+                receipt = ob.ack(key, detail)
+                summary["delivered"] += 1
+                _write_board_ingest_receipt(
+                    event.get("evidence_root"), mission_control_url_set=True, ok=True,
+                    task_id=detail,
+                    department_slug=event["request"].get("department_slug"),
+                    source=event["request"].get("source"),
+                    reason=f"retried event delivered (http={status})", queued=False,
+                    event_id=event["event_id"], attempts=receipt.get("attempts"))
+            else:
+                receipt = ob.fail(key, detail, retryable=(verdict != "dead"))
+                summary["dead_letter" if verdict == "dead" else "queued"] += 1
+                _write_board_ingest_receipt(
+                    event.get("evidence_root"), mission_control_url_set=True, ok=False,
+                    task_id=None,
+                    department_slug=event["request"].get("department_slug"),
+                    source=event["request"].get("source"), reason=detail,
+                    queued=(verdict != "dead"), event_id=event["event_id"],
+                    attempts=receipt.get("attempts"))
+        summary["counts"] = ob.counts()
+    except (cc_board_outbox.OutboxError, OSError, ValueError) as exc:
+        summary["board"] = f"outbox error: {type(exc).__name__}: {exc}"
+    finally:
+        ob.close()
+    return summary
+
+
+def ingest_child_task(
+    title: str,
+    description: str = "",
+    *,
+    run_id: str,
+    operation_key: str,
+    family: str = "board",
+    parent_task_id: Optional[str] = None,
+    outbox_path: Optional[str] = None,
+    evidence_root: Optional[str] = None,
+    env: Optional[dict] = None,
+    **ingest_kwargs,
+) -> Optional[str]:
+    """Ingest an engine-owned CHILD card against an EXISTING parent.
+
+    The parent is reused from ``parent_task_id`` or the run's recorded parent
+    mapping; if neither exists the child is not created (never a fabricated
+    parent). Children carry ``source: "ghl-hybrid"``. NEVER raises."""
+    path = resolve_outbox_path(outbox_path, env, evidence_root)
+    if not path:
+        _log("ingest_child_task skipped — no outbox configured (no parent ledger).")
+        return None
+    parent = (parent_task_id or "").strip()
+    if not parent:
+        try:
+            ob = _outbox_for(path, env)
+            parent = ob.parent_for(run_id) or ""
+            ob.close()
+        except (cc_board_outbox.OutboxError, OSError, ValueError) as exc:
+            _log(f"ingest_child_task: parent lookup failed ({exc}); child not created.")
+            return None
+    if not parent:
+        _log(f"ingest_child_task skipped — no existing parent for run {run_id!r}.")
+        return None
+    return ingest_task(
+        title, description, run_id=run_id, operation_key=operation_key,
+        family=family, parent_task_id=parent, outbox_path=path,
+        evidence_root=evidence_root, env=env, **ingest_kwargs,
+    )
+
+
+def outbox_status(outbox_path: str, *, env: Optional[dict] = None) -> dict:
+    """Read-only outbox summary for operators and tests. NEVER raises."""
+    try:
+        ob = _outbox_for(outbox_path, env)
+    except (cc_board_outbox.OutboxError, OSError, ValueError) as exc:
+        return {"available": False, "error": f"{type(exc).__name__}: {exc}"}
+    try:
+        events = ob.events()
+        return {
+            "available": True,
+            "counts": ob.counts(),
+            "pending": [e["idempotency_key"] for e in events
+                        if e["status"] == cc_board_outbox.STATUS_PENDING],
+            "last_error": next((e["last_error"] for e in reversed(events)
+                                if e["last_error"]), None),
+        }
+    finally:
+        ob.close()
+
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +637,13 @@ def ingest_task(
     bundle_sha: Optional[str] = None,
     env: Optional[dict] = None,
     evidence_root: Optional[str] = None,
+    run_id: Optional[str] = None,
+    operation_key: Optional[str] = None,
+    family: Optional[str] = None,
+    parent_task_id: Optional[str] = None,
+    is_parent: bool = False,
+    outbox_path: Optional[str] = None,
+    secret_values=None,
 ) -> Optional[str]:
     """POST one funnel/website job to /api/tasks/ingest.
 
@@ -369,6 +731,23 @@ def ingest_task(
                           ``cc_board.py reconcile`` an on-disk trail to sweep.
                           Omit (the default) for byte-identical legacy behavior —
                           no receipt is written and nothing else changes.
+        run_id:           OPTIONAL (WF20). Stable run identity for the durable
+                          outbox; defaults to an adhoc id derived from the
+                          idempotency key. Retries keep it stable.
+        operation_key:    OPTIONAL (WF20). Logical operation name inside the run.
+        family:           OPTIONAL (WF20). Operation family (course, community,
+                          meeting_room, course/Community/added native families).
+        parent_task_id:   OPTIONAL (WF20). Reuse an EXISTING parent card for an
+                          engine-owned child; the producer never creates a second
+                          parent for the same run.
+        is_parent:        OPTIONAL (WF20). Record this card as the run's parent
+                          (source becomes 'ghl-hybrid') for later child reuse.
+        outbox_path:      OPTIONAL (WF20). Durable outbox file. Defaults to
+                          CC_BOARD_OUTBOX, else <evidence_root>/routing/
+                          board-outbox.sqlite3. Unset everywhere => legacy
+                          direct POST, unchanged.
+        secret_values:    OPTIONAL. Resolved secret VALUES to scrub from the
+                          durable event in addition to the standard secret shapes.
 
     Returns:
         task_id (str) on success — the CC UUID for this board card.
@@ -506,6 +885,16 @@ def ingest_task(
         sha = (bundle_sha or "").strip()
         if sha:
             payload["bundle_sha"] = sha
+
+    outbox_file = resolve_outbox_path(outbox_path, env, evidence_root)
+    if outbox_file:
+        return _ingest_via_outbox(
+            cfg=cfg, payload=payload, key=key, department_slug=department_slug,
+            source=source, outbox_file=outbox_file, run_id=run_id,
+            operation_key=operation_key, family=family,
+            parent_task_id=parent_task_id, is_parent=is_parent,
+            evidence_root=evidence_root, secret_values=secret_values, env=env,
+        )
 
     url = f"{cfg['base_url']}/api/tasks/ingest"
     try:
@@ -2538,6 +2927,128 @@ def _reconcile_cli(argv: Optional[list] = None) -> int:
     return 0  # non-gating — always exit 0, per B-U13
 
 
+
+def _outbox_selftest() -> int:
+    """WF20 durable outbox self-test — no network. Returns 0 on pass."""
+    import tempfile
+
+    errors: list[str] = []
+    env = {"MISSION_CONTROL_URL": "https://x.example.com"}
+    calls: list[dict] = []
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "board-outbox.sqlite3")
+
+        def _timeout(url, payload, cfg, method="POST"):
+            calls.append(dict(payload))
+            raise urllib.error.URLError("board timed out")
+
+        orig = globals()["_post_json"]
+        globals()["_post_json"] = _timeout
+        try:
+            # 1. Board timeout: event queued, ingest returns None, no raise.
+            try:
+                rc = ingest_task("Outbox job", env=env, outbox_path=path,
+                                 run_id="run-1", operation_key="course:1",
+                                 family="course")
+                if rc is not None:
+                    errors.append("ingest_task(outbox, timeout) should return None")
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"ingest_task(outbox, timeout) raised: {exc}")
+            st = outbox_status(path, env=env)
+            if (st.get("counts") or {}).get("pending") != 1:
+                errors.append(f"timeout must queue one pending event, got {st!r}")
+        finally:
+            globals()["_post_json"] = orig
+
+        # 2. Retry re-sends the SAME event and acks it; a second flush is a no-op.
+        def _ok(url, payload, cfg, method="POST"):
+            calls.append(dict(payload))
+            return 201, {"task_id": "task-outbox-1", "deduped": False}
+
+        orig = globals()["_post_json"]
+        globals()["_post_json"] = _ok
+        try:
+            before = len(calls)
+            summary = flush_outbox(path, env=env, now=time.time() + 3600)
+            if summary.get("delivered") != 1:
+                errors.append(f"flush_outbox should deliver 1, got {summary!r}")
+            if len(calls) != before + 1:
+                errors.append("flush_outbox must send exactly one event")
+            if calls[-1].get("idempotency_key") is None:
+                errors.append("retried event lost its idempotency key")
+            after = len(calls)
+            flush_outbox(path, env=env, now=time.time() + 7200)
+            if len(calls) != after:
+                errors.append("acked event must never be redelivered")
+            counts = outbox_status(path, env=env)["counts"]
+            if counts.get("acked") != 1:
+                errors.append(f"ack must be recorded, got {counts!r}")
+        finally:
+            globals()["_post_json"] = orig
+
+        # 3. Parent recorded once, child reuses it, child source is ghl-hybrid.
+        def _parent(url, payload, cfg, method="POST"):
+            calls.append(dict(payload))
+            return 201, {"task_id": "parent-1"}
+
+        orig = globals()["_post_json"]
+        globals()["_post_json"] = _parent
+        try:
+            ingest_task("Parent job", env=env, outbox_path=path, run_id="run-2",
+                        operation_key="course:parent", family="course", is_parent=True)
+            if calls[-1].get("source") != cc_board_outbox.ENGINE_SOURCE:
+                errors.append("is_parent ingest must carry source ghl-hybrid")
+            child = ingest_child_task(
+                "Child job", env=env, outbox_path=path, run_id="run-2",
+                operation_key="course:child", family="course")
+            if child != "parent-1":
+                errors.append(f"child should reuse the parent card, got {child!r}")
+        finally:
+            globals()["_post_json"] = orig
+
+        ob = cc_board_outbox.BoardOutbox(path)
+        try:
+            child_ev = ob.event("board.ingest:adhoc")
+        except cc_board_outbox.OutboxError:
+            child_ev = None
+        finally:
+            ob.close()
+        # The child reuses the parent mapping; find it by title.
+        ob = cc_board_outbox.BoardOutbox(path)
+        try:
+            child_events = [e for e in ob.events() if e["request"].get("title") == "Child job"]
+        finally:
+            ob.close()
+        if not child_events or child_events[-1]["parent_task_id"] != "parent-1":
+            errors.append("child event must carry the EXISTING parent_task_id")
+        elif child_events[-1]["source"] != cc_board_outbox.ENGINE_SOURCE:
+            errors.append("child event must carry source ghl-hybrid")
+
+        # 4. Unknown source refused (fail closed, no crash).
+        ob = cc_board_outbox.BoardOutbox(path)
+        try:
+            try:
+                ev = cc_board_outbox.build_event(
+                    idempotency_key="bad-source", request={"title": "x"},
+                    run_id="run-3", operation_key="x", family="board",
+                    source="not-a-source")
+                ob.enqueue(ev)
+                errors.append("unknown source must be refused")
+            except cc_board_outbox.OutboxError:
+                pass
+        finally:
+            ob.close()
+
+    if errors:
+        for e in errors:
+            print(f"  FAIL: {e}", file=sys.stderr)
+        print(f"[outbox-selftest] FAIL — {len(errors)} error(s)", file=sys.stderr)
+        return 1
+    print("[outbox-selftest] PASS — all checks passed (no network required)")
+    return 0
+
+
 def _demo(env: Optional[dict] = None) -> int:
     """Live demo — POST a test task to the board and print the result."""
     cfg = board_config(env)
@@ -2606,6 +3117,15 @@ if __name__ == "__main__":
     parser.add_argument("--passed", default="", help="'1'/'0'/'true'/'false' explicit PASS/FAIL (with --emit-qc)")
     parser.add_argument("--scorecard", default="", help="Path to the scorecard JSON (with --emit-qc). If --score is "
                                                         "omitted, a numeric 'score' key is read from this file.")
+    # WF20 — durable outbox retry + status (fail-soft; never a build gate).
+    parser.add_argument("--retry-pending", action="store_true",
+                        help="Retry due board-outbox events (same event, never the business operation).")
+    parser.add_argument("--outbox", default="",
+                        help="Outbox file for --retry-pending/--outbox-status (default: CC_BOARD_OUTBOX).")
+    parser.add_argument("--limit", type=int, default=20,
+                        help="Max events per --retry-pending pass (default 20).")
+    parser.add_argument("--outbox-status", action="store_true",
+                        help="Print a read-only outbox summary.")
     args = parser.parse_args()
 
     if args.selftest:
@@ -2616,13 +3136,28 @@ if __name__ == "__main__":
         rc_u9 = _u9_selftest()
         rc_persona_used = _persona_used_selftest()
         rc_ingest_persona = _ingest_persona_selftest()
+        rc_outbox = _outbox_selftest()
         sys.exit(0 if (rc_ingest == 0 and rc_status == 0 and rc_activity == 0
                        and rc_phase == 0 and rc_u9 == 0 and rc_persona_used == 0
-                       and rc_ingest_persona == 0) else 1)
+                       and rc_ingest_persona == 0 and rc_outbox == 0) else 1)
     elif args.status_selftest:
         sys.exit(_status_selftest())
     elif args.u9_selftest:
         sys.exit(_u9_selftest())
+    elif args.retry_pending:
+        _path = args.outbox.strip() or resolve_outbox_path(None, None, None)
+        if not _path:
+            _log("--retry-pending requires --outbox or CC_BOARD_OUTBOX; skipped (no-op).")
+            sys.exit(0)
+        print(json.dumps(flush_outbox(_path, limit=args.limit), indent=2))
+        sys.exit(0)
+    elif args.outbox_status:
+        _path = args.outbox.strip() or resolve_outbox_path(None, None, None)
+        if not _path:
+            _log("--outbox-status requires --outbox or CC_BOARD_OUTBOX; skipped (no-op).")
+            sys.exit(0)
+        print(json.dumps(outbox_status(_path), indent=2))
+        sys.exit(0)
     elif args.emit_qc:
         # Fail-soft QC emission for the shell gates. Never a build-blocker: any
         # problem prints to stderr and exits 0 so a QC gate's own exit code (the

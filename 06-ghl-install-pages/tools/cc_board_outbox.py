@@ -76,6 +76,7 @@ DEFAULT_BACKOFF_CAP_S = 64.0
 DEFAULT_LEASE_S = 300.0
 
 _SECRET_KEY_RE = None
+_TEXT_ASSIGN_RE = None
 
 
 class OutboxError(ValueError):
@@ -137,11 +138,50 @@ def _redact_keys(obj: Any) -> Tuple[Any, int]:
     return obj, 0
 
 
+def _text_assign_re():
+    global _TEXT_ASSIGN_RE
+    if _TEXT_ASSIGN_RE is None:
+        import re
+        # Secret-NAMED assignments inside free text ("api_token=...",
+        # "client_secret: ..."). The generic scrubber misses names like
+        # "api_token" because the underscore is a word character, so the
+        # "token" alternative has no word boundary there.
+        _TEXT_ASSIGN_RE = re.compile(
+            r"(?i)\b([A-Za-z0-9_-]*(?:token|secret|password|passwd|api[_-]?key"
+            r"|authorization|cookie)[A-Za-z0-9_-]*)(\s*[:=]\s*)"
+            r"(\"[^\"]{4,}\"|'[^']{4,}'|[^\s,;\"'}\]]{4,})"
+        )
+    return _TEXT_ASSIGN_RE
+
+
+def _redact_text_values(obj: Any) -> Tuple[Any, int]:
+    if isinstance(obj, str):
+        out, n = _text_assign_re().subn(
+            lambda m: f"{m.group(1)}{m.group(2)}{ghl_evidence.REDACTED}", obj)
+        return out, n
+    if isinstance(obj, dict):
+        out, count = {}, 0
+        for key, value in obj.items():
+            scrubbed, n = _redact_text_values(value)
+            out[key] = scrubbed
+            count += n
+        return out, count
+    if isinstance(obj, list):
+        out_list, count = [], 0
+        for value in obj:
+            scrubbed, n = _redact_text_values(value)
+            out_list.append(scrubbed)
+            count += n
+        return out_list, count
+    return obj, 0
+
+
 def redact_request(request: dict, *, secret_values=None) -> Tuple[dict, int]:
     """Return (redacted_request, redaction_count). Never mutates the input."""
     key_redacted, key_count = _redact_keys(request)
-    shape_redacted, shape_count = ghl_evidence.scrub_obj(key_redacted, secret_values)
-    return shape_redacted, key_count + shape_count
+    text_redacted, text_count = _redact_text_values(key_redacted)
+    shape_redacted, shape_count = ghl_evidence.scrub_obj(text_redacted, secret_values)
+    return shape_redacted, key_count + text_count + shape_count
 
 
 def validate_event(event: dict) -> None:
