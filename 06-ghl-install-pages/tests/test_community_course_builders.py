@@ -24,17 +24,41 @@ import ghl_community_builder as cb  # noqa: E402
 import ghl_course_builder as course  # noqa: E402
 
 
-# ── router registration (U7 / §3) ────────────────────────────────────────────
-@pytest.mark.parametrize("obj", ["community", "course", "channel"])
-def test_router_registers_new_objects(obj):
+# ── router registration (U7 / §3, split by WF07 / doc 1 D02) ─────────────────
+@pytest.mark.parametrize("obj", ["community", "community_group", "channel"])
+def test_router_keeps_community_authoring_browser_only(obj):
+    """Community/group/channel AUTHORING has no public create contract."""
     r = router.route(obj)
     assert r.object_type == obj
-    assert r.create_api_exists is False          # browser is the ONLY create rail
+    assert r.create_api_exists is False
     assert r.rails[0].rail == router.Rail.BROWSER
     assert r.rails[0].tier == router.Tier.BROWSER
-    # disclosure line is emitted per spec §3 / Skill 36
     disc = router.tier_disclosure(r.rails[0])
     assert disc.startswith("[GHL tier used: 4")
+
+
+@pytest.mark.parametrize("obj", ["course", "course_module", "course_lesson"])
+def test_router_routes_course_crud_through_public_adapter(obj):
+    """D02: course CRUD is public-API-first; the browser is a preserved fallback.
+
+    This test REPLACES the old assertion that a course has no public API — that
+    contract is obsolete (doc 1 s8.1: "Remove tests that assert courses have no
+    public API").
+    """
+    r = router.route(obj)
+    assert r.create_api_exists is True
+    assert r.rails[0].rail == router.Rail.PUBLIC_ADAPTER
+    assert any(s.rail == router.Rail.BROWSER for s in r.rails), \
+        "the managed-browser fallback must be preserved, not deleted"
+    assert router.pending_registry_operations(obj), \
+        f"{obj} must name the public operation rows it needs from WF00"
+
+
+def test_course_and_community_never_share_a_route_set():
+    """The D02 split is structural, not a comment: separate object types."""
+    assert router.route("course").rail_names() != router.route("community").rail_names()
+    assert router.route("course").idempotency_key == "logical_key_manifest"
+    assert router.route("community_group").create_api_exists is False
 
 
 # ── community THINK layer ─────────────────────────────────────────────────────
@@ -110,15 +134,37 @@ def test_selector_map_has_no_locked_inarea_targets_yet():
 
 
 # ── course THINK layer ────────────────────────────────────────────────────────
-def test_course_module_lesson_dedupe_and_draft_default():
+def test_course_same_title_lessons_survive_with_distinct_keys_and_draft_default():
+    """A09: duplicate display titles are legal; identity is the logical key.
+
+    The old test asserted title-based dedupe dropped the second "Intro". That was
+    the defect (doc 1 s8.2), not the contract.
+    """
     task = {"course_name": "Launch", "location_id": "L", "modules": [
         {"title": "Welcome", "lessons": [{"title": "Intro"}, {"title": "Intro"}]},
         {"title": "Welcome", "lessons": []}]}
     plan = course.plan_course(task)
     assert plan["course_name"] == "ZHC Launch"
-    assert [m["title"] for m in plan["modules"]] == ["Welcome"]
-    assert len(plan["modules"][0]["lessons"]) == 1
+    assert [m["title"] for m in plan["modules"]] == ["Welcome", "Welcome"]
+    lessons = plan["modules"][0]["lessons"]
+    assert len(lessons) == 2, "same-title lessons must both survive"
+    assert [l["lesson_key"] for l in lessons] == ["intro", "intro-2"]
+    assert len({l["identity_key"] for l in lessons}) == 2
     assert plan["publish"] is False                    # default DRAFT
+
+
+def test_course_plan_rejects_duplicate_logical_keys_and_cycles():
+    import ghl_course_delivery as delivery
+    dup = {"course_name": "L", "location_id": "L", "modules": [
+        {"title": "A", "module_key": "m", "lessons": []},
+        {"title": "B", "module_key": "m", "lessons": []}]}
+    with pytest.raises(delivery.CoursePlanError):
+        course.plan_course(dup)
+    cyc = {"course_name": "L", "location_id": "L", "modules": [
+        {"title": "A", "module_key": "a", "parent_module_key": "b", "lessons": []},
+        {"title": "B", "module_key": "b", "parent_module_key": "a", "lessons": []}]}
+    with pytest.raises(delivery.CoursePlanError):
+        course.plan_course(cyc)
 
 
 def test_course_publish_requires_approval():

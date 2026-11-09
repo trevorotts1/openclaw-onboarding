@@ -114,10 +114,24 @@ def test_map_only_preflight_stops_when_a_create_would_be_needed():
 # Router — matrix + decision doctrine
 # ---------------------------------------------------------------------------
 def test_browser_only_objects_have_no_create_api():
-    for t in ("form", "survey", "community", "course", "channel"):
+    """Community/group/channel AUTHORING has no public create contract (D02).
+
+    ``course`` was removed from this list by WF07: course CRUD is a public-API
+    family now (doc 1 s8) and is asserted separately below.
+    """
+    for t in ("form", "survey", "community", "community_group", "channel"):
         r = router.route(t)
         assert r.create_api_exists is False
         assert r.rails[0].rail == router.Rail.BROWSER
+
+
+def test_course_crud_is_public_api_first_with_browser_fallback():
+    """D02: course CRUD leads with the public adapter; the browser is preserved."""
+    for t in ("course", "course_module", "course_lesson"):
+        r = router.route(t)
+        assert r.create_api_exists is True
+        assert r.rails[0].rail == router.Rail.PUBLIC_ADAPTER
+        assert any(s.rail == router.Rail.BROWSER for s in r.rails)
 
 
 def test_api_first_objects_lead_with_non_browser_rail():
