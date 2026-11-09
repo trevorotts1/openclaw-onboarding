@@ -1,0 +1,323 @@
+{
+  "_doc": "Machine-readable selector map for the Skill-6 MEETING ROOM operator (06-ghl-install-pages/tools/ghl_meeting_rooms.py). Every target in this file is DEDICATED to Meeting Rooms so no Community/Course selector is reused for a meeting surface. Anchors are recorded in Playwright getBy* notation and translated to agent-browser 0.27.0 `find` / native-eval calls by ghl_ab_executor.py. NO node here has been captured live in this lane: live GoHighLevel writes are out of scope for the builder lane, so every target is `capture-pending` and the D8 gate STOP-and-reports until a real capture run flips it to `locked`.",
+  "_status_legend": {
+    "capture-pending": "NOT captured live. D8: NO invented CSS. A REQUIRED capture-pending anchor makes the live operator STOP-and-report. It never becomes a guessed click.",
+    "locked": "LOCKed by a live capture run for THIS surface (create a scratch room, walk it, record the real anchor + confidence, remove it). Safe to drive.",
+    "verified-shared-rail": "Confirmed on the shared leadconnector app rail and cited from an existing captured map. Safe to act on."
+  },
+  "_exec_legend": {
+    "auto": "ghl_ab_executor: `find <locator> <value> click [--name]`, native-eval .click() fallback on a find miss (default).",
+    "native": "Trusted DOM element.click() via eval. REQUIRED for GHL Naive-UI submit/save buttons that report Done without firing the handler.",
+    "scoped-native": "Card/row-scoped native eval: locate the object's OWN card by name first, then click a control WITHIN it, so a global first-match can never hit another host's room."
+  },
+  "_capture_contract": "Flip a target to status:'locked' ONLY by a live capture run: open Meeting Room, create a scratch room owned by the authorized test host, record each real anchor + confidence in this file, read the room back after Save, then remove the scratch room through an explicitly authorized cleanup. Record the capture date and location alias (never a client name).",
+  "_capture_pending_reason": "WF26 lane: no authorized live GoHighLevel write in this run. Capture is named external activation evidence, not fabricated selectors.",
+  "_pinned_agent_browser": "0.27.0",
+  "meeting_room": {
+    "routes": {
+      "meeting_rooms_list": {
+        "status": "capture-pending",
+        "kind": "route",
+        "anchor": "/v2/location/<LOCATION_ID>/meeting-room",
+        "fallbacks": ["navigate the route directly after landing", "left-rail entry"],
+        "conf": 0,
+        "observed": "NOT observed in this lane. The help article documents Meeting Room > My room > Create room; it does not publish an app route.",
+        "note": "Replace the anchor only with a route read from a real address bar during capture."
+      },
+      "my_room": {
+        "status": "capture-pending",
+        "kind": "route",
+        "anchor": "<ROUTE_READ_FROM_CAPTURE>/my-room",
+        "fallbacks": ["Meeting Room left-rail item then My room card"],
+        "conf": 0,
+        "note": "Documented entry point per the vendor help article; route NOT observed here."
+      }
+    },
+    "nav": {
+      "meeting_room_rail_item": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Meeting Room')",
+        "fallbacks": ["getByRole('link', { name: /Meeting Room/ })"],
+        "conf": 0,
+        "note": "Label is documented; the exact node type (SPAN vs link) is NOT observed."
+      },
+      "my_room_card": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('My room')",
+        "fallbacks": ["getByRole('heading', { name: /My room/ })"],
+        "conf": 0
+      }
+    },
+    "inventory": {
+      "room_list_container": {
+        "status": "capture-pending",
+        "kind": "get_role",
+        "anchor": "getByRole('list')",
+        "fallbacks": ["snapshot text sweep of the room cards"],
+        "conf": 0,
+        "note": "Needed to REUSE an approved existing room instead of creating duplicates on every run."
+      },
+      "room_card_by_name": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "card-scoped match on the room name (never a global first match)",
+        "fallbacks": ["exact-name text node then its enclosing card"],
+        "conf": 0
+      }
+    },
+    "my_room": {
+      "create_room_button": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: /Create room|Create Room/ })",
+        "fallbacks": ["getByText('Create room')"],
+        "conf": 0
+      },
+      "room_name_input": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "anchor": "getByPlaceholder('Room name')",
+        "fallbacks": ["label 'Name' within the room details panel"],
+        "conf": 0
+      },
+      "room_save_button": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: 'Save' })",
+        "exec": "native",
+        "fallbacks": ["getByText('Saved') as the persisted marker, never as the click"],
+        "conf": 0,
+        "note": "The vendor flow saves room details, security and co-hosts; a toast alone is NOT proof."
+      },
+      "reopen_entry": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('My room')",
+        "fallbacks": ["navigate the my_room route then read the persisted panel"],
+        "conf": 0,
+        "note": "Save-and-reopen proof: the operator re-enters and reads name/owner/link/security/co-hosts."
+      }
+    },
+    "security": {
+      "waiting_room_toggle": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Waiting room')",
+        "fallbacks": ["toggle adjacent to the documented admission policy label"],
+        "conf": 0
+      },
+      "passcode_toggle": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Passcode')",
+        "fallbacks": ["security section toggle, captured by position within the section"],
+        "conf": 0
+      },
+      "passcode_input": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "anchor": "getByPlaceholder('Passcode')",
+        "fallbacks": ["input following the passcode toggle"],
+        "conf": 0,
+        "note": "The VALUE is a secret reference resolved at run time. The operator never writes the value to evidence, receipts or the plan."
+      },
+      "guest_access_toggle": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Guest access')",
+        "fallbacks": ["documented guest-access control in the security section"],
+        "conf": 0
+      },
+      "cohost_add_control": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: /Add co-host|Add cohost/ })",
+        "fallbacks": ["identity field below the co-host heading"],
+        "conf": 0
+      },
+      "cohost_user_input": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "anchor": "getByPlaceholder('Search users')",
+        "fallbacks": ["co-host picker input"],
+        "conf": 0
+      },
+      "cohost_confirm": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: /Add|Confirm/ })",
+        "exec": "native",
+        "fallbacks": ["row-scoped confirm inside the picker"],
+        "conf": 0
+      }
+    },
+    "calendar": {
+      "meeting_location_select": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Meeting location')",
+        "fallbacks": ["Calendar settings row for the appointment"],
+        "conf": 0,
+        "note": "Skill 44 owns the supported Calendar/Appointment API. This control is used ONLY through the managed UI when no verified API field exists."
+      },
+      "native_room_option": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText(/HighLevel Meeting Room|Meeting Room/)",
+        "fallbacks": ["option list within the meeting location selector"],
+        "conf": 0
+      },
+      "custom_link_option": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Custom')",
+        "fallbacks": ["custom meeting location row"],
+        "conf": 0,
+        "note": "Reusable static link path. Label it reusable; it is NOT appointment-isolated."
+      },
+      "custom_link_input": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "anchor": "getByPlaceholder('https://')",
+        "fallbacks": ["custom location URL field"],
+        "conf": 0
+      }
+    },
+    "guest_join": {
+      "join_page_heading": {
+        "status": "capture-pending",
+        "kind": "get_role",
+        "anchor": "getByRole('heading')",
+        "fallbacks": ["snapshot text sweep for the room name on the join page"],
+        "conf": 0
+      },
+      "guest_name_input": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "anchor": "getByPlaceholder('Your name')",
+        "fallbacks": ["name field on the join page"],
+        "conf": 0
+      },
+      "passcode_input": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "anchor": "getByPlaceholder('Passcode')",
+        "fallbacks": ["passcode field on the join page"],
+        "conf": 0
+      },
+      "join_button": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: /Join/ })",
+        "exec": "native",
+        "fallbacks": ["primary button on the join page"],
+        "conf": 0
+      },
+      "waiting_room_indicator": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText(/waiting|admit/i)",
+        "fallbacks": ["guest waiting state text"],
+        "conf": 0
+      }
+    },
+    "host_controls": {
+      "admit_button": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: /Admit/ })",
+        "fallbacks": ["participant row action in the host panel"],
+        "conf": 0
+      },
+      "participant_list": {
+        "status": "capture-pending",
+        "kind": "get_role",
+        "anchor": "getByRole('list', { name: /participants/i })",
+        "fallbacks": ["host panel participant rows"],
+        "conf": 0
+      }
+    },
+    "media": {
+      "start_video": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: /camera|video/i })",
+        "fallbacks": ["media control bar"],
+        "conf": 0,
+        "note": "NEVER clicked to prove a button exists. Only after an approved rehearsal with working devices."
+      },
+      "start_audio": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: /microphone|mic/i })",
+        "fallbacks": ["media control bar"],
+        "conf": 0
+      },
+      "screen_share": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: /share/i })",
+        "fallbacks": ["media control bar"],
+        "conf": 0
+      },
+      "record_button": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: /record/i })",
+        "fallbacks": ["host menu recording item"],
+        "conf": 0,
+        "note": "Recording requires an explicit client policy and approval reference in the plan."
+      },
+      "transcription_toggle": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText(/transcri/i)",
+        "fallbacks": ["meeting settings transcription control"],
+        "conf": 0,
+        "note": "The vendor documents that transcription must be enabled during the meeting for transcript-based outputs. Recording ON is not transcription ON."
+      },
+      "breakout_create": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: /breakout/i })",
+        "fallbacks": ["host panel breakout item"],
+        "conf": 0
+      },
+      "breakout_assign": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText(/assign/i)",
+        "fallbacks": ["breakout assignment panel"],
+        "conf": 0,
+        "note": "Created/assigned is NOT proof participants moved."
+      },
+      "breakout_open": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: /open/i })",
+        "fallbacks": ["breakout open-all control"],
+        "conf": 0
+      }
+    },
+    "cleanup": {
+      "delete_room_control": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText(/delete/i)",
+        "fallbacks": ["room settings danger zone"],
+        "conf": 0,
+        "note": "Deletion is separately authorized. Existing production rooms are NEVER deleted, disabled or migrated as implicit cleanup (IG-MEET-09)."
+      },
+      "delete_confirm": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: /Delete|Confirm/ })",
+        "exec": "native",
+        "fallbacks": ["type-to-proceed confirm dialog"],
+        "conf": 0
+      }
+    }
+  }
+}

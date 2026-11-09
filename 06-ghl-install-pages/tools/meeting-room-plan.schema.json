@@ -1,0 +1,138 @@
+{
+  "$id": "meeting-room-plan/1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "allow_guests": {
+      "type": "boolean"
+    },
+    "approval_references": {
+      "type": "array"
+    },
+    "breakout_requested": {
+      "type": "boolean"
+    },
+    "buffer_after_minutes": {
+      "type": "integer"
+    },
+    "buffer_before_minutes": {
+      "type": "integer"
+    },
+    "calendar_id": {
+      "type": "string"
+    },
+    "cleanup_authorization": {
+      "type": "string"
+    },
+    "cohost_user_ids": {
+      "type": "array"
+    },
+    "course_id": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "duration_minutes": {
+      "type": "integer"
+    },
+    "event_id": {
+      "type": "string"
+    },
+    "existing_room_reference": {
+      "type": "string"
+    },
+    "host_user_id": {
+      "description": "Staff user that must OWN the room. Required; never defaulted to the operator.",
+      "type": "string"
+    },
+    "location_id": {
+      "description": "GHL sub-account. The subaccount gate runs before any write.",
+      "type": "string"
+    },
+    "migration_authorization": {
+      "type": "string"
+    },
+    "notice_minutes": {
+      "type": "integer"
+    },
+    "notification_policy": {
+      "type": "string"
+    },
+    "object_type": {
+      "type": "string"
+    },
+    "participant_audience": {
+      "type": "string"
+    },
+    "passcode_secret_reference": {
+      "description": "Secret REFERENCE only. plan_room() refuses a literal passcode value.",
+      "type": "string"
+    },
+    "plan_version": {
+      "type": "string"
+    },
+    "purpose": {
+      "type": "string"
+    },
+    "recording_policy": {
+      "type": "string"
+    },
+    "recurrence": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "requested_outputs": {
+      "type": "array"
+    },
+    "retention_and_sharing_policy": {
+      "type": "string"
+    },
+    "review_owner": {
+      "type": "string"
+    },
+    "room_link_mode": {
+      "description": "Internal label only; translate through observed UI controls or a verified API field.",
+      "enum": [
+        "reusable",
+        "appointment_unique",
+        "existing_room"
+      ],
+      "type": "string"
+    },
+    "schedule_timezone": {
+      "type": "string"
+    },
+    "slug": {
+      "type": "string"
+    },
+    "sub_results": {
+      "description": "Honest per-capability sub-results (Document 1 \u00a723.9). A requested but untested capability is never 'verified'.",
+      "type": "object"
+    },
+    "summary_policy": {
+      "type": "string"
+    },
+    "transcription_language": {
+      "type": "string"
+    },
+    "transcription_policy": {
+      "type": "string"
+    },
+    "waiting_room_policy": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "object_type",
+    "plan_version",
+    "location_id",
+    "host_user_id",
+    "room_link_mode",
+    "sub_results"
+  ],
+  "title": "Meeting room plan (workflow WF26)",
+  "type": "object"
+}
