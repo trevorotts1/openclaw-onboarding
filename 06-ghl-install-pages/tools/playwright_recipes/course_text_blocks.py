@@ -21,6 +21,28 @@ COMMON=blocks.COMMON
 TYPES=('Category Block','Custom Block','Text Block','Image Block')
 EDITOR='div[contenteditable="true"].tiptap.ProseMirror.general-courses-editor'
 PREVIEW_OWNER='#content-container > div.col-span-9.flex.flex-col.gap-4'
+AUTHORED_PREVIEWS='#content-container, .welcome-hero-image, .instructor-card'
+
+
+def _inspector_caption(page,caption):
+    """Require the captured native caption outside measured authored regions.
+
+    Exact text alone is ambiguous when a legitimate Content/course title is
+    the same caption. Exclude the captured RTE and preview owners (including
+    an ancestor that only matches because it contains authored content),
+    without guessing a heading class or accepting an absent native caption.
+    """
+    matches=page.get_by_text(caption,exact=True);native=[]
+    for index in range(matches.count()):
+        candidate=matches.nth(index)
+        if not candidate.is_visible():continue
+        if candidate.evaluate('''(element, owners) => !owners.some(selector =>
+            element.closest(selector) || element.querySelector(selector))''',
+                [EDITOR,AUTHORED_PREVIEWS]):
+            native.append(candidate)
+    if len(native)!=1:
+        raise Stop('Native '+caption+' inspector heading changed or is ambiguous outside captured authored regions')
+    return native[0]
 
 
 def _content(value):
@@ -154,7 +176,7 @@ def _open(page,plan,identity):
     click(row.locator(':scope > div.w-full.hl-text-md-medium'))
     wait_until(lambda:_selected_preview(page,inventory,identity).is_visible(),
         'Native Text Block selection did not bind its exact preview order')
-    theme._one(page.get_by_text('Text Block',exact=True),'Native Text Block inspector heading changed')
+    _inspector_caption(page,'Text Block')
     delete=theme._one(page.locator('#delete-block-btn'),'Native Text Block inspector Delete control changed')
     if delete.inner_text().strip()!='Delete Block':raise Stop('Native Text Block inspector identity changed')
     return inventory,_selected_preview(page,inventory,identity)

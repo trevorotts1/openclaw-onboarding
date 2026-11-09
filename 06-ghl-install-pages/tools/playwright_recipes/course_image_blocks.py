@@ -148,7 +148,7 @@ def _open(page,plan,identity):
     click(row.locator(':scope > div.w-full.hl-text-md-medium'))
     preview=text._selected_preview(page,inventory,identity,'Image Block')
     image=theme._one(preview.locator('img[alt="Image block '+identity+'"]'),'Native Image Block UUID-bound image changed')
-    theme._one(page.get_by_text('Image',exact=True),'Native Image Block inspector heading changed')
+    text._inspector_caption(page,'Image')
     theme._one(page.get_by_role('button',name='Delete Block',exact=True),'Native Image Block inspector changed')
     return inventory,image
 
