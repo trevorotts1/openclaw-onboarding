@@ -70,12 +70,37 @@ from .transport import RequestsTransport, Transport, TransportResponse
 OPERATION_ID = "locations.create"
 OPERATION_METHOD = "POST"
 OPERATION_PATH = "/locations"
-OPERATION_VERSION = "2021-07-28"
 OPERATION_SCOPES: tuple[str, ...] = ("locations.write",)
 OPERATION_DOC_URL = (
     "https://marketplace.gohighlevel.com/docs/ghl/locations/create-location"
 )
 DOC_FETCH_DATE = "2026-11-08"
+
+
+@dataclass(frozen=True)
+class AgencyOperationRow:
+    """This operation's OWN frozen row.
+
+    The Version literal lives on the row (freeze 1.3 step 3: Version is a
+    property of a row).  No module-level version constant exists, so the
+    public package keeps its no-global-default guarantee; every call reads
+    OPERATION.version.
+    """
+
+    operation_id: str = OPERATION_ID
+    method: str = OPERATION_METHOD
+    path_template: str = OPERATION_PATH
+    version: str = "2021-07-28"
+    scopes: tuple[str, ...] = OPERATION_SCOPES
+    auth_kind: AuthKind = AuthKind.agency_pit
+    tenant_binding: str = "body.companyId"
+    write: bool = True
+    approval_required: bool = True
+    doc_url: str = OPERATION_DOC_URL
+    doc_fetch_date: str = DOC_FETCH_DATE
+
+
+OPERATION = AgencyOperationRow()
 
 APPROVAL_KIND = "automation_write"
 APPROVAL_ACTION = "locations.create"
@@ -456,7 +481,7 @@ class AgencyAdapter:
             query=None,
             body=body,
             tenant=spec.agency_company_id,
-            version=OPERATION_VERSION,
+            version=OPERATION.version,
         )
         receipt_id = "gxo_agency_" + secrets.token_hex(6)
         plan_fact = self._plans.for_company(spec.agency_company_id)
@@ -479,7 +504,7 @@ class AgencyAdapter:
                 "attempt": attempt,
                 "readback": readback.result.value if readback else None,
                 "receipt_id": receipt_id,
-                "version_header": OPERATION_VERSION,
+                "version_header": OPERATION.version,
                 "timeout_s": timeout,
                 "adapter_version": ADAPTER_VERSION,
                 "transport": "http",
@@ -513,7 +538,7 @@ class AgencyAdapter:
                 response_fingerprint=response_fp,
                 tenant=spec.agency_company_id,
                 attempt=attempt,
-                version_header=OPERATION_VERSION,
+                version_header=OPERATION.version,
                 readback=readback,
                 adapter_version=ADAPTER_VERSION,
                 transport="http",
@@ -573,7 +598,7 @@ class AgencyAdapter:
             response: TransportResponse = self._transport.request(
                 method=OPERATION_METHOD,
                 url=OPERATION_PATH,
-                version=OPERATION_VERSION,
+                version=OPERATION.version,
                 headers=agency_headers(self._auth),
                 query=None,
                 body=body,
@@ -700,7 +725,7 @@ class AgencyAdapter:
             response_fingerprint=readback.detail.get("response_fingerprint"),
             tenant=spec.agency_company_id,
             attempt=prior.attempt,
-            version_header=OPERATION_VERSION,
+            version_header=OPERATION.version,
             readback=readback,
             adapter_version=ADAPTER_VERSION,
             transport="http",
@@ -755,7 +780,7 @@ class AgencyAdapter:
             response = self._transport.request(
                 method="GET",
                 url=path,
-                version=OPERATION_VERSION,
+                version=OPERATION.version,
                 headers=agency_headers(self._auth),
                 query=None,
                 body=None,
@@ -853,7 +878,7 @@ __all__ = [
     "OPERATION_ID",
     "OPERATION_METHOD",
     "OPERATION_PATH",
-    "OPERATION_VERSION",
+    "OPERATION.version",
     "OPERATION_SCOPES",
     "APPROVAL_KIND",
     "APPROVAL_ACTION",
