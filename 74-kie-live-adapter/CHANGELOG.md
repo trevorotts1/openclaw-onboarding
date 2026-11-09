@@ -1,5 +1,9 @@
 # Changelog - Skill 74 KIE Live Adapter
 
+## [1.1.12] - 2026-11-08 - G3 bookkeeping: markers rolled 1.1.11 -> 1.1.12
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 1.1.11 -> 1.1.12 alongside the post-main-merge bookkeeping (no behavior change; the F21 durable-data-root work is the 1.1.11 entry below).
+
 ## [1.1.11] - 2026-11-08 - F21 item 11: one durable data root
 
 - The adapter built its cache and receipts from `os.path.join(home, ".openclaw", ...)` while a separate `DATA_OC_ROOT` constant named `/data/.openclaw`. Two computations, one run: on a Docker/VPS box HOME is the image's temporary layer, so paid-job receipts landed somewhere a recreate wipes, and the mode file was looked for in a different root than the state was written to.
