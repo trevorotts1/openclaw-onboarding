@@ -136,10 +136,12 @@ include 429 rate limited.
 
 ## 4. House prompt band vs TTS model caps (SPEC section 5)
 
-The 5,000 / ~9,000 / 19,000 BlackCEO prompt band is a HOUSE POLICY, not a
-provider limit. For TTS the model caps are far below 5,000 in the ElevenLabs
-cases — per SPEC rule B (verified cap 5,000-19,999): use a safe ceiling with
-headroom; do not force the 5,000 floor where the cap is 5,000.
+The retired image house band (5,000 / 9,000 / 19,000) never governs TTS: audio
+prompt sizing follows KIE prompt rule 12 (owner order 2026-10-05), 95-100% of
+the verified maximum as target, 80% hard floor. For TTS the model caps are far
+below 5,000 in the ElevenLabs cases — per SPEC rule B (verified cap
+5,000-19,999): use a safe ceiling with headroom; do not force the 5,000 floor
+where the cap is 5,000.
 
 | Route | Cap | Safe ceiling | Rule |
 |---|---|---|---|

@@ -1,3 +1,7 @@
+## [2.2.11] - 2026-11-09 - fix: restore the PENDING_ACCEPTANCE_TEST status clause dropped from models.json notes (INST-001 #23)
+
+- `models.json` notes: the `hard-enforcement status PENDING_ACCEPTANCE_TEST, validators warn only` clause the gapfill dropped is restored on the legacy GPT Image 2 entries (with the owner-confirmed 25,000 cap band restated) and on the 2.5 entries. No cap, band, id, alias, ratio or ordering changed.
+
 ## [2.2.10] - 2026-11-09 - GPT Image 2.6 owner cap 20,000 recorded in models.json
 
 - `models.json`: `owner_prompt_cap_chars: 20000` on both 2.6 sunburst entries (t2i + i2i). The existing `policy_owner_cap` precedence in the 74 adapter and 66 validator now resolves max 20000 with `limit_source` owner-ruling.
