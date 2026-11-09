@@ -1,0 +1,754 @@
+{
+ "schema": "ghl-hybrid/binding-law-applications/v1",
+ "unit": "BLD-118",
+ "slice": "SCOPE-LEDGER.md binding-law applications 71-140 (ledger order, not renumbered)",
+ "baseline": {
+  "repo": "trevorotts1/openclaw-onboarding",
+  "ref": "origin/main",
+  "sha": "014aad4f27a7d269b98d5beb11395e4ad255eaaf"
+ },
+ "ledger_order": {
+  "rule": "applications are numbered 1..208 in ledger order: 13 units x L1..L16",
+  "units": [
+   "LAND-001",
+   "LAND-002",
+   "LAND-003",
+   "LAND-004",
+   "LAND-005",
+   "RES-001",
+   "RES-002",
+   "RES-003",
+   "RES-004",
+   "MOCK-001",
+   "ASM-001",
+   "PRMPT-001",
+   "INST-001"
+  ],
+  "laws": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "L5",
+   "L6",
+   "L7",
+   "L8",
+   "L9",
+   "L10",
+   "L11",
+   "L12",
+   "L13",
+   "L14",
+   "L15",
+   "L16"
+  ]
+ },
+ "counts": {
+  "total": 70,
+  "PRESENT": 5,
+  "ABSENT": 9,
+  "UNKNOWN": 56
+ },
+ "rows": [
+  {
+   "n": 71,
+   "id": "LAND-005-L7",
+   "unit": "LAND-005",
+   "law": "L7",
+   "requirement": "No SSH.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 72,
+   "id": "LAND-005-L8",
+   "unit": "LAND-005",
+   "law": "L8",
+   "requirement": "No fleet contact.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 73,
+   "id": "LAND-005-L9",
+   "unit": "LAND-005",
+   "law": "L9",
+   "requirement": "No secret printed.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 74,
+   "id": "LAND-005-L10",
+   "unit": "LAND-005",
+   "law": "L10",
+   "requirement": "Collision law: open PRs and git log checked before each file change; no duplicate vehicle.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 75,
+   "id": "LAND-005-L11",
+   "unit": "LAND-005",
+   "law": "L11",
+   "requirement": "ONE PR per unit; a recut closes the old PR in the same run with a pointer.",
+   "verdict": "PRESENT",
+   "method": "github_pr",
+   "evidence": "one PR for the unit (#2962); closing comment records the batch inclusion and the open/supersede decision: 'Nothing is dropped silently.'"
+  },
+  {
+   "n": 76,
+   "id": "LAND-005-L12",
+   "unit": "LAND-005",
+   "law": "L12",
+   "requirement": "If BEHIND: recut from current origin/main; never merge main into a branch.",
+   "verdict": "ABSENT",
+   "method": "git_log_merges",
+   "evidence": "git log --merges on PR #2962 head dd9ed8a74 shows 1 merge: dd9ed8a74 'Merge remote-tracking branch 'origin/main' into skill6/remaining-features-20261109' \u2014 main merged into a branch"
+  },
+  {
+   "n": 77,
+   "id": "LAND-005-L13",
+   "unit": "LAND-005",
+   "law": "L13",
+   "requirement": "Ancestry: git merge-base --is-ancestor <commit> origin/main returns 0.",
+   "verdict": "PRESENT",
+   "method": "git_merge_base",
+   "evidence": "included revision f115b4ce5 is an ancestor of 014aad4f27a7 (merge commit d64498b35 also ancestor); PR #2962 comment records 'The included revision is on main (merge commit d64498b35)'"
+  },
+  {
+   "n": 78,
+   "id": "LAND-005-L14",
+   "unit": "LAND-005",
+   "law": "L14",
+   "requirement": "Work only in the assigned CLONE and TMPDIR.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 79,
+   "id": "LAND-005-L15",
+   "unit": "LAND-005",
+   "law": "L15",
+   "requirement": "QC by Opus-Chain (non-DeepSeek), never the builder lane.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "the QC lane id, model and verdict live in the QC return, not in the git tree; no ticket path for these units exists on 014aad4f27a7"
+  },
+  {
+   "n": 80,
+   "id": "LAND-005-L16",
+   "unit": "LAND-005",
+   "law": "L16",
+   "requirement": "QC returns CONFIRMED or FAILED naming each defect.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "the QC lane id, model and verdict live in the QC return, not in the git tree; no ticket path for these units exists on 014aad4f27a7"
+  },
+  {
+   "n": 81,
+   "id": "RES-001-L1",
+   "unit": "RES-001",
+   "law": "L1",
+   "requirement": "No check deleted, skipped, xfailed or widened.",
+   "verdict": "PRESENT",
+   "method": "git_diff",
+   "evidence": "PR diff 014aad4f27a7...<head> over '*test*.py'/'*test*.sh': 0 removed assert lines, 0 added skip/xfail markers, 0 deleted test files (PRs: #2869, #2902, #2909, #2914, #2918, #2923)"
+  },
+  {
+   "n": 82,
+   "id": "RES-001-L2",
+   "unit": "RES-001",
+   "law": "L2",
+   "requirement": "No force-push.",
+   "verdict": "ABSENT",
+   "method": "github_timeline",
+   "evidence": "HeadRefForcePushedEvent totalCount>0 on the unit's PR(s); worst: 79 on PR #2869 (gh api graphql timelineItems itemTypes:[HEAD_REF_FORCE_PUSHED_EVENT])"
+  },
+  {
+   "n": 83,
+   "id": "RES-001-L3",
+   "unit": "RES-001",
+   "law": "L3",
+   "requirement": "No admin bypass (no --admin).",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "no unit PR in this range was merged, so there is no merge-time required-check state; --admin/--no-verify usage is transcript-only"
+  },
+  {
+   "n": 84,
+   "id": "RES-001-L4",
+   "unit": "RES-001",
+   "law": "L4",
+   "requirement": "No --no-verify.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "no unit PR in this range was merged, so there is no merge-time required-check state; --admin/--no-verify usage is transcript-only"
+  },
+  {
+   "n": 85,
+   "id": "RES-001-L5",
+   "unit": "RES-001",
+   "law": "L5",
+   "requirement": "Pin never hand-written.",
+   "verdict": "UNKNOWN",
+   "method": "tree+git",
+   "evidence": "mechanism PRESENT (.github/workflows/sf-prover-pin-authority.yml:1 'name: SF prover pin authority'; 49-signature-funnel/scripts/front_door.py:16 'MINTING. Only two paths write scripts/SF-PROVER-PIN.sha256:') but this unit's PR diff touches the pin file, and the shallow clone cannot cut the range at a merge-base, so authorship of every pin-touching commit cannot be attributed"
+  },
+  {
+   "n": 86,
+   "id": "RES-001-L6",
+   "unit": "RES-001",
+   "law": "L6",
+   "requirement": "Authority workflow mints the pin once.",
+   "verdict": "UNKNOWN",
+   "method": "tree+git",
+   "evidence": "mechanism PRESENT (.github/workflows/sf-prover-pin-authority.yml:1 'name: SF prover pin authority'; 49-signature-funnel/scripts/front_door.py:16 'MINTING. Only two paths write scripts/SF-PROVER-PIN.sha256:') but this unit's PR diff touches the pin file, and the shallow clone cannot cut the range at a merge-base, so authorship of every pin-touching commit cannot be attributed"
+  },
+  {
+   "n": 87,
+   "id": "RES-001-L7",
+   "unit": "RES-001",
+   "law": "L7",
+   "requirement": "No SSH.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 88,
+   "id": "RES-001-L8",
+   "unit": "RES-001",
+   "law": "L8",
+   "requirement": "No fleet contact.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 89,
+   "id": "RES-001-L9",
+   "unit": "RES-001",
+   "law": "L9",
+   "requirement": "No secret printed.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 90,
+   "id": "RES-001-L10",
+   "unit": "RES-001",
+   "law": "L10",
+   "requirement": "Collision law: open PRs and git log checked before each file change; no duplicate vehicle.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 91,
+   "id": "RES-001-L11",
+   "unit": "RES-001",
+   "law": "L11",
+   "requirement": "ONE PR per unit; a recut closes the old PR in the same run with a pointer.",
+   "verdict": "UNKNOWN",
+   "method": "github_pr",
+   "evidence": "unit's own landing PR number is not recorded in the tree; the six named PRs (2869/2902/2909/2914/2918/2923) are residual inputs, not recuts"
+  },
+  {
+   "n": 92,
+   "id": "RES-001-L12",
+   "unit": "RES-001",
+   "law": "L12",
+   "requirement": "If BEHIND: recut from current origin/main; never merge main into a branch.",
+   "verdict": "ABSENT",
+   "method": "git_log_merges",
+   "evidence": "PR #2869 range carries 7 merge commits incl. ad52bc07d 'Merge origin/main into ent/ENT-001-remove-entitlement-gate'"
+  },
+  {
+   "n": 93,
+   "id": "RES-001-L13",
+   "unit": "RES-001",
+   "law": "L13",
+   "requirement": "Ancestry: git merge-base --is-ancestor <commit> origin/main returns 0.",
+   "verdict": "ABSENT",
+   "method": "git_merge_base",
+   "evidence": "scripts/check-launch-family-parity.py on 014aad4f27a7: 'hosting/admission/D5' grep rc=1 (not found); none of the six PR heads is an ancestor of main \u2014 the D5 parity entry has not landed"
+  },
+  {
+   "n": 94,
+   "id": "RES-001-L14",
+   "unit": "RES-001",
+   "law": "L14",
+   "requirement": "Work only in the assigned CLONE and TMPDIR.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 95,
+   "id": "RES-001-L15",
+   "unit": "RES-001",
+   "law": "L15",
+   "requirement": "QC by Opus-Chain (non-DeepSeek), never the builder lane.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "the QC lane id, model and verdict live in the QC return, not in the git tree; no ticket path for these units exists on 014aad4f27a7"
+  },
+  {
+   "n": 96,
+   "id": "RES-001-L16",
+   "unit": "RES-001",
+   "law": "L16",
+   "requirement": "QC returns CONFIRMED or FAILED naming each defect.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "the QC lane id, model and verdict live in the QC return, not in the git tree; no ticket path for these units exists on 014aad4f27a7"
+  },
+  {
+   "n": 97,
+   "id": "RES-002-L1",
+   "unit": "RES-002",
+   "law": "L1",
+   "requirement": "No check deleted, skipped, xfailed or widened.",
+   "verdict": "UNKNOWN",
+   "method": "none",
+   "evidence": "no PR/head exists for RES-002, so no PR diff can be scanned for removed asserts or added skips"
+  },
+  {
+   "n": 98,
+   "id": "RES-002-L2",
+   "unit": "RES-002",
+   "law": "L2",
+   "requirement": "No force-push.",
+   "verdict": "UNKNOWN",
+   "method": "none",
+   "evidence": "no PR for RES-002; no timeline to read"
+  },
+  {
+   "n": 99,
+   "id": "RES-002-L3",
+   "unit": "RES-002",
+   "law": "L3",
+   "requirement": "No admin bypass (no --admin).",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "no unit PR in this range was merged, so there is no merge-time required-check state; --admin/--no-verify usage is transcript-only"
+  },
+  {
+   "n": 100,
+   "id": "RES-002-L4",
+   "unit": "RES-002",
+   "law": "L4",
+   "requirement": "No --no-verify.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "no unit PR in this range was merged, so there is no merge-time required-check state; --admin/--no-verify usage is transcript-only"
+  },
+  {
+   "n": 101,
+   "id": "RES-002-L5",
+   "unit": "RES-002",
+   "law": "L5",
+   "requirement": "Pin never hand-written.",
+   "verdict": "UNKNOWN",
+   "method": "none",
+   "evidence": "no PR for RES-002; pin attribution cannot be resolved"
+  },
+  {
+   "n": 102,
+   "id": "RES-002-L6",
+   "unit": "RES-002",
+   "law": "L6",
+   "requirement": "Authority workflow mints the pin once.",
+   "verdict": "UNKNOWN",
+   "method": "none",
+   "evidence": "no PR for RES-002; pin attribution cannot be resolved"
+  },
+  {
+   "n": 103,
+   "id": "RES-002-L7",
+   "unit": "RES-002",
+   "law": "L7",
+   "requirement": "No SSH.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 104,
+   "id": "RES-002-L8",
+   "unit": "RES-002",
+   "law": "L8",
+   "requirement": "No fleet contact.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 105,
+   "id": "RES-002-L9",
+   "unit": "RES-002",
+   "law": "L9",
+   "requirement": "No secret printed.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 106,
+   "id": "RES-002-L10",
+   "unit": "RES-002",
+   "law": "L10",
+   "requirement": "Collision law: open PRs and git log checked before each file change; no duplicate vehicle.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 107,
+   "id": "RES-002-L11",
+   "unit": "RES-002",
+   "law": "L11",
+   "requirement": "ONE PR per unit; a recut closes the old PR in the same run with a pointer.",
+   "verdict": "UNKNOWN",
+   "method": "github_pr",
+   "evidence": "no PR number recorded for RES-002"
+  },
+  {
+   "n": 108,
+   "id": "RES-002-L12",
+   "unit": "RES-002",
+   "law": "L12",
+   "requirement": "If BEHIND: recut from current origin/main; never merge main into a branch.",
+   "verdict": "UNKNOWN",
+   "method": "git_log_merges",
+   "evidence": "no PR or branch for RES-002 is recorded in the tree or on origin, so there is no branch to inspect for main-merges"
+  },
+  {
+   "n": 109,
+   "id": "RES-002-L13",
+   "unit": "RES-002",
+   "law": "L13",
+   "requirement": "Ancestry: git merge-base --is-ancestor <commit> origin/main returns 0.",
+   "verdict": "ABSENT",
+   "method": "git_merge_base",
+   "evidence": "49-signature-funnel/VERSION = v2.1.48 and skill-version.txt = v2.1.49 on 014aad4f27a7 -> they still disagree; the reconciliation did not land"
+  },
+  {
+   "n": 110,
+   "id": "RES-002-L14",
+   "unit": "RES-002",
+   "law": "L14",
+   "requirement": "Work only in the assigned CLONE and TMPDIR.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 111,
+   "id": "RES-002-L15",
+   "unit": "RES-002",
+   "law": "L15",
+   "requirement": "QC by Opus-Chain (non-DeepSeek), never the builder lane.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "the QC lane id, model and verdict live in the QC return, not in the git tree; no ticket path for these units exists on 014aad4f27a7"
+  },
+  {
+   "n": 112,
+   "id": "RES-002-L16",
+   "unit": "RES-002",
+   "law": "L16",
+   "requirement": "QC returns CONFIRMED or FAILED naming each defect.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "the QC lane id, model and verdict live in the QC return, not in the git tree; no ticket path for these units exists on 014aad4f27a7"
+  },
+  {
+   "n": 113,
+   "id": "RES-003-L1",
+   "unit": "RES-003",
+   "law": "L1",
+   "requirement": "No check deleted, skipped, xfailed or widened.",
+   "verdict": "PRESENT",
+   "method": "git_diff",
+   "evidence": "PR diff 014aad4f27a7...<head> over '*test*.py'/'*test*.sh': 0 removed assert lines, 0 added skip/xfail markers, 0 deleted test files (PRs: #2929, #2942, #2944, #2949)"
+  },
+  {
+   "n": 114,
+   "id": "RES-003-L2",
+   "unit": "RES-003",
+   "law": "L2",
+   "requirement": "No force-push.",
+   "verdict": "ABSENT",
+   "method": "github_timeline",
+   "evidence": "HeadRefForcePushedEvent totalCount>0 on the unit's PR(s); worst: 13 on PR #2929 (gh api graphql timelineItems itemTypes:[HEAD_REF_FORCE_PUSHED_EVENT])"
+  },
+  {
+   "n": 115,
+   "id": "RES-003-L3",
+   "unit": "RES-003",
+   "law": "L3",
+   "requirement": "No admin bypass (no --admin).",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "no unit PR in this range was merged, so there is no merge-time required-check state; --admin/--no-verify usage is transcript-only"
+  },
+  {
+   "n": 116,
+   "id": "RES-003-L4",
+   "unit": "RES-003",
+   "law": "L4",
+   "requirement": "No --no-verify.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "no unit PR in this range was merged, so there is no merge-time required-check state; --admin/--no-verify usage is transcript-only"
+  },
+  {
+   "n": 117,
+   "id": "RES-003-L5",
+   "unit": "RES-003",
+   "law": "L5",
+   "requirement": "Pin never hand-written.",
+   "verdict": "UNKNOWN",
+   "method": "tree+git",
+   "evidence": "mechanism PRESENT (.github/workflows/sf-prover-pin-authority.yml:1 'name: SF prover pin authority'; 49-signature-funnel/scripts/front_door.py:16 'MINTING. Only two paths write scripts/SF-PROVER-PIN.sha256:') but this unit's PR diff touches the pin file, and the shallow clone cannot cut the range at a merge-base, so authorship of every pin-touching commit cannot be attributed"
+  },
+  {
+   "n": 118,
+   "id": "RES-003-L6",
+   "unit": "RES-003",
+   "law": "L6",
+   "requirement": "Authority workflow mints the pin once.",
+   "verdict": "UNKNOWN",
+   "method": "tree+git",
+   "evidence": "mechanism PRESENT (.github/workflows/sf-prover-pin-authority.yml:1 'name: SF prover pin authority'; 49-signature-funnel/scripts/front_door.py:16 'MINTING. Only two paths write scripts/SF-PROVER-PIN.sha256:') but this unit's PR diff touches the pin file, and the shallow clone cannot cut the range at a merge-base, so authorship of every pin-touching commit cannot be attributed"
+  },
+  {
+   "n": 119,
+   "id": "RES-003-L7",
+   "unit": "RES-003",
+   "law": "L7",
+   "requirement": "No SSH.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 120,
+   "id": "RES-003-L8",
+   "unit": "RES-003",
+   "law": "L8",
+   "requirement": "No fleet contact.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 121,
+   "id": "RES-003-L9",
+   "unit": "RES-003",
+   "law": "L9",
+   "requirement": "No secret printed.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 122,
+   "id": "RES-003-L10",
+   "unit": "RES-003",
+   "law": "L10",
+   "requirement": "Collision law: open PRs and git log checked before each file change; no duplicate vehicle.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 123,
+   "id": "RES-003-L11",
+   "unit": "RES-003",
+   "law": "L11",
+   "requirement": "ONE PR per unit; a recut closes the old PR in the same run with a pointer.",
+   "verdict": "UNKNOWN",
+   "method": "github_pr",
+   "evidence": "verify-only unit; its own PR number depends on the GAP REAL branch which this tree does not record"
+  },
+  {
+   "n": 124,
+   "id": "RES-003-L12",
+   "unit": "RES-003",
+   "law": "L12",
+   "requirement": "If BEHIND: recut from current origin/main; never merge main into a branch.",
+   "verdict": "ABSENT",
+   "method": "git_log_merges",
+   "evidence": "PR #2942 range carries 1 merge commit: f223cbf41 'Merge pull request #2935 from trevorotts1/batch/auto-merge (merge train: #2928)'"
+  },
+  {
+   "n": 125,
+   "id": "RES-003-L13",
+   "unit": "RES-003",
+   "law": "L13",
+   "requirement": "Ancestry: git merge-base --is-ancestor <commit> origin/main returns 0.",
+   "verdict": "UNKNOWN",
+   "method": "none",
+   "evidence": "conditional unit (ledger 3 RES-003 #7: 'If closed: ... make no change'): a gap-closed verdict legitimately lands no commit, so no ancestor commit exists to test"
+  },
+  {
+   "n": 126,
+   "id": "RES-003-L14",
+   "unit": "RES-003",
+   "law": "L14",
+   "requirement": "Work only in the assigned CLONE and TMPDIR.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 127,
+   "id": "RES-003-L15",
+   "unit": "RES-003",
+   "law": "L15",
+   "requirement": "QC by Opus-Chain (non-DeepSeek), never the builder lane.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "the QC lane id, model and verdict live in the QC return, not in the git tree; no ticket path for these units exists on 014aad4f27a7"
+  },
+  {
+   "n": 128,
+   "id": "RES-003-L16",
+   "unit": "RES-003",
+   "law": "L16",
+   "requirement": "QC returns CONFIRMED or FAILED naming each defect.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "the QC lane id, model and verdict live in the QC return, not in the git tree; no ticket path for these units exists on 014aad4f27a7"
+  },
+  {
+   "n": 129,
+   "id": "RES-004-L1",
+   "unit": "RES-004",
+   "law": "L1",
+   "requirement": "No check deleted, skipped, xfailed or widened.",
+   "verdict": "PRESENT",
+   "method": "git_diff",
+   "evidence": "PR diff 014aad4f27a7...<head> over '*test*.py'/'*test*.sh': 0 removed assert lines, 0 added skip/xfail markers, 0 deleted test files (PRs: #2889)"
+  },
+  {
+   "n": 130,
+   "id": "RES-004-L2",
+   "unit": "RES-004",
+   "law": "L2",
+   "requirement": "No force-push.",
+   "verdict": "ABSENT",
+   "method": "github_timeline",
+   "evidence": "HeadRefForcePushedEvent totalCount>0 on the unit's PR(s); worst: 17 on PR #2889 (gh api graphql timelineItems itemTypes:[HEAD_REF_FORCE_PUSHED_EVENT])"
+  },
+  {
+   "n": 131,
+   "id": "RES-004-L3",
+   "unit": "RES-004",
+   "law": "L3",
+   "requirement": "No admin bypass (no --admin).",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "no unit PR in this range was merged, so there is no merge-time required-check state; --admin/--no-verify usage is transcript-only"
+  },
+  {
+   "n": 132,
+   "id": "RES-004-L4",
+   "unit": "RES-004",
+   "law": "L4",
+   "requirement": "No --no-verify.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "no unit PR in this range was merged, so there is no merge-time required-check state; --admin/--no-verify usage is transcript-only"
+  },
+  {
+   "n": 133,
+   "id": "RES-004-L5",
+   "unit": "RES-004",
+   "law": "L5",
+   "requirement": "Pin never hand-written.",
+   "verdict": "UNKNOWN",
+   "method": "tree+git",
+   "evidence": "mechanism PRESENT (.github/workflows/sf-prover-pin-authority.yml:1 'name: SF prover pin authority'; 49-signature-funnel/scripts/front_door.py:16 'MINTING. Only two paths write scripts/SF-PROVER-PIN.sha256:') but this unit's PR diff touches the pin file, and the shallow clone cannot cut the range at a merge-base, so authorship of every pin-touching commit cannot be attributed"
+  },
+  {
+   "n": 134,
+   "id": "RES-004-L6",
+   "unit": "RES-004",
+   "law": "L6",
+   "requirement": "Authority workflow mints the pin once.",
+   "verdict": "UNKNOWN",
+   "method": "tree+git",
+   "evidence": "mechanism PRESENT (.github/workflows/sf-prover-pin-authority.yml:1 'name: SF prover pin authority'; 49-signature-funnel/scripts/front_door.py:16 'MINTING. Only two paths write scripts/SF-PROVER-PIN.sha256:') but this unit's PR diff touches the pin file, and the shallow clone cannot cut the range at a merge-base, so authorship of every pin-touching commit cannot be attributed"
+  },
+  {
+   "n": 135,
+   "id": "RES-004-L7",
+   "unit": "RES-004",
+   "law": "L7",
+   "requirement": "No SSH.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 136,
+   "id": "RES-004-L8",
+   "unit": "RES-004",
+   "law": "L8",
+   "requirement": "No fleet contact.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 137,
+   "id": "RES-004-L9",
+   "unit": "RES-004",
+   "law": "L9",
+   "requirement": "No secret printed.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 138,
+   "id": "RES-004-L10",
+   "unit": "RES-004",
+   "law": "L10",
+   "requirement": "Collision law: open PRs and git log checked before each file change; no duplicate vehicle.",
+   "verdict": "UNKNOWN",
+   "method": "transcript",
+   "evidence": "lane transcript only; the git tree records no SSH/fleet/secret action log for this unit"
+  },
+  {
+   "n": 139,
+   "id": "RES-004-L11",
+   "unit": "RES-004",
+   "law": "L11",
+   "requirement": "ONE PR per unit; a recut closes the old PR in the same run with a pointer.",
+   "verdict": "UNKNOWN",
+   "method": "github_pr",
+   "evidence": "verify-only unit; its own PR number depends on the GAP REAL branch which this tree does not record"
+  },
+  {
+   "n": 140,
+   "id": "RES-004-L12",
+   "unit": "RES-004",
+   "law": "L12",
+   "requirement": "If BEHIND: recut from current origin/main; never merge main into a branch.",
+   "verdict": "ABSENT",
+   "method": "git_log_merges",
+   "evidence": "PR #2889 range carries 4 merge commits incl. 99bd7a343 'Merge remote-tracking branch 'origin/main' into land/BWX-020-bfw'"
+  }
+ ]
+}
