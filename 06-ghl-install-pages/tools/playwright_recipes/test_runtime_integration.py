@@ -329,7 +329,7 @@ class BrowserProviderRuntimeTests(unittest.TestCase):
                 callback.assert_not_called()
                 self.assertEqual(result['status'], 'PROVIDER_RECONCILIATION_REQUIRED')
                 self.assertFalse(result['browser_used'])
-                self.assertEqual(result['state_file'], str(state))
+                self.assertEqual(result['state_file'], str(state.resolve()))
                 self.assertEqual(state.read_text(), raw)
                 self.assertFalse(Path(directory, 'provider-state.json').exists())
 
@@ -343,7 +343,7 @@ class BrowserProviderRuntimeTests(unittest.TestCase):
                     directory, input_dir='.', executors={'agent_browser':callback})
                 callback.assert_not_called()
                 self.assertEqual(result['status'], 'PROVIDER_RECONCILIATION_REQUIRED')
-                self.assertEqual(result['state_file'], str(marker))
+                self.assertEqual(result['state_file'], str(marker.resolve()))
                 self.assertEqual(marker.read_text(), raw)
 
     def test_active_editor_lease_blocks_provider_even_before_editor_intent_exists(self):
@@ -380,7 +380,7 @@ class BrowserProviderRuntimeTests(unittest.TestCase):
             result = host.run_recipe('forms.settings', self.inputs(), self.probes('agent_browser'),
                 directory, input_dir='.', executors={'agent_browser':callback})
             callback.assert_not_called()
-            self.assertEqual(result['state_file'], str(state))
+            self.assertEqual(result['state_file'], str(state.resolve()))
             self.assertEqual(state.read_text(), '{unresolved')
 
     def test_provider_and_portal_journals_block_playwright_before_editor_work(self):
@@ -457,7 +457,7 @@ class BrowserProviderRuntimeTests(unittest.TestCase):
                     input_dir='.', page=Mock())
                 editor.assert_not_called()
             self.assertEqual(result['status'], 'NEEDS_BROWSER_RECOVERY')
-            self.assertEqual(result['state_file'], str(root/'provider-state.json'))
+            self.assertEqual(result['state_file'], str((root/'provider-state.json').resolve()))
             self.assertEqual((root/'route.json').read_text(), route_text)
             self.assertEqual((root/'handoff.json').read_text(), original_handoff)
 
