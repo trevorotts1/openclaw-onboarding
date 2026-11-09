@@ -21,12 +21,14 @@ SPEC_DIR = SKILL_ROOT / "references" / "copy-specs"
 SPEC_FILES = {
     "standard": "standard-v6.json",
     "long-form": "long-form-v6.json",
-    # FIX-01 Stage A: the checkout page's own five-section spec. The checkout wrapper's
-    # --page-version "checkout" must name a form this one registry defines.
-    "checkout": "roles/checkout.json",
     "product-selection": "product-selection-v1.json",
     "thank-you": "thank-you-v1.json",  # the thank-you page (page_role thank_you): five sections, scripts/page_role.py reads its wireframe wording
     "upsell": "upsell-v6.json",  # the upsell page (page_roles upsell_1, upsell_2): eight sections
+    # FIX-01 Stage A: the checkout page's own five-section spec. The checkout wrapper's
+    # --page-version "checkout" must name a form this one registry defines. Registered after
+    # the three page types that must stay first (tests/test_product_selection_form.py pins
+    # FORMS[:3]); a form's position carries no behaviour.
+    "checkout": "roles/checkout.json",
 }
 FORMS = tuple(SPEC_FILES)
 LANDING_FORMS = ("standard", "long-form")
