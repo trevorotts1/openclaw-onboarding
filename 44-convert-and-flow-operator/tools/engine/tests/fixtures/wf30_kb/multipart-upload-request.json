@@ -1,0 +1,52 @@
+{
+  "interface": "wf30.multipart-upload-request.v1",
+  "interface_owner": "WF30",
+  "transport_owner": "WF01",
+  "operation_id": "knowledge_bases.sources.upload",
+  "operation_row_owner": "WF00",
+  "row_status": "UNRESOLVED",
+  "row_evidence": {
+    "source": "https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/apps/knowledge-base.json",
+    "retrieved": "2026-11-08",
+    "finding": "the published Knowledge Base contract lists CRUD, crawler, crawler status, training, trained-url and FAQ operations; it publishes no file-source upload operation",
+    "consequence": "WF30 refuses with file_upload_contract_unresolved before any network call and never invents a path, Version, media type or body field"
+  },
+  "request": {
+    "operation_id": "knowledge_bases.sources.upload",
+    "tenant": "<location id>",
+    "knowledge_base_id": "<knowledge base id>",
+    "fields": {"knowledgeBaseId": "<knowledge base id>"},
+    "file_field": "file",
+    "filename": "sample.pdf",
+    "content_type": "application/pdf",
+    "byte_size": 124,
+    "content_sha256": "82e669b550abc94e0ffa99e994bf9f39bc8b78bb4fd02b4b03dfcf41273d0e39",
+    "timeout_s": 60.0
+  },
+  "file_types": {
+    "documented": [".pdf", ".doc", ".docx"],
+    "max_bytes": 10485760,
+    "revalidated_before_upload": true,
+    "magic_bytes_checked": true
+  },
+  "samples": [
+    {"file": "kb-file-samples/sample.pdf", "content_type": "application/pdf", "byte_size": 124, "sha256": "82e669b550abc94e0ffa99e994bf9f39bc8b78bb4fd02b4b03dfcf41273d0e39"},
+    {"file": "kb-file-samples/sample.docx", "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "byte_size": 35, "sha256": "41e6641472ac1b2c79190e84c4eb39f6015d9988b918bab2908d3867d06aff3"},
+    {"file": "kb-file-samples/sample.doc", "content_type": "application/msword", "byte_size": 34, "sha256": "5000a81f53154fe8c8f6286980997d85dd730315b26b2c88efdf684633179ada"},
+    {"file": "kb-file-samples/sample.txt", "expected": "refused: kb_source_file_type_unsupported", "byte_size": 35, "sha256": "7c2996200bb483dcd40d51a58a27102dd3c10c12633041a8c7c02e8e9a642356"}
+  ],
+  "transport_rules": [
+    "the transport constructs one valid multipart boundary and body; the caller never sets a boundary",
+    "Authorization is a request header only; it never becomes a form field and never travels to an asset host",
+    "the tenant credential is bound to the operation row's tenant for this location",
+    "the transport hashes the actual bytes and records a redacted request fingerprint",
+    "upload acceptance is not ingestion, training or retrieval readiness",
+    "a timeout or reset after submission is unknown_outcome and is reconciled by provider file/job id before any retry",
+    "a missing media type or an unsupported file is refused before transport, never disguised as JSON or base64"
+  ],
+  "response_contract": {
+    "accepted_when": "2xx with error_kind none",
+    "retained_fields": ["status", "provider file id when the body returns fileId/id/_id", "response fingerprint"],
+    "never_recorded": ["Authorization", "raw multipart body", "customer content"]
+  }
+}
