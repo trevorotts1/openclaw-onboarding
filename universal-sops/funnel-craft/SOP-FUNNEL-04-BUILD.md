@@ -10,9 +10,26 @@
 
 ## 0. WHY THIS SOP EXISTS
 
-Skill 49 AUTHORS copy and images; it does NOT hand-roll GHL. **Skill 6 is the ONE GHL delivery rail.**
-Every media upload and every page/funnel build is DELEGATED — a hand-rolled GHL REST call is the
-ungoverned path and is refused (AF-FUN-CANONICAL-BYPASS).
+Skill 49 AUTHORS copy and images; it does NOT hand-roll GHL. **Skill 6 is the ONE GHL construction
+rail.** Every page/funnel build and every visual authoring step is DELEGATED. Hand-rolled HTTP — a
+call that does not go through the shared adapter and its registry row — is the ungoverned path and is
+refused (AF-FUN-CANONICAL-BYPASS).
+
+## 0A. PUBLIC OPERATIONS VERSUS VISUAL CONSTRUCTION
+
+Select each step from its registry row (`44-convert-and-flow-operator/tools/engine/cli_anything/
+gohighlevel/public/operations.py`) and the per-`(operation_id, tenant)` capability record:
+
+| Step | Registry row | Class | Rule |
+|---|---|---|---|
+| Inventory funnels / pages / page count | `funnels.list`, `funnels.pages.list`, `funnels.pages.count` | `public_direct` | Use the governed read; a successful read proves the read only. |
+| Create a redirect | `funnels.redirects.create` | `public_direct` | Governed write, issued through the shared adapter with a receipt. |
+| Upload media / create media folder | `media.upload`, `media.folders.create` | `public_direct` | Governed writes; availability stays per-location evidence. |
+| Build the funnel / steps / page canvas | `funnels.create`, `funnels.steps.create`, `funnels.pages.get`, `funnels.pages.autosave`, `funnels.pages.authoring` | `skill44_private` / `skill06_authoring` | Visual construction stays with Skill 6, exactly as this SOP already requires. |
+
+Public inventory, redirect, and media operations are **not** a second construction rail: they never
+replace Skill 6's page/funnel build, and they never authorize a competing builder. If a needed row is
+`capability_gap`, report the gap rather than fabricating the step.
 
 ## 1. P4 — MEDIA FOLDER + UPLOAD (Skill 6 `ghl_media.py`)
 
@@ -40,6 +57,11 @@ ends a purchase on an offer page.
 
 Build the funnel + pages and inject the fragments through Skill 6. The build must clear Skill 6's
 fragment + reachability invariants and the **funnel-build QC ≥ 8.5** gate before the pipeline advances.
+
+**Route receipts.** Emit one logical operation receipt per governed operation (stable key
+`(company_id, location_id, run_id, operation_key)`, the actual selected route, a readback state, and
+any attempts). Native full-width verification and the existing rendered-`<img>`/reachability gates stay
+unchanged; the receipt records that they ran, it does not replace them.
 
 ## 5. LABELING
 

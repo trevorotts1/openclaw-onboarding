@@ -22,7 +22,21 @@ trusted — the provers read the artifacts and the HMAC.
 that the offer ledger is non-empty (AF-FUN-OFFER-LEDGER-MISSING), and that every image has a real Kie
 taskId resolving to a GHL media host. **After Downsell 2 the funnel never pitches again.**
 
-## 2. THE SIGNED CERTIFICATE
+## 2. TRANSPORT-INDEPENDENT EVIDENCE
+
+The certificate must not depend on the rail that happened to deliver a step. For every phase record
+the **observed artifact** (page id, preview URL, media host URL, redirect id, rendered marker) and the
+**route that produced it**, drawn from the registry row and capability evidence. A public row, an
+authorized private gap fill, and a managed-UI authoring step are all acceptable only when their
+observed artifacts satisfy the same phase contract.
+
+**Disclose unsupported and pending sub-results.** Anything not proved — a sub-result the location does
+not enable, a pending beta row, an untested branch, a widget or meeting link that was not exercised —
+is listed explicitly on the certificate as `unsupported` or `pending` with the exact phase and the
+recheck condition. A pending sub-result is never rendered as a pass, and it never blocks the phase
+statement that *was* proved.
+
+## 3. THE SIGNED CERTIFICATE
 
 `prove_sf_cert.py` emits `PROCESS-CERTIFICATE.json` ONLY when the phase ledger is contiguous and
 in-order (AF-FUN-CERT-PHASE-GAP), every phase passed (AF-FUN-CERT-PHASE-FAIL), and the HMAC is valid
@@ -34,14 +48,14 @@ python3 49-signature-funnel/scripts/prove_sf_no_pitch.py <run-dir>
 python3 49-signature-funnel/scripts/prove_sf_cert.py     <run-dir>
 ```
 
-## 3. PUBLISH GUARD (human approval)
+## 4. PUBLISH GUARD (human approval)
 
 The pipeline STOPS at `/preview/<pageId>` URLs + a labeled `~/Downloads/<slug>-signature-funnel/`
 bundle (all copy, prompts, PNGs, HTML fragments, `brief.json`, preview URLs, certificate). **Going live
 is an explicit human approval** — the owner approves in the Review lane; the engine never auto-publishes.
 Reporting is operator-verbose, never client-facing noise.
 
-## 4. P10 — THE 10-EMAIL OFFER (handoff)
+## 5. P10 — THE 10-EMAIL OFFER (handoff)
 
 After the downsell is approved, offer: *"Want the 10 landing-page promo emails for this funnel?"* On
 yes, hand the locked `brief.json` + final copy bundle to the **Email Engine (Skill 50)** via
@@ -49,8 +63,9 @@ yes, hand the locked `brief.json` + final copy bundle to the **Email Engine (Ski
 the Downloads bundle. Email generation is out of scope for Skill 49 — the contract is hand off brief +
 copy, receive 10 emails.
 
-## 5. DEFINITION OF DONE
+## 6. DEFINITION OF DONE
 
 Certificate present + valid, Thank-You clean, every `<img>` on the GHL media host, funnel-build QC ≥ 8.5,
-preview URLs delivered, Downloads bundle labeled with the `<client>__<funnel>__<stage>__<type>__vNN`
-grammar, and (if accepted) the 10 emails attached. Anything short of this is NOT done.
+the route for every governed step recorded, every unsupported/pending sub-result disclosed, preview
+URLs delivered, Downloads bundle labeled with the `<client>__<funnel>__<stage>__<type>__vNN` grammar,
+and (if accepted) the 10 emails attached. Anything short of this is NOT done.

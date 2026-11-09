@@ -11,7 +11,24 @@
 
 The website is built through the SAME delivery rail as every funnel/page: the Skill 6 dispatcher. This
 cluster never writes local HTML as the deliverable and never hand-rolls GHL REST calls — those are the
-ungoverned paths.
+ungoverned paths. Skill 6 stays the SOLE GHL construction owner; no second builder is introduced.
+
+## 0A. SHARED ROUTING CONTRACT
+
+Every governed step names its registry row
+(`44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py`) and is
+issued only when the per-`(operation_id, tenant)` capability record allows this location:
+
+- inventory and media: `funnels.list`, `funnels.pages.list`, `funnels.pages.count`, `media.upload`,
+  `media.folders.create` are `public_direct` governed operations;
+- page authoring and canvas: `funnels.create`, `funnels.steps.create`, `funnels.pages.autosave`,
+  `funnels.pages.authoring` remain `skill44_private` / `skill06_authoring` and belong to Skill 6;
+- a `capability_gap` row is reported as an honest gap, never guessed.
+
+**Widget and full-width verification.** Before a page is called verified, confirm the intended native
+widget (if the brief includes one) is the single embed actually on the page, and confirm the native
+full-width section setting the design intake required is applied. A rendered page with a missing or
+duplicated widget, or with full-width silently off, is not verified.
 
 ## 1. THE COPY DEPENDENCY IS ALREADY ENFORCED (FIX-COPY-01)
 
