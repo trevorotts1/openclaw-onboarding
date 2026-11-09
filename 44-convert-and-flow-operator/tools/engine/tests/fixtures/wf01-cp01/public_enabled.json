@@ -1,0 +1,23 @@
+{
+  "case": "public_enabled",
+  "note": "Synthetic tenant. A record that authorizes a READ of one operation; it never authorizes a write.",
+  "record": {
+    "location_id": "loc_synthetic_0001",
+    "operation_id": "contacts.list",
+    "contract_revision": "sha256:synthetic-contract-rev",
+    "documented": true,
+    "adapter_built": true,
+    "offline_tests_passed": true,
+    "availability": "available",
+    "scope_state": "granted",
+    "read_probe": {"state": "passed", "receipt_id": "gxo_res_synthetic_read"},
+    "write_canary": {"state": "not_run", "receipt_id": null},
+    "enabled": true
+  },
+  "resolve": {"write": false, "route_class": "public_direct"},
+  "expect": {
+    "decision": "allow",
+    "route": "public_rest",
+    "write_decision": "canary_required"
+  }
+}

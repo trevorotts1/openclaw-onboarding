@@ -1,0 +1,25 @@
+{
+  "case": "authorization_denied",
+  "note": "A missing scope on a valid token. Never a beta flag, never a fallback.",
+  "http_status": 403,
+  "body": {"message": "The token does not have the required scope: opportunities.write"},
+  "record": {
+    "location_id": "loc_synthetic_0001",
+    "operation_id": "opportunities.create",
+    "contract_revision": "sha256:synthetic-contract-rev",
+    "documented": true,
+    "adapter_built": true,
+    "offline_tests_passed": true,
+    "availability": "unknown",
+    "scope_state": "missing_scope",
+    "read_probe": {"state": "not_run", "receipt_id": null},
+    "write_canary": {"state": "not_run", "receipt_id": null},
+    "enabled": false
+  },
+  "expect": {
+    "classification": "missing_scope",
+    "fallback_allowed": false,
+    "route": "none",
+    "resolve_decision": "deny"
+  }
+}

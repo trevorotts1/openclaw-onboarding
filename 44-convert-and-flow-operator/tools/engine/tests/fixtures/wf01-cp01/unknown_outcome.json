@@ -1,0 +1,25 @@
+{
+  "case": "unknown_outcome",
+  "note": "An ambiguous commit after a write. Reconcile on the same rail; never repeat and never switch rails.",
+  "transport_error": "timeout",
+  "write": true,
+  "record": {
+    "location_id": "loc_synthetic_0001",
+    "operation_id": "contacts.create",
+    "contract_revision": "sha256:synthetic-contract-rev",
+    "documented": true,
+    "adapter_built": true,
+    "offline_tests_passed": true,
+    "availability": "available",
+    "scope_state": "granted",
+    "read_probe": {"state": "passed", "receipt_id": "gxo_res_synthetic_read"},
+    "write_canary": {"state": "passed", "receipt_id": "gxo_res_synthetic_canary"},
+    "enabled": true
+  },
+  "expect": {
+    "classification": "unknown_outcome",
+    "route": "reconcile_only",
+    "must_reconcile": true,
+    "resolve_decision": "allow"
+  }
+}

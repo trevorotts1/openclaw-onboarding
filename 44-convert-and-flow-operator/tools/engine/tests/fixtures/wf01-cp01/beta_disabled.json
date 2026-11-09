@@ -1,0 +1,26 @@
+{
+  "case": "beta_disabled",
+  "note": "Synthetic 403 body. The documented beta flag is per sub-account; it is not a bad token.",
+  "http_status": 403,
+  "body": {"code": "WORKFLOW_API_NOT_ENABLED_FOR_LOCATION", "message": "Workflow API is not enabled for this location"},
+  "record": {
+    "location_id": "loc_synthetic_0001",
+    "operation_id": "workflows.definition.create",
+    "contract_revision": "sha256:synthetic-contract-rev",
+    "documented": true,
+    "adapter_built": true,
+    "offline_tests_passed": true,
+    "availability": "beta_not_enabled",
+    "scope_state": "granted",
+    "read_probe": {"state": "failed", "receipt_id": "gxo_res_synthetic_beta"},
+    "write_canary": {"state": "not_run", "receipt_id": null},
+    "enabled": false,
+    "fallback_policy": "authorized_private_then_managed_browser"
+  },
+  "expect": {
+    "classification": "beta_not_enabled",
+    "fallback_allowed": true,
+    "route": "private_fallback",
+    "resolve_decision": "deny"
+  }
+}
