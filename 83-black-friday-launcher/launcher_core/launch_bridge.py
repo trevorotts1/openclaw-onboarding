@@ -215,6 +215,38 @@ def check_launch_record(launch: Dict[str, Any]) -> List[str]:
     return list(substrate.dispatch().vlp.validate_launch(launch))
 
 
+def plan_document_hash(launch: Dict[str, Any]) -> str:
+    """Skill 49's own hash of the record: the one value an approval binds."""
+    return substrate.dispatch().vlp.plan_document_hash(launch)
+
+
+def resolve_launch(normalized: Dict[str, Any], graph: Dict[str, Any], *,
+                   landing_pages: Optional[Sequence[str]] = None,
+                   extra_pages: Sequence[str] = ()) -> tuple:
+    """(image inputs, to_confirm, launch record) with the paid budget verified against the plan's OWN hash.
+
+    F20: the paid image resolver needs the plan hash, and the plan hash is computed from the record that
+    carries the resolved style and provider, so resolving the paid plan first is circular. The record is
+    therefore built from the plan-shape inputs (style and provider only), hashed, and the spend is then
+    verified against that hash. The final record is rebuilt from the verified inputs and must hash
+    identically: a resolution that moved the hash would mean the client approved a different plan.
+    """
+    test_only = bool(normalized.get("test_only", True))
+    shape = image_plan.plan_shape(normalized.get("image_plan"), test_only=test_only)
+    provisional = to_launch_record(normalized, graph, shape,
+                                  landing_pages=landing_pages, extra_pages=extra_pages)
+    approved_hash = plan_document_hash(provisional)
+    inputs, to_confirm = image_plan.resolve(normalized.get("image_plan"), test_only=test_only,
+                                            plan_hash=approved_hash)
+    launch = to_launch_record(normalized, graph, inputs,
+                              landing_pages=landing_pages, extra_pages=extra_pages)
+    if plan_document_hash(launch) != approved_hash:
+        raise BridgeError("AF-LAUNCH-PLAN-HASH-UNSTABLE",
+                          "resolving the picture plan changed the plan hash, so an approval would bind a "
+                          "plan the client never saw. Nothing was dispatched and nothing was spent.")
+    return inputs, to_confirm, launch
+
+
 def lane_plan(graph: Dict[str, Any], workers: Optional[int] = None,
               extra_pages: Sequence[str] = (), side_by_side: bool = False) -> Dict[str, Any]:
     """What runs first and what runs together, in the order a client would be told.
@@ -424,10 +456,11 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
     """
     out_dir = Path(out_dir)
     normalized = intake_module.validate(payload)
-    inputs, to_confirm = image_plan.resolve(normalized.get("image_plan"),
-                                            test_only=bool(normalized.get("test_only", True)))
     graph = route.compile_route(normalized)
-    launch = to_launch_record(normalized, graph, inputs, landing_pages=landing_pages, extra_pages=extra_pages)
+    # F20: the paid budget is verified against the plan hash the record itself produces (no circular
+    # dependency), and the record is rebuilt from the verified inputs.
+    inputs, to_confirm, launch = resolve_launch(normalized, graph, landing_pages=landing_pages,
+                                                extra_pages=extra_pages)
     _bind_approval(launch, normalized, approval)
     fails = check_launch_record(launch)
     if fails:
