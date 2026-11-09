@@ -1,3 +1,7 @@
+## [v2.1.47] - 2026-11-09 - VERSION file brought level with skill-version.txt (no behaviour change)
+
+- `VERSION` still read v2.1.41 while `skill-version.txt` and `SKILL.md` read v2.1.46. All three now read v2.1.47. Not a pinned file; the SF prover pin is unchanged.
+
 ## [v2.1.46] - 2026-11-09 - G3 lockstep roll for the Skill 83 intake-drift cure (no Skill 49 behaviour change)
 
 - Version bumped because the bot-minted `scripts/SF-PROVER-PIN.sha256` changed for the Skill 83 `launcher_core/package.py` cure (report intake drift before the plan drift it implies). No functional change in Skill 49.
