@@ -1,36 +1,36 @@
 #!/usr/bin/env python3
-"""ghl_course_builder.py — Skill 06 browser-control builder for a GoHighLevel /
-Convert and Flow COURSE in the Memberships area (spec §5.2, unit U14).
+"""ghl_course_builder.py — Skill 06 API-FIRST course coordinator (WF07 / doc 1 s8).
 
-GoHighLevel has NO known public create API for a course (spec §3 marks it ASSUMED
-until the first-hour Tier-1/Tier-2 tool-list check; the router flips primary
-automatically if a create tool is found). The create + outline surface is
-browser-only — this is the DUMB / DO layer driver, split from a SMART / THINK layer
-exactly like the form and community builders:
+TWO RAILS, ONE FACADE
+---------------------
+  • API-FIRST (default when a public adapter is supplied) — the THINK layer
+    validates the course plan (logical-key identity, parent-before-child
+    categories, required content) and ``CourseCoordinator`` drives the shared
+    typed Courses public adapter: create/reuse the course shell, create
+    categories parent-before-child, create each lesson with its OWN checkpoint
+    (per-lesson resume), hand media/assessment content to the WF08 seam, apply
+    deterministic final sequencing with a read-back, associate a Community group
+    ONLY when the plan asks, then reduce an aggregate course-delivery receipt
+    (``ghl_course_delivery.py``). NO browser is started on this path.
+  • MANAGED-BROWSER FALLBACK (``execution_mode="browser"``) — the Phase-B
+    proven DUMB/DO layer driver: Memberships → Courses list → search-first
+    idempotency → outline walk with a per-lesson ledger and its own F6 receipt
+    → outline read-back + preview render_check → cleanup. PRESERVED, never
+    deleted; it is simply no longer the only rail.
 
-  • THINK layer (this Python): resolves the plan — ZHC-prefixed course name, the
-    modules→lessons tree (titles + body copy from the APPROVED source), lesson media
-    as ghl_media CDN URLs (NEVER browser-uploaded), publish gated by may_publish
-    (default DRAFT) — and emits, WITHOUT any browser, under <evidence_root>/routing/:
-        course-plan.json · course-click-list.json · course-preflight.json
-  • DUMB layer (agent-browser 0.27.0): Memberships → Courses list → search-first
-    (idempotency) → Create → walk the outline module-by-module / lesson-by-lesson,
-    saving per lesson (RateGovernor-spaced). EACH lesson is a ledgered, resumable
-    step with its OWN F6 receipt, so a 40-lesson course resumes at lesson
-    granularity. Verify = outline read-back (module/lesson names match the plan 1:1)
-    + course preview render_check. ALWAYS delete the scratch course in cleanup.
+``build_course(...)`` and the CLI shape are compatible: an existing caller that
+supplies no adapter keeps the exact browser behaviour it had.
 
 D8 — ZERO INVENTED SELECTORS. Every in-area anchor is loaded from
 `selectors-live-communities-courses.json`; a REQUIRED `capture-pending` anchor makes
-the live walk STOP-and-report (never guesses CSS). dry-run + selftest are fully
-network-free and prove the THINK layer + walk logic (incl. the STOP-and-report gate
-and a mocked-browser lesson walk).
+the live browser walk STOP-and-report (never guesses CSS). dry-run + selftest are
+fully network-free and prove the THINK layer + walk logic.
 
 Usage:
     result = build_course(task, "/tmp/course-run-01")             # dry_run=True default
-    result = build_course(task, "/tmp/course-run-01", dry_run=False)   # live (gated)
+    result = build_course(task, "/tmp/course-run-01", dry_run=False, adapter=adapter)
     python3 ghl_course_builder.py --dry-run --location-id LOC --course-name "Launch 101" \
-        --plan-json /path/to/course.json
+        --plan-json /path/to/course.json [--execution-mode api|browser]
     python3 ghl_course_builder.py --selftest
 """
 from __future__ import annotations
@@ -74,6 +74,16 @@ import ghl_community_builder as _cb  # type: ignore
 # U8/U10 — shared phase-checkpoint store + the uniform RUN REPORT emitter.
 import ghl_run_state  # noqa: E402
 from ghl_run_state import PhaseSpec, run_phase  # noqa: E402
+
+# WF07 — plan validation, logical-key identity map and the aggregate delivery
+# reducer live in their own pure module so the coordinator and the tests share
+# ONE definition of "addressable course object" and "delivered".
+try:
+    import ghl_course_delivery as _delivery  # noqa: E402
+    _HAVE_DELIVERY = True
+except Exception:  # noqa: BLE001
+    _delivery = None  # type: ignore
+    _HAVE_DELIVERY = False
 
 # ── U8: the course builder's declared phase walk ────────────────────────────────
 # The course builder ALREADY had the skill's only resume — a per-LESSON receipt
@@ -124,41 +134,95 @@ except Exception:  # noqa: BLE001
 # ---------------------------------------------------------------------------
 # THINK layer
 # ---------------------------------------------------------------------------
+def _unique_key(base: str, used: set, index: int) -> str:
+    """A stable logical key from a title, disambiguated by DECLARATION INDEX.
+
+    Duplicate display titles are legal (A09); the index suffix is what keeps two
+    lessons both called "Introduction" addressable as distinct objects. The same
+    input always yields the same keys, which is what makes resume and
+    reconciliation deterministic.
+    """
+    key = _slug(base or f"item-{index + 1}") or f"item-{index + 1}"
+    if key in used:
+        key = f"{key}-{index + 1}"
+    used.add(key)
+    return key
+
+
 def _resolve_modules(task: dict) -> List[dict]:
+    """Resolve the plan's module/lesson tree.
+
+    IDENTITY IS THE LOGICAL KEY, NEVER THE TITLE. A module/lesson may supply its
+    own ``module_key`` / ``lesson_key``; otherwise one is derived from the title
+    and disambiguated by declaration index. Titles are display text: two lessons
+    named "Introduction" both survive.
+    """
     raw = task.get("modules") or []
     out: List[dict] = []
-    seen_mod: set = set()
+    used_mod: set = set()
     for mi, m in enumerate(raw):
         mtitle = (m.get("title") if isinstance(m, dict) else str(m)).strip()
         if not mtitle:
             continue
-        mkey = mtitle.lower()
-        if mkey in seen_mod:                 # dedupe modules (F14)
-            continue
-        seen_mod.add(mkey)
+        mkey = (m.get("module_key") if isinstance(m, dict) else "") or ""
+        mkey = str(mkey).strip() or _unique_key(mtitle, used_mod, mi)
+        used_mod.add(mkey)
         lessons: List[dict] = []
-        seen_les: set = set()
+        used_les: set = set()
         for li, lraw in enumerate((m.get("lessons") if isinstance(m, dict) else []) or []):
             ltitle = (lraw.get("title") if isinstance(lraw, dict) else str(lraw)).strip()
             if not ltitle:
                 continue
-            lkey = ltitle.lower()
-            if lkey in seen_les:
-                continue
-            seen_les.add(lkey)
+            lkey = (lraw.get("lesson_key") if isinstance(lraw, dict) else "") or ""
+            lkey = str(lkey).strip() or _unique_key(ltitle, used_les, li)
+            used_les.add(lkey)
             media = (lraw.get("media_url", "") if isinstance(lraw, dict) else "")
             if media and "firebase" in media.lower():
                 raise StopAndReport("plan.media",
                                     f"lesson {ltitle!r} media_url is a Firebase URL — use a "
                                     "ghl_media CDN URL (media is never browser-routed; §5.2).")
+            body = (lraw.get("body", lraw.get("description", ""))
+                    if isinstance(lraw, dict) else "")
+            description_ref = (lraw.get("description_ref", "")
+                               if isinstance(lraw, dict) else "")
             lessons.append({
                 "index": li,
+                "lesson_key": lkey,
+                "identity_key": f"lesson:{mkey}/{lkey}",
                 "title": ltitle,
-                "slug": _slug(f"{mtitle}-{ltitle}"),
-                "body": (lraw.get("body", "") if isinstance(lraw, dict) else ""),
+                "slug": _slug(f"{mtitle}-{ltitle}-{lkey}"),
+                "body": body,
+                "description": body,
+                "description_ref": description_ref,
+                "position": (lraw.get("position", li + 1)
+                             if isinstance(lraw, dict) else li + 1),
+                "visibility": (lraw.get("visibility", "draft")
+                               if isinstance(lraw, dict) else "draft"),
+                "asset_refs": list(lraw.get("asset_refs") or [])
+                if isinstance(lraw, dict) else [],
+                "assessment_ref": (lraw.get("assessment_ref") if isinstance(lraw, dict)
+                                   else None),
+                # A legacy lesson that only carries a title has no approved content
+                # to require; only an explicit reference (or an explicit flag) makes
+                # content a delivery requirement.
+                "required_for_delivery": bool(
+                    lraw.get("required_for_delivery",
+                             bool(description_ref or body))
+                ) if isinstance(lraw, dict) else False,
                 "media_url": media,          # CDN URL only, inserted as a link/embed
             })
-        out.append({"index": mi, "title": mtitle, "slug": _slug(mtitle), "lessons": lessons})
+        out.append({
+            "index": mi,
+            "module_key": mkey,
+            "identity_key": f"module:{mkey}",
+            "parent_module_key": (m.get("parent_module_key", "")
+                                  if isinstance(m, dict) else ""),
+            "title": mtitle,
+            "slug": _slug(mtitle),
+            "position": (m.get("position", mi + 1) if isinstance(m, dict) else mi + 1),
+            "visibility": (m.get("visibility", "draft") if isinstance(m, dict) else "draft"),
+            "lessons": lessons,
+        })
     return out
 
 
@@ -167,9 +231,13 @@ def plan_course(task: dict) -> dict:
     modules = _resolve_modules(task)
     approval = task.get("approval", "")
     publish = bool(task.get("publish", False)) and _may_publish(approval)
-    return {
+    plan = {
+        "schema_version": ("course-build-plan/1.0.0" if _HAVE_DELIVERY else "skill6-course-plan/1"),
         "object_type": "course",
+        "run_id": task.get("run_id", ""),
         "location_id": task.get("location_id", ""),
+        "course_key": task.get("course_key") or _slug(name),
+        "title": name,
         "course_name": name,
         "slug": _slug(name),
         "product_type": task.get("product_type", "course"),
@@ -177,9 +245,18 @@ def plan_course(task: dict) -> dict:
         "modules": modules,
         "lesson_count": sum(len(m["lessons"]) for m in modules),
         "publish": publish,                  # default DRAFT (may_publish gate)
-        "idempotency_key": "zhc_name_search",
+        "release_intent": task.get("release_intent", "draft_only"),
+        "existing_course_product_id": task.get("existing_course_product_id"),
+        "community": task.get("community") or {},
+        "offer_plan_ref": task.get("offer_plan_ref"),
+        "idempotency_key": "logical_key_manifest",
         "created_at": _ts(),
     }
+    if _HAVE_DELIVERY:
+        errors = _delivery.validate_plan(plan)
+        if errors:
+            raise _delivery.CoursePlanError(errors)
+    return plan
 
 
 def _may_publish(approval: str) -> bool:
@@ -225,6 +302,40 @@ def emit_click_list(plan: dict) -> dict:
                       "Per-lesson receipts make a long course resumable at lesson granularity."]}
 
 
+def api_preflight(plan: dict, adapter: Any = None, *, required: bool = True) -> dict:
+    """API-ONLY preflight — no browser capability probe, no session, no page.
+
+    The old preflight implicitly required a managed browser because the only
+    create rail was the UI. An outline build is now a pure public-API operation,
+    so this gate checks exactly what an API build needs: a validated plan, a
+    location, and a public adapter. It NEVER starts agent-browser.
+    """
+    checks: List[dict] = []
+
+    def chk(name: str, ok: bool, detail: str = "", hard: bool = True) -> None:
+        checks.append({"check": name, "pass": bool(ok), "hard": hard, "detail": detail})
+
+    chk("A-P1:location_id", bool(plan.get("location_id")),
+        "location_id required (tenant gate before any write)")
+    chk("A-P2:has_modules", len(plan.get("modules") or []) > 0,
+        "a course needs >=1 module")
+    chk("A-P3:has_lessons", int(plan.get("lesson_count") or 0) > 0,
+        "a course needs >=1 lesson")
+    if _HAVE_DELIVERY:
+        errs = _delivery.validate_plan(plan)
+        chk("A-P4:plan_valid", not errs, "; ".join(errs[:5]))
+    chk("A-P5:public_adapter", adapter is not None,
+        "an API build requires the shared typed public adapter (WF06); "
+        "no browser is started to compensate", hard=required)
+    chk("A-P6:no_browser_required", True,
+        "public outline build performs no browser capability probe (doc 1 s8.4 step 2)",
+        hard=False)
+    hard_fail = [c for c in checks if c["hard"] and not c["pass"]]
+    return {"pass": not hard_fail, "mode": "api", "browser_required": False,
+            "checks": checks,
+            "stop_reason": (hard_fail[0]["detail"] if hard_fail else "")}
+
+
 def _preflight(plan: dict) -> dict:
     checks: List[dict] = []
 
@@ -248,20 +359,33 @@ def _preflight(plan: dict) -> dict:
 # DUMB layer — live outline walk (resumable, per-lesson receipts)
 # ---------------------------------------------------------------------------
 def _resume_done_lessons(evidence_root: str) -> set:
-    """Read the lesson receipts already written → the set of completed lesson slugs
-    (resume granularity, F6/§6). A resumed run SKIPS anything already receipted."""
+    """Read the lesson receipts already written → the set of completed lesson
+    identities (resume granularity, F6/§6). A resumed run SKIPS anything already
+    receipted.
+
+    Both identity spellings are returned: the legacy receipt ``slug`` and the
+    WF07 ``verify.logical_key`` (``<module_key>/<lesson_key>``). Logical keys are
+    what the API coordinator resumes on, so a kill mid-course never duplicates a
+    lesson whose display title happens to collide with another one.
+    """
     eco = os.path.join(evidence_root, "ecosystem")
     done: set = set()
     if os.path.isdir(eco):
         for fn in os.listdir(eco):
-            if fn.startswith("lesson-") and fn.endswith(".json"):
-                try:
-                    with open(os.path.join(eco, fn), encoding="utf-8") as fh:
-                        r = json.load(fh)
-                    if r.get("created"):
-                        done.add(r.get("slug"))
-                except Exception:  # noqa: BLE001
+            if not fn.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(eco, fn), encoding="utf-8") as fh:
+                    r = json.load(fh)
+                if not r.get("created"):
                     continue
+                if r.get("slug"):
+                    done.add(r.get("slug"))
+                logical = (r.get("verify") or {}).get("logical_key")
+                if logical:
+                    done.add(logical)
+            except Exception:  # noqa: BLE001
+                continue
     return done
 
 
@@ -535,13 +659,462 @@ def _live_build(task: dict, plan: dict, click_list: dict, preflight: dict,
 
 
 # ---------------------------------------------------------------------------
+# API-FIRST COORDINATOR (WF07 / doc 1 s8.4)
+#
+# This is the published coordinator interface (WF07-CP01). Callers inject:
+#   • ``adapter``      — the shared typed Courses public adapter (WF06). Required
+#                        keyword calls, each returning a dict carrying ``id``:
+#                          create_course(location_id=, payload=)
+#                          get_course(location_id=, course_id=)          [optional]
+#                          create_category(location_id=, payload=)
+#                          create_lesson(location_id=, payload=)
+#                          list_lessons(location_id=, course_id=)        [optional]
+#                          sequence(location_id=, course_id=, ordering=)[optional]
+#   • ``media_binder`` — the WF08 native-content seam. Optional; called only when
+#                        the plan actually requests media/attachments.
+#   • ``association``  — the WF09 Learning-association seam. Called ONLY when the
+#                        plan sets ``community.required`` (a standalone course
+#                        needs no group).
+# No browser is opened on this path. The managed-browser walk stays reachable as
+# an EXPLICIT fallback (``execution_mode="browser"``), never as the default.
+# ---------------------------------------------------------------------------
+COURSE_MANIFEST_REL = os.path.join("routing", "course-identity-manifest.json")
+
+
+def _manifest_path(evidence_root: str) -> str:
+    return os.path.join(str(evidence_root), COURSE_MANIFEST_REL)
+
+
+def load_course_manifest(evidence_root: str) -> dict:
+    """The recorded logical-key -> object-ID manifest (reconciliation by RECORDED
+    ID, never by title). Absent/corrupt reads as an empty manifest."""
+    path = _manifest_path(evidence_root)
+    if not os.path.isfile(path):
+        return {"schema_version": "skill6-course-identity-manifest/1", "objects": {}}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        if not isinstance(doc, dict):
+            raise ValueError("manifest is not an object")
+        doc.setdefault("objects", {})
+        return doc
+    except Exception:  # noqa: BLE001 — a corrupt manifest must not fake identity
+        return {"schema_version": "skill6-course-identity-manifest/1", "objects": {},
+                "corrupt": True}
+
+
+def save_course_manifest(evidence_root: str, manifest: dict) -> str:
+    path = _manifest_path(evidence_root)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.tmp-{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+    return path
+
+
+def _adapter_call(adapter: Any, name: str, **kwargs) -> dict:
+    """Call one adapter method honestly: absent method or non-dict return is a
+    STOP, never a silent no-op that would let an unbuilt object look created."""
+    fn = getattr(adapter, name, None)
+    if fn is None:
+        raise StopAndReport(f"adapter.{name}",
+                            f"the public course adapter does not implement {name}() — "
+                            "an API-only outline build cannot continue")
+    out = fn(**kwargs)
+    if not isinstance(out, dict):
+        raise StopAndReport(f"adapter.{name}",
+                            f"adapter.{name}() returned {type(out).__name__}, not a dict")
+    return out
+
+
+def _adapter_optional(adapter: Any, name: str, **kwargs) -> Any:
+    fn = getattr(adapter, name, None)
+    if fn is None:
+        return None
+    try:
+        return fn(**kwargs)
+    except Exception:  # noqa: BLE001 — optional capability, recorded not fatal
+        return None
+
+
+class CourseCoordinator:
+    """API-first, resumable course coordinator over an injected public adapter."""
+
+    def __init__(self, plan: dict, evidence_root: str, *,
+                 adapter: Any,
+                 media_binder: Any = None,
+                 association: Any = None,
+                 state: Optional["ghl_run_state.RunState"] = None,
+                 log: Any = None) -> None:
+        self.plan = plan
+        self.evidence_root = str(evidence_root)
+        self.adapter = adapter
+        self.media_binder = media_binder
+        self.association = association
+        self.state = state
+        self._log = log or _log
+        self.manifest = load_course_manifest(self.evidence_root)
+        self.objects: Dict[str, dict] = self.manifest.setdefault("objects", {})
+        self.steps: List[str] = []
+        self.warnings: List[str] = []
+        self.course_id: Optional[str] = None
+
+    # -- helpers ----------------------------------------------------------
+    def _remember(self, logical_key: str, object_type: str, object_id: str,
+                  action: str, visibility: str = "") -> None:
+        self.objects[logical_key] = {
+            "object_type": object_type, "object_id": object_id,
+            "action": action, "visibility": visibility or None,
+        }
+        save_course_manifest(self.evidence_root, self.manifest)
+
+    def _record(self, object_type: str, logical_key: str, action: str, *,
+                object_id: Optional[str] = None, verify: Optional[dict] = None,
+                request_shape: Any = None) -> Optional[str]:
+        try:
+            receipt = _receipt(object_type, logical_key.replace("/", "_"), action,
+                               response_id=object_id, verify=verify or {},
+                               request_shape=request_shape)
+            return _write_receipt(self.evidence_root, receipt)
+        except Exception as exc:  # noqa: BLE001 — receipt failure is surfaced, not hidden
+            self.warnings.append(f"receipt {object_type}:{logical_key} failed: {exc}")
+            return None
+
+    def _phase(self, name: str, fn):
+        return run_phase(self.state, name, fn, log=self._log)
+
+    # -- steps -------------------------------------------------------------
+    def _ensure_course_shell(self) -> dict:
+        location = self.plan["location_id"]
+        # Reconcile by the RECORDED ID first: a resumed run must never create a
+        # second course shell for the same logical plan.
+        prior = self.objects.get("course")
+        if isinstance(prior, dict) and prior.get("object_id"):
+            got = _adapter_optional(self.adapter, "get_course",
+                                    location_id=location,
+                                    course_id=str(prior["object_id"]))
+            if got is None:
+                self.warnings.append(
+                    f"recorded course id {prior['object_id']!r} could not be re-read on "
+                    "this run — reusing the recorded id, not creating a duplicate")
+            self.course_id = str(prior["object_id"])
+            self.steps.append("course:reused:manifest")
+            return {"id": self.course_id, "action": "reused"}
+        existing = self.plan.get("existing_course_product_id")
+        existing_id = existing.get("id") if isinstance(existing, dict) else (
+            existing if isinstance(existing, str) else None)
+        if existing_id:
+            got = _adapter_optional(self.adapter, "get_course",
+                                    location_id=location, course_id=existing_id)
+            if isinstance(got, dict) and got.get("id"):
+                self.course_id = str(got["id"])
+                self.steps.append("course:reused:recorded_id")
+                self._record("course", self.plan["course_key"], "reused",
+                             object_id=self.course_id,
+                             verify={"ok": True, "matched_by": "recorded_course_id"})
+                return {"id": self.course_id, "action": "reused"}
+            self.warnings.append(
+                f"existing_course_product_id {existing_id!r} was not found in "
+                f"location {location!r} — creating instead of guessing")
+        payload = {"title": self.plan["title"]}
+        if self.plan.get("description"):
+            payload["description"] = self.plan["description"]
+        out = _adapter_call(self.adapter, "create_course",
+                            location_id=location, payload=payload)
+        cid = out.get("id")
+        if not cid:
+            raise StopAndReport("course.create", "create_course returned no id")
+        self.course_id = str(cid)
+        self.steps.append("course:created")
+        self._remember("course", "course", self.course_id, "created")
+        self._record("course", self.plan["course_key"], "created",
+                     object_id=self.course_id,
+                     verify={"ok": True, "created": True}, request_shape=payload)
+        return {"id": self.course_id, "action": "created"}
+
+    def _create_module(self, module: dict, parent_id: Optional[str]) -> dict:
+        payload: Dict[str, Any] = {
+            "title": module["title"],
+            "visibility": module.get("visibility") or "draft",
+            "sequenceNo": module.get("position") or 1,
+        }
+        if parent_id:
+            payload["parentCategory"] = parent_id
+        out = _adapter_call(self.adapter, "create_category",
+                            location_id=self.plan["location_id"], payload=payload)
+        mid = out.get("id")
+        if not mid:
+            raise StopAndReport(f"category.create:{module['module_key']}",
+                                "create_category returned no id")
+        return {"id": str(mid), "payload": payload}
+
+    def _create_lesson(self, module: dict, lesson: dict, category_id: str) -> dict:
+        payload: Dict[str, Any] = {
+            "title": lesson["title"],
+            "categoryId": category_id,
+            "visibility": lesson.get("visibility") or "draft",
+            "sequenceNo": lesson.get("position") or 1,
+        }
+        if lesson.get("body"):
+            payload["description"] = lesson["body"]
+        out = _adapter_call(self.adapter, "create_lesson",
+                            location_id=self.plan["location_id"], payload=payload)
+        lid = out.get("id")
+        if not lid:
+            raise StopAndReport(f"lesson.create:{lesson['lesson_key']}",
+                                "create_lesson returned no id")
+        return {"id": str(lid), "payload": payload}
+
+    def _sequence_and_readback(self, module_ids: Dict[str, str],
+                               lesson_ids: Dict[str, str],
+                               module_order: List[str]) -> dict:
+        """Deterministic final sequencing, then READ BACK the actual order."""
+        ordering = []
+        for mkey in module_order:
+            mid = module_ids.get(mkey)
+            if mid:
+                m = next(x for x in self.plan["modules"] if x["module_key"] == mkey)
+                ordering.append({"object_type": "category", "id": mid,
+                                 "sequenceNo": m.get("position") or 1})
+                for l in m["lessons"]:
+                    lid = lesson_ids.get(f"lesson:{mkey}/{l['lesson_key']}")
+                    if lid:
+                        ordering.append({"object_type": "lesson", "id": lid,
+                                         "sequenceNo": l.get("position") or 1})
+        applied = _adapter_optional(self.adapter, "sequence",
+                                    location_id=self.plan["location_id"],
+                                    course_id=self.course_id, ordering=ordering)
+        readback = _adapter_optional(self.adapter, "list_lessons",
+                                     location_id=self.plan["location_id"],
+                                     course_id=self.course_id)
+        order_ok = None
+        if isinstance(readback, list):
+            observed = [str(x.get("id")) for x in readback if isinstance(x, dict)]
+            wanted = [o["id"] for o in ordering if o["object_type"] == "lesson"]
+            if wanted:
+                # Order is the OBSERVED order restricted to the objects we own —
+                # a set-membership test would report a reversed list as a match.
+                observed_owned = [i for i in observed if i in set(wanted)]
+                order_ok = observed_owned == wanted
+        return {
+            "applied": bool(applied.get("ok")) if isinstance(applied, dict) else False,
+            "readback_present": isinstance(readback, list),
+            "order_matches": order_ok,
+            "ordering": ordering,
+        }
+
+    def run(self) -> dict:
+        if not _HAVE_DELIVERY:
+            raise StopAndReport("plan", "ghl_course_delivery is unavailable — the API "
+                                        "coordinator cannot validate or reduce a plan")
+        errors = _delivery.validate_plan(self.plan)
+        if errors:
+            raise _delivery.CoursePlanError(errors)
+
+        idmap = _delivery.identity_map(self.plan)
+        module_order = _delivery.parent_order(self.plan)
+        pref = api_preflight(self.plan, self.adapter)
+        if not pref["pass"]:
+            return {"ok": False, "mode": "api", "error": pref["stop_reason"],
+                    "preflight": pref}
+
+        shell = self._phase("api_course_shell", self._ensure_course_shell)
+
+        # Modules in parent-before-child order, each checkpointed.
+        module_ids: Dict[str, str] = {}
+        for mkey in module_order:
+            module = next(m for m in self.plan["modules"] if m["module_key"] == mkey)
+            rec = idmap[f"module:{mkey}"]
+
+            def _mk(_m=module, _r=rec) -> dict:
+                prior = self.objects.get(f"module:{_r['module_key']}")
+                if isinstance(prior, dict) and prior.get("object_id"):
+                    # Reconcile by the RECORDED ID: a resumed run must never
+                    # create a second category for the same logical key.
+                    self.steps.append(f"module:reused:{_r['module_key']}")
+                    return {"id": str(prior["object_id"]), "reused": True}
+                parent_id = module_ids.get(_r["parent_module_key"]) if _r["parent_module_key"] else None
+                if _r["parent_module_key"] and not parent_id:
+                    raise StopAndReport(
+                        f"category:{_r['module_key']}",
+                        f"parent module {_r['parent_module_key']!r} has no resolved ID — "
+                        "parent-before-child order was not honoured")
+                out = self._create_module(_m, parent_id)
+                self._remember(f"module:{_r['module_key']}", "course_module",
+                               out["id"], "created", _m.get("visibility", ""))
+                self._record("course_module", _r["module_key"], "created",
+                             object_id=out["id"],
+                             verify={"ok": True, "visibility": _m.get("visibility", "draft")},
+                             request_shape=out["payload"])
+                self.steps.append(f"module:{_r['module_key']}")
+                return out
+
+            out = self._phase(f"module:{mkey}", _mk)
+            module_ids[mkey] = out["id"]
+
+        # Lessons, each with its OWN checkpoint so one failure never rebuilds the rest.
+        lesson_ids: Dict[str, str] = {}
+        for mkey in module_order:
+            module = next(m for m in self.plan["modules"] if m["module_key"] == mkey)
+            for lesson in module["lessons"]:
+                lkey = f"lesson:{mkey}/{lesson['lesson_key']}"
+
+                def _mk_lesson(_m=module, _l=lesson, _k=lkey, _cat=module_ids[mkey]) -> dict:
+                    prior = self.objects.get(_k)
+                    if isinstance(prior, dict) and prior.get("object_id"):
+                        self.steps.append(f"{_k}:reused")
+                        return {"id": str(prior["object_id"]), "reused": True}
+                    out = self._create_lesson(_m, _l, _cat)
+                    self._remember(_k, "course_lesson", out["id"], "created",
+                                   _l.get("visibility", ""))
+                    self._record("course_lesson", _k.replace("/", "_"), "created",
+                                 object_id=out["id"],
+                                 verify={"ok": True, "logical_key": _k,
+                                         "category_id": _cat,
+                                         "visibility": _l.get("visibility", "draft")},
+                                 request_shape=out["payload"])
+                    self.steps.append(_k)
+                    return out
+
+                out = self._phase(lkey, _mk_lesson)
+                lesson_ids[lkey] = out["id"]
+
+        # Native-content handoff (WF08 seam) — only when the plan asks for media.
+        needs_media = any(
+            lesson.get("asset_refs") or lesson.get("media_url")
+            or lesson.get("assessment_ref")
+            for m in self.plan["modules"] for lesson in m["lessons"]
+        )
+        content_proof: dict = {"required": bool(needs_media)}
+        if needs_media:
+            if self.media_binder is None:
+                self.warnings.append(
+                    "plan requests media/assessments but no WF08 media binder was "
+                    "supplied — delivery will report the content as unbound")
+            else:
+                try:
+                    proof = self.media_binder(plan=self.plan, identity=idmap,
+                                              course_id=self.course_id,
+                                              lesson_ids=dict(lesson_ids),
+                                              evidence_root=self.evidence_root)
+                    if isinstance(proof, dict):
+                        content_proof.update(proof)
+                except Exception as exc:  # noqa: BLE001 — surfaced, never faked
+                    self.warnings.append(f"media binder raised: {type(exc).__name__}: {exc}")
+            content_proof.setdefault("required", True)
+
+        sequencing = self._phase(
+            "api_sequencing",
+            lambda: self._sequence_and_readback(module_ids, lesson_ids, module_order))
+
+        # Community association ONLY when requested (a standalone course is legal).
+        community_art = None
+        community_spec = self.plan.get("community") or {}
+        if community_spec.get("required"):
+            if self.association is None:
+                self.warnings.append(
+                    "plan requires a Community association but no WF09 association "
+                    "seam was supplied — delivery will report it pending")
+                community_art = {"state": "not_requested_by_runtime"}
+            else:
+                try:
+                    community_art = self.association(
+                        plan=self.plan, course_id=self.course_id,
+                        evidence_root=self.evidence_root)
+                except Exception as exc:  # noqa: BLE001
+                    community_art = {"state": "failed",
+                                     "error": f"{type(exc).__name__}: {exc}"}
+
+        artifacts: Dict[str, dict] = {"course": {
+            "state": "verified", "verified": True, "object_id": self.course_id}}
+        for key, rec in self.objects.items():
+            if key == "course":
+                continue
+            artifacts[key] = {"state": "verified", "verified": True,
+                              "object_id": rec.get("object_id"),
+                              "visibility": rec.get("visibility")}
+        delivery = _delivery.reduce_delivery(
+            self.plan, artifacts,
+            community_artifact=community_art,
+            content_proof=content_proof if needs_media else None,
+        )
+        receipt_path = _delivery.write_delivery_receipt(self.evidence_root, delivery)
+
+        summary = _router.reduce_receipts(self.evidence_root) if _HAVE_ROUTER else {}
+        ok = delivery["state"] == _delivery.DELIVERY_DELIVERED
+        return {
+            "ok": ok,
+            "mode": "api",
+            "browser_started": False,
+            "course_id": self.course_id,
+            "steps_done": self.steps,
+            "warnings": self.warnings,
+            "sequencing": sequencing,
+            "delivery": delivery,
+            "delivery_receipt_path": receipt_path,
+            "receipts_summary": summary,
+            "dry_run": False,
+        }
+
+
+def build_course_api(task: dict, evidence_root: str, *, adapter: Any,
+                     media_binder: Any = None, association: Any = None,
+                     state: Optional["ghl_run_state.RunState"] = None,
+                     resume: bool = False, plan: Optional[dict] = None) -> dict:
+    """Run the API-first coordinator. ``build_course`` selects it by mode."""
+    del resume  # resumability comes from the phase ledger + identity manifest
+    started = time.monotonic()
+    os.makedirs(os.path.join(evidence_root, "routing"), exist_ok=True)
+    if plan is None:
+        plan = run_phase(state, "plan", lambda: plan_course(task), log=_log)
+    _write_json(os.path.join(evidence_root, "routing", "course-plan.json"), plan)
+    coord = CourseCoordinator(plan, evidence_root, adapter=adapter,
+                              media_binder=media_binder, association=association,
+                              state=state)
+    try:
+        result = coord.run()
+    except StopAndReport as sr:
+        _log(f"STOP-and-report @ {sr.step}: {sr.reason}")
+        return {"ok": False, "mode": "api", "error": str(sr),
+                "stop_step": sr.step, "stop_reason": sr.reason,
+                "steps_done": coord.steps, "warnings": coord.warnings,
+                "duration_s": time.monotonic() - started, "dry_run": False}
+    result["duration_s"] = time.monotonic() - started
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Main entry
 # ---------------------------------------------------------------------------
 def build_course(task: dict, evidence_root: str, *, dry_run: bool = True,
                  resume: bool = False,
-                 state: Optional["ghl_run_state.RunState"] = None) -> dict:
+                 state: Optional["ghl_run_state.RunState"] = None,
+                 adapter: Any = None,
+                 media_binder: Any = None,
+                 association: Any = None,
+                 execution_mode: str = "") -> dict:
+    """Build a course.
+
+    ``execution_mode`` selects the rail EXPLICITLY:
+      * ``"api"``            — API-first coordinator (requires ``adapter``);
+      * ``"browser"``        — the legacy managed-browser walk (fallback);
+      * ``""`` (default)     — ``"api"`` when an adapter is supplied, otherwise
+                               ``"browser"`` so every existing caller keeps its
+                               exact behaviour.
+
+    An API outline build never starts a browser. The managed-browser path is
+    preserved as an explicit, selectable fallback (doc 1 s8.1).
+    """
     started = time.monotonic()
     dry_run = bool(task.get("dry_run", dry_run))
+    mode = (execution_mode or task.get("execution_mode")
+            or ("api" if adapter is not None else "browser")).strip().lower()
+    if mode not in ("api", "browser"):
+        raise ValueError(f"execution_mode {mode!r} is not one of ('api', 'browser')")
     # A run-id resume implies the lesson-level skip too: re-walking a lesson that
     # already has a receipt would just duplicate it.
     resume = bool(resume or task.get("resume") or (state is not None and state.doc.get("attempts", 1) > 1))
@@ -551,13 +1124,16 @@ def build_course(task: dict, evidence_root: str, *, dry_run: bool = True,
     plan = run_phase(state, "plan", lambda: plan_course(task), log=_log)
     preflight = run_phase(state, "preflight", lambda: _preflight(plan), log=_log)
     click_list = run_phase(state, "click_list", lambda: emit_click_list(plan), log=_log)
+    api_gate = api_preflight(plan, adapter, required=(mode == "api"))
     _write_json(os.path.join(evidence_root, "routing", "course-plan.json"), plan)
     _write_json(os.path.join(evidence_root, "routing", "course-click-list.json"), click_list)
     _write_json(os.path.join(evidence_root, "routing", "course-preflight.json"), preflight)
+    _write_json(os.path.join(evidence_root, "routing", "course-api-preflight.json"), api_gate)
 
     if not preflight["pass"]:
         return {"ok": False, "object_type": "course", "duration_s": time.monotonic() - started,
-                "preflight": preflight, "error": preflight["stop_reason"], "dry_run": dry_run}
+                "preflight": preflight, "error": preflight["stop_reason"], "dry_run": dry_run,
+                "execution_mode": mode}
 
     if dry_run:
         disclosure = (_router.tier_disclosure(_router.route("course").rails[0])
@@ -566,7 +1142,19 @@ def build_course(task: dict, evidence_root: str, *, dry_run: bool = True,
              f"{plan['lesson_count']} lessons) written. {disclosure}")
         return {"ok": True, "object_type": "course", "duration_s": time.monotonic() - started,
                 "plan": plan, "click_list": click_list, "preflight": preflight,
-                "tier_disclosure": disclosure, "dry_run": True}
+                "api_preflight": api_gate, "tier_disclosure": disclosure,
+                "execution_mode": mode, "browser_required": bool(mode == "browser"),
+                "dry_run": True}
+
+    if mode == "api":
+        if not api_gate["pass"]:
+            return {"ok": False, "object_type": "course", "mode": "api",
+                    "duration_s": time.monotonic() - started,
+                    "error": api_gate["stop_reason"], "api_preflight": api_gate,
+                    "plan": plan, "dry_run": False}
+        return build_course_api(task, evidence_root, adapter=adapter,
+                                media_binder=media_binder, association=association,
+                                state=state, resume=resume, plan=plan)
 
     return run_phase(state, "m_walk", lambda: _live_build(
         task, plan, click_list, preflight, evidence_root, started, resume), log=_log)
@@ -583,18 +1171,25 @@ def _selftest() -> int:  # noqa: C901
             "modules": [
                 {"title": "Welcome", "lessons": [
                     {"title": "Intro", "body": "hello"},
-                    {"title": "Intro", "body": "dup"},          # dedupe
+                    {"title": "Intro", "body": "dup"},          # SAME TITLE, distinct key
                     {"title": "Setup", "media_url": "https://storage.leadconnectorhq.com/x.mp4"}]},
-                {"title": "Welcome", "lessons": []},            # dup module dropped
+                {"title": "Welcome", "lessons": []},            # SAME TITLE, distinct module key
                 {"title": "Build", "lessons": [{"title": "First page"}]}]}
     plan = plan_course(task)
     if plan["course_name"] != "ZHC Launch 101":
         errors.append(f"zhc name wrong: {plan['course_name']!r}")
-    if [m["title"] for m in plan["modules"]] != ["Welcome", "Build"]:
-        errors.append(f"module dedupe failed: {[m['title'] for m in plan['modules']]}")
-    if plan["modules"][0]["lessons"][0]["title"] != "Intro" or len(plan["modules"][0]["lessons"]) != 2:
-        errors.append("lesson dedupe failed")
-    if plan["lesson_count"] != 3:
+    # A09: duplicate DISPLAY titles are legal; identity is the logical key.
+    if [m["title"] for m in plan["modules"]] != ["Welcome", "Welcome", "Build"]:
+        errors.append(f"same-title modules were dropped: {[m['title'] for m in plan['modules']]}")
+    mkeys = [m["module_key"] for m in plan["modules"]]
+    if len(mkeys) != len(set(mkeys)):
+        errors.append(f"module logical keys are not unique: {mkeys}")
+    if len(plan["modules"][0]["lessons"]) != 3:
+        errors.append("same-title lessons were deduped away (A09 forbids it)")
+    lkeys = [l["lesson_key"] for l in plan["modules"][0]["lessons"]]
+    if lkeys != ["intro", "intro-2", "setup"]:
+        errors.append(f"lesson logical keys are not stable/distinct: {lkeys}")
+    if plan["lesson_count"] != 4:
         errors.append(f"lesson_count wrong: {plan['lesson_count']}")
     if plan["publish"]:
         errors.append("default must be DRAFT (publish False)")
@@ -616,9 +1211,14 @@ def _selftest() -> int:  # noqa: C901
     except StopAndReport:
         pass
 
-    # preflight fails on no modules
-    if _preflight(plan_course({"course_name": "Empty", "location_id": "L", "modules": []}))["pass"]:
-        errors.append("preflight should fail with no modules")
+    # plan validation fails BEFORE any write (empty outline is not a course)
+    empty_rejected = False
+    try:
+        _preflight(plan_course({"course_name": "Empty", "location_id": "L", "modules": []}))
+    except ValueError as exc:      # CoursePlanError subclasses ValueError
+        empty_rejected = "modules" in str(exc)
+    if not empty_rejected:
+        errors.append("plan with no modules must be rejected at plan time")
 
     # dry-run
     with tempfile.TemporaryDirectory() as tmp:
@@ -744,6 +1344,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--evidence-root", default="/tmp/course-run-01")
     p.add_argument("--course-name", default="New Course")
     p.add_argument("--location-id", default=os.environ.get("GHL_LOCATION_ID", ""))
+    p.add_argument("--execution-mode", choices=("", "api", "browser"), default="",
+                   help="Rail selection: 'api' = API-first coordinator (needs the "
+                        "shared public adapter), 'browser' = the managed-browser "
+                        "fallback, '' = api when an adapter is supplied else browser.")
     p.add_argument("--plan-json", default="", help="Path to a JSON with modules[] (THINK input)")
     args = p.parse_args(argv)
     if args.selftest:
@@ -755,6 +1359,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     args.resume = run_id_to_resume     # what ghl_run_state.cli_run reads
 
     task: Dict[str, Any] = {"course_name": args.course_name, "location_id": args.location_id}
+    if args.execution_mode:
+        task["execution_mode"] = args.execution_mode
     if args.plan_json and os.path.isfile(args.plan_json):
         with open(args.plan_json, encoding="utf-8") as fh:
             task.update(json.load(fh))
