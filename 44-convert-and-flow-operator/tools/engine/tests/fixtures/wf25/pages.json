@@ -1,0 +1,61 @@
+{
+  "fixture_version": "wf25-cp01",
+  "contract_revision": "wf25-monitoring-2026-11-08",
+  "workflow_id": "wf_synthetic_wf25",
+  "windows": [
+    {"start": "2026-11-01T00:00:00Z", "end": "2026-11-02T00:00:00Z"},
+    {"start": "2026-11-02T00:00:00Z", "end": "2026-11-03T00:00:00Z"}
+  ],
+  "pages": [
+    {
+      "window": 0,
+      "cursor_in": null,
+      "cursor_out": "opaque-cursor-1",
+      "body": {
+        "logs": [
+          {"logId": "log-1", "status": "completed", "contactId": "contact-synthetic", "message": "synthetic message body"}
+        ],
+        "meta": {"nextCursor": "opaque-cursor-1"}
+      }
+    },
+    {
+      "window": 0,
+      "cursor_in": "opaque-cursor-1",
+      "cursor_out": null,
+      "body": {
+        "logs": [
+          {"logId": "log-2", "status": "waiting"}
+        ],
+        "meta": {"nextCursor": null}
+      }
+    },
+    {
+      "window": 1,
+      "cursor_in": null,
+      "cursor_out": null,
+      "body": {
+        "logs": [
+          {"logId": "log-2", "status": "waiting"},
+          {"logId": "log-3", "status": "failed"},
+          {"logId": "log-4", "status": "removed"},
+          {"logId": "log-5", "status": "brand_new_status"},
+          {"eventId": "evt-6", "status": "completed"}
+        ],
+        "meta": {}
+      }
+    }
+  ],
+  "expected": {
+    "pages_read": 3,
+    "duplicates_dropped": 1,
+    "counts": {
+      "completed": 2,
+      "waiting": 1,
+      "failed": 1,
+      "removed": 1,
+      "unclassified": 1,
+      "total_events": 6
+    },
+    "filters_fingerprint_input": {"tag": "synthetic-filter"}
+  }
+}

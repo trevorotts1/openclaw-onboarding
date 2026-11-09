@@ -1,0 +1,34 @@
+{
+  "contract_revision": "wf25-monitoring-2026-11-08",
+  "workflow_id": "wf_synthetic_wf25",
+  "metric_kind": "event_count",
+  "label": "workflow_log_event_count",
+  "cohort_conversion": null,
+  "counts": {
+    "completed": 2,
+    "waiting": 1,
+    "failed": 1,
+    "removed": 1,
+    "unclassified": 1,
+    "total_events": 6
+  },
+  "windows": [
+    {
+      "start": "2026-11-01T00:00:00Z",
+      "end": "2026-11-02T00:00:00Z"
+    },
+    {
+      "start": "2026-11-02T00:00:00Z",
+      "end": "2026-11-03T00:00:00Z"
+    }
+  ],
+  "pages_read": 3,
+  "duplicates_dropped": 1,
+  "filters_fingerprint": "d7ff8dae5fc3c0314cb5ec94bc266f9fef36f151cc3da52763ccb4e0499bff7d",
+  "receipt_ids": [
+    "gxo_res_synthetic_0001"
+  ],
+  "empty": false,
+  "execution_proof": false,
+  "note": "Log-event counts for the requested windows. A same-window ratio is not cohort conversion; contacts may enter before the window."
+}
