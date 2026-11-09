@@ -20,6 +20,11 @@ import test_delivery as fixtures
 
 
 class DirectProviderEvidenceTests(unittest.TestCase):
+    def browser_probes(self):
+        return {'lanes':{'agent_browser':{'available':True}},
+            'api_capabilities':{'courses.update':{'location_id':'fixture',
+                'observed_at':time.time(),'supported':False,'reason':'unsupported_endpoint'}}}
+
     def operations(self, root):
         api = fixtures.FakeTransport()
         dispatch, calendar_api, calendar_inputs, route = fixtures.CalendarProviderTests().context()
@@ -101,7 +106,7 @@ class DirectProviderEvidenceTests(unittest.TestCase):
     def test_direct_api_intent_blocks_fresh_browser_or_api_provider_callback(self):
         data = {'location_id':'fixture','location_name':'Fixture',
                 'start_url':'https://app.convertandflow.com/v2/location/fixture/dashboard',
-                'settings':{'save_progress':True}}
+                'name':'Fixture course'}
         for journal in ('delivery-state.json','calendar-delivery-state.json'):
             for prior in (None,'{malformed',json.dumps({'status':'PROVIDER_INTENT_RECORDED'})):
                 with self.subTest(journal=journal,prior=prior), tempfile.TemporaryDirectory() as root:
@@ -109,8 +114,8 @@ class DirectProviderEvidenceTests(unittest.TestCase):
                     if prior is not None:
                         Path(root,'provider-state.json').write_text(prior)
                     callback = Mock()
-                    result = host.run_recipe('forms.settings',data,
-                        {'lanes':{'agent_browser':{'available':True}}},root,
+                    result = host.run_recipe('courses.update',data,
+                        self.browser_probes(),root,
                         input_dir='.',executors={'agent_browser':callback})
                     self.assertEqual(result['status'],'PROVIDER_RECONCILIATION_REQUIRED')
                     callback.assert_not_called()
@@ -129,18 +134,18 @@ class DirectProviderEvidenceTests(unittest.TestCase):
                     with evidence_lease.evidence_lease(root,'fixture',kind='course'):
                         self.fail('Replay-only lease authorized a fresh write')
 
-    def saved_provider_fixture(self, root, *, operation='forms.settings'):
+    def saved_provider_fixture(self, root, *, operation='courses.update'):
         data = {'location_id':'fixture','location_name':'Fixture',
                 'start_url':'https://app.convertandflow.com/v2/location/fixture/dashboard',
-                'settings':{'save_progress':True}}
+                'name':'Fixture course'}
         if operation == 'courses.create':
             probe = {'api_capabilities':{operation:{'location_id':'fixture',
                 'observed_at':time.time(),'provider':'public_api','version':'v3',
                 'scope_ok':True,'supported':True}}}
             lane, kind, status = 'public_api', 'course', 'API_STEPS_COMPLETE'
         else:
-            probe = {'lanes':{'agent_browser':{'available':True}}}
-            lane, kind, status = 'agent_browser', 'form', 'EDITOR_STEPS_COMPLETE'
+            probe = self.browser_probes()
+            lane, kind, status = 'agent_browser', 'course', 'EDITOR_STEPS_COMPLETE'
         callback = Mock(return_value={'status':status,'location_id':'fixture',
             'objects':[{'kind':kind,'id':'saved_id'}]})
         first = host.run_recipe(operation,data,probe,root,input_dir='.',executors={lane:callback})
@@ -171,7 +176,7 @@ class DirectProviderEvidenceTests(unittest.TestCase):
                 path = Path(root,'provider-state.json')
                 damaged = json.dumps(change(json.loads(path.read_text())))
                 path.write_text(damaged)
-                result = host.run_recipe('forms.settings',data,probe,root,
+                result = host.run_recipe('courses.update',data,probe,root,
                     input_dir='.',executors={lane:callback})
                 self.assertEqual(result['status'],'PROVIDER_RECONCILIATION_REQUIRED')
                 callback.assert_not_called()
@@ -197,11 +202,11 @@ class DirectProviderEvidenceTests(unittest.TestCase):
             prior['outcome']['private_response'] = 'PRIVATE_MUST_NOT_LEAK'
             prior['outcome']['objects'][0]['private_response'] = 'PRIVATE_MUST_NOT_LEAK'
             preserved = json.dumps(prior);path.write_text(preserved)
-            result = host.run_recipe('forms.settings',data,probe,root,
+            result = host.run_recipe('courses.update',data,probe,root,
                 input_dir='.',executors={lane:callback})
             self.assertEqual(result['status'],'ALREADY_EXECUTED')
             self.assertEqual(set(result['result']),{'status','location_id','objects','verification_required'})
-            self.assertEqual(result['result']['objects'],[{'kind':'form','id':'saved_id'}])
+            self.assertEqual(result['result']['objects'],[{'kind':'course','id':'saved_id'}])
             self.assertNotIn('PRIVATE_MUST_NOT_LEAK',json.dumps(result))
             self.assertEqual(path.read_text(),preserved)
             callback.assert_not_called()
@@ -217,7 +222,7 @@ class DirectProviderEvidenceTests(unittest.TestCase):
                 path = Path(root,'provider-state.json')
                 prior = json.loads(path.read_text());prior['outcome'].update(flag)
                 preserved = json.dumps(prior);path.write_text(preserved)
-                result = host.run_recipe('forms.settings',data,probe,root,
+                result = host.run_recipe('courses.update',data,probe,root,
                     input_dir='.',executors={lane:callback})
                 self.assertEqual(result['status'],'NEEDS_VERIFICATION')
                 self.assertEqual(result['result']['status'],'NEEDS_VERIFICATION')
@@ -293,11 +298,11 @@ class DirectProviderEvidenceTests(unittest.TestCase):
     def test_browser_callback_identity_refusal_is_terminal_without_losing_intent(self):
         data = {'location_id':'fixture','location_name':'Fixture',
                 'start_url':'https://app.convertandflow.com/v2/location/fixture/dashboard',
-                'settings':{'save_progress':True}}
-        probe = {'lanes':{'agent_browser':{'available':True}}}
+                'name':'Fixture course'}
+        probe = self.browser_probes()
         callback = Mock(side_effect=AuthBridgeError('VALUE_MUST_NOT_BE_PERSISTED'))
         with tempfile.TemporaryDirectory() as root:
-            result = host.run_recipe('forms.settings',data,probe,root,
+            result = host.run_recipe('courses.update',data,probe,root,
                 input_dir='.',executors={'agent_browser':callback})
             self.assertEqual(result['status'],'STOP_AUTH')
             self.assertTrue(result['browser_used'])
@@ -305,7 +310,7 @@ class DirectProviderEvidenceTests(unittest.TestCase):
             self.assertEqual(json.loads(state)['status'],'PROVIDER_RECONCILIATION_REQUIRED')
             auth = Path(root,'auth-stop.json').read_text()
             self.assertNotIn('VALUE_MUST_NOT_BE_PERSISTED',state+auth+json.dumps(result))
-            result = host.run_recipe('forms.settings',data,probe,root,
+            result = host.run_recipe('courses.update',data,probe,root,
                 input_dir='.',executors={'agent_browser':callback})
             self.assertEqual(result['status'],'STOP_AUTH_CONTEXT')
             self.assertEqual(callback.call_count,1)
