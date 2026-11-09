@@ -66,7 +66,8 @@ def intake_doc(**over):
 
 
 def real_hash(doc):
-    return cli._plan_hash(cli._resolved_launch(doc)[1])
+    """The hash the client approves: the plan-shape record's own hash (the `plan` derivation)."""
+    return cli._approved_plan_hash(intake.validate(doc))
 
 
 def approval_record(doc, **over):
@@ -236,7 +237,7 @@ class ApprovalBindingTests(_Tmp):
 
     def manifest_dir(self, approved, receipt_ref="APPR-TEST"):
         doc = self.live()
-        _, launch = cli._resolved_launch(doc)
+        _, launch = cli._resolved_launch(doc, plan_hash=real_hash(doc))
         launch["plan_approval_ref"] = "APPR-TEST"
         run = self.dir / "package"
         run.mkdir()
@@ -279,7 +280,7 @@ class ApprovalBindingTests(_Tmp):
         graph = cli.route.compile_route(normalized)
         for node in graph["nodes"]:
             (run / "pieces" / f"{node['role']}.json").write_text("{}", encoding="utf-8")
-        launch = cli._resolved_launch(doc)[1]
+        launch = cli._resolved_launch(doc, plan_hash=real_hash(doc))[1]
         launch["plan_approval_ref"] = "APPR-TEST"
         launch.update(launch_over)
         (run / "launch.json").write_text(json.dumps(launch), encoding="utf-8")

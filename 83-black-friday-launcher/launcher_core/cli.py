@@ -75,12 +75,42 @@ def _launch_for(normalized: dict, inputs: dict, **choices: Any) -> dict:
     return launch_bridge.to_launch_record(normalized, route.compile_route(normalized), inputs, **choices)
 
 
-def _resolved_launch(payload: Any, **choices: Any) -> tuple:
-    """(normalized intake, launch record) exactly as launch_bridge.run would build them."""
+def _approved_plan_hash(normalized: dict, **choices: Any) -> str:
+    """The hash the client is about to approve, from the plan-shape record only (FIX-04, FIX-05).
+
+    This is the `plan` preview's own hash derivation, and the one place in this module a hash is
+    computed rather than read off an approval record. It is never used to satisfy a check: it is the
+    value printed for the client to approve, and `dispatch` accepts only the approval record's own
+    copy of it."""
+    return _plan_hash(_launch_for(normalized, launch_bridge.plan_shape_inputs(normalized), **choices))
+
+
+def _plan_inputs(normalized: dict, *, test_only: bool, plan_hash: str, **choices: Any) -> dict:
+    """The image inputs `plan` prints: the resolved plan when it resolves, else the plan-shape fallback.
+
+    plan_hash is the approval-bound hash handed to the paid resolver, so a paid plan's budget is
+    checked against the very plan being shown. When the resolver refuses (no budget, no brand file),
+    the preview falls back to the plan-shape inputs, which always carry design_style (FIX-04)."""
+    fallback = launch_bridge.plan_shape_inputs(normalized)
+    try:
+        return image_plan.resolve(normalized.get("image_plan"), test_only=test_only,
+                                  plan_hash=plan_hash)[0]
+    except image_plan.ImagePlanError:
+        return fallback
+
+
+def _resolved_launch(payload: Any, *, plan_hash: str, **choices: Any) -> tuple:
+    """(normalized intake, launch record) exactly as launch_bridge.run would build them.
+
+    plan_hash is the hash the run's approval record binds (`_plan_hash` of the dispatched plan),
+    threaded to launch_bridge.resolve_launch and on to the paid image-plan resolution. It has no
+    default: a call site that forgets it is a visible TypeError, never a silently unapproved paid
+    plan. An empty value on a paid run still fails with AF-LAUNCH-IMAGE-PLAN-APPROVAL."""
     normalized = intake.validate(payload)
-    inputs, _ = image_plan.resolve(normalized.get("image_plan"),
-                                   test_only=bool(normalized.get("test_only", True)))
-    return normalized, _launch_for(normalized, inputs, **choices)
+    graph = route.compile_route(normalized)
+    _inputs, _to_confirm, launch = launch_bridge.resolve_launch(
+        normalized, graph, plan_hash=plan_hash, **choices)
+    return normalized, launch
 
 
 def _bind(normalized: dict, real_hash: str, real_ref: str) -> dict:
@@ -264,21 +294,21 @@ def render_plan(normalized: dict, launch: dict) -> str:
     return "\n".join(lines)
 
 
-def cmd_plan(args: argparse.Namespace) -> int:
-    """`--intake`: show the client the plan and the hash to approve. `--plan`: validate a shared launch plan."""
+def cmd_plan(args: argparse.Namespace, *, plan_hash: str) -> int:
+    """`--intake`: show the client the plan and the hash to approve. `--plan`: validate a shared launch plan.
+
+    plan_hash is required and has no default (FIX-05): the parser's own entry point derives the hash
+    the client is about to approve and passes it here, so no call site can omit it and let the paid
+    resolver read an empty value."""
     if bool(args.intake) == bool(args.plan):
         raise CliError("AF-LAUNCH-PLAN-ARGS", "give exactly one of --intake (show the plan to approve) "
                             "or --plan (validate a shared launch plan)")
     if args.intake:
         normalized = intake.validate(_read_json(args.intake))
-        test_only = bool(normalized.get("test_only", True))
-        try:
-            inputs, _ = image_plan.resolve(normalized.get("image_plan"), test_only=test_only)
-        except image_plan.ImagePlanError:
-            # the picture details (brand file, cap) do not change the plan; only the provider is in the hash
-            raw = (normalized.get("image_plan") or {}).get("image_provider")
-            inputs = {"image_provider": raw if raw in image_plan.KNOWN_PROVIDERS else image_plan.DEFAULT_PROVIDER}
-        print(render_plan(normalized, _launch_for(normalized, inputs, **_page_choices(args))))
+        choices = _page_choices(args)
+        inputs = _plan_inputs(normalized, test_only=bool(normalized.get("test_only", True)),
+                              plan_hash=plan_hash, **choices)
+        print(render_plan(normalized, _launch_for(normalized, inputs, **choices)))
         return 0
     plan = _read_json(args.plan)
     deliveries = _read_json(args.deliveries) if args.deliveries else None
@@ -286,6 +316,17 @@ def cmd_plan(args: argparse.Namespace) -> int:
     launch_plan.assert_complete(record["completeness"])
     _emit(record)
     return 0
+
+
+def _plan_command(args: argparse.Namespace) -> int:
+    """The `plan` subcommand's entry: derive the hash the client is about to approve, then delegate.
+
+    With `--plan` (validate a shared launch plan) no image plan is resolved, so there is no hash to
+    derive and the empty string is passed and never read."""
+    if not args.intake:
+        return cmd_plan(args, plan_hash="")
+    normalized = intake.validate(_read_json(args.intake))
+    return cmd_plan(args, plan_hash=_approved_plan_hash(normalized, **_page_choices(args)))
 
 
 def _launcher_intake():
@@ -329,9 +370,12 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     dependencies.require(mode=dependencies.mode_for_intake(payload))
     approval = _read_json(args.approval)
     launch_id = str(payload.get("launch_id") or "") if isinstance(payload, dict) else ""
-    normalized, launch = _resolved_launch(payload, **_page_choices(args))
-    real = _plan_hash(launch)
     record = approval if isinstance(approval, dict) else {}
+    # FIX-05: the approval record carries the plan hash it binds; it is threaded into the paid
+    # image-plan resolution, so the plan that runs is provably the plan that was approved.
+    normalized, launch = _resolved_launch(
+        payload, plan_hash=str(record.get("plan_hash") or ""), **_page_choices(args))
+    real = _plan_hash(launch)
     if record.get("plan_hash") != real:
         raise CliError("AF-LAUNCH-APPROVAL-HASH",
                             f"the approval record binds plan {str(record.get('plan_hash'))[:8]}, but "
@@ -486,11 +530,19 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
     except dependencies.DependencyError as exc:
         print(f"FAIL {exc}", file=sys.stderr)
         return 2
+    # FIX-09: the exit status and the printed readiness flag are derived from the SAME computed
+    # blocker set, so a run with blockers can never print a ready flag or exit 0. Advisory entries
+    # (present-nothing, never blocking) are named separately and never change the exit status.
+    blockers = list(report["blockers"])
+    advisory = [e["id"] for e in report["entries"] if e["status"] != "present" and not e["blocking"]]
+    report = {**report,
+              "enabled_in_999": bool(report["enabled_in_999"]) and not blockers,
+              "would_enable": not blockers}
     _emit(report)
     print(f"\n{len(report['present'])} present, {len(report['missing'])} missing, "
           f"{len(report['unverifiable'])} unverifiable; "
           f"enabled_in_999={report['enabled_in_999']}, "
-          f"would_enable={report['would_enable']}")
+          f"would_enable={report['would_enable']}, blockers={len(blockers)}")
     for entry in report["entries"]:
         print(f"  {entry['status'].upper():12s} {entry['id']}  ({entry['evidence']})")
     # The metadata spines (registration.json, skill.json) are pointers, not a second
@@ -516,7 +568,12 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
     print("  UNSELECTED-OPTIONAL: " + (", ".join(cl["unselected_optional"]) or "none"))
     if cl["selected_missing"]:
         print("  SELECTED BUT MISSING: " + ", ".join(cl["selected_missing"]))
-    return 2 if args.install and report["blockers"] else 0
+    print("\nBLOCKING (" + str(len(blockers)) + "): " + (", ".join(blockers) or "none"))
+    for blocker in blockers:
+        entry = next(e for e in report["entries"] if e["id"] == blocker)
+        print(f"  BLOCKING   {blocker}  ({entry['evidence']})")
+    print("ADVISORY (" + str(len(advisory)) + "): " + (", ".join(advisory) or "none"))
+    return 2 if blockers else 0
 
 
 _LANDING_HELP = ("the landing pages the client wants: landing, sales or landing,sales (default: the set "
@@ -611,7 +668,7 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--extra-page", action="append", choices=["downsell_2"], help=_EXTRA_HELP)
     pl.add_argument("--deliveries",
                     help="JSON object of unit id -> delivery result; omit to see what is missing")
-    pl.set_defaults(fn=cmd_plan)
+    pl.set_defaults(fn=_plan_command)
 
     x = sub.add_parser("dispatch", help="turn the intake into a Skill 49 launch record and build every page")
     x.add_argument("--intake", required=True)

@@ -20,6 +20,20 @@ The owner's rules, exactly:
 A membership is not a purchase event, so a membership attestation never needs a
 purchase reference. A purchase attestation must state the amount. The declared price is the owner's stated fact, not a
 default: a purchase attestation that declares a different amount is refused.
+
+LAUNCH ORIGIN (FIX-12, owner ruling 2026-11-08). There are exactly two entry points, and the origin
+is never inferred from an account's state, a tag, a config value or an environment variable:
+
+* ``gate()`` is the CLIENT launch entry point. A client launching her own offer never has her
+  account membership consulted: no contact-tag lookup executes on that path, so no membership value
+  can change its outcome. The qualifying-purchase read-back, the declaration's accepted set and the
+  refusal for a basis outside it all behave exactly as they did before.
+* ``internal_gate()`` is the BlackCEO-internal launch entry point. It is the only path on which the
+  membership tags are read back, and it still refuses a non-member with
+  ``AF-LAUNCH-ENTITLEMENT-NOT-MEMBER``.
+
+``attest()`` carries the explicit ``launch_origin`` argument with no default, so a new call site
+cannot re-enter the membership branch by forgetting it.
 """
 
 from __future__ import annotations
@@ -63,6 +77,13 @@ ATTESTATION_BOUNDARY = (
 
 # The only interview answer that counts as 'included'. Exact match, no prefix.
 INCLUDED_CHOICE = "Yes, it is included"
+
+# Who is launching. Explicit at every entry point, never derived from account state, tags,
+# configuration or the environment (FIX-12: implied scope re-enters the check the first time a
+# call site forgets the argument).
+CLIENT_ORIGIN = "client"
+INTERNAL_ORIGIN = "blackceo_internal"
+LAUNCH_ORIGINS = (CLIENT_ORIGIN, INTERNAL_ORIGIN)
 
 _CM_NAME = "ghl_contact_membership"
 # Test/orchestrator seam: a transport set here is used instead of the live env one.
@@ -200,8 +221,14 @@ def _nonempty(value: Any) -> bool:
 
 
 def _verify(declaration: Dict[str, Any], rule: Dict[str, Any], basis: str,
-            evidence_ref: str, purchase_ref: Any, transport: Any) -> None:
-    """Resolve the attestation in the client's GHL record. Raises on any miss."""
+            evidence_ref: str, purchase_ref: Any, transport: Any, launch_origin: str) -> None:
+    """Resolve the attestation in the client's GHL record. Raises on any miss.
+
+    The membership read-back (``contact_tags`` and the tag comparison that raises
+    ``AF-LAUNCH-ENTITLEMENT-NOT-MEMBER``) runs ONLY for a BlackCEO-internal launch. On a client
+    launch it is never reached, so no lookup for this account is made on that path."""
+    if launch_origin == CLIENT_ORIGIN and not rule["requires_purchase"]:
+        return  # FIX-12: no membership consultation, and no transport is even resolved
     cm = _membership_module()
     if transport is None:
         transport = _transport
@@ -242,8 +269,14 @@ def _verify(declaration: Dict[str, Any], rule: Dict[str, Any], basis: str,
               "the order amount/currency does not match the owner-stated price")
 
 
-def attest(attestation: Any, transport: Any = None) -> Dict[str, Any]:
-    """Verify one attestation against the declaration AND the client's GHL record."""
+def attest(attestation: Any, transport: Any = None, *, launch_origin: str) -> Dict[str, Any]:
+    """Verify one attestation against the declaration AND the client's GHL record.
+
+    launch_origin is required and has no default: CLIENT_ORIGIN never consults membership,
+    INTERNAL_ORIGIN does. Prefer gate() or internal_gate(), which name the two paths."""
+    if launch_origin not in LAUNCH_ORIGINS:
+        _fail("AF-LAUNCH-ENTITLEMENT-ORIGIN", "launch_origin",
+              f"{launch_origin!r} is not a launch origin; use one of {list(LAUNCH_ORIGINS)}")
     declaration = load_declaration()
     if not isinstance(attestation, dict):
         _fail("AF-LAUNCH-ENTITLEMENT-ATTESTATION", "entitlement_attestation",
@@ -295,7 +328,7 @@ def attest(attestation: Any, transport: Any = None) -> Dict[str, Any]:
               f"{basis!r} qualifies without a purchase; a membership is not a "
               "purchase event")
     _verify(declaration, rule, basis, attestation["evidence_ref"].strip(),
-            purchase_ref, transport)
+            purchase_ref, transport, launch_origin)
     return {
         "basis": basis,
         "qualifies": True,
@@ -314,8 +347,19 @@ def attest(attestation: Any, transport: Any = None) -> Dict[str, Any]:
 
 
 def gate(attestation: Any, transport: Any = None) -> Dict[str, Any]:
-    """The single build gate. Refuses every state the GHL record cannot prove."""
-    return attest(attestation, transport)
+    """The CLIENT launch entry point. Its body contains no membership check (FIX-12).
+
+    Refuses every state the record cannot prove, exactly as before, except that it never asks the
+    requester's account for a membership: that question is not put on this path."""
+    return attest(attestation, transport, launch_origin=CLIENT_ORIGIN)
+
+
+def internal_gate(attestation: Any, transport: Any = None) -> Dict[str, Any]:
+    """The BlackCEO-INTERNAL launch entry point. The membership read-back lives only here (FIX-12).
+
+    A BlackCEO-internal launch by an account that does not hold the declared membership tag is still
+    refused with AF-LAUNCH-ENTITLEMENT-NOT-MEMBER."""
+    return attest(attestation, transport, launch_origin=INTERNAL_ORIGIN)
 
 
 def attest_from_interview(answer: Any, attestation: Any,

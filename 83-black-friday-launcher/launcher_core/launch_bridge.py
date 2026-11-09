@@ -14,6 +14,15 @@ the visual direction, so Skill 49's dispatch is asked to run them as parallel la
 that (``parallel`` argument). The lane plan is computed and reported either way, so a client sees what
 will run first and what runs together; if the dispatcher has no parallel mode yet, the report says
 "serial" rather than pretending.
+
+INPUTS CONTRACT (FIX-04), binding on every future editor: every key this module reads from the
+``inputs`` mapping by bare subscript is guaranteed present in every producer of ``inputs`` — the
+resolved image plan (``image_plan.resolve``) and the plan-shape fallback (``plan_shape_inputs`` here, exposed for
+``cli.py``) — and every read of a key that is not contractually
+required tolerates its absence with the documented product default, never the empty string.
+``design_style`` in ``structure_refs`` is the key that used to break this: the fallback omitted it
+and the bare subscript raised ``KeyError``. Producers populate it; the read here is guarded too,
+because either half alone leaves the class of defect alive.
 """
 
 from __future__ import annotations
@@ -95,9 +104,12 @@ def structure_refs(normalized: Dict[str, Any], inputs: Dict[str, Any], landing_p
     The plan hash covers every record key but status and plan_approval_ref, so a copy form, a landing
     page set, a design style or an extra page that changes after approval is a re-approval, never a
     silent edit. source_refs is the one free-form list the launch schema (closed) already allows."""
+    style = inputs.get("design_style")
+    if not isinstance(style, str) or not style.strip():
+        style = image_plan.DEFAULT_DESIGN_STYLE  # never empty: empty is a distinct style downstream
     return [f"{STRUCTURE_PREFIX}copy_profile={normalized['copy_profile']}",
             f"{STRUCTURE_PREFIX}landing_pages={','.join(sorted(set(landing_pages)))}",
-            f"{STRUCTURE_PREFIX}design_style={inputs['design_style']}",
+            f"{STRUCTURE_PREFIX}design_style={style.strip()}",
             f"{STRUCTURE_PREFIX}extra_pages={','.join(sorted(set(extra_pages)))}"]
 
 
@@ -213,6 +225,61 @@ def to_launch_record(normalized: Dict[str, Any], graph: Dict[str, Any],
 def check_launch_record(launch: Dict[str, Any]) -> List[str]:
     """Skill 49's own validator's verdict on the record. Empty list means schema- and domain-valid."""
     return list(substrate.dispatch().vlp.validate_launch(launch))
+
+
+def plan_document_hash(launch: Dict[str, Any]) -> str:
+    """Skill 49's own hash of the record: the one value an approval binds."""
+    return substrate.dispatch().vlp.plan_document_hash(launch)
+
+
+def plan_shape_inputs(normalized: Dict[str, Any]) -> Dict[str, Any]:
+    """The two image-plan facts the plan hash binds, resolved without money or approval.
+
+    FIX-04: ``design_style`` is always present and never the empty string; with none, or an empty or
+    unknown value, the documented product default (``image_plan.DEFAULT_DESIGN_STYLE``) is used. An
+    unbuilt provider is resolved to the house provider here exactly as ``image_plan`` resolves it, so
+    the plan-shape record and the resolved record hash the same unless a real choice changed."""
+    image = normalized.get("image_plan") if isinstance(normalized.get("image_plan"), dict) else {}
+    style = image.get("design_style")
+    if not isinstance(style, str) or not style.strip():
+        style = image_plan.DEFAULT_DESIGN_STYLE
+    provider = image.get("image_provider")
+    return {"design_style": style.strip(),
+            "image_provider": (provider if provider in image_plan.KNOWN_PROVIDERS
+                               else image_plan.DEFAULT_PROVIDER)}
+
+
+def resolve_launch(normalized: Dict[str, Any], graph: Dict[str, Any], *,
+                   plan_hash: Optional[str] = None,
+                   landing_pages: Optional[Sequence[str]] = None,
+                   extra_pages: Sequence[str] = ()) -> tuple:
+    """(image inputs, to_confirm, launch record) with the paid budget bound to the plan's OWN hash.
+
+    FIX-05: the paid resolver needs the hash the approval is bound to, so it is threaded here rather
+    than left out. ``plan_hash`` is the approval record's value when the caller has one (``run`` passes
+    ``approval['plan_hash']``, ``cli.dispatch`` passes the record's hash). ``None`` is the only
+    "derive it" signal — the `plan` preview — and the derived hash must survive resolution unchanged;
+    if it does not, the client would approve one plan and run another. An explicitly empty string is
+    passed straight through, so a paid run with no approval-bound hash still refuses with
+    AF-LAUNCH-IMAGE-PLAN-APPROVAL rather than being quietly given a hash it never approved.
+    """
+    test_only = bool(normalized.get("test_only", True))
+    derived = plan_hash is None
+    approved = plan_hash
+    if derived:
+        approved = plan_document_hash(to_launch_record(
+            normalized, graph, plan_shape_inputs(normalized),
+            landing_pages=landing_pages, extra_pages=extra_pages))
+    inputs, to_confirm = image_plan.resolve(normalized.get("image_plan"), test_only=test_only,
+                                            plan_hash=approved)
+    launch = to_launch_record(normalized, graph, inputs, landing_pages=landing_pages,
+                              extra_pages=extra_pages)
+    if derived and plan_document_hash(launch) != approved:
+        raise BridgeError(
+            "AF-LAUNCH-BRIDGE-PLAN-HASH",
+            "resolving the picture plan changed the plan hash, so an approval would bind a plan the "
+            "client never saw. Nothing was dispatched and nothing was spent.")
+    return inputs, to_confirm, launch
 
 
 def lane_plan(graph: Dict[str, Any], workers: Optional[int] = None,
@@ -362,6 +429,20 @@ def _validate_supplied_adapters(config: Dict[str, Any], test_only: bool) -> None
                           f"{exc}. Nothing was dispatched and nothing was spent.") from exc
 
 
+def _canonical_path(value: Any) -> str:
+    """One canonical form for a compared path: absolute, symlinks resolved, both sides the same routine.
+
+    FIX-13: ``/var/...`` and ``/private/var/...`` are one file on macOS and must compare equal; a
+    genuinely different file must still compare unequal. A prefix rewrite would answer one symlink and
+    mangle every other root, so both sides go through ``Path.resolve`` and nothing else."""
+    return str(Path(str(value)).resolve())
+
+
+def _same_path(recorded: Any, wanted: Any) -> bool:
+    """True when both spellings name the same filesystem object."""
+    return _canonical_path(recorded) == _canonical_path(wanted)
+
+
 def _landing_bridge_config(adapter_inputs: Dict[str, Any], dispatch_dir: Path, inputs: Dict[str, Any],
                            inputs_path: Path) -> Dict[str, Any]:
     """Hand Skill 49's landing bridge the approved image plan (STR-16).
@@ -393,10 +474,43 @@ def _landing_bridge_config(adapter_inputs: Dict[str, Any], dispatch_dir: Path, i
                            "brand_owner": written["brand_owner"], "design_style": written["design_style"],
                            "image_provider": written["image_provider"]},
             "image_cap": written["image_cap"], "brand_owner": written["brand_owner"]}
+    # Any other path comparison in this module, inspected for the same class and left as-is because
+    # it decides no file identity: _bridge_config_path and _check_copy_form only read a path;
+    # split_landing classifies an artifact by its label prefix; the writes and copies below construct
+    # paths and compare nothing. The two identity comparisons are the two image_inputs keys, and both
+    # go through the one routine above.
     for key, value in want.items():
-        if key in landing and landing[key] != value:
+        if key not in landing:
+            continue
+        recorded = landing[key]
+        if key == "image_inputs":
+            if not _same_path(recorded, value):
+                raise BridgeError(
+                    "AF-LAUNCH-BRIDGE-IMAGE-PLAN",
+                    f"image_inputs in the landing bridge config is {_canonical_path(recorded)} but the "
+                    f"approved image plan says {_canonical_path(value)}. Nothing was dispatched and "
+                    "nothing was spent.")
+            continue
+        if isinstance(value, dict) and isinstance(recorded, dict) and "image_inputs" in value:
+            if "image_inputs" in recorded and not _same_path(recorded["image_inputs"],
+                                                             value["image_inputs"]):
+                raise BridgeError(
+                    "AF-LAUNCH-BRIDGE-IMAGE-PLAN",
+                    f"image_plan.image_inputs in the landing bridge config is "
+                    f"{_canonical_path(recorded['image_inputs'])} but the approved image plan says "
+                    f"{_canonical_path(value['image_inputs'])}. Nothing was dispatched and nothing was "
+                    "spent.")
+            rest_recorded = {k: v for k, v in recorded.items() if k != "image_inputs"}
+            rest_wanted = {k: v for k, v in value.items() if k != "image_inputs"}
+            if rest_recorded != rest_wanted:
+                raise BridgeError(
+                    "AF-LAUNCH-BRIDGE-IMAGE-PLAN",
+                    f"{key} in the landing bridge config is {rest_recorded!r} but the approved image "
+                    f"plan says {rest_wanted!r}. Nothing was dispatched and nothing was spent.")
+            continue
+        if recorded != value:
             raise BridgeError("AF-LAUNCH-BRIDGE-IMAGE-PLAN",
-                              f"{key} in the landing bridge config is {landing[key]!r} but the approved image "
+                              f"{key} in the landing bridge config is {recorded!r} but the approved image "
                               f"plan says {value!r}. Nothing was dispatched and nothing was spent.")
     landing.update(want)
     landing["draft"] = landing.get("draft") is True  # a draft is only ever declared, never defaulted on
@@ -424,10 +538,13 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
     """
     out_dir = Path(out_dir)
     normalized = intake_module.validate(payload)
-    inputs, to_confirm = image_plan.resolve(normalized.get("image_plan"),
-                                            test_only=bool(normalized.get("test_only", True)))
     graph = route.compile_route(normalized)
-    launch = to_launch_record(normalized, graph, inputs, landing_pages=landing_pages, extra_pages=extra_pages)
+    # FIX-05: the approval record carries the plan hash the run is bound to; the paid image-plan
+    # resolution below is given that value, never none.
+    bound_hash = approval.get("plan_hash") if isinstance(approval, dict) else None
+    inputs, to_confirm, launch = resolve_launch(
+        normalized, graph, plan_hash=bound_hash,
+        landing_pages=landing_pages, extra_pages=extra_pages)
     _bind_approval(launch, normalized, approval)
     fails = check_launch_record(launch)
     if fails:

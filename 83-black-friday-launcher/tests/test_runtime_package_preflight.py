@@ -182,7 +182,9 @@ class RuntimePackagePreflight(unittest.TestCase):
         with mock.patch.object(dependencies, "ensure_runtime_packages") as ensure, \
                 mock.patch.object(cli, "cmd_questions", return_value=0) as questions, \
                 contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(cli.main(["dependencies", "--root", str(self.dir)]), 0)
+            # FIX-09: the fixture names a required package that is not installed, so the report is
+            # honest about it (exit 2, readiness false). The safety assertion is that no install ran.
+            self.assertEqual(cli.main(["dependencies", "--root", str(self.dir)]), 2)
             self.assertEqual(cli.main(["questions"]), 0)
             self.assertEqual(questions.call_count, 1)  # the command really ran
             self.assertEqual(ensure.call_count, 0)

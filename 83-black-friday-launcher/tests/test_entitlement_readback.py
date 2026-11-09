@@ -40,6 +40,13 @@ def refused(case, attestation, transport, code):
     case.assertEqual(cm.exception.code, code)
 
 
+def internal_refused(case, attestation, transport, code):
+    """FIX-12: the membership read-back lives on the BlackCEO-internal entry point only."""
+    with case.assertRaises(entitlement.EntitlementError) as cm:
+        entitlement.internal_gate(attestation, transport)
+    case.assertEqual(cm.exception.code, code)
+
+
 class EntitlementReadbackTest(unittest.TestCase):
     def setUp(self):
         self._env = {k: os.environ.pop(k, None)
@@ -56,24 +63,34 @@ class EntitlementReadbackTest(unittest.TestCase):
         free = {"basis": "purchase", "evidence_ref": "evidence-1", "attested_by": "operator",
                 "purchase_reference": "order-1", "amount_minor": 49700}
         refused(self, free, fake(), "AF-LAUNCH-ENTITLEMENT-EVIDENCE-UNRESOLVED")
-        refused(self, {**MEMBER, "evidence_ref": "yes whatever"}, fake(),
-                "AF-LAUNCH-ENTITLEMENT-EVIDENCE-UNRESOLVED")
+        # FIX-12: a membership basis is not looked up on the client path, so the free-text refusal for it
+        # is proved on the internal entry point (the same safety assertion, scoped where it still runs).
+        internal_refused(self, {**MEMBER, "evidence_ref": "yes whatever"}, fake(),
+                         "AF-LAUNCH-ENTITLEMENT-EVIDENCE-UNRESOLVED")
         refused(self, {**PURCHASE, "purchase_reference": "order-1"}, fake(),
                 "AF-LAUNCH-ENTITLEMENT-EVIDENCE-UNRESOLVED")
 
     def test_no_credential_and_no_transport_fails_closed(self):
-        refused(self, MEMBER, None, "AF-LAUNCH-ENTITLEMENT-UNVERIFIED")
+        # The purchase read-back is unchanged on the client path: no way to read the record fails closed.
+        refused(self, PURCHASE, None, "AF-LAUNCH-ENTITLEMENT-UNVERIFIED")
+        # The membership read-back is scoped to the internal path, where the same invariant holds.
+        internal_refused(self, MEMBER, None, "AF-LAUNCH-ENTITLEMENT-UNVERIFIED")
 
     def test_member_tag_read_back_qualifies(self):
+        # FIX-12: the CLIENT entry point never consults membership, and still admits the member basis.
         result = entitlement.gate(MEMBER, fake())
         self.assertEqual(result["evidence_kind"], "ghl_contact_readback")
         self.assertFalse(result["proves_purchase"])
-        refused(self, MEMBER, fake(contact_tags=("school-of-ai",)),
-                "AF-LAUNCH-ENTITLEMENT-NOT-MEMBER")
+        self.assertTrue(entitlement.gate(MEMBER, fake(contact_tags=()))["qualifies"])
+        # The INTERNAL entry point keeps the read-back and its refusal: the check is scoped, not deleted.
+        self.assertEqual(entitlement.internal_gate(MEMBER, fake())["basis"],
+                         "brand_management_membership")
+        internal_refused(self, MEMBER, fake(contact_tags=("school-of-ai",)),
+                         "AF-LAUNCH-ENTITLEMENT-NOT-MEMBER")
         # ZHC with Brand Management needs both tags
         zhc = {**MEMBER, "basis": "zhc_with_brand_management"}
-        refused(self, zhc, fake(), "AF-LAUNCH-ENTITLEMENT-NOT-MEMBER")
-        entitlement.gate(zhc, fake(contact_tags=("brand-management-member", "zhc-member")))
+        internal_refused(self, zhc, fake(), "AF-LAUNCH-ENTITLEMENT-NOT-MEMBER")
+        entitlement.internal_gate(zhc, fake(contact_tags=("brand-management-member", "zhc-member")))
 
     def test_order_read_back_qualifies_purchase(self):
         result = entitlement.gate(PURCHASE, fake())
@@ -91,12 +108,12 @@ class EntitlementReadbackTest(unittest.TestCase):
 
     def test_module_seam_transport_is_used(self):
         entitlement.set_transport(fake())
-        self.assertEqual(entitlement.gate(MEMBER)["basis"], "brand_management_membership")
+        self.assertEqual(entitlement.internal_gate(MEMBER)["basis"], "brand_management_membership")
 
     def test_lookup_issues_get_only(self):
         t = fake()
         entitlement.gate(PURCHASE, t)
-        entitlement.gate(MEMBER, t)
+        entitlement.internal_gate(MEMBER, t)
         self.assertTrue(t.requests)
         self.assertEqual({m for m, _, _ in t.requests}, {"GET"})
         for verb in ("POST", "PUT", "DELETE"):
@@ -111,12 +128,12 @@ class EntitlementReadbackTest(unittest.TestCase):
             with self.assertRaises(entitlement.EntitlementError) as cm:
                 entitlement.attest_from_interview(answer, MEMBER, fake())
             self.assertEqual(cm.exception.code, "AF-LAUNCH-ENTITLEMENT-INTERVIEW-CHOICE")
-        # the exact choice still needs the lookup
-        refused_t = fake(contact_tags=())
-        with self.assertRaises(entitlement.EntitlementError):
-            entitlement.attest_from_interview(entitlement.INCLUDED_CHOICE, MEMBER, refused_t)
-        ok = entitlement.attest_from_interview(entitlement.INCLUDED_CHOICE, MEMBER, fake())
+        # FIX-12: the interview is the client path, so it never consults membership. The exact choice is
+        # admitted without any contact lookup; the membership question stays on the internal entry point.
+        no_membership = fake(contact_tags=())
+        ok = entitlement.attest_from_interview(entitlement.INCLUDED_CHOICE, MEMBER, no_membership)
         self.assertTrue(ok["qualifies"])
+        self.assertEqual(no_membership.requests, [])
 
 
 if __name__ == "__main__":
