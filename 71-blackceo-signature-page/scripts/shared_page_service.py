@@ -169,10 +169,11 @@ def main(argv=None) -> int:
             raise ServiceError("page-request: the document is not a JSON "
                                "object")
         role = request.get("page_role")
-        if role not in role_enum:
-            raise ServiceError(
-                f"page-request: page_role {role!r} is not one of "
-                f"{role_enum}")
+        try:
+            # FIX-07: the one validator, reading the same schema enum, names the rejected token.
+            role = page_role.validate_page_role(role)
+        except page_role.PageRoleUnknown as exc:
+            raise ServiceError(f"page-request: {exc} (schema enum {role_enum})") from exc
         own = page_role.spec_for_role(role)
         # A role's expected page version is the form copy_forms registers for it (the one
         # registry; checkout is "checkout" even though it is drawn from the standard sheet),

@@ -111,8 +111,16 @@ class SpecTests(unittest.TestCase):
 
     def test_launch_context_maps_the_upsell_copy_profile(self):
         import launch_context
-        self.assertEqual(launch_context.COPY_PROFILE_VERSION["signature-upsell-eight-section"], "upsell")
-        self.assertEqual(launch_context.COPY_PROFILE_VERSION["standard"], "standard")
+        sys.path.insert(0, str(SCRIPTS))
+        try:
+            import copy_forms
+        finally:
+            sys.path.pop(0)
+        # FIX-14: ONE registry. launch_context no longer holds a second version table; the
+        # accepted alias and the plain forms resolve through copy_forms.resolve_profile.
+        self.assertFalse(hasattr(launch_context, "COPY_PROFILE_VERSION"))
+        self.assertEqual(copy_forms.resolve_profile("signature-upsell-eight-section"), "upsell")
+        self.assertEqual(copy_forms.resolve_profile("standard"), "standard")
 
 
 @needs_skill80

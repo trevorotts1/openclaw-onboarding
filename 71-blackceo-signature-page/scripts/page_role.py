@@ -9,7 +9,9 @@ is the one place that maps a role or a copy version to its spec, so the section-
 check, the request builder, the wireframe prompt, the Design Board and the gate all read
 the same file and nothing forks the pipeline.
 
-A spec without `page_role`/`page_roles` is a landing form. FIX-15: discovery is recursive
+A spec without `page_role`/`page_roles` is a landing form. FIX-07: the page-role vocabulary
+is the route-graph schema's closed enum, read at runtime by validate_page_role, and a role
+the schema does not permit raises PageRoleUnknown naming the token. FIX-15: discovery is recursive
 under references/copy-specs/ (checkout lives at roles/checkout.json), is keyed by the role or
 version the spec itself declares, and never uses `wireframe.form_label` as an existence
 filter. A role that has a spec file on disk but is missing from discovery fails closed with
@@ -29,6 +31,11 @@ import copy_forms  # noqa: E402  the one registry of copy forms
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SPEC_DIR = SKILL_ROOT / "references" / "copy-specs"
+# FIX-07: the authoritative page-role vocabulary is the closed enum the route graph emits,
+# read from the schema at runtime. Never a hand-maintained copy in this module.
+ROUTE_GRAPH_SCHEMA = SKILL_ROOT.parent / "49-signature-funnel" / "schema" / "route-graph.schema.json"
+# The per-role section structure registry (downsell_1 lives here, not in a copy spec).
+PAGE_STRUCTURES = SKILL_ROOT / "references" / "page-structures.json"
 LANDING_VERSIONS = ("standard", "long-form")
 LANDING_ROLE = "landing"
 MOBILE_MAX_WIDTH = 768
@@ -41,6 +48,101 @@ def _read(path: str) -> dict:
 
 class RoleSpecNotDiscovered(LookupError):
     """A role has a spec file on disk but discovery did not return it (FIX-15: fail closed)."""
+
+
+class PageRoleSchemaUnavailable(RuntimeError):
+    """The route-graph schema that owns the page-role vocabulary cannot be read (fail closed)."""
+
+
+class PageRoleUnknown(LookupError):
+    """A page role the route-graph schema does not permit (FIX-07: a specific diagnostic)."""
+
+
+class PageRoleUnregistered(LookupError):
+    """A schema role with no copy spec, page structure or registered form (FIX-07 coverage)."""
+
+
+@lru_cache(maxsize=None)
+def schema_page_roles() -> tuple:
+    """The page-role enum read from 49-signature-funnel/schema/route-graph.schema.json.
+
+    The schema is the authority the route graph emits, so the validator reads it instead of
+    holding a list that could drift. Unreadable schema fails closed with a named error rather
+    than falling back to a list (FIX-07).
+    """
+    try:
+        schema = json.loads(ROUTE_GRAPH_SCHEMA.read_text(encoding="utf-8"))
+        roles = schema["properties"]["nodes"]["items"]["properties"]["role"]["enum"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise PageRoleSchemaUnavailable(
+            f"cannot read the page-role enum from {ROUTE_GRAPH_SCHEMA}: {exc}") from exc
+    return tuple(str(role) for role in roles)
+
+
+@lru_cache(maxsize=None)
+def page_structure_roles() -> tuple:
+    """The roles references/page-structures.json gives their own section structure."""
+    try:
+        data = json.loads(PAGE_STRUCTURES.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ()
+    roles = data.get("roles") if isinstance(data, dict) else None
+    return tuple(str(role) for role in roles) if isinstance(roles, dict) else ()
+
+
+def validate_page_role(role) -> str:
+    """The schema spelling of `role`, or PageRoleUnknown quoting the rejected value.
+
+    Separator normalisation is copy_forms.norm: ONE normaliser for both spelling boundaries
+    (FIX-14), so "product_selection" and "product-selection" are the same slot here and the
+    intake boundary names the same registry key.
+    """
+    if isinstance(role, str):
+        wanted = copy_forms.slug(role)
+        if wanted:
+            for known in schema_page_roles():
+                if copy_forms.slug(known) == wanted:
+                    return known
+    raise PageRoleUnknown(
+        f"page role {role!r} is not one of the route-graph roles "
+        f"{', '.join(schema_page_roles())}")
+
+
+def role_form(role):
+    """The registered copy form a role (in either spelling) is built from, or None for landing."""
+    canonical = validate_page_role(role)
+    return None if canonical == LANDING_ROLE else copy_forms.form_for_role(canonical)
+
+
+def register_page_role(role) -> str:
+    """Validate `role` and prove Skill 71 can build it: landing forms, a copy spec, a page
+    structure, or a registered form. PageRoleUnregistered names a schema role with none.
+
+    FIX-07 invariant: every role the route-graph schema permits is registerable and
+    validatable here, and a role the schema does not permit raises PageRoleUnknown naming it.
+    """
+    canonical = validate_page_role(role)
+    if canonical == LANDING_ROLE:
+        for form in copy_forms.LANDING_FORMS:
+            copy_forms.load_spec(form)
+        return canonical
+    if (canonical in page_structure_roles() or spec_for_role(canonical)
+            or copy_forms.form_for_role(canonical)):
+        return canonical
+    raise PageRoleUnregistered(
+        f"page role {canonical!r} is permitted by the route-graph schema but Skill 71 has no "
+        "copy spec, page structure or registered form for it")
+
+
+def registered_page_roles() -> tuple:
+    """Every schema role Skill 71 can register, in schema order (the coverage assertion)."""
+    out = []
+    for role in schema_page_roles():
+        try:
+            out.append(register_page_role(role))
+        except PageRoleUnregistered:
+            continue
+    return tuple(out)
 
 
 def owns_wireframe_wording(spec) -> bool:
@@ -172,7 +274,9 @@ def declared_role(run_dir, request=None) -> str:
     for value in (request.get("page_role"), metadata.get("page_role"), intake.get("page_role"),
                   launch.get("page_role"), page_request.get("page_role")):
         if isinstance(value, str) and value:
-            return value
+            # FIX-07: a declared role is validated against the route-graph schema here, the
+            # read path every stage and the gate share; an out-of-schema token never floats.
+            return validate_page_role(value)
     for value in (request.get("copy_version"), metadata.get("copy_version"),
                   intake.get("copy_version")):
         form = copy_forms.norm(value) if value else None  # a registered form names its own role
