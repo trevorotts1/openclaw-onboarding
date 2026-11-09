@@ -128,6 +128,17 @@ Each prover ships a `--self-test` with VALID + VIOLATION fixtures; run everythin
 - GHL funnel/step/page build + HTML injection → **Skill 6** `ghl_rest_canvas.py` / `ghl_builder.py`.
 - 10 promo emails → the **Email Skill project** (post-downsell handoff, P10).
 
+## Thank-you fulfillment map (bound before replay)
+
+`scripts/translate_thank_you_result.py` binds the S44/F03/F05 fulfillment map to the
+purchase before Skill 82's validators see it: `manifest.provenance.map_sha256` must
+equal the map's current bytes, the map must carry a version plus this purchase's
+tenant/launch/revision, and every entitlement it names must be one the purchase paid
+for. Only then is the entitlement-keyed mapping passed into `validate_thank_you`, which
+restores the exact paid+granted equality. A map supplied without a digest is recorded
+as unbound; a bound map that is stale, foreign or names an unpurchased entitlement is
+refused by name. A thank-you visit is never fulfillment evidence.
+
 ## KIE image route (the only approved path)
 
 Every image request in a run follows `universal-sops/funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md` section 3:

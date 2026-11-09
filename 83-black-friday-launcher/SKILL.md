@@ -244,6 +244,26 @@ a numbered directory, so the same code runs in both layouts.
    digest. The achieved stage comes from evidence only, so a local/draft package is never
    labelled installed or live, and a read-back past the authorized stage is refused.
 
+9. **Linked delivery destinations and the early capability check (F22).**
+   `launcher_core/linked_delivery.py` inventories every destination this launch depends on —
+   the pages it builds, the client-owned destinations it already has, and third-party
+   destinations — from the intake's optional `linked_destinations` list plus each offer's
+   owner-confirmed delivery destination. A `new_build` entry needs a registered page role
+   (Skill 49's `structure/page_types.json`) or a documented adapter to one, plus explicit
+   brand, design, copy, review and approval evidence; an existing or third-party entry needs
+   ownership/reference, access, link, product, entitlement and fulfillment evidence. A bump is
+   a checkout component, never a page, and a second downsell stays design-only until its
+   purchase route exists. Resolution is deterministic: the same inputs produce the same ordered
+   inventory and the same fingerprint (`launch-resources.json`), which `package.assemble`
+   records and the F22 check rule re-verifies, refusing a changed inventory or a delivery claim
+   with an unaccounted-for destination. `launcher_core/capability_check.py` runs the real
+   current checks (journey mapping, billing type, native checkout family, output destination,
+   installed runtime, conversational workflows, workflow authorization) BEFORE any design work
+   in `launch_bridge.run`, and again at assembly; a capability the approved feature set needs
+   but cannot be proved refuses by name, while unselected ones are recorded as advisories and
+   independent work continues. Folded levels are reported from the per-offer checkout instances
+   (`combined_single_offer` per main price choice), not from the obsolete contract-gap claim.
+
 ## Read order
 
 Read in this order. Each step names the file, so nothing here depends on guessing a path.
