@@ -1,3 +1,7 @@
+## [v2.1.48] - 2026-11-09 - VERSION file brought level with skill-version.txt (no behaviour change)
+
+- `VERSION` still read v2.1.41 while `skill-version.txt` and `SKILL.md` read v2.1.47. All three now read v2.1.48. Not a pinned file; the SF prover pin is unchanged.
+
 ## [v2.1.47] - 2026-11-09 - G3 lockstep roll for the Skill 83 version-parity completion (no Skill 49 behaviour change)
 
 - Version bumped because the bot-minted `scripts/SF-PROVER-PIN.sha256` changed when Skill 83 `launcher_core/constants.py` carried its version. No functional change in Skill 49.
