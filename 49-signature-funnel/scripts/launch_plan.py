@@ -124,6 +124,18 @@ GUIDED_DELIVERABLES_KEY = "deliverables_plan"
 DELIVERABLES_DIR = "deliverables"
 DELIVERY_RECORD_NAME = "delivery-record.json"
 DELIVERY_RECORD_TYPE = "signature-launch.deliverables.v1"
+COURSE_REQUESTS_NAME = "course-delivery-requests.json"
+COURSE_REQUESTS_RECORD_TYPE = "launcher.course-delivery-requests.v1"
+COURSE_REQUEST_PENDING = (
+    "the deliverable is recorded as unfinished_course and no approved course content "
+    "is in hand, so no production request is minted; the promise stays pending")
+COURSE_REQUEST_RECORDED = (
+    "the course production request is recorded; the promise is delivered only when the "
+    "producer returns a verified course-delivery receipt")
+COURSE_PRODUCER_UNAVAILABLE = (
+    "the course production request builder (83-black-friday-launcher/launcher_core/"
+    "course_delivery.py) is not installed beside this planner, so no versioned course "
+    "request can be minted; the promise stays pending")
 PRODUCED, NOT_PRODUCED = "produced", "not_produced"
 
 # The one deliverable kind this run can genuinely write. Every other kind is a
@@ -451,6 +463,63 @@ def _ledger_value(answers: Dict[str, Any], key: str) -> Any:
     return entry, None
 
 
+def _course_delivery_module():
+    """The launcher's canonical course request/receipt module, or None.
+
+    Imported by repository layout (this planner also runs standalone). A missing
+    module is recorded honestly; it is never replaced by a locally re-invented
+    request shape that could drift from the launcher's.
+    """
+    import importlib.util
+    candidate = HERE.parents[1] / "83-black-friday-launcher" / "launcher_core" / "course_delivery.py"
+    if not candidate.is_file():
+        return None
+    name = "launcher_course_delivery_s49"
+    module = sys.modules.get(name)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(name, candidate)
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return module
+
+
+def _course_request_for_package(launch: Dict[str, Any], answers: Dict[str, Any],
+                                package: Dict[str, Any], row: Dict[str, Any]):
+    """(state, request|None, missing, reason) for one legacy unfinished_course row."""
+    module = _course_delivery_module()
+    if module is None:
+        return "pending", None, [COURSE_PRODUCER_UNAVAILABLE], COURSE_PRODUCER_UNAVAILABLE
+    offer = next((o for o in launch.get("offers") or []
+                  if isinstance(o, dict) and o.get("offer_id") == package.get("offer_id")), None)
+    if offer is None:
+        return ("pending", None,
+                ["the launch record offer this package came from"],
+                COURSE_REQUEST_PENDING)
+    content = fact(answers, "launch.course_content", "offers.main.course_content")
+    group = fact(answers, "launch.community_group")
+    commerce = {
+        "commerce_product_id": package.get("native_product_id"),
+        "commerce_price_id": package.get("price_id"),
+        "order_ref": fact(answers, "launch.order_ref"),
+    }
+    try:
+        converted = module.convert_legacy_unfinished_course(
+            {"item": row.get("item"), "kind": row.get("kind")},
+            launch=launch, offer={**offer, "location_id": launch.get("location_id")},
+            content=content, group=group if isinstance(group, dict) else None,
+            commerce=commerce)
+    except Exception as exc:  # a malformed approved outline is a named pending fact
+        return "pending", None, [str(exc)], str(exc)
+    if converted.get("state") == "requested":
+        return "requested", converted["request"], [], None
+    if converted.get("state") == "pending":
+        return "pending", None, list(converted.get("missing") or []), converted.get("reason")
+    return "pending", None, [COURSE_REQUEST_PENDING], COURSE_REQUEST_PENDING
+
+
 def _deliverable_kinds(answers: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """item text -> {item, kind, evidence}, from the intake's own classification.
 
@@ -534,6 +603,7 @@ def produce_deliverables(launch: Dict[str, Any], answers: Dict[str, Any],
     proposal, _state = _ledger_value(answers, GUIDED_PROPOSAL_KEY)
     rows: List[Dict[str, Any]] = []
     files: List[Dict[str, Any]] = []
+    course_requests: List[Dict[str, Any]] = []
     base = Path(run_dir).resolve() if isinstance(run_dir, str) and run_dir.strip() else None
     if base is not None:
         base.mkdir(parents=True, exist_ok=True)  # the run folder, never a stray temp dir
@@ -556,6 +626,22 @@ def produce_deliverables(launch: Dict[str, Any], answers: Dict[str, Any],
                     entry.update(state=PRODUCED, path=str(rel), sha256=digest,
                                  size=target.stat().st_size)
                     files.append({"path": str(rel), "sha256": digest})
+            elif row["kind"] == "unfinished_course":
+                # Legacy state -> versioned production request ONLY when approved
+                # content exists. A request is not a delivery: the row stays
+                # not_produced until a verified receipt comes back.
+                state, request, missing_facts, reason = _course_request_for_package(
+                    launch, answers, package, row)
+                entry.update(
+                    state=NOT_PRODUCED,
+                    course_request_state=state,
+                    missing_capability=([COURSE_REQUEST_RECORDED] if request is not None
+                                        else [reason or COURSE_REQUEST_PENDING]),
+                    note=KIND_NOTE.get(row["kind"], KIND_NOTE["unknown"]),
+                    **({"course_request": request} if request is not None else {}),
+                    **({"course_request_missing": missing_facts} if missing_facts else {}))
+                if request is not None:
+                    course_requests.append(request)
             else:
                 entry.update(state=NOT_PRODUCED, missing_capability=[MISSING_AUTHORING_PRODUCER],
                              note=KIND_NOTE.get(row["kind"], KIND_NOTE["unknown"]))
@@ -577,12 +663,26 @@ def produce_deliverables(launch: Dict[str, Any], answers: Dict[str, Any],
         "missing_capability": sorted({cap for r in rows
                                       for cap in r.get("missing_capability") or []}),
         "files": files,
+        "course_requests": course_requests,
+        "course_requests_record": None,
         "record": None,
     }
     if base is None:
         return block
+    if course_requests:
+        record_target = base / COURSE_REQUESTS_NAME
+        record_target.write_text(json.dumps(
+            {"contract_type": COURSE_REQUESTS_RECORD_TYPE,
+             "schema_version": "1.0.0",
+             "requests": course_requests}, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8")
+        block["course_requests_record"] = {
+            "path": COURSE_REQUESTS_NAME,
+            "sha256": hashlib.sha256(record_target.read_bytes()).hexdigest(),
+            "count": len(course_requests)}
     record_doc = {k: block[k] for k in ("record_type", "state", "free_item", "items", "counts",
-                                        "missing_capability")}
+                                        "missing_capability", "course_requests",
+                                        "course_requests_record")}
     record_doc["launch_id"] = str(launch.get("launch_id", "launch"))
     target = base / DELIVERY_RECORD_NAME
     target.write_text(json.dumps(record_doc, indent=2, sort_keys=True) + "\n", encoding="utf-8")

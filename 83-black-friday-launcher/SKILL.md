@@ -378,6 +378,13 @@ steps, all DRAFT-ONLY (nothing is sent and nothing goes live):
 Skill 83 builds pages; it does not build workflows itself. See Skill 44's own SKILL.md and INSTRUCTIONS.md for
 the same four steps from the other side.
 
+Course deliverables have their own producer route: an `unfinished_course` deliverable
+becomes a versioned course production request only when approved content exists
+(`launcher_core/course_delivery.py`), a verified receipt marks delivery complete only
+for the components the client requested, and buyer access stays separate from payment
+(a `course-deliveries.json` receipt-reference map feeds Skill 44's fulfillment map;
+the launch record's old `delivery_bindings` object is never rewritten).
+
 ## Pictures, spend and design approvals
 
 Skill 83 asks the client the picture questions (`python3 -m launcher_core.cli questions`), records the answers

@@ -159,6 +159,36 @@ the rule reads the image provider from each page's design artifacts and the upse
 so it cannot fire for them yet (tracked as UPS-23).
 The design board and the final mockups are recorded as `awaiting_client_approval` until the client approves.
 
+## Course delivery (launcher_core/course_delivery.py)
+
+A deliverable the intake records as `unfinished_course` is no longer a dead end.
+`convert_legacy_unfinished_course` turns it into a versioned
+`launcher.course-deliverable-request.v1` ONLY when approved course content is in
+hand (an approval reference plus module and lesson titles); without it the honest
+`pending` state and every missing fact are recorded, and nothing is invented.
+`49-signature-funnel/scripts/launch_plan.py` writes the requests it mints to
+`course-delivery-requests.json` in the run folder. A request is not a delivery: the
+plan row stays `not_produced` until a verified receipt comes back.
+
+`dispatch` calls the supplied Skill 6 `build_course` facade (task, evidence root,
+`dry_run`) — the module never imports a live producer and a missing facade is a
+named error. `build_receipt` records one row per REQUESTED component: the course
+entity in the requested location, every requested module/lesson in order, requested
+media only when it is actually bound (listed is not bound), requested assessments,
+the requested release policy, and the Learning association only when a group was
+requested. Requested-only is the rule: an unrequested component never gates.
+
+Access is separate from payment. `access.state` is `access_ready` only when the
+delivery is complete and the access grant or an approved test-access proof is
+verified; `proves_payment` is always false and an enrollment is never payment proof.
+A refund or revocation withholds the link. `bindings` writes a SEPARATE
+receipt-reference map (`course-deliveries.json`) keyed by entitlement id: the launch
+record's strict `delivery_bindings` object is untouched, so old consumers keep
+reading the old shape, and an included bump/upsell never inherits another offer's
+course URL. Skill 44's fulfillment map reads the receipts as an optional argument and
+withholds a granted course's `delivery_url` until the receipt is access-ready, so
+Skill 82 renders no access link until then and shows the real next step instead.
+
 ## Graphics department hooks
 
 `launcher_core/graphics_hooks.py` is wired into the real handoff. After `package.assemble` seals the

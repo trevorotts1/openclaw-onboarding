@@ -73,12 +73,19 @@ KIND_SCHEDULE = "schedule_included_service"
 # their digest is recorded; nothing else is ever called produced.
 PROMISE_PRODUCED = "produced"
 PROMISE_NOT_PRODUCED = "not_produced"
+# A course promise verified by an external producer's receipt. Distinct from
+# ``produced``, which means bytes this run wrote itself.
+PROMISE_DELIVERED = "delivered"
 
 # How an offer's promised item is delivered. Four different facts that a single
 # "delivered" flag would collapse into a lie.
 MODE_FILE = "generated_file"
 MODE_SERVICE = "human_delivered_service"
 MODE_UNWRITTEN = "unfinished_course"
+# A verified course-delivery receipt from launcher_core/course_delivery.py. The
+# legacy ``unfinished_course`` mode stays reachable for every run that carries no
+# receipt, so old records are byte-identical.
+MODE_COURSE = "course_delivery"
 
 # The one mode this intake cannot record: no question asks for a session date or
 # a booking time, so a call that happens later is indistinguishable from a
@@ -360,15 +367,21 @@ def bindings(planned: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
     return out
 
 
-def _mode(entry: Mapping[str, Any], item_artifact: Optional[Mapping[str, Any]]) -> Dict[str, str]:
+def _mode(entry: Mapping[str, Any], item_artifact: Optional[Mapping[str, Any]],
+          course_receipt: Optional[Mapping[str, Any]] = None) -> Dict[str, str]:
     """The one delivery mode this offer's recorded facts prove, and the fact it rests on.
 
     ``future_session`` is never returned: see ``UNRECORDED_SESSION``. A human service
     is never reported as an unwritten file, and an unwritten item is never reported
-    as a service, so neither fact is substituted for the other.
+    as a service, so neither fact is substituted for the other. A verified course
+    receipt replaces the blanket ``unfinished_course`` classification; without one
+    the legacy mode is unchanged.
     """
     if item_artifact:
         return {"mode": MODE_FILE, "basis": "artifact: bytes produced in this run"}
+    if course_receipt is not None:
+        return {"mode": MODE_COURSE,
+                "basis": f"course-delivery receipt {course_receipt.get('receipt_id')!r}"}
     if entry["human_service"]:
         return {"mode": MODE_SERVICE,
                 "basis": "answers:access_delivery = 'No, nothing to deliver'"}
@@ -376,7 +389,8 @@ def _mode(entry: Mapping[str, Any], item_artifact: Optional[Mapping[str, Any]]) 
 
 
 def record(planned: Mapping[str, Any], produced: Mapping[str, Any],
-           launch: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+           launch: Optional[Mapping[str, Any]] = None,
+           course_receipts: Optional[Mapping[str, Mapping[str, Any]]] = None) -> Dict[str, Any]:
     """The honest production record: what exists, what does not, and why.
 
     A promise is ``produced`` only when this run wrote bytes for it; every other
@@ -389,14 +403,28 @@ def record(planned: Mapping[str, Any], produced: Mapping[str, Any],
     digest and a sheet can never be read as the product.
     """
     launch = launch or {}
+    course_receipts = {
+        k: v for k, v in (course_receipts or {}).items() if isinstance(v, Mapping)
+    }
     offers: List[Dict[str, Any]] = []
     for entry in planned["offers"]:
         sheet = produced.get(entry["offer_id"])
         if sheet is None:
             raise DeliveryError("AF-LAUNCH-DELIVERY-SHEET",
                                 f"offer {entry['offer_id']!r} has no produced delivery sheet")
-        mode = _mode(entry, sheet.get("item"))
-        if mode["mode"] == MODE_FILE:
+        receipt = course_receipts.get(entry["offer_id"])
+        mode = _mode(entry, sheet.get("item"), receipt)
+        if mode["mode"] == MODE_COURSE:
+            complete = receipt.get("complete") is True
+            promises = [{"item": item,
+                         "state": PROMISE_DELIVERED if complete else PROMISE_NOT_PRODUCED,
+                         "receipt_ref": receipt.get("receipt_id"),
+                         **({} if complete else {"missing_capability":
+                            "; ".join(receipt.get("outstanding") or [])
+                            or "the course-delivery receipt is incomplete"})}
+                        for item in entry["promises"]]
+            missing = [] if complete else list(receipt.get("outstanding") or [])
+        elif mode["mode"] == MODE_FILE:
             promises = [{"item": item, "state": PROMISE_PRODUCED,
                          "artifact": dict(sheet["item"])} for item in entry["promises"]]
             missing: List[str] = []
@@ -421,6 +449,15 @@ def record(planned: Mapping[str, Any], produced: Mapping[str, Any],
             "sheet": {"path": sheet["path"], "sha256": sheet["sha256"],
                       "size": sheet["size"], "content": "delivery_sheet"},
             "promises": promises,
+            **({"course_delivery": {
+                    "receipt_ref": receipt.get("receipt_id"),
+                    "complete": receipt.get("complete") is True,
+                    "access_ready": bool((receipt.get("access") or {}).get("state")
+                                         == "access_ready" and complete),
+                    "access_state": (receipt.get("access") or {}).get("state"),
+                    "outstanding": list(receipt.get("outstanding") or []),
+                    "enrollment_is_payment_proof": False,
+                }} if mode["mode"] == MODE_COURSE else {}),
             # ponytail: no producer in this tree writes a promised item's own content (a
             # course module, video lesson, live call or template pack). When one lands,
             # ``produce`` returns its bytes as ``sheet["item"]`` and this record flips
@@ -509,7 +546,8 @@ def write_record(record_doc: Mapping[str, Any], out_dir: Path) -> Path:
 
 def run(normalized: Mapping[str, Any], out_dir: Path,
         launch: Optional[Mapping[str, Any]] = None,
-        answers: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+        answers: Optional[Mapping[str, Any]] = None,
+        course_receipts: Optional[Mapping[str, Mapping[str, Any]]] = None) -> Dict[str, Any]:
     """plan -> produce -> bind -> record, writing into ``out_dir``.
 
     Returns {"plan", "produced", "bindings", "record", "record_path"}. The caller
@@ -519,7 +557,7 @@ def run(normalized: Mapping[str, Any], out_dir: Path,
     planned = plan(normalized, answers)
     produced = produce(planned, out_dir, {**(launch or {}),
                                           "locale": normalized.get("locale") or "en"})
-    doc = record(planned, produced, launch)
+    doc = record(planned, produced, launch, course_receipts)
     path = write_record(doc, out_dir)
     return {"plan": planned, "produced": produced, "bindings": bindings(planned),
             "record": doc, "record_path": str(path)}

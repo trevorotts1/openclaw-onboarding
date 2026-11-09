@@ -278,8 +278,22 @@ def _latest_event_outcomes(store, tenant_id: str, launch_id: str,
     return {k: v[1] for k, v in latest.items()}
 
 
+def course_access_ready(receipt) -> bool:
+    """True only when a course-delivery receipt says the delivery is complete and
+    the buyer's access was verified (WF13).
+
+    A missing/malformed receipt is False: a course link is never promoted on an
+    unverified delivery. Enrollment is an access grant, never payment proof.
+    """
+    if not isinstance(receipt, dict):
+        return False
+    return (receipt.get("complete") is True
+            and (receipt.get("access") or {}).get("state") == "access_ready")
+
+
 def build_fulfillment_map(store, tenant_id: str, launch_id: str,
-                          contact_ref: str, launch_record=None) -> dict:
+                          contact_ref: str, launch_record=None,
+                          course_receipts=None) -> dict:
     """Assemble the fulfillment map for one buyer. Read-only.
 
     `launch_record` is optional: the launch's record of record (S49,
@@ -288,12 +302,20 @@ def build_fulfillment_map(store, tenant_id: str, launch_id: str,
     for the entitlement (CR-S82-003); every other output is identical
     to the no-record call.
 
+    `course_receipts` is optional and SEPARATE from the launch record's
+    delivery_bindings (WF13): {entitlement_id: course-delivery receipt}. When a
+    granted entitlement has a receipt that is not access-ready, its delivery_url
+    is withheld (None) so Skill 82 renders the real next step instead of a link.
+    A missing or malformed receipt is treated the same way — never a guessed URL.
+    The inner map shape is unchanged.
+
     Returns {"tenant_id", "launch_id", "contact_ref",
              "entitlement_version", "entitlements": {entitlement_id:
              {"state", "delivery_url", "next_action"}}} — the inner
     dict is exactly the map shape of the S82 contract section 2.
     """
     bindings = _extract_bindings(launch_record)
+    course_receipts = course_receipts if isinstance(course_receipts, dict) else {}
     line_refs = store.buyer_lines(tenant_id, launch_id, contact_ref)
     book = {(lr, ent): st for lr, ent, st in
             store.buyer_entitlement_rows(tenant_id, launch_id,
@@ -328,6 +350,12 @@ def build_fulfillment_map(store, tenant_id: str, launch_id: str,
             # the ONLY branch the binding may touch.
             action, delivery_url = _bound_delivery(bindings,
                                                    entitlement)
+            if entitlement in course_receipts:
+                # WF13: a course delivery that is not verified (or a revoked
+                # delivery) never promotes its URL. No URL means Skill 82
+                # renders no access link; the real next step is shown instead.
+                if not course_access_ready(course_receipts[entitlement]):
+                    delivery_url = None
         entitlements[entitlement] = {
             "state": state,
             "delivery_url": delivery_url,
