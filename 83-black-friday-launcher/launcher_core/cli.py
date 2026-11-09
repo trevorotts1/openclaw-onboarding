@@ -76,11 +76,17 @@ def _launch_for(normalized: dict, inputs: dict, **choices: Any) -> dict:
 
 
 def _resolved_launch(payload: Any, **choices: Any) -> tuple:
-    """(normalized intake, launch record) exactly as launch_bridge.run would build them."""
+    """(normalized intake, launch record) exactly as launch_bridge.run would build them.
+
+    F20: a paid run's budget is verified against the plan hash of the record it produces, so the record
+    is built once from the plan-shape inputs and once from the resolved ones (launch_bridge.resolve_launch).
+    Resolving the paid image plan before any plan hash existed refused every paid dispatch with
+    AF-LAUNCH-IMAGE-PLAN-APPROVAL, and `plan` could not print the hash to approve at all.
+    """
     normalized = intake.validate(payload)
-    inputs, _ = image_plan.resolve(normalized.get("image_plan"),
-                                   test_only=bool(normalized.get("test_only", True)))
-    return normalized, _launch_for(normalized, inputs, **choices)
+    graph = route.compile_route(normalized)
+    _inputs, _to_confirm, launch = launch_bridge.resolve_launch(normalized, graph, **choices)
+    return normalized, launch
 
 
 def _bind(normalized: dict, real_hash: str, real_ref: str) -> dict:
@@ -273,11 +279,14 @@ def cmd_plan(args: argparse.Namespace) -> int:
         normalized = intake.validate(_read_json(args.intake))
         test_only = bool(normalized.get("test_only", True))
         try:
-            inputs, _ = image_plan.resolve(normalized.get("image_plan"), test_only=test_only)
+            # F20: the plan hash binds the design style (via structure_refs) and the provider, so `plan`
+            # resolves exactly those two from the same rules `dispatch` uses. A fallback that omitted
+            # design_style raised KeyError in structure_refs and printed no plan to approve.
+            inputs = image_plan.plan_shape(normalized.get("image_plan"), test_only=test_only)
         except image_plan.ImagePlanError:
-            # the picture details (brand file, cap) do not change the plan; only the provider is in the hash
-            raw = (normalized.get("image_plan") or {}).get("image_provider")
-            inputs = {"image_provider": raw if raw in image_plan.KNOWN_PROVIDERS else image_plan.DEFAULT_PROVIDER}
+            inputs = {"design_style": image_plan.DEFAULT_DESIGN_STYLE,
+                      "design_style_source": "default_to_confirm",
+                      "image_provider": image_plan.DEFAULT_PROVIDER}
         print(render_plan(normalized, _launch_for(normalized, inputs, **_page_choices(args))))
         return 0
     plan = _read_json(args.plan)
