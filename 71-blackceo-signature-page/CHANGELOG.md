@@ -2,6 +2,14 @@
 
 - `references/prompt-budget-policy.json`: 2.6 entry is `OWNER_RULED`, one source `66-kie-image/models.json` `owner_prompt_cap_chars`. `cap_for_model` and `stage_executor.prompt_budget` fail to 20,000 on lookup miss, never 32,000.
 
+## [1.3.26] - 2026-11-09 - MOCK-001: plan every image slot, hand the generated images to the mockup, fail a short mockup
+
+- `references/copy-specs/standard-v6.json`, `long-form-v6.json`: each image-bearing section declares `default_slots` (slot id, ratio, art direction), derived from the "Default slots" cell of its row in `references/section-image-prompt.md` (9 slots standard, 12 long-form; sections 6, 7 and 11 are type-only). `image_slots_source` records that derivation.
+- `scripts/build_production_request.py`: the slot fallback is no longer gated on `page_role`, so a landing spec's `default_slots` reach the request; `SLOT CANON` now names the section's own planned slots (id, ratio, art direction) instead of pasting the skeleton table's prose cell, whose private labels had kept the hero and founder-portrait canon out of the prompt.
+- `scripts/stage_executor.py`: `prior_slices('final-mockups', ...)` now also returns the section's generated, QC'd images from `image-generation-qc`, so the mockup composites the run's real photography.
+- `scripts/validate_mockup_slots.py`, `shared-utils/signature_launch/design/image_slots.py`: reverse-coverage floor — every PLANNED slot must appear in the rendered mockup; a miss is an ERROR naming the slot. The plan is the run's request, else the copy spec for the run's `copy_version`, so a short plan cannot pass its own check.
+- Tests: `tests/test_mockup_slot_coverage_floor.py`, `tests/test_section_count.py`, `shared-utils/signature_launch/tests/test_image_slots_tokens.py`.
+
 ## [1.3.24] - 2026-11-09 - G3 lockstep roll for the ENT-001 gate-removal recut (no behaviour change)
 
 - Version bumped so the recut content carries a version G3 requires above main. No functional change.

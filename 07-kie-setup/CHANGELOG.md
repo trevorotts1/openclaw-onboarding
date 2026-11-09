@@ -1,3 +1,7 @@
+## [v7.2.8] - 2026-11-09 - official-docs port test reads the shipped versions (no behaviour change)
+
+- `tests/test_official_docs_port.py` `SKILL_VERSIONS` pinned 07 7.2.4 / 74 1.1.12 / 66 2.2.6 / 68 2.3.6, so two version tests failed on main. It now reads 07 7.2.8 / 74 1.1.14 / 66 2.2.9 / 68 2.3.7, the versions main ships. Test-only change.
+
 ## [v7.2.7] - 2026-11-09 - GPT Image 2.6 named as the Presentations pin (2.5 claim corrected)
 
 - `SKILL.md` line 90 named GPT-Image-2.5 as the Presentations-pinned model; Presentations pins `gpt-image-2-6/sunburst-*`, so the sentence now names GPT-Image-2.6. Text only, no behaviour change.
