@@ -1,5 +1,11 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## v2.1.40 - 2026-11-08 - G3 lockstep roll for the fold (no behaviour change)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled v2.1.39 -> v2.1.40 so the AGNES gate
+  fixture restamp carries the version bump G3 requires above main. The pin file is not touched by
+  this roll; the batch mint follows the fold.
+
 ## v2.1.39 - 2026-11-08 - registry-hash restamp for the AGNES gate fixtures (no behaviour change)
 
 - `scripts/test_agnes_gates.py` and `scripts/test_agnes_dispatch_e2e.py` carry the updated
