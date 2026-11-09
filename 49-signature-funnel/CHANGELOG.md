@@ -4,6 +4,10 @@ Version stamped above `main` (v2.1.40) so G3 sees the bump for the folded conten
 
 # Changelog — Signature Funnel (Skill 49)
 
+## v2.1.42 - 2026-11-09 - batch: DEC fold lands FIX-16 Branch A on the launch path
+
+- Version stamped above `main` (v2.1.41) so G3 sees the bump for the folded content in this batch.
+
 ## v2.1.39 - 2026-11-09 - FIX-16 Branch A: the pin certifies the Skill 71 page-build tree
 
 - `scripts/front_door.py` (`_PIN_SPEC`, `_skill_dirs`): the composition now covers Skill 71 — every non-test
