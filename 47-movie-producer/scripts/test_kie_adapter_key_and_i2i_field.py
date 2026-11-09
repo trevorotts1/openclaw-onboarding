@@ -50,11 +50,11 @@ try:
     body = ft.create_calls[0] if ft.create_calls else {}
     inp = body.get("input", {})
     check("i2i run succeeded through Skill 74 (%s)" % getattr(res, "error", ""), res.success is True)
-    check("i2i uses model gpt-image-2-5-sunburst-image-to-image",
-          body.get("model") == "gpt-image-2-5-sunburst-image-to-image")
+    check("i2i uses model gpt-image-2-6/sunburst-image-to-image",
+          body.get("model") == "gpt-image-2-6/sunburst-image-to-image")
     check("i2i sends documented field input_urls", inp.get("input_urls") == ["https://example.invalid/ref.png"])
     check("i2i does not send Nano Banana field image_input", "image_input" not in inp)
-    declared = set(img._DECLARED_INPUT_FIELDS["gpt-image-2-5-sunburst-image-to-image"])
+    declared = set(img._DECLARED_INPUT_FIELDS["gpt-image-2-6/sunburst-image-to-image"])
     check("i2i input holds only schema-declared fields", set(inp) <= declared)
     check("i2i does not send undeclared output_format", "output_format" not in inp)
     ft2 = base.FakeKieTransport()
@@ -63,7 +63,7 @@ try:
     tool.execute({"prompt": "p", "output_path": "/tmp/kie_t2i_test.png"})
     tin = (ft2.create_calls[0] if ft2.create_calls else {}).get("input", {})
     check("t2i input holds only schema-declared fields",
-          set(tin) <= set(img._DECLARED_INPUT_FIELDS["gpt-image-2-5-sunburst-text-to-image"]))
+          set(tin) <= set(img._DECLARED_INPUT_FIELDS["gpt-image-2-6/sunburst-text-to-image"]))
     check("t2i does not send output_format or input_urls", "output_format" not in tin and "input_urls" not in tin)
     ft3 = base.FakeKieTransport()
     ft3.prompt_max = 1

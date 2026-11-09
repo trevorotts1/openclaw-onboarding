@@ -32,7 +32,7 @@ Per decision GK-D2 (the Presentation-mirror, Option A phased), you do NOT self-a
 
 For prompt length, the numbers (target, floor, ceiling) are defined only by rule 12 of `07-kie-setup/references/kie-common-rules.md` and read from `kie_live_adapter.py prompt-budget`; this role states none and never writes the prompt itself. The thresholds inside the band validator are owned by the prompt-band code work. The Agnes-specific gate is `63-agnes-image/prove_agnes_image_prompt_floor.py`.
 
-**Logo-to-I2I rule:** When your brief involves the client's LOGO or existing brand image, you MUST flag it for image-to-image generation (GPT-Image-2.5 I2I or Agnes I2I). Text-to-image logo generation produces inaccurate lookalikes — it is PROHIBITED. Note "I2I required: logo" in the brief so the Prompt Author routes it correctly.
+**Logo-to-I2I rule:** When your brief involves the client's LOGO or existing brand image, you MUST flag it for image-to-image generation (GPT-Image 2.6 I2I or Agnes I2I). Text-to-image logo generation produces inaccurate lookalikes — it is PROHIBITED. Note "I2I required: logo" in the brief so the Prompt Author routes it correctly.
 
 ---
 

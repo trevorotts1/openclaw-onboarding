@@ -2939,7 +2939,7 @@ def _self_check() -> int:
                 "final": run / stage / slot, "run_dir": run, "identity": ident,
                 "label": slot, "prompt": "x" * 19500, "references": []}
 
-    request = {"model": "gpt-image-2-5-sunburst-text-to-image", "sections": []}
+    request = {"model": "gpt-image-2-6/sunburst-text-to-image", "sections": []}
 
     # A — the identity carries all seven fields and two viewports never collide.
     with tempfile.TemporaryDirectory() as t:

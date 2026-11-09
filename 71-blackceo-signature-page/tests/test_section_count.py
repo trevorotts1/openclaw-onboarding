@@ -169,7 +169,7 @@ class SectionCountTests(unittest.TestCase):
     def test_under_the_80_percent_floor_is_refused_on_the_paid_path(self):
         # Owner rule 12 / Decision 1: the paid path refuses below the 80 percent floor and
         # warns (never refuses) below the 95 percent target.
-        request = {"model": "gpt-image-2-5-sunburst", "stage_prompts": {"visual-mockup": "{copy}"},
+        request = {"model": "gpt-image-2-6/sunburst", "stage_prompts": {"visual-mockup": "{copy}"},
                    "_hypersat": exe.hypersaturation.roles_for_run(self.run)}
         section = {"section_id": "1", "copy": "A finished sentence."}
         with self.assertRaises(exe.ExecutorError) as ctx:
@@ -178,7 +178,7 @@ class SectionCountTests(unittest.TestCase):
         self.assertTrue(exe.stage_prompt("visual-mockup", section, 1, 1440, request, "3:4"))
 
     def test_preflight_exits_1_on_a_prompt_under_the_floor(self):
-        request = {"model": "gpt-image-2-5-sunburst", "copy_version": "standard",
+        request = {"model": "gpt-image-2-6/sunburst", "copy_version": "standard",
                    "stage_prompts": {"visual-mockup": "{copy}"},
                    "sections": sections([str(i) for i in range(1, 13)])}
         (self.run / "production-request.json").write_text(json.dumps(request))
@@ -230,7 +230,7 @@ class BuilderTests(unittest.TestCase):
         self.assertIn("missing ['2A']", str(ctx.exception))
 
 
-REAL_MODEL = "gpt-image-2-5-sunburst-image-to-image"
+REAL_MODEL = "gpt-image-2-6/sunburst-image-to-image"
 
 
 def design_prose(chars=14500):
