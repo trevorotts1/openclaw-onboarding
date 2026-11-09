@@ -1674,7 +1674,7 @@ def run_on_page(page, job, evidence_root, *, contact_field_capability=None):
         if (root / 'handoff.json').exists() and not (root / 'state.json').exists():
             raise Stop('Editor recovery handoff has no journal; reconciliation required before execution')
         arguments = ({'contact_field_capability':contact_field_capability}
-            if any(step['action'] == 'native_contact_field_chain' for step in job['steps']) else {})
+            if any(step['action'] == 'native_contact_field_chain' for step in job.get('steps', [])) else {})
         return _run_on_page(page, job, root, **arguments)
     finally:
         if provider_fd is not None:
@@ -1702,7 +1702,7 @@ def _run_on_page(page, job, evidence_root, *, contact_field_capability=None):
         replay = completed_editor_replay(state_path, job, fingerprint)
         assert_tenant(page, job)
         return replay
-    if any(step['action'] == 'native_contact_field_chain' for step in job['steps']):
+    if any(step['action'] == 'native_contact_field_chain' for step in job.get('steps', [])):
         from playwright_recipes.contact_field_frontdoor import validate_runtime
         validate_runtime(job, contact_field_capability)
     assert_tenant(page, job)
@@ -1821,9 +1821,9 @@ def execute(job, root, *, contact_field_capability=None):
     if journal_present(state_path):
         from playwright_recipes.editor_replay import completed_editor_replay
         replay = completed_editor_replay(state_path, job, sha(json.dumps(job, sort_keys=True)))
-        if any(step['action'] == 'native_contact_field_chain' for step in job['steps']):
+        if any(step['action'] == 'native_contact_field_chain' for step in job.get('steps', [])):
             return replay
-    elif any(step['action'] == 'native_contact_field_chain' for step in job['steps']):
+    elif any(step['action'] == 'native_contact_field_chain' for step in job.get('steps', [])):
         from playwright_recipes.contact_field_frontdoor import validate_runtime
         validate_runtime(job, contact_field_capability)
     endpoint = os.environ.get("GHL_MANAGED_CDP_URL", "")
@@ -1858,7 +1858,7 @@ def execute(job, root, *, contact_field_capability=None):
                     raise Stop('Canonical activation did not verify this exact protected target')
                 managed.assert_alive()
                 arguments = ({'contact_field_capability':contact_field_capability}
-                    if any(step['action'] == 'native_contact_field_chain' for step in job['steps']) else {})
+                    if any(step['action'] == 'native_contact_field_chain' for step in job.get('steps', [])) else {})
                 return run_on_page(page,job,root,**arguments)
         finally:
             seed_path.unlink(missing_ok=True)
@@ -1881,7 +1881,7 @@ def execute(job, root, *, contact_field_capability=None):
             if len(pages) != 1:
                 raise Stop("Exactly one existing tab must match start_url")
             arguments = ({'contact_field_capability':contact_field_capability}
-                if any(step['action'] == 'native_contact_field_chain' for step in job['steps']) else {})
+                if any(step['action'] == 'native_contact_field_chain' for step in job.get('steps', [])) else {})
             return run_on_page(pages[0], job, root, **arguments)
             # Exiting Playwright detaches this client; do not browser.close() a host-owned session.
 
