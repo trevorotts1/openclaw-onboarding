@@ -1,0 +1,14 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Exact approved location name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/memberships/courses/course-creator-studio?view=manager&sub_view=customize&product_id=COURSE_FROM_INVENTORY",
+  "course_id": "COURSE_FROM_INVENTORY",
+  "template_id": "INACTIVE_TEMPLATE_FROM_INVENTORY",
+  "expected_template_title": "Exact inactive template title",
+  "publish": false,
+  "background_image": {
+    "file": "/absolute/path/to/approved-background.png",
+    "sha256": "REPLACE_WITH_APPROVED_FILE_SHA256",
+    "expected_url": "https://example.com/actual-current-preview.png"
+  }
+}

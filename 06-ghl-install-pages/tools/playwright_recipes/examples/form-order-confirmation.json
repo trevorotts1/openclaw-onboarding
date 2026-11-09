@@ -1,0 +1,35 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Approved account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/form-builder-v2/FORM_FROM_INVENTORY",
+  "submission": {
+    "mode": "Order Confirmation",
+    "form_id": "FORM_FROM_INVENTORY",
+    "expected_form_name": "Exact existing payment form name",
+    "expected_mode": "Message",
+    "ack_conditional_precedence": false,
+    "checkout_contract": {
+      "status": "PASS",
+      "source": "Actual approved Skill44/79 same-form checkout inventory reference",
+      "location_id": "LOCATION_FROM_INVENTORY",
+      "form_id": "FORM_FROM_INVENTORY",
+      "product_id": "PRODUCT_FROM_API_AND_NATIVE_CHECKBOX",
+      "product_name": "Exact existing native product name",
+      "product_type": "DIGITAL",
+      "price_id": "UNIQUE_PRICE_FROM_PRODUCT_API",
+      "price_name": "Exact native monthly price name",
+      "price": {
+        "native_product_id": "PRODUCT_FROM_API_AND_NATIVE_CHECKBOX",
+        "native_price_id": "UNIQUE_PRICE_FROM_PRODUCT_API",
+        "amount_minor": 19700,
+        "currency": "USD",
+        "billing_type": "recurring",
+        "recurring_interval": "month",
+        "trial_days": null
+      },
+      "display_amount": "$197/month",
+      "expected_selected": false,
+      "observed_at": "1970-01-01T00:00:00Z"
+    }
+  }
+}

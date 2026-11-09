@@ -74,6 +74,7 @@ def main() -> int:
     for row in payload["contexts"]:
         assert row.get("workflow") and row.get("job"), row
         assert row.get("proves"), row
+        assert row.get("push_runs") is True, row
     print("ok   real tree: 8/8 contexts resolve; 1 declared PR-skip gap (G1)")
 
     cases = []
@@ -110,6 +111,25 @@ def main() -> int:
         path.write_text(text.replace("Only ANNOTATED tags are accepted", "tag accepted"),
                         encoding="utf-8")
     cases.append(("named-behavior assertion removed", gut_body, "no longer contains the named behavior"))
+
+    # 7. A `paths:` filter re-added on pull_request -> the workflow is SKIPPED
+    #    WHOLE on any PR whose diff misses the filter, so the required context
+    #    never reports and the PR hangs with zero failing checks. This is the
+    #    shape that blocks a PR forever, so it must be a hard mapping failure.
+    def add_pr_paths(wd: Path) -> None:
+        rewrite(wd / "qc-static.yml", "  pull_request:\n    branches: [main]\n",
+                "  pull_request:\n    branches: [main]\n    paths:\n"
+                "      - '49-signature-funnel/**'\n")
+    cases.append(("path filter re-added on pull_request", add_pr_paths,
+                  "pull_request trigger is path-filtered"))
+
+    # 8. The inline form on push to main -> the context never reports on the
+    #    second event the ruleset requires it on. Both list forms are filters.
+    def add_push_paths(wd: Path) -> None:
+        rewrite(wd / "version-consistency.yml", "  push:\n    branches: [main]\n",
+                "  push:\n    branches: [main]\n    paths-ignore: ['docs/**']\n")
+    cases.append(("path-ignore re-added on push to main", add_push_paths,
+                  "push trigger is path-filtered"))
 
     for label, mutate, needle in cases:
         root = broken_workflows(mutate)

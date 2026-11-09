@@ -1,0 +1,21 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Approved account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/dashboard",
+  "name": "EXACT_EXISTING_ROOM_NAME",
+  "slug": "exact-existing-room-slug",
+  "waiting_room": true,
+  "guest_users": false,
+  "open_room": false,
+  "allow_creation": false,
+  "expected_room_id": "https://rooms.example.invalid/exact-existing-room-slug",
+  "cohosts": {
+    "expected": [
+      {"name": "Exact Existing Co-host", "email": "existing@example.invalid"}
+    ],
+    "desired": [
+      {"name": "Exact Approved Co-host", "email": "approved@example.invalid"}
+    ],
+    "access_change_acknowledged": true
+  }
+}

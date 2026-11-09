@@ -12,6 +12,16 @@ name: QC static checks
 #   • No flat-constant scoring (0.7/0.7/0.8/0.8) lingering in persona-selector-v2.py
 #
 # Triggers on every push to main and every PR targeting main.
+#
+# NO `paths:` / `paths-ignore:` ON THESE TRIGGERS, AND DO NOT ADD ANY. This
+# workflow reports the required status context `QC static invariants` on main's
+# ruleset. A path-filtered workflow is not skipped job-by-job -- GitHub SKIPS
+# THE WHOLE WORKFLOW when a PR's diff misses the filter, so the required context
+# never appears and the PR hangs at "Expected - Waiting for status to be
+# reported" with ZERO failing checks. That is the failure mode that gets a gate
+# switched off. scripts/ci/required_context_behaviors.py enforces this from the
+# first step of the job below, so re-adding a filter fails the build instead of
+# silently blocking every unrelated PR.
 
 on:
   push:

@@ -1,0 +1,15 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "ACCOUNT_FROM_INVENTORY",
+  "start_url": "https://app.example.com/v2/location/LOCATION_FROM_INVENTORY/form-builder-v2/FORM_FROM_INVENTORY",
+  "tracking": {
+    "expected": {
+      "page_view_event": "Page View",
+      "submission_event": "Submit Application"
+    },
+    "changes": {
+      "page_view_event": "Page View",
+      "submission_event": "Lead"
+    }
+  }
+}
