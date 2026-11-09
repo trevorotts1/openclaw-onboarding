@@ -57,8 +57,10 @@ def compile_recipe(operation, data):
         else:
             add('form_css',radius=data.get('radius',12))
     elif operation=='forms.settings':
-        if not set(data).intersection({'settings', 'schedule'}):
-            raise Stop('Form settings require explicit settings or schedule')
+        if not set(data).intersection({'settings', 'schedule', 'tracking'}):
+            raise Stop('Form settings require explicit settings, schedule or tracking')
+        if 'tracking' in data:
+            add('native_form_tracking', tracking=data['tracking'])
         if 'schedule' in data:
             add('native_form_schedule', schedule=data['schedule'])
         if 'settings' in data:
@@ -97,7 +99,7 @@ def compile_recipe(operation, data):
             condition['effect'] = effect
         if condition.get('effect', 'Hide Field') not in ('Hide Field', 'Show Field'):
             raise Stop('Only the captured Hide Field/Show Field condition effects are implemented')
-        add('native_condition', **condition)
+        add('native_condition_group' if 'clauses' in condition else 'native_condition', **condition)
     elif operation=='quizzes.configure':
         config = dict(data['configuration'])
         has_results = 'result_page' in config
@@ -135,9 +137,16 @@ def compile_recipe(operation, data):
             if not isinstance(details.get('expected_room_id'),str) or not details['expected_room_id']:
                 raise Stop('Meeting update requires the exact existing room identity')
             details['allow_creation'] = False
-        add('meeting',**details)
+        if 'cohosts' in details:
+            # Roster reconciliation is an independently inventoried operation.
+            # Room metadata are expected unchanged values, never an earlier
+            # write that could succeed before a later roster preflight fails.
+            details['allow_creation'] = False if operation == 'meetings.update' else details.get('allow_creation')
+            add('meeting_cohosts', payload={**{key:base[key] for key in ('location_id', 'location_name', 'start_url')}, **details})
+        else:
+            add('meeting',**details)
     elif operation == 'courses.configure_ui' and 'template_id' in data:
-        add('native_course_theme', payload=data)
+        add('native_course_blocks' if 'custom_blocks' in data else 'native_course_theme', payload=data)
     elif operation in ('forms.configure','checkout.one_click_upsell','funnels.split_variant','communities.configure','courses.configure_ui','meetings.integrate'):
         if operation=='checkout.one_click_upsell':
             receipt=data.get('checkout_contract',{})

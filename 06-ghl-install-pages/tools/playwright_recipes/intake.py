@@ -25,7 +25,7 @@ FIELDS = {
     'forms.create': {'name', 'required', 'allow_creation', 'radius'},
     'forms.configure': {'fields', 'add_fields', 'address_fields', 'consent', 'object_fields', 'field_dependencies'},
     'forms.style': {'custom_css', 'radius', 'css_key', 'expect_styles'},
-    'forms.settings': {'settings', 'schedule'},
+    'forms.settings': {'settings', 'schedule', 'tracking'},
     'forms.submission': {'submission'}, 'forms.notifications': {'notifications'},
     'forms.conditions': {'condition'},
     'surveys.create': {'name', 'allow_creation', 'standard_fields'},
@@ -35,7 +35,7 @@ FIELDS = {
     'communities.configure': {'portal_url', 'group_name', 'channels', 'details', 'access'},
     'meetings.setup': {'meeting'}, 'meetings.update': {'meeting'},
     'meetings.integrate': {'integration_mode'},
-    'courses.configure_ui': {'course_id', 'template_id', 'expected_template_title', 'changes', 'expected_values'},
+    'courses.configure_ui': {'course_id', 'template_id', 'expected_template_title', 'changes', 'expected_values', 'custom_blocks'},
     'funnels.split_variant': set(),
 }
 REQUIRED = {
@@ -90,7 +90,10 @@ def validate_intake(operation, data):
         if native and 'options' in data:
             raise Stop('Native course theme edits and recorded options require separate jobs')
         if native:
-            from playwright_recipes.course_theme import validate_inputs
+            if 'custom_blocks' in data:
+                from playwright_recipes.course_blocks import validate_inputs
+            else:
+                from playwright_recipes.course_theme import validate_inputs
             validate_inputs(data)
     for key in ('seo', 'checkout', 'configuration', 'submission', 'notifications', 'community', 'meeting', 'options'):
         if key in data and (not isinstance(data[key], dict)
@@ -136,5 +139,8 @@ def validate_intake(operation, data):
             raise Stop('Community channels, details and access require separately journaled jobs')
         if set(data).intersection({'channels', 'details', 'access'}) and 'options' in data:
             raise Stop('Concrete community operations and generic options require separate jobs')
+    if operation in ('meetings.setup', 'meetings.update') and 'cohosts' in data['meeting']:
+        if 'options' in data:
+            raise Stop('Co-host roster reconciliation and recorded options require separate jobs')
     if operation == 'meetings.integrate' and data.get('integration_mode') is not None:
         raise Stop('Native calendar API integration must use the measured API host route')

@@ -144,7 +144,7 @@
       "action": "native_course_theme_or_options",
       "implemented": true,
       "proof": "CAPTURED",
-      "use": "Edit fourteen captured Neo Classic text/visibility controls on an exact existing inactive template; expected-value preflight, active-theme preservation and independent reopen; live Python proof deferred. Other theme controls require captured profiles."
+      "use": "Inactive existing theme text/palette/fonts and exact Custom Block append/edit with protected siblings; media/activation remain separate"
     },
     "meetings.setup": {
       "name": "20_setup_meeting_room",
@@ -165,14 +165,14 @@
       "action": "native_form_schedule_or_settings",
       "implemented": true,
       "proof": "CAPTURED",
-      "use": "Captured opening/closing windows, IANA timezone and outside-window message/redirect plus seven ordinary switches; preserve branding, save/reopen and retain functional verification pending"
+      "use": "Captured scheduling windows, IANA timezone, outside-window outcomes, ordinary switches and Facebook Pixel ID/page/submission events; exact save/reopen, functional proof pending"
     },
     "courses.update": {
       "name": "23_update_course",
       "action": "api",
       "implemented": true,
       "proof": "API_FIRST",
-      "use": "Documented course styling/content settings through Courses v3"
+      "use": "Documented course settings or approved SHA256-bound PNG media upload and API appearance attachment through exact Courses v3 capability route"
     },
     "courses.lesson_quiz.create": {
       "name": "24_create_lesson_quiz",
@@ -186,7 +186,7 @@
       "action": "native_condition",
       "implemented": true,
       "proof": "CAPTURED",
-      "use": "Captured Hide Field rule; persisted behavior verification pending"
+      "use": "Captured single-target Hide/Show and homogeneous 2..20-clause AND/OR groups; complete existing rule inventory and independently reopened summary; behavior proof pending"
     },
     "checkout.configure_native": {
       "name": "26_configure_native_checkout",
@@ -200,14 +200,14 @@
       "action": "meeting",
       "implemented": true,
       "proof": "CAPTURED",
-      "use": "Native room identity guard, Save changes and independent readback"
+      "use": "Exact room/security updates or independently journaled complete nonempty cohost roster reconciliation with saved readback; empty roster and native access proof remain incomplete"
     },
     "quizzes.configure": {
       "name": "28_configure_quiz_scores_and_tiers",
       "action": "quiz_configuration",
       "implemented": true,
       "proof": "CAPTURED",
-      "use": "Native categories, existing choice scores and three result tiers; final Python live run pending"
+      "use": "Native categories, existing choice scores, any captured existing tier layout and Header/CTA copy; tier creation/removal and native outcome proof remain separate"
     },
     "surveys.configure": {
       "name": "29_configure_survey_branch",

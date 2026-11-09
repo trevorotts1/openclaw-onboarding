@@ -1,3 +1,18 @@
+## [v27.1.92] - 2026-11-09
+
+- Add native homogeneous AND/OR form conditions, Address child properties and
+  Facebook Pixel/event settings with expected-state checks and reopened readback.
+- Add inactive-theme Custom Block append/edit, bound to exact native/generated
+  block identities while preserving existing media and sibling rich content.
+- Add exact existing-room co-host roster reconciliation, preserving security
+  settings and refusing uncaptured empty rosters. Bind replay to the full plan.
+- Edit any captured existing quiz tier layout without inferring tier creation.
+- Upload approved PNG course media through the existing API rail, preserve
+  appearance siblings and retain pending visual/learner proof through the host.
+- Preflight every native checkout target before editing the first value, and
+  accept complete mixed API inventories for existing object-field placement.
+- Preserve remaining build gaps and separately pending native acceptance.
+
 ## [v27.1.91] - 2026-11-09
 
 - Add captured native form consent, Address Query Keys, existing Radio placement,

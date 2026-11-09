@@ -96,12 +96,16 @@ def validate_job(job, base):
         # No general query exception is granted to options or other actions.
         query_steps = job.get('steps')
         if (not isinstance(query_steps, list) or len(query_steps) != 1
-                or any(not isinstance(step, dict) or step.get('action') != 'native_course_theme'
+                or any(not isinstance(step, dict) or step.get('action') not in ('native_course_theme', 'native_course_blocks')
                        for step in query_steps)):
             raise Stop('Only a captured native course-theme job may use its manager query')
         from playwright_recipes.course_theme import validate as validate_course_theme
         for step in query_steps:
-            payload = validate_course_theme(step)
+            if step['action'] == 'native_course_blocks':
+                from playwright_recipes.course_blocks import validate
+                payload = validate(step)
+            else:
+                payload = validate_course_theme(step)
             if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
                 raise Stop('Course theme manager query belongs to another job identity')
     if 'auth_activation' in job:
@@ -119,7 +123,7 @@ def validate_job(job, base):
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_course_theme", "native_fields", "native_field_placement", "native_address_fields", "native_form_consent", "native_object_fields", "native_survey_object_fields", "native_condition", "quiz_configuration", "quiz_results", "survey_configuration", "survey_rule_stack", "form", "form_css", "native_form_css", "native_form_schedule", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "community_access", "assessment", "meeting", "options"}
+    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_course_theme", "native_course_blocks", "native_fields", "native_field_placement", "native_address_fields", "native_form_consent", "native_object_fields", "native_survey_object_fields", "native_condition", "native_condition_group", "quiz_configuration", "quiz_results", "survey_configuration", "survey_rule_stack", "form", "form_css", "native_form_css", "native_form_schedule", "native_form_tracking", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "community_access", "assessment", "meeting", "meeting_cohosts", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -150,6 +154,9 @@ def validate_job(job, base):
             payload = s['payload']
             if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
                 raise Stop('Native object fields belong to a different location or editor')
+        if s['action']=='native_form_tracking':
+            from playwright_recipes.form_tracking import validate
+            validate(s)
         if s['action']=='native_form_schedule':
             from playwright_recipes.form_schedule import validate
             validate(s)
@@ -158,6 +165,14 @@ def validate_job(job, base):
             payload = validate(s)
             if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
                 raise Stop('Course theme payload belongs to a different location or manager')
+        if s['action']=='native_course_blocks':
+            from playwright_recipes.course_blocks import validate
+            payload = validate(s)
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Course Custom Block payload belongs to another location or manager')
+        if s['action']=='native_condition_group':
+            from playwright_recipes.form_conditions import validate
+            validate(s)
         if s['action'] in ('native_fields','native_condition'):
             from playwright_recipes.assessments import validate_fields, validate_condition
             (validate_fields if s['action']=='native_fields' else validate_condition)(s)
@@ -220,6 +235,15 @@ def validate_job(job, base):
             except OrderComponentError as exc:
                 raise Stop(str(exc)) from None
             s['_input_dir'] = str(base.resolve())
+        if s['action']=='meeting_cohosts':
+            from playwright_recipes.meeting_cohosts import validate_write_inputs
+            if set(s) != {'id', 'action', 'payload'}:
+                raise Stop('Co-host writer requires only its explicit bound payload')
+            payload = validate_write_inputs(s.get('payload'))
+            if set(payload).intersection({'id', 'action', '_context'}):
+                raise Stop('Co-host payload must not override runner metadata')
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Co-host payload belongs to a different location or origin')
         if s['action']=='meeting':
             s['_context'] = {k:job[k] for k in ('location_id','location_name','start_url')}
             from playwright_recipes.meetings import validate_room
@@ -1134,6 +1158,11 @@ def meeting(page, step):
     return create_room(page, inputs)
 
 
+def meeting_cohosts(page, step):
+    from playwright_recipes.meeting_cohosts import configure
+    return configure(page, step['payload'])
+
+
 def form_submission(page, step):
     from playwright_recipes.form_submission import configure
     return configure(page, step)
@@ -1191,6 +1220,21 @@ def native_condition(page, step):
 
 def quiz_configuration(page, step):
     from playwright_recipes.quiz_ui import configure
+    return configure(page, step)
+
+
+def native_form_tracking(page, step):
+    from playwright_recipes.form_tracking import configure
+    return configure(page, step)
+
+
+def native_course_blocks(page, step):
+    from playwright_recipes.course_blocks import configure
+    return configure(page, step)
+
+
+def native_condition_group(page, step):
+    from playwright_recipes.form_conditions import configure
     return configure(page, step)
 
 
@@ -1400,7 +1444,7 @@ def _run_on_page(page, job, evidence_root):
     results = []
     fresh_container = None
     state = {"fingerprint":fingerprint, "location_id":job["location_id"], "status":"RUNNING", "results":results}
-    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_course_theme":native_course_theme, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_address_fields":native_address_fields, "native_form_consent":native_form_consent, "native_object_fields":native_object_fields, "native_survey_object_fields":native_survey_object_fields, "native_condition":native_condition, "quiz_configuration":quiz_configuration, "quiz_results":quiz_results, "survey_configuration":survey_configuration, "survey_rule_stack":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "native_form_schedule":native_form_schedule, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
+    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_course_theme":native_course_theme, "native_course_blocks":native_course_blocks, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_address_fields":native_address_fields, "native_form_consent":native_form_consent, "native_object_fields":native_object_fields, "native_survey_object_fields":native_survey_object_fields, "native_condition":native_condition, "native_condition_group":native_condition_group, "quiz_configuration":quiz_configuration, "quiz_results":quiz_results, "survey_configuration":survey_configuration, "survey_rule_stack":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "native_form_schedule":native_form_schedule, "native_form_tracking":native_form_tracking, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"meeting_cohosts":meeting_cohosts,"options":options}
     for step in job["steps"]:
         assert_tenant(page, job)
         state["current_step"] = step["id"]
@@ -1444,6 +1488,9 @@ def _run_on_page(page, job, evidence_root):
                 'NATIVE_CONFIGURATION_READBACK_VERIFIED', 'NATIVE_CHECKOUT_UI_READBACK_VERIFIED', 'ROOM_PERSISTED',
                 'ROOM_CREATED_AND_VERIFIED', 'ROOM_REUSED_AND_VERIFIED',
                 'ROOM_CREATED_VERIFIED', 'ROOM_REUSED_VERIFIED', 'ROOM_UPDATED_VERIFIED',
+                'COHOSTS_SAVED_AND_REOPENED', 'COHOSTS_REUSED_AND_REOPENED',
+                'CONDITION_GROUP_SAVED_AND_REOPENED', 'CONDITION_GROUP_REUSED_AND_REOPENED',
+                'COURSE_BLOCKS_SAVED_AND_REOPENED', 'FORM_TRACKING_SAVED_AND_REOPENED',
             }
             statusless = {'navigate': 'area', 'container': 'container_url', 'page': 'editor_url'}
             if status not in completed and not (

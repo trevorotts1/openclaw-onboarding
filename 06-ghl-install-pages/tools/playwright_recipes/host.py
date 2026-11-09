@@ -58,6 +58,14 @@ def _provider_objects(operation, inputs, objects):
         expected_keys = sorted((obj['kind'], obj['id']) for obj in expected)
         if actual_keys != expected_keys:
             raise Stop('Course outline receipt does not match the exact requested targets')
+    if operation == 'courses.update' and 'media_assets' in inputs:
+        if __package__:
+            from .course_media import validate_inputs
+        else:
+            from course_media import validate_inputs
+        plan = validate_inputs(inputs)
+        if identities != [{'kind':'course', 'id':plan['product_id']}]:
+            raise Stop('Course media receipt does not match the exact requested course')
     return identities
 
 
@@ -235,7 +243,12 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
         if provider is None and operation in ('courses.create','courses.update','courses.lesson_quiz.create') and route['lane'] in ('public_api','skill44') and inputs.get('api_capability'):
             # Reuse the course implementation's real Skill 44 transport. An
             # official-MCP route always requires its actual injected MCP tool.
-            if __package__:
+            if operation == 'courses.update' and 'media_assets' in inputs:
+                if __package__:
+                    from .course_media import course_executor
+                else:
+                    from course_media import course_executor
+            elif __package__:
                 from .delivery import course_executor
             else:
                 from delivery import course_executor
@@ -352,7 +365,12 @@ def main(argv=None):
                 validate_job(compile_recipe(args.operation, inputs), args.inputs.resolve().parent)
                 status = 'PORTAL_CONTEXT_REQUIRED' if args.operation == 'communities.configure' and ('channels' in inputs or 'details' in inputs) else 'VALIDATED_ONLY'
             elif selected['lane'] in ('public_api','skill44','official_mcp') and args.operation in ('courses.create','courses.update','courses.lesson_quiz.create'):
-                if __package__:
+                if args.operation == 'courses.update' and 'media_assets' in inputs:
+                    if __package__:
+                        from .course_media import validate_api_inputs
+                    else:
+                        from course_media import validate_api_inputs
+                elif __package__:
                     from .delivery import validate_api_inputs
                 else:
                     from delivery import validate_api_inputs

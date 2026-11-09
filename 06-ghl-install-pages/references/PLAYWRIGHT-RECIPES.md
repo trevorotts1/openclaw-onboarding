@@ -213,9 +213,9 @@ credential actions remain outside this executor. An assertion must be present.
 
 Profiles needed before broad deployment include: all form choice/advanced
 controls, submit/redirect/tracking/notification rules; additional survey question
-types/outcomes; quiz question creation, variable tiers and outcome behavior; native split creation/allocation;
+types/outcomes; quiz question creation, tier creation/removal and outcome behavior; native split creation/allocation;
 checkout products/bumps/one-click behavior; portal settings; course UI-only
-features; meeting calendar/co-host/recording/transcription integrations.
+features; dynamic appointment-room and community/course meeting associations; recording/transcription integrations.
 
 ## Recovery and proof
 
@@ -329,13 +329,51 @@ same compiled job. Saved/replayed results bind exact editor and configuration.
 
 `courses.configure_ui` accepts an inventoried inactive template with fourteen
 text/visibility controls, six-color layout palette and primary/secondary font and
-weight. It preserves the current active theme; media and custom blocks remain
-incomplete. `courses.lessons` supports existing draft module/lesson moves and
+weight. It preserves the current active theme; Custom Block append/edit is also
+implemented with exact block IDs and protected sibling snapshots. Native media
+uploads remain incomplete. `courses.lessons` supports existing draft module/lesson moves and
 drip/lock-reference metadata through the API-first provider.
 
 `community_access.py` implements captured classic privacy/access controls;
-`meeting_cohosts.py` is a read-only preflight helper only. It never assigns, removes
-or saves a co-host. Neither file establishes all community/meeting options.
+`meeting_cohosts.py` reconciles the complete approved co-host roster of an exact
+existing room. `meetings.setup` and `meetings.update` accept `meeting.cohosts`
+with complete expected/desired native name/email identities and scoped access
+acknowledgment. That compiles to a dedicated, journaled writer; the room name,
+slug and all three security choices are unchanged inventory guards. Room creation
+or security/name changes and roster changes use separate jobs with fresh inventory.
+An independently reopened roster is required; functional access and notification
+behavior remain pending. See `meeting-cohosts.md`. Dynamic meeting associations
+remain incomplete.
 
 Consult `PLAYWRIGHT-BUILD-STATUS.json` for exact scope; native functional acceptance
 remains separately pending.
+
+## Compound rules, existing quiz layouts and API course media
+
+`forms.conditions.condition` accepts `clauses`, `match:all|any`, `effect` and
+`target` for homogeneous two-to-twenty-clause AND/OR rules. The native effect has
+one target field. Existing unrelated condition stacks are refused, while an exact
+existing group can be reused. The saved summary, editor and configuration are
+independently rebound after reopening. Legacy single-clause inputs remain valid.
+See `form-compound-condition.json` and its accompanying explanation.
+
+`quizzes.configure` can edit any captured existing tier layout using the exact
+current labels, order and ranges. It does not create or remove tiers. See
+`quiz-existing-tier-layout.json`.
+
+`courses.update` accepts `media_assets` for approved, SHA256-bound PNG uploads and
+API product appearance fields. The host selects `course_media` on the measured
+same-location v3 route; its check mode requires course-read, course-write and
+media-write scopes without uploading. This is separate from inactive theme media
+and custom blocks. See `course-media-upload.md`. All native appearance/learner
+acceptance stays pending after a saved API update.
+
+`courses.configure_ui.custom_blocks` uses the exact inactive template, ordered
+Category/Custom Block ID inventory, complete expected existing content and authored
+plain-text/button changes. New blocks bind generated native IDs into saved replay
+so a completed run never appends again. See `course-custom-block.md`.
+
+`forms.settings.tracking` accepts inventoried Facebook Pixel ID and page/submission
+event changes. It preserves unrequested values and independently reopens the saved
+form. Export/embed controls are separate, and no event/submission verification is
+claimed. See `form-tracking.json`.

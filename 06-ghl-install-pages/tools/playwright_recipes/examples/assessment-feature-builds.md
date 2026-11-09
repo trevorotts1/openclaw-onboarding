@@ -13,7 +13,7 @@ labels and option counts still guard the target. Shared-field editing requires
 `query_key`, but requires every existing choice question in the configuration,
 unique existing and desired Query Keys, and no direct key swap into another
 question’s existing identity. All identities are read before the first write.
-The handler reads every requested question and the requested existing three-tier
+The handler reads every requested question and the requested existing result-tier
 layout before writing the first authored value.
 
 See `quiz-question-properties.json`.
@@ -94,3 +94,21 @@ requested variant are compared before and after Save. Styling, global dynamic
 mode/source changes, uploads and other result sections remain outside this
 handler. `behavior_verified` and `submission_verified` remain false. No optional
 or live tests have been run for this implementation pass.
+
+## Existing result-tier layouts
+
+`quizzes.configure` accepts an existing native tier layout with any complete
+integer-percentage partition, rather than imposing three rows. Supply `tiers`,
+`expected_tier_labels`, and `expected_tiers` with every current label and previous
+range in exact row order. The native popover must expose exactly that many
+label inputs and two range inputs per row. First/last range endpoints must remain
+locked at 0/100, and all interior controls must be editable before the first fill.
+
+Every current range and label is checked during preflight. After editing, native
+Save and independent editor reopening must preserve every desired row. The
+operation edits existing rows only; it never presses Add tier, creates/removes a
+row, or changes a template. Existing three-tier jobs remain compatible; adding
+`expected_tiers` gives them the same exact old-range guard.
+
+See `quiz-existing-tier-layout.json`. Native layout limits, native styling/media
+controls, and submitted result behavior remain separate from this implementation.
