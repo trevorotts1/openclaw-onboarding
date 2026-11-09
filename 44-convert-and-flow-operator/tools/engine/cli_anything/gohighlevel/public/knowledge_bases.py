@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from .adapter import PublicGhlAdapter
 from .auth import TenantBinding
@@ -51,7 +51,12 @@ from .errors import ContractViolation
 from .idempotency import IdempotencyKey
 from .readback import ReadbackSpec
 from .result import OperationResult, Status
-from .transport import Transport, TransportResponse
+from .transport import (
+    MultipartFile,
+    MultipartRequest,
+    Transport,
+    TransportResponse,
+)
 
 # ---------------------------------------------------------------------------
 # operation ids (rows owned by WF00; exact vendor evidence in the change request)
@@ -85,6 +90,8 @@ OPERATION_IDS: dict[str, str] = {
 #: 2026-11-08).  Revalidated by tests; a change is a contract change, not a
 #: silent constant bump.
 KB_PER_LOCATION_LIMIT = 15
+#: Mirrors ``operations.UNKNOWN``: a row the vendor evidence never settled.
+UNRESOLVED_PATH = "UNKNOWN"
 KB_FILE_MAX_BYTES = 10 * 1024 * 1024
 KB_FILE_TYPES: dict[str, str] = {
     ".pdf": "application/pdf",
@@ -279,6 +286,80 @@ class MultipartTransport:
         raise KnowledgeBaseGap(
             "multipart_transport_not_implemented",
             detail={"owner": "WF01", "operation_id": request.operation_id},
+        )
+
+class TransportMultipartSeam(MultipartTransport):
+    """WF01's ``request_multipart`` seam, bound to the KB upload payload.
+
+    WF01 owns the multipart wire body (boundary, encoding, redirect refusal,
+    upload-host binding).  This bridge only translates the frozen payload and
+    resolves the operation row; it never invents a route, a media type or a
+    boundary, and it refuses before transport when the row has no published
+    contract.
+    """
+
+    def __init__(self, *, transport: Any, public: PublicGhlAdapter) -> None:
+        if not callable(getattr(transport, "request_multipart", None)):
+            raise ContractViolation("multipart_seam_unsupported")
+        self._transport = transport
+        self._public = public
+
+    def upload(self, request: MultipartUploadRequest) -> MultipartResponse:
+        if not isinstance(request, MultipartUploadRequest):
+            raise ContractViolation("multipart_payload_invalid")
+        row = self._public._resolve_row(request.operation_id)
+        template = _row_attr(row, "path_template", "")
+        if not isinstance(template, str) or not template.strip() or template == UNRESOLVED_PATH:
+            raise KnowledgeBaseGap(
+                "file_upload_contract_unresolved",
+                detail={
+                    "operation_id": request.operation_id,
+                    "owner": "WF00",
+                    "blocker": str(_row_attr(row, "blocker", None) or "B-NO-CONTRACT"),
+                    "reason": "no published vendor route; no path may be invented",
+                },
+            )
+        fields = dict(request.fields)
+        url = template
+        for name in _PATH_NAME.findall(template):
+            value = fields.get(name)
+            if not isinstance(value, str) or not value:
+                raise ContractViolation(
+                    "path_param_invalid",
+                    operation_id=request.operation_id,
+                    detail={"name": name},
+                )
+            url = url.replace("{" + name + "}", quote(value, safe=""))
+        version = request.version
+        if version is None:
+            row_version = _row_attr(row, "version", None)
+            version = row_version if isinstance(row_version, str) else None
+        payload = MultipartRequest(
+            files=(
+                MultipartFile(
+                    field_name=request.file_field,
+                    filename=request.filename,
+                    content_type=request.content_type,
+                    content=bytes(request.content),
+                ),
+            ),
+            fields=fields,
+        )
+        outcome = self._transport.request_multipart(
+            method=str(_row_attr(row, "method") or "POST"),
+            url=url,
+            version=version,
+            headers={},
+            query=None,
+            payload=payload,
+            timeout_s=float(request.timeout_s),
+        )
+        response = outcome.response
+        return MultipartResponse(
+            status=response.status,
+            headers=dict(response.headers or {}),
+            body=bytes(response.body or b""),
+            error_kind=str(response.error_kind),
         )
 
 
@@ -919,6 +1000,12 @@ class KnowledgeBaseClient:
                 public._transport = recorder  # ponytail: see module note
             except AttributeError:  # pragma: no cover - defensive
                 raise ContractViolation("kb_transport_unbindable") from None
+        if multipart is None and callable(
+            getattr(base, "request_multipart", None)
+        ):
+            # WF01's transport is present: wire the real multipart seam so the
+            # upload path is live end to end instead of refusing on a gap.
+            multipart = TransportMultipartSeam(transport=base, public=public)
         self._public = public
         self._transport = recorder
         self._multipart = multipart
@@ -1263,6 +1350,31 @@ class KnowledgeBaseClient:
                     ),
                 },
             )
+        row = self._public._resolve_row(OPERATION_IDS["file.upload"])
+        template = _row_attr(row, "path_template", "")
+        availability = str(_row_attr(row, "availability", None) or "")
+        if (
+            not isinstance(template, str)
+            or not template.strip()
+            or template == UNRESOLVED_PATH
+            or availability == "feature_gap"
+        ):
+            # A row may exist and still carry no route (WF00 CP04 publishes the
+            # gap row with path_template=UNKNOWN).  Refuse before any network
+            # call and name the blocker instead of sending to an invented path.
+            raise KnowledgeBaseGap(
+                "file_upload_contract_unresolved",
+                detail={
+                    "operation_id": OPERATION_IDS["file.upload"],
+                    "owner": "WF00",
+                    "blocker": str(_row_attr(row, "blocker", None) or "B-NO-CONTRACT"),
+                    "availability": availability or "unknown",
+                    "reason": (
+                        "apps/knowledge-base.json publishes no file-source upload "
+                        "operation; no path, media type or body field may be invented"
+                    ),
+                },
+            )
         if self._multipart is None:
             raise KnowledgeBaseGap(
                 "multipart_transport_unavailable",
@@ -1589,6 +1701,15 @@ class KnowledgeBaseClient:
 # ---------------------------------------------------------------------------
 # small helpers
 # ---------------------------------------------------------------------------
+
+_PATH_NAME = re.compile(r"\{([^{}]+)\}")
+
+def _row_attr(row: Any, name: str, default: Any = None) -> Any:
+    """Read a row field from a mapping or an object, never inventing one."""
+
+    if isinstance(row, Mapping):
+        return row.get(name, default)
+    return getattr(row, name, default)
 
 def _required(value: Any, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
