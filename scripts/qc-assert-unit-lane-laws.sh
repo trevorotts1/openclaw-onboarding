@@ -343,12 +343,16 @@ elif [ -n "$QC_VERDICT" ] && [ -f "$QC_VERDICT" ]; then
 else
   VERDICT_TEXT="$(grep -iE '\b(CONFIRMED|FAILED)\b' "$TRANSCRIPT" 2>/dev/null)"
 fi
-if ! printf '%s' "$VERDICT_TEXT" | grep -qiE '\b(CONFIRMED|FAILED)\b'; then
+# A here-string, never a pipe into `grep -q`: grep -q exits at the first match
+# and SIGPIPEs its producer, which under `pipefail` turns a successful match into
+# a false failure (scripts/qc-assert-code-has-no-sigpipe.sh, T5).
+VERDICT_WORD="$(grep -oiE -m1 '\b(CONFIRMED|FAILED)\b' <<< "$VERDICT_TEXT" 2>/dev/null | tr '[:lower:]' '[:upper:]' || true)"
+if [ -z "$VERDICT_WORD" ]; then
   verdict L16 FAIL "no CONFIRMED or FAILED verdict in the QC text"
-elif printf '%s' "$VERDICT_TEXT" | grep -qiE '\bFAILED\b' && [ "$ALLOW_UNMERGED" -ne 1 ]; then
+elif [ "$VERDICT_WORD" = "FAILED" ] && [ "$ALLOW_UNMERGED" -ne 1 ]; then
   verdict L16 FAIL "QC said FAILED but the commit is landed on $MAIN_REF"
 else
-  verdict L16 PASS "QC verdict present ($(printf '%s' "$VERDICT_TEXT" | grep -oiE '\b(CONFIRMED|FAILED)\b' | head -1))"
+  verdict L16 PASS "QC verdict present ($VERDICT_WORD)"
 fi
 
 # ── summary ──────────────────────────────────────────────────────────────────
