@@ -279,6 +279,11 @@ skill and every skill it calls, and it is not optional.
 completeness: knowing WHICH file comes first is not knowing WHAT it says. A dependency you have not read
 whole is a dependency you cannot claim to have followed.
 
+**GREPPING IS NOT READING.** A search hit is a pointer, never knowledge: open the file and read it whole.
+"No grepping allowed." (`50-email-engine/SOURCE-EMAIL-CORPUS.md:25`). Do not skim, do not read only the
+lines a search returned, and never act on a file you have not read end to end. If you catch yourself
+searching for the answer instead of reading the source, stop and read the source.
+
 ## Read order
 
 Read in this order. Each step names the file, so nothing here depends on guessing a path.
