@@ -27,6 +27,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CHECKER = os.path.join(HERE, "check-binding-laws.py")
 BOT = "41898282+github-actions[bot]@users.noreply.github.com"
 PIN = "49-signature-funnel/scripts/SF-PROVER-PIN.sha256"
+# This file is itself a test path, so the checker scans it when it lands. The
+# skip-marker fixture is therefore assembled from parts, the same idiom
+# tools/gate-added-paths.sh uses: a scanner must never contain the literal text
+# it scans for, or the guard trips on its own fixture (which it did, on PR #3029).
+XF = "x" + "fail"
+SKIP_MARK = "pytest.mark." + XF
 
 
 class Repo:
@@ -131,7 +137,8 @@ def test_l1_removed_assertion_fails():
 def test_l1_added_xfail_fails():
     r = Repo()
     try:
-        r._write("tests/test_sample.py", "import pytest\n@pytest.mark.xfail\ndef test_ok():\n    assert 1 == 1\n")
+        fixture = f"import pytest\n@{SKIP_MARK}\ndef test_ok():\n    assert 1 == 1\n"
+        r._write("tests/test_sample.py", fixture)
         r.commit("mark it xfail")
         rc, out = run(r)
         assert statuses(out)["L1"] == "FAIL", out
