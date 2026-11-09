@@ -1,0 +1,71 @@
+{
+  "schema_version": "s75.identity.v1",
+  "client_id": "fixture-client-a",
+  "character_id": "chr-fixture-marcus",
+  "display_name": "Marcus Bell",
+  "identity_summary": "A night-shift line cook who keeps every promise he makes to his daughter, and no promise he makes to himself.",
+  "occupation": "Line cook, hospital cafeteria",
+  "social_context": "Raised by a grandmother, now the steady adult in his household.",
+  "emotional_wound": "He was told he was not the reliable one and has spent years proving it.",
+  "mistaken_belief": "Being needed is the same thing as being loved.",
+  "behavior_under_pressure": "Goes quiet, works faster, and agrees to more than he can carry.",
+  "appearance_traits": "Tall, broad shoulders, worn hands, close-cropped hair.",
+  "relevant_background_history": [
+    "Left school at seventeen to cover rent.",
+    "Cooked his way up from dishwashing in the same kitchen."
+  ],
+  "competence": [
+    "Reads a crowded kitchen and reorders the line before it backs up."
+  ],
+  "fears": [
+    "That his daughter will learn to expect less from him."
+  ],
+  "beliefs": [
+    "A man is what he shows up for on the days he is tired."
+  ],
+  "contradictions": [
+    "Preaches rest and never takes any."
+  ],
+  "habits": [
+    "Wipes the counter before answering a hard question."
+  ],
+  "wants": {
+    "external": "Keep the job that covers the rent.",
+    "internal": "Be someone his daughter can count on out loud."
+  },
+  "voice": {
+    "rhythm": "Short flat sentences, one beat per thought.",
+    "vocabulary": "Kitchen words, no flourish, no profanity in front of family.",
+    "restraint": "Answers fewer questions than he is asked."
+  },
+  "identity_visual": {
+    "face": "Long face, tired eyes, faint scar above the left brow.",
+    "age": "Thirties, reads older under fluorescent light.",
+    "hair": "Close-cropped black hair, greying at the temples.",
+    "wardrobe_rules": [
+      "Workwear only: dark button shirt, sleeves rolled.",
+      "No jewellery except a plain wedding band on a chain."
+    ],
+    "continuity_constraints": [
+      "Left brow scar always visible.",
+      "Sleeves never rolled above the elbow."
+    ],
+    "prompt_block": "Marcus Bell, tall line cook in his thirties, long tired face, close-cropped greying hair, faint left brow scar, dark button shirt with sleeves rolled to the forearm."
+  },
+  "story_status": "FICTION",
+  "aliases": [],
+  "reference_ids": [],
+  "provenance_by_field": {
+    "identity_summary": "client brief, fixture",
+    "wants": "client brief, fixture",
+    "identity_visual": "client brief, fixture"
+  },
+  "draft_state": "DRAFT_INCOMPLETE",
+  "approval_bindings": [],
+  "shared_source": null,
+  "local_cache": null,
+  "sync_state": "LOCAL_ONLY",
+  "relationships": [],
+  "revision": 1,
+  "content_digest": "0359429a992de63e8be1a94b70ea511d28c1d9b946342c70de20819391c55607"
+}

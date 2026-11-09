@@ -1,0 +1,1210 @@
+{
+  "schema_version": "s75.approval_bindings.v1",
+  "note": "Change scenarios for the whole-package approval. Each case names the kinds that changed and the receipts that must be invalidated; every other receipt must stay active.",
+  "package_receipt": "package",
+  "elected_receipt_kind": "storyboard_approval",
+  "cases": [
+    {
+      "name": "script_edit_invalidates_only_the_package",
+      "changed": [
+        "script"
+      ],
+      "expect_invalidated": [
+        "package"
+      ],
+      "expect_active": [
+        "storyboard_approval"
+      ]
+    },
+    {
+      "name": "lyrics_edit_invalidates_only_the_package",
+      "changed": [
+        "lyrics"
+      ],
+      "expect_invalidated": [
+        "package"
+      ],
+      "expect_active": [
+        "storyboard_approval"
+      ]
+    },
+    {
+      "name": "cast_edit_invalidates_only_the_package",
+      "changed": [
+        "episode_cast_manifest"
+      ],
+      "expect_invalidated": [
+        "package"
+      ],
+      "expect_active": [
+        "storyboard_approval"
+      ]
+    },
+    {
+      "name": "world_edit_invalidates_only_the_package",
+      "changed": [
+        "episode_world"
+      ],
+      "expect_invalidated": [
+        "package"
+      ],
+      "expect_active": [
+        "storyboard_approval"
+      ]
+    },
+    {
+      "name": "music_choice_touches_no_receipt",
+      "changed": [
+        "selected_music"
+      ],
+      "expect_invalidated": [],
+      "expect_active": [
+        "package",
+        "storyboard_approval"
+      ]
+    },
+    {
+      "name": "storyboard_edit_invalidates_only_the_elected_receipt",
+      "changed": [
+        "storyboard_approval"
+      ],
+      "expect_invalidated": [
+        "storyboard_approval"
+      ],
+      "expect_active": [
+        "package"
+      ]
+    }
+  ],
+  "reply_decisions": {
+    "note": "Client replies that must NEVER open the whole-package gate, and the plain approvals that must. Each entry records the interpreter's non-approve read: 'revise' (refusal/edit) or 'ambiguous' (held, never guessed).",
+    "must_not_open": [
+      {
+        "name": "approves_nothing",
+        "text": "I approve nothing",
+        "intent": "revise"
+      },
+      {
+        "name": "approve_nothing",
+        "text": "approve nothing",
+        "intent": "revise"
+      },
+      {
+        "name": "approves_none_of_it",
+        "text": "I approve none of it",
+        "intent": "revise"
+      },
+      {
+        "name": "approves_then_revise",
+        "text": "I approve the script and revise the lyrics",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "approves_but_change",
+        "text": "I approve, but change the ending",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "everything_except",
+        "text": "approve everything except the ending",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "approves_option_two",
+        "text": "I approve option 2",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "approves_the_foley",
+        "text": "approve the foley",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "double_negation_disapprove",
+        "text": "I do not disapprove",
+        "intent": "revise"
+      },
+      {
+        "name": "double_negation_not_saying_no",
+        "text": "I am not saying no",
+        "intent": "revise"
+      },
+      {
+        "name": "question_should_i",
+        "text": "should I approve this?",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "conditional_would_if",
+        "text": "I would approve if the ending were happier",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "third_party_said",
+        "text": "my friend said approve it",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "third_party_quoted",
+        "text": "the note said \"approve it\"",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "approves_then_change_chorus",
+        "text": "yes, but please change the chorus first",
+        "intent": "ambiguous"
+      },
+      {
+        "name": "approves_but_not_lyrics",
+        "text": "I approve this but not the lyrics",
+        "intent": "revise"
+      },
+      {
+        "name": "not_yet",
+        "text": "not yet, ask me tomorrow",
+        "intent": "revise"
+      },
+      {
+        "name": "refuse_plain",
+        "text": "no, do not make it",
+        "intent": "revise"
+      }
+    ],
+    "ambiguous_scope": [
+      {
+        "name": "approve_one_of_them",
+        "text": "approve one of them",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_approved",
+        "text": "approved",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_yes",
+        "text": "yes",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_sounds_good",
+        "text": "sounds good",
+        "expect": "refused"
+      },
+      {
+        "name": "the_ones_we_discussed",
+        "text": "the ones we discussed",
+        "expect": "refused"
+      },
+      {
+        "name": "all_of_those",
+        "text": "all of those",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_them",
+        "text": "them",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_i_approve",
+        "text": "I approve",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_yes_approved",
+        "text": "yes, approved",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_approved_no_changes",
+        "text": "approved, no changes",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_ok",
+        "text": "ok",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_go_ahead",
+        "text": "go ahead",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_ship_it",
+        "text": "ship it",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_perfect",
+        "text": "perfect",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_that_works",
+        "text": "that works",
+        "expect": "refused"
+      },
+      {
+        "name": "all_of_them",
+        "text": "all of them",
+        "expect": "refused"
+      },
+      {
+        "name": "one_of_those",
+        "text": "one of those",
+        "expect": "refused"
+      },
+      {
+        "name": "the_ones",
+        "text": "the ones",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_yep",
+        "text": "yep",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_looks_good",
+        "text": "looks good",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_approve_it",
+        "text": "approve it",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_make_it",
+        "text": "make it",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_love_it",
+        "text": "love it",
+        "expect": "refused"
+      },
+      {
+        "name": "bare_lets_do_it",
+        "text": "let's do it",
+        "expect": "refused"
+      },
+      {
+        "name": "plain_approved_no_changes",
+        "text": "approved, no changes",
+        "expect": "refused",
+        "was": "must_open"
+      },
+      {
+        "name": "plain_i_approve",
+        "text": "I approve",
+        "expect": "refused",
+        "was": "must_open"
+      },
+      {
+        "name": "plain_yes_approved",
+        "text": "yes, approved",
+        "expect": "refused",
+        "was": "must_open"
+      }
+    ],
+    "partial_scope": [
+      {
+        "name": "research_bundle_alone",
+        "text": "The research bundle is approved.",
+        "covers": [
+          "research_bundle"
+        ]
+      },
+      {
+        "name": "research_bundle_and_scene_plan",
+        "text": "I approve the research bundle and the scene plan.",
+        "covers": [
+          "research_bundle",
+          "scene_plan"
+        ]
+      },
+      {
+        "name": "cast_manifest_alone",
+        "text": "The episode cast manifest is approved.",
+        "covers": [
+          "episode_cast_manifest"
+        ]
+      },
+      {
+        "name": "cast_manifest_and_script",
+        "text": "I approve the episode cast manifest and the script.",
+        "covers": [
+          "episode_cast_manifest",
+          "script"
+        ]
+      },
+      {
+        "name": "world_alone",
+        "text": "The episode world is approved.",
+        "covers": [
+          "episode_world"
+        ]
+      },
+      {
+        "name": "world_and_cast_manifest",
+        "text": "I approve the episode world and the episode cast manifest.",
+        "covers": [
+          "episode_cast_manifest",
+          "episode_world"
+        ]
+      },
+      {
+        "name": "story_beats_alone",
+        "text": "The causal story beats are approved.",
+        "covers": [
+          "causal_story_beats"
+        ]
+      },
+      {
+        "name": "story_beats_and_scene_plan",
+        "text": "I approve the causal story beats and the scene plan.",
+        "covers": [
+          "causal_story_beats",
+          "scene_plan"
+        ]
+      },
+      {
+        "name": "scene_plan_alone",
+        "text": "The scene plan is approved.",
+        "covers": [
+          "scene_plan"
+        ]
+      },
+      {
+        "name": "scene_plan_and_script",
+        "text": "I approve the scene plan and the script.",
+        "covers": [
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "characters_mean_the_cast_manifest",
+        "text": "The characters are approved.",
+        "covers": [
+          "episode_cast_manifest"
+        ]
+      },
+      {
+        "name": "only_the_scene_plan",
+        "text": "Only the scene plan is approved.",
+        "covers": [
+          "scene_plan"
+        ]
+      },
+      {
+        "name": "script_alone",
+        "text": "I approve the script.",
+        "covers": [
+          "script"
+        ]
+      },
+      {
+        "name": "lyrics_alone",
+        "text": "The lyrics are approved.",
+        "covers": [
+          "lyrics"
+        ]
+      },
+      {
+        "name": "manifest_alone",
+        "text": "The creative package manifest is approved.",
+        "covers": [
+          "creative_package_manifest"
+        ]
+      },
+      {
+        "name": "world_alone_by_name",
+        "text": "I approve the world.",
+        "covers": [
+          "episode_world"
+        ]
+      },
+      {
+        "name": "beats_by_story_word",
+        "text": "The story beats are approved.",
+        "covers": [
+          "causal_story_beats"
+        ]
+      },
+      {
+        "name": "script_and_lyrics_named",
+        "text": "I approve the script and the lyrics.",
+        "covers": [
+          "lyrics",
+          "script"
+        ]
+      },
+      {
+        "name": "script_and_lyrics_stated",
+        "text": "The script and the lyrics are approved.",
+        "covers": [
+          "lyrics",
+          "script"
+        ]
+      },
+      {
+        "name": "research_and_world",
+        "text": "I approve the research bundle and the episode world.",
+        "covers": [
+          "episode_world",
+          "research_bundle"
+        ]
+      }
+    ],
+    "must_open": [
+      {
+        "name": "plain_01",
+        "text": "I approve the whole creative package.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_02",
+        "text": "The creative package is approved.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_03",
+        "text": "The whole package is approved.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_04",
+        "text": "Approve the package.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_05",
+        "text": "The package is approved as is.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_06",
+        "text": "Approved, no changes to the package.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_07",
+        "text": "I approve everything in the package.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_08",
+        "text": "Everything in the package is approved.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_09",
+        "text": "I approve the story and the song lyrics and the rest of the package.",
+        "intent": "ambiguous",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_10",
+        "text": "The script, the lyrics and the rest of the package are approved.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_11",
+        "text": "I approve the research bundle, the episode cast manifest, the episode world, the causal story beats, the scene plan, the script, the lyrics and the creative package manifest.",
+        "intent": "ambiguous",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_12",
+        "text": "The research bundle, the episode cast manifest, the episode world, the causal story beats, the scene plan, the script, the lyrics and the package manifest are approved.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_13",
+        "text": "The drama song ad package is approved.",
+        "intent": "unseen",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_14",
+        "text": "The ad is approved - the whole creative package.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_15",
+        "text": "Go ahead with the whole package.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_16",
+        "text": "Ship the whole package - approved.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_17",
+        "text": "I approve the script and the lyrics and everything else.",
+        "intent": "ambiguous",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_18",
+        "text": "The script and the lyrics are approved and so is the whole package.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_19",
+        "text": "Looks good - approve the whole package.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_20",
+        "text": "Yes - the script, the lyrics and the entire package.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_21",
+        "text": "The story and the song lyrics are approved, and the rest of the package too.",
+        "intent": "ambiguous",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_22",
+        "text": "I approve the artifacts.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_23",
+        "text": "The deliverable is approved.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_24",
+        "text": "Approve everything.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_25",
+        "text": "The whole thing is approved.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_26",
+        "text": "The package looks perfect, approve it.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_27",
+        "text": "I approve the script, the lyrics and the whole package.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_28",
+        "text": "The scene plan and the rest of the package are approved.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_29",
+        "text": "The research bundle is approved and so is the rest of the package.",
+        "intent": "ambiguous",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_30",
+        "text": "The cast manifest is approved with the whole package.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_31",
+        "text": "The world, the story beats and the entire package are approved.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_32",
+        "text": "I approve the lyrics and the whole thing in the package.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_33",
+        "text": "The script is approved, and everything else with it.",
+        "intent": "ambiguous",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_34",
+        "text": "Approve the script and the package.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_35",
+        "text": "The lyrics and the creative package are approved.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_36",
+        "text": "I approve the scene plan and everything else in the package.",
+        "intent": "ambiguous",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_37",
+        "text": "The story is approved and so is the whole package.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_38",
+        "text": "The characters and the whole package are approved.",
+        "intent": "unseen",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_39",
+        "text": "The script and the lyrics and the creative package are approved.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "plain_40",
+        "text": "The episode world and the creative package manifest and the whole package are approved.",
+        "intent": "approve",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      }
+    ],
+    "unseen_referent": [
+      {
+        "name": "brief_whole_package_revision_99",
+        "text": "I approve the whole package, revision 99.",
+        "expect_code": "APPROVAL_NAMES_UNSEEN_REVISION",
+        "covers": []
+      },
+      {
+        "name": "brief_scene_plan_revision_9",
+        "text": "The scene plan revision 9 is approved.",
+        "expect_code": "APPROVAL_NAMES_UNSEEN_REVISION",
+        "covers": []
+      },
+      {
+        "name": "brief_script_revision_2",
+        "text": "The script revision 2 is approved.",
+        "expect_code": "APPROVAL_NAMES_UNSEEN_REVISION",
+        "covers": []
+      },
+      {
+        "name": "lyrics_revision_7",
+        "text": "The lyrics revision 7 is approved.",
+        "expect_code": "APPROVAL_NAMES_UNSEEN_REVISION",
+        "covers": []
+      },
+      {
+        "name": "bare_revision_5",
+        "text": "Revision 5 is approved.",
+        "expect_code": "APPROVAL_NAMES_UNSEEN_REVISION",
+        "covers": []
+      },
+      {
+        "name": "music_never_in_the_package",
+        "text": "I approve the music.",
+        "expect_code": "APPROVAL_NAMES_UNKNOWN_ARTIFACT",
+        "covers": []
+      },
+      {
+        "name": "storyboard_never_in_the_package",
+        "text": "I approve the storyboard.",
+        "expect_code": "APPROVAL_NAMES_UNKNOWN_ARTIFACT",
+        "covers": []
+      },
+      {
+        "name": "unseen_artifact_beside_the_package",
+        "text": "I approve the whole package and the music.",
+        "expect_code": "APPROVAL_NAMES_UNKNOWN_ARTIFACT",
+        "covers": []
+      }
+    ],
+    "idiom_scope": [
+      {
+        "name": "brief_green_light",
+        "text": "Green light the drama song ad package and the script.",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "brief_move_forward",
+        "text": "Let's move forward with the creative package and the script.",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "brief_our_blessing",
+        "text": "You have our blessing on the creative package and the script.",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "brief_full_steam_ahead",
+        "text": "Full steam ahead on the drama song ad package and the lyrics.",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      },
+      {
+        "name": "green_light_one_artifact",
+        "text": "Green light the scene plan.",
+        "covers": [
+          "scene_plan"
+        ]
+      },
+      {
+        "name": "thumbs_up_two_artifacts",
+        "text": "Thumbs up on the script and the lyrics.",
+        "covers": [
+          "lyrics",
+          "script"
+        ]
+      },
+      {
+        "name": "full_steam_one_artifact",
+        "text": "Full steam ahead on the research bundle.",
+        "covers": [
+          "research_bundle"
+        ]
+      },
+      {
+        "name": "our_blessing_the_whole_package",
+        "text": "You have our blessing on the whole creative package.",
+        "covers": [
+          "causal_story_beats",
+          "creative_package_manifest",
+          "episode_cast_manifest",
+          "episode_world",
+          "lyrics",
+          "research_bundle",
+          "scene_plan",
+          "script"
+        ]
+      }
+    ]
+  }
+}

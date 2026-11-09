@@ -1,0 +1,538 @@
+{
+  "schema": "blackceo.s75.onboarding-package-manifest/v1",
+  "unit": "S75-T29",
+  "acceptance_id": "S75-A29",
+  "round": "1",
+  "role": "ONB-PACKAGE-OWNER",
+  "repository": "https://github.com/trevorotts1/openclaw-onboarding.git",
+  "base_sha": "3c798db6659c576cc40e3ce8c81d2ede7acf3e0c",
+  "skill_root_anchor": "75-drama-song-ad-factory",
+  "location_mapping": {
+    "why_this_path": "The three lease paths (package/onboarding-manifest.json, package/onboarding_adapter.py, tests/fixtures/onboarding_entrypoints.json) are new files; no established file of this role exists at base. package/ is copied verbatim by install.sh line 3994 (cp -r \"$ITEM\" \"$SKILLS_DIR/$SKILL_NAME/\"), so the manifest, the adapter and the fixture all ship to the box.",
+    "established_mechanisms_consumed_not_replaced": [
+      {
+        "mechanism": "package flavor seam",
+        "path": "scripts/core/package_flavor_adapter.py",
+        "seam": "package_flavor_adapter.resolve",
+        "why": "S75-T03 owns the one named flavor seam. This unit calls it; it does not fork, shadow or re-derive it."
+      },
+      {
+        "mechanism": "story-first artifact order and record contracts",
+        "path": "scripts/core/story_first_contracts.py",
+        "why": "S75-T03 owns STAGE_ORDER and the envelope validators. This unit binds to them."
+      },
+      {
+        "mechanism": "complete cast / world gates",
+        "path": "scripts/core/character_bible/identity.py",
+        "why": "Accepted base gates for cast library, crowd groups, anonymous speakers, episode setting."
+      },
+      {
+        "mechanism": "Notion discovery",
+        "path": "scripts/core/character_library/notion_adapter.py",
+        "why": "S75-T14 accepted discovery surface; S75-T15 accepted state is consumed as-is and its unmerged r6b repair is not depended on."
+      },
+      {
+        "mechanism": "eighteen-style catalogue",
+        "path": "scripts/core/music_styles/catalog.py",
+        "why": "S75-T18 owns MAX_STYLES/STYLE_IDS/CATALOG and per-style provider compilation."
+      },
+      {
+        "mechanism": "runtime control entrypoint",
+        "path": "scripts/core/intake_preflight/factory.py",
+        "why": "One control CLI; held by the unresolved emergency owner. Read only here, never imported for mutation and never edited."
+      }
+    ],
+    "second_package_mechanism_created": false
+  },
+  "supported_entrypoint": {
+    "documented_form": {
+      "argv": [
+        "python3",
+        "scripts/core/intake_preflight/factory.py",
+        "<command>"
+      ],
+      "relays_to": "self (argument parsing lives in this file)",
+      "source": "SKILL.md section 'The control entrypoint'"
+    },
+    "advertised_form": {
+      "argv": [
+        "python3",
+        "scripts/openclaw_adapter.py",
+        "<command>"
+      ],
+      "relays_to": "scripts/core/intake_preflight/factory.py",
+      "why_preferred": "The wrapper resolves the shared entrypoint next to itself and relays stdout, stderr and exit code unchanged; it also survives the installed layout where the caller's cwd is not the skill root.",
+      "source": "scripts/openclaw_adapter.py module docstring"
+    },
+    "exit_map_source": "scripts/core/intake_preflight/__init__.py",
+    "exit_map": {
+      "ok": 0,
+      "waiting": 2,
+      "parked": 3,
+      "rejected": 4,
+      "error": 1
+    },
+    "envelope_schema_version": "blackceo.intake-preflight/envelope/v1"
+  },
+  "capability_meanings": {
+    "existence": "EXISTING: the module file is present under the skill root, imports cleanly in this checker, and every declared symbol resolves.",
+    "exposure": "EXPOSED: the module is in the transitive static import closure of the supported entrypoint (scripts/core/intake_preflight/factory.py), i.e. the entrypoint process reaches it without this checker importing it directly. Existence is not exposure; only this column answers A29's word 'exposes'.",
+    "why_two_columns": "Round 1 (evidence/S75-T29.verdict.round1.json) failed exactly here: all four capability modules existed and the checker imported them directly, while the entrypoint's own import closure reached none of them. The receipt therefore reports existence and exposure as separate columns and a clause that claims exposure needs both."
+  },
+  "reachability": {
+    "entrypoint": "scripts/core/intake_preflight/factory.py",
+    "entrypoint_relayed_from": "scripts/openclaw_adapter.py relays to it as [sys.executable, entrypoint, *argv], so factory.py's import closure is the entrypoint process's import closure",
+    "capability_targets": [
+      "story_first_contracts",
+      "character_bible.identity",
+      "character_library.notion_adapter",
+      "music_styles.catalog"
+    ],
+    "positive_controls": [
+      "music_styles.music_styles",
+      "character_library.character_library"
+    ],
+    "why_a_positive_control": "the walker must reach a module known to be reached (music_styles.music_styles via suno_recipe.py, character_library.character_library via factory.py:3136). If it cannot, the walk is broken and the receipt says PROBE_INVALID instead of claiming anything is unreachable.",
+    "dynamic_imports": "factory.py loads some core modules through _core_mod()/importlib at call time (song_choices, song_dispatch, final_recap, qc_gate, length_formula, method_plan, agnes_plan, agnes_quota, onscreen_text). The walker counts those sites and reports them unresolved rather than following them; none of them names a capability target."
+  },
+  "expected_artifact_order": [
+    "research_premise",
+    "cast_and_world",
+    "story_plan",
+    "script_lyrics",
+    "package_approval",
+    "music",
+    "timed_storyboard",
+    "keyframes",
+    "storyboard_approval",
+    "video",
+    "assembly"
+  ],
+  "clauses": {
+    "artifact_order": {
+      "acceptance_phrase": "exposes the new order",
+      "exposure_targets": ["story_first_contracts"],
+      "providers": [
+        {
+          "id": "story_first_contracts",
+          "kind": "module",
+          "path": "scripts/core/story_first_contracts.py",
+          "import_dir": "scripts/core",
+          "module": "story_first_contracts",
+          "symbols": [
+            "STAGE_ORDER",
+            "STAGE_PRODUCES",
+            "STAGE_REQUIRES",
+            "next_stage",
+            "check_stage"
+          ],
+          "provenance": {
+            "unit": "S75-T03",
+            "commit": "b7cfa96c8",
+            "state": "merged_in_base"
+          }
+        }
+      ],
+      "probes": [
+        {
+          "id": "order_matches_declared",
+          "what": "STAGE_ORDER equals expected_artifact_order exactly"
+        },
+        {
+          "id": "order_is_enforced",
+          "what": "check_stage('script_lyrics', empty RunRegistry) refuses with ContractError code ORDER"
+        },
+        {
+          "id": "order_is_consumed_in_production",
+          "what": "scripts/core/script_writer.py imports story_first_contracts and calls .check_stage"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "scripts/core/script_writer.py",
+          "symbols": [
+            "check_stage"
+          ],
+          "evidence": "module docstring: 'Order enforced before any model call (story_first_contracts.check_stage)'; the module does 'import story_first_contracts as C' and calls C.check_stage",
+          "why": "this is the production consumer of the order, so the order is not merely importable"
+        }
+      ]
+    },
+    "cast_world_script_gates": {
+      "acceptance_phrase": "complete cast/world/script gates",
+      "exposure_targets": ["story_first_contracts", "character_bible.identity"],
+      "providers": [
+        {
+          "id": "story_first_contracts",
+          "kind": "module",
+          "path": "scripts/core/story_first_contracts.py",
+          "import_dir": "scripts/core",
+          "module": "story_first_contracts",
+          "symbols": [
+            "validate_identity",
+            "validate_world",
+            "validate_cast_manifest",
+            "validate_scene",
+            "validate_scene_plan",
+            "check_stage",
+            "APPROVAL_BINDS"
+          ],
+          "provenance": {
+            "unit": "S75-T03",
+            "commit": "b7cfa96c8",
+            "state": "merged_in_base"
+          }
+        },
+        {
+          "id": "character_identity",
+          "kind": "module",
+          "path": "scripts/core/character_bible/identity.py",
+          "import_dir": "scripts/core",
+          "module": "character_bible.identity",
+          "symbols": [
+            "validate_cast",
+            "validate_library",
+            "validate_episode_setting",
+            "validate_identity",
+            "seal_identity",
+            "canonical_digest"
+          ],
+          "provenance": {
+            "unit": "S75-T05",
+            "commit": "87e87fef7",
+            "state": "merged_in_base"
+          }
+        },
+        {
+          "id": "production_admission",
+          "kind": "module",
+          "path": "scripts/core/production_process.py",
+          "import_dir": "scripts/core",
+          "module": "production_process",
+          "symbols": [
+            "admit_production",
+            "inspect_intake"
+          ],
+          "provenance": {
+            "unit": "base",
+            "commit": null,
+            "state": "merged_in_base"
+          },
+          "notes": "Presence-checked only; admit_production requires a real run directory, so this unit never calls it."
+        }
+      ],
+      "extensions": [
+        {
+          "id": "t07_cast_hardening",
+          "kind": "module",
+          "path": "scripts/core/character_bible/cast_validation.py",
+          "import_dir": "scripts/core",
+          "module": "character_bible.cast_validation",
+          "symbols": [
+            "validate_cast",
+            "assert_valid_cast",
+            "validate_crowd_group",
+            "derive_speakers"
+          ],
+          "required": false,
+          "provenance": {
+            "unit": "S75-T07",
+            "branch": "s75/S75-T07",
+            "commit": "e320b7d5f",
+            "state": "accepted_not_merged_at_base"
+          },
+          "what_it_adds": "S75-T07 content groundedness: bounded-vocabulary membership, act requirement, per-location crowd placement and a refusal for a crowd that gains a speaking or continuing member. Absent from this base tree; bound automatically when the accepted module lands.",
+          "why_not_required": "A29's gate requirement is satisfied by the accepted base providers above; T07 is a hardening layer, so its absence is reported, never simulated."
+        }
+      ],
+      "probes": [
+        {
+          "id": "script_gate_requires_script_and_lyrics",
+          "what": "STAGE_REQUIRES['package_approval'] contains 'script' and 'lyrics'"
+        },
+        {
+          "id": "approval_binds_script",
+          "what": "APPROVAL_BINDS['package_approval'] covers script, lyrics and creative_package_manifest"
+        },
+        {
+          "id": "gates_are_callable",
+          "what": "every declared gate symbol exists and is callable"
+        }
+      ]
+    },
+    "notion": {
+      "acceptance_phrase": "Notion",
+      "exposure_targets": ["character_library.notion_adapter"],
+      "providers": [
+        {
+          "id": "notion_adapter",
+          "kind": "module",
+          "path": "scripts/core/character_library/notion_adapter.py",
+          "import_dir": "scripts/core",
+          "module": "character_library.notion_adapter",
+          "symbols": [
+            "OPS",
+            "discover",
+            "resolve_client_library",
+            "build_snapshot_and_manifest",
+            "offer_cast_choice",
+            "resolve_cast_selection",
+            "scrub"
+          ],
+          "provenance": {
+            "unit": "S75-T14",
+            "commit": "3fabcc5eb",
+            "state": "merged_in_base"
+          }
+        }
+      ],
+      "probes": [
+        {
+          "id": "ops_are_the_four_supported",
+          "what": "OPS == ('search','read_page','query_data_source','create_page')"
+        },
+        {
+          "id": "dead_connection_is_refused_offline",
+          "what": "resolve_client_library with a local stub whose call raises raises ConnectionUnavailable and never touches a network"
+        }
+      ],
+      "accepted_state_note": "S75-T15 (capability token) is consumed only at its accepted state. Its unmerged r6b repair (branch s75/S75-T15-r6b, head 2f6b762f4) is NOT a dependency of this unit."
+    },
+    "styles_18": {
+      "acceptance_phrase": "all18 styles",
+      "exposure_targets": ["music_styles.catalog"],
+      "providers": [
+        {
+          "id": "style_catalogue",
+          "kind": "module",
+          "path": "scripts/core/music_styles/catalog.py",
+          "import_dir": "scripts/core",
+          "module": "music_styles.catalog",
+          "symbols": [
+            "MAX_STYLES",
+            "STYLE_IDS",
+            "CATALOG",
+            "style_ids",
+            "style",
+            "label",
+            "description",
+            "production_traits",
+            "delivery_map",
+            "provider_hint",
+            "choice_rows",
+            "validate_catalog"
+          ],
+          "provenance": {
+            "unit": "S75-T18",
+            "commit": "afb07e76e",
+            "state": "merged_in_base"
+          }
+        }
+      ],
+      "expected_count": 18,
+      "expected_ids": [
+        "soul-ballad",
+        "rnb-flow",
+        "soul-rise",
+        "acoustic-pop",
+        "folk-storytelling",
+        "country-pop",
+        "melodic-rap",
+        "trap-rap",
+        "pop-rap",
+        "pop-rock",
+        "reggaeton",
+        "cinematic-orchestral-song",
+        "musical-theater",
+        "contemporary-gospel",
+        "urban-gospel",
+        "alternative-rnb",
+        "afro-soul",
+        "country-rap"
+      ],
+      "recipe_providers": [
+        {
+          "id": "recipe_module_t19",
+          "path": "scripts/core/music_styles/recipes.py",
+          "import_dir": "scripts/core",
+          "module": "music_styles.recipes",
+          "ids_symbol": "RECIPE_IDS",
+          "provenance": {
+            "unit": "S75-T19",
+            "commit": "110640126",
+            "state": "merged_in_base"
+          }
+        },
+        {
+          "id": "recipe_module_t22",
+          "path": "scripts/core/music_styles/recipes_s75_t22.py",
+          "import_dir": "scripts/core",
+          "module": "music_styles.recipes_s75_t22",
+          "ids_symbol": "STYLE_IDS",
+          "provenance": {
+            "unit": "S75-T22",
+            "commit": "f896077f9",
+            "state": "merged_in_base"
+          }
+        },
+        {
+          "id": "legacy_recipes_t20",
+          "path": "scripts/core/music_styles/music_styles.py",
+          "import_dir": "scripts/core",
+          "module": "music_styles.music_styles",
+          "ids_symbol": "RECIPES",
+          "provenance": {
+            "unit": "S75-T20",
+            "revision_symbol": "RAP_RECIPE_REVISION",
+            "revision": "s75-t20/1",
+            "state": "merged_in_base"
+          }
+        }
+      ],
+      "recipe_coverage_note": "Compiled recipe modules cover 12 of the 18 ids; the remaining 6 (soul-ballad, rnb-flow, soul-rise, country-rap, pop-rock, reggaeton) are driven through catalog.provider_hint from the catalogue's own production traits. No claim is made that all 18 have a per-style recipe module.",
+      "probes": [
+        {
+          "id": "count_is_eighteen",
+          "what": "len(STYLE_IDS) == MAX_STYLES == 18 and the ids equal expected_ids"
+        },
+        {
+          "id": "catalogue_is_valid",
+          "what": "validate_catalog() returns 18 and CATALOG has 18 records"
+        },
+        {
+          "id": "every_style_compiles",
+          "what": "label, description, production_traits, delivery_map and provider_hint return non-empty for all 18 ids"
+        },
+        {
+          "id": "choice_surface_is_eighteen",
+          "what": "len(choice_rows()) == 18"
+        }
+      ]
+    },
+    "flavor_parity": {
+      "acceptance_phrase": "onboarding flavor assembled through the owned package adapters",
+      "exposure_targets": [],
+      "providers": [
+        {
+          "id": "package_flavor_adapter",
+          "kind": "module",
+          "path": "scripts/core/package_flavor_adapter.py",
+          "import_dir": "scripts/core",
+          "module": "package_flavor_adapter",
+          "symbols": [
+            "SEAM",
+            "ONB",
+            "N999",
+            "PACKAGE_DIFFERENCES",
+            "resolve",
+            "core_digest",
+            "load_fixture_999"
+          ],
+          "provenance": {
+            "unit": "S75-T03",
+            "commit": "29819886a",
+            "state": "merged_in_base"
+          }
+        }
+      ],
+      "probes": [
+        {
+          "id": "onb_resolves_through_the_seam",
+          "what": "resolve('onboarding') reports seam package_flavor_adapter.resolve and the shared core digest"
+        },
+        {
+          "id": "onb_approval_module_is_present",
+          "what": "the ONB layout names scripts/core/character_bible/character_approval.py and that file exists"
+        },
+        {
+          "id": "n999_absence_is_preserved_not_filled",
+          "what": "resolve('999')['character_approval_module'] is None and this unit creates no such module for 999"
+        },
+        {
+          "id": "one_shared_core",
+          "what": "resolve('onboarding')['core_digest'] == resolve('999')['core_digest'] == core_digest()"
+        }
+      ],
+      "sampled_condition_accounted": "999 has no character_bible/character_approval.py. That absence is a sampled platform fact, represented here as an explicit None in the flavor seam and never repaired by writing a module into 999."
+    },
+    "emergency_fixes_read_only": {
+      "acceptance_phrase": "adapter checks do not regress accepted emergency fixes",
+      "exposure_targets": [],
+      "policy": "read_only",
+      "owner": "UNKNOWN",
+      "owner_evidence": "evidence/emergency-owner-handoff.json (S75-T01) records gate state NOT_HANDED_OFF and owner UNKNOWN for task 01a16e50-177f-7476-8bf1-dbd252a75030. This unit does not guess an owner.",
+      "held_files": [
+        {
+          "name": "factory.py",
+          "path": "scripts/core/intake_preflight/factory.py",
+          "state": "present_in_base"
+        },
+        {
+          "name": "lyric_writer.py",
+          "path": "scripts/core/lyric_writer/lyric_writer.py",
+          "state": "present_in_base"
+        },
+        {
+          "name": "character_approval.py",
+          "path": "scripts/core/character_bible/character_approval.py",
+          "state": "present_in_base"
+        },
+        {
+          "name": "method_plan.py",
+          "path": "scripts/core/method_plan/method_plan.py",
+          "state": "present_in_base"
+        },
+        {
+          "name": "registry.json",
+          "path": null,
+          "state": "absent_in_base_tree",
+          "searched": "recursive walk of the skill root and of the repository tree (only 06-ghl-install-pages/funnel-engines/registry.json and 72-motion-video-plus/tests/fixtures/approvals/registry.json match, neither is Skill 75's); not searched: client boxes, the 999 tree"
+        }
+      ],
+      "probes": [
+        {
+          "id": "adapter_imports_no_held_module",
+          "what": "the adapter source imports none of the five held modules by name"
+        },
+        {
+          "id": "adapter_has_no_mutation_path",
+          "what": "an AST scan finds no writable open(), no os.remove/rename/replace/unlink and no pathlib write/unlink call in the adapter source"
+        },
+        {
+          "id": "held_files_reported",
+          "what": "sha256 and size of every held file present are reported in the receipt; no acceptance claim is made about their content"
+        }
+      ]
+    },
+    "entrypoint_reachability": {
+      "acceptance_phrase": "the supported entrypoint exposes what the row names (exposure, not existence)",
+      "exposure_targets": [],
+      "providers": [],
+      "probes": [
+        {
+          "id": "closure_is_non_empty_and_controlled",
+          "what": "the static import walk from scripts/core/intake_preflight/factory.py reaches a non-empty set and finds both declared positive controls (music_styles.music_styles, character_library.character_library); if not, the walk is invalid and nothing is called unreachable"
+        },
+        {
+          "id": "exposes_meaning_is_declared_and_bound",
+          "what": "the manifest declares what 'exposes' means and the adapter's own constants agree with that declaration, so existence and exposure cannot be read as one thing"
+        },
+        {
+          "id": "declared_capabilities_reachable_from_entrypoint",
+          "what": "every module in reachability.capability_targets is in the entrypoint's reachable set"
+        }
+      ],
+      "why": "Round 1 failed because the four capability modules were reachable only by the checker importing them directly. This clause is the unit's own check for that exact defect class, with a positive control so it cannot pass on an empty or broken walk."
+    }
+  },
+  "not_claimed": [
+    "No claim that the four capability modules are exposed by the entrypoint. At this base they are EXISTING only: this checker imports them, and the entrypoint's own import closure reaches none of them (see the receipt's capability_exposure.rows). Closing that gap needs either an edit to scripts/core/intake_preflight/factory.py -- which is one of the five HELD files (owner UNKNOWN, NOT_HANDED_OFF) and out of this unit's lease -- or a scope decision on A29's word 'exposes'. Both belong to the owner; this unit records the gap and does not decide it.",
+    "No claim about how A29's 'all18 styles' should read. Recorded as fact only: the eighteen-entry catalogue is music_styles/catalog.py (18 ids) and the entrypoint-reachable style menu is music_styles.music_styles.style_ids() -- 3 ids ('soul-ballad','rnb-flow','soul-rise'), which music_styles.py:214-215 says is deliberate. Whether the row means the card menu must offer 18 or that 18 exist as a library surface is the owner's scope decision, not a repair author's.",
+    "No acceptance claim is made about the content of the five held files; their owner handoff is still NOT_HANDED_OFF.",
+    "No claim that all 18 styles have a per-style compiled recipe module (12 do; 6 compile through catalogue traits).",
+    "No claim that S75-T07's content-groundedness hardening is in this base tree; it is bound when present and reported absent here.",
+    "No claim that S75-T15's unmerged r6b repair is present or depended on.",
+    "No claim of installation on a live box, no paid generation, no provider call, no network credential use, no fleet rollout.",
+    "No claim about 999 beyond what the flavor seam declares: this unit does not ship N999 code and does not fill its sampled absence."
+  ]
+}

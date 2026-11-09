@@ -64,8 +64,46 @@ REQUIRED_FOUNDATION = (
 #: Contract: the opening 12 seconds carry spoken/articulated words.
 SPOKEN_OPENING_S = 12.0
 MAX_ATTEMPTS = 2
+#: Raw-response retention cap: bounds the raw authored text kept for diagnosis, never a prompt length.
+#: Declared in shared-utils/kie_prompt_gates.json (allowed_numeric) and confirmed through the shared
+#: enforcer by _raw_keep_chars(), so the declaration stays the source of truth.
 RAW_KEEP_CHARS = 20000
 LINE_FIELDS = ("line_id", "character_id", "text", "start_s", "end_s")
+
+
+def _load_enforcer():
+    """Find shared-utils/kie_prompt_enforcer.py (repo checkout or installed skills tree)."""
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    if envd:
+        dirs.append(Path(envd) / "shared-utils")
+    dirs += [Path.home() / ".openclaw" / "skills" / "shared-utils",
+             Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        if (d / "kie_prompt_enforcer.py").is_file():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+            import kie_prompt_enforcer
+            return kie_prompt_enforcer
+    return None
+
+_ENFORCER = _load_enforcer()
+
+def _raw_keep_chars():
+    """The declared raw-retention cap, confirmed through the shared enforcer (rule 12 seam).
+
+    Rule 12 governs KIE prompt length; this number bounds the raw authored RESPONSE kept for
+    diagnosis, so the enforcer is asked for its own budget arithmetic, never a verdict on the raw
+    text. The declared number stands unchanged when shared-utils is absent, so the raw retention and
+    the emitted prompt stay byte-identical either way.
+    """
+    KPE = _ENFORCER
+    if KPE is not None:
+        try:
+            return int(KPE.budget(RAW_KEEP_CHARS)["max"])
+        except Exception:
+            return RAW_KEEP_CHARS
+    return RAW_KEEP_CHARS
 
 
 class WriterRefused(Exception):
@@ -371,6 +409,7 @@ def parse_response(request, response):
                                 "response missing %s" % key, {"missing": key})
     raw = response["raw_text"]
     authored = _extract_payload(raw)
+    keep = _raw_keep_chars()
     encoded = raw.encode("utf-8")
     dispatch = {
         "attempt": request["attempt"],
@@ -383,8 +422,8 @@ def parse_response(request, response):
         "model": response.get("model"),
         "raw_sha256": hashlib.sha256(encoded).hexdigest(),
         "raw_bytes": len(encoded),
-        "raw_retained": raw[:RAW_KEEP_CHARS],
-        "raw_truncated": len(raw) > RAW_KEEP_CHARS,
+        "raw_retained": raw[:keep],
+        "raw_truncated": len(raw) > keep,
     }
     return {"authored": authored, "dispatch": dispatch}
 

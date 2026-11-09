@@ -1,0 +1,152 @@
+{
+  "episode_id": "ep_workshop_001",
+  "foundation": {
+    "character_identity_library_snapshot": {
+      "digest": "sha256:bb22",
+      "revision": 3,
+      "snapshot_id": "cis_001"
+    },
+    "episode_cast_manifest": {
+      "cast": [
+        {
+          "cast_id": "char_mara_001",
+          "display_name": "Mara",
+          "identity_revision": 1
+        },
+        {
+          "cast_id": "char_levi_002",
+          "display_name": "Levi",
+          "identity_revision": 1
+        }
+      ],
+      "digest": "sha256:cc33",
+      "manifest_id": "ecm_workshop_001",
+      "revision": 2
+    },
+    "episode_world": {
+      "digest": "sha256:dd44",
+      "locations": [
+        {
+          "location_id": "loc_workshop_front_001"
+        }
+      ],
+      "revision": 1,
+      "world_id": "world_workshop_001"
+    },
+    "research_bundle": {
+      "bundle_id": "rb_workshop_001",
+      "claims": [
+        {
+          "claim_id": "claim_shortfall_001"
+        }
+      ],
+      "digest": "sha256:aa11",
+      "revision": 1
+    }
+  },
+  "foundation_revisions": {
+    "character_identity_library_snapshot": {
+      "digest": "sha256:bb22",
+      "revision": 3
+    },
+    "episode_cast_manifest": {
+      "digest": "sha256:cc33",
+      "revision": 2
+    },
+    "episode_world": {
+      "digest": "sha256:dd44",
+      "revision": 1
+    },
+    "research_bundle": {
+      "digest": "sha256:aa11",
+      "revision": 1
+    }
+  },
+  "plan_id": "plan_workshop_001",
+  "scenes": [
+    {
+      "cast_roles": [
+        {
+          "cast_id": "char_mara_001",
+          "consequence": "Loses control of the information she was hiding",
+          "identity_revision": 1,
+          "role": "viewpoint"
+        },
+        {
+          "cast_id": "char_levi_002",
+          "consequence": "Gains the fact he needs before payroll clears",
+          "identity_revision": 1,
+          "role": "partner"
+        }
+      ],
+      "causal_outcome": "Levi can read the notice, so the next scene must produce a dated plan",
+      "causal_predecessor": "opening",
+      "claim_ids": [
+        "claim_shortfall_001"
+      ],
+      "consequential_choice": "She gives up control of the notice instead of pulling it back",
+      "dramatic_purpose": "Expose the immediate cost of concealment and force Mara's first honest choice in front of her partner",
+      "emotion_after": "still afraid but no longer isolated",
+      "emotion_before": "defensive and ashamed",
+      "estimated_duration_seconds": 24,
+      "framing_movement_intention": "Medium close-up on Mara inside the door, cut to Levi's hands, insert on the envelope, slow push to the exposed page",
+      "immediate_want": "Mara wants one more vague promise accepted without reading the warning",
+      "lip_sync_intention": "Spoken words in the first shots, sung line over a cutaway; intervals are expectations only",
+      "location_id": "loc_workshop_front_001",
+      "obstacle": "Levi's empty ledger and his direct question block that escape",
+      "planned_dialogue_function": "Spoken lines admit the concealment, then a sung line carries the admission without resolving it",
+      "scene_id": "scene_workshop_001",
+      "sequence": 1,
+      "sound_music_intention": "Fan clicks off before the first line; quiet room tone, then a restrained low instrumental bed",
+      "time": "evening closing time, one continuous evening",
+      "timing_basis": "provisional_pending_selected_music",
+      "transition": "Match-cut the shared ledger orientation into the next scene's first action",
+      "turn_trigger": "Putting the open notice where Levi can read it shifts her from hiding to sharing",
+      "visible_action": "Mara opens the envelope and places the warning beside the open ledger, then stops straightening the tools and leaves her hands still",
+      "world_revision": 1
+    },
+    {
+      "cast_roles": [
+        {
+          "cast_id": "char_levi_002",
+          "consequence": "Owns half the repair instead of waiting to be told",
+          "identity_revision": 1,
+          "role": "viewpoint"
+        },
+        {
+          "cast_id": "char_mara_001",
+          "consequence": "Accepts a written date she cannot quietly move",
+          "identity_revision": 1,
+          "role": "partner"
+        }
+      ],
+      "causal_outcome": "A dated shortfall plan exists, so the CTA can be one concrete request",
+      "causal_predecessor": "Levi can read the notice, so the next scene must produce a dated plan",
+      "claim_ids": [
+        "claim_shortfall_001"
+      ],
+      "consequential_choice": "Mara writes the second date herself instead of dictating it",
+      "dramatic_purpose": "Convert the exposed warning into a shared dated plan, so the solution answers the actual obstacle rather than reassuring",
+      "emotion_after": "steady enough to act",
+      "emotion_before": "braced for a lecture",
+      "estimated_duration_seconds": 21,
+      "framing_movement_intention": "Two-shot across the ledger, then over-shoulder to the written date, holding the established axis",
+      "immediate_want": "Levi wants a date and a name against every unpaid line",
+      "lip_sync_intention": "One spoken line mouth-visible, the repeated hook sung off camera; expectations only, unmeasured",
+      "location_id": "loc_workshop_front_001",
+      "obstacle": "Mara wants the plan kept verbal so nothing is written down",
+      "planned_dialogue_function": "Short spoken exchange sets the date; the sung hook names the open book once, deliberately repeated",
+      "scene_id": "scene_workshop_002",
+      "sequence": 2,
+      "sound_music_intention": "Pen scratch and paper movement carry the beat; music drops to a single held note under the writing",
+      "time": "evening closing time, minutes after the notice opens",
+      "timing_basis": "provisional_pending_selected_music",
+      "transition": "Hold on the written date and cut on the pen lifting to the single CTA",
+      "turn_trigger": "Levi writes his own name first, so the plan costs him something too",
+      "visible_action": "Levi writes the first supplier name and date in the ledger margin and slides the pen across the table without letting go of the page",
+      "world_revision": 1
+    }
+  ],
+  "schema_version": "blackceo.scene-plan/v1",
+  "status": "complete"
+}
