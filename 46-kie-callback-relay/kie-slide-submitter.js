@@ -37,6 +37,7 @@ const fs     = require('fs');
 const path   = require('path');
 const crypto = require('crypto');
 const { KieKvPoller } = require('./box-kv-poller');
+const { resolveDataRoot, ensureDirs } = require('./data-root');
 
 const KIE_CREATE_TASK_URL = 'https://api.kie.ai/api/v1/jobs/createTask';
 // The relay Worker base URL is per-deployment. Read it from KIE_KV_BASE_URL (set per box in the
@@ -172,7 +173,19 @@ class KieSlideSubmitter {
    * @param {string} opts.clientSlug       -- client identifier (no spaces/special chars)
    * @param {string} opts.kieApiKey        -- Kie API key (Bearer token)
    * @param {string} opts.kvWorkerUrl      -- Worker base URL
-   * @param {string} opts.workspaceDir     -- path to workspace directory
+   * @param {string} [opts.workspaceDir]   -- DEPRECATED, kept for callers: it no
+   *                                          longer decides where paid-job state
+   *                                          lives. Skill 46 used to write its
+   *                                          registry/index/done under whatever
+   *                                          directory a caller passed, so a run
+   *                                          folder inside a replaceable skill tree
+   *                                          lost the evidence a resubmit is decided
+   *                                          on (F21 item 11).
+   * @param {string} [opts.dataRoot]       -- explicit durable-root pin. Default: the
+   *                                          ONE resolver,
+   *                                          shared-utils/durable-data-root.sh,
+   *                                          which Skill 74 executes too, so both
+   *                                          modules see the same root.
    * @param {string} [opts.callbackHmacKey] -- this client's PER-CLIENT derived callback key
    *                                          (fix F): HMAC-SHA256(clientSlug, fleet master).
    *                                          The Worker re-derives the same value from its
@@ -192,12 +205,14 @@ class KieSlideSubmitter {
     this.callbackHmacKey = opts.callbackHmacKey || '';
     this.kvReadToken     = opts.kvReadToken || '';
 
-    this.registryDir  = path.join(this.workspaceDir, '.kie', 'registry');
-    this.indexDir     = path.join(this.workspaceDir, '.kie', 'index');
-    this.doneDir      = path.join(this.workspaceDir, '.kie', 'done');
-    fs.mkdirSync(this.registryDir, { recursive: true });
-    fs.mkdirSync(this.indexDir,    { recursive: true });
-    fs.mkdirSync(this.doneDir,     { recursive: true });
+    // F21 item 11: resolve the durable root ONCE, here, and hand the SAME layout to
+    // every poller this submitter builds. Two computations are how one job ends up
+    // with two answers about where it lives.
+    this.layout       = resolveDataRoot({ scope: this.clientSlug, dataRoot: opts.dataRoot });
+    ensureDirs(this.layout, ['registry', 'index', 'done']);
+    this.registryDir  = this.layout.registry;
+    this.indexDir     = this.layout.index;
+    this.doneDir      = this.layout.done;
 
     // Poller is created lazily in submitDeck() with callbacksEnabled set from deck size.
     this.poller = null;
@@ -231,6 +246,24 @@ class KieSlideSubmitter {
       if (!this.kvReadToken) {
         throw new Error('[kie-submit] kvReadToken is required for callback mode (KVREAD_TOKEN)');
       }
+      // F21 ITEM 10 -- ONE PAID TRANSPORT PER MODE. Skill 07/74 own the paid submit
+      // (catalogue, schema validation, preflight, price, one submit per request). This
+      // function's own createTask POST is the LEGACY direct-submit; keeping it as a
+      // second callback-mode transport means two code paths can mint two identities for
+      // one job. Callback mode therefore goes through
+      //   prepareCallback -> kie_live_adapter.py submit --callback-url -> adoptAdapterTask
+      // and the small deck (callbacks OFF, below the threshold) keeps its documented
+      // direct-poll exemption with no callback deployment of any kind.
+      const allowLegacy = opts.allowLegacyDirectSubmit === true
+        || String(process.env.KIE_ALLOW_LEGACY_DIRECT_CALLBACK || '') === '1';
+      if (!allowLegacy) {
+        throw new Error(
+          '[kie-submit] callback mode must submit through Skill 74, not a direct createTask: use ' +
+          'prepareCallback() -> kie_live_adapter.py submit --callback-url <that URL> -> adoptAdapterTask(). ' +
+          'A deck at or below the callback threshold still uses submitDeck() unchanged. ' +
+          'Set opts.allowLegacyDirectSubmit (or KIE_ALLOW_LEGACY_DIRECT_CALLBACK=1) only to replay a ' +
+          'legacy deck deliberately.');
+      }
     }
 
     // Build the poller lazily with the right mode. When callbacks are disabled the poller
@@ -238,7 +271,7 @@ class KieSlideSubmitter {
     this.poller = new KieKvPoller({
       clientSlug:       this.clientSlug,
       kvWorkerUrl:      this.kvWorkerUrl,
-      workspaceDir:     this.workspaceDir,
+      layout:           this.layout,        // F21 item 11: the SAME resolved root, never a second one
       kvReadToken:      this.kvReadToken,   // Fix B/F: per-client bearer token (callback path only)
       callbacksEnabled: useCallbacks        // Fix 33: false => direct Kie recordInfo poll
     });
@@ -440,21 +473,71 @@ class KieSlideSubmitter {
    * (write-before-submit, crash-safe), and return the URL to hand to
    *   kie_live_adapter.py submit --request req.json --callback-url <callBackUrl> --mode active
    * Requires callbackHmacKey and kvReadToken (callback mode).
-   * @returns {{submitId: string, callBackUrl: string}}
+   *
+   * F21 ITEM 10 -- REUSE THE EXISTING JOB IDENTITY. This used to mint a fresh 128-bit
+   * `submitId` on every call, so a retry after a crash, a timeout or an uncertain submit
+   * produced a SECOND job identity for the same slide -- a second paid job, with the first
+   * one's provider task still running and its evidence no longer addressable from the slide.
+   * One logical job (client + deck + slide + model) now has one identity, resolved by
+   * scanning the durable registry:
+   *
+   *   row exists, has a taskId          -> state 'accepted'  (reused; resubmit false)
+   *   row exists, no taskId             -> state 'uncertain' (reused; resubmit false) --
+   *                                        a taskId:null row is an UNRESOLVED submission, not
+   *                                        proof that submitting again is free or safe
+   *   row exists for a DIFFERENT model  -> the inputs changed, so this is a different job:
+   *                                        the old row is marked 'superseded' and a new
+   *                                        identity is minted
+   *   no row                            -> state 'new' (resubmit true)
+   *
+   * `callBackUrl` is returned unchanged for a reused identity: that exact URL carries the
+   * `j=` submitId Skill 74 echoes back, so `adoptAdapterTask` can prove the two sides are
+   * talking about the same job.
+   *
+   * @returns {{submitId, callBackUrl, taskId, state, reused, resubmit, model, label}}
    */
   prepareCallback({ deckId, slideId, targetPath, model }) {
     if (!this.callbackHmacKey || !this.kvReadToken) {
       throw new Error('[kie-submit] callbackHmacKey and kvReadToken are required for the Skill 74 route');
     }
+    const label = `${deckId}_${slideId}`;
+    const existing = this._loadRegistryByLabel()[label] || null;
+
+    if (existing && existing.clientSlug === this.clientSlug) {
+      const sameModel = !existing.model || !model || String(existing.model) === String(model);
+      if (sameModel && existing.submitId && existing.callBackUrl) {
+        return {
+          submitId:     existing.submitId,
+          callBackUrl:  existing.callBackUrl,
+          taskId:       existing.taskId || null,
+          state:        existing.taskId ? 'accepted' : 'uncertain',
+          reused:       true,
+          resubmit:     false,           // the identity is held; reconcile it, never re-mint it
+          model:        existing.model || model || null,
+          label,
+        };
+      }
+      if (!sameModel) {
+        // Different inputs = a different job. Retire the old row by name instead of
+        // letting two identities claim one label on the next resume scan.
+        existing.status = 'superseded';
+        existing.supersededBy = null;
+        existing.supersededReason = `model changed ${existing.model || '(none)'} -> ${model}`;
+        existing.supersededAt = new Date().toISOString();
+        this._writeRegistry(existing.submitId, existing);
+      }
+    }
+
     const submitId = crypto.randomBytes(16).toString('hex');
     const { perTaskSecret, callBackUrl } = this._makeCallback(submitId);
     this._writeRegistry(submitId, {
-      submitId, label: `${deckId}_${slideId}`, clientSlug: this.clientSlug, deckId, slideId,
+      submitId, label, clientSlug: this.clientSlug, deckId, slideId,
       model: model || null, targetPath, perTaskSecret, callBackUrl,
       submittedAt: new Date().toISOString(), status: 'submitting', taskId: null,
       fallbackPolledAt: null, via: 'skill-74'
     });
-    return { submitId, callBackUrl };
+    return { submitId, callBackUrl, taskId: null, state: 'new', reused: false,
+             resubmit: true, model: model || null, label };
   }
 
   /**
@@ -474,7 +557,31 @@ class KieSlideSubmitter {
     if (!reg || reg.callBackUrl !== t.callbackUrl || reg.clientSlug !== this.clientSlug) {
       throw new Error('[kie-submit] adapter result callback_url does not match a prepared callback on this box; refusing');
     }
-    const fail = (code) => ({ slideId: reg.slideId, submitId, taskId: t.taskId, status: 'failed', resultUrls: [], localPath: null, code });
+
+    // F21 ITEM 10 -- THE JOB IDENTITY MUST BE IDENTICAL ACROSS THE CALLBACK.
+    // `submitId` is the local identity (the callback URL's j=); the registry row is the
+    // evidence of it; `t.taskId` is what Skill 74 says the provider issued. A result that
+    // would REBIND an already-recorded task is a different job answering for this one --
+    // exactly how an older attempt, or a second submit, overwrites the current artifact.
+    const recordedTaskId = reg.taskId || null;
+    if (recordedTaskId && t.taskId && String(t.taskId) !== String(recordedTaskId)) {
+      throw new Error(
+        `[kie-submit] adapter task_id ${t.taskId} is not the job identity recorded for ` +
+        `submitId ${submitId} (recorded ${recordedTaskId}); refusing to rebind a paid job`);
+    }
+    if (recordedTaskId && !t.taskId) {
+      // A submit that came back with no task id for a job that already has one is an
+      // unresolved answer, not a failed job: keep the recorded identity and say so.
+      reg.status = reg.status === 'done' ? reg.status : 'uncertain';
+      reg.uncertainReason = 'adapter returned no task_id for a job that already had one';
+      reg.uncertainAt = new Date().toISOString();
+      this._writeRegistry(submitId, reg);
+      return { slideId: reg.slideId, submitId, taskId: recordedTaskId, status: 'failed',
+               resultUrls: [], localPath: null, code: 'identity-missing' };
+    }
+
+    const fail = (code) => ({ slideId: reg.slideId, submitId, taskId: t.taskId || recordedTaskId,
+                              status: 'failed', resultUrls: [], localPath: null, code });
     if (!t.taskId || t.state === 'skipped' || t.state === 'fail') {
       reg.status = 'failed-submit';
       this._writeRegistry(submitId, reg);
@@ -487,7 +594,7 @@ class KieSlideSubmitter {
     this._writeIndex(t.taskId, submitId);
     if (!this.poller) {
       this.poller = new KieKvPoller({ clientSlug: this.clientSlug, kvWorkerUrl: this.kvWorkerUrl,
-        workspaceDir: this.workspaceDir, kvReadToken: this.kvReadToken, callbacksEnabled: true });
+        layout: this.layout, kvReadToken: this.kvReadToken, callbacksEnabled: true });
     }
     const timeoutMs = opts.timeoutMs || MODEL_TIMEOUTS[reg.model] || MODEL_TIMEOUTS.default;
     const done = await this.poller.waitForTask(submitId, t.taskId, reg.perTaskSecret,
@@ -673,8 +780,10 @@ class KieSlideSubmitter {
         loser.row.status = 'superseded';
         loser.row.supersededBy = winner.row.submitId || null;
         try {
-          fs.writeFileSync(path.join(this.registryDir, loser.file),
-            JSON.stringify(loser.row, null, 2));
+          const p = path.join(this.registryDir, loser.file);
+          const tmp = `${p}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+          fs.writeFileSync(tmp, JSON.stringify(loser.row, null, 2));
+          fs.renameSync(tmp, p);
           console.warn(`[kie-submit] resume: superseded duplicate registry row ${loser.file} for label ${label}`);
         } catch (_) { /* best-effort; skip on write failure */ }
       }
@@ -688,13 +797,20 @@ class KieSlideSubmitter {
   }
 
   _writeRegistry(submitId, data) {
+    // Atomic replace (temp + rename): a concurrent reader -- a resume scan, another
+    // slide's waiter -- must never see a half-written registry row, and a crash
+    // between submit and status update must not leave a truncated one.
     const p = path.join(this.registryDir, `${submitId}.json`);
-    fs.writeFileSync(p, JSON.stringify(data, null, 2));
+    const tmp = `${p}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+    fs.renameSync(tmp, p);
   }
 
   _writeIndex(taskId, submitId) {
     const p = path.join(this.indexDir, `${taskId}.json`);
-    fs.writeFileSync(p, JSON.stringify({ taskId, submitId }));
+    const tmp = `${p}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ taskId, submitId }));
+    fs.renameSync(tmp, p);
   }
 
   _readDoneMarker(taskId) {

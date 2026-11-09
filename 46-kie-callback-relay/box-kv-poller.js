@@ -33,6 +33,7 @@ const fs   = require('fs');
 const path = require('path');
 const https = require('https');
 const crypto = require('crypto');
+const { resolveDataRoot, ensureDirs } = require('./data-root');
 
 // Allowed Kie result CDN hosts. These are the hosts Kie's docs describe; capture the EXACT
 // host(s) from a live callback and OVERRIDE via the KIE_RESULT_HOSTS env var (comma-separated)
@@ -56,7 +57,15 @@ class KieKvPoller {
    * @param {object} opts
    * @param {string} opts.clientSlug        -- client identifier
    * @param {string} opts.kvWorkerUrl       -- base URL of the Worker, e.g. https://kie-callback.<your-cf-zone>
-   * @param {string} opts.workspaceDir      -- path to workspace, e.g. /data or ~/clawd
+   * @param {string} [opts.workspaceDir]    -- DEPRECATED, kept for callers: no longer
+   *                                            decides where state lives. The durable
+   *                                            job layout comes from
+   *                                            shared-utils/durable-data-root.sh.
+   * @param {object} [opts.layout]          -- a layout the SUBMITTER already resolved
+   *                                            (F21 item 11: resolved once, used
+   *                                            everywhere). Without it this poller
+   *                                            resolves exactly one.
+   * @param {string} [opts.dataRoot]        -- explicit durable-root pin
    * @param {string} opts.kvReadToken       -- per-client bearer token for /kv-read auth
    *                                            (fix B/F). Required ONLY when callbacks are
    *                                            enabled; small decks (fix 33) poll Kie directly.
@@ -72,10 +81,13 @@ class KieKvPoller {
     this.kvReadToken      = opts.kvReadToken || '';
     this.callbacksEnabled = opts.callbacksEnabled !== false; // default true (large-deck path)
     this.pollIntervalMs   = opts.pollIntervalMs || 2000;
-    this.registryDir      = path.join(this.workspaceDir, '.kie', 'registry');
-    this.doneDir          = path.join(this.workspaceDir, '.kie', 'done');
-    fs.mkdirSync(this.registryDir, { recursive: true });
-    fs.mkdirSync(this.doneDir,     { recursive: true });
+    // F21 item 11: ONE durable layout for paid-job evidence, outside every
+    // replaceable skill tree. A poller built by the submitter reuses the
+    // submitter's layout instead of resolving a second time.
+    this.layout           = opts.layout || resolveDataRoot({ scope: this.clientSlug, dataRoot: opts.dataRoot });
+    ensureDirs(this.layout, ['registry', 'done']);
+    this.registryDir      = this.layout.registry;
+    this.doneDir          = this.layout.done;
 
     // Fix 33: the KV bearer token is only needed on the callback path. Below the
     // callback threshold the box never touches the Worker, so the secret is optional.
