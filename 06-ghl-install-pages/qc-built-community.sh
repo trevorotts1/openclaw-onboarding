@@ -76,9 +76,7 @@ fi
 
 ARG="${1:-}"; JSON=""
 [ "${2:-}" = "--json" ] && JSON="1"
-if [ -z "$ARG" ]; then
-  echo "usage: qc-built-community.sh <evidence_root> [--json] | --selftest" >&2; exit 2
-fi
+[ -z "$ARG" ] && ARG="${OPENCLAW_EVIDENCE_ROOT:-$HOME/.openclaw/workspace}"
 EVIDENCE="$ARG"
 if [ ! -d "$EVIDENCE" ]; then
   for c in "$PWD/working/communities/$ARG" "$HOME/clawd/working/communities/$ARG"; do
