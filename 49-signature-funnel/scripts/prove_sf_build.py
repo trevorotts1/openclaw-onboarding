@@ -758,10 +758,26 @@ def main(argv: List[str]) -> int:
                     help="Skill 6 verify evidence root (default <run-dir>/build/evidence)")
     ap.add_argument("--self-test", action="store_true",
                     help="construct a VALID receipt (must PASS) + each VIOLATION fixture (must FAIL)")
+    ap.add_argument("--visual-only", action="store_true",
+                    help="run ONLY the visual-direction gate (P7-BUILD's visual stage): every page "
+                         "needs %s records in page-images/. Exit 0 pass, 2 violation, 3 usage."
+                         % (", ".join(VISUAL_STAGES),))
     args = ap.parse_args(argv)
 
     if args.self_test:
         return run_self_test()
+
+    if args.visual_only:
+        # Fix plan B1 (unowned requirement G-2): the visual stage is a NAMED, separately
+        # runnable gate so the orchestrator can refuse a run whose wireframes/mockups are
+        # absent BEFORE any other build work. Same check _gate_build runs; never a second rule.
+        rd, size = args.run_dir, args.funnel_size
+        if not rd or size is None:
+            print("USAGE ERROR: --visual-only needs --run-dir and --funnel-size.")
+            return EXIT_FAILCLOSED
+        violations = visual_direction_violations(Path(rd), int(size))
+        _report(violations, [f"visual stage: {len(VISUAL_STAGES)} stage(s) x every page ({size}-step)"])
+        return EXIT_OK if not violations else EXIT_VIOLATION
 
     receipt_path = args.receipt or args.receipt_pos
     if not receipt_path:
