@@ -1,7 +1,7 @@
 """The owner prompt cap must live in the 74 registry and be derived, never restated.
 
 LAND-001 #11 / fix plan A1-A2: a ``*-2-6`` route with no owner row silently falls
-back to the vendor's 32,000. The cap is the owner ruling of 2026-11-08; it is read
+back to the vendor figure. The cap is the owner ruling of 2026-11-08; it is read
 from the policy owner (Skill 66), not typed twice.
 """
 import json
@@ -33,7 +33,7 @@ class RegistryRows(unittest.TestCase):
         for row in rows:
             self.assertEqual(row.get("owner_prompt_cap_chars"), CAP, row.get("id"))
 
-    def test_no_vendor_32000_records_as_the_owner_cap(self):
+    def test_the_vendor_figure_is_never_recorded_as_the_owner_cap(self):
         for row in _rows():
             self.assertNotEqual(row.get("owner_prompt_cap_chars"), 32000, row.get("id"))
 
@@ -81,7 +81,7 @@ class OwnerCapResolution(unittest.TestCase):
 
 
 class LimitsPrecedence(unittest.TestCase):
-    """The resolution path, not just the helper: a vendor 32,000 must lose to the family cap."""
+    """The resolution path, not just the helper: the vendor figure must lose to the family cap."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()

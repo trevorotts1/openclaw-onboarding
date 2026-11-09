@@ -552,7 +552,7 @@ def policy_owner_cap_family(model_id, here=None):
     The owner ruling is recorded once (Skill 66, 2026-11-08): 20,000 for the
     gpt-image-2-6 family. A route id that has no row of its own still inherits
     the family cap, so a sibling route can never quietly fall back to the
-    vendor's 32,000 merely because it was added after the ruling.
+    vendor figure merely because it was added after the ruling.
     """
     cap, owner = policy_owner_cap(model_id, here)
     if cap is not None:
@@ -1491,7 +1491,7 @@ class Adapter:
         # vendor schema for prompt length. The vendor figure is kept in the note for provenance
         # and in models.json; it is never rewritten or deleted. The family fallback is what makes
         # a sibling route (flare vs sunburst) inherit the one family ruling instead of falling
-        # back to the vendor's 32,000.
+        # back to the vendor figure.
         ocap, oowner = policy_owner_cap_family(model)
         if ocap is not None:
             if mx is not None and mx != ocap:
