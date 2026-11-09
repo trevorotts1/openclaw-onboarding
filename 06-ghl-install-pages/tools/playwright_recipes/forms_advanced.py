@@ -1,7 +1,7 @@
-"""Captured native Address query and two-clause consent editing.
+"""Captured native Address child properties and two-clause consent editing.
 
 Uses the same native five-child Address layout captured for field placement.
-Address edits existing child query keys only. Consent uses its separately
+Address edits existing child query keys and captured child properties. Consent uses its separately
 captured two-clause panel. Neither fabricates custom-field definitions or
 infers unseen choice/upload property controls.
 The parent runner owns the tenant guard and intent-before-mutation journal.
@@ -17,14 +17,14 @@ from urllib.parse import urlsplit
 if __package__:
     from .field_placement import (
         CANVAS_ITEMS, _ADDRESS_QUERIES, _close_initial, _close_properties,
-        _inventory, _query_controls, _query_key,
+        _inventory, _query_controls, _query_key, _address_headers,
     )
     from .assessments import reopen_editor
     from .skill6_playwright import Stop, click, fill, form_builder, wait_until
 else:
     from field_placement import (
         CANVAS_ITEMS, _ADDRESS_QUERIES, _close_initial, _close_properties,
-        _inventory, _query_controls, _query_key,
+        _inventory, _query_controls, _query_key, _address_headers,
     )
     from assessments import reopen_editor
     from skill6_playwright import Stop, click, fill, form_builder, wait_until
@@ -50,8 +50,8 @@ def validate(step):
     after = dict(before)
     for field in result['address_fields']:
         if (not isinstance(field, dict)
-                or set(field) - {'field', 'query_key', 'current_query_key'}
-                or field.get('field') not in _ADDRESS_QUERIES
+                or set(field) - {'field', 'query_key', 'current_query_key', 'properties', 'expected_properties'}
+                or not isinstance(field.get('field'),str) or field['field'] not in _ADDRESS_QUERIES
                 or 'query_key' not in field or field['field'] in seen):
             raise Stop('Address child edits require unique captured field names and explicit Query Keys')
         label = field['field']
@@ -59,6 +59,34 @@ def validate(step):
         current = _token(field.get('current_query_key', _ADDRESS_QUERIES[label]))
         desired = _token(field['query_key'])
         before[label], after[label] = current, desired
+        if ('properties' in field)!=('expected_properties' in field):
+            raise Stop('Address property edits require matching expected_properties')
+        if 'properties' in field:
+            properties,expected=field['properties'],field['expected_properties']
+            allowed={'label','placeholder','short_label','required','hidden','hidden_value'}
+            if (not isinstance(properties,dict) or not properties or not isinstance(expected,dict)
+                    or set(properties)-allowed or set(expected)!=set(properties)):
+                raise Stop('Address properties need identical nonempty previous/desired captured property keys')
+            for values in (properties,expected):
+                for key,value in values.items():
+                    if key in ('required','hidden'):
+                        if type(value) is not bool:
+                            raise Stop('Address Required/Hidden properties require real booleans')
+                    elif key=='hidden_value' and value is None and values.get('hidden') is False:
+                        pass  # Hidden value has no visible native control when Hidden is off.
+                    elif (not isinstance(value,str) or len(value)>5000
+                            or any(ord(c)<32 and c not in '\n\r\t' for c in value)
+                            or (key=='label' and not value.strip())):
+                        raise Stop('Address child text properties require explicit valid text')
+                if values.get('required') is True and values.get('hidden') is True:
+                    raise Stop('An Address child cannot be Required and Hidden')
+                if 'hidden_value' in values and 'hidden' not in values:
+                    raise Stop('Address hidden_value requires an explicit Hidden state')
+                if values.get('hidden') is False and values.get('hidden_value') is not None:
+                    raise Stop('An unhidden Address child cannot have an authored hidden_value')
+            if (properties.get('hidden') is True and expected.get('hidden') is False
+                    and ('hidden_value' not in properties or not isinstance(properties['hidden_value'],str))):
+                raise Stop('Enabling Hidden requires explicit Address child hidden_value and previous absence')
     if len(set(before.values())) != len(before) or len(set(after.values())) != len(after):
         raise Stop('Address child Query Keys must remain unique')
     for label in seen:
@@ -71,7 +99,9 @@ def configuration_hash(step):
     valid = validate(step)
     fields = [{'field':f['field'],
                'current_query_key':f.get('current_query_key', _ADDRESS_QUERIES[f['field']]),
-               'query_key':f['query_key']} for f in valid['address_fields']]
+               'query_key':f['query_key'],
+               **({key:f[key] for key in ('properties','expected_properties')}
+                  if 'properties' in f else {})} for f in valid['address_fields']]
     return hashlib.sha256(json.dumps(fields, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
@@ -94,17 +124,15 @@ def _open_address(frame):
         raise Stop('Native Address settings control is missing or ambiguous')
     click(gear)
     frame.get_by_text('Address Fields', exact=True).wait_for(state='visible', timeout=45000)
-    headers = frame.locator('.n-collapse-item__header-main')
-    if headers.count() != len(_ADDRESS_QUERIES):
-        raise Stop('Native Address child inventory changed')
+    _address_headers(frame)
     for label in _ADDRESS_QUERIES:
         enabled = frame.get_by_role('checkbox', name=label, exact=True)
         if enabled.count() != 1 or not enabled.is_checked():
             raise Stop('Address child visibility differs from the captured complete group')
 
 
-def _child(frame, label):
-    headers = frame.locator('.n-collapse-item__header-main')
+def _child_item(frame,label):
+    headers = _address_headers(frame)
     header = headers.filter(has_text=re.compile(r'^\s*' + re.escape(label) + r'\s*$'))
     if header.count() != 1:
         raise Stop('Native Address child header is missing or ambiguous')
@@ -117,7 +145,87 @@ def _child(frame, label):
     controls = _query_controls(item)
     if len(controls) != 1 or not controls[0].is_visible():
         raise Stop('Native Address child Query Key control did not open')
+    return item
+
+
+def _child(frame, label):
+    item=_child_item(frame,label)
+    controls=_query_controls(item)
     return controls[0], _token(_query_key(item))
+
+
+_ADDRESS_TEXT_CONTROLS={'label':('#label input','Label'),
+    'placeholder':('#fieldPlaceholder input','Placeholder'),
+    'short_label':('#shortLabel input','Short Label')}
+_ADDRESS_CHECKBOX_CONTROLS={'required':'#fieldRequired[role="checkbox"]',
+                           'hidden':'#fieldCheckbox[role="checkbox"]'}
+
+
+def _child_properties(frame,label):
+    """Read only the scoped child controls observed in the native Address panel."""
+    item=_child_item(frame,label)
+    controls,state={},{}
+    for key,(selector,row_label) in _ADDRESS_TEXT_CONTROLS.items():
+        control=item.locator(selector)
+        if control.count()!=1 or not control.is_visible():
+            raise Stop('Native Address child text control is missing or ambiguous: '+key)
+        row=control.evaluate("el => el.closest('.form-group')?.textContent || ''")
+        suffix=r'(?:\s*Please Input)?' if key=='short_label' else ''
+        if not isinstance(row,str) or not re.fullmatch(r'\s*'+re.escape(row_label)+suffix+r'\s*',row):
+            raise Stop('Native Address child property row identity changed: '+key)
+        controls[key],state[key]=control,control.input_value()
+        if not isinstance(state[key],str):
+            raise Stop('Native Address child text value is unavailable')
+    for key,selector in _ADDRESS_CHECKBOX_CONTROLS.items():
+        control=item.locator(selector)
+        if control.count()!=1 or not control.is_visible():
+            raise Stop('Native Address child checkbox is missing or ambiguous: '+key)
+        value=control.get_attribute('aria-checked')
+        if value not in ('true','false'):
+            raise Stop('Native Address child checkbox state is unavailable')
+        controls[key],state[key]=control,value=='true'
+    if state['required'] and state['hidden']:
+        raise Stop('Native Address child has conflicting Required/Hidden state')
+    hidden_value=item.locator('#fieldHiddenvalue input')
+    if state['hidden']:
+        if hidden_value.count()!=1 or not hidden_value.is_visible():
+            raise Stop('Native Address child Hidden value control is unavailable')
+        row=hidden_value.evaluate("el => el.closest('.form-group')?.textContent || ''")
+        if not isinstance(row,str) or not re.fullmatch(r'\s*Hidden value\s*(?:Please Input)?\s*',row):
+            raise Stop('Native Address child Hidden value row identity changed')
+        state['hidden_value']=hidden_value.input_value()
+        controls['hidden_value']=hidden_value
+    else:
+        if hidden_value.count() and hidden_value.is_visible():
+            raise Stop('Native Address child has a visible Hidden value while Hidden is off')
+        state['hidden_value']=None
+    return controls,state
+
+
+def _write_child_properties(frame,label,before,desired):
+    controls,current=_child_properties(frame,label)
+    if current!=before:
+        raise Stop('Native Address child properties changed after preflight')
+    # Native Required/Hidden are mutually exclusive, including intermediates.
+    def toggle(key,value):
+        click(controls[key])
+        wait_until(lambda:controls[key].get_attribute('aria-checked')==('true' if value else 'false'),
+                   'Native Address child checkbox did not change: '+key)
+    for key in ('required','hidden'):
+        if current[key] and not desired[key]:
+            toggle(key,False)
+    for key in _ADDRESS_TEXT_CONTROLS:
+        if before[key]!=desired[key]:
+            fill(controls[key],desired[key])
+    for key in ('required','hidden'):
+        if not before[key] and desired[key]:
+            toggle(key,True)
+    if desired['hidden']:
+        fresh_controls,fresh_state=_child_properties(frame,label)
+        if fresh_state['hidden_value']!=desired['hidden_value']:
+            fill(fresh_controls['hidden_value'],desired['hidden_value'])
+    if _child_properties(frame,label)[1]!=desired:
+        raise Stop('Native Address child properties or preserved values differ from the target')
 
 
 def _snapshot(frame):
@@ -137,6 +245,7 @@ def configure(page, step):
     before = _snapshot(frame)
     desired = dict(before)
     wanted_inventory = dict(inventory)
+    property_plans={}
     for field in plan['address_fields']:
         label = field['field']
         old = field.get('current_query_key', _ADDRESS_QUERIES[label])
@@ -147,9 +256,22 @@ def configure(page, step):
             raise Stop('New Address child Query Key already belongs to another native field')
         desired[label] = new
         wanted_inventory[new] = wanted_inventory.pop(old)
+        if 'properties' in field:
+            _,observed=_child_properties(frame,label)
+            if any(observed[key]!=value for key,value in field['expected_properties'].items()):
+                raise Stop('Address child properties differ from their inventoried previous values')
+            wanted={**observed,**field['properties']}
+            if wanted['required'] and wanted['hidden']:
+                raise Stop('Address property target conflicts with the preserved Required/Hidden state')
+            if not wanted['hidden']:
+                wanted['hidden_value']=None
+            property_plans[label]=(observed,wanted)
     # All targets and collisions are known before the first fill.
     if _snapshot(frame) != before:
         raise Stop('Address child inventory changed after preflight')
+    for label,(observed,_) in property_plans.items():
+        if _child_properties(frame,label)[1]!=observed:
+            raise Stop('Address child properties changed after the complete preflight')
     for field in plan['address_fields']:
         control, current = _child(frame, field['field'])
         if current != before[field['field']]:
@@ -158,8 +280,13 @@ def configure(page, step):
             fill(control, field['query_key'])
         if control.input_value() != field['query_key']:
             raise Stop('Native Address child ignored the authored Query Key')
+        if field['field'] in property_plans:
+            _write_child_properties(frame,field['field'],*property_plans[field['field']])
     if _snapshot(frame) != desired:
         raise Stop('Address child Query Keys or protected sibling identities changed')
+    for label,(_,wanted) in property_plans.items():
+        if _child_properties(frame,label)[1]!=wanted:
+            raise Stop('Another Address child edit changed a requested child property')
     _close_properties(frame)
     if _inventory(frame, allow_unknown_queries=True) != wanted_inventory:
         raise Stop('Native query inventory differs from the requested Address edit')
@@ -175,6 +302,9 @@ def configure(page, step):
     _open_address(frame)
     if _snapshot(frame) != desired:
         raise Stop('Address child Query Keys did not persist after independent reopen')
+    for label,(_,wanted) in property_plans.items():
+        if _child_properties(frame,label)[1]!=wanted:
+            raise Stop('Address child properties did not persist after independent reopen')
     _close_properties(frame)
     _close_initial(frame)
     return {'status':'ADDRESS_FIELDS_SAVED_AND_REOPENED', 'editor_url':page.url,
@@ -391,7 +521,15 @@ def _object_record(value):
     return deepcopy(value)
 
 
-def validate_object_fields(step, *, kind='form'):
+def validate_object_fields(step, *, kind='form', require_fresh=False):
+    """Validate dependency identity; only a new native execution requires age.
+
+    Intake, compilation and completed replay must remain structurally valid as
+    the original GET ages. configure_object_fields separately opts into the
+    fresh same-location read required before touching native controls.
+    """
+    if type(require_fresh) is not bool:
+        raise Stop('Object-field freshness requirement must be a real boolean')
     if (not isinstance(step, dict) or set(step) - {'id', 'action', 'payload'}
             or step.get('action', 'native_object_fields') != 'native_object_fields'
             or kind not in ('form', 'survey')):
@@ -430,14 +568,29 @@ def validate_object_fields(step, *, kind='form'):
             or type(dependency['http_status']) is not int or dependency['http_status'] != 200
             or type(dependency['observed_at']) not in (int, float)
             or not math.isfinite(dependency['observed_at'])
-            or not 0 <= time.time() - dependency['observed_at'] <= 3600
+            or dependency['observed_at'] < 0
+            or (require_fresh and not 0 <= time.time() - dependency['observed_at'] <= 3600)
             or not isinstance(dependency['fields'], list)):
         raise Stop('Object fields require fresh verified same-location API dependency read-back')
-    definitions = [_object_record(field) for field in dependency['fields']]
-    by_id = {field['id']:field for field in definitions}
-    if len(by_id) != len(definitions):
-        raise Stop('API field dependency identity is duplicated')
-    if any(by_id.get(field['id']) != field for field in requested):
+    # A real location list includes fields that are not being placed in this
+    # job. They need unambiguous API identities, not the requested widget's
+    # native Radio shape. In particular, unrelated TEXT/DATE fields must not
+    # prevent placing an independently captured RADIO widget.
+    by_id, keys = {}, set()
+    for field in dependency['fields']:
+        if (not isinstance(field, dict)
+                or not isinstance(field.get('id'), str)
+                or not re.fullmatch(r'[A-Za-z0-9_-]{1,256}', field['id'])):
+            raise Stop('API field dependency identity is invalid')
+        key = _token(field.get('field_key'))
+        if not key.startswith('contact.') or len(key) <= len('contact.'):
+            raise Stop('API field dependency key must identify a contact field')
+        if field['id'] in by_id or key in keys:
+            raise Stop('API field dependency identity or key is duplicated')
+        by_id[field['id']] = field
+        keys.add(key)
+    if any(field['id'] not in by_id or _object_record(by_id[field['id']]) != field
+           for field in requested):
         raise Stop('Requested object fields differ from their API-confirmed definitions')
     return deepcopy(step)
 
@@ -445,9 +598,8 @@ def validate_object_fields(step, *, kind='form'):
 def object_fields_configuration_hash(step, *, kind='form'):
     # Configuration hashes remain usable on replay after a capability ages out.
     # Freshness is an execution preflight, not permission to forget an old write.
-    payload = step.get('payload') if isinstance(step, dict) else None
-    if not isinstance(payload, dict):
-        raise Stop('Object-field receipt is missing its payload')
+    valid=validate_object_fields(step,kind=kind,require_fresh=False)
+    payload=valid['payload']
     fields = [_object_record(field) for field in payload.get('object_fields', [])]
     if not fields:
         raise Stop('Object-field receipt has no authored fields')
@@ -552,7 +704,7 @@ def configure_object_fields(page, step, *, kind='form', frame=None, canvas_scope
     and supply an independent reopen callback returning fresh (frame, scope).
     No custom-field schema or global choice value is created/edited here.
     """
-    plan = validate_object_fields(step, kind=kind)
+    plan = validate_object_fields(step, kind=kind, require_fresh=True)
     payload = plan['payload']
     if page.url != payload['start_url']:
         raise Stop('Object-field placement page differs from its requested editor')

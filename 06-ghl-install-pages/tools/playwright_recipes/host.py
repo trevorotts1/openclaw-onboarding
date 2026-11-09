@@ -58,6 +58,14 @@ def _provider_objects(operation, inputs, objects):
         expected_keys = sorted((obj['kind'], obj['id']) for obj in expected)
         if actual_keys != expected_keys:
             raise Stop('Course outline receipt does not match the exact requested targets')
+    if operation == 'courses.update' and 'media_assets' in inputs:
+        if __package__:
+            from .course_media import validate_inputs
+        else:
+            from course_media import validate_inputs
+        plan = validate_inputs(inputs)
+        if identities != [{'kind':'course', 'id':plan['product_id']}]:
+            raise Stop('Course media receipt does not match the exact requested course')
     return identities
 
 
@@ -154,8 +162,9 @@ def _recipe_readiness(operation, inputs, probes, input_dir):
     observed = deepcopy(probes)
     native = operation in ('checkout.configure_native','checkout.one_click_upsell') and bool(inputs.get('adapter_capture'))
     recorded = bool(inputs.get('options'))
-    ui = operation in ('checkout.configure_ui', 'courses.configure_ui')
-    portal = operation == 'communities.configure' and bool(set(inputs).intersection({'channels', 'details', 'access'}))
+    ui = (operation in ('checkout.configure_ui', 'courses.configure_ui')
+          or operation == 'meetings.integrate' and inputs.get('integration_mode') == 'dynamic_calendar_room')
+    portal = operation == 'communities.configure' and bool(set(inputs).intersection({'channels', 'details', 'access', 'course_associations'}))
     if not native and not recorded and not ui and not portal:
         return observed, None
     # A receipt for another input/profile cannot bless this specific capture.
@@ -189,6 +198,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
         return {'status': 'STOP_INVALID_INPUT', 'browser_used': False,
                 'reason': 'A location-bound input mapping is required'}
     access_mode = operation == 'communities.configure' and 'access' in inputs
+    course_association_mode = operation == 'communities.configure' and 'course_associations' in inputs
     if access_authorization is not None and not access_mode:
         return {'status':'STOP_INVALID_INPUT', 'browser_used':False,
                 'reason':'A live access authorization applies only to its exact community access operation'}
@@ -208,6 +218,10 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
                 'reason': 'Installed executors must be a provider mapping'}
     observed, capture_error = _recipe_readiness(operation, inputs, probes, input_dir)
     route = decide(operation, inputs['location_id'], observed, inputs=inputs)
+    if course_association_mode and route['lane'] != 'playwright':
+        return {'status':'STOP_INVALID_INPUT' if capture_error else 'COURSE_ASSOCIATION_SCRIPT_ROUTE_REQUIRED',
+                'route':route, 'browser_used':False,
+                'reason':'Community course associations require the captured script and live same-session portal context; a generic capability or provider cannot authorize this native operation'}
     if access_mode and route['lane'] != 'playwright':
         return {'status':'STOP_INVALID_INPUT' if capture_error else 'ACCESS_SCRIPT_ROUTE_REQUIRED',
                 'route':route, 'browser_used':False,
@@ -235,7 +249,12 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
         if provider is None and operation in ('courses.create','courses.update','courses.lesson_quiz.create') and route['lane'] in ('public_api','skill44') and inputs.get('api_capability'):
             # Reuse the course implementation's real Skill 44 transport. An
             # official-MCP route always requires its actual injected MCP tool.
-            if __package__:
+            if operation == 'courses.update' and 'media_assets' in inputs:
+                if __package__:
+                    from .course_media import course_executor
+                else:
+                    from course_media import course_executor
+            elif __package__:
                 from .delivery import course_executor
             else:
                 from delivery import course_executor
@@ -277,16 +296,16 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
             if 'auth_activation' in inputs:
                 return _terminal_auth_stop(operation, inputs, root, type(exc).__name__, contract=True)
             raise
-        if operation == 'communities.configure' and set(inputs).intersection({'channels', 'details', 'access'}):
+        if operation == 'communities.configure' and set(inputs).intersection({'channels', 'details', 'access', 'course_associations'}):
             if page is None or portal_context is None:
                 return {'status': 'PORTAL_CONTEXT_REQUIRED', 'route': route,
                         'browser_used': False,
                         'reason': 'Supply an authenticated caller-owned portal Page and same-session identity context; no login or token seed attempted'}
             if __package__:
-                from .skill6_playwright import community_channels, community_details, community_access
+                from .skill6_playwright import community_channels, community_details, community_access, community_courses
             else:
-                from skill6_playwright import community_channels, community_details, community_access
-            handler = community_access if access_mode else community_details if 'details' in inputs else community_channels
+                from skill6_playwright import community_channels, community_details, community_access, community_courses
+            handler = community_access if access_mode else community_courses if 'course_associations' in inputs else community_details if 'details' in inputs else community_channels
             arguments = {'portal_context':portal_context, 'evidence_root':root}
             if access_mode:
                 arguments['access_authorization'] = access_authorization
@@ -307,7 +326,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
                 result['state_file'] = str(root / 'community-access-state.json')
                 result['instruction'] = 'Reconcile the retained access intent before another write.'
             return result
-        expected_state = root / ('community-access-state.json' if access_mode else 'community-details-state.json' if operation == 'communities.configure' and 'details' in inputs else 'community-portal-state.json' if operation == 'communities.configure' and 'channels' in inputs else 'state.json')
+        expected_state = root / ('community-access-state.json' if access_mode else 'community-details-state.json' if operation == 'communities.configure' and ('details' in inputs or 'course_associations' in inputs) else 'community-portal-state.json' if operation == 'communities.configure' and 'channels' in inputs else 'state.json')
         blocked_state = next((root / name for name in (
             'state.json', 'provider-state.json', 'community-portal-state.json', 'community-details-state.json', 'community-access-state.json')
             if journal_present(root / name)), expected_state)
@@ -352,7 +371,12 @@ def main(argv=None):
                 validate_job(compile_recipe(args.operation, inputs), args.inputs.resolve().parent)
                 status = 'PORTAL_CONTEXT_REQUIRED' if args.operation == 'communities.configure' and ('channels' in inputs or 'details' in inputs) else 'VALIDATED_ONLY'
             elif selected['lane'] in ('public_api','skill44','official_mcp') and args.operation in ('courses.create','courses.update','courses.lesson_quiz.create'):
-                if __package__:
+                if args.operation == 'courses.update' and 'media_assets' in inputs:
+                    if __package__:
+                        from .course_media import validate_api_inputs
+                    else:
+                        from course_media import validate_api_inputs
+                elif __package__:
                     from .delivery import validate_api_inputs
                 else:
                     from delivery import validate_api_inputs

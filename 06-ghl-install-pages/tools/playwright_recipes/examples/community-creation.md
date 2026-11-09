@@ -11,12 +11,20 @@ authored name, slug and description, and Discovery explicitly off. This path
 requires `allow_creation:true` and **explicit `inactive:false`**: the owner job
 must request a newly active group. No active/inactive status control is clicked.
 
-The newly created name is independently read back in the Active list. Current
-native cards expose no slug, opaque ID or portal link. The receipt therefore
-remains `GROUP_CREATED_PENDING_IDENTITY`, with `slug_identity_verified:false`,
-`discovery_verified:false`, `independent_readback:REQUIRED` and
-`functional_verified:false`. The `slug` field is the authored input, not invented
-native proof. No privacy control is present on the captured Create Group page.
+Immediately after this handler submits the unique new name/slug, the native app
+returns to the exact location-bound list with `groupCreated` and `groupSlug`
+query parameters. The handler requires both exact authored values, rejects
+duplicate/unrecognized keys, and records that native transaction binding before
+list navigation removes the query. The name is then independently read in the
+Active list. Native name length is at most 30 characters.
+
+The receipt is `GROUP_CREATED_SLUG_IDENTIFIED`, with
+`identity_source:native_creation_redirect`, `slug_identity_verified:true`,
+`portal_identity_verified:false`, `discovery_verified:false`,
+`independent_readback:VERIFIED` and `functional_verified:false`. This observed
+create redirect is not accepted from intake or from an existing name-only card.
+It does not establish portal authentication, privacy or member behavior. No
+privacy control is present on the captured Create Group page.
 
 Two other cases stop before native writes:
 

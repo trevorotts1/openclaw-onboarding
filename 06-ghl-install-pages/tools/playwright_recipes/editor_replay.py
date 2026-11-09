@@ -25,6 +25,7 @@ STATUSES = {
     'native_object_fields': {'OBJECT_FIELDS_SAVED_AND_REOPENED'},
     'native_survey_object_fields': {'SURVEY_OBJECT_FIELDS_SAVED_AND_REOPENED'},
     'native_condition': {'CONDITION_ALREADY_PRESENT', 'CONDITION_SAVED_AND_REOPENED', 'CONDITION_SAVE_SUBMITTED'},
+    'native_condition_group': {'CONDITION_GROUP_SAVED_AND_REOPENED', 'CONDITION_GROUP_REUSED_AND_REOPENED'},
     'quiz_configuration': {'QUIZ_CONFIGURATION_SAVED_AND_REOPENED'},
     'quiz_results': {'QUIZ_RESULTS_SAVED_AND_REOPENED'},
     'survey_configuration': {'SURVEY_RULE_ALREADY_PRESENT', 'SURVEY_RULE_SAVED_AND_REOPENED'},
@@ -32,12 +33,18 @@ STATUSES = {
     'assessment': {'ASSESSMENT_REUSED', 'ASSESSMENT_SAVE_SUBMITTED'},
     'form_settings': {'FORM_SETTINGS_PERSISTED'},
     'native_form_schedule': {'FORM_SCHEDULE_SAVED_AND_REOPENED'},
+    'native_form_tracking': {'FORM_TRACKING_SAVED_AND_REOPENED'},
+    'native_form_embed': {'FORM_EMBED_EXPORTED_AND_REREAD'},
     'native_course_theme': {'COURSE_THEME_SAVED_AND_REOPENED'},
+    'native_course_blocks': {'COURSE_BLOCKS_SAVED_AND_REOPENED'},
+    'native_course_theme_media': {'COURSE_THEME_MEDIA_SAVED_AND_REOPENED'},
     'form_submission': {'FORM_SUBMISSION_SAVED_AND_REOPENED'},
     'form_notifications': {'NOTIFICATION_SETTINGS_SAVED_AND_REOPENED'},
     'options': {'RECORDED_OPTIONS_EXECUTED'},
-    'community': {'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED', 'GROUP_CREATED_PENDING_IDENTITY'},
+    'community': {'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED', 'GROUP_CREATED_PENDING_IDENTITY', 'GROUP_CREATED_SLUG_IDENTIFIED'},
     'meeting': {'ROOM_CREATED_VERIFIED', 'ROOM_REUSED_VERIFIED', 'ROOM_UPDATED_VERIFIED'},
+    'meeting_cohosts': {'COHOSTS_SAVED_AND_REOPENED', 'COHOSTS_REUSED_AND_REOPENED'},
+    'native_dynamic_meeting_location': {'DYNAMIC_MEETING_LOCATION_SAVED_AND_REOPENED', 'DYNAMIC_MEETING_LOCATION_REUSED_AND_REOPENED'},
     'native_checkout': {'NATIVE_CONFIGURATION_READBACK_VERIFIED'},
     'native_checkout_ui': {'NATIVE_CHECKOUT_UI_READBACK_VERIFIED'},
 }
@@ -53,6 +60,7 @@ REQUIRED = {
     'native_object_fields': ('editor_url', 'fields', 'configuration_sha256', 'independent_readback', 'submission_verified'),
     'native_survey_object_fields': ('kind', 'editor_url', 'target_slide', 'field_count', 'configuration_sha256', 'independent_readback', 'submission_verified', 'behavior_verified'),
     'native_condition': ('kind', 'effect', 'if_field', 'operator', 'target', 'independent_readback', 'submission_verified', 'behavior_verified'),
+    'native_condition_group': ('kind', 'editor_url', 'configuration_sha256', 'clause_count', 'independent_readback', 'submission_verified', 'behavior_verified'),
     'quiz_configuration': ('kind', 'editor_url', 'questions', 'submission_verified'),
     'quiz_results': ('kind', 'editor_url', 'configuration_sha256', 'independent_readback', 'behavior_verified', 'submission_verified'),
     'survey_configuration': ('kind', 'editor_url', 'source_slide', 'target_slide', 'independent_readback', 'submission_verified', 'behavior_verified'),
@@ -61,10 +69,16 @@ REQUIRED = {
     'form_settings': ('settings', 'editor_url'),
     'native_form_schedule': ('editor_url', 'enabled', 'configuration_sha256', 'independent_readback', 'behavior_verified', 'submission_verified'),
     'native_course_theme': ('editor_url', 'course_id', 'template_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed'),
+    'native_course_blocks': ('editor_url', 'course_id', 'template_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed', 'added_block_ids', 'block_ids'),
+    'native_course_theme_media': ('editor_url', 'course_id', 'template_id', 'configuration_sha256', 'independent_readback', 'functional_verified', 'activation_performed', 'source_sha256', 'background_url_sha256'),
+    'native_form_tracking': ('editor_url', 'configuration_sha256', 'independent_readback', 'behavior_verified', 'submission_verified'),
+    'native_form_embed': ('kind', 'editor_url', 'form_id', 'configuration_sha256', 'embed_sha256', 'embed_code', 'export_settings', 'independent_readback', 'settings_persisted', 'installation_verified', 'behavior_verified', 'submission_verified'),
     'form_submission': ('mode', 'editor_url', 'value_sha256', 'independent_readback', 'behavior_verified', 'submission_verified'),
     'form_notifications': ('enabled', 'configuration_sha256', 'recipient_count', 'independent_readback', 'behavior_verification'),
     'options': ('count', 'capture_source'), 'community': ('name', 'slug', 'discovery', 'deleted'),
     'meeting': ('room', 'meeting_started'),
+    'meeting_cohosts': ('location_id', 'room_id', 'configuration_sha256', 'cohost_count', 'addition_count', 'removal_count', 'independent_readback', 'meeting_started', 'functional_verified', 'notification_behavior_verified'),
+    'native_dynamic_meeting_location': ('location_id', 'calendar_id', 'staff_id', 'configuration_sha256', 'independent_readback', 'native_location_kind', 'appointment_created', 'meeting_started', 'dynamic_room_generation_verified', 'functional_verified'),
     'native_checkout': ('component_id', 'page_id', 'operations', 'payment_verified', 'checkout_ready', 'independent_readback'),
     'native_checkout_ui': ('element_id', 'editor_url', 'payment_verified', 'checkout_ready'),
 }
@@ -72,10 +86,10 @@ BOOLEANS = frozenset(('behavior_verified', 'submission_verified', 'payment_verif
     'functional_verified', 'checkout_ready', 'meeting_started', 'discovery', 'deleted',
     'products_missing', 'form_submitted', 'notifications_sent', 'legal_copy_saved', 'legal_acceptance',
     'conditional_precedence_present', 'conditional_precedence_acknowledged', 'activation_performed',
-    'native_name_seen_after_reload', 'slug_identity_verified', 'discovery_verified', 'group_activation_attempted'))
-COUNTS = frozenset(('count', 'radius', 'render_checks', 'recipient_count', 'questions', 'source_slide', 'target_slide', 'rule_count', 'field_count'))
-IDS = frozenset(('element_id', 'section_id', 'component_id', 'page_id', 'calendar_id', 'course_id', 'template_id', 'slug'))
-HASHES = frozenset(('html_sha256', 'css_sha256', 'value_sha256', 'configuration_sha256', 'requested_slug_sha256'))
+    'settings_persisted', 'installation_verified', 'appointment_created', 'dynamic_room_generation_verified', 'notification_behavior_verified', 'native_name_seen_after_reload', 'slug_identity_verified', 'portal_identity_verified', 'discovery_verified', 'group_activation_attempted'))
+COUNTS = frozenset(('count', 'radius', 'render_checks', 'recipient_count', 'questions', 'source_slide', 'target_slide', 'rule_count', 'field_count', 'cohost_count', 'addition_count', 'removal_count', 'clause_count'))
+IDS = frozenset(('element_id', 'section_id', 'component_id', 'page_id', 'calendar_id', 'course_id', 'template_id', 'slug', 'staff_id', 'form_id'))
+HASHES = frozenset(('html_sha256', 'css_sha256', 'value_sha256', 'configuration_sha256', 'requested_slug_sha256', 'source_sha256', 'background_url_sha256', 'observed_slug_sha256', 'embed_sha256'))
 ID_PATTERN = re.compile(r'[A-Za-z0-9_-]{1,256}')
 
 
@@ -149,10 +163,14 @@ def _result(step, value, job):
         safe = {'status':value['status']}
     if 'location_id' in value and value['location_id'] != job['location_id']:
         _fail()
+    embed = None
+    if action == 'native_form_embed':
+        from playwright_recipes.form_embed import validate_receipt
+        embed = validate_receipt(value, step)
     extra = {
         'html': {'element_id', 'section_id'}, 'native_form_css': {'render_checks'},
         'meeting': {'previous_room_identity'},
-        'community': {'requested_slug_sha256', 'group_status'},
+        'community': {'requested_slug_sha256', 'observed_slug_sha256', 'identity_source', 'group_status'},
     }.get(action, set())
     # A familiar field on an unrelated handler is still an arbitrary extra.
     allowed = set(REQUIRED[action]) | extra | BOOLEANS | {
@@ -180,7 +198,7 @@ def _result(step, value, job):
         safe[key] = value[key]
     for key in ('editor_url', 'container_url', 'form_url'):
         if key in value:
-            if action == 'native_course_theme' and key == 'editor_url':
+            if action in ('native_course_theme', 'native_course_blocks', 'native_course_theme_media') and key == 'editor_url':
                 from playwright_recipes.course_theme import editor_url
                 expected_url = editor_url(step['payload'])
                 if value[key] != expected_url:
@@ -205,7 +223,7 @@ def _result(step, value, job):
                 _fail()
             safe[key] = value[key]
     if 'kind' in value:
-        if value['kind'] not in ('quiz', 'quiz_results', 'survey', 'form_condition', 'survey_condition', 'survey_condition_stack', 'survey_object_fields'):
+        if value['kind'] not in ('quiz', 'quiz_results', 'survey', 'form_condition', 'survey_condition', 'survey_condition_stack', 'survey_object_fields', 'form_condition_group', 'form_embed'):
             _fail()
         safe['kind'] = value['kind']
     if 'mode' in value and value['mode'] is not None:
@@ -227,6 +245,14 @@ def _result(step, value, job):
     if action in ('native_condition', 'survey_configuration') and value['kind'] != (
             'form_condition' if action == 'native_condition' else 'survey_condition'):
         _fail()
+    if action == 'native_condition_group':
+        from playwright_recipes.form_conditions import configuration_hash
+        if (value['kind'] != 'form_condition_group'
+                or value['clause_count'] != len(step['clauses'])
+                or value['configuration_sha256'] != configuration_hash(step)
+                or value['independent_readback'] != 'VERIFIED'
+                or value['submission_verified'] is not False or value['behavior_verified'] is not False):
+            _fail()
     if action == 'survey_rule_stack':
         from playwright_recipes.survey_ui import configuration_hash
         if (value['kind'] != 'survey_condition_stack'
@@ -267,6 +293,31 @@ def _result(step, value, job):
                 or value['functional_verified'] is not False
                 or value['activation_performed'] is not False):
             _fail()
+    if action == 'native_course_theme_media':
+        from playwright_recipes.course_theme_media import configuration_hash
+        plan = step['payload']
+        if (value['course_id'] != plan['course_id'] or value['template_id'] != plan['template_id']
+                or value['configuration_sha256'] != configuration_hash(plan)
+                or value['source_sha256'] != plan['background_image']['sha256']
+                or value['independent_readback'] != 'VERIFIED'
+                or value['functional_verified'] is not False or value['activation_performed'] is not False):
+            _fail()
+    if action == 'native_course_blocks':
+        from playwright_recipes.course_blocks import configuration_hash, validate_inputs
+        plan = validate_inputs(step['payload'])
+        before = [row['id'] for row in plan['custom_blocks']['expected_inventory']]
+        added, identities = value['added_block_ids'], value['block_ids']
+        if (value['course_id'] != plan['course_id'] or value['template_id'] != plan['template_id']
+                or value['configuration_sha256'] != configuration_hash(plan)
+                or value['independent_readback'] != 'VERIFIED'
+                or value['functional_verified'] is not False or value['activation_performed'] is not False
+                or not isinstance(added, list) or len(added) != len(plan['custom_blocks']['append'])
+                or not isinstance(identities, list)
+                or any(not isinstance(identity, str) or not ID_PATTERN.fullmatch(identity) for identity in identities)
+                or identities != before + added or len(set(identities)) != len(identities)):
+            _fail()
+        safe['added_block_ids'] = added
+        safe['block_ids'] = identities
     if action == 'native_fields':
         fields = [field['field'] for field in step.get('fields', [])]
         if value['fields'] != fields:
@@ -280,6 +331,16 @@ def _result(step, value, job):
                 or value['independent_readback'] != 'VERIFIED' or value['submission_verified'] is not False):
             _fail()
         safe['fields'] = fields
+    if action == 'native_form_embed':
+        if value['form_id'] != step['integration']['form_id']:
+            _fail()
+        safe.update(embed)
+    if action == 'native_form_tracking':
+        from playwright_recipes.form_tracking import configuration_hash
+        if (value['configuration_sha256'] != configuration_hash(step)
+                or value['independent_readback'] != 'VERIFIED'
+                or value['submission_verified'] is not False or value['behavior_verified'] is not False):
+            _fail()
     if action == 'native_form_consent':
         from playwright_recipes.forms_advanced import consent_configuration_hash
         if (value['configuration_sha256'] != consent_configuration_hash(step)
@@ -339,6 +400,21 @@ def _result(step, value, job):
                 or value.get('discovery') is not False or value.get('deleted') is not False):
             _fail()
         safe['name'] = step['name']
+        if value['status'] == 'GROUP_CREATED_SLUG_IDENTIFIED':
+            digest = hashlib.sha256(step['slug'].encode()).hexdigest()
+            if (step.get('allow_creation') is not True or step.get('inactive', True) is not False
+                    or value.get('requested_slug_sha256') != digest or value.get('observed_slug_sha256') != digest
+                    or value.get('identity_source') != 'native_creation_redirect'
+                    or value.get('native_name_seen_after_reload') is not True
+                    or value.get('group_status') != 'Active'
+                    or value.get('slug_identity_verified') is not True
+                    or value.get('portal_identity_verified') is not False
+                    or value.get('discovery_verified') is not False or value.get('functional_verified') is not False
+                    or value.get('group_activation_attempted') is not False
+                    or value.get('independent_readback') != 'VERIFIED'):
+                _fail()
+            safe['group_status'] = 'Active'
+            safe['identity_source'] = 'native_creation_redirect'
         if value['status'] == 'GROUP_CREATED_PENDING_IDENTITY':
             if (step.get('allow_creation') is not True or step.get('inactive', True) is not False
                     or value.get('requested_slug_sha256') != hashlib.sha256(step['slug'].encode()).hexdigest()
@@ -356,6 +432,43 @@ def _result(step, value, job):
         if value['enabled'] != expected or any(type(x) is not bool for x in value['enabled'].values()):
             _fail()
         safe['enabled'] = expected
+    if action == 'native_dynamic_meeting_location':
+        from playwright_recipes.meeting_dynamic import validate_inputs, configuration_hash
+        plan = validate_inputs(step['payload'], require_fresh=False)
+        changed = plan['expected_staff_locations'][0]['location_kind'] != 'Meeting Room'
+        expected_status = ('DYNAMIC_MEETING_LOCATION_SAVED_AND_REOPENED' if changed
+                           else 'DYNAMIC_MEETING_LOCATION_REUSED_AND_REOPENED')
+        if (any(plan[key] != job[key] for key in ('location_id', 'location_name', 'start_url'))
+                or value['calendar_id'] != plan['calendar_id'] or value['staff_id'] != plan['staff_id']
+                or value['configuration_sha256'] != configuration_hash(plan)
+                or value['status'] != expected_status or value['native_location_kind'] != 'Meeting Room'
+                or value['independent_readback'] != 'VERIFIED'
+                or any(value[key] is not False for key in ('appointment_created', 'meeting_started',
+                    'dynamic_room_generation_verified', 'functional_verified'))):
+            _fail()
+        safe['location_id'] = job['location_id']
+        safe['native_location_kind'] = 'Meeting Room'
+    if action == 'meeting_cohosts':
+        from playwright_recipes.meeting_cohosts import validate_write_inputs, write_configuration_hash
+        plan = validate_write_inputs(step['payload'])
+        before, after = plan['cohosts']['expected'], plan['cohosts']['desired']
+        additions = sum(person not in before for person in after)
+        removals = sum(person not in after for person in before)
+        expected_status = ('COHOSTS_SAVED_AND_REOPENED' if additions or removals
+                           else 'COHOSTS_REUSED_AND_REOPENED')
+        if (any(plan[key] != job[key] for key in ('location_id', 'location_name', 'start_url'))
+                or value['room_id'] != plan['expected_room_id']
+                or value['configuration_sha256'] != write_configuration_hash(plan)
+                or value['cohost_count'] != len(after)
+                or value['addition_count'] != additions or value['removal_count'] != removals
+                or value['status'] != expected_status
+                or value['independent_readback'] != 'VERIFIED'
+                or any(value[key] is not False for key in (
+                    'meeting_started', 'functional_verified', 'notification_behavior_verified'))):
+            _fail()
+        safe['room_id'] = _url(value['room_id'], job, public_room=True)
+        safe['location_id'] = job['location_id']
+        safe['independent_readback'] = 'VERIFIED'
     if action == 'meeting':
         room = value['room']
         if not isinstance(room, Mapping) or room.get('location_id') != job['location_id'] or room.get('status') != 'PRESENT':

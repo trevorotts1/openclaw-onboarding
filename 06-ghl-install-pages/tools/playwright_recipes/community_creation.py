@@ -14,7 +14,7 @@ No Login, invitation, ownership transfer or status dropdown is ever clicked here
 from copy import deepcopy
 import hashlib
 import re
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 if __package__:
     from .skill6_playwright import Stop, assert_tenant, click, fill, wait_until
@@ -50,7 +50,7 @@ def validate(step):
             or start.path != '/v2/location/' + context['location_id']
                 + '/memberships/communities/community-groups'):
         raise Stop('Community creation requires its exact canonical location-bound Groups list start URL')
-    for key, limit in (('name', 100), ('description', 150)):
+    for key, limit in (('name', 30), ('description', 150)):
         value = data.get(key)
         if (not isinstance(value, str) or not value.strip() or len(value) > limit
                 or (key == 'name' and value != value.strip())
@@ -178,6 +178,37 @@ def inventory(page, context):
     return [{'name': name, 'status': status} for name, status in snapshots[1]]
 
 
+def _created_identity(page, context, data):
+    """Read the native create redirect before any list navigation loses it.
+
+    This query is accepted only immediately after this handler submitted a new
+    unique name/slug. It is never accepted from intake or reused to bless a
+    name-only existing card. Duplicate/unrecognized query keys fail closed.
+    """
+    expected=urlsplit(_list_url(context))
+    current=urlsplit(page.url)
+    if (current.scheme!=expected.scheme or current.netloc!=expected.netloc
+            or current.fragment):
+        raise Stop('Community create redirect changed authenticated app origin')
+    create_path=expected.path.rsplit('/',1)[0]+'/create-group'
+    if current.path==create_path and not current.query:
+        return None
+    if current.path!=expected.path:
+        raise Stop('Community create redirect changed exact location/list identity')
+    if not current.query:
+        return None
+    try:query=parse_qsl(current.query,keep_blank_values=True,strict_parsing=True)
+    except ValueError:
+        raise Stop('Community create redirect identity query is malformed') from None
+    if len(query)!=2 or {key for key,_ in query}!={'groupCreated','groupSlug'}:
+        raise Stop('Community create redirect name/slug binding is missing or ambiguous')
+    observed=dict(query)
+    if observed!={'groupCreated':data['name'],'groupSlug':data['slug']}:
+        raise Stop('Community create redirect does not identify the authored group name and slug')
+    assert_tenant(page,context)
+    return {'name':observed['groupCreated'],'slug':observed['groupSlug']}
+
+
 def configure(page, step):
     data = validate(step)
     context = data['_context']
@@ -223,15 +254,24 @@ def configure(page, step):
     wait_until(lambda: submit.is_enabled(), 'Community create fields or slug are not accepted by the native form')
     click(submit)
     fields['name'].wait_for(state='hidden', timeout=45000)
+    created={}
+    def identity_ready():
+        result=_created_identity(page,context,data)
+        if result is None:return False
+        created.update(result);return True
+    wait_until(identity_ready,'Native community create did not return its exact name/slug identity binding')
     after = inventory(page, context)
     actual = [row for row in after if row['name'] == data['name']]
     if len(actual) != 1 or actual[0]['status'] != 'Active':
         raise Stop('Created community is not uniquely present in the native Active inventory')
-    # The named app card proves the native create persisted, but still cannot
-    # prove a slug, portal identity, privacy or member behavior. Keep that gap.
-    return {'status': 'GROUP_CREATED_PENDING_IDENTITY', 'name': data['name'],
+    # The native post-create redirect binds this authored name/slug; separate
+    # portal authentication, privacy/discovery and member behavior remain owed.
+    return {'status': 'GROUP_CREATED_SLUG_IDENTIFIED', 'name': data['name'],
         'slug': data['slug'], 'discovery': False, 'deleted': False,
         'requested_slug_sha256': hashlib.sha256(data['slug'].encode()).hexdigest(),
         'native_name_seen_after_reload': True, 'group_status': 'Active',
-        'slug_identity_verified': False, 'discovery_verified': False, 'independent_readback': 'REQUIRED',
+        'observed_slug_sha256': hashlib.sha256(created['slug'].encode()).hexdigest(),
+        'identity_source':'native_creation_redirect',
+        'slug_identity_verified': True, 'portal_identity_verified':False,
+        'discovery_verified': False, 'independent_readback': 'VERIFIED',
         'functional_verified': False, 'group_activation_attempted': False}

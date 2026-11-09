@@ -123,6 +123,12 @@ def validate_details_inputs(inputs):
 
 
 def _context_inputs(inputs):
+    if isinstance(inputs, Mapping) and 'course_associations' in inputs:
+        if __package__:
+            from .community_courses import validate_inputs as validate_courses_inputs
+        else:
+            from community_courses import validate_inputs as validate_courses_inputs
+        return validate_courses_inputs(inputs)
     if isinstance(inputs, Mapping) and 'access' in inputs:
         if __package__:
             from .community_access import validate_inputs as validate_access_inputs
@@ -154,7 +160,13 @@ def _facts(page, inputs, reader, *, verify_control=True):
     # the single authenticated identity read, then recheck the route: hydration
     # must not bless a redirect or user change that happened during the wait.
     if verify_control:
-        if 'details' in inputs or 'access' in inputs:
+        if 'course_associations' in inputs:
+            _,slug=_portal(inputs['portal_url'])
+            control=page.locator('a[href="/communities/groups/'+slug+'/learning"]')
+            control.wait_for(state='visible',timeout=45000)
+            if control.count()!=1 or not control.is_visible():
+                raise Stop('Captured modern community Learning link unavailable or ambiguous')
+        elif 'details' in inputs or 'access' in inputs:
             settings = page.get_by_role('button', name='SETTINGS', exact=True)
             settings.wait_for(state='visible', timeout=45000)
             if settings.count() != 1 or not settings.is_visible():

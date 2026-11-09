@@ -23,19 +23,19 @@ FIELDS = {
         'contact_fields', 'checkout_options', 'content', 'theme_inputs', 'legal_copy',
         'product_binding', 'product_id', 'price_id', 'charge', 'execute_payment'},
     'forms.create': {'name', 'required', 'allow_creation', 'radius'},
-    'forms.configure': {'fields', 'add_fields', 'address_fields', 'consent', 'object_fields', 'field_dependencies'},
+    'forms.configure': {'fields', 'add_fields', 'address_fields', 'consent', 'object_fields', 'field_dependencies', 'integration'},
     'forms.style': {'custom_css', 'radius', 'css_key', 'expect_styles'},
-    'forms.settings': {'settings', 'schedule'},
+    'forms.settings': {'settings', 'schedule', 'tracking'},
     'forms.submission': {'submission'}, 'forms.notifications': {'notifications'},
     'forms.conditions': {'condition'},
     'surveys.create': {'name', 'allow_creation', 'standard_fields'},
     'quizzes.create': {'name', 'allow_creation', 'standard_fields', 'fixture'},
     'surveys.configure': {'configuration'}, 'quizzes.configure': {'configuration'},
     'communities.create': {'community'},
-    'communities.configure': {'portal_url', 'group_name', 'channels', 'details', 'access'},
+    'communities.configure': {'portal_url', 'group_name', 'channels', 'details', 'access', 'course_associations', 'api_capability'},
     'meetings.setup': {'meeting'}, 'meetings.update': {'meeting'},
-    'meetings.integrate': {'integration_mode'},
-    'courses.configure_ui': {'course_id', 'template_id', 'expected_template_title', 'changes', 'expected_values'},
+    'meetings.integrate': {'integration_mode', 'calendar_id', 'calendar_name', 'staff_id', 'connection_staff_label', 'expected_staff_locations', 'staff_dependency'},
+    'courses.configure_ui': {'course_id', 'template_id', 'expected_template_title', 'changes', 'expected_values', 'custom_blocks', 'background_image'},
     'funnels.split_variant': set(),
 }
 REQUIRED = {
@@ -80,7 +80,7 @@ def validate_intake(operation, data):
         unused = set(data).intersection(CHECKOUT - {'checkout_contract'})
         if unused:
             raise Stop('Native checkout inputs require their captured adapter: ' + ', '.join(sorted(unused)))
-    if operation == 'communities.configure' and not set(data).intersection({'channels', 'details', 'access'}):
+    if operation == 'communities.configure' and not set(data).intersection({'channels', 'details', 'access', 'course_associations'}):
         if set(data).intersection({'portal_url', 'group_name'}):
             raise Stop('Portal identity requires a concrete channel or details operation')
     if missing:
@@ -90,7 +90,12 @@ def validate_intake(operation, data):
         if native and 'options' in data:
             raise Stop('Native course theme edits and recorded options require separate jobs')
         if native:
-            from playwright_recipes.course_theme import validate_inputs
+            if 'custom_blocks' in data:
+                from playwright_recipes.course_blocks import validate_inputs
+            elif 'background_image' in data:
+                from playwright_recipes.course_theme_media import validate_inputs
+            else:
+                from playwright_recipes.course_theme import validate_inputs
             validate_inputs(data)
     for key in ('seo', 'checkout', 'configuration', 'submission', 'notifications', 'community', 'meeting', 'options'):
         if key in data and (not isinstance(data[key], dict)
@@ -104,6 +109,12 @@ def validate_intake(operation, data):
         for flag in ('allow_creation', 'inactive', 'discovery'):
             if nested in data and flag in data[nested] and type(data[nested][flag]) is not bool:
                 raise Stop(nested + '.' + flag + ' requires a real boolean')
+    if operation == 'forms.configure' and 'integration' in data:
+        if set(data).intersection({'fields', 'add_fields', 'address_fields', 'consent',
+                                    'object_fields', 'field_dependencies', 'options'}):
+            raise Stop('Native form embed export requires its own independently journaled job')
+        from playwright_recipes.form_embed import validate
+        validate({'integration':data['integration']})
     if operation == 'forms.configure':
         for key in ('fields', 'add_fields', 'address_fields', 'object_fields'):
             if key in data and (not isinstance(data[key], list) or not data[key]):
@@ -131,10 +142,21 @@ def validate_intake(operation, data):
                 raise Stop('Survey object questions and conditional rule stacks require separate jobs')
             from playwright_recipes.survey_fields import validate
             validate({'payload':{**{key:data[key] for key in ('location_id', 'location_name', 'start_url')}, **config}})
+    if operation == 'communities.configure' and 'course_associations' in data:
+        from playwright_recipes.community_courses import validate_inputs
+        validate_inputs(data)
     if operation == 'communities.configure':
-        if len(set(data).intersection({'channels', 'details', 'access'})) > 1:
+        if len(set(data).intersection({'channels', 'details', 'access', 'course_associations'})) > 1:
             raise Stop('Community channels, details and access require separately journaled jobs')
-        if set(data).intersection({'channels', 'details', 'access'}) and 'options' in data:
+        if set(data).intersection({'channels', 'details', 'access', 'course_associations'}) and 'options' in data:
             raise Stop('Concrete community operations and generic options require separate jobs')
+    if operation in ('meetings.setup', 'meetings.update') and 'cohosts' in data['meeting']:
+        if 'options' in data:
+            raise Stop('Co-host roster reconciliation and recorded options require separate jobs')
     if operation == 'meetings.integrate' and data.get('integration_mode') is not None:
-        raise Stop('Native calendar API integration must use the measured API host route')
+        if data['integration_mode'] != 'dynamic_calendar_room':
+            raise Stop('Native calendar API integration must use the measured API host route')
+        if 'options' in data:
+            raise Stop('Native dynamic rooms and recorded options require separate jobs')
+        from playwright_recipes.meeting_dynamic import validate_inputs
+        validate_inputs({key:value for key,value in data.items() if key not in ('integration_mode', 'publish', 'auth_activation')}, require_fresh=False)

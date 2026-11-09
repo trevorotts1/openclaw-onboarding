@@ -1,3 +1,34 @@
+## [v27.1.93] - 2026-11-09
+
+- Add native per-appointment Meeting Room calendar location controls, bound to
+  exact staff/calendar IDs and a complete unambiguous location user inventory.
+- Upload approved immutable PNG backgrounds into inactive course templates;
+  preserve transparency, active theme, Custom Blocks and other theme settings.
+- Configure four native form embed layouts/Advanced controls and export exact
+  revalidated code twice; retain code on replay without claiming installation.
+- Provision authored Radio definitions through a measured Skill44 fallback and
+  chain exact existing-survey placement with separate uncertain-write journals.
+- Attach Private courses in authenticated community Learning with exact API and
+  native card IDs; refuse unknown zero-card absence rather than infer empty state.
+- Bind newly created community name/slug through the native creation redirect,
+  then independently reopen the group list; retain missing portal/discovery proof.
+- Keep native functional/submission/notification and generated-room proof pending.
+
+## [v27.1.92] - 2026-11-09
+
+- Add native homogeneous AND/OR form conditions, Address child properties and
+  Facebook Pixel/event settings with expected-state checks and reopened readback.
+- Add inactive-theme Custom Block append/edit, bound to exact native/generated
+  block identities while preserving existing media and sibling rich content.
+- Add exact existing-room co-host roster reconciliation, preserving security
+  settings and refusing uncaptured empty rosters. Bind replay to the full plan.
+- Edit any captured existing quiz tier layout without inferring tier creation.
+- Upload approved PNG course media through the existing API rail, preserve
+  appearance siblings and retain pending visual/learner proof through the host.
+- Preflight every native checkout target before editing the first value, and
+  accept complete mixed API inventories for existing object-field placement.
+- Preserve remaining build gaps and separately pending native acceptance.
+
 ## [v27.1.91] - 2026-11-09
 
 - Add captured native form consent, Address Query Keys, existing Radio placement,
