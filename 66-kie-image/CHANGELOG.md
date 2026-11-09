@@ -1,5 +1,13 @@
 # Changelog - kie-image
 
+## [2.2.6] - 2026-11-08 - rule-12 band on the regenerated enforcer; version past main's fold
+
+- `scripts/validate_prompt.py` carries the merged rule-12 band arithmetic beside the GPT Image 2.6
+  slash ids and the owner cap of 20,000 characters (`owner_prompt_cap_chars` outranks the vendor
+  schema at limit resolution).
+- Version bumped to v2.2.6: main's W19 fold already reached v2.2.5.
+- Risk: LOW. Band arithmetic and model ids only; no route or credential changed.
+
 ## [2.2.4] - 2026-11-08 - feat: GPT Image 2.5 -> 2.6 Sunburst is the default image route
 
 - Every 2.5 reference in this skill now names `gpt-image-2-6/sunburst-text-to-image` (T2I) and

@@ -1,5 +1,14 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
 
+## v2.2.10 - 2026-11-08 - GPT Image 2.6 stays the endpoint name after main's fold
+
+- `SKILL.md`: the description keeps GPT Image 2.6 as the first of the seven image endpoints.
+  Main's W19 fold reintroduced the retired 2.5 wording in that line; this patch restores 2.6.
+- `scripts/_kie_prompt_enforcer_embedded.py` and `scripts/prompt_policy.py` carry the merged
+  rule-12 band (95 to 100 passes, 80 to below 95 warns and expands, below 80 rejects).
+- Version bumped to v2.2.10: main's fold already reached v2.2.9.
+- Risk: LOW. One description line and the regenerated enforcer copy.
+
 ## v2.2.2 - 2026-10-06 - feat: rule 12 on the library bands, merged with the Ideogram alignment
 
 - `prompt-bands.json` v3 holds no length numbers (merged with the GPT Image 2.5 Sunburst default alignment); KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut.

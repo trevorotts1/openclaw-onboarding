@@ -14,6 +14,15 @@ All notable changes to this skill wrapper are documented here.
 ---
 
 
+## [v27.1.87] - 2026-11-08 - KIE prompt-enforcer copy regenerated; version past main's fold
+
+- `tools/_kie_prompt_enforcer_embedded.py` and `tools/prompt_policy.py` carry main's regenerated
+  rule-12 band (95 to 100 passes, 80 to below 95 warns and expands, below 80 rejects) with the
+  GPT Image 2.6 slash ids; `tools/gates.json` and `tools/ghl_media.py` dispatch 2.6 only.
+- Version bumped to v27.1.87: main's own W19 fold already reached v27.1.86, so the migration
+  diff needs the next patch to keep the G3 skill-version-bump guard honest.
+- Risk: LOW. Model ids and their gates only.
+
 ## [v27.1.86] - 2026-11-08 - KIE GPT Image 2.6 Sunburst reaches the media tools
 
 - `tools/_kie_prompt_enforcer_embedded.py`, `tools/gates.json` and `tools/ghl_media.py` carry
