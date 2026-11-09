@@ -3,26 +3,28 @@
 """
 validate_prompt.py - Skill 66 kie-image prompt validator (v2.3.0).
 
-Prompt budget (F18 2026-11-07, superseding the 80-percent warning-only band): a prompt
-must use 95-100% of the model's VERIFIED character maximum. Below 95% FAILS and must be
-revised; below 80% is a particularly clear hard failure; above the documented maximum
-FAILS; an UNKNOWN maximum REFUSES a pass. This script keeps no band of its own: it calls
-the shared policy service through shared-utils/kie_prompt_enforcer.py, which wraps Skill
-74 `prompt-budget --check` (live schema first, registry snapshot second). When that
-adapter is absent or unreachable the limit is the models.json cap (live_schema_cap_chars,
-else vendor_hard_cap_chars, else owner_observed_cap_chars); with no such cap the verdict
-is UNKNOWN_MAX and the prompt is invalid.
+Prompt budget (owner rule 12, kie-common-rules.md section 12, owner order 2026-10-05;
+re-confirmed as governing in all contexts by owner Decision 1, 2026-10-15 and Q1,
+2026-10-17): a prompt should use 95-100% of the model's VERIFIED character maximum.
+80% to below 95% PASSES with a warn-and-expand message naming the characters to ADD;
+below 80% FAILS hard; above the documented maximum FAILS; an UNKNOWN maximum REFUSES a
+pass. This script keeps no band of its own: it calls the shared policy service through
+shared-utils/kie_prompt_enforcer.py, which wraps Skill 74 `prompt-budget --check`
+(live schema first, registry snapshot second). When that adapter is absent or
+unreachable the limit is the models.json cap (live_schema_cap_chars, else
+vendor_hard_cap_chars, else owner_observed_cap_chars); with no such cap the verdict is
+UNKNOWN_MAX and the prompt is invalid.
 
-  floor = ceil(0.95 * max)   below it  -> invalid (exit 1), prints the exact chars to ADD
-  target = 95%..100% of max  in it      -> PASS
-  max                        above it  -> invalid hard fail (exit 2), prints the exact chars to CUT
-  80% hard floor             below it  -> invalid (exit 1), a particularly clear failure
+  hard floor = ceil(0.80 * max)   below it -> invalid (exit 1), names the exact chars to ADD
+  target     = 95%..100% of max   in it     -> PASS
+  80% to below 95%                 in it    -> PASS with a WARN naming the exact chars to ADD
+  max                              above it -> invalid hard fail (exit 2), names the chars to CUT
 
 The old house band (5,000 / 9,000 / 19,000) is retired by owner order. Token-capped
 models (Qwen) get no fake char cap; with no verified character maximum they cannot pass.
 STDLIB PYTHON3 ONLY. No secrets read.
 
-Exit codes:  0 acceptable (warnings may exist) | 1 invalid (out of band, unknown max, strict)
+Exit codes:  0 acceptable (warnings may exist) | 1 invalid (below the 80% floor, unknown max)
              2 above the maximum (hard)
 
 Output: single JSON object on stdout: { model_id, cap_status, chars, tokens_est, max, floor, target_min,

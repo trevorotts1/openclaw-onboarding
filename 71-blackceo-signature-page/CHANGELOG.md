@@ -11,6 +11,14 @@
   1.3.21 together.
 - Risk: LOW. One literal inside a self-check fixture.
 
+## 1.3.18 - 2026-11-08 - one prompt-band rule: owner rule 12 governs (POL-001)
+
+- `scripts/stage_executor.py`: the paid path's hard floor moves from the strict 95 percent reading to owner rule 12's 80 percent. `prompt_budget()` now carries `hard_floor_chars` (ceil(0.80 x max)) beside the 95 percent target; below the hard floor the paid path refuses (naming the ADD to the floor and to the target), and 80 to below 95 percent PASSES with a warn-and-expand ADD on stderr. Basis: owner Decision 1 (2026-10-15) adopted the rule 12 band and Q1 (2026-10-17) confirmed it governs in all contexts; F18 (2026-11-07) introduced the strict reading without an owner ruling.
+- `scripts/validate_prompt.py`: below the 80 percent floor is exit 3, above the maximum exit 4, and BELOW_TARGET is no longer a band failure. The warn-and-expand message is now carried into the printed notes so a passing 80-to-below-95 percent prompt never looks like a silent pass.
+- `references/prompt-budget-policy.json`: the band block records floor 80 / target 95 to 100 with the rule 12 semantics; the F18 strict-band wording is withdrawn.
+- tests: `tests/test_validate_copy_prompt.py` (85 and 94 percent pass with the ADD named; 79 percent still fails exit 3), `tests/test_stage_executor_prompt_contract.py`, `tests/test_section_count.py`.
+- Version bumped to 1.3.18 (`VERSION`, `skill-version.txt`, `SKILL.md` frontmatter).
+
 ## 1.3.12 - 2026-10-26 - oct-25 fix batch: l01-l08 install, preflight, handoff and intake hardening
 
 - `scripts/install_local.py` (l01): the installer no longer truncates a registry that resolves back to the same file it is writing, refuses symlinked registry leaves, honours dry-run failures, and applies the terminal-evidence rule to the executor exit. Tests: `tests/test_scripts.py`.
