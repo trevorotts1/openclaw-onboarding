@@ -104,6 +104,17 @@ DIVERGENT = {
     _SL + "experience/render_question.py": ("D3 999 questions path", ()),
     _SL + "experience/test_experience.py": ("D3 999 questions path", ()),
     _SL + "experience/README.md": ("D3 999 questions path", ()),
+    # D5: the F17 hosting-admission test loads Skill 45's hosting route
+    # (45-design-intelligence-library/scripts/graphics_ghl_push.py) to RECORD the evidence.
+    # 999 ships no Skill 45 tree at all; its production fallback is real
+    # (launcher_core/graphics_hooks.py -> {state: unavailable, reason: PUSH_REF is not installed}).
+    # The 999 copy therefore skips ONLY the route-evidence cases, conditionally and by name, and
+    # runs every admission/refusal case against launcher_core/image_stages.py. The seam tokens
+    # prove that adaptation is present: the Skill 45 path is still named, the skip is conditional,
+    # and the admission matrix is the thing under test.
+    _LAUNCHER + "tests/test_hosting_admission.py": (
+        "D5 999 has no Skill 45: route-evidence cases skip conditionally, admission matrix runs",
+        ("_SKILL45_PUSH", "unittest.skipUnless", "hosted_admission")),
 }
 
 # The parity gates themselves ride with the signature-page family, so 999 can

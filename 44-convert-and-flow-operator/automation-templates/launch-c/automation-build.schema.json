@@ -130,6 +130,11 @@
           "enum": ["single", "successive", null],
           "description": "settings.enrollment as declared, or null when the plan declares none. Applied natively as the top-level workflow boolean allowMultiple (single=false, successive=true — captured live, see evidence/F05-capability.json) and proven per build by the post-save readback, never by the request."
         },
+        "enrollment": {
+          "type": ["string", "null"],
+          "enum": ["single", "successive", "unknown", null],
+          "description": "Enrolment mode, carried from the launch plan's automation settings.enrollment. successive keeps a SECOND purchase's fulfilment, deduplicated by the native event/transaction/line identity, and is refused when the same unit declares reentry blocked. Read by the installable compiler's purchase_identity."
+        },
         "purchase_identity": {
           "type": ["object", "null"],
           "description": "The purchase-event identity the post-sale handler deduplicates on, carried verbatim from the launch plan (native field references only). Null when the plan declares none: the compiler records purchase_identity.sufficient false rather than normalising an order id into a key.",

@@ -40,7 +40,19 @@ The generation record's shape:
 
 Every slot in desktop-wireframe/image-inventory.json must appear in
 the record exactly once, in the section the wireframe section plan
-assigns it to (when a plan is on record). A slot that traces to
+assigns it to (when a plan is on record).
+
+The reverse-coverage floor: every slot the page PLANNED must appear in
+the rendered mockup, whether or not the run's own inventory still lists
+it. The plan is the run's request (production-request-final-mockups.json,
+else production-request.json, else page-request.json) when it declares
+slots, otherwise the copy spec for intake.json's copy_version (its
+default_slots come from the section-image-prompt.md skeleton table). A
+planned slot the generation record does not render is an ERROR naming
+that slot, never a warning: a twelve-slot page rendered with two
+pictures is exactly the defect this floor exists for.
+
+A slot that traces to
 neither -- a placeholder entry, a missing entry, a missing file, a
 generated claim the map does not back, a supplied claim on a
 non-supplied inventory entry, or a supplied sha256 that does not
@@ -50,6 +62,7 @@ each naming trait M1.
 Exit codes: 0 pass, 1 one named FAIL line per failure, 2 unreadable input.
 """
 import hashlib
+import importlib.util
 import json
 import re
 import sys
@@ -57,6 +70,62 @@ from pathlib import Path
 
 DEFAULT_STAGE = "final-mockups"
 SLOT_NUM_RE = re.compile(r"(\d+)\s*$")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+IMAGE_SLOTS_PATH = (REPO_ROOT / "shared-utils" / "signature_launch" / "design"
+                    / "image_slots.py")
+COPY_SPECS_DIR = Path(__file__).resolve().parents[1] / "references" / "copy-specs"
+REQUEST_FILES = ("production-request-final-mockups.json", "production-request.json",
+                 "page-request.json")
+_IMAGE_SLOTS = None
+
+def image_slots():
+    """shared-utils' one image-slot contract (the reverse-coverage floor)."""
+    global _IMAGE_SLOTS
+    if _IMAGE_SLOTS is None:
+        spec = importlib.util.spec_from_file_location(
+            "signature_launch_image_slots", IMAGE_SLOTS_PATH)
+        if spec is None or spec.loader is None:
+            raise SystemExit(f"unreadable image-slot contract: {IMAGE_SLOTS_PATH}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _IMAGE_SLOTS = module
+    return _IMAGE_SLOTS
+
+def planned_slot_ids(run_dir):
+    """(planned slot ids, where they came from) for this run.
+
+    The run's own request wins when it declares slots; otherwise the copy spec
+    for the run's ``copy_version`` is the plan (its ``default_slots`` come from
+    the section-image-prompt.md skeleton table). This is the floor's universe:
+    the inventory alone cannot be it, because a run that planned no image has a
+    short inventory and would pass its own check.
+    """
+    for name in REQUEST_FILES:
+        path = run_dir / name
+        if not path.is_file():
+            continue
+        try:
+            doc = load_json(path)
+        except Exception:
+            continue
+        try:
+            ids = image_slots().planned_slot_ids(doc)
+        except ValueError:
+            continue
+        if ids:
+            return ids, name
+    try:
+        intake = load_json(run_dir / "intake.json")
+    except Exception:
+        return [], None
+    version = intake.get("copy_version") if isinstance(intake, dict) else None
+    path = COPY_SPECS_DIR / f"{version}-v6.json"
+    if not path.is_file():
+        return [], None
+    try:
+        return image_slots().planned_slot_ids(load_json(path)), f"references/copy-specs/{path.name}"
+    except ValueError:
+        return [], None
 
 
 def load_json(path):
@@ -215,6 +284,14 @@ def check_run(run_dir, stage=DEFAULT_STAGE):
     plan_sections = plan_slot_sections(run_dir)
     map_files = image_map_files(run_dir)
     failures = list(record_failures)
+    # The reverse-coverage floor: every PLANNED slot must appear in the rendered
+    # mockup. The inventory check below can only police the slots the run itself
+    # planned; a short plan is exactly how a twelve-slot page shipped with two
+    # pictures, so the plan comes from the request (else the copy spec).
+    planned, planned_source = planned_slot_ids(run_dir)
+    if planned:
+        for line in image_slots().check_planned_coverage(planned, list(record_slots)):
+            failures.append(f"stage {stage} {line} [plan: {planned_source}]")
     for slot_id, entry in record_slots.items():
         if slot_id not in inventory_by_id:
             failures.append(
