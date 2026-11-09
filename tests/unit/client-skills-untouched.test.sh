@@ -42,7 +42,20 @@ chash(){ (cd "$SK" && find 58-ghl-page-rebuild 44-video-overlay-playbook -print0
 BEFORE="$(chash)"; [ -n "$BEFORE" ] || { bad "could not hash the fixture"; exit 1; }
 
 # ---- 1. the client-made test and the count --------------------------------------------------
-awk '/^#=== BEGIN FLEET-PREFLIGHT-V1 ===$/,/^#=== END FLEET-PREFLIGHT-V1 ===$/' "$REPO/update-skills.sh" | grep -v '^fleet_preflight_checks$' > "$T/pf.sh"
+without_preflight_call(){ sed -E 's/^[[:blank:]]*fleet_preflight_checks[[:blank:]]*$/:/'; }
+# Load the helpers without running preflight. Keep the surrounding --help
+# conditional nonempty and exercise indented calls even on older updaters.
+for indent in '' '  ' $'\t'; do
+  printf 'fleet_preflight_checks(){ echo unexpected > "$CLIENT_SKILLS_TEST_PROBE"; }\nfleet_preflight_checks_extra(){ echo expected > "$CLIENT_SKILLS_TEST_EXTRA"; }\nif true; then\n%sfleet_preflight_checks\nfi\nfleet_preflight_checks_extra\n' "$indent" \
+    | without_preflight_call > "$T/load-fixture.sh"
+  rm -f "$T/unexpected" "$T/expected"
+  CLIENT_SKILLS_TEST_PROBE="$T/unexpected" CLIENT_SKILLS_TEST_EXTRA="$T/expected" \
+    bash -c 'source "$1"; declare -F fleet_preflight_checks >/dev/null' _ "$T/load-fixture.sh" \
+    && [ ! -e "$T/unexpected" ] && [ -s "$T/expected" ] \
+    && ok "helper load omits only the exact preflight call (indent=${#indent})" \
+    || bad "helper load invoked preflight or removed its definition/another command"
+done
+awk '/^#=== BEGIN FLEET-PREFLIGHT-V1 ===$/,/^#=== END FLEET-PREFLIGHT-V1 ===$/' "$REPO/update-skills.sh" | without_preflight_call > "$T/pf.sh"
 [ -s "$T/pf.sh" ] && bash -n "$T/pf.sh" && ok "extracted the FLEET-PREFLIGHT-V1 block" || { bad "block missing"; exit 1; }
 res="$(EXTRACTED_DIR="$SRC" bash -c 'source "$1"
   for n in 58-ghl-page-rebuild 44-video-overlay-playbook; do oc_skill_is_client_made $n && echo "client:$n"; done
