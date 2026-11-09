@@ -1,0 +1,346 @@
+{
+  "schema_version": "1.0.0",
+  "artifact": "ghl-contract-sources",
+  "generated_by": "GHL-014 / WF14",
+  "generated_at": "2026-11-08",
+  "fetch_policy": "No page was fetched in this lane. `fetch_state` labels inherited, reopened-at-spec-time, or not-refetched evidence. A missing `published_or_modified` means the source did not state one; it is never derived from a crawl timestamp.",
+  "sources": [
+    {
+      "source_id": "S01",
+      "family": "workflows",
+      "url": "https://help.leadconnectorhq.com/support/solutions/articles/155000009503",
+      "published_or_modified": "2026-10-30",
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF14"
+    },
+    {
+      "source_id": "S02",
+      "family": "workflows",
+      "url": "https://api.leadconnectorhq.com/widget/form/xdf7jCwOt7isk4xZRJWE",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF14"
+    },
+    {
+      "source_id": "S03",
+      "family": "workflows",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/workflows/get-workflow-step-types/index.html",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF14"
+    },
+    {
+      "source_id": "S04",
+      "family": "workflows",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/workflows/create-workflow/index.html",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF14"
+    },
+    {
+      "source_id": "S05",
+      "family": "workflows",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/workflows/get-workflow-definition/index.html",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF14"
+    },
+    {
+      "source_id": "S06",
+      "family": "workflows",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/workflows/update-workflow-definition/index.html",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF14"
+    },
+    {
+      "source_id": "S07",
+      "family": "workflows",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/workflows/validate-workflow-definition/index.html",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF14"
+    },
+    {
+      "source_id": "S08",
+      "family": "workflows",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/workflows/update-workflow-status/index.html",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF14"
+    },
+    {
+      "source_id": "S09",
+      "family": "workflows",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/workflows/search-workflows/index.html",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF14"
+    },
+    {
+      "source_id": "S10",
+      "family": "workflows",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/workflows/",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF14"
+    },
+    {
+      "source_id": "S11",
+      "family": "courses",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/courses/create-course/",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF06"
+    },
+    {
+      "source_id": "S12",
+      "family": "courses",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/courses/create-category/index.html",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF06"
+    },
+    {
+      "source_id": "S13",
+      "family": "courses",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/courses/create-lesson/index.html",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF06"
+    },
+    {
+      "source_id": "S14",
+      "family": "courses",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/courses/import-courses/",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF06"
+    },
+    {
+      "source_id": "S15",
+      "family": "auth",
+      "url": "https://marketplace.gohighlevel.com/docs/Authorization/Scopes/",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF14"
+    },
+    {
+      "source_id": "S16",
+      "family": "courses",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/courses/",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF06"
+    },
+    {
+      "source_id": "S18",
+      "family": "social-planner",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/social-planner/create-post/index.html",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF10/WF14"
+    },
+    {
+      "source_id": "S19",
+      "family": "social-planner",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/social-planner/get-community-users/index.html",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF10/WF14"
+    },
+    {
+      "source_id": "S20",
+      "family": "social-planner",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/social-planner/validate-community-user-membership/index.html",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF10/WF14"
+    },
+    {
+      "source_id": "S21",
+      "family": "social-planner",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/social-planner/create-comment/index.html",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF10/WF14"
+    },
+    {
+      "source_id": "S23",
+      "family": "mcp",
+      "url": "https://marketplace.gohighlevel.com/docs/other/mcp/",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF15"
+    },
+    {
+      "source_id": "S24",
+      "family": "communities",
+      "url": "https://help.gohighlevel.com/support/solutions/articles/155000000280-how-to-setup-customize-and-manage-your-communities",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF09/WF14"
+    },
+    {
+      "source_id": "S25",
+      "family": "communities",
+      "url": "https://help.gohighlevel.com/support/solutions/articles/155000000289-how-to-manage-members-inside-groups",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF09/WF14"
+    },
+    {
+      "source_id": "S26",
+      "family": "communities",
+      "url": "https://help.gohighlevel.com/support/solutions/articles/155000000297",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF09/WF14"
+    },
+    {
+      "source_id": "S27",
+      "family": "communities",
+      "url": "https://help.gohighlevel.com/support/solutions/articles/155000009196-how-to-create-and-manage-premium-channels-in-communities",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF09/WF14"
+    },
+    {
+      "source_id": "S28",
+      "family": "auth",
+      "url": "https://marketplace.gohighlevel.com/docs/Changelog/",
+      "published_or_modified": null,
+      "fetch_state": "inherited_source_not_refetched",
+      "owner": "WF14"
+    },
+    {
+      "source_id": "V01",
+      "family": "meeting-rooms",
+      "url": "https://help.gohighlevel.com/support/solutions/articles/155000009149-meeting-room-in-highlevel-overview",
+      "published_or_modified": "2026-11-03",
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF26"
+    },
+    {
+      "source_id": "V02",
+      "family": "voice-ai",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/voice-ai/create-agent/",
+      "published_or_modified": null,
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF27"
+    },
+    {
+      "source_id": "V03",
+      "family": "agent-studio",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/agent-studio/create-agent/index.html",
+      "published_or_modified": null,
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF29"
+    },
+    {
+      "source_id": "V04",
+      "family": "knowledge-bases",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/files/index.html",
+      "published_or_modified": null,
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF30"
+    },
+    {
+      "source_id": "V05",
+      "family": "chat-widgets",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/chat-widget/create-chat-widget/",
+      "published_or_modified": null,
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF31"
+    },
+    {
+      "source_id": "V06",
+      "family": "projects",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/projects/create-projects-list-task/index.html",
+      "published_or_modified": null,
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF32"
+    },
+    {
+      "source_id": "V07",
+      "family": "projects",
+      "url": "https://help.gohighlevel.com/support/solutions/articles/155000009246-how-to-connect-ai-clients-to-project-management-with-mcp",
+      "published_or_modified": "2026-10-27",
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF32/WF15"
+    },
+    {
+      "source_id": "V08",
+      "family": "funnels",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/funnels/get-funnels/",
+      "published_or_modified": null,
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF24"
+    },
+    {
+      "source_id": "V09",
+      "family": "funnels",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/funnels/get-pages-by-funnel-id/index.html",
+      "published_or_modified": null,
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF24"
+    },
+    {
+      "source_id": "V10",
+      "family": "funnels",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/funnels/get-pages-count-by-funnel-id/index.html",
+      "published_or_modified": null,
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF24"
+    },
+    {
+      "source_id": "V11",
+      "family": "workflow-monitoring",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/workflows/get-workflow-logs/index.html",
+      "published_or_modified": null,
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF25"
+    },
+    {
+      "source_id": "V12",
+      "family": "conversation-ai",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/conversation-ai/create-agent/index.html",
+      "published_or_modified": null,
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF28"
+    },
+    {
+      "source_id": "V13",
+      "family": "workflow-monitoring",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/workflows/get-workflow-log-statistics/index.html",
+      "published_or_modified": null,
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF25"
+    },
+    {
+      "source_id": "V14",
+      "family": "projects",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/projects/projects-api/index.html",
+      "published_or_modified": null,
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF32"
+    },
+    {
+      "source_id": "V15",
+      "family": "projects",
+      "url": "https://help.gohighlevel.com/support/solutions/articles/155000009223-highlevel-project-management-api-setup-and-features",
+      "published_or_modified": "2026-10-22",
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF32"
+    },
+    {
+      "source_id": "V16",
+      "family": "knowledge-bases",
+      "url": "https://marketplace.gohighlevel.com/docs/ghl/knowledge-base/create-knowledge-base/",
+      "published_or_modified": null,
+      "fetch_state": "reopened_2026_11_08_not_refetched",
+      "owner": "WF30"
+    }
+  ],
+  "source_id_absence_note": "Source ids not listed (S17, S22, IG-*) remain in Document 1 as inherited citations. They are not duplicated here because this register only carries sources the documents in this skill cite directly."
+}
