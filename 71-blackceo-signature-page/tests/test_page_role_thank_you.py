@@ -102,11 +102,20 @@ class SpecTests(unittest.TestCase):
 
     def test_resolution_by_role_and_version(self):
         self.assertEqual(page_role.spec_for_role("thank_you")["copy_version"], "thank-you")
-        for role in ("landing", "product_selection", "checkout", "upsell_1", "downsell_1", "upsell_2"):
-            self.assertIsNone(page_role.spec_for_role(role), role)  # no structure yet: legacy path
-        self.assertEqual(page_role.copy_versions(), ("standard", "long-form", "thank-you"))
+        # FIX-15: discovery is recursive and enumerates every role spec on disk, so a role
+        # with its own file (checkout at roles/checkout.json, product-selection, upsell) now
+        # resolves instead of falling through to the landing path.
+        self.assertEqual(page_role.spec_for_role("product_selection")["copy_version"], "product-selection")
+        self.assertEqual(page_role.spec_for_role("checkout")["page_role"], "checkout")
+        self.assertEqual(page_role.spec_for_role("upsell_1")["copy_version"], "upsell")
+        self.assertEqual(page_role.spec_for_role("upsell_2")["copy_version"], "upsell")
+        for role in ("landing", "downsell_1"):  # no copy-spec file: the legacy path
+            self.assertIsNone(page_role.spec_for_role(role), role)
+        self.assertEqual(page_role.copy_versions(),
+                         ("standard", "long-form", "product-selection", "checkout", "thank-you", "upsell"))
         self.assertIsNone(page_role.load_spec("short-form"))
         self.assertEqual(page_role.spec_ref("thank-you"), "references/copy-specs/thank-you-v1.json")
+        self.assertEqual(page_role.spec_ref("checkout"), "references/copy-specs/roles/checkout.json")
         self.assertEqual(page_role.spec_ref("standard"), "references/copy-specs/standard-v6.json")
         self.assertEqual(page_role.spec_ref("nope"), "")
 

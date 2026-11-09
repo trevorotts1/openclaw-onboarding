@@ -323,7 +323,7 @@ def produce(args, request) -> dict:
             raise WrapperError(f"Skill 71 script {name} not found under {s71}")
     run_dir = Path(args.run_dir).resolve()
     admit = [sys.executable, s71 / "shared_page_service.py", "--request", args.request, "--run-dir", run_dir,
-             "--page-version", "standard", "--brand-owner", args.brand_owner, "--image-cap", args.image_cap,
+             "--page-version", "checkout", "--brand-owner", args.brand_owner, "--image-cap", args.image_cap,
              "--brand-file", args.brand_file, "--launch-record", args.launch, "--route-graph", args.route_graph,
              "--validation-only"]  # admission seam only; the stages below generate
     if args.design_style:

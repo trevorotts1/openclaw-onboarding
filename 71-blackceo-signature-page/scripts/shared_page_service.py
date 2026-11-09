@@ -174,9 +174,17 @@ def main(argv=None) -> int:
                 f"page-request: page_role {role!r} is not one of "
                 f"{role_enum}")
         own = page_role.spec_for_role(role)
-        want = own["copy_version"] if own else None
-        wrong_form = (a.page_version != want) if own else (
-            page_role.role_specs().get(a.page_version) is not None)
+        # A role's expected page version is the form copy_forms registers for it (the one
+        # registry; checkout is "checkout" even though it is drawn from the standard sheet),
+        # else the copy_version its spec declares. FIX-15: `wireframe.form_label` is an
+        # ownership question for wireframe rendering, asked here at its point of use, never a
+        # predicate that removes a spec from discovery.
+        want = ((own.get("copy_version") or copy_forms.form_for_role(role))
+                if own else None)
+        wrong_form = (a.page_version != want) if own else any(
+            page_role.owns_wireframe_wording(spec)
+            for version, spec in page_role.role_specs().items()
+            if version == a.page_version)
         if wrong_form:
             raise ServiceError(
                 f"page-request: page_role {role!r} takes --page-version "

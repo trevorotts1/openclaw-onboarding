@@ -751,14 +751,24 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
         role_form = copy_forms.form_for_role(page_role)  # the one registry: it reads plural page_roles too
         spec = role_spec.load(page_role)
         if spec:
+            # FIX-15: a role that has a spec on disk must have a registered form. If the one
+            # registry does not know the role, refuse here — never fall back to the spec's own
+            # `form` and skip the mismatch check (that fallback is what made the guard silent).
+            if not role_form:
+                raise BuildError(
+                    f"page role {page_role!r} has a spec on disk but copy_forms.SPEC_FILES "
+                    "registers no form for it; register the role's form in the one registry "
+                    "(there is no fallback to the spec's form)")
             # the executor's own rule for a role spec (check_section_count): that role is built
             # from a landing form's style reference, never from a page type's own form
-            if version and version not in role_spec.FORMS:
+            if version and version not in role_spec.FORMS and version != role_form:
                 raise BuildError(
                     f"--copy-version {version!r} does not fit page role {page_role!r}: that role "
                     f"is drawn from the {', '.join(role_spec.FORMS)} form (a page type is never "
                     "forced into another's sections)")
-            version = version or spec["form"]
+            # the registry's form names the role; the spec's `form` names the style sheet it is
+            # drawn from (checkout is drawn from the standard sheet). Both are declared data.
+            version = spec["form"] if version in (None, role_form) else version
         else:
             if role_form and version and version != role_form:
                 raise BuildError(
@@ -889,8 +899,8 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--copy-version", choices=list(copy_forms.FORMS),
-                   help="the copy form (standard, long-form, product-selection, upsell); optional for a page "
-                        "role that has its own spec")
+                   help="the copy form (standard, long-form, checkout, product-selection, upsell); a page "
+                        "role that has its own spec is drawn from the spec's declared `form` when this is omitted")
     p.add_argument("--page-role", default="landing",
                    help="page role (default landing); a role with references/copy-specs/roles/<role>.json "
                         "is built to that role's section sequence, a role with an entry in "

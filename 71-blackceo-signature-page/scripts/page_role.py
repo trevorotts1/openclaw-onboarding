@@ -9,9 +9,11 @@ is the one place that maps a role or a copy version to its spec, so the section-
 check, the request builder, the wireframe prompt, the Design Board and the gate all read
 the same file and nothing forks the pipeline.
 
-A spec without `page_role` is a landing form. A page role with no spec yet (for example
-product_selection) keeps its legacy behaviour: it resolves to None here and the callers
-fall through to the landing path, exactly as before.
+A spec without `page_role`/`page_roles` is a landing form. FIX-15: discovery is recursive
+under references/copy-specs/ (checkout lives at roles/checkout.json), is keyed by the role or
+version the spec itself declares, and never uses `wireframe.form_label` as an existence
+filter. A role that has a spec file on disk but is missing from discovery fails closed with
+RoleSpecNotDiscovered rather than resolving to None.
 
 Library only; it calls no provider and reads no secret.
 """
@@ -37,27 +39,78 @@ def _read(path: str) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def _owns_wireframe_wording(spec) -> bool:
+class RoleSpecNotDiscovered(LookupError):
+    """A role has a spec file on disk but discovery did not return it (FIX-15: fail closed)."""
+
+
+def owns_wireframe_wording(spec) -> bool:
     """A page type whose spec carries its own wireframe wording (`wireframe.form_label`, the
-    thank-you page). A registered form that only names a page_role (product-selection, in
-    copy_forms.py) is drawn from the shared form wording instead and keeps its own path."""
+    thank-you page). Ownership is a wireframe-rendering question asked at the point of use; it
+    never decides whether a role spec exists (FIX-15)."""
     wireframe = spec.get("wireframe") if isinstance(spec.get("wireframe"), dict) else {}
     return bool(wireframe.get("form_label"))
 
 
-def role_specs() -> dict:
-    """{copy_version: spec} for every spec in references/copy-specs/ that names a page_role and
-    owns its wireframe wording."""
+def declared_roles(spec) -> tuple:
+    """Every page role the spec itself declares (`page_role`, or the plural `page_roles`)."""
+    roles = []
+    if spec.get("page_role"):
+        roles.append(str(spec["page_role"]))
+    roles.extend(str(role) for role in (spec.get("page_roles") or ()))
+    return tuple(dict.fromkeys(roles))
+
+
+def _registered_version(spec, path) -> str | None:
+    """The key a discovered role spec is registered under. Never its position in the tree:
+    its declared `copy_version`, else the form key copy_forms.SPEC_FILES gives its file
+    (checkout declares no copy_version: its page version is the registry key "checkout"),
+    else the role it declares."""
+    if spec.get("copy_version"):
+        return str(spec["copy_version"])
+    rel = path.relative_to(SPEC_DIR).as_posix()
+    for form, target in copy_forms.SPEC_FILES.items():
+        if Path(target).as_posix() == rel:
+            return str(form)
+    roles = declared_roles(spec)
+    return roles[0] if roles else None
+
+
+def role_spec_paths() -> dict:
+    """{registered version: path} for every role spec at any depth under references/copy-specs/.
+
+    FIX-15: recursive, and discovery is not filtered by `wireframe.form_label` — that predicate
+    belongs at the point of use, not in the registry."""
     out = {}
-    for path in sorted(SPEC_DIR.glob("*.json")):
+    for path in sorted(SPEC_DIR.rglob("*.json")):
         try:
             spec = _read(str(path))
         except (OSError, ValueError):
             continue
-        if (isinstance(spec, dict) and spec.get("page_role") and spec.get("copy_version")
-                and _owns_wireframe_wording(spec)):
-            out[str(spec["copy_version"])] = spec
+        if not isinstance(spec, dict) or not declared_roles(spec):
+            continue
+        version = _registered_version(spec, path)
+        if version:
+            out[version] = path
     return out
+
+
+def role_specs() -> dict:
+    """{registered version: spec} for every role spec at any depth under references/copy-specs/."""
+    return {version: _read(str(path)) for version, path in role_spec_paths().items()}
+
+
+def _spec_on_disk(role):
+    """The path of a role spec file on disk for `role`, independent of discovery."""
+    if not isinstance(role, str) or not role:
+        return None
+    for path in sorted(SPEC_DIR.rglob("*.json")):
+        try:
+            spec = _read(str(path))
+        except (OSError, ValueError):
+            continue
+        if isinstance(spec, dict) and role in declared_roles(spec):
+            return path
+    return None
 
 
 def copy_versions() -> tuple:
@@ -77,18 +130,25 @@ def spec_ref(version) -> str:
     name it (references/copy-specs/<file>); '' when the version is unknown."""
     if version in LANDING_VERSIONS:
         return f"references/copy-specs/{version}-v6.json"
-    for path in sorted(SPEC_DIR.glob("*.json")):
-        spec = _read(str(path))
-        if isinstance(spec, dict) and spec.get("page_role") and spec.get("copy_version") == version:
-            return f"references/copy-specs/{path.name}"
-    return ""
+    path = role_spec_paths().get(str(version))
+    if path is None:
+        return ""
+    return f"references/copy-specs/{path.relative_to(SPEC_DIR).as_posix()}"
 
 
 def spec_for_role(role):
-    """The role's own spec, or None (landing, or a role with no section structure yet)."""
+    """The role's own spec. None only for a role with no spec file at all (landing).
+
+    FIX-15: a role that has a spec on disk but is missing from discovery raises
+    RoleSpecNotDiscovered naming the role and the path, never a silent None."""
     for spec in role_specs().values():
-        if spec["page_role"] == role:
+        if role in declared_roles(spec):
             return spec
+    path = _spec_on_disk(role)
+    if path is not None:
+        raise RoleSpecNotDiscovered(
+            f"page role {role!r} has a spec at {path} but page_role.role_specs() did not "
+            "discover it; every references/copy-specs/**/*.json role spec must be in the registry")
     return None
 
 
