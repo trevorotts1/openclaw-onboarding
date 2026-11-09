@@ -221,17 +221,22 @@ class BleedCheckTests(unittest.TestCase):
         prompts = self.dir / "image-inventory-prompts"
         prompts.mkdir()
         (prompts / "IMG-001.txt").write_text("A desk.", encoding="utf-8")
-        # F17 gates every direct execution: a paid item may start only once stage_gate's own item
-        # dependencies hold (the inventory names the item, the prompt item is closed, and the
-        # upstream manifest exists). The fixture supplies exactly those; the gate is untouched.
-        inventory = self.dir / "desktop-wireframe" / "image-inventory.json"
-        inventory.parent.mkdir()
-        inventory.write_text(json.dumps({"images": [{"id": "IMG-001"}]}), encoding="utf-8")
-        (prompts / "prompt-manifest.json").write_text(json.dumps({}), encoding="utf-8")
-        state = self.dir / "private" / "state.json"
-        state.parent.mkdir()
-        state.write_text(json.dumps({"stages": {}, "receipts": {}, "items": {
-            "image-inventory-prompts": {"IMG-001": {"status": "closed"}}}}), encoding="utf-8")
+        # run_item now consults stage_gate.py before any read (a paid stage may not start on a run
+        # that has not reached it), so this fixture supplies the gate's own inputs rather than
+        # bypassing it: the wireframe inventory that defines the item universe, the upstream stage's
+        # structural manifest, and a closed upstream prompt item for IMG-001.
+        wireframe = self.dir / "desktop-wireframe"
+        wireframe.mkdir()
+        (wireframe / "image-inventory.json").write_text(
+            json.dumps({"images": [{"id": "IMG-001"}]}), encoding="utf-8")
+        (prompts / "prompt-manifest.json").write_text(
+            json.dumps({"items": ["IMG-001"]}), encoding="utf-8")
+        private = self.dir / "private"
+        private.mkdir()
+        (private / "state.json").write_text(json.dumps({
+            "stages": {}, "receipts": {},
+            "items": {"image-inventory-prompts": {"IMG-001": {"status": "closed"}}},
+        }), encoding="utf-8")
         req = {"references": [BOARD["url"]]}
         with contextlib.redirect_stdout(io.StringIO()):
             bad = exe.run_item(self.dir, "image-generation-qc", "IMG-001", req,
