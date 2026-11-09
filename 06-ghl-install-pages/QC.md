@@ -105,6 +105,14 @@ If any answer is ✗, this skill is NOT done. Loop back.
 
 ---
 
+## Registry-doc agreement (revision 3.0)
+
+- [ ] Course prose does not claim "browser-only" or "no public create API"; it states the
+  WF06 adapter gap and the narrow UI-only ingestion seam.
+- [ ] `references/course-api-first-build.md` exists and matches the capability index.
+- [ ] Any route/version in Skill 6 prose matches the registry row or is labelled historical.
+- [ ] `29-ghl-convert-and-flow/tests/test_docs_contract.py` passes (A18).
+
 ## Per-build quality gate (FAB-QC ≥ 8.5) — distinct from install QC above
 
 The checklist above is **install-level QC** (is the skill set up correctly?). Every

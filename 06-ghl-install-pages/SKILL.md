@@ -69,6 +69,14 @@ This is NOT about writing or designing the HTML. The HTML is already done
 (usually from a SuperDesign export). This skill is purely about getting that
 code into GHL so the page goes live.
 
+## Registry-derived capability index (read before claiming a rail)
+
+`29-ghl-convert-and-flow/references/ghl-hybrid-capability-index.json` is the one inventory of
+what is implemented, beta-gated, browser-backed, internal-only or still a labelled gap. This
+skill's builders choose a rail from that evidence, not from a stale "public API can't do X"
+assumption. The index is derived: it cannot enable an operation, and a changed registry without
+a regenerated index fails `29-ghl-convert-and-flow/tests/test_docs_contract.py`.
+
 ## Funnel Template Library (STEP 0 — template-first / reuse-before-reinvent)
 
 This skill ships a **38-template funnel library** at `06-ghl-install-pages/funnel-templates/`
@@ -120,6 +128,25 @@ review/derive timing, not assume ordinary delays. Handoff `ts` is build time, ne
 registration time. Skill 44 automatically chooses and configures Set event start time
 when relevant. Its event sequence needs the managed browser's full UI workflow, not
 this skill's single-action `ghl_workflow_builder.py` helper.
+
+## Course construction — API-first, with one narrow browser seam (revision 3.0)
+
+Course construction is **not** "browser-only" and **not** "API-only". The current truth:
+
+- Public course operations (`/courses/products`, categories, lessons, offers, enrollment,
+  import, lesson quiz) are documented, and the typed adapter + registry rows are owned by
+  **WF06** (media binding WF08, coordinator/router WF07). On this branch those rows are not yet
+  published, so the index labels them `documented-unimplemented` with `GAP-WF06-*` owners.
+- The proven managed-browser builder (`tools/ghl_course_builder.py`) stays as the fallback and
+  as the **only** rail for a native-content ingestion step that has no verified public
+  equivalent. Do not rebuild an API-created course in the browser.
+- Read `references/course-api-first-build.md` before any course build. It carries the object
+  distinctions, DTO identity placement, three media paths, import lifecycle, offer/enrollment
+  rules and the honest proof fields.
+
+Authority for every route/version/classification is
+`29-ghl-convert-and-flow/references/ghl-hybrid-capability-index.json`. A page, a builder
+docstring or this section cannot enable an operation.
 
 ## Full-Funnel Pipeline Integration (Skill 44 seam)
 

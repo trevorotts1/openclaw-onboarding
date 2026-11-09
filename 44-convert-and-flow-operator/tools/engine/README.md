@@ -75,7 +75,7 @@ You should see 5 contacts (or an empty list, depending on the account). Done.
 
 ## Workflow building (the powerful part)
 
-The public GHL API is read-only for workflows. To **create or update** workflows, the CLI uses GHL's internal API — and that needs a Firebase refresh token.
+Workflow **listing and contact enrollment** are public REST. Workflow **definition** authoring exists as a documented v4 **staging, beta-gated** contract — it is not production-available just because the route exists. Until that beta is enabled, the CLI creates or updates workflows through GHL's internal API, which needs a Firebase refresh token.
 
 ### Step 1 — grab the token
 
@@ -159,7 +159,7 @@ The CLI talks to two APIs:
 
 | API | What it can do | How it authenticates |
 |-----|----------------|----------------------|
-| **Public** (`services.leadconnectorhq.com`) | Read everything, create contacts/opportunities/etc. **Workflows are GET-only here.** | `GHL_API_KEY` (Private Integration Token) |
+| **Public** (`services.leadconnectorhq.com`) | Read registered operations and create the operations the registry marks implemented. Workflow definition writes are beta-gated (`B-V4-S`), not part of the production public surface yet. | `GHL_API_KEY` (Private Integration Token) |
 | **Internal** (`backend.leadconnectorhq.com`) | Everything the GHL UI can do — including **creating workflows**. Hidden behind a `--experimental` flag on commands that use it. | Firebase JWT, refreshed from `GHL_FIREBASE_REFRESH_TOKEN` |
 
 You only need the Firebase token if you want to **build** workflows. Everything else works with just the API key.

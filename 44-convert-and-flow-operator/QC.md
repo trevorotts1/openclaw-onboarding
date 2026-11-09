@@ -55,6 +55,14 @@ human-readable companion checklist. All items below are machine-asserted by the 
 - [ ] Platform overlay frontmatter `name: convert-and-flow-operator` matches SKILL.md
 - [ ] Mac overlay: auto-re-grab recipe present in platform/mac/recipes/
 
+## Section G2: Registry-doc agreement (revision 3.0)
+
+- [ ] `29-ghl-convert-and-flow/tests/test_docs_contract.py` passes: every registry operation has a source record and every documented route has an adapter or a labelled gap.
+- [ ] No current claim says workflows are GET-only. Workflow definition rows are described as v4 staging/beta-gated (`B-V4-S`), with the internal Firebase path as the approved fallback.
+- [ ] No current claim says course construction is browser-only; the public adapter gap (WF06) and the UI-only native-content seam are both labelled.
+- [ ] Version literals in this skill's prose match the registry row or are marked historical.
+- [ ] The capability index hash matches `public/operations.py`; a changed registry without a regenerated index fails the test.
+
 ## Section H: QC scope flags (document for QC review)
 
 - Criterion 8 grep for old Rule 16 wording EXCLUDES historical CHANGELOG.md entries.

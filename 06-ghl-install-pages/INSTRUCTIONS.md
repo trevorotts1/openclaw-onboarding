@@ -48,6 +48,14 @@ This assumes your HTML code is already written and ready to paste. This guide is
 > 4. Ledger every phase via `tools/ghl_builder.py ledger-write ...`; verify with `ghl_builder.py verify <url> <marker>`; never publish unless `ghl_builder.py may-publish <approval>` returns PUBLISH.
 
 
+## Course builds — start with the API-first reference
+
+Before a course build, read `references/course-api-first-build.md`. Course construction has a
+public API contract owned by WF06 and a managed-browser seam only for native-content ingestion
+and UI-only gaps. The capability index
+(`29-ghl-convert-and-flow/references/ghl-hybrid-capability-index.json`) states which rows exist
+on this branch; do not treat the builder's docstring as authority.
+
 ## The 10-Phase Deployment Process (human-readable click-path narrative)
 
 > NOTE: in code, navigation is snapshot-driven (runtime gates), NOT the fixed

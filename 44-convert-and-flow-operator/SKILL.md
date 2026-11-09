@@ -207,6 +207,18 @@ python3 -I -c "import glob;print(len([p for p in glob.glob('44-convert-and-flow-
 
 ---
 
+## Documentation authority (revision 3.0)
+
+Skill 29 is the registry-derived documentation layer. Its
+`29-ghl-convert-and-flow/references/ghl-hybrid-capability-index.json` carries one record per
+operation: method, path, version, documented level, route class, tenant binding,
+write/approval flags, scopes, source URL/fetch date, blocker, readback plan and classification
+(`implemented`, `documented-unimplemented`, `internal-only`, `browser-backed`, `beta-gated`,
+`unresolved`, `retired`, `excluded`). This skill implements; Skill 29 documents. Neither a
+reference nor a README can enable an operation — enablement is per `(operation_id, tenant)` in
+the capability gate. When a doc and the registry disagree, the registry wins and the doc is
+fixed.
+
 ## What This Skill Is
 
 Skill 44 is the **Tier 0** in the 6-tier GHL access chain (skill 36). It wraps the
@@ -233,11 +245,14 @@ commands automatically; operators never need to memorize command syntax.
 - **forms** — list, get submissions
 - **social** — list accounts, schedule post, get post status
 - **locations** — get location info, list custom fields, list custom values
-- **workflows** — `list` is READ-ONLY on the LOCATION PIT (Tier 0). BUT `get` and `export`
-  route through the INTERNAL Firebase client and REQUIRE the Firebase refresh token — they are
-  NOT PIT reads (see "Workflow BUILD and EDIT" below; the same token gates read-back). With no
-  Firebase token, `get`/`export` cannot run and workflow QC falls to the Tier-4 agent-browser
-  read-back (fail-closed — "no token" never means "skip QC").
+- **workflows** — `list` and contact enrollment are public REST (Tier 0). Workflow
+  **definition** read/create/update/publish/delete are a documented **v4 staging, beta-gated**
+  contract (`B-V4-S`); they are not production-available merely because the row exists. `get`
+  and `export` route through the INTERNAL Firebase client and REQUIRE the Firebase refresh
+  token — they are NOT PIT reads (see "Workflow BUILD and EDIT" below; the same token gates
+  read-back). With no Firebase token, `get`/`export` cannot run and workflow QC falls to the
+  Tier-4 agent-browser read-back (fail-closed — "no token" never means "skip QC"). The old
+  "workflows are GET-only" statement is withdrawn.
 
 ### Sub-agent contact lookup rule (CRITICAL)
 
