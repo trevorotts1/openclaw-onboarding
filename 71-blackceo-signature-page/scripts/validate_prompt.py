@@ -327,6 +327,34 @@ def load_policy(path=None):
                 "tripwire_chars": 2000}
 
 
+def _owner_cap_for_2_6():
+    """Owner ruling 2026-11-08: every 2.6 route caps at the owner-recorded value.
+
+    The one source is 66-kie-image/models.json (owner_prompt_cap_chars). This
+    reader carries no number of its own, so the gate's band rule stays clean.
+    Returns None when the source cannot be read (fail closed upstream).
+    """
+    for base in Path(__file__).resolve().parents:
+        candidate = base / "66-kie-image" / "models.json"
+        if not candidate.is_file():
+            continue
+        try:
+            doc = json.loads(candidate.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        for entry in doc.get("models", []) or []:
+            if not isinstance(entry, dict):
+                continue
+            family = entry.get("family", "") or ""
+            ident = entry.get("canonical_model_id", "") or ""
+            if "gpt-image-2-6" in family or "gpt-image-2-6" in ident:
+                value = entry.get("owner_prompt_cap_chars")
+                if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+                    return value
+        return None
+    return None
+
+
 def cap_for_model(model, policy):
     """Resolve the policy entry for a model id (longest prefix wins)."""
     best = None
@@ -339,9 +367,13 @@ def cap_for_model(model, policy):
         return best
     if model and "gpt-image-2-6" in model:
         # Fail to the law, never to 32,000: owner ruling 2026-11-08 caps every
-        # 2.6 route at 20,000 even if the policy file lookup misses.
-        return {"max_chars": 20000, "cap_status": "OWNER_RULED", "unit": "chars",
-                "source": "Owner ruling 2026-11-08 fallback: 20,000 (66-kie-image/models.json owner_prompt_cap_chars)."}
+        # 2.6 route at the owner-recorded value, read from its one source
+        # (66-kie-image/models.json owner_prompt_cap_chars) so this gate
+        # carries no band number of its own.
+        recorded_owner = _owner_cap_for_2_6()
+        if recorded_owner is not None:
+            return {"max_chars": recorded_owner, "cap_status": "OWNER_RULED", "unit": "chars",
+                    "source": "Owner ruling 2026-11-08 fallback (66-kie-image/models.json owner_prompt_cap_chars)."}
     return policy.get("default", {"max_chars": None, "cap_status": "UNKNOWN",
                                    "unit": "chars"})
 
