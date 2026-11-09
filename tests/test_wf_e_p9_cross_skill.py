@@ -99,18 +99,6 @@ from launcher_core import (  # noqa: E402
     route as route83,
 )
 
-sys.path.insert(0, str(LAUNCH83 / "fixtures"))
-import test_only_readback  # noqa: E402  Skill 83's TEST-ONLY GHL read-back transport (read-only, offline)
-from launcher_core import entitlement as entitlement83  # noqa: E402
-
-
-@pytest.fixture(autouse=True)
-def _offline_ghl_readback():
-    """intake83.validate() reads the entitlement attestation back from GHL; offline, only the TEST-ONLY refs resolve."""
-    test_only_readback.install()
-    yield
-    entitlement83.set_transport(None)
-
 
 SKILL62_VIDEOS = CWFE62 / "generate_videos.py"
 THANK_YOU_SNAPSHOT = ROOT / "82-signature-thank-you" / "fixtures" / "test-only-snapshot.json"
@@ -166,11 +154,6 @@ def launch_intake(mode: str, mains: int = 1, **overrides) -> dict:
         "brand": {"ref": "brand-test", "hash": "a" * 64},
         "copy_profile": "signature_12_section",
         "approval": {"ref": "approval-test", "hash": "b" * 64},
-        "entitlement_attestation": {"basis": "purchase", "evidence_ref": test_only_readback.TEST_ONLY_CONTACT,
-                                    "attested_by": "operator-test",
-                                    "purchase_reference": test_only_readback.TEST_ONLY_ORDER,
-                                    "amount_minor": entitlement83.load_declaration()["purchase_price"]["amount_minor"],
-                                    "currency": entitlement83.load_declaration()["purchase_price"]["currency"]},
         "offers": offers,
         "answers_file": _answers_file_for(offers),
         "checkout_terms": {

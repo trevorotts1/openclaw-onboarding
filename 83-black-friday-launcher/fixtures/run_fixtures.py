@@ -197,9 +197,9 @@ def build_and_check(name: str, payload: Dict[str, Any],
     check(f"{name} package is self-contained",
           all((run_dir / art["path"]).is_file()
               for p in out_record["manifest"]["pieces"] for art in p["artifacts"]))
-    check(f"{name} receipt records the entitlement basis",
-          out_record["receipt"]["entitlement"]["basis"] ==
-          normalized["entitlement"]["basis"])
+    check(f"{name} receipt carries no invented account plan",
+          out_record["receipt"]["entitlement"]["basis"] is None
+          and out_record["receipt"]["entitlement"]["state"] == "unknown")
     check(f"{name} checkout mapping is bound to the S79 contract",
           out_record["manifest"]["checkout"]["contract"].endswith(
               "checkout.schema.json")
@@ -218,9 +218,9 @@ def run_elevation() -> None:
     check("elevation keeps three distinct main offers", len(mains) == 3, str(len(mains)))
     check("elevation never carries a no-price offer",
           all(o["price"]["amount_minor"] > 0 for o in normalized["offers"]))
-    check("elevation entitlement is attested, never defaulted",
-          normalized["entitlement"]["basis"] == "purchase"
-          and normalized["entitlement"]["requires_purchase"] is True)
+    check("elevation needs no account declaration to build",
+          normalized["entitlement"]["state"] == "unknown"
+          and normalized["entitlement"]["qualifies"] is None)
     record = build_and_check(
         "elevation", payload,
         ["landing", "product_selection", "checkout", "upsell_1",
@@ -254,8 +254,8 @@ def run_seven_figure_preneur() -> None:
           payload["journey_mode"] == "folded_levels", payload["journey_mode"])
 
     normalized = intake.validate(payload)
-    check("7FigurePreneur membership qualifies without a purchase",
-          normalized["entitlement"]["basis"] == "brand_management_membership"
+    check("7FigurePreneur needs no account declaration to build",
+          normalized["entitlement"]["state"] == "unknown"
           and normalized["entitlement"]["requires_purchase"] is False)
 
     record = build_and_check(
@@ -297,7 +297,6 @@ def main() -> int:
     print(f"skill root: {SKILL_ROOT}")
     print(f"open seams: {list(SEAM_IDS)}")
     print(f"decided: {list(DECIDED_IDS)}")
-    test_only_readback.install()
     try:
         run_elevation()
         run_seven_figure_preneur()

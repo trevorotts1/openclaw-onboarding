@@ -1,3 +1,7 @@
+## [1.3.24] - 2026-11-09 - G3 lockstep roll for the ENT-001 gate-removal recut (no behaviour change)
+
+- Version bumped so the recut content carries a version G3 requires above main. No functional change.
+
 ## [1.3.23] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 
 - Version bumped so the folded content carries the version G3 requires above main. No functional change.

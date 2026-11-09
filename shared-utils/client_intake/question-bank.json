@@ -95,7 +95,6 @@
     "journey_mode": "funnel_shape question",
     "approval": "plan_approval question",
     "brand": "brand_colors, fonts, logo and photos questions",
-    "entitlement_attestation": "entitlement question",
     "page-version": "derived from copy_profile and page_set",
     "payment_plans": "derived from billing (offers.main.billing_type: one_time = false, recurring or installment = true); never asked, because billing already answers it"
   },
@@ -1984,40 +1983,6 @@
         "q16"
       ],
       "required_by": []
-    },
-    {
-      "id": "entitlement",
-      "group": "launch",
-      "text": "Is this launch kit included in what you bought or have a license for?",
-      "why": "A launch is only built with a confirmed right to run it.",
-      "answer_type": "choice",
-      "choices": [
-        "Yes, it is included",
-        "Please check for me",
-        "No"
-      ],
-      "help": {
-        "label": "I'm not sure, help me",
-        "kind": "explain",
-        "explain": "I check this against your account record. I never assume it.",
-        "examples": []
-      },
-      "default": null,
-      "never_default": true,
-      "required": "always",
-      "condition": "mode == bf",
-      "targets": [
-        "entitlement"
-      ],
-      "legacy_ids": [],
-      "required_by": [
-        "83:entitlement_attestation"
-      ],
-      "choice_explanations": {
-        "Yes, it is included": "Covered by what you already have.",
-        "Please check for me": "I verify it against your account record before anything runs.",
-        "No": "This launch needs its own arrangement."
-      }
     },
     {
       "id": "checkout_terms",

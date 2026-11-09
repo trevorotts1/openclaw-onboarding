@@ -33,7 +33,7 @@ class DecisionReconciliationTests(unittest.TestCase):
     def test_decided_choices_are_carried_by_code_and_unique(self):
         self.assertEqual(len(DECIDED_IDS), len(set(DECIDED_IDS)))
         self.assertEqual(set(DECIDED_IDS), {
-            "entitlement_declaration_and_attestation",
+            "no_client_entitlement_declaration",
             "council_included_in_launch_planning",
             "native_converted_and_flow_checkout_mapping",
             "verified_offer_facts_only",
