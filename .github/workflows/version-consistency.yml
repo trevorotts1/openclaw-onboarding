@@ -541,6 +541,14 @@ jobs:
               continue
             fi
 
+            # Generated prover pin (minted by the mint workflow, e.g.
+            # 49-signature-funnel/scripts/SF-PROVER-PIN.sha256): not skill
+            # content, so a pin-only change must not require a version bump.
+            # Any other file under the skill dir still counts.
+            if [[ "$f" == */scripts/SF-PROVER-PIN.sha256 ]]; then
+              continue
+            fi
+
             # Check if skill-version.txt was also changed for this skill.
             # Use a here-string (NOT `echo "$CHANGED_FILES" | grep -q`): with
             # `set -o pipefail`, a large CHANGED_FILES piped into `grep -q` makes
