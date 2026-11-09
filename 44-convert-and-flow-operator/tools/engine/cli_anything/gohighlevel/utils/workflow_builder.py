@@ -213,13 +213,18 @@ def intent_from_definition(
 
     if not isinstance(current, Mapping) or not isinstance(desired, Mapping):
         raise ContractViolation("definition_invalid")
-    plan: dict[str, Any] = {
-        "set_fields": {
-            str(key): value
-            for key, value in desired.items()
-            if str(key) not in COLLECTIONS and str(key) != "version"
-        }
+    set_fields = {
+        str(key): value
+        for key, value in desired.items()
+        if str(key) not in COLLECTIONS and str(key) != "version"
     }
+    # WF04: an authored trigger whose filter metadata is incomplete must never
+    # invent structure.  A PROVEN current trigger is carried verbatim; with no
+    # proven configuration the intent refuses (see ``_trigger_preservation``).
+    preserved_trigger = _trigger_preservation(current, desired)
+    if preserved_trigger is not None:
+        set_fields["trigger"] = preserved_trigger
+    plan: dict[str, Any] = {"set_fields": set_fields}
     for kind in COLLECTIONS:
         current_nodes = _definition_nodes(current, kind)
         loose = [index for index, node in enumerate(current_nodes) if _identity(node) is None]
@@ -927,6 +932,473 @@ def compile_trigger_conditions(tag: Optional[str], eligibility: list) -> list[di
     return conditions
 
 
+# ── WF04 compiler gates: approved intent -> supported definition ────────────
+#
+# Document 1 section 6.3 requires the compiler to PROVE, not assume: resolved
+# step/asset references, preserved provider field names, no API-unrecognized
+# action quietly turned into a note, client-side proof for
+# ``requiredEnforcement: builder-only``, complete trigger-filter metadata,
+# intended AND never flattened to OR on the public rail, a kept
+# logical->provider id map, local graph rules before the vendor validator, and
+# a draft create plus readback compare.  The vendor validation READ is a named
+# gap (public/workflow_v4.py GAP_RULES), so its absence can never produce a
+# completion certificate.
+
+#: Graph failures that make a definition unsound to SUBMIT.  UNTERMINATED and
+#: CYCLE stay out on purpose: they are WF-23 export-QC findings, and the
+#: approved launch templates legitimately end on a send.  They are recorded on
+#: the certificate, never converted into a create refusal.
+BLOCKING_GRAPH_FAILURES = frozenset({
+    "ID_MISSING", "DUPLICATE_ID", "DANGLING", "MALFORMED_BRANCH", "ROOT",
+    "PARENT_INVALID", "PARENT_CYCLE", "ORPHAN", "UNWIRED_BRANCH", "DEAD_END",
+    "CROSS_BRANCH",
+})
+TRIGGER_RELATIONS = ("and", "or")
+_NOOP_WARNING_MARKERS = (
+    "note", "noop", "no-op", "unrecognized", "unrecognised", "unsupported",
+    "converted", "downgraded", "skipped_action",
+)
+
+
+def trigger_logic(trigger: Any) -> dict:
+    """The boolean logic the PLAN declared for a trigger's conditions.
+
+    The create contract accepts a trigger-relation field but normalises writes
+    to OR (Document 1 s6.3 item 7).  Reading the authored declaration is what
+    lets a caller refuse to send an intended AND the provider would flatten.
+    No declaration is ``None`` (unknown) -- never assumed to be OR.
+    """
+    if not isinstance(trigger, Mapping):
+        return {"intended": None, "source": None, "unknown_reason": "trigger_absent"}
+    declared = []
+    for key in ("relation", "logic", "conditionsRelation", "conditionRelation"):
+        value = trigger.get(key)
+        if isinstance(value, str) and value.strip().lower() in TRIGGER_RELATIONS:
+            declared.append((key, value.strip().lower()))
+    conditions = trigger.get("conditions")
+    if isinstance(conditions, list):
+        for index, condition in enumerate(conditions):
+            if not isinstance(condition, Mapping):
+                continue
+            for key in ("relation", "logic", "join"):
+                value = condition.get(key)
+                if isinstance(value, str) and value.strip().lower() in TRIGGER_RELATIONS:
+                    declared.append(("conditions[%d].%s" % (index, key),
+                                     value.strip().lower()))
+    kinds = {value for _source, value in declared}
+    record = [{"field": source, "value": value} for source, value in declared]
+    if not kinds:
+        return {"intended": None, "source": None, "declared": record,
+                "unknown_reason": "no relation declared"}
+    if len(kinds) > 1:
+        return {"intended": None, "source": None, "declared": record,
+                "unknown_reason": "conflicting relation declarations"}
+    return {"intended": kinds.pop(),
+            "source": ",".join(sorted({source for source, _value in declared})),
+            "declared": record}
+
+
+def trigger_filter_findings(trigger: Any) -> list:
+    """Incomplete trigger-filter metadata as explicit findings.
+
+    ``filtersComplete: false``, a non-empty ``incompleteFields`` list, or a
+    ``feedNormalization`` that was never proven means the authored filter
+    structure is not known-complete.  The compiler must then keep a proven
+    existing configuration (update) or route the authored part to the fallback
+    (create) -- it must never invent the missing structure.
+    """
+    if not isinstance(trigger, Mapping):
+        return []
+    findings = []
+    if trigger.get("filtersComplete") is False:
+        findings.append({"code": "trigger_filter_incomplete",
+                         "field": "filtersComplete"})
+    incomplete = trigger.get("incompleteFields")
+    if isinstance(incomplete, (list, tuple)) and incomplete:
+        findings.append({"code": "trigger_filter_incomplete",
+                         "field": "incompleteFields",
+                         "detail": [str(item) for item in incomplete]})
+    elif isinstance(incomplete, str) and incomplete.strip():
+        findings.append({"code": "trigger_filter_incomplete",
+                         "field": "incompleteFields", "detail": incomplete.strip()})
+    normalization = trigger.get("feedNormalization")
+    if normalization is not None and str(normalization).strip().lower() in (
+            "", "unknown", "unverified", "unproven"):
+        findings.append({"code": "trigger_filter_unproven",
+                         "field": "feedNormalization",
+                         "detail": str(normalization)})
+    return findings
+
+
+def resolve_asset_references(templates: list, resolver: Any = None) -> tuple:
+    """Resolve every ``assetReferences`` entry BEFORE submitting.
+
+    One entry is ``{"kind": ..., "ref": ..., "field": ...}``.  ``resolver`` is
+    called as ``resolver(kind, ref)`` and must return the provider id (or the
+    provider object carrying ``id``) for that reference.  A resolved id is
+    written onto ``attributes[field]`` when a field is named -- the provider
+    field name stays exactly as authored -- and recorded on
+    ``resolvedAssetReferences``.  Nothing is guessed: an unresolved reference
+    is a finding, and with no resolver every reference is unresolved.
+    """
+    resolved_templates: list = []
+    findings: list = []
+    for raw in templates or []:
+        if not isinstance(raw, Mapping):
+            resolved_templates.append(raw)
+            continue
+        step = dict(raw)
+        references = step.get("assetReferences")
+        if references is None:
+            resolved_templates.append(step)
+            continue
+        if not isinstance(references, (list, tuple)):
+            findings.append({"code": "asset_references_invalid",
+                             "step_id": step.get("id")})
+            resolved_templates.append(step)
+            continue
+        attributes = dict(step.get("attributes") or {})
+        kept = []
+        for reference in references:
+            if not isinstance(reference, Mapping):
+                findings.append({"code": "asset_reference_invalid",
+                                 "step_id": step.get("id")})
+                continue
+            kind = str(reference.get("kind") or "").strip()
+            ref = str(reference.get("ref") or "").strip()
+            if not kind or not ref:
+                findings.append({"code": "asset_reference_incomplete",
+                                 "step_id": step.get("id")})
+                continue
+            value = None
+            if resolver is not None:
+                try:
+                    value = resolver(kind, ref)
+                except Exception as exc:  # noqa: BLE001 - a failed lookup is unresolved
+                    findings.append({
+                        "code": "asset_reference_unresolved",
+                        "step_id": step.get("id"), "kind": kind, "ref": ref,
+                        "detail": "%s: %s" % (type(exc).__name__, exc)})
+                    continue
+            if isinstance(value, Mapping):
+                value = value.get("id") or value.get("_id")
+            if not isinstance(value, (str, int)) or not str(value).strip():
+                findings.append({"code": "asset_reference_unresolved",
+                                 "step_id": step.get("id"), "kind": kind,
+                                 "ref": ref})
+                continue
+            entry = {"kind": kind, "ref": ref, "id": str(value)}
+            field = reference.get("field")
+            if isinstance(field, str) and field.strip():
+                attributes[field.strip()] = str(value)
+                entry["field"] = field.strip()
+            kept.append(entry)
+        if kept:
+            step["resolvedAssetReferences"] = kept
+        step["attributes"] = attributes
+        resolved_templates.append(step)
+    return resolved_templates, findings
+
+
+def builder_only_findings(templates: list) -> list:
+    """``requiredEnforcement: builder-only`` needs client-side proof.
+
+    The provider may accept a missing value the UI normally supplies
+    (Document 1 s6.3 item 5), so a 200 is not proof.  The plan must name the
+    fields it relies on (``requiredFields``) and every one must be present on
+    the compiled step; anything less refuses the public compile and keeps the
+    supported fallback.
+    """
+    findings = []
+    for raw in templates or []:
+        if not isinstance(raw, Mapping):
+            continue
+        if str(raw.get("requiredEnforcement") or "").strip() != "builder-only":
+            continue
+        step_id = raw.get("id")
+        required = raw.get("requiredFields")
+        if isinstance(required, Mapping):
+            required = list(required)
+        if not isinstance(required, (list, tuple)) or not required:
+            findings.append({"code": "builder_only_proof_missing",
+                             "step_id": step_id})
+            continue
+        attributes = raw.get("attributes")
+        attributes = attributes if isinstance(attributes, Mapping) else {}
+        for field in required:
+            name = str(field)
+            present = attributes.get(name) not in (None, "", [], {})
+            present = present or raw.get(name) not in (None, "", [], {})
+            if not present:
+                findings.append({"code": "builder_only_field_missing",
+                                 "step_id": step_id, "field": name})
+    return findings
+
+
+def _validate_graph_module():
+    """Locate the repository's own tools/validate_graph.py (same discovery as
+    workflow_identity).  ``None`` means the local validator is absent."""
+    here = Path(__file__).resolve()
+    for parent in [here] + list(here.parents):
+        for candidate in (parent / "tools" / "validate_graph.py",
+                          parent / "validate_graph.py"):
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def local_graph_verdict(templates: list, trigger_target: Optional[str] = None) -> dict:
+    """The repository's graph rules over a compiled template list.
+
+    ``available: false`` is a REAL answer: an absent or unloadable validator
+    never reads as PASS.  Blocking failures are separated from the recorded
+    ones (UNTERMINATED / CYCLE) so a create is refused only for a graph that is
+    structurally unsound.
+    """
+    nodes = [node for node in (templates or []) if isinstance(node, Mapping)]
+    path = _validate_graph_module()
+    if path is None:
+        return {"available": False, "verdict": "unavailable", "failures": [],
+                "blocking": ["validator_absent"]}
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("caf_validate_graph_wf04", str(path))
+    if spec is None or spec.loader is None:
+        return {"available": False, "verdict": "unavailable", "failures": [],
+                "blocking": ["validator_unloadable"]}
+    try:
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        report = module.graph(None, nodes, trigger_target)
+    except Exception as exc:  # noqa: BLE001 - an unreadable check is never a pass
+        return {"available": False, "verdict": "unavailable", "failures": [],
+                "blocking": ["validator_error:%s" % type(exc).__name__]}
+    failures = [dict(item) for item in report.get("failures") or []
+                if isinstance(item, Mapping)]
+    blocking = [item for item in failures
+                if item.get("kind") in BLOCKING_GRAPH_FAILURES]
+    return {"available": True, "verdict": report.get("verdict"),
+            "failures": failures, "blocking": blocking}
+
+
+def validator_verdict(payload: Any) -> dict:
+    """The vendor validator's own verdict, or an explicit absence.
+
+    ``HTTP 200`` plus ``valid: false`` is a FAILURE (Document 1 s6.3 item 9).
+    A response carrying no verdict is ``missing`` -- never a pass, because a
+    missing validator result cannot produce a successful completion
+    certificate (IG-WF-10).
+    """
+    if payload is None:
+        return {"state": "missing", "valid": None, "warnings": [],
+                "reason": "no validator response was produced"}
+    if not isinstance(payload, Mapping):
+        return {"state": "unreadable", "valid": None, "warnings": [],
+                "reason": "validator response is not an object"}
+    warnings = payload.get("warnings")
+    warning_list = [dict(item) for item in warnings if isinstance(item, Mapping)] \
+        if isinstance(warnings, list) else []
+    for container in (payload, payload.get("data")):
+        if not isinstance(container, Mapping):
+            continue
+        value = container.get("valid")
+        if isinstance(value, bool):
+            return {"state": "valid" if value else "invalid", "valid": value,
+                    "warnings": warning_list,
+                    "reason": None if value
+                    else "the vendor validator returned valid:false"}
+    return {"state": "missing", "valid": None, "warnings": warning_list,
+            "reason": "the response carries no valid flag"}
+
+
+def noop_downgrades(authored: list, provider_templates: list,
+                    warnings: Any = None) -> list:
+    """Actions that came back as a note/no-op instead of a real step.
+
+    The provider may report a warning instead of a validation error; that is
+    still a business failure (Document 1 s6.3 item 4).  A step counts as
+    downgraded when it is absent from the saved graph, or when a warning names
+    it while describing a note/no-op conversion.
+    """
+    findings: list = []
+    provider_ids = set()
+    for node in provider_templates or []:
+        if not isinstance(node, Mapping):
+            continue
+        for key in ("id", "_id"):
+            value = node.get(key)
+            if value is not None and str(value).strip():
+                provider_ids.add(str(value))
+    for node in authored or []:
+        if not isinstance(node, Mapping):
+            continue
+        step_id = node.get("id")
+        if step_id is None or str(step_id).strip() == "":
+            findings.append({"step_id": None,
+                             "reason": "authored step has no id"})
+            continue
+        if str(step_id) not in provider_ids:
+            findings.append({"step_id": str(step_id),
+                             "reason": "step missing from the saved graph"})
+    for warning in warnings or []:
+        if not isinstance(warning, Mapping):
+            continue
+        text = " ".join(str(warning.get(key) or "") for key in
+                        ("code", "message", "detail", "reason")).lower()
+        if not any(marker in text for marker in _NOOP_WARNING_MARKERS):
+            continue
+        step_id = warning.get("stepId") or warning.get("actionId") or warning.get("id")
+        findings.append({
+            "step_id": None if step_id is None else str(step_id),
+            "reason": "provider warning reports a note/no-op conversion",
+            "warning": dict(warning)})
+    return findings
+
+
+def logical_to_provider_map(authored: list, provider_templates: list) -> dict:
+    """Keep the authored-id -> provider-id map for the run receipts.
+
+    Exact id first, then a unique (type, name) match.  An authored step with no
+    provider counterpart is ``unmatched`` -- reported, never invented.
+    """
+    provider = [node for node in (provider_templates or [])
+                if isinstance(node, Mapping)]
+    by_id = {}
+    for node in provider:
+        for key in ("id", "_id"):
+            value = node.get(key)
+            if value is not None and str(value).strip():
+                by_id.setdefault(str(value), node)
+    used = set()
+    mapping: dict = {}
+    unmatched: list = []
+    for node in authored or []:
+        if not isinstance(node, Mapping):
+            continue
+        step_id = node.get("id")
+        if step_id is None:
+            unmatched.append(None)
+            continue
+        step_id = str(step_id)
+        if step_id in by_id and step_id not in used:
+            mapping[step_id] = step_id
+            used.add(step_id)
+            continue
+        hit = None
+        for candidate in provider:
+            identity = None
+            for key in ("id", "_id"):
+                value = candidate.get(key)
+                if value is not None and str(value).strip():
+                    identity = str(value)
+                    break
+            if identity is None or identity in used:
+                continue
+            if (candidate.get("type") == node.get("type")
+                    and candidate.get("name") == node.get("name")):
+                hit = identity
+                break
+        if hit is None:
+            unmatched.append(step_id)
+            continue
+        mapping[step_id] = hit
+        used.add(hit)
+    return {"map": mapping, "unmatched": unmatched}
+
+
+def completion_certificate(*, local_graph: Any = None, validator: Any = None,
+                           readback: Any = None, downgrades: Any = None,
+                           id_map: Any = None) -> dict:
+    """One completion record; ``certified`` only when every proof is present.
+
+    A read-back mismatch, a missing validator result, a blocking local-graph
+    failure or a note/no-op downgrade each take the certificate away.  This is
+    evidence, never a substitute for the provider's own result.
+    """
+    reasons: list = []
+    graph = dict(local_graph or {})
+    if graph.get("verdict") != "PASS":
+        reasons.append("local_graph:%s" % (graph.get("verdict") or "missing"))
+    for item in graph.get("blocking") or []:
+        kind = item.get("kind") if isinstance(item, Mapping) else item
+        reasons.append("local_graph_blocking:%s" % kind)
+    verdict = dict(validator or {"state": "missing"})
+    if verdict.get("state") != "valid":
+        reasons.append("vendor_validator:%s" % (verdict.get("state") or "missing"))
+    check = dict(readback or {})
+    if check.get("state") != "matched":
+        reasons.append("readback:%s" % (check.get("state") or "missing"))
+    for item in downgrades or []:
+        reasons.append("noop_downgrade:%s"
+                       % ((item or {}).get("step_id") or "unknown"))
+    return {
+        "certified": not reasons,
+        "reasons": reasons,
+        "local_graph": {key: graph.get(key) for key in
+                        ("available", "verdict", "failures", "blocking")},
+        "vendor_validator": verdict,
+        "readback": check,
+        "noop_downgrades": list(downgrades or []),
+        "logical_to_provider_id_map": dict(id_map or {}),
+    }
+
+
+def compile_gate_findings(wf_def: Any, *, public_route: bool) -> list:
+    """Pre-submit findings for one workflow definition.
+
+    Structural findings (incomplete filter metadata, unproven builder-only
+    obligations, unresolved asset references) refuse on BOTH rails because the
+    plan itself is not provable.  An intended AND is refused only on the
+    public rail: the create would flatten it to OR, while the private rail
+    carries the authored conditions unchanged.
+    """
+    if not isinstance(wf_def, Mapping):
+        return [{"code": "compile_definition_invalid"}]
+    templates = wf_def.get("templates")
+    if not isinstance(templates, list) or not templates:
+        return [{"code": "compile_templates_missing"}]
+    findings: list = []
+    logic = trigger_logic(wf_def.get("requested_trigger")
+                          or wf_def.get("trigger") or {})
+    if logic.get("intended") == "and" and public_route:
+        findings.append({
+            "code": "trigger_and_not_preservable_public",
+            "detail": ("the public create normalises an intended AND to OR; "
+                       "the private rail carries the authored conditions")})
+    for item in trigger_filter_findings(wf_def.get("requested_trigger") or {}):
+        findings.append(dict(item))
+    for item in builder_only_findings(templates):
+        findings.append(dict(item))
+    for item in wf_def.get("asset_reference_findings") or []:
+        findings.append(dict(item) if isinstance(item, Mapping)
+                        else {"code": "asset_reference_unresolved"})
+    return findings
+
+
+def _trigger_preservation(current: Any, desired: Any) -> Any:
+    """Carry a PROVEN current trigger when the authored filter is incomplete.
+
+    Returns ``None`` when the authored trigger carries no incompleteness (the
+    desired value is applied normally).  Otherwise a current trigger whose
+    ``filtersComplete`` is true is returned so its proven configuration is kept
+    verbatim; with no proven configuration the caller must refuse rather than
+    invent the missing structure.
+    """
+    if not isinstance(desired, Mapping):
+        return None
+    findings = trigger_filter_findings(desired.get("trigger"))
+    if not findings:
+        return None
+    current_trigger = current.get("trigger") if isinstance(current, Mapping) else None
+    if (isinstance(current_trigger, Mapping)
+            and current_trigger.get("filtersComplete") is True):
+        return current_trigger
+    from cli_anything.gohighlevel.public.errors import ContractViolation
+    raise ContractViolation(
+        "trigger_filter_incomplete_no_proven_configuration",
+        detail={"findings": findings})
+
+
 def _guarded_templates(templates: list, *, promotional: bool,
                        close_at: Optional[str],
                        schedule_by_id: Optional[Mapping[str, Mapping[str, Any]]] = None) -> list:
@@ -1120,6 +1592,15 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
             "incomplete_actions": installable["incomplete_actions"],
             "purchase_identity": installable["purchase_identity"],
             "compile_notes": installable["notes"],
+            # WF04: the authored trigger and any recorded asset findings travel
+            # with the compiled definition so the pre-submit gate can prove
+            # what the public create would otherwise flatten.
+            "requested_trigger": (
+                dict(build["trigger"])
+                if isinstance(build.get("trigger"), Mapping) else {}),
+            "asset_reference_findings": [
+                dict(item) for item in build.get("asset_reference_findings") or []
+                if isinstance(item, Mapping)],
         }
         previous_keys.append(wf_key)
     return compiled
@@ -1700,8 +2181,12 @@ class CampaignBuilder:
     Uses ThreadPoolExecutor for parallel workflow creation.
     """
 
-    def __init__(self, client: InternalGHLClient, *, v4: Any = None):
+    def __init__(self, client: InternalGHLClient, *, v4: Any = None,
+                 asset_resolver: Any = None):
         self.client = client
+        # WF04: assetReferences resolve through this seam BEFORE any submit.
+        # None means "no resolver": every reference then refuses the build.
+        self.asset_resolver = asset_resolver
         self.loc = client.location_id
         # Public V4 adapter (GU-013).  None means "not wired": every workflow
         # surface then keeps the existing private rail, which is the named
@@ -1736,6 +2221,87 @@ class CampaignBuilder:
         result = precheck_dependencies(self.client, location_id, wf_def)
         self.stats.setdefault("precheck", {})[wf_def.get("name")] = result
         return result
+
+    @staticmethod
+    def _compare_templates(authored: list, provider: Any) -> dict:
+        """Read-back compare of a compiled graph against the saved one."""
+        if not isinstance(provider, list):
+            return {"state": "unreadable", "detail": "provider graph not a list"}
+        mapping = logical_to_provider_map(authored, provider)
+        if mapping["unmatched"]:
+            return {"state": "mismatch", "missing": mapping["unmatched"],
+                    "logical_to_provider_id_map": mapping["map"]}
+        return {"state": "matched",
+                "logical_to_provider_id_map": mapping["map"]}
+
+    def _public_certificate(self, wf_id: str, templates: list) -> dict:
+        """Certificate for a public create: read back, compare, validate.
+
+        The vendor validation READ is a named gap on this rail, so the
+        validator state is ``missing`` and the certificate is withheld.  That
+        is the honest answer: a missing validator result cannot certify a
+        completion (IG-WF-10).
+        """
+        from cli_anything.gohighlevel.public.auth import TenantBinding
+        from cli_anything.gohighlevel.public.workflow_v4_intent import (
+            extract_definition,
+        )
+
+        tenant = TenantBinding(location_id=self.loc, source="request")
+        readback: dict = {"state": "missing"}
+        payload = None
+        try:
+            read_result, payload = self.public_v4.read_definition_document(
+                tenant=tenant, workflow_id=wf_id)
+        except Exception as exc:  # noqa: BLE001 - an unreadable read is explicit
+            read_result = None
+            readback = {"state": "unreadable",
+                        "detail": type(exc).__name__}
+        if read_result is not None:
+            status = getattr(read_result, "status", None)
+            value = getattr(status, "value", str(status))
+            if value != "ok":
+                readback = {"state": "unreadable", "detail": value}
+            else:
+                definition = extract_definition(payload)
+                provider = (definition.get("actions")
+                            if isinstance(definition, Mapping) else None)
+                readback = self._compare_templates(templates, provider)
+        validator = self.public_v4_validation_verdict()
+        downgrades = []
+        if readback.get("state") == "matched":
+            definition = extract_definition(payload) if payload is not None else None
+            provider = (definition.get("actions")
+                        if isinstance(definition, Mapping) else None)
+            downgrades = noop_downgrades(templates, provider or [])
+        return completion_certificate(
+            local_graph=local_graph_verdict(templates),
+            validator=validator,
+            readback=readback,
+            downgrades=downgrades,
+            id_map=readback.get("logical_to_provider_id_map") or {},
+        )
+
+    def public_v4_validation_verdict(self) -> dict:
+        """The vendor validator's verdict on this rail, or its named absence.
+
+        The frozen operation map records ``validation.read`` as a NAMED GAP, so
+        the honest state is ``missing`` with the unblock evidence attached.
+        This never reports a pass it did not receive.
+        """
+        try:
+            from cli_anything.gohighlevel.public.workflow_v4 import (
+                GAP_RULES,
+                OPERATION_MAP,
+            )
+        except Exception as exc:  # noqa: BLE001 - an unimportable package is absent
+            return {"state": "missing", "reason": "public package unavailable (%s)"
+                                                  % type(exc).__name__}
+        if OPERATION_MAP.get("validation.read") is None:
+            rule, unblock = GAP_RULES["validation.read"]
+            return {"state": "missing", "rule": rule,
+                    "reason": "no documented validation read", "unblock": unblock}
+        return {"state": "missing", "reason": "validation read produced no verdict"}
 
     def _dependency_refusal(self, wf_name: Optional[str], dep_state: dict) -> Optional[str]:
         """Refusal reason for a failed dependency pre-check, else None."""
@@ -1794,7 +2360,7 @@ class CampaignBuilder:
     def _create_workflow_public(
         self,
         key: str,
-        wf_name: str,
+        wf_def: Mapping[str, Any],
         templates: list,
         folder_name: str,
     ) -> tuple:
@@ -1813,6 +2379,7 @@ class CampaignBuilder:
         from cli_anything.gohighlevel.public.auth import TenantBinding
         from cli_anything.gohighlevel.public.result import Status
 
+        wf_name = str(wf_def.get("name"))
         definition: dict[str, Any] = {"name": wf_name, "actions": list(templates)}
         if folder_name:
             definition["folderName"] = folder_name
@@ -1824,6 +2391,8 @@ class CampaignBuilder:
             attempt=1,
         )
         if result.status is Status.unknown_outcome:
+            unit_key = wf_def.get("unit_key")
+            self.stats.setdefault("needs_reconcile", []).append(unit_key or wf_name)
             self.stats["errors"].append(
                 f"{wf_name}: public V4 create returned unknown_outcome "
                 f"(receipt {result.receipt_id}) — reconcile before any retry; "
@@ -1845,6 +2414,18 @@ class CampaignBuilder:
                 f"(receipt {result.receipt_id}) — reconcile before any retry."
             )
             return key, None, False, False, None
+
+        # WF04: draft create plus readback compare, then one completion
+        # certificate.  A missing readback or validator result never becomes a
+        # success claim, and the private fallback is NEVER used after the write.
+        certificate = self._public_certificate(str(wf_id), templates)
+        self.stats.setdefault("certificate", {})[key] = certificate
+        if not certificate["certified"]:
+            self.stats["errors"].append(
+                f"{wf_name}: public V4 create landed as {wf_id} but no completion "
+                "certificate was issued ("
+                + ", ".join(certificate["reasons"])
+                + ") — the private fallback was NOT used.")
         return key, str(wf_id), True, False, None
 
     def build(
@@ -1953,6 +2534,14 @@ class CampaignBuilder:
             self.stats["errors"].extend(refusal[5] for refusal in identity_refusals)
             self.stats["end_time"] = time.time()
             return self.stats
+
+        # WF04: the capability for browser-required work is SELECTED before any
+        # submit, so the disclosed route exists before the first write -- never
+        # chosen after an ambiguous one.
+        has_browser_rows = any(
+            isinstance(value, Mapping) and value.get("browser_steps")
+            for value in campaign.values())
+        browser_route = self.route_for("browser_step") if has_browser_rows else None
 
         # Idempotency pre-check — fetch the location's existing workflow/folder
         # listing ONCE per build() call (not once per workflow, to avoid N extra
@@ -2184,6 +2773,11 @@ class CampaignBuilder:
                         "branch targets - refusing to build a graph whose conditions cannot "
                         "be wired. Author next/branches on each branch node in the plan.")
 
+            # WF04: resolve every assetReference BEFORE submitting.  An
+            # unresolved reference is a finding, never a guessed id.
+            templates, asset_findings = resolve_asset_references(
+                templates, self.asset_resolver)
+
             # A16 layer-7: the step-save backend validates action ids as
             # UUIDs; plan-supplied slug ids are rejected ("Invalid uuid").
             # Mint deterministic UUIDv5 ids for non-UUID action ids BEFORE
@@ -2200,6 +2794,18 @@ class CampaignBuilder:
                         f"{wf_name}: compiled graph hash {expected_hash} does not "
                         f"match the declared expected hash {declared_hash} — "
                         "refusing to build a plan that drifted after compile.")
+
+            # WF04 compile gate: an unprovable plan is refused before the first
+            # transport call, not downgraded into a note after a 200.
+            gate = compile_gate_findings(
+                {**wf_def, "templates": templates,
+                 "asset_reference_findings": asset_findings},
+                public_route=False)
+            if gate:
+                return (key, None, False, False, None,
+                        f"{wf_name}: compile refused ("
+                        + ", ".join(str(item.get("code")) for item in gate)
+                        + "): the plan cannot be compiled without guessing.")
 
             # Reconcile-before-retry: a journalled remote id is authoritative.
             # Read it back; adopt only when it matches, never retry a create.
@@ -2236,10 +2842,18 @@ class CampaignBuilder:
             # body (no contact_tag trigger, no explicit folder id).
             route = self.route_for("create")
             if route.public:
-                blocker = self._v4_create_blocker(
-                    wf_def, folder_name=folder_name,
-                    requested_folder_id=requested_folder_id,
-                )
+                public_gate = compile_gate_findings(
+                    {**wf_def, "templates": templates},
+                    public_route=True)
+                blocker = (
+                    "public compile refused ("
+                    + ", ".join(str(item.get("code")) for item in public_gate)
+                    + "); using the named Skill 44 private fallback"
+                    if public_gate else
+                    self._v4_create_blocker(
+                        wf_def, folder_name=folder_name,
+                        requested_folder_id=requested_folder_id,
+                    ))
                 if blocker:
                     route = WorkflowRoute(
                         "create", route.operation_id, WORKFLOW_ROUTE_PRIVATE,
@@ -2248,7 +2862,7 @@ class CampaignBuilder:
                     self.stats.setdefault("route", {})["create"] = route.as_evidence()
                 else:
                     public_result = self._create_workflow_public(
-                        key, wf_name, templates, folder_name
+                        key, wf_def, templates, folder_name
                     )
                     return tuple(public_result) + (None,)
 
@@ -2427,7 +3041,9 @@ class CampaignBuilder:
             # "saved" until the provider returns the graph we expected.
             readback_ok = None
             requires = wf_def.get("requires") or []
-            if steps_ok and (wf_def.get("unit_key") or "readback_verified" in requires):
+            if steps_ok and (wf_def.get("unit_key")
+                             or wf_def.get("require_certificate")
+                             or "readback_verified" in requires):
                 ok, observed, read_templates = verify_saved_graph(
                     self.client, self.loc, str(wf_id), expected_hash)
                 readback_ok = bool(ok)
@@ -2465,6 +3081,34 @@ class CampaignBuilder:
                                    remote_id=str(wf_id), phase="readback",
                                    status="ok", expected_hash=expected_hash,
                                    readback_hash=observed)
+
+                # WF04 completion certificate: local graph rules, the vendor
+                # validator's own verdict, the readback compare and the
+                # note/no-op downgrade check, kept with the run receipts.
+                if read_templates is None:
+                    readback_state = {"state": "unreadable"}
+                elif readback_ok:
+                    readback_state = {"state": "matched"}
+                else:
+                    readback_state = {"state": "mismatch",
+                                      "expected_hash": expected_hash,
+                                      "readback_hash": observed}
+                certificate = completion_certificate(
+                    local_graph=local_graph_verdict(templates),
+                    validator=validator_verdict(put_result),
+                    readback=readback_state,
+                    downgrades=noop_downgrades(
+                        templates, read_templates or [],
+                        (put_result or {}).get("warnings")
+                        if isinstance(put_result, Mapping) else None),
+                    id_map=logical_to_provider_map(
+                        templates, read_templates or []).get("map") or {},
+                )
+                self.stats.setdefault("certificate", {})[key] = certificate
+                if wf_def.get("require_certificate") and not certificate["certified"]:
+                    self.stats["errors"].append(
+                        f"{wf_name}: completion certificate not issued ("
+                        + ", ".join(certificate["reasons"]) + ")")
 
             # F05: the requested Allow Reentry setting is APPLIED on the
             # settings object (create_body/PUT above) and READ BACK here. An
@@ -2587,9 +3231,12 @@ class CampaignBuilder:
                     browser_rows.append(dict(row, workflow=wf_def.get("name"),
                                              workflow_key=key))
         if browser_rows:
-            route = self.route_for("browser_step")
+            route = browser_route or self.route_for("browser_step")
             observed = None
-            if browser_executor is not None:
+            ambiguous = bool(self.stats.get("needs_reconcile"))
+            if ambiguous:
+                observed = None
+            elif browser_executor is not None:
                 try:
                     observed = browser_executor(browser_rows, self.loc)
                 except Exception as exc:  # noqa: BLE001 - a failed capability is recorded
@@ -2604,6 +3251,9 @@ class CampaignBuilder:
             }
             if still_pending:
                 reason = (
+                    "a write outcome is ambiguous — no fallback runs until the "
+                    "write is reconciled (never after an ambiguous write)"
+                    if ambiguous else
                     "no selected capability executor is wired for this run"
                     if observed is None else
                     "the selected capability did not report these rows done")
