@@ -1,3 +1,7 @@
+## [1.3.22] - 2026-11-08 - batch merge: W26 fold content landed (F14 governed runner, F16 intake provenance); version stamped above main for G3
+
+Version stamped above `main` (1.3.21) so G3 sees the bump for the folded content in the same batch. No change beyond the folded content itself.
+
 # CHANGELOG
 
 ## 1.3.21 - 2026-11-09 - F16 S2 policy work: one style vocabulary, brand hash binding, creative-direction precedence (BLD-004)

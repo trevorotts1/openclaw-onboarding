@@ -120,11 +120,16 @@ class NoMutation(unittest.TestCase):
                 j = json.loads(p.stdout)
                 self.assertEqual(j["adapter"], "74-kie-live-adapter")
             self.assertTrue(any(os.path.getsize(os.path.join(save, f)) > 0 for f in os.listdir(save)))
+            # /cache/ and the durable /data/kie-jobs/ tree are the adapter's OWN state (F21
+            # item 11 moved receipts there); everything else in .openclaw must be untouched.
+            def _own_state(tree):
+                return {x: y for x, y in tree.items()
+                        if "/cache/" not in x and "/data/kie-jobs/" not in x}
             for k in sentinels:
                 self.assertEqual(digest_tree(os.path.join(home, k.split("/")[0])) if k.split("/")[0] != ".openclaw"
-                                 else {x: y for x, y in digest_tree(os.path.join(home, ".openclaw")).items() if "/cache/" not in x},
+                                 else _own_state(digest_tree(os.path.join(home, ".openclaw"))),
                                  before[k] if k.split("/")[0] != ".openclaw"
-                                 else {x: y for x, y in before[k].items() if "/cache/" not in x}, k)
+                                 else _own_state(before[k]), k)
             self.assertEqual(env["ANTHROPIC_API_KEY"], "sentinel-anthropic")
             self.assertTrue(all(ok for _, _, ok in SEEN), "every request: Bearer only, no apikey header")
             blob = "".join(outs)
@@ -132,7 +137,13 @@ class NoMutation(unittest.TestCase):
                 with open(f, "rb") as fh:
                     blob += fh.read().decode("latin-1")
             self.assertNotIn(KEY, blob)
-            self.assertTrue(os.path.isdir(os.path.join(home, ".openclaw", "cache", "kie-live-adapter", "receipts")))
+            # F21 item 11: receipts are EVIDENCE, so they now live under the resolved durable
+            # root (<root>/data/kie-jobs/<scope>/receipts), not under the prunable cache. The
+            # directory the adapter actually chose is read back from `health`, never assumed.
+            health = json.loads(subprocess.run([sys.executable, SCRIPT, "health", "--json"], env=env,
+                                               capture_output=True, text=True, timeout=60).stdout)
+            self.assertTrue(os.path.isdir(health["data"]["receipts_dir"]), health["data"]["receipts_dir"])
+            self.assertEqual(health["data"]["data_root"], os.path.join(home, ".openclaw"))
 
 
 if __name__ == "__main__":

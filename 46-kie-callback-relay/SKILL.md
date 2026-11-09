@@ -8,9 +8,9 @@ description: >
   crash-safe on-disk task registry. Applies to large decks (above configurable
   threshold); smaller decks use efficient batch polling per Candidate C of the
   design.
-version: v2.1.1
+version: v2.1.2
 metadata:
-  version: "v2.1.0"
+  version: "v2.1.1"
   skill_number: 46
   requires_skills: [07]
   priority: HIGH
@@ -73,15 +73,44 @@ For production batches (decks, many images) the submit step goes through Skill 7
 
 1. `submitter.prepareCallback({deckId, slideId, targetPath, model})` mints the per-task
    secret and the signed `callBackUrl` (`/cb?c=&j=&s=&h=`), and writes the registry row.
+   **It REUSES the existing job identity (F21 item 10):** called again for the same client +
+   deck + slide + model it returns the same `submitId` and the same URL, with
+   `state` `accepted` (a provider task id is on record) or `uncertain` (prepared, unresolved)
+   and `resubmit: false`. Only a first preparation returns `state: 'new'` with
+   `resubmit: true`. A `taskId: null` row is an UNCERTAIN submission -- not proof that
+   resubmitting is free or safe.
 2. `kie_live_adapter.py submit --request req.json --callback-url <that URL> --mode active --json`
-   (after the policy skill's `validate` and `preflight`). Skill 74 never picks the model.
+   (after the policy skill's `validate` and `preflight`). Skill 74 never picks the model and
+   echoes the exact URL back as `data.callback_url`, so its `j=` is the job identity.
 3. `submitter.adoptAdapterTask(<Skill 74 result JSON>)` accepts Skill 74's normalized task
    metadata (`task_id`, `model_id`, `callback_url`), records the taskId, and waits through the
-   same KV poller, download and "done means a file on disk" rule as `submitDeck`. A result whose
-   `callback_url` was not minted on this box, or a skipped (shadow) submit, never waits.
+   same KV poller, download and "done means a file on disk" rule as `submitDeck`. The identity
+   must be IDENTICAL across the callback: a `task_id` that differs from one already recorded
+   for this `submitId` is refused (never rebound), a `task_id`-less answer for a recorded job
+   reports `identity-missing`, a result whose `callback_url` was not minted on this box is
+   refused, and a skipped (shadow) submit never waits.
 
-`submitDeck` (direct createTask) remains and is unchanged. Full contract: SUBMITTER-SOP.md,
-"Production route via Skill 74".
+**One paid transport per mode (F21 item 10).** Callback mode (a deck above the threshold)
+submits through the Skill 74 route above; `submitDeck`'s own createTask POST is the LEGACY
+direct-submit and refuses callback mode unless the caller passes
+`allowLegacyDirectSubmit: true` (or `KIE_ALLOW_LEGACY_DIRECT_CALLBACK=1`) to replay an old deck
+deliberately. A deck at or below the threshold keeps its documented exemption and needs no
+callback deployment at all. Full contract: SUBMITTER-SOP.md, "Production route via Skill 74".
+
+## Durable State (F21 item 11)
+
+Paid-work evidence -- registry, taskId index, done markers, receipts -- is NOT written under a
+working folder or a skill tree. One resolver owns the location,
+`shared-utils/durable-data-root.sh`, and Skill 74 executes the same file:
+
+- root: `$OPENCLAW_DATA_ROOT`, else `$OPENCLAW_ROOT`/`$OC_ROOT`, else `/data/.openclaw`, else
+  `$HOME/.openclaw`;
+- state: `<root>/data/kie-jobs/<clientSlug>/{registry,index,done,receipts}`.
+
+`data-root.js` exposes `resolveDataRoot({scope, dataRoot})`; the submitter resolves it ONCE and
+hands the same layout to the KV poller, so two modules cannot disagree about where one job
+lives. A root that cannot be resolved is REFUSED by name -- a guessed path is how evidence ends
+up somewhere an update wipes.
 
 ## Files in This Folder
 
@@ -91,6 +120,7 @@ For production batches (decks, many images) the submit step goes through Skill 7
 - `worker/package.json` -- devDependencies (wrangler)
 - `box-kv-poller.js` -- box-side KV polling module
 - `kie-slide-submitter.js` -- slide submitter (webhook-primary, poll-fallback)
+- `data-root.js` -- the box-side caller of `shared-utils/durable-data-root.sh` (F21 item 11)
 - `SUBMITTER-SOP.md` -- operator SOP for the slide submitter (hardened contract)
 - `DEPLOY.md` -- step-by-step deploy guide for the operator
 - `test/security.test.mjs` -- stubbed-fetch regression suite for the 3 security components

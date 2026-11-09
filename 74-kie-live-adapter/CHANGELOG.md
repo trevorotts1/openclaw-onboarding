@@ -1,5 +1,19 @@
 # Changelog - Skill 74 KIE Live Adapter
 
+## [1.1.12] - 2026-11-08 - G3 bookkeeping: markers rolled 1.1.11 -> 1.1.12
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 1.1.11 -> 1.1.12 alongside the post-main-merge bookkeeping (no behavior change; the F21 durable-data-root work is the 1.1.11 entry below).
+
+## [1.1.11] - 2026-11-08 - F21 item 11: one durable data root
+
+- The adapter built its cache and receipts from `os.path.join(home, ".openclaw", ...)` while a separate `DATA_OC_ROOT` constant named `/data/.openclaw`. Two computations, one run: on a Docker/VPS box HOME is the image's temporary layer, so paid-job receipts landed somewhere a recreate wipes, and the mode file was looked for in a different root than the state was written to.
+- Both paths now come from ONE resolver, `shared-utils/durable-data-root.sh` — the same file Skill 46's `data-root.js` executes. New `resolve_durable_layout(env, scope)` runs it once and returns `{root, scope, state_dir, registry, index, done, receipts, cache}`. Root precedence: `$OPENCLAW_DATA_ROOT`, else `$OPENCLAW_ROOT`/`$OC_ROOT`, else `/data/.openclaw`, else `$HOME/.openclaw`; state is `<root>/data/kie-jobs/kie-live-adapter`, cache is `<root>/cache/kie-live-adapter`.
+- Receipts are evidence and now live under the durable root, not the prunable cache. Existing receipts at the old `~/.openclaw/cache/kie-live-adapter/receipts` path are NOT moved and NOT read twice: the adapter reports the condition once as `data_migration_note` (preserving migration is F24's).
+- Unresolvable root: `data_root` is `None`, `data_root_warning` names the reason, and receipts fall back to the previous location — a guess is never presented as the root. `health` now reports `data_root`, `receipts_dir`, `data_root_resolver`, `data_root_warning` and `data_migration_note` (paths only, never a secret).
+- `DATA_OC_ROOT` is gone; the mode-file lookup uses the resolved root, so no constant sits beside the resolver.
+- New `tests/test_durable_data_root.py` (7 tests, hermetic): layout comes from the resolver, scope traversal refused, receipts written under the durable root, `health` reports both paths, unresolvable root named not guessed, legacy receipts reported and untouched, and the removed constant stays removed. The existing suite (126 tests, including the mode-lookup and no-chat-mutation proves) stays green.
+- `07-kie-setup/tests/test_official_docs_port.py`'s `SKILL_VERSIONS` pin moved 1.1.9 -> 1.1.11 (it was already stale at 1.1.9 against the shipped 1.1.10), so the docs-port gate stops pinning a superseded version. The `47-movie-producer` embedded client remains STALE exactly as it was on the base branch: that re-embed is not part of this change.
+
 ## [1.1.9] - 2026-10-20 - sync createTask models are dispatchable; URL-less save persists the payload
 
 - `_dispatch` no longer reports a SYNCHRONOUS createTask answer as `bad_response`. `ai-music-api/timeStamped-lyrics` returns its finished payload in `data` (the aligned words under `data.data`, `startS`/`endS`) with no `taskId`; the adapter called that "createTask returned no taskId" and those models could never be dispatched. Such an answer now returns `state=success` with `data={"response": data, "sync": true}` and a warning. Proven live on Laya Kelley's box (her takes and word timings came back after the same patch; `~/scratch/dsf-stall-fix/laya/skill74/box-local-74.diff`).

@@ -1,0 +1,350 @@
+{
+  "unit": "BLD-015",
+  "question": "Does the GoHighLevel workflow settings API expose an enrolment field at all?",
+  "answer": "YES",
+  "captured_at": "2026-11-08T16:34:22Z",
+  "capture_method": {
+    "authority": "operator account only (Trevor's own GoHighLevel sub-account)",
+    "transport": "backend.leadconnectorhq.com GET /workflow/{location}/{id}",
+    "api_version_header": "2021-07-28",
+    "auth": "Firebase refresh-token exchange held in the operator env store",
+    "requests": "GET only \u2014 no create, no update, no publish, no client account",
+    "workflows_read": 26,
+    "identifiers": "every location, workflow, contact and account identifier was replaced with a sha256 prefix before this file was written; no token or account number is stored here"
+  },
+  "enrolment_field": {
+    "native_field": "allowMultiple",
+    "location_in_payload": "top-level boolean on the workflow document",
+    "observed": true,
+    "observed_values": [
+      "false",
+      "true"
+    ],
+    "why_this_is_the_enrolment_control": [
+      "it is the only enrol-shaped boolean the provider returns",
+      "both true and false were observed across the 26 workflows, so it is a real settable control, not a constant",
+      "no field named enrollment, enrolment, allowEnrollment, reEntry, allowReentry or allowReentryAfterCompletion exists on any workflow"
+    ],
+    "plan_mapping": {
+      "single": false,
+      "successive": true,
+      "rationale": "a successive purchase (e.g. an upsell line after the main order) arrives while the buyer is still active in the main-order workflow; the native multi-enrolment control is what lets that workflow take the contact again"
+    },
+    "not_claimed": [
+      "a separate 're-entry after completion' control was NOT observed: the provider returns no such field, so nothing is asserted about it",
+      "applicability is proven per build by the post-save readback, not by this capture"
+    ]
+  },
+  "payload_shape": {
+    "nested_settings_object": {
+      "present_on_any_workflow": 0,
+      "workflows_read": 26,
+      "statement": "the workflow document carries NO nested `settings` object; the settings are top-level fields"
+    },
+    "setting_fields_observed": {
+      "allowMultiple": [
+        "false",
+        "true"
+      ],
+      "allowMultipleOpportunity": [
+        "false",
+        "true"
+      ],
+      "autoMarkAsRead": [
+        "false"
+      ],
+      "eventStartDate": [
+        "null"
+      ],
+      "removeContactFromLastStep": [
+        "true"
+      ],
+      "senderAddress": [
+        "\"<dict:2>\"",
+        "null"
+      ],
+      "stopOnResponse": [
+        "false"
+      ],
+      "timezone": [
+        "\"<str:7>\""
+      ],
+      "window": [
+        "\"<dict:4>\"",
+        "null"
+      ]
+    },
+    "candidate_fields_absent_everywhere": [
+      "allow enrollment",
+      "allowEnrollment",
+      "allowMultipleEnrollments",
+      "allowReentry",
+      "allowReentryAfterCompletion",
+      "allow_reentry",
+      "enrollment",
+      "enrolment",
+      "multipleEnrollments",
+      "reEntry",
+      "reentry",
+      "removeFromLastStep",
+      "stopOnResponseChannel"
+    ],
+    "top_level_field_frequency": {
+      "__v": 26,
+      "_id": 26,
+      "allowMultiple": 26,
+      "allowMultipleOpportunity": 4,
+      "autoMarkAsRead": 26,
+      "companyAge": 13,
+      "companyId": 13,
+      "createdAt": 26,
+      "creationSource": 26,
+      "dataVersion": 26,
+      "deleted": 26,
+      "eventStartDate": 25,
+      "filePath": 26,
+      "fileUrl": 26,
+      "id": 26,
+      "isTriggerBucketMigrated": 1,
+      "locationId": 26,
+      "meta": 25,
+      "name": 26,
+      "originId": 13,
+      "originType": 4,
+      "parentId": 24,
+      "permission": 26,
+      "permissionMeta": 26,
+      "removeContactFromLastStep": 26,
+      "senderAddress": 26,
+      "status": 25,
+      "stopOnResponse": 26,
+      "timezone": 26,
+      "triggersFilePath": 19,
+      "type": 26,
+      "updatedAt": 26,
+      "updatedBy": 23,
+      "version": 26,
+      "window": 25,
+      "workflowData": 26,
+      "workflowNote": 4
+    },
+    "sample_documents": [
+      {
+        "workflow_ref": "redacted:54d24c1e479a",
+        "top_level_keys": [
+          "__v",
+          "_id",
+          "allowMultiple",
+          "allowMultipleOpportunity",
+          "autoMarkAsRead",
+          "createdAt",
+          "creationSource",
+          "dataVersion",
+          "deleted",
+          "eventStartDate",
+          "filePath",
+          "fileUrl",
+          "id",
+          "locationId",
+          "meta",
+          "name",
+          "originId",
+          "originType",
+          "permission",
+          "permissionMeta",
+          "removeContactFromLastStep",
+          "senderAddress",
+          "status",
+          "stopOnResponse",
+          "timezone",
+          "type",
+          "updatedAt",
+          "updatedBy",
+          "version",
+          "window",
+          "workflowData",
+          "workflowNote"
+        ],
+        "workflowData_keys": [
+          "templates"
+        ],
+        "nested_settings_object_present": false
+      },
+      {
+        "workflow_ref": "redacted:f0c302e2e621",
+        "top_level_keys": [
+          "__v",
+          "_id",
+          "allowMultiple",
+          "autoMarkAsRead",
+          "companyAge",
+          "companyId",
+          "createdAt",
+          "creationSource",
+          "dataVersion",
+          "deleted",
+          "eventStartDate",
+          "filePath",
+          "fileUrl",
+          "id",
+          "locationId",
+          "meta",
+          "name",
+          "parentId",
+          "permission",
+          "permissionMeta",
+          "removeContactFromLastStep",
+          "senderAddress",
+          "status",
+          "stopOnResponse",
+          "timezone",
+          "triggersFilePath",
+          "type",
+          "updatedAt",
+          "updatedBy",
+          "version",
+          "window",
+          "workflowData"
+        ],
+        "workflowData_keys": [
+          "templates"
+        ],
+        "nested_settings_object_present": false
+      },
+      {
+        "workflow_ref": "redacted:7762542b10d7",
+        "top_level_keys": [
+          "__v",
+          "_id",
+          "allowMultiple",
+          "autoMarkAsRead",
+          "companyAge",
+          "companyId",
+          "createdAt",
+          "creationSource",
+          "dataVersion",
+          "deleted",
+          "eventStartDate",
+          "filePath",
+          "fileUrl",
+          "id",
+          "locationId",
+          "meta",
+          "name",
+          "parentId",
+          "permission",
+          "permissionMeta",
+          "removeContactFromLastStep",
+          "senderAddress",
+          "status",
+          "stopOnResponse",
+          "timezone",
+          "type",
+          "updatedAt",
+          "version",
+          "window",
+          "workflowData"
+        ],
+        "workflowData_keys": [
+          "templates"
+        ],
+        "nested_settings_object_present": false
+      },
+      {
+        "workflow_ref": "redacted:86989b1e46df",
+        "top_level_keys": [
+          "__v",
+          "_id",
+          "allowMultiple",
+          "autoMarkAsRead",
+          "companyAge",
+          "companyId",
+          "createdAt",
+          "creationSource",
+          "dataVersion",
+          "deleted",
+          "eventStartDate",
+          "filePath",
+          "fileUrl",
+          "id",
+          "locationId",
+          "meta",
+          "name",
+          "parentId",
+          "permission",
+          "permissionMeta",
+          "removeContactFromLastStep",
+          "senderAddress",
+          "status",
+          "stopOnResponse",
+          "timezone",
+          "type",
+          "updatedAt",
+          "updatedBy",
+          "version",
+          "window",
+          "workflowData"
+        ],
+        "workflowData_keys": [
+          "templates"
+        ],
+        "nested_settings_object_present": false
+      },
+      {
+        "workflow_ref": "redacted:9abb1719be20",
+        "top_level_keys": [
+          "__v",
+          "_id",
+          "allowMultiple",
+          "autoMarkAsRead",
+          "createdAt",
+          "creationSource",
+          "dataVersion",
+          "deleted",
+          "eventStartDate",
+          "filePath",
+          "fileUrl",
+          "id",
+          "locationId",
+          "meta",
+          "name",
+          "originId",
+          "parentId",
+          "permission",
+          "permissionMeta",
+          "removeContactFromLastStep",
+          "senderAddress",
+          "status",
+          "stopOnResponse",
+          "timezone",
+          "triggersFilePath",
+          "type",
+          "updatedAt",
+          "updatedBy",
+          "version",
+          "window",
+          "workflowData"
+        ],
+        "workflowData_keys": [
+          "templates"
+        ],
+        "nested_settings_object_present": false
+      }
+    ]
+  },
+  "api_version": {
+    "internal_backend_header": "2021-07-28",
+    "applies_to": "GET /workflow/{locationId}/{workflowId} on backend.leadconnectorhq.com (Skill 44 private rail)",
+    "official_public_api": "the Marketplace API exposes only GET /workflows/ \u2014 no workflow update/settings operation, so the private rail above is the only API route that can apply a setting"
+  },
+  "implementation_decision": {
+    "applied": "allowMultiple is written in the create body and the step-save PUT from automations[].settings.enrollment",
+    "read_back": "the saved workflow document is re-read and the top-level allowMultiple value is compared with the requested value",
+    "applied_flag": "set from the readback only; an absent value stays unknown and applied=false, and the build reports the setting as NOT proven",
+    "never": "no `applied: true` is hardcoded anywhere in this path"
+  },
+  "sources": {
+    "live_capture": "lanes/BLD-015-lane/f05-live-values.redacted.json",
+    "code": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/workflow_builder.py"
+  }
+}
