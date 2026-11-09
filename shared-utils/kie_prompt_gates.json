@@ -1,6 +1,6 @@
 {
   "_comment": "The declared list of every gate that enforces KIE prompt length. F18 (2026-11-07): the band, the counter and the freeze live in shared-utils/prompt_policy.py, and every gate calls it (directly or through shared-utils/kie_prompt_enforcer.py). Read by tests/unit/kie-prompt-enforcer-and-gates.test.py, which (a) fails when a declared gate module holds a numeric character band (a len(...) compared with a literal, a band-named integer constant, a min/max/floor/ceiling key with a number) outside the allowed_numeric list, (b) fails when a gate imports the enforcer but never calls it, and (c) walks every skill's scripts and fails when an undeclared module compares a prompt length with a literal or defines a prompt-length constant. Add a new gate here when it is written.",
-  "rule": "Strict production band, policy 2.0.0 (F18 2026-11-07): 95-100 percent of the verified maximum passes; below 95 percent fails; below 80 percent is a hard failure; above the maximum fails; an unknown maximum refuses a pass. -> shared-utils/prompt_policy.py",
+  "rule": "Production band, policy 2.0.0 (F18 2026-11-07; restored 80 percent band): 95-100 percent of the verified maximum is the target and passes; 80 to below 95 percent passes with a warn-and-expand message; below 80 percent is a hard failure; above the maximum fails; an unknown maximum refuses a pass. -> shared-utils/prompt_policy.py",
   "enforcer": "shared-utils/kie_prompt_enforcer.py",
   "policy": "shared-utils/prompt_policy.py",
   "policy_calls": [
