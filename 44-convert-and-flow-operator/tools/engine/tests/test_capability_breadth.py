@@ -108,7 +108,7 @@ PRE_GATE_RULES = frozenset(
 #: loudly is the point.  172 = the 140-row freeze plus the 2026-11-08 WF00
 #: additions (5 workflow rows, 3 Community rows, 1 agency row, 10 course rows,
 #: 13 monitoring/native-AI rows).
-EXPECTED_OPERATION_COUNT = 172
+EXPECTED_OPERATION_COUNT = 206
 
 _COMPLETE = dict(
     contract_verified=True,
@@ -141,7 +141,7 @@ def _path_params(template: str, tenant: str) -> dict[str, str]:
     }
 
 
-def _query_for(row) -> dict[str, str]:
+def _query_for(row, tenant: str = "") -> dict[str, str]:
     """Satisfy a row's declared required query so the gate is actually reached.
 
     A missing required query is a typed contract violation *before* the gate
@@ -151,7 +151,11 @@ def _query_for(row) -> dict[str, str]:
 
     enums = dict(getattr(row, "query_enums", ()) or ())
     return {
-        str(name): str(enums[name][0]) if name in enums else "synthetic_value"
+        str(name): (
+            str(enums[name][0]) if name in enums
+            else tenant if name == "locationId" and tenant
+            else "synthetic_value"
+        )
         for name in tuple(getattr(row, "required_query", ()) or ())
     }
 
@@ -185,7 +189,7 @@ def _call_kwargs(row, tenant: str) -> dict:
         "operation_id": row.operation_id,
         "tenant": fake_tenant(tenant),
         "path_params": _path_params(row.path_template, tenant),
-        "query": _query_for(row),
+        "query": _query_for(row, tenant),
     }
     if row.write:
         kwargs["idempotency_key"] = issue_key(row.operation_id)

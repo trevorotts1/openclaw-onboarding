@@ -696,7 +696,10 @@ class FrozenRegistryConformanceTest(unittest.TestCase):
             # refusal is covered by tests/test_public_media_required_query.py.
             enums = dict(frozen.query_enums)
             query = {
-                name: (enums.get(name) or ("synthetic_value",))[0]
+                name: (
+                    SYNTHETIC_TENANT if name == "locationId"
+                    else (enums.get(name) or ("synthetic_value",))[0]
+                )
                 for name in tuple(frozen.required_query)
             }
             transport.responses = [resp(200)]

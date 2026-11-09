@@ -1,6 +1,6 @@
 {
   "bundle_version": "1.0.0",
-  "checkpoint": "WF00-CP01",
+  "checkpoint": "WF00-CP03",
   "checksum_algorithm": "sha256",
   "contracts": [
     {
@@ -215,6 +215,15 @@
               "undocumented"
             ]
           },
+          "documented_query": {
+            "description": "Query parameter names the operation documents, required or optional.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
           "effect": {
             "description": "Read/write effect of the operation itself, independent of method. POST /workflows/search is a read; definition validation persists nothing but consumes write quota.",
             "enum": [
@@ -226,6 +235,13 @@
           "identity_binding": {
             "description": "The frozen tenant_binding literal, e.g. path.locationId, query.locationId, body.locationId, implicit-pit, token-id, connection scope, n/a, unknown.",
             "type": "string"
+          },
+          "identity_detail": {
+            "description": "Identity detail not carried by tenant_binding (for example an agency companyId the typed adapter writes itself). Never a credential value.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "identity_placement": {
             "description": "Where the tenant/location identity rides. Never inferred from the verb.",
@@ -284,6 +300,28 @@
           "path_template": {
             "minLength": 1,
             "type": "string"
+          },
+          "query_constraints": {
+            "description": "Named bounds/grammar for documented query parameters, transcribed only where the source states them.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "constraint": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "constraint"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "query_enums": {
             "items": {
@@ -404,6 +442,13 @@
             },
             "type": "array",
             "uniqueItems": true
+          },
+          "version_state": {
+            "description": "Whether the row's Version literal is settled. unverified records a documentation label or no literal without claiming a live header contract.",
+            "enum": [
+              "frozen",
+              "unverified"
+            ]
           }
         },
         "required": [
@@ -433,10 +478,11 @@
           "token_class must agree with token_class_derived(auth_kinds).",
           "effect=write requires approval_class != none for a destructive route and requires the registry write flag.",
           "scopes_resolved=false is required whenever scopes is empty.",
+          "version_state=unverified may carry version=null only when version is in unresolved_fields and a blocker is set; a documented row otherwise requires a literal version.",
           "implementation must agree with route_class through TRANSPORT_BY_ROUTE."
         ]
       },
-      "sha256": "a41a452c0e2c0d24a3d33c44817a10b614e572ebb3f898adea296b1ba314ec38",
+      "sha256": "e55b1f1db49d0a88ec97c65f593b526a76d004f028299193f2caba376aa34046",
       "version": "1.0.0"
     },
     {
@@ -2507,6 +2553,10 @@
       "projects_space_id",
       "projects_list_id",
       "projects_task_id"
+    ],
+    "version_states": [
+      "frozen",
+      "unverified"
     ]
   }
 }
