@@ -499,5 +499,77 @@ class GateIntegrationTests(unittest.TestCase):
         self.assertEqual(capability.activation, ACTIVATION_UNVERIFIED)
 
 
+class SharedQuotaTests(unittest.TestCase):
+    """IG-ROUTE-05: bounded backoff on a SHARED per-location budget."""
+
+    def test_quota_exhaustion_refuses_before_transport(self) -> None:
+        from cli_anything.gohighlevel.public.transport import LocationQuota
+
+        quota = LocationQuota(location_id=SYNTHETIC_TENANT, limit=1, window_s=60.0)
+        transport = FakeTransport()
+        capability = Capability(
+            operation_id="contacts.list",
+            contract_verified=True,
+            adapter_built=True,
+            offline_tests_passed=True,
+            read_verified=True,
+            enabled=True,
+            tenant=SYNTHETIC_TENANT,
+            activation=ACTIVATION_VERIFIED,
+        )
+        adapter = PublicGhlAdapter(
+            auth=fake_auth(),
+            operations=registry(
+                Row("contacts.list", method="GET", path_template="/contacts/")
+            ),
+            transport=transport,
+            capability=CapabilityGate(
+                {"contacts.list": capability}, tenant=SYNTHETIC_TENANT
+            ),
+            quota=quota,
+            monotonic=lambda: 100.0,
+        )
+        first = adapter.call(operation_id="contacts.list", tenant=fake_tenant())
+        self.assertEqual(first.status, Status.ok)
+        # The first call consumed the only slot; the SECOND is refused by the
+        # shared budget itself, before any transport call.
+        second = adapter.call(operation_id="contacts.list", tenant=fake_tenant())
+        self.assertEqual(second.status, Status.rate_limited)
+        self.assertEqual(second.error["rule"], "location_quota_exhausted")
+        self.assertFalse(second.error["rotate_transport"])
+        self.assertTrue(second.evidence["refused_before_transport"])
+        self.assertEqual(transport.call_count, 1)
+
+    def test_retry_after_is_honoured_and_bounded(self) -> None:
+        from cli_anything.gohighlevel.public.transport import LocationQuota
+
+        quota = LocationQuota(location_id=SYNTHETIC_TENANT, limit=5, window_s=60.0,
+                              max_backoff_s=120.0)
+        self.assertEqual(quota.record_retry_after(30, now=0.0), 30.0)
+        self.assertEqual(quota.blocked_for(10.0), 20.0)
+        # A huge reset is clamped: the block is bounded, never unbounded.
+        self.assertEqual(quota.record_retry_after(9999, now=0.0), 120.0)
+
+    def test_rate_limited_selects_no_route_and_no_rotation(self) -> None:
+        failure = classify_failure(http_status=429, body=b"{}")
+        self.assertEqual(failure.kind, "rate_limited")
+        record = CapabilityRecordV2(
+            location_id=SYNTHETIC_TENANT,
+            operation_id="contacts.list",
+            contract_revision="rev1",
+            documented=True,
+            adapter_built=True,
+            offline_tests_passed=True,
+            read_probe={"state": "passed", "receipt_id": "r"},
+            enabled=True,
+        )
+        resolution = resolve_capability(
+            record=record, tenant=SYNTHETIC_TENANT, operation_id="contacts.list"
+        )
+        decision = decide_route(resolution=resolution, failure=failure)
+        self.assertEqual(decision.route, "none")
+        self.assertFalse(decision.must_reconcile)
+
+
 if __name__ == "__main__":
     unittest.main()
