@@ -32,8 +32,16 @@ that the widget renders. Screenshot desktop + mobile; the 50%-width field pairs 
 Tag creation happened at P2; **attachment** happens here. Because the GHL form builder has no native
 add-tag control, Skill 44 builds a **"Form Submitted → Add Contact Tag `{{contact.zhc_…}}`"** workflow,
 filtered to THIS form, using the form id parsed from the build. It runs under Skill 44's PLAN-MODE +
-WF-1..21 + rubric >= 8.5. No such workflow (and no documented hidden-Tags-field alternative) ⇒
+WF-1..28 + rubric >= 8.5. No such workflow (and no documented hidden-Tags-field alternative) ⇒
 AF-FORM-TAG-WORKFLOW.
+
+**The functional contract is rail-independent.** Whether the form was authored in the managed UI
+(`forms.authoring` / `forms.update`, `skill06_authoring`), by a supported public row where one is
+actually enabled, or by an authorized private gap fill, P4 proves the SAME intake contract from
+SOP-FORM-01: one real submission produces the recorded `on_submit` outcome (contact upsert, the exact
+`zhc_` tag, notification/redirect, workflow enrollment) and honours the recorded consent/data
+requirements. A build that passes on one rail and not the other is not certified; the route used is
+recorded on the certificate.
 
 ## 3. THE INDEPENDENT QC GATE
 
@@ -58,7 +66,9 @@ auto-publishes. Reporting is operator-verbose, never client-facing noise.
 ## 5. DEFINITION OF DONE
 
 `render_check` 200 + the marker in the RENDERED DOM, the `Form Submitted → Add Contact Tag` workflow
-built and confirmed, every custom field/tag re-GET 200 under its `zhc_` key, the form under its `ZHC `
-container name, `qc-built-form.sh` PASS (QC >= 8.5), a preview URL delivered, the downloads bundle
-labeled with the `<client>__<form>__<type>__vNN` grammar (`type ∈ {brief, fields, deps, embed,
-preview}`), and human approval before any publish. Anything short of this is NOT done.
+built and confirmed, one real submission matching the recorded `on_submit` outcome and consent
+contract, every custom field/tag re-GET 200 under its `zhc_` key, the routes used recorded on the
+certificate, the form under its `ZHC ` container name, `qc-built-form.sh` PASS (QC >= 8.5), a preview
+URL delivered, the downloads bundle labeled with the `<client>__<form>__<type>__vNN` grammar
+(`type ∈ {brief, fields, deps, embed, preview}`), and human approval before any publish. Anything
+short of this is NOT done.

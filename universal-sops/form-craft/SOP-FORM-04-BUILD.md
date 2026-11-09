@@ -12,8 +12,24 @@
 ## 0. WHY THIS SOP EXISTS
 
 Skill 44 has pre-created the deps; now the browser does the ONE thing it is allowed to do — execute a
-fully-resolved click list verbatim. **Skill 6 is the ONE GHL delivery rail.** The browser makes ZERO
-decisions; every target string, label, width, and toggle is pre-specified by `_emit_click_list`.
+fully-resolved click list verbatim. **Skill 6 is the ONE GHL delivery rail for authoring.** The browser
+makes ZERO decisions; every target string, label, width, and toggle is pre-specified by `_emit_click_list`.
+
+## 0A. EXACT OPERATION CAPABILITY SELECTION (read before choosing a rail)
+
+Select the rail from the registry row, never from a family name or a discovery count:
+
+| Need | Registry row | Class | What that means here |
+|---|---|---|---|
+| List forms / list submissions | `forms.list`, `forms.submissions.list` | `public_direct` | Read-only. A successful read proves the read row; it proves nothing about creating a form. |
+| Change a form / author a form | `forms.update`, `forms.authoring` | `skill06_authoring` | No public contract is declared. The managed UI is the authoring rail; do not invent a public create/update call. |
+| Author a survey | `surveys.authoring` | `skill06_authoring` | Same rule; `surveys.list` / `surveys.submissions.list` remain reads. |
+| Upload a form custom file | `forms.custom_files.upload` | `public_direct` but `B-NO-ADAPTER` | The contract exists; no adapter is built, so it is not a usable build path yet. |
+
+**Discovering Forms (or any MCP tool) does not prove create support.** An operation is usable only when
+its registry row exists, its capability record allows this location, and the adapter can issue it. When
+the row is `skill06_authoring`, say so and drive the managed UI; when the row is `capability_gap`, report
+the gap and stop.
 
 ## 1. AUTH — TOKEN-ONLY SEED (the gate that used to burn tokens)
 

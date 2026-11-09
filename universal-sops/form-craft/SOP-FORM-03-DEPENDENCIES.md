@@ -15,8 +15,16 @@ The video shows two ways a custom field reaches a form: (A) create-on-the-fly by
 where GHL mints a random unique-key suffix a human must rename; and (B) **Add Object Fields**, where a
 PRE-CREATED custom field drags in with its key + name LOCKED. Path (A) leaves naming and keys to the
 weak browser — fragile, un-prefixed, non-idempotent. This design REJECTS (A). The grocery-shopping rule:
-**pre-build the forms/calendars/tags/workflows (Skill 44) BEFORE the page.** Custom fields + tags are
-created through the GHL-API rail, never the browser.
+**pre-build the forms/calendars/tags/workflows (Skill 44) BEFORE the page.** Custom fields and tags are
+created through **verified public operations issued through the shared adapter**, never by hand-rolled
+HTTP and never by the browser.
+
+**Exact operations (registry rows, not assumptions).** The frozen registry
+(`44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py`) declares
+`custom_fields.list`, `custom_fields.create`, `tags.list`, `tags.create`, `custom_values.list`, and
+`custom_values.create`. Each row carries its own Version, auth class, and tenant binding. Use the row
+only when the per-`(operation_id, tenant)` capability record allows this location; a catalog entry or a
+successful list read never enables a create.
 
 ## 1. THE DEPENDENCY PLAN (`plan_dependencies`)
 
@@ -34,8 +42,8 @@ Object Fields.
 
 ## 2. IDEMPOTENCY (GET-first, no duplicates)
 
-BEFORE creating anything, Skill 44 lists the location's existing custom fields + tags. `plan_dependencies`
-stamps each entry:
+BEFORE creating anything, Skill 44 lists the location's existing custom fields + tags through those
+public rows. `plan_dependencies` stamps each entry:
 
 - **`reuse`** — an existing `zhc_…` key/tag already matches (never re-created).
 - **`create`** — the remainder.
@@ -55,11 +63,16 @@ duplicating the semantic. **Create-on-the-fly in the browser is DISALLOWED** —
   AFTER the form id exists (SOP-FORM-05). Documented alternative: a HIDDEN Tags object-field with a
   preset value (live-verify before first use).
 
-## 4. THE LEDGER IS PROOF
+## 4. THE LEDGER IS PROOF — RECORD THE ACTUAL MAPPING
 
-The created field/tag IDs are written to the run ledger. The browser build MUST NOT start until the
-plan is executed and the ledger records the created IDs — a missing dependency plan / ledger at build
-time ⇒ AF-FORM-DEP-LEDGER-MISSING. The dependency plan is a hard hand-off, not a hope.
+The ledger records the **actual resource mapping**, not just a count: for every entry the observed
+`custom_field_id` / key / data type, or the observed `tag` spelling, or the observed custom-value name
+and non-empty value, plus the route that produced or confirmed it (`public_direct`, `skill44_private`,
+or `reuse`). A plan entry with no observed identity is not a dependency; it is an open gap.
+
+The browser build MUST NOT start until the plan is executed and the ledger records the created or reused
+IDs — a missing dependency plan / ledger at build time ⇒ AF-FORM-DEP-LEDGER-MISSING. The dependency plan
+is a hard hand-off, not a hope.
 
 ## 5. VERIFY BEFORE ADVANCING
 

@@ -31,6 +31,23 @@ Deliver the intake questions in a SINGLE message, never one-question-per-turn. L
 | **styling / custom CSS** | Brand colors, buttons, responsive tweaks; the form's Custom CSS box + a host-page wrapper. |
 | **keep / delete defaults** | GHL seeds a scratch form with First Name / Last Name / Phone / Email / consent. Which to KEEP, which to DELETE. |
 | **form NAME** | The container name (auto-prefixed to `ZHC <name>` — see SOP-FORM-04). |
+| **requested artifact** | Whether the client asked for a **form**, a **survey**, or a **marketing quiz**. These are three different native objects with three different builders; a marketing quiz is never a course lesson quiz. The answer fixes which downstream SOP and which operation row applies. |
+| **submission outcome** | What one real submission must produce: contact created/updated, `zhc_` tag attached, notification or redirect, appointment or workflow enrollment, and the report the client reads. |
+| **consent / data requirements** | The exact consent / T&C line, the data-retention or privacy requirement, and the purpose statement the contact agrees to. |
+
+## 1A. OUTCOME AND DATA CONTRACT (captured at intake, proved at certify)
+
+The submission outcome and the consent/data requirements are part of the locked brief, not a
+downstream discovery. Record them as testable statements so P4-CERTIFY can prove the same
+functional contract on whichever rail built the form:
+
+- **Outcome:** `on_submit` list — contact upsert, tag(s), notification, redirect/thank-you, workflow
+  enrollment, and the client-visible report.
+- **Consent / data:** the exact consent copy, the field(s) it binds to, the retention/privacy
+  statement, and any required double opt-in.
+- **Artifact type:** `form` | `survey` | `marketing_quiz`. A `survey` or `marketing_quiz` request is
+  not silently built as a form; if the requested native builder is unavailable on the location, the
+  honest gap is reported and the owner chooses the approved alternative.
 
 ## 2. THE TRUTH GATE
 
