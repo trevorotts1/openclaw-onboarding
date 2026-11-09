@@ -69,7 +69,11 @@ class Modes(unittest.TestCase):
         self.assertEqual(K.Adapter(env={"HOME": self.tmp, "OC_CONFIG": os.path.join(oc, "openclaw.json")}).mode, "active")
 
     def test_mode_lookup_reads_data_openclaw_home(self):
-        """M8/H7 done-when: HOME=/tmp/h, no OC_CONFIG, injected /data/.openclaw mode file = active."""
+        """M8/H7 done-when: HOME=/tmp/h, no OC_CONFIG, the resolved root's mode file = active.
+
+        F21 item 11: the root is no longer the DATA_OC_ROOT constant -- it is whatever the
+        one shared resolver returns, so this test fakes the RESOLVER, not a global.
+        """
         h = os.path.join(self.tmp, "h")
         os.makedirs(h)
         fake = os.path.join(self.tmp, "data", ".openclaw")
@@ -80,11 +84,17 @@ class Modes(unittest.TestCase):
         os.makedirs(claude)
         with open(os.path.join(claude, "kie-live-adapter-mode.conf"), "w") as f:
             f.write("off\n")
-        with mock.patch.object(K, "DATA_OC_ROOT", fake):
+        layout = {"root": fake, "state_dir": os.path.join(fake, "data", "kie-jobs"),
+                  "registry": os.path.join(fake, "data", "kie-jobs", "registry"),
+                  "index": os.path.join(fake, "data", "kie-jobs", "index"),
+                  "done": os.path.join(fake, "data", "kie-jobs", "done"),
+                  "receipts": os.path.join(fake, "data", "kie-jobs", "receipts"),
+                  "cache": os.path.join(fake, "cache"), "resolver": "fake"}
+        with mock.patch.object(K, "resolve_durable_layout", return_value=dict(layout)):
             env = {"HOME": h, "CLAUDE_CONFIG_DIR": claude}
             self.assertNotIn("OC_CONFIG", env)
             self.assertEqual(K.Adapter(env=env).mode, "active")
-            # OC_CONFIG still wins over the injected /data path.
+            # OC_CONFIG still wins over the resolved root.
             env["OC_CONFIG"] = h
             with open(os.path.join(h, "kie-live-adapter-mode.conf"), "w") as f:
                 f.write("off\n")
@@ -100,8 +110,7 @@ class Modes(unittest.TestCase):
         os.makedirs(claude)
         with open(os.path.join(claude, "kie-live-adapter-mode.conf"), "w") as f:
             f.write("off\n")
-        real_isdir = os.path.isdir
-        with mock.patch("os.path.isdir", side_effect=lambda p: False if p == K.DATA_OC_ROOT else real_isdir(p)):
+        with mock.patch.object(K, "resolve_durable_layout", side_effect=K.KieError("data_root_unresolved", "none")):
             self.assertEqual(K.Adapter(env={"HOME": h}).mode, "active")
             # explicit CLAUDE_CONFIG_DIR wins over ~/.claude
             self.assertEqual(K.Adapter(env={"HOME": h, "CLAUDE_CONFIG_DIR": claude}).mode, "off")
