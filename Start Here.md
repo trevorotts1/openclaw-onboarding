@@ -1479,19 +1479,11 @@ Edit `~/.openclaw/openclaw.json` and add the models the CLIENT selects under `ag
             "maxTokens": 65536
           }
         },
-        "openrouter/perplexity/sonar-pro-search": {
-          "alias": "sonar-pro-search",
-          "params": {
-            "contextWindow": 200000,
-            "maxTokens": 8000
-          }
+        "ollama/kimi-k2.6:cloud": {
+          "alias": "moonshot-cloud"
         },
-        "openrouter/perplexity/sonar": {
-          "alias": "sonar",
-          "params": {
-            "contextWindow": 127072,
-            "maxTokens": 8000
-          }
+        "openrouter/moonshotai/kimi-k2.6": {
+          "alias": "moonshot"
         }
       }
     }
