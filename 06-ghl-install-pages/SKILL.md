@@ -10,7 +10,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v27.1.88"
+  version: "v27.1.89"
   priority: HIGH
 ---
 
@@ -28,7 +28,9 @@ drives the browser, pastes the code, and handles all the clicks and navigation.
 > extension, then managed Agent Browser, then enabled computer use. Consult
 > `tools/playwright_recipes/route.py` using current per-location capability
 > receipts. Read `references/PLAYWRIGHT-RECIPES.md` for named recipes, intake,
-> invocation, recovery and the honest coverage table. A PROFILE recipe is
+> invocation, recovery and the honest coverage table. Native form scheduling and
+> existing draft course outline edits have dedicated handlers; retain their pending
+> functional verification. A PROFILE recipe is
 > eligible only after its actual controls have been captured; otherwise the
 > next browser lane performs the capture. The final Python process still needs
 > Mac/VPS end-to-end receipts; live UI paths do not establish that proof.

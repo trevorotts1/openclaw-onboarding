@@ -1,3 +1,16 @@
+## [v27.1.89] - 2026-11-09
+
+- Add captured native form scheduling with time-zone/date validation, before/after
+  messages or redirects, protected-setting preservation and independent reopen.
+- Expand simple built-in field property editing to twelve field types and verify
+  authored values before Save and after reopening the exact form.
+- Add API-first existing draft course category/lesson edits with version preflight,
+  parent/tenant binding, sibling preservation and exact target-bound replay.
+- Reject ignored intake values and misleading provider receipts; keep generic
+  recorded actions pending independent proof and guard editor identity per action.
+- Independent review: 542 tests discovered, 535 passed, seven optional local browser
+  skips. Mac/Linux Chromium CI is mandatory; native client acceptance stays open.
+
 ## [v27.1.87] - 2026-11-08
 
 - Add guarded native form built-in placement with Query Key inventory, duplicate

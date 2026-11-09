@@ -3,6 +3,16 @@
 Owner scope reviewed: November 8, 2026. This is the completion contract, not a
 claim that these rows have passed. The private owner brief remains private.
 
+## Current source checkpoint — November 9, 2026
+
+Batch 1 merged in PR #2877. The next reviewed source batch has 33 catalog
+operations and 542 tests discovered (535 passed, seven optional browser skips).
+Native form scheduling, twelve simple field property paths and existing draft
+course outline API edits now have concrete handlers. This expands the applicable
+rows; it does not close their complete feature or functional acceptance criteria.
+Final native Python execution, payment journeys and all required client receipts
+remain necessary. An operation count must not be reported as a completion ratio.
+
 ## What counts as complete
 
 A catalog name, implementation flag, fake-browser test, captured screen, API

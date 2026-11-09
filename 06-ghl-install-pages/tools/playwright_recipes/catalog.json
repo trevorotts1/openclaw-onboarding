@@ -90,7 +90,7 @@
       "action": "native_field_placement_or_fields_or_options",
       "implemented": true,
       "proof": "PROFILE",
-      "use": "Captured native built-in placement by query identity plus standard-field properties with independent reopen; custom schemas and advanced choices remain capture/dependency gated"
+      "use": "Captured native built-in placement and property edits for12simplefield types; preserves caller intent, query identity and pending submission proof; custom schemas remain API-owned"
     },
     "forms.style": {
       "name": "13_polish_form_css",
@@ -162,10 +162,10 @@
     },
     "forms.settings": {
       "name": "22_configure_form_settings",
-      "action": "form_settings",
+      "action": "native_form_schedule_or_settings",
       "implemented": true,
       "proof": "CAPTURED",
-      "use": "Seven explicit native form settings, row/count guards and editor reload read-back; scheduling excluded; Python live run pending"
+      "use": "Captured opening/closing windows, IANA timezone and outside-window message/redirect plus seven ordinary switches; preserve branding, save/reopen and retain functional verification pending"
     },
     "courses.update": {
       "name": "23_update_course",
@@ -236,6 +236,13 @@
       "implemented": true,
       "proof": "CAPTURED",
       "use": "Configure native email notification and auto responder, replace recipients only after inventory handshake, independently reopen settings; event/mail delivery remains unverified"
+    },
+    "courses.lessons": {
+      "name": "33_update_course_outline",
+      "action": "api",
+      "implemented": true,
+      "proof": "API_FIRST",
+      "use": "Edit existing draft modules/lessons through Courses v3 with all-target version/identity preflight, protected sibling data and independent readback; native learner proof remains pending"
     }
   }
 }

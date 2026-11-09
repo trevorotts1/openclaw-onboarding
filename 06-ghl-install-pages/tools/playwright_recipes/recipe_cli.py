@@ -11,6 +11,11 @@ else:
 
 
 def compile_recipe(operation, data):
+    if __package__:
+        from .intake import validate_intake
+    else:
+        from intake import validate_intake
+    validate_intake(operation, data)
     base={k:data[k] for k in ('location_id','location_name','start_url')}
     if 'auth_activation' in data:
         base['auth_activation'] = data['auth_activation']
@@ -52,7 +57,12 @@ def compile_recipe(operation, data):
         else:
             add('form_css',radius=data.get('radius',12))
     elif operation=='forms.settings':
-        add('form_settings',settings=data['settings'])
+        if not set(data).intersection({'settings', 'schedule'}):
+            raise Stop('Form settings require explicit settings or schedule')
+        if 'schedule' in data:
+            add('native_form_schedule', schedule=data['schedule'])
+        if 'settings' in data:
+            add('form_settings',settings=data['settings'])
     elif operation=='forms.notifications':
         config = data.get('notifications')
         if not isinstance(config, dict) or set(config).intersection({'id','action','_context'}):
@@ -113,8 +123,8 @@ def compile_recipe(operation, data):
                 raise Stop('Native upsell requires a location-bound Skill 44/79 product, price, source/upsell step and verified prior-payment contract')
         if not data.get('options'):
             raise Stop('This operation needs its recorded options profile; hand off for browser capture')
-    elif operation=='courses.create':
-        raise Stop('API_ROUTE: Courses v3 create is documented. Use the per-location API probe and Skill 44/official MCP')
+    elif operation in ('courses.create', 'courses.update', 'courses.lessons', 'courses.lesson_quiz.create'):
+        raise Stop('API_ROUTE: Use the per-location Courses v3 capability probe and maintained host API executor')
     else:
         raise Stop('Unknown operation')
     if data.get('options'):

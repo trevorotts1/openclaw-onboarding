@@ -16,6 +16,22 @@ STANDARD_FIELDS = {
     'Phone': ('+1 (555) 000-0000', 'phone'),
     'Email': ('your@email.com', 'email'),
 }
+# Only the complete native simple-field property layout has been captured here.
+# Keep STANDARD_FIELDS separate: condition menus have their own narrower capture.
+SIMPLE_FIELDS = {**STANDARD_FIELDS,
+    'Full Name': ('Enter your full name', 'full_name'),
+    'Organization': ('Enter your organization', 'organization'),
+    'Website': ('https://yourwebsite.com', 'website'),
+    'Date of birth': ('DD / MM / YYYY', 'date_of_birth'),
+    'City': ('Enter your city', 'city'),
+    'State': ('Enter your state', 'state'),
+    'Country': ('Enter your country', 'country'),
+    'Postal Code': ('ZIP or postal code', 'postal_code'),
+}
+SIMPLE_FIELD_TYPES = {name: ('email' if name == 'Email' else
+    'date' if name == 'Date of birth' else 'select' if name == 'Country' else 'text')
+    for name in SIMPLE_FIELDS}
+FIELD_WRAPPER = 'xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " form-field-wrapper ") and parent::*[@id="form-builder-container"]][1]'
 PROPERTIES = ('label', 'placeholder', 'short_label', 'query_key', 'width_pct')
 
 
@@ -171,14 +187,16 @@ def configure_css(page, step):
 def validate_fields(step):
     if not isinstance(step, dict) or set(step) - {'id', 'action', 'fields'}:
         raise AssessmentError('Unsupported native field configuration option')
+    if 'action' in step and step['action'] != 'native_fields':
+        raise AssessmentError('Native field action does not match this handler')
     fields = step.get('fields')
     if not isinstance(fields, list) or not fields:
         raise AssessmentError('fields must be a nonempty list')
     seen = set()
     result = deepcopy(step)
     for field in result['fields']:
-        if not isinstance(field, dict) or field.get('field') not in STANDARD_FIELDS:
-            raise AssessmentError('Only captured standard native fields are supported')
+        if not isinstance(field, dict) or field.get('field') not in SIMPLE_FIELDS:
+            raise AssessmentError('Only captured simple native fields are supported')
         if field['field'] in seen:
             raise AssessmentError('Duplicate field edit')
         seen.add(field['field'])
@@ -205,54 +223,99 @@ def validate_fields(step):
             raise AssessmentError('Placeholder must remain an unambiguous field anchor')
         if 'label' in field and not field['label'].strip():
             raise AssessmentError('Field label cannot be empty')
+        for key in ('query_key', 'current_query_key'):
+            if key in field and (not field[key].strip() or len(field[key]) > 256
+                    or any(char.isspace() or ord(char) < 32 for char in field[key])):
+                raise AssessmentError('Field query keys must be nonempty tokens without whitespace')
         if 'width_pct' in field and (type(field['width_pct']) is not int or not 1 <= field['width_pct'] <= 100):
             raise AssessmentError('Field width must be an integer from 1 to 100')
-    anchors = {field: values[0] for field, values in STANDARD_FIELDS.items()}
-    anchors.update({f['field']: f.get('placeholder', f.get('current_placeholder', anchors[f['field']])) for f in result['fields']})
-    placeholders = list(anchors.values())
-    if len(placeholders) != len(set(placeholders)):
-        raise AssessmentError('Edited placeholders must remain unique')
+    # Reject collisions before any browser access. In particular, swaps would
+    # make the next field ambiguous during the unsaved intermediate state.
+    for prop, current, offset in (('placeholder', 'current_placeholder', 0),
+                                  ('query_key', 'current_query_key', 1)):
+        old = {name: values[offset] for name, values in SIMPLE_FIELDS.items()}
+        for field in result['fields']:
+            old[field['field']] = field.get(current, old[field['field']])
+        if len(set(old.values())) != len(old):
+            raise AssessmentError('Current field ' + prop + ' identities must remain unique')
+        final = dict(old)
+        for field in result['fields']:
+            name, value = field['field'], field.get(prop, old[field['field']])
+            if any(value == previous for other, previous in old.items() if other != name):
+                raise AssessmentError('Edited field ' + prop + ' collides with another current identity')
+            final[name] = value
+        if len(set(final.values())) != len(final):
+            raise AssessmentError('Edited field ' + prop + ' identities must remain unique')
     return result
 
 
 def configure_fields(page, step):
-    """Edit standard native form properties and verify them after list reopen.
+    """Edit captured native simple-field properties with complete preflight.
 
-    Parent runner provides tenant checks and durable intent-before-mutation state.
-    Advanced custom fields remain owned by the pre-created-field dependency rail.
+    Composite Address child properties and custom schemas remain separate rails.
+    The parent runner supplies tenant checks and intent-before-mutation state.
+    All requested native identities and resulting booleans are checked before the
+    first property write; Save is attempted once, followed by exact list reopen.
     """
     if __package__:
-        from .skill6_playwright import click, fill, form_builder, visible, exact_search, wait_until, Stop
+        from .skill6_playwright import click, fill, form_builder, wait_until, Stop
     else:
-        from skill6_playwright import click, fill, form_builder, visible, exact_search, wait_until, Stop
+        from skill6_playwright import click, fill, form_builder, wait_until, Stop
     step = validate_fields(step)
     frame = form_builder(page)
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
-    name = title.input_value()
-    editor_url = page.url
-    close = frame.get_by_role('dialog').get_by_role('button', name='Close', exact=True)
-    if visible(close):
+    title.wait_for(state='visible', timeout=45000)
+    if title.count() != 1:
+        raise Stop('Native form title is missing or ambiguous')
+    name, editor_url = title.input_value(), page.url
+    if not isinstance(name, str) or not name.strip():
+        raise Stop('Saved native form identity is unavailable')
+
+    def close_drawer():
+        dialog = frame.get_by_role('dialog')
+        if not dialog.count():
+            return
+        if dialog.count() != 1 or dialog.get_by_text('Form Element', exact=True).count() != 1:
+            raise Stop('Unexpected native form dialog requires reconciliation')
+        close = dialog.get_by_role('button', name='Close', exact=True)
+        if close.count() != 1:
+            raise Stop('Native Form Element Close control changed')
         click(close)
 
     def panel(field, placeholder):
+        close_drawer()
         click(frame.get_by_role('tab', name='Edit', exact=True))
         target = frame.get_by_placeholder(placeholder, exact=True)
         if target.count() != 1:
             raise Stop('Field anchor is absent or ambiguous: ' + field['field'])
+        wrapper = target.locator(FIELD_WRAPPER)
+        kind = wrapper.locator('[data-field-type]')
+        if (wrapper.count() != 1 or kind.count() != 1
+                or kind.get_attribute('data-field-type') != SIMPLE_FIELD_TYPES[field['field']]
+                or wrapper.locator('input').count() != 1):
+            raise Stop('Field anchor belongs to a different native type or composite group')
         click(target)
-        click(frame.get_by_label('Open settings', exact=True))
+        if SIMPLE_FIELD_TYPES[field['field']] in ('date', 'select'):
+            target.press('Escape', timeout=45000)
+        gear = wrapper.locator('[aria-label="Open settings"]')
+        click(gear)
         frame.get_by_text('General Settings', exact=True).wait_for(state='visible', timeout=45000)
         inputs = frame.get_by_role('textbox', name='Please Input', exact=True)
         hidden = frame.get_by_role('checkbox', name='Hidden', exact=True)
+        required = frame.get_by_role('checkbox', name='Required', exact=True)
+        if hidden.count() != 1 or required.count() != 1:
+            raise Stop('Native field boolean controls changed')
         expected_count = 6 if hidden.is_checked() else 5
         if inputs.count() != expected_count:
             raise Stop('Native field property panel changed; capture required')
         for index, label in enumerate(('Label', 'Placeholder', 'Short Label', 'Query Key', 'Field Width')):
-            if label not in inputs.nth(index).evaluate("el => el.closest('.form-group')?.textContent || ''"):
+            row = inputs.nth(index).evaluate("el => el.closest('.form-group')?.textContent || ''")
+            suffix = r'(?:\s*Please Input)?' if label == 'Short Label' else r'\s*%?' if label == 'Field Width' else ''
+            if not isinstance(row, str) or not re.fullmatch(r'\s*' + re.escape(label) + suffix + r'\s*', row):
                 raise Stop('Native field property order changed; capture required')
         if expected_count == 6 and 'hidden value' not in inputs.nth(5).evaluate("el => el.closest('.form-group')?.textContent || ''").casefold():
             raise Stop('Native hidden value control changed')
-        return inputs
+        return inputs, required, hidden
 
     def close_panel():
         backs = frame.get_by_role('button', name='Back', exact=True)
@@ -260,54 +323,111 @@ def configure_fields(page, step):
             raise Stop('Native field panel Back controls changed')
         click(backs.nth(1))
 
-    expected = []
+    # Read-only selection of every requested target before touching properties.
+    plans = []
     for field in step['fields']:
-        default_placeholder, default_key = STANDARD_FIELDS[field['field']]
+        default_placeholder, default_key = SIMPLE_FIELDS[field['field']]
         old_placeholder = field.get('current_placeholder', default_placeholder)
         key = field.get('current_query_key', default_key)
-        inputs = panel(field, old_placeholder)
-        if inputs.nth(3).input_value() != key:
-            raise Stop('Standard field identity differs from captured query key')
-        required = frame.get_by_role('checkbox', name='Required', exact=True)
-        hidden = frame.get_by_role('checkbox', name='Hidden', exact=True)
-        wanted_required = field.get('required', required.is_checked())
-        wanted_hidden = field.get('hidden', hidden.is_checked())
-        if wanted_required and wanted_hidden:
+        inputs, required, hidden = panel(field, old_placeholder)
+        new_placeholder = field.get('placeholder', old_placeholder)
+        if new_placeholder != old_placeholder and frame.get_by_placeholder(new_placeholder, exact=True).count():
+            raise Stop('New field placeholder is already present in the native editor')
+        before = [inputs.nth(i).input_value() for i in range(inputs.count())]
+        if before[3] != key:
+            raise Stop('Native field identity differs from captured query key')
+        booleans = (required.is_checked(), hidden.is_checked())
+        wanted = (field.get('required', booleans[0]), field.get('hidden', booleans[1]))
+        if wanted[0] and wanted[1]:
             raise Stop('Requested field would become required and hidden')
-        # Uncheck first so even intermediate states preserve the mutual exclusion.
-        if not wanted_required:
+        plans.append((field, before, booleans, wanted))
+        close_panel()
+
+    # Query keys can be renamed on unrequested fields, including custom text
+    # fields. Static canonical names cannot establish that a new key is free.
+    query_inventory = None
+    if any('query_key' in field and field['query_key'] != before[3]
+            for field, before, _, _ in plans):
+        if __package__:
+            from .field_placement import _inventory
+        else:
+            from field_placement import _inventory
+        query_inventory = _inventory(frame, allow_unknown_queries=True)
+        for field, before, _, _ in plans:
+            key, wanted_key = before[3], field.get('query_key', before[3])
+            if query_inventory.get(key) != SIMPLE_FIELD_TYPES[field['field']]:
+                raise Stop('Native query inventory differs from the requested field identity')
+            if wanted_key != key:
+                if wanted_key in query_inventory:
+                    raise Stop('New query key already belongs to an existing native field')
+                query_inventory[wanted_key] = query_inventory.pop(key)
+
+    expected = []
+    for field, before, booleans, wanted in plans:
+        inputs, required, hidden = panel(field, before[1])
+        if ([inputs.nth(i).input_value() for i in range(inputs.count())] != before
+                or (required.is_checked(), hidden.is_checked()) != booleans):
+            raise Stop('Native field changed after preflight; reconcile before editing')
+        wanted_required, wanted_hidden = wanted
+        # Expected state is authored overrides plus the preflight baseline,
+        # never whatever a framework happened to retain after fill().
+        desired_values = [str(field[prop]) if prop in field else before[index]
+                          for index, prop in enumerate(PROPERTIES)]
+        desired_hidden = (field['hidden_value'] if 'hidden_value' in field else
+                          before[5] if len(before) == 6 else None)
+        # Turn exclusions off before enabling either side, preserving the rule
+        # even during intermediate states. Avoid touching unchanged switches.
+        if not wanted_required and required.is_checked():
             required.set_checked(False)
-        if not wanted_hidden:
+        if not wanted_hidden and hidden.is_checked():
             hidden.set_checked(False)
             wait_until(lambda: inputs.count() == 5, 'Hidden value control did not close')
         for index, prop in enumerate(PROPERTIES):
-            if prop in field:
-                fill(inputs.nth(index), str(field[prop]))
-        if wanted_required:
+            if prop in field and inputs.nth(index).input_value() != desired_values[index]:
+                fill(inputs.nth(index), desired_values[index])
+            if inputs.nth(index).input_value() != desired_values[index]:
+                raise Stop('Native field property did not accept the authored or preserved value: ' + prop)
+        if wanted_required and not required.is_checked():
             required.set_checked(True)
         if wanted_hidden:
-            hidden.set_checked(True)
+            if not hidden.is_checked():
+                hidden.set_checked(True)
             wait_until(lambda: inputs.count() == 6, 'Hidden value control did not appear')
             if 'hidden value' not in inputs.nth(5).evaluate("el => el.closest('.form-group')?.textContent || ''").casefold():
                 raise Stop('Native hidden value control changed')
+            # A newly exposed, unrequested default was not visible during
+            # preflight. Preserve it as found; authored defaults always take
+            # precedence and can never be learned from a failed fill.
+            if desired_hidden is None:
+                desired_hidden = inputs.nth(5).input_value()
             if 'hidden_value' in field:
-                fill(inputs.nth(5), field['hidden_value'])
-        expected.append((field, [inputs.nth(i).input_value() for i in range(inputs.count())], wanted_required, wanted_hidden))
+                fill(inputs.nth(5), desired_hidden)
+            if inputs.nth(5).input_value() != desired_hidden:
+                raise Stop('Native field hidden value did not accept the authored or preserved value')
+            desired_values.append(desired_hidden)
+        if ([inputs.nth(i).input_value() for i in range(inputs.count())] != desired_values
+                or (required.is_checked(), hidden.is_checked()) != wanted):
+            raise Stop('Native field properties differ from the authored or preserved target before Save')
+        expected.append((field, desired_values, wanted_required, wanted_hidden))
         close_panel()
+    close_drawer()
+    if query_inventory is not None and _inventory(frame, allow_unknown_queries=True) != query_inventory:
+        raise Stop('Native field query inventory changed during editing')
     click(frame.get_by_role('button', name='Save', exact=True))
     wait_until(lambda: frame.get_by_role('button', name='Save', exact=True).count() == 1
                and frame.get_by_role('button', name='Save', exact=True).is_enabled(), 'Form save did not finish')
     reopen_editor(page, 'form', name, editor_url)
-    if visible(close):
-        click(close)
+    frame = form_builder(page)
+    if query_inventory is not None and _inventory(frame, allow_unknown_queries=True) != query_inventory:
+        raise Stop('Saved native field query inventory did not persist')
     for field, values, required, hidden in expected:
-        inputs = panel(field, values[1])
+        inputs, actual_required, actual_hidden = panel(field, values[1])
         if [inputs.nth(i).input_value() for i in range(inputs.count())] != values:
             raise Stop('Field properties did not persist: ' + field['field'])
-        for label, value in (('Required', required), ('Hidden', hidden)):
-            if frame.get_by_role('checkbox', name=label, exact=True).is_checked() != value:
-                raise Stop('Field boolean did not persist: ' + field['field'] + '/' + label)
+        if actual_required.is_checked() != required or actual_hidden.is_checked() != hidden:
+            raise Stop('Field booleans did not persist: ' + field['field'])
         close_panel()
+    close_drawer()
     return {'status': 'FIELD_PROPERTIES_SAVED_AND_REOPENED', 'editor_url': page.url,
             'fields': [f['field'] for f in step['fields']], 'submission_verified': False}
 
