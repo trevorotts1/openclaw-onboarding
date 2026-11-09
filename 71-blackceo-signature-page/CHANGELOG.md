@@ -1,3 +1,7 @@
+## [v1.3.26] - 2026-11-09
+
+- Resolve the missing-policy GPT Image owner cap from the canonical Skill 66 registry. Refuse unknown or invalid owner caps instead of duplicating a numeric limit in the prompt gate.
+
 ## [1.3.25] - 2026-11-09 - GPT Image 2.6 cap reads the 66 owner cap, fails to 20,000
 
 - `references/prompt-budget-policy.json`: 2.6 entry is `OWNER_RULED`, one source `66-kie-image/models.json` `owner_prompt_cap_chars`. `cap_for_model` and `stage_executor.prompt_budget` fail to 20,000 on lookup miss, never 32,000.
