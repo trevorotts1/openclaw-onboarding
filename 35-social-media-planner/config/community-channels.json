@@ -1,0 +1,108 @@
+{
+  "$schema_note": "WF11 runtime channel capability table for Skill 35 Community publishing. This is the table scripts/community_publish.py READS at runtime (not a prose platform list). Two rules bind it: (1) a selected platform's own limits govern that platform's request, so a Community caption is never silently truncated by a shorter channel sharing the cycle; (2) `community` is a first-class destination with its own limits and its own nested author mapping, so an external social marketing post is never broadcast into a private group without an approved inside-group task. Limits transcribed from the revision-3.0 implementation contract section 11.3/11.5; checked_at records when the profile was last reconciled.",
+  "policy": {
+    "version": "1.0.0",
+    "checked_at": "2026-11-08",
+    "source": "01_BLACKCEO_GHL_HYBRID_IMPLEMENTATION_SPEC_v3.0 section 11.3-11.5",
+    "split_rule": "One provider request per platform. Never merge a Community destination with an external destination into one request.",
+    "unmapped_platform_policy": "A platform with no row here is REFUSED by name. It is never posted with borrowed limits.",
+    "community_broadcast_default": "notifyAllGroupMembers defaults to false and is only enabled with an explicit approval record."
+  },
+  "limits": {
+    "community": {
+      "channel_label": "Community (inside-group)",
+      "kind": "community",
+      "title_max_chars": 1000,
+      "caption_max_chars": 100000,
+      "media_max_items": 4,
+      "comment_max_chars": 8000,
+      "requires_community_details": true,
+      "requires_author_mapping": true,
+      "attachment_urls_rendered": false,
+      "attachment_note": "Community comment attachment URLs are not rendered because of the Community bucket restriction. A successful comment response is never described as a successfully attached resource.",
+      "default_notify_all_group_members": false
+    },
+    "facebook": {
+      "channel_label": "Facebook",
+      "kind": "external",
+      "caption_max_chars": 63206,
+      "media_max_items": 10,
+      "requires_community_details": false,
+      "requires_author_mapping": false,
+      "attachment_urls_rendered": true
+    },
+    "instagram": {
+      "channel_label": "Instagram",
+      "kind": "external",
+      "caption_max_chars": 2200,
+      "media_max_items": 10,
+      "requires_community_details": false,
+      "requires_author_mapping": false,
+      "attachment_urls_rendered": true
+    },
+    "linkedin": {
+      "channel_label": "LinkedIn",
+      "kind": "external",
+      "caption_max_chars": 3000,
+      "media_max_items": 9,
+      "requires_community_details": false,
+      "requires_author_mapping": false,
+      "attachment_urls_rendered": true
+    },
+    "x": {
+      "channel_label": "X / Twitter",
+      "kind": "external",
+      "caption_max_chars": 280,
+      "media_max_items": 4,
+      "requires_community_details": false,
+      "requires_author_mapping": false,
+      "attachment_urls_rendered": true
+    },
+    "tiktok": {
+      "channel_label": "TikTok",
+      "kind": "external",
+      "caption_max_chars": 2200,
+      "media_max_items": 1,
+      "requires_community_details": false,
+      "requires_author_mapping": false,
+      "attachment_urls_rendered": true
+    },
+    "pinterest": {
+      "channel_label": "Pinterest",
+      "kind": "external",
+      "caption_max_chars": 500,
+      "title_max_chars": 100,
+      "media_max_items": 1,
+      "requires_community_details": false,
+      "requires_author_mapping": false,
+      "attachment_urls_rendered": true
+    },
+    "youtube": {
+      "channel_label": "YouTube",
+      "kind": "external",
+      "caption_max_chars": 5000,
+      "media_max_items": 1,
+      "requires_community_details": false,
+      "requires_author_mapping": false,
+      "attachment_urls_rendered": true
+    },
+    "google-business-profile": {
+      "channel_label": "Google Business Profile",
+      "kind": "external",
+      "caption_max_chars": 1500,
+      "media_max_items": 1,
+      "requires_community_details": false,
+      "requires_author_mapping": false,
+      "attachment_urls_rendered": true
+    },
+    "threads": {
+      "channel_label": "Threads",
+      "kind": "external",
+      "caption_max_chars": 500,
+      "media_max_items": 1,
+      "requires_community_details": false,
+      "requires_author_mapping": false,
+      "attachment_urls_rendered": true
+    }
+  }
+}

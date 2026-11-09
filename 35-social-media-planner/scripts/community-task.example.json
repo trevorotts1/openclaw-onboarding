@@ -1,0 +1,24 @@
+{
+  "$schema_note": "Starter shape for ONE approved inside-group Community calendar task consumed by scripts/community_publish.py. This is input to Skill 35, not a provider payload: community_publish.py builds the provider request (accountIds + communityPostDetails.postAsUser) from it and refuses anything it cannot prove. `group_id` must be the observed backend group id, never a portal slug. Every listed account gets its OWN author; a member eligible in one private channel is not assumed eligible in another. `notify_all_group_members` defaults to false and requires explicit broadcast approval.",
+  "cycle_id": "2026-11-08-launch-week",
+  "topic": "Week of the launch announcement",
+  "scope": "inside_group",
+  "department_owner": "community-builder",
+  "intent": "publish",
+  "title": "Approved discussion title",
+  "caption": "Approved discussion content. Community captions run to 100,000 characters, so this text is never truncated to fit a shorter channel on the same cycle.",
+  "media": [
+    { "url": "https://assets.cdn.filesafe.space/LOCATION_ID/media/example.png", "type": "image" }
+  ],
+  "notify_all_group_members": false,
+  "status": "scheduled",
+  "scheduled_at": "2026-11-10T14:00:00Z",
+  "accounts": [
+    { "channel": "community", "account_id": "CONNECTED_COMMUNITY_ACCOUNT_ID" }
+  ],
+  "_notes": [
+    "community-channels.json is the runtime limit table; title <= 1000, caption <= 100000, media <= 4, comment <= 8000.",
+    "A reply/conversation intent belongs to Skill 38 and is refused here (conversation_owned_by_skill_38).",
+    "A new group/channel needs the managed re-sync step before it has an account id; the account is re-queried afterwards."
+  ]
+}
