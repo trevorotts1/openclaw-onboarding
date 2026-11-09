@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.3.7] - 2026-11-09 - GPT Image 2.6 migration lands on current main
+
+Version rolled above `main` (2.3.6) so G3 sees the bump beside the migration content that lands with it. No behavior change in this entry.
+
 ## [2.3.6] - 2026-11-08 - G3 lockstep roll (PR 2868)
 
 - `SKILL.md` frontmatter and `skill-version.txt` rolled 2.3.5 -> 2.3.6 so the changelog entries added to this skill carry the required version bump. No behavior change; audio-request validation is unchanged.

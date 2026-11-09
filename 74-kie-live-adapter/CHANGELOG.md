@@ -1,5 +1,9 @@
 # Changelog - Skill 74 KIE Live Adapter
 
+## [1.1.13] - 2026-11-09 - GPT Image 2.6 migration lands on current main
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 1.1.12 -> 1.1.13 so G3 sees the bump beside the GPT Image 2.6 migration content. No behavior change in this entry.
+
 ## [1.1.12] - 2026-11-08 - G3 bookkeeping: markers rolled 1.1.11 -> 1.1.12
 
 - `SKILL.md` frontmatter and `skill-version.txt` rolled 1.1.11 -> 1.1.12 alongside the post-main-merge bookkeeping (no behavior change; the F21 durable-data-root work is the 1.1.11 entry below).

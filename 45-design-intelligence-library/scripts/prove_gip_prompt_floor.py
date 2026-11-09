@@ -4,7 +4,7 @@
 Protocol (GIP) prompt-band gate (diu_validator.py prompt-band).
 
 Graphics had MAX-only cap tiers and NO minimum floor anywhere: a one-line prompt could
-reach the paid Kie.ai / GPT-Image 2.5 API unchallenged. FIX 1-A/1-B added per-asset-class
+reach the paid Kie.ai / GPT-Image 2.6 API unchallenged. FIX 1-A/1-B added per-asset-class
 BANDS (prompt-bands.json). Since the owner order of 2026-10-05 (KIE prompt rule 12) a band
 holds no length numbers: length is 95 to 100 percent of the model maxLength, floor 80
 percent (AF-GIP-PROMPT-FLOOR), ceiling 100 percent (AF-DIU-PROMPT-CAP), enforced by the shared
@@ -115,11 +115,11 @@ def _fit(head: str, tail: str, chars: int) -> str:
 
 
 # Fixture sizes are percentages of the model max the band's first endpoint resolves to (Skill 74 registry
-# snapshot, hermetic): GPT Image 2.5 = 20,000 for the text_bearing_long and visual_long bands, Seedream 4.5 = 3,000
+# snapshot, hermetic): GPT Image 2.6 = 20,000 for the text_bearing_long and visual_long bands, Seedream 4.5 = 3,000
 # for the medium band.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import diu_validator as _dv  # noqa: E402  (the shared enforcer is reached through the validator)
-GPT_MAX = _dv.KPE.budget_for("gpt-image-2-5-sunburst-text-to-image")["max"]
+GPT_MAX = _dv.KPE.budget_for("gpt-image-2-6/sunburst-text-to-image")["max"]
 MEDIUM_MAX = _dv.KPE.budget_for("seedream/4.5-text-to-image")["max"] if _dv.KPE.budget_for("seedream/4.5-text-to-image") else 3000
 
 
@@ -129,7 +129,7 @@ def rich_text_bearing(copy_line: str = "Stop Guessing. Start Closing.",
                       do_not_block: str = _DO_NOT_BLOCK,
                       chars: int = GPT_MAX * 97 // 100) -> str:
     """A text_bearing_long PASS fixture: `chars` stripped characters (default 97 percent of the 20,000
-    GPT Image 2.5 max), >=150 distinct words, the 8-class negative block, a spelling-lock, verbatim copy,
+    GPT Image 2.6 max), >=150 distinct words, the 8-class negative block, a spelling-lock, verbatim copy,
     and (optionally) the style-ref directive."""
     head = (
         "ASSET: ad creative | BAND: text_bearing_long\n"

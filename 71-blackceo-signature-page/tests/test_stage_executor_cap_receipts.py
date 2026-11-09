@@ -113,7 +113,7 @@ class CapAndReceipts(unittest.TestCase):
         # F18: the paid boundary freezes and re-checks the prompt; use an in-band prompt
         # (97.5 percent of the recorded 20,000-char maximum) and a model with a recorded
         # maximum, so this test measures the spend ledger, not the prompt band.
-        request = {"model": "gpt-image-2-5-sunburst-text-to-image", "sections": []}
+        request = {"model": "gpt-image-2-6/sunburst-text-to-image", "sections": []}
         slot = f"part-{n:02d}.png"
         base = exe.base_identity(self.run_dir, request, stage="visual-mockup", slot=slot,
                                  viewport="1440x760")

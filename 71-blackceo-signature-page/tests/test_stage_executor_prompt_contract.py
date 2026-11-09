@@ -171,7 +171,7 @@ class WireRepairRoundThreeTests(unittest.TestCase):
     def test_short_prompt_is_refused_below_the_80_percent_floor(self):
         # Owner rule 12: on the PAID path below the 80 percent floor (16,000 of 20,000) is the
         # hard reject, naming the characters to add and the count to the 95 percent target.
-        request = {"model": "gpt-image-2-5-sunburst", "_hypersat": PALETTE,
+        request = {"model": "gpt-image-2-6/sunburst", "_hypersat": PALETTE,
                    "stage_prompts": {"visual-mockup": "{copy}"}}
         with self.assertRaises(exe.ExecutorError) as ctx:
             exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4",
@@ -181,7 +181,7 @@ class WireRepairRoundThreeTests(unittest.TestCase):
 
     def test_80_to_below_95_percent_passes_and_warns(self):
         # The middle band PASSES and never silently: it names the characters to add.
-        request = {"model": "gpt-image-2-5-sunburst", "_hypersat": PALETTE,
+        request = {"model": "gpt-image-2-6/sunburst", "_hypersat": PALETTE,
                    "stage_prompts": {"visual-mockup": "Detailed rule. " * 900}}
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
@@ -194,7 +194,7 @@ class WireRepairRoundThreeTests(unittest.TestCase):
 
     def test_design_prose_section_budget_refuses(self):
         filler = "Detailed rule. " * 1400
-        request = {"model": "gpt-image-2-5-sunburst", "_hypersat": PALETTE,
+        request = {"model": "gpt-image-2-6/sunburst", "_hypersat": PALETTE,
                    "stage_prompts": {"visual-mockup": filler + "{copy} {slots}"}}
         with self.assertRaises(exe.ExecutorError) as ctx:
             exe.stage_prompt("visual-mockup", SECTION, 1, 1440, request, "3:4")

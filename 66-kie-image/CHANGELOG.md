@@ -1,5 +1,18 @@
 # Changelog - kie-image
 
+## [2.2.7] - 2026-11-09 - GPT Image 2.6 migration lands on current main
+
+- Version rolled 2.2.6 -> 2.2.7 so G3 sees this skill's bump beside the migration content that
+  lands with it. No behavior change in this entry; the migration itself is documented below.
+
+## [2.2.6] - 2026-11-08 - rule-12 band on the regenerated enforcer; version past main's fold
+
+- `scripts/validate_prompt.py` carries the merged rule-12 band arithmetic beside the GPT Image 2.6
+  slash ids and the owner cap of 20,000 characters (`owner_prompt_cap_chars` outranks the vendor
+  schema at limit resolution).
+- Version bumped to v2.2.6: main's W19 fold already reached v2.2.5.
+- Risk: LOW. Band arithmetic and model ids only; no route or credential changed.
+
 ## [2.2.6] - 2026-11-08 - G3 lockstep roll (PR 2868)
 
 - `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.5 -> 2.2.6 so this skill's changelog entry carries the version bump G3 requires above main. No behavior change; main's one prompt-band rule (owner rule 12) is carried unchanged.
@@ -7,6 +20,14 @@
 ## [2.2.5] - 2026-11-08 - G3 lockstep roll (PR 2868)
 
 - `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.4 -> 2.2.5 so the changelog entries added to this skill carry the required version bump. No behavior change; the prompt gate is unchanged.
+
+## [2.2.4] - 2026-11-08 - feat: GPT Image 2.5 -> 2.6 Sunburst is the default image route
+
+- Every 2.5 reference in this skill now names `gpt-image-2-6/sunburst-text-to-image` (T2I) and
+  `gpt-image-2-6/sunburst-image-to-image` (I2I). Skill 88 explicitly calls models.json for
+  capability data, the adapter for dispatch.
+- `models.json` 2.6 rows carry the real 16-value `aspect_ratio` enum and the owner prompt cap.
+- No credential, endpoint or payload shape changed.
 
 ## [2.2.4] - 2026-11-08 - G3 lockstep rolls (F18 touch, CI clear)
 
