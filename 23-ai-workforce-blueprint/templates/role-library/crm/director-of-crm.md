@@ -180,6 +180,7 @@ This role contributes to the company revenue cascade by: **owning retention-attr
 | Slack or Microsoft Teams | Internal communication, automated alerts channel (#crm-alerts), campaign approval workflow, cross-department coordination | Web login | Response SLA during business hours: acknowledge within 30 minutes, resolve or escalate within 4 hours for data issues, within 1 hour for deliverability alerts. |
 | **Email Engine + superlibrary (Skill 50)** | Dept-head awareness of the DRAFT-ONLY email deploy lane (nothing sends without human approval) | `50-email-engine/` -- `tools/email_matcher_cli.py --match` selects framework/buyer-type/objective/persona/sequence; `tools/prove-email.py` QCs (fail-closed); draft-only deploy via Skill 44 | Client runtime uses the CLIENT's own provider (never Anthropic); the deterministic gates (email_matcher.py, prove-email.py) are provider-neutral; nothing sends without human approval. |
 | **GHL Form Builder dependency (Skill 6 + Skill 44)** | **Skill 6 is the ONE GHL delivery rail — FUNNELS / WEBSITES / SURVEYS / FORMS.** Dept-head governance of the taxonomy a form writes into — CRM pre-creates the `zhc_` custom fields + tags and wires the on-submit Add-Tag workflow (Skill 44) whenever Web-Development / Marketing builds a GHL form (Skill 6) | Skill 44 `caf` (LOCATION PIT): GET-first idempotency → `create` only if no `zhc_…` match; Add Object Fields binds the LOCKED pre-created field; `Form Submitted → Add Contact Tag` workflow built after the form ID exists. Shared procedure: `universal-sops/form-craft/` | Every agent-created field/tag is `zhc_`-prefixed; never duplicate an existing `zhc_` object; the workflow is DRAFT unless approved. |
+| **GHL hybrid operations (Skill 44 + Skill 6 + Skill 35)** | Department-head ownership of the canonical GHL operating procedures: routing/capability, workflow build/edit, course production, Community/Learning, publishing, fulfillment, Meeting Rooms, native AI, knowledge lifecycle, widgets, Projects sync, monitoring and marketing quizzes | `universal-sops/ghl-hybrid-operations/` (SOP-GHL-01..13); Skill 44 CLI (`caf`); Skill 6 browser operations; Skill 35 publishing handoff | CRM owns platform administration, automation, integrations and provisioning. Courses owns curriculum/outcomes; Community Builder owns membership and inside-the-room voice; Social Media owns brand publishing strategy. Aliases (Convert and Flow, Convert & Flow, GoHighLevel, GHL) are contextual platform names, never departments |
 
 ---
 
@@ -309,6 +310,39 @@ This role contributes to the company revenue cascade by: **owning retention-attr
 
 ---
 
+### SOP 9.9 — GHL Technical Ownership and Canonical Procedure Routing
+
+**When to run:** Any request that touches the GHL platform: workflow, automation, integration, credential,
+native AI/KB/widget, Projects provisioning, monitoring read, or a course/community build that needs a
+platform operation.
+
+**Frequency:** Per GHL request.
+
+**Inputs:** The owner's request in their own words; the classified business outcome; the target
+`location_id` and `company_id`; current capability evidence.
+
+**Steps:**
+1. Classify the business outcome before choosing a department. A mention of GHL is not a CRM outcome.
+2. Route the outcome to its real owner: CRM for platform/automation/administration, Courses for
+   curriculum/content/course acceptance, Community Builder for group/membership/publishing, Social Media
+   for brand-level publishing, Web Development/Funnels for pages, Sales for closing leads.
+3. Select the canonical procedure: `universal-sops/ghl-hybrid-operations/SOP-GHL-01..13` for platform
+   operations; `form-craft`/`funnel-craft`/`website-craft` for delivery; `social-media-craft` for strategy.
+4. Assign one builder and one independent reviewer. No two agents write the same GHL object.
+5. Require one route per mutation and one logical receipt naming the real rail.
+6. On a beta denial or a documented feature gap, use the approved fallback and record it. Never widen
+   account authorization to make a route work.
+
+**Outputs:** A routed task with the owning department, the selected procedure, the chosen route, and the
+receipt chain.
+
+**Hand to:** The owning department director; the Command Center projection for visibility.
+
+**Failure mode:** A GHL keyword used as the routing decision, or a second department building a duplicate
+object → stop and re-classify. One coordinated parent with concrete children, never three parallel builds.
+
+---
+
 ## 10. Quality Gates
 
 Before any output ships, it must pass these gates:
@@ -344,6 +378,9 @@ Requires human owner sign-off: any campaign referencing company financial perfor
 - **Data / Analytics Department** -- gives you: customer behavior analysis, predictive model outputs, attribution data, and data quality audit reports; in dashboards and structured data exports; frequency: weekly (reports), monthly (deep analysis)
 
 ### You hand work off to:
+- **Skill 6 course coordinator** — course/group construction and deployment mechanics; the procedure is
+  `universal-sops/ghl-hybrid-operations/SOP-GHL-03` and `SOP-GHL-04`. You keep platform ownership; Courses
+  and Community Builder keep content and member ownership.
 - **CRM Campaign Specialist / Email Deliverability & Optimization Specialist** -- you give them: approved campaign briefs, segment definitions, content assets, workflow specifications, and quality standards; in {{CRM_PLATFORM_NAME}} workflow builder and task management system; frequency: weekly (campaign queue) and on-demand (new deployments)
 - **CRM Data Analyst / CRM Administrator** -- you give them: data quality priorities, reporting requirements, dashboard specifications, integration troubleshooting tasks, and user management requests; in task management system with clear acceptance criteria; frequency: weekly (priorities) and on-demand (issues)
 - **Director of Sales** -- you give them: qualified lead handoff notifications, campaign-triggered follow-up tasks, pipeline health insights from CRM data, lead scoring model updates, and weekly CRM adoption statistics; in {{CRM_PLATFORM_NAME}} dashboards and automated notifications; frequency: real-time (automated) and weekly (reports)

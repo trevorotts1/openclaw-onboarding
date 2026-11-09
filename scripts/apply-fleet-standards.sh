@@ -3264,6 +3264,8 @@ reuse another client's chat id — pass ONLY the real originating chat id of the
 | "map/graph my workforce", "graph my company" | `openclaw-maintenance` |
 | "produce a podcast episode", "turn this intake into a published episode", "run the podcast production engine", "generate this week's episode" | `podcast` |
 | "close out a funnel build in GHL", "QA the funnel before it ships", "test the checkout / order-bump / upsell path" | `funnels` |
+| "create a course with modules and lessons", "attach my videos to the course lessons", "build me a course", "set up rooms for the live sessions in this course" | `courses` |
+| "create a private community with channels", "attach the existing course to the group's Learning tab", "post this lesson announcement to our community", "publish this post in the members-only channel" | `community-builder` |
 
 Notes:
 - Presentation/deck/slide requests are owned by REFLEX 0 (the strict presentation reflex) ABOVE — it fires first; do not double-route.

@@ -188,6 +188,7 @@ This role contributes to the company revenue cascade by: **ensuring the CRM is a
 | Sandbox / Testing Environment | Safe environment for testing field changes, permission modifications, integrations, and platform updates before production deployment | Web login | Mirror of production configuration. All changes tested here first. Must be refreshed from production at least quarterly to maintain representative data. |
 | Support Ticket System (CRM-native or external) | Tracking and resolving user-reported issues, feature requests, and platform questions | Web login | Every ticket requires: reporter, issue description, priority, status, resolution notes, resolution date. Used for weekly and monthly support metrics. |
 | **GHL Form Builder dependency (Skill 6 + Skill 44)** | **Skill 6 is the ONE GHL delivery rail — FUNNELS / WEBSITES / SURVEYS / FORMS.** Pre-create the `zhc_` **custom fields** a form binds to via Add Object Fields (you own the custom fields the form writes into) | Skill 44 `caf` (LOCATION PIT): GET-first idempotency → `create` only if no `zhc_…` match; the form (Skill 6) then DRAGS the pre-created field from **Add Object Fields** (name/key LOCKED). Shared procedure: `universal-sops/form-craft/` | Every agent-created field is `zhc_`-prefixed; never duplicate an existing `zhc_` object; document it in the Data Dictionary BEFORE creation. |
+| **GHL hybrid operations (Skill 44 + Skill 6)** | Tenant/auth resolution, capability evidence, native AI/KB/widget/Projects provisioning checks and monitoring reads | `universal-sops/ghl-hybrid-operations/` (SOP-GHL-01, 07-12); Skill 44 CLI (`caf`); Skill 6 browser administration | Credential references only, never secrets. You administer the platform; you do not hold a buyer's or member's identity |
 
 ---
 
@@ -288,6 +289,38 @@ This role contributes to the company revenue cascade by: **ensuring the CRM is a
 **Outputs:** Imported records in production, import documentation log
 **Hand to:** Requester (confirmation of import completion with counts), Automation Workflow Specialist (if import triggered automation workflows)
 **Failure mode:** Never import directly into production without sandbox testing first. A field mapping error on a 10,000-record import creates 10,000 dirty records that take days to clean. The 30-minute sandbox test prevents days of cleanup.
+
+---
+
+### SOP 9.6 — GHL Tenant, Credential and Native-Capability Administration
+
+**When to run:** A GHL integration/token issue, a new location/sub-account, or a request to enable a native
+capability (Meeting Rooms, native AI, KB, widget, Projects).
+
+**Frequency:** On-demand.
+
+**Inputs:** `company_id`, `location_id`, `agency_company_id` where agency-scoped; the credential reference
+and fingerprint (never the secret); the capability record for the operation; the requested enablement.
+
+**Steps:**
+1. Resolve the tenant identity first. A read on one location never activates another.
+2. Check the credential by making one authorized call and reporting pass/fail only. Never print the value.
+3. On 401/expired credential, use the existing bounded resolver/refresh path and retry once inside policy.
+4. On generic 403 / missing scope / wrong role, record the exact cause and repair authorization or block the
+   operation. Never switch tenant or account to evade a denial.
+5. Record capability evidence per operation: documented, adapter built, offline tests, availability, scope
+   state, read probe, write canary, enabled, checked/expires.
+6. For native capability enablement, follow the matching procedure: SOP-GHL-07 rooms, SOP-GHL-08 native AI,
+   SOP-GHL-09 knowledge, SOP-GHL-10 widgets, SOP-GHL-11 Projects.
+7. Update the Data Dictionary/capability record with the new object or scope; announce platform changes to
+   affected users before applying them.
+
+**Outputs:** Tenant/capability record, pass/fail credential evidence, enablement receipt, change notice.
+
+**Hand to:** Director of CRM (capability change); the requesting department (enabled capability); QC (evidence).
+
+**Failure mode:** A guessed tenant, a printed secret, or a capability marked enabled without a read probe →
+stop and correct. Unknown stays unknown; it never becomes a silent success.
 
 ---
 

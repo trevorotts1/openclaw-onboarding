@@ -182,7 +182,7 @@ This role contributes to the company revenue cascade by: **building audience att
 
 | Skill | Reach for it when the client says… | On-box path | Execution playbook |
 |---|---|---|---|
-| **35** social-media-planner | "post my content this week" · "run my social" · "schedule posts" | `~/.openclaw/skills/35-social-media-planner/` | `universal-sops/social-media-craft/` |
+| **35** social-media-planner | "post my content this week" · "run my social" · "schedule posts" | `~/.openclaw/skills/35-social-media-planner/` | `universal-sops/social-media-craft/` · `universal-sops/ghl-hybrid-operations/` |
 | **57** social-media-in-a-box | "run my social week end-to-end" · "a week of content" · "a full week of posts across all platforms" | `~/.openclaw/skills/57-social-media-in-a-box/` | `universal-sops/social-media-craft/` |
 | **84** purple-billboard-blueprint | "run my purple billboard" · "a giveaway post with a keyword" · "prepare my 30 days of billboard posts" | `~/.openclaw/skills/84-purple-billboard-blueprint/` | `universal-sops/social-media-craft/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->

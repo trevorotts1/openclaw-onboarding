@@ -191,8 +191,18 @@ When a persona is present, this file is subordinate to it.
 | Story and consent log | One row per story: member, quote, consent date, scope, expiry | `<DEPT_DIR>/stories.md` | No consent row, no publication |
 | Pulse and ledger | Daily community numbers and the department's open work list | `<DEPT_DIR>/pulse.md`, `<DEPT_DIR>/ledger.md` | Read every morning |
 | Persona selector | Governing persona for a community task | `scripts/persona-selector-v2.py --task "<task>" --department {{DEPARTMENT_NAME}}` | Persona governs HOW (Section 2) |
+| **GHL group / Community operations (Skill 6 + Skill 44/35)** | Create and configure the group, channels, membership and the course Learning association; publish approved posts | Skill 6 Community builder and course/Learning operations; Skill 44/35 shared Community publishing operations | Community Builder owns structure and member experience; Skill 6 owns the UI/API mechanics, Skill 35 the approved publishing handoff. Procedure: `universal-sops/ghl-hybrid-operations/SOP-GHL-04-COMMUNITY-AND-LEARNING.md` and `SOP-GHL-05-COMMUNITY-PUBLISHING.md`. Opaque group id and portal slug are different identifiers |
 
 ---
+
+<!-- SKILLS_YOU_OPERATE_V1 -->
+**Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+
+| Skill | Reach for it when the client says… | On-box path | Execution playbook |
+|---|---|---|---|
+| **06** ghl-install-pages | "build me a form in GHL" · "build me a page in GHL" · "publish this page" | `~/.openclaw/skills/06-ghl-install-pages/` | `universal-sops/form-craft/` · `universal-sops/ghl-hybrid-operations/` |
+| **35** social-media-planner | "post my content this week" · "run my social" · "schedule posts" | `~/.openclaw/skills/35-social-media-planner/` | `universal-sops/social-media-craft/` · `universal-sops/ghl-hybrid-operations/` |
+<!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures
 
@@ -340,6 +350,63 @@ When a persona is present, this file is subordinate to it.
 
 ---
 
+### SOP 9.7 — Group, Channel and Learning Association Build
+
+**When to run:** A group, its channels, its membership, or a course Learning association must be created or
+changed.
+
+**Frequency:** Per group build or structural change.
+
+**Inputs:** Group purpose and visibility; channel list; posting/moderation policy; approved member source;
+the course/product id for a Learning association; the learner membership decision.
+
+**Steps:**
+1. Confirm the group does not already exist (GET-first by name and portal slug). Never build a second
+   group to work around a failed attempt.
+2. Hand Skill 6 the approved structure: visibility, channels in order, posting permissions, notification
+   defaults.
+3. Add members only from the approved source; require a per-member skip/failure record.
+4. Request the Learning association as a SEPARATE object, same location, idempotent on
+   `(course_product_id, community_group_id)`.
+5. Require readback: group visibility, channel list, member counts, association state.
+6. On cleanup, detach the association and record inactive residue. Detaching never deletes the course.
+
+**Outputs:** Group id + slug, channel list, member operation log, association state, residue record.
+
+**Hand to:** {{AI_CEO_NAME}} (completion + residue note); Courses (course remains intact) through the CEO.
+
+**Failure mode:** The course sits in another location, or detach would delete the course → stop, preserve
+state, and escalate. Never cross-locate an object to make an association succeed.
+
+---
+
+### SOP 9.8 — Approved Community Publishing Handoff
+
+**When to run:** Approved copy must be published as a community post, comment, or lesson announcement.
+
+**Frequency:** Per approved publish.
+
+**Inputs:** Approved copy; target group/channel; author member identity; media (if any); notification
+decision; the lesson id when the post is an announcement.
+
+**Steps:**
+1. Confirm the copy is approved and the voice matches the owner voice sample.
+2. Hand Skill 35 the target channel and the member-author identity. A connected Social Planner account id
+   is a channel account, never the group id.
+3. Require the returned post id and the real state: draft, scheduled, or published.
+4. Require attachment/comment state separately from the post itself.
+5. Enable member notifications only when you approved them; otherwise publish without notifications.
+6. Record the lesson/course reference instead of creating a second duplicate announcement.
+
+**Outputs:** Post id, channel ref, author identity, actual state, notification decision.
+
+**Hand to:** {{AI_CEO_NAME}} (result + state); Social Media for brand-level reuse through the CEO.
+
+**Failure mode:** Scheduled is reported as published, or the author identity cannot be resolved → reject
+the result; never post as an undisclosed human member.
+
+---
+
 ## 10. Quality Gates
 
 Before anything member-facing ships:
@@ -363,6 +430,10 @@ Escalation gate: anything touching money, legal exposure, or a member-safety dec
 - **Member signals** — questions, flags, and friction surfacing in the room; frequency: continuous.
 
 ### You hand work off to
+- **Skill 6 Community builder** — group/channel/member/Learning operations (SOP 9.7); returns per-object
+  readback and residue notes.
+- **Skill 35 Social Media planner** — the approved publish handoff (SOP 9.8); returns post id and real
+  state. Brand-level publishing strategy stays with Social Media.
 - **Ephemeral community workers** — task + SOP path; they return artifacts with evidence.
 - **{{AI_CEO_NAME}}** — approved member stories, health reports, and rule-change proposals.
 - **Other departments** (through {{AI_CEO_NAME}}) — approved stories for reuse, and any product or billing issue you are not the owner of.

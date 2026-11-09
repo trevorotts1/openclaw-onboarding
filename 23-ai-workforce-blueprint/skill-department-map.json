@@ -16,7 +16,8 @@
   "client_facing": "true = a client can request this in plain language; it carries intent_triggers and resolves to a live owning department + specialist role. These are the intent-routing catalog.",
   "infra": "false = install-time / operator / build-time / customer-facing-system skill. Carries a dept_owner for maintenance ownership only; no intent_triggers; excluded from the intent-routing catalog.",
   "roles": "Every role slug listed here MUST exist in the role-library _index.json (orphan check enforces this). Default posture: assign to an EXISTING role; NO new roles (PRD section 6).",
-  "execution_sops": "Pointer(s) under universal-sops/ (craft cluster dir or loose doc). null = no craft playbook for this skill."
+  "execution_sops": "Pointer(s) under universal-sops/ (craft cluster dir or loose doc). null = no craft playbook for this skill.",
+  "ghl_hybrid_operations": "Revision 3.0: CRM / Courses / Community Builder keep their existing canonical department folders and IDs. 'Convert and Flow', 'Convert & Flow', 'GoHighLevel' and 'GHL' are contextual platform ALIASES for the crm department, never new departments. The shared GHL operating procedures live in universal-sops/ghl-hybrid-operations/ (SOP-GHL-01..13); alias and pointer rules are frozen in WF16-CP01-ALIAS-AND-POINTER-CONTRACT.json for the Command Center context layer."
  },
  "skills": [
   {
@@ -76,7 +77,9 @@
    "client_facing": true,
    "description": "Delivery rail that installs/publishes forms and pages into GHL.",
    "departments": [
-    "web-development"
+    "web-development",
+    "courses",
+    "community-builder"
    ],
    "roles": [
     {
@@ -88,18 +91,33 @@
      "dept": "web-development",
      "slug": "landing-page-specialist",
      "primary": false
+    },
+    {
+     "dept": "courses",
+     "slug": "director-of-courses",
+     "primary": false
+    },
+    {
+     "dept": "community-builder",
+     "slug": "director-of-community-builder",
+     "primary": false
     }
    ],
    "intent_triggers": [
     "build me a form in GHL",
     "build me a page in GHL",
     "publish this page",
-    "install this funnel in GHL"
+    "install this funnel in GHL",
+    "create a course with modules and lessons",
+    "attach my videos to the course lessons",
+    "attach the existing course to the group's learning tab",
+    "create a private community with channels"
    ],
    "execution_sops": [
-    "form-craft"
+    "form-craft",
+    "ghl-hybrid-operations"
    ],
-   "note": "Primarily a delivery rail for funnel/form builds; carries a light client-facing intent for direct GHL form/page requests."
+   "note": "Skill 6 is the ONE GHL delivery rail (funnels/pages/forms/surveys) AND the API-first course construction/deployment + hybrid Community authoring coordinator. Web-development keeps the primary role for page/form delivery; Courses and Community Builder are secondary consumers that reach this skill from their own department scope. Procedure: universal-sops/form-craft/ and universal-sops/ghl-hybrid-operations/SOP-GHL-03/04."
   },
   {
    "skill": "07",
@@ -420,10 +438,12 @@
    "slug": "ghl-convert-and-flow",
    "name": "ghl-convert-and-flow",
    "client_facing": false,
-   "description": "Install-time: Convert & Flow / GHL setup.",
+   "description": "Install-time: Convert & Flow / GHL setup reference (supporting knowledge pointer, not a user-triggered department). Procedure: universal-sops/ghl-hybrid-operations/SOP-GHL-01-CAPABILITY-AND-ROUTING.md.",
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
-   "execution_sops": []
+   "execution_sops": [
+    "ghl-hybrid-operations"
+   ]
   },
   {
    "skill": "30",
@@ -462,7 +482,8 @@
    "client_facing": true,
    "description": "Multi-agent content publishing engine: research, create, produce, schedule and publish across enabled GHL social channels.",
    "departments": [
-    "social-media"
+    "social-media",
+    "community-builder"
    ],
    "roles": [
     {
@@ -474,16 +495,24 @@
      "dept": "social-media",
      "slug": "community-manager",
      "primary": false
+    },
+    {
+     "dept": "community-builder",
+     "slug": "director-of-community-builder",
+     "primary": false
     }
    ],
    "intent_triggers": [
     "post my content this week",
     "run my social",
     "schedule posts",
-    "plan my social calendar"
+    "plan my social calendar",
+    "post this lesson announcement to our community",
+    "publish this post in the members-only channel"
    ],
    "execution_sops": [
-    "social-media-craft"
+    "social-media-craft",
+    "ghl-hybrid-operations"
    ],
    "note": "Superseded/rolled into Skill 57 (social-media-in-a-box) for the productionized weekly engine; both remain client-facing."
   },
@@ -492,10 +521,12 @@
    "slug": "ghl-mcp-setup",
    "name": "ghl-mcp-setup",
    "client_facing": false,
-   "description": "Install-time: GHL MCP server setup.",
+   "description": "Install-time: GHL MCP server setup and discovery reference (supporting knowledge pointer, not a user-triggered department). Procedure: universal-sops/ghl-hybrid-operations/SOP-GHL-01-CAPABILITY-AND-ROUTING.md.",
    "dept_owner": "openclaw-maintenance",
    "intent_triggers": [],
-   "execution_sops": []
+   "execution_sops": [
+    "ghl-hybrid-operations"
+   ]
   },
   {
    "skill": "37",

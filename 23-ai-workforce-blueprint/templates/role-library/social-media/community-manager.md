@@ -178,7 +178,7 @@ This role contributes to the company revenue cascade by: **building the relation
 
 | Skill | Reach for it when the client says… | On-box path | Execution playbook |
 |---|---|---|---|
-| **35** social-media-planner | "post my content this week" · "run my social" · "schedule posts" | `~/.openclaw/skills/35-social-media-planner/` | `universal-sops/social-media-craft/` |
+| **35** social-media-planner | "post my content this week" · "run my social" · "schedule posts" | `~/.openclaw/skills/35-social-media-planner/` | `universal-sops/social-media-craft/` · `universal-sops/ghl-hybrid-operations/` |
 <!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures

@@ -181,7 +181,7 @@ This role contributes to the company revenue cascade by: **architecting and opti
 
 | Skill | Reach for it when the client says… | On-box path | Execution playbook |
 |---|---|---|---|
-| **06** ghl-install-pages | "build me a form in GHL" · "build me a page in GHL" · "publish this page" | `~/.openclaw/skills/06-ghl-install-pages/` | `universal-sops/form-craft/` |
+| **06** ghl-install-pages | "build me a form in GHL" · "build me a page in GHL" · "publish this page" | `~/.openclaw/skills/06-ghl-install-pages/` | `universal-sops/form-craft/` · `universal-sops/ghl-hybrid-operations/` |
 | **49** signature-funnel | "build my funnel" · "signature funnel" · "3/5/7 step funnel" | `~/.openclaw/skills/49-signature-funnel/` | `universal-sops/funnel-craft/` |
 | **62** cinematic-web-funnel-engine | "build me an animated website" · "create a cinematic landing page" · "make a scroll animation website" | `~/.openclaw/skills/62-cinematic-web-funnel-engine/` | `universal-sops/funnel-craft/` · `universal-sops/website-craft/` · `universal-sops/video-pipeline-craft/` |
 | **78** signature-product-selection | "build a product selection page" · "build my order page" · "wireframes and mockups for my order page" | `~/.openclaw/skills/78-signature-product-selection/` | `universal-sops/funnel-craft/` |

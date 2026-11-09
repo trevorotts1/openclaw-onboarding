@@ -184,8 +184,17 @@ When a persona is present, this file is subordinate to it.
 | Persona selector | Governing persona for a curriculum or production task | `scripts/persona-selector-v2.py --task "<task>" --department {{DEPARTMENT_NAME}}` | Persona governs HOW (Section 2) |
 | Owner teaching-voice reference | Write lessons for {{OWNER_NAME}}'s audience in their register: {{OWNER_VOICE_SAMPLE}} spoken {{OWNER_COMMUNICATION_STYLE}} | workspace USER.md (Behavioral B-4) | When USER.md has no answer, record `[OWNER FOLLOW-UP]` instead of inventing a register |
 | Web research | Instructional-design and completion research (Section 16) | Tavily / Sonar search | Cite source + retrieval date inline |
+| **GHL course construction & deployment (Skill 6 + Skill 44)** | Turn the signed module map into a real GHL course: course product, modules, lessons, native content and permanent media binding, then release | Skill 6 course coordinator (`06-ghl-install-pages/tools/ghl_course_builder.py` + object router); Skill 44 public course operations; KIE asset handoff | Courses owns outcomes and content; Skill 6 owns construction/deployment mechanics. Procedure: `universal-sops/ghl-hybrid-operations/SOP-GHL-03-COURSE-PRODUCTION.md`. Never invent course draft/media fields; list, published and verified are separate states |
 
 ---
+
+<!-- SKILLS_YOU_OPERATE_V1 -->
+**Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+
+| Skill | Reach for it when the client says… | On-box path | Execution playbook |
+|---|---|---|---|
+| **06** ghl-install-pages | "build me a form in GHL" · "build me a page in GHL" · "publish this page" | `~/.openclaw/skills/06-ghl-install-pages/` | `universal-sops/form-craft/` · `universal-sops/ghl-hybrid-operations/` |
+<!-- END SKILLS_YOU_OPERATE_V1 -->
 
 ## 9. Standard Operating Procedures
 
@@ -356,6 +365,39 @@ Escalation gate: anything naming a price, a guarantee, or a product change goes 
 
 ---
 
+### SOP 9.7 — Course Production Handoff to Skill 6
+
+**When to run:** A signed module map is ready to become a real GHL course, or an existing course needs a
+module/lesson/media change.
+
+**Frequency:** Per course build or change.
+
+**Inputs:** Signed module map; one outcome per lesson; the assessment binding; media assets with permanent
+locations and rights status; the target GHL location and visibility decision.
+
+**Steps:**
+1. Confirm the module map is signed and every lesson names exactly one observable outcome.
+2. Hand Skill 6 the course shell intent: course title, category, target audience, visibility, and the
+   ordered module/lesson map with a stable local key per object.
+3. Hand the media manifest only after every asset is permanently stored; a URL in a plan is not a bound
+   asset.
+4. Require a readback per object (title, category, visibility, content, media, order) before accepting any
+   lesson as produced.
+5. Request Course Builder coordination for the Learning-tab association per
+   `SOP-GHL-04-COMMUNITY-AND-LEARNING.md` when the course lives inside a group.
+6. Walk the student view once, end to end, and record what you saw.
+7. Accept only when every lesson has real content and bound media. A course shell or an import job is not
+   a produced course.
+
+**Outputs:** A produced course with readback evidence; learner-check note; content changelog row.
+
+**Hand to:** {{AI_CEO_NAME}} (completion notice); Community Builder (Learning association) through the CEO.
+
+**Failure mode:** A lesson returns as a title with no content, or media still processing → reject it back
+with the exact missing fields; do not accept a partial course or re-teach the content yourself.
+
+---
+
 ## 11. Handoffs (Value Stream Map)
 
 ### You receive work from
@@ -364,6 +406,10 @@ Escalation gate: anything naming a price, a guarantee, or a product change goes 
 - **Platform analytics** — completion, drop-off, and assessment data; frequency: continuous.
 
 ### You hand work off to
+- **Skill 6 course coordinator** — course shell, module/lesson construction, native content and media
+  binding (SOP 9.7); returns per-object readback and learner-check evidence.
+- **Community Builder (through {{AI_CEO_NAME}})** — the Learning-tab association when a course lives inside
+  a group; association is a separate object, never a course edit.
 - **Ephemeral lesson producers** — one lesson per worker, SOP-named briefs; they return versioned lesson files.
 - **Assessment designer** — outcome-to-check binding per SOP 9.4.
 - **Cohort facilitator** — delivery of live sessions and homework drops.
