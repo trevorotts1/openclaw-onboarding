@@ -2,11 +2,20 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.29
+version: 0.2.30
 priority: HIGH
 ---
 
 # Black Friday Launcher (skill 83)
+
+## RULE 1: READ EVERYTHING BEFORE YOU TOUCH ANYTHING
+
+**READ THIS ENTIRE FILE BEFORE TOUCHING ANYTHING ELSE.**
+
+Read this entire document from top to bottom before executing a single step.
+Then read every SOP this skill declares, in full, in this order:
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md`,
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`.
 
 ## Your role with the client (BINDING, for the WHOLE conversation, not only the opening)
 
@@ -325,8 +334,10 @@ python3 -m launcher_core.cli seams
 python3 -m launcher_core.cli dependencies [--root <repo>] [--install]
 ```
 
-`assemble` also produces the graphics handoff every time: the SOP-GIP-02 image QC request and report
-(built only from Skill 71 Review Receipt v2 files, never from typed scores) and the SOP-GIP-03
+`assemble` also produces the graphics handoff every time: the
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md` image QC request and report
+(built only from Skill 71 Review Receipt v2 files, never from typed scores) and the
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`
 delivery record. `--run-image-stages` runs Skill 71's real image-stage driver first (it stops at the
 client's layout-proof approval; `--allow-paid` is required with the paid provider). `--host-media` is
 the one approved upload: it runs the existing GHL media uploader, records its real result and puts the

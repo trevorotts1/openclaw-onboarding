@@ -1,0 +1,41 @@
+{
+  "course_id": "COURSE_FROM_INVENTORY",
+  "template_id": "INACTIVE_TEMPLATE_FROM_INVENTORY",
+  "expected_template_title": "Draft theme",
+  "expected_values": {
+    "layout_palette": {
+      "base": [
+        "#FEFEFFFF",
+        "#1D2939FF"
+      ],
+      "accent": [
+        "#004EEBFF",
+        "#98A2B3FF",
+        "#FEFEFFFF",
+        "#F2F4F7FF"
+      ]
+    },
+    "primary_font": "Roboto",
+    "primary_weight": "Regular",
+    "secondary_font": "Roboto",
+    "secondary_weight": "Regular"
+  },
+  "changes": {
+    "layout_palette": {
+      "base": [
+        "#FFFFFFFF",
+        "#111827FF"
+      ],
+      "accent": [
+        "#6D28D9FF",
+        "#9CA3AFFF",
+        "#FFFFFFFF",
+        "#F3F4F6FF"
+      ]
+    },
+    "primary_font": "Roboto",
+    "primary_weight": "Bold",
+    "secondary_font": "Roboto",
+    "secondary_weight": "Regular"
+  }
+}

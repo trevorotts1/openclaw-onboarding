@@ -1,0 +1,34 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Approved account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/quiz-builder-v2/QUIZ_FROM_INVENTORY",
+  "configuration": {
+    "result_page": {
+      "expected": {
+        "business_name": "BUSINESS_NAME_FROM_NATIVE_INVENTORY"
+      },
+      "changes": {
+        "business_name": "Approved business display name"
+      },
+      "cta_context": {
+        "dynamic": true,
+        "score_source": "Overall Only"
+      },
+      "cta_variants": [
+        {
+          "tier": "Low",
+          "expected": {
+            "cta_content": "CURRENT_LOW_TIER_COPY_FROM_INVENTORY",
+            "cta_button_text": "CURRENT_BUTTON_TEXT_FROM_INVENTORY",
+            "cta_url": "https://example.com/current"
+          },
+          "changes": {
+            "cta_content": "Approved next-step copy.",
+            "cta_button_text": "Learn more",
+            "cta_url": "https://example.com/approved"
+          }
+        }
+      ]
+    }
+  }
+}
