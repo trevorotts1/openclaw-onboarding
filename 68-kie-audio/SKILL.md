@@ -7,7 +7,7 @@ description: >
   legacy /api/v1/generate music-generation route is RETIRED), supported audio
   processing operations, and speech-to-text CAPABILITY DETECTION (ADVERTISED_NOT_YET_VERIFIED — no
   endpoint, dispatch_enabled false).
-version: v2.3.7
+version: v2.3.8
 metadata:
   version: "2.3.4"
   priority: HIGH
@@ -87,8 +87,10 @@ See `references/stt.md` for the negative-result trail and re-proof procedure.
 
 ## Prompt sizing (SPEC section 5)
 
-House band 5,000 / ~9,000 / 19,000 chars is HOUSE POLICY; the model hard cap
-always wins (rule A/B/C).
+KIE prompt rule 12 (owner order 2026-10-05) governs audio prompt sizing: 95-100% of
+the model's verified maximum is the target, 80% the hard floor, 100% the ceiling;
+the retired image house band (5,000 / 9,000 / 19,000) never applies to audio. The
+model hard cap always wins (rule A/B/C).
 
 - Gemini TTS: per-turn 10,000 cap → target ≤ ~9,500 per turn (rule B);
   the combined production script band applies per turn.

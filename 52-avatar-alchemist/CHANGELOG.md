@@ -1,5 +1,9 @@
 # Changelog — Skill 52 (Avatar Alchemist)
 
+## v2.0.3 - 2026-11-09 - fix: image-prompt band follows KIE rule 12 at the 2.6 owner cap (INST-001 #21)
+
+- `AA-PIPELINE-MANIFEST.json` + `AVATAR-MANIFEST.json` + `SKILL.md` + `aa_build_check.py` doc header: the `char_band` floors move [5000,19000] -> [16000,20000] (80% floor / 100% ceiling of the GPT Image 2.6 owner cap 20000); the self-test synth sizes fixtures from the manifest band. `AA-GATE-HASHES.json` re-recorded; integrity check + self-test + preflight negative suite PASS.
+
 ## v2.0.1 - 2026-10-06 - chore: the unused 5,000 to 19,000 image prompt band is removed
 
 - `aa_build_check.py` read `image_prompt_band` min and max into variables nothing used; they are removed and the manifest states the rule instead of numbers. KIE prompt rule 12 (owner order 2026-10-05): prompt length is 95 to 100 percent of the model maxLength, hard floor 80 percent, hard ceiling 100 percent, measured by the one shared enforcer `shared-utils/kie_prompt_enforcer.py` (wraps Skill 74 `prompt-budget --check`); the gate keeps no band of its own and its rejection names the exact characters to add or cut.
