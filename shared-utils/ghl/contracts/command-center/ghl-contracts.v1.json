@@ -1,0 +1,2562 @@
+{
+  "bundle_version": "1.0.0",
+  "checkpoint": "WF00-CP03",
+  "checksum_algorithm": "sha256",
+  "contracts": [
+    {
+      "name": "operation-contract",
+      "schema": {
+        "$defs": {
+          "operation_id": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "planned",
+              "submitted",
+              "processing",
+              "verified",
+              "failed",
+              "blocked",
+              "unknown_outcome",
+              "not_requested"
+            ]
+          },
+          "typed_id": {
+            "description": "Value of an explicit, domain-typed identifier. The property name carries the domain; a bare product_id or user_id is forbidden at a cross-skill boundary.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "typed_id_name": {
+            "enum": [
+              "company_id",
+              "location_id",
+              "agency_company_id",
+              "commerce_product_id",
+              "commerce_price_id",
+              "course_product_id",
+              "course_category_id",
+              "course_lesson_id",
+              "course_offer_id",
+              "community_group_id",
+              "community_group_slug",
+              "community_channel_id",
+              "social_account_id",
+              "member_contact_id",
+              "workflow_id",
+              "cc_task_id",
+              "run_id",
+              "voice_agent_id",
+              "conversation_agent_id",
+              "studio_agent_id",
+              "studio_version_id",
+              "studio_execution_id",
+              "knowledge_base_id",
+              "knowledge_source_id",
+              "chat_widget_id",
+              "meeting_room_ref",
+              "host_user_id",
+              "projects_space_id",
+              "projects_list_id",
+              "projects_task_id",
+              "contact_id",
+              "invoice_id",
+              "calendar_id",
+              "funnel_id",
+              "page_id",
+              "form_id",
+              "survey_id"
+            ]
+          }
+        },
+        "$id": "https://blackceo.local/ghl/contracts/operation-contract.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "effect": {
+                  "const": "read"
+                }
+              },
+              "required": [
+                "effect"
+              ]
+            },
+            "then": {
+              "properties": {
+                "consumes_write_quota": {
+                  "const": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "effect": {
+                  "const": "non_persisting_write"
+                }
+              },
+              "required": [
+                "effect"
+              ]
+            },
+            "then": {
+              "properties": {
+                "approval_class": {
+                  "enum": [
+                    "none",
+                    "approval"
+                  ]
+                },
+                "consumes_write_quota": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "request_media_type": {
+                  "const": "multipart/form-data"
+                }
+              },
+              "required": [
+                "request_media_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "method": {
+                  "enum": [
+                    "POST",
+                    "PUT",
+                    "PATCH"
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        "description": "One operation row as declared by the central registry at 44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py. Additive v1: every field the operation contract requires (Document 1 section 5.1) is declared per row, never inferred from the HTTP verb or from a module-wide default. `x-semantic-constraints` records checks a JSON Schema cannot express and that the contract validator enforces.",
+        "properties": {
+          "approval_class": {
+            "enum": [
+              "none",
+              "approval",
+              "destructive"
+            ]
+          },
+          "auth_kinds": {
+            "items": {
+              "enum": [
+                "location_pit",
+                "oauth",
+                "agency_pit",
+                "firebase_internal"
+              ]
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "availability": {
+            "enum": [
+              "public",
+              "private_beta",
+              "feature_gap",
+              "tenant_restricted",
+              "internal",
+              "retired",
+              "unknown"
+            ]
+          },
+          "availability_restriction": {
+            "description": "Named blocker/restriction code. Documentation never activates a tenant.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "consumes_write_quota": {
+            "type": "boolean"
+          },
+          "doc_evidence": {
+            "description": "Provenance of doc_url and doc_retrieved_at. revision3_spec means the contract came from the revision-3 specification without reopening the page; it must never be reported as a fresh fetch.",
+            "enum": [
+              "frozen",
+              "reopened_2026-11-07",
+              "reopened_2026-11-08",
+              "revision3_spec",
+              "none"
+            ]
+          },
+          "doc_retrieved_at": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "doc_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "documented_level": {
+            "enum": [
+              "D",
+              "S",
+              "internal",
+              "undocumented"
+            ]
+          },
+          "documented_query": {
+            "description": "Query parameter names the operation documents, required or optional.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "effect": {
+            "description": "Read/write effect of the operation itself, independent of method. POST /workflows/search is a read; definition validation persists nothing but consumes write quota.",
+            "enum": [
+              "read",
+              "write",
+              "non_persisting_write"
+            ]
+          },
+          "identity_binding": {
+            "description": "The frozen tenant_binding literal, e.g. path.locationId, query.locationId, body.locationId, implicit-pit, token-id, connection scope, n/a, unknown.",
+            "type": "string"
+          },
+          "identity_detail": {
+            "description": "Identity detail not carried by tenant_binding (for example an agency companyId the typed adapter writes itself). Never a credential value.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "identity_placement": {
+            "description": "Where the tenant/location identity rides. Never inferred from the verb.",
+            "enum": [
+              "path",
+              "query",
+              "body",
+              "token",
+              "connection",
+              "none",
+              "unknown"
+            ]
+          },
+          "implementation": {
+            "enum": [
+              "public_rest",
+              "official_mcp",
+              "skill44_private",
+              "skill06_browser",
+              "excluded",
+              "unresolved"
+            ]
+          },
+          "method": {
+            "description": "POST/DELETE is a documented dual-verb row (like/unlike); UNKNOWN is an unresolved operation whose path is a named capability gap.",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE",
+              "MCP",
+              "POST/DELETE",
+              "UNKNOWN"
+            ]
+          },
+          "operation_id": {
+            "$ref": "#/$defs/operation_id"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/$defs/outcome"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "pagination": {
+            "enum": [
+              "none",
+              "cursor",
+              "page",
+              "offset",
+              "unknown"
+            ]
+          },
+          "path_template": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "query_constraints": {
+            "description": "Named bounds/grammar for documented query parameters, transcribed only where the source states them.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "constraint": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "constraint"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "query_enums": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "allowed": {
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                "name": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "allowed"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "readback_operation": {
+            "description": "Operation id that proves a write. null means no frozen readback plan; the caller must supply one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_media_type": {
+            "description": "The real request media type. A typed JSON request and a typed multipart request can never be confused.",
+            "enum": [
+              "application/json",
+              "multipart/form-data",
+              "unknown"
+            ]
+          },
+          "request_schema_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "required_query": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "response_schema_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "route_class": {
+            "enum": [
+              "public_direct",
+              "official_mcp",
+              "skill44_private",
+              "skill06_authoring",
+              "retired",
+              "capability_gap",
+              "excluded"
+            ]
+          },
+          "schema_version": {
+            "const": "1.0.0"
+          },
+          "scopes": {
+            "description": "Candidate scopes from evidence. An empty array means the scope is unresolved, never that no scope is needed.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "scopes_resolved": {
+            "type": "boolean"
+          },
+          "token_class": {
+            "enum": [
+              "location_pit",
+              "oauth",
+              "agency_pit",
+              "firebase_internal",
+              "mixed",
+              "none"
+            ]
+          },
+          "unresolved_fields": {
+            "description": "Declared fields whose evidence did not settle them. Named explicitly, never guessed.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "version": {
+            "description": "Per-operation Version header literal. null means the route sends no Version header (official MCP rows) or has no public contract.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version_alternates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "version_state": {
+            "description": "Whether the row's Version literal is settled. unverified records a documentation label or no literal without claiming a live header contract.",
+            "enum": [
+              "frozen",
+              "unverified"
+            ]
+          }
+        },
+        "required": [
+          "schema_version",
+          "operation_id",
+          "method",
+          "path_template",
+          "route_class",
+          "documented_level",
+          "version",
+          "identity_placement",
+          "identity_binding",
+          "token_class",
+          "scopes",
+          "effect",
+          "consumes_write_quota",
+          "approval_class",
+          "request_media_type",
+          "pagination",
+          "availability",
+          "implementation"
+        ],
+        "title": "GHL Hybrid Operation Contract",
+        "type": "object",
+        "x-semantic-constraints": [
+          "identity_placement must agree with identity_binding's leading segment (path./query./body./implicit-pit/token-id/connection scope/n/a/unknown).",
+          "token_class must agree with token_class_derived(auth_kinds).",
+          "effect=write requires approval_class != none for a destructive route and requires the registry write flag.",
+          "scopes_resolved=false is required whenever scopes is empty.",
+          "version_state=unverified may carry version=null only when version is in unresolved_fields and a blocker is set; a documented row otherwise requires a literal version.",
+          "implementation must agree with route_class through TRANSPORT_BY_ROUTE."
+        ]
+      },
+      "sha256": "e55b1f1db49d0a88ec97c65f593b526a76d004f028299193f2caba376aa34046",
+      "version": "1.0.0"
+    },
+    {
+      "name": "capability-record.v2",
+      "schema": {
+        "$defs": {
+          "capability": {
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "enabled": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "adapter_built": {
+                      "const": true
+                    },
+                    "documented": {
+                      "const": true
+                    },
+                    "offline_tests_passed": {
+                      "const": true
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "enabled": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ]
+                },
+                "then": {
+                  "description": "A write capability additionally requires a passed write canary; the JSON Schema cannot branch on whether the operation is a write, so the validator enforces that rule.",
+                  "properties": {
+                    "availability": {
+                      "enum": [
+                        "available",
+                        "tenant_restricted"
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "adapter_built": {
+                "type": "boolean"
+              },
+              "availability": {
+                "enum": [
+                  "available",
+                  "unavailable",
+                  "beta_not_enabled",
+                  "feature_disabled",
+                  "tenant_restricted",
+                  "unknown"
+                ]
+              },
+              "checked_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "contract_revision": {
+                "description": "The operation-contract hash this capability was evaluated against.",
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "credential_fingerprint": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "credential_ref": {
+                "description": "Alias only, e.g. location-pit:OWNER_MANAGED_ALIAS. Never a secret value.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "documented": {
+                "type": "boolean"
+              },
+              "effective_grant_fingerprint": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "evidence_refs": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "expires_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "fallback_policy": {
+                "enum": [
+                  "none",
+                  "authorized_private",
+                  "managed_browser",
+                  "authorized_private_then_managed_browser"
+                ]
+              },
+              "invalidation_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "location_id": {
+                "$ref": "operation-contract.schema.json#/$defs/typed_id"
+              },
+              "offline_tests_passed": {
+                "type": "boolean"
+              },
+              "operation_id": {
+                "$ref": "operation-contract.schema.json#/$defs/operation_id"
+              },
+              "principal": {
+                "description": "Authenticated principal identity (token-derived), never a secret.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "read_probe": {
+                "$ref": "#/$defs/probe"
+              },
+              "record_version": {
+                "const": 2
+              },
+              "request_media_type": {
+                "enum": [
+                  "application/json",
+                  "multipart/form-data",
+                  "unknown"
+                ]
+              },
+              "scope_state": {
+                "enum": [
+                  "verified",
+                  "unverified",
+                  "missing",
+                  "revoked"
+                ]
+              },
+              "write_canary": {
+                "$ref": "#/$defs/probe"
+              }
+            },
+            "required": [
+              "record_version",
+              "location_id",
+              "operation_id",
+              "contract_revision",
+              "documented",
+              "adapter_built",
+              "offline_tests_passed",
+              "availability",
+              "scope_state",
+              "read_probe",
+              "write_canary",
+              "enabled",
+              "checked_at",
+              "expires_at",
+              "fallback_policy"
+            ],
+            "type": "object"
+          },
+          "probe": {
+            "additionalProperties": false,
+            "properties": {
+              "checked_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "receipt_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "not_run",
+                  "passed",
+                  "failed",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "state",
+              "receipt_id"
+            ],
+            "type": "object"
+          }
+        },
+        "$id": "https://blackceo.local/ghl/contracts/capability-record.v2.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Additive v2 capability record (Document 1 section 5.2). Separate facts replace one misleading `enabled` boolean: documentation, adapter existence, offline tests, account availability, authorization/scope evidence, a bounded read probe and a bounded write canary are independent dimensions. A read on one location never activates another location, and documentation never enables a tenant. v1 records are translated by `legacy_conversion` without widening any grant; the v1 `capabilities` map is not rewritten in place.",
+        "properties": {
+          "authority": {
+            "type": "string"
+          },
+          "capabilities": {
+            "additionalProperties": {
+              "$ref": "#/$defs/capability"
+            },
+            "description": "operation_id -> capability facts for this one location.",
+            "propertyNames": {
+              "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$"
+            },
+            "type": "object"
+          },
+          "legacy_conversion": {
+            "additionalProperties": false,
+            "description": "Provenance of a v1 -> v2 translation. A v1 record is read, never rewritten; the translation is explicit and auditable.",
+            "properties": {
+              "converted_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "from_record_version": {
+                "maximum": 1,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "grants_widened": {
+                "const": false
+              },
+              "notes": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "source_path": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "from_record_version",
+              "source_sha256",
+              "converted_at",
+              "grants_widened"
+            ],
+            "type": "object"
+          },
+          "location_id": {
+            "$ref": "operation-contract.schema.json#/$defs/typed_id"
+          },
+          "note": {
+            "type": "string"
+          },
+          "record_version": {
+            "const": 2
+          },
+          "recorded_at": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "record_version",
+          "location_id",
+          "recorded_at",
+          "capabilities"
+        ],
+        "title": "GHL Hybrid Capability Record v2",
+        "type": "object",
+        "x-semantic-constraints": [
+          "A capability whose operation effect is write and enabled=true must carry write_canary.state=passed with a receipt_id.",
+          "A capability with scope_state in {missing,revoked} must have enabled=false.",
+          "checked_at/expires_at are per location/credential/contract; a credential rotation or docs-hash change invalidates only the rows bound to it, never the whole record.",
+          "v1 translation maps enabled+read_verified to read_probe.state=passed and leaves write_canary.state=not_run: it never widens a grant."
+        ]
+      },
+      "sha256": "35211aa632d94b4134d65d6caf563fe9f3739464514a42329206acfdb3f118e6",
+      "version": "2.0.0"
+    },
+    {
+      "name": "hybrid-operation-receipt.v1",
+      "schema": {
+        "$defs": {
+          "attempt": {
+            "additionalProperties": false,
+            "properties": {
+              "attempt_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "error": {
+                "additionalProperties": false,
+                "properties": {
+                  "message": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "provider_code": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "reconcilable": {
+                    "type": "boolean"
+                  },
+                  "rule": {
+                    "type": "string"
+                  }
+                },
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "finished_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "http_status": {
+                "maximum": 599,
+                "minimum": 100,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "outcome": {
+                "$ref": "#/$defs/outcome"
+              },
+              "rail": {
+                "enum": [
+                  "public_rest",
+                  "official_mcp",
+                  "skill44_private",
+                  "skill06_browser",
+                  "none"
+                ]
+              },
+              "request_fingerprint": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "response_fingerprint": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "started_at": {
+                "format": "date-time",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "attempt_id",
+              "rail",
+              "outcome"
+            ],
+            "type": "object"
+          },
+          "legacy_conversion": {
+            "additionalProperties": false,
+            "description": "Explicit, versioned conversion from a strict old launch binding instead of rewriting it in place.",
+            "properties": {
+              "converted": {
+                "type": "boolean"
+              },
+              "from_schema_version": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "grants_widened": {
+                "const": false
+              },
+              "notes": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "from_schema_version",
+              "converted",
+              "grants_widened"
+            ],
+            "type": "object"
+          },
+          "outcome": {
+            "enum": [
+              "planned",
+              "submitted",
+              "processing",
+              "verified",
+              "failed",
+              "blocked",
+              "unknown_outcome",
+              "not_requested"
+            ]
+          },
+          "readback": {
+            "additionalProperties": false,
+            "properties": {
+              "checked_fields": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "receipt_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "not_requested",
+                  "pending",
+                  "matched",
+                  "mismatched",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "state",
+              "checked_fields"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "enum": [
+              "planned",
+              "submitted",
+              "processing",
+              "configured",
+              "attached",
+              "verified",
+              "failed",
+              "blocked",
+              "unknown",
+              "not_requested"
+            ]
+          },
+          "sub_results": {
+            "additionalProperties": false,
+            "description": "Typed per-family results carried inside the one shared envelope.",
+            "properties": {
+              "chat_widget": {
+                "additionalProperties": false,
+                "properties": {
+                  "chat_widget_id": {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  },
+                  "config_version": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "installed": {
+                    "type": "boolean"
+                  },
+                  "responder_verified": {
+                    "type": "boolean"
+                  },
+                  "state": {
+                    "$ref": "#/$defs/state"
+                  },
+                  "thread_verified": {
+                    "type": "boolean"
+                  },
+                  "unknowns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "conversation_ai": {
+                "additionalProperties": false,
+                "properties": {
+                  "channels": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "conversation_agent_id": {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  },
+                  "duplicate_send_guarded": {
+                    "type": "boolean"
+                  },
+                  "responder_owner": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "state": {
+                    "$ref": "#/$defs/state"
+                  },
+                  "unknowns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "knowledge_base": {
+                "additionalProperties": false,
+                "properties": {
+                  "attached": {
+                    "type": "boolean"
+                  },
+                  "ingestion_completed": {
+                    "type": "boolean"
+                  },
+                  "knowledge_base_id": {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  },
+                  "knowledge_source_id": {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  },
+                  "retrieval_verified": {
+                    "type": "boolean"
+                  },
+                  "state": {
+                    "$ref": "#/$defs/state"
+                  },
+                  "training_completed": {
+                    "type": "boolean"
+                  },
+                  "unknowns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "upload_accepted": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "meeting_room": {
+                "additionalProperties": false,
+                "properties": {
+                  "calendar_id": {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  },
+                  "configuration_saved": {
+                    "type": "boolean"
+                  },
+                  "guest_verified": {
+                    "type": "boolean"
+                  },
+                  "host_user_id": {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  },
+                  "meeting_room_ref": {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  },
+                  "recording_verified": {
+                    "type": "boolean"
+                  },
+                  "reusable_link": {
+                    "type": "boolean"
+                  },
+                  "state": {
+                    "$ref": "#/$defs/state"
+                  },
+                  "transcript_verified": {
+                    "type": "boolean"
+                  },
+                  "unknowns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "projects": {
+                "additionalProperties": false,
+                "properties": {
+                  "api_available": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "projection_enabled": {
+                    "type": "boolean"
+                  },
+                  "projects_list_id": {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  },
+                  "projects_space_id": {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  },
+                  "projects_task_id": {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  },
+                  "state": {
+                    "$ref": "#/$defs/state"
+                  },
+                  "ui_available": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "unknowns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "studio": {
+                "additionalProperties": false,
+                "properties": {
+                  "executed": {
+                    "type": "boolean"
+                  },
+                  "promoted": {
+                    "type": "boolean"
+                  },
+                  "state": {
+                    "$ref": "#/$defs/state"
+                  },
+                  "studio_agent_id": {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  },
+                  "studio_execution_id": {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  },
+                  "studio_version_id": {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  },
+                  "unknowns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "voice_ai": {
+                "additionalProperties": false,
+                "properties": {
+                  "call_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "call_verified": {
+                    "type": "boolean"
+                  },
+                  "phone_assigned": {
+                    "type": "boolean"
+                  },
+                  "state": {
+                    "$ref": "#/$defs/state"
+                  },
+                  "unknowns": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "voice_agent_id": {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "visibility": {
+            "enum": [
+              "draft",
+              "published",
+              "private",
+              "not_applicable",
+              "unknown"
+            ]
+          }
+        },
+        "$id": "https://blackceo.local/ghl/contracts/hybrid-operation-receipt.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "One immutable logical-operation event (Document 1 section 5.5). The stable key is (company_id, location_id, run_id, operation_key); attempts have unique ids underneath it and event_sequence is a persisted increasing integer within the logical operation. Outcomes include unknown_outcome and not_requested and are never mapped onto the Command Center TaskStatus enum. Meeting/AI/KB/widget/Projects sub-results live inside this same envelope; there is no per-feature fork.",
+        "properties": {
+          "actual_visibility": {
+            "$ref": "#/$defs/visibility"
+          },
+          "attempt_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "attempts": {
+            "items": {
+              "$ref": "#/$defs/attempt"
+            },
+            "type": "array"
+          },
+          "build_state": {
+            "enum": [
+              "not_started",
+              "in_progress",
+              "implemented",
+              "verified",
+              "failed",
+              "unknown"
+            ]
+          },
+          "company_id": {
+            "$ref": "operation-contract.schema.json#/$defs/typed_id"
+          },
+          "content_hash": {
+            "description": "Approved content is hashed separately from redacted diagnostics so redaction cannot invalidate matching.",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_sequence": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "evidence_refs": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "legacy_conversion": {
+            "$ref": "#/$defs/legacy_conversion"
+          },
+          "location_id": {
+            "$ref": "operation-contract.schema.json#/$defs/typed_id"
+          },
+          "next_action": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "object_refs": {
+            "additionalProperties": {
+              "$ref": "operation-contract.schema.json#/$defs/typed_id"
+            },
+            "description": "Domain-typed object references. Keys must be named typed identifiers, never a bare id/product_id/user_id.",
+            "propertyNames": {
+              "$ref": "operation-contract.schema.json#/$defs/typed_id_name"
+            },
+            "type": "object"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operation_id": {
+            "$ref": "operation-contract.schema.json#/$defs/operation_id"
+          },
+          "operation_key": {
+            "description": "Stable logical-operation key, e.g. course:launch101:lesson:welcome:intro:create.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/$defs/outcome"
+          },
+          "rail": {
+            "enum": [
+              "public_rest",
+              "official_mcp",
+              "skill44_private",
+              "skill06_browser",
+              "none"
+            ]
+          },
+          "readback": {
+            "$ref": "#/$defs/readback"
+          },
+          "receipt_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "request_hash": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "requested_visibility": {
+            "$ref": "#/$defs/visibility"
+          },
+          "run_id": {
+            "$ref": "operation-contract.schema.json#/$defs/typed_id"
+          },
+          "schema_version": {
+            "const": "1.0.0"
+          },
+          "skill": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sub_results": {
+            "$ref": "#/$defs/sub_results"
+          },
+          "task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "schema_version",
+          "receipt_id",
+          "attempt_id",
+          "event_sequence",
+          "run_id",
+          "operation_key",
+          "operation_id",
+          "company_id",
+          "location_id",
+          "skill",
+          "rail",
+          "outcome",
+          "build_state",
+          "request_hash",
+          "object_refs",
+          "readback",
+          "attempts",
+          "evidence_refs",
+          "observed_at"
+        ],
+        "title": "GHL Hybrid Operation Receipt v1",
+        "type": "object",
+        "x-semantic-constraints": [
+          "A re-delivered event keeps its original receipt_id and bytes; a later processing/verification update emits a new event and a new event_sequence.",
+          "Sequences are allocated by one writer per logical operation; a reducer retains attempt history and applies legal transitions instead of trusting arrival order.",
+          "outcome=verified requires readback.state=matched and at least one object ref or evidence ref.",
+          "outcome=unknown_outcome forbids a later duplicate write on another rail until reconciliation names the actual object.",
+          "Sub-results are optional and independent; a missing sub-result means not requested, never passed."
+        ]
+      },
+      "sha256": "40a7dab8d1422653fc5a3116a8bc764e12ba4c4bc0e3a2cbacc23c198862d571",
+      "version": "1.0.0"
+    },
+    {
+      "name": "course-build-plan.v1",
+      "schema": {
+        "$defs": {
+          "asset_ref": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "lesson": {
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "required_for_delivery": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "required_for_delivery"
+                  ]
+                },
+                "then": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "description_ref": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "description_ref"
+                      ]
+                    },
+                    {
+                      "properties": {
+                        "asset_refs": {
+                          "minItems": 1
+                        }
+                      },
+                      "required": [
+                        "asset_refs"
+                      ]
+                    },
+                    {
+                      "properties": {
+                        "assessment_ref": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "assessment_ref"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "properties": {
+              "assessment_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "asset_refs": {
+                "items": {
+                  "$ref": "#/$defs/asset_ref"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "description_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "description_sha256": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  }
+                ]
+              },
+              "lesson_key": {
+                "$ref": "#/$defs/logical_key"
+              },
+              "position": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "required_for_delivery": {
+                "type": "boolean"
+              },
+              "title": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "visibility": {
+                "$ref": "#/$defs/visibility"
+              }
+            },
+            "required": [
+              "lesson_key",
+              "title",
+              "position",
+              "visibility",
+              "required_for_delivery"
+            ],
+            "type": "object"
+          },
+          "logical_key": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "type": "string"
+          },
+          "module": {
+            "additionalProperties": false,
+            "properties": {
+              "lessons": {
+                "items": {
+                  "$ref": "#/$defs/lesson"
+                },
+                "type": "array"
+              },
+              "module_key": {
+                "$ref": "#/$defs/logical_key"
+              },
+              "parent_module_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "position": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "title": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "visibility": {
+                "$ref": "#/$defs/visibility"
+              }
+            },
+            "required": [
+              "module_key",
+              "title",
+              "position",
+              "visibility",
+              "lessons"
+            ],
+            "type": "object"
+          },
+          "visibility": {
+            "enum": [
+              "draft",
+              "published",
+              "hidden",
+              "unknown"
+            ]
+          }
+        },
+        "$id": "https://blackceo.local/ghl/contracts/course-build-plan.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Internal course plan (Document 1 section 8.2). It expresses content and relationships without pretending to be a vendor DTO; Section 8.3 maps it to the public wire contract. Logical keys are the identity inside the plan: duplicate display titles are allowed when logical keys differ. The vendor `status` property is never invented; draft-only release is expressed through module/lesson visibility, offer/access and release actions.",
+        "properties": {
+          "buyer_access_test_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "community": {
+            "additionalProperties": false,
+            "properties": {
+              "group_ref": {
+                "description": "Relative path to an approved group plan; a standalone course does not require a group.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "learning_access_policy_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "required": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "required"
+            ],
+            "type": "object"
+          },
+          "course_key": {
+            "$ref": "#/$defs/logical_key"
+          },
+          "description": {
+            "type": "string"
+          },
+          "existing_course_product_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "operation-contract.schema.json#/$defs/typed_id"
+              }
+            ]
+          },
+          "legacy_conversion": {
+            "$ref": "hybrid-operation-receipt.v1.schema.json#/$defs/legacy_conversion"
+          },
+          "location_id": {
+            "$ref": "operation-contract.schema.json#/$defs/typed_id"
+          },
+          "modules": {
+            "items": {
+              "$ref": "#/$defs/module"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "offer_plan_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "poster_image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "release_intent": {
+            "enum": [
+              "draft_only",
+              "release_approved"
+            ]
+          },
+          "run_id": {
+            "$ref": "operation-contract.schema.json#/$defs/typed_id"
+          },
+          "schema_version": {
+            "const": "1.0.0"
+          },
+          "source_approval_ref": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "run_id",
+          "location_id",
+          "course_key",
+          "title",
+          "source_approval_ref",
+          "release_intent",
+          "modules"
+        ],
+        "title": "GHL Course Build Plan v1",
+        "type": "object",
+        "x-semantic-constraints": [
+          "module_key is unique across the plan; lesson_key is unique within its module (the same lesson key may appear under different modules).",
+          "parent_module_key, when not null, must name a module_key in the same plan; the parent chain must be acyclic and must not point at itself.",
+          "description_ref must name a relative path that exists in the approved content set; a missing content reference rejects the plan.",
+          "asset_refs must name relative paths in the approved asset set; no cross-location object id may appear.",
+          "visibility must be one of the documented category/lesson vocabularies; the two vocabularies are not interchangeable.",
+          "Duplicate display titles are allowed when logical keys differ; a matching title is a reconciliation candidate, never permission to edit or delete an existing object."
+        ]
+      },
+      "sha256": "c015f7c5b7864edc5f50320207fec7f1ec0f438fcbba5543ef0efbaf4f27cde4",
+      "version": "1.0.0"
+    },
+    {
+      "name": "course-asset-manifest.v1",
+      "schema": {
+        "$id": "https://blackceo.local/ghl/contracts/course-asset-manifest.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "role": {
+                  "const": "lesson_video"
+                }
+              },
+              "required": [
+                "role"
+              ]
+            },
+            "then": {
+              "properties": {
+                "duration_seconds": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "mime_type": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "role": {
+                  "const": "lesson_audio"
+                }
+              },
+              "required": [
+                "role"
+              ]
+            },
+            "then": {
+              "properties": {
+                "duration_seconds": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "mime_type": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "generation_state": {
+                  "const": "completed"
+                }
+              },
+              "required": [
+                "generation_state"
+              ]
+            },
+            "then": {
+              "properties": {
+                "byte_size": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "description": "Shared course-media handoff package (Document 1 section 10.3). KIE creates the file; this manifest says which approved file belongs to which lesson, whether generation actually finished, where a durable copy lives, and whether GHL attached it. A queued generation is not completed; a provider URL is not proof that bytes are downloadable, correctly typed and persisted. Required fields vary by asset type: an image never carries an invented audio duration.",
+        "properties": {
+          "asset_key": {
+            "description": "Stable logical key, e.g. launch101:welcome:intro:video.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "type": "string"
+          },
+          "byte_size": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "course_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "durable_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_seconds": {
+            "minimum": 0,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "generation_state": {
+            "enum": [
+              "queued",
+              "generating",
+              "completed",
+              "failed",
+              "unknown"
+            ]
+          },
+          "ghl_binding": {
+            "additionalProperties": false,
+            "properties": {
+              "content_id": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  }
+                ]
+              },
+              "lesson_id": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  }
+                ]
+              },
+              "receipt_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "route": {
+                "enum": [
+                  "public_import",
+                  "public_native_content",
+                  "skill06_browser",
+                  "none",
+                  "unknown"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "not_started",
+                  "attached",
+                  "association_verified",
+                  "failed",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "state",
+              "content_id",
+              "lesson_id"
+            ],
+            "type": "object"
+          },
+          "height": {
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lesson_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "local_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mime_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "module_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proof": {
+            "additionalProperties": false,
+            "description": "Separate proofs. A permanent URL proves only asset_persisted.",
+            "properties": {
+              "asset_persisted": {
+                "type": "boolean"
+              },
+              "learner_render_verified": {
+                "type": "boolean"
+              },
+              "lesson_association_verified": {
+                "type": "boolean"
+              },
+              "native_content_ready": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "provider": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "provider_task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qc": {
+            "additionalProperties": false,
+            "properties": {
+              "receipt_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "not_run",
+                  "passed",
+                  "failed",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          "role": {
+            "enum": [
+              "lesson_video",
+              "lesson_audio",
+              "lesson_image",
+              "lesson_document",
+              "course_poster",
+              "assessment_media",
+              "other"
+            ]
+          },
+          "schema_version": {
+            "const": "1.0.0"
+          },
+          "sha256": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              }
+            ]
+          },
+          "storage_access": {
+            "enum": [
+              "approved_for_destination",
+              "private_pending",
+              "unknown"
+            ]
+          },
+          "unknowns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "width": {
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "schema_version",
+          "asset_key",
+          "course_key",
+          "lesson_key",
+          "role",
+          "provider",
+          "generation_state",
+          "ghl_binding"
+        ],
+        "title": "GHL Course Asset Manifest v1",
+        "type": "object",
+        "x-semantic-constraints": [
+          "sha256 is computed from the actual file bytes, never derived from a provider task id.",
+          "A completed generation requires a nonzero byte_size, a sha256 and a durable local or approved-storage reference.",
+          "ghl_binding.state=association_verified requires both content_id and lesson_id and a readback receipt reference.",
+          "Duplicate callbacks or retries update one asset record; they never upload again or create another lesson."
+        ]
+      },
+      "sha256": "c055f4b69d1e73347f0a667b17506ee3f8f38e2c0b5df15f82ae1f4c8ee11e55",
+      "version": "1.0.0"
+    },
+    {
+      "name": "learning-association.v1",
+      "schema": {
+        "$defs": {
+          "access": {
+            "additionalProperties": false,
+            "properties": {
+              "mode": {
+                "enum": [
+                  "all_members",
+                  "level_based",
+                  "time_based",
+                  "paid",
+                  "unknown"
+                ]
+              },
+              "policy_ref": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "policy_ref"
+            ],
+            "type": "object"
+          },
+          "association": {
+            "additionalProperties": false,
+            "properties": {
+              "access_mode": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "course_product_id": {
+                "$ref": "operation-contract.schema.json#/$defs/typed_id"
+              },
+              "group_id": {
+                "$ref": "operation-contract.schema.json#/$defs/typed_id"
+              },
+              "verified": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "course_product_id",
+              "group_id",
+              "access_mode"
+            ],
+            "type": "object"
+          },
+          "group_ref": {
+            "additionalProperties": false,
+            "properties": {
+              "group_id": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  }
+                ]
+              },
+              "group_slug": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  }
+                ]
+              },
+              "portal_host": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "group_id",
+              "group_slug",
+              "portal_host"
+            ],
+            "type": "object"
+          }
+        },
+        "$id": "https://blackceo.local/ghl/contracts/learning-association.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Validated course-to-Community-group Learning relationship plan (Document 1 section 9.4). The input is a relationship plan, not a page URL. Attaching and detaching are relationships: detaching never deletes the course, and a group association, a course offer, a commerce product and an enrollment remain separate objects.",
+        "properties": {
+          "approval_ref": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "course_product_id": {
+            "$ref": "operation-contract.schema.json#/$defs/typed_id"
+          },
+          "desired_access": {
+            "$ref": "#/$defs/access"
+          },
+          "existing_association": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/association"
+              }
+            ]
+          },
+          "group_ref": {
+            "$ref": "#/$defs/group_ref"
+          },
+          "location_id": {
+            "$ref": "operation-contract.schema.json#/$defs/typed_id"
+          },
+          "operation": {
+            "enum": [
+              "attach",
+              "detach",
+              "verify"
+            ]
+          },
+          "relationship_receipt_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schema_version": {
+            "const": "1.0.0"
+          },
+          "unknowns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema_version",
+          "location_id",
+          "course_product_id",
+          "group_ref",
+          "desired_access",
+          "operation",
+          "approval_ref"
+        ],
+        "title": "GHL Learning Association v1",
+        "type": "object",
+        "x-semantic-constraints": [
+          "The group and the course must resolve in the same location; a cross-location reference rejects the plan.",
+          "An existing association with the same course and the same access policy produces an idempotent verified result without adding a second one.",
+          "operation=detach removes only the relationship and never calls course delete.",
+          "Ambiguous name-only matches must be resolved before any UI action; a matching title alone is not object identity."
+        ]
+      },
+      "sha256": "27c95c3956ee81ead1c1fad4dc4ffd252c590d79102830f20c7034de9cccb486",
+      "version": "1.0.0"
+    },
+    {
+      "name": "course-delivery-receipt.v1",
+      "schema": {
+        "$defs": {
+          "component": {
+            "additionalProperties": false,
+            "properties": {
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "receipt_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "$ref": "#/$defs/state"
+              },
+              "unknowns": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          "components": {
+            "additionalProperties": false,
+            "properties": {
+              "assessment": {
+                "$ref": "#/$defs/component"
+              },
+              "community": {
+                "$ref": "#/$defs/component"
+              },
+              "course_shell": {
+                "$ref": "#/$defs/component"
+              },
+              "enrollment": {
+                "$ref": "#/$defs/component"
+              },
+              "learner_access": {
+                "$ref": "#/$defs/component"
+              },
+              "learning_association": {
+                "$ref": "#/$defs/component"
+              },
+              "lessons": {
+                "items": {
+                  "$ref": "#/$defs/lesson_result"
+                },
+                "type": "array"
+              },
+              "media_binding": {
+                "additionalProperties": false,
+                "properties": {
+                  "asset_persisted": {
+                    "type": "boolean"
+                  },
+                  "assets": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "learner_render_verified": {
+                    "type": "boolean"
+                  },
+                  "lesson_association_verified": {
+                    "type": "boolean"
+                  },
+                  "native_content_ready": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "state": {
+                    "$ref": "#/$defs/state"
+                  }
+                },
+                "required": [
+                  "state"
+                ],
+                "type": "object"
+              },
+              "offer": {
+                "$ref": "#/$defs/component"
+              },
+              "plan_object_identity": {
+                "$ref": "#/$defs/component"
+              }
+            },
+            "required": [
+              "course_shell",
+              "plan_object_identity",
+              "lessons",
+              "media_binding"
+            ],
+            "type": "object"
+          },
+          "lesson_result": {
+            "additionalProperties": false,
+            "properties": {
+              "content_bound": {
+                "type": "boolean"
+              },
+              "course_lesson_id": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "operation-contract.schema.json#/$defs/typed_id"
+                  }
+                ]
+              },
+              "lesson_key": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "module_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "$ref": "#/$defs/state"
+              },
+              "unknowns": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "visibility": {
+                "enum": [
+                  "draft",
+                  "published",
+                  "hidden",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "lesson_key",
+              "state"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "enum": [
+              "planned",
+              "submitted",
+              "processing",
+              "created",
+              "reused",
+              "attached",
+              "verified",
+              "failed",
+              "blocked",
+              "unknown",
+              "not_requested"
+            ]
+          }
+        },
+        "$id": "https://blackceo.local/ghl/contracts/course-delivery-receipt.v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Aggregate course-delivery receipt (Document 1 sections 8.4, 8.5, 17, 18). A filled course title with no content is not delivery. The receipt separates plan-to-object identity, content/media binding, assessments, offer/enrollment, group association, learner access and observed playback. Live verification is reported separately from offline implementation readiness; the reducer that may set business_delivery_verified is the only writer of that state.",
+        "properties": {
+          "build_state": {
+            "enum": [
+              "not_started",
+              "in_progress",
+              "implemented",
+              "verified",
+              "failed",
+              "unknown"
+            ]
+          },
+          "business_delivery_verified": {
+            "type": "boolean"
+          },
+          "components": {
+            "$ref": "#/$defs/components"
+          },
+          "course_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "course_product_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "operation-contract.schema.json#/$defs/typed_id"
+              }
+            ]
+          },
+          "evidence_refs": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "legacy_conversion": {
+            "$ref": "hybrid-operation-receipt.v1.schema.json#/$defs/legacy_conversion"
+          },
+          "live_verification": {
+            "description": "Live learner proof and offline implementation readiness are separate facts.",
+            "enum": [
+              "not_run",
+              "pending",
+              "passed",
+              "failed",
+              "unknown"
+            ]
+          },
+          "location_id": {
+            "$ref": "operation-contract.schema.json#/$defs/typed_id"
+          },
+          "next_action": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "planned",
+              "submitted",
+              "processing",
+              "verified",
+              "failed",
+              "blocked",
+              "unknown_outcome",
+              "not_requested"
+            ]
+          },
+          "receipt_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "run_id": {
+            "$ref": "operation-contract.schema.json#/$defs/typed_id"
+          },
+          "schema_version": {
+            "const": "1.0.0"
+          },
+          "unknowns": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "schema_version",
+          "receipt_id",
+          "run_id",
+          "location_id",
+          "course_key",
+          "outcome",
+          "build_state",
+          "components",
+          "evidence_refs",
+          "observed_at"
+        ],
+        "title": "GHL Course Delivery Receipt v1",
+        "type": "object",
+        "x-semantic-constraints": [
+          "business_delivery_verified=true requires outcome=verified, live_verification=passed, and every required component in {verified, not_requested-with-reason}.",
+          "A required component in {planned, submitted, processing, failed, blocked, unknown} forbids business_delivery_verified.",
+          "A component marked not_requested carries a scope reason; a missing required implementation is never classified not_requested.",
+          "plan_object_identity verified requires every approved logical key mapped to a real id (no title-only identity)."
+        ]
+      },
+      "sha256": "0d32d75dc38f454374cd1dcf2f7b267fddbda7ef8078653ad1e8e3873a6b98c9",
+      "version": "1.0.0"
+    }
+  ],
+  "generated_at": "2026-11-08",
+  "note": "Versioned, hash-checked copy for the Command Center build/runtime. It must not need GitHub access at request time. Do not edit this file in the Command Center repository; regenerate from WF00.",
+  "registry_module": "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py",
+  "source_path": "shared-utils/ghl/contracts/",
+  "source_repository": "openclaw-onboarding",
+  "vocabularies": {
+    "availability": [
+      "public",
+      "private_beta",
+      "feature_gap",
+      "tenant_restricted",
+      "internal",
+      "retired",
+      "unknown"
+    ],
+    "media_types": [
+      "application/json",
+      "multipart/form-data",
+      "unknown"
+    ],
+    "outcomes": [
+      "planned",
+      "submitted",
+      "processing",
+      "verified",
+      "failed",
+      "blocked",
+      "unknown_outcome",
+      "not_requested"
+    ],
+    "typed_ids": [
+      "company_id",
+      "location_id",
+      "agency_company_id",
+      "commerce_product_id",
+      "commerce_price_id",
+      "course_product_id",
+      "course_category_id",
+      "course_lesson_id",
+      "course_offer_id",
+      "community_group_id",
+      "community_group_slug",
+      "community_channel_id",
+      "social_account_id",
+      "member_contact_id",
+      "workflow_id",
+      "cc_task_id",
+      "run_id",
+      "voice_agent_id",
+      "conversation_agent_id",
+      "studio_agent_id",
+      "studio_version_id",
+      "studio_execution_id",
+      "knowledge_base_id",
+      "knowledge_source_id",
+      "chat_widget_id",
+      "meeting_room_ref",
+      "host_user_id",
+      "projects_space_id",
+      "projects_list_id",
+      "projects_task_id"
+    ],
+    "version_states": [
+      "frozen",
+      "unverified"
+    ]
+  }
+}

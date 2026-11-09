@@ -97,14 +97,18 @@ EXPECTED_ENABLED = frozenset(
 )
 
 #: The gate is default-deny, so the only admissible pre-gate refusals are the
-#: frozen tenant-binding rules.  A new rule appearing here is a behaviour
-#: change the suite must be told about.
-PRE_GATE_RULES = frozenset({"unknown_tenant_binding", "tenant_path_missing"})
+#: frozen tenant-binding rules and the frozen auth-class rule.  A new rule
+#: appearing here is a behaviour change the suite must be told about.
+PRE_GATE_RULES = frozenset(
+    {"unknown_tenant_binding", "tenant_path_missing", "auth_kind_not_allowed"}
+)
 
 #: Pinned registry shape.  A change here means operations.py grew or shrank:
 #: update this count and the breadth expectations in the same change.  Failing
-#: loudly is the point.
-EXPECTED_OPERATION_COUNT = 140
+#: loudly is the point.  172 = the 140-row freeze plus the 2026-11-08 WF00
+#: additions (5 workflow rows, 3 Community rows, 1 agency row, 10 course rows,
+#: 13 monitoring/native-AI rows).
+EXPECTED_OPERATION_COUNT = 206
 
 _COMPLETE = dict(
     contract_verified=True,
@@ -137,7 +141,7 @@ def _path_params(template: str, tenant: str) -> dict[str, str]:
     }
 
 
-def _query_for(row) -> dict[str, str]:
+def _query_for(row, tenant: str = "") -> dict[str, str]:
     """Satisfy a row's declared required query so the gate is actually reached.
 
     A missing required query is a typed contract violation *before* the gate
@@ -147,7 +151,11 @@ def _query_for(row) -> dict[str, str]:
 
     enums = dict(getattr(row, "query_enums", ()) or ())
     return {
-        str(name): str(enums[name][0]) if name in enums else "synthetic_value"
+        str(name): (
+            str(enums[name][0]) if name in enums
+            else tenant if name == "locationId" and tenant
+            else "synthetic_value"
+        )
         for name in tuple(getattr(row, "required_query", ()) or ())
     }
 
@@ -181,7 +189,7 @@ def _call_kwargs(row, tenant: str) -> dict:
         "operation_id": row.operation_id,
         "tenant": fake_tenant(tenant),
         "path_params": _path_params(row.path_template, tenant),
-        "query": _query_for(row),
+        "query": _query_for(row, tenant),
     }
     if row.write:
         kwargs["idempotency_key"] = issue_key(row.operation_id)
@@ -240,6 +248,19 @@ def _assert_gate_reachable_rule(operation_id: str, rule: str, row) -> None:
         f"{operation_id}: unexpected denial rule {rule!r}; only "
         f"capability_disabled or {sorted(PRE_GATE_RULES)} may deny a row"
     )
+    if rule == "auth_kind_not_allowed":
+        # Only a row whose declared credential classes cannot accept a
+        # location PIT or OAuth token may be refused by the frozen auth rule.
+        # A row that accepts either one must reach the capability gate.
+        accepted = {kind.value for kind in tuple(row.auth_kinds)}
+        assert not accepted & {"location_pit", "oauth"}, (
+            f"{operation_id}: a row accepting location_pit/oauth was denied by "
+            f"{rule!r} instead of the capability gate"
+        )
+        assert row.route_class != "excluded", (
+            f"{operation_id}: an excluded row must not be exercised"
+        )
+        return
     assert row.route_class != "public_direct", (
         f"{operation_id}: a public_direct row must be denied by the capability "
         f"gate, not by {rule!r}"
@@ -264,10 +285,15 @@ _APPLICABLE_BINDINGS = frozenset(
 def _pre_gate_operation_ids() -> set[str]:
     """Registry rows the adapter refuses before the capability gate.
 
-    Recomputed from the registry's own ``tenant_binding`` and
-    ``path_template`` fields, so the suite never carries a stale refusal
-    count; if the adapter stops refusing one of these rows the observed set
-    diverges and the suite fails.
+    Recomputed from the registry's own ``tenant_binding``/``path_template``/
+    ``auth_kinds`` fields, so the suite never carries a stale refusal count; if
+    the adapter stops refusing one of these rows the observed set diverges and
+    the suite fails.
+
+    The instrument supplies a location PIT (or OAuth) credential.  A row that
+    accepts neither credential class -- for example the agency-token-only
+    create-location row -- is refused by the frozen ``auth_kind_not_allowed``
+    rule before the gate.
     """
 
     pre: set[str] = set()
@@ -281,8 +307,11 @@ def _pre_gate_operation_ids() -> set[str]:
                 pre.add(operation_id)
         elif binding.startswith("path."):
             # The identifier rides its own path parameter; nothing to inject.
-            continue
+            pass
         elif binding not in _APPLICABLE_BINDINGS:
+            pre.add(operation_id)
+        accepted = {kind.value for kind in tuple(getattr(row, "auth_kinds", ()) or ())}
+        if not accepted & {"location_pit", "oauth"}:
             pre.add(operation_id)
     return pre
 
@@ -394,10 +423,10 @@ class CheckedInRecordBreadthTest(unittest.TestCase):
             for operation_id, row in OPERATIONS.items()
             if row.route_class == "public_direct"
         }
-        self.assertTrue(public <= (gate_denials | set(EXPECTED_ENABLED)), (
+        self.assertTrue(public <= (gate_denials | set(EXPECTED_ENABLED) | pre_gate), (
             "every non-enabled public_direct row must be denied by "
-            f"capability_disabled; missing "
-            f"{sorted(public - gate_denials - set(EXPECTED_ENABLED))}"
+            "capability_disabled or a frozen pre-gate rule; missing "
+            f"{sorted(public - gate_denials - set(EXPECTED_ENABLED) - pre_gate)}"
         ))
 
 
@@ -466,9 +495,10 @@ class SingleEnablementBreadthTest(unittest.TestCase):
                 for operation_id, row in OPERATIONS.items()
                 if row.route_class == "public_direct"
             } - {ENABLED_OPERATION}
-            self.assertTrue(public <= gate_denials, (
+            self.assertTrue(public <= gate_denials | pre_gate, (
                 "every non-enabled public_direct row must be denied by "
-                f"capability_disabled; missing {sorted(public - gate_denials)}"
+                "capability_disabled or by a frozen pre-gate rule; missing "
+                f"{sorted(public - gate_denials - pre_gate)}"
             ))
 
 

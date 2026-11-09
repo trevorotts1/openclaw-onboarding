@@ -1,0 +1,65 @@
+{
+  "approval_class": "none",
+  "auth_kinds": [
+    "location_pit",
+    "oauth"
+  ],
+  "availability": "public",
+  "availability_restriction": "B-WORKFLOW-BETA",
+  "consumes_write_quota": false,
+  "doc_retrieved_at": "2026-11-08",
+  "doc_url": "https://marketplace.gohighlevel.com/docs/ghl/workflows/",
+  "documented_level": "D",
+  "effect": "read",
+  "identity_binding": "query.locationId",
+  "identity_placement": "query",
+  "implementation": "public_rest",
+  "method": "GET",
+  "operation_id": "funnels.pages.count",
+  "outcomes": [
+    "planned",
+    "submitted",
+    "processing",
+    "verified",
+    "failed",
+    "blocked",
+    "unknown_outcome",
+    "not_requested"
+  ],
+  "pagination": "none",
+  "path_template": "/funnels/page/count",
+  "query_enums": [],
+  "readback_operation": null,
+  "request_media_type": "application/json",
+  "request_schema_ref": null,
+  "required_query": [
+    "locationId",
+    "funnelId"
+  ],
+  "response_schema_ref": null,
+  "route_class": "public_direct",
+  "schema_version": "1.0.0",
+  "scopes": [
+    "workflows.readonly"
+  ],
+  "scopes_resolved": true,
+  "token_class": "mixed",
+  "unresolved_fields": [
+    "version.header",
+    "scopes"
+  ],
+  "version": "2023-02-21",
+  "version_alternates": [],
+  "version_state": "unverified",
+  "documented_query": [
+    "locationId",
+    "funnelId",
+    "name"
+  ],
+  "query_constraints": [
+    {
+      "name": "locationId",
+      "constraint": "sub-account id"
+    }
+  ]
+}

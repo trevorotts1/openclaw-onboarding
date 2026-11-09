@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://blackceo.local/ghl/contracts/operation-contract.schema.json",
+  "title": "GHL Hybrid Operation Contract",
+  "description": "One operation row as declared by the central registry at 44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py. Additive v1: every field the operation contract requires (Document 1 section 5.1) is declared per row, never inferred from the HTTP verb or from a module-wide default. `x-semantic-constraints` records checks a JSON Schema cannot express and that the contract validator enforces.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation_id",
+    "method",
+    "path_template",
+    "route_class",
+    "documented_level",
+    "version",
+    "identity_placement",
+    "identity_binding",
+    "token_class",
+    "scopes",
+    "effect",
+    "consumes_write_quota",
+    "approval_class",
+    "request_media_type",
+    "pagination",
+    "availability",
+    "implementation"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "operation_id": { "$ref": "#/$defs/operation_id" },
+    "method": {
+      "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "MCP", "POST/DELETE", "UNKNOWN"],
+      "description": "POST/DELETE is a documented dual-verb row (like/unlike); UNKNOWN is an unresolved operation whose path is a named capability gap."
+    },
+    "path_template": { "type": "string", "minLength": 1 },
+    "version": {
+      "type": ["string", "null"],
+      "description": "Per-operation Version header literal. null means the route sends no Version header (official MCP rows) or has no public contract."
+    },
+    "version_alternates": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "identity_placement": {
+      "enum": ["path", "query", "body", "token", "connection", "none", "unknown"],
+      "description": "Where the tenant/location identity rides. Never inferred from the verb."
+    },
+    "identity_binding": {
+      "type": "string",
+      "description": "The frozen tenant_binding literal, e.g. path.locationId, query.locationId, body.locationId, implicit-pit, token-id, connection scope, n/a, unknown."
+    },
+    "token_class": {
+      "enum": ["location_pit", "oauth", "agency_pit", "firebase_internal", "mixed", "none"]
+    },
+    "auth_kinds": {
+      "type": "array",
+      "items": { "enum": ["location_pit", "oauth", "agency_pit", "firebase_internal"] },
+      "uniqueItems": true
+    },
+    "scopes": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "description": "Candidate scopes from evidence. An empty array means the scope is unresolved, never that no scope is needed."
+    },
+    "scopes_resolved": { "type": "boolean" },
+    "effect": {
+      "enum": ["read", "write", "non_persisting_write"],
+      "description": "Read/write effect of the operation itself, independent of method. POST /workflows/search is a read; definition validation persists nothing but consumes write quota."
+    },
+    "consumes_write_quota": { "type": "boolean" },
+    "approval_class": { "enum": ["none", "approval", "destructive"] },
+    "doc_url": { "type": ["string", "null"] },
+    "doc_retrieved_at": { "type": ["string", "null"], "format": "date" },
+    "doc_evidence": {
+      "enum": [
+        "frozen",
+        "reopened_2026-11-07",
+        "reopened_2026-11-08",
+        "revision3_spec",
+        "none"
+      ],
+      "description": "Provenance of doc_url and doc_retrieved_at. revision3_spec means the contract came from the revision-3 specification without reopening the page; it must never be reported as a fresh fetch."
+    },
+    "request_media_type": {
+      "enum": ["application/json", "multipart/form-data", "unknown"],
+      "description": "The real request media type. A typed JSON request and a typed multipart request can never be confused."
+    },
+    "request_schema_ref": { "type": ["string", "null"] },
+    "response_schema_ref": { "type": ["string", "null"] },
+    "pagination": { "enum": ["none", "cursor", "page", "offset", "unknown"] },
+    "readback_operation": {
+      "type": ["string", "null"],
+      "description": "Operation id that proves a write. null means no frozen readback plan; the caller must supply one."
+    },
+    "availability": {
+      "enum": [
+        "public",
+        "private_beta",
+        "feature_gap",
+        "tenant_restricted",
+        "internal",
+        "retired",
+        "unknown"
+      ]
+    },
+    "availability_restriction": {
+      "type": ["string", "null"],
+      "description": "Named blocker/restriction code. Documentation never activates a tenant."
+    },
+    "implementation": {
+      "enum": [
+        "public_rest",
+        "official_mcp",
+        "skill44_private",
+        "skill06_browser",
+        "excluded",
+        "unresolved"
+      ]
+    },
+    "route_class": {
+      "enum": [
+        "public_direct",
+        "official_mcp",
+        "skill44_private",
+        "skill06_authoring",
+        "retired",
+        "capability_gap",
+        "excluded"
+      ]
+    },
+    "documented_level": { "enum": ["D", "S", "internal", "undocumented"] },
+    "required_query": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "query_enums": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "allowed"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "allowed": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    "version_state": {
+      "enum": ["frozen", "unverified"],
+      "description": "Whether the row's Version literal is settled. unverified records a documentation label or no literal without claiming a live header contract."
+    },
+    "documented_query": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "description": "Query parameter names the operation documents, required or optional."
+    },
+    "query_constraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "constraint"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "constraint": { "type": "string", "minLength": 1 }
+        }
+      },
+      "description": "Named bounds/grammar for documented query parameters, transcribed only where the source states them."
+    },
+    "identity_detail": {
+      "type": ["string", "null"],
+      "description": "Identity detail not carried by tenant_binding (for example an agency companyId the typed adapter writes itself). Never a credential value."
+    },
+    "outcomes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/outcome" },
+      "uniqueItems": true
+    },
+    "unresolved_fields": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "description": "Declared fields whose evidence did not settle them. Named explicitly, never guessed."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "effect": { "const": "read" } }, "required": ["effect"] },
+      "then": {
+        "properties": { "consumes_write_quota": { "const": false } }
+      }
+    },
+    {
+      "if": { "properties": { "effect": { "const": "non_persisting_write" } }, "required": ["effect"] },
+      "then": {
+        "properties": {
+          "consumes_write_quota": { "const": true },
+          "approval_class": { "enum": ["none", "approval"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "request_media_type": { "const": "multipart/form-data" } }, "required": ["request_media_type"] },
+      "then": {
+        "properties": { "method": { "enum": ["POST", "PUT", "PATCH"] } }
+      }
+    }
+  ],
+  "x-semantic-constraints": [
+    "identity_placement must agree with identity_binding's leading segment (path./query./body./implicit-pit/token-id/connection scope/n/a/unknown).",
+    "token_class must agree with token_class_derived(auth_kinds).",
+    "effect=write requires approval_class != none for a destructive route and requires the registry write flag.",
+    "scopes_resolved=false is required whenever scopes is empty.",
+    "version_state=unverified may carry version=null only when version is in unresolved_fields and a blocker is set; a documented row otherwise requires a literal version.",
+    "implementation must agree with route_class through TRANSPORT_BY_ROUTE."
+  ],
+  "$defs": {
+    "operation_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$"
+    },
+    "outcome": {
+      "enum": [
+        "planned",
+        "submitted",
+        "processing",
+        "verified",
+        "failed",
+        "blocked",
+        "unknown_outcome",
+        "not_requested"
+      ]
+    },
+    "typed_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Value of an explicit, domain-typed identifier. The property name carries the domain; a bare product_id or user_id is forbidden at a cross-skill boundary."
+    },
+    "typed_id_name": {
+      "enum": [
+        "company_id",
+        "location_id",
+        "agency_company_id",
+        "commerce_product_id",
+        "commerce_price_id",
+        "course_product_id",
+        "course_category_id",
+        "course_lesson_id",
+        "course_offer_id",
+        "community_group_id",
+        "community_group_slug",
+        "community_channel_id",
+        "social_account_id",
+        "member_contact_id",
+        "workflow_id",
+        "cc_task_id",
+        "run_id",
+        "voice_agent_id",
+        "conversation_agent_id",
+        "studio_agent_id",
+        "studio_version_id",
+        "studio_execution_id",
+        "knowledge_base_id",
+        "knowledge_source_id",
+        "chat_widget_id",
+        "meeting_room_ref",
+        "host_user_id",
+        "projects_space_id",
+        "projects_list_id",
+        "projects_task_id",
+        "contact_id",
+        "invoice_id",
+        "calendar_id",
+        "funnel_id",
+        "page_id",
+        "form_id",
+        "survey_id"
+      ]
+    }
+  }
+}

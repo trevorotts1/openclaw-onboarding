@@ -48,12 +48,15 @@ from cli_anything.gohighlevel.public.errors import (  # noqa: E402
 from cli_anything.gohighlevel.public.readback import ReadbackRegistry  # noqa: E402
 from cli_anything.gohighlevel.public.result import Status  # noqa: E402
 
-_V4_WRITES = (
+_WORKFLOW_WRITES = (
     "workflows.definition.create",
     "workflows.definition.update",
     "workflows.status.publish",
     "workflows.definition.delete",
 )
+# The workflow definition rows were re-frozen at production v3 on 2026-11-08
+# (Document 1 sections 4.3/6.2).  They stay default-deny; only the obsolete
+# staging wire literal changed.
 
 _READ_ROW = row(
     "contacts.get",
@@ -327,13 +330,14 @@ class FrozenRegistryCapabilityTest(unittest.TestCase):
                 self.assertFalse(descriptor.enabled)
                 self.assertIsNotNone(descriptor.activation_blocked)
 
-    def test_every_v4_write_is_disabled(self) -> None:
+    def test_every_workflow_write_is_disabled_at_production_v3(self) -> None:
         gate = CapabilityGate(tenant=SYNTHETIC_TENANT)
-        for operation_id in _V4_WRITES:
+        for operation_id in _WORKFLOW_WRITES:
             with self.subTest(operation_id=operation_id):
                 self.assertIn(operation_id, FROZEN_OPERATIONS)
                 frozen = FROZEN_OPERATIONS[operation_id]
-                self.assertEqual(frozen.version, "v4")
+                self.assertEqual(frozen.version, "v3")
+                self.assertEqual(frozen.documented_level, "D")
                 self.assertTrue(frozen.write)
                 self.assertTrue(frozen.approval_required)
                 self.assertFalse(gate.get(operation_id).enabled)

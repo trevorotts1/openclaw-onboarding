@@ -141,10 +141,14 @@ class DisabledByDefault(unittest.TestCase):
             self.assertIsNotNone(capability.activation_blocked, key)
             self.assertFalse(capability.write_ready() if key in WRITE_KEYS else False)
 
-    def test_v4_write_rows_are_v4_and_approval_guarded(self) -> None:
+    def test_workflow_write_rows_are_production_v3_and_approval_guarded(self) -> None:
+        # Re-frozen 2026-11-08: the five definition pages publish on the
+        # production marketplace at Version v3.  The staging-only v4 literal was
+        # obsolete.  Disabled-by-default is unchanged.
         for operation_id in WRITE_IDS:
             row = OPERATIONS[operation_id]
-            self.assertEqual(row.version, "v4", operation_id)
+            self.assertEqual(row.version, "v3", operation_id)
+            self.assertEqual(row.documented_level, "D", operation_id)
             self.assertTrue(row.write, operation_id)
             self.assertTrue(row.approval_required, operation_id)
             self.assertEqual(row.route_class, "public_direct", operation_id)
@@ -312,14 +316,18 @@ class DisabledByDefault(unittest.TestCase):
             for operation_id in WRITE_IDS:
                 self.assertNotIn(operation_id, text, f"{path.name}: {operation_id}")
 
-    def test_v4_version_is_confined_to_the_frozen_rows(self) -> None:
+    def test_no_registry_row_carries_the_staging_v4_literal(self) -> None:
+        # The staging-only v4 literal must not survive anywhere in the frozen
+        # table, and every operation the adapter maps is now production v3.
         v4_rows = {
             operation_id
             for operation_id, row in OPERATIONS.items()
             if row.version == "v4"
         }
-        expected = {value for value in OPERATION_MAP.values() if value is not None}
-        self.assertEqual(v4_rows, expected)
+        self.assertEqual(v4_rows, set())
+        mapped = {value for value in OPERATION_MAP.values() if value is not None}
+        for operation_id in mapped:
+            self.assertEqual(OPERATIONS[operation_id].version, "v3", operation_id)
 
     def test_operation_map_writes_are_exactly_the_four_frozen_keys(self) -> None:
         mapped_writes = {
