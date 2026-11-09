@@ -1,9 +1,10 @@
 # KIE Image — Prompt Policy & House Bands
 
-> SUPERSEDED IN PART (owner order 2026-10-05): the house band below (5,000 / 9,000 / 19,000) and the
-> per-rule "target" figures are replaced by the prompt budget: 95-100% of the model's character max,
-> never below 80%, limit from Skill 74 `prompt-budget` (live schema first). Rules A-E still describe how
-> each model's cap status is classified; the expansion structure in section 9 still applies.
+> SUPERSEDED IN PART (owner order 2026-10-05): the retired house band and the per-rule fixed "target"
+> figures are replaced by the prompt budget: 95-100% of the model's character max is the target band;
+> 80% to below 95% passes with a warn-and-expand message; below 80% is a hard failure; the limit comes
+> from Skill 74 `prompt-budget` (live schema first). Rules A-E still describe how each model's cap
+> status is classified; the expansion structure in section 9 still applies.
 
 Verification date: 2026-08-26. Authority: Spec 5 (BlackCEO Media Prompt Policy),
 Spec 7.4 (per-family prompt caps), and first-party KIE research
@@ -11,13 +12,16 @@ Spec 7.4 (per-family prompt caps), and first-party KIE research
 
 ---
 
-## 1. House band (spec 5.1)
+## 1. Prompt band (spec 5.1)
 
-BlackCEO house prompting policy — NOT a universal provider limit:
+BlackCEO prompt policy — NOT a universal provider limit. No fixed character
+floor, target or preferred maximum applies. The band is a percentage of the
+model's own verified maximum:
 
-- desired minimum when legal: **5,000 characters**
-- normal target when legal: **~9,000 characters**
-- preferred maximum when legal: **19,000 characters**
+- target band: **95 to 100 percent** of the verified maximum
+- **80 percent to below 95 percent**: passes with a warn-and-expand message
+- below **80 percent**: hard failure
+- above the maximum: hard failure
 
 The runtime selects the model FIRST, then calculates the legal band for that
 model (spec 5.2). The cap fields per entry:
@@ -25,21 +29,21 @@ model (spec 5.2). The cap fields per entry:
 ```
 vendor_hard_cap_chars | vendor_hard_cap_tokens | owner_observed_cap_chars |
 cap_status: VERIFIED | OWNER_OBSERVED | NOT_PUBLISHED | LIVE_PROBE_REQUIRED |
-house_prompt_min_chars: 5000 | house_prompt_target_chars: 9000 |
-house_prompt_max_chars: 19000
+prompt_floor_percent: 95 | prompt_hard_floor_percent: 80 | prompt_ceiling_percent: 100
 ```
 
 ## 2. Rule A — verified cap >= 20,000
 
-Use 5,000–19,000 chars; target ~9,000. GPT Image 2.6 enforces 20,000 chars
+Use the percentage band above: target 95–100 percent of the verified maximum.
+GPT Image 2.6 enforces 20,000 chars
 (owner ruling 2026-11-08, which governs over the vendor OpenAPI's published
 32,000; cap_status `DOCS`); no other KIE
 image family currently qualifies with a vendor-verified cap at/above 20,000.
 
 ## 3. Rule B — verified cap between 5,000 and 19,999
 
-Do not use 19,000. Use a safe ceiling BELOW the hard cap; preserve headroom for
-wrappers/rewrites. Wording per family:
+Do not aim for a fixed preferred maximum. Use a safe percentage of the hard cap
+BELOW the maximum; preserve headroom for wrappers/rewrites. Wording per family:
 
 - **Wan 2.7 Image** (`wan/2-7-image`, `wan/2-7-image-pro`): hard cap **5,000
   chars VERIFIED** ("with a minimum of 1 characters and a maximum of 5,000
@@ -53,7 +57,7 @@ wrappers/rewrites. Wording per family:
 
 ## 4. Rule C — verified cap below 5,000
 
-The 5,000-char house minimum is impossible. Use a safe high-information prompt
+The retired 5,000-char house floor is impossible. Use a safe high-information prompt
 below the model limit. No KIE image family currently sits here.
 
 ## 5. Rule D — token cap, not character cap
@@ -83,14 +87,14 @@ output" is a context window on the legacy page, not a request-field maximum.
 
 | Family | Cap status | Legal band |
 |---|---|---|
-| GPT Image 2 (legacy, retained) | OWNER_OBSERVED ~25K | house 5,000–19,000 legal; 19,000+ warns (never hard-fails on observed cap) |
-| GPT Image 2.6 (default, ruling 2026-09-09) | OWNER_RULED 20K (owner ruling 2026-11-08; governs over the vendor's published 32K) | floor 16,000; target 19,000–20,000; hard-fails past 20,000 |
+| GPT Image 2 (legacy, retained) | OWNER_OBSERVED ~25K | percentage band of the observed cap; an observed cap never hard-fails |
+| GPT Image 2.6 (default, ruling 2026-09-09) | OWNER_RULED 20K (owner ruling 2026-11-08; governs over the vendor's published 32K) | 95–100 percent target; 80 percent hard floor; hard-fails past 20,000 |
 | Qwen 3.0 / Pro | LIVE_PROBE_REQUIRED (4.5K tokens; docs 5000 chars) | token-estimate validation; docs char max 5,000 |
-| Seedream 5.0 Pro/Lite/4.5 | NOT_PUBLISHED | house band as TARGET only; no invented ceiling |
-| Nano Banana 2 / 2 Lite / Pro / legacy | NOT_PUBLISHED | house band as TARGET only |
+| Seedream 5.0 Pro/Lite/4.5 | NOT_PUBLISHED | percentage band as TARGET only; no invented ceiling |
+| Nano Banana 2 / 2 Lite / Pro / legacy | NOT_PUBLISHED | percentage band as TARGET only |
 | Wan 2.7 Image | VERIFIED 5,000 | 4,500–4,900 target; >5,000 HARD REJECTED |
-| FLUX.2 | NOT_PUBLISHED | house band as TARGET only |
-| Z-Image | NOT_PUBLISHED | house band as TARGET only |
+| FLUX.2 | NOT_PUBLISHED | percentage band as TARGET only |
+| Z-Image | NOT_PUBLISHED | percentage band as TARGET only |
 | Ideogram V3 | VERIFIED 5,000 | 4,500–4,900 target; >5,000 HARD REJECTED |
 | Imagen 4 | VERIFIED 5,000 | 4,500–4,900 target; >5,000 HARD REJECTED |
 
@@ -98,7 +102,7 @@ output" is a context window on the legacy page, not a request-field maximum.
 
 If the user says only "make me a futuristic Black woman CEO standing in a glass
 office", the system EXPANDS that into the model-appropriate robust production
-prompt. Never demand the user type 5,000 characters.
+prompt. Never demand the user type a long prompt.
 
 ## 9. Do not pad prompts with junk (spec 5.4)
 
@@ -126,14 +130,14 @@ than deleting the most important control information):
 
 If a scheduled job will create an image later, store the creative INTENT and
 route through the same model-aware prompt composer at execution time. Do NOT
-freeze a 19,000-character blob that may be incompatible with a different model
+freeze a maximum-size blob that may be incompatible with a different model
 selected later.
 
 ## 11. Validation
 
 `scripts/validate_prompt.py` implements rules A–E deterministically:
 - exit 0: acceptable (warnings may exist)
-- exit 1: soft-fail (house band violation / cap-status concern; `--strict`
+- exit 1: soft-fail (prompt band violation / cap-status concern; `--strict`
   promotes warnings to errors)
 - exit 2: hard-fail (prompt exceeds a VERIFIED hard cap)
 
