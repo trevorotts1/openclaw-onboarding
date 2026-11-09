@@ -1,0 +1,21 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Fixture account",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/memberships/communities/community-groups",
+  "portal_url": "https://example.com/communities/groups/fixture-community/inactive-group",
+  "group_name": "Fixture community",
+  "publish": false,
+  "access": {
+    "expected": {
+      "privacy": "public",
+      "accessible_from_switcher": true,
+      "allow_member_invites": true,
+      "mandatory_profile": false
+    },
+    "desired": {
+      "privacy": "private",
+      "allow_member_invites": false,
+      "mandatory_profile": true
+    }
+  }
+}
