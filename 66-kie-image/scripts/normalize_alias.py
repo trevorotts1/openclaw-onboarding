@@ -18,12 +18,14 @@ import sys
 
 # Transcription alias -> normalized family name (spec 13, image-relevant rows).
 #
-# OPERATOR RULING 2026-09-09 (Ruling 6): GPT Image 2.5 Sunburst is now the
-# default two-model system entry point. Short human aliases ("gpt-img2",
-# "GPT-image 2.0") resolve to "gpt image 2.5" (the new default family token)
-# rather than the retained legacy family. The legacy family token
-# "gpt image 2" is KEPT below (FAMILY_OF still resolves it to the old ids);
-# nothing in ALIAS_MAP points at it anymore, but it stays reachable for any
+# OPERATOR RULING 2026-09-09 (Ruling 6), superseded as the default by GPT
+# Image 2.6 Sunburst (#2860): bare human aliases ("gpt image", "gpt-image",
+# "openai image") resolve to "gpt image 2.6" (the current default family
+# token). An explicit generation mention resolves to the family it names:
+# "gpt-img2" and "GPT-image 2.0" -> "gpt image 2" (retained legacy),
+# "gpt-img2.5" and "GPT-image 2.5" -> "gpt image 2.5" (retained). The legacy
+# family token "gpt image 2" is KEPT below (FAMILY_OF still resolves it to
+# the old ids); no bare phrase points at it, but it stays reachable for any
 # caller that already has the literal legacy family string.
 ALIAS_MAP = {
     "quinn": "qwen",

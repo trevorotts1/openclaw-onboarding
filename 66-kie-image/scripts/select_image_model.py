@@ -759,7 +759,7 @@ SELFTEST_CASES = [
     # Explicit legacy pin phrase still resolves to the retained legacy route.
     ("use gpt image 2 legacy for this banner", "gpt-image-2-text-to-image", True, None),
     # Explicit canonical legacy model id mention always resolves to legacy,
-    # regardless of the default having moved to 2.5.
+    # regardless of the default having moved to GPT Image 2.6 Sunburst.
     ("dispatch with gpt-image-2-text-to-image explicitly", "gpt-image-2-text-to-image", True, None),
     # 3:1 / 1:3 / 9:21 are NOT served by 2.5; they route to the retained
     # legacy GPT Image 2 route (Ruling 6, supersedes Ruling 5's hard-fail).

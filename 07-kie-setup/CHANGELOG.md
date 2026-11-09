@@ -1,3 +1,7 @@
+## [v7.2.7] - 2026-11-09 - GPT Image 2.6 named as the Presentations pin (2.5 claim corrected)
+
+- `SKILL.md` line 90 named GPT-Image-2.5 as the Presentations-pinned model; Presentations pins `gpt-image-2-6/sunburst-*`, so the sentence now names GPT-Image-2.6. Text only, no behaviour change.
+
 ## [v7.2.6] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 
 - Version bumped so the folded content carries the version G3 requires above main. No functional change.

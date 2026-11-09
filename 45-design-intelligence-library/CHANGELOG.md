@@ -1,3 +1,7 @@
+## v2.2.13 - 2026-11-09 - GPT-Image 2.6 is the default; 2.5 is the retained legacy route
+
+- `SKILL.md` model routing now presents GPT-Image 2.6 as default general-purpose since #2860 and GPT-Image 2.5 as the retained legacy route on the identical ratio set. The 2.5 "Default general-purpose" claim is removed. Text only, no behaviour change.
+
 # Skill 45 CHANGELOG — Design Intelligence Library
 ## v2.2.12 - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 
