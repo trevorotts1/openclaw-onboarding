@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Tuple
 
 
 class Transport(Enum):
@@ -88,6 +88,12 @@ class Capability:
     readback: bool = False  # True => read the record back after every write
     constraints: Tuple[str, ...] = ()
     resolver: str = ""  # DISCOVERABLE: how the true op class is confirmed
+    # Per-operation contract facts. There is NO global Version upgrade: a header
+    # value belongs to its operation family, and an unproven value is labeled.
+    version_header: Optional[str] = None
+    version_state: str = "unstated"   # verified | unverified | unstated
+    scope_state: str = "unstated"     # verified | unverified | unstated
+    implemented: str = "unknown"      # "yes" (a shipped caller exists) | "unknown"
 
 
 # --------------------------------------------------------------------------
@@ -244,9 +250,11 @@ RESTRICTIONS: Dict[str, Tuple[str, str]] = {
     ),
     "funnel_page_content_no_public_api": (
         "There is no public API endpoint that creates funnel page content. Funnel/website "
-        "page buildout is browser-executed (Skill 06 gated builders). "
-        "GET /funnels/funnel/list and GET /funnels/page are read-only surface.",
-        "36-ghl-mcp-setup/GHL-LOOKUP-SOP.md; 29-ghl-convert-and-flow/references/api-generations.md",
+        "page buildout is browser-executed (Skill 06 gated builders). The reconciled "
+        "public READ surface is exactly GET /funnels/funnel/list, GET /funnels/page and "
+        "GET /funnels/page/count; none of them implies an authoring route.",
+        "36-ghl-mcp-setup/GHL-LOOKUP-SOP.md; 29-ghl-convert-and-flow/references/api-generations.md; "
+        "shared-utils/ghl/funnel_read_contract.py",
     ),
     "form_field_placement_no_rest": (
         "No field-placement REST API exists for forms: custom fields/tags are pre-created "
@@ -413,15 +421,54 @@ OPERATIONS: Tuple[Capability, ...] = (
                     "never routes to CAF_CLI (no media commands)")),
 
     # --- funnels (REST read-only surface, VERIFIED) ---
+    # Reconciled by WF24 against the published contracts (Document 1 21.3):
+    # one operation id, one route, one query shape across every surface. The
+    # literal Version and the PIT scope name remain explicit UNVERIFIED facts.
     _C("funnels.list", Transport.PUBLIC_REST, "GET /funnels/funnel/list",
        frozenset({OpClass.LIST}), Support.VERIFIED,
-       "29-ghl-convert-and-flow/references/api-generations.md", resource="funnels"),
+       "29-ghl-convert-and-flow/references/api-generations.md; "
+       "Marketplace GET /funnels/funnel/list (V08); shared-utils/ghl/funnel_read_contract.py",
+       resource="funnels", implemented="yes",
+       version_header="2023-02-21", version_state="unverified",
+       scope_state="unverified",
+       constraints=("locationId + offset + limit are query parameters",)),
     _C("funnels.pages_list", Transport.PUBLIC_REST, "GET /funnels/page",
        frozenset({OpClass.LIST}), Support.VERIFIED,
-       "29-ghl-convert-and-flow/references/api-generations.md", resource="funnels"),
+       "29-ghl-convert-and-flow/references/api-generations.md; "
+       "Marketplace GET /funnels/page (V09); shared-utils/ghl/funnel_read_contract.py",
+       resource="funnels", implemented="yes",
+       version_header="2023-02-21", version_state="unverified",
+       scope_state="unverified",
+       constraints=("locationId + funnelId + limit + offset are query parameters",
+                    "read/list only: no page authoring route is inferred")),
     _C("funnels.pages_count", Transport.PUBLIC_REST, "GET /funnels/page/count",
        frozenset({OpClass.READ}), Support.VERIFIED,
-       "29-ghl-convert-and-flow/references/api-generations.md", resource="funnels"),
+       "29-ghl-convert-and-flow/references/api-generations.md; "
+       "Marketplace GET /funnels/page/count (V10); shared-utils/ghl/funnel_read_contract.py",
+       resource="funnels", implemented="yes",
+       version_header="2023-02-21", version_state="unverified",
+       scope_state="unverified",
+       constraints=("locationId + funnelId are query parameters",
+                    "read only: a count never implies authoring")),
+
+    # --- forms and surveys (REST read-only surface) ---
+    # Bound by WF24 so registry/inventory/router/Skill 6 describe one shape.
+    _C("forms.list", Transport.PUBLIC_REST, "GET /forms/",
+       frozenset({OpClass.LIST}), Support.VERIFIED,
+       "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/"
+       "operations.py (forms.list row, Version v3)",
+       resource="forms", implemented="yes",
+       version_header=None, version_state="unverified", scope_state="unverified",
+       constraints=("read/list only; field placement and authoring stay in the "
+                    "gated managed browser builder",)),
+    _C("surveys.list", Transport.PUBLIC_REST, "GET /surveys/",
+       frozenset({OpClass.LIST}), Support.VERIFIED,
+       "44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/"
+       "operations.py (surveys.list row, Version v3); "
+       "06-ghl-install-pages/tools/ghl_public_client.py",
+       resource="surveys", implemented="yes",
+       version_header=None, version_state="unverified", scope_state="unverified",
+       constraints=("read/list only; survey writes are capture-gated",)),
 
     # --- workflows (REST read-only surface, VERIFIED) ---
     _C("workflows.get", Transport.PUBLIC_REST, "GET /workflows/",
@@ -592,6 +639,82 @@ def require_route(op_class: OpClass, **kw) -> Capability:
     return routes[0]
 
 
+@dataclass(frozen=True)
+class CapabilityFacts:
+    """Independent capability dimensions. They are NOT one ``enabled`` boolean.
+
+    ``documented``            the operation and route are recorded from a source.
+    ``implemented``           a shipped caller exists ("yes") or is unproven.
+    ``routable``              the exact op class may be selected right now.
+    ``account_available``     tenant/account availability. Never inferable from a
+                              route row; stays "unknown" until tenant evidence exists.
+    ``functionally_verified`` a real read/write was exercised and read back; stays
+                              "not_run" in this catalog (no live proof is claimed).
+    """
+
+    capability_id: str
+    documented: bool
+    implemented: str
+    routable: bool
+    account_available: str
+    functionally_verified: str
+    advertised_support: str
+    route: str
+    version_header: Optional[str]
+    version_state: str
+    scope_state: str
+    reason: str
+
+
+def describe_capability(
+    capability_id: str, *, dynamic_confirmed: bool = False
+) -> CapabilityFacts:
+    """The five capability dimensions for one capability id, computed honestly."""
+    cap = next((c for c in OPERATIONS if c.capability_id == capability_id), None)
+    if cap is None:
+        raise KeyError(
+            "%r is not in capability_inventory.OPERATIONS; a capability state is "
+            "never invented" % (capability_id,)
+        )
+    documented = cap.support in (Support.VERIFIED, Support.DISCOVERABLE)
+    is_routable = routable(cap, dynamic_confirmed=dynamic_confirmed)
+    return CapabilityFacts(
+        capability_id=cap.capability_id,
+        documented=documented,
+        implemented=cap.implemented,
+        routable=is_routable,
+        account_available="unknown",
+        functionally_verified="not_run",
+        advertised_support=cap.support.value,
+        route=cap.route,
+        version_header=cap.version_header,
+        version_state=cap.version_state,
+        scope_state=cap.scope_state,
+        reason=(
+            "dimensions are independent: a documented/implemented read is never "
+            "account-available or functionally verified without tenant evidence; "
+            "account_available and functionally_verified are not inferred"
+        ),
+    )
+
+
+def capability_state_report() -> Dict[str, Dict[str, Any]]:
+    """capability_id -> facts dict, for downstream inventories and Skill 29."""
+    return {
+        cap.capability_id: {
+            "documented": (f := describe_capability(cap.capability_id)).documented,
+            "implemented": f.implemented,
+            "routable": f.routable,
+            "account_available": f.account_available,
+            "functionally_verified": f.functionally_verified,
+            "version_header": f.version_header,
+            "version_state": f.version_state,
+            "scope_state": f.scope_state,
+        }
+        for cap in OPERATIONS
+    }
+
+
 _REST_VERB_CLASSES = {
     "GET": frozenset({OpClass.READ, OpClass.LIST}),
     "POST": frozenset({OpClass.CREATE, OpClass.EDIT, OpClass.EXECUTE}),
@@ -725,6 +848,45 @@ def self_check() -> None:
         assert "incomplete" in str(exc)
     else:
         raise AssertionError("require_route must refuse an unregistered products edit")
+
+    # 11. Reconciled funnel reads: exact paths and explicit unresolved facts.
+    funnel_routes = {
+        c.capability_id: c.route
+        for c in OPERATIONS
+        if c.resource == "funnels"
+    }
+    assert funnel_routes == {
+        "funnels.list": "GET /funnels/funnel/list",
+        "funnels.pages_list": "GET /funnels/page",
+        "funnels.pages_count": "GET /funnels/page/count",
+    }, funnel_routes
+    for cap_id in ("funnels.list", "funnels.pages_list", "funnels.pages_count"):
+        facts = describe_capability(cap_id)
+        assert facts.documented and facts.implemented == "yes"
+        assert facts.version_state == "unverified"
+        assert facts.scope_state == "unverified"
+        assert facts.account_available == "unknown"
+        assert facts.functionally_verified == "not_run"
+
+    # 12. The dimensions are separate facts, not one enable flag.
+    report = capability_state_report()
+    assert report["funnels.list"] == {
+        "documented": True,
+        "implemented": "yes",
+        "routable": True,
+        "account_available": "unknown",
+        "functionally_verified": "not_run",
+        "version_header": "2023-02-21",
+        "version_state": "unverified",
+        "scope_state": "unverified",
+    }, report["funnels.list"]
+    assert report["funnels.pages_count"]["routable"] is True
+
+    # 13. No global Version substitution: forms/surveys carry no invented header.
+    for cap_id in ("forms.list", "surveys.list"):
+        facts = describe_capability(cap_id)
+        assert facts.version_header is None and facts.version_state == "unverified"
+        assert facts.implemented == "yes"
 
 
 if __name__ == "__main__":
