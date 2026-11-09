@@ -1,4 +1,4 @@
-## [2.2.10] - 2026-11-09 - Ratio coherence: GPT Image 2.6 now matches the vendor 16-member enum
+## [2.2.11] - 2026-11-09 - Ratio coherence: GPT Image 2.6 now matches the vendor 16-member enum
 
 - `models.json`: both `gpt-image-2-6/sunburst` rows' `aspect_ratios` set to the vendor live schema
   (`auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3` -- 16 members,
@@ -6,7 +6,7 @@
   `gpt-image-2-6/sunburst-text-to-image` `input_fields.aspect_ratio.enum`) and
   `ratio_resolution_exclusions` set to `[]`. The old 27:16/16:27/9:8/8:9 entries were 2.5-era and are
   not in the 2.6 schema. The superseded Ruling 6 ratio prose in both rows now records that it does not
-  apply to 2.6.
+  apply to 2.6. (Owner cap 20,000 from main carried unchanged on both rows.)
 - `scripts/validate_payload.py`: the 2.5 per-resolution exclusion branch no longer matches 2-6 ids;
   2.6 is validated by enum membership alone. Self-test cases added for 2.6 (3:1, 1:3, 5:4, 2:1 and
   9:21-at-4K accepted; 27:16 rejected; legacy-2 and 2.5 rules not applied to 2.6).
@@ -14,6 +14,10 @@
   `GPT_2_5_RATIO_SUBSTITUTIONS`) are gated to the 2.5 family, so 3:1/1:3/9:21 stay on 2.6 and
   5:4/4:5/2:1/1:2 are passed through unsubstituted. Self-test cases updated; 2.5 behaviour re-tested
   under an explicit 2.5 pin.
+
+## [2.2.10] - 2026-11-09 - GPT Image 2.6 owner cap 20,000 recorded in models.json
+
+- `models.json`: `owner_prompt_cap_chars: 20000` on both 2.6 sunburst entries (t2i + i2i). The existing `policy_owner_cap` precedence in the 74 adapter and 66 validator now resolves max 20000 with `limit_source` owner-ruling.
 
 ## [2.2.9] - 2026-11-09 - 2.6 named as the ratio-rule default; remaining 2.5 default claims corrected
 
