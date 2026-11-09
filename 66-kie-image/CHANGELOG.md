@@ -1,6 +1,7 @@
 ## [2.2.9] - 2026-11-09 - 2.6 named as the ratio-rule default; remaining 2.5 default claims corrected
 
-- `models.json` `owner_preferred_default` / `_note`: 2.6 Sunburst is the current default since #2860; Ruling 6 is retained as history and 2.5 is retained as the same-route predecessor. `SKILL.md`: the `(default)` ratio-rule label moved to 2.6, with the 2.5 ratio facts kept attached to 2.5. Two stale comments in `normalize_alias.py` and `select_image_model.py` corrected. No executable logic changed; both self-tests pass.
+- `models.json` `owner_preferred_default` / `_note`: 2.6 Sunburst is the current default since #2860; Ruling 6 is retained as history and 2.5 is retained by operator ruling 2026-09-09. `SKILL.md`: the `(default)` ratio-rule label moved to 2.6, with the 2.5 ratio facts kept attached to 2.5. Two stale comments in `normalize_alias.py` and `select_image_model.py` corrected. No executable logic changed; both self-tests pass.
+- Second pass (same version): the legacy GPT Image 2 `status_note`/`notes` rows no longer call 2.5 the default, and five more comments (`normalize_alias.py:64`, `:144-145`, `select_image_model.py:41`, `:204-208`, `validate_payload.py:335`) no longer describe 2.5 as the default. Comments and JSON prose only; no executable line, mapping, assertion, ratio table or test changed.
 
 # Changelog - kie-image
 ## [2.2.8] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)

@@ -49,14 +49,14 @@
       "sync": false,
       "active": true,
       "status": "legacy",
-      "status_note": "legacy - retained by operator ruling 2026-09-09 for 3:1, 1:3, 9:21 only. GPT Image 2.5 Sunburst (gpt-image-2-5-sunburst-text-to-image) is now the default; this entry's own constraints are UNCHANGED and still apply exactly as before for anything routed here.",
+      "status_note": "legacy - retained by operator ruling 2026-09-09 for 3:1, 1:3, 9:21 only. GPT Image 2.5 Sunburst (gpt-image-2-5-sunburst-text-to-image) is RETAINED and is no longer the default; this entry's own constraints are UNCHANGED and still apply exactly as before for anything routed here.",
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/gpt/gpt-image-2-text-to-image",
       "known_inconsistencies": [
         "RESOLVED by operator confirmation 2026-08-27: prompt cap is 25,000 characters (owner-confirmed, authoritative). Docs page text (2026-08-26, verbatim): \"maximum 20,000 characters\", that figure is STALE. Quoted verbatim for provenance. cap_status OWNER_CONFIRMED; owner_observed_cap_chars 25000; vendor_hard_cap_chars stays null (vendor never published 25k). Warn-only, never hard-fail. This 25,000 owner-confirmation applies to GPT Image 2 ONLY and has NOT been retested on GPT Image 2.5 Sunburst (operator ruling 2026-09-09); see the gpt-image-2-5-sunburst-text-to-image entry for the separate 2.5 cap.",
         "Quality tier is expressed as resolution enum (1K/2K/4K); no separate quality field."
       ],
-      "notes": "LEGACY ROUTE (operator ruling 2026-09-09): retained only for aspect ratios 3:1, 1:3, 9:21, which GPT Image 2.5 Sunburst does not serve. GPT Image 2.5 Sunburst is now the owner-preferred default. High-fidelity general generation, editing, product/brand images, detailed long-form creative instructions. Per-resolution exclusion (page verbatim): \"for 2K and 4K resolution, the following aspect ratios are not supported: 5:4, 4:5, 3:1, 1:3, and 9:21\"; \"Images with the aspect ratio set to auto or without a specified aspect ratio parameter will only be converted to 1K images\"; \"Images with a 1:1 aspect ratio cannot be converted to 4K images\". House band 5,000-19,000 is legal; hard-enforcement status PENDING_ACCEPTANCE_TEST, validators warn only."
+      "notes": "LEGACY ROUTE (operator ruling 2026-09-09): retained only for aspect ratios 3:1, 1:3, 9:21, which GPT Image 2.5 Sunburst does not serve. GPT Image 2.5 Sunburst is RETAINED and is no longer the default. High-fidelity general generation, editing, product/brand images, detailed long-form creative instructions. Per-resolution exclusion (page verbatim): \"for 2K and 4K resolution, the following aspect ratios are not supported: 5:4, 4:5, 3:1, 1:3, and 9:21\"; \"Images with the aspect ratio set to auto or without a specified aspect ratio parameter will only be converted to 1K images\"; \"Images with a 1:1 aspect ratio cannot be converted to 4K images\". House band 5,000-19,000 is legal; hard-enforcement status PENDING_ACCEPTANCE_TEST, validators warn only."
     },
     {
       "provider": "kie",
@@ -89,7 +89,7 @@
       "sync": false,
       "active": true,
       "status": "legacy",
-      "status_note": "legacy - retained by operator ruling 2026-09-09 for 3:1, 1:3, 9:21 only. GPT Image 2.5 Sunburst (gpt-image-2-5-sunburst-image-to-image) is now the default; this entry's own constraints are UNCHANGED and still apply exactly as before for anything routed here.",
+      "status_note": "legacy - retained by operator ruling 2026-09-09 for 3:1, 1:3, 9:21 only. GPT Image 2.5 Sunburst (gpt-image-2-5-sunburst-image-to-image) is RETAINED and is no longer the default; this entry's own constraints are UNCHANGED and still apply exactly as before for anything routed here.",
       "last_verified_at": "2026-08-26",
       "source_url": "https://docs.kie.ai/market/gpt/gpt-image-2-image-to-image",
       "known_inconsistencies": [

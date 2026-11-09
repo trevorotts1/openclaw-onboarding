@@ -38,7 +38,7 @@ MODELS_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 # ---------------------------------------------------------------------------
 
 REGISTRY = {
-    # GPT Image 2.5 Sunburst -- operator default (ruling 2026-09-09, Ruling 6).
+    # GPT Image 2.5 Sunburst -- retained legacy family (ruling 2026-09-09, Ruling 6). Not the default.
     # Two-model system: GPT Image 2 (legacy, below) is RETAINED, not retired,
     # and is the required route for aspect ratios 3:1, 1:3, 9:21 only.
     "gpt-image-2-5-sunburst": {
@@ -201,11 +201,12 @@ ALIASES = {
     "c dream": "seedream-5.0-pro",
     "c-dream": "seedream-5.0-pro",
     "seed dream": "seedream-5.0-pro",
-    # gpt family -- operator ruling 2026-09-09 (Ruling 6): short human aliases
-    # now resolve to the GPT Image 2.5 Sunburst default. The retained legacy
-    # GPT Image 2 route is still reachable via an explicit canonical model id
+    # gpt family -- operator ruling 2026-09-09 (Ruling 6). The short human
+    # aliases below resolve to the retained legacy GPT Image 2 route, not to a
+    # default; 2.6 is reached by naming it. The "2.5 / sunburst" keys further
+    # down map to the retained 2.5 family, and the explicit canonical model id
     # (gpt-image-2-text-to-image / gpt-image-2-image-to-image, matched via
-    # MODEL_TO_FAMILY below) or the "legacy"-qualified phrases added here.
+    # MODEL_TO_FAMILY below) stays available.
     "gpt-img2": "gpt-image-2",
     "gpt img2": "gpt-image-2",
     "gpt image 2": "gpt-image-2",

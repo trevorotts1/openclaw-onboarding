@@ -61,7 +61,7 @@ FAMILY_OF = {
         "gpt-image-2-6/sunburst-text-to-image",
         "gpt-image-2-6/sunburst-image-to-image",
     ],
-    # GPT Image 2.5 Sunburst -- operator default (ruling 2026-09-09).
+    # GPT Image 2.5 Sunburst -- retained legacy family (ruling 2026-09-09). Not the default.
     "gpt image 2.5": [
         "gpt-image-2-5-sunburst-text-to-image",
         "gpt-image-2-5-sunburst-image-to-image",
@@ -141,8 +141,11 @@ def main(argv=None) -> int:
         assert normalize_alias("idiogram") == "ideogram"
         assert normalize_alias("Idiogram") == "ideogram"
         assert normalize_alias("imagine 4") == "imagen 4"
-        # Ruling 2026-09-09 (Ruling 6): short GPT-image aliases now resolve to
-        # the 2.5 Sunburst default, not the retained legacy family.
+        # Ruling 2026-09-09 (Ruling 6), superseded as the default by GPT Image
+        # 2.6 (#2860): explicit "gpt-img2" / "GPT-image 2.0" resolve to the
+        # retained legacy "gpt image 2" family, bare phrases ("gpt image",
+        # "OpenAI image") resolve to "gpt image 2.6", and 2.5 mentions stay on
+        # the retained 2.5 family. None of these is a default.
         assert normalize_alias("gpt-img2") == "gpt image 2"
         assert normalize_alias("GPT-image 2.0") == "gpt image 2"
         assert normalize_alias("gpt image") == "gpt image 2.6"
