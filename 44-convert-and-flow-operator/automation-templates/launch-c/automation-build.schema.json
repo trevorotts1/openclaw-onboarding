@@ -128,7 +128,7 @@
         "allow_enrollment": {
           "type": ["string", "null"],
           "enum": ["single", "successive", null],
-          "description": "settings.enrollment as declared, or null when the plan declares none. Recorded, never invented into a provider payload the rail has not verified."
+          "description": "settings.enrollment as declared, or null when the plan declares none. Applied natively as the top-level workflow boolean allowMultiple (single=false, successive=true — captured live, see evidence/F05-capability.json) and proven per build by the post-save readback, never by the request."
         },
         "purchase_identity": {
           "type": ["object", "null"],

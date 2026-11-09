@@ -1,6 +1,16 @@
+## [v7.2.5] - 2026-11-08 - batch merge: W26 fold content landed; version stamped above main for G3
+
+Version stamped above `main` (v7.2.4) so G3 sees the bump for the folded content in the same batch. No change beyond the folded content itself.
+
 # Changelog - kie-setup
 
 All notable changes to this skill wrapper are documented here.
+
+---
+
+## [v7.2.4] - 2026-11-08 - pin moves with Skill 74 v1.1.11
+
+- `tests/test_official_docs_port.py`: `SKILL_VERSIONS["74-kie-live-adapter"]` follows Skill 74's durable-data-root patch from 1.1.9 to 1.1.11. The pin was already stale at 1.1.9 against the shipped 1.1.10, so this removes a pre-existing red gate rather than adding one. The skill's own pin moves to 7.2.4 with this version roll. No setup step changes.
 
 ---
 

@@ -32,7 +32,8 @@ Auth is `Authorization: Bearer` only. A header named apikey returns 401. Dead (4
 - Polling starts at 3 seconds, backs off by 1.5 up to 15 seconds, and stops at a configurable deadline (default 300). A deadline returns state running with error code timeout and keeps the task id.
 - Saving: result files are fetched without the API key. On 403, 404 or 410 the link is refreshed once through download-url and retried once.
 - Uploads: realpath resolved, must be a regular readable file, 1 byte to 512 MB, mime image, video, audio or pdf. expiresAt is honored if returned, otherwise assume 24 hours.
-- Drift receipts: one JSON line per catalog, schema or validate event in `<cache>/receipts/YYYYMMDD.jsonl`, with a digest and a drift flag against the last digest seen. Redacted.
+- Drift receipts: one JSON line per catalog, schema or validate event in `<receipts>/YYYYMMDD.jsonl`, with a digest and a drift flag against the last digest seen. Redacted.
+- Durable data root (F21 item 11): `<root>` comes from `shared-utils/durable-data-root.sh` ($OPENCLAW_DATA_ROOT, else $OPENCLAW_ROOT/$OC_ROOT, else /data/.openclaw, else $HOME/.openclaw). `<root>/data/kie-jobs/kie-live-adapter` holds receipts; `<root>/cache/kie-live-adapter` holds the re-fetchable cache. `health` reports both, plus `data_root_warning` when no root could be resolved and `data_migration_note` when older receipts still sit at the previous path (never moved by this skill).
 - Environment hooks (tests only): KIE_LIVE_API_BASE and KIE_LIVE_UPLOAD_BASE are honored only when they point at localhost. KIE_LIVE_MIN_SPACING and KIE_LIVE_POLL_INITIAL tune timing.
 
 ## v1.1.2 consumer options

@@ -70,7 +70,7 @@ ALL_ELEMENTS = ["subject", "environment", "style", "lighting",
                 "composition", "output"]
 ENV = {"AGNES_AI_API_KEY": "e2e-dummy-key-not-a-credential"}
 GOVERNING_ENTRY_HASH = (
-    "0981c8f0e6e754d6f473fffbb385e92655be70808356cc0d3c3761c07dbb741c")
+    "d90d7f6f42ed622f7c5979bbdc9f3c7eaff74d42139ae1c252d0d28b6a11691e")
 
 
 def provider_body(image_bytes: bytes, *, model=MODEL,
