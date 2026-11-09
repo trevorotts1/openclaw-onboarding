@@ -111,7 +111,7 @@ class RadioExecution(unittest.TestCase):
             state['writes']+=1
             new={**authored(count),'_widget_inputs':[{'type':'radio','name':NEW_ID,'value':label} for label in authored(count)['options']],
                 '_radio_input_ids':[NEW_ID+'_'+str(index) for index in range(count)]}
-            state['inventory'][0].append(new)
+            state['inventory'][0][-1]=new
             if collateral:state['inventory'][0][0]['query_key']='Changed old key'
             return deepcopy(new)
         def reopen(*args):
@@ -123,7 +123,11 @@ class RadioExecution(unittest.TestCase):
             stack.enter_context(patch.object(choice,'click',side_effect=lambda target:target.click()))
             stack.enter_context(patch.object(choice,'wait_until',side_effect=lambda pred,reason:self.assertTrue(pred())))
             stack.enter_context(patch.object(choice,'_inventory',side_effect=lambda *args,**kwargs:deepcopy(state['inventory'])))
-            stack.enter_context(patch.object(choice,'_append',return_value=RadioDom([widget(count)])))
+            def insert(*args,**kwargs):
+                state['inventory'][0].append({**question('New native choice','radio','RADIO'),'_widget_inputs':[],
+                    '_radio_input_ids':[NEW_ID+'_'+str(index) for index in range(count)]})
+                return RadioDom([widget(count)])
+            stack.enter_context(patch.object(choice,'_append',side_effect=insert))
             writer=stack.enter_context(patch.object(choice,'_write_question',side_effect=write))
             stack.enter_context(patch.object(native,'reopen_editor',side_effect=reopen))
             try:result=choice.configure(page,plan)

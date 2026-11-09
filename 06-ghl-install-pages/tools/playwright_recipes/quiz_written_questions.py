@@ -30,7 +30,7 @@ def validate(step):
         for page in projected['pages']:
             if isinstance(page,dict) and isinstance(page.get('questions'),list):
                 for index,question in enumerate(page['questions']):
-                    if isinstance(question,dict) and question.get('field_type') in ('RADIO','CHECKBOX','SINGLE_OPTIONS'):
+                    if isinstance(question,dict) and question.get('field_type') in ('RADIO','CHECKBOX','SINGLE_OPTIONS','MULTIPLE_OPTIONS'):
                         choice._question(question)
                         page['questions'][index]={key:question[key] for key in native.properties_for(question['field_type'])}
     projected=native.validate({'action':'quiz_short_answers','payload':projected},field_types=TYPES,
@@ -80,6 +80,7 @@ def configure(page,step):
         identity()
         if inventory()!=desired:raise Stop('Native quiz changed before the next written-answer insertion')
         item=_append(frame,runtime,question,page=page)
+        native._prewrite_delta(frame,runtime,desired,choice._inventory,question)
         authored=native._write_question(frame,item,question,field_types=TYPES,new_kind=question['field_type'],
                                         default_key=PROFILES[question['field_type']]['default_key'],metadata_reader=choice._metadata)
         desired[owner].append(authored)

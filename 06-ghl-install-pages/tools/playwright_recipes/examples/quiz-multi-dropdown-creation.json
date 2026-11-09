@@ -1,0 +1,26 @@
+{
+  "action": "quiz_multiple_choices",
+  "payload": {
+    "location_id": "REPLACE_LOCATION_ID",
+    "location_name": "REPLACE_EXACT_ACCOUNT_NAME",
+    "start_url": "https://app.convertandflow.com/v2/location/REPLACE_LOCATION_ID/quiz-builder-v2/REPLACE_QUIZ_ID",
+    "expected_quiz_name": "REPLACE_EXACT_QUIZ_NAME",
+    "pages": [{"label": "Page 1", "questions": [{
+      "field_type": "RADIO", "question": "REPLACE_EXACT_EXISTING_QUESTION", "placeholder": "", "short_label": "",
+      "query_key": "radio", "required": false, "hidden": false
+    }]}],
+    "create_page": true,
+    "new_page_label": "Page 2",
+    "target_page": 2,
+    "acknowledge_shared_field_options": true,
+    "questions": [{
+      "field_type": "MULTIPLE_OPTIONS",
+      "question": "Which priorities matter?",
+      "placeholder": "Select every relevant priority",
+      "short_label": "Priorities",
+      "unique_key": "business_priorities",
+      "required": true,
+      "options": ["Growth", "Clarity", "Time", "Team"]
+    }]
+  }
+}

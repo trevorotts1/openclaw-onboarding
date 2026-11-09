@@ -36,7 +36,7 @@ FIELDS = {
     'communities.configure': {'portal_url', 'group_name', 'channels', 'details', 'access', 'course_associations', 'api_capability', 'branding'},
     'meetings.setup': {'meeting'}, 'meetings.update': {'meeting'},
     'meetings.integrate': {'integration_mode', 'calendar_id', 'calendar_name', 'staff_id', 'connection_staff_label', 'expected_staff_locations', 'staff_dependency', 'portal_url', 'group_name', 'group_id', 'event_id', 'allow_room_creation', 'expected'},
-    'courses.configure_ui': {'course_id', 'template_id', 'expected_template_title', 'changes', 'expected_values', 'custom_blocks', 'background_image', 'custom_block_image'},
+    'courses.configure_ui': {'course_id', 'template_id', 'expected_template_title', 'changes', 'expected_values', 'custom_blocks', 'background_image', 'custom_block_image', 'text_blocks', 'theme_images', 'image_blocks'},
     'funnels.split_variant': set(),
 }
 REQUIRED = {
@@ -159,7 +159,13 @@ def validate_intake(operation, data):
         if native and 'options' in data:
             raise Stop('Native course theme edits and recorded options require separate jobs')
         if native:
-            if 'custom_blocks' in data:
+            if 'image_blocks' in data:
+                from playwright_recipes.course_image_blocks import validate_inputs
+            elif 'theme_images' in data:
+                from playwright_recipes.course_section_media import validate_inputs
+            elif 'text_blocks' in data:
+                from playwright_recipes.course_text_blocks import validate_inputs
+            elif 'custom_blocks' in data:
                 from playwright_recipes.course_blocks import validate_inputs
             elif 'background_image' in data:
                 from playwright_recipes.course_theme_media import validate_inputs
