@@ -35,8 +35,12 @@ structure: `scripts/dispatch_launch.py`,
 `scripts/agnes_dispatch.py`, `scripts/agnes_gates.py`,
 `scripts/agnes_orchestrator.py` and `scripts/agnes_response.py`. The
 hash-pin therefore covers the files that choose launch routes, pages and
-dispatch as well as the legacy core, and moving any of them requires
-`bash signature-funnel-entry.sh --write-pin` to mint the new
+dispatch as well as the legacy core. The digest also covers Skill 71's
+page-build tree — its non-test scripts and the reference JSON those scripts
+read — because that tree builds the pages this dispatcher chooses (FIX-16,
+Branch A: one digest certifies the code that actually runs, so two boxes
+cannot share a pin while running different Skill 71 code). Moving any of
+these requires `bash signature-funnel-entry.sh --write-pin` to mint the new
 `scripts/SF-PROVER-PIN.sha256`.
 
 ## Launch-mode toolchain (`scripts/`)
