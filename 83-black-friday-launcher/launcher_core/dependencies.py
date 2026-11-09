@@ -57,7 +57,12 @@ _CLASSES = (CLASS_REQUIRED, CLASS_SELECTED, CLASS_OPTIONAL)
 
 # File-shaped entries: a path that must exist, never a tree digest or a version.
 _FILE_KINDS = ("shared_utils", "department_map_entry", "installer_registration",
-               "schema", "template")
+               "schema", "template", "sop")
+
+# A `sop` entry resolves the SOP file AND a read receipt under the skill's own
+# tree. The receipt names the SOP's repo path and its sha256, so a read of an
+# older copy stops counting the moment the SOP changes.
+SOP_RECEIPT_DIR = "receipts/sop-read"
 
 
 def entry_class(entry: Dict[str, Any]) -> str:
@@ -392,6 +397,16 @@ def _floor_unmet(ref: str) -> Optional[str]:
 def _present(entry: Dict[str, Any], root: Path) -> Dict[str, Any]:
     kind = entry["kind"]
     ref = entry["ref"]
+    if kind == "sop":
+        target, error = _resolve(ref, root, kind)
+        if target is None or not target.is_file():
+            return {"status": "missing", "evidence": error or f"{ref} is absent"}
+        judged = _sop_receipt(entry, root, target)
+        if not judged["ok"]:
+            return {"status": "missing",
+                    "evidence": f"{ref} resolved={target}: {judged['why']}"}
+        return {"status": "present",
+                "evidence": f"{ref} resolved={target} receipt={judged['receipt']}"}
     if kind in ("skill_tree",) + _FILE_KINDS:
         target, error = _resolve(ref, root, kind)
         if target is None:
@@ -460,6 +475,41 @@ def _present(entry: Dict[str, Any], root: Path) -> Dict[str, Any]:
                             f"isolated_interpreter={isolated}"}
     return {"status": "unverifiable", "evidence": f"unknown kind {kind!r}"}
 
+
+def _sha256_file(path: Path) -> Optional[str]:
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+def _sop_receipt(entry: Dict[str, Any], root: Path, target: Path) -> Dict[str, Any]:
+    """The read receipt a `sop` entry requires, or why it does not count."""
+    declared = str(entry.get("receipt") or "").strip()
+    rel = declared or f"{SOP_RECEIPT_DIR}/{target.stem}.json"
+    try:
+        receipt = resolve_skill_dir(SKILL_NAME, root) / rel
+    except SkillResolutionError as exc:
+        return {"ok": False, "why": f"receipt path unresolved ({exc})"}
+    if not receipt.is_file():
+        return {"ok": False, "why": f"no read receipt at {rel}"}
+    try:
+        record = json.loads(receipt.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"ok": False, "why": f"read receipt {rel} unreadable"}
+    if not isinstance(record, dict):
+        return {"ok": False, "why": f"read receipt {rel} is not a record"}
+    want = _sha256_file(target)
+    if want is None:
+        return {"ok": False, "why": f"{entry['ref']} unreadable"}
+    have = str(record.get("sha256") or "")
+    if have != want:
+        return {"ok": False,
+                "why": f"read receipt {rel} is stale (sha256 {have or 'absent'} != {want})"}
+    named = str(record.get("sop") or "")
+    if named and Path(named).name != target.name:
+        return {"ok": False,
+                "why": f"read receipt {rel} names {named!r}, not {entry['ref']!r}"}
+    return {"ok": True, "why": "", "receipt": str(receipt)}
 
 def _registered_enabled(base: Path) -> bool:
     """True when the skill's registration.json records enabled_in_999: true."""
