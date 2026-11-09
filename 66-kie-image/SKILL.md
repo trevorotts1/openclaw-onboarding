@@ -7,7 +7,7 @@ description: >
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
-version: v2.2.12
+version: v2.2.13
 metadata:
   version: "2.2.11"
   priority: HIGH
@@ -139,7 +139,7 @@ chars to CUT), 80-95% warns. Unknown limit: UNKNOWN, no floor. Verbatim content
 6. **references/qc.md** — real visual QC checklist + retry ladder.
 7. **INSTRUCTIONS.md** — daily usage walkthrough.
 8. **INSTALL.md** — credential check + connect verification.
-9. **EXAMPLES.md** — copy-paste curl payloads (GPT Image 2.5 t2i/i2i, Wan bbox,
+9. **EXAMPLES.md** — copy-paste curl payloads (GPT Image 2.6 t2i/i2i, Wan bbox,
    Seedream i2i, NB2 i2i).
 10. **CORE_UPDATES.md** — core-file wiring (performed by `wire.sh`).
 11. **QC.md** — verification checklist.

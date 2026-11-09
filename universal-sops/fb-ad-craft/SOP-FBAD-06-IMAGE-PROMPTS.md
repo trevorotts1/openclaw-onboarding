@@ -41,7 +41,7 @@ Each prompt declares these eight sections, in order (AF-FBAD-PROMPT-ORDER):
 
 ### A2. The richness floor
 
-Prompt length follows rule 12 of `07-kie-setup/references/kie-common-rules.md` (floor 80 percent, target 95 to 100 percent of the model cap: 2.5 floor 16,000). The gate (AF-FBAD-PROMPT-RICHNESS) keeps no number of its own: `_chk_prompt_richness` asks the shared enforcer `shared-utils/kie_prompt_enforcer.py`, which reads the model limit from Skill 74 `prompt-budget`, and a prompt outside the band is refused with the exact characters to add or cut. A thin prompt
+Prompt length follows rule 12 of `07-kie-setup/references/kie-common-rules.md` (floor 80 percent, target 95 to 100 percent of the model cap: 2.6 floor 16,000). The gate (AF-FBAD-PROMPT-RICHNESS) keeps no number of its own: `_chk_prompt_richness` asks the shared enforcer `shared-utils/kie_prompt_enforcer.py`, which reads the model limit from Skill 74 `prompt-budget`, and a prompt outside the band is refused with the exact characters to add or cut. A thin prompt
 yields generic stock art; this length is what encodes creativity, typography,
 color-grading, quality, and facial-intelligence in enough specificity to be one cohesive
 campaign of 10.
