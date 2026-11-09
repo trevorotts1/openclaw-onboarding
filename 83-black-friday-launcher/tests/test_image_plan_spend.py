@@ -112,7 +112,7 @@ class PaidSpendTests(unittest.TestCase):
 
     def test_a_verified_budget_allows_paid_and_reports_the_derived_picture_ceiling(self):
         (inputs, to_confirm), verifier = self.paid()
-        price = image_plan.IMAGE_PRICE_MINOR["kie"]["USD"]
+        price = image_plan.live_price("kie", "USD")["per_picture_minor"]
         self.assertTrue(inputs["allow_paid"])
         self.assertEqual(inputs["executor_provider"], "kie")
         self.assertEqual(inputs["paid_approval_id"], APPROVAL_ID)
@@ -125,13 +125,29 @@ class PaidSpendTests(unittest.TestCase):
         self.assertEqual(kwargs["cap"], {"cap_minor": 4000, "currency": "USD"})
         self.assertIs(kwargs["test_only"], False)
 
+    def test_the_picture_ceiling_is_priced_live_not_from_a_table(self):
+        (inputs, _), _v = self.paid()
+        quote = image_plan.live_price("kie", "USD")
+        self.assertEqual(inputs["image_price_minor"], quote["per_picture_minor"])
+        self.assertEqual(inputs["image_price_credits"], quote["credits"])
+        self.assertIn("74-kie-live-adapter", inputs["image_price_source"])
+        self.assertFalse(hasattr(image_plan, "IMAGE_PRICE_MINOR"), "a static table cannot price a paid run")
+        for currency in ("EUR", "GBP"):
+            self.refused("AF-LAUNCH-IMAGE-PLAN-CAP", self.raw(image_currency=currency))
+
+    def test_a_named_resolution_selects_the_live_tier(self):
+        (inputs, _), _v = self.paid(self.raw(image_resolution="1K"))
+        self.assertEqual(inputs["image_resolution"], "1K")
+        self.assertLessEqual(inputs["image_price_minor"],
+                             image_plan.live_price("kie", "USD")["per_picture_minor"])
+
     def test_the_spend_is_money_not_a_picture_count(self):
         self.refused("AF-LAUNCH-IMAGE-PLAN-CAP", {k: v for k, v in self.raw().items()
                                                   if k not in ("image_cap_minor", "image_currency")} | {"image_cap": 50})
         self.refused("AF-LAUNCH-IMAGE-PLAN-CAP", self.raw(image_cap_minor=None))
         self.refused("AF-LAUNCH-IMAGE-PLAN-CAP", self.raw(image_currency="XYZ"))  # no price row: never guessed
         self.refused("AF-LAUNCH-IMAGE-PLAN-CAP", self.raw(image_cap_minor=3))     # not even one picture
-        ceiling = 4000 // image_plan.IMAGE_PRICE_MINOR["kie"]["USD"]
+        ceiling = 4000 // image_plan.live_price("kie", "USD")["per_picture_minor"]
         self.refused("AF-LAUNCH-IMAGE-PLAN-CAP", self.raw(image_cap=ceiling + 1))
         (inputs, _), _v = self.paid(self.raw(image_cap=ceiling - 1))
         self.assertEqual(inputs["image_cap"], ceiling - 1)
