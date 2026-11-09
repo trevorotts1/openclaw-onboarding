@@ -322,6 +322,84 @@ def _theme_input_controls(dialog, requested, *, write):
             raise CheckoutRefused('Native Inputs choice does not match: ' + key)
 
 
+def _preflight_checkout_ui(dialog, data):
+    """Inspect every requested captured control before the first value write.
+
+    Navigation and expanding a property group do not author checkout state.
+    Keep this separate from desired-state verification: an old value may differ
+    legitimately, whereas a missing later control must stop the entire batch
+    before mode/product/contact changes are made.
+    """
+    if data.get('mode'):
+        steps = dialog.get_by_role('button', name=re.compile(r'^Steps(?:\s+(?:One-step|Two-step|Split))?$'))
+        if steps.count() != 1:
+            raise CheckoutRefused('Native Steps navigation changed')
+        steps.click()
+        group = dialog.get_by_role('group', name='settings.orderFormSteps', exact=True)
+        group.wait_for(state='visible', timeout=45000)
+        mode = group.get_by_role('button', name=data['mode'], exact=True)
+        if mode.count() != 1:
+            raise CheckoutRefused('Native Steps mode changed')
+    if data.get('products'):
+        _products_panel(dialog)
+        for key in data['products']:
+            control = dialog.get_by_role('switch', name=PRODUCT_SWITCHES[key], exact=True)
+            if control.count() != 1 or control.get_attribute('aria-checked') not in ('true', 'false'):
+                raise CheckoutRefused('Native Products switch changed: ' + key)
+    if data.get('contact_fields'):
+        _contact_panel(dialog)
+        for key, states in data['contact_fields'].items():
+            _contact_field_controls(dialog, key, states)
+    if data.get('checkout_options'):
+        panel = dialog.get_by_role('button', name='Checkout options', exact=True)
+        if panel.count() != 1:
+            raise CheckoutRefused('Native Checkout options navigation changed')
+        panel.click()
+        for key in data['checkout_options']:
+            control = dialog.get_by_role('switch', name=CHECKOUT_SWITCHES[key], exact=True)
+            control.wait_for(state='visible', timeout=45000)
+            if control.count() != 1 or control.get_attribute('aria-checked') not in ('true', 'false'):
+                raise CheckoutRefused('Native Checkout option control changed: ' + key)
+            # An already enabled Terms editor can be inventoried now. A disabled
+            # editor only exists after its explicit switch is enabled; its
+            # captured row/shape is checked immediately after that write.
+            if key in ('terms_and_conditions', 'terms_and_conditions_step_2') and control.get_attribute('aria-checked') == 'true':
+                _terms_editor(dialog, CHECKOUT_SWITCHES[key])
+    if data.get('content'):
+        panel = dialog.get_by_role('button', name='Content', exact=True)
+        if panel.count() != 1:
+            raise CheckoutRefused('Native Content navigation changed')
+        panel.click()
+        for key in data['content']:
+            group, label = CONTENT_FIELDS[key]
+            control = dialog.get_by_role('textbox', name=label, exact=True)
+            if control.count() == 0 or not control.is_visible():
+                accordion = dialog.get_by_text(group, exact=True)
+                if accordion.count() != 1:
+                    raise CheckoutRefused('Native Content group changed: ' + group)
+                accordion.click()
+            control.wait_for(state='visible', timeout=45000)
+            if control.count() != 1 or not isinstance(control.input_value(), str):
+                raise CheckoutRefused('Native Content field is missing or ambiguous: ' + key)
+    if data.get('theme_inputs'):
+        nav = dialog.get_by_role('button', name='Theme & style', exact=True)
+        if nav.count() != 1:
+            raise CheckoutRefused('Native Theme & style navigation changed')
+        nav.click()
+        inputs = dialog.get_by_text('Inputs', exact=True)
+        if inputs.count() != 1:
+            raise CheckoutRefused('Native Inputs styling group changed')
+        inputs.click()
+        for key, value in data['theme_inputs'].items():
+            group = dialog.get_by_role('group', name=THEME_INPUTS[key][0], exact=True)
+            if group.count() != 1:
+                raise CheckoutRefused('Native Inputs property group changed: ' + key)
+            control = group.get_by_role('button', name=value, exact=True)
+            control.wait_for(state='visible', timeout=45000)
+            if control.count() != 1 or control.get_attribute('aria-pressed') not in ('true', 'false'):
+                raise CheckoutRefused('Native Inputs choice state unavailable: ' + key)
+
+
 def apply_checkout_ui(frame, data):
     """Apply explicit native mode/options and verify visible editor state.
 
@@ -330,6 +408,7 @@ def apply_checkout_ui(frame, data):
     """
     validate_checkout_ui(data)
     dialog = open_native_order_settings(frame, data)
+    _preflight_checkout_ui(dialog, data)
     if data.get('mode'):
         steps = dialog.get_by_role('button', name=re.compile(r'^Steps(?:\s+(?:One-step|Two-step|Split))?$'))
         if steps.count() != 1:

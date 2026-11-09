@@ -26,6 +26,8 @@ class Locator:
     def __init__(self, frame, kind, name=None):
         self.frame,self.kind,self.name=frame,kind,name
     def count(self):
+        if (self.kind, self.name) in getattr(self.frame, 'control_counts', {}):
+            return self.frame.control_counts[(self.kind, self.name)]
         if self.kind=='dialog':return int(self.frame.dialog)
         if self.kind=='order':return self.frame.order_count
         if self.kind=='textbox':return 1
@@ -159,6 +161,35 @@ class CheckoutUITests(unittest.TestCase):
         self.assertEqual(result['independent_readback'],'REQUIRED')
         self.assertFalse(result['payment_verified'])
         self.assertFalse(any(name in ('Add Product','Save','Purchase','Publish') for _,name in frame.clicks))
+
+    def test_late_missing_or_ambiguous_controls_stop_before_any_earlier_value_write(self):
+        cases = [
+            ({'switch': 'Enable coupon codes'}, {}),
+            ({'switch': 'Sticky contact'}, {'checkout_options': {'sticky_contact': True}}),
+            ({'textbox': 'Order button text'}, {'content': {'order_button_text': 'Approved order'}}),
+        ]
+        for bad, extra in cases:
+            frame = Frame()
+            frame.control_counts = {(kind, name): 2 for kind, name in bad.items()}
+            with self.subTest(bad=bad), self.assertRaises(CheckoutRefused):
+                ui.apply_checkout_ui(frame, {**inputs(), **extra})
+            self.assertEqual(frame.mode, 'One-step')
+            self.assertEqual(frame.switches, {})
+            self.assertEqual(frame.content, {})
+            self.assertFalse(any(kind in ('switch', 'field', 'terms_text', 'theme')
+                                 for kind, _ in frame.clicks))
+
+    def test_late_contact_identity_mismatch_prevents_mode_and_product_edits(self):
+        frame = Frame()
+        frame.fields['company']['label'] = 'Another company field'
+        data = {**inputs(), 'contact_fields': {
+            'phone': {'required': True}, 'company': {'visible': False}}}
+        with self.assertRaises(CheckoutRefused):
+            ui.apply_checkout_ui(frame, data)
+        self.assertEqual(frame.mode, 'One-step')
+        self.assertEqual(frame.switches, {})
+        self.assertFalse(frame.fields['phone']['required'])
+        self.assertTrue(frame.fields['company']['visible'])
 
     def test_switches_are_set_not_blind_toggled(self):
         frame=Frame();frame.switches={'Show quantity':True,'Enable coupon codes':False}

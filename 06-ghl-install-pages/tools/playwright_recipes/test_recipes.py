@@ -131,12 +131,12 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(r['route']['lane'],'PROBE_API')
         self.assertFalse(r['browser_used'])
 
-    def test_invalid_quiz_has_browser_recovery_handoff(self):
+    def test_invalid_quiz_refuses_before_browser_work_or_recovery_handoff(self):
         with tempfile.TemporaryDirectory() as d:
             r=host.run_recipe('quizzes.create',{**job(),'name':'Fixture'},self.probes(),d,input_dir='.')
-            self.assertEqual(r['status'],'NEEDS_BROWSER_RECOVERY')
+            self.assertEqual(r['status'],'STOP_INVALID_INPUT')
             self.assertEqual(r['route']['lane'],'openclaw_extension')
-            self.assertTrue(Path(d,'handoff.json').is_file())
+            self.assertFalse(Path(d,'handoff.json').exists())
 
 
 class RecoveryTests(unittest.TestCase):

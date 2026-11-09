@@ -121,11 +121,27 @@ _ADDRESS_QUERIES = {
 }
 
 
+def _address_headers(frame):
+    """Accept the five captured children plus the observed autocomplete section.
+
+    The November 9 builder adds an Auto Complete Address / New accordion to the
+    same panel. It is a settings section, not a sixth contact-field identity.
+    Unknown extra sections remain a capture blocker.
+    """
+    headers = frame.locator('.n-collapse-item__header-main')
+    count=headers.count()
+    if count not in (len(_ADDRESS_QUERIES),len(_ADDRESS_QUERIES)+1):
+        _stop('Native Address child inventory is incomplete or changed')
+    if count==len(_ADDRESS_QUERIES)+1:
+        autocomplete=headers.filter(has_text=re.compile(r'^\s*Auto Complete Address\s*New\s*$'))
+        if autocomplete.count()!=1:
+            _stop('Unknown extra native Address accordion requires capture')
+    return headers
+
+
 def _address_keys(frame, *, allow_unknown_queries=False):
     """Read the captured five child fields of one complete native Address group."""
-    headers = frame.locator('.n-collapse-item__header-main')
-    if headers.count() != len(_ADDRESS_QUERIES):
-        _stop('Native Address child inventory is incomplete or changed')
+    headers=_address_headers(frame)
     observed = []
     for label, expected in _ADDRESS_QUERIES.items():
         enabled = frame.get_by_role('checkbox', name=label, exact=True)

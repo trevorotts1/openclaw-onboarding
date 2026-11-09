@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import form_submission as submission
 import recipe_cli
 import skill6_playwright as runner
+from test_assessments import list_reopen_surface
 
 
 class SubmissionValidation(unittest.TestCase):
@@ -49,6 +50,7 @@ class NativeSubmissionExecution(unittest.TestCase):
                  'saves': 0, 'mode_clicks': 0, 'fills': 0}
         title = MagicMock()
         title.input_value.return_value = 'ZHC Form Fixture'
+        title.count.return_value=1
         save = MagicMock()
         save.count.return_value = 1
         save.is_enabled.return_value = True
@@ -92,12 +94,13 @@ class NativeSubmissionExecution(unittest.TestCase):
         return page, frame, state
 
     def run_surface(self, page, frame, config):
+        cell=list_reopen_surface(page)
         with patch.object(runner, 'form_builder', return_value=frame), \
              patch.object(runner, 'click', side_effect=lambda loc: loc.click()), \
              patch.object(runner, 'fill', side_effect=lambda loc, value: loc.fill(value)), \
              patch.object(runner, 'visible', return_value=False), \
              patch.object(runner, 'wait_until', side_effect=lambda predicate, message: self.assertTrue(predicate())), \
-             patch.object(runner, 'exact_search', return_value=MagicMock()):
+             patch.object(runner, 'exact_search', return_value=cell):
             return submission.configure(page, config)
 
     def test_plain_message_saves_and_reopens_without_generating_html(self):
