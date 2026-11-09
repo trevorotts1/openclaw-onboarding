@@ -7,7 +7,7 @@ description: >
   Gemini Omni Video, Runway Dedicated, Veo 3.1 Dedicated), payload validation
   against a machine-readable registry, prompt sizing against published limits,
   asynchronous task dispatch with callbacks or polling, and mandatory real visual QC.
-version: v2.1.5
+version: v2.1.6
 metadata:
   version: "2.1.4"
   priority: HIGH
@@ -48,7 +48,7 @@ All video tasks are asynchronous: HTTP 200 from createTask or dedicated endpoint
 ## Registry & Prompt Doctrine
 
 - `models.json` is this skill's CURATED POLICY and verified-override registry (37 verified entries with exact first-party endpoints, caps, and parameters). It is not the exhaustive KIE catalog and not the live source of limits or prices: Skill 74 `validate` (live schema, registry fallback) and `price` are. A model missing here is DISCOVERED, never an automatic default; there is no auto-latest for video.
-- Standard house band: desired min 5,000 chars, target ~9,000 chars, preferred max 19,000 chars (for models with cap ≥20,000). For smaller cap models, enforce high-density compression without losing control domains.
+- Prompt sizing follows KIE prompt rule 12 (owner order 2026-10-05): 95-100% of the model's verified maximum is the target, 80% is the hard floor, 100% the ceiling, enforced by `scripts/validate_prompt.py` via `shared-utils/kie_prompt_enforcer.py` (Skill 74 `prompt-budget --check`). For smaller cap models, enforce high-density compression without losing control domains. The retired 5,000/9,000/19,000 house band no longer stands as a live rule.
 
 ## Prerequisites & Auth
 

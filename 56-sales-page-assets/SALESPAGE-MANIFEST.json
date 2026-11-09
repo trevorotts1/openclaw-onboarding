@@ -42,7 +42,7 @@
       "name": "Image prompts (N, slice map, template rules) + prompt STRENGTH",
       "produces_artifact": "image_plan.json",
       "chk_wrapper": "_chk_sp_image_plan",
-      "gate": "prove_sp_image_plan.py (slice coverage) + prove_sp_prompt_floor.py (two-floor strength 5,000-19,000, brand-graded)",
+      "gate": "prove_sp_image_plan.py (slice coverage) + prove_sp_prompt_floor.py (two-floor strength per KIE prompt rule 12: 95-100% of model max target, 80% hard floor, brand-graded)",
       "py_symbol": "run_sales_page_assets._image_plan_suite",
       "defers_unless": "funnel_type == sales_page_assets"
     },
@@ -213,12 +213,12 @@
       "py_symbol": "prove_sp_image_plan.evaluate"
     },
     "AF-SP56-PROMPT-FLOOR": {
-      "trigger": "an image prompt is under the 5,000 stripped-char floor (or empty)",
+      "trigger": "an image prompt is under the KIE rule 12 length floor (80% of model max) (or empty)",
       "enforced_by": "P1-IMAGE-PLAN",
       "py_symbol": "prove_sp_prompt_floor.evaluate_prompt"
     },
     "AF-SP56-PROMPT-CEILING": {
-      "trigger": "an image prompt is over the 19,000 stripped-char ceiling",
+      "trigger": "an image prompt is over the model maximum (100% ceiling)",
       "enforced_by": "P1-IMAGE-PLAN",
       "py_symbol": "prove_sp_prompt_floor.evaluate_prompt"
     },
