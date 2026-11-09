@@ -1,0 +1,41 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Approved account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/memberships/communities/community-groups",
+  "portal_url": "https://portal.example.invalid/communities/groups/approved-group-slug/home",
+  "group_name": "EXACT_EXISTING_GROUP_NAME",
+  "group_id": "GROUP_ID_FROM_NATIVE_INVENTORY",
+  "event_id": "EVENT_ID_FROM_NATIVE_INVENTORY",
+  "allow_room_creation": true,
+  "expected": {
+    "view": {
+      "title": "Fixture event",
+      "date": "Nov 09, 2026",
+      "time": "9:00 PM - 10:00 PM",
+      "description": "Existing approved description",
+      "attendee_count": "1 guests",
+      "fee": "Free",
+      "location_text": "https://example.invalid/existing",
+      "location_url": "https://example.invalid/existing"
+    },
+    "form": {
+      "title": "Fixture event",
+      "description": "Existing approved description",
+      "start_date": "Nov 09, 2026",
+      "start_time": "9:00",
+      "start_ampm": "PM",
+      "end_date": "Nov 09, 2026",
+      "end_time": "10:00",
+      "end_ampm": "PM",
+      "timezone": "America/New_York GMT-05:00",
+      "recurrence": "Doesn't repeat",
+      "location_type": "Other",
+      "location_url": "https://example.invalid/existing",
+      "hide_location": false,
+      "remind": false,
+      "hide_attendees": false,
+      "attendees": "All members",
+      "thumbnail_src": null
+    }
+  }
+}
