@@ -205,6 +205,21 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         _launch_event(normalized["launch_id"], {"event_type": "stage_blocked", "stage": "assemble",
                                                 "failures": [exc.code]})
         raise
+    # B5: re-open the just-sealed package and re-prove its receipt and artifact bytes from disk
+    # before anything is handed off. `checks.verify_package_receipt` is the recovery entry point
+    # L03 and L12 call; running it on the delivery path means a receipt that cannot be re-read, or
+    # an artifact whose bytes moved after sealing, stops the handoff instead of shipping.
+    verification = checks.verify_package_receipt(Path(args.out))
+    broken = [v for v in verification["violations"]
+              if ": artifact " in v
+              or "AF-LAUNCH-PKG-RECEIPT: receipt.json is missing" in v
+              or "AF-LAUNCH-PKG-MANIFEST: package-manifest.json is missing" in v]
+    if verification["state"] == "failed" and broken:
+        _launch_event(normalized["launch_id"],
+                      {"event_type": "stage_blocked", "stage": "assemble_reopen",
+                       "failures": broken[:20]})
+        raise CliError("AF-LAUNCH-ASSEMBLY-NOT-DELIVERABLE",
+                       "the sealed package does not re-open: " + "; ".join(broken[:10]))
     # SOP-GIP-02/03 at the real handoff: the request, the report built from real Review Receipt v2
     # files, the authorised upload only when an approval was named, the hosted URLs in the pages and
     # the delivery record. A missing review, provider or hosting capability is recorded, never faked.
@@ -231,6 +246,8 @@ def cmd_assemble(args: argparse.Namespace) -> int:
            "activation_label": out["manifest"]["activation_label"],
            "launch_plan_completeness":
                (out["manifest"].get("launch_plan") or {}).get("completeness"),
+           "receipt_verified": verification["state"],
+           "receipt_artifacts_checked": verification["artifacts_checked"],
            "image_stages": ({"complete": stage_report.get("complete"),
                              "report": str(Path(args.run_dir) / "qc/image_stages_report.json")}
                             if stage_report else {"state": "not_invoked"}),
