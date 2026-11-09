@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
 import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -125,7 +126,7 @@ class CommandTests(unittest.TestCase):
             {"case_id": "c4", "kind": "stale_after_update", "question": "q"},
             {"case_id": "c5", "kind": "cross_client", "question": "q"},
         ]
-        path = os.path.join(os.environ["TMPDIR"], "wf30-retrieval-cases.json")
+        path = os.path.join(os.environ.get("TMPDIR") or tempfile.gettempdir(), "wf30-retrieval-cases.json")
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(cases, handle)
         result = CliRunner().invoke(
