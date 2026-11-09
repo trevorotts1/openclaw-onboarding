@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "_purpose": "Declared consumer binding for Skill 81's hash-pinned validator bytes (F24 item 18). Skill 49's downsell_wrapper.py copies these bytes and refuses any file whose sha256 differs from its compiled-in pin. That means an ordinary repair to Skill 81 breaks the wrapper's integrity check unless the pin moves in the same commit. This file makes the binding DECLARED on the dependency side, so whoever changes Skill 81 is told who pins it, and tests/test_validator_pin_lockstep.py proves all three parties agree: this file's recorded sha256, the real bytes on disk, and the pin constant the wrapper actually enforces.",
+  "_lockstep_rule": "Any byte change to a file listed in 'pinned' requires, in the SAME commit: (1) this file's sha256 updated, (2) the named pin constant in the named consumer updated, (3) the consumer's own test suite re-run. Use `python3 tests/test_validator_pin_lockstep.py` from this directory to see the current three-way agreement.",
+  "pinned": {
+    "validators/validate_downsell.py": {
+      "sha256": "43291ab4f8705b5a96da1f944f8a1c88869bfd52bb77dbc4a46128630a6edae1",
+      "consumers": [
+        {
+          "repo": "openclaw-onboarding",
+          "path": "49-signature-funnel/scripts/downsell_wrapper.py",
+          "pin_constant": "PIN_VALIDATE_DOWNSELL",
+          "enforced_at": "downsell_wrapper._load_skill81"
+        }
+      ]
+    },
+    "schemas/downsell-request.schema.json": {
+      "sha256": "39e056705cae7fac81025e41feebdef5a1ed1ea87409423a4d60268c8c0d9e2b",
+      "consumers": [
+        {
+          "repo": "openclaw-onboarding",
+          "path": "49-signature-funnel/scripts/downsell_wrapper.py",
+          "pin_constant": "PIN_REQUEST_SCHEMA",
+          "enforced_at": "downsell_wrapper._load_skill81"
+        }
+      ]
+    },
+    "schemas/downsell-result-extension.schema.json": {
+      "sha256": "8108de3c81fe0d93843e8511d94b82ffe2bb0da6d723e3e0438b5268aa39e80e",
+      "consumers": [
+        {
+          "repo": "openclaw-onboarding",
+          "path": "49-signature-funnel/scripts/downsell_wrapper.py",
+          "pin_constant": "PIN_EXTENSION_SCHEMA",
+          "enforced_at": "downsell_wrapper._load_skill81"
+        }
+      ]
+    }
+  }
+}
