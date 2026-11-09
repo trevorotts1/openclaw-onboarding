@@ -1,4 +1,7 @@
 # Changelog - kie-image
+## [2.2.7] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
 
 ## [2.2.6] - 2026-11-08 - G3 lockstep roll (PR 2868)
 

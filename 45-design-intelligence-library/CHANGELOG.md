@@ -1,4 +1,7 @@
 # Skill 45 CHANGELOG — Design Intelligence Library
+## v2.2.12 - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
 
 ## v2.2.10 - 2026-11-08 - GPT Image 2.6 stays the endpoint name after main's fold
 

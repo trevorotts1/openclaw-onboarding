@@ -1,4 +1,7 @@
 # Changelog - Skill 37: ZHC Closeout
+## v13.2.3 - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
 
 ## v13.2.0 - 2026-10-06 - feat(kie): one KIE path through the Skill 74 transport
 

@@ -3,6 +3,9 @@
 All notable changes to this skill are documented here.
 
 ---
+## [2.1.8] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
 
 ## [2.1.6] - 2026-10-15 - feat: Agnes Image 2.5 Flash becomes the default (Signature Launch S63)
 
