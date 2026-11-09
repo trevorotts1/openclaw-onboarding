@@ -1,0 +1,57 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Approved account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/quiz-builder-v2/QUIZ_FROM_INVENTORY",
+  "configuration": {
+    "expected_tier_labels": [
+      "Tier 1",
+      "Tier 2",
+      "Tier 3",
+      "Tier 4"
+    ],
+    "expected_tiers": [
+      {
+        "label": "Tier 1",
+        "from": 0,
+        "to": 24
+      },
+      {
+        "label": "Tier 2",
+        "from": 25,
+        "to": 49
+      },
+      {
+        "label": "Tier 3",
+        "from": 50,
+        "to": 74
+      },
+      {
+        "label": "Tier 4",
+        "from": 75,
+        "to": 100
+      }
+    ],
+    "tiers": [
+      {
+        "label": "Starting",
+        "from": 0,
+        "to": 19
+      },
+      {
+        "label": "Building",
+        "from": 20,
+        "to": 39
+      },
+      {
+        "label": "Growing",
+        "from": 40,
+        "to": 79
+      },
+      {
+        "label": "Leading",
+        "from": 80,
+        "to": 100
+      }
+    ]
+  }
+}

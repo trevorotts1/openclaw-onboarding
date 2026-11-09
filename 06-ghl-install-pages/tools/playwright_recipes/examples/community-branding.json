@@ -1,0 +1,18 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Exact approved location name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/memberships/communities/community-groups",
+  "portal_url": "https://portal.example.com/communities/groups/exact-group-slug/home",
+  "group_name": "Exact approved group name",
+  "publish": false,
+  "branding": {
+    "expected": {"logo": null, "favicon": null, "cover": null},
+    "images": [
+      {
+        "slot": "logo",
+        "file": "/absolute/path/to/approved-logo.png",
+        "sha256": "REPLACE_WITH_APPROVED_FILE_SHA256"
+      }
+    ]
+  }
+}
