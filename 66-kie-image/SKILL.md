@@ -2,14 +2,14 @@
 name: kie-image
 description: >
   KIE Image generation via the KIE.ai Market API. Owns model selection across
-  14 image families (GPT Image 2.5, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
+  14 image families (GPT Image 2.6, Qwen Image 3.0/Pro, Seedream 5.0 Pro/Lite/4.5,
   Nano Banana 2/2 Lite/Pro/legacy, Wan 2.7 Image, FLUX.2, Z-Image, Ideogram V3,
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
-version: v2.2.6
+version: v2.2.7
 metadata:
-  version: "2.2.2"
+  version: "2.2.7"
   priority: HIGH
 ---
 
@@ -30,7 +30,7 @@ wait (callback or poll), and visually QC the result.
    catalog** (owner order 2026-10-05: if a new GPT Image model comes out, the
    system moves to it automatically; resolved by Skill 74 `latest-family`, with
    the `models.json` default as the fallback when the adapter is absent or
-   unreachable; today that is GPT Image 2.5 Sunburst), preferred for high-fidelity general KIE
+   unreachable; today that is GPT Image 2.6 Sunburst), preferred for high-fidelity general KIE
    image generation/editing, product/brand images, and detailed long-form
    creative instructions (owner's preference, operator ruling 2026-09-09,
    supersedes GPT Image 2), when compatible (respecting its ratio/resolution
@@ -91,7 +91,7 @@ Key cap facts (full matrix: `references/models.md`):
   2026-08-27 — authoritative for GPT Image 2 only; docs page's "maximum
   20,000 characters" is stale; warn-only, never hard-fail; house band
   5,000–19,000 with ~9,000 target is legal).
-- GPT Image 2.5 (default today, operator ruling 2026-09-09): 20,000 chars per KIE
+- GPT Image 2.6 (default today since #2860; caps carried forward from 2.5, KIE-066 NOTE): 20,000 chars per KIE
   docs dated 2026-09-09 (`DOCS`, NOT owner-confirmed — the GPT Image 2 25,000
   confirmation does not carry forward and has not been retested on 2.5).
 - Qwen 3.0/Pro: 4.5K **tokens** advertised — token-aware validation only; never
