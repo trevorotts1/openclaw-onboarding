@@ -1517,7 +1517,7 @@ own documentation of what exists upstream.
 
 ### Constraint sets are PER-GENERATION and never merged
 
-- **2.6 entries:** prompt cap **32,000** (live schema 2026-11-08); the 16-ratio enum
+- **2.6 entries:** prompt cap **20,000** by OWNER RULING 2026-11-08 (one source: `66-kie-image/models.json` `owner_prompt_cap_chars`; the vendor 32,000 is retained for provenance only); the 16-ratio enum
   above; **no per-resolution exclusions** — nothing is 1K-only and nothing is rejected at
   `2K`/`4K` on the basis of aspect ratio; `27:16 / 16:27 / 9:8 / 8:9` are not members at
   any resolution.
