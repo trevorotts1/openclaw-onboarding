@@ -329,7 +329,7 @@ class CommunityPortalTests(unittest.TestCase):
         with self.assertRaises(core.Stop):
             core.execute(job, '/unused')
 
-    def test_actual_api_receipt_remains_first_before_portal_context(self):
+    def test_broad_api_receipt_cannot_replace_native_portal_context(self):
         data = inputs()
         callback = Mock(return_value={'status': 'API_STEPS_COMPLETE',
                                      'location_id': 'LOC_TEST', 'objects': []})
@@ -341,9 +341,9 @@ class CommunityPortalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             result = host.run_recipe('communities.configure', data, probes, root,
                                      input_dir='.', executors={'official_mcp': callback})
-            self.assertEqual(result['route']['lane'], 'official_mcp')
-            self.assertEqual(callback.call_count, 1)
-            self.assertNotEqual(result['status'], 'PORTAL_CONTEXT_REQUIRED')
+            self.assertEqual(result['route']['lane'], 'playwright')
+            callback.assert_not_called()
+            self.assertEqual(result['status'], 'PORTAL_CONTEXT_REQUIRED')
 
     def test_direct_and_package_context_types_are_identical(self):
         packaged = importlib.import_module('playwright_recipes.community_portal')
