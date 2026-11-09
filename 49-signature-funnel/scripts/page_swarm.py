@@ -265,6 +265,20 @@ def execute(requests: List[Dict[str, Any]], executor: Callable[..., Dict[str, An
     paid = bool(image_inputs) and image_inputs.get("image_provider") == "kie"
     # the free stub makes no paid start: no limiter tokens, no cap (the ledger only records)
     out_dir = Path(out_dir) if out_dir else None
+
+    # A3 — the prompt floor is a PRE-SUBMIT gate, not only a later phase. A paid launch whose
+    # run dir carries its authoring prompt ledger is proven here, before any lane starts, so a
+    # non-conforming prompt cannot reach a paid Kie call. (Absent ledger: nothing to prove here;
+    # the P2 phase still refuses a bad ledger before certification.)
+    if paid and out_dir is not None and (out_dir / "prompt_ledger.json").is_file():
+        import prove_sf_prompt_floor as _pf  # ships beside this module
+        _ledger = json.loads((out_dir / "prompt_ledger.json").read_text(encoding="utf-8"))
+        _violations, _warnings, _ = _pf.preflight_ledger(_ledger)
+        for _msg in _warnings:
+            print(f"WARNING: {_msg}", file=sys.stderr)
+        if _violations:
+            raise SwarmError("prompt gate refused before any paid submit: "
+                             + "; ".join(f"{c}: {m}" for c, m in _violations))
     ledger = None
     if image_inputs is not None:
         ledger = SpendLedger(image_inputs["image_cap"], enforce=paid, provider=image_inputs["image_provider"],

@@ -78,6 +78,19 @@ EXIT_FAILCLOSED = 3
 # 95 to 100 percent of the model maxLength, hard floor 80 percent (AF-FUN-PROMPT-FLOOR), hard ceiling
 # 100 percent (AF-FUN-PROMPT-CEILING). The limit comes from Skill 74 prompt-budget; no band lives here.
 IMAGE_MODEL_DEFAULT = "gpt-image-2-6/sunburst-text-to-image"
+
+# OWNER CAP (owner ruling 2026-11-08, restated 2026-11-09): the GPT Image 2.6 prompt
+# maximum is 20,000 characters. The owner cap OUTRANKS the vendor schema cache, which
+# can drift upward (a live-schema:cache read reported 32,000 on 2026-11-09). An explicit
+# maximum passed to the policy service is never overridden by the cached schema.
+OWNER_PROMPT_MAX = 20000
+OWNER_PROMPT_MAX_PREFIXES = ("gpt-image-2-6/",)
+OWNER_PROMPT_MAX_SOURCE = "owner-cap:20000 (2026-11-08 owner ruling; outranks the vendor schema)"
+
+def owner_max_for(model: Optional[str]) -> Optional[int]:
+    """The owner cap for a model, or None when no owner cap is published for it."""
+    m = str(model or IMAGE_MODEL_DEFAULT)
+    return OWNER_PROMPT_MAX if m.startswith(OWNER_PROMPT_MAX_PREFIXES) else None
 PROMPT_MIN_DISTINCT_WORDS = 220  # AF-FUN-PROMPT-DENSITY: catches paragraph-repeat padding
 
 # The canonical SIGNATURE GRADE BLOCK (SACRED IP) — embedded verbatim in block 4 of
@@ -209,25 +222,50 @@ def evaluate_prompt(record: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], Opti
     lc = stripped.lower()
     model = str(record.get("model") or IMAGE_MODEL_DEFAULT)
 
-    # FLOOR 1 — length band (strict 95-100 percent through the one policy service)
+    # FLOOR 1 — length band (strict 95-100 percent of the OWNER cap, through the one policy
+    # service). This is the PRE-SUBMIT gate: callers must run it immediately before handing a
+    # prompt to the Kie transport; the P2 phase alone cannot prove a prompt was not already
+    # sent, so a refusal here is the only place "never submitted" is true.
+    om = owner_max_for(model)
     if POLICY is not None:
-        receipt = POLICY.freeze(stripped, model=model,
+        receipt = POLICY.freeze(stripped, model=model, max_chars=om,
+                                max_source=(OWNER_PROMPT_MAX_SOURCE if om else None),
                                 review_ref=record.get("prompt_sha256"),
                                 job_id=record.get("job_id"))
         if not receipt["verdict"]["ok"]:
             status = receipt["verdict"]["status"]
             code = "AF-FUN-PROMPT-CEILING" if status == "ABOVE_MAX" else "AF-FUN-PROMPT-FLOOR"
-            fails.append((code, f"{who}: {receipt['verdict']['message']}; NOT sent to Kie"))
+            fails.append((code, f"{who}: {receipt['verdict']['message']}; REFUSED before submit"))
     else:
-        verdict = KPE.check(model, stripped)
+        verdict = KPE.check(model, stripped, fallback_max=om)
+        n = len(stripped)
+        if om is not None and n > om:
+            verdict = dict(verdict, ok=False, status="ABOVE_MAX",
+                           message=("prompt is %d chars (%.1f%% of max %d); ABOVE the owner cap: CUT %d chars"
+                                    % (n, n * 100.0 / om, om, n - om)))
+        elif om is not None and n < int(om * 0.95):
+            verdict = dict(verdict, ok=False, status="BELOW_FLOOR",
+                           message=("prompt is %d chars (%.1f%% of the %d owner cap), below the 95 percent "
+                                    "target: ADD %d chars of genuine specification (reject and rewrite, never pad)"
+                                    % (n, n * 100.0 / om, om, int(om * 0.95) - n)))
         if not verdict["ok"]:
             code = "AF-FUN-PROMPT-CEILING" if verdict["status"] == "ABOVE_MAX" else "AF-FUN-PROMPT-FLOOR"
-            fails.append((code, f"{who}: {verdict['message']}; NOT sent to Kie"))
+            fails.append((code, f"{who}: {verdict['message']}; REFUSED before submit"))
         receipt = {"final_prompt_sha256": verdict.get("prompt_sha256"),
                    "count": verdict.get("count"), "max": verdict.get("max"),
                    "ratio": verdict.get("ratio"),
                    "policy_version": verdict.get("policy_version"),
-                   "payload_sha256": None}
+                   "payload_sha256": None,
+                   "verdict": {"ok": verdict.get("ok"), "status": verdict.get("status"),
+                               "message": verdict.get("message") or "",
+                               "warnings": list(verdict.get("warnings") or [])}}
+
+    # A4 — the owner rule's 80-to-below-95 percent "warn and expand" band PASSES with a
+    # warning. It used to be dropped here; keep it on the receipt so every caller sees it.
+    if receipt is not None:
+        warns = list((receipt.get("verdict") or {}).get("warnings") or [])
+        if warns:
+            receipt.setdefault("warnings", warns)
 
     # FLOOR 2 — density
     distinct = _distinct_words(stripped)
@@ -276,6 +314,38 @@ def evaluate_prompt(record: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], Opti
     return fails, receipt
 
 
+def preflight_prompt(record: Dict[str, Any]
+                     ) -> Tuple[List[Tuple[str, str]], List[str], Optional[Dict[str, Any]]]:
+    """PRE-SUBMIT gate: run this immediately before handing ONE prompt to the Kie transport.
+
+    Returns (violations, warnings, receipt). Submit only when `violations` is empty.
+    `warnings` carries the owner rule's 80-to-below-95 percent warn-and-expand band: the
+    prompt may be submitted, but the ADD the warning names belongs in the prompt.
+    """
+    fails, receipt = evaluate_prompt(record)
+    warns = list((receipt or {}).get("verdict", {}).get("warnings") or [])
+    return fails, warns, receipt
+
+def preflight_ledger(ledger: Dict[str, Any]
+                     ) -> Tuple[List[Tuple[str, str]], List[str], List[Optional[Dict[str, Any]]]]:
+    """PRE-SUBMIT gate for a whole authoring ledger (every prompt the transport would send)."""
+    violations: List[Tuple[str, str]] = []
+    warnings: List[str] = []
+    receipts: List[Optional[Dict[str, Any]]] = []
+    prompts = ledger.get("prompts") if isinstance(ledger, dict) else None
+    if not isinstance(prompts, list) or not prompts:
+        return [("AF-FUN-PROMPT-FLOOR",
+                 "prompt ledger carries no non-empty 'prompts' array")], [], []
+    for rec in prompts:
+        if not isinstance(rec, dict):
+            violations.append(("AF-FUN-PROMPT-FLOOR", "a prompt entry is not an object"))
+            continue
+        got, warns, receipt = preflight_prompt(rec)
+        violations.extend(got)
+        warnings.extend(str(w) for w in warns)
+        receipts.append(receipt)
+    return violations, warnings, receipts
+
 def verify(ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
     violations: List[Tuple[str, str]] = []
     notes: List[str] = []
@@ -287,8 +357,9 @@ def verify(ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
         if not isinstance(rec, dict):
             violations.append(("AF-FUN-PROMPT-FLOOR", "a prompt entry is not an object"))
             continue
-        got, receipt = evaluate_prompt(rec)
+        got, warns, receipt = preflight_prompt(rec)
         violations.extend(got)
+        notes.extend("WARNING: " + str(w) for w in warns)
         if receipt:
             payload_sha = (POLICY.payload_sha256(
                 {"model": str(rec.get("model") or IMAGE_MODEL_DEFAULT),
@@ -299,7 +370,8 @@ def verify(ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
                 % (rec.get("page_type", "?"), rec.get("section", "?"), receipt.get("count"),
                    receipt.get("ratio") or 0.0, receipt.get("max"),
                    receipt.get("final_prompt_sha256"), payload_sha))
-    notes.append(f"checked {len(prompts)} image prompt(s) against the strict 95-100 percent band")
+    notes.append(f"checked {len(prompts)} image prompt(s) against the owner 20,000-character cap "
+                 "(95-100 percent passes; 80 to below 95 passes WITH a warn-and-expand warning)")
     return violations, notes
 
 
@@ -504,11 +576,15 @@ def _load_json(path: str) -> Any:
 
 def _report(violations, notes) -> None:
     for note in notes:
-        print(f"NOTE: {note}")
+        if str(note).startswith("WARNING: "):
+            print(f"WARN: {str(note)[len('WARNING: '):]}")
+        else:
+            print(f"NOTE: {note}")
     if not violations:
         print("PASS: every image prompt clears the two-floor gate (KIE rule 12 length band).")
         return
-    print(f"FAIL: {len(violations)} prompt violation(s) — the failing prompt is NOT sent to Kie.")
+    print(f"FAIL: {len(violations)} prompt violation(s) — the pre-submit gate refuses these; "
+          "call preflight_prompt/preflight_ledger before the Kie submit.")
     for code, msg in violations:
         print(f"  VIOLATION [{code}] {msg}")
 
@@ -534,7 +610,11 @@ _VOCAB = (
 
 
 def _target() -> int:
-    """The middle of the rule 12 target band for the default image model (self-test fixtures)."""
+    """The middle of the rule 12 target band for the default image model (self-test fixtures).
+    The OWNER cap decides the band; a drifted live-schema cache must not move the fixtures."""
+    om = owner_max_for(IMAGE_MODEL_DEFAULT)
+    if om:
+        return (int(om * 0.95) + om) // 2
     b = KPE.budget_for(IMAGE_MODEL_DEFAULT)
     return (b["target_min"] + b["max"]) // 2
 
@@ -771,6 +851,37 @@ def run_self_test() -> int:
             caught += 1
             print(f"SELF-TEST ok: '{name}' -> nonzero, carries {expected}.")
     print(f"SELF-TEST FIXTURES: {1 if not v else 0} valid-pass, {caught}/{len(cases)} violation-catch")
+
+    # A3: the OWNER cap decides the band (20,000 characters), not a drifted live schema cache.
+    over = _valid_ledger()
+    over["prompts"][0]["prompt"] = _valid_photo_prompt(25000)
+    over_v, _ = verify(over)
+    if "AF-FUN-PROMPT-CEILING" in {c for c, _ in over_v}:
+        print("SELF-TEST ok: a 25,000-character prompt is REFUSED at the pre-submit gate (owner cap 20,000).")
+    else:
+        ok = False
+        print(f"SELF-TEST FAIL: a 25,000-character prompt was not refused: {sorted({c for c, _ in over_v})}")
+    just_under = _valid_ledger()
+    just_under["prompts"][0]["prompt"] = _valid_photo_prompt(19500)
+    ju_v, ju_notes = verify(just_under)
+    if not ju_v and not any(str(n).startswith("WARNING: ") for n in ju_notes):
+        print("SELF-TEST ok: a 19,500-character prompt PASSES cleanly under the owner cap.")
+    else:
+        ok = False
+        print(f"SELF-TEST FAIL: a 19,500-character prompt did not pass cleanly: {ju_v}")
+
+    # A4: the owner rule's 80-to-below-95 percent warn-and-expand band must SURFACE, not vanish.
+    band = _valid_ledger()
+    band["prompts"][0]["prompt"] = _valid_photo_prompt(int(OWNER_PROMPT_MAX * 0.85))
+    band_v, band_notes = verify(band)
+    band_warns = [n for n in band_notes if str(n).startswith("WARNING: ")]
+    if not band_v and band_warns:
+        print(f"SELF-TEST ok: a prompt in the 80-to-below-95 percent band PASSES with its WARNING surfaced: "
+              f"{band_warns[0][:96]}...")
+    else:
+        ok = False
+        print(f"SELF-TEST FAIL: the warn-and-expand band was dropped "
+              f"(violations={len(band_v)}, warnings={len(band_warns)}).")
     # FIX-IMG-07 — the --structure coverage cross-check (prompt + image ledgers).
     if not run_coverage_self_test():
         ok = False

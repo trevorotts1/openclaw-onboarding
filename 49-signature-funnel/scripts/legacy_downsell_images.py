@@ -283,6 +283,18 @@ def main(argv=None):
                 raise Refused(f"the Skill 71 tree lacks {need}")
         entries = json.loads(entries_file.read_text(encoding="utf-8"))["roles"]
         ledger = json.loads(args.ledger.read_text(encoding="utf-8"))
+        # A3 — pre-submit gate: a paid image run must not start on a non-conforming prompt.
+        # The authoring prompt ledger sits beside the copy ledger in a Skill 49 run dir.
+        if args.image_provider == "kie":
+            _pl = args.ledger.resolve().parent / "prompt_ledger.json"
+            if _pl.is_file():
+                import prove_sf_prompt_floor as _pf  # ships beside this tool
+                _v, _w, _ = _pf.preflight_ledger(json.loads(_pl.read_text(encoding="utf-8")))
+                for _m in _w:
+                    print(f"WARNING: {_m}", file=sys.stderr)
+                if _v:
+                    raise Refused("prompt gate refused before any paid submit: "
+                                  + "; ".join(f"{c}: {m}" for c, m in _v))
         structure = json.loads(STRUCTURE.read_text(encoding="utf-8"))
         size = ledger.get("funnel_size")
         if str(size) not in structure["funnel_matrix"]:
