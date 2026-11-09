@@ -1,3 +1,7 @@
+### v1.0.20 -- G3 lockstep roll for the batch fold (no behaviour change) (2026-11-09)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
+
 ### v1.0.16 -- model doctrine cleanup: client choice or configured default (2026-10-13)
 
 - INSTALL.md owner_pins example and the producer orchestrator role no longer pin named models: each role resolves to the model the client selected, or the client's configured default model, recorded in model-map.json; when neither exists the run stops and asks the client.

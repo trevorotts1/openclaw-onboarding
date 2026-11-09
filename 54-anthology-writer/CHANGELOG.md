@@ -1,4 +1,7 @@
 # Changelog — Anthology Writer (Skill 54)
+## v2.0.8 - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
 
 ## v2.0.7 - 2026-11-08 - cover prompt names GPT Image 2.6; manifest pin and version reconciled
 

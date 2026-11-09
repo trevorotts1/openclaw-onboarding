@@ -1,4 +1,7 @@
 # Changelog - Skill 74 KIE Live Adapter
+## [1.1.13] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
+
+- Version bumped so the folded content carries the version G3 requires above main. No functional change.
 
 ## [1.1.12] - 2026-11-08 - G3 bookkeeping: markers rolled 1.1.11 -> 1.1.12
 
