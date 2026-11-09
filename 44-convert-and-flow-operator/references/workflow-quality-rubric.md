@@ -2,7 +2,7 @@
 
 ## Purpose
 
-WF-1..WF-21 (`references/workflow-build-checklist-template.md`) is a **binary PASS/FAIL on
+WF-1..WF-28 (`references/workflow-build-checklist-template.md`) is a **binary PASS/FAIL on
 settings** — it answers "are the settings correct?" but never "is this the RIGHT workflow / how
 well does it serve the client's stated goal?"
 
@@ -16,15 +16,35 @@ deliberate **SUPERSET OVERLAY**, NOT a replacement:
 - The rubric **reads outputs only** — it does NOT alter `workflow_builder.py`,
   `safety_gate.py`, `VERIFIED_ACTIONS`, or `link_steps()`. This guarantees it is non-breaking.
 
-**Ordering at Step 9 QC GATE:** WF-1..WF-21 runs FIRST (via `qc-built-workflow.sh`). The
+**Ordering at Step 9 QC GATE:** WF-1..WF-28 runs FIRST (via `qc-built-workflow.sh`). The
 weighted rubric is computed AFTER, and only on a workflow whose mechanical WF items pass. The
-rubric **never runs instead of** WF-1..WF-21.
+rubric **never runs instead of** WF-1..WF-28.
+
+## Route and contract evidence (required, no new dimension)
+
+Before grading, record the route taken for every governed operation: the registry operation id, the
+class (`public_direct`, `official_mcp`, `skill44_private`, `skill06_authoring`, `capability_gap`), and
+the capability evidence that allowed it (WF-25). A route claim with no evidence is missing evidence and
+scores the dimension it belongs to at the low anchor.
+
+## Three proof tiers — never conflate them
+
+| Tier | What it proves | Evidence |
+|---|---|---|
+| **Definition** | The saved workflow graph contains the intended nodes and settings | `caf workflows export` / `workflows.definition.read`, plus WF-23/WF-24 |
+| **Read-back** | The provider returns the same settings after the write (independent read, not the write response) | the readback operation/plan and its matched fields |
+| **Runtime** | A contact actually traversed the workflow and the provider log shows it | WF-28 log-backed controlled test |
+
+Definition proof never substitutes for read-back or runtime proof. Runtime proof is only claimed when a
+controlled test actually ran; otherwise the build reports `runtime: not_run` with the reason, and the
+absence is not a pass. The eight dimensions, their weights, and the **8.5** ship threshold are
+unchanged.
 
 ---
 
 ## How to score
 
-1. Run WF-1..WF-21 first (`qc-built-workflow.sh <wf-id> --json`). If any mechanical WF item
+1. Run WF-1..WF-28 first (`qc-built-workflow.sh <wf-id> --json`). If any mechanical WF item
    FAILs, the build is not ready — fix and re-run; the rubric is not the place to "buy back" a
    hard WF failure.
 2. For each of the 8 dimensions below, choose the **anchor** the built workflow most closely
@@ -208,7 +228,7 @@ loop note: "Lowest dimensions: D1 Goal-fit (5/10 — added SMS not in A2) and
 
 ## Cross-reference
 
-- Hard gate (must all PASS): `references/workflow-build-checklist-template.md` (WF-1..WF-21).
+- Hard gate (must all PASS): `references/workflow-build-checklist-template.md` (WF-1..WF-28).
 - Mechanical assertions: `qc-built-workflow.sh` (WF-3/4/5/6/7/12/15/18/21 + the rubric score).
-- Step 9 QC GATE sequence: `INSTRUCTIONS.md` Step 9 (WF-1..21 first, then this rubric, ≥ 8.5 to
+- Step 9 QC GATE sequence: `INSTRUCTIONS.md` Step 9 (WF-1..28 first, then this rubric, ≥ 8.5 to
   ship, below 8.5 loops naming the low dimension).

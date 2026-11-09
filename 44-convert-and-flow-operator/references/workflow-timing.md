@@ -43,13 +43,24 @@ time: verify the field's precision and the platform's timezone interpretation.
 3. Write `timing` into each workflow plan as shown below. Run the helper for EACH
    execution path. Its nodes are a semantic UI outline, **not GHL API payloads**.
    Interleave the approved messages/actions at the corresponding Wait IDs.
-4. For event timing, automatically place **Set event start time** before the first
+4. **Resolve the real date and timezone before choosing a node.** A timing instruction names an
+event (registration, purchase, booking, webinar occurrence, renewal). Record the exact source
+field/trigger binding, its precision (date-only vs timestamp), and the IANA timezone the location
+interprets it in. Never substitute today's build date, contact creation time, the handoff `ts`, or a
+shared hardcoded timestamp. Then confirm that the selected rail can actually represent the scheduled
+action: check the operation row and its schema (`workflows.definition.create` /
+`workflows.definition.update` are public staging rows requiring approval; `funnels.pages.autosave` and
+the private `workflows.private.*` rows are Firebase-backed; an authoring gap is managed UI). If the
+chosen representation cannot express the event anchor, report that specific limitation and use an
+approved representation — never replace a date condition with an unrelated relative wait to bypass
+validation.
+5. For event timing, automatically place **Set event start time** before the first
    dependent Wait on EVERY reachable branch. Configure its source, then use the
    native event-relative Wait mode with the signed offset (before/after). Reuse the
    start for later waits on the same event; reset it when a path changes to a different
    event. If paths rejoin with different active starts, explicitly set the intended
    start again before their next event Wait. Ordinary delays do not reset the start.
-5. Use the available verified execution route. The current internal API builder
+6. Use the available verified execution route. The current internal API builder
    only verifies duration Wait payloads; it rejects an event timing contract before
    creating anything. Do not remove the contract to bypass that refusal. Continue
    with the Skill 6 managed browser gateway, observing the actual UI and configuring
@@ -58,7 +69,7 @@ time: verify the field's precision and the platform's timezone interpretation.
    Follow the managed browser instructions and observed controls; do not invent API
    enums, merge tokens or selectors. If actual access/configuration is unavailable,
    report that specific unfinished dependency and retain the outline for resumption.
-6. Read back/export the saved draft and compare every start source and Wait mode,
+7. Read back/export the saved draft and compare every start source and Wait mode,
    offset, branch placement, timezone and late-entry policy with the outline. A
    screenshot of a node label alone proves neither configuration nor execution.
    Pass WF-9/16/17 before reporting the workflow complete or publishing it.

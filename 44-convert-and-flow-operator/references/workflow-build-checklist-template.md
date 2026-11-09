@@ -1,7 +1,11 @@
-# Skill 44 — Workflow Build Checklist Template (WF-1..WF-22)
+# Skill 44 — Workflow Build Checklist Template (WF-1..WF-28)
 
-WF-22 was appended on 2026-09-03 as a send-integrity gate (see its section below); items were
-NOT renumbered — WF numbers are cited by scripts, QC.md, and stage gates.
+WF-22 was appended on 2026-09-03 as a send-integrity gate. WF-23 and WF-24 were appended for the
+saved-graph validator and the trigger entrance link. WF-25..WF-28 were appended for per-location
+public capability, current step schemas / API validation, revision preservation, and the log-backed
+controlled test. Items were NOT renumbered — WF numbers are cited by scripts, QC.md, and stage gates.
+WF-23/WF-24 are machine-asserted by `qc-built-workflow.sh`; WF-25..WF-28 are reviewer-checked with the
+required evidence named in each item.
 
 ## Purpose
 
@@ -263,6 +267,65 @@ bodies; mechanically asserted by `qc-built-workflow.sh` since that date.
   body is present and is the intended copy. Never an assumed pass.
 - Status: `[ ] PASS  [ ] FAIL  [ ] N/A`
 
+### WF-23 — Saved-Graph Validator Evidence
+
+`qc-built-workflow.sh` runs the graph validator on the SAVED workflow export and prints the evidence
+line. Record it verbatim; never assert a branch count by hand.
+
+- `branches=<n>` (counts `if_else`, `workflow_split`, `goto`, `transition`): `[FILL: from the WF-23 evidence line]`
+- `unwired=<n>` (branches missing a target): `[FILL]`
+- Orphans / broken links reported by the validator: `[FILL: none | list]`
+- Status: `[ ] PASS  [ ] FAIL`
+- Notes: `[FILL if FAIL: which structural condition failed]`
+
+### WF-24 — Trigger Entrance Link
+
+- The trigger's `targetActionId` equals the root action node of the saved graph: `[ ] CONFIRMED`
+- No second unreachable entry into the graph: `[ ] CONFIRMED`
+- Status: `[ ] PASS  [ ] FAIL`
+- Notes: `[FILL if FAIL: which entry is missing or duplicated]`
+
+### WF-25 — Per-Location Public Capability
+
+For every operation the build relies on, read the registry row
+(`44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/operations.py`) and the
+current per-`(operation_id, tenant)` capability record. A catalog entry, a docs page, or a successful
+MCP discovery is NOT capability evidence.
+
+| Operation id | Route class | Capability allows this location? | Evidence ref | Status |
+|---|---|---|---|---|
+| `[FILL: e.g. workflows.definition.create]` | `[FILL: public_direct / official_mcp / skill44_private / skill06_authoring / capability_gap]` | `[ ] YES  [ ] NO  [ ] UNKNOWN` | `[FILL: capability record / probe ref]` | `[ ] PASS  [ ] FAIL` |
+
+- Status: `[ ] PASS  [ ] FAIL`
+- Notes: `[FILL: any `beta_not_enabled`, missing scope, or `capability_gap`, with the approved fallback chosen]`
+
+### WF-26 — Current Step Schemas and API Validation
+
+- Every action node type used is present in the current schema/VERIFIED_ACTIONS for this engine: `[ ] CONFIRMED`
+- The payload was validated before save (no guessed field, enum, merge token, or version): `[ ] CONFIRMED`
+- Version used is the row's own Version (no global `/v3` prefix, no blanket upgrade): `[ ] CONFIRMED`
+- Validator / compiler exit code: `[FILL: 0 or the failing code]`
+- Status: `[ ] PASS  [ ] FAIL`
+- Notes: `[FILL: any field left UNKNOWN rather than guessed]`
+
+### WF-27 — Revision Preservation
+
+- The pre-write revision/version was read from the provider before the mutation: `[FILL: observed revision]`
+- The save carried the current revision, and a stale-revision refusal was handled by re-reading and reapplying intent: `[ ] CONFIRMED`
+- An unknown graph element was preserved, not deleted to force a save: `[ ] CONFIRMED`
+- A published/live workflow was not silently moved to draft: `[ ] CONFIRMED`
+- Status: `[ ] PASS  [ ] FAIL`
+- Notes: `[FILL: the stale-revision event and the re-read, if one happened]`
+
+### WF-28 — Log-Backed Controlled Test
+
+- A controlled test was run on a synthetic/test contact in the target location (never a real customer): `[ ] CONFIRMED`
+- The provider execution log was read back and shows the expected node sequence: `[FILL: log ref or "not_run — reason"]`
+- The test confirms runtime behavior separately from definition/read-back proof: `[ ] CONFIRMED`
+- External side effects were suppressed or explicitly approved: `[ ] CONFIRMED`
+- Status: `[ ] PASS  [ ] FAIL  [ ] N/A (no executable runtime path on this build — state why)`
+- Notes: `[FILL: what the log proved, and what remains unproven]`
+
 ---
 
 ## Overall QC Result
@@ -291,6 +354,12 @@ bodies; mechanically asserted by `qc-built-workflow.sh` since that date.
 | WF-20 No Hallucinated Artifacts | `[ ] PASS  [ ] FAIL` |
 | WF-21 Snapshot | `[ ] PASS  [ ] FAIL` |
 | WF-22 Email Body Non-Empty | `[ ] PASS  [ ] FAIL  [ ] N/A` |
+| WF-23 Saved-Graph Validator | `[ ] PASS  [ ] FAIL` |
+| WF-24 Trigger Entrance Link | `[ ] PASS  [ ] FAIL` |
+| WF-25 Per-Location Public Capability | `[ ] PASS  [ ] FAIL  [ ] N/A` |
+| WF-26 Step Schemas + API Validation | `[ ] PASS  [ ] FAIL` |
+| WF-27 Revision Preservation | `[ ] PASS  [ ] FAIL  [ ] N/A` |
+| WF-28 Log-Backed Controlled Test | `[ ] PASS  [ ] FAIL  [ ] N/A` |
 
 **Final verdict:** `[ ] ALL-PASS — QC APPROVED  [ ] FAIL — see items above`
 
@@ -298,7 +367,7 @@ bodies; mechanically asserted by `qc-built-workflow.sh` since that date.
 
 ## Cross-reference: Skill 41 12-Point Checklist
 
-This WF-1..WF-22 checklist is a SUPERSET of Skill 41's 12-point verification-checklist.md,
+This WF-1..WF-28 checklist is a SUPERSET of Skill 41's 12-point verification-checklist.md,
 extended for caf-built workflows with Skill 44-specific gates (trigger active state,
 re-entry/publish gating questions, SMS From-number, delivery-chain linkage, hallucination
 detection, and snapshot verification). The mapping is:
@@ -318,7 +387,7 @@ detection, and snapshot verification). The mapping is:
 | 11. Re-entry / stop-on-response / time windows | WF-6, WF-16 |
 | 12. Test with test contact | WF-20 (independent read via export) |
 
-For caf-built workflows, use THIS checklist (WF-1..WF-22) as the authoritative source.
+For caf-built workflows, use THIS checklist (WF-1..WF-28) as the authoritative source.
 Skill 41's 12-point checklist applies to Build-with-AI (manual browser) builds only.
 
 ---

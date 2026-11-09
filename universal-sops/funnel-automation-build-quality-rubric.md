@@ -7,7 +7,7 @@ threshold.)
 **Scorer:** `shared-utils/fab_qc.py` (one shared, importable, deterministic scorer — both skills
 use it, mirroring how `flex.py` is the shared matcher core).
 **Wrappers:** Skill 6 → `06-ghl-install-pages/qc-built-funnel.sh <slug>` · Skill 44 →
-`44-convert-and-flow-operator/qc-built-workflow.sh … --fab` (overlay AFTER WF-1..21).
+`44-convert-and-flow-operator/qc-built-workflow.sh … --fab` (overlay AFTER WF-1..28).
 
 ---
 
@@ -15,7 +15,7 @@ use it, mirroring how `flex.py` is the shared matcher core).
 
 The mechanical gates are **library-blind**:
 
-- Skill 44's `qc-built-workflow.sh` scores the EXPORTED workflow JSON on WF-1..21 + an
+- Skill 44's `qc-built-workflow.sh` scores the EXPORTED workflow JSON on WF-1..28 + an
   8-dimension weighted rubric — but it never opens the **matched automation template**, the
   `copy_persona`, or the recorded **flex decision**. A workflow can score 10/10 while drifting
   from the template it was matched to, shipping thin copy, ignoring the persona, or force-copying
@@ -25,9 +25,16 @@ The mechanical gates are **library-blind**:
   substantive, persona-grounded, or flexibility-honored.
 
 FAB-QC is a **SUPERSET OVERLAY** on top of those mechanical floors — it does **not** replace
-them. `ghl_verify` (funnels) and WF-1..21 (automations) remain the **hard mechanical floor**;
+them. `ghl_verify` (funnels) and WF-1..28 (automations) remain the **hard mechanical floor**;
 FAB-QC adds the six library-aware dimensions they are blind to and is itself the FLOOR for the
 `render/soundness` dimension (D3), so a build can never "buy back" a 5xx or a WF FAIL.
+
+**Transport-independent scoring.** Score behavior and evidence, not the rail that produced them. A
+page or workflow delivered by a governed public operation, by an authorized private gap fill, or by
+managed-UI authoring earns the same score for the same observed behavior. The evidence tree always
+names the route used and the observed artifact; a route claim without an observed artifact scores as
+missing evidence, never as a pass. The 8.5 threshold, the hard-miss rule, the dependency/timing rules,
+the complete-branch rule, and the no-false-completion rule are unchanged.
 
 ---
 
@@ -35,22 +42,31 @@ FAB-QC adds the six library-aware dimensions they are blind to and is itself the
 
 | Dim | Name | Weight | What it proves | Evidence read |
 |-----|------|-------:|----------------|---------------|
-| **D1** | Template fidelity | 22 | The built artifact reproduces the **matched** template's required structure | funnel: template `pageStructure` vs built pages; automation: template `sequence` vs built steps (channel+order). `routing/match-decision.json` → `template_path` |
+| **D1** | Template fidelity (graph preservation included) | 22 | The built artifact reproduces the **matched** template's required structure | funnel: template `pageStructure` vs built pages; automation: template `sequence` vs built steps (channel+order). `routing/match-decision.json` → `template_path` |
 | **D2** | Copy substance / real-not-thin | 20 | Every required section/step carries substantive copy | **lengthClass-keyed floors (FIX-XC-04a):** per-slot — body/content slots **≥40 words**, headline/subhead/CTA/button (legitimately-short) slots exempt at **≥4 words**; **page-level** — whole-funnel stripped-word floor keyed to the matched template's `lengthClass` (**short-form ≥350 / medium ≥700 / long-form ≥1,800**, adjustable constants table in `shared-utils/fab_qc.py`) + **ZERO** surviving placeholder tokens (`lorem`, `[HEADLINE]`, `{{…}}` unfilled, `TODO`, "Your text here", "Insert X", empty). Legit merge fields (`{{contact.first_name}}`) are allowed. **Any below-floor slot or page in a live artifact is a HARD MISS** (cannot be averaged away) → bounded re-author loop (verifier ≠ author, ≤5 attempts). Automation steps keep the light ≥4-word floor |
-| **D3** | Render / soundness | 18 | The build actually works | funnel: `ghl_verify` `overall_pass` (200 + marker + sections); automation: WF-1..21 mechanical PASS. **This is the hard mechanical floor.** |
+| **D3** | Render / soundness | 18 | The build actually works | funnel: `ghl_verify` `overall_pass` (200 + marker + sections); automation: WF-1..28 mechanical PASS. **This is the hard mechanical floor.** |
 | **D4** | Persona grounding | 15 | The matched book persona governs the copy | `persona-selection-log.md` names the template's `books`/`copyFramework.primaryPersona` (funnel) or `copy_persona.primary` (automation). **Fail-closed** if the selector did not run. Template persona slugs/labels are reconciled to the canonical Skill-22 `persona-categories.json` ids via `shared-utils/persona-crosswalk.json` (resolver `shared-utils/persona_crosswalk.py`) so "copy from the personas" pulls the right persona-blueprint |
 | **D5** | Flexibility honored (guide-not-rule) | 13 | The template never dominated the user's desire | recorded `intent_mode` + `flex_decision` in `routing/match-decision.json`. An **EXPLICIT** user spec that was NOT honored verbatim (overridden by a template) is a hard miss |
 | **D6** | Funnel↔automation link integrity | 12 | When a funnel implies follow-ups, the `_links` pairing was honored | `match-decision.json` → `funnel_template_id` + `linked_automations` vs `_links/funnel-to-automation.json`. **N/A → 10.** A primary follow-up silently dropped (not attached AND not user-overridden) is a hard miss |
 
 **Weighted score** = Σ(dimension_score × weight ÷ 10) ÷ 10, on a 0–10 scale. **Pass** iff
-**score ≥ 8.5 AND no hard miss**.
+**score ≥ 8.5 AND no hard miss AND the functional-integration check passes**.
+
+**Functional-integration check (not a new dimension, not a new threshold).** The scored artifact must
+show its required integration actually wired: for an automation, the trigger entrance link and the
+delivery chain (WF-24, WF-15); for a funnel page, the rendered embed/widget/redirect target the brief
+requires. Missing integration is a hard miss on the dimension that owns it (D1 structure or D3
+render/soundness) — it cannot be averaged away, and it never adds a second score.
 
 ### Hard-miss rule (lifted from `funnel_rubrics.py`)
 
 A load-bearing sub-check that earns 0 **fails its dimension regardless of the weighted mean** —
 a missing load-bearing artifact cannot be averaged away. The hard misses are:
 
-- D1: < 50 % of the matched template's required structure reproduced.
+- D1: < 50 % of the matched template's required structure reproduced, **or** the built workflow
+  lost graph structure the source/template carried (unknown nodes or branches dropped, step order
+  broken, trigger entrance unlinked). Graph preservation is part of fidelity: a build that silently
+  changes the graph is not faithful even when the surviving steps match.
 - D2: any surviving placeholder token in a **LIVE** artifact (a `trust:MOCK` artifact is exempt).
 - D3: any 5xx, `overall_pass:false`, or a WF mechanical FAIL.
 - D4: the persona selector did not run / no `persona-selection-log.md` (fail-closed), or the
@@ -66,7 +82,7 @@ a missing load-bearing artifact cannot be averaged away. The hard misses are:
 # Funnel build (Skill 6) — runs AFTER the canonical ghl_verify gate
 06-ghl-install-pages/qc-built-funnel.sh <slug>            # exit 0 iff FAB-QC >= 8.5
 
-# Automation build (Skill 44) — runs AFTER WF-1..21
+# Automation build (Skill 44) — runs AFTER WF-1..28
 44-convert-and-flow-operator/qc-built-workflow.sh <wf-id> --fab --evidence <root>
 
 # Direct (any evidence tree)
@@ -82,7 +98,7 @@ The scorer reads the build's **evidence tree**:
                                    #  funnel_template_id, linked_automations}  <- written by the matchers' step0
   build/fab-artifact.json         # normalised built artifact (pages[]/copy or steps[]/copy)
   scorecard/verify-summary.json   # funnel: ghl_verify summary (overall_pass, pages[].status)
-  qc/wf-checklist.json            # automation: WF-1..21 items[] {id,status}
+  qc/wf-checklist.json            # automation: WF-1..28 items[] {id,status}
   persona-selection-log.md        # the P1/P2 persona log (D4)
 ```
 
@@ -96,8 +112,8 @@ D5/D6 always have evidence to read.
 
 - **Skill 6:** `v2_dispatcher.py` marks a task `verified` only after `ghl_verify overall_pass`
   AND the build is held to FAB-QC ≥ 8.5 (`v2-autonomous-build-sop.md §9` "BUILD-QC GATE").
-- **Skill 44:** `INSTRUCTIONS.md` Step 9.3c runs the FAB overlay AFTER WF-1..21 + the 8-dim
-  rubric; "done" requires WF-1..21 all PASS **AND** the combined weighted score ≥ 8.5.
+- **Skill 44:** `INSTRUCTIONS.md` Step 9.3c runs the FAB overlay AFTER WF-1..28 + the 8-dim
+  rubric; "done" requires WF-1..28 all PASS **AND** the combined weighted score ≥ 8.5.
 - **Loop:** name the lowest dimension, fix it, re-run. Max 5 loops, then escalate (hallucination
   escalation path per `44-.../INSTRUCTIONS.md`).
 - **CI guard:** `scripts/guard-fab-qc-gate.sh` asserts the rubric + scorer exist, the threshold
