@@ -9,7 +9,7 @@ from ._registry import family_group, register_group
 
 FAMILY = "agent_studio"
 OWNER = "WF29"
-OPERATION_ROOTS: tuple[str, ...] = ("studio.",)
+OPERATION_ROOTS: tuple[str, ...] = ("agentStudio.",)
 EXTRA_OPERATION_IDS: tuple[str, ...] = ()
 
 def build() -> object:

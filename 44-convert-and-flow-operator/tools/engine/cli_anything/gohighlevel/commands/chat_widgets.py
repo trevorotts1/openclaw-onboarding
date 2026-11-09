@@ -9,7 +9,7 @@ from ._registry import family_group, register_group
 
 FAMILY = "chat_widgets"
 OWNER = "WF31"
-OPERATION_ROOTS: tuple[str, ...] = ("widgets.",)
+OPERATION_ROOTS: tuple[str, ...] = ("chat_widgets.",)
 EXTRA_OPERATION_IDS: tuple[str, ...] = ()
 
 def build() -> object:

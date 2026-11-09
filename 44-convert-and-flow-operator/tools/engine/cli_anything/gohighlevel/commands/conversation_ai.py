@@ -9,8 +9,8 @@ from ._registry import family_group, register_group
 
 FAMILY = "conversation_ai"
 OWNER = "WF28"
-OPERATION_ROOTS: tuple[str, ...] = ()
-EXTRA_OPERATION_IDS: tuple[str, ...] = ("conversation.agents.create",)
+OPERATION_ROOTS: tuple[str, ...] = ("conversation_ai.",)
+EXTRA_OPERATION_IDS: tuple[str, ...] = ()
 
 def build() -> object:
     return family_group(FAMILY, OWNER, OPERATION_ROOTS, EXTRA_OPERATION_IDS, "Conversation AI agents")

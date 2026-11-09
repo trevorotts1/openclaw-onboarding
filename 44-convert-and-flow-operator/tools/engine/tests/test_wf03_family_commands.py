@@ -137,11 +137,11 @@ class FamilyRouteDisciplineTest(unittest.TestCase):
             result = self.runner.invoke(
                 self.cli,
                 ["--location-id", "loc_synthetic_wf03", "knowledge_bases",
-                 "knowledge_bases-files-upload"],
+                 "knowledge_bases-sources-upload"],
             )
         finally:
             _registry._adapter = real
-        row = OPERATIONS["knowledge_bases.files.upload"]
+        row = OPERATIONS["knowledge_bases.sources.upload"]
         self.assertEqual(row.route_class, "capability_gap")
         self.assertEqual(result.exit_code, 1, result.output)
         self.assertIn("not a public operation", result.output)
@@ -166,12 +166,12 @@ class FamilyRouteDisciplineTest(unittest.TestCase):
             result = self.runner.invoke(
                 self.cli,
                 ["--dry-run", "--json", "--location-id", "loc_synthetic_wf03",
-                 "voice_ai", "voice-agents-create"],
+                 "voice_ai", "voiceAi-agents-create"],
             )
         finally:
             mod._get_internal_client = saved
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("voice.agents.create", result.output)
+        self.assertIn("voiceAi.agents.create", result.output)
 
 class CapabilitiesFamilyTest(unittest.TestCase):
     def setUp(self):
@@ -198,7 +198,7 @@ class CapabilitiesFamilyTest(unittest.TestCase):
         result = self.runner.invoke(
             self.cli,
             ["--json", "--location-id", "loc_synthetic_wf03",
-             "capabilities", "gate", "voice.agents.create"],
+             "capabilities", "gate", "voiceAi.agents.create"],
         )
         payload = __import__("json").loads(result.output)
         self.assertEqual(result.exit_code, 1, result.output)

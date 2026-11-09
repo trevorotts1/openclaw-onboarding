@@ -9,8 +9,8 @@ from ._registry import family_group, register_group
 
 FAMILY = "agency"
 OWNER = "WF05"
-OPERATION_ROOTS: tuple[str, ...] = ("agency.",)
-EXTRA_OPERATION_IDS: tuple[str, ...] = ()
+OPERATION_ROOTS: tuple[str, ...] = ()
+EXTRA_OPERATION_IDS: tuple[str, ...] = ("locations.create",)
 
 def build() -> object:
     return family_group(FAMILY, OWNER, OPERATION_ROOTS, EXTRA_OPERATION_IDS, "Agency-level location creation")
