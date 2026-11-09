@@ -442,7 +442,7 @@ def prompt_budget(model: str | None):
         policy = json.loads((SKILL_ROOT / "references" / "prompt-budget-policy.json")
                             .read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return None
+        policy = {"models": []}
     for entry in policy.get("models") or []:
         match = entry.get("match")
         if not (model and match and str(match) in model and entry.get("unit") == "chars"):
@@ -456,6 +456,12 @@ def prompt_budget(model: str | None):
                 "hard_floor_chars": band["hard_floor"],
                 "target_chars": band["target_min"],
                 "source": "prompt-budget-policy:%s" % entry.get("cap_status", "UNKNOWN")}
+    if model and "gpt-image-2-6" in model:
+        # Fail to the law, never to 32,000: owner ruling 2026-11-08 caps every
+        # 2.6 route at 20,000 even if the policy file lookup misses.
+        return {"max_chars": 20000, "floor_chars": 19000, "hard_floor_chars": 16000,
+                "target_chars": 19000,
+                "source": "Owner ruling 2026-11-08 fallback: 20,000 (66-kie-image/models.json owner_prompt_cap_chars)."}
     return None
 
 def prompt_cap(model: str | None):
