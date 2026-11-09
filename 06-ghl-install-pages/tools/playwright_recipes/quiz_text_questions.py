@@ -34,7 +34,12 @@ FLAGS={'required':'#fieldRequired[role="checkbox"]','hidden':'#fieldCheckbox[rol
 def properties_for(kind):
     # The captured quiz Single Dropdown exposes Required and no Hidden
     # control. Absence of a supported setting is not a fabricated false value.
+    if kind=='MULTIPLE_OPTIONS':return PROPERTIES-{'hidden','query_key'}|{'unique_key'}
     return PROPERTIES-{'hidden'} if kind=='SINGLE_OPTIONS' else PROPERTIES
+
+
+def key_for(kind):
+    return 'unique_key' if kind=='MULTIPLE_OPTIONS' else 'query_key'
 
 
 def owner_keys(payload):
@@ -51,11 +56,14 @@ def _question(value,*,new=False,field_types=None):
         raise Stop('Every quiz question needs its complete exact type/text/key/flags inventory')
     if not isinstance(value['field_type'],str) or value['field_type'] not in (field_types if field_types is not None else {'TEXT'} if new else {'TEXT','RADIO'}):
         raise Stop('Short Answer creation supports captured TEXT with existing TEXT/RADIO inventory only')
+    key=key_for(value['field_type']);token=value[key]
+    token_valid=isinstance(token,str) and bool(re.fullmatch(r'[A-Za-z0-9_.-]{1,256}',token))
+    if key=='unique_key' and not new and token=='':token_valid=True
     if (not _text(value['question']) or not _text(value['placeholder'],empty=True)
             or not _text(value['short_label'],empty=True)
-            or not isinstance(value['query_key'],str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,256}',value['query_key'])
+            or not token_valid
             or type(value['required']) is not bool or 'hidden' in value and type(value['hidden']) is not bool):
-        raise Stop('Authored quiz properties require explicit text, unique query tokens and Boolean flags')
+        raise Stop('Authored quiz properties require explicit text, literal native keys and Boolean flags')
     return deepcopy(value)
 
 
@@ -97,10 +105,17 @@ def validate(step,*,field_types=('TEXT','RADIO'),new_types=('TEXT',),reserved_ke
     desired=[_question(q,new=True,field_types=new_types) for q in new]
     if len(labels)!=len(set(labels)):raise Stop('Quiz page labels must be unique')
     if create_page and payload['new_page_label'] in labels:raise Stop('New page label collides with an existing page owner')
-    for key in ('question','query_key'):
-        before=[q[key].casefold() for q in old];after=[q[key].casefold() for q in desired]
-        if len(before)!=len(set(before)) or len(after)!=len(set(after)) or set(before).intersection(after):
-            raise Stop('Quiz existing/new question labels and Query Keys must be unambiguous and disjoint')
+    before=[q['question'].casefold() for q in old];after=[q['question'].casefold() for q in desired]
+    if len(before)!=len(set(before)) or len(after)!=len(set(after)) or set(before).intersection(after):
+        raise Stop('Quiz existing/new question labels must be unambiguous and disjoint')
+    def identities(questions):
+        # Empty native Unique Key values are unknown; their placeholders are
+        # preserved metadata, never a query key or a derived field identity.
+        return [(key_for(q['field_type']),q[key_for(q['field_type'])].casefold())
+                for q in questions if q[key_for(q['field_type'])]]
+    before,after=identities(old),identities(desired)
+    if len(before)!=len(set(before)) or len(after)!=len(set(after)) or set(before).intersection(after):
+        raise Stop('Quiz authored keys must be unique and disjoint in their actual native property namespace')
     if reserved_key is not None and any(q['query_key'].casefold()==reserved_key.casefold() for q in old+desired):
         raise Stop('Reserved native question default Query Key must be unoccupied before insertion')
     return deepcopy(payload)
@@ -196,12 +211,31 @@ def _radio_options(frame):
     return result
 
 
+def _advanced_identity(frame):
+    unique=frame.locator('#uniqueKey input');name=frame.locator('#custom-field-label input')
+    if unique.count()>1 or name.count()>1:raise Stop('Native custom-field identity controls are ambiguous')
+    if unique.count()!=1 or not unique.is_visible():
+        header=frame.locator('div.n-collapse-item__header-main:visible').filter(
+            has_text=re.compile(r'^\s*Advanced\s*Settings\s*$'))
+        click(_one(header,'Native Advanced Settings opener changed'))
+        wait_until(lambda:unique.count()==1 and unique.is_visible() and name.count()==1 and name.is_visible(),
+                   'Native custom-field Advanced Settings did not expose its measured identity controls')
+    _one(unique,'Native Unique Key input changed');_one(name,'Native Custom Field Name input changed')
+    actual_name=name.input_value();placeholder=unique.get_attribute('placeholder')
+    if not _text(actual_name) or not _text(placeholder):
+        raise Stop('Native custom-field name or key placeholder cannot be preserved')
+    return unique,name,{'_custom_field_name':actual_name,'_unique_key_placeholder':placeholder}
+
+
 def _read_question(frame,item,*,field_types=('TEXT','RADIO'),metadata_reader=None):
     _close_properties(frame)
     label,kind=_item_kind(item,field_types=field_types);_activate_item(frame,item,label)
     click(_one(frame.get_by_role('button',name='Open settings',exact=True),'Native quiz Open settings control changed'))
     result={'field_type':kind}
     for key,selector in FIELD_INPUTS.items():
+        if kind=='MULTIPLE_OPTIONS' and key=='query_key':
+            if frame.locator(selector).count()!=0:raise Stop('Multi Dropdown unexpectedly exposes an unmeasured Query Key')
+            continue
         result[key]=_one(frame.locator(selector),'Native quiz '+key+' property control changed').input_value()
     for key,selector in FLAGS.items():
         if key not in properties_for(kind):
@@ -211,6 +245,10 @@ def _read_question(frame,item,*,field_types=('TEXT','RADIO'),metadata_reader=Non
         value=flag.get_attribute('aria-checked')
         if value not in ('true','false'):raise Stop('Native quiz Boolean property state is unavailable')
         result[key]=value=='true'
+    custom_identity={}
+    if kind=='MULTIPLE_OPTIONS':
+        unique,_,custom_identity=_advanced_identity(frame)
+        result['unique_key']=unique.input_value()
     _question(result,field_types=field_types)
     text=label.inner_text().strip()
     if text not in (result['question'],result['question']+'*' if result['required'] else result['question'],
@@ -220,6 +258,7 @@ def _read_question(frame,item,*,field_types=('TEXT','RADIO'),metadata_reader=Non
         name:n.getAttribute('name'),type:n.getAttribute('type'),value:n.value,placeholder:n.getAttribute('placeholder')}))''')
     if not isinstance(result['_widget_inputs'],list):raise Stop('Native quiz widget input identity is unavailable')
     if kind=='RADIO':result['_radio_options']=_radio_options(frame)
+    result.update(custom_identity)
     if metadata_reader is not None:result.update(metadata_reader(frame,kind))
     _close_properties(frame,required=True)
     return result
@@ -319,6 +358,19 @@ def _target_page(frame,plan,before,inventory_reader):
     return runtime,deepcopy(after)
 
 
+def _prewrite_delta(frame,plan,before,inventory_reader,question):
+    """Prove the appended index is new before touching any field properties."""
+    after=inventory_reader(frame,plan);owner=plan['target_page']-1
+    if len(after)!=len(before) or len(after[owner])!=len(before[owner])+1:
+        raise Stop('Native question insertion did not produce the exact new-owner widget delta')
+    for index,previous in enumerate(before):
+        current=after[index][:-1] if index==owner else after[index]
+        if current!=previous:
+            raise Stop('Native question insertion changed an old prefix or another page before property authoring')
+    if after[owner][-1]['field_type']!=question['field_type']:
+        raise Stop('Native appended widget type changed before property authoring')
+
+
 def _append_tile(frame,plan,tile_label,*,page=None):
     _close_properties(frame)
     dialog=frame.get_by_role('dialog')
@@ -395,34 +447,46 @@ def _append(frame,plan,*,page=None):
     return item
 
 
-def _write_question(frame,item,question,*,field_types=('TEXT','RADIO'),new_kind='TEXT',default_key='single_line',metadata_reader=None):
+def _write_question(frame,item,question,*,field_types=('TEXT','RADIO'),new_kind='TEXT',default_key='single_line',metadata_reader=None,expected_metadata=None):
     before=_read_question(frame,item,field_types=field_types,metadata_reader=metadata_reader)
-    if (before['field_type']!=new_kind or before['query_key']!=default_key
+    if (before['field_type']!=new_kind or before[key_for(new_kind)]!=default_key
             or before['placeholder'] or before['short_label'] or before['required'] or before.get('hidden',False)):
-        raise Stop('New Short Answer default properties differ from capture')
+        raise Stop('New native question default properties differ from capture')
+    if expected_metadata is not None and any(before.get(key)!=value for key,value in expected_metadata.items()):
+        raise Stop('New native custom-field identity metadata changed before property authoring')
     label,_=_item_kind(item,field_types=field_types);click(label)
     click(_one(frame.get_by_role('button',name='Open settings',exact=True),'Native new question settings changed'))
     for key,selector in FIELD_INPUTS.items():
-        control=_one(frame.locator(selector),'Native Short Answer property changed')
+        if new_kind=='MULTIPLE_OPTIONS' and key=='query_key':
+            if frame.locator(selector).count()!=0:raise Stop('Multi Dropdown unexpectedly exposes an unmeasured Query Key')
+            continue
+        control=_one(frame.locator(selector),'Native question property changed')
         if control.input_value()!=question[key]:
             fill(control,question[key]);control.press('Tab')
-        if control.input_value()!=question[key]:raise Stop('Native Short Answer ignored an authored property')
+        if control.input_value()!=question[key]:raise Stop('Native question ignored an authored property')
     for key,selector in FLAGS.items():
         if key not in properties_for(new_kind):
             if frame.locator(selector).count()!=0:raise Stop('An unsupported dropdown Hidden control appeared')
             continue
-        flag=_one(frame.locator(selector),'Native Short Answer checkbox changed')
+        flag=_one(frame.locator(selector),'Native question checkbox changed')
         value=flag.get_attribute('aria-checked')
-        if value not in ('true','false') or not flag.is_enabled():raise Stop('Native Short Answer flag is unavailable')
+        if value not in ('true','false') or not flag.is_enabled():raise Stop('Native question flag is unavailable')
         if (value=='true')!=question[key]:
             click(flag)
             wait_until(lambda:flag.get_attribute('aria-checked')==str(question[key]).lower(),
-                       'Native Short Answer checkbox did not accept the requested state')
+                       'Native question checkbox did not accept the requested state')
+    if new_kind=='MULTIPLE_OPTIONS':
+        unique,name,protected=_advanced_identity(frame)
+        if any(protected[key]!=before[key] for key in protected):
+            raise Stop('Question properties changed protected Custom Field Name or Unique Key placeholder')
+        fill(unique,question['unique_key']);click(name)
+        if unique.input_value()!=question['unique_key']:
+            raise Stop('Native Multi Dropdown ignored the authored explicit Unique Key')
     _close_properties(frame,required=True)
     after=_read_question(frame,item,field_types=field_types,metadata_reader=metadata_reader)
     if {key:after[key] for key in properties_for(new_kind)}!=question:
-        raise Stop('New Short Answer properties differ before Save')
-    for key in ('_radio_options','_choice_controls','_choice_switches'):
+        raise Stop('New native question properties differ before Save')
+    for key in ('_radio_options','_choice_controls','_choice_switches','_custom_field_name','_unique_key_placeholder'):
         if before.get(key)!=after.get(key):
             raise Stop('Authoring question properties changed preserved native choice metadata')
     return after
@@ -443,7 +507,9 @@ def configure(page,step):
     for question in plan['questions']:
         identity()
         if _inventory(frame,runtime)!=desired:raise Stop('Quiz questions changed before the next insertion')
-        item=_append(frame,runtime,page=page);authored=_write_question(frame,item,question)
+        item=_append(frame,runtime,page=page)
+        _prewrite_delta(frame,runtime,desired,_inventory,question)
+        authored=_write_question(frame,item,question)
         desired[owner].append(authored)
         if _inventory(frame,runtime)!=desired:
             raise Stop('Short Answer insertion changed existing questions or a different page')

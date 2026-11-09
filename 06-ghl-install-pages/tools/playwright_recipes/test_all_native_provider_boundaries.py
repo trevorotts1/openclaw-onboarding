@@ -5,6 +5,7 @@ location, a completion status, and a root ID for creation. None contains the
 compiled step receipts. A broad capability cannot authorize those native jobs.
 """
 import ast
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -21,7 +22,7 @@ def native_cases(root):
  asset=root/'approved.png';asset.write_bytes(b'\x89PNG\r\n\x1a\nAPPROVED')
  for k,o,d,*_ in form_cases():yield k,o,d
  yield from other_cases(asset)
- for k in ('short','choice','radio','yes_no','written'):
+ for k in ('short','choice','radio','yes_no','quiz_dropdown','quiz_multi','written'):
   from test_fourth_control_integration import request
   o,d,_=request(k);yield 'quiz_'+k,o,d
  from test_field_placement_integration import inputs
@@ -55,6 +56,12 @@ def native_cases(root):
  access=json.loads((Path(__file__).parent/'examples/community-access.json').read_text());yield 'access','communities.configure',access
  from test_course_block_media import inputs as block
  yield 'course_block_image','courses.configure_ui',block(asset)
+ from test_course_text_blocks import inputs as text
+ yield 'course_text_blocks','courses.configure_ui',text()
+ from test_course_section_media import inputs as section_images
+ yield 'course_section_media','courses.configure_ui',section_images(str(asset),hashlib.sha256(asset.read_bytes()).hexdigest())
+ from test_course_image_blocks import inputs as image_blocks
+ yield 'course_image_blocks','courses.configure_ui',image_blocks()
  profile={'capture_source':'fixture exact UI controls','steps':[{'action':'expect_text','target':{'by':'role','role':'heading','value':'Approved fixture'},'value':'Approved fixture'}]}
  for op in ('forms.configure','courses.configure_ui','communities.configure','funnels.split_variant','meetings.integrate'):
   yield op+'_options',op,{**base,'options':profile}
@@ -102,8 +109,8 @@ class CompleteNativeProviderBoundaries(unittest.TestCase):
                     and node.func.id=='add' and node.args):
                 named |= literal_action(node.args[0])
         self.assertTrue(named <= covered,named-covered)
-        self.assertEqual(len(covered),53,'Update the bounded fixtures for newly added dynamic compiler actions')
-        self.assertEqual(len(rows),64)
+        self.assertEqual(len(covered),56,'Update the bounded fixtures for newly added dynamic compiler actions')
+        self.assertEqual(len(rows),69)
 
     def test_no_current_native_job_delegates_to_status_only_api_or_extension_callback(self):
         with tempfile.TemporaryDirectory() as directory:

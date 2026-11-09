@@ -12,9 +12,10 @@ native Python job or learner behavior.
 
 The native Body sidebar inventory is an exact ordered list of `.sortable-item`
 IDs/types. The current supported list contains one `categoryBlock` of type
-`Category Block` and zero or more UUID entries of type `Custom Block`. Additional
-Image/Text/Video Block types are capture-pending for this handler and cause
-refusal before authoring. Inventories must come from the native course/template,
+`Category Block` and UUID entries of type `Custom Block`, `Text Block` or
+`Image Block`. Text/Image siblings are independently read and preserved;
+their authoring has separate dedicated actions. Video Block types remain
+capture-pending and cause refusal before authoring. Inventories must come from the native course/template,
 not an inferred name or copied example.
 
 `custom_blocks.append` contains fully authored plain text, button URL and radio

@@ -1,3 +1,48 @@
+## [v27.1.98] - 2026-11-09
+
+- Add captured quiz Multi Dropdown through the existing multiple-choice native
+  action, with an explicit Unique Key and separate advanced field-name/hint
+  preservation. Reject Query Key and Hidden aliases for this profile.
+- Resize options with one measured Add/Delete per exact count delta; protect
+  the complete retained category, score, enabled and jump inventory after each
+  click and bind the resized snapshot again before property authoring. The
+  adapter's 2–50 bound is not a measured native platform limit.
+- Exercise native primary/fallback Page transport, new-page intent, exact
+  Unique Key hashes, fresh receipts and completed replay through the real host.
+  The provider-boundary matrix now covers 69 jobs and all 56 compiler actions.
+- Keep native inspector captions distinct from authored Text/Image content
+  inside captured editor and preview regions while preserving exact selected
+  block/type/order and active-preview guards.
+- Keep the immutable sixth core and frozen-fifth operation audit unchanged.
+  Native outer Save, backend Unique Key normalization, full option-range and
+  functional acceptance remain pending; Picture Choice and Video Blocks are
+  not added by this checkpoint. Global release metadata stays unchanged.
+
+## [v27.1.97] - 2026-11-09
+
+- Add inactive-template native Text Block append/plain-text editing with exact
+  sidebar IDs, complete UUID-less preview order binding, selected inspector
+  checks and protected rich siblings, colors and theme state.
+- Add approved Hero/Instructor PNG uploads and Image Block append, replacement
+  and HTTPS destination editing. Preserve distinct old inspector/preview URLs,
+  verify both new image URLs, and retain exact source, target, order and hash
+  evidence through one Save and independent reopening.
+- Integrate all three course actions through intake, compiler, manager-query
+  identity checks, owned native transports and strict original fresh/replay
+  receipts. The complete provider-boundary matrix covers 67 valid jobs and all
+  56 current compiler actions.
+- Verify the complete old quiz prefix and every other page immediately after
+  insertion, before authoring any question property. A nameless old default
+  widget cannot be mistaken for the new appended question.
+- Preserve the frozen-fifth 33-operation audit: 21 built, 11 partial and one
+  generic-only. Validate all 112 named and five additional function references;
+  retain original line anchors with explicit current-definition hints. These
+  counts are source coverage, not elapsed progress or live readiness.
+- Keep native/client acceptance and uncaptured controls separate. Video Blocks,
+  additional quiz profiles, split creation/traffic and loaded-empty co-host
+  handling are not promoted to completed capabilities. Repository-wide release
+  metadata and unrelated manifests remain unchanged.
+
 ## [v27.1.96] - 2026-11-09
 
 - Add native quiz Single Dropdown with its captured option identities and

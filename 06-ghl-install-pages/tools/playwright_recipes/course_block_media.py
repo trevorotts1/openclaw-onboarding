@@ -32,7 +32,7 @@ def validate_inputs(inputs):
     theme._id(config.get('block_id'));identities=[]
     for row in config['expected_inventory']:
         if (not isinstance(row,dict) or set(row)!={'id','type'}
-                or row.get('type') not in ('Category Block','Custom Block')):
+                or row.get('type') not in ('Category Block','Custom Block','Text Block','Image Block')):
             raise Stop('Custom Block image requires a captured Category/Custom Block inventory')
         theme._id(row.get('id'));identities.append(row['id'])
     if (len(set(identities))!=len(identities)

@@ -105,11 +105,17 @@ class NewPageQuestionChain(unittest.TestCase):
         def append(_frame,runtime,*args,**kwargs):
             self.assertEqual(runtime['target_page'],2);self.assertEqual(len(runtime['pages']),2)
             self.assertEqual(surface.inventory[1],[]);state['drags']+=1
+            default={**authored(),'question':'Single Dropdown abc12','query_key':'dropdown',
+                'placeholder':'','short_label':'','required':False,'options':list(choice.OPTIONS),'_widget_inputs':[]}
+            surface.inventory[1].append(default);mount(surface.new_canvas,default)
             return object()
         def write(*args):
             record={**authored(),'_widget_inputs':[],'_option_identity':[]}
-            surface.inventory[0 if wrong_target else 1].append(record)
-            mount(surface.canvas if wrong_target else surface.new_canvas,record)
+            if wrong_target:
+                surface.inventory[0].append(record);mount(surface.canvas,record)
+            else:
+                surface.inventory[1][-1]=record
+                surface.new_canvas.findall('.//*[@role="textbox"]')[-1].text=record['question']
             return deepcopy(record)
         def reopen(*args):
             state['reopened']=True

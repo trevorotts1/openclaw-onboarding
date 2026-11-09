@@ -122,7 +122,7 @@ class Execution(unittest.TestCase):
         save.click.side_effect=lambda:state.__setitem__('saves',state['saves']+1)
         def write(*args):
             authored={**new_question(),'_widget_inputs':[],'_option_identity':[]}
-            state['inventory'][0].append(authored)
+            state['inventory'][0][-1]=authored
             if collateral:state['inventory'][0][0]['question']='Changed sibling'
             return deepcopy(authored)
         def reopen(*args):
@@ -134,7 +134,11 @@ class Execution(unittest.TestCase):
             stack.enter_context(patch.object(choice,'click',side_effect=lambda target:target.click()))
             stack.enter_context(patch.object(choice,'wait_until',side_effect=lambda pred,reason:self.assertTrue(pred())))
             stack.enter_context(patch.object(choice,'_inventory',side_effect=lambda *args:deepcopy(state['inventory'])))
-            append=stack.enter_context(patch.object(choice,'_append',return_value=object()))
+            def insert(*args,**kwargs):
+                state['inventory'][0].append({**question('Multiple Choice abc12','checkbox','CHECKBOX'),
+                    'options':list(choice.OPTIONS),'_widget_inputs':[]})
+                return object()
+            append=stack.enter_context(patch.object(choice,'_append',side_effect=insert))
             stack.enter_context(patch.object(choice,'_fresh_choice'))
             stack.enter_context(patch.object(choice,'_write_question',side_effect=write))
             stack.enter_context(patch.object(text,'reopen_editor',side_effect=reopen))
