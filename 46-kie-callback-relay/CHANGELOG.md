@@ -4,6 +4,42 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.1.1] - 2026-11-08 - F21 items 10 and 11: one job identity, one durable data root
+
+- **F21 item 10 — a callback reuses the existing job identity.** `prepareCallback()` used to mint a
+  fresh 128-bit `submitId` on every call, so a retry after a crash, a timeout or an uncertain submit
+  created a SECOND job identity for one slide — a second paid job — while the first provider task was
+  still running and no longer addressable from that slide. It now scans the durable registry for the
+  job (client + deck + slide + model) and returns the SAME `submitId` and the SAME `callBackUrl`,
+  with `state` `new` / `uncertain` / `accepted` and `resubmit` true only for `new`. A changed model is
+  a different job: the earlier row is marked `superseded` with the reason recorded. `adoptAdapterTask()`
+  now proves the identity is IDENTICAL across the callback: a `task_id` that differs from one already
+  recorded for that `submitId` is refused (never rebound over a paid job), and a `task_id`-less answer
+  for a recorded job keeps the recorded id and reports `failed` / `identity-missing` instead of a
+  silent success.
+- **F21 item 10 — one paid transport per mode.** Callback mode (deck above the threshold) must submit
+  through the Skill 74 route; `submitDeck()`'s own createTask POST is the legacy direct-submit and now
+  refuses callback mode unless the caller passes `allowLegacyDirectSubmit: true` (or
+  `KIE_ALLOW_LEGACY_DIRECT_CALLBACK=1`) to replay an old deck deliberately. A deck at or below the
+  threshold keeps its documented exemption and needs no callback deployment.
+- **F21 item 11 — the durable data root.** Registry, taskId index and done markers were built with
+  `path.join(workspaceDir, '.kie', …)` in TWO files, so paid-work evidence lived wherever a caller's
+  working folder pointed — including inside replaceable skill trees. All of it now comes from ONE
+  resolver, `shared-utils/durable-data-root.sh` (Skill 74's Python adapter executes the same file), at
+  `<root>/data/kie-jobs/<clientSlug>/{registry,index,done,receipts}`. New `data-root.js` locates the
+  resolver and returns the layout; the submitter resolves it ONCE and passes the same layout to the KV
+  poller. A root that cannot be resolved is refused by name rather than guessed. Registry and index
+  writes are now atomic (temp + rename).
+- `workspaceDir` is accepted but no longer decides where state lives; `dataRoot` is the explicit pin.
+- Docs: `SKILL.md` ("Production Route via Skill 74", new "Durable State"), `SUBMITTER-SOP.md` (durable
+  paths, the reuse contract, and the no-`taskId` row now says reconcile — not "re-submit").
+- Tests: `test/security.test.mjs` 106 -> 132 assertions, including the id-reuse matrix (both ids
+  printed), the refused rebind, `identity-missing`, the durable-root layout, the poller inheriting the
+  submitter's layout, and the refusal of an unresolvable root. `qc-kie-callback-relay.sh` QC PASS.
+  Both new checks fail on `origin/main` and pass here (7 failed -> PASS each).
+
+---
+
 ## [v2.1.0] - 2026-10-06 - feat: Skill 74 handoff for production batches
 
 - `kie-slide-submitter.js`: `prepareCallback()` mints the per-task secret and signed `/cb` URL and writes the registry row before submit; `adoptAdapterTask()` accepts Skill 74's normalized task metadata (`task_id`, `model_id`, `callback_url`, via `data.callback_url` or flat), records the taskId and index, and waits through the same KV poller, download and file-on-disk rule as `submitDeck`. A callback URL not minted on this box (j= has no registry row, URL differs, other client) is refused with no wait; a skipped or failed submit returns `failed` without waiting. New export `normalizeAdapterTask`. URL building moved into `_makeCallback()` shared with `submitDeck` (same output).

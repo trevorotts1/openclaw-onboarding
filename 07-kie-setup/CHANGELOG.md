@@ -4,6 +4,12 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v7.2.4] - 2026-11-08 - pin moves with Skill 74 v1.1.11
+
+- `tests/test_official_docs_port.py`: `SKILL_VERSIONS["74-kie-live-adapter"]` follows Skill 74's durable-data-root patch from 1.1.9 to 1.1.11. The pin was already stale at 1.1.9 against the shipped 1.1.10, so this removes a pre-existing red gate rather than adding one. The skill's own pin moves to 7.2.4 with this version roll. No setup step changes.
+
+---
+
 ## [v7.2.3] - 2026-10-20 - pin moves with Skill 74 v1.1.9
 
 - `tests/test_official_docs_port.py`: `SKILL_VERSIONS["74-kie-live-adapter"]` follows Skill 74's music-stage patch from 1.1.8 to 1.1.9 (sync createTask answers dispatchable; URL-less save persists the payload). The skill's own pin moves to 7.2.3 with this version roll. No setup step changes.
