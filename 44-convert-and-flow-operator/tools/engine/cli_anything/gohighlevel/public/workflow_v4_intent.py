@@ -699,6 +699,90 @@ def apply_intent(
     return proposed
 
 
+# ---------------------------------------------------------------------------
+# snapshot restore intent and provider id remap
+# ---------------------------------------------------------------------------
+
+
+def intent_from_snapshot(
+    current: Mapping[str, Any], snapshot: Mapping[str, Any]
+) -> Intent:
+    """Explicit ``Intent`` that turns ``current`` into ``snapshot``.
+
+    The snapshot's historical ``version`` is never placed in the intent: the
+    caller writes with a FRESH revision.  An id-less current node is refused
+    (``current_node_identity_missing``) because it has no identity to name in a
+    ``remove_*`` list, so dropping it would be an undetectable removal.
+    """
+
+    if not isinstance(current, Mapping) or not isinstance(snapshot, Mapping):
+        raise ContractViolation("definition_invalid")
+    plan: dict[str, Any] = {
+        "set_fields": {
+            str(key): value
+            for key, value in snapshot.items()
+            if str(key) not in COLLECTIONS and str(key) != REVISION_FIELD
+        }
+    }
+    for kind in COLLECTIONS:
+        current_nodes = list(_nodes_of(kind, current))
+        loose = [node for node in current_nodes if node_identity(node) is None]
+        if loose:
+            raise ContractViolation(
+                "current_node_identity_missing",
+                detail={"kind": kind, "count": len(loose)},
+            )
+        wanted = list(_nodes_of(kind, snapshot))
+        for node in wanted:
+            if node_identity(node) is None:
+                raise ContractViolation(
+                    "intent_node_identity_missing", detail={"kind": kind}
+                )
+        present = [
+            identity
+            for identity in (node_identity(node) for node in current_nodes)
+            if identity is not None
+        ]
+        seen = {
+            identity
+            for identity in (node_identity(node) for node in wanted)
+            if identity is not None
+        }
+        plan["upsert_" + kind] = tuple(wanted)
+        plan["remove_" + kind] = tuple(sorted(set(present) - seen))
+    return Intent(**plan)
+
+
+def provider_step_id_map(
+    authored: Mapping[str, Any], returned: Mapping[str, Any]
+) -> tuple[dict[str, str], bool]:
+    """Translate authored step ids to the provider ids actually returned.
+
+    Pairing is positional WITHIN a collection and only when the collection
+    lengths agree.  A missing or non-string provider id leaves that entry out
+    and marks the map ``partial``; nothing is guessed from labels, ordering
+    across collections, or an inferred provider scheme.
+    """
+
+    if not isinstance(authored, Mapping) or not isinstance(returned, Mapping):
+        raise ContractViolation("definition_invalid")
+    mapping: dict[str, str] = {}
+    complete = True
+    for kind in COLLECTIONS:
+        authored_nodes = list(_nodes_of(kind, authored))
+        returned_nodes = list(_nodes_of(kind, returned))
+        if len(authored_nodes) != len(returned_nodes):
+            complete = False
+        for before, after in zip(authored_nodes, returned_nodes):
+            authored_id = node_identity(before)
+            returned_id = node_identity(after)
+            if authored_id is None or returned_id is None:
+                complete = False
+                continue
+            mapping[authored_id] = returned_id
+    return mapping, complete
+
+
 __all__ = [
     "COLLECTIONS",
     "REVISION_FIELD",
@@ -718,4 +802,6 @@ __all__ = [
     "node_identity",
     "diff_definition",
     "apply_intent",
+    "intent_from_snapshot",
+    "provider_step_id_map",
 ]
