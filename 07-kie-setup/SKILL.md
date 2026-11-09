@@ -4,7 +4,7 @@ description: >
   Complete setup, credential management, and API router reference for KIE.ai, a
   unified API platform for generating images, videos, and audio through one API
   key and consistent async job conventions.
-version: v7.2.5
+version: v7.2.6
 metadata:
   version: "7.2.3"
   priority: CRITICAL

@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://blackceo/presentations/slides.schema.json",
   "title": "Presentations deck slides.json schema",
-  "description": "DETERMINISTIC deck pipeline input. An AI agent produces THIS file from the source material (transcript/brief). build_deck.py then renders it with ZERO further AI judgement: it renders the authored rich prompt for each slide verbatim (with the mandatory English/Latin-only pin appended when absent), calls KIE.ai GPT Image 2.5 Sunburst, downloads one full-bleed 16:9 PNG per slide, and assembles a .pptx. The agent NEVER generates images itself. All wording that must appear on a slide must be written, spelled correctly, in the 'copy' array — KIE renders that text INTO the image.",
+  "description": "DETERMINISTIC deck pipeline input. An AI agent produces THIS file from the source material (transcript/brief). build_deck.py then renders it with ZERO further AI judgement: it renders the authored rich prompt for each slide verbatim (with the mandatory English/Latin-only pin appended when absent), calls KIE.ai GPT Image 2.6 Sunburst, downloads one full-bleed 16:9 PNG per slide, and assembles a .pptx. The agent NEVER generates images itself. All wording that must appear on a slide must be written, spelled correctly, in the 'copy' array — KIE renders that text INTO the image.",
   "type": "array",
   "minItems": 1,
   "items": {
@@ -37,7 +37,7 @@
       "mode": {
         "type": "string",
         "enum": ["t2i"],
-        "description": "Image generation mode. The DETERMINISTIC pipeline uses ONLY 't2i' (gpt-image-2-5-sunburst-text-to-image) — the copy is rendered into a freshly generated photographic scene. (Image-to-image logo placement remains available via the separate kie_generate.py helper but is out of scope for build_deck.py.) Defaults to 't2i' if omitted."
+        "description": "Image generation mode. The DETERMINISTIC pipeline uses ONLY 't2i' (gpt-image-2-6/sunburst-text-to-image) — the copy is rendered into a freshly generated photographic scene. (Image-to-image logo placement remains available via the separate kie_generate.py helper but is out of scope for build_deck.py.) Defaults to 't2i' if omitted."
       },
       "media": {
         "description": "Optional typed per-slide media choice (Skill 72 directive Section 14.2, MG-036). This is the MEDIA choice, never the image-generation 'mode' above. Absent media means {\"kind\": \"still\"}: the slide is the deterministic KIE still image, exactly as before. The motion alternative names an authenticated Skill 72 component by its job manifest, its approved render receipt, and its poster; build_deck.py validates the governed MG-035 package (package record, MG-034 QC verdict, poster parity, receipt binding, hashes) before anything is embedded, and every failure degrades the slide to its still with a reason code in working/checkpoints/motion.json. Motion is elected per deck (intake want_motion_graphics, default NO) and capped at 2 pieces per deck (Slot A slide 1, Slot B a section divider). Invariants JSON Schema cannot express (the placement rectangle lies inside [0,1] and preserves 16:9; paths resolve inside the run root with symlinks resolved before containment; hashes match the receipt and the package record) are enforced by build_deck.validate_motion_slide_artifacts.",

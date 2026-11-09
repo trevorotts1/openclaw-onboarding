@@ -105,16 +105,15 @@ Routing policy (spec 7.5), in order:
 1. Explicit user pick wins — capability match, never "fixed" into something else.
 2. Else the GPT Image default: the NEWEST GPT Image generation in KIE's live catalog
    (owner order 2026-10-05, resolved by Skill 74 `latest-family`; models.json default
-   when the adapter is absent or unreachable; today GPT Image 2.5 Sunburst) is the
+   when the adapter is absent or unreachable; today GPT Image 2.6 Sunburst) is the
    preferred default (operator ruling 2026-09-09,
    supersedes GPT Image 2; high-fidelity general generation/editing,
-   product/brand, detailed long-form creative) when compatible — mind the
-   ratio/resolution exclusions (2K/4K exclude 27:16, 16:27, 9:8, 8:9 — 1K
-   only). GPT Image 2 (legacy) is RETAINED, not retired: the selector routes
-   aspect ratios 3:1, 1:3, 9:21 to it automatically (it does not serve those
-   on 2.5), and applies its OWN separate, unchanged exclusion rules (2K/4K
+   product/brand, detailed long-form creative) when compatible. 2.6 has NO
+   per-resolution ratio exclusions, and its 16-value enum serves 3:1, 1:3,
+   9:21, 5:4, 4:5, 2:1 and 1:2 directly. GPT Image 2 (legacy) is RETAINED, not
+   retired, and applies its OWN separate, unchanged exclusion rules (2K/4K
    exclude 5:4, 4:5, 3:1, 1:3, 9:21; "auto" -> 1K only; 1:1 cannot convert to
-   4K) whenever that legacy route is used.
+   4K) whenever that legacy route is used — but no ratio REQUIRES it.
 3. Else by capability: Nano Banana Pro / 2 (general, multi-ref), Seedream 5.0 Pro
    (complex/controlled), Ideogram V3 (typography/design), Qwen 3.0 (structured
    layouts, multilingual), Wan 2.7 (bbox control, gallery), Lite/Fast (volume).
@@ -135,7 +134,7 @@ the exact number to CUT; 80-95% passes with a warning to expand. Unknown limit:
 UNKNOWN warning, no floor. Verbatim content (spoken text, lyrics) has no floor.
 Without the adapter the limit is the models.json cap. Per-model figures today:
 
-- GPT Image 2.5 (default): 20,000 (live schema). Legacy GPT Image 2: 20,000 in the live
+- GPT Image 2.6 (default): 20,000 (owner ruling 2026-11-08; the vendor OpenAPI publishes 32,000, which does NOT govern). Legacy GPT Image 2: 20,000 in the live
   schema, which is the hard limit (KIE rejects longer prompts); the 25,000 that N43 recorded
   as owner-confirmed is superseded by KIE's live schema as of 2026-10-05, and the validator
   prints a warning saying so.
@@ -164,11 +163,13 @@ STEP 4: VALIDATE (BEFORE DISPATCH — NEVER AFTER)
   model, or a --strict warning); exit 2 above the max.
 - validate_payload: reference counts, MB/format, ratio/resolution enums,
   per-family rules (GPT Image 2 per-resolution exclusions and auto/1:1 rules
-  for the retained legacy route; GPT Image 2.5's own separate, NOT merged,
-  1K-only exclusion list for the default route; Wan n 1–4 / gallery 1–12
-  with enable_sequential, bbox <=2 per image, inputs min 240px and max 10MB;
-  Qwen max 3 refs; legacy NB 10MB not 30MB; Z-Image T2I-only; Ideogram
-  strength 0.01–1; Seedream 4.5 has no output_format).
+  for the retained legacy route; GPT Image 2.6's own separate, NOT merged,
+  16-value enum with NO per-resolution exclusions, gif/svg rejected on i2i,
+  and the gif/svg conditional fields enforced for the default route; Wan
+  n 1–4 / gallery 1–12 with enable_sequential, bbox <=2 per image, inputs
+  min 240px and max 10MB; Qwen max 3 refs; legacy NB 10MB not 30MB;
+  Z-Image T2I-only; Ideogram strength 0.01–1; Seedream 4.5 has no
+  output_format).
 
 Bad payloads NEVER reach the API. Validation happens before charging provider
 credits (spec 14).
@@ -221,8 +222,9 @@ STEP 6: QC — LOOK AT THE IMAGE
 state == "success" is proof the provider returned bytes, nothing more. Download
 resultUrls and INSPECT: dimensions match requested enum (on the retained
 legacy GPT Image 2 route: auto->1K only, 1:1 cannot be 4K; on the GPT Image
-2.5 default route: 27:16/16:27/9:8/8:9 are 1K only — either way, excluded
-ratios never silently returned); reference
+2.6 default route there are NO per-resolution exclusions, so every returned
+ratio must simply be a member of its 16-value enum — 27:16/16:27/9:8/8:9 are
+not); reference
 fidelity (faces, product geometry, logo exactness); edit preservation; colors/
 lighting/typography; anatomy and subject count; ratio per family enum.
 
@@ -243,8 +245,9 @@ PRACTICAL NUMBERS (from models.json, verified 2026-08-26)
 
 - Rate: 20 new generation requests / 10 seconds; 100+ concurrent per account.
 - Retention: KIE documents 14 days for generated media but its task-detail page says result URLs typically expire after 24 hours; download/persist immediately.
-- GPT Image 2 / GPT Image 2.5 refs: max 16, 30MB, JPEG/PNG/WEBP/JPG (carried
-  forward unchanged on 2.5); resolution 1K/2K/4K.
+- GPT Image 2 refs: max 16, 30MB, JPEG/PNG/WEBP/JPG. GPT Image 2.6 refs:
+  max 16, 30MB, JPEG/PNG/WEBP only; resolution 1K/2K/4K with no exclusions;
+  prompt max 20,000 chars (owner ruling 2026-11-08).
 - Qwen refs: max 3, 10MB each, six formats; resolution 1K/2K only.
 - Wan refs: max 9, 10MB, min 240px per side; resolution 1K/2K (Pro +4K, T2I only).
 - Legacy nano-banana refs: 10MB (not 30MB).

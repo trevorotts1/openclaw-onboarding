@@ -1,15 +1,15 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-11-09T03:10:17Z",
+  "generated_at": "2026-11-09T06:19:01Z",
   "file_count": 116,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
-      "sha256": "510bb4333de3c01bd94fb60a35cd7fcb39106ab467eadf64268ff2c43686947a",
+      "sha256": "00bdd3ef66f2de3da977e2b36071c039bf9e9793fb69e1d006300dc74b78f4d5",
       "bytes": 34048
     },
     "PRESENTATION-MASTER-DOCTRINE.md": {
-      "sha256": "c73f76f27e4657d772dce79f87a5ebebb7150c02d9f19a28ef377f24dfb531bd",
+      "sha256": "41d4a4f2145af49f2fc3ecb987ef8fa5771ca87913755a72afdd6dae86cd331d",
       "bytes": 15189
     },
     "SOP-CONV-AI-01-OPERATING-THE-CONVERSATIONAL-AI-SYSTEM.md": {
@@ -37,7 +37,7 @@
       "bytes": 7408
     },
     "anthology-craft/SOP-ANTHOLOGY-01-ENGINE-RUNBOOK.md": {
-      "sha256": "004caec2d4241cb57abb7bb6dffa658b5b882df408e5997e02ba4fd0b15c1f41",
+      "sha256": "12634197d99f7b3bb23b09aad8e563677447139352531610717aa46e7c275bad",
       "bytes": 14613
     },
     "anthology-craft/SOP-ANTHOLOGY-02-CLIENT-ONBOARDING.md": {
@@ -145,7 +145,7 @@
       "bytes": 2387
     },
     "fb-ad-craft/SOP-FBAD-06-IMAGE-PROMPTS.md": {
-      "sha256": "25dda2385b7ea42e904238d664f6741e5e471c0d7e08453565607e58f9ef3ea6",
+      "sha256": "9eea99d6d3ddda2336f93492da7436a60ae77586f09b312402e3b7e2a7b9f0f2",
       "bytes": 6919
     },
     "fb-ad-craft/SOP-FBAD-07-TARGETING.md": {
@@ -213,7 +213,7 @@
       "bytes": 7900
     },
     "funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md": {
-      "sha256": "3c2b135d74b4bc502ca2565a1c77af0162e133a82de19bad13a800c231102cba",
+      "sha256": "cf3750f97cedfd170d8aa30644ec5ac5e60821caa4b7f6ece32949dbe6bb2a85",
       "bytes": 6128
     },
     "funnel-craft/SOP-FUNNEL-04-BUILD.md": {
@@ -237,7 +237,7 @@
       "bytes": 3209
     },
     "podcast-craft/SOP-PODCAST-01-ENGINE-RUNBOOK.md": {
-      "sha256": "c4497417084598ad17bcffd87ba08f29f08b0d3122fd861fc8d002f96ad125fb",
+      "sha256": "39442a0a7c40f55d62755dd5bf21c0c9c832dc5f49ec41e9d82bdc7cbce4601a",
       "bytes": 23486
     },
     "podcast-craft/SOP-PODCAST-02-CLIENT-ONBOARDING.md": {
@@ -277,7 +277,7 @@
       "bytes": 6927
     },
     "presentation-design-system/05-SOP-logo-consistency.md": {
-      "sha256": "7e8cb8649e51fe46313fddb8f00f63ef0b3633fb99b7e95603270016fc74bdf6",
+      "sha256": "ff5e1ef88511e646da04e575fa4a9612911f4dd0d318ee49176d42416652b428",
       "bytes": 10305
     },
     "presentation-design-system/README.md": {
@@ -289,11 +289,11 @@
       "bytes": 1390
     },
     "presentation-image-library/SOP-IMG-01-KIE-CALL-MECHANICS.md": {
-      "sha256": "948e2d918e4db72fef13365dccc2deecd9e6fdddeef40a4f1388faa00bc9035e",
+      "sha256": "1e5af32b57fc8492c8ae635264b9fa3c23dd78f0657a8306125034cd50cbed2b",
       "bytes": 33571
     },
     "presentation-image-library/SOP-IMG-02-DIU-INTEGRATION-AND-SEEDING.md": {
-      "sha256": "aa8002e46493bf1fed2854936ca1c7a79bb85b87f05df7ca858aa52150243d15",
+      "sha256": "537e30b85fe5fd1bc21346f3db53ba8352b2d0a80e588957b135476e7e718216",
       "bytes": 14559
     },
     "presentation-image-library/SOP-IMG-03-STYLE-OR-CREATIVE-DEVELOP-CONVERSATION.md": {
@@ -301,15 +301,15 @@
       "bytes": 13145
     },
     "presentation-image-library/SOP-IMG-04-SIGNATURE-STYLE-RECALL-AND-DIU-LOGO-I2I.md": {
-      "sha256": "5a88394709fa4070fc1036a87bead6bedc2f4113983b440f59134dd14375c0d1",
+      "sha256": "309a4785931b4e561271e1f8412ced680f29b4b55a6de9f306980aa50d5d72ac",
       "bytes": 12168
     },
     "presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "ae7beda950416b64b59e8a9d2d30bbba25937e424f2d3f86d6a3e7a6ce9a86b5",
+      "sha256": "98be775a79eae97eed55dcaadbb220a422cb5fd357f6d870724cdfdd564a6a65",
       "bytes": 148222
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "c845e12c4359e919303c46359fa552dd0ec770f26730bbe33a10a430caf26ccd",
+      "sha256": "4dd4758c7a9bf1117acadd88a1b78926dd80ddfe92c553a6ed3bf49a27d33eba",
       "bytes": 198771
     },
     "presentation-slide-craft/README.md": {
@@ -317,7 +317,7 @@
       "bytes": 1383
     },
     "presentation-slide-craft/SOP-CROSS-REFERENCE-MAP.md": {
-      "sha256": "fe96524c9443ed23d54dbe7ea2fa3fe0b934e813523d12775b2713d12ae26049",
+      "sha256": "7beb003a759f27a0b0dd0d30891488285192537c58498e4b6cb4e6988b339833",
       "bytes": 5951
     },
     "presentation-slide-craft/SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md": {
@@ -333,7 +333,7 @@
       "bytes": 11894
     },
     "presentation-slide-craft/SOP-SLIDE-03-HOOK-DOCTRINE.md": {
-      "sha256": "64a161fa585917a695237331b1591b98bc451fa8260ed0106d6a2b81e80d9a42",
+      "sha256": "6d5e050b9cdb66f22fc5ca4cf096582390f352d904a96ad310eb5103411db0ac",
       "bytes": 13966
     },
     "presentation-slide-craft/SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md": {
@@ -341,7 +341,7 @@
       "bytes": 11790
     },
     "presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md": {
-      "sha256": "2b9913b5aa93e6845cdd862994ce85c9aa38a631917705ace1d3fef6dc2b4c28",
+      "sha256": "7b32c3fa1cbb29d35acf75e773c4f5409eb3430bd3d315217e67b76403e8c1d1",
       "bytes": 14168
     },
     "presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md": {
@@ -393,11 +393,11 @@
       "bytes": 3559
     },
     "social-media-craft/SOP-SOCIAL-02-RUN.md": {
-      "sha256": "d82a9074709fbe7ea01c6836d46ee1a5674534b628fcbdbb87b811024c85187c",
+      "sha256": "05f77ad8b9af7663cc54f4f0e76f50fb1a09a086dd3a37f6c315a2508a0f9986",
       "bytes": 5478
     },
     "social-media-craft/SOP-SOCIAL-03-CREATIVE-INTERJECTION.md": {
-      "sha256": "099f7fc8851589b41c4955c183665f6da1cc0baee34c8a734be99cbc69bd1f07",
+      "sha256": "dbea37a7141069da6d776dfada63c838cc6480d08a5bb3d49d78600ab355195f",
       "bytes": 7485
     },
     "social-media-craft/SOP-SOCIAL-04-VERIFY.md": {
@@ -429,7 +429,7 @@
       "bytes": 6522
     },
     "video-production/SOP-PVC-01-PERSONAL-VIDEO-CREATOR.md": {
-      "sha256": "811a4b9d7f01c9ae018d9837474839a4332625f3c58dc6ad0b6dad0dfa15ee25",
+      "sha256": "15cdf9ff3a018b6bb5c9523b9bb19b5abd05d29c920dd86c06706b5a2e90410f",
       "bytes": 64942
     },
     "video-production/VIDEO-PRODUCTION-MANIFEST.json": {

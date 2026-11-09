@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # live_smoke.sh - OPT-IN live check for Skill 74. Operator account only. Never part of the QC script.
 #   bash scripts/live_smoke.sh           free calls only: health, credits, catalog, one schema, one validate, tiny upload
-#   bash scripts/live_smoke.sh --paid    ALSO runs exactly ONE paid job: gpt-image-2-5-sunburst-text-to-image at 1K
+#   bash scripts/live_smoke.sh --paid    ALSO runs exactly ONE paid job: gpt-image-2-6/sunburst-text-to-image at 1K
 # Prints SET / NOT-SET for the key and never the value. Cache and receipts go to a temp dir.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,7 +11,7 @@ PAID=0; [ "${1:-}" = "--paid" ] && PAID=1
 export PYTHONDONTWRITEBYTECODE=1 KIE_LIVE_ADAPTER_MODE=active
 W="$(mktemp -d "${TMPDIR:-/tmp}/kie-live-smoke.XXXXXX")"; trap 'rm -rf "$W"' EXIT
 export KIE_LIVE_CACHE_DIR="$W/cache"
-MODEL="gpt-image-2-5-sunburst-text-to-image"   # the fleet image pin; the adapter never substitutes another model
+MODEL="gpt-image-2-6/sunburst-text-to-image"   # the fleet image pin; the adapter never substitutes another model
 run() { python3 "$ADA" "$@" --json; }
 show() { python3 -c 'import json,sys; r=json.load(sys.stdin); print(r["state"], r.get("task_id"), r.get("credits_consumed"), r.get("error"), r.get("data",{}).get("credits",""))'; }
 echo "== health";  run health  | show
