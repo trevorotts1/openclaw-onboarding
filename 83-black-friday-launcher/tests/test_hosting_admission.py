@@ -214,6 +214,19 @@ class RouteEvidenceTests(HostingCase):
             (job / "qc" / "image_qc_report.json").write_text(json.dumps({"assets": [
                 {"local_path": "renders/ad-01.png", "asset_id": "ad-01", "pass": True, "triggered_autofails": []}]}))
             (job / "job.json").write_text(json.dumps({"has_ghl": True}))
+            # F19 (merged): the hosting route now refuses bytes that carry no independent
+            # current-file review. This case is about the F17 route evidence, so it supplies a
+            # valid review record instead of weakening the authority.
+            (job / "qc" / "review_records.json").write_text(json.dumps({"records": [{
+                "schema": "signature-launch-review-record/v1",
+                "reviewer_session": "rev-1", "reviewer_model": "m-review",
+                "verdict": "pass", "independent_review": True, "scope": "item",
+                "attempt_id": "attempt-1", "revision": "r1",
+                "reviewed_artifacts": [{"path": "renders/ad-01.png",
+                                        "sha256": hashlib.sha256(PNG).hexdigest()}],
+            }]}))
+            (job / "qc" / "dispatch_ledger.json").write_text(json.dumps({"sessions": [
+                {"session_id": "rev-1", "model": "m-review"}]}))
             store = job / "approval-store"
             store.mkdir()
             (store / "APPR-LIVE.json").write_text(json.dumps({
