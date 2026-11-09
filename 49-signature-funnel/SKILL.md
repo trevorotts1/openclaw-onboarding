@@ -1,10 +1,22 @@
 ---
 name: signature-funnel
 description: Builds a Trevor Otts Signature Funnel — the SACRED 12-section Hero copy system, per-section long-form image prompts sized to the model's own character budget (95 to 100 percent of its maximum, never below 80 percent), GHL media + funnel build, and a configurable 3/5/7-step funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching). Gates the sacred method with fail-closed deterministic provers: the intake gate, the 12-section copy contract (per-section char/word bands, six page profiles), the image-prompt two-floor gate (length and structure), and a no-pitch (clean thank-you) + image-provenance gate. A canonical fail-closed entry (deps/bypass-scan/hash-pin/0600-nonce) drives a no-skip orchestrator that issues a signed PROCESS-CERTIFICATE only on all-phases-pass. Delegates image generation to Skill 66 (model policy) then Skill 74 (the one approved KIE transport) and ALL GHL media + build to Skill 6. Client runtime uses the client's own providers, never Anthropic.
-version: v2.1.48
+version: v2.1.50
 ---
 
 # Signature Funnel (Skill 49)
+
+## RULE 1: READ EVERYTHING BEFORE YOU TOUCH ANYTHING
+
+**READ THIS ENTIRE FILE BEFORE TOUCHING ANYTHING ELSE.**
+
+Read this entire document from top to bottom before executing a single step.
+Then read every SOP this skill declares, in full, in this order:
+`universal-sops/funnel-craft/SOP-FUNNEL-01-INTAKE.md`,
+`universal-sops/funnel-craft/SOP-FUNNEL-02-COPY.md`,
+`universal-sops/funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md`,
+`universal-sops/funnel-craft/SOP-FUNNEL-04-BUILD.md`,
+`universal-sops/funnel-craft/SOP-FUNNEL-05-CERTIFY.md`.
 
 The methodology + enforcement layer for the Trevor Otts **Signature Funnel** — the 12-section Hero
 landing page plus its upsell / downsell / OTO2 chain and thank-you page, built as a configurable
@@ -111,7 +123,7 @@ The copy ledger and `build_receipt.json` are written by the run's own agent, so 
 - **`prove_sf_build.py`** — the build receipt (QC >= 8.5, a preview URL per page, the full page set) read
   against the tool evidence above: parsed fragments, the recomputed Skill 6 verify run, and the
   wireframe + mockup set for every page.
-- **`prove_sf_prompt_floor.py`** — stripped-length gate (the prompt length budget is `07-kie-setup/references/kie-common-rules.md` rule 12; SOP-FUNNEL-03 states how the prover and `prompt-budget --check` combine) + distinct-word density + Signature
+- **`prove_sf_prompt_floor.py`** — stripped-length gate (the prompt length budget is `07-kie-setup/references/kie-common-rules.md` rule 12; `universal-sops/funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md` states how the prover and `prompt-budget --check` combine) + distinct-word density + Signature
   Grade Block + negative block + em-dash ban + typography discipline.
 - **`prove_sf_no_pitch.py`** — the thank-you page carries no offer name / price / sale CTA, and every
   image has a real Kie taskId resolving to a GHL media host (fail-closed on empty offer ledger / no
@@ -158,8 +170,12 @@ No price, model id, endpoint or rate figure is written in this skill (rules 2, 3
   falls through to the template-first funnel matcher. Skill 56 (Sales-Page-Assets) is the 2nd
   registered entry (the Direct-Response sibling). Skill 6 remains the ONE GHL delivery rail.
 - **Doors (roles):** the web-development and marketing **Signature Funnel Specialist** roles, plus
-  Section-8 tool rows on the funnel-strategist / funnel-builder / landing-page specialists. Shared
-  procedure cluster: `universal-sops/funnel-craft/`.
+  Section-8 tool rows on the funnel-strategist / funnel-builder / landing-page specialists. The five
+  SOPs (read every one in full): `universal-sops/funnel-craft/SOP-FUNNEL-01-INTAKE.md`,
+  `universal-sops/funnel-craft/SOP-FUNNEL-02-COPY.md`,
+  `universal-sops/funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md`,
+  `universal-sops/funnel-craft/SOP-FUNNEL-04-BUILD.md`,
+  `universal-sops/funnel-craft/SOP-FUNNEL-05-CERTIFY.md`.
 - **Deliverable labeling grammar (reciprocal with Skill 56):** every copy doc / prompt / PNG / HTML
   fragment / preview is labeled `<client>__<funnel>__<stage>__<type>__vNN`
   (`stage ∈ {main,checkout,upsell1,downsell1,upsell2,downsell2,thankyou}`,

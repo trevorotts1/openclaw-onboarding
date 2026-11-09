@@ -1,11 +1,14 @@
-"""Native marketing quiz categories, option scores and three result tiers.
+"""Native marketing quiz properties, categories, scores and existing result tiers.
 
 Selectors/counts were captured in quiz-builder-app on 2026-11-08. No survey or
-course-quiz selector is reused. This edits an existing quiz; it does not submit
-contacts, publish, delete options/categories or change custom-field definitions.
+course-quiz selector is reused. Existing choice-question text, placeholder,
+short label and query identity can be authored with previous-value guards.
+This edits an existing quiz; it does not submit contacts, publish, delete
+options/categories or create contact-field schemas.
 """
 from copy import deepcopy
 import math
+import re
 
 
 class QuizError(ValueError):
@@ -15,13 +18,31 @@ class QuizError(ValueError):
 def validate(step):
     if not isinstance(step, dict):
         raise QuizError('Quiz configuration must be an object')
-    if set(step) - {'id', 'action', 'categories', 'expected_question_count', 'questions', 'tiers', 'expected_tier_labels'}:
+    if set(step) - {'id', 'action', 'categories', 'category_changes', 'expected_question_count', 'questions', 'tiers', 'expected_tier_labels', 'expected_tiers'}:
         raise QuizError('Unsupported native quiz configuration option')
     categories = step.get('categories', [])
     if not isinstance(categories, list) or any(not isinstance(x, str) or not x.strip() for x in categories):
         raise QuizError('Category names must be explicit nonempty text')
     if len(categories) != len({x.casefold() for x in categories}):
         raise QuizError('Duplicate category names')
+    category_changes = step.get('category_changes', [])
+    if not isinstance(category_changes, list):
+        raise QuizError('Category changes must be an explicit list')
+    before_names, after_names = set(), set()
+    for change in category_changes:
+        if (not isinstance(change, dict) or set(change) != {'expected_name', 'name'}
+                or any(not isinstance(change[key], str) or not change[key].strip()
+                       for key in ('expected_name', 'name'))):
+            raise QuizError('A category rename requires its exact previous and authored names')
+        before, after = change['expected_name'].casefold(), change['name'].casefold()
+        if before == 'overall only' or after == 'overall only':
+            raise QuizError('The reserved Overall Only category cannot be renamed or replaced')
+        if before in before_names or after in after_names:
+            raise QuizError('Duplicate category rename targets or authored names')
+        if change['name'] != change['expected_name'] and change['expected_name'] in categories:
+            raise QuizError('A renamed previous category cannot also be requested as a new category in the same job')
+        before_names.add(before)
+        after_names.add(after)
     questions = step.get('questions', [])
     if not isinstance(questions, list):
         raise QuizError('Questions must be a list')
@@ -32,7 +53,9 @@ def validate(step):
     for q in questions:
         if not isinstance(q, dict) or type(q.get('index')) is not int or not 0 <= q['index'] < count:
             raise QuizError('Question index is outside the captured canvas count')
-        if set(q) - {'index', 'expected_question', 'expected_query_key', 'options', 'question', 'append_options', 'shared_field_change_ack'}:
+        if set(q) - {'index', 'expected_question', 'expected_query_key', 'query_key', 'options', 'question',
+                     'placeholder', 'short_label', 'expected_placeholder', 'expected_short_label',
+                     'append_options', 'shared_field_change_ack'}:
             raise QuizError('Unsupported native question option; question creation/renaming needs its own capture')
         if q['index'] in indexes:
             raise QuizError('Duplicate question configuration')
@@ -48,7 +71,18 @@ def validate(step):
             raise QuizError('Appended quiz options must be a list')
         if 'question' in q and (not isinstance(q['question'], str) or not q['question'].strip()):
             raise QuizError('Authored quiz question text must be nonempty')
-        authoring = 'question' in q or bool(appended) or any(isinstance(o, dict) and 'new_label' in o for o in options)
+        if 'query_key' in q and (not isinstance(q['query_key'], str)
+                or not re.fullmatch(r'[A-Za-z0-9_.-]{1,256}', q['query_key'])):
+            raise QuizError('Quiz Query Key must be an explicit simple token')
+        for property_name in ('placeholder', 'short_label'):
+            expected_name = 'expected_' + property_name
+            if (property_name in q) != (expected_name in q):
+                raise QuizError('Quiz property changes require their exact previous value: ' + property_name)
+            if property_name in q and (not isinstance(q[property_name], str)
+                    or not isinstance(q[expected_name], str)):
+                raise QuizError('Quiz placeholder and short label must be text, including an explicit empty value')
+        authoring = (any(key in q for key in ('question', 'placeholder', 'short_label', 'query_key'))
+                     or bool(appended) or any(isinstance(o, dict) and 'new_label' in o for o in options))
         if authoring and q.get('shared_field_change_ack') is not True:
             raise QuizError('Question/choice authoring requires shared_field_change_ack:true for the exact guarded field')
         labels = []
@@ -71,13 +105,32 @@ def validate(step):
             raise QuizError('Existing option identity labels are ambiguous')
         if any(o.get('new_label', o['label']) != o['label'] and o.get('new_label') in existing_labels for o in options):
             raise QuizError('Renaming into another existing label requires a separately reconciled edit')
+    if any('query_key' in question for question in questions):
+        if indexes != set(range(count)):
+            raise QuizError('Quiz Query Key changes require complete existing question inventory')
+        before = [question['expected_query_key'] for question in questions]
+        after = [question.get('query_key', question['expected_query_key']) for question in questions]
+        if len(before) != len({key.casefold() for key in before}) or len(after) != len({key.casefold() for key in after}):
+            raise QuizError('Quiz Query Keys are duplicated in the existing or desired inventory')
+        for question in questions:
+            desired_key = question.get('query_key', question['expected_query_key'])
+            other_keys = {key.casefold() for key in before if key != question['expected_query_key']}
+            if desired_key.casefold() in other_keys:
+                raise QuizError('Query Key swaps require a separately reconciled intermediate edit')
     tiers = step.get('tiers')
     if tiers is not None:
-        if not isinstance(tiers, list) or len(tiers) != 3:
-            raise QuizError('Only the captured three-tier layout is implemented')
+        if not isinstance(tiers, list) or not 1 <= len(tiers) <= 101:
+            raise QuizError('Supply one existing native row for every desired integer-percent tier')
         existing = step.get('expected_tier_labels')
-        if not isinstance(existing, list) or len(existing) != 3 or any(not isinstance(x, str) or not x for x in existing):
-            raise QuizError('Supply the three current tier labels as identity guards')
+        if (not isinstance(existing, list) or len(existing) != len(tiers)
+                or any(not isinstance(x, str) or not x.strip() for x in existing)
+                or len(existing) != len(set(existing))):
+            raise QuizError('Supply every unique current tier label in the exact existing row order')
+        expected_tiers = step.get('expected_tiers')
+        if expected_tiers is not None:
+            _validate_tier_ranges(expected_tiers, existing, 'Existing')
+        elif len(tiers) != 3:
+            raise QuizError('Non-three-tier layouts require the complete expected_tiers range inventory')
         previous = -1
         labels = []
         for tier in tiers:
@@ -92,9 +145,27 @@ def validate(step):
             previous = high
         if previous != 100 or len(labels) != len(set(labels)):
             raise QuizError('Tier ranges must end at 100 and labels must be unique')
-    if not categories and not questions and tiers is None:
+    if not categories and not category_changes and not questions and tiers is None:
         raise QuizError('No native quiz changes requested')
+    if tiers is None and ('expected_tier_labels' in step or 'expected_tiers' in step):
+        raise QuizError('Expected tier inventory requires an authored tiers request')
     return deepcopy(step)
+
+
+def _validate_tier_ranges(tiers, labels, prefix):
+    if not isinstance(tiers, list) or len(tiers) != len(labels):
+        raise QuizError(prefix + ' tier inventory must have one complete row per label')
+    previous = -1
+    for tier, label in zip(tiers, labels):
+        if not isinstance(tier, dict) or set(tier) != {'label', 'from', 'to'} or tier['label'] != label:
+            raise QuizError(prefix + ' tier labels/order differ from the exact row inventory')
+        low, high = tier['from'], tier['to']
+        if (type(low) is not int or type(high) is not int or not 0 <= low <= high <= 100
+                or low != previous + 1):
+            raise QuizError(prefix + ' tier ranges must cover 0 through 100 without gaps or overlap')
+        previous = high
+    if previous != 100:
+        raise QuizError(prefix + ' tier ranges must end at 100')
 
 
 def configure(page, step):
@@ -130,15 +201,36 @@ def configure(page, step):
             raise Stop('Native quiz category identity changed')
         return modal, names
 
-    def categories(read_only=False):
+    def categories(read_only=False, preflight=False):
         modal, names = category_dialog()
         observed = [names.nth(i).input_value() for i in range(names.count())]
         if len(observed) != len({x.casefold() for x in observed}):
             raise Stop('Existing quiz categories are ambiguous')
+        for change in step.get('category_changes', []):
+            previous, desired = change['expected_name'], change['name']
+            expected_name = desired if read_only else previous
+            matches = [index for index, name in enumerate(observed) if name == expected_name]
+            if len(matches) != 1 or matches[0] == 0:
+                raise Stop('Requested quiz category rename target is absent or ambiguous')
+            index = matches[0]
+            if any(name.casefold() == desired.casefold() for offset, name in enumerate(observed) if offset != index):
+                raise Stop('Authored quiz category name collides with another existing category')
+            if not names.nth(index).is_enabled():
+                raise Stop('Native quiz category is not editable')
+            if read_only:
+                if desired != previous and previous in observed:
+                    raise Stop('Renamed category retained a duplicate previous name')
+            elif not preflight:
+                fill(names.nth(index), desired)
+                if names.nth(index).input_value() != desired:
+                    raise Stop('Native quiz category ignored the authored rename')
+                observed[index] = desired
         for name in step.get('categories', []):
             if name.casefold() in {x.casefold() for x in observed}:
                 if name not in observed:
                     raise Stop('Existing category differs only by case; reconcile before writes')
+                continue
+            if preflight:
                 continue
             if read_only:
                 raise Stop('Quiz category was not persisted')
@@ -148,11 +240,9 @@ def configure(page, step):
                 raise Stop('New category control differs from capture')
             fill(names.nth(before), name)
             observed.append(name)
-        click(modal.get_by_role('button', name='Cancel' if read_only else 'Submit', exact=True))
+        click(modal.get_by_role('button', name='Cancel' if read_only or preflight else 'Submit', exact=True))
         modal.wait_for(state='hidden', timeout=45000)
-
-    if step.get('categories'):
-        categories()
+        return observed
 
     def desired_options(question):
         return [{**option, 'label': option.get('new_label', option['label'])}
@@ -191,8 +281,14 @@ def configure(page, step):
             if label not in properties.nth(index).evaluate("el => el.closest('.form-group')?.textContent || ''"):
                 raise Stop('Quiz question property ordering changed')
         question_text = question.get('question', question['expected_question']) if read_only else question['expected_question']
-        if properties.nth(0).input_value() != question_text or properties.nth(3).input_value() != question['expected_query_key']:
+        query_key = question.get('query_key', question['expected_query_key']) if read_only else question['expected_query_key']
+        if properties.nth(0).input_value() != question_text or properties.nth(3).input_value() != query_key:
             raise Stop('Selected quiz question identity mismatch')
+        for index, name in ((1, 'placeholder'), (2, 'short_label')):
+            if name in question:
+                expected = question[name] if read_only else question['expected_' + name]
+                if properties.nth(index).input_value() != expected:
+                    raise Stop('Quiz question property differs from its inventoried value: ' + name)
         pickers, scores = controls(desired_options(question) if read_only else question['options'])
         return properties, pickers, scores
 
@@ -213,6 +309,17 @@ def configure(page, step):
                     raise Stop('Native append-option controls differ from the captured layout')
                 if 'question' in question:
                     fill(properties.nth(0), question['question'])
+                    if properties.nth(0).input_value() != question['question']:
+                        raise Stop('Native quiz ignored the authored question text')
+                for index, name in ((1, 'placeholder'), (2, 'short_label')):
+                    if name in question:
+                        fill(properties.nth(index), question[name])
+                        if properties.nth(index).input_value() != question[name]:
+                            raise Stop('Native quiz ignored the authored question property: ' + name)
+                if 'query_key' in question:
+                    fill(properties.nth(3), question['query_key'])
+                    if properties.nth(3).input_value() != question['query_key']:
+                        raise Stop('Native quiz ignored the authored Query Key')
                 labels = frame.get_by_role('textbox', name='Label', exact=True)
                 for index, option in enumerate(question['options']):
                     if option.get('new_label', option['label']) != option['label']:
@@ -251,9 +358,7 @@ def configure(page, step):
                     raise Stop('Quiz option score differs from request')
             close_question()
 
-    questions()
-
-    def tiers(read_only=False):
+    def tiers(read_only=False, preflight=False):
         if step.get('tiers') is None:
             return
         click(frame.get_by_role('button', name='Edit Template', exact=True))
@@ -266,37 +371,79 @@ def configure(page, step):
         labels = popup.get_by_role('textbox', name='Label', exact=True)
         ranges = popup.get_by_role('textbox', name='', exact=True)
         expected_labels = [t['label'] for t in step['tiers']] if read_only else step['expected_tier_labels']
-        if labels.count() != 3 or ranges.count() != 6:
-            raise Stop('Only the captured three-tier result layout can be changed')
-        if [labels.nth(i).input_value() for i in range(3)] != expected_labels:
+        count = len(expected_labels)
+        if labels.count() != count or ranges.count() != count * 2:
+            raise Stop('Native tier row/range inventory differs; this operation never creates or removes tiers')
+        if [labels.nth(i).input_value() for i in range(count)] != expected_labels:
             raise Stop('Existing tier labels differ from the expected template')
-        if ranges.nth(0).is_enabled() or ranges.nth(5).is_enabled() or ranges.nth(0).input_value() != '0' or ranges.nth(5).input_value() != '100':
+        if ranges.nth(0).is_enabled() or ranges.nth(count * 2 - 1).is_enabled() or ranges.nth(0).input_value() != '0' or ranges.nth(count * 2 - 1).input_value() != '100':
             raise Stop('Tier endpoint guards changed')
+        observed_ranges = []
         for index, tier in enumerate(step['tiers']):
-            if not read_only:
+            if not read_only and not preflight:
                 fill(labels.nth(index), tier['label'])
             for endpoint, key in enumerate(('from', 'to')):
                 control = ranges.nth(index * 2 + endpoint)
+                if preflight:
+                    try:
+                        current = int(control.input_value())
+                    except (TypeError, ValueError):
+                        raise Stop('Existing quiz tier range is not an integer') from None
+                    if not 0 <= current <= 100:
+                        raise Stop('Existing quiz tier range is outside the captured percentage scale')
+                    observed_ranges.append(current)
+                    if step.get('expected_tiers') is not None and current != step['expected_tiers'][index][key]:
+                        raise Stop('Existing native tier ranges differ from the inventoried previous values')
+                    if (index * 2 + endpoint not in (0, count * 2 - 1)
+                            and not control.is_enabled()):
+                        raise Stop('Native interior tier endpoint is not editable')
+                    continue
                 if not read_only and control.is_enabled():
                     fill(control, str(tier[key]))
                 if control.input_value() != str(tier[key]):
                     raise Stop('Quiz result tier value differs from request')
-        click(popup.get_by_role('button', name='Cancel' if read_only else 'Save', exact=True))
+        if preflight and any(observed_ranges[index * 2] > observed_ranges[index * 2 + 1]
+                or (index and observed_ranges[index * 2] != observed_ranges[index * 2 - 1] + 1)
+                for index in range(count)):
+            raise Stop('Existing quiz tier ranges overlap, contain gaps or reverse their endpoints')
+        click(popup.get_by_role('button', name='Cancel' if read_only or preflight else 'Save', exact=True))
         popup.wait_for(state='hidden', timeout=45000)
-        click(modal.get_by_role('button', name='Cancel' if read_only else 'Save', exact=True))
+        click(modal.get_by_role('button', name='Cancel' if read_only or preflight else 'Save', exact=True))
         modal.wait_for(state='hidden', timeout=45000)
 
+    # Read every requested native target before the first authored value. A bad
+    # later question/tier must not follow earlier shared-field/category writes.
+    if step.get('categories') or step.get('category_changes'):
+        existing_categories = categories(preflight=True)
+        replacements = {change['expected_name']:change['name'] for change in step.get('category_changes', [])}
+        available_categories = {replacements.get(name, name) for name in existing_categories} | set(step.get('categories', []))
+        if any(option['category'] not in available_categories
+               for question in step.get('questions', [])
+               for option in desired_options(question)):
+            raise Stop('A requested quiz score category is absent from the native inventory and creation plan')
+    for question in step.get('questions', []):
+        open_question(question)
+        if question.get('append_options'):
+            append = frame.get_by_role('button', name='Add option', exact=True)
+            if append.count() != 2 or not append.nth(1).is_enabled():
+                raise Stop('Native append-option controls are unavailable before authoring')
+        close_question()
+    tiers(preflight=True)
+    if step.get('categories') or step.get('category_changes'):
+        categories()
+    questions()
     tiers()
     click(frame.get_by_role('button', name='Save', exact=True))
     wait_until(lambda: frame.get_by_role('button', name='Save', exact=True).count() == 1
                and frame.get_by_role('button', name='Save', exact=True).is_enabled(), 'Quiz save did not finish')
     reopen_editor(page, 'quiz', quiz_name, editor_url)
     close_initial()
-    if step.get('categories'):
+    if step.get('categories') or step.get('category_changes'):
         categories(read_only=True)
     questions(read_only=True)
     tiers(read_only=True)
     return {'status': 'QUIZ_CONFIGURATION_SAVED_AND_REOPENED', 'kind': 'quiz',
             'editor_url': page.url, 'categories': step.get('categories', []),
+            'category_changes': step.get('category_changes', []),
             'questions': len(step.get('questions', [])), 'tiers': step.get('tiers'),
             'submission_verified': False}

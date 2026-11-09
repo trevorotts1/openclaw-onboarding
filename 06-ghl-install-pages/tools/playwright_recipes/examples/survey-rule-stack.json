@@ -1,0 +1,28 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Approved account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/survey-builder-v2/SURVEY_FROM_INVENTORY",
+  "configuration": {
+    "expected_slide_count": 3,
+    "slide_labels": [
+      "P1 - Routing",
+      "P2 - Details",
+      "P3 - Finish"
+    ],
+    "rules": [
+      {
+        "source_slide": 1,
+        "target_slide": 3,
+        "if_field": "Email",
+        "operator": "Contains",
+        "value": "@example.com"
+      },
+      {
+        "source_slide": 2,
+        "target_slide": 3,
+        "if_field": "First Name",
+        "operator": "Is Filled"
+      }
+    ]
+  }
+}

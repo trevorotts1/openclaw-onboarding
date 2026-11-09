@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import quiz_ui
 import skill6_playwright as runner
+from test_assessments import list_reopen_surface
 
 
 def configuration():
@@ -184,11 +185,13 @@ class NativeQuestionExecution(unittest.TestCase):
         return page, state
 
     def run_surface(self, page, data=None):
+        cell=list_reopen_surface(page)
+        page.frame_locator.return_value.get_by_role('textbox',name='Form Name',exact=True).count.return_value=1
         with patch.object(runner, 'click', side_effect=lambda loc: loc.click()), \
              patch.object(runner, 'fill', side_effect=lambda loc, value: loc.fill(value)), \
              patch.object(runner, 'visible', return_value=False), \
              patch.object(runner, 'wait_until', side_effect=lambda predicate, message: self.assertTrue(predicate())), \
-             patch.object(runner, 'exact_search', return_value=MagicMock()):
+             patch.object(runner, 'exact_search', return_value=cell):
             return quiz_ui.configure(page, configuration() if data is None else data)
 
     def test_native_categories_and_scores_survive_independent_reopen(self):
@@ -304,11 +307,13 @@ class NativeCategoriesAndTiers(unittest.TestCase):
         return page, state
 
     def run_surface(self, page, step):
+        cell=list_reopen_surface(page)
+        page.frame_locator.return_value.get_by_role('textbox',name='Form Name',exact=True).count.return_value=1
         with patch.object(runner, 'click', side_effect=lambda loc: loc.click()), \
              patch.object(runner, 'fill', side_effect=lambda loc, value: loc.fill(value)), \
              patch.object(runner, 'visible', return_value=False), \
              patch.object(runner, 'wait_until', side_effect=lambda predicate, message: self.assertTrue(predicate())), \
-             patch.object(runner, 'exact_search', return_value=MagicMock()):
+             patch.object(runner, 'exact_search', return_value=cell):
             return quiz_ui.configure(page, step)
 
     def test_category_creation_reuses_existing_and_reopens_without_duplicates(self):

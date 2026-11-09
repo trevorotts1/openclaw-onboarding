@@ -85,12 +85,38 @@ def validate_job(job, base):
     if not isinstance(job.get('start_url'),str) or not isinstance(job.get('location_name'),str):
         raise Stop('start_url and location_name must be strings')
     u = urlparse(job.get("start_url", ""))
-    if u.scheme != "https" or u.username or u.password or u.query or u.fragment:
-        raise Stop("start_url must be an exact HTTPS app URL without query, fragment, or credentials")
+    if u.scheme != "https" or u.username or u.password or u.fragment:
+        raise Stop("start_url must be an exact HTTPS app URL without fragment or credentials")
     if not re.search(r"/(?:v2/)?location/" + re.escape(loc) + r"(?:/|$)", u.path):
         raise Stop("start_url must belong to location_id")
     if not job.get("location_name"):
         raise Stop("location_name is required for the visible account check")
+    if u.query:
+        # The captured course Customize manager needs three exact parameters.
+        # No general query exception is granted to options or other actions.
+        query_steps = job.get('steps')
+        if (not isinstance(query_steps, list) or len(query_steps) != 1
+                or any(not isinstance(step, dict) or step.get('action') not in ('native_course_theme', 'native_course_blocks', 'native_course_theme_media', 'native_course_block_media', 'native_dynamic_meeting_location')
+                       for step in query_steps)):
+            raise Stop('Only a captured native editor job may use its bound manager query')
+        from playwright_recipes.course_theme import validate as validate_course_theme
+        for step in query_steps:
+            if step['action'] == 'native_course_blocks':
+                from playwright_recipes.course_blocks import validate
+                payload = validate(step)
+            elif step['action'] == 'native_course_theme_media':
+                from playwright_recipes.course_theme_media import validate
+                payload = validate(step)
+            elif step['action'] == 'native_course_block_media':
+                from playwright_recipes.course_block_media import validate
+                payload = validate(step)
+            elif step['action'] == 'native_dynamic_meeting_location':
+                from playwright_recipes.meeting_dynamic import validate_inputs
+                payload = validate_inputs(step.get('payload'), require_fresh=False)
+            else:
+                payload = validate_course_theme(step)
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Native manager query belongs to another job identity')
     if 'auth_activation' in job:
         activation = job['auth_activation']
         if not isinstance(activation, dict) or set(activation) - {'expected_builder_title'}:
@@ -106,7 +132,7 @@ def validate_job(job, base):
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_fields", "native_field_placement", "native_condition", "quiz_configuration", "survey_configuration", "form", "form_css", "native_form_css", "native_form_schedule", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "assessment", "meeting", "options"}
+    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_course_theme", "native_course_blocks", "native_course_theme_media", "native_course_block_media", "native_fields", "native_field_placement", "native_address_fields", "native_form_consent", "native_object_fields", "native_dropdown_fields", "native_large_text_fields", "quiz_short_answers", "quiz_multiple_choices", "quiz_written_answers", "native_survey_object_fields", "native_condition", "native_condition_group", "native_condition_stack", "native_condition_outcomes", "quiz_configuration", "quiz_results", "survey_configuration", "survey_rule_stack", "form", "form_css", "native_form_css", "native_form_schedule", "native_form_tracking", "native_form_embed", "native_order_confirmation", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "community_access", "community_courses", "community_event_room", "community_branding", "assessment", "meeting", "meeting_cohosts", "native_dynamic_meeting_location", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -122,18 +148,111 @@ def validate_job(job, base):
         if s['action']=='native_field_placement':
             from playwright_recipes.field_placement import validate
             validate(s)
+        if s['action']=='native_address_fields':
+            from playwright_recipes.forms_advanced import validate
+            validate(s)
+        if s['action']=='native_form_consent':
+            from playwright_recipes.forms_advanced import validate_consent
+            validate_consent(s)
+        if s['action'] in ('native_object_fields', 'native_survey_object_fields'):
+            if s['action'] == 'native_object_fields':
+                from playwright_recipes.forms_advanced import validate_object_fields as validate
+            else:
+                from playwright_recipes.survey_fields import validate
+            validate(s)
+            payload = s['payload']
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Native object fields belong to a different location or editor')
+        if s['action'] in ('native_dropdown_fields','native_large_text_fields','quiz_short_answers','quiz_multiple_choices','quiz_written_answers'):
+            if s['action']=='native_dropdown_fields':
+                from playwright_recipes.dropdown_fields import validate
+            elif s['action']=='native_large_text_fields':
+                from playwright_recipes.large_text_fields import validate
+            elif s['action']=='quiz_multiple_choices':
+                from playwright_recipes.quiz_choice_questions import validate
+            elif s['action']=='quiz_written_answers':
+                from playwright_recipes.quiz_written_questions import validate
+            else:
+                from playwright_recipes.quiz_text_questions import validate
+            validate(s)
+            if any(s['payload'][key]!=job[key] for key in ('location_id','location_name','start_url')):
+                raise Stop('Native question payload belongs to another editor or location')
+        if s['action']=='native_form_embed':
+            from playwright_recipes.form_embed import validate
+            plan = validate(s)
+            expected = '/v2/location/' + job['location_id'] + '/form-builder-v2/' + plan['integration']['form_id']
+            if urlparse(job['start_url']).path.rstrip('/') != expected:
+                raise Stop('Native embed job must bind its exact inventoried form editor')
+        if s['action']=='native_form_tracking':
+            from playwright_recipes.form_tracking import validate
+            validate(s)
         if s['action']=='native_form_schedule':
             from playwright_recipes.form_schedule import validate
+            validate(s)
+        if s['action']=='native_course_theme':
+            from playwright_recipes.course_theme import validate
+            payload = validate(s)
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Course theme payload belongs to a different location or manager')
+        if s['action']=='native_course_block_media':
+            from playwright_recipes.course_block_media import validate
+            payload = validate(s)
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Course block image payload belongs to another location or manager')
+        if s['action']=='native_condition_outcomes':
+            from playwright_recipes.form_condition_outcomes import validate
+            validate(s)
+        if s['action']=='native_condition_stack':
+            from playwright_recipes.form_condition_stack import validate
+            validate(s)
+        if s['action']=='native_course_theme_media':
+            from playwright_recipes.course_theme_media import validate
+            payload = validate(s)
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Course background payload belongs to another location or manager')
+        if s['action']=='native_course_blocks':
+            from playwright_recipes.course_blocks import validate
+            payload = validate(s)
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Course Custom Block payload belongs to another location or manager')
+        if s['action']=='native_condition_group':
+            from playwright_recipes.form_conditions import validate
             validate(s)
         if s['action'] in ('native_fields','native_condition'):
             from playwright_recipes.assessments import validate_fields, validate_condition
             (validate_fields if s['action']=='native_fields' else validate_condition)(s)
+        if s['action']=='native_order_confirmation':
+            from playwright_recipes.form_order_confirmation import validate
+            plan = validate(s)['payload']
+            if any(plan[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Order Confirmation payload belongs to another location or editor')
         if s['action']=='form_submission':
             from playwright_recipes.form_submission import validate
             validate(s)
-        if s['action'] in ('community_channels', 'community_details'):
+        if s['action'] == 'community_event_room':
+            if set(s) != {'id', 'action', 'payload'}:
+                raise Stop('Event portal context belongs to the live host, never a JSON job')
+            from playwright_recipes.community_event_meeting import validate_inputs
+            payload = validate_inputs(s.get('payload'))
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Community event payload belongs to another app location')
+        if s['action'] in ('community_channels', 'community_details', 'community_access', 'community_courses', 'community_branding'):
             from playwright_recipes.community_portal import validate_inputs, validate_details_inputs
-            validator = validate_details_inputs if s['action'] == 'community_details' else validate_inputs
+            if s['action'] == 'community_branding':
+                if set(s) != {'id', 'action', 'payload'}:
+                    raise Stop('Community Branding requires only its bound payload')
+                from playwright_recipes.community_branding import validate_inputs as validator
+            elif s['action'] == 'community_courses':
+                if set(s) != {'id', 'action', 'payload'}:
+                    raise Stop('Community course associations require a bound payload')
+                from playwright_recipes.community_courses import validate_inputs as validator
+            elif s['action'] == 'community_access':
+                if set(s) - {'id', 'action', 'payload'}:
+                    raise Stop('Community access authorizations belong to the live host, never the JSON job')
+                from playwright_recipes.community_access import validate_inputs as validate_access_inputs
+                validator = validate_access_inputs
+            else:
+                validator = validate_details_inputs if s['action'] == 'community_details' else validate_inputs
             payload = validator(s.get('payload'))
             if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
                 raise Stop('Community payload belongs to a different app location')
@@ -144,11 +263,16 @@ def validate_job(job, base):
         if s['action']=='native_form_css':
             from playwright_recipes.assessments import validate_css
             validate_css(s)
-        if s['action']=='survey_configuration':
+        if s['action'] in ('survey_configuration', 'survey_rule_stack'):
             from playwright_recipes.survey_ui import validate
             validate(s)
+            if (s['action'] == 'survey_rule_stack') != ('rules' in s):
+                raise Stop('Survey rule-stack action must match its exact input schema')
         if s['action']=='quiz_configuration':
             from playwright_recipes.quiz_ui import validate
+            validate(s)
+        if s['action']=='quiz_results':
+            from playwright_recipes.quiz_results import validate
             validate(s)
         if s['action']=='native_checkout_ui':
             from playwright_recipes.checkout_ui import validate_checkout_ui
@@ -176,6 +300,22 @@ def validate_job(job, base):
             except OrderComponentError as exc:
                 raise Stop(str(exc)) from None
             s['_input_dir'] = str(base.resolve())
+        if s['action']=='native_dynamic_meeting_location':
+            from playwright_recipes.meeting_dynamic import validate_inputs
+            if set(s) != {'id', 'action', 'payload'}:
+                raise Stop('Native dynamic room requires only its explicit bound payload')
+            payload = validate_inputs(s.get('payload'), require_fresh=False)
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Native dynamic room payload belongs to another location or editor')
+        if s['action']=='meeting_cohosts':
+            from playwright_recipes.meeting_cohosts import validate_write_inputs
+            if set(s) != {'id', 'action', 'payload'}:
+                raise Stop('Co-host writer requires only its explicit bound payload')
+            payload = validate_write_inputs(s.get('payload'))
+            if set(payload).intersection({'id', 'action', '_context'}):
+                raise Stop('Co-host payload must not override runner metadata')
+            if any(payload[key] != job[key] for key in ('location_id', 'location_name', 'start_url')):
+                raise Stop('Co-host payload belongs to a different location or origin')
         if s['action']=='meeting':
             s['_context'] = {k:job[k] for k in ('location_id','location_name','start_url')}
             from playwright_recipes.meetings import validate_room
@@ -289,16 +429,14 @@ def validate_job(job, base):
             if mutations and not any(option['action'].startswith('expect_') for option in s['steps'][mutations[-1]+1:]):
                 raise Stop('Recorded options require read-back after their last mutation')
         if s["action"] == "community":
-            if s.get("channels") or s.get("privacy") or s.get("branding"):
-                raise Stop("Community portal settings require a captured options profile in its authenticated portal context")
-            if not isinstance(s.get('description'),str) or len(s.get("description", "")) not in range(1, 151):
-                raise Stop("Community description must be 1–150 characters")
-            if not isinstance(s.get('slug'),str) or not re.fullmatch(r"[a-z0-9-]+", s.get("slug", "")):
-                raise Stop("Community slug is required")
-            if not s.get("allow_creation"):
-                raise Stop("Community creation leaves a retained group; allow_creation must be explicit")
-            if s.get("discovery", False):
-                raise Stop("Discovery opt-in is not part of this pilot")
+            if len(prepared['steps']) != 1:
+                raise Stop('Community creation must reconcile its native identity before any later operation')
+            context = {key:job[key] for key in ('location_id', 'location_name', 'start_url')}
+            if '_context' in s and s['_context'] != context:
+                raise Stop('Community creation context belongs to a different job')
+            s['_context'] = context
+            from playwright_recipes.community_creation import validate
+            validate(s)
     return prepared
 
 
@@ -400,7 +538,39 @@ def assert_tenant(page, job):
         return
     # Dashboard and lists prove their visible account name. The presence of an
     # unrelated iframe does not bypass this guard.
-    group = page.get_by_role('region', name='Workspace navigation', exact=True).get_by_role('group', name=job['location_name'], exact=True)
+    course = re.fullmatch(r'/v2/location/' + re.escape(job['location_id'])
+        + r'/memberships/courses/themes-overview/([A-Za-z0-9_-]+)/edit/template/([A-Za-z0-9_-]+)', path)
+    if course:
+        from urllib.parse import parse_qsl
+        query = parse_qsl(requested.query, keep_blank_values=True)
+        expected_query = [('view', 'manager'), ('sub_view', 'customize'), ('product_id', course[1])]
+        template_ids = ({job['template_id']} if 'template_id' in job else
+            {step.get('payload', {}).get('template_id') for step in job.get('steps', [])
+             if step.get('action') == 'native_course_theme'})
+        if (requested.path != '/v2/location/' + job['location_id']
+                + '/memberships/courses/course-creator-studio'
+                or sorted(query) != sorted(expected_query)
+                or template_ids != {course[2]} or urlparse(page.url).query or urlparse(page.url).fragment):
+            raise Stop('Course editor does not match the requested course/template identity')
+        page.get_by_placeholder('Template title', exact=True).wait_for(state='visible', timeout=45000)
+        if (page.get_by_placeholder('Template title', exact=True).count() != 1
+                or page.get_by_role('button', name='Activate Template', exact=True).count() != 1):
+            raise Stop('Course template editor did not hydrate its captured controls')
+        identity()
+        return
+    workspace = page.get_by_role('region', name='Workspace navigation', exact=True)
+    group = workspace.get_by_role('group', name=job['location_name'], exact=True)
+    switcher_manager = requested.path.endswith((
+        '/memberships/courses/course-creator-studio',
+        '/memberships/communities/community-groups'))
+    if switcher_manager or group.count() == 0:
+        switcher = workspace.get_by_role('button', name=re.compile(r'^Switch account from '))
+        switcher.wait_for(state='visible', timeout=45000)
+        if (switcher.count() != 1 or not switcher.is_visible()
+                or switcher.get_attribute('aria-label') != 'Switch account from ' + job['location_name']):
+            raise Stop('Workspace switcher belongs to another account')
+        identity()
+        return
     group.wait_for(state='visible', timeout=45000)
     identity()
 
@@ -1060,6 +1230,16 @@ def meeting(page, step):
     return create_room(page, inputs)
 
 
+def native_dynamic_meeting_location(page, step):
+    from playwright_recipes.meeting_dynamic import configure
+    return configure(page, step['payload'])
+
+
+def meeting_cohosts(page, step):
+    from playwright_recipes.meeting_cohosts import configure
+    return configure(page, step['payload'])
+
+
 def form_submission(page, step):
     from playwright_recipes.form_submission import configure
     return configure(page, step)
@@ -1075,9 +1255,54 @@ def native_form_schedule(page, step):
     return configure(page, step)
 
 
+def native_course_theme(page, step):
+    from playwright_recipes.course_theme import configure
+    return configure(page, step)
+
+
 def native_fields(page, step):
     from playwright_recipes.assessments import configure_fields
     return configure_fields(page, step)
+
+
+def native_address_fields(page, step):
+    from playwright_recipes.forms_advanced import configure
+    return configure(page, step)
+
+
+def native_form_consent(page, step):
+    from playwright_recipes.forms_advanced import configure_consent
+    return configure_consent(page, step)
+
+
+def native_large_text_fields(page, step):
+    from playwright_recipes.large_text_fields import configure
+    return configure(page,step)
+
+def native_dropdown_fields(page, step):
+    from playwright_recipes.dropdown_fields import configure
+    return configure(page,step)
+
+def quiz_short_answers(page, step):
+    from playwright_recipes.quiz_text_questions import configure
+    return configure(page,step)
+
+def quiz_multiple_choices(page, step):
+    from playwright_recipes.quiz_choice_questions import configure
+    return configure(page,step)
+
+def quiz_written_answers(page, step):
+    from playwright_recipes.quiz_written_questions import configure
+    return configure(page,step)
+
+def native_object_fields(page, step):
+    from playwright_recipes.forms_advanced import configure_object_fields
+    return configure_object_fields(page, step)
+
+
+def native_survey_object_fields(page, step):
+    from playwright_recipes.survey_fields import configure
+    return configure(page, step)
 
 
 def native_field_placement(page, step):
@@ -1092,6 +1317,55 @@ def native_condition(page, step):
 
 def quiz_configuration(page, step):
     from playwright_recipes.quiz_ui import configure
+    return configure(page, step)
+
+
+def native_order_confirmation(page, step):
+    from playwright_recipes.form_order_confirmation import configure
+    return configure(page, step)
+
+
+def native_form_embed(page, step):
+    from playwright_recipes.form_embed import configure
+    return configure(page, step)
+
+
+def native_form_tracking(page, step):
+    from playwright_recipes.form_tracking import configure
+    return configure(page, step)
+
+
+def native_course_block_media(page, step):
+    from playwright_recipes.course_block_media import configure
+    return configure(page, step)
+
+
+def native_condition_outcomes(page, step):
+    from playwright_recipes.form_condition_outcomes import configure
+    return configure(page,step)
+
+def native_condition_stack(page, step):
+    from playwright_recipes.form_condition_stack import configure
+    return configure(page, step)
+
+
+def native_course_theme_media(page, step):
+    from playwright_recipes.course_theme_media import configure
+    return configure(page, step)
+
+
+def native_course_blocks(page, step):
+    from playwright_recipes.course_blocks import configure
+    return configure(page, step)
+
+
+def native_condition_group(page, step):
+    from playwright_recipes.form_conditions import configure
+    return configure(page, step)
+
+
+def quiz_results(page, step):
+    from playwright_recipes.quiz_results import configure
     return configure(page, step)
 
 
@@ -1190,28 +1464,89 @@ def options(page, step):
 
 
 def community(page, step):
-    navigate(page, "Communities")
-    existing = page.locator(".group-footer").filter(has=page.get_by_text(step["name"], exact=True))
-    if not existing.count():
-        # General multi-page list enumeration is not proven. Only create after an
-        # authoritative empty-state, otherwise return for inventory reconciliation.
-        if not visible(page.get_by_text("You don't have a community yet", exact=True)):
-            raise Stop("Community list is not empty; reconcile active and inactive groups before creating")
-        click(page.get_by_role("button", name="Create Group", exact=True))
-        fill(page.get_by_role("textbox", name="Group Name", exact=True), step["name"])
-        fill(page.get_by_role("textbox", name="Group Slug", exact=True), step["slug"])
-        fill(page.get_by_role("textbox", name="Enter a brief description", exact=True), step["description"])
-        page.get_by_role("switch").set_checked(False)
-        click(page.get_by_role("button", name="Create Group", exact=True))
-        existing.wait_for(state="visible", timeout=45000)
-    if step.get("inactive", True):
-        status = existing.locator("#status_button")
-        if (status.inner_text()).strip() != "Inactive":
-            click(status)
-            click(page.get_by_text("Inactive", exact=True))
-            click(page.get_by_role("dialog").get_by_role("button", name="Confirm", exact=True))
-        wait_until(lambda: _text_equals(status, "Inactive"), "Group did not become inactive")
-    return {"status":"GROUP_RETAINED_INACTIVE" if step.get("inactive", True) else "GROUP_CREATED", "name":step["name"], "slug":step["slug"], "discovery":False, "channels":"NOT_CONFIGURED", "deleted":False}
+    from playwright_recipes.community_creation import configure
+    return configure(page, step)
+
+
+def community_branding(page, step, *, portal_context=None, evidence_root=None):
+    if portal_context is None or evidence_root is None:
+        raise Stop('Community Branding requires a live same-session portal context')
+    from playwright_recipes.community_branding import run_branding, validate_inputs, configuration_hash, SLOTS
+    from playwright_recipes.community_portal import _portal
+    plan = validate_inputs(step['payload'])
+    result = run_branding(page, plan, evidence_root, portal_context=portal_context)
+    if not isinstance(result, dict):
+        raise Stop('Community Branding returned no bound outcome')
+    previews = result.get('preview_sha256')
+    if (not isinstance(previews, dict) or set(previews) != set(SLOTS)
+            or any(value is not None and (not isinstance(value, str)
+                or not re.fullmatch(r'[a-f0-9]{64}', value)) for value in previews.values())):
+        raise Stop('Community Branding preview evidence is malformed')
+    changed = {asset['slot'] for asset in plan['branding']['images']}
+    for slot, previous in plan['branding']['expected'].items():
+        before = sha(previous) if previous is not None else None
+        if (slot in changed and (previews[slot] is None or previews[slot] == before)
+                or slot not in changed and previews[slot] != before):
+            raise Stop('Community Branding preview changes do not match requested slots')
+    _, slug = _portal(plan['portal_url'])
+    expected = {'status':'NEEDS_VERIFICATION', 'location_id':plan['location_id'],
+        'objects':[{'kind':'community','id':slug}], 'configuration_sha256':configuration_hash(plan),
+        'controls_verified':True, 'independent_readback':'VERIFIED',
+        'branding_slots':[asset['slot'] for asset in plan['branding']['images']],
+        'preview_sha256':previews,
+        'source_sha256':{asset['slot']:asset['sha256'] for asset in plan['branding']['images']},
+        'behavior_verified':False, 'functional_verified':False, 'verification_required':True,
+        'group_activation_attempted':False, 'communication_attempted':False,
+        'identity_source':'same_session_authenticated_read_and_modern_branding_previews'}
+    if (set(result) - set(expected) not in (set(), {'replayed'})
+            or 'replayed' in result and result['replayed'] is not True
+            or any(result.get(key) != value or type(result.get(key)) is not type(value)
+                   for key,value in expected.items())):
+        raise Stop('Community Branding result does not bind its exact configuration and pending proof')
+    return {**expected, **({'replayed':True} if result.get('replayed') is True else {})}
+
+
+def community_courses(page, step, *, portal_context=None, evidence_root=None):
+    if portal_context is None or evidence_root is None:
+        raise Stop('Community course associations require the live same-session portal context')
+    from playwright_recipes.community_courses import run_courses, validate_inputs, _receipt
+    plan = validate_inputs(step['payload'])
+    result = run_courses(page, plan, evidence_root, portal_context=portal_context)
+    if (not isinstance(result, dict)
+            or type(result.get('reused')) is not bool or type(result.get('share_post_skipped')) is not bool
+            or result['reused'] and result['share_post_skipped']):
+        raise Stop('Community course outcome has invalid reuse/communication proof')
+    expected = _receipt(plan, reused=result['reused'], skipped=result['share_post_skipped'])
+    replayed = result.get('replayed')
+    if (set(result) - set(expected) not in (set(), {'replayed'})
+            or 'replayed' in result and replayed is not True
+            or any(result.get(key) != value or type(result.get(key)) is not type(value)
+                   for key,value in expected.items())):
+        raise Stop('Community course outcome does not bind its exact requested IDs and proof')
+    return {**expected, **({'replayed':True} if replayed is True else {})}
+
+
+
+def community_event_room(page, step, *, portal_context=None, evidence_root=None):
+    """Keep immediate native room creation inside its exact portal journal/context."""
+    if portal_context is None or evidence_root is None:
+        raise Stop('Community event room requires the live same-session event portal context')
+    from playwright_recipes.community_event_meeting import run_event, validate_inputs, _receipt, _room_id
+    plan = validate_inputs(step['payload'])
+    result = run_event(page, plan, evidence_root, portal_context=portal_context)
+    if (not isinstance(result, dict) or not isinstance(result.get('room_id'), str)
+            or not re.fullmatch(r'[a-f0-9]{24}', result['room_id'])):
+        raise Stop('Community event outcome has an invalid native room identity')
+    changed = plan['expected']['form']['location_type'] != 'Live Room'
+    if not changed and result['room_id'] != _room_id(plan['expected']['form']['location_url'], plan):
+        raise Stop('Community event outcome changed the requested reused room identity')
+    expected = _receipt(plan, result['room_id'], changed=changed)
+    if (set(result) - set(expected) not in (set(), {'replayed'})
+            or 'replayed' in result and result['replayed'] is not True
+            or any(result.get(key) != value or type(result.get(key)) is not type(value)
+                   for key,value in expected.items())):
+        raise Stop('Community event outcome does not bind exact IDs/configuration/pending proof')
+    return {**expected, **({'replayed':True} if result.get('replayed') is True else {})}
 
 
 def community_channels(page, step, *, portal_context=None, evidence_root=None):
@@ -1232,14 +1567,32 @@ def community_details(page, step, *, portal_context=None, evidence_root=None):
                        portal_context=portal_context)
 
 
+def community_access(page, step, *, portal_context=None, evidence_root=None, access_authorization=None):
+    """Keep access-expansion approval as an opaque live host capability."""
+    if portal_context is None or evidence_root is None:
+        raise Stop('Community access requires the authenticated portal host context')
+    from playwright_recipes.community_access import run_access
+    return run_access(page, step['payload'], evidence_root,
+                      portal_context=portal_context, access_authorization=access_authorization)
+
+
 def _text_equals(locator, text):
     return (locator.inner_text()).strip() == text
+
+
+_PORTAL_ACTIONS = frozenset(('community_channels', 'community_details', 'community_access',
+    'community_courses', 'community_branding', 'community_event_room'))
+
+
+def _reject_portal_editor_jobs(job):
+    if any(step.get('action') in _PORTAL_ACTIONS for step in job.get('steps', [])):
+        raise Stop('Community portal jobs require caller-owned page/context through host.run_recipe')
 
 
 _EDITOR_FOREIGN_JOURNALS = (
     'provider-state.json', 'community-portal-state.json', 'auth-stop.json',
     'delivery-state.json', 'calendar-delivery-state.json',
-    'community-details-state.json',
+    'community-details-state.json', 'community-access-state.json', 'community-event-state.json',
 )
 
 
@@ -1255,6 +1608,7 @@ def _reject_foreign_editor_journals(root):
 
 
 def run_on_page(page, job, evidence_root):
+    _reject_portal_editor_jobs(job)
     root = Path(evidence_root).resolve()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     from playwright_recipes.evidence_lease import open_lease
@@ -1292,6 +1646,7 @@ def _run_on_page(page, job, evidence_root):
     explicitly reconciled job. No broad browser-state or secret-bearing trace
     is written; only minimal object identifiers and named outcomes.
     """
+    _reject_portal_editor_jobs(job)
     root = Path(evidence_root).resolve()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(root, 0o700)
@@ -1307,7 +1662,7 @@ def _run_on_page(page, job, evidence_root):
     results = []
     fresh_container = None
     state = {"fingerprint":fingerprint, "location_id":job["location_id"], "status":"RUNNING", "results":results}
-    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_condition":native_condition, "quiz_configuration":quiz_configuration, "survey_configuration":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "native_form_schedule":native_form_schedule, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"options":options}
+    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_course_theme":native_course_theme, "native_course_blocks":native_course_blocks, "native_course_theme_media":native_course_theme_media, "native_course_block_media":native_course_block_media, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_address_fields":native_address_fields, "native_form_consent":native_form_consent, "native_object_fields":native_object_fields, "native_dropdown_fields":native_dropdown_fields, "native_large_text_fields":native_large_text_fields, "quiz_short_answers":quiz_short_answers, "quiz_multiple_choices":quiz_multiple_choices, "quiz_written_answers":quiz_written_answers, "native_survey_object_fields":native_survey_object_fields, "native_condition":native_condition, "native_condition_group":native_condition_group, "native_condition_stack":native_condition_stack, "native_condition_outcomes":native_condition_outcomes, "quiz_configuration":quiz_configuration, "quiz_results":quiz_results, "survey_configuration":survey_configuration, "survey_rule_stack":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "native_form_schedule":native_form_schedule, "native_form_tracking":native_form_tracking, "native_form_embed":native_form_embed, "native_order_confirmation":native_order_confirmation, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"meeting_cohosts":meeting_cohosts,"native_dynamic_meeting_location":native_dynamic_meeting_location,"options":options}
     for step in job["steps"]:
         assert_tenant(page, job)
         state["current_step"] = step["id"]
@@ -1334,21 +1689,40 @@ def _run_on_page(page, job, evidence_root):
                     else None)
             if not isinstance(result, dict):
                 raise Stop('Handler returned no structured outcome')
+            if step['action'] in ('native_dropdown_fields','native_large_text_fields',
+                    'quiz_short_answers','quiz_multiple_choices','quiz_written_answers',
+                    'native_condition_stack','native_condition_outcomes',
+                    'native_order_confirmation','native_course_block_media') or (
+                    step['action'] == 'community' and result.get('status') in (
+                        'GROUP_CREATED_SLUG_IDENTIFIED','GROUP_REUSED_IDENTITY_CONFIRMED')):
+                # Fresh execution and replay require the same complete, bound
+                # proof. A familiar status alone cannot mark a write finished.
+                from playwright_recipes.editor_replay import _result
+                result = _result(step, result, job)
             status = result.get('status')
             completed = {
                 'RENDERED', 'SEO_RENDERED', 'COMPONENT_SAVED', 'SAVED_AND_REOPENED',
                 'FORM_CSS_RENDERED', 'NATIVE_FORM_CSS_SAVED_AND_REOPENED', 'FORM_SETTINGS_PERSISTED',
-                'FORM_SCHEDULE_SAVED_AND_REOPENED', 'ASSESSMENT_REUSED',
+                'FORM_SCHEDULE_SAVED_AND_REOPENED', 'COURSE_THEME_SAVED_AND_REOPENED',
+                'ADDRESS_FIELDS_SAVED_AND_REOPENED', 'CONSENT_SAVED_AND_REOPENED',
+                'OBJECT_FIELDS_SAVED_AND_REOPENED', 'SURVEY_OBJECT_FIELDS_SAVED_AND_REOPENED', 'ASSESSMENT_REUSED',
                 'ASSESSMENT_SAVE_SUBMITTED', 'ROOM_SAVE_SUBMITTED',
-                'RECORDED_OPTIONS_EXECUTED', 'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED',
+                'DROPDOWN_FIELDS_SAVED_AND_REOPENED', 'LARGETEXT_FIELDS_SAVED_AND_REOPENED', 'QUIZ_SHORT_ANSWERS_SAVED_AND_REOPENED', 'QUIZ_MULTIPLE_CHOICES_SAVED_AND_REOPENED', 'QUIZ_WRITTEN_ANSWERS_SAVED_AND_REOPENED', 'RECORDED_OPTIONS_EXECUTED', 'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED', 'GROUP_CREATED_PENDING_IDENTITY', 'GROUP_CREATED_SLUG_IDENTIFIED', 'GROUP_REUSED_IDENTITY_CONFIRMED',
                 'FIELD_PROPERTIES_SAVED_AND_REOPENED', 'BUILTIN_FIELDS_SAVED_AND_REOPENED',
                 'BUILTIN_FIELDS_REUSED_AND_REOPENED', 'CONDITION_SAVE_SUBMITTED', 'CONDITION_SAVED_AND_REOPENED',
-                'QUIZ_CONFIGURATION_SAVED_AND_REOPENED', 'CONDITION_ALREADY_PRESENT',
+                'QUIZ_CONFIGURATION_SAVED_AND_REOPENED', 'QUIZ_RESULTS_SAVED_AND_REOPENED', 'CONDITION_ALREADY_PRESENT',
                 'FORM_SUBMISSION_SAVED_AND_REOPENED', 'NOTIFICATION_SETTINGS_SAVED_AND_REOPENED',
-                'SURVEY_RULE_SAVED_AND_REOPENED', 'SURVEY_RULE_ALREADY_PRESENT',
+                'SURVEY_RULE_SAVED_AND_REOPENED', 'SURVEY_RULE_ALREADY_PRESENT', 'SURVEY_RULE_STACK_SAVED_AND_REOPENED',
                 'NATIVE_CONFIGURATION_READBACK_VERIFIED', 'NATIVE_CHECKOUT_UI_READBACK_VERIFIED', 'ROOM_PERSISTED',
                 'ROOM_CREATED_AND_VERIFIED', 'ROOM_REUSED_AND_VERIFIED',
                 'ROOM_CREATED_VERIFIED', 'ROOM_REUSED_VERIFIED', 'ROOM_UPDATED_VERIFIED',
+                'COHOSTS_SAVED_AND_REOPENED', 'COHOSTS_REUSED_AND_REOPENED',
+                'CONDITION_GROUP_SAVED_AND_REOPENED', 'CONDITION_GROUP_REUSED_AND_REOPENED',
+                'COURSE_BLOCKS_SAVED_AND_REOPENED', 'FORM_TRACKING_SAVED_AND_REOPENED',
+                'COURSE_THEME_MEDIA_SAVED_AND_REOPENED', 'COURSE_BLOCK_MEDIA_SAVED_AND_REOPENED',
+                'CONDITION_STACK_SAVED_AND_REOPENED', 'CONDITION_STACK_REUSED_AND_REOPENED', 'CONDITION_OUTCOMES_SAVED_AND_REOPENED', 'CONDITION_OUTCOMES_REUSED_AND_REOPENED', 'FORM_EMBED_EXPORTED_AND_REREAD',
+                'ORDER_CONFIRMATION_SAVED_AND_REOPENED', 'ORDER_CONFIRMATION_REUSED_AND_REOPENED',
+                'DYNAMIC_MEETING_LOCATION_SAVED_AND_REOPENED', 'DYNAMIC_MEETING_LOCATION_REUSED_AND_REOPENED',
             }
             statusless = {'navigate': 'area', 'container': 'container_url', 'page': 'editor_url'}
             if status not in completed and not (
@@ -1363,6 +1737,9 @@ def _run_on_page(page, job, evidence_root):
             # Never persist raw Playwright exception text: it may quote input values.
             state.update(status="NEEDS_BROWSER_RECOVERY", error_type=type(exc).__name__, failed_step=step["id"])
             secure_json(state_path, state)
+            from ghl_auth import AuthBridgeError
+            if isinstance(exc, AuthBridgeError):
+                raise
             raise Stop("Step " + step["id"] + " needs browser recovery; no mutation was retried") from None
     pending=[r['id'] for r in results if
              r['result'].get('checkout_ready') is False
@@ -1380,6 +1757,7 @@ def _run_on_page(page, job, evidence_root):
 
 
 def execute(job, root):
+    _reject_portal_editor_jobs(job)
     # Refuse a retained foreign intent before opening/seeding a browser. The
     # locked run_on_page entry rechecks this after authentication as well.
     _reject_foreign_editor_journals(Path(root).resolve())
@@ -1388,8 +1766,6 @@ def execute(job, root):
     if journal_present(state_path):
         from playwright_recipes.editor_replay import completed_editor_replay
         completed_editor_replay(state_path, job, sha(json.dumps(job, sort_keys=True)))
-    if any(step.get('action') in ('community_channels', 'community_details') for step in job.get('steps', [])):
-        raise Stop('Community portal jobs require caller-owned page/context through host.run_recipe')
     endpoint = os.environ.get("GHL_MANAGED_CDP_URL", "")
     if endpoint and 'auth_activation' in job:
         raise Stop('Auth activation requires the fresh owned managed context, not an attached browser')
