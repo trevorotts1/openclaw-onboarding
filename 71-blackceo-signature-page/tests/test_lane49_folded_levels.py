@@ -95,11 +95,9 @@ class BuilderStampsFoldedLevelsTests(unittest.TestCase):
     def test_the_real_83_seven_figure_preneur_record_yields_three_levels(self):
         # the record 83 to_launch_record builds from its seven-figure-preneur fixture, built in a child
         # process so 83's modules never touch this test's import path
-        # (with 83's TEST-ONLY GHL read-back transport installed: the fixture carries TEST-ONLY references)
         root = HERE.parents[1] / "83-black-friday-launcher"
         code = ("import json,sys;from pathlib import Path;sys.path.insert(0,'.');"
                 "from launcher_core import intake,route,launch_bridge as lb;"
-                "sys.path.insert(0,'fixtures');import test_only_readback;test_only_readback.install();"
                 "n=intake.validate(json.loads(Path('fixtures/seven-figure-preneur/intake.json').read_text()));"
                 "print(json.dumps(lb.to_launch_record(n,route.compile_route(n),{'image_provider':'kie','design_style':'B'})))")
         proc = subprocess.run([sys.executable, "-I", "-c", code], cwd=root, text=True, capture_output=True)

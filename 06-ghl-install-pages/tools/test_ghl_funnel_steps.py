@@ -17,26 +17,6 @@ from launcher_core import intake as launch_intake, route  # noqa: E402
 LOC = "TEST-LOCATION"
 
 
-def _test_only_readback():
-    """TEST-ONLY read-back transport from the 83 fixtures (read-only reuse): intake.validate
-    verifies the entitlement attestation through it instead of a live GHL read."""
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "_s83_test_only_readback", os.path.join(LAUNCHER, "fixtures", "test_only_readback.py"))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-@pytest.fixture(autouse=True)
-def _offline_entitlement_readback():
-    from launcher_core import entitlement
-    previous = entitlement._transport
-    _test_only_readback().install()
-    yield
-    entitlement.set_transport(previous)
-
-
 def _intake():
     with open(os.path.join(LAUNCHER, "fixtures", "elevation", "intake.json"), encoding="utf-8") as f:
         return launch_intake.validate(json.load(f))
