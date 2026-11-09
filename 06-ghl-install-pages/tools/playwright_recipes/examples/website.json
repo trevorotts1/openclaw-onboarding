@@ -1,0 +1,21 @@
+{
+  "location_id": "REPLACE_LOCATION_ID",
+  "location_name": "REPLACE_VISIBLE_ACCOUNT_NAME",
+  "start_url": "https://app.convertandflow.com/v2/location/REPLACE_LOCATION_ID/dashboard",
+  "container_name": "ZHC Approved Example Website",
+  "page_name": "ZHC Approved Example Page",
+  "path": "/approved-example",
+  "file": "page.html",
+  "marker": "Approved website example",
+  "seo": {
+    "title": "Approved Website Example",
+    "description": "Replace this example with the approved description for this page.",
+    "keywords": ["coaching website", "business community", "approved code"],
+    "page_copy": "Replace this with approved code for your coaching website and business community.",
+    "keyword_source": "REPLACE_WITH_RESEARCH_RECEIPT",
+    "author": "REPLACE_FOUNDER_NAME",
+    "author_source": "REPLACE_VERIFIED_FOUNDER_SOURCE",
+    "canonical": "https://example.com/approved-example",
+    "canonical_host": "example.com"
+  }
+}

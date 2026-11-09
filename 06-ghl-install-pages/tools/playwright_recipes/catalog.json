@@ -1,0 +1,241 @@
+{
+  "schema": "skill6-playwright-recipes/1",
+  "captured_at": "2026-11-08",
+  "proof_definition": {
+    "LIVE_PATH": "The sequence was exercised in the connected browser, not by the final standalone Python process.",
+    "CAPTURED": "Live controls inspected; final save or complete configuration remains unverified.",
+    "PROFILE": "The executor exists; a captured options profile supplies this operation's precise controls.",
+    "API_FIRST": "Use a per-location API capability receipt before browser fallback."
+  },
+  "recipes": {
+    "funnels.create": {
+      "name": "01_create_funnel",
+      "action": "container",
+      "implemented": true,
+      "proof": "LIVE_PATH",
+      "use": "Create or reuse a named funnel"
+    },
+    "funnels.add_page": {
+      "name": "02_add_funnel_page",
+      "action": "page",
+      "implemented": true,
+      "proof": "LIVE_PATH",
+      "use": "Add a page and URL path to a funnel"
+    },
+    "websites.create": {
+      "name": "03_create_website",
+      "action": "container",
+      "implemented": true,
+      "proof": "LIVE_PATH",
+      "use": "Create or reuse a website container"
+    },
+    "websites.add_page": {
+      "name": "04_add_website_page",
+      "action": "page",
+      "implemented": true,
+      "proof": "LIVE_PATH",
+      "use": "Add a website page"
+    },
+    "pages.install_code": {
+      "name": "05_install_external_code",
+      "action": "html",
+      "implemented": true,
+      "proof": "LIVE_PATH",
+      "use": "Install approved AI/Skill 49/83 code; convert full HTML using the shared fragment tool"
+    },
+    "pages.install_embed": {
+      "name": "06_install_hosted_embed",
+      "action": "html",
+      "implemented": true,
+      "proof": "PROFILE",
+      "use": "Insert a supplied Vercel/app embed fragment after the existing embeddability gate"
+    },
+    "checkout.wrap_native": {
+      "name": "07_wrap_native_checkout",
+      "action": "checkout",
+      "implemented": true,
+      "proof": "LIVE_PATH",
+      "use": "Install native order form between independent custom code sections; one/two-step UI"
+    },
+    "checkout.one_click_upsell": {
+      "name": "08_configure_native_upsell",
+      "action": "options",
+      "implemented": true,
+      "proof": "PROFILE",
+      "use": "Replay a captured native purchase-action binding; requires Skill 44/79 products/prices and a prior-payment contract"
+    },
+    "funnels.split_variant": {
+      "name": "09_create_split_variant",
+      "action": "options",
+      "implemented": true,
+      "proof": "PROFILE",
+      "use": "Replay native Create variation and allocation controls; preserve exact source/variant IDs"
+    },
+    "pages.seo": {
+      "name": "10_fill_page_seo",
+      "action": "seo",
+      "implemented": true,
+      "proof": "LIVE_PATH",
+      "use": "Title, description, researched keywords, founder author, canonical and language; verify rendered metadata"
+    },
+    "forms.create": {
+      "name": "11_create_form",
+      "action": "form",
+      "implemented": true,
+      "proof": "LIVE_PATH",
+      "use": "Create/reuse native form; require standard fields; custom-field dependencies remain owned by Skill 44"
+    },
+    "forms.configure": {
+      "name": "12_configure_form_options",
+      "action": "native_field_placement_or_fields_or_options",
+      "implemented": true,
+      "proof": "PROFILE",
+      "use": "Captured native built-in placement by query identity plus standard-field properties with independent reopen; custom schemas and advanced choices remain capture/dependency gated"
+    },
+    "forms.style": {
+      "name": "13_polish_form_css",
+      "action": "form_css",
+      "implemented": true,
+      "proof": "LIVE_PATH",
+      "use": "Rounded native inputs/buttons with preserved client CSS, inside the form iframe"
+    },
+    "surveys.create": {
+      "name": "14_create_survey",
+      "action": "assessment",
+      "implemented": true,
+      "proof": "LIVE_PATH",
+      "use": "Create/reuse native survey; standard field drag and page structure; advanced branches via captured options"
+    },
+    "quizzes.create": {
+      "name": "15_create_marketing_quiz",
+      "action": "assessment",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Actual quiz-builder-app, separate from survey and course lesson quizzes; scoring/result profiles required"
+    },
+    "communities.create": {
+      "name": "16_create_community",
+      "action": "community",
+      "implemented": true,
+      "proof": "LIVE_PATH",
+      "use": "Create group and retain it inactive for a fixture; activation only from explicit input"
+    },
+    "communities.configure": {
+      "name": "17_configure_community",
+      "action": "options",
+      "implemented": true,
+      "proof": "PROFILE",
+      "use": "Native channels and authored group-description settings through an authenticated caller-owned portal context; same-session identity capture required. Inactive groups cannot create channels. Other privacy/branding/course settings need profiles.",
+      "specific_handlers": [
+        "community_channels",
+        "community_details"
+      ],
+      "live_identity_status": "CAPTURE_REQUIRED"
+    },
+    "courses.create": {
+      "name": "18_create_course",
+      "action": "api",
+      "implemented": true,
+      "proof": "API_FIRST",
+      "use": "Courses v3 creation with modules/lessons/quizzes, guarded Skill44 transport and readback; live client run pending"
+    },
+    "courses.configure_ui": {
+      "name": "19_configure_course_ui",
+      "action": "options",
+      "implemented": true,
+      "proof": "PROFILE",
+      "use": "Recorded UI-only course controls; never replace documented API operations"
+    },
+    "meetings.setup": {
+      "name": "20_setup_meeting_room",
+      "action": "meeting",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Personal room details and explicit security choices; never start a meeting or request mic/camera"
+    },
+    "meetings.integrate": {
+      "name": "21_integrate_meeting_room",
+      "action": "options",
+      "implemented": true,
+      "proof": "PROFILE",
+      "use": "Recorded calendar/community/course event integration using the verified room link"
+    },
+    "forms.settings": {
+      "name": "22_configure_form_settings",
+      "action": "form_settings",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Seven explicit native form settings, row/count guards and editor reload read-back; scheduling excluded; Python live run pending"
+    },
+    "courses.update": {
+      "name": "23_update_course",
+      "action": "api",
+      "implemented": true,
+      "proof": "API_FIRST",
+      "use": "Documented course styling/content settings through Courses v3"
+    },
+    "courses.lesson_quiz.create": {
+      "name": "24_create_lesson_quiz",
+      "action": "api",
+      "implemented": true,
+      "proof": "API_FIRST",
+      "use": "Create quiz and questions on an existing course lesson"
+    },
+    "forms.conditions": {
+      "name": "25_configure_form_condition",
+      "action": "native_condition",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Captured Hide Field rule; persisted behavior verification pending"
+    },
+    "checkout.configure_native": {
+      "name": "26_configure_native_checkout",
+      "action": "native_checkout",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Native product/price/bump/action adapter with exact capture map; live/payment proof pending"
+    },
+    "meetings.update": {
+      "name": "27_update_meeting_room",
+      "action": "meeting",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Native room identity guard, Save changes and independent readback"
+    },
+    "quizzes.configure": {
+      "name": "28_configure_quiz_scores_and_tiers",
+      "action": "quiz_configuration",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Native categories, existing choice scores and three result tiers; final Python live run pending"
+    },
+    "surveys.configure": {
+      "name": "29_configure_survey_branch",
+      "action": "survey_configuration",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Native forward Jump To with slide/source identity guards and saved-card readback"
+    },
+    "checkout.configure_ui": {
+      "name": "30_configure_native_checkout_ui",
+      "action": "native_checkout_ui",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Exact native order-form mode, Products switches, Contact fields, Checkout options, 37 Content textboxes and Inputs appearance/labels; save/reopen/readback, payment verification separate"
+    },
+    "forms.submission": {
+      "name": "31_configure_form_submission",
+      "action": "form_submission",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Caller-approved plain submit message or HTTPS redirect; native mode/value save and exact editor readback; conditional precedence acknowledgment required; Order Confirmation stays on payment rail"
+    },
+    "forms.notifications": {
+      "name": "32_configure_form_notifications",
+      "action": "form_notifications",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Configure native email notification and auto responder, replace recipients only after inventory handshake, independently reopen settings; event/mail delivery remains unverified"
+    }
+  }
+}

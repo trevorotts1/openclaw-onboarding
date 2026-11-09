@@ -1,0 +1,54 @@
+name: Skill 6 recipe portability
+
+on:
+  pull_request:
+    paths:
+      - '06-ghl-install-pages/tools/playwright_recipes/**'
+      - '06-ghl-install-pages/tools/browser_manager.py'
+      - '06-ghl-install-pages/tools/ghl_auth.py'
+      - '06-ghl-install-pages/tools/ghl_auth_activation.py'
+      - '06-ghl-install-pages/tests/*auth*.py'
+      - '.github/workflows/skill6-recipes-portability.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-fixture:
+    name: Python and Chromium fixture (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      SKILL6_BROWSER_FIXTURE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Python runtime dependencies
+        run: python -m pip install playwright requests pytest
+      - name: Install Chromium and Linux runtime libraries
+        if: runner.os == 'Linux'
+        run: python -m playwright install --with-deps chromium
+      - name: Install Chromium on Mac
+        if: runner.os == 'macOS'
+        run: python -m playwright install chromium
+      - name: Run offline contracts and mandatory real Chromium fixtures
+        run: python -m unittest discover -s 06-ghl-install-pages/tools/playwright_recipes -p 'test_*.py' -v
+      - name: Preserve canonical authentication and token-only contracts
+        run: >-
+          python -m pytest -q
+          06-ghl-install-pages/tests/test_wf_b_ghl_auth_bridge_b05_b19.py
+          06-ghl-install-pages/tests/test_ghl_auth_orchestrator.py
+          06-ghl-install-pages/tests/test_inject_ghl_auth_no_reload.py
+          06-ghl-install-pages/tests/test_ghl_auth_fallback_gates.py
+          06-ghl-install-pages/tests/test_ghl_auth_fallback_happy_and_selfheal.py
+          06-ghl-install-pages/tests/test_guard_ghl_auth_fallback.py
