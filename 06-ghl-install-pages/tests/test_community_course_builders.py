@@ -90,8 +90,17 @@ def test_selector_map_has_no_locked_inarea_targets_yet():
     create-then-clean run. Guard: every LOCKed target carries a real anchor, and the ONLY
     remaining capture-pending in-area targets are the documented not-yet-captured set."""
     sels = cb.load_selectors()
-    pending = {"privacy_switch", "product_type", "lesson_body_editor",
-               "settings_nav", "status_toggle"}
+    # Phase B's documented not-yet-captured set (community create flow + course wizard).
+    pending_phase_b = {"privacy_switch", "product_type", "lesson_body_editor",
+                       "settings_nav", "status_toggle"}
+    # WF09 hybrid surfaces added AFTER Phase B: deliberately capture-pending until a
+    # live capture locks them (D8 — the live walk STOP-and-reports; nothing is faked).
+    wf09_surfaces = {"learning", "update_group", "access", "activate", "members", "content"}
+    pending_wf09 = {
+        "learning_tab", "association_rows", "add_existing_course_control",
+        "course_picker_search", "course_option", "policy_select", "policy_option",
+        "save_association", "associations_reload", "detach_confirm",
+    }
     locked_count = 0
     for top in ("community", "course"):
         for surface, targets in sels[top].items():
@@ -104,8 +113,16 @@ def test_selector_map_has_no_locked_inarea_targets_yet():
                     assert t.get("anchor"), f"{top}.{surface}.{tname} locked but has no anchor"
                     locked_count += 1
                 elif t["status"] == "capture-pending":
-                    assert tname in pending, (
-                        f"{top}.{surface}.{tname} unexpectedly capture-pending (Phase B LOCKed it?)")
+                    if surface in wf09_surfaces:
+                        assert tname in pending_wf09, (
+                            f"{top}.{surface}.{tname} is pending but not in the documented "
+                            "WF09 pending-by-design set")
+                        assert t.get("note"), (
+                            f"{top}.{surface}.{tname} pending without an explanatory note")
+                    else:
+                        assert tname in pending_phase_b, (
+                            f"{top}.{surface}.{tname} unexpectedly capture-pending "
+                            "(Phase B LOCKed it?)")
     assert locked_count >= 20, f"expected the Phase B LOCKed in-area set, got {locked_count}"
 
 

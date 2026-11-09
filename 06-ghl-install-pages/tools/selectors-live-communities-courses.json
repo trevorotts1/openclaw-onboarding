@@ -220,6 +220,94 @@
         "conf": 9.0
       }
     },
+    "learning": {
+      "_flow": "Group portal -> Learning tab -> enumerate existing associations -> Add existing course (NEVER 'Create new course') -> approved policy -> Save -> reload -> verify course+policy. Detach removes ONLY the relationship row; the course is never deleted.",
+      "_capture_status": "pending_live_capture",
+      "_capture_note": "WF09 build (2026-11-08): these Learning surfaces were NOT live-captured in this lane. Every target stays capture-pending so the live walk STOP-and-reports (D8). Capture on the authorized operator test group, then flip to locked with the real anchor + conf.",
+      "learning_tab": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Learning')",
+        "fallbacks": ["portal group tab row: Discussion | Learning | Events | ..."],
+        "conf": 0,
+        "note": "The group portal tabs were observed in Phase B (Discussion/Learning/Events/Leaderboard/Members/About) but the Learning tab control itself was not locked."
+      },
+      "association_rows": {
+        "status": "capture-pending",
+        "kind": "scoped-native",
+        "anchor": "association rows in the group Learning tab (read their identity + policy text)",
+        "fallbacks": ["ghl_learning_association.read_associations (_ROWS_JS)"],
+        "conf": 0,
+        "note": "Required read anchor: enumeration MUST precede any attach so the operation is idempotent."
+      },
+      "add_existing_course_control": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: 'Add Course' })",
+        "fallbacks": ["'Attach course' / 'Add existing course' control in the Learning tab"],
+        "conf": 0,
+        "note": "MUST open an EXISTING-course picker; the operator refuses any create-new-course control."
+      },
+      "course_picker_search": {
+        "status": "capture-pending",
+        "kind": "placeholder",
+        "required": false,
+        "anchor": "getByPlaceholder('Search courses')",
+        "fallbacks": ["picker search textbox"],
+        "conf": 0,
+        "note": "Optional isolation aid; the identity match is the course name/id, not the search text."
+      },
+      "course_option": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('<COURSE NAME>')",
+        "fallbacks": ["picker row matching the resolved course identity (name + id)"],
+        "conf": 0,
+        "note": "Ambiguity must be resolved before clicking (spec §9.4 step 5)."
+      },
+      "policy_select": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('Access')",
+        "fallbacks": ["access-policy select in the association editor"],
+        "conf": 0,
+        "note": "Set ONLY the approved policy; never flip all-members <-> paid implicitly."
+      },
+      "policy_option": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "anchor": "getByText('<APPROVED POLICY LABEL>')",
+        "fallbacks": ["policy option matching desired_access.policy_label"],
+        "conf": 0,
+        "note": "Option label is plan-supplied (desired_access.policy_label); capture confirms the control shape, never the value."
+      },
+      "save_association": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "exec": "native",
+        "anchor": "getByRole('button', { name: 'Save' })",
+        "fallbacks": ["dialog Save / Create association button"],
+        "conf": 0,
+        "note": "Naive-UI dialogs need the native DOM click (exec:native) like the group/channel submits."
+      },
+      "associations_reload": {
+        "status": "capture-pending",
+        "kind": "get_text",
+        "required": false,
+        "anchor": "getByText('Learning')",
+        "fallbacks": ["reload the relationship view (navigate/reopen the Learning tab)"],
+        "conf": 0,
+        "note": "Reload is required for the verify step; optional only because a caller may re-read in place."
+      },
+      "detach_confirm": {
+        "status": "capture-pending",
+        "kind": "role_name",
+        "anchor": "getByRole('button', { name: 'Remove' })",
+        "fallbacks": ["confirm control in the detach dialog"],
+        "conf": 0,
+        "note": "Detach removes the RELATIONSHIP only; it must never call a course delete."
+      }
+    },
     "deactivate": {
       "_flow": "scoped-native: navigate communities list -> find the created group's CARD by name/slug -> click its Status 'Active' dropdown (card-scoped) -> click 'Inactive' option -> 'Deactivate Group' confirm dialog -> Confirm.",
       "status_dropdown": {
