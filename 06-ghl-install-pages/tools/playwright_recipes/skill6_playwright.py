@@ -141,7 +141,7 @@ def validate_job(job, base):
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_course_theme", "native_course_blocks", "native_course_text_blocks", "native_course_section_media", "native_course_image_blocks", "native_course_theme_media", "native_course_block_media", "native_fields", "native_field_placement", "native_address_fields", "native_form_consent", "native_object_fields", "native_dropdown_fields", "native_large_text_fields", "quiz_short_answers", "quiz_multiple_choices", "quiz_written_answers", "native_survey_object_fields", "native_condition", "native_condition_group", "native_condition_stack", "native_condition_outcomes", "quiz_configuration", "quiz_results", "survey_configuration", "survey_rule_stack", "form", "form_css", "native_form_css", "native_form_schedule", "native_form_tracking", "native_form_embed", "native_order_confirmation", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "community_access", "community_courses", "community_event_room", "community_branding", "assessment", "meeting", "meeting_cohosts", "native_dynamic_meeting_location", "options"}
+    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_course_theme", "native_course_blocks", "native_course_text_blocks", "native_course_section_media", "native_course_image_blocks", "native_course_theme_media", "native_course_block_media", "native_fields", "native_field_placement", "native_address_fields", "native_form_consent", "native_object_fields", "native_contact_field_chain", "native_dropdown_fields", "native_large_text_fields", "quiz_short_answers", "quiz_multiple_choices", "quiz_written_answers", "native_survey_object_fields", "native_condition", "native_condition_group", "native_condition_stack", "native_condition_outcomes", "quiz_configuration", "quiz_results", "survey_configuration", "survey_rule_stack", "form", "form_css", "native_form_css", "native_form_schedule", "native_form_tracking", "native_form_embed", "native_order_confirmation", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "community_access", "community_courses", "community_event_room", "community_branding", "assessment", "meeting", "meeting_cohosts", "native_dynamic_meeting_location", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -163,6 +163,12 @@ def validate_job(job, base):
         if s['action']=='native_form_consent':
             from playwright_recipes.forms_advanced import validate_consent
             validate_consent(s)
+        if s['action']=='native_contact_field_chain':
+            from playwright_recipes.contact_field_frontdoor import validate
+            payload = validate(s)
+            if (len(prepared['steps']) != 1 or any(payload[key] != job[key]
+                    for key in ('location_id','location_name','start_url'))):
+                raise Stop('Contact dependency chain requires its own exact same-editor job')
         if s['action'] in ('native_object_fields', 'native_survey_object_fields'):
             if s['action'] == 'native_object_fields':
                 from playwright_recipes.forms_advanced import validate_object_fields as validate
@@ -1643,7 +1649,7 @@ def _reject_foreign_editor_journals(root):
         raise Stop('Existing provider, API or portal outcome requires reconciliation before editor execution')
 
 
-def run_on_page(page, job, evidence_root):
+def run_on_page(page, job, evidence_root, *, contact_field_capability=None):
     _reject_portal_editor_jobs(job)
     root = Path(evidence_root).resolve()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -1667,14 +1673,16 @@ def run_on_page(page, job, evidence_root):
         _reject_foreign_editor_journals(root)
         if (root / 'handoff.json').exists() and not (root / 'state.json').exists():
             raise Stop('Editor recovery handoff has no journal; reconciliation required before execution')
-        return _run_on_page(page, job, root)
+        arguments = ({'contact_field_capability':contact_field_capability}
+            if any(step['action'] == 'native_contact_field_chain' for step in job['steps']) else {})
+        return _run_on_page(page, job, root, **arguments)
     finally:
         if provider_fd is not None:
             os.close(provider_fd)
         os.close(fd)
 
 
-def _run_on_page(page, job, evidence_root):
+def _run_on_page(page, job, evidence_root, *, contact_field_capability=None):
     """Host integration seam: use an already managed, signed-in Playwright Page.
 
     State records are intent-before-mutation. A crashed/uncertain step is never
@@ -1694,6 +1702,9 @@ def _run_on_page(page, job, evidence_root):
         replay = completed_editor_replay(state_path, job, fingerprint)
         assert_tenant(page, job)
         return replay
+    if any(step['action'] == 'native_contact_field_chain' for step in job['steps']):
+        from playwright_recipes.contact_field_frontdoor import validate_runtime
+        validate_runtime(job, contact_field_capability)
     assert_tenant(page, job)
     results = []
     fresh_container = None
@@ -1718,6 +1729,13 @@ def _run_on_page(page, job, evidence_root):
                     raise Stop('Recorded options identity differs from its parent job')
                 result = options(page, {**step, '_context':context})
                 fresh_container = None
+            elif step['action'] == 'native_contact_field_chain':
+                from playwright_recipes.contact_field_frontdoor import configure
+                chain_root = root / 'contact-fields'
+                if chain_root.is_symlink():
+                    raise Stop('Contact chain evidence directory is a symlink')
+                result = configure(page, step, chain_root, capability=contact_field_capability)
+                fresh_container = None
             else:
                 result = handlers[step["action"]](page, step)
                 fresh_container = (result.fresh_container
@@ -1725,10 +1743,10 @@ def _run_on_page(page, job, evidence_root):
                     else None)
             if not isinstance(result, dict):
                 raise Stop('Handler returned no structured outcome')
-            if step['action'] in ('native_dropdown_fields','native_large_text_fields',
+            if step['action'] in ('native_contact_field_chain','native_dropdown_fields','native_large_text_fields',
                     'quiz_short_answers','quiz_multiple_choices','quiz_written_answers',
                     'native_condition_stack','native_condition_outcomes',
-                    'native_order_confirmation','native_course_block_media','native_course_text_blocks','native_course_section_media','native_course_image_blocks') or (
+                    'native_order_confirmation','native_course_blocks','native_course_theme_media','native_course_block_media','native_course_text_blocks','native_course_section_media','native_course_image_blocks') or (
                     step['action'] == 'community' and result.get('status') in (
                         'GROUP_CREATED_SLUG_IDENTIFIED','GROUP_REUSED_IDENTITY_CONFIRMED')):
                 # Fresh execution and replay require the same complete, bound
@@ -1737,6 +1755,7 @@ def _run_on_page(page, job, evidence_root):
                 result = _result(step, result, job)
             status = result.get('status')
             completed = {
+                'CONTACT_FIELDS_SAVED_AND_REOPENED',
                 'RENDERED', 'SEO_RENDERED', 'COMPONENT_SAVED', 'SAVED_AND_REOPENED',
                 'FORM_CSS_RENDERED', 'NATIVE_FORM_CSS_SAVED_AND_REOPENED', 'FORM_SETTINGS_PERSISTED',
                 'FORM_SCHEDULE_SAVED_AND_REOPENED', 'COURSE_THEME_SAVED_AND_REOPENED',
@@ -1792,7 +1811,7 @@ def _run_on_page(page, job, evidence_root):
     return state
 
 
-def execute(job, root):
+def execute(job, root, *, contact_field_capability=None):
     _reject_portal_editor_jobs(job)
     # Refuse a retained foreign intent before opening/seeding a browser. The
     # locked run_on_page entry rechecks this after authentication as well.
@@ -1801,7 +1820,12 @@ def execute(job, root):
     state_path = Path(root).resolve() / 'state.json'
     if journal_present(state_path):
         from playwright_recipes.editor_replay import completed_editor_replay
-        completed_editor_replay(state_path, job, sha(json.dumps(job, sort_keys=True)))
+        replay = completed_editor_replay(state_path, job, sha(json.dumps(job, sort_keys=True)))
+        if any(step['action'] == 'native_contact_field_chain' for step in job['steps']):
+            return replay
+    elif any(step['action'] == 'native_contact_field_chain' for step in job['steps']):
+        from playwright_recipes.contact_field_frontdoor import validate_runtime
+        validate_runtime(job, contact_field_capability)
     endpoint = os.environ.get("GHL_MANAGED_CDP_URL", "")
     if endpoint and 'auth_activation' in job:
         raise Stop('Auth activation requires the fresh owned managed context, not an attached browser')
@@ -1833,7 +1857,9 @@ def execute(job, root):
                 elif receipt.get('activation_proof', {}).get('target_verified') is not True or page.url != job['start_url']:
                     raise Stop('Canonical activation did not verify this exact protected target')
                 managed.assert_alive()
-                return run_on_page(page,job,root)
+                arguments = ({'contact_field_capability':contact_field_capability}
+                    if any(step['action'] == 'native_contact_field_chain' for step in job['steps']) else {})
+                return run_on_page(page,job,root,**arguments)
         finally:
             seed_path.unlink(missing_ok=True)
         # The manager owns headless launch, lock, TTL/watchdog, and teardown.
@@ -1854,7 +1880,9 @@ def execute(job, root):
             pages = [p for c in browser.contexts for p in c.pages if p.url == job["start_url"]]
             if len(pages) != 1:
                 raise Stop("Exactly one existing tab must match start_url")
-            return run_on_page(pages[0], job, root)
+            arguments = ({'contact_field_capability':contact_field_capability}
+                if any(step['action'] == 'native_contact_field_chain' for step in job['steps']) else {})
+            return run_on_page(pages[0], job, root, **arguments)
             # Exiting Playwright detaches this client; do not browser.close() a host-owned session.
 
 

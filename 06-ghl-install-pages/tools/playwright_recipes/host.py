@@ -205,6 +205,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
     course_association_mode = operation == 'communities.configure' and 'course_associations' in inputs
     branding_mode = operation == 'communities.configure' and 'branding' in inputs
     event_mode = operation == 'meetings.integrate' and inputs.get('integration_mode') == 'community_event_room'
+    contact_mode = operation == 'forms.configure' and 'contact_field_plan' in inputs
     captured_mode = captured_script_mode(operation, inputs)
     if event_mode and 'auth_activation' in inputs:
         return {'status':'STOP_INVALID_INPUT','browser_used':False,
@@ -255,6 +256,14 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
             if route['lane'].startswith('STOP_AUTH') else 'CAPTURED_SCRIPT_ROUTE_REQUIRED')
         return {'status':status,'route':route,'browser_used':False,
                 'reason':'Native editor jobs require the maintained compiled leaf and owned receipt journal. Supply a compatible caller-owned Page for a measured browser transport; generic provider callback statuses are not native proof'}
+    if contact_mode and not journal_present(Path(evidence_root).resolve()/'state.json'):
+        try:
+            from playwright_recipes.contact_field_frontdoor import validate_capability, payload_from_inputs
+            validate_capability({'payload':payload_from_inputs(inputs)}, observed.get('contact_field_capability'))
+        except Exception as exc:
+            return {'status':'CONTACT_FIELD_CAPABILITY_REQUIRED', 'route':route,
+                'browser_used':False, 'error_type':type(exc).__name__,
+                'reason':'A fresh same-location Contact v3 capability with the requested read/write scopes is required before browser or API execution'}
     if 'auth_activation' in inputs and route['lane'] != 'playwright':
         return {'status':'STOP_FRESH_ACTIVATION_REQUIRED', 'route':route,
                 'browser_used':False,
@@ -350,7 +359,10 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
             result = handler(page, job['steps'][0], **arguments)
             return {'status': result['status'], 'route': route,
                     'browser_used': True, 'result': result}
-        result = run_on_page(page, job, root) if page is not None else execute(job, root)
+        contact_arguments = ({'contact_field_capability':observed.get('contact_field_capability')}
+            if operation == 'forms.configure' and 'contact_field_plan' in inputs else {})
+        result = (run_on_page(page, job, root, **contact_arguments) if page is not None
+            else execute(job, root, **contact_arguments))
         return {'status': result['status'], 'route': route, 'result': result}
     except Exception as exc:
         # Raw errors may quote client text or credentials. Persist type only.
@@ -416,7 +428,10 @@ def main(argv=None):
                 return 2
             status = 'ROUTE_VALIDATED_ONLY'
             if selected['lane'] == 'playwright':
-                validate_job(compile_recipe(args.operation, inputs), args.inputs.resolve().parent)
+                job = validate_job(compile_recipe(args.operation, inputs), args.inputs.resolve().parent)
+                if args.operation == 'forms.configure' and 'contact_field_plan' in inputs:
+                    from playwright_recipes.contact_field_frontdoor import validate_capability
+                    validate_capability(job['steps'][0], observed.get('contact_field_capability'))
                 status = 'PORTAL_CONTEXT_REQUIRED' if (args.operation == 'communities.configure' and ('channels' in inputs or 'details' in inputs) or args.operation == 'meetings.integrate' and inputs.get('integration_mode') == 'community_event_room') else 'VALIDATED_ONLY'
             elif selected['lane'] in ('public_api','skill44','official_mcp') and args.operation in ('courses.create','courses.update','courses.lesson_quiz.create'):
                 if args.operation == 'courses.update' and 'media_assets' in inputs:

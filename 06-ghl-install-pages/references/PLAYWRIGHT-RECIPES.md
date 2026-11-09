@@ -330,8 +330,7 @@ same compiled job. Saved/replayed results bind exact editor and configuration.
 `courses.configure_ui` accepts an inventoried inactive template with fourteen
 text/visibility controls, six-color layout palette and primary/secondary font and
 weight. It preserves the current active theme; Custom Block append/edit is also
-implemented with exact block IDs and protected sibling snapshots. Native media
-uploads remain incomplete. `courses.lessons` supports existing draft module/lesson moves and
+implemented with exact block IDs and protected sibling snapshots. Approved background, Custom Block, Hero, Instructor and Image Block PNG paths are implemented; Video Blocks and image-removal modes remain unsupported. `courses.lessons` supports existing draft module/lesson moves and
 drip/lock-reference metadata through the API-first provider.
 
 `community_access.py` implements captured classic privacy/access controls;
@@ -350,8 +349,9 @@ remains separately pending.
 
 ## Compound rules, existing quiz layouts and API course media
 
-`forms.conditions.condition` accepts `clauses`, `match:all|any`, `effect` and
-`target` for homogeneous two-to-twenty-clause AND/OR rules. The native effect has
+`forms.conditions.condition` accepts `clauses`, `match:all|any|mixed`, `effect` and
+`target`. Mixed predicates carry one explicit ordered `and`/`or` connector per
+clause boundary and both connector types. No Boolean precedence is inferred. The native effect has
 one target field. Existing unrelated condition stacks are refused, while an exact
 existing group can be reused. The saved summary, editor and configuration are
 independently rebound after reopening. Legacy single-clause inputs remain valid.
@@ -409,3 +409,41 @@ live authenticated caller-owned portal context and an exact same-location Course
 API title/ID inventory. It saves without sharing a post and independently reads
 native product/group IDs. Zero-card course inventories refuse until authoritative
 empty/loading evidence is captured. See `community-private-course.md`.
+
+## Current reviewed control build checkpoint
+
+Read `PLAYWRIGHT-BUILD-STATUS.json` `current_feature_progress` before interpreting
+the older 21/11/1 operation audit. Broad partial operations contain completed
+controls; their frozen classifications are not a count of unfinished Python files.
+The current delta adds mixed predicate connectors, condition-card stack growth
+and contraction/clear, inactive background transparency, explicit Custom Block
+deletion, and the maintained
+Contact dependency-to-form front door. Each remains pending final native/script
+functional acceptance after independent saved-configuration verification.
+
+Use `forms.configure.contact_field_plan` exclusively for documented Contact
+LARGE_TEXT creation or exact existing Dropdown reuse plus captured native
+placement. Supply the current API capability in the host probe, outside authored
+inputs; see `examples/contact-field-frontdoor.md`. Dropdown option-array creation
+and arbitrary legacy canvas adoption refuse before unsupported work.
+
+Use `courses.configure_ui.background_transparency` exclusively with exact previous
+background URL/percentage and desired integer percentage; see
+`examples/course-background-transparency.md`. It preserves the inactive template
+and image and uses measured arrow keys, never DOM mutation or assumed Home/End.
+
+For Show/Hide cards, supply complete `condition.expected_rules` before edits or
+count-changing replacement. Retained cards are edited and missing suffix cards
+appended; contraction removes exact tail cards through scoped Delete confirmations.
+An explicit empty desired `rules` list requires the complete old inventory and
+positive loaded-empty proof before Save and after independent reopening. See
+`examples/form-condition-stack-growth.md`, `examples/form-condition-stack-contraction.md`
+and `examples/form-mixed-condition.md`. Native drag reordering and arbitrary
+existing outcome-card editing remain unsupported.
+
+`courses.configure_ui.custom_blocks.deletion` removes one explicitly inventoried
+Custom Block from an inactive template through its exact target-bound native
+confirmation. Retained sidebar/preview order and surrounding content must agree
+before one Save and independent reopen; see
+`examples/course-custom-block-delete.md`. This does not add arbitrary block or
+image removal and does not activate or publish a template.
