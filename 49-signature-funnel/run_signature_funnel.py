@@ -217,6 +217,82 @@ def _brief_size(run_dir: Path) -> Optional[int]:
         return None
 
 
+def _gate_visual(run_dir: Path) -> Tuple[bool, str]:
+    """The VISUAL STAGE gate (fix plan B1, unowned requirement G-2).
+
+    Skill 49 had no wireframe/mockup phase at all: the wireframe step lived only as prose in
+    SKILL.md ("after P1 copy passes, run scripts/legacy_downsell_images.py"), and the
+    orchestrator never invoked it, so the step was skipped silently. This runs the visual
+    check as its own named gate — every page must carry the desktop wireframe, the mobile
+    wireframe, the visual mockup and the final mockup (prove_sf_build.VISUAL_STAGES) — and
+    P7-BUILD calls it FIRST, before the FAB/QC seams, so a run with no visual set cannot
+    reach any later proof.
+    """
+    size = _brief_size(run_dir)
+    if size is None:
+        if not (run_dir / "brief.json").is_file():
+            # A fixture run dir with no brief at all: P7's own AF-FUN-BUILD-SIZE check owns
+            # that refusal, so this gate does not pre-empt it with a different code.
+            return True, "no brief.json in the run dir; funnel_size is checked by P7-BUILD"
+        return False, ("AF-FUN-VISUAL-SIZE: brief funnel_size unresolved — the required page "
+                       "set for the visual stages cannot be computed (fail-closed)")
+    ok, detail = _shell_prover("prove_sf_build.py",
+                               ["--visual-only", "--run-dir", str(run_dir),
+                                "--funnel-size", str(size)])
+    if ok:
+        return True, f"visual stage complete for the {size}-step page set"
+    return False, ("AF-FUN-VISUAL-PHASE: the visual stage did not certify — wireframes and final "
+                   "mockups are a gated phase, not a prose instruction. " + detail)
+
+
+def _run_visual_stage(run_dir: Path) -> Tuple[bool, str]:
+    """The MANDATORY VISUAL STEP (fix plan B1, second branch).
+
+    When the locked brief asks for it (`visual_stage` in {"auto","required"}), the orchestrator
+    runs scripts/legacy_downsell_images.py itself instead of leaving it to prose. The tool is
+    invoked, never reimplemented. Nothing is guessed: the paths come from brief.json, and an
+    unresolvable brief is refused with the exact command to run by hand.
+
+    A failed invocation is NOT fatal here — the P7 visual gate still refuses to certify a run
+    with no visual set, so the attempt can never become a silent skip.
+    """
+    try:
+        brief = json.loads((run_dir / "brief.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return True, "no readable brief.json; the P7 visual gate remains the enforcement"
+    mode = str(brief.get("visual_stage") or "").strip().lower()
+    if mode not in ("auto", "required"):
+        return True, "brief does not request a visual step (visual_stage not set)"
+    receipt = run_dir / "page-images" / "page-images-receipt.json"
+    if receipt.is_file():
+        return True, "visual set already present"
+    vs = brief.get("visual") if isinstance(brief.get("visual"), dict) else {}
+    missing = [k for k in ("skill71_root", "brand_file", "brand_owner") if not vs.get(k)]
+    if missing:
+        return False, ("AF-FUN-VISUAL-ARGS: brief.visual is missing %s; run "
+                       "scripts/legacy_downsell_images.py --ledger <copy_ledger.json> "
+                       "--skill71-root <71-dir> --brand-file <brand.json> --brand-owner <client> "
+                       "--out-dir <run-dir> (the P7 visual gate will refuse until it is done)"
+                       % ", ".join(missing))
+    cmd = [sys.executable, str(_SCRIPTS / "legacy_downsell_images.py"),
+           "--ledger", str(run_dir / "copy_ledger.json"),
+           "--skill71-root", str(vs["skill71_root"]),
+           "--brand-file", str(vs["brand_file"]),
+           "--brand-owner", str(vs["brand_owner"]),
+           "--out-dir", str(run_dir),
+           "--image-provider", str(vs.get("provider") or "kie")]
+    if str(vs.get("provider") or "kie") == "kie" and vs.get("allow_paid") is True:
+        cmd.append("--allow-paid")
+    if str(vs.get("provider") or "").lower() == "stub" and vs.get("stub_approved_by"):
+        cmd += ["--stub-approved-by", str(vs["stub_approved_by"])]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    tail = (proc.stdout + proc.stderr).strip().splitlines()[-6:]
+    if proc.returncode != 0:
+        return False, ("AF-FUN-VISUAL-STEP: legacy_downsell_images.py exited %d: %s"
+                       % (proc.returncode, " | ".join(tail)))
+    return True, "visual stage produced the wireframe/mockup set"
+
+
 def _gate_html_fragments(run_dir: Path) -> Tuple[bool, str]:
     """P5-HTML (FIX-XC-03a): a non-empty pages/<profile>.fragment.html for EVERY page
     in the brief's 3/5/7 matrix. No fragment set == no built pages == fail-closed."""
@@ -400,7 +476,14 @@ def _gate_build(run_dir: Path) -> Tuple[bool, str]:
         proof the engine echoed the copy it authored (no artifact == fail-closed, never a
         silent FAB-QC skip).                                            -> AF-FUN-BUILD-FAB
     (2) THEN the pinned prove_sf_build.py enforces build_receipt.json QC>=8.5 + a preview
-        URL per page (the existing seam)."""
+        URL per page (the existing seam).
+
+    Fix plan B1: the VISUAL STAGE runs FIRST. A run with no wireframe/mockup set must not
+    reach the FAB or QC seams at all, so the visual gap is named as its own failure
+    (AF-FUN-VISUAL-PHASE) instead of being buried in the build receipt list."""
+    visual_ok, visual_detail = _gate_visual(run_dir)
+    if not visual_ok:
+        return False, visual_detail
     fab = run_dir / _FAB_ARTIFACT_REL
     if not fab.exists():
         return False, ("AF-FUN-BUILD-FAB: build/fab-artifact.json (the FAB scorecard) is "
@@ -527,6 +610,11 @@ def orchestrate(run_dir: Path, key: str) -> Tuple[int, Dict]:
     # scorecard the QC>=8.5 seam requires at P7). Best-effort here; P7 fails closed if
     # the file is still absent, so this can never silently skip the gate.
     _emit_fab_artifact_from_ledger(run_dir)
+    # Fix plan B1 (unowned G-2): the visual stage is a MANDATORY step of the orchestrator,
+    # not a sentence in SKILL.md. It runs when the briefing asks for it; a failure here is
+    # recorded and the P7 visual gate still refuses to certify, so it can never be a skip.
+    visual_ok, visual_detail = _run_visual_stage(run_dir)
+    print(f"  [{'PASS' if visual_ok else 'FAIL':4s}] VISUAL-STEP  (legacy_downsell_images.py) :: {visual_detail}")
     gates = _phase_gates(run_dir)
     print(f"== Signature Funnel orchestrator :: run {run_dir} ==")
     _resolve_persona(run_dir)
