@@ -22,6 +22,9 @@ else:
     from skill6_playwright import Stop,click,fill,form_builder,wait_until
 
 
+_ROW_DELETE_PATH='M16 6v-.8c0-1.12 0-1.68-.218-2.108a2 2 0 00-.874-.874C14.48 2 13.92 2 12.8 2h-1.6c-1.12 0-1.68 0-2.108.218a2 2 0 00-.874.874C8 3.52 8 4.08 8 5.2V6M3 6h18m-2 0v11.2c0 1.68 0 2.52-.327 3.162a3 3 0 01-1.311 1.311C16.72 22 15.88 22 14.2 22H9.8c-1.68 0-2.52 0-3.162-.327a3 3 0 01-1.311-1.311C5 19.72 5 18.88 5 17.2V6'
+
+
 def _rules(rules,*,reject_conflicts=True):
     if not isinstance(rules,list) or not 1<=len(rules)<=50:
         raise Stop('Native condition stacks require 1 to 50 ordered rules')
@@ -49,9 +52,6 @@ def validate(step):
         value['expected_rules']=_rules(step['expected_rules'],reject_conflicts=False)
         if len(value['expected_rules'])!=len(value['rules']):
             raise Stop('Native condition edits require equal complete previous and desired rule counts')
-        for before,after in zip(value['expected_rules'],value['rules']):
-            if len(after['clauses'])<len(before['clauses']):
-                raise Stop('Shrinking native clauses requires a captured row removal flow; no writes attempted')
     return value
 
 
@@ -124,6 +124,9 @@ def _edit(frame,dialog,index,before_rule,rule,current,identity):
     # source/operator/value/connector/effect/target before the first edit.
     group._modal_state(modal,before_rule)
     count=len(before_rule['clauses'])
+    while count>len(rule['clauses']):
+        identity()
+        count=_remove_tail(modal,before_rule,count,identity)
     for row,clause in enumerate(rule['clauses']):
         identity()
         if modal.locator('[id^="selectedField-"]').count()!=count:
@@ -166,6 +169,39 @@ def _edit(frame,dialog,index,before_rule,rule,current,identity):
     wait_until(lambda:group._inventory(dialog)==wanted,
                'Native edited card or an untouched sibling differs from the full authored stack')
     return wanted
+
+
+def _remove_tail(modal,before_rule,count,identity):
+    """Remove one captured noninitial predicate row and prove its exact prefix."""
+    if type(count) is not int or count<2:
+        raise Stop('Native predicate removal never deletes the initial If row')
+    current={**deepcopy(before_rule),'clauses':deepcopy(before_rule['clauses'][:count])}
+    group._modal_state(modal,current)
+    source=group._one(modal.locator('#selectedField-'+str(count-1)),
+                      'Native tail predicate source changed')
+    row=source.locator('..');owner=row.locator('..')
+    if (not {'mb-8','flex','gap-x-2','px-0.5'}.issubset((row.get_attribute('class') or '').split())
+            or not {'mb-2','flex','flex-col','gap-y-2','text-base'}.issubset((owner.get_attribute('class') or '').split())
+            or owner.locator('[id^="selectedField-"]').count()!=1
+            or owner.locator('[id^="selectedOperation-"]').count()!=1):
+        raise Stop('Native removable predicate row owner changed')
+    trash=group._one(owner.locator(':scope > div.flex.items-center.justify-between > svg'),
+                     'Native tail predicate delete icon is missing or ambiguous')
+    if not {'mr-3','h-4','w-4','cursor-pointer','text-error-700'}.issubset(
+            (trash.get_attribute('class') or '').split()):
+        raise Stop('Native predicate delete icon class identity changed')
+    path=group._one(trash.locator('path'),'Native predicate trash path is ambiguous')
+    if path.get_attribute('d')!=_ROW_DELETE_PATH:
+        raise Stop('Native predicate delete icon differs from the captured trash control')
+    identity();click(trash)
+    wait_until(lambda:modal.locator('[id^="selectedField-"]').count()==count-1
+               and modal.locator('#selectedField-'+str(count-1)).count()==0
+               and modal.locator('#selectedOperation-'+str(count-1)).count()==0
+               and modal.locator('#inputValue-'+str(count-1)).count()==0,
+               'Native tail predicate did not remove exactly one complete row')
+    expected={**deepcopy(before_rule),'clauses':deepcopy(before_rule['clauses'][:count-1])}
+    group._modal_state(modal,expected)
+    return count-1
 
 
 def configure(page,step):

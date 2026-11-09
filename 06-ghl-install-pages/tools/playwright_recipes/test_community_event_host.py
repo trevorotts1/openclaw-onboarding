@@ -138,15 +138,19 @@ class EventHostTests(unittest.TestCase):
     def test_uncertain_event_error_preserves_journal_and_never_switches_lane(self):
         prior=b'{"status":"ROOM_GENERATION_INTENT_RECORDED"}'
         with tempfile.TemporaryDirectory() as directory:
-            path=Path(directory)/event._JOURNAL;path.write_bytes(prior)
+            physical=Path(directory)/'evidence';physical.mkdir()
+            alias=Path(directory)/'evidence-alias';alias.symlink_to(physical,target_is_directory=True)
+            # macOS /var is itself a symlink. Exercise the same alias boundary
+            # on every platform and require the host's canonical journal path.
+            path=alias/event._JOURNAL;path.write_bytes(prior)
             with patch.object(event,'run_event',side_effect=runner.Stop('uncertain private message')), \
                     patch.object(host,'recovery') as recovery:
-                result=host.run_recipe('meetings.integrate',inputs(),probes(),directory,
+                result=host.run_recipe('meetings.integrate',inputs(),probes(),alias,
                     input_dir='.',page=object(),portal_context=object())
             self.assertEqual(result['status'],'EVENT_RECONCILIATION_REQUIRED')
-            self.assertEqual(result['state_file'],str(path))
+            self.assertEqual(result['state_file'],str(path.resolve()))
             self.assertEqual(path.read_bytes(),prior)
-            self.assertFalse((Path(directory)/'handoff.json').exists())
+            self.assertFalse((alias/'handoff.json').exists())
             self.assertNotIn('private message',str(result));recovery.assert_not_called()
 
 

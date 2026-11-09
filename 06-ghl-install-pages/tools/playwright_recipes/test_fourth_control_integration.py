@@ -21,17 +21,21 @@ def request(kind):
             'location_id':'LOC','location_name':'Fixture Account',
             'start_url':'https://app.convertandflow.com/v2/location/LOC/form-builder-v2/FORM',
             'condition':{'rules':[rule(),rule('Display custom message')]}}, 'form_condition_outcomes'
-    if kind == 'stack_edit':
+    if kind in ('stack_edit','stack_shrink'):
         from test_form_condition_stack_edits import edit_plan
+        condition = edit_plan()
+        if kind == 'stack_shrink':
+            condition['expected_rules'][0]['clauses'].append({'if_field':'Email','operator':'Is Filled'})
         return 'forms.conditions', {
             'location_id':'LOC','location_name':'Fixture Account',
             'start_url':'https://app.convertandflow.com/v2/location/LOC/form-builder-v2/FORM',
-            'condition':edit_plan()}, 'form_condition_stack'
+            'condition':condition}, 'form_condition_stack'
     factories = {
         'short':('test_quiz_text_questions','step','short_answer_questions','quiz_text_questions'),
         'choice':('test_quiz_choice_questions','step','multiple_choice_questions','quiz_choice_questions'),
         'radio':('test_quiz_radio_creation','step','multiple_choice_questions','quiz_choice_questions'),
         'yes_no':('test_quiz_radio_creation','step','multiple_choice_questions','quiz_choice_questions'),
+        'quiz_dropdown':('test_quiz_dropdown_creation','step','multiple_choice_questions','quiz_choice_questions'),
         'written':('test_quiz_written_questions','step','written_answer_questions','quiz_written_questions'),
         'dropdown':('test_dropdown_fields','plan',None,'dropdown_fields'),
         'large':('test_large_text_fields','plan',None,'large_text_fields'),
@@ -77,13 +81,13 @@ def receipt(job,module):
     return value
 
 
-KINDS = ('short','choice','radio','yes_no','written','dropdown','large','outcomes','stack_edit')
+KINDS = ('short','choice','radio','yes_no','quiz_dropdown','written','dropdown','large','outcomes','stack_edit','stack_shrink')
 
 
 class FourthControls(unittest.TestCase):
     def test_real_compiler_routes_each_full_request_without_dropping_previous_inventory(self):
-        actions = ('quiz_short_answers','quiz_multiple_choices','quiz_multiple_choices','quiz_multiple_choices','quiz_written_answers',
-            'native_dropdown_fields','native_large_text_fields','native_condition_outcomes','native_condition_stack')
+        actions = ('quiz_short_answers','quiz_multiple_choices','quiz_multiple_choices','quiz_multiple_choices','quiz_multiple_choices','quiz_written_answers',
+            'native_dropdown_fields','native_large_text_fields','native_condition_outcomes','native_condition_stack','native_condition_stack')
         for kind,action in zip(KINDS,actions):
             with self.subTest(kind=kind):
                 job = compiled(kind)
@@ -92,7 +96,7 @@ class FourthControls(unittest.TestCase):
         self.assertEqual(compiled('stack_edit')['steps'][0]['expected_rules'],data['condition']['expected_rules'])
 
     def test_quiz_creation_refuses_mixed_controls_and_parent_owner_overrides(self):
-        for kind in ('short','choice','radio','yes_no','written'):
+        for kind in ('short','choice','radio','yes_no','quiz_dropdown','written'):
             operation,data,_ = request(kind)
             key = next(iter(data['configuration']))
             invalid = []
@@ -104,7 +108,7 @@ class FourthControls(unittest.TestCase):
                     recipe_cli.compile_recipe(operation,bad)
 
     def test_native_payloads_cannot_cross_parent_location_or_editor(self):
-        for kind in ('short','choice','radio','yes_no','written','dropdown','large'):
+        for kind in ('short','choice','radio','yes_no','quiz_dropdown','written','dropdown','large'):
             job = compiled(kind);job['steps'][0]['payload']['start_url'] += '_FOREIGN'
             with self.subTest(kind=kind),self.assertRaises(runner.Stop):runner.validate_job(job,Path('.'))
 
@@ -188,7 +192,7 @@ class FourthControls(unittest.TestCase):
                 self.assertEqual(state['results'],[])
 
     def test_malformed_first_quiz_receipts_stop_without_blessing_or_second_insertion(self):
-        for kind in ('short','choice','radio','yes_no','written'):
+        for kind in ('short','choice','radio','yes_no','quiz_dropdown','written'):
             job = compiled(kind);_,_,module = request(kind)
             native = importlib.import_module('playwright_recipes.'+module)
             for change in ({'question_count':True},{'target_page':2},{'kind':'quiz'},
@@ -300,6 +304,39 @@ class FourthControls(unittest.TestCase):
                 state = json.loads(Path(root,'state.json').read_text())
                 self.assertEqual(state['results'],[])
                 self.assertEqual(state['current_step_status'],'INTENT_RECORDED')
+
+    def test_explicit_new_page_intent_survives_frontdoor_hash_and_completed_replay(self):
+        for kind in ('short','choice','quiz_dropdown','written'):
+            operation,data,module = request(kind)
+            key = next(iter(data['configuration']))
+            authored = data['configuration'][key]
+            authored.update(create_page=True,new_page_label='Page 2',target_page=2)
+            original = deepcopy(data)
+            job = runner.validate_job(recipe_cli.compile_recipe(operation,data),Path('.'))
+            step = job['steps'][0]
+            self.assertEqual(data,original)
+            self.assertIs(step['payload']['create_page'],True)
+            self.assertEqual(step['payload']['new_page_label'],'Page 2')
+            self.assertEqual(step['payload']['target_page'],2)
+            self.assertEqual(len(step['payload']['pages']),1)
+            native = importlib.import_module('playwright_recipes.'+module)
+            value = receipt(job,module)
+            with self.subTest(kind=kind),tempfile.TemporaryDirectory() as root, \
+                    patch.object(runner,'assert_tenant'),patch.object(native,'configure',return_value=value) as write:
+                first = host.run_recipe(operation,data,{'lanes':{'playwright':{'available':True}}},
+                    root,input_dir='.',page=object())
+                repeated = host.run_recipe(operation,data,{'lanes':{'playwright':{'available':True}}},
+                    root,input_dir='.',page=object())
+                self.assertEqual(first['status'],'NEEDS_VERIFICATION',first)
+                self.assertEqual(repeated['status'],'NEEDS_VERIFICATION',repeated)
+                write.assert_called_once()
+                path = Path(root,'state.json');state = json.loads(path.read_text())
+                saved = state['results'][0]['result']
+                self.assertEqual(saved['target_page'],2)
+                self.assertEqual(saved['configuration_sha256'],native.configuration_hash(step))
+                saved['target_page'] = 1;path.write_text(json.dumps(state))
+                with self.assertRaises(runner.Stop):runner.run_on_page(object(),job,root)
+                write.assert_called_once()
 
 
 if __name__ == '__main__':unittest.main()

@@ -21,6 +21,7 @@ else:
 
 COMMON={'location_id','location_name','start_url'}
 OWNER={'expected_quiz_name','pages','target_page','questions'}
+PAGE_CREATION={'create_page','new_page_label'}
 PROPERTIES={'field_type','question','placeholder','short_label','query_key','required','hidden'}
 CANVAS='#the-form-builder.form-element.form-builder--wrap > .drop > .builder_sub_container'
 ITEMS=':scope > .smooth-dnd-draggable-wrapper.element-box.menu-field-wrap.col-12 > .menu-item > .menu-item > .form-builder--item'
@@ -30,20 +31,30 @@ FIELD_INPUTS={'question':'#fieldTitle input','placeholder':'#fieldPlaceholder in
 FLAGS={'required':'#fieldRequired[role="checkbox"]','hidden':'#fieldCheckbox[role="checkbox"]'}
 
 
+def properties_for(kind):
+    # The captured quiz Single Dropdown exposes Required and no Hidden
+    # control. Absence of a supported setting is not a fabricated false value.
+    return PROPERTIES-{'hidden'} if kind=='SINGLE_OPTIONS' else PROPERTIES
+
+
+def owner_keys(payload):
+    return COMMON|OWNER|(PAGE_CREATION if set(payload).intersection(PAGE_CREATION) else set())
+
+
 def _text(value,*,empty=False):
     return (isinstance(value,str) and (empty or bool(value.strip())) and len(value)<=1000
             and not any(ord(c)<32 for c in value))
 
 
 def _question(value,*,new=False,field_types=None):
-    if not isinstance(value,dict) or set(value)!=PROPERTIES:
+    if not isinstance(value,dict) or set(value)!=properties_for(value.get('field_type')):
         raise Stop('Every quiz question needs its complete exact type/text/key/flags inventory')
     if not isinstance(value['field_type'],str) or value['field_type'] not in (field_types if field_types is not None else {'TEXT'} if new else {'TEXT','RADIO'}):
         raise Stop('Short Answer creation supports captured TEXT with existing TEXT/RADIO inventory only')
     if (not _text(value['question']) or not _text(value['placeholder'],empty=True)
             or not _text(value['short_label'],empty=True)
             or not isinstance(value['query_key'],str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,256}',value['query_key'])
-            or type(value['required']) is not bool or type(value['hidden']) is not bool):
+            or type(value['required']) is not bool or 'hidden' in value and type(value['hidden']) is not bool):
         raise Stop('Authored quiz properties require explicit text, unique query tokens and Boolean flags')
     return deepcopy(value)
 
@@ -53,7 +64,7 @@ def validate(step,*,field_types=('TEXT','RADIO'),new_types=('TEXT',),reserved_ke
             or step.get('action','quiz_short_answers')!='quiz_short_answers'):
         raise Stop('Unsupported quiz Short Answer runner metadata')
     payload=step.get('payload')
-    if not isinstance(payload,dict) or set(payload)!=COMMON|OWNER:
+    if not isinstance(payload,dict) or set(payload)!=owner_keys(payload):
         raise Stop('Short Answer creation requires exact existing quiz/page identities and full inventory')
     loc=payload['location_id']
     if not isinstance(loc,str) or not re.fullmatch(r'[A-Za-z0-9_-]+',loc):raise Stop('Quiz location ID is invalid')
@@ -67,9 +78,17 @@ def validate(step,*,field_types=('TEXT','RADIO'),new_types=('TEXT',),reserved_ke
             or not re.fullmatch('/v2/location/'+re.escape(loc)+r'/quiz-builder-v2/[A-Za-z0-9_-]+',url.path)):
         raise Stop('Short Answer authoring must bind its exact existing native quiz editor URL')
     pages=payload['pages'];target=payload['target_page'];new=payload['questions']
-    if (not isinstance(pages,list) or not pages or type(target) is not int or not 1<=target<=len(pages)
+    create_page='create_page' in payload
+    if create_page and (payload['create_page'] is not True or not _text(payload['new_page_label'])
+            or payload['new_page_label']!=payload['new_page_label'].strip()):
+        raise Stop('New empty-page mode requires explicit true and the exact expected new page label')
+    if (not isinstance(pages,list) or not pages or type(target) is not int or not 1<=target<=len(pages)+int(create_page)
             or not isinstance(new,list) or not new):
         raise Stop('Quiz Short Answers require existing complete pages and at least one authored question')
+    if create_page and (target!=len(pages)+1 or len(new)!=1):
+        raise Stop('New empty-page mode authors exactly one question on one explicitly appended page')
+    if create_page and payload['new_page_label']!='Page '+str(len(pages)+1):
+        raise Stop('New page label must be the captured generated Page N+1 caption; this mode does not rename pages')
     labels=[];old=[]
     for page in pages:
         if not isinstance(page,dict) or set(page)!={'label','questions'} or not _text(page['label']) or not isinstance(page['questions'],list):
@@ -77,6 +96,7 @@ def validate(step,*,field_types=('TEXT','RADIO'),new_types=('TEXT',),reserved_ke
         labels.append(page['label']);old.extend(_question(q,field_types=field_types) for q in page['questions'])
     desired=[_question(q,new=True,field_types=new_types) for q in new]
     if len(labels)!=len(set(labels)):raise Stop('Quiz page labels must be unique')
+    if create_page and payload['new_page_label'] in labels:raise Stop('New page label collides with an existing page owner')
     for key in ('question','query_key'):
         before=[q[key].casefold() for q in old];after=[q[key].casefold() for q in desired]
         if len(before)!=len(set(before)) or len(after)!=len(set(after)) or set(before).intersection(after):
@@ -184,6 +204,9 @@ def _read_question(frame,item,*,field_types=('TEXT','RADIO'),metadata_reader=Non
     for key,selector in FIELD_INPUTS.items():
         result[key]=_one(frame.locator(selector),'Native quiz '+key+' property control changed').input_value()
     for key,selector in FLAGS.items():
+        if key not in properties_for(kind):
+            if frame.locator(selector).count()!=0:raise Stop('An unsupported dropdown Hidden control appeared')
+            continue
         flag=_one(frame.locator(selector),'Native quiz '+key+' checkbox changed')
         value=flag.get_attribute('aria-checked')
         if value not in ('true','false'):raise Stop('Native quiz Boolean property state is unavailable')
@@ -202,8 +225,12 @@ def _read_question(frame,item,*,field_types=('TEXT','RADIO'),metadata_reader=Non
     return result
 
 
-def _inventory(frame,plan,*,field_types=('TEXT','RADIO'),metadata_reader=None):
+def _prepare_inventory(frame):
     _close_drawer(frame);click(frame.get_by_role('tab',name='Edit',exact=True))
+
+
+def _inventory(frame,plan,*,field_types=('TEXT','RADIO'),metadata_reader=None):
+    _prepare_inventory(frame)
     result=[]
     for _,canvas in _owners(frame,plan):
         items=_items(canvas);count=items.count();questions=[]
@@ -218,14 +245,91 @@ def _inventory(frame,plan,*,field_types=('TEXT','RADIO'),metadata_reader=None):
 
 
 def _properties_only(inventory):
-    return [[{key:q[key] for key in PROPERTIES} for q in page] for page in inventory]
+    return [[{key:q[key] for key in properties_for(q['field_type'])} for q in page] for page in inventory]
+
+
+def _wait_editor_identity(page,title,plan):
+    def ready():
+        if page.url!=plan['start_url']:raise Stop('Native quiz editor URL changed while loading')
+        if title.count()>1:raise Stop('Native quiz title is ambiguous while loading')
+        if title.count()==0:return False
+        name=title.input_value()
+        if not name or not name.strip():return False
+        if name!=plan['expected_quiz_name']:raise Stop('Native quiz title differs from its exact intended owner')
+        return True
+    wait_until(ready,'Native quiz owner did not finish loading')
+
+
+def _wait_baseline(frame,plan,*,expected=None):
+    """Wait only for missing loading DOM, never forgive a positive mismatch."""
+    _prepare_inventory(frame)
+    def ready():
+        pages=frame.locator('.survey-form-container.flex')
+        if pages.count()==0 and frame.locator('.survey-form-container').count()==0:return False
+        for index in range(pages.count()):
+            heading=pages.nth(index).locator(PAGE_HEADING)
+            if heading.count()==0 or heading.count()==1 and not heading.inner_text().strip():return False
+        for index,(_,canvas) in enumerate(_owners(frame,plan)):
+            questions=expected[index] if expected is not None else plan['pages'][index]['questions'];items=_items(canvas)
+            if items.count()==0 and questions:return False
+            if items.count()!=len(questions):raise Stop('Loaded native quiz question count differs from its expected baseline')
+            if not questions:
+                marker=canvas.get_by_text('Drag and drop components',exact=True)
+                if marker.count()==0:return False
+                _one(marker,'Native empty quiz baseline marker is ambiguous')
+            for offset,question in enumerate(questions):
+                label=items.nth(offset).get_by_role('textbox',name='Label',exact=True)
+                if label.count()==0:return False
+                _one(label,'Native quiz baseline Label is ambiguous')
+                value=label.inner_text().strip();kind=label.get_attribute('data-field-type')
+                if not value or not kind:return False
+                if (kind!=question['field_type'] or value not in (question['question'],question['question']+'*',question['question']+' *')):
+                    raise Stop('Loaded native quiz question owner differs from its expected baseline')
+        return True
+    wait_until(ready,'Native quiz baseline widgets did not finish loading')
+
+
+def _target_page(frame,plan,before,inventory_reader):
+    """Append one explicitly requested empty owner before its first question."""
+    if not plan.get('create_page'):return plan,deepcopy(before)
+    _prepare_inventory(frame);_close_properties(frame)
+    if inventory_reader(frame,plan)!=before:raise Stop('Quiz baseline changed before the single Add Page action')
+    owners=_owners(frame,plan)
+    if frame.locator('#add-slide-button').count()!=len(owners):
+        raise Stop('Native Add Page control inventory differs from the complete page owners')
+    for owner,_ in owners:
+        _one(owner.locator('button#add-slide-button'),'Native Add Page control is not scoped once to its exact page')
+    add=owners[-1][0].locator('button#add-slide-button')
+    runtime=deepcopy(plan);runtime['pages'].append({'label':plan['new_page_label'],'questions':[]})
+    expected_count=len(runtime['pages'])
+    click(add)
+    def one_new_owner():
+        count=frame.locator('.survey-form-container.flex').count()
+        if count>expected_count or count<len(owners):raise Stop('Native Add Page changed an unexpected number of owners')
+        return count==expected_count
+    wait_until(one_new_owner,'Native Add Page did not append exactly one owner; do not repeat it')
+    _wait_baseline(frame,runtime,expected=[*before,[]])
+    new_owner,new_canvas=_owners(frame,runtime)[-1]
+    _one(new_owner.locator('button#add-elements-button'),'New native empty page has no captured Add Elements control')
+    _one(new_canvas.get_by_text('Drag and drop components',exact=True),'New native page lacks its positive empty canvas marker')
+    if frame.locator('#add-slide-button').count()!=expected_count:
+        raise Stop('New page Add Page controls do not match the exact owner count')
+    after=inventory_reader(frame,runtime)
+    if after!=[*before,[]]:raise Stop('Native Add Page changed existing questions or did not create an exact empty owner')
+    return runtime,deepcopy(after)
 
 
 def _append_tile(frame,plan,tile_label,*,page=None):
     _close_properties(frame)
     dialog=frame.get_by_role('dialog')
     if not dialog.count():
-        click(_one(frame.get_by_role('button',name='Add Quiz Element',exact=True),'Native Add Quiz Element changed'))
+        if plan.get('create_page'):
+            owner,_=_owners(frame,plan)[plan['target_page']-1]
+            opener=owner.locator('button#add-elements-button')
+            _one(opener,'New native empty page Add Elements opener changed')
+        else:
+            opener=_one(frame.get_by_role('button',name='Add Quiz Element',exact=True),'Native Add Quiz Element changed')
+        click(opener)
         dialog=frame.get_by_role('dialog');dialog.wait_for(state='visible',timeout=45000)
     if dialog.count()!=1 or dialog.get_by_text('Quiz Element',exact=True).count()!=1:
         raise Stop('Native Quiz Element drawer changed')
@@ -244,9 +348,10 @@ def _append_tile(frame,plan,tile_label,*,page=None):
     if (not box or box['width']<8 or box['height']<8 or before and not last):
         raise Stop('Native quiz append destination is not measurable')
     if last:
-        # Live capture appended successfully seven pixels inside the lower
-        # edge of the last wrapper. Native canvases normally end exactly at
-        # that wrapper; a requirement for a blank tail prevents real writes.
+        # Guarded attempted append geometry from the captured lower-edge drag.
+        # Populated-page acceptance remains unresolved: this can create a new
+        # page, which must stop before properties or Save. Normal canvases end
+        # at their last wrapper, so a blank-tail requirement is not usable.
         x=last['x']+last['width']/2-box['x'];y=last['y']+last['height']-7-box['y']
         if last['width']<8 or last['height']<14:
             raise Stop('Native final question has no captured inside-edge drop area')
@@ -268,7 +373,12 @@ def _append_tile(frame,plan,tile_label,*,page=None):
             # inside-edge point three times before releasing. One drag only.
             for _ in range(3):page.mouse.move(*destination)
         finally:page.mouse.up()
-    wait_until(lambda:items.count()==before+1,'Short Answer insertion did not append exactly one widget')
+    def one_inserted():
+        _owners(frame,plan)
+        count=items.count()
+        if count>before+1 or count<before:raise Stop('Native question drag changed an unexpected number of existing-owner widgets')
+        return count==before+1
+    wait_until(one_inserted,'Native question insertion did not append exactly one widget')
     _owners(frame,plan);_close_drawer(frame)
     return items.nth(before)
 
@@ -288,7 +398,7 @@ def _append(frame,plan,*,page=None):
 def _write_question(frame,item,question,*,field_types=('TEXT','RADIO'),new_kind='TEXT',default_key='single_line',metadata_reader=None):
     before=_read_question(frame,item,field_types=field_types,metadata_reader=metadata_reader)
     if (before['field_type']!=new_kind or before['query_key']!=default_key
-            or before['placeholder'] or before['short_label'] or before['required'] or before['hidden']):
+            or before['placeholder'] or before['short_label'] or before['required'] or before.get('hidden',False)):
         raise Stop('New Short Answer default properties differ from capture')
     label,_=_item_kind(item,field_types=field_types);click(label)
     click(_one(frame.get_by_role('button',name='Open settings',exact=True),'Native new question settings changed'))
@@ -298,6 +408,9 @@ def _write_question(frame,item,question,*,field_types=('TEXT','RADIO'),new_kind=
             fill(control,question[key]);control.press('Tab')
         if control.input_value()!=question[key]:raise Stop('Native Short Answer ignored an authored property')
     for key,selector in FLAGS.items():
+        if key not in properties_for(new_kind):
+            if frame.locator(selector).count()!=0:raise Stop('An unsupported dropdown Hidden control appeared')
+            continue
         flag=_one(frame.locator(selector),'Native Short Answer checkbox changed')
         value=flag.get_attribute('aria-checked')
         if value not in ('true','false') or not flag.is_enabled():raise Stop('Native Short Answer flag is unavailable')
@@ -307,7 +420,7 @@ def _write_question(frame,item,question,*,field_types=('TEXT','RADIO'),new_kind=
                        'Native Short Answer checkbox did not accept the requested state')
     _close_properties(frame,required=True)
     after=_read_question(frame,item,field_types=field_types,metadata_reader=metadata_reader)
-    if {key:after[key] for key in PROPERTIES}!=question:
+    if {key:after[key] for key in properties_for(new_kind)}!=question:
         raise Stop('New Short Answer properties differ before Save')
     for key in ('_radio_options','_choice_controls','_choice_switches'):
         if before.get(key)!=after.get(key):
@@ -322,17 +435,17 @@ def configure(page,step):
         if page.url!=plan['start_url'] or title.count()!=1 or title.input_value()!=plan['expected_quiz_name']:
             raise Stop('Short Answer quiz identity changed')
         assert_tenant(page,plan)
-    title.wait_for(state='visible',timeout=45000);identity()
+    title.wait_for(state='visible',timeout=45000);_wait_editor_identity(page,title,plan);identity();_wait_baseline(frame,plan)
     before=_inventory(frame,plan)
     if _properties_only(before)!=[page['questions'] for page in plan['pages']]:
         raise Stop('Existing quiz questions differ from the complete expected inventory')
-    desired=deepcopy(before);owner=plan['target_page']-1
+    runtime,desired=_target_page(frame,plan,before,_inventory);owner=plan['target_page']-1
     for question in plan['questions']:
         identity()
-        if _inventory(frame,plan)!=desired:raise Stop('Quiz questions changed before the next insertion')
-        item=_append(frame,plan,page=page);authored=_write_question(frame,item,question)
+        if _inventory(frame,runtime)!=desired:raise Stop('Quiz questions changed before the next insertion')
+        item=_append(frame,runtime,page=page);authored=_write_question(frame,item,question)
         desired[owner].append(authored)
-        if _inventory(frame,plan)!=desired:
+        if _inventory(frame,runtime)!=desired:
             raise Stop('Short Answer insertion changed existing questions or a different page')
     identity();save=_one(frame.get_by_role('button',name='Save',exact=True),'Native quiz Save changed')
     if not save.is_enabled():raise Stop('Native Short Answer configuration remains invalid')
@@ -341,8 +454,8 @@ def configure(page,step):
     page.wait_for_load_state('networkidle',timeout=45000)
     reopen_editor(page,'quiz',plan['expected_quiz_name'],plan['start_url'])
     frame=page.frame_locator('iframe[name="quiz-builder-app"]');title=frame.get_by_role('textbox',name='Form Name',exact=True)
-    title.wait_for(state='visible',timeout=45000);identity()
-    if _inventory(frame,plan)!=desired:raise Stop('New native Short Answers did not persist after independent reopen')
+    title.wait_for(state='visible',timeout=45000);_wait_editor_identity(page,title,plan);identity();_wait_baseline(frame,runtime,expected=desired)
+    if _inventory(frame,runtime)!=desired:raise Stop('New native Short Answers did not persist after independent reopen')
     return {'status':'QUIZ_SHORT_ANSWERS_SAVED_AND_REOPENED','kind':'quiz_short_answers',
         'editor_url':page.url,'configuration_sha256':configuration_hash(step),
         'question_count':len(plan['questions']),'target_page':plan['target_page'],

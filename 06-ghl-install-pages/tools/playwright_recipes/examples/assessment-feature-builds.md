@@ -238,8 +238,10 @@ question types and answer routing remain separate implementation requirements.
 
 The native condition stack implements ordered Show/Hide rules, homogeneous
 AND/OR clauses within each rule, and one explicit rule per target. An explicit
-complete `expected_rules` list enables same-count edits; clause removal remains
-uncaptured. A dedicated outcome stack also appends Redirect to URL, Display
+complete `expected_rules` list enables same-count edits, including captured
+tail-clause removal while preserving the initial If row. Condition-card removal,
+reordering and count changes remain separate requirements. A dedicated outcome
+stack also appends Redirect to URL, Display
 custom message and Disqualify lead effects while preserving prior card HTML.
 See `form-condition-stack-edit.json` and `form-condition-outcomes.md`. Nested
 mixed predicates remain a separate requirement.
@@ -253,6 +255,17 @@ acknowledgment are required as described in `quiz-multiple-choice-creation.md`
 and `quiz-written-answer-creation.md`. New keys must be distinct from existing
 keys, but a prior native default key does not block index-bound insertion.
 Answer routing and uncaptured question types remain separate requirements.
+
+The choice frontdoor also accepts captured `SINGLE_OPTIONS` Single Dropdown
+questions with three explicit options and no `hidden` property. It does not
+invent a Hidden control or treat a different widget's settings as its own.
+An explicit `create_page:true` and generated `new_page_label` author one question
+on a new empty page at `target_page:N+1`; the original full inventory and hash
+remain bound through saved readback and completed replay. See
+`quiz-new-empty-page-question.md`. The populated-page append path remains a
+measured gap for Dropdown widgets, and Multi Dropdown has a separate unimplemented
+identity/control contract. Positive UI capture and offline checks are not saved
+or submitted acceptance.
 
 API-backed existing Single Dropdown and Large Text schema placement uses
 independent native Query Key values; no canvas API ID is fabricated. Initial

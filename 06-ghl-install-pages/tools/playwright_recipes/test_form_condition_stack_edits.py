@@ -18,14 +18,17 @@ def edit_plan():
 
 
 class EditSchemaTests(unittest.TestCase):
-    def test_expected_count_and_uncaptured_clause_removal_refuse_before_browser(self):
+    def test_expected_card_count_mismatch_refuses_before_browser(self):
         mismatch=edit_plan();mismatch['expected_rules'].pop()
-        shrinking=edit_plan();shrinking['expected_rules'][0]['clauses'].append(
-            {'if_field':'Email','operator':'Is Empty'})
-        for data in (mismatch,shrinking):
+        for data in (mismatch,):
             page=Mock()
             with self.subTest(data=data),self.assertRaises(Stop):native.configure(page,data)
             self.assertFalse(page.mock_calls)
+
+    def test_captured_tail_clause_removal_is_now_an_explicit_supported_edit(self):
+        shrinking=edit_plan();shrinking['expected_rules'][0]['clauses'].append(
+            {'if_field':'Email','operator':'Is Empty'})
+        self.assertEqual(native.validate(shrinking),shrinking)
 
     def test_hash_binds_previous_stack_and_retains_legacy_append_hash(self):
         data=edit_plan();changed=deepcopy(data);changed['expected_rules'][0]['effect']='Show Field'

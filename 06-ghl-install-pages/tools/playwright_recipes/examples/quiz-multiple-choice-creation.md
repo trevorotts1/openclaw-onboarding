@@ -11,6 +11,18 @@ the native editor warns that option changes can affect field reuse.
 An option rename that would transiently collide with another still occupied
 default label is refused before insertion; no invented staging labels are used.
 
+`SINGLE_OPTIONS` with three options selects the captured Single Dropdown tile.
+Its records omit `hidden` entirely: the native quiz General panel has Required
+and no Hidden control, whose unexpected appearance is refused. The default key
+is `dropdown`, the generated label has five characters and the active canvas
+contains a typeless, ID-less, name-less `input.dropdown-input.form-placeholder`.
+Only the exact selected widget's `#options-card .option` labels are read or
+edited. Each has `option-label-UUID-N` ID and `UUID_N` for attribute; there are
+no per-option disabled checkbox/radio input values to pretend to verify.
+The separate native property option Label values, categories and scores must
+match independently after editing, saving and reopening. Three Jump switches
+are retained; a Spread control is absent for this captured type.
+
 One native drag inserts seven pixels inside the last question's lower edge on
 the exact target page, using fresh bounds and the captured repeated final pointer
 events. Normal populated canvases need no blank tail. A changed page count stops
@@ -42,3 +54,7 @@ configuration hash on first execution and replay, and refuse mixed assessment
 actions in this operation. Completion requires a real Save and independent
 quiz-list reopen with full page, property, option and scoring inventory readback.
 Source/fixture checks do not prove live saved behavior or submitted outcomes.
+
+Every new native choice UUID is also checked against visible prior choice
+option identities and existing input names, including cross-type reuse. No
+global API identity or absence outside this exact editor is inferred.

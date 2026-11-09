@@ -28,9 +28,12 @@ predicate/effect/target is then checked, and every untouched card must remain
 unchanged after each modal Save. The hash binds both previous and desired lists.
 
 Changing existing AND/OR connectors does not append a row. Clauses can retain
-their count or grow through the captured native append controls. Removing a
-clause or changing the number/order of cards requires a separate captured flow
-and is refused before writing. A conflicting previous Show/Hide pair may be
+their count, grow through native append controls, or shrink by removing tail
+rows. Each removal is bound to the exact tail row's owner and captured trash
+SVG, never the first If row. There is no confirmation dialog in this captured
+flow. Every remaining prefix clause, connector, effect and target is checked
+after each removal. Changing the number/order of cards still requires a
+separate captured flow and is refused before writing. A conflicting previous Show/Hide pair may be
 explicitly inventoried and corrected; conflicting desired predicates for one
 target remain refused. See `form-condition-stack-edit.json`.
 

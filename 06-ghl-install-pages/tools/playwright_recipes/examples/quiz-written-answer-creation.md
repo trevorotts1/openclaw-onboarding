@@ -37,3 +37,11 @@ journaled assessment action. Completion requires independent quiz-list reopen
 and the complete saved desired inventory. The unsaved native captures were
 discarded; source and fixture checks do not prove live saved behavior, numerical
 validation, routing, scoring effects or submitted answers.
+
+Native title visibility can precede saved question DOM hydration. Before the
+first inventory, the writer waits for the correct nonempty title, exact page
+headings and positive expected baseline widgets on Edit. Missing loading DOM
+waits within the normal bounded readiness budget; a wrong nonempty owner, URL,
+type, label or positive count is refused. A declared empty page still needs
+its captured visible drop placeholder, never zero nodes alone. After reopening,
+readiness uses the complete desired inventory including the newly added fields.
