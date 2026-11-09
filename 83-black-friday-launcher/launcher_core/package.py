@@ -34,12 +34,14 @@ from .constants import (
     SKILL_VERSION,
     skill_path,
 )
+from . import capability_check
 from . import checkout as checkout_module
 from . import council as council_module
 from . import image_plan as image_plan_module
 from . import intake as intake_module
 from . import launch_bridge
 from . import launch_plan as launch_plan_module
+from . import linked_delivery
 from . import page_designs
 from . import route as route_module
 from .check_rules import delivery_units
@@ -1294,6 +1296,40 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         council = council_module.planning_step(intake, runner=council_runner)
     checkout = checkout_module.order_form_mapping(
         intake, route, **({"readback": checkout_readback} if checkout_readback is not None else {}))
+    # F22: the linked delivery/access inventory and the capability record are recomputed
+    # from the same intake the dispatch used. A required capability that cannot be proved,
+    # or an unaccounted-for destination in a package that claims delivery, refuses here —
+    # the claim boundary — and the files are written only after both hold.
+    resources = linked_delivery.resolve(intake)
+    capabilities = capability_check.run(intake, route=route, plan=launch_plan)
+    try:
+        capability_check.assert_ready(capabilities)
+    except capability_check.CapabilityError as exc:
+        raise PackageError(exc.code,
+                           f"{exc.detail}; this package cannot claim readiness") from exc
+    if resources["blockers"] and (scope == DELIVERY_SCOPE_FULL or not test_only):
+        first = resources["blockers"][0]
+        raise PackageError(first["code"],
+                           f"{first['operator_detail']}; this package cannot claim delivery")
+    resources_path = linked_delivery.write_record(resources, run_dir)
+    capabilities_path = run_dir / capability_check.RECORD_REL
+    capabilities_path.write_text(json.dumps(capabilities, indent=2, sort_keys=True) + "\n",
+                                 encoding="utf-8")
+    resources_ref = {"path": resources_path.name, "sha256": _sha256_file(resources_path),
+                     "fingerprint": resources["fingerprint"],
+                     "counts": resources["summary"]["counts"],
+                     "state": resources["summary"]["state"],
+                     "pages": resources["pages"],
+                     "fulfillment": resources["fulfillment"],
+                     "client_blockers": resources["summary"]["client_blockers"],
+                     "next_steps": resources["summary"]["next_steps"]}
+    capabilities_ref = {"path": capability_check.RECORD_REL,
+                        "sha256": _sha256_file(capabilities_path),
+                        "state": capabilities["state"],
+                        "required": capabilities["required"],
+                        "blocked": capabilities["blocked"],
+                        "advisories": [name for name, row in capabilities["capabilities"].items()
+                                       if row["state"] == "unproven" and not row["required"]]}
     if launch_plan is not None and launch_plan.get("launch_id") != intake["launch_id"]:
         raise PackageError("AF-LAUNCH-PLAN-LAUNCH",
                            f"the launch plan is for {launch_plan.get('launch_id')!r}, not "
@@ -1488,6 +1524,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                     "advice_sha256": _sha256_file(council_path)},
         "checkout": {**checkout, "mapping_path": "checkout-mapping.json",
                      "mapping_sha256": _sha256_file(checkout_path)},
+        "linked_delivery": resources_ref,
+        "capabilities": capabilities_ref,
         "cross_sales": cross_sales,
         "live_effects": live_effects,
         "test_only": test_only,
@@ -1574,6 +1612,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             "mapping_path": "checkout-mapping.json",
             "mapping_sha256": _sha256_file(checkout_path),
         },
+        "linked_delivery": resources_ref,
+        "capabilities": capabilities_ref,
         "offer_facts": offer_facts(intake),
         "cross_sales": cross_sales,
         "seams": seams,
