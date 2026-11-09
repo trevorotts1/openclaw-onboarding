@@ -11,7 +11,8 @@
 #   3. HASH-PIN    — recompute the sha256 of every file the dispatch/launch path
 #                    executes or reads for decisions (scripts/front_door.py generates
 #                    the list: provers, wrappers, page types, the 83 launcher tree, the
-#                    shared contract validator) and compare to SF-PROVER-PIN.sha256.
+#                    71 page-build tree, the shared contract validator) and compare to
+#                    SF-PROVER-PIN.sha256.
 #                    The pin is CI-minted only. Skill 83's launcher runs the same gate.
 #   4. BYPASS-SCAN — refuse a run (or a skill tree) whose files hand-roll GHL REST calls or
 #                    mail/senders instead of delegating to Skill 6 / Skill 66 + Skill 74.

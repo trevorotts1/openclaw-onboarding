@@ -40,8 +40,10 @@ class Trees(unittest.TestCase):
         cls._td = tempfile.TemporaryDirectory()
         root = Path(cls._td.name)
         cls.t49, cls.t83 = root / "49-signature-funnel", root / "83-black-friday-launcher"
+        cls.t71 = root / "71-blackceo-signature-page"
         shutil.copytree(SKILL, cls.t49, ignore=SKIP)
         shutil.copytree(REPO / "83-black-friday-launcher", cls.t83, ignore=SKIP)
+        shutil.copytree(REPO / "71-blackceo-signature-page", cls.t71, ignore=SKIP)
         for name in ("signature_launch", "signature_launch_contract"):
             shutil.copytree(REPO / "shared-utils" / name, root / "shared-utils" / name, ignore=_top_files_only)
         # 83's `cli dispatch` runs its dependency preflight (every sibling skill tree, client_intake, the registry
@@ -231,6 +233,77 @@ class EveryDecisionFileIsPinned(Trees):
         self.assertEqual(fd.NET_ALLOWED, {"49/scripts/agnes_orchestrator.py", "49/scripts/mc_board.py",
                                           "shared/contract/approval_record.py", "shared/launch/launch_events.py"})
 
+
+class Skill71PageBuildTreeIsPinned(Trees):
+    """FIX-16 Branch A: the Skill 71 page-build tree is inside the composition, so one digest certifies the
+    code that actually builds the pages. The pin covers scripts and the reference JSON those scripts read;
+    Skill 71's own test files are not pinned, and a missing tree fails closed."""
+
+    def names(self):
+        return {n for n, _ in fd.pin_files(self.t49)}
+
+    def test_every_skill71_script_and_reference_json_is_named(self):
+        names = self.names()
+        for want in ("71/scripts/swarm_runner.py", "71/scripts/shared_page_service.py",
+                     "71/scripts/build_production_request.py", "71/scripts/page_role.py",
+                     "71/scripts/copy_forms.py", "71/references/launch.schema.json",
+                     "71/references/page-kinds.json", "71/references/copy-specs/roles/checkout.json"):
+            self.assertIn(want, names)
+        for f in (self.t71 / "scripts").glob("*.py"):
+            if not fd._is_test(f.name):
+                self.assertIn(f"71/scripts/{f.name}", names)
+        for sub in ("references", "references/copy-specs", "references/copy-specs/roles",
+                    "references/style-traits"):
+            for f in (self.t71 / sub).glob("*.json"):
+                self.assertIn(f"71/{sub}/{f.name}", names, sub)
+
+    def test_a_new_or_edited_skill71_file_trips_hash_pin_both_ways(self):
+        # both directions: an edit to an existing pinned file, and a brand-new file the generated list picks up
+        for rel in ("scripts/swarm_runner.py", "scripts/shared_page_service.py", "references/launch.schema.json"):
+            with self.tampered(self.t71 / rel):
+                with self.assertRaises(fd.FrontDoorError) as cm:
+                    fd.check(skill_dir=self.t49)
+                self.assertEqual(cm.exception.gate, "HASH-PIN", rel)
+        extra = self.t71 / "scripts" / "new_page_stage.py"
+        extra.write_text("X = 1\n")
+        try:
+            with self.assertRaises(fd.FrontDoorError) as cm:
+                fd.step_hashpin(self.t49)
+            self.assertEqual(cm.exception.gate, "HASH-PIN")
+        finally:
+            extra.unlink()
+        fd.check(skill_dir=self.t49)  # restored: clear again
+
+    def test_skill71_test_files_are_not_pinned(self):
+        before = fd.compute_pin(self.t49)
+        extra = self.t71 / "scripts" / "test_not_pinned.py"
+        extra.write_text("X = 1\n")
+        try:
+            self.assertEqual(fd.compute_pin(self.t49), before)
+            self.assertNotIn("71/scripts/test_not_pinned.py", self.names())
+        finally:
+            extra.unlink()
+
+    def test_a_missing_skill71_tree_fails_closed(self):
+        moved = self.t71.with_name(self.t71.name + ".moved")
+        self.t71.rename(moved)
+        try:
+            with self.assertRaises(fd.FrontDoorError) as cm:
+                fd.pin_files(self.t49)
+            self.assertEqual(cm.exception.gate, "HASH-PIN")
+            self.assertIn("pinned tree missing: 71", cm.exception.detail)
+        finally:
+            moved.rename(self.t71)
+
+    def test_skill71_is_pinned_but_not_string_scanned(self):
+        # boundary: Skill 71's builders legitimately import urllib.request (browser bootstrap, run events),
+        # so the string/AST scan does not cover that tree. The file is still protected by the pin above.
+        self.assertEqual(fd.scan_tree(self.t49), [])
+        with self.tampered(self.t71 / "scripts/stage_gate.py", b"\nimport requests\n"):
+            self.assertEqual(fd.scan_tree(self.t49), [])
+            with self.assertRaises(fd.FrontDoorError):
+                fd.step_hashpin(self.t49)
+        fd.check(skill_dir=self.t49)
 
 class PinIsMintedOnlyByTheAuthority(Trees):
     """ENF-14: rows 2, 4 and 6."""
