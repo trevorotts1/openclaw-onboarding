@@ -158,7 +158,7 @@ This role contributes to the company revenue cascade by: **protecting client gen
 
 ## 8. Tools You Use
 
-> **KIE lifecycle authority (this role does not restate it).** Live endpoints, Bearer-only auth, rate limits, credit preflight, and persist-results-immediately live in `07-kie-setup/references/kie-common-rules.md`. Model choice, prompt caps, and payload shape belong to the owning skills (image: Skill 66, video: Skill 67, audio: Skill 68); the live catalog and the live `pricingDesc` (the only price authority) come through Skill 74; the image pin is AGENTS.md N43 (GPT-Image-2.5 `sunburst` by default, the retained legacy GPT-Image-2 only for 3:1, 1:3, 9:21). The KIE key is the client's own, resolved through the alias family in `shared-utils/secret_names.json`. Where this file differs from those sources, they win.
+> **KIE lifecycle authority (this role does not restate it).** Live endpoints, Bearer-only auth, rate limits, credit preflight, and persist-results-immediately live in `07-kie-setup/references/kie-common-rules.md`. Model choice, prompt caps, and payload shape belong to the owning skills (image: Skill 66, video: Skill 67, audio: Skill 68); the live catalog and the live `pricingDesc` (the only price authority) come through Skill 74; the image pin is AGENTS.md N43 (GPT-Image 2.6 `sunburst` by default, the retained legacy GPT-Image-2 only for 3:1, 1:3, 9:21). The KIE key is the client's own, resolved through the alias family in `shared-utils/secret_names.json`. Where this file differs from those sources, they win.
 
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|

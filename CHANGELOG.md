@@ -1,3 +1,28 @@
+## [Unreleased]  -  2026-11-08  -  KIE GPT Image 2.6 moves to slash model ids, a 16-value ratio enum and an owner prompt cap of 20,000
+
+- KIE model ids migrate to slash form across the tree: `gpt-image-2-6/sunburst-text-to-image` and `gpt-image-2-6/sunburst-image-to-image`. The hyphen form returns HTTP 422 "The model name you specified is not supported" on a live probe, so every dispatch, registry, selector and gate now emits the slash form.
+- The 2.6 `aspect_ratio` enum is the vendor's 2026-11-08 set of exactly sixteen values: auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3. The 2.5-era 27:16, 16:27, 9:8 and 8:9 are not members at any resolution and are absent from `66-kie-image/models.json`.
+- Owner ruling 2026-11-08: the governing prompt cap for GPT Image 2.6 is 20,000 characters. `owner_prompt_cap_chars` outranks the vendor schema at limit resolution in both the Skill 66 validator and the Skill 74 adapter, so the reported source is `owner-ruling:66-kie-image`. The captured vendor schema in `~/.openclaw/cache/kie-live-adapter/schema/` still records maxLength 32,000 and was deliberately left unaltered: the vendor figure is provenance, never permission. A prompt at 19,500 passes, 20,100 is rejected with exactly 100 characters to cut, and 30,000 is rejected with exactly 10,000 to cut.
+- Ratio routing stops substituting: 3:1, 1:3, 9:21, 5:4, 4:5, 2:1 and 1:2 are served natively, so the substitution table and the ratio-based legacy detour are gone. `gpt-image-2` stays reachable by explicit pin only.
+- Skill 38's visual workflow protocol names the new family, so bumps Skill 38 to v2.0.225. The excluded-historical set stays untouched by the id migration: `evidence/`, `PROCESS-CERTIFICATE`, `provenance/calls.json`, and past CHANGELOG entries keep their original wording.
+- Migration: repository changes only; this draft has not been merged, deployed or rolled onto any client box.
+- Risk: MEDIUM. The cap tightens from the vendor's published 32,000 to the owner's 20,000, so prompts that were legal under the larger figure are now rejected on the ceiling. The gate names the exact characters to cut, and no floor or band was widened to accommodate them.
+- Leftovers the first pass missed are migrated too: Skill 71's stage-executor lifecycle self-check
+  fixture built its request with the retired hyphen id, and Skill 54's cover-prompt render-target
+  paragraph still named GPT-image-2.5. Both now name `gpt-image-2-6/sunburst-text-to-image`; the
+  cover prompt's own sha256 pin in `ANTHOLOGY-MANIFEST.json` is re-pinned to the edited bytes so
+  `prove_aw_fidelity.py` stays green. Kept as-is by design: the Skill 66 alias tables (compat shims
+  that resolve old phrases to 2.6), the Agnes-family files (a different vendor), run history,
+  `evidence/`, `examples/` and past CHANGELOG entries.
+- Versions: Skill 71 to v1.3.21 (all three carriers: `SKILL.md`, `skill-version.txt`, `VERSION`),
+  Skill 54 to v2.0.7 with its manifest `skill_version` reconciled from the stale v2.0.5, and
+  Skill 49 to v2.1.39 (registry-hash restamp: its two AGNES gate fixtures carry the updated
+  `KNOWN_ENTRY_HASH` and the SF prover pin is minted by the pin workflow, never hand-edited),
+  Skill 06 to v27.1.87, Skill 45 to v2.2.10 and Skill 66 to v2.2.6 — main's W19 fold
+  (POL-001 one prompt-band rule plus regenerated KIE prompt-enforcer copies) reached
+  v27.1.86 / v2.2.9 / v2.2.5 for those three, so the migration diff takes the next patch on
+  each to keep the G3 skill-version-bump guard honest.
+
 ## [v27.1.71]  -  2026-11-05  -  Presentation intake asks one actual question at a time
 
 - The mini app and conversational agent now request one independent answer per question. Canonical per-field prompts replace the merged ask sequence; the historical 23-turn target never authorizes batching. Quick and in-depth retain separate pacing and build-mode decisions.
@@ -7,7 +32,7 @@
 - Reject compound compatibility prompts and a second question before the client answers in the conversation scanner. The intake workflow exercises the agent, embedded and hosted app, signature intake and saved-session behavior.
 - Migration: repository changes only; this draft has not been merged, deployed or rolled onto any client box. New agent interviews use individual fields; historical compound conversation traces remain subject to the conversation gate rather than being rewritten as compliant evidence.
 - Risk: MEDIUM. Interview pacing changes and the number of turns can increase; required answers and consent are preserved. Skill 51 receives the standard patch bump in this release.
-- Skill 38's tunnel installer now refuses to hand a box a second cloudflared connector token: when another tunnel already owns the hostnames being served it exits 11 and names them, instead of silently taking the live connector and leaving the client link dead after Access login. bumps Skill 38 to v2.0.224; Skill 32's daemon installer gets the same preflight (v13.1.70).
+- Skill 38's tunnel installer now refuses to hand a box a second cloudflared connector token: when another tunnel already owns the hostnames being served it exits 11 and names them, instead of silently taking the live connector and leaving the client link dead after Access login. bumps Skill 38 to v2.0.225; Skill 32's daemon installer gets the same preflight (v13.1.70).
 
 ## [v27.1.70]  -  2026-11-05  -  Skill 77 council: selected-tree gate accepts one release at two roots; boxes stop ending 78/79 wired
 

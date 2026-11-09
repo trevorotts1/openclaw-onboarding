@@ -230,7 +230,7 @@ class StageExecutorHookTests(unittest.TestCase):
             self.assertIn("no API call was made", str(ctx.exception))
 
     def test_text_capable_models_pass(self):
-        for model in ("gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-text-to-image", "stub-model"):
+        for model in ("gpt-image-2-6/sunburst-text-to-image", "gpt-image-2-text-to-image", "stub-model"):
             self.se.require_text_capable(model)
 
     def test_the_paid_route_refuses_a_text_blind_model_without_touching_the_adapter(self):
