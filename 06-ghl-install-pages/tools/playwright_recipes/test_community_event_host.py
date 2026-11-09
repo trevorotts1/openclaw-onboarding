@@ -120,7 +120,9 @@ class EventHostTests(unittest.TestCase):
             result=host.run_recipe('meetings.integrate',inputs(),fallback,directory,
                 input_dir='.',page=object(),portal_context=object(),executors={
                     'public_api':provider,'openclaw_extension':provider})
-        self.assertEqual(result['status'],'EVENT_SCRIPT_ROUTE_REQUIRED')
+        # A supplied Page uses the owned leaf on this measured transport; the
+        # fake opaque context still fails before room creation or provider use.
+        self.assertEqual(result['status'],'EVENT_PREFLIGHT_REFUSED')
         provider.assert_not_called()
 
     def test_event_refuses_fresh_app_auth_and_generic_options_before_browser(self):
