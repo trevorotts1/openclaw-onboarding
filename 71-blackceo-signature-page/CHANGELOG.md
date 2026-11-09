@@ -1,3 +1,7 @@
+## [1.3.25] - 2026-11-09 - GPT Image 2.6 cap reads the 66 owner cap, fails to 20,000
+
+- `references/prompt-budget-policy.json`: 2.6 entry is `OWNER_RULED`, one source `66-kie-image/models.json` `owner_prompt_cap_chars`. `cap_for_model` and `stage_executor.prompt_budget` fail to 20,000 on lookup miss, never 32,000.
+
 ## [1.3.24] - 2026-11-09 - G3 lockstep roll for the ENT-001 gate-removal recut (no behaviour change)
 
 - Version bumped so the recut content carries a version G3 requires above main. No functional change.
