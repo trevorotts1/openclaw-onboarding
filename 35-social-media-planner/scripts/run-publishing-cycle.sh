@@ -1240,6 +1240,12 @@ if [ -n "$COMMUNITY_TASK" ]; then
   fi
   _cp_args=(--task "$COMMUNITY_TASK" --location-id "$GOHIGHLEVEL_LOCATION_ID"
             --group-id "$COMMUNITY_GROUP_ID")
+  # The WF10 write seam records an approval reference; the Purple approval
+  # manifest (C3) is that reference. Without it a create is REFUSED, never
+  # published anonymously.
+  if [ -n "$APPROVAL_MANIFEST" ]; then
+    _cp_args+=(--approval-ref "$APPROVAL_MANIFEST")
+  fi
   if [ "$COMMUNITY_PUBLISH" -eq 1 ] && [ "$DRY_RUN" -eq 0 ]; then
     log "Community publish: creating the approved inside-group post via the WF10 adapter."
   else

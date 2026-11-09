@@ -68,7 +68,13 @@ ADAPTER_METHODS = (
 #: PUBLISHED_STATES prove a post exists on the destination.
 CREATED_STATES = ("submitted", "draft_saved", "scheduled", "publishing")
 PUBLISHED_STATES = ("published", "published_verified")
-PENDING_STATES = ("pending_moderation", "processing")
+#: WF10's PostLifecycle names the in-flight state `pending_processing`; the
+#: provider status literal is `processing`. Both are the same non-success fact.
+PENDING_STATES = ("pending_moderation", "processing", "pending_processing")
+#: Lifecycle values that come straight from a WF10 PostReceipt.
+WF10_LIFECYCLES = tuple(sorted(
+    set(CREATED_STATES) | set(PUBLISHED_STATES) | set(PENDING_STATES) | {"failed"}
+))
 
 
 class CommunityAdapterUnavailable(RuntimeError):
@@ -120,56 +126,368 @@ def channel_limits(table: Mapping, channel: str) -> dict:
 # ---------------------------------------------------------------------------
 # adapter binding
 # ---------------------------------------------------------------------------
-def load_community_adapter(engine_root: str | None = None) -> Any:
-    """Import the WF10 adapter module, or fail loudly.
+#: The published WF10 module (WF10-CP01). Skill 35 never re-implements it.
+WF10_MODULE_NAME = "cli_anything.gohighlevel.public.community_social"
+#: The published surface this consumer binds to. Checked before any call so a
+#: renamed or removed symbol is a loud failure, never a half-bound adapter.
+WF10_SURFACE = (
+    "CommunitySocialAdapter",   # the typed adapter class (not module functions)
+    "ConnectedAccount",
+    "AuthorMapping",
+    "PlatformRequest",
+    "CommentPlan",
+    "build_community_post",
+    "build_comment",
+    "PostLifecycle",
+    "OPERATION_IDS",
+)
 
-    Search order: an explicit engine root, then the repo-relative engine path,
-    then a plain import (an installed package). A missing module raises
-    CommunityAdapterUnavailable naming every location searched — the caller
-    must never fall back to a home-grown HTTP call here.
+def _operation_short(operation_id: str) -> str:
+    """The frozen key prefix for one operation id (GU-004 section 2.4)."""
+    import re
+    short = re.sub(r"[^a-z0-9]+", "-", str(operation_id or "").lower()).strip("-")
+    short = re.sub(r"-{2,}", "-", short)[:32].strip("-")
+    return short or "op"
+
+def idempotency_key_for(operation_id: str, logical_key: str) -> str:
+    """A valid, deterministic WF10 idempotency key for one logical operation.
+
+    The adapter refuses any key outside ``gxo_<op-short>-<32 hex>``, so the
+    consumer's stable logical identity is hashed into that format. The same
+    logical operation therefore reuses the same key and a replay is deduped.
+    """
+    import hashlib
+    digest = hashlib.sha256(str(logical_key or "").encode("utf-8")).hexdigest()[:32]
+    return "gxo_%s-%s" % (_operation_short(operation_id), digest)
+
+def wf10_surface_gaps(module: Any) -> list[str]:
+    """Symbols the published WF10 module does not expose."""
+    return [name for name in WF10_SURFACE if not hasattr(module, name)]
+
+def import_wf10_module(engine_root: str | None = None) -> Any:
+    """Import the published WF10 module, or fail loudly naming every path tried.
+
+    An explicit ``engine_root`` means that root only: a caller that names a root
+    is asking a question about THAT tree, so silently falling back to a sibling
+    checkout would answer a different question. With no explicit root the
+    repo-relative engine tree is searched, then a plain package import.
     """
     import importlib
 
-    candidates = []
-    roots = [engine_root] if engine_root else []
-    roots.append(os.path.join(SKILL_DIR, "..", "44-convert-and-flow-operator",
-                              "tools", "engine"))
+    roots = ([engine_root] if engine_root
+             else [os.path.join(SKILL_DIR, "..", "44-convert-and-flow-operator",
+                                "tools", "engine")])
+    searched = []
     for root in roots:
-        if not root:
-            continue
         cleaned = os.path.abspath(root)
         if cleaned not in sys.path:
             sys.path.insert(0, cleaned)
-        candidates.append(
-            os.path.join(cleaned, "cli_anything", "gohighlevel", "public",
-                         "community_social.py"))
-    for name in ("cli_anything.gohighlevel.public.community_social",
-                 "community_social"):
+        searched.append(os.path.join(
+            cleaned, "cli_anything", "gohighlevel", "public", "community_social.py"))
+    names = [WF10_MODULE_NAME]
+    if engine_root is None:
+        names.append("community_social")
+    root = os.path.abspath(engine_root) if engine_root else None
+    for name in names:
         try:
             module = importlib.import_module(name)
         except ImportError:
             continue
-        missing = [m for m in ADAPTER_METHODS if not hasattr(module, m)]
-        if missing:
+        # An explicit root is a question about THAT tree. A module already in
+        # sys.modules from another checkout must not answer it.
+        if root is not None:
+            origin = os.path.abspath(str(getattr(module, "__file__", "") or ""))
+            if not origin.startswith(root + os.sep):
+                continue
+        gaps = wf10_surface_gaps(module)
+        if gaps:
             raise CommunityAdapterUnavailable(
-                "WF10 adapter %r is present but incomplete; missing: %s"
-                % (name, ", ".join(missing)))
+                "WF10 adapter %r is present but does not expose the published "
+                "surface; missing: %s" % (name, ", ".join(gaps)))
         return module
     raise CommunityAdapterUnavailable(
-        "WF10 Community adapter not available (assumed checkpoint WF10-CP01). "
+        "WF10 Community adapter not available (published checkpoint WF10-CP01). "
         "Searched: %s. Skill 35 will not issue a provider call itself and will "
-        "not report a post it did not create." % (", ".join(candidates) or "none"))
+        "not report a post it did not create." % ", ".join(searched))
 
+def _public_modules(module: Any) -> tuple:
+    """The WF10 package's own auth/adapter classes, imported from ITS tree."""
+    from cli_anything.gohighlevel.public.adapter import (  # type: ignore
+        ApprovalRef, PublicGhlAdapter)
+    from cli_anything.gohighlevel.public.auth import (  # type: ignore
+        AuthKind, TenantBinding, resolve_auth, resolve_tenant_from_env)
+    del module  # the package import is the authority; the module only proves it
+    return ApprovalRef, PublicGhlAdapter, AuthKind, TenantBinding, resolve_auth, resolve_tenant_from_env
+
+class Wf10CommunityAdapter:
+    """The consumer seam, implemented over the published WF10 adapter.
+
+    Skill 35 keeps its own request splitting, author selection and receipt
+    vocabulary. This class translates between that seam and the typed WF10
+    surface, so every provider call — row, tenant binding, auth class,
+    idempotency, approval, readback, capability gate — stays WF10's.
+    """
+
+    def __init__(self, module: Any, adapter: Any, tenant: Any, *,
+                 approval: Any = None) -> None:
+        self.module = module
+        self.adapter = adapter
+        self.tenant = tenant
+        self.approval = approval
+        self._accounts: dict[str, Any] = {}
+
+    # -- accounts --------------------------------------------------------
+    def _refresh_accounts(self) -> list:
+        result, accounts = self.adapter.list_community_accounts(tenant=self.tenant)
+        if result.status.value != "ok":
+            raise CommunityPublishError(
+                "accounts_read_failed",
+                "the Community connected-account read did not succeed (%s, "
+                "receipt %s); it is not an empty account list"
+                % (result.status.value, result.receipt_id))
+        self._accounts = {account.account_id: account for account in accounts}
+        return list(self._accounts.values())
+
+    @staticmethod
+    def _account_row(account: Any) -> dict:
+        row = {
+            "id": account.account_id,
+            "platform": account.platform,
+            "type": account.platform,
+            "name": account.name or "",
+            "kind": "community",
+        }
+        if account.group_id:
+            row["groupId"] = account.group_id
+        if account.oauth_id:
+            row["oauthId"] = account.oauth_id
+        return row
+
+    def list_accounts(self, location_id: str | None = None,
+                      cursor: str | None = None) -> dict:
+        accounts = self._refresh_accounts()
+        return {"success": True,
+                "results": {"accounts": [self._account_row(a) for a in accounts]}}
+
+    def _account(self, account_id: str) -> Any:
+        wanted = str(account_id or "").strip()
+        if wanted not in self._accounts:
+            self._refresh_accounts()
+        if wanted not in self._accounts:
+            raise CommunityPublishError(
+                "account_not_connected",
+                "%r is not a connected Community channel account of this "
+                "location; select one from the connected-account listing — an "
+                "account id is never derived from a group slug" % wanted)
+        return self._accounts[wanted]
+
+    def require_observed_group(self, group_id: str) -> None:
+        """Refuse a group id no connected account reports."""
+        self._account_for_group(group_id)
+
+    def _account_for_group(self, group_id: str) -> Any:
+        wanted = str(group_id or "").strip()
+        if not wanted:
+            raise CommunityPublishError(
+                "group_id_required",
+                "a Community write needs the observed backend group id; a group "
+                "slug is not interchangeable with it")
+        if not self._accounts:
+            self._refresh_accounts()
+        matches = [a for a in self._accounts.values() if a.group_id == wanted]
+        if not matches:
+            self._refresh_accounts()
+            matches = [a for a in self._accounts.values() if a.group_id == wanted]
+        if not matches:
+            raise CommunityPublishError(
+                "group_id_unobserved",
+                "no connected Community account reports backend group id %r; "
+                "read account.meta.groupId from the connected-account listing "
+                "and re-sync the channel before publishing" % wanted)
+        return matches[0]
+
+    # -- members ---------------------------------------------------------
+    def list_community_members(self, location_id: str, account_id: str,
+                               cursor: str | None = None) -> dict:
+        account = self._account(account_id)
+        page = int(cursor) if str(cursor or "").strip() else 1
+        result, page_result = self.adapter.list_members(
+            tenant=self.tenant, account=account, page=page)
+        if result.status.value != "ok":
+            raise CommunityPublishError(
+                "members_read_failed",
+                "the member list for account %s did not succeed (%s, receipt %s)"
+                % (account_id, result.status.value, result.receipt_id))
+        rows = [{"contactId": member.contact_id, "name": member.name or ""}
+                for member in page_result.members]
+        return {"results": {"users": rows},
+                "nextCursor": (str(page + 1) if page_result.has_more else None)}
+
+    def validate_community_author(self, location_id: str, group_id: str,
+                                  contact_id: str) -> dict:
+        account = self._account_for_group(group_id)
+        result, validation = self.adapter.validate_author(
+            tenant=self.tenant, account=account, contact_id=contact_id)
+        return {"valid": validation.state == "valid",
+                "state": validation.state,
+                "group_id": validation.group_id,
+                "contact_id": validation.contact_id,
+                "provider_status": result.status.value,
+                "http_status": validation.http_status,
+                "receipt_id": validation.receipt_id}
+
+    # -- writes ----------------------------------------------------------
+    def _require_approval(self) -> Any:
+        if self.approval is None:
+            raise CommunityPublishError(
+                "approval_required",
+                "the WF10 write seam needs an approval reference; pass the "
+                "Purple approval manifest (--approval-ref) so the adapter "
+                "records who approved this publication")
+        return self.approval
+
+    def create_post(self, location_id: str, payload: Mapping) -> dict:
+        approval = self._require_approval()
+        account_ids = [str(item) for item in payload.get("accountIds") or ()]
+        if not account_ids:
+            raise CommunityPublishError(
+                "no_community_accounts", "the request names no account id")
+        accounts = [self._account(account_id) for account_id in account_ids]
+        details = payload.get("communityPostDetails") or {}
+        post_as_user = details.get("postAsUser") or {}
+        authors = []
+        for account_id in account_ids:
+            entry = post_as_user.get(account_id) or {}
+            contact = str(entry.get("id") or "").strip()
+            if not contact:
+                raise CommunityPublishError(
+                    "author_missing",
+                    "account %s carries no member contactId; every Community "
+                    "account needs its own author mapping" % account_id)
+            authors.append(self.module.AuthorMapping(
+                account_id=account_id, contact_id=contact,
+                name=str(entry.get("name") or "") or None))
+        plan = self.module.build_community_post(
+            accounts=accounts,
+            authors=authors,
+            title=details.get("title"),
+            caption=payload.get("summary"),
+            media=payload.get("media") or (),
+            status=str(payload.get("status") or "draft"),
+            schedule_date=payload.get("scheduledAt") or payload.get("scheduleDate"),
+            notify_all_group_members=bool(details.get("notifyAllGroupMembers")),
+            broadcast_approved=bool(payload.get("broadcast_approved")))
+        community = [r for r in plan.platform_requests() if r.is_community]
+        receipt = self.adapter.create_post(
+            tenant=self.tenant, request=community[0], approval=approval,
+            idempotency_key=idempotency_key_for(
+                self.module.OPERATION_IDS["posts.create"],
+                str(payload.get("idempotency_key") or "")))
+        return {"id": None,
+                "status": None,
+                "lifecycle": receipt.lifecycle.value,
+                "receipt_id": receipt.result.receipt_id,
+                "http_status": receipt.result.http_status,
+                "deduplicated": receipt.deduplicated,
+                # The published WF10 receipt carries the lifecycle and the
+                # receipt id, not the created provider post id. Named here so a
+                # caller never receives a fabricated one.
+                "post_id_gap": "post_id_not_exposed_by_wf10_cp01"}
+
+    def get_post(self, location_id: str, post_id: str) -> dict:
+        """Read a post back. The published WF10 surface exposes no post read.
+
+        `create_post` already judged the readback and returned a lifecycle, so
+        the consumer never needs a second read. A caller that asks anyway gets a
+        named gap instead of a value this adapter cannot prove.
+        """
+        raise CommunityPublishError(
+            "post_read_unavailable",
+            "the published WF10-CP01 surface (CommunitySocialAdapter) exposes no "
+            "single-post read; the create receipt's lifecycle is the readback. "
+            "Recorded as change-requests/wf11/2.md")
+
+    def create_comment(self, location_id: str, payload: Mapping) -> dict:
+        approval = self._require_approval()
+        attach = str(payload.get("attachmentUrl") or "").strip()
+        plan = self.module.build_comment(
+            post_id=payload.get("postId"),
+            text=payload.get("text"),
+            is_parent_thread=bool(payload.get("isParentThread", True)),
+            parent_comment_id=payload.get("commentId"),
+            notify_all_group_members=bool(payload.get("notifyAllGroupMembers")),
+            broadcast_approved=bool(payload.get("broadcast_approved")),
+            attachments=(attach,) if attach else ())
+        receipt = self.adapter.create_comment(
+            tenant=self.tenant, plan=plan, approval=approval,
+            idempotency_key=idempotency_key_for(
+                self.module.OPERATION_IDS["comments.create"],
+                str(payload.get("idempotency_key") or "")))
+        return {"id": None,
+                "provider_status": receipt.result.status.value,
+                "receipt_id": receipt.result.receipt_id,
+                "http_status": receipt.result.http_status,
+                "attachments_rendered": receipt.attachments_rendered,
+                "comment_id_gap": "comment_id_not_exposed_by_wf10_cp01"}
+
+def bind_community_adapter(module: Any, adapter: Any, tenant: Any, *,
+                           approval: Any = None) -> Wf10CommunityAdapter:
+    """Bind an injected WF10 adapter instance (tests and callers that own auth)."""
+    gaps = wf10_surface_gaps(module)
+    if gaps:
+        raise CommunityAdapterUnavailable(
+            "WF10 module does not expose the published surface; missing: %s"
+            % ", ".join(gaps))
+    return Wf10CommunityAdapter(module, adapter, tenant, approval=approval)
+
+def load_community_adapter(engine_root: str | None = None, *,
+                           adapter: Any = None,
+                           location_id: str | None = None,
+                           approval_ref: str | None = None) -> Wf10CommunityAdapter:
+    """Import WF10 and return the live, bound consumer adapter.
+
+    With no injected ``adapter`` the live surface is constructed exactly as the
+    WF10 command module constructs it (location PIT auth + the frozen registry).
+    A missing token, tenant or published symbol raises
+    ``CommunityAdapterUnavailable`` — the caller prints BLOCKED and publishes
+    nothing.
+    """
+    module = import_wf10_module(engine_root)
+    ApprovalRef, PublicGhlAdapter, AuthKind, TenantBinding, resolve_auth,         resolve_tenant_from_env = _public_modules(module)
+    try:
+        if location_id:
+            tenant = TenantBinding(location_id=str(location_id),
+                                   source="skill35:--location-id")
+        else:
+            tenant = resolve_tenant_from_env()
+    except Exception as exc:  # noqa: BLE001 - no tenant is a loud block
+        raise CommunityAdapterUnavailable(
+            "WF10 adapter cannot bind a tenant: %s: %s. Set "
+            "--location-id or GOHIGHLEVEL_LOCATION_ID." % (type(exc).__name__, exc)
+        ) from exc
+    if adapter is None:
+        try:
+            auth = resolve_auth(kind=AuthKind.location_pit,
+                                location_id=tenant.location_id)
+            adapter = module.CommunitySocialAdapter(
+                public=PublicGhlAdapter(auth=auth))
+        except Exception as exc:  # noqa: BLE001 - no auth is a loud block
+            raise CommunityAdapterUnavailable(
+                "WF10 adapter cannot bind auth for location %s: %s: %s"
+                % (tenant.location_id, type(exc).__name__, exc)) from exc
+    approval = None
+    if approval_ref:
+        approval = ApprovalRef(ref=str(approval_ref), kind="approval_record")
+    return bind_community_adapter(module, adapter, tenant, approval=approval)
 
 def require_adapter(adapter: Any) -> Any:
-    """Validate an injected adapter against the frozen surface."""
+    """Validate an injected adapter against the frozen consumer seam."""
     missing = [m for m in ADAPTER_METHODS if not hasattr(adapter, m)]
     if missing:
         raise CommunityAdapterUnavailable(
             "adapter %r does not implement the WF10 surface; missing: %s"
             % (adapter, ", ".join(missing)))
     return adapter
-
 
 # ---------------------------------------------------------------------------
 # accounts and authors
@@ -548,6 +866,12 @@ def publish_community_task(
     media = list(task.get("media") or ())
     preflight_channel_content(table, "community", title=title, caption=caption, media=media)
 
+    # Refuse a group id the connected account does not report BEFORE spending a
+    # member read on it: a slug is not a backend group id.
+    group_check = getattr(adapter, "require_observed_group", None)
+    if callable(group_check):
+        group_check(group_id)
+
     authors = resolve_account_authors(
         adapter, location_id, accounts,
         selections=selections, staff_user_ids=staff_user_ids)
@@ -569,37 +893,50 @@ def publish_community_task(
         notify_all_group_members=bool(task.get("notify_all_group_members")),
         broadcast_approved=broadcast_approved,
         status=task.get("status"), scheduled_at=task.get("scheduled_at"))
+    # Two facts the WF10 write seam reads and this consumer already proved.
+    payload["broadcast_approved"] = bool(broadcast_approved)
+    payload["idempotency_key"] = key
 
     created = adapter.create_post(location_id, payload)
     if not isinstance(created, Mapping):
         raise CommunityPublishError(
             "create_response_unrecognised", "the adapter returned no record object")
     post_id = str(created.get("id") or created.get("post_id") or "").strip()
-    status = str(created.get("status") or "").strip().lower() or None
-    if not post_id:
-        receipt = {
-            "state": "unknown_outcome",
-            "operation": "community.post.create",
-            "operation_key": key,
-            "detail": "adapter returned a record with no post id; reconcile before retry",
-            "authors": authors,
-        }
-        if receipt_store is not None:
-            receipt_store[key] = dict(receipt)
-        return receipt
+    lifecycle = str(created.get("lifecycle") or "").strip().lower() or None
+    status = lifecycle or str(created.get("status") or "").strip().lower() or None
 
-    # The readback must agree with the status the create response claimed. A
-    # create that says "published" while the read still says "processing" is
-    # NOT a verified publication.
-    readback = verify_post(adapter, location_id, post_id, expected_state=status)
-    state = receipt_state(status, readback_ok=readback.get("state") == "matched")
+    if lifecycle:
+        # The WF10 receipt already judged create + readback and reported which
+        # lifecycle fact it observed. A second local readback would re-ask the
+        # same question through a surface that does not expose it.
+        readback = {"state": "matched"
+                    if lifecycle == "published_verified" else "not_required",
+                    "source": "wf10_post_receipt",
+                    "checked_fields": []}
+        state = receipt_state(lifecycle, readback_ok=lifecycle == "published_verified")
+    elif post_id:
+        # The readback must agree with the status the create response claimed. A
+        # create that says "published" while the read still says "processing" is
+        # NOT a verified publication.
+        readback = verify_post(adapter, location_id, post_id, expected_state=status)
+        state = receipt_state(status, readback_ok=readback.get("state") == "matched")
+    else:
+        readback = {"state": "unavailable", "checked_fields": [],
+                    "source": "no_create_record_and_no_post_id"}
+        state = "unknown_outcome"
+
     receipt = {
         "state": state,
         "operation": "community.post.create",
         "operation_key": key,
         "account_ids": [a["account_id"] for a in authors],
         "authors": authors,
-        "post_id": post_id,
+        # None is honest: the published WF10 receipt does not expose the created
+        # provider post id. A caller that needs it reconciles against the
+        # provider listing; Skill 35 never invents one.
+        "post_id": post_id or None,
+        "post_id_gap": created.get("post_id_gap"),
+        "provider_receipt_id": created.get("receipt_id"),
         "url": created.get("url") or readback.get("url"),
         "provider_status": status,
         "scheduled_at": task.get("scheduled_at"),
@@ -656,6 +993,7 @@ def publish_community_comment(
         "isParentThread": not bool(parent_comment_id),
         "text": text,
         "notifyAllGroupMembers": bool(notify_all_group_members),
+        "broadcast_approved": bool(broadcast_approved),
     }
     if parent_comment_id:
         payload["commentId"] = str(parent_comment_id)
@@ -663,14 +1001,33 @@ def publish_community_comment(
         payload["attachmentUrl"] = str(attach_url)
     created = adapter.create_comment(location_id, payload)
     comment_id = ""
+    provider_status = None
     if isinstance(created, Mapping):
         comment_id = str(created.get("id") or created.get("comment_id") or "")
+        provider_status = str(created.get("provider_status") or "").strip().lower() or None
 
     warning = comment_attachment_warning(table) if attach_url else ""
+    if comment_id:
+        state = "submitted"
+    elif provider_status == "ok":
+        # The provider accepted the comment; the published receipt carries no
+        # comment id, so the outcome is accepted-but-unidentified, not unknown.
+        state = "submitted"
+    elif provider_status == "unknown_outcome":
+        state = "unknown_outcome"
+    elif provider_status:
+        state = "failed"
+    else:
+        state = "unknown_outcome"
     return {
-        "state": "submitted" if comment_id else "unknown_outcome",
+        "state": state,
         "operation": "community.comment.create",
         "comment_id": comment_id or None,
+        "comment_id_gap": (created.get("comment_id_gap")
+                           if isinstance(created, Mapping) else None),
+        "provider_status": provider_status,
+        "provider_receipt_id": (created.get("receipt_id")
+                                if isinstance(created, Mapping) else None),
         "is_parent_thread": payload["isParentThread"],
         # Never describe an unrendered attachment as attached.
         "attachment_rendered": bool(attach_url) and not warning,
@@ -764,6 +1121,8 @@ def _main(argv: Sequence[str]) -> int:
     ap.add_argument("--location-id", required=True)
     ap.add_argument("--group-id", required=True, help="observed backend group id")
     ap.add_argument("--engine-root", default=None)
+    ap.add_argument("--approval-ref", default=None,
+                    help="approval record reference (the Purple approval manifest path)")
     ap.add_argument("--check", action="store_true", help="validate only; no provider call")
     args = ap.parse_args(argv)
 
@@ -780,7 +1139,9 @@ def _main(argv: Sequence[str]) -> int:
                           channel_limits(table, "community")}, indent=2))
         return 0
     try:
-        adapter = load_community_adapter(args.engine_root)
+        adapter = load_community_adapter(
+            args.engine_root, location_id=args.location_id,
+            approval_ref=args.approval_ref)
     except CommunityAdapterUnavailable as exc:
         print(f"BLOCKED: {exc}", file=sys.stderr)
         return 3

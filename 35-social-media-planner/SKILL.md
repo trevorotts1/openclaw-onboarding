@@ -169,6 +169,19 @@ in this file are not the authority).
 8. **Non-Community posting is unchanged.** External channels keep their existing
    path; `split_by_channel()` separates them and never rewrites their payload.
 
+**Binding (WF11 integration).** The consumer imports the published WF10 module
+`44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/community_social.py`
+(`WF10-CP01`, class `CommunitySocialAdapter`) and executes every call through the
+operation rows WF00 froze in `public/operations.py`: `social.accounts.list`,
+`social.community.accounts.users.list`, `social.community.authors.validate`,
+`social.posts.create` (+`social.posts.list` readback),
+`social.community.comments.create` (+`social.comments.list` readback). Skill 35
+issues no HTTP itself. A create is refused without an approval reference
+(`approval_required`): pass the Purple approval manifest. The published receipt
+carries the lifecycle and the receipt id but **not** the created provider post
+id, so a receipt reports `post_id: null` with
+`post_id_gap=post_id_not_exposed_by_wf10_cp01` rather than inventing one.
+
 Entrypoint: `scripts/run-publishing-cycle.sh --community-task <file>
 --community-group-id <id>` is CHECK ONLY (validates and prints the plan, no
 provider call). Add `--community-publish` to create the post; it exits 3 BLOCKED

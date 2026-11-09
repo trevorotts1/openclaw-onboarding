@@ -146,6 +146,10 @@ private copy of the numbers.
 - [ ] Skill 35 did not answer any reply/conversation turn — Skill 38 owns that (`conversation_owned_by_skill_38`)
 - [ ] Non-Community (external) posting behaviour is unchanged
 
+- [ ] The consumer binds the PUBLISHED WF10 module (`44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/public/community_social.py`, class `CommunitySocialAdapter`) and every id in `OPERATION_IDS` resolves to a frozen WF00 row in `public/operations.py` — proven by `test_a14_every_consumer_operation_id_is_a_frozen_wf00_row` and `test_a14_frozen_community_rows_carry_the_documented_facts`
+- [ ] A create is REFUSED with `approval_required` when no approval reference is bound; the Purple approval manifest is passed as `--approval-ref`
+- [ ] A receipt without a created provider post id reports `post_id: null` plus `post_id_gap=post_id_not_exposed_by_wf10_cp01`; no id is ever invented
+
 Fail-closed assertions available in code: `scripts/community_publish.py` refuses
 with a named code (`caption_over_limit`, `title_over_limit`, `media_over_limit`,
 `media_item_shape`, `staff_id_rejected`, `member_not_eligible_for_channel`,

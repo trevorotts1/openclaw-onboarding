@@ -174,8 +174,13 @@ bash ~/.openclaw/skills/35-social-media-planner/scripts/run-publishing-cycle.sh 
 # Create the post (fails loudly, exit 3, when the shared adapter is absent)
 bash ~/.openclaw/skills/35-social-media-planner/scripts/run-publishing-cycle.sh \
   --community-task ~/.openclaw/config/community-task.json \
-  --community-group-id <OBSERVED_BACKEND_GROUP_ID> --community-publish
+  --community-group-id <OBSERVED_BACKEND_GROUP_ID> --community-publish \
+  --approval-manifest <PURPLE_APPROVAL_MANIFEST>
 ```
+
+A create is REFUSED (`4`) without an approval reference: the WF10 write seam
+records the approval, so the Purple approval manifest is passed through as the
+consumer's `--approval-ref`. Nothing is ever published anonymously.
 
 Exit codes for this mode: `0` ok; `2` unreadable task/arguments; `3` BLOCKED —
 shared adapter unavailable, nothing published; `4` refused by a limit,

@@ -67,7 +67,7 @@ def _rows():
             scopes_candidate=("socialplanner/account.readonly",),
         ),
         row(
-            "social.community.users.list",
+            "social.community.accounts.users.list",
             method="GET",
             path_template=(
                 "/social-media-posting/{locationId}/community/accounts/"
@@ -77,7 +77,7 @@ def _rows():
             scopes_candidate=("socialplanner/oauth.readonly",),
         ),
         row(
-            "social.community.group_users.validate",
+            "social.community.authors.validate",
             method="GET",
             path_template=(
                 "/social-media-posting/{locationId}/community/groups/"
@@ -103,7 +103,7 @@ def _rows():
             scopes_candidate=("socialplanner/post.readonly",),
         ),
         row(
-            "social.comments.community.create",
+            "social.community.comments.create",
             method="POST",
             path_template="/social-media-posting/comments/community",
             tenant_binding="query.locationId",
@@ -407,7 +407,7 @@ class PostPreflightTests(_Harness):
     def test_missing_operation_row_fails_loudly_with_change_request(self):
         transport = FakeTransport([])
         rows = tuple(
-            item for item in _rows() if item.operation_id != "social.community.users.list"
+            item for item in _rows() if item.operation_id != "social.community.accounts.users.list"
         )
         operations = registry(*rows)
         public = make_adapter(transport, operations, gate=enabled_gate(rows))
@@ -416,10 +416,10 @@ class PostPreflightTests(_Harness):
         )
         with self.assertRaises(CommunitySocialGap) as caught:
             adapter.list_members(tenant=self.tenant(), account=_account_object())
-        self.assertEqual(caught.exception.operation_id, "social.community.users.list")
+        self.assertEqual(caught.exception.operation_id, "social.community.accounts.users.list")
         self.assertEqual(
             caught.exception.detail["change_request"],
-            "lanes/GHL-010-lane/change-requests/1.md",
+            "change-requests/wf11/1.md",
         )
         self.assertEqual(transport.call_count, 0)
 

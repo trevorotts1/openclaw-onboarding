@@ -478,11 +478,18 @@ exec {real_curl} "$@"
         stub.chmod(0o755)
         self.home = str(home)
         self.script = HERE / "run-publishing-cycle.sh"
+        # A copy of this skill with NO sibling 44-convert-and-flow-operator tree.
+        # It is the only way to ask "what does the entrypoint do when the WF10
+        # adapter is genuinely absent?" once the adapter exists on this checkout.
+        self.isolated = home / "skill35"
+        shutil.copytree(HERE.parent, self.isolated,
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        self.isolated_script = self.isolated / "scripts" / "run-publishing-cycle.sh"
 
     def tearDown(self):
         self.h.cleanup()
 
-    def _run(self, *args):
+    def _run(self, *args, script=None, task=None):
         import subprocess
 
         env = {
@@ -490,9 +497,10 @@ exec {real_curl} "$@"
             "PATH": "%s/bin:/usr/bin:/bin" % self.home,
             "TMPDIR": os.environ.get("TMPDIR", "/tmp"),
         }
+        script = script or self.script
+        task = task or (HERE / "community-task.example.json")
         return subprocess.run(
-            ["bash", str(self.script), "--community-task",
-             str(HERE / "community-task.example.json"),
+            ["bash", str(script), "--community-task", str(task),
              "--community-group-id", "grp-1", *args],
             capture_output=True, text=True, timeout=120, env=env)
 
@@ -503,13 +511,256 @@ exec {real_curl} "$@"
         self.assertIn("CHECK ONLY", p.stdout)
 
     def test_a14_entrypoint_blocks_loudly_without_wf10_adapter(self):
-        p = self._run("--community-publish")
+        # Run the REAL entrypoint from a tree where the WF10 adapter does not
+        # exist: the loud BLOCKED path, not a fabricated success and not the
+        # live path this checkout would otherwise take.
+        p = self._run("--community-publish", script=self.isolated_script,
+                      task=self.isolated / "scripts" / "community-task.example.json")
         self.assertEqual(p.returncode, 3,
                          f"expected a loud BLOCKED, got {p.returncode}\n"
                          f"STDOUT:{p.stdout}\nSTDERR:{p.stderr}")
         self.assertIn("BLOCKED", p.stderr)
         self.assertIn("WF10-CP01", p.stderr)
 
+
+# ---------------------------------------------------------------------------
+# Integration: the consumer bound to the PUBLISHED WF10 adapter, driven through
+# the FROZEN WF00-CP01 operation rows. This is what the WF00/WF10 unblocking
+# bought: every call below resolves a real row and builds the real path, offline.
+# ---------------------------------------------------------------------------
+_ENGINE = HERE.parents[1] / "44-convert-and-flow-operator" / "tools" / "engine"
+for _extra in (str(_ENGINE), str(_ENGINE / "tests")):
+    if _extra not in sys.path:
+        sys.path.insert(0, _extra)
+
+from _public_contract_fakes import (  # noqa: E402
+    SYNTHETIC_TENANT as _TENANT,
+    FakeTransport as _FakeTransport,
+    enabled_gate as _enabled_gate,
+    fake_tenant as _fake_tenant,
+    make_adapter as _make_adapter,
+    resp as _resp,
+)
+from cli_anything.gohighlevel.public.adapter import ApprovalRef as _ApprovalRef  # noqa: E402
+from cli_anything.gohighlevel.public.community_social import (  # noqa: E402
+    CommunitySocialAdapter as _WF10Adapter,
+    OPERATION_IDS as _WF10_OPERATION_IDS,
+)
+from cli_anything.gohighlevel.public.operations import (  # noqa: E402
+    OPERATIONS as _FROZEN_OPERATIONS,
+)
+
+#: The three Community rows WF00-CP01 froze, with the facts this consumer needs.
+_FROZEN_COMMUNITY_ROWS = {
+    "social.community.accounts.users.list": (
+        "GET",
+        "/social-media-posting/{locationId}/community/accounts/{accountId}/users",
+        "path.locationId",
+        "socialplanner/oauth.readonly",
+    ),
+    "social.community.authors.validate": (
+        "GET",
+        "/social-media-posting/{locationId}/community/groups/{groupId}/users/"
+        "{contactId}/validate",
+        "path.locationId",
+        "socialplanner/account.readonly",
+    ),
+    "social.community.comments.create": (
+        "POST",
+        "/social-media-posting/comments/community",
+        "query.locationId",
+        "socialplanner/comments.write",
+    ),
+}
+
+def _row_attr(row, name):
+    return getattr(row, name, None)
+
+class CommunityTestWF10Integration(unittest.TestCase):
+    """One real adapter, one real registry, zero network."""
+
+    def _binding(self, responses, *, approval=True):
+        transport = _FakeTransport(responses)
+        rows = list(_FROZEN_OPERATIONS.values())
+        public = _make_adapter(transport, _FROZEN_OPERATIONS,
+                               gate=_enabled_gate(rows))
+        adapter = _WF10Adapter(public=public, transport=transport)
+        module = cp.import_wf10_module(str(_ENGINE))
+        binding = cp.bind_community_adapter(
+            module, adapter, _fake_tenant(),
+            approval=_ApprovalRef(ref="approval-synthetic-wf11") if approval else None)
+        return binding, transport
+
+    @staticmethod
+    def _accounts_body(group_id="grp-real-1"):
+        return _resp(200, json.dumps({"accounts": [{
+            "id": "acct-real", "platform": "community", "name": "Launch Group",
+            "meta": {"groupId": group_id}}]}).encode())
+
+    @staticmethod
+    def _members_body():
+        return _resp(200, json.dumps({"users": [
+            {"contactId": "contact-real", "name": "Approved Member"}]}).encode())
+
+    @staticmethod
+    def _validate_body(valid=True):
+        return _resp(200, json.dumps({"valid": valid}).encode())
+
+    def _task(self, **over):
+        task = {
+            "cycle_id": "cycle-real-1",
+            "topic": "Launch week",
+            "title": "Approved discussion title",
+            "caption": "Approved discussion content",
+            "accounts": [{"channel": "community", "account_id": "acct-real"}],
+        }
+        task.update(over)
+        return task
+
+    # -- A14: rows, account/member mapping, request shapes ---------------
+    def test_a14_every_consumer_operation_id_is_a_frozen_wf00_row(self):
+        for key, operation_id in _WF10_OPERATION_IDS.items():
+            self.assertIsNotNone(
+                _FROZEN_OPERATIONS.get(operation_id),
+                "consumer key %r needs %r and WF00 freezes no such row"
+                % (key, operation_id))
+        # The Community ids are the ones WF00 froze, not the earlier assumptions.
+        self.assertEqual(_WF10_OPERATION_IDS["members.list"],
+                         "social.community.accounts.users.list")
+        self.assertEqual(_WF10_OPERATION_IDS["members.validate"],
+                         "social.community.authors.validate")
+        self.assertEqual(_WF10_OPERATION_IDS["comments.create"],
+                         "social.community.comments.create")
+
+    def test_a14_frozen_community_rows_carry_the_documented_facts(self):
+        for operation_id, (method, path, tenant, scope) in _FROZEN_COMMUNITY_ROWS.items():
+            row = _FROZEN_OPERATIONS.get(operation_id)
+            self.assertIsNotNone(row, "%s is missing from WF00 operations.py" % operation_id)
+            self.assertEqual(_row_attr(row, "method"), method, operation_id)
+            self.assertEqual(_row_attr(row, "path_template"), path, operation_id)
+            self.assertEqual(_row_attr(row, "tenant_binding"), tenant, operation_id)
+            self.assertEqual(tuple(_row_attr(row, "scopes_candidate") or ()), (scope,),
+                             operation_id)
+            self.assertEqual(_row_attr(row, "write"), method != "GET", operation_id)
+
+    def test_a14_real_module_exposes_the_published_surface(self):
+        module = cp.import_wf10_module(str(_ENGINE))
+        self.assertEqual(cp.wf10_surface_gaps(module), [])
+
+    def test_a14_real_adapter_publishes_through_the_frozen_rows(self):
+        caption = "Approved discussion content"
+        binding, transport = self._binding([
+            self._accounts_body(),
+            self._members_body(),
+            self._validate_body(),
+            _resp(201, json.dumps({"id": "post-internal-1"}).encode()),
+            _resp(200, json.dumps({"posts": [
+                {"id": "post-internal-1", "status": "published", "summary": caption}
+            ]}).encode()),
+        ])
+        receipt = cp.publish_community_task(
+            binding, location_id=_TENANT, group_id="grp-real-1",
+            task=self._task(status="scheduled", scheduled_at="2026-11-10T14:00:00Z"))
+
+        seen = [(r["method"], r["url"]) for r in transport.requests]
+        self.assertEqual(seen, [
+            ("GET", "/social-media-posting/%s/accounts" % _TENANT),
+            ("GET", "/social-media-posting/%s/community/accounts/acct-real/users" % _TENANT),
+            ("GET", "/social-media-posting/%s/community/groups/grp-real-1/users/"
+                    "contact-real/validate" % _TENANT),
+            ("POST", "/social-media-posting/%s/posts" % _TENANT),
+            ("POST", "/social-media-posting/%s/posts/list" % _TENANT),
+        ])
+        body = transport.requests[3]["body"]
+        self.assertEqual(body["accountIds"], ["acct-real"])
+        self.assertEqual(body["summary"], caption)
+        self.assertEqual(body["status"], "scheduled")
+        self.assertEqual(body["scheduleDate"], "2026-11-10T14:00:00Z")
+        # account.id is the key; the author is the member's own contactId
+        self.assertEqual(body["communityPostDetails"]["postAsUser"]["acct-real"]["id"],
+                         "contact-real")
+        self.assertEqual(receipt["state"], "published_verified")
+        self.assertTrue(receipt["published"])
+        self.assertIsNone(receipt["post_id"])
+        self.assertEqual(receipt["post_id_gap"], "post_id_not_exposed_by_wf10_cp01")
+
+    # -- A15: lifecycle honesty on the real adapter ----------------------
+    def test_a15_real_adapter_scheduled_is_not_published(self):
+        caption = "Approved discussion content"
+        binding, transport = self._binding([
+            self._accounts_body(),
+            self._members_body(),
+            self._validate_body(),
+            _resp(201, json.dumps({"id": "post-internal-2"}).encode()),
+            _resp(200, json.dumps({"posts": [
+                {"id": "post-internal-2", "status": "scheduled", "summary": caption}
+            ]}).encode()),
+        ])
+        receipt = cp.publish_community_task(
+            binding, location_id=_TENANT, group_id="grp-real-1",
+            task=self._task(status="scheduled", scheduled_at="2026-11-10T14:00:00Z"))
+        self.assertEqual(receipt["state"], "scheduled")
+        self.assertFalse(receipt["published"])
+        self.assertEqual(len(transport.requests), 5)
+
+    def test_a15_real_adapter_processing_readback_is_not_verified(self):
+        caption = "Approved discussion content"
+        binding, transport = self._binding([
+            self._accounts_body(),
+            self._members_body(),
+            self._validate_body(),
+            _resp(201, json.dumps({"id": "post-internal-3"}).encode()),
+            _resp(200, json.dumps({"posts": [
+                {"id": "post-internal-3", "status": "processing", "summary": caption}
+            ]}).encode()),
+        ])
+        receipt = cp.publish_community_task(
+            binding, location_id=_TENANT, group_id="grp-real-1", task=self._task())
+        self.assertEqual(receipt["state"], "pending_processing")
+        self.assertFalse(receipt["published"])
+
+    def test_a14_real_adapter_refuses_a_write_without_an_approval_ref(self):
+        binding, transport = self._binding([
+            self._accounts_body(),
+            self._members_body(),
+            self._validate_body(),
+        ], approval=False)
+        with self.assertRaises(cp.CommunityPublishError) as ctx:
+            cp.publish_community_task(
+                binding, location_id=_TENANT, group_id="grp-real-1", task=self._task())
+        self.assertEqual(ctx.exception.code, "approval_required")
+        self.assertEqual([r for r in transport.requests
+                          if r["method"] == "POST" and r["url"].endswith("/posts")], [])
+
+    def test_a14_real_adapter_refuses_a_group_id_the_account_does_not_report(self):
+        binding, transport = self._binding([self._accounts_body()])
+        with self.assertRaises(cp.CommunityPublishError) as ctx:
+            cp.publish_community_task(
+                binding, location_id=_TENANT, group_id="grp-from-a-slug", task=self._task())
+        self.assertEqual(ctx.exception.code, "group_id_unobserved")
+        self.assertEqual(transport.requests[0]["method"], "GET")
+
+    def test_a15_real_adapter_comment_uses_the_frozen_community_route(self):
+        binding, transport = self._binding([
+            _resp(200, json.dumps({"id": "comment-internal-1"}).encode()),
+            _resp(200, json.dumps({"comments": [
+                {"id": "comment-internal-1", "postId": "post-internal-1"}]}).encode()),
+        ])
+        receipt = cp.publish_community_comment(
+            binding, location_id=_TENANT, post_id="post-internal-1", text="Thanks all")
+        first = transport.requests[0]
+        self.assertEqual(first["method"], "POST")
+        self.assertEqual(first["url"], "/social-media-posting/comments/community")
+        # Frozen row: the tenant rides in the query, not the path.
+        self.assertEqual(first["query"], {"locationId": _TENANT})
+        body = first["body"]
+        self.assertEqual(body["postId"], "post-internal-1")
+        self.assertEqual(body["comment"], "Thanks all")
+        self.assertTrue(body["isParentThread"])
+        self.assertEqual(receipt["state"], "submitted")
+        self.assertIsNone(receipt["comment_id"])
+        self.assertEqual(receipt["comment_id_gap"],
+                         "comment_id_not_exposed_by_wf10_cp01")
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

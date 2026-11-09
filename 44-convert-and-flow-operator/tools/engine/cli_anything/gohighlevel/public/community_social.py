@@ -7,22 +7,25 @@ binding, auth class, idempotency, approval, readback and capability gate stay
 the ones the rest of Skill 44 uses.  This module adds no second dispatch
 authority and never invents a version, a scope or a path.
 
-Three Community routes that Document 1 section 11.2 names are not yet frozen in
-``public/operations.py`` (WF00 owns that file):
+Three Community routes that Document 1 section 11.2 names are frozen in
+``public/operations.py`` by WF00-CP01 (WF00 owns that file).  The ids WF00
+froze are the authority; this module's earlier assumed ids were reconciled to
+them (WF11 integration, change request ``change-requests/wf11/2.md``):
 
-    social.community.users.list
+    social.community.accounts.users.list
         GET /social-media-posting/{locationId}/community/accounts/{accountId}/users
         scope socialplanner/oauth.readonly
-    social.community.group_users.validate
+    social.community.authors.validate
         GET /social-media-posting/{locationId}/community/groups/{groupId}/users/{contactId}/validate
         scope socialplanner/account.readonly
-    social.comments.community.create
+    social.community.comments.create
         POST /social-media-posting/comments/community?locationId=...
         scope socialplanner/comments.write
 
-They are requested in ``lanes/GHL-010-lane/change-requests/1.md`` (WF10-CR01).
-Until the rows land, a call that needs one raises ``CommunitySocialGap`` naming
-the exact operation id and the change request.  Nothing here fakes the result.
+Path, version, auth class, scope candidate, tenant binding (``query.locationId``
+for the comment create) and readback are the frozen rows verbatim.  A row that
+is missing at run time still raises ``CommunitySocialGap`` naming the exact
+operation id — nothing here fakes a result.
 
 Identity rules this module enforces (Document 1 sections 3.3 and 11.3):
 
@@ -76,34 +79,27 @@ ATTACHMENT_WARNING = (
     "operation or an accessible resource link in the text."
 )
 
-#: Operation-id map.  The three Community-specific ids are pending WF00 rows;
-#: the rest already exist in ``public/operations.py``.
+#: Operation-id map.  Every id below is the row WF00 froze in
+#: ``public/operations.py`` (WF00-CP01); WF00 owns the ids, this module only
+#: consumes them.
 OPERATION_IDS: dict[str, str] = {
     "accounts.list": "social.accounts.list",
-    "members.list": "social.community.users.list",
-    "members.validate": "social.community.group_users.validate",
+    "members.list": "social.community.accounts.users.list",
+    "members.validate": "social.community.authors.validate",
     "posts.create": "social.posts.create",
     "posts.list": "social.posts.list",
     "posts.get": "social.posts.get",
-    "comments.create": "social.comments.community.create",
+    "comments.create": "social.community.comments.create",
     "comments.list": "social.comments.list",
 }
 
-PENDING_OPERATION_ROWS: dict[str, str] = {
-    "social.community.users.list": (
-        "Document 1 section 11.2: GET /social-media-posting/{locationId}/"
-        "community/accounts/{accountId}/users, scope socialplanner/oauth.readonly"
-    ),
-    "social.community.group_users.validate": (
-        "Document 1 section 11.2: GET /social-media-posting/{locationId}/"
-        "community/groups/{groupId}/users/{contactId}/validate, scope "
-        "socialplanner/account.readonly (verified per section 11.2)"
-    ),
-    "social.comments.community.create": (
-        "Document 1 section 11.2: POST /social-media-posting/comments/community"
-        "?locationId=..., scope socialplanner/comments.write, tenant in query"
-    ),
-}
+#: Empty by design: WF00-CP01 froze every Community row above.  A future id that
+#: is written before its row lands belongs here so the gap detail can name the
+#: documented contract instead of an empty string.
+PENDING_OPERATION_ROWS: dict[str, str] = {}
+
+#: Where a genuinely missing row is reported for change.
+ROW_CHANGE_REQUEST = "change-requests/wf11/1.md"
 
 #: Wire names Document 1 does not settle.  They are emitted as recorded here
 #: and are listed in WF10-CR01 so WF00/WF01 can certify or correct them.  A
@@ -841,7 +837,7 @@ class CommunitySocialAdapter:
                 operation_id=operation_id,
                 detail={
                     "owner": "WF00",
-                    "change_request": "lanes/GHL-010-lane/change-requests/1.md",
+                    "change_request": ROW_CHANGE_REQUEST,
                     "contract": PENDING_OPERATION_ROWS.get(operation_id, ""),
                 },
             )
@@ -1209,6 +1205,7 @@ __all__ = [
     "MembershipValidation",
     "OPERATION_IDS",
     "PENDING_OPERATION_ROWS",
+    "ROW_CHANGE_REQUEST",
     "PlatformRequest",
     "PostLifecycle",
     "PostReceipt",
