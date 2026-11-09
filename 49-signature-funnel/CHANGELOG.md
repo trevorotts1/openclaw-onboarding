@@ -1,3 +1,7 @@
+## [v2.1.45] - 2026-11-09 - G3 lockstep roll for the ENT-001 pin mint (no behaviour change)
+
+- Version bumped because the minted `scripts/SF-PROVER-PIN.sha256` is Skill 49 content and G3 requires a skill-version.txt bump alongside it. No functional change.
+
 ## [v2.1.44] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 
 - Version bumped so the folded content carries the version G3 requires above main. No functional change.
