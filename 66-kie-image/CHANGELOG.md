@@ -1,5 +1,9 @@
 # Changelog - kie-image
 
+## [2.2.5] - 2026-11-08 - G3 lockstep roll (PR 2868)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.4 -> 2.2.5 so the changelog entries added to this skill carry the required version bump. No behavior change; the prompt gate is unchanged.
+
 ## [2.2.4] - 2026-11-08 - G3 lockstep rolls (F18 touch, CI clear)
 
 - `SKILL.md` frontmatter and `skill-version.txt` rolled 2.2.2 -> 2.2.4 by the F18 version bump (2026-11-07) and the PR 2864 CI-clear roll (2026-11-08): prompt-gate prompt-budget enforcement carries forward, no new behavior in this entry. Entry added so the Skill 07 docs-port changelog gate pins the shipped version.

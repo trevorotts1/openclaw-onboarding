@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [2.3.6] - 2026-11-08 - G3 lockstep roll (PR 2868)
+
+- `SKILL.md` frontmatter and `skill-version.txt` rolled 2.3.5 -> 2.3.6 so the changelog entries added to this skill carry the required version bump. No behavior change; audio-request validation is unchanged.
+
 ## [2.3.5] - 2026-11-08 - G3 lockstep roll (CI clear)
 
 - `SKILL.md` frontmatter and `skill-version.txt` rolled 2.3.4 -> 2.3.5 by the PR 2864 CI-clear roll (2026-11-08): audio-request validation carries forward, no new behavior in this entry. Entry added so the Skill 07 docs-port changelog gate pins the shipped version.

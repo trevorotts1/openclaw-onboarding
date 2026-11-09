@@ -100,8 +100,8 @@ FINGERPRINTS = {
 SKILL_VERSIONS = {
     "07-kie-setup": "7.2.4",
     "74-kie-live-adapter": "1.1.12",
-    "66-kie-image": "2.2.4",
-    "68-kie-audio": "2.3.5",
+    "66-kie-image": "2.2.5",
+    "68-kie-audio": "2.3.6",
 }
 
 
