@@ -11,12 +11,12 @@
   "dispatched_through": "openclaw-onboarding/74-kie-live-adapter/scripts/kie_live_adapter.py",
   "adapter_mode": "active",
   "credential": "KIE_API_KEY, resolved by shared-utils/key_resolver.py from the operator secrets store; presence reported as SET, value never read into this record",
-  "model_id": "gpt-image-2-5-sunburst-text-to-image",
+  "model_id": "gpt-image-2-6/sunburst-text-to-image",
   "model_capability": "Text to Image",
   "model_selection": "Skill 66 kie-image default route (operator ruling 2026-09-09); explicit request was for the operator default, not a named alternate",
   "schema_source": "schema:live then schema:cache",
   "price_observed": {
-   "pricing_desc": "GPT Image 2.5 - 6 credits 1K, 10 credits 2K, 16 credits 4K",
+   "pricing_desc": "GPT Image 2.6 - 6 credits 1K, 10 credits 2K, 16 credits 4K",
    "credits_estimate_at_4K": 16,
    "preflight_required": 20.8,
    "price_source": "catalog:live"

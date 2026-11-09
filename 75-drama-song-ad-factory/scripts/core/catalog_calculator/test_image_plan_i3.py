@@ -14,7 +14,7 @@ except ImportError:                    # script run gets the module file
     import catalog_calculator as C                       # noqa: E402
 import _fixtures as F                                # noqa: E402
 
-SUN = "gpt-image-2-5-sunburst"
+SUN = "gpt-image-2-6/sunburst"
 
 
 def card(**kw):

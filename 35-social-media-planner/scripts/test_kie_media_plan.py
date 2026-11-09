@@ -7,7 +7,7 @@ from pathlib import Path
 
 import kie_media_plan as kmp
 
-SUN = "gpt-image-2-5-sunburst-text-to-image"
+SUN = "gpt-image-2-6/sunburst-text-to-image"
 
 
 def plan(image=None, video=None):
@@ -28,7 +28,7 @@ class MediaPlanTests(unittest.TestCase):
 
     def test_non_gpt_image_models_are_ignored_and_reported(self):
         for bad in ("nano-banana-pro", "google/nano-banana", "midjourney-v7", "ideogram/v3-text-to-image",
-                    "gpt-image-2-text-to-image", "gpt-image-1-5-text-to-image", "gpt-image-2-5-flare-text-to-image"):
+                    "gpt-image-2-text-to-image", "gpt-image-1-5-text-to-image", "gpt-image-2-6/flare-text-to-image"):
             p = plan(image={"model": bad})
             self.assertEqual(p["image"]["text_to_image"], SUN, bad)
             self.assertEqual(len(p["violations"]), 1, bad)

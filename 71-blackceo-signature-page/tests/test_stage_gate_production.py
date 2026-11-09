@@ -119,25 +119,25 @@ class PromptJudgedAgainstTheRunModel(Tmp):
     PROMPT = ("A photograph of a founder at a desk. " * 600)[:19000]
 
     def test_19000_chars_fails_a_5000_char_model_maximum(self):
-        res = validate_prompt.inspect(self.PROMPT, model="gpt-image-2-5-sunburst-text-to-image", max_chars=5000)
+        res = validate_prompt.inspect(self.PROMPT, model="gpt-image-2-6/sunburst-text-to-image", max_chars=5000)
         self.assertTrue([e for e in res["errors"] if "of max 5000" in e], res["errors"])
         self.assertEqual(res["telemetry"]["budget"]["status"], "ABOVE_MAX")
 
     def test_control_without_the_request_maximum_the_policy_band_passes_it(self):
-        res = validate_prompt.inspect(self.PROMPT, model="gpt-image-2-5-sunburst-text-to-image")
+        res = validate_prompt.inspect(self.PROMPT, model="gpt-image-2-6/sunburst-text-to-image")
         self.assertEqual(res["telemetry"]["budget"]["status"], "OK")
         self.assertEqual([e for e in res["errors"] if "max is" in e], [])
 
     def test_request_maximum_cannot_loosen_the_policy_maximum(self):
-        res = validate_prompt.inspect(self.PROMPT, model="gpt-image-2-5-sunburst-text-to-image", max_chars=90000)
+        res = validate_prompt.inspect(self.PROMPT, model="gpt-image-2-6/sunburst-text-to-image", max_chars=90000)
         self.assertEqual(res["telemetry"]["model_max_chars"], 20000)
 
     def test_gate_reads_the_model_from_the_run_request(self):
         self.assertEqual(stage_gate.run_model_request(self.run_dir), (None, None))
         write_json(self.run_dir / "production-request.json",
-                   {"model": "gpt-image-2-5-sunburst-text-to-image", "model_max_chars": 5000, "sections": []})
+                   {"model": "gpt-image-2-6/sunburst-text-to-image", "model_max_chars": 5000, "sections": []})
         self.assertEqual(stage_gate.run_model_request(self.run_dir, "image-inventory-prompts"),
-                         ("gpt-image-2-5-sunburst-text-to-image", 5000))
+                         ("gpt-image-2-6/sunburst-text-to-image", 5000))
 
     def item_failures(self):
         prompt = self.run_dir / "image-inventory-prompts" / "IMG-001.txt"
@@ -148,7 +148,7 @@ class PromptJudgedAgainstTheRunModel(Tmp):
 
     def test_stage_validator_fails_the_prompt_against_the_request_model(self):
         write_json(self.run_dir / "production-request.json",
-                   {"model": "gpt-image-2-5-sunburst-text-to-image", "model_max_chars": 5000, "sections": []})
+                   {"model": "gpt-image-2-6/sunburst-text-to-image", "model_max_chars": 5000, "sections": []})
         self.assertIn("of max 5000", self.item_failures())
 
     def test_control_no_request_model_leaves_the_default_judgement(self):
@@ -156,12 +156,12 @@ class PromptJudgedAgainstTheRunModel(Tmp):
 
     def test_close_records_the_budget_against_the_run_model(self):
         write_json(self.run_dir / "production-request.json",
-                   {"model": "gpt-image-2-5-sunburst-text-to-image", "model_max_chars": 5000, "sections": []})
+                   {"model": "gpt-image-2-6/sunburst-text-to-image", "model_max_chars": 5000, "sections": []})
         prompt = self.run_dir / "image-inventory-prompts" / "IMG-001.txt"
         prompt.parent.mkdir(parents=True, exist_ok=True)
         prompt.write_text(self.PROMPT, encoding="utf-8")
         record = stage_gate._prompt_budget_record(prompt, self.run_dir)
-        self.assertEqual(record["model"], "gpt-image-2-5-sunburst-text-to-image")
+        self.assertEqual(record["model"], "gpt-image-2-6/sunburst-text-to-image")
         self.assertEqual(record["budget"]["max"], 5000)
         self.assertEqual(record["percent_of_max"], 380.0)
 

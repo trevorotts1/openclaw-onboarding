@@ -1,10 +1,30 @@
 # CHANGELOG
 
-## 1.3.21 - 2026-11-09 - F16 S2 policy work: one style vocabulary, brand hash binding, creative-direction precedence (BLD-004)
+## 1.3.21 - 2026-11-09 - F16 S2 policy work + lifecycle self-check fixture names the current image model
 
 - `scripts/write_intake.py`: style source resolves in the shared vocabulary (`recommended_accepted` for an accepted proposal, never `client_choice`; unproven stays `client_choice`, unconfirmed default stays `default_to_confirm`); brand hash binding (`--brand-sha256`/`--brand-version` refuse on mismatch/unreadable); creative-direction precedence (`--creative-direction-kind`/`--creative-direction-grade-mode`/`--creative-direction-approval-ref`); palette status in the one vocabulary (`unknown` when missing/unrecognized, never omitted).
 - `scripts/stage_gate.py`: F16 rule updates. Tests: `tests/test_f16_intake_provenance.py`, `tests/test_stage_gate.py`.
 - Version bumped to 1.3.21 (`VERSION`, `skill-version.txt`, `SKILL.md` frontmatter) for the G3 content-change gate.
+
+- `scripts/stage_executor.py`: the F21 lifecycle self-check's fixture request named the retired
+  `gpt-image-2-5-sunburst-text-to-image` id; it now builds the request with
+  `gpt-image-2-6/sunburst-text-to-image`, the slash form that is live (the hyphen form returns
+  HTTP 422). The check measures identity, reservation and resume behaviour, never the model, so
+  its assertions and the F18 prompt band are unchanged.
+- Version lockstep: `skill-version.txt`, `VERSION` and the `SKILL.md` frontmatter all move to
+  1.3.21 together.
+- Restored from main (lost by the stale-snapshot commit f1e231cd0): ANNOT-001's
+  `scripts/validate_annotation_leak.py`, `tests/test_annotation_leak.py`, its six fixtures, the
+  `run_tests.py` registration, the two `references/stage-contract.json` invocations and the
+  annotation sentence in `scripts/build_production_request.py`. Its `--model` default and the
+  annotation_leak fixture name `gpt-image-2-6/sunburst-image-to-image`.
+- Restored from main (also lost by f1e231cd0): POL-001's warn-and-expand band in
+  `scripts/validate_prompt.py` (80 to below 95 percent passes and surfaces the warning with its ADD
+  count), `references/prompt-budget-policy.json` band wording, and the `tests/test_validate_copy_prompt.py`
+  assertions on `WARNING:`, `ADD 2000 chars`, `ADD 200 chars`, BELOW_TARGET and `add_chars`. Only the
+  model ids moved to 2.6.
+- Risk: LOW. One literal inside a self-check fixture.
+
 
 ## 1.3.18 - 2026-11-08 - one prompt-band rule: owner rule 12 governs (POL-001)
 
