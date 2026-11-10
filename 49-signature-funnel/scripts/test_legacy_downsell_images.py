@@ -34,6 +34,11 @@ PAGES = {"main": ("sales", 12), "upsell": ("upsell_1", 8), "downsell": ("downsel
 
 class LegacyPageImagesTests(unittest.TestCase):
     def run_tool(self, ledger, *extra):
+        # Fix plan B2 (unowned requirement G-3): the tool DEFAULTS to the real provider now, so a
+        # run that wants the offline stub must ask for it and record the owner approval that
+        # permitted it. This suite exercises the stub path end to end.
+        if "--image-provider" not in extra:
+            extra = (*extra, "--image-provider", "stub", "--stub-approved-by", "fixture-owner-approval")
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = pathlib.Path(tmp.name)

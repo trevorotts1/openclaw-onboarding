@@ -695,6 +695,38 @@ class _Page:
                        "design-board/design-board.png, and record the approval with design_board.py approve. "
                        "final-mockups does not start without it")
 
+    def generated_references(self) -> list:
+        """The client's generated images for this page, as --references paths (fix plan B8/G-11).
+
+        build_production_request.py never mentioned image-generation-qc or image-map, so the
+        final-mockups request carried no pictures and the model invented the imagery. The
+        files are taken from the run's own artifacts: the image map first (it names the real
+        asset per slot), then the image-generation-qc Image-NNN files.
+        """
+        refs = []
+        mapped = self.run / "image-map-upload" / "image-map.json"
+        try:
+            data = _read(mapped) or {}
+            for e in (data.get("images") if isinstance(data, dict) else None) or []:
+                raw = isinstance(e, dict) and (e.get("asset_file") or e.get("asset_path")
+                                               or e.get("file") or e.get("filename"))
+                if not raw:
+                    continue
+                p = Path(str(raw))
+                candidates = [p] if p.is_absolute() else [
+                    self.run / "image-map-upload" / p, self.run / "image-generation-qc" / p, self.run / p]
+                hit = next((c for c in candidates if c.is_file()), None)
+                if hit is not None and str(hit) not in refs:
+                    refs.append(str(hit))
+        except Exception:  # noqa: BLE001  (a broken map never blocks the draw; QC gate owns that)
+            refs = []
+        qc = self.run / "image-generation-qc"
+        if qc.is_dir():
+            for p in sorted(qc.glob("*.png")):
+                if str(p) not in refs:
+                    refs.append(str(p))
+        return refs
+
     def produce_mockups(self) -> None:
         request = self.run / FINAL_REQUEST
         if not request.is_file():
@@ -705,8 +737,12 @@ class _Page:
                 raise Stop("needs_authoring", f"final-mockups: {FINAL_REQUEST} does not exist; build it with "
                            "build_production_request.py --stage final-mockups (the NEXT 2 line the layout-proof "
                            "run printed)")
-            rc, out = self.call("build_production_request.py", "--copy-version", version, "--manuscript", manuscript,
-                                "--stage", "final-mockups", "--out", request, "--run-dir", self.run)
+            build = ["--copy-version", version, "--manuscript", manuscript,
+                     "--stage", "final-mockups", "--out", request, "--run-dir", self.run]
+            refs = self.generated_references()
+            if refs:  # the page's real pictures ride into the draw as references
+                build += ["--references", ",".join(refs)]
+            rc, out = self.call("build_production_request.py", *build)
             self.need(rc, out, "final-mockups", "building its request")
         if not (self.run / "final-mockups" / "stage-executor-record.json").is_file():
             rc, out = self.executor("--stages", "final-mockups", "--request", FINAL_REQUEST)

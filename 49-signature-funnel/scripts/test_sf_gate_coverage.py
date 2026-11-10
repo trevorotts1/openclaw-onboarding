@@ -249,6 +249,17 @@ def probe_runner() -> Set[str]:
             ok, msg = fn(rd)
             if not ok:
                 got |= _codes_from_msg(msg)
+        # Fix plan B1 (unowned requirement G-2): P7-BUILD consults the VISUAL gate before the
+        # FAB/QC seams, so the build's OWN codes are reachable only on a run that already has a
+        # valid visual set. Give the gate one; a run whose FAB artifact is still absent must
+        # then name AF-FUN-BUILD-FAB (the probe the reordering would otherwise hide).
+        vr = Path(td) / "visual-complete"
+        vr.mkdir()
+        (vr / "brief.json").write_text(json.dumps({"funnel_type": "signature_funnel", "funnel_size": 3}))
+        build.write_valid_run_evidence(vr, 3)
+        ok, msg = runner._gate_build(vr)
+        if not ok:
+            got |= _codes_from_msg(msg)
         ok, msg = runner._check_front_door(rd, None, None)
         if not ok:
             got |= _codes_from_msg(msg)

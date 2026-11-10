@@ -30,9 +30,9 @@ built and says what it needs. This tool never writes checkout copy.
       --brand-file <brand.json> --brand-owner <client> --out-dir <dir> [--page downsell-2]
 
 --page narrows the run. Each page is checked against structure/page_types.json (page_set.py): a page
-whose images are missing is refused. Provider is the offline stub unless --image-provider kie
---allow-paid (the review PDFs and boards are composed only on kie; the receipt lists them as render
-pending). Exit 0 ok, 2 refused or a stage failed.
+whose images are missing is refused. Provider DEFAULTS to kie (--allow-paid required); the offline stub
+is opt-in only and needs a recorded owner approval, --stub-approved-by <ref> (the review PDFs and boards
+are composed only on kie; the receipt lists them as render pending). Exit 0 ok, 2 refused or a stage failed.
 """
 from __future__ import annotations
 
@@ -267,7 +267,12 @@ def main(argv=None):
                     help="the thank-you page's access button label (the legacy ledger carries none)")
     ap.add_argument("--help-label", default="Get Support",
                     help="the thank-you page's help button label (the legacy ledger carries none)")
-    ap.add_argument("--image-provider", choices=["stub", "kie"], default="stub")
+    ap.add_argument("--image-provider", choices=["stub", "kie"], default="kie",
+                    help="kie (default) draws real wireframes and needs --allow-paid; stub writes "
+                         "placeholders and needs a recorded owner approval (--stub-approved-by)")
+    ap.add_argument("--stub-approved-by",
+                    help="the owner approval reference that permits a STUB run; without it a stub "
+                         "run is refused and, if a receipt claims one, P7-BUILD refuses to certify")
     ap.add_argument("--allow-paid", action="store_true")
     ap.add_argument("--image-model")
     ap.add_argument("--design-prose", type=Path)
@@ -275,6 +280,13 @@ def main(argv=None):
     try:
         if args.image_provider == "kie" and not args.allow_paid:
             raise Refused("--image-provider kie spends money; it needs --allow-paid, approved by the owner")
+        if args.image_provider == "stub" and not (args.stub_approved_by or "").strip():
+            # Fix plan B2: the provider must never DEFAULT to placeholder wireframes. A stub run
+            # is allowed only with a recorded owner approval, written into the receipt so the
+            # build gate can refuse an unapproved one.
+            raise Refused("--image-provider stub writes PLACEHOLDER wireframes and needs a recorded "
+                          "owner approval: pass --stub-approved-by <owner approval reference>. The "
+                          "default provider is kie.")
         root = args.skill71_root.resolve()
         scripts = root / "scripts"
         entries_file = root / "references" / "page-structures.json"
@@ -292,12 +304,16 @@ def main(argv=None):
         slugs = targets(structure, size, args.page, entries, bool(args.checkout_manuscript))
         args.image_model = _image_model(args)  # once per run: every page records the same id
         report = {"funnel_size": size, "pages": {},
+                  "provider": args.image_provider,
+                  "stub_approval": (args.stub_approved_by or None) if args.image_provider == "stub" else None,
                   "not_built": {s: NOT_BUILT[s] for s in structure["funnel_matrix"][str(size)]
                                 if s in NOT_BUILT and not (s == "checkout" and args.checkout_manuscript)}}
         for slug in slugs:
             report["pages"][slug] = run_page(slug, structure, ledger, args, scripts, entries)
         report["note"] = ("the image inventory, generation, Design Board approval and final-mockups "
-                          "are client-gated stages downstream and were not run")
+                          "are client-gated stages downstream and were not run HERE. final-mockups is "
+                          "NOT optional: prove_sf_build.VISUAL_STAGES requires it, so P7-BUILD refuses "
+                          "to certify until the client-gated final-mockups stage has closed (fix plan B3)")
         args.out_dir.mkdir(parents=True, exist_ok=True)
         (args.out_dir / "page-images-receipt.json").write_text(
             json.dumps(report, indent=2) + "\n", encoding="utf-8")
