@@ -33,7 +33,7 @@ Add:
 - Query: GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<TASK_ID> (state: waiting/queuing/generating/success/fail).
 - Default picks: Long-form (>15s) -> Wan 3.0 (wan/3-0-video); Multi-shot -> Kling 3.0 Omni; 2K -> MiniMax H3; explicit user model wins.
 - Validators run before dispatch: scripts/validate_prompt.py, scripts/validate_payload.py, scripts/select_video_model.py, scripts/normalize_alias.py.
-- Prompt bands: Wan 3.0/Gemini Omni/Seedance 2.5 (20K-30K cap, house band 5K-19K); MiniMax/PixVerse/Wan 2.7 (5K-7K caps); Kling Omni (3,072 cap); others NOT_PUBLISHED.
+- Prompt bands: rule 12 budget on every model (95-100% of the verified max, never below 80%, limit from Skill 74): Wan 3.0/Gemini Omni/Seedance 2.5 (20K-30K cap); MiniMax/PixVerse/Wan 2.7 (5K-7K caps); Kling Omni (3,072 cap); others NOT_PUBLISHED.
 - Full registry + per-family tables: [MASTER_FILES_FOLDER]/67-kie-video/models.json, [MASTER_FILES_FOLDER]/67-kie-video/references/
 ```
 

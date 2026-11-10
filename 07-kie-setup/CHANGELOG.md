@@ -1,3 +1,7 @@
+## [v7.2.11] - 2026-11-10 - official-docs port test pins 07 7.2.11 and 66 2.2.16 (test pin only, no behaviour change; INST-001 #21)
+
+- `tests/test_official_docs_port.py` `SKILL_VERSIONS` now reads 07 7.2.11 and 66 2.2.16 (was 7.2.10 and 2.2.15) after the INST-001 #21 Skill 66 doc bump. Touching a file inside this skill directory requires the G3 patch bump, so 07 rolls with it; the G3 lockstep, nothing else in Skill 07 changed.
+
 ## [v7.2.10] - 2026-11-10 - official-docs port test pins the shipped versions (test pin only, no behaviour change)
 
 - `tests/test_official_docs_port.py` `SKILL_VERSIONS` now reads the versions this merge train ships: 07 7.2.10, 74 1.1.17, 66 2.2.15, 68 2.3.8 (was 74 1.1.14, 66 2.2.11, 68 2.3.7, so two version tests failed on main). G3 patch bump for that test-only change (merge-train integration, GAP-RES3).

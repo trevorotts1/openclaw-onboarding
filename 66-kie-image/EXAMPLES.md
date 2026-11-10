@@ -173,7 +173,8 @@ MISTAKE 2: Skipping the validators.
 
 MISTAKE 3: Inventing a prompt cap.
   Seedream, Nano Banana, FLUX.2, Z-Image: vendor cap NOT published. Do not
-  hard-reject above 19,000; do not claim a number. House band is a TARGET.
+  claim a number; the limit comes from Skill 74 (live schema), and with none
+  known validate_prompt.py refuses a pass (UNKNOWN_MAX). No fixed 19,000 ceiling.
 
 MISTAKE 4: Converting Qwen's "4.5K token inputs" into a 4,500-char rule.
   Tokens are not characters. Rule D. Use token estimation; docs schema

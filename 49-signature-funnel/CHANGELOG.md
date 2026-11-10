@@ -1,3 +1,7 @@
+## [v2.1.53] - 2026-11-10 - docs: golden-daybreak README prompt-ledger row states the rule 12 band (INST-001 #21; no behaviour change)
+
+- `examples/golden-daybreak/README.md` line 39: the stale `5k–19k band` (en dash, which the ASCII grep missed) now reads `each 16,000–20,000 stripped chars, rule 12 band`, matching README line 20 and the `run_signature_funnel.py` line 29 fix. Doc only; the README is inside the pinned tree, so the SF prover pin is re-minted by the bot after merge and is not hand-edited here.
+
 ## [v2.1.52] - 2026-11-10 - merge-train integration of PRs 3064, 3071 and 3068: prompt-floor gapfill, final-mockups gated, unowned-18 fix plan
 
 - PR 3064 (PRMPT-001): `scripts/prove_sf_prompt_floor.py` no longer claims an over-max prompt was "NOT sent to Kie" and surfaces the 80-to-below-95 percent warn-and-expand warning; `signature-funnel-entry.sh` front door repaired; new `test_entry_front_door.py` and `test_prompt_floor_warn_surface.py`.
