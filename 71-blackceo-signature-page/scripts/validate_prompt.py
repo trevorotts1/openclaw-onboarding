@@ -380,13 +380,16 @@ def _owner_cap_from(spec):
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    for row in data.get("models") or data.get("entries") or []:
-        if isinstance(row, dict) and row.get(sel_field) == sel:
-            cap = row.get(field)
-            if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
-                return cap
-            return None
-    return None
+    if not isinstance(data, dict):
+        return None
+    rows = data.get("models", data.get("entries"))
+    if not isinstance(rows, list):
+        return None
+    matches = [row for row in rows if isinstance(row, dict) and row.get(sel_field) == sel]
+    if len(matches) != 1:
+        return None
+    cap = matches[0].get(field)
+    return cap if type(cap) is int and cap > 0 else None
 
 def cap_for_model(model, policy):
     """Resolve the policy entry for a model id (longest prefix wins)."""
@@ -405,18 +408,12 @@ def cap_for_model(model, policy):
             return dict(best, max_chars=None, unit=best.get("unit", "chars"))
         return best
     if model and "gpt-image-2-6" in model:
-        # Fail to the law, never to 32,000: owner ruling 2026-11-08 caps every
-        # 2.6 route at the 66-kie-image/models.json owner_prompt_cap_chars value.
-        cap = _owner_cap_from({"file": "66-kie-image/models.json",
-                               "selector_field": "canonical_model_id",
-                               "selector": "gpt-image-2-6/sunburst-text-to-image",
-                               "field": "owner_prompt_cap_chars"})
-        if cap is None:
-            return {"max_chars": None, "cap_status": "UNKNOWN", "unit": "chars",
-                    "source": "Owner ruling 2026-11-08: no owner cap recorded; refusing."}
-        return {"max_chars": cap, "cap_status": "OWNER_RULED", "unit": "chars",
-                "source": "Owner ruling 2026-11-08: %d read from 66-kie-image/models.json "
-                          "owner_prompt_cap_chars." % cap}
+        # Preserve the delivered exact-model, owner-only fallback when local policy is absent.
+        owner_cap = _owner_image_cap(model)
+        if owner_cap is not None:
+            return owner_cap
+        return {"max_chars": None, "cap_status": "UNKNOWN", "unit": "chars",
+                "source": "Exact owner-policy registry cap unavailable for " + model}
     return policy.get("default", {"max_chars": None, "cap_status": "UNKNOWN",
                                    "unit": "chars"})
 
