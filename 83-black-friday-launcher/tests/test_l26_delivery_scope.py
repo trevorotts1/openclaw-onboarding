@@ -199,17 +199,15 @@ class CliScopeTests(_Base):
         self.intake_path = Path(self.tmp.name) / "intake.json"
         self.intake_path.write_text(json.dumps(base_intake()), encoding="utf-8")
         pieces_dir = self.run_dir / "pieces"
-        pdf = (b"%PDF-1.4\n1 0 obj<</Type/Page/MediaBox [0 0 612 792]>>endobj\n"
-               b"trailer<</Root 1 0 R>>\n%%EOF\n")
-        for role, piece in self.pieces.items():
-            # B4: `assemble` now refuses a package carrying no design at all, so every page on the
-            # CLI path names its desktop wireframe. This class covers delivery scope, not the design set.
-            wireframe = pieces_dir / f"{role}_DESKTOP_WIREFRAMES.pdf"
-            wireframe.write_bytes(pdf)
-            piece["artifacts"].append({"path": str(wireframe),
-                                       "sha256": hashlib.sha256(pdf).hexdigest(),
-                                       "size": len(pdf), "kind": "wireframe_desktop_pdf"})
-            (pieces_dir / f"{role}.json").write_text(json.dumps(piece), encoding="utf-8")
+        # `assemble` refuses a package without a complete design set (B4, then the AF-LAUNCH-ASSEMBLE-DESIGN
+        # refusal at the CLI). This class covers delivery scope, not the design set, so every page on the CLI
+        # path comes from the free fake consumer, which writes the full labelled design set for the page.
+        from test_lane83_designs import make_piece
+        designs = Path(self.tmp.name) / "designs"
+        designs.mkdir()
+        for node in self.graph["nodes"]:
+            piece = make_piece(designs, self.normalized, node)
+            (pieces_dir / f"{node['role']}.json").write_text(json.dumps(piece), encoding="utf-8")
 
     def _assemble(self, *extra):
         stdout, stderr = io.StringIO(), io.StringIO()
