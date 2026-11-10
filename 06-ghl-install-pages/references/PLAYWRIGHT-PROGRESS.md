@@ -24,7 +24,7 @@ new features:
 | `surveys.create` | Additional question types, multiple-slide authoring and broader complete survey flows beyond the bounded single-slide Radio chain. |
 | `surveys.configure` | Additional question controls, compound predicates and broader completion/outcome/rule lifecycle. |
 | `quizzes.create` | Picture Choice, reliable populated-page append and complete shell/questions/scoring/results flow. |
-| `quizzes.configure` | Picture Choice, populated-page append, Jump To destinations, tier creation/removal and result media/styles. |
+| `quizzes.configure` | Picture Choice controls beyond the bounded three-option existing-catalog writer; populated-page append, Jump To destinations, tier creation/removal and result media/styles. |
 | `courses.configure_ui` | Video upload/processing/save lifecycle, image removal and other uncaptured controls. |
 | `communities.configure` | Authoritative first-course empty-state handling, non-Private course modes and portal parity/reuse shapes. |
 | `meetings.setup` | Authoritative empty co-host roster and first-assignment path. |
@@ -38,7 +38,7 @@ source implementation, native acceptance and merge delivery remain separate.
 Private incomplete meeting-empty-roster work is not part of the delivered batch
 and must not be promoted from mocked proof.
 
-## Next source batch — not yet merged
+## Current source unit — PR #3078, not yet merged
 
 The maintained `surveys.create` host/CLI now accepts `radio_questions` to create
 a single-slide shell with one explicit captured standard field, independently
@@ -50,6 +50,14 @@ CONFIRMED. The same reviewed source batch also adds mixed quiz question batch
 compilation through the existing type-specific writers, with exact inventory
 continuity on one quiz and refusal after an interrupted later batch. Picture
 Choice and populated-page append remain outside that batch contract. This is source implementation, with native final acceptance pending.
+A separate reviewed Picture Choice action now authors exactly three options
+using approved existing Media Storage images and the captured default style.
+It binds the first Save owner-ID transition and caller-declared persisted Unique
+Key, then independently reopens the saved question. Eleven focused tests pass;
+independent source review is CONFIRMED. Native installed Python acceptance
+remains pending. This action is deliberately outside mixed question batches.
+See `tools/playwright_recipes/examples/quiz-picture-choice.md`.
+
 See `tools/playwright_recipes/examples/survey-radio-creation.md` for the actual
 host command and input/capability contract. Additional question types and
 multiple-slide authoring still require code; all twelve operation areas above

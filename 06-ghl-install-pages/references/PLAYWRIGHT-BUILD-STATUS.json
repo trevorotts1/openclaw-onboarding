@@ -262,7 +262,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "SOURCE_BRANCH_PENDING_PR"
+        "delivery": "PUBLISHED_UNIT_PR_PENDING_MERGE"
       },
       {
         "id": "quiz-mixed-question-batches",
@@ -284,7 +284,31 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "SOURCE_BRANCH_PENDING_PR"
+        "delivery": "PUBLISHED_UNIT_PR_PENDING_MERGE"
+      },
+      {
+        "id": "quiz-picture-choice",
+        "feature": "Author one native Picture Choice question using three approved existing-catalog images",
+        "operations": [
+          "quizzes.configure"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_picture_questions.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "Exactly three options and the captured default layout; no local uploads, resizing or presentation changes.",
+          "A positively inventoried empty/new page, exact media catalog tile/thumbnail/canonical URL and full prior question/page inventory bind authoring.",
+          "The new question alone may transition from a transient UUID to a persisted owner ID at Save; exact caller-declared persisted Unique Key and protected styles are checked.",
+          "Separate Picture Choice action remains excluded from mixed question_batches until cross-writer Picture inventory support exists."
+        ],
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
+        "focused_source_tests": 11,
+        "delivery": "PUBLISHED_UNIT_PR_PENDING_MERGE"
       }
     ],
     "new_control_capabilities_in_this_batch": [
@@ -316,7 +340,8 @@
         "Picture Choice, reliable existing populated-page append and a complete new-shell-to-authored-questions/scoring/results flow."
       ],
       "quizzes.configure": [
-        "Picture Choice, populated-page append, answer Jump To destinations, tier creation/removal and remaining result media/styling."
+        "Picture Choice option-count, style/layout, local-upload and broader media paths beyond the captured fixed-three-option existing-catalog writer.",
+        "Reliable populated-page append, answer Jump To destinations, tier creation/removal and remaining result media/styling."
       ],
       "surveys.create": [
         "Additional survey question/widget types, multiple-slide authoring and broader complete new-survey flows remain unimplemented.",
@@ -369,9 +394,15 @@
     },
     "unmerged_source_additions": [
       "survey-shell-radio-chain",
-      "quiz-mixed-question-batches"
+      "quiz-mixed-question-batches",
+      "quiz-picture-choice"
     ],
-    "current_unmerged_source_branch": "skill6/survey-radio-quiz-batches-20261110"
+    "current_unmerged_source_branch": "skill6/survey-radio-quiz-batches-20261110",
+    "current_unmerged_unit_pr": {
+      "number": 3078,
+      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3078",
+      "status": "OPEN; source update submitted normally; required checks and canonical merge remain pending"
+    }
   },
   "operations": [
     {

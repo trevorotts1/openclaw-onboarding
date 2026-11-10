@@ -54,6 +54,7 @@ REQUIRED = {
 
 
 QUIZ_CREATION = {
+    'picture_choice_questions': ('quiz_picture_choices', 'quiz_picture_questions'),
     'short_answer_questions': ('quiz_short_answers', 'quiz_text_questions'),
     'multiple_choice_questions': ('quiz_multiple_choices', 'quiz_choice_questions'),
     'written_answer_questions': ('quiz_written_answers', 'quiz_written_questions'),

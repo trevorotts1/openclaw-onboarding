@@ -28,7 +28,8 @@ def compile_batches(data):
     expected_pages = None
     quiz_name = None
     for index, batch in enumerate(batches):
-        if not isinstance(batch, dict) or len(batch) != 1 or not set(batch).issubset(QUIZ_CREATION):
+        if (not isinstance(batch, dict) or len(batch) != 1
+                or not set(batch).issubset(set(QUIZ_CREATION) - {'picture_choice_questions'})):
             raise Stop('Every quiz batch requires one captured question-writer request')
         request = {**data, 'configuration': deepcopy(batch)}
         action, payload = quiz_creation(request)
