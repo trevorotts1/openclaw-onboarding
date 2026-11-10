@@ -3,6 +3,10 @@
 All notable changes to this skill are documented here.
 
 ---
+## [2.0.7] - 2026-11-10 - docs: retired prompt-band wording reworded to KIE prompt rule 12 (INST-001 #21)
+
+- `SKILL.md`: prose only; no behaviour change. Version bumped so G3 sees the touched content above main.
+
 ## [2.0.6] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 
 - Version bumped so the folded content carries the version G3 requires above main. No functional change.
