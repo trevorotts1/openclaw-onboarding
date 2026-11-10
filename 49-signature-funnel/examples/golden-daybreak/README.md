@@ -36,7 +36,7 @@ provers and drives the canonical no-skip orchestrator to a signed
 |---|---|
 | `brief.json` | Locked, provenance-gated runtime intake brief (7-step; Q1–Q17 answers + truth gate + offer ledger) |
 | `copy_ledger.json` | Per-page 12-section SACRED copy ledger (main + checkout + U1/D1/U2/D2 + thank-you) |
-| `prompt_ledger.json` | Image-prompt ledger (14 prompts, 5k–19k band) |
+| `prompt_ledger.json` | Image-prompt ledger (14 prompts, each 16,000–20,000 stripped chars, rule 12 band) |
 | `media_ledger.json` | Image records (Kie taskId + GHL host) + thank-you page (no-pitch gate input) |
 | `build_golden.py` | Deterministic reproducer — regenerates every ledger, proves each gate, mints the cert, and writes the broken variants + rejection results |
 | `working/prover_results.json` | Captured PASS output of the four Signature-Funnel provers |

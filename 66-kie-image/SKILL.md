@@ -7,7 +7,7 @@ description: >
   Imagen 4), payload validation against a machine-readable registry, prompt
   sizing against published limits, asynchronous task dispatch with callbacks or
   polling, and mandatory real visual QC.
-version: v2.2.15
+version: v2.2.16
 metadata:
   version: "2.2.11"
   priority: HIGH
@@ -100,9 +100,10 @@ Key cap facts (full matrix: `references/models.md`):
 - Wan 2.7 Image: 5,000 chars VERIFIED — do NOT force 5,000 as a minimum;
   target 4,500–4,900.
 - Ideogram V3, Imagen 4 family: 5,000 chars VERIFIED (target 4,500–4,900).
-- All other families: cap NOT PUBLISHED — house band is a TARGET, never an
-  invented vendor law; no hard rejections above 19,000 unless a verified cap
-  exists.
+- All other families: cap NOT PUBLISHED — never an invented vendor law. The
+  limit comes from Skill 74 (live schema first); with no verified maximum
+  `validate_prompt.py` refuses a pass (UNKNOWN_MAX). The retired 19,000 house
+  ceiling is not applied.
 
 ## Prompt budget (owner order 2026-10-05)
 
