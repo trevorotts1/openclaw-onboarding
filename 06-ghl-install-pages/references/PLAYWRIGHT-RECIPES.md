@@ -447,3 +447,19 @@ confirmation. Retained sidebar/preview order and surrounding content must agree
 before one Save and independent reopen; see
 `examples/course-custom-block-delete.md`. This does not add arbitrary block or
 image removal and does not activate or publish a template.
+
+
+## Complete owned marketing quiz creation (v27.1.104)
+
+`quizzes.create` now composes the captured new shell, explicit existing/new page
+targets, question writers, scoring and result copy in one independently journaled
+job. See `examples/owned-assessment-creation.md` and `quiz-owned-creation.json`.
+The optional `target_page` is inside each question writer object. Counts and
+scoring bind the complete flattened final order. Fixed-three Picture Choice can
+append to a fully inventoried populated page; all previous questions/media/styles
+and the new first-Save owner/key transition remain checked. Only complete captured
+default-label vectors and exact empty/filled media controls are accepted.
+
+The mixed `quizzes.configure` compiler retains its separate explicit new-page
+contract. Extra option-count/upload/presentation/jump/tier/result-media controls
+remain partial. Source closure is separate from installed/respondent acceptance.

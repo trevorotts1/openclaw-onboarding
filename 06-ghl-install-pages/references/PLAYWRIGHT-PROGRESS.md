@@ -1,67 +1,58 @@
 # Current build recovery - November 10, 2026
 
-Skill 6 v27.1.101 is delivered through [batch #3090](https://github.com/trevorotts1/openclaw-onboarding/pull/3090),
-merge commit `83d44056f9620b60292872cbcff4f5f6423f9ffd`. This lands unit #3087:
-mixed Picture Choice batches, multiple standard-field survey slides and
-inventoried condition-outcome removal. Earlier #3085 delivers v27.1.100.
+**Current source: 22 BUILT, 10 PARTIAL, 1 GENERIC_ONLY across 33 operation groups.**
+Eleven operation areas still need code. These are operation groups, not Python
+file counts or a feature-weighted percentage. The original frozen 21/11/1 audit
+is retained in `PLAYWRIGHT-BUILD-STATUS.json`; it is no longer the current count.
 
-The v27.1.102 source adds four independently reviewed capabilities:
+`quizzes.create` is now code complete within the fixed captured R33 marketing
+contract. The v27.1.104 follow-up adds explicit same-page batch targets, flattened
+scoring/receipt counts, populated Picture Choice insertion, two complete native
+default-label profiles and the exact filled-media control. It retains every old
+question/media/style identity, independent saved reopen and child intent journal.
 
-1. One new-quiz job composes the captured empty shell, ordered questions, scoring
-   and result copy. It binds the generated editor after a saved independent reopen,
-   then keeps question/configuration journals and exact aggregate receipts.
-2. New surveys can start with positively empty slides without forced contact
-   fields. Ordered Radio batches can target several slides, after a complete
-   read-only dependency preflight. Full saved slide/field/query inventories bind
-   the final independently reopened survey.
-3. Existing Redirect, custom-message and disqualification cards support captured
-   edits, predicate count changes and explicit retained-source ordinals. Rich
-   siblings and original order stay protected through removal/edit/tail append.
-4. Form, survey and quiz writers read the actual contenteditable Form Name while
-   retaining old input titles. Survey shell names use the maintained compiler rule.
+Native evidence includes a saved/reopened TEXT/TEXT/LARGE_TEXT prefix plus
+Picture Choice with three catalog images on Page 1, the new transient-to-persisted
+owner/key transition, a fresh pre-media default vector and selected media controls.
+Fifty-one focused checks passed in 0.257s; independent source review CONFIRMED
+all three fixed R33 source gaps closed. Installed Python execution, respondent
+answers/backend effects and final scoring/client acceptance remain pending.
 
-These changes passed focused integration checks and independent source review.
-The shared provider matrix includes all 61 dynamic actions and 74 bounded jobs.
-No optional complete local suite was rerun. Installed native-script execution,
-respondent behavior and other final acceptance remain pending.
+## Actual delivery and collision-aware queue
 
-Current count: **33 operation groups, 21 BUILT, 11 PARTIAL, 1 GENERIC_ONLY**.
-Twelve operation areas still need code. These are operation groups, not Python
-file counts or a feature-weighted percentage. Seventeen bounded additions have
-been delivered since the frozen audit; four more are built in this source.
+- Skill 6 v27.1.102 delivered through [#3096](https://github.com/trevorotts1/openclaw-onboarding/pull/3096),
+  main `710b36e9c1c36d3c72a33ebb52b7054234c00a2e`, unit #3095. The landed Skill 6
+  subtree exactly matches reviewed `dc82b8c99...` including the two CI fixture fixes.
+- Authority recovery [#3094](https://github.com/trevorotts1/openclaw-onboarding/pull/3094)
+  merged normally, preserving actual bot ancestry and all required checks.
+- The concurrent finish-388 workflow owns [#3097](https://github.com/trevorotts1/openclaw-onboarding/pull/3097).
+  Respect its branch/report lock. It is resolving a real combined prompt-policy
+  conflict. Own overlapping #3098 is CLOSED as collision-superseded, not delivered;
+  its source branches and real bot mint are retained for evidence.
+- This v27.1.104 closure is a reviewed source follow-up, with no competing merge
+  train. The other owner reserves v27.1.103 for a checkout-test change. Rebase the
+  reviewed delta onto actual latest main and retain that test/changelog/version
+  work before final publication/merge. Never overwrite changed base files.
 
-| Operation | Remaining executable scope |
+| Operation still requiring code | Remaining scope |
 | --- | --- |
 | `funnels.split_variant` | Native variation creation/reuse and traffic allocation/readback. |
 | `forms.configure` | Remaining widgets/properties, Address parent controls, Dropdown creation and embed controls. |
-| `forms.conditions` | Card reordering, nested groups and broader field identities. Existing outcome edits/count changes are now built. |
+| `forms.conditions` | Card reordering, nested groups and broader field identities. Existing outcome edits/count changes are built. |
 | `surveys.create` | Non-Radio widget/property authoring, requested Required/Hidden/media controls and broader complete flows. |
 | `surveys.configure` | Additional question controls, compound predicates and completion/rule lifecycle. |
-| `quizzes.create` | Reliable populated-page append. The captured new-shell question/scoring/result pipeline is now built. |
-| `quizzes.configure` | Picture option/style/upload controls, populated-page append, Jump To, tier lifecycle and result media/styles. |
+| `quizzes.configure` | Picture option/style/upload controls, Jump To, tier lifecycle and result media/styles. |
 | `courses.configure_ui` | Video lifecycle, image removal and uncaptured controls. |
 | `communities.configure` | Authoritative first-course empty state, non-Private modes and portal parity/reuse. |
 | `meetings.setup` | Authoritative empty co-host roster and first-assignment path. |
 | `meetings.update` | Authoritative empty co-host roster and clear-all path. |
 | `meetings.integrate` | Course Live Sessions, wider provider/event shapes, recording/transcription. |
 
-## Execution policy for finishing quickly
-
-Build independent operation owners in parallel. Run focused changed checks once,
-then one independent source review. Repeat only affected checks after a real
-change or failure. Preserve required repository checks and the existing merge
-coordinator. Do not rerun the optional full suite or rebuild delivered work.
-
-The user explicitly approved private test captures and the reviewed CI authority
-repair. The empty quiz and two-slide blank survey were saved and reopened. The
-originating browser connection then became unavailable; further captures and the
-fresh real authority mint require that connection to resume. Approval remains
-active. Keep production co-host assignments unchanged when no safe empty fixture
-exists. No alternate access or credential path is substituted.
-
-Use `tools/playwright_recipes/examples/owned-assessment-creation.md` with the
-new-quiz and new-survey examples. Current publication/delivery is recorded in
-`PLAYWRIGHT-BUILD-STATUS.json` and the persistent recovery file.
+Build independent owned scopes in parallel. Run focused changed checks once and
+one independent source review; repeat only affected checks for an actual change
+or failure. Keep required repository checks, do not rerun optional full local
+suites, and do not mint or create overlapping batch vehicles without refreshing
+live main, source heads, open canonical ownership and report locks.
 
 ---
 

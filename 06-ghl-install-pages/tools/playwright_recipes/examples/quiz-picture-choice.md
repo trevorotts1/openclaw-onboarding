@@ -4,8 +4,10 @@ Use `quizzes.configure` with the exclusive `configuration.picture_choice_questio
 object. It accepts the same owner/page fields as the captured question writers:
 `expected_quiz_name`, full ordered `pages`, `target_page`, and `questions`, plus
 `acknowledge_shared_field_options: true`. Exactly one new question is supported.
-The target must be a positively inventoried empty page, or explicitly append one
-with `create_page: true` and the exact native `new_page_label: "Page N+1"`.
+The target may be an exact fully inventoried existing page, including a populated
+page. Alternatively append one with `create_page: true` and the exact native
+`new_page_label: "Page N+1"`. Existing question, owner, media and style inventories
+must be preserved before property writes and after independent reopening.
 
 The new question has `field_type: "PICTURE_CHOICE"`, explicit `question`,
 `placeholder`, `short_label`, `query_key`, `required`, `hidden`, and
@@ -49,5 +51,8 @@ Creation-only media-button names and `expected_persisted_unique_key` belong only
 to the new Picture Choice request. Subsequent writers preserve the native media,
 owner and style inventory. Each batch keeps its own journal and receipt; an
 uncertain Picture save blocks later writers and never repeats the earlier prefix.
-Every later batch still requires an explicit new empty page. Short Answer
-batches use the complete-inventory written-answer writer with TEXT only.
+The mixed `quizzes.configure` batch compiler retains its explicit new-empty-page
+contract for later batches. Separately, the owned `quizzes.create` pipeline accepts
+an optional `target_page` inside each writer batch: an existing page appends with
+its complete prefix, while exactly the next page creates a new empty owner.
+Short Answer batches use the complete-inventory written writer with TEXT only.

@@ -39,7 +39,8 @@
               "required": false,
               "hidden": false
             }
-          ]
+          ],
+          "target_page": 1
         }
       }
     ],

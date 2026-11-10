@@ -1,3 +1,18 @@
+## [v27.1.104] - 2026-11-10
+
+- Complete the bounded captured marketing-quiz creation contract with explicit
+  existing-page targets and one-next-page creation. Keep complete evolving
+  inventories; flatten final page order for scoring and receipt question counts.
+- Add Picture Choice to populated quiz pages while retaining exact old-prefix,
+  image, style, first-Save owner/key and uncertain-write guards. Accept only the
+  two complete captured default-label vectors and the exact filled-media control.
+- Reconcile R33 after saved/reopened native captures and independent source QC:
+  quizzes.create is BUILT. Current source counts are 22 built, 10 partial and one
+  generic-only; keep the original frozen audit and separately pending live proof.
+- Keep this reviewed follow-up separate from the active finish-388 owner. Its
+  test-only v27.1.103 is reserved in #3097; merge this source onto the actual latest
+  base with that changelog and checkout-test change preserved. No duplicate train.
+
 ## [v27.1.102] - 2026-11-10
 
 - Compose captured new quiz creation, question batches, scoring and result copy

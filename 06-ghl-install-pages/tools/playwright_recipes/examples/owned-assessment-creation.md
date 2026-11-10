@@ -6,9 +6,12 @@ location name, the exact list URL and all authored copy/field definitions before
 running the maintained `host.py`. Start with a new distinct name and explicitly
 allow creation. Existing objects with that name refuse before creation.
 
-The quiz example composes two captured questions, explicit scoring and result
-copy. Each question occupies its own page; reliable append to a populated page
-is still missing. The generated editor identity is retained after the empty
+The quiz example composes two captured questions on Page 1, explicit scoring and
+result copy. Each writer batch may declare `target_page`: an exact existing page
+appends with its complete prior inventory; exactly the next page creates a new
+empty owner. Omitted targets retain the original one-question-per-new-page flow.
+Scoring and receipt counts bind the flattened final page/question order.
+The generated editor identity is retained after the empty
 shell has saved and independently reopened. Every child stage retains its own
 intent journal; uncertain writes refuse instead of recreating the quiz.
 

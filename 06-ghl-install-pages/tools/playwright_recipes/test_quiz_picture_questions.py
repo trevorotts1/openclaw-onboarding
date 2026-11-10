@@ -95,16 +95,16 @@ class PictureChoiceTests(unittest.TestCase):
         new=step();new['payload'].update(create_page=True,new_page_label='Page 2',target_page=2)
         picture.validate(new)
 
-    def test_unimplemented_counts_missing_media_keys_populated_page_and_foreign_owner_refuse(self):
-        for defect in ('count','url','tile','key','populated','owner','ordinary','options','mixed_batches'):
+    def test_unimplemented_counts_missing_media_keys_colliding_prior_key_and_foreign_owner_refuse(self):
+        for defect in ('count','url','tile','key','prior_key','owner','ordinary','options','mixed_batches'):
             value=step();q=value['payload']['questions'][0]
             if defect=='count':q['options'].pop()
             elif defect=='url':q['options'][0]['image_url']='javascript:alert(1)'
             elif defect=='tile':q['options'][0].pop('media_button_name')
             elif defect=='key':q.pop('expected_persisted_unique_key')
-            elif defect=='populated':
+            elif defect=='prior_key':
                 from test_quiz_text_questions import question as text_question
-                value['payload']['pages'][0]['questions']=[text_question()]
+                value['payload']['pages'][0]['questions']=[text_question('Existing question',q['query_key'],'TEXT')]
             elif defect=='owner':value['payload']['start_url']=value['payload']['start_url'].replace('/LOC/','/OTHER/')
             elif defect=='ordinary':q['field_type']='RADIO'
             elif defect=='options':value['payload']['acknowledge_shared_field_options']=False
