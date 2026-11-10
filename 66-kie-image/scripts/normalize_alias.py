@@ -22,11 +22,12 @@ import sys
 # Image 2.6 Sunburst (#2860): bare human aliases ("gpt image", "gpt-image",
 # "openai image") resolve to "gpt image 2.6" (the current default family
 # token). An explicit generation mention resolves to the family it names:
-# "gpt-img2" and "GPT-image 2.0" -> "gpt image 2" (retained legacy),
-# "gpt-img2.5" and "GPT-image 2.5" -> "gpt image 2.5" (retained). The legacy
-# family token "gpt image 2" is KEPT below (FAMILY_OF still resolves it to
-# the old ids); no bare phrase points at it, but it stays reachable for any
-# caller that already has the literal legacy family string.
+# "gpt-img2" and "GPT-image 2.0" -> "gpt image 2" (retained legacy);
+# generation-named aliases whose family has been superseded keep their keys and
+# now resolve to the successor family "gpt image 2.6" (values swapped, no key
+# deleted). The legacy family token "gpt image 2" is KEPT below (FAMILY_OF
+# still resolves it to the old ids); no bare phrase points at it, but it stays
+# reachable for any caller that already has the literal legacy family string.
 ALIAS_MAP = {
     "quinn": "qwen",
     "quinn image 3.0": "qwen",
@@ -40,8 +41,8 @@ ALIAS_MAP = {
     "gpt image": "gpt image 2.6",
     "gpt-image": "gpt image 2.6",
     "openai image": "gpt image 2.6",
-    "gpt-img2.5": "gpt image 2.5",
-    "gpt-image 2.5": "gpt image 2.5",
+    "gpt-img2.5": "gpt image 2.6",
+    "gpt-image 2.5": "gpt image 2.6",
     "gpt image 2.6": "gpt image 2.6",
     "gpt-image 2.6": "gpt image 2.6",
     "gpt-image-2.6": "gpt image 2.6",
@@ -56,15 +57,11 @@ ALIAS_MAP = {
 
 # Family name -> canonical KIE Market model IDs (registry models.json).
 FAMILY_OF = {
-    # GPT Image 2.6 Sunburst -- operator default since #2860 (same route shape as 2.5; KIE-066).
+    # GPT Image 2.6 Sunburst -- operator default since #2860 (same route shape as the superseded
+    # generation; KIE-066). The superseded generation's rows stay in models.json marked legacy.
     "gpt image 2.6": [
         "gpt-image-2-6/sunburst-text-to-image",
         "gpt-image-2-6/sunburst-image-to-image",
-    ],
-    # GPT Image 2.5 Sunburst -- retained legacy family (ruling 2026-09-09). Not the default.
-    "gpt image 2.5": [
-        "gpt-image-2-5-sunburst-text-to-image",
-        "gpt-image-2-5-sunburst-image-to-image",
     ],
     # GPT Image 2 -- LEGACY, retained by operator ruling 2026-09-09 for
     # aspect ratios 3:1, 1:3, 9:21 only. Not deleted; no alias points here
@@ -144,23 +141,24 @@ def main(argv=None) -> int:
         # Ruling 2026-09-09 (Ruling 6), superseded as the default by GPT Image
         # 2.6 (#2860): explicit "gpt-img2" / "GPT-image 2.0" resolve to the
         # retained legacy "gpt image 2" family, bare phrases ("gpt image",
-        # "OpenAI image") resolve to "gpt image 2.6", and 2.5 mentions stay on
-        # the retained 2.5 family. None of these is a default.
+        # "OpenAI image") resolve to "gpt image 2.6", and superseded-generation
+        # mentions keep their keys but resolve to the successor family. None of
+        # these is a default.
         assert normalize_alias("gpt-img2") == "gpt image 2"
         assert normalize_alias("GPT-image 2.0") == "gpt image 2"
         assert normalize_alias("gpt image") == "gpt image 2.6"
         assert normalize_alias("OpenAI image") == "gpt image 2.6"
-        assert normalize_alias("gpt-img2.5") == "gpt image 2.5"
-        assert normalize_alias("GPT-image 2.5") == "gpt image 2.5"
+        assert normalize_alias("gpt-img2.5") == "gpt image 2.6"
+        assert normalize_alias("GPT-image 2.5") == "gpt image 2.6"
         assert normalize_alias("gpt-img2.6") == "gpt image 2.6"
         assert normalize_alias("sunburst") == "gpt image 2.6"
         # Legacy family stays resolvable directly (not deleted, just unaliased).
         assert FAMILY_OF["gpt image 2"] == [
             "gpt-image-2-text-to-image", "gpt-image-2-image-to-image"]
-        assert FAMILY_OF["gpt image 2.5"] == [
-            "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image"]
         assert FAMILY_OF["gpt image 2.6"] == [
             "gpt-image-2-6/sunburst-text-to-image", "gpt-image-2-6/sunburst-image-to-image"]
+        # the superseded generation is not a selectable family here
+        assert "gpt image 2.5" not in FAMILY_OF
         assert normalize_alias("nano banana light") == "nano banana 2 lite"
         # Z-Image guard: "z image" must NOT resolve into qwen.
         assert normalize_alias("z image") == "z image"
