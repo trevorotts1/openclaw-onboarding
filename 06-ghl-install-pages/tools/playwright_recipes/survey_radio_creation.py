@@ -1,0 +1,240 @@
+"""Create a native survey shell, reopen it, then place authored Radio questions.
+
+Uses the maintained assessment creator and measured Radio dependency/placement
+chain. Shell, API and native writes retain separate uncertain-intent journals.
+The enclosing editor runner owns the same-location lease and final receipt.
+"""
+from copy import deepcopy
+import hashlib
+import json
+from pathlib import Path
+import re
+from urllib.parse import urlsplit
+
+from playwright_recipes import radio_dependencies as radio, survey_fields
+from playwright_recipes.assessments import reopen_editor, STANDARD_FIELDS
+from playwright_recipes.evidence_lease import journal_present, read_journal
+from playwright_recipes.skill6_playwright import Stop, assert_tenant, secure_json
+
+ACTION='native_survey_radio_creation'
+COMMON=('location_id','location_name','start_url')
+
+
+def validate_inputs(inputs):
+    if (not isinstance(inputs,dict) or set(inputs)!=set(COMMON)|{'name','allow_creation','standard_fields','radio_questions'}
+            or inputs['allow_creation'] is not True
+            or not isinstance(inputs['standard_fields'],list) or len(inputs['standard_fields'])!=1
+            or inputs['standard_fields'][0] not in STANDARD_FIELDS):
+        raise Stop('Survey Radio creation requires explicit creation, one captured standard field and authored Radio questions')
+    for key in ('name','location_name'):
+        value=inputs[key]
+        if not isinstance(value,str) or not value.strip() or value!=value.strip() or len(value)>500 or any(ord(c)<32 for c in value):
+            raise Stop('Survey creation requires its exact visible '+key)
+    radio.validate_inputs({'location_id':inputs['location_id'],'questions':inputs['radio_questions']})
+    try:
+        url=urlsplit(inputs['start_url']);port=url.port
+    except (TypeError,ValueError):raise Stop('Survey creation list URL is malformed') from None
+    if (url.scheme!='https' or not url.hostname or url.username is not None or url.password is not None
+            or port not in (None,443) or url.query or url.fragment
+            or url.path!='/v2/location/'+inputs['location_id']+'/survey-builder/main'):
+        raise Stop('Survey Radio creation must start at the exact native survey list')
+    return deepcopy(inputs)
+
+
+def payload_from_inputs(data):
+    return validate_inputs({key:value for key,value in data.items() if key not in ('publish','auth_activation')})
+
+
+def validate(step):
+    if not isinstance(step,dict) or set(step)-{'id','action','payload'} or step.get('action',ACTION)!=ACTION:
+        raise Stop('Unsupported survey Radio creation action')
+    return validate_inputs(step.get('payload'))
+
+
+def configuration_hash(plan):
+    return hashlib.sha256(json.dumps(validate_inputs(plan),sort_keys=True,separators=(',',':')).encode()).hexdigest()
+
+
+def validate_runtime(job,capability):
+    steps=job.get('steps')
+    if not isinstance(steps,list) or len(steps)!=1:
+        raise Stop('Survey Radio creation requires its own independently journaled job')
+    plan=validate(steps[0])
+    if any(plan[key]!=job.get(key) for key in COMMON):raise Stop('Survey creation belongs to another parent location/list')
+    radio.validate_capability(capability,plan['location_id'],creation=any(q['expected_id'] is None for q in plan['radio_questions']))
+
+
+def _binding(value,plan):
+    if (not isinstance(value,dict) or set(value)!={'editor_url','slide_labels','canvas','standard_field'}
+            or not isinstance(value['editor_url'],str)):
+        raise Stop('Survey shell binding is incomplete')
+    url=urlsplit(value['editor_url']);origin=urlsplit(plan['start_url'])
+    if ((url.scheme,url.netloc)!=(origin.scheme,origin.netloc) or url.query or url.fragment
+            or not re.fullmatch('/v2/location/'+re.escape(plan['location_id'])+r'/survey-builder-v2/[A-Za-z0-9_-]+',url.path)):
+        raise Stop('Survey shell binding changed its exact created origin/location/editor')
+    labels=value['slide_labels']
+    if (not isinstance(labels,list) or len(labels)!=1 or not isinstance(labels[0],str)
+            or not re.fullmatch(r'P1 - .+',labels[0]) or any(ord(c)<32 for c in labels[0])):
+        raise Stop('Survey shell binding needs one exact native slide label')
+    standard=plan['standard_fields'][0];kind='email' if standard=='Email' else 'text'
+    if value['standard_field']!={'label':standard,'placeholder':STANDARD_FIELDS[standard][0],'type':kind}:
+        raise Stop('Survey shell binding changed its authored standard field')
+    rows=value['canvas'];standard_count=0
+    if not isinstance(rows,list) or not rows:raise Stop('Survey shell canvas is not positively loaded')
+    for row in rows:
+        if (not isinstance(row,dict) or set(row)!={'types','names'}
+                or not isinstance(row['types'],list) or len(row['types'])!=1
+                or row['types'][0] not in (kind,'submit','h1','terms_and_conditions')
+                or not isinstance(row['names'],list)):
+            raise Stop('Survey shell binding contains an unsupported canvas row')
+        for name in row['names']:
+            if (not isinstance(name,list) or len(name)!=3 or name[0] not in ('INPUT','TEXTAREA','SELECT')
+                    or any(item is not None and (not isinstance(item,str) or any(ord(c)<32 for c in item)) for item in name[1:])):
+                raise Stop('Survey shell binding has malformed canvas control identities')
+        if row['types']==[kind]:
+            if len(row['names'])!=1 or row['names'][0][:2]!=['INPUT',kind]:
+                raise Stop('Survey shell standard field lacks its captured native input type')
+            standard_count+=1
+    if standard_count!=1:raise Stop('Survey shell binding must retain exactly one authored standard field')
+    return deepcopy(value)
+
+
+def _shell(page,plan,editor_url):
+    from playwright_recipes.forms_advanced import _canvas_identity
+    from playwright_recipes.skill6_playwright import click
+    if page.url!=editor_url:raise Stop('Created survey editor identity changed')
+    parsed=urlsplit(editor_url);origin=urlsplit(plan['start_url'])
+    if ((parsed.scheme,parsed.netloc)!=(origin.scheme,origin.netloc) or parsed.query or parsed.fragment
+            or not re.fullmatch('/v2/location/'+re.escape(plan['location_id'])+r'/survey-builder-v2/[A-Za-z0-9_-]+',parsed.path)):
+        raise Stop('Created survey does not identify one exact same-location editor')
+    assert_tenant(page,plan)
+    frame=page.frame_locator('iframe[name="survey-builder-app"]')
+    title=frame.get_by_role('textbox',name='Form Name',exact=True)
+    title.wait_for(state='visible',timeout=45000)
+    if title.count()!=1 or title.input_value()!=plan['name']:raise Stop('Created survey name differs from its authored name')
+    survey_fields._close_initial(frame)
+    click(frame.get_by_role('tab',name='Edit',exact=True))
+    slides=frame.locator('.survey-form-container')
+    if slides.count()!=1 or frame.get_by_role('button',name='Add Slide',exact=True).count()!=1:
+        raise Stop('New survey shell differs from the requested single-slide inventory')
+    owner=slides.nth(0);label=owner.locator('.builder-form-name')
+    if label.count()!=1 or not label.inner_text().strip():raise Stop('New survey slide label is unavailable')
+    standard=plan['standard_fields'][0];placeholder,_=STANDARD_FIELDS[standard]
+    field=owner.get_by_placeholder(placeholder,exact=True)
+    if (field.count()!=1 or not field.is_visible()
+            or field.get_attribute('type')!=('email' if standard=='Email' else 'text')):
+        raise Stop('New survey shell does not contain its captured authored standard-field type')
+    inventory=_canvas_identity(owner)
+    return _binding({'editor_url':editor_url,'slide_labels':['P1 - '+label.inner_text().strip()],
+        'canvas':inventory,'standard_field':{'label':standard,'placeholder':field.get_attribute('placeholder'),
+            'type':field.get_attribute('type')}},plan)
+
+
+def _native_step(plan,binding,fields):
+    from playwright_recipes.recipe_cli import compile_recipe
+    return compile_recipe('surveys.configure',{**{key:plan[key] for key in COMMON},
+        'start_url':binding['editor_url'],'configuration':{'expected_slide_count':1,
+            'slide_labels':binding['slide_labels'],'target_slide':1,'object_fields':fields,
+            'field_dependencies':{'status':'VERIFIED','provider':'skill44',
+                'location_id':plan['location_id'],'observed_at':0,
+                'operation':'custom_fields.get','http_status':200,'fields':deepcopy(fields)}}})['steps'][0]
+
+
+def validate_receipt(value,step):
+    from playwright_recipes.editor_replay import _result
+    plan=validate(step)
+    keys={'status','location_id','editor_url','configuration_sha256','shell_binding','api_fields',
+        'native_receipt','independent_readback','behavior_verified','submission_verified'}
+    if (not isinstance(value,dict) or set(value)!=keys or value['status']!='SURVEY_RADIO_SAVED_AND_REOPENED'
+            or value['location_id']!=plan['location_id'] or value['configuration_sha256']!=configuration_hash(plan)
+            or value['independent_readback']!='VERIFIED' or value['behavior_verified'] is not False
+            or value['submission_verified'] is not False):
+        raise Stop('Survey Radio creation completion is malformed or unbound')
+    binding=_binding(value['shell_binding'],plan)
+    if binding['editor_url']!=value['editor_url']:
+        raise Stop('Survey Radio completion changed its created editor binding')
+    radio._survey_plan({**{key:plan[key] for key in COMMON},'start_url':binding['editor_url'],
+        'expected_slide_count':1,'slide_labels':binding['slide_labels'],'target_slide':1,
+        'questions':plan['radio_questions']})
+    fields=value['api_fields']
+    if not isinstance(fields,list) or len(fields)!=len(plan['radio_questions']):raise Stop('Survey Radio completion omits authored definitions')
+    ids=set()
+    for requested,field in zip(plan['radio_questions'],fields):
+        if (not isinstance(field,dict) or set(field)!={'id','name','field_key','data_type','options'}
+                or any(field[key]!=requested[key] for key in ('name','field_key','options')) or field['data_type']!='RADIO'
+                or requested['expected_id'] is not None and field['id']!=requested['expected_id']):
+            raise Stop('Survey Radio completion changes an authored field definition')
+        identity=radio.delivery._id(field['id'],'completed Radio field id')
+        if identity in ids:raise Stop('Survey Radio completion repeats a field identity')
+        ids.add(identity)
+    native=_native_step(plan,binding,fields)
+    result=deepcopy(value)
+    result['native_receipt']=_result(native,value['native_receipt'],
+        {**{key:plan[key] for key in COMMON},'start_url':binding['editor_url']})
+    return result
+
+
+def configure(page,step,evidence_root,*,capability):
+    from playwright_recipes.recipe_cli import compile_recipe
+    from playwright_recipes.skill6_playwright import run_on_page,validate_job
+    from playwright_recipes.editor_replay import completed_editor_replay
+    plan=validate(step)
+    radio.validate_capability(capability,plan['location_id'],creation=any(q['expected_id'] is None for q in plan['radio_questions']))
+    root=Path(evidence_root).resolve();shell_root=root/'shell';question_root=root/'questions'
+    binding_path=root/'shell-binding.json'
+    if any(path.is_symlink() for path in (shell_root,question_root,binding_path)):
+        raise Stop('Survey creation evidence contains a symlink')
+    shell_inputs={key:value for key,value in plan.items() if key!='radio_questions'}
+    shell_job=validate_job(compile_recipe('surveys.create',shell_inputs),root)
+    if journal_present(binding_path):
+        binding=read_journal(binding_path)
+        original=completed_editor_replay(shell_root/'state.json',shell_job,
+            hashlib.sha256(json.dumps(shell_job,sort_keys=True).encode()).hexdigest())
+        if (len(original['results'])!=1 or not isinstance(binding,dict)
+                or original['results'][0]['result'].get('editor_url')!=binding.get('shell',{}).get('editor_url')):
+            raise Stop('Survey shell binding differs from its original creation journal')
+    else:
+        # A failed/uncertain shell journal refuses replay. A completed shell
+        # job may be read back to establish its retained editor before chaining.
+        shell_result=run_on_page(page,shell_job,shell_root)
+        rows=shell_result.get('results',[])
+        if len(rows)!=1 or rows[0].get('result',{}).get('status')!='ASSESSMENT_SAVE_SUBMITTED':
+            raise Stop('Survey shell was not a newly created saved assessment')
+        editor_url=rows[0]['result'].get('editor_url')
+        if page.url!=editor_url:reopen_editor(page,'survey',plan['name'],editor_url)
+        before=_shell(page,plan,editor_url)
+        reopen_editor(page,'survey',plan['name'],editor_url)
+        if _shell(page,plan,editor_url)!=before:raise Stop('New survey complete owner identity did not persist on reopen')
+        binding={'configuration_sha256':configuration_hash(plan),'shell':before}
+        secure_json(binding_path,binding)
+    if (not isinstance(binding,dict) or set(binding)!={'configuration_sha256','shell'}
+            or binding['configuration_sha256']!=configuration_hash(plan)):
+        raise Stop('Survey creation evidence belongs to another authored plan')
+    shell=_binding(binding['shell'],plan)
+    # Re-enter only the exact retained editor; never search/create another shell
+    # after API or placement uncertainty. The native child journal controls replay.
+    if page.url!=shell['editor_url']:
+        reopen_editor(page,'survey',plan['name'],shell['editor_url'])
+    current=_shell(page,plan,shell['editor_url'])
+    if (current['slide_labels']!=shell['slide_labels']
+            or not journal_present(question_root/'native'/'state.json') and current!=shell):
+        raise Stop('Survey shell changed before its authored Radio dependency/placement chain')
+    questions={**{key:plan[key] for key in COMMON},'start_url':shell['editor_url'],
+        'expected_slide_count':1,'slide_labels':shell['slide_labels'],'target_slide':1,
+        'questions':plan['radio_questions']}
+    raw=radio.build_survey_questions(questions,question_root,page=page,capability=capability)
+    api=read_journal(question_root/'delivery-state.json')
+    if (api.get('schema')!=radio.SCHEMA or api.get('location_id')!=plan['location_id']
+            or api.get('fingerprint')!=radio.configuration_hash({'location_id':plan['location_id'],'questions':plan['radio_questions']})
+            or api.get('status')!='API_STEPS_COMPLETE' or api.get('current_step_status')!='VERIFIED'
+            or api.get('fields')!=raw.get('object_fields')):
+        raise Stop('Survey Radio completion lacks its original verified API journal')
+    native_job=read_journal(question_root/'native-question-job.json')
+    completed=completed_editor_replay(question_root/'native'/'state.json',native_job,
+        hashlib.sha256(json.dumps(native_job,sort_keys=True).encode()).hexdigest())
+    if len(completed['results'])!=1:raise Stop('Survey Radio placement has an unexpected native step inventory')
+    result={'status':'SURVEY_RADIO_SAVED_AND_REOPENED','location_id':plan['location_id'],
+        'editor_url':shell['editor_url'],'configuration_sha256':configuration_hash(plan),'shell_binding':shell,
+        'api_fields':raw['object_fields'],'native_receipt':completed['results'][0]['result'],
+        'independent_readback':'VERIFIED','behavior_verified':False,'submission_verified':False}
+    return validate_receipt(result,step)

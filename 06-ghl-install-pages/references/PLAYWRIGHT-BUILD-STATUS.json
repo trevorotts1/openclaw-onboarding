@@ -241,6 +241,50 @@
           "No arbitrary block deletion, activation or publication."
         ],
         "native_final_script_acceptance": "PENDING"
+      },
+      {
+        "id": "survey-shell-radio-chain",
+        "feature": "Create/reopen a single-slide survey shell and place authored Radio questions through the maintained host",
+        "operations": [
+          "surveys.create"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_radio_creation.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "Exactly one authored captured standard field establishes a positively loaded saved owner before Radio schema/native writes.",
+          "Exact same-origin created editor, structured full canvas snapshot and complete API/native journals bind completion/replay.",
+          "Uncertain creation/save never retries; no respondent submission or behavioral acceptance is inferred."
+        ],
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
+        "delivery": "SOURCE_BRANCH_PENDING_PR"
+      },
+      {
+        "id": "quiz-mixed-question-batches",
+        "feature": "Compile mixed captured quiz question batches with continuous full page inventories",
+        "operations": [
+          "quizzes.configure"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_batches.py",
+            "function": "compile_batches"
+          }
+        ],
+        "preserved_boundaries": [
+          "Each batch uses the existing captured type-specific writer and its own intent and bound receipt.",
+          "Complete declared page inventories must continue exactly on the same quiz; no automatic retry after a partial later batch.",
+          "Only supported empty/new-page shapes are allowed; no Picture Choice or populated-page append is implied."
+        ],
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
+        "delivery": "SOURCE_BRANCH_PENDING_PR"
       }
     ],
     "new_control_capabilities_in_this_batch": [
@@ -273,10 +317,13 @@
       ],
       "quizzes.configure": [
         "Picture Choice, populated-page append, answer Jump To destinations, tier creation/removal and remaining result media/styling."
+      ],
+      "surveys.create": [
+        "Additional survey question/widget types, multiple-slide authoring and broader complete new-survey flows remain unimplemented.",
+        "The new bounded single-slide standard-field-plus-Radio chain does not complete all R31 scope."
       ]
     },
     "other_partial_areas": [
-      "surveys.create",
       "surveys.configure",
       "communities.configure",
       "meetings.setup",
@@ -287,9 +334,44 @@
     "predecessor_batch": {
       "pr": 3053,
       "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3053",
-      "status_at_checkpoint": "OPEN, auto-merge enabled; no merge is inferred"
+      "status_at_checkpoint": "MERGED 2026-11-09T23:22:27Z; merge commit 565a27d2f26526cab73ca750ea2be83f05bee50c"
     },
-    "current_batch_pr": "Not opened. Reviewed source is saved independently while predecessor checks run."
+    "current_batch_pr": "Merged through canonical PR #3059; unit #3057 delivered through that batch. No pending merge is inferred for this source.",
+    "verified_delivery": {
+      "status": "MERGED",
+      "pr": 3059,
+      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3059",
+      "merged_at": "2026-11-10T00:25:28Z",
+      "merge_commit": "4e052754cd683a09fca81d622bf2b341e62c8b66",
+      "skill6_subtree": "1be8cb2d1e916fb30f033e2598d39d8709d25d00",
+      "unit_pr": 3057,
+      "unit_disposition": "DELIVERED_THROUGH_BATCH",
+      "source_feature_additions_since_frozen_audit": 11,
+      "native_final_script_acceptance": "DEFERRED"
+    },
+    "remaining_operation_reconciliation": {
+      "basis": "Existing explicit executable gaps remain after subtracting the eleven source-built feature additions. This reconciles operation membership only, not feature-weighted completion or native readiness.",
+      "count": 12,
+      "operations": [
+        "funnels.split_variant",
+        "forms.configure",
+        "surveys.create",
+        "quizzes.create",
+        "communities.configure",
+        "courses.configure_ui",
+        "meetings.setup",
+        "meetings.integrate",
+        "forms.conditions",
+        "meetings.update",
+        "quizzes.configure",
+        "surveys.configure"
+      ]
+    },
+    "unmerged_source_additions": [
+      "survey-shell-radio-chain",
+      "quiz-mixed-question-batches"
+    ],
+    "current_unmerged_source_branch": "skill6/survey-radio-quiz-batches-20261110"
   },
   "operations": [
     {

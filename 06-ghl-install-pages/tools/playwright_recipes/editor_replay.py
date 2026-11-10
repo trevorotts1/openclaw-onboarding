@@ -15,6 +15,7 @@ else:
 
 
 STATUSES = {
+    'native_survey_radio_creation': {'SURVEY_RADIO_SAVED_AND_REOPENED'},
     'html': {'RENDERED'}, 'seo': {'SEO_RENDERED'}, 'checkout': {'COMPONENT_SAVED'},
     'form': {'SAVED_AND_REOPENED'}, 'form_css': {'FORM_CSS_RENDERED'},
     'native_form_css': {'NATIVE_FORM_CSS_SAVED_AND_REOPENED'},
@@ -62,6 +63,7 @@ STATUSES = {
     'native_checkout_ui': {'NATIVE_CHECKOUT_UI_READBACK_VERIFIED'},
 }
 REQUIRED = {
+    'native_survey_radio_creation': ('location_id','editor_url','configuration_sha256','shell_binding','api_fields','native_receipt','independent_readback','behavior_verified','submission_verified'),
     'navigate': ('area',), 'container': ('container_url', 'name'), 'page': ('editor_url',),
     'html': ('editor_url', 'html_sha256'), 'seo': ('canonical',),
     'checkout': ('mode', 'payment_verified', 'checkout_ready'), 'form': ('form_url',),
@@ -175,6 +177,10 @@ def _operation(value):
 
 def _result(step, value, job):
     action = step['action']
+    if action == 'native_survey_radio_creation':
+        from playwright_recipes.survey_radio_creation import validate_receipt
+        if any(step['payload'][key]!=job[key] for key in ('location_id','location_name','start_url')):_fail()
+        return validate_receipt(value,step)
     if action == 'native_contact_field_chain':
         from playwright_recipes.contact_field_frontdoor import validate_receipt
         if any(step['payload'][key] != job[key] for key in ('location_id','location_name','start_url')):
