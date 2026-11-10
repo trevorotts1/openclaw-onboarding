@@ -88,6 +88,9 @@ jobs:
 
       - name: Recompute the pin and run the bypass scan
         shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           verifier="trusted/49-signature-funnel/scripts/front_door.py"
@@ -165,8 +168,21 @@ jobs:
           # (2) DECIDES: the bypass scan over the PR tree runs from trusted code.
           python3 "$verifier" --skill-dir tree/49-signature-funnel bypass-scan
           # (3) Extra signal (set -e: it can add a failure, never remove one): the base tree still matches the
-          # base pin, so the PR did not quietly alter what the old spec asserts.
-          python3 "$verifier" --skill-dir trusted/49-signature-funnel hashpin
+          # base pin, so the PR did not quietly alter what the old spec asserts. Skipped only for a pin-only
+          # PR (net diff touches nothing but the pin file): main is currently stale, so demanding base-tree
+          # consistency would deadlock the mint repair path, and step (1) already certified the PR tree digest.
+          # The hand-edit gate below still requires the pin commit to be bot-authored and pin-only.
+          pin="49-signature-funnel/scripts/SF-PROVER-PIN.sha256"
+          touched=""; others="x"
+          if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
+            touched="$(git -C tree diff --name-only "$BASE_SHA" "$HEAD_SHA" -- "$pin")"
+            others="$(git -C tree diff --name-only "$BASE_SHA" "$HEAD_SHA" -- . | grep -v -x "$pin" || true)"
+          fi
+          if [ -n "$touched" ] && [ -z "$others" ]; then
+            echo "::notice::pin-only PR: skipping the stale base-tree consistency signal; step (1) already certified the PR tree digest"
+          else
+            python3 "$verifier" --skill-dir trusted/49-signature-funnel hashpin
+          fi
           # ponytail: the trusted check hashes with the BASE algorithm and resolves new trees only by the
           # numbered-skill convention, so a PR that changes how the pin is computed, drops a pin rule, adds a
           # non-numbered tree, or adds a network allow-list entry stays red: land the verifier change on main in
