@@ -6,11 +6,11 @@ downsell, landing) cannot show up in them. This test builds the adapter commands
 launcher_core.launch_bridge from per-page inputs (the same path as `cli dispatch --adapter-inputs`), runs
 them on the free stub provider, then runs `cli assemble` and `cli check` over what they wrote.
 
-It ends at the design gate. A stub run draws unlabeled layout proofs only (Skill 71 labels and composes only
-paid renders), and final mockups need the client's recorded approval of a real (non-stub) Design Board, so
-`check` refuses with exactly the missing section kinds for every page and nothing else. Every earlier step
-must pass.
-No network, no paid call, no fake consumer.
+A stub run draws unlabeled layout proofs only (Skill 71 labels and composes only paid renders), and `assemble`
+refuses a package without a complete design set, so the test gives each page the labelled design set the free
+fake consumer writes before it assembles. `check` then passes the whole package, and the package still says the
+client has approved nothing (no approval was recorded). Every step must pass.
+No network, no paid call; the fake consumer builds none of the pages, it only supplies the design set.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ import substrate  # noqa: E402
 import lane83_fake_consumer  # noqa: E402  only for its marker constants: proves we did NOT use it
 import test_lane83_dispatch as dispatch_tests  # noqa: E402  run_dispatch carries the approval and plan choices
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402  (its path is added by test_lane83_dispatch)
-from launcher_core import checks, cli, page_designs  # noqa: E402
+from launcher_core import cli, page_designs  # noqa: E402
 
 S71 = REPO_ROOT / "71-blackceo-signature-page"
 COPY_EXAMPLES = S71 / "tests" / "fixtures" / "copy_examples"
@@ -274,12 +274,39 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
                 self.assertEqual(_sha256(path), art["sha256"], f"{role}: {path.name} does not match its recorded hash")
                 self.assertNotEqual(path.read_bytes(), fake_png, f"{role}: {path.name} is the fake consumer's picture")
 
-        # assemble, exactly as a client runs it (pages alone: the calendar and automations are other skills')
+        # `assemble` refuses a package without a complete design set (AF-LAUNCH-ASSEMBLE-DESIGN), and a stub run
+        # labels nothing. So each real page piece also carries the labelled design set the free fake consumer
+        # writes (as CliScopeTests does); the real pieces keep their own artifacts, and the fake consumer's
+        # pictures are added only after the real-file checks above, which would reject them. Assemble binds each
+        # piece to the dispatch's stored result for its page, so the same entries are added to that stored result.
         intake_path = self.root / "intake.json"
         intake_path.write_text(json.dumps(doc), encoding="utf-8")
-        package_dir = self.root / "package"
         readback = self.root / "checkout-readback.json"  # what the Skill 06 install read-back records for the order form
         readback.write_text(json.dumps(TEST_ONLY_CHECKOUT_READBACK), encoding="utf-8")
+        # tested here: a stub run labels no designs, so assemble refuses it (exit 2) and writes no package files
+        bare = self.root / "package-bare"
+        code, shown = self._cli("assemble", "--intake", str(intake_path), "--pieces", str(out / "pieces"),
+                                "--out", str(bare), "--page-only", "--checkout-readback", str(readback))
+        self.assertEqual(code, 2, shown)
+        self.assertFalse((bare / "package-manifest.json").exists())
+        self.assertFalse((bare / "receipt.json").exists())
+        from test_lane83_designs import make_piece  # noqa: E402  (a late import: it pulls in its own test module)
+        normalized = cli.intake.validate(doc)
+        designs = self.root / "designs"
+        designs.mkdir()
+        for node in cli.route.compile_route(normalized)["nodes"]:
+            piece_path = out / "pieces" / f"{node['role']}.json"
+            # the real landing piece is the sales page (page_kind "sales"), so its design files are labelled for it
+            added = make_piece(designs, normalized, node,
+                               extra_args=("--pages", "sales") if node["role"] == "landing" else ())["artifacts"]
+            stored = [out / "dispatch" / f"{prefix}-{node['role']}.json" for prefix in ("result", "page-result")]
+            for path in [piece_path] + [p for p in stored if p.is_file()]:
+                record = json.loads(path.read_text(encoding="utf-8"))
+                record["artifacts"] += added
+                path.write_text(json.dumps(record), encoding="utf-8")
+
+        # assemble, exactly as a client runs it (pages alone: the calendar and automations are other skills')
+        package_dir = self.root / "package"
         code, shown = self._cli("assemble", "--intake", str(intake_path), "--pieces", str(out / "pieces"),
                                 "--out", str(package_dir), "--page-only", "--checkout-readback", str(readback))
         self.assertEqual(code, 0, shown)
@@ -293,15 +320,13 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         (package_dir / "client-confirmations.json").write_text(json.dumps({"confirmations": confirmations}),
                                                                encoding="utf-8")
 
-        # check: everything passes up to the design gate, which refuses exactly the designs a stub run
-        # cannot honestly have (IMG-02: only labeled, client-approved final mockups count; a stub run labels nothing)
+        # check: with each page carrying the labelled design set above, the design gate has nothing to refuse and
+        # the whole package passes (a bare stub run labels nothing: assemble refuses that before check is reached)
         code, shown = self._cli("check", "--manifest", str(manifest_path), "--root", str(package_dir))
-        self.assertEqual(code, 2, shown)
-        self.assertIn("delivery level: designs: failed", shown)
-        self.assertNotIn("PASS package complete", shown)
-        expected = {f"{page_designs.CODE}: {page_designs.page_key(p)} is missing {k.replace('_', ' ')}"
-                    for p in manifest["pieces"] for k in checks.SECTION_KINDS}
-        self.assertEqual(len(expected), len(ROLES) * len(checks.SECTION_KINDS))
+        self.assertEqual(code, 0, shown)
+        self.assertNotIn("designs: failed", shown)
+        self.assertIn("PASS package complete", shown)
+        expected = set()  # the missing-design lines a stub run used to leave: none remain
         got = {line.strip()[2:] for line in shown.splitlines() if line.strip().startswith("- ")}
         self.assertEqual(got, expected, shown)
         # the package says the client has approved nothing yet: no approval was recorded, none is claimed

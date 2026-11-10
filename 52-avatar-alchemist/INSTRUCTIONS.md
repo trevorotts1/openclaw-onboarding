@@ -58,7 +58,7 @@ anything is scheduled — a hand-forged nonce cannot skip these. It also loads
 ```
 python3 scripts/aa_build_check.py --run <RUN_DIR>
 ```
-Enforces stripped-word floors, exact counts, the 5,000–19,000-char image-prompt band, the 13
+Enforces stripped-word floors, exact counts, the 16,000–20,000-char image-prompt band (KIE prompt rule 12 at the GPT Image 2.6 owner cap), the 13
 restored ad-set categories (R4 — enforced only under `--apply-repairs`), bot-doc structure, the
 12-section hero page, zero placeholders, and zero Anthropic model ids. Any violation is fail-closed.
 Stage 02 links are checked separately by the fail-soft `aa_links_gate.py` (verify or `degraded:search`).

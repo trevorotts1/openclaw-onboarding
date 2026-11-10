@@ -76,8 +76,12 @@ GHL_TOOLS = SKILL_DIR.parent / "06-ghl-install-pages" / "tools"  # Skill 6: ghl_
 EVIDENCE_REL = Path("build") / "evidence"        # Skill 6 verify evidence root inside the run dir
 PAGE_IMAGES_REL = Path("page-images")            # legacy_downsell_images.py --out-dir
 PAGE_IMAGES_RECEIPT = "page-images-receipt.json"
-# Same tuple as legacy_downsell_images.STAGES (a test holds them equal).
-VISUAL_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
+# The three stages legacy_downsell_images.STAGES writes, plus Skill 71's fourth
+# stage (`final-mockups`). Fix plan B3: a run without the final mockups cannot
+# certify, so the fourth stage is gated here even though the legacy tool stops
+# at three. A test holds the three legacy stages a subset of this tuple.
+VISUAL_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup", "final-mockups")
+LEGACY_VISUAL_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
 MIN_SECTION_CHARS = 10   # a section marker around no real text is not a built section
 QC_TOLERANCE = 0.05
 
@@ -295,6 +299,58 @@ def tool_run_violations(receipt: Dict[str, Any], evidence_root: Path) -> List[Tu
 # ---------------------------------------------------------------------------
 # IMG-16 — a funnel needs visual direction (wireframes + mockups) for every page.
 # ---------------------------------------------------------------------------
+def _required_image_pairs(size: int):
+    """(pairs, error, any_image) from the ONE source of truth (prove_sf_prompt_floor).
+
+    Fix plan B6 (unowned requirement G-10): the required per-section image set is already
+    computed deterministically from structure/funnel_structure.json for the prompt ledger.
+    Binding it to the WIREFRAME inventory is what makes "a section must carry an image" a
+    fact the build gate can check, instead of a rule nothing enforces.
+    """
+    try:
+        if str(SKILL_DIR / "scripts") not in sys.path:
+            sys.path.insert(0, str(SKILL_DIR / "scripts"))
+        import prove_sf_prompt_floor as psf  # noqa: PLC0415  (sibling prover, one definition)
+        structure = psf.load_structure()
+        return psf.required_image_pairs(size, structure), None, getattr(psf, "ANY_IMAGE", "*")
+    except Exception as exc:  # noqa: BLE001  (unresolvable set is fail-closed below)
+        return [], f"{type(exc).__name__}: {exc}", "*"
+
+
+def _wireframe_slotsets(slug_dir: Path) -> tuple[dict, set]:
+    """({section_id: [slot ids]} from the wireframe section plan, {inventory slot ids}).
+
+    Both artifacts are the wireframe stage's own output; a page with neither cannot bind its
+    required images to anything, which is exactly the gap this check exists to expose.
+    """
+    plan = {}
+    try:
+        data = json.loads((slug_dir / "section-plan.json").read_text(encoding="utf-8"))
+        for entry in data if isinstance(data, list) else []:
+            if not isinstance(entry, dict):
+                continue
+            sid = entry.get("section_id")
+            ids = [str(s) for s in entry.get("image_slot_ids") or [] if isinstance(s, str)]
+            if sid is not None and ids:
+                plan[str(sid)] = ids
+    except (OSError, ValueError):
+        plan = {}
+    inventory = set()
+    try:
+        inv = json.loads((slug_dir / "image-inventory.json").read_text(encoding="utf-8"))
+        entries = inv if isinstance(inv, list) else (inv.get("images") or inv.get("entries")
+                                                     or inv.get("inventory") or [])
+        for e in entries if isinstance(entries, list) else []:
+            if isinstance(e, dict):
+                for key in ("id", "slot_id", "image_slot_id", "image_id"):
+                    if isinstance(e.get(key), str) and e[key].strip():
+                        inventory.add(e[key].strip())
+                        break
+    except (OSError, ValueError):
+        inventory = set()
+    return plan, inventory
+
+
 def visual_direction_violations(run_dir: Path, size: int) -> List[Tuple[str, str]]:
     """Every page of the funnel needs the desktop wireframe, mobile wireframe and visual
     mockup records legacy_downsell_images.py writes under <run>/page-images. The design-only
@@ -313,6 +369,14 @@ def visual_direction_violations(run_dir: Path, size: int) -> List[Tuple[str, str
                           "or mockup set was produced (run scripts/legacy_downsell_images.py)"))
     claimed_pages = receipt.get("pages") if isinstance(receipt.get("pages"), dict) else {}
     not_built = receipt.get("not_built") if isinstance(receipt.get("not_built"), dict) else {}
+    # Fix plan B2: a STUB run writes placeholder wireframes. It may exist only when the receipt
+    # carries the owner approval that permitted it; an unapproved stub receipt never certifies.
+    stub_code = "AF-FUN-BUILD-VISUAL-STUB"
+    if str(receipt.get("provider") or "").lower() == "stub" and not str(receipt.get("stub_approval") or "").strip():
+        out.append((stub_code,
+                    f"{PAGE_IMAGES_REL}/{PAGE_IMAGES_RECEIPT} records an UNAPPROVED stub run: the "
+                    "wireframes and mockups are placeholders. Re-run with the real provider, or record "
+                    "the owner approval with --stub-approved-by <reference>."))
     for slug in required_page_types(size):
         if slug == "checkout" and slug not in claimed_pages and slug in not_built:
             continue  # design-only: the receipt names it as not built and says what it needs
@@ -331,6 +395,38 @@ def visual_direction_violations(run_dir: Path, size: int) -> List[Tuple[str, str
             if receipt and claimed != _sha256_file(rec):
                 out.append((code, f"page '{slug}': {stage} record does not match the sha256 in "
                                   f"{PAGE_IMAGES_RECEIPT}"))
+
+    # Fix plan B6 (unowned requirement G-10): BIND the required per-section image set to the
+    # WIREFRAME inventory. The required set comes from funnel_structure.json (the same pairs the
+    # prompt coverage gate uses); the wireframe section plan must declare a slot for each, and the
+    # inventory must actually carry it. Without this, "2-3 images on a page" was a wish: nothing
+    # connected the required set to the wireframe, so no gate could require an undeclared slot.
+    slotset_code = "AF-FUN-VISUAL-SLOTSET"
+    pairs, why, any_image = _required_image_pairs(size)
+    if why:
+        out.append((slotset_code,
+                    f"the required per-section image set could not be resolved ({why}); the "
+                    "wireframe inventory cannot be bound to it (fail-closed)"))
+    else:
+        required_pages = set(required_page_types(size))
+        for page, sec in pairs:
+            if sec == any_image or page not in required_pages:
+                continue  # page-level ">= 1 image" is covered by the stage records above
+            if page == "checkout" and page not in claimed_pages and page in not_built:
+                continue
+            plan, inventory = _wireframe_slotsets(base / page / "desktop-wireframe")
+            slot_ids = plan.get(str(sec)) or []
+            present = [s for s in slot_ids if s in inventory]
+            if not slot_ids:
+                out.append((slotset_code,
+                            f"page '{page}' section {sec}: the wireframe section plan declares NO "
+                            f"image slot ({PAGE_IMAGES_REL}/{page}/desktop-wireframe/section-plan.json); "
+                            "a required image has nowhere to live"))
+            elif not present:
+                out.append((slotset_code,
+                            f"page '{page}' section {sec}: its slot(s) {slot_ids} are not in "
+                            f"{PAGE_IMAGES_REL}/{page}/desktop-wireframe/image-inventory.json "
+                            "(the required image is bound to a slot the inventory does not carry)"))
     return out
 
 
@@ -531,6 +627,8 @@ def write_valid_run_evidence(run_dir: Path, size: int,
     # legacy_downsell_images.py output shape: one record per page and stage, plus the receipt.
     out = rd / PAGE_IMAGES_REL
     pages: Dict[str, Any] = {}
+    pairs, _why, any_image = _required_image_pairs(size)
+    counter = 0
     for slug in required_page_types(size):
         if slug == "checkout":
             continue
@@ -541,6 +639,19 @@ def write_valid_run_evidence(run_dir: Path, size: int,
             rec.write_text(json.dumps({"images": [{"id": f"{slug}-{stage}-1"}]}), encoding="utf-8")
             stages[stage] = {"record": str(rec), "sha256": _sha256_file(rec), "images": 1}
         pages[slug] = {"stages": stages}
+        # The wireframe stage's own artifacts, bound to the required section image set (B6/G-10).
+        plan, inventory = [], []
+        for page, sec in pairs:
+            if page != slug or sec == any_image:
+                continue
+            counter += 1
+            slot = f"IMG-{counter:03d}"
+            plan.append({"section_id": str(sec), "image_slot_ids": [slot]})
+            inventory.append({"id": slot})
+        wf = out / slug / "desktop-wireframe"
+        wf.mkdir(parents=True, exist_ok=True)
+        (wf / "section-plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        (wf / "image-inventory.json").write_text(json.dumps({"images": inventory}), encoding="utf-8")
     (out / PAGE_IMAGES_RECEIPT).write_text(json.dumps(
         {"funnel_size": size, "pages": pages,
          "not_built": {"checkout": "design-only page"} if size == 7 else {}}), encoding="utf-8")
@@ -746,10 +857,26 @@ def main(argv: List[str]) -> int:
                     help="Skill 6 verify evidence root (default <run-dir>/build/evidence)")
     ap.add_argument("--self-test", action="store_true",
                     help="construct a VALID receipt (must PASS) + each VIOLATION fixture (must FAIL)")
+    ap.add_argument("--visual-only", action="store_true",
+                    help="run ONLY the visual-direction gate (P7-BUILD's visual stage): every page "
+                         "needs %s records in page-images/. Exit 0 pass, 2 violation, 3 usage."
+                         % (", ".join(VISUAL_STAGES),))
     args = ap.parse_args(argv)
 
     if args.self_test:
         return run_self_test()
+
+    if args.visual_only:
+        # Fix plan B1 (unowned requirement G-2): the visual stage is a NAMED, separately
+        # runnable gate so the orchestrator can refuse a run whose wireframes/mockups are
+        # absent BEFORE any other build work. Same check _gate_build runs; never a second rule.
+        rd, size = args.run_dir, args.funnel_size
+        if not rd or size is None:
+            print("USAGE ERROR: --visual-only needs --run-dir and --funnel-size.")
+            return EXIT_FAILCLOSED
+        violations = visual_direction_violations(Path(rd), int(size))
+        _report(violations, [f"visual stage: {len(VISUAL_STAGES)} stage(s) x every page ({size}-step)"])
+        return EXIT_OK if not violations else EXIT_VIOLATION
 
     receipt_path = args.receipt or args.receipt_pos
     if not receipt_path:

@@ -78,6 +78,6 @@ content gate PASS, independent QC 9.2 (≥ 8.5, verifier ≠ author).
 |---|---|---|---|---|
 | 01 | missing-generator | `16-brand-bio` produced nothing | `aa_build_check` | rejected — `AF-AV-STAGE-MISSING` (exit 2) |
 | 02 | out-of-band-copy | ad-set-7 category drifts `5 → 2` | `aa_build_check` | rejected — `AF-AV-ADSET-CAT` (exit 2) |
-| 03 | image-prompt-too-short | landing image prompts under the 5000-char band | `aa_build_check` | rejected — `AF-AV-IMG-BAND` (exit 2) |
+| 03 | image-prompt-too-short | landing image prompts under the 16,000-char floor of the 16,000–20,000 band | `aa_build_check` | rejected — `AF-AV-IMG-BAND` (exit 2) |
 | 04 | book-version-not-routed | `version=book`, no Book skill on box | `aa_intake_gate` | rejected — `AF-AV-BOOK-SKILL-MISSING` (parks `book-skill-not-available`, exit 2) |
 | 05 | missing-provenance | artifact edited after its receipt sha256 | `aa_delivery_gate` | **no certificate** — `AF-AV-PROVENANCE` (exit 2) |

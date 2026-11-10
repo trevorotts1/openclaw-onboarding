@@ -34,6 +34,11 @@ PAGES = {"main": ("sales", 12), "upsell": ("upsell_1", 8), "downsell": ("downsel
 
 class LegacyPageImagesTests(unittest.TestCase):
     def run_tool(self, ledger, *extra):
+        # Fix plan B2 (unowned requirement G-3): the tool DEFAULTS to the real provider now, so a
+        # run that wants the offline stub must ask for it and record the owner approval that
+        # permitted it. This suite exercises the stub path end to end.
+        if "--image-provider" not in extra:
+            extra = (*extra, "--image-provider", "stub", "--stub-approved-by", "fixture-owner-approval")
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = pathlib.Path(tmp.name)
@@ -148,6 +153,110 @@ class LegacyPageImagesTests(unittest.TestCase):
         self.assertIn("--allow-paid", proc.stderr)
 
 
+class WireframeSlotsetBoundToRequest(unittest.TestCase):
+    """AF-FUN-VISUAL-SLOTSET (G-10): the tool writes the wireframe section plan and inventory from the
+    page's own production request, after giving every section the funnel structure requires an image
+    for a slot. The real tool output goes through the real prover; only final-mockups may remain."""
+
+    run_tool = LegacyPageImagesTests.run_tool
+
+    def check_size(self, size):
+        sys.path.insert(0, str(SCRIPTS))
+        self.addCleanup(sys.path.remove, str(SCRIPTS))
+        import prove_sf_build
+        proc, out = self.run_tool({**LEDGER, "funnel_size": size})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        run = out.parent / "run"
+        run.mkdir()
+        out.rename(run / "page-images")
+        violations = prove_sf_build.visual_direction_violations(run, size)
+        self.assertEqual({code for code, _ in violations}, {"AF-FUN-BUILD-VISUAL"}, violations)
+        self.assertTrue(all("final-mockups" in msg for _, msg in violations), violations)
+        for plan_file in (run / "page-images").glob("*/desktop-wireframe/section-plan.json"):
+            ids = [i for sec in json.loads(plan_file.read_text()) for i in sec["image_slot_ids"]]
+            self.assertEqual(len(ids), len(set(ids)), plan_file)  # renumbering kept every id unique
+        main = json.loads((run / "page-images" / "main" / "desktop-wireframe" / "section-plan.json").read_text())
+        self.assertEqual([len(sec["image_slot_ids"]) for sec in main], [1] * 12)  # 6, 7, 11 are no longer empty
+
+    def test_size_3(self):
+        self.check_size(3)
+
+    def test_size_5(self):
+        self.check_size(5)
+
+    def test_size_7(self):
+        self.check_size(7)
+
+
+class RecordFinalMockups(unittest.TestCase):
+    """G-4 (defect A): --record-final-mockups merges the closed final-mockups records into the receipt, so
+    the real P7 prover sees no AF-FUN-BUILD-VISUAL. It draws nothing and spends nothing."""
+
+    run_tool = LegacyPageImagesTests.run_tool
+
+    def setUp(self):
+        sys.path.insert(0, str(SCRIPTS))
+        self.addCleanup(sys.path.remove, str(SCRIPTS))
+        import prove_sf_build
+        self.build = prove_sf_build
+        proc, out = self.run_tool({**LEDGER, "funnel_size": 3})  # stub run: no paid call
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.run_dir = out.parent / "run"
+        self.run_dir.mkdir()
+        out.rename(self.run_dir / "page-images")
+        self.base = self.run_dir / "page-images"
+        self.pages = sorted(json.loads((self.base / "page-images-receipt.json").read_text())["pages"])
+
+    def plant(self, skip=(), images=("a.png",)):
+        for slug in self.pages:
+            if slug not in skip:
+                d = self.base / slug / "final-mockups"
+                d.mkdir(parents=True, exist_ok=True)
+                (d / "stage-executor-record.json").write_text(json.dumps({"images": list(images)}))
+
+    def record(self):
+        return subprocess.run([sys.executable, str(TOOL), "--record-final-mockups", "--out-dir", str(self.base)],
+                              capture_output=True, text=True)
+
+    def visual(self):
+        return [v for v in self.build.visual_direction_violations(self.run_dir, 3) if v[0] == "AF-FUN-BUILD-VISUAL"]
+
+    def test_before_the_mode_the_prover_refuses_and_after_it_passes(self):
+        self.plant()
+        self.assertTrue(self.visual())  # the control: the records alone do not certify
+        proc = self.record()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(self.visual(), [])
+
+    def test_a_page_without_a_record_exits_2_naming_it_and_leaves_the_receipt_alone(self):
+        self.plant(skip=("upsell",))
+        before = (self.base / "page-images-receipt.json").read_bytes()
+        proc = self.record()
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("upsell", proc.stderr)
+        self.assertNotIn("main", proc.stderr)
+        self.assertEqual((self.base / "page-images-receipt.json").read_bytes(), before)
+
+    def test_a_record_with_no_images_is_refused(self):
+        self.plant(images=())
+        self.assertEqual(self.record().returncode, 2)
+
+    def test_a_record_changed_after_the_mode_ran_fails_on_the_sha256(self):
+        self.plant()
+        self.assertEqual(self.record().returncode, 0)
+        (self.base / "main" / "final-mockups" / "stage-executor-record.json").write_text('{"images": ["b.png"]}')
+        self.assertTrue(any("sha256" in msg for _, msg in self.visual()), self.visual())
+
+    def test_the_mode_needs_no_provider_flag_and_makes_no_subprocess_call(self):
+        self.plant()
+        spec = importlib.util.spec_from_file_location("legacy_images_record", TOOL)
+        tool = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tool)
+        with mock.patch.object(tool.subprocess, "run", side_effect=AssertionError("spawned")), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(tool.main(["--record-final-mockups", "--out-dir", str(self.base)]), 0)
+
+
 FAKE_ADAPTER = """#!/usr/bin/env python3
 import json, os
 print(json.dumps({"state": "success", "data": {"source": "fake", "changed": True, "routes": {
@@ -178,6 +287,8 @@ class ImageModelResolvedThroughSkill66(unittest.TestCase):
             if not pathlib.Path(cmd[1]).name.startswith(("build_production_request", "stage_executor")):
                 return real(cmd, **kw)  # Skill 66's own call to the Skill 74 adapter is real
             seen.append(list(cmd))
+            if "--out" in cmd:  # the real builder writes the request the tool now reads back to bind slots
+                (pathlib.Path(kw["cwd"]) / cmd[cmd.index("--out") + 1]).write_text('{"sections": []}')
             return subprocess.CompletedProcess(cmd, 0, "", "")
         err = io.StringIO()
         with mock.patch.object(self.tool.subprocess, "run", fake_run), contextlib.redirect_stderr(err):

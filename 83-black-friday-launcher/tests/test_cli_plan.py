@@ -282,14 +282,19 @@ class ApprovalBindingTests(_Tmp):
         launch["plan_approval_ref"] = "APPR-TEST"
         launch.update(launch_over)
         (run / "launch.json").write_text(json.dumps(launch), encoding="utf-8")
-        fake = {"manifest_path": "m", "receipt_path": "r",
+        # the step spine (cli._close_step_spine) now requires each declared artifact to exist on disk
+        sealed = {name: self.write(f"sealed-{name}.json", {}) for name in ("manifest", "receipt")}
+        fake = {"manifest_path": str(sealed["manifest"]), "receipt_path": str(sealed["receipt"]),
                 # package.assemble always stamps the activation record and its label (package.py,
                 # manifest["activation"] / manifest["activation_label"]); cmd_assemble reports both.
                 "manifest": {"to_confirm": [], "delivery_scope": "page_only", "delivery_label": "x",
                              "activation": {"desired_state": "local_prepared",
                                             "achieved_state": "draft_constructed"},
                              "activation_label": "draft_constructed: local draft package"}}
+        # package.assemble is mocked whole and the fake manifest holds no designs, so cli's design backstop
+        # is stubbed out here; the real design refusal is proven by test_l26_delivery_scope CliScopeTests.
         with mock.patch.object(cli.package, "assemble", return_value=fake) as built, \
+                mock.patch.object(cli.page_designs, "design_violations", return_value=[]), \
                 mock.patch.object(cli.council, "planning_step", return_value={"status": "ok"}):
             rc, out, err = run_cli("assemble", "--intake", self.write("intake.json", doc),
                                    "--run-dir", run, "--out", self.dir / "out", "--page-only")

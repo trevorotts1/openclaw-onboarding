@@ -252,11 +252,29 @@ def _platform(stage: str, template: str) -> str:
 GENERATED_IMAGES_DIR = "image-generation-qc"
 GENERATED_IMAGE_RE = re.compile(r"^Image-(\d+)\.png$")
 
+GENERATED_REF_DIRS = (GENERATED_IMAGES_DIR, "image-map-upload")
+
+
+def request_references(request: dict) -> list:
+    """The request-level references with this client's GENERATED images removed (fix plan B8/G-11).
+
+    The request carries the generated images (--references) so they are on record, but a
+    request-level reference rides into EVERY job and is labelled "structure only", so a section
+    whose plan holds no image would still receive them. A generated image reaches a job only
+    through prior_slices, per section. Anything under image-generation-qc/ or image-map-upload/
+    is therefore dropped here, in build_input, both reference_block calls and reference_bleed.
+    """
+    return [r for r in (request.get("references") or [])
+            if not set(re.split(r"[\\/]", str(r))) & set(GENERATED_REF_DIRS)]
+
+
 def planned_slot_ids(run_dir: Path, index: int):
     """The slot ids the wireframe section plan assigns to section ``index`` (1-based).
 
     ``None`` when no section plan is on record: the caller then cannot know which
-    generated file belongs to this section.
+    generated file belongs to this section. An empty list means the plan records
+    the section and assigns it no image (a type-only section: 6 persona cards,
+    7 icon cards, 11 numbered steps), so it receives no photograph.
     """
     path = run_dir / "desktop-wireframe" / "section-plan.json"
     try:
@@ -268,8 +286,13 @@ def planned_slot_ids(run_dir: Path, index: int):
     section = plan[index - 1]
     if not isinstance(section, dict):
         return None
-    ids = [s for s in section.get("image_slot_ids") or [] if isinstance(s, str) and s.strip()]
-    return ids or None
+    # MOCK-001 B8: key presence, not truthiness, separates "no plan" (None: every
+    # generated photo is this page's raw material) from "plan says no image" ([]:
+    # a type-only section gets zero files). `ids or None` collapsed the empty plan
+    # into no plan and handed every generated image to sections 6, 7 and 11.
+    if "image_slot_ids" not in section:
+        return None
+    return [s for s in section.get("image_slot_ids") or [] if isinstance(s, str) and s.strip()]
 
 def generated_image_refs(run_dir: Path, index: int):
     """The image-generation-qc files this section's planned slots name.
@@ -297,15 +320,51 @@ def generated_image_refs(run_dir: Path, index: int):
             wanted.add(int(m.group(1)))
     return [p for p in files if int(GENERATED_IMAGE_RE.match(p.name).group(1)) in wanted]
 
-def prior_slices(stage: str, run_dir: Path, index: int, template: str):
+def generated_images_for_section(run_dir: Path, section: dict) -> list:
+    """The client's GENERATED images for THIS section (fix plan B8, unowned requirement G-11).
+
+    The final-mockups draw used to receive only earlier STAGE slices (the wireframe and the
+    visual mockup) — never the pictures the client actually generated for the slots. The model
+    therefore invented the imagery and the mockup shipped without the images that belong in it.
+
+    The files come from the same resolver the Design Board uses (design_board.page_images:
+    image-map-upload/image-map.json first, then image-generation-qc/Image-NNN.png), so there is
+    one answer to "where is this slot's image", never a second one. An unresolvable section
+    yields [] — the reverse-coverage gate, not this helper, is what refuses a missing image.
+    """
+    try:
+        slots = section.get("slots") if isinstance(section, dict) else None
+        wanted = {str(s.get("slot_id")) for s in (slots or [])
+                  if isinstance(s, dict) and s.get("slot_id")}
+        if not wanted:
+            return []
+        import design_board  # lazy: keeps this module importable without the Pillow path
+        items = design_board.page_images(Path(run_dir), {"sections": [section]})
+    except Exception:  # noqa: BLE001  (any failure means "no extra references", never a crash)
+        return []
+    picks = []
+    for item in items:
+        if str(item.get("slot_id")) in wanted:
+            p = item.get("_path")
+            if p is not None and Path(p).is_file() and Path(p) not in picks:
+                picks.append(Path(p))
+    return picks
+
+def prior_slices(stage: str, run_dir: Path, index: int, template: str,
+                 section: dict | None = None):
     """The matching slice of each earlier stage for THIS section only.
 
     The executor used to attach every earlier slice to every job. A model
     handed all twelve slices draws a whole page and leaves the rest blank;
     it must see the same-index wireframe (and, at final mockups, the
-    same-index visual mockup) and nothing else. final-mockups also receives
-    this section's generated images (image-generation-qc), which are the
-    real photography the mockup composites into its slots.
+    same-index visual mockup) and nothing else.
+
+    At final mockups the client's GENERATED images for this section are appended after the
+    stage slices (fix plan B8 / G-11), so the draw composites the real pictures instead of
+    inventing them.
+
+    Without a section on hand the same rule falls back to the section plan's slot
+    numbering, so a caller that passes only the index keeps its generated references.
     """
     earlier = STAGES[:STAGES.index(stage)]
     want = _platform(stage, template)
@@ -319,7 +378,9 @@ def prior_slices(stage: str, run_dir: Path, index: int, template: str):
                 if candidate.is_file() and candidate not in picks:
                     picks.append(candidate)
     if stage == "final-mockups":
-        for candidate in generated_image_refs(run_dir, index):
+        refs = (generated_images_for_section(run_dir, section) if section is not None
+                else generated_image_refs(run_dir, index))
+        for candidate in refs:
             if candidate not in picks:
                 picks.append(candidate)
     return picks
@@ -485,6 +546,35 @@ def policy_band_numbers(max_chars):
             "hard_floor": -(-m * 80 // 100)}
 
 
+def _owner_cap_from(spec) -> int | None:
+    """Read a cap from the owner catalog row named by a policy `max_chars_from` block.
+
+    FIX-PLAN A1 (unowned requiement G-6): the policy file must not hard-code the
+    number, because a second copy of 20,000 is exactly the drift that produced the
+    32,000 maximum. The owner catalog (66-kie-image/models.json) is the one source;
+    this resolves it and returns None when the row or the field is absent, so the
+    caller refuses instead of inventing a maximum.
+    """
+    if not isinstance(spec, dict):
+        return None
+    rel, field = spec.get("file"), spec.get("field")
+    sel_field, sel = spec.get("selector_field"), spec.get("selector")
+    if not (isinstance(rel, str) and isinstance(field, str) and isinstance(sel_field, str)
+            and isinstance(sel, str)):
+        return None
+    path = (SKILL_ROOT.parent / rel).resolve()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    for row in data.get("models") or data.get("entries") or []:
+        if isinstance(row, dict) and row.get(sel_field) == sel:
+            cap = row.get(field)
+            if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
+                return cap
+            return None
+    return None
+
 def prompt_budget(model: str | None):
     """The model's recorded rule 12 band: maximum, 95 percent target, 80 percent hard floor.
 
@@ -501,21 +591,40 @@ def prompt_budget(model: str | None):
         match = entry.get("match")
         if not (model and match and str(match) in model and entry.get("unit") == "chars"):
             continue
-        try:
-            cap = int(entry.get("max_chars"))
-        except (TypeError, ValueError):
-            return None
+        cap = None
+        resolved_from = None
+        if isinstance(entry.get("max_chars_from"), dict):
+            cap = _owner_cap_from(entry["max_chars_from"])
+            if cap is not None:
+                resolved_from = entry["max_chars_from"].get("file")
+        if cap is None:
+            try:
+                cap = int(entry.get("max_chars"))
+            except (TypeError, ValueError):
+                return None
+        band = policy_band_numbers(cap)
+        source = "prompt-budget-policy:%s" % entry.get("cap_status", "UNKNOWN")
+        if resolved_from:
+            source += " read from %s" % resolved_from
+        return {"max_chars": cap, "floor_chars": band["floor"],
+                "hard_floor_chars": band["hard_floor"],
+                "target_chars": band["target_min"],
+                "source": source}
+    if model and "gpt-image-2-6" in model:
+        # Fail to the law, never to 32,000: owner ruling 2026-11-08 caps every
+        # 2.6 route at the 66-kie-image/models.json owner_prompt_cap_chars value.
+        cap = _owner_cap_from({"file": "66-kie-image/models.json",
+                               "selector_field": "canonical_model_id",
+                               "selector": "gpt-image-2-6/sunburst-text-to-image",
+                               "field": "owner_prompt_cap_chars"})
+        if cap is None:
+            return None  # an absent owner cap never becomes an invented maximum
         band = policy_band_numbers(cap)
         return {"max_chars": cap, "floor_chars": band["floor"],
                 "hard_floor_chars": band["hard_floor"],
                 "target_chars": band["target_min"],
-                "source": "prompt-budget-policy:%s" % entry.get("cap_status", "UNKNOWN")}
-    if model and "gpt-image-2-6" in model:
-        # Fail to the law, never to 32,000: owner ruling 2026-11-08 caps every
-        # 2.6 route at 20,000 even if the policy file lookup misses.
-        return {"max_chars": 20000, "floor_chars": 19000, "hard_floor_chars": 16000,
-                "target_chars": 19000,
-                "source": "Owner ruling 2026-11-08 fallback: 20,000 (66-kie-image/models.json owner_prompt_cap_chars)."}
+                "source": "Owner ruling 2026-11-08: %d read from 66-kie-image/models.json "
+                          "owner_prompt_cap_chars." % cap}
     return None
 
 def prompt_cap(model: str | None):
@@ -1287,7 +1396,7 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
                                # main threads default_count=0. Same outcome, explicit default wins.
                                step_rule=_step_rule(request.get("_step_band"), page_spec,
                                                     default_count=(7 if steps_ok else 0)))
-    ref_block = reference_use.reference_block(request.get("references"),
+    ref_block = reference_use.reference_block(request_references(request),
                                               request.get("reference_roles"))
     color_block = str(request.get("_brand_block") or "")
     roles = request.get("_hypersat")
@@ -1383,7 +1492,7 @@ def build_input(job: dict, request: dict) -> dict:
         refs = [str(r) for r in job["references"]]
     else:
         refs = list(dict.fromkeys(str(r) for r in (job.get("style_refs") or []) +
-                                  (request.get("references") or []) + job["references"]))
+                                  request_references(request) + job["references"]))
     base = {"prompt": job["prompt"], "input_urls": refs}
     if job.get("ratio"):
         base["aspect_ratio"] = job["ratio"]
@@ -2358,9 +2467,10 @@ def reference_bleed(out: Path, request: dict, provider):
     """QC leg: did the delivered image reproduce the reference's palette or
     brand text? None when no reference was attached or the image is a stub
     placeholder. Recorded, never gating here: the stage gate reads it."""
-    if provider.name == "stub" or not request.get("references"):
+    refs = request_references(request)
+    if provider.name == "stub" or not refs:
         return None
-    return reference_use.check(out, request["references"], request.get("client_palette") or ())
+    return reference_use.check(out, refs, request.get("client_palette") or ())
 
 
 def record_bleed(entry: dict, out: Path, request: dict, provider, stage: str) -> None:
@@ -2408,7 +2518,7 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
             out = run_dir / stage / slot
             ratio = target_ratio(stage, template, section, run_dir, index)
             style = style_refs(stage, request, provider.name == "kie")
-            refs = prior_slices(stage, run_dir, index, template)
+            refs = prior_slices(stage, run_dir, index, template, section)
             typed = section_typed_references(
                 stage, width, resolve_composition(section, index, request), section,
                 request_form(request), request)
@@ -2679,7 +2789,7 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
     if not prompt:
         raise ExecutorError(f"the item prompt {prompt_path} is empty")
     prompt = with_photo_rules(prompt, item, request)
-    ref_block = reference_use.reference_block(request.get("references"),
+    ref_block = reference_use.reference_block(request_references(request),
                                               request.get("reference_roles"))
     roles = request.get("_hypersat") or hypersaturation.roles_for_run(run_dir)
     if not roles:
@@ -2886,7 +2996,7 @@ def main(argv=None) -> int:
                                 stage, section, index, width, request, ratio,
                                 with_sizes=True, strict_floor=True, typed_refs=typed)
                             refs = style_refs(stage, request) + prior_slices(
-                                stage, run_dir, index, template)
+                                stage, run_dir, index, template, section)
                         except ExecutorError as exc:
                             refused += 1
                             print(f"PREFLIGHT {stage} {name} REFUSED: {exc}")

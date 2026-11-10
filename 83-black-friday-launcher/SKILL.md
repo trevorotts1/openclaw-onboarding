@@ -2,7 +2,7 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.31
+version: 0.2.32
 priority: HIGH
 ---
 
@@ -274,6 +274,24 @@ a numbered directory, so the same code runs in both layouts.
    but cannot be proved refuses by name, while unselected ones are recorded as advisories and
    independent work continues. Folded levels are reported from the per-offer checkout instances
    (`combined_single_offer` per main price choice), not from the obsolete contract-gap claim.
+
+## Reading rule (BINDING — applies before any step of this skill runs)
+
+**READ EVERYTHING BEFORE YOU TOUCH ANYTHING.** Read this entire file from top to bottom before executing a
+single step. This is the wording already proven at `06-ghl-install-pages/INSTALL.md:72`; it governs this
+skill and every skill it calls, and it is not optional.
+
+**Read each declared dependency WHOLE.** Every file the read order below names — this file, `DISPATCH.md`,
+`DECISIONS-PENDING.md`, the page skills, the SOP files under
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/`, and the launcher's own
+`launcher_core/dependencies.json` — must be read from top to bottom before you act on it. Read order is not
+completeness: knowing WHICH file comes first is not knowing WHAT it says. A dependency you have not read
+whole is a dependency you cannot claim to have followed.
+
+**GREPPING IS NOT READING.** A search hit is a pointer, never knowledge: open the file and read it whole.
+"No grepping allowed." (`50-email-engine/SOURCE-EMAIL-CORPUS.md:25`). Do not skim, do not read only the
+lines a search returned, and never act on a file you have not read end to end. If you catch yourself
+searching for the answer instead of reading the source, stop and read the source.
 
 ## Read order
 

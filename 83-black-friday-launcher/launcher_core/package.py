@@ -14,6 +14,7 @@ import importlib.util
 import json
 import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -1130,6 +1131,41 @@ def _client_handoff(intake: Dict[str, Any], ordered: List[Dict[str, Any]],
     }
 
 
+def _refuse_incomplete_designs(ordered: List[Dict[str, Any]], route: Dict[str, Any], test_only: bool,
+                               staged: List[Tuple[str, bytes]], whole_set: bool) -> None:
+    """Refuse a package whose pages lack a full labeled design set, with nothing written to run_dir.
+
+    The files are laid out in a scratch folder at the paths the package will use, beside the route
+    graph, and judged by the same page_designs.design_violations that `check` and the CLI use. B4
+    (no page carries any wireframe or mockup) keeps its own code, AF-LAUNCH-PKG-PAGE-DESIGNS, and is
+    always enforced; the whole-set refusal (AF-LAUNCH-ASSEMBLE-DESIGN) applies when ``whole_set``.
+    """
+    from . import checks as checks_module  # local: checks imports this module
+    manifest = {"pieces": ordered, "test_only": test_only, "designs_required": True,
+                "design_approvals": page_designs.default_approvals()}
+    with tempfile.TemporaryDirectory(prefix="assemble-designs-") as scratch:
+        root = Path(scratch)
+        for rel, data in staged:
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_bytes(data)
+        (root / page_designs.ROUTE_GRAPH_REL).write_text(
+            json.dumps(route, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        carried = any(kind in page_designs.KINDS
+                      for _, _, kind in checks_module._design_artifacts(manifest))
+        if not carried:
+            _, design_fails = checks_module._design_level(manifest, root, None)
+            raise PackageError(
+                "AF-LAUNCH-PKG-PAGE-DESIGNS",
+                "no page carries a wireframe or a mockup, so the package is not assembled: "
+                + "; ".join(design_fails or ["every page is missing its design set"]))
+        designs = page_designs.design_violations(manifest, root) if whole_set else []
+    if designs:
+        raise PackageError(
+            "AF-LAUNCH-ASSEMBLE-DESIGN",
+            "the package has no complete design set (call `check` for the full list): "
+            + " | ".join(designs))
+
+
 def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              pieces: Dict[str, Any], source_root: Optional[Path] = None,
              council: Optional[Dict[str, Any]] = None,
@@ -1144,7 +1180,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
              dispatch_run: Optional[Path] = None,
              design_waiver: Optional[Dict[str, Any]] = None,
              checkout_readback: Optional[Dict[str, Any]] = None,
-             activation_readback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+             activation_readback: Optional[Dict[str, Any]] = None,
+             refuse_incomplete_designs: bool = False) -> Dict[str, Any]:
     """Write package-manifest.json + receipt.json into run_dir. Returns both records.
 
     Artifacts are copied into run_dir/pieces/<page_id>/ so the delivered package
@@ -1155,8 +1192,11 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     renamed hash. Two different files that would land on one path are refused.
 
     require_designs makes AF-LAUNCH-PAGE-DESIGNS part of the package's own checks: every page
-    must carry its full labeled set of desktop and mobile wireframes and mockups. Explicit False
-    (the CLI's --allow-no-designs) always needs a verified design_waiver bound to the approved hash.
+    must carry its full labeled set of desktop and mobile wireframes and mockups. It is also
+    enforced HERE, not only by `check`: a package whose pages carry no design artifact at all is
+    refused (AF-LAUNCH-PKG-PAGE-DESIGNS) and nothing is sealed, so a launch can never be handed
+    off with the wireframes and mockups simply skipped. Explicit False (the CLI's
+    --allow-no-designs) always needs a verified design_waiver bound to the approved hash.
     An unchosen value (None) is designs required for any dispatched or live package, and stays
     not-required only for a hand-built test fixture with no dispatch run (recorded
     dispatch_binding.state = "unbound_fixture"). checkout_readback, when given, is passed to
@@ -1216,6 +1256,9 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     Open page blockers travel with each piece into the manifest and receipt units. A full launch
     refuses to assemble while any are open (AF-LAUNCH-PKG-BLOCKERS); a page-only package is labelled
     design-only. ``require_designs=False`` needs a verified ``design_waiver`` bound to the plan hash.
+    ``refuse_incomplete_designs`` (the CLI passes it unless --allow-no-designs) judges the whole design
+    set (page_designs.design_violations) BEFORE the first write and raises AF-LAUNCH-ASSEMBLE-DESIGN, so
+    a partial set seals nothing. Library callers that build a package to hand to `check` leave it off.
     A client delivery (a dispatched full launch, or any non-test intake) needs Skill 49's lane
     receipts in the store; live_effects names the paid picture renders instead of a constant.
     """
@@ -1261,7 +1304,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         dispatch_record = {"state": DISPATCH_STATE_UNBOUND_FIXTURE,
                            "detail": "no dispatch run: hand-built test fixture, not a dispatched build"}
     activation = _activation(intake, binding, activation_readback)
-    # The activation record is written SEPARATELY from the construction receipts,
+    # The activation record is written SEPARATELY from the construction receipts (after the design
+    # refusal below, so a refused package leaves nothing on disk),
     # before the manifest, so its own digest can be carried by the manifest without
     # a cycle. The construction receipts it names stay the originals.
     activation_record = {
@@ -1283,10 +1327,6 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                  "stage is claimed only from an observed read-back, and a local/draft package "
                  "is never relabelled live"),
     }
-    activation_path = run_dir / ACTIVATION_RECORD_REL
-    activation_path.write_text(json.dumps(activation_record, indent=2, sort_keys=True) + "\n",
-                               encoding="utf-8")
-    activation_ref = {"path": ACTIVATION_RECORD_REL, "sha256": _sha256_file(activation_path)}
     evidence = receipt_evidence(run_dir)
     if evidence["state"] in ("malformed", "unavailable"):
         raise PackageError("AF-LAUNCH-PKG-RECEIPTS",
@@ -1326,25 +1366,6 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         first = resources["blockers"][0]
         raise PackageError(first["code"],
                            f"{first['operator_detail']}; this package cannot claim delivery")
-    resources_path = linked_delivery.write_record(resources, run_dir)
-    capabilities_path = run_dir / capability_check.RECORD_REL
-    capabilities_path.write_text(json.dumps(capabilities, indent=2, sort_keys=True) + "\n",
-                                 encoding="utf-8")
-    resources_ref = {"path": resources_path.name, "sha256": _sha256_file(resources_path),
-                     "fingerprint": resources["fingerprint"],
-                     "counts": resources["summary"]["counts"],
-                     "state": resources["summary"]["state"],
-                     "pages": resources["pages"],
-                     "fulfillment": resources["fulfillment"],
-                     "client_blockers": resources["summary"]["client_blockers"],
-                     "next_steps": resources["summary"]["next_steps"]}
-    capabilities_ref = {"path": capability_check.RECORD_REL,
-                        "sha256": _sha256_file(capabilities_path),
-                        "state": capabilities["state"],
-                        "required": capabilities["required"],
-                        "blocked": capabilities["blocked"],
-                        "advisories": [name for name, row in capabilities["capabilities"].items()
-                                       if row["state"] == "unproven" and not row["required"]]}
     if launch_plan is not None and launch_plan.get("launch_id") != intake["launch_id"]:
         raise PackageError("AF-LAUNCH-PLAN-LAUNCH",
                            f"the launch plan is for {launch_plan.get('launch_id')!r}, not "
@@ -1386,6 +1407,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     waiver = None
     if require_designs is False:
         waiver = _verify_design_waiver(design_waiver, approved)
+    approval_copies: List[Tuple[Path, Path]] = []   # written after the design refusal, never before
     if design_approvals is not None:
         # STR-25: an approved Design Board must resolve to a recorded Skill 71 approval, and a relative
         # reference is copied byte-for-byte into the package so `check` re-resolves the same record.
@@ -1404,10 +1426,11 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                                    f"approval record {ref!r} resolves outside the run it came from")
             dest = run_dir / ref
             if src != dest.resolve():
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(src.read_bytes())
+                approval_copies.append((src, dest))
 
     landing_roots = _landing_run_roots(root)
+    staged: Dict[str, str] = {}   # rel path -> sha256, planned copies (nothing is written yet)
+    to_write: List[Tuple[str, bytes, str, str]] = []
     for piece in ordered:
         copied: List[Dict[str, Any]] = []
         sources = [_artifact_source(art["path"], source_root, landing_roots) for art in piece["artifacts"]]
@@ -1441,18 +1464,53 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                     inside = Path(*inside.parts[2:])
             rel = str(prefix / inside)
             dest = run_dir / rel
-            if dest.exists() and _sha256_file(dest) != actual:
+            if (dest.exists() and _sha256_file(dest) != actual) or staged.get(rel, actual) != actual:
                 raise PackageError("AF-LAUNCH-PKG-COLLISION",
                                    f"{piece['role']}: two different files would both be delivered as {rel!r}")
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(data)
-            if _sha256_file(dest) != art["sha256"]:
-                raise PackageError("AF-LAUNCH-PKG-HASH",
-                                   f"{piece['role']}: copied artifact {rel!r} did not verify")
+            staged[rel] = actual
+            to_write.append((rel, data, art["sha256"], piece["role"]))
             entry = {k: v for k, v in art.items() if k not in ("path", "sha256")}
             copied.append({"path": rel, "sha256": actual, **entry})
         piece["artifacts"] = copied
 
+    # M3 (ASM-001): the design set is judged HERE, before the first byte is written, so a refused
+    # package seals nothing (no manifest, no receipt, no copies). It is checked on a scratch copy laid
+    # out exactly as the package will be.
+    if designs_required:
+        _refuse_incomplete_designs(ordered, route, test_only, [(rel, data) for rel, data, _, _ in to_write],
+                                   refuse_incomplete_designs)
+    for rel, data, declared, role in to_write:
+        dest = run_dir / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        if _sha256_file(dest) != declared:
+            raise PackageError("AF-LAUNCH-PKG-HASH", f"{role}: copied artifact {rel!r} did not verify")
+    for src, dest in approval_copies:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(src.read_bytes())
+    activation_path = run_dir / ACTIVATION_RECORD_REL
+    activation_path.write_text(json.dumps(activation_record, indent=2, sort_keys=True) + "\n",
+                               encoding="utf-8")
+    activation_ref = {"path": ACTIVATION_RECORD_REL, "sha256": _sha256_file(activation_path)}
+    resources_path = linked_delivery.write_record(resources, run_dir)
+    capabilities_path = run_dir / capability_check.RECORD_REL
+    capabilities_path.write_text(json.dumps(capabilities, indent=2, sort_keys=True) + "\n",
+                                 encoding="utf-8")
+    resources_ref = {"path": resources_path.name, "sha256": _sha256_file(resources_path),
+                     "fingerprint": resources["fingerprint"],
+                     "counts": resources["summary"]["counts"],
+                     "state": resources["summary"]["state"],
+                     "pages": resources["pages"],
+                     "fulfillment": resources["fulfillment"],
+                     "client_blockers": resources["summary"]["client_blockers"],
+                     "next_steps": resources["summary"]["next_steps"]}
+    capabilities_ref = {"path": capability_check.RECORD_REL,
+                        "sha256": _sha256_file(capabilities_path),
+                        "state": capabilities["state"],
+                        "required": capabilities["required"],
+                        "blocked": capabilities["blocked"],
+                        "advisories": [name for name, row in capabilities["capabilities"].items()
+                                       if row["state"] == "unproven" and not row["required"]]}
     for rel, raw in bridge_files:
         (run_dir / rel).parent.mkdir(parents=True, exist_ok=True)
         (run_dir / rel).write_bytes(raw)

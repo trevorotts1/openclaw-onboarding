@@ -14,16 +14,16 @@ Authoritative Reference: BlackCEO Execution Spec §5 (Prompt Rules A–E, Struct
 
 BlackCEO prompt policy is measured in **exact characters, not words**.
 When legal under vendor model limits, the system operates in the following standard house band:
-- **Desired Minimum:** 5,000 characters
-- **Target Operating Length:** ~9,000 characters
-- **Preferred Maximum:** 19,000 characters
+- **Desired Minimum:** 80% of the model maximum (hard floor)
+- **Target Operating Length:** 95-100% of the model maximum
+- **Preferred Maximum:** 100% of the model maximum
 
 ### Priority Rule: Model Hard Limit Always Wins
 The runtime selects the model first, evaluates its hard constraints, and enforces the appropriate operational band:
 
 - **Rule A: Verified Character Cap ≥ 20,000**
   - Models: `wan/3-0-video`, `wan/3-0-video-prime`, `gemini-omni-video`, `bytedance/seedance-2-5`.
-  - House band applies: 5,000–19,000 characters, targeting ~9,000 characters. Full descriptive detail, beat-by-beat timing, lighting, camera choreography, and soundscapes are mandatory.
+  - Rule 12 budget applies (95-100% of the verified maximum, floor 80%). Full descriptive detail, beat-by-beat timing, lighting, camera choreography, and soundscapes are mandatory.
 - **Rule B: Verified Character Cap Between 5,000 and 19,999**
   - Models: `minimax-h3/*` (7,000 cap), `pixverse-v6/*` (5,000 cap), `wan/2-7-*` (5,000 cap), `happyhorse-1-1/*` (5,000 non-CN cap), `happyhorse/*` (5,000 non-CN cap).
   - Do NOT target 19,000 or the exact hard cap. Enforce safe ceilings:

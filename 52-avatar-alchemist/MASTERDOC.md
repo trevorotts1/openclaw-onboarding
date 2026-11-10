@@ -124,8 +124,8 @@ sheet) → `Facebook_Targeting_Intelligence`; `35-top-39` (**exactly 3×13 = 39 
 | Stage | Generator | Tier | Produces | Band |
 |---|---|---|---|---|
 | `39-hero-page` | Write the hero page | A | 12-section "Trevor Otts Hero Landing Page System" → `Landing_Page` | **12 sections**; **R6** consumes `38`; **R7** client TIER-A (Anthropic chain removed) |
-| `40-landing-image-prompts` | Write image prompts for landing page | B | Midjourney v6 prompt per section → `Landing_Page_Image_Prompts` | **stripped-char band 5,000–19,000** |
-| `36-image-prompts-39` | Image Prompt Writer | B | **exactly 39** Midjourney prompts → `Top_39_Suggested_Image_Prompts` | **39 prompts**, unique artist each, band 5,000–19,000, `--ar 1:1 --r 10 --c 25 --s 750` |
+| `40-landing-image-prompts` | Write image prompts for landing page | B | Midjourney v6 prompt per section → `Landing_Page_Image_Prompts` | **stripped-char band 16,000–20,000** |
+| `36-image-prompts-39` | Image Prompt Writer | B | **exactly 39** Midjourney prompts → `Top_39_Suggested_Image_Prompts` | **39 prompts**, unique artist each, band 16,000–20,000, `--ar 1:1 --r 10 --c 25 --s 750` |
 
 ## 3. Per-artifact bands (machine-enforced; measured on STRIPPED text; self-reported counts ignored)
 
@@ -137,7 +137,7 @@ sheet) → `Facebook_Targeting_Intelligence`; `35-top-39` (**exactly 3×13 = 39 
   a contact receives) is **≤550 stripped chars** (`AA-PIPELINE-MANIFEST.json`
   `floors.bot_msg_char_cap`; enforced by `_botdoc_defects`).
 - **Exact counts:** `36` = 39 image prompts · `35` = 3×13 = 39 · `37` = 12+12+12 · each ad set = 10 ads.
-- **Image-prompt char band:** `36` and `40` = **5,000–19,000 stripped chars**; no repeated
+- **Image-prompt char band:** `36` and `40` = **16,000–20,000 stripped chars**; no repeated
   artist/photographer/producer token across prompts.
 - **Structure:** each of the 13 ad sets names its restored category (no "category 2" drift);
   bot docs carry H1 `# … Section` + XML labels + `{{contact.*}}` merge tags; hero = 12 sections.

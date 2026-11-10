@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-11-10T01:11:10Z",
+  "generated_at": "2026-11-10T10:19:54Z",
   "file_count": 116,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -57,12 +57,12 @@
       "bytes": 9741
     },
     "avatar-craft/README.md": {
-      "sha256": "64e4ff5333af250a4f99bd7727776171904a81f2a76e40adff218e8501a0c710",
-      "bytes": 9265
+      "sha256": "e27ba2921247f387eaf89e3f2469833501c2c5adf2a601515f3d5994f9ef00ec",
+      "bytes": 9287
     },
     "avatar-craft/SOP-AVATAR-01-BRAND-INTELLIGENCE-PACKAGE.md": {
-      "sha256": "65f2f94e81f9a15545f0e9dc69dab72bf2451c94e13d1f23e8436bb5f3e85cbf",
-      "bytes": 11531
+      "sha256": "716237d76d7f625f702f2c390b5db62d27d53309a6137fb843d42f5cdd1481df",
+      "bytes": 11553
     },
     "book-writer-craft/README.md": {
       "sha256": "2b2f7b8f69f0a89470596906bd0855381305968e3c27c5f8a28ad221416c89cb",
@@ -429,12 +429,12 @@
       "bytes": 6522
     },
     "video-production/SOP-PVC-01-PERSONAL-VIDEO-CREATOR.md": {
-      "sha256": "15cdf9ff3a018b6bb5c9523b9bb19b5abd05d29c920dd86c06706b5a2e90410f",
-      "bytes": 64942
+      "sha256": "53b97f433d46af64025449d924d0405a72c819ac4b365b2f728bde6a507d14aa",
+      "bytes": 65075
     },
     "video-production/VIDEO-PRODUCTION-MANIFEST.json": {
-      "sha256": "52d9babd962a1a10bef182b3c0d388b94035b2ceea1daf61f54b6701ac115f7c",
-      "bytes": 8098
+      "sha256": "4f65f4ef2db8fad20d6fae16d88468030433bbd531fc8a6f2f35447711b720b5",
+      "bytes": 8107
     },
     "website-craft/MASTER-WEBSITE-QC-AUTOFAIL-RULESET.md": {
       "sha256": "78cd2377f66433fbe6b77d4e1564d83ab1bc39e07a2dc06e65ca679bba6bb6d2",

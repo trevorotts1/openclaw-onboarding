@@ -28,9 +28,11 @@ stdlib only. Exit 0 = pass, exit 2 = violation, exit 3 = usage/fail-closed.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -190,6 +192,74 @@ def _check_grade_block(stripped: str, lc: str, who: str) -> List[Tuple[str, str]
              f">={GRADE_CONTIGUOUS_NORM_CHARS}-char verbatim run) — missing e.g.: {miss_preview}")]
 
 
+def _adapter_path() -> Optional[Path]:
+    """Skill 74's transport, or None. KIE_LIVE_ADAPTER_PATH="" disables the bridge (66's own rule)."""
+    env = os.environ.get("KIE_LIVE_ADAPTER_PATH")
+    if env is not None:
+        return Path(env) if env and Path(env).is_file() else None
+    roots = [Path(__file__).resolve().parents[2]]
+    if os.environ.get("OPENCLAW_SKILLS_DIR"):
+        roots.append(Path(os.environ["OPENCLAW_SKILLS_DIR"]))
+    roots += [Path.home() / ".openclaw" / "skills", Path("/data/.openclaw/skills")]
+    for root in roots:
+        for name in ("74-kie-live-adapter", "kie-live-adapter"):
+            p = root / name / "scripts" / "kie_live_adapter.py"
+            if p.is_file():
+                return p
+    return None
+
+# G-8: one check per (model, prompt sha). The adapter resolves a schema once per model;
+# re-shelling per ledger row would multiply that cost for no extra proof.
+_ADAPTER_CACHE: Dict[Tuple[str, str], Optional[Dict[str, Any]]] = {}
+
+def _adapter_prompt_budget(model: str, text: str) -> Optional[Dict[str, Any]]:
+    """G-8 — run the SAME `prompt-budget --check` Skill 74 runs, at Skill 49's submit path.
+
+    The fix plan's A3 is explicit: the length check must live at the call site and must use
+    the transport's own mechanism, so Skill 49 and Skill 74 can never hold two bands. This
+    shells the adapter's own CLI (the command a human runs) rather than importing it, so
+    there is exactly one implementation. Returns the adapter's `data` block with the
+    transport's exit_code, or None when the adapter cannot answer (absent, broken, timeout)
+    — in which case the canonical policy service alone governs, exactly as before.
+
+    The result can only ADD refusals (see evaluate_prompt): it never clears a prompt the
+    canonical service refused, so this change cannot let anything through.
+    """
+    if not text or not model:
+        return None
+    key = (str(model), hashlib.sha256(text.encode("utf-8")).hexdigest())
+    if key in _ADAPTER_CACHE:
+        return _ADAPTER_CACHE[key]
+    path = _adapter_path()
+    if path is None:
+        _ADAPTER_CACHE[key] = None
+        return None
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(path), "prompt-budget", "--model", str(model),
+             "--check", "--prompt-file", "-"],
+            input=text, capture_output=True, text=True, timeout=60,
+            env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+    except (OSError, subprocess.SubprocessError):
+        _ADAPTER_CACHE[key] = None
+        return None
+    try:
+        payload = json.loads(proc.stdout)
+    except ValueError:
+        _ADAPTER_CACHE[key] = None
+        return None
+    if not isinstance(payload, dict):
+        _ADAPTER_CACHE[key] = None
+        return None
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    got = dict(data)
+    got["exit_code"] = int(got.get("exit_code") or 0) or int(proc.returncode)
+    got["state"] = payload.get("state")
+    got["error"] = payload.get("error")
+    got["warnings"] = list(payload.get("warnings") or [])
+    _ADAPTER_CACHE[key] = got
+    return got
+
 def evaluate_prompt(record: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], Optional[Dict[str, Any]]]:
     """Return (list of (AF-code, message), frozen policy receipt). Empty failures == clean.
 
@@ -217,17 +287,54 @@ def evaluate_prompt(record: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], Opti
         if not receipt["verdict"]["ok"]:
             status = receipt["verdict"]["status"]
             code = "AF-FUN-PROMPT-CEILING" if status == "ABOVE_MAX" else "AF-FUN-PROMPT-FLOOR"
-            fails.append((code, f"{who}: {receipt['verdict']['message']}; NOT sent to Kie"))
+            # A3: this prover is the P2-PROMPTS phase over ledgers already on disk, so it cannot
+            # claim a prompt "was not sent". The submit path (Skill 74, _prompt_gate) refuses the
+            # same band before its HTTP call, which is what makes the prompt unsubmittable.
+            fails.append((code, f"{who}: {receipt['verdict']['message']}; the Kie submit path "
+                                "refuses this prompt before its HTTP call"))
     else:
         verdict = KPE.check(model, stripped)
         if not verdict["ok"]:
             code = "AF-FUN-PROMPT-CEILING" if verdict["status"] == "ABOVE_MAX" else "AF-FUN-PROMPT-FLOOR"
-            fails.append((code, f"{who}: {verdict['message']}; NOT sent to Kie"))
+            fails.append((code, f"{who}: {verdict['message']}; the Kie submit path "
+                                "refuses this prompt before its HTTP call"))
         receipt = {"final_prompt_sha256": verdict.get("prompt_sha256"),
                    "count": verdict.get("count"), "max": verdict.get("max"),
                    "ratio": verdict.get("ratio"),
                    "policy_version": verdict.get("policy_version"),
                    "payload_sha256": None}
+
+    # FLOOR 1b (G-8) — THE TRANSPORT'S OWN CHECK, at this submit path.
+    # Skill 74's `prompt-budget --check` is the command the paid transport itself runs. It can
+    # only ADD a refusal here: a prompt the canonical service already refused stays refused,
+    # and one it accepted can still be refused by the transport. The reverse never happens.
+    adapter = _adapter_prompt_budget(model, stripped)
+    if adapter is not None:
+        exit_code = int(adapter.get("exit_code") or 0)
+        if exit_code in (3, 4) or adapter.get("state") == "fail":
+            code = "AF-FUN-PROMPT-CEILING" if exit_code == 4 else "AF-FUN-PROMPT-FLOOR"
+            msg = (adapter.get("error") or {}).get("msg") or adapter.get("status") or "refused"
+            fails.append((code, f"{who}: Skill 74 prompt-budget --check refused it "
+                                f"({msg}, exit {exit_code}); refused before any Kie submit"))
+
+    # FLOOR 1c (G-9) — WARN-AND-EXPAND IS NOT A PASS. The 80-to-below-95 band emits a warning
+    # naming the characters to ADD. If that warning is still on the verdict, the prompt was never
+    # expanded, so certifying it would ship a short prompt as if it were compliant. Fail closed.
+    # Only a length warning counts: the resolved limit carries informational provenance notes
+    # (e.g. "owner cap governs over the vendor schema"), and refusing those would be noise.
+    verdict_warnings = list(((receipt or {}).get("verdict") or {}).get("warnings") or [])
+    unexpanded = [w for w in verdict_warnings
+                  if "warn and expand" in str(w).lower()
+                  or ("add " in str(w).lower() and "percent band" in str(w).lower())]
+    if not unexpanded and adapter is not None and int(adapter.get("exit_code") or 0) == 5:
+        # Exit 5 is the transport's own warn-and-expand / out-of-band answer. It is not a
+        # refusal by itself, but it is never an expansion either: fail closed here.
+        unexpanded = [str(adapter.get("status") or "warn-and-expand")]
+    if unexpanded:
+        fails.append(("AF-FUN-PROMPT-UNEXPANDED",
+                      f"{who}: the length verdict carries {len(unexpanded)} unexpanded "
+                      f"warn-and-expand warning(s) — expand the prompt to the target band before "
+                      f"submit; first: {unexpanded[0]}"))
 
     # FLOOR 2 — density
     distinct = _distinct_words(stripped)
@@ -290,6 +397,13 @@ def verify(ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
         got, receipt = evaluate_prompt(rec)
         violations.extend(got)
         if receipt:
+            # A4: the owner rule's 80-to-below-95 percent band PASSES with a warn-and-expand
+            # warning naming the characters to ADD. That verdict was dropped here (the string
+            # "warning" appeared zero times in this file). Surfaced here; the same verdict
+            # fails closed at FLOOR 1c (AF-FUN-PROMPT-UNEXPANDED).
+            for warning in (receipt.get("verdict") or {}).get("warnings") or []:
+                notes.append("WARNING (prompt policy) %s section %s: %s"
+                             % (rec.get("page_type", "?"), rec.get("section", "?"), warning))
             payload_sha = (POLICY.payload_sha256(
                 {"model": str(rec.get("model") or IMAGE_MODEL_DEFAULT),
                  "input": {"prompt": receipt.get("prompt")}})
@@ -508,7 +622,8 @@ def _report(violations, notes) -> None:
     if not violations:
         print("PASS: every image prompt clears the two-floor gate (KIE rule 12 length band).")
         return
-    print(f"FAIL: {len(violations)} prompt violation(s) — the failing prompt is NOT sent to Kie.")
+    print(f"FAIL: {len(violations)} prompt violation(s) — the Kie submit path refuses a failing "
+          "prompt before its HTTP call.")
     for code, msg in violations:
         print(f"  VIOLATION [{code}] {msg}")
 

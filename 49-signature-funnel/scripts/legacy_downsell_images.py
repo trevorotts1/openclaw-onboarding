@@ -29,10 +29,20 @@ built and says what it needs. This tool never writes checkout copy.
   legacy_downsell_images.py --ledger <copy_ledger.json> --skill71-root <71 dir> \
       --brand-file <brand.json> --brand-owner <client> --out-dir <dir> [--page downsell-2]
 
+Before a page is drawn, every section funnel_structure.json image_coverage requires an image for gets a slot in the
+page's own production request (the stricter rule wins over Skill 71's type-only sections), and the wireframe
+section-plan.json and image-inventory.json are written from that request.
+
+After Skill 71's client-gated path has closed final-mockups for each page (Design Board approval first),
+--record-final-mockups --out-dir <dir> draws nothing and spends nothing: it reads each page's closed
+final-mockups/stage-executor-record.json, merges {record, sha256, images} into page-images-receipt.json, and
+exits 2 naming any page whose record is missing or carries no images (then the receipt is left as it was).
+A record changed after that is caught by the P7 build gate on the sha256.
+
 --page narrows the run. Each page is checked against structure/page_types.json (page_set.py): a page
-whose images are missing is refused. Provider is the offline stub unless --image-provider kie
---allow-paid (the review PDFs and boards are composed only on kie; the receipt lists them as render
-pending). Exit 0 ok, 2 refused or a stage failed.
+whose images are missing is refused. Provider DEFAULTS to kie (--allow-paid required); the offline stub
+is opt-in only and needs a recorded owner approval, --stub-approved-by <ref> (the review PDFs and boards
+are composed only on kie; the receipt lists them as render pending). Exit 0 ok, 2 refused or a stage failed.
 """
 from __future__ import annotations
 
@@ -48,6 +58,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import page_set  # noqa: E402
+import prove_sf_prompt_floor as psf  # noqa: E402  (the one source of the required per-section image set)
 from checkout_wrapper import CARD_FIELDS  # noqa: E402
 
 STRUCTURE = HERE.parent / "structure" / "funnel_structure.json"
@@ -177,7 +188,47 @@ def _image_model(args):
         raise Refused(f"images: Skill 66 did not resolve the image-to-image model ({exc}); nothing is drawn")
 
 
-def draw(run, build_args, args, scripts):
+IMG_ID = re.compile(r"^IMG-\d+$")
+
+
+def required_sections(slug, size):
+    """The numbered sections of this page that funnel_structure.json image_coverage says carry one
+    image (the stricter rule: Skill 71 marks some sections type-only, the funnel structure still
+    requires an image there, and prove_sf_build binds the wireframe inventory to this set)."""
+    pairs = psf.required_image_pairs(size, psf.load_structure())
+    return {str(sec) for page, sec in pairs if page == slug and sec != psf.ANY_IMAGE}
+
+
+def bind_slots(run, request_name, required, bands):
+    """Make the page's own production request carry a slot in every required section, then write the
+    wireframe plan and inventory from it. A required section the request left without a slot gets one
+    before any draw (the band's declared slot ratio when the page type declares bands, else 16:9);
+    IMG-NNN ids are renumbered in section order so they stay unique. Idempotent for one page: the
+    three stage requests are the same sections, so each gets the same slots and ids.
+    Returns (section plan, inventory entries)."""
+    path = run / request_name
+    request = json.loads(path.read_text(encoding="utf-8"))
+    sections = request.get("sections") or []
+    for sec in sections:
+        sid = str(sec.get("section_id"))
+        if sid in required and not sec.get("slots"):
+            sec["slots"] = [{"slot_id": "IMG-000", "aspect_ratio": (bands.get(sid) or {}).get("aspect_ratio") or "16:9",
+                             "art_direction": f"Editorial photograph that illustrates: {sec.get('section_name') or 'this section'}"}]
+    n = 0
+    for sec in sections:
+        for slot in sec.get("slots") or []:
+            if IMG_ID.match(str(slot.get("slot_id"))):
+                n += 1
+                slot["slot_id"] = f"IMG-{n:03d}"
+    path.write_text(json.dumps(request, indent=2) + "\n", encoding="utf-8")
+    plan = [{"section_id": str(sec.get("section_id")),
+             "image_slot_ids": [str(sl["slot_id"]) for sl in sec.get("slots") or []]} for sec in sections]
+    inventory = [{"id": str(sl["slot_id"]), "section_id": str(sec.get("section_id")), **sl}
+                 for sec in sections for sl in sec.get("slots") or []]
+    return plan, inventory
+
+
+def draw(run, build_args, args, scripts, required=frozenset(), bands=None):
     """The three stages through Skill 71's own builder and executor, in the run folder.
     args.image_model is already resolved (main, once per run)."""
     model = args.image_model
@@ -197,6 +248,43 @@ def draw(run, build_args, args, scripts):
             if proc.returncode != 0:
                 tail = (proc.stdout + proc.stderr).strip().splitlines()[-8:]
                 raise Refused(f"{run.name}: {Path(cmd[1]).name} {stage} exited {proc.returncode}: " + " | ".join(tail))
+            if cmd is build:  # slots are bound before the stage draws, never after
+                plan, inventory = bind_slots(run, f"production-request-{stage}.json", required, bands or {})
+                if stage in ("desktop-wireframe", "mobile-tablet"):
+                    (run / stage).mkdir(exist_ok=True)
+                    (run / stage / "section-plan.json").write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+                if stage == "desktop-wireframe":
+                    (run / stage / "image-inventory.json").write_text(
+                        json.dumps({"images": inventory}, indent=2) + "\n", encoding="utf-8")
+
+
+def record_final_mockups(out_dir):
+    """--record-final-mockups: no draw, no spend. Merge each receipt page's closed final-mockups record
+    ({record, sha256, images}) into page-images-receipt.json; refuse, writing nothing, if any page lacks one."""
+    path = out_dir / "page-images-receipt.json"
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+        pages = report["pages"]
+    except (OSError, ValueError, KeyError, TypeError):
+        raise Refused(f"{path} is absent or unreadable: run this tool first, then record final-mockups")
+    found, missing = {}, []
+    for slug in pages:
+        record = out_dir / slug / "final-mockups" / "stage-executor-record.json"
+        try:
+            images = json.loads(record.read_text(encoding="utf-8")).get("images")
+        except (OSError, ValueError, AttributeError):
+            images = None
+        if not isinstance(images, list) or not images:
+            missing.append(slug)
+        else:
+            found[slug] = {"record": str(record), "sha256": hashlib.sha256(record.read_bytes()).hexdigest(),
+                           "images": len(images)}
+    if missing:
+        raise Refused(f"final-mockups has no closed record with images for page(s) {missing}; nothing recorded")
+    for slug, entry in found.items():
+        pages[slug].setdefault("stages", {})["final-mockups"] = entry
+    path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps({"recorded_final_mockups": {s: e["images"] for s, e in found.items()}}, indent=2))
 
 
 def run_page(slug, structure, ledger, args, scripts, entries):
@@ -234,7 +322,9 @@ def run_page(slug, structure, ledger, args, scripts, entries):
                         encoding="utf-8")
         build_args = ["--page-role", role, "--page-copy", str(copy)]
     (run / "intake.json").write_text(json.dumps(intake), encoding="utf-8")
-    draw(run, build_args, args, scripts)
+    layouts = json.loads((scripts.parent / "references" / "page-structures.json").read_text(encoding="utf-8"))
+    bands = {b["id"]: b.get("slot") or {} for b in ((layouts.get("layouts") or {}).get(role) or {}).get("sections") or []}
+    draw(run, build_args, args, scripts, required_sections(slug, ledger.get("funnel_size")), bands)
     out = {}
     for stage in STAGES:
         record = run / stage / "stage-executor-record.json"
@@ -253,11 +343,13 @@ def run_page(slug, structure, ledger, args, scripts, entries):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--ledger", type=Path, required=True, help="the run's copy_ledger.json")
-    ap.add_argument("--skill71-root", type=Path, required=True)
-    ap.add_argument("--brand-file", type=Path, required=True)
-    ap.add_argument("--brand-owner", required=True)
+    ap.add_argument("--ledger", type=Path, help="the run's copy_ledger.json")
+    ap.add_argument("--skill71-root", type=Path)
+    ap.add_argument("--brand-file", type=Path)
+    ap.add_argument("--brand-owner")
     ap.add_argument("--out-dir", type=Path, required=True)
+    ap.add_argument("--record-final-mockups", action="store_true",
+                    help="no draw, no spend: merge each page's closed final-mockups record into page-images-receipt.json")
     ap.add_argument("--page", action="append", help="a matrix slug to build (repeatable)")
     ap.add_argument("--checkout-manuscript", type=Path,
                     help="the approved five-section checkout manuscript; without it checkout is reported not built")
@@ -267,14 +359,32 @@ def main(argv=None):
                     help="the thank-you page's access button label (the legacy ledger carries none)")
     ap.add_argument("--help-label", default="Get Support",
                     help="the thank-you page's help button label (the legacy ledger carries none)")
-    ap.add_argument("--image-provider", choices=["stub", "kie"], default="stub")
+    ap.add_argument("--image-provider", choices=["stub", "kie"], default="kie",
+                    help="kie (default) draws real wireframes and needs --allow-paid; stub writes "
+                         "placeholders and needs a recorded owner approval (--stub-approved-by)")
+    ap.add_argument("--stub-approved-by",
+                    help="the owner approval reference that permits a STUB run; without it a stub "
+                         "run is refused and, if a receipt claims one, P7-BUILD refuses to certify")
     ap.add_argument("--allow-paid", action="store_true")
     ap.add_argument("--image-model")
     ap.add_argument("--design-prose", type=Path)
     args = ap.parse_args(argv)
     try:
+        if args.record_final_mockups:
+            record_final_mockups(args.out_dir)
+            return 0
+        for flag in ("ledger", "skill71_root", "brand_file", "brand_owner"):
+            if not getattr(args, flag):
+                raise Refused(f"--{flag.replace('_', '-')} is required unless --record-final-mockups is given")
         if args.image_provider == "kie" and not args.allow_paid:
             raise Refused("--image-provider kie spends money; it needs --allow-paid, approved by the owner")
+        if args.image_provider == "stub" and not (args.stub_approved_by or "").strip():
+            # Fix plan B2: the provider must never DEFAULT to placeholder wireframes. A stub run
+            # is allowed only with a recorded owner approval, written into the receipt so the
+            # build gate can refuse an unapproved one.
+            raise Refused("--image-provider stub writes PLACEHOLDER wireframes and needs a recorded "
+                          "owner approval: pass --stub-approved-by <owner approval reference>. The "
+                          "default provider is kie.")
         root = args.skill71_root.resolve()
         scripts = root / "scripts"
         entries_file = root / "references" / "page-structures.json"
@@ -292,12 +402,17 @@ def main(argv=None):
         slugs = targets(structure, size, args.page, entries, bool(args.checkout_manuscript))
         args.image_model = _image_model(args)  # once per run: every page records the same id
         report = {"funnel_size": size, "pages": {},
+                  "provider": args.image_provider,
+                  "stub_approval": (args.stub_approved_by or None) if args.image_provider == "stub" else None,
                   "not_built": {s: NOT_BUILT[s] for s in structure["funnel_matrix"][str(size)]
                                 if s in NOT_BUILT and not (s == "checkout" and args.checkout_manuscript)}}
         for slug in slugs:
             report["pages"][slug] = run_page(slug, structure, ledger, args, scripts, entries)
         report["note"] = ("the image inventory, generation, Design Board approval and final-mockups "
-                          "are client-gated stages downstream and were not run")
+                          "are client-gated stages downstream and were not run HERE. final-mockups is "
+                          "NOT optional: prove_sf_build.VISUAL_STAGES requires it, so P7-BUILD refuses "
+                          "to certify until the client-gated final-mockups stage has closed and "
+                          "--record-final-mockups has merged its record into this receipt (fix plan B3)")
         args.out_dir.mkdir(parents=True, exist_ok=True)
         (args.out_dir / "page-images-receipt.json").write_text(
             json.dumps(report, indent=2) + "\n", encoding="utf-8")

@@ -27,7 +27,7 @@
     "got_codes": [
       "AF-AV-IMG-BAND"
     ],
-    "out": "VIOLATION [AF-AV-IMG-BAND] stage '40-landing-image-prompts': 49 stripped chars outside image-prompt band [5000,19000]"
+    "out": "VIOLATION [AF-AV-IMG-BAND] stage '40-landing-image-prompts': 49 stripped chars outside image-prompt band [16000,20000]"
   },
   "04_book_version_not_routed": {
     "prover": "aa_intake_gate.py",
