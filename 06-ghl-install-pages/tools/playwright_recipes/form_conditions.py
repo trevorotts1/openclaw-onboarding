@@ -11,9 +11,11 @@ import json
 import re
 
 if __package__:
+    from . import form_condition_fields as field_identity
     from .assessments import reopen_editor, read_editor_title
     from .skill6_playwright import Stop, click, fill, form_builder, wait_until
 else:
+    import form_condition_fields as field_identity
     from assessments import reopen_editor, read_editor_title
     from skill6_playwright import Stop, click, fill, form_builder, wait_until
 
@@ -30,14 +32,16 @@ OUTCOME = '.flex.text-xs.leading-5.text-gray-600'
 
 def validate(step, *, minimum_clauses=2):
     if (not isinstance(step,dict)
-            or set(step) - {'id','action','clauses','match','connectors','effect','target'}
+            or set(step) - {'id','action','clauses','match','connectors','effect','target','field_bindings'}
             or step.get('action','native_condition_group') != 'native_condition_group'):
         raise Stop('Unsupported native form condition group')
+    bindings=condition_bindings(step)
+    labels={field['label'] for field in bindings}
     if not isinstance(step.get('match'),str) or step['match'] not in ('all','any','mixed'):
         raise Stop('Condition group match must be all, any or explicit mixed')
     if not isinstance(step.get('effect'),str) or step['effect'] not in ('Hide Field','Show Field'):
         raise Stop('Condition groups support captured single-field Show/Hide effects')
-    if not isinstance(step.get('target'),str) or step['target'] not in TARGETS:
+    if not isinstance(step.get('target'),str) or step['target'] not in TARGETS|labels:
         raise Stop('Condition target must use a captured native field label')
     clauses = step.get('clauses')
     if (type(minimum_clauses) is not int or minimum_clauses not in (1,2)
@@ -55,7 +59,7 @@ def validate(step, *, minimum_clauses=2):
     for clause in clauses:
         if (not isinstance(clause,dict)
                 or set(clause)-{'if_field','operator','value'}
-                or not isinstance(clause.get('if_field'),str) or clause['if_field'] not in FIELDS
+                or not isinstance(clause.get('if_field'),str) or clause['if_field'] not in FIELDS|labels
                 or not isinstance(clause.get('operator'),str) or clause['operator'] not in UNARY|BINARY):
             raise Stop('Compound clauses require captured fields and operators')
         if clause['operator'] in UNARY:
@@ -72,10 +76,20 @@ def validate(step, *, minimum_clauses=2):
     return deepcopy(step)
 
 
+def condition_bindings(step):
+    return field_identity.validate(step['field_bindings'],reserved=TARGETS) if 'field_bindings' in step else []
+
+
+def _preflight_fields(frame,plan,identity):
+    if 'field_bindings' in plan:
+        field_identity.preflight(frame,plan['field_bindings'],identity)
+
+
 def configuration_hash(step):
     valid = validate(step)
     payload = {key:valid[key] for key in ('clauses','match','effect','target')}
     if 'connectors' in valid:payload['connectors']=valid['connectors']
+    if 'field_bindings' in valid:payload['field_bindings']=valid['field_bindings']
     return hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
@@ -101,7 +115,13 @@ def _selected(node):
 def _choose(frame, selector, label):
     node = _one(frame.locator(selector),'Native compound select is missing or ambiguous')
     click(node)
-    option = frame.locator('.n-base-select-option').get_by_text(label,exact=True)
+    if ((selector.startswith('#selectedField-') or selector=='#selectedFieldShowHide')
+            and label not in TARGETS):
+        search=_one(node.locator('input.n-base-selection-input'),
+                    'Native custom condition field search is missing or ambiguous')
+        fill(search,label)
+    option = frame.locator('.n-base-select-option:visible').get_by_text(label,exact=True)
+    wait_until(lambda:option.count()==1,'Native condition choice did not resolve uniquely: '+label)
     click(_one(option,'Compound condition choice is absent or ambiguous: '+label))
     wait_until(lambda:_selected(node)==label,'Native compound selection did not persist in the modal')
 
@@ -164,6 +184,33 @@ def _expected(plan):
              'outcome':[plan['effect'],plan['target']]}]
 
 
+def _value_input(modal,index,*,unary=False):
+    """Bind the captured n-input DIV to its actual nested text input.
+
+    Unary operators retain a positively invisible wrapper in the native DOM.
+    Its existence is not an ignored authored value. A visible value control,
+    ambiguous wrapper or changed nested-input shape still refuses.
+    """
+    wrapper=modal.locator('#inputValue-'+str(index))
+    if unary and wrapper.count()==0:return None  # previously captured absent shape
+    _one(wrapper,'Native condition value wrapper is missing or ambiguous')
+    classes=(wrapper.get_attribute('class') or '').split()
+    if 'n-input' not in classes:
+        raise Stop('Native condition value owner is not the captured n-input wrapper')
+    control=_one(wrapper.locator('input.n-input__input-el'),
+                 'Native condition nested value input is missing or ambiguous')
+    if (control.get_attribute('type')!='text'
+            or control.get_attribute('placeholder')!='Please Type a value here'):
+        raise Stop('Native condition nested value input identity changed')
+    if unary:
+        if 'invisible' not in classes or wrapper.is_visible() or control.is_visible():
+            raise Stop('Native unary condition unexpectedly exposes a value control')
+        return None
+    if 'invisible' in classes or not wrapper.is_visible() or not control.is_visible():
+        raise Stop('Native binary condition value input is not visible')
+    return control
+
+
 def _modal_state(modal,plan):
     count = len(plan['clauses'])
     sources = modal.locator('[id^="selectedField-"]')
@@ -176,11 +223,9 @@ def _modal_state(modal,plan):
                 or _selected(_one(modal.locator('#selectedOperation-'+str(index)),
                                   'Native compound operator is missing'))!=clause['operator']):
             raise Stop('Native compound clause differs from the authored source/operator')
-        value = modal.locator('#inputValue-'+str(index))
         if clause['operator'] in UNARY:
-            if value.count():
-                raise Stop('Unary compound clause unexpectedly contains a value control')
-        elif value.count()!=1 or value.input_value()!=clause['value']:
+            _value_input(modal,index,unary=True)
+        elif _value_input(modal,index).input_value()!=clause['value']:
             raise Stop('Native compound value differs from the authored clause')
     joins = modal.locator('.n-tabs')
     if joins.count()!=count:
@@ -237,6 +282,7 @@ def configure(page,step):
         dialog.wait_for(state='visible',timeout=45000)
         return _one(dialog,'Native Conditions dialog is missing or ambiguous')
 
+    _preflight_fields(frame,plan,identity)
     dialog = open_conditions()
     before, wanted = _inventory(dialog),_expected(plan)
     if before and before!=wanted:
@@ -256,8 +302,7 @@ def configure(page,step):
             _choose(frame,'#selectedField-'+str(index),clause['if_field'])
             _choose(frame,'#selectedOperation-'+str(index),clause['operator'])
             if clause['operator'] in BINARY:
-                value = _one(modal.locator('#inputValue-'+str(index)),
-                             'Native binary compound value control changed')
+                value = _value_input(modal,index)
                 fill(value,clause['value'])
                 if value.input_value()!=clause['value']:
                     raise Stop('Native compound value did not accept the authored text')
@@ -299,6 +344,7 @@ def configure(page,step):
         _wait_for_form_save(page,save)
     reopen_editor(page,'form',name,editor_url)
     frame = form_builder(page)
+    _preflight_fields(frame,plan,identity)
     dialog = open_conditions()
     if _inventory(dialog)!=wanted:
         raise Stop('Native compound condition did not persist after independent reopen')

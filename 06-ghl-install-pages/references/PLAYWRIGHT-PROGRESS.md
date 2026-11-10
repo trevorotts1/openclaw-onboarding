@@ -1,3 +1,178 @@
+# Current source build status — November 10, 2026
+
+**33 named operations: 22 BUILT, 11 PARTIAL, 0 GENERIC_ONLY.**
+Eleven bounded operation areas still require code. This is a current source inventory,
+not an effort percentage, merged-delivery count or native functional PASS.
+
+The previous repeated **21 BUILT / 11 PARTIAL / 1 GENERIC_ONLY** was the frozen
+fifth-source audit. It is preserved as history, not reported as current. Later
+feature entries had accumulated without updating the original operation rows.
+This reconciliation removes those contradictory missing-feature claims.
+
+Two classifications now reflect the actual code:
+
+- `quizzes.create` is BUILT for its captured new-quiz profile: owned shell creation,
+  independent reopen, question/scoring/result jobs and final full inventory.
+  It uses one question per page, explicit captured scoring and the fixed-three
+  catalog-image Picture Choice profile. Existing populated-page append belongs
+  to `quizzes.configure`; final respondent/native acceptance remains pending.
+- `funnels.split_variant` is PARTIAL rather than GENERIC_ONLY: dedicated inactive
+  same-step creation/reuse, intake/compiler/runner and fresh replay readback exist.
+  Active and non-100/0 profiles refuse before browser acquisition. Activation
+  confirmation and saved active-state readback remain unfinished.
+
+| Operation still partial | Remaining executable scope |
+| --- | --- |
+| `funnels.split_variant` | Activation/allocation confirmation and saved active-state readback. |
+| `forms.configure` | Numeric/checkbox/file/signature authoring; Address parent controls; ungrounded legacy adoption; Contact Dropdown creation and remaining embed color/icon controls. |
+| `forms.conditions` | Custom condition families beyond TEXT and rich-message outcome order recreation. Mixed connectors, deletion/count changes, existing outcome edits and non-message order recreation are built. |
+| `surveys.create` | Question families beyond captured standard fields/Radio/TEXT and their media paths. Paragraph/Multi Line remains pending this checkpoint. Owned shell/slide orchestration and populated TEXT append are built. |
+| `surveys.configure` | Other question properties; compound predicates and completion/redirect/message/disqualification rule lifecycle. TEXT and existing Multi Line/LARGE_TEXT properties and forward Jump To stacks are built. |
+| `quizzes.configure` | Existing populated-page append; Picture option/style/upload controls; answer Jump To; tier lifecycle and result media/styles. Multi Dropdown and fixed-three Picture Choice are built. |
+| `courses.configure_ui` | Video lifecycle and background/Custom Block image removal. Background transparency, Text/Image blocks, Custom Block deletion and exact Image Block image removal are built. |
+| `communities.configure` | Authoritative first-course empty state, non-Private course modes and modern portal settings/reuse gaps. Existing association replay is built. |
+| `meetings.setup` | Authoritative empty co-host roster and first-assignment path. |
+| `meetings.update` | Authoritative empty-roster, first-assignment and clear-all paths. |
+| `meetings.integrate` | Course Live Sessions and additional calendar/provider/event shapes beyond captured profiles. |
+
+Unknown native drag/nested-grouping availability and unspecified "other controls"
+are not added as requirements. A concrete platform inventory or explicit owner
+requirement must establish further scope.
+
+The current combined source also includes seven reviewed follow-on features,
+inactive split routing/preflight and non-message outcome order recreation. The
+split builder ran six focused tests in0.530s; its pre-navigation correction ran
+one affected test in0.002s. The outcome reorder addition ran six focused tests
+in0.018s. Independent source reviews are CONFIRMED. Existing Multi Line/LARGE_TEXT property editing is also built, including Required/Hidden,
+exact location/editor binding, saved reopen and fresh replay. Its eight focused tests
+passed in0.340s and one affected three-drift test passed in0.002s; source review is
+CONFIRMED. Paragraph creation remains pending. The current matrix has64 dynamic
+actions and77 bounded jobs. This ledger reconciliation
+uses JSON parsing and whitespace validation only; no tests were repeated.
+
+Merge train [#3101](https://github.com/trevorotts1/openclaw-onboarding/pull/3101)
+landed v27.1.103 at `a28b89970668ad097892664117170baf98765baa`. The follow-on
+[#3099](https://github.com/trevorotts1/openclaw-onboarding/pull/3099) reconciles
+release metadata as v27.1.104 and preserves the other train's implementation.
+Draft/publication/merge status is tracked independently of source counts.
+
+Final installed Mac/Linux execution, saved native script runs, respondent branches,
+score boundaries, learner/member access and payment journeys remain separately
+unverified. Source tests and captures do not claim those outcomes.
+
+Build independent missing features in isolated branches, reuse captured controls,
+and run only changed checks once plus one source review. Repeat affected checks
+only after a real change or failure. Preserve pinned heads and the existing batch
+process; avoid duplicate trains, other owners' tabs and production co-host changes.
+
+---
+
+<details>
+<summary>Historical checkpoints — superseded counts and missing lists</summary>
+
+## Forms closure reconciliation — November 10, 2026
+
+The operation-level `forms.conditions` missing list had retained already-built features.
+It now reflects the current source: mixed connectors, delete/count changes, outcome
+edits, custom TEXT identities and Show/Hide recreation are implemented. This update
+also adds explicit unchanged order recreation for non-message mixed outcome stacks,
+using captured Delete/author controls and preserving the unchanged prefix. Rich
+message permutations refuse before browser access to protect saved markup.
+
+Validation: six focused new tests passed in 0.018s after correcting an invalid
+conflicting Show/Hide test fixture. No existing suite was repeated. Broad operation
+count remains 21 BUILT / 11 PARTIAL / 1 GENERIC_ONLY; unsupported custom field families
+and message-bearing order recreation keep forms.conditions PARTIAL.
+
+# Current build recovery - November 10, 2026
+
+This section supersedes the preserved history below. Authority repair
+[#3094](https://github.com/trevorotts1/openclaw-onboarding/pull/3094) is merged at
+`461ff7c6591653b6bc1d61564f70405e20c2cb82`. The existing coordinator's merged
+[batch #3096](https://github.com/trevorotts1/openclaw-onboarding/pull/3096), head
+`feae7bc2696e69b6bdc995279a773280c5730bcc`, carries v27.1.102 unit #3095 at
+`dc82b8c9928229920694d13445a2135127abae6b`. The earlier Mac fixture failure
+was corrected on that unit head; its Mac and Ubuntu jobs passed. No old-head
+rerun or competing batch is needed. Batch #3096 merged at `710b36e9c1c36d3c72a33ebb52b7054234c00a2e`
+on November 10 at 1:54:47 AM Eastern.
+Skill 6 v27.1.101 was delivered through #3090; v27.1.100 through #3085.
+
+The v27.1.103 continuation integrates seven independently reviewed bounded changes:
+
+1. An explicit full Show/Hide rule permutation recreates only the changed suffix
+   through captured Delete/author controls. The unchanged prefix is retained,
+   rules cannot be edited/added/removed in the same job, and the complete saved
+   order must survive independent reopen. This does not author native drag.
+2. Exact inactive course Image Block image removal binds the existing image and
+   observed positive empty placeholders, protects the destination and siblings,
+   saves once, and independently reopens the full empty-image state.
+3. Completed community course-association replay reloads Learning and verifies
+   the actual target plus complete siblings. Drift stops for reconciliation
+   without another Add, API read or journal rewrite.
+4. Captured Single Line TEXT survey questions now author Label, Placeholder,
+   Short Label, Query Key, Required/Hidden and conditional Hidden value on an
+   explicitly empty slide. TEXT can precede Radio on that slide; text-only
+   creation requires no Radio schema API. Child journals and aggregate reopen
+   verify all saved properties and order. The later continuation below also covers
+   populated-slide append and existing TEXT property edits.
+
+5. Compound, Show/Hide and outcome condition writers bind the captured nested
+   text input. Unary clauses accept the positive invisible-wrapper shape; binary
+   clauses require the visible typed textbox and its exact authored value.
+6. Ordered survey TEXT batches can append beneath the complete populated canvas,
+   with a separate retained journal per question and multiple stages on one slide.
+   The new `native_survey_text_configuration` action edits exact inventoried TEXT
+   properties while preserving sibling widgets. The aggregate receipt checks all
+   saved properties and order. Radio dependencies remain separate.
+
+7. Existing custom TEXT condition sources and targets bind the complete ordered
+   label, Query Key and field-type inventory, including unused siblings. Searchable
+   virtualized choices require one exact visible label. The same bindings cover
+   compound groups, Show/Hide stacks and outcome predicates. Other custom widget
+   families remain unsupported; final source review is CONFIRMED.
+
+All seven additions passed their targeted builder checks and one independent
+source review without blocking defects or repeated tests. The latest condition fix's
+111 targeted checks passed in 0.212s; survey continuation's 24 checks passed and
+its matrix covers 62 dynamic actions and 75 bounded jobs. Integration
+uses changed-file AST/JSON/version/whitespace validation only; no optional full
+local suite or repeated builder tests ran. Final installed-script,
+respondent and learner acceptance remain separate.
+
+Current count: **33 operation groups, 21 BUILT, 11 PARTIAL, 1 GENERIC_ONLY**.
+Twelve broad operation areas still have explicit executable gaps. These are
+operation groups, not individual Python scripts or an effort percentage. New
+bounded changes do not promote an entire operation prematurely.
+
+| Operation | Remaining executable scope |
+| --- | --- |
+| `funnels.split_variant` | Native variation creation/reuse and traffic allocation/readback. |
+| `forms.configure` | Remaining widgets/properties, Address parent controls, Dropdown creation and embed controls. |
+| `forms.conditions` | Custom families beyond TEXT and message-bearing outcome reorder recreation remain unsupported; native nested grouping availability is unverified. Mixed AND/OR, card removal/count changes, Show/Hide and non-message outcome permutations, and custom TEXT bindings are built. |
+| `surveys.create` | Other widgets, media and broader flows; captured Single Line creation, populated append and existing TEXT property edits are built. |
+| `surveys.configure` | Other question controls, compound predicates and completion/rule lifecycle; existing TEXT property edits are built. |
+| `quizzes.create` | Reliable populated-page append; another active session owns the quiz editor and its continuation. |
+| `quizzes.configure` | Picture option/style/upload controls, populated-page append, Jump To, tier lifecycle and result media/styles. |
+| `courses.configure_ui` | Video lifecycle, background/Custom Block image removal and uncaptured controls; exact Image Block removal is built. |
+| `communities.configure` | Authoritative first-course empty state, non-Private modes and portal parity/reuse; completed association replay now checks live inventory. |
+| `meetings.setup` | Authoritative empty co-host roster and first-assignment path. |
+| `meetings.update` | Authoritative empty co-host roster and clear-all path. |
+| `meetings.integrate` | Course Live Sessions, wider provider/event shapes, recording/transcription. |
+
+## Execution policy for finishing quickly
+
+Build independent operation owners in isolated branches; root serializes native
+capture. Run focused changed checks once and one independent source review.
+Repeat affected checks only after actual changes/failures. Preserve required
+repository checks and the existing coordinator, freeze exact member heads and
+resolve current main before publication. Do not rebuild reviewed payloads,
+rerun old-head failures, take over another session's browser tab or open a
+competing merge train. Preserve production co-host assignments.
+
+---
+
+# Preserved v27.1.102 checkpoint
+
 # Current build recovery - November 10, 2026
 
 Skill 6 v27.1.101 is delivered through [batch #3090](https://github.com/trevorotts1/openclaw-onboarding/pull/3090),
@@ -34,12 +209,12 @@ been delivered since the frozen audit; four more are built in this source.
 | --- | --- |
 | `funnels.split_variant` | Native variation creation/reuse and traffic allocation/readback. |
 | `forms.configure` | Remaining widgets/properties, Address parent controls, Dropdown creation and embed controls. |
-| `forms.conditions` | Card reordering, nested groups and broader field identities. Existing outcome edits/count changes are now built. |
+| `forms.conditions` | Custom families beyond TEXT and message-bearing outcome reorder recreation; native nested grouping availability unverified. Captured mixed connectors, edits/count changes and explicit non-message permutations are built. |
 | `surveys.create` | Non-Radio widget/property authoring, requested Required/Hidden/media controls and broader complete flows. |
 | `surveys.configure` | Additional question controls, compound predicates and completion/rule lifecycle. |
 | `quizzes.create` | Reliable populated-page append. The captured new-shell question/scoring/result pipeline is now built. |
 | `quizzes.configure` | Picture option/style/upload controls, populated-page append, Jump To, tier lifecycle and result media/styles. |
-| `courses.configure_ui` | Video lifecycle, image removal and uncaptured controls. |
+| `courses.configure_ui` | Video lifecycle, background/Custom Block image removal and uncaptured controls; background transparency and exact Image Block removal are built. |
 | `communities.configure` | Authoritative first-course empty state, non-Private modes and portal parity/reuse. |
 | `meetings.setup` | Authoritative empty co-host roster and first-assignment path. |
 | `meetings.update` | Authoritative empty co-host roster and clear-all path. |
@@ -398,3 +573,5 @@ still running at the last observation. The newly integrated source must receive
 its own Mac/Linux mandatory-browser CI and Downloads checkpoint. Native scope
 identity remains unconfirmed; this is not evidence that a key is absent/invalid.
 Do not bypass the canonical authentication check or clear uncertain client intent.
+
+</details>

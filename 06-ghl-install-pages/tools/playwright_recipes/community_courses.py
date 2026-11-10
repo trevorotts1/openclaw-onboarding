@@ -241,6 +241,22 @@ def _receipt(plan,*,reused,skipped):
         'identity_source':'same_session_authenticated_read_and_native_course_card'}
 
 
+def _matches_completed_inventory(plan,rows,*,reused):
+    """Bind a completed association to its full saved contract, not its journal.
+
+    Native new-card position is not fixed. The requested card must appear once,
+    and all independently inventoried siblings must retain their exact order
+    and metadata. Reuse must preserve the complete original list unchanged.
+    """
+    config=plan['course_associations'];before=config['expected_courses']
+    wanted={'course_id':config['course_id'],'title':config['course_title'],'visibility':'Private'}
+    matches=[row for row in rows if row['course_id']==config['course_id']]
+    if matches!=[wanted]:return False
+    if reused:return rows==before
+    return (len(rows)==len(before)+1
+        and [row for row in rows if row['course_id']!=config['course_id']]==before)
+
+
 def run_courses(page,inputs,evidence_root,*,portal_context,transport=None,clock=time.time):
     plan=validate_inputs(inputs);_capability(plan.get('api_capability'),plan['location_id'])
     root=Path(evidence_root).resolve()
@@ -257,6 +273,14 @@ def run_courses(page,inputs,evidence_root,*,portal_context,transport=None,clock=
             if raw!=expected or raw['reused'] and raw['share_post_skipped']:
                 raise Stop('Community course saved proof differs from its authored operation')
             _on_learning(page,plan,portal_context,clock=clock)
+            # A prior successful receipt does not establish current native
+            # membership. Reload the same Learning route before replaying;
+            # drift stops without another API call, association or journal edit.
+            page.reload(wait_until='domcontentloaded',timeout=45000)
+            page.wait_for_load_state('networkidle',timeout=45000)
+            facts=_check(page,plan,portal_context,clock=clock)
+            if not _matches_completed_inventory(plan,_inventory(page,plan,facts),reused=raw['reused']):
+                raise Stop('Saved native course association or sibling inventory changed; reconcile before replay')
             return {**expected,'replayed':True}
         api=transport or delivery.Skill44Transport();_course_identity(api,plan)
         facts=_on_learning(page,plan,portal_context,clock=clock)
@@ -281,11 +305,8 @@ def run_courses(page,inputs,evidence_root,*,portal_context,transport=None,clock=
             skipped=False if reused else _add(page,plan,portal_context,clock)
             facts=_check(page,plan,portal_context,clock=clock)
             desired=_inventory(page,plan,facts)
-            if reused:
-                if desired!=before:raise Stop('Reused native course association changed sibling cards')
-            elif (len(desired)!=len(before)+1 or [row for row in desired if row['course_id']==config['course_id']]!=[wanted]
-                    or [row for row in desired if row['course_id']!=config['course_id']]!=before):
-                raise Stop('New native private course association changed existing sibling cards')
+            if not _matches_completed_inventory(plan,desired,reused=reused):
+                raise Stop('Native private course association changed target or sibling cards')
             page.reload(wait_until='domcontentloaded',timeout=45000)
             facts=_check(page,plan,portal_context,clock=clock)
             if _inventory(page,plan,facts)!=desired:

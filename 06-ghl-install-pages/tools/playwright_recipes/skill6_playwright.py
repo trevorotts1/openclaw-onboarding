@@ -141,7 +141,7 @@ def validate_job(job, base):
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_course_theme", "native_course_blocks", "native_course_text_blocks", "native_course_section_media", "native_course_image_blocks", "native_course_theme_media", "native_course_block_media", "native_fields", "native_field_placement", "native_address_fields", "native_form_consent", "native_object_fields", "native_contact_field_chain", "native_survey_radio_creation", "native_quiz_creation", "native_survey_creation", "native_dropdown_fields", "native_large_text_fields", "quiz_short_answers", "quiz_multiple_choices", "quiz_written_answers", "quiz_picture_choices", "native_survey_object_fields", "native_condition", "native_condition_group", "native_condition_stack", "native_condition_outcomes", "quiz_configuration", "quiz_results", "survey_configuration", "survey_rule_stack", "form", "form_css", "native_form_css", "native_form_schedule", "native_form_tracking", "native_form_embed", "native_order_confirmation", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "community_access", "community_courses", "community_event_room", "community_branding", "assessment", "meeting", "meeting_cohosts", "native_dynamic_meeting_location", "options"}
+    allowed = {"native_survey_multiline_configuration", "native_split_variant", "navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_course_theme", "native_course_blocks", "native_course_text_blocks", "native_course_section_media", "native_course_image_blocks", "native_course_theme_media", "native_course_block_media", "native_fields", "native_field_placement", "native_address_fields", "native_form_consent", "native_object_fields", "native_contact_field_chain", "native_survey_radio_creation", "native_quiz_creation", "native_survey_creation", "native_dropdown_fields", "native_large_text_fields", "quiz_short_answers", "quiz_multiple_choices", "quiz_written_answers", "quiz_picture_choices", "native_survey_object_fields", "native_survey_text_configuration", "native_condition", "native_condition_group", "native_condition_stack", "native_condition_outcomes", "quiz_configuration", "quiz_results", "survey_configuration", "survey_rule_stack", "form", "form_css", "native_form_css", "native_form_schedule", "native_form_tracking", "native_form_embed", "native_order_confirmation", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "community_access", "community_courses", "community_event_room", "community_branding", "assessment", "meeting", "meeting_cohosts", "native_dynamic_meeting_location", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -179,6 +179,21 @@ def validate_job(job, base):
             if (len(prepared['steps']) != 1 or any(payload[key] != job[key]
                     for key in ('location_id','location_name','start_url'))):
                 raise Stop('Contact dependency chain requires its own exact same-editor job')
+        if s['action']=='native_split_variant':
+            from playwright_recipes.split_variant import validate
+            payload=validate(s)['payload']
+            if len(prepared['steps']) != 1 or any(payload[key]!=job[key] for key in ('location_id','location_name','start_url')):
+                raise Stop('Native split variants require their own exact same-location overview job')
+        if s['action']=='native_survey_multiline_configuration':
+            from playwright_recipes.survey_multiline_configuration import validate
+            payload=validate(s)
+            if any(payload[key]!=job[key] for key in ('location_id','location_name','start_url')):
+                raise Stop('Survey Multi Line properties belong to another editor/location')
+        if s['action']=='native_survey_text_configuration':
+            from playwright_recipes.survey_text_configuration import validate
+            payload=validate(s)
+            if any(payload[key]!=job[key] for key in ('location_id','location_name','start_url')):
+                raise Stop('Survey TEXT properties belong to another editor/location')
         if s['action'] in ('native_object_fields', 'native_survey_object_fields'):
             if s['action'] == 'native_object_fields':
                 from playwright_recipes.forms_advanced import validate_object_fields as validate
@@ -1349,6 +1364,18 @@ def native_object_fields(page, step):
     return configure_object_fields(page, step)
 
 
+def native_split_variant(page, step):
+    from playwright_recipes.split_variant import configure
+    return configure(page, step)
+
+def native_survey_multiline_configuration(page,step):
+    from playwright_recipes.survey_multiline_configuration import configure
+    return configure(page,step)
+
+def native_survey_text_configuration(page,step):
+    from playwright_recipes.survey_text_configuration import configure
+    return configure(page,step)
+
 def native_survey_object_fields(page, step):
     from playwright_recipes.survey_fields import configure
     return configure(page, step)
@@ -1727,6 +1754,15 @@ def _run_on_page(page, job, evidence_root, *, contact_field_capability=None, rad
     if journal_present(state_path):
         replay = completed_editor_replay(state_path, job, fingerprint)
         assert_tenant(page, job)
+        for step, row in zip(job['steps'], replay['results']):
+            if step['action'] == 'native_split_variant':
+                from playwright_recipes.split_variant import verify_completed
+                verify_completed(page, step, row['result'])
+        for item in replay['results']:
+            if item['action']=='native_survey_multiline_configuration':
+                from playwright_recipes.survey_multiline_configuration import verify
+                step=next(step for step in job['steps'] if step['id']==item['id'])
+                verify(page,step,item['result'])
         return replay
     if any(step['action'] in ('native_survey_radio_creation','native_survey_creation') for step in job.get('steps', [])):
         from playwright_recipes.survey_radio_creation import validate_runtime
@@ -1738,7 +1774,7 @@ def _run_on_page(page, job, evidence_root, *, contact_field_capability=None, rad
     results = []
     fresh_container = None
     state = {"fingerprint":fingerprint, "location_id":job["location_id"], "status":"RUNNING", "results":results}
-    handlers = {"container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_course_theme":native_course_theme, "native_course_blocks":native_course_blocks, "native_course_text_blocks":native_course_text_blocks, "native_course_section_media":native_course_section_media, "native_course_image_blocks":native_course_image_blocks, "native_course_theme_media":native_course_theme_media, "native_course_block_media":native_course_block_media, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_address_fields":native_address_fields, "native_form_consent":native_form_consent, "native_object_fields":native_object_fields, "native_dropdown_fields":native_dropdown_fields, "native_large_text_fields":native_large_text_fields, "quiz_short_answers":quiz_short_answers, "quiz_multiple_choices":quiz_multiple_choices, "quiz_written_answers":quiz_written_answers, "quiz_picture_choices":quiz_picture_choices, "native_survey_object_fields":native_survey_object_fields, "native_condition":native_condition, "native_condition_group":native_condition_group, "native_condition_stack":native_condition_stack, "native_condition_outcomes":native_condition_outcomes, "quiz_configuration":quiz_configuration, "quiz_results":quiz_results, "survey_configuration":survey_configuration, "survey_rule_stack":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "native_form_schedule":native_form_schedule, "native_form_tracking":native_form_tracking, "native_form_embed":native_form_embed, "native_order_confirmation":native_order_confirmation, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"meeting_cohosts":meeting_cohosts,"native_dynamic_meeting_location":native_dynamic_meeting_location,"options":options}
+    handlers = {"native_survey_multiline_configuration":native_survey_multiline_configuration, "native_split_variant":native_split_variant, "container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_course_theme":native_course_theme, "native_course_blocks":native_course_blocks, "native_course_text_blocks":native_course_text_blocks, "native_course_section_media":native_course_section_media, "native_course_image_blocks":native_course_image_blocks, "native_course_theme_media":native_course_theme_media, "native_course_block_media":native_course_block_media, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_address_fields":native_address_fields, "native_form_consent":native_form_consent, "native_object_fields":native_object_fields, "native_dropdown_fields":native_dropdown_fields, "native_large_text_fields":native_large_text_fields, "quiz_short_answers":quiz_short_answers, "quiz_multiple_choices":quiz_multiple_choices, "quiz_written_answers":quiz_written_answers, "quiz_picture_choices":quiz_picture_choices, "native_survey_object_fields":native_survey_object_fields, "native_survey_text_configuration":native_survey_text_configuration, "native_condition":native_condition, "native_condition_group":native_condition_group, "native_condition_stack":native_condition_stack, "native_condition_outcomes":native_condition_outcomes, "quiz_configuration":quiz_configuration, "quiz_results":quiz_results, "survey_configuration":survey_configuration, "survey_rule_stack":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "native_form_schedule":native_form_schedule, "native_form_tracking":native_form_tracking, "native_form_embed":native_form_embed, "native_order_confirmation":native_order_confirmation, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"meeting_cohosts":meeting_cohosts,"native_dynamic_meeting_location":native_dynamic_meeting_location,"options":options}
     for step in job["steps"]:
         assert_tenant(page, job)
         state["current_step"] = step["id"]
@@ -1784,9 +1820,9 @@ def _run_on_page(page, job, evidence_root, *, contact_field_capability=None, rad
                     else None)
             if not isinstance(result, dict):
                 raise Stop('Handler returned no structured outcome')
-            if step['action'] in ('native_quiz_creation','native_survey_creation','native_survey_radio_creation','native_contact_field_chain','native_dropdown_fields','native_large_text_fields',
+            if step['action'] in ('native_split_variant','native_quiz_creation','native_survey_creation','native_survey_radio_creation','native_contact_field_chain','native_dropdown_fields','native_large_text_fields',
                     'quiz_short_answers','quiz_multiple_choices','quiz_written_answers','quiz_picture_choices',
-                    'native_condition_stack','native_condition_outcomes',
+                    'native_condition_stack','native_condition_outcomes','native_survey_text_configuration','native_survey_multiline_configuration',
                     'native_order_confirmation','native_course_blocks','native_course_theme_media','native_course_block_media','native_course_text_blocks','native_course_section_media','native_course_image_blocks') or (
                     step['action'] == 'community' and result.get('status') in (
                         'GROUP_CREATED_SLUG_IDENTIFIED','GROUP_REUSED_IDENTITY_CONFIRMED')):
@@ -1796,12 +1832,13 @@ def _run_on_page(page, job, evidence_root, *, contact_field_capability=None, rad
                 result = _result(step, result, job)
             status = result.get('status')
             completed = {
+                'SPLIT_VARIANT_SAVED_AND_REOPENED', 'SPLIT_VARIANT_REUSED_AND_REOPENED',
                 'CONTACT_FIELDS_SAVED_AND_REOPENED', 'SURVEY_RADIO_SAVED_AND_REOPENED', 'QUIZ_CREATED_SAVED_AND_REOPENED', 'SURVEY_CREATED_SAVED_AND_REOPENED',
                 'RENDERED', 'SEO_RENDERED', 'COMPONENT_SAVED', 'SAVED_AND_REOPENED',
                 'FORM_CSS_RENDERED', 'NATIVE_FORM_CSS_SAVED_AND_REOPENED', 'FORM_SETTINGS_PERSISTED',
                 'FORM_SCHEDULE_SAVED_AND_REOPENED', 'COURSE_THEME_SAVED_AND_REOPENED',
                 'ADDRESS_FIELDS_SAVED_AND_REOPENED', 'CONSENT_SAVED_AND_REOPENED',
-                'OBJECT_FIELDS_SAVED_AND_REOPENED', 'SURVEY_OBJECT_FIELDS_SAVED_AND_REOPENED', 'ASSESSMENT_REUSED',
+                'OBJECT_FIELDS_SAVED_AND_REOPENED', 'SURVEY_OBJECT_FIELDS_SAVED_AND_REOPENED', 'SURVEY_TEXT_PROPERTIES_SAVED_AND_REOPENED', 'SURVEY_MULTILINE_PROPERTIES_SAVED_AND_REOPENED', 'ASSESSMENT_REUSED',
                 'ASSESSMENT_SAVE_SUBMITTED', 'ROOM_SAVE_SUBMITTED',
                 'DROPDOWN_FIELDS_SAVED_AND_REOPENED', 'LARGETEXT_FIELDS_SAVED_AND_REOPENED', 'QUIZ_SHORT_ANSWERS_SAVED_AND_REOPENED', 'QUIZ_MULTIPLE_CHOICES_SAVED_AND_REOPENED', 'QUIZ_WRITTEN_ANSWERS_SAVED_AND_REOPENED', 'QUIZ_PICTURE_CHOICES_SAVED_AND_REOPENED', 'RECORDED_OPTIONS_EXECUTED', 'GROUP_RETAINED_INACTIVE', 'GROUP_CREATED', 'GROUP_CREATED_PENDING_IDENTITY', 'GROUP_CREATED_SLUG_IDENTIFIED', 'GROUP_REUSED_IDENTITY_CONFIRMED',
                 'FIELD_PROPERTIES_SAVED_AND_REOPENED', 'BUILTIN_FIELDS_SAVED_AND_REOPENED',

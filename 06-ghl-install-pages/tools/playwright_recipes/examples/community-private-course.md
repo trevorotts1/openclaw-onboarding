@@ -40,8 +40,12 @@ This group-configuration executor shares `community-details-state.json` and
 the existing `community_details` evidence lease. Separate operations need
 separate evidence roots. Intent precedes native Add Course. Any uncertain save
 retains its journal and refuses a second add; reconcile native cards first.
-Exact completed replay validates the saved proof and the fresh portal context
-without repeating API reads or native creation.
+Exact completed replay validates the saved proof and fresh portal context, then
+independently reloads Learning and reads the requested association plus the
+complete sibling inventory. Missing, renamed, duplicated or access-changed cards
+stop for reconciliation without repeating API reads or native creation. Reusing
+an existing association preserves the entire inventoried card order; a newly
+added card can occupy any native position while its siblings retain their order.
 
 The receipt stays `NEEDS_VERIFICATION`, with `controls_verified:true`,
 `independent_readback:VERIFIED`, `functional_verified:false`,

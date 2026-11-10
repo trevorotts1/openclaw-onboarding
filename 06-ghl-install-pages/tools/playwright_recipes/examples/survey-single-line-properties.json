@@ -1,0 +1,58 @@
+{
+  "location_id": "LOC",
+  "location_name": "Fixture Account",
+  "start_url": "https://app.convertandflow.com/v2/location/LOC/survey-builder-v2/SURVEY",
+  "configuration": {
+    "expected_survey_name": "ZHC Single Line intake survey",
+    "expected_slide_count": 2,
+    "slide_labels": [
+      "P1 - Slide 1",
+      "P2 - Slide 2"
+    ],
+    "text_questions": {
+      "expected": [
+        [
+          {
+            "label": "What is your goal?",
+            "placeholder": "Your answer",
+            "short_label": "Goal",
+            "query_key": "intake_goal",
+            "required": true,
+            "hidden": false
+          },
+          {
+            "label": "What is your timeline?",
+            "placeholder": "Your answer",
+            "short_label": "Goal",
+            "query_key": "intake_timeline",
+            "required": true,
+            "hidden": false
+          }
+        ],
+        []
+      ],
+      "desired": [
+        [
+          {
+            "label": "Your main goal",
+            "placeholder": "Your answer",
+            "short_label": "Goal",
+            "query_key": "intake_goal",
+            "required": false,
+            "hidden": true,
+            "hidden_value": "approved-intake"
+          },
+          {
+            "label": "What is your timeline?",
+            "placeholder": "Your answer",
+            "short_label": "Goal",
+            "query_key": "intake_timeline",
+            "required": true,
+            "hidden": false
+          }
+        ],
+        []
+      ]
+    }
+  }
+}

@@ -1,13 +1,13 @@
 {
   "schema": "skill6-build-inventory/2",
-  "updated_at": "2026-11-10T06:07:25.964649+00:00",
-  "scope": "33 named catalog operations; equal-weight executable build coverage of frozen source, not elapsed effort, feature-weighted progress or live readiness.",
+  "updated_at": "2026-11-10T11:32:16.161233+00:00",
+  "scope": "33 named catalog operations in the current combined reviewed source. Counts describe bounded executable contracts, not feature-weighted effort, merged delivery or native functional acceptance.",
   "counts": {
-    "BUILT": 21,
+    "BUILT": 22,
     "PARTIAL": 11,
-    "GENERIC_ONLY": 1
+    "GENERIC_ONLY": 0
   },
-  "remaining_named_operations_requiring_build_work": 12,
+  "remaining_named_operations_requiring_build_work": 11,
   "definition": {
     "BUILT": "Concrete executable implementation exists for the named operation contract; provider/capture/input credentials and deferred proof alone are not missing code.",
     "PARTIAL": "Concrete implementation exists, but identified requested controls or native identity/action paths within the recorded operation area remain unimplemented or cannot complete on the measured native shape.",
@@ -15,14 +15,21 @@
   },
   "current_feature_progress": {
     "schema": "skill6-current-feature-progress/1",
-    "updated_at": "2026-11-10T06:07:25.964649+00:00",
-    "read_first": "The 21/11/1 counts and original row gaps are the frozen fifth-source operation audit, not a fresh unfinished-script count. This section records reviewed implementation added since that audit. SOURCE_BUILT does not mean native functional acceptance or deployed/merged.",
-    "source_branch": "skill6/closure-pipelines-v102-20261110",
+    "updated_at": "2026-11-10T11:32:16.161233+00:00",
+    "read_first": "Current top-level counts and operations are reconciled current source. The original21/11/1 frozen fifth-source audit is historical only. SOURCE_BUILT remains separate from merged delivery and native functional acceptance.",
+    "source_branch": "skill6/reviewed-controls-v103-checkpoint-20261110",
     "durable_core_source_commit": "554fc5c2b2d7587dcde85905417de81c4e668d22",
     "additional_reviewed_source": [
       "1a4daf06f4494cb297fa57552a5367323ffd54d1",
       "e3718cf31a22fbb99cee02dd608e987368041815",
-      "53ca2cff0475fef0d4fe6b528c2fb0d587aa8b32"
+      "53ca2cff0475fef0d4fe6b528c2fb0d587aa8b32",
+      "d0a6a1d78d47a61859de85e050275a2d8561c4fd",
+      "d810952639d17df0a5f0c9f4ee7e00723aa9b48b",
+      "af7b1aaa1150c83daf84c0287e318ad786ff5c3d",
+      "6e580c419f479c4fdf61bc9ea15cbd5a0e8bba64",
+      "ddecd2e96e41031c7e09b476db5bda2829726009",
+      "ce78012ba5c9a0c0a8d52512156483619806a237",
+      "c9d9dd91aad2cffcd566032c50f87de6a008a730"
     ],
     "completed_since_frozen_audit": [
       {
@@ -391,7 +398,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+        "delivery": "DELIVERED_THROUGH_BATCH_3096"
       },
       {
         "id": "survey-empty-slide-radio-pipeline",
@@ -413,7 +420,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+        "delivery": "DELIVERED_THROUGH_BATCH_3096"
       },
       {
         "id": "form-existing-outcome-edits",
@@ -434,7 +441,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+        "delivery": "DELIVERED_THROUGH_BATCH_3096"
       },
       {
         "id": "native-contenteditable-editor-titles",
@@ -460,41 +467,280 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
+        "delivery": "DELIVERED_THROUGH_BATCH_3096"
+      },
+      {
+        "id": "show-hide-explicit-order-recreation",
+        "feature": "Explicit complete Show/Hide order replacement through captured deletion and authoring",
+        "operations": [
+          "forms.conditions"
+        ],
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_stack.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "Explicit recreate_order is a full permutation of unchanged complete Show/Hide rules; preserve unchanged prefix and recreate only changed suffix.",
+          "No native drag or internal card identity preservation is claimed; rich outcome cards, combined edits/count changes and uncertain journal retries refuse."
+        ],
+        "status": "SOURCE_BUILT",
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
         "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+      },
+      {
+        "id": "inactive-course-image-block-removal",
+        "feature": "Remove an exact inactive course Image Block image with inventoried positive empty readback",
+        "operations": [
+          "courses.configure_ui"
+        ],
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/course_image_blocks.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "Bind exact block, current URLs and captured empty-placeholder URLs; preserve destinations, siblings, theme and block identity.",
+          "Save once and independently reopen the positive empty state; background/Custom Block removal and Video Block lifecycle remain unsupported."
+        ],
+        "status": "SOURCE_BUILT",
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
+        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+      },
+      {
+        "id": "community-course-completed-replay-readback",
+        "feature": "Reconcile completed community course-association replay against current Learning inventory",
+        "operations": [
+          "communities.configure"
+        ],
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/community_courses.py",
+            "function": "run_courses"
+          }
+        ],
+        "preserved_boundaries": [
+          "Reload the requested Learning group and verify the target and complete sibling inventory before completed replay.",
+          "Missing, renamed, duplicated, reordered or access-changed cards stop without another native Add, API read or journal rewrite; first-empty/non-Private paths remain gaps."
+        ],
+        "status": "SOURCE_BUILT",
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
+        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+      },
+      {
+        "id": "survey-native-single-line-owned-creation",
+        "feature": "Native Single Line TEXT question authoring in the owned empty-slide survey creation pipeline",
+        "operations": [
+          "surveys.create",
+          "surveys.configure"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_text_questions.py",
+            "function": "configure"
+          },
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_creation.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "One Single Line batch on an explicitly empty target slide before any Radio batch; author exact label, placeholder, short label, Query Key, Required/Hidden and conditional Hidden value.",
+          "Required and Hidden are exclusive; populated-slide TEXT append and other widgets remain unsupported. Text-only creation has no Radio API-schema dependency. Child intent and independent full aggregate readback remain mandatory."
+        ],
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
+        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+      },
+      {
+        "id": "native-condition-nested-value-compatibility",
+        "feature": "Native nested text-value input and positive invisible unary-wrapper compatibility",
+        "operations": [
+          "forms.conditions"
+        ],
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_conditions.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "Binary clauses bind the captured visible nested typed textbox; unary clauses recognize the positive invisible wrapper and do not fill it.",
+          "Changed native shape refuses. This adds no custom widget family, nested expression group or respondent acceptance."
+        ],
+        "independent_source_review": "CONFIRMED",
+        "status": "SOURCE_BUILT",
+        "native_final_script_acceptance": "PENDING",
+        "delivery": "PUBLISHED_DRAFT_3099"
+      },
+      {
+        "id": "survey-populated-text-and-existing-properties",
+        "feature": "Populated survey TEXT append, multiple TEXT stages and existing TEXT property action",
+        "operations": [
+          "surveys.create",
+          "surveys.configure"
+        ],
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_text_questions.py",
+            "function": "configure"
+          },
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_text_configuration.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "Use the captured blank tail beneath complete prior canvas inventory; retain a separate child intent journal for every question and exact aggregate saved order.",
+          "Existing property edits preflight every TEXT position/property, protect other widgets and refuse Query Key swaps or ungrounded mixed-widget key edits."
+        ],
+        "independent_source_review": "CONFIRMED",
+        "status": "SOURCE_BUILT",
+        "native_final_script_acceptance": "PENDING",
+        "delivery": "PUBLISHED_DRAFT_3099"
+      },
+      {
+        "id": "native-custom-text-condition-field-bindings",
+        "feature": "Existing custom TEXT source/target bindings in native condition groups, stacks and outcomes",
+        "operations": [
+          "forms.conditions"
+        ],
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_fields.py",
+            "function": "preflight"
+          }
+        ],
+        "preserved_boundaries": [
+          "Require the complete ordered custom TEXT label/Query Key/type inventory including unused siblings; independently verify before and after condition writes.",
+          "Filter virtualized searchable choices by exact label; duplicate/shadowed labels, ambiguous keys and unsupported custom families refuse. Native capture is not installed-script or respondent acceptance."
+        ],
+        "independent_source_review": "CONFIRMED",
+        "status": "SOURCE_BUILT",
+        "native_final_script_acceptance": "PENDING",
+        "delivery": "SOURCE_REVIEWED_DRAFT_CANDIDATE"
+      },
+      {
+        "id": "native-inactive-split-creation-reuse",
+        "feature": "Dedicated inactive native same-step variant creation/reuse with bound replay readback",
+        "operations": [
+          "funnels.split_variant"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/split_variant.py",
+            "function": "configure"
+          }
+        ],
+        "independent_source_review": "CONFIRMED",
+        "native_final_script_acceptance": "PENDING",
+        "source_commit": "f3042a4d81eca441037960aec18c9583d364f747",
+        "preserved_boundaries": [
+          "Only inactive100/0 profiles; active requests refuse during compilation/job validation before browser acquisition."
+        ]
+      },
+      {
+        "id": "non-message-outcome-order-recreation",
+        "feature": "Explicit unchanged non-message conditional outcome order recreation",
+        "operations": [
+          "forms.conditions"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_outcomes.py",
+            "function": "configure"
+          }
+        ],
+        "independent_source_review": "CONFIRMED",
+        "native_final_script_acceptance": "PENDING",
+        "source_commit": "cef3411d01263a6f116c513f87855341d6d47ebf",
+        "preserved_boundaries": [
+          "Preserve unchanged prefix and exact full permutation; rich message order recreation refuses before browser access."
+        ]
+      },
+      {
+        "id": "survey-existing-multiline-properties",
+        "feature": "Existing Multi Line LARGE_TEXT properties with exact location binding, saved reopen and fresh replay",
+        "operations": [
+          "surveys.configure"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_commit": "02878a979b",
+        "preceding_source_commit": "9f6c3c152c",
+        "independent_source_review": "CONFIRMED",
+        "native_final_script_acceptance": "PENDING",
+        "preserved_boundaries": [
+          "Existing inventoried LARGE_TEXT properties only, including Required/Hidden. Paragraph creation remains unsupported.",
+          "Exact location/editor and complete prior inventory bind save, independent reopen and fresh replay."
+        ],
+        "validation": "Eight focused tests passed0.340s; one affected three-drift test passed0.002s. No broader suite repeated."
       }
     ],
     "new_control_capabilities_in_this_batch": [
-      "quiz-owned-new-shell-pipeline",
-      "survey-empty-slide-radio-pipeline",
-      "form-existing-outcome-edits",
-      "native-contenteditable-editor-titles"
+      "show-hide-explicit-order-recreation",
+      "inactive-course-image-block-removal",
+      "community-course-completed-replay-readback",
+      "survey-native-single-line-owned-creation",
+      "native-condition-nested-value-compatibility",
+      "survey-populated-text-and-existing-properties",
+      "native-custom-text-condition-field-bindings"
     ],
     "receipt_hardening": [
-      "Fresh native course background-media completion now passes the same exact configuration/source/changed-image validator as completed replay."
+      "Fresh native course background-media completion now passes the same exact configuration/source/changed-image validator as completed replay.",
+      "Completed community course-association replay independently reloads Learning and verifies the actual target and complete sibling inventory without another add or API read."
     ],
     "remaining_controls_in_updated_areas": {
+      "funnels.split_variant": [
+        "Active split activation and authored traffic-allocation confirmation/save/readback remain unimplemented. Current native requests refuse active or non-100/0 profiles before browser acquisition."
+      ],
       "forms.configure": [
-        "Numeric, checkbox/multiselect, file-upload and signature widget authoring; remaining uncaptured field properties.",
-        "Address parent autocomplete/search-required controls, ungrounded legacy widget adoption and additional embed controls.",
-        "Contact Dropdown creation lacks a documented option-array request schema and explicitly refuses."
+        "Numeric, checkbox/multiselect, file-upload and signature field authoring still lack dedicated typed placement/property paths.",
+        "Address parent Auto-Complete Address and Mandatory to Select Address in Search Bar controls have no authored native path.",
+        "Arbitrary legacy Dropdown/LARGE_TEXT canvas adoption remains ungrounded; fresh API-inventoried insertion and completed replay are supported. Contact Dropdown creation lacks a documented option-array API request schema.",
+        "Native embed button color and alternate icon authoring are not implemented; captured existing values remain preserved."
       ],
       "forms.conditions": [
-        "Native card drag reordering, nested grouping and broader custom/advanced field identities. Existing Redirect, custom-message and disqualification edits/count changes are now built."
-      ],
-      "courses.configure_ui": [
-        "Video Block upload/processing/save lifecycle, image-removal modes and other uncaptured template/block settings.",
-        "Activation/publication remains a separate explicit operation, not implied by inactive-template edits."
-      ],
-      "quizzes.create": [
-        "Reliable existing populated-page append remains unimplemented. Captured new-shell question/scoring/result orchestration is now built; remaining styles/media/tier lifecycle are tracked under quizzes.configure."
-      ],
-      "quizzes.configure": [
-        "Picture Choice option-count, style/layout, local-upload and broader media paths beyond the captured fixed-three-option existing-catalog writer.",
-        "Reliable populated-page append, answer Jump To destinations, tier creation/removal and remaining result media/styling."
+        "Custom condition sources/targets beyond captured TEXT, including Radio, numerical, file and other option-valued families, remain unsupported.",
+        "Order recreation involving rich custom-message/disqualification content remains unsupported; non-message Show/Hide/Redirect permutations are supported."
       ],
       "surveys.create": [
-        "Non-Radio question/widget authoring, including requested properties, Required/Hidden and media controls.",
-        "Broader complete survey flows, compound predicates and completion outcomes. Empty slide shells and Radio batches targeting several slides are now built."
+        "Native question authoring beyond captured standard fields, Radio and Single Line TEXT remains unimplemented; Paragraph/Multi Line capture is in progress and is not counted built here.",
+        "Media/question types outside those captured profiles have no dedicated authoring path."
+      ],
+      "surveys.configure": [
+        "Question properties for families beyond captured Radio, TEXT and existing LARGE_TEXT remain unimplemented; Paragraph/LARGE_TEXT creation remains unsupported.",
+        "Compound predicates and completion/redirect/custom-message/disqualification rule editing, removal and ordering remain unimplemented; existing forward Jump To stacks remain supported."
+      ],
+      "quizzes.configure": [
+        "Reliable append on an existing populated quiz page remains unimplemented in this source; another session owns the native continuation.",
+        "Picture Choice option-count/style/layout/local-upload controls beyond the fixed-three existing-catalog writer remain unimplemented.",
+        "Answer Jump To destination authoring, tier creation/removal and result Header logo/media or remaining result styling controls have no complete native writer."
+      ],
+      "courses.configure_ui": [
+        "Video Block upload/processing/save lifecycle and background/Custom Block image removal remain unimplemented; positive saved-empty image state for those two removal controls is not captured."
+      ],
+      "communities.configure": [
+        "First course association from an authoritatively loaded empty Learning inventory and non-Private course visibility modes lack typed native paths.",
+        "Modern portal channel/details/access parity and inactive/ambiguous app-to-portal reuse remain unsupported."
+      ],
+      "meetings.setup": [
+        "Authoritative loaded-empty co-host roster handling and first co-host assignment on a newly empty room remain unimplemented."
+      ],
+      "meetings.update": [
+        "Authoritative loaded-empty co-host roster handling, first assignment and clear-all removal remain unimplemented; existing nonempty roster reconciliation is supported."
+      ],
+      "meetings.integrate": [
+        "Native course Live Sessions/Meeting Room association has no typed implementation.",
+        "Dynamic calendar multi-staff/multi-location and new-provider/Connections-staff changes remain unsupported beyond the captured single-staff/single-location profile.",
+        "Community event shapes beyond the captured existing free nonrecurring all-member event lack complete preserved-state handling."
       ]
     },
     "other_partial_areas": [
@@ -504,32 +750,32 @@
       "meetings.update",
       "meetings.integrate"
     ],
-    "dedicated_native_split_creation_and_allocation": "UNIMPLEMENTED",
+    "dedicated_native_split_creation_and_allocation": "INACTIVE_CREATION_REUSE_SOURCE_BUILT; ACTIVE_ALLOCATION_UNIMPLEMENTED",
     "predecessor_batch": {
       "pr": 3053,
       "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3053",
       "status_at_checkpoint": "MERGED 2026-11-09T23:22:27Z; merge commit 565a27d2f26526cab73ca750ea2be83f05bee50c"
     },
-    "current_batch_pr": "v27.1.101 delivered through #3090. Four bounded source additions in v27.1.102 are independently reviewed; exact current-base publication and merge remain separate.",
+    "current_batch_pr": "Current follow-on Draft #3099 carries reviewed Skill6 additions; v103 merge train #3101 is merged at a28b89970668ad097892664117170baf98765baa. Follow-on release metadata is reconciled as v27.1.104; publication/merge status must be checked independently.",
     "verified_delivery": {
       "status": "MERGED",
-      "pr": 3090,
-      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3090",
-      "merge_commit": "83d44056f9620b60292872cbcff4f5f6423f9ffd",
-      "unit_pr": 3087,
-      "unit_head": "7a17c3d9ac518134148312fcf21bf0eb0e640717",
+      "pr": 3096,
+      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3096",
+      "merged_at": "2026-11-10T06:54:47Z",
+      "merge_commit": "710b36e9c1c36d3c72a33ebb52b7054234c00a2e",
+      "unit_pr": 3095,
+      "unit_head": "dc82b8c9928229920694d13445a2135127abae6b",
       "unit_disposition": "DELIVERED_THROUGH_BATCH",
-      "source_feature_additions_since_frozen_audit": 17,
+      "source_feature_additions_since_frozen_audit": 21,
       "native_final_script_acceptance": "PENDING"
     },
     "remaining_operation_reconciliation": {
-      "basis": "All twelve explicit operation areas retain executable gaps after seventeen delivered source additions and four newly reviewed bounded additions. Full-operation categories do not change because a subfeature is built or native proof is deferred.",
-      "count": 12,
+      "basis": "Current combined source after reviewed seven additions, inactive split routing/preflight, non-message outcome order recreation and course ledger reconciliation. Quiz creation is assessed against its bounded new-owner contract; existing populated-page append belongs to configuration.",
+      "count": 11,
       "operations": [
         "funnels.split_variant",
         "forms.configure",
         "surveys.create",
-        "quizzes.create",
         "communities.configure",
         "courses.configure_ui",
         "meetings.setup",
@@ -541,39 +787,64 @@
       ]
     },
     "unmerged_source_additions": [
-      "quiz-owned-new-shell-pipeline",
-      "survey-empty-slide-radio-pipeline",
-      "form-existing-outcome-edits",
-      "native-contenteditable-editor-titles"
+      "show-hide-explicit-order-recreation",
+      "inactive-course-image-block-removal",
+      "community-course-completed-replay-readback",
+      "survey-native-single-line-owned-creation",
+      "native-condition-nested-value-compatibility",
+      "survey-populated-text-and-existing-properties",
+      "native-custom-text-condition-field-bindings"
     ],
-    "current_unmerged_source_branch": "skill6/closure-pipelines-v102-20261110",
+    "current_unmerged_source_branch": "skill6/reviewed-controls-v103-checkpoint-20261110",
     "current_unmerged_unit_pr": {
-      "source_branch": "skill6/closure-pipelines-v102-20261110",
-      "status": "SOURCE_REVIEWED_PENDING_PUBLICATION; exact current-base tree will be published once"
+      "pr": 3099,
+      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3099",
+      "source_branch": "skill6/reviewed-controls-v103-checkpoint-20261110",
+      "status": "DRAFT_CURRENT_REVIEWED_FOLLOW_ON",
+      "auto_merge": false,
+      "coordination": "Owner train #3101 has landed at a28b89970668ad097892664117170baf98765baa; current follow-on reconciles only shared release metadata as104 and preserves other-owner implementation.",
+      "previous_published_head": "fb45d8842861f9b712e9bb43ec269a11c97c3792"
     },
     "previous_verified_delivery": {
       "status": "MERGED",
-      "pr": 3085,
-      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3085",
-      "merged_at": "2026-11-10T04:53:00Z",
-      "merge_commit": "dd9e52592d52db6037d845ce5cd5d02326b15f99",
-      "unit_pr": 3078,
-      "unit_head": "8df0709717082c1325d5dda6064c42fae95c371e",
-      "source_feature_additions_since_frozen_audit": 14,
-      "native_final_script_acceptance": "DEFERRED"
+      "pr": 3090,
+      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3090",
+      "merge_commit": "83d44056f9620b60292872cbcff4f5f6423f9ffd",
+      "unit_pr": 3087,
+      "unit_head": "7a17c3d9ac518134148312fcf21bf0eb0e640717",
+      "unit_disposition": "DELIVERED_THROUGH_BATCH",
+      "source_feature_additions_since_frozen_audit": 17,
+      "native_final_script_acceptance": "PENDING"
     },
     "execution_policy": {
       "local_tests": "Focused changed behavior once; rerun only affected failures after a fix. No optional whole local suite.",
       "review": "One independent source review of each final change.",
       "merge": "Existing coordinator and required repository checks; no competing train or bypass.",
-      "native": "Private test capture explicitly approved. Empty quiz and two empty survey slides were saved/reopened; originating browser connection then became unavailable. No alternate browser or credential workaround; final installed-script acceptance remains pending."
+      "native": "Root uses the originating Chrome session for approved private captures. Other sessions own the populated quiz editor, so this continuation does not take it over or duplicate quiz changes. Final installed-script acceptance remains pending."
     },
     "focused_integration": {
-      "checks": "38 focused pipeline/provider/condition/title checks passed in 0.580s; after the actual survey name fix, nine affected survey tests passed in 0.073s.",
-      "dynamic_actions": 61,
-      "bounded_jobs": 74,
-      "independent_source_review": "CONFIRMED for quiz, survey, condition edits, title compatibility and shared routing",
+      "checks": "Native condition compatibility111targetedPASS0.212s; populated survey/property24targetedPASS; integration14changedPythonASTonce, JSON/whitespace and2authoredcompilerexamplesPASS. No optional whole suite or repeated builder tests.",
+      "dynamic_actions": 64,
+      "bounded_jobs": 77,
+      "independent_source_review": "All seven additions CONFIRMED; no blocking defects or tests repeated by reviewers.",
       "optional_whole_suite": "NOT_RUN"
+    },
+    "continuation_v103": {
+      "independent_source_review": "All seven additions CONFIRMED.",
+      "validation": "Targeted builder checks and independent reviews are retained; integration uses changed-file mechanical checks only. No optional full suite or repeated review.",
+      "operation_counts_unchanged": false,
+      "survey_continuation": "SOURCE_INTEGRATED_INDEPENDENT_REVIEW_CONFIRMED",
+      "survey_source_commit": "6e580c419f479c4fdf61bc9ea15cbd5a0e8bba64",
+      "new_custom_text_source_commit": "c9d9dd91aad2cffcd566032c50f87de6a008a730",
+      "new_custom_text_review": "CONFIRMED",
+      "dynamic_actions": 64,
+      "bounded_jobs": 77
+    },
+    "native_split_current_prerequisite": "The existing synthetic split probe has a managed domain and saved same-step control/variant at100/0. Inactive native creation/reuse is now implemented; active confirmation/readback remains unimplemented.",
+    "public_split_checkpoint": {
+      "commit": "cb5b624365a9d8d60452413cc1611061897f1a76",
+      "status": "PRESERVED_SOURCE_CHECKPOINT",
+      "notice": "No CI or release-ref advancement implied."
     }
   },
   "operations": [
@@ -864,41 +1135,40 @@
     {
       "operation": "funnels.split_variant",
       "recipe_name": "09_create_split_variant",
-      "status": "GENERIC_ONLY",
+      "status": "PARTIAL",
       "missing_executable_features": [
-        "No dedicated executable native variant creation/reuse handler, source/variant ID binding, or traffic-allocation writer/readback. The domain prerequisite reader and generic profile do not implement these writes."
+        "Active split activation and authored traffic-allocation confirmation/save/readback remain unimplemented. Current native requests refuse active or non-100/0 profiles before browser acquisition."
       ],
       "requirements": [
         "R14"
       ],
       "implemented_executable_features": [
-        "Read-only exact source-step prerequisite check reports the captured missing-domain blocker. A generic recorded-options recipe exists."
+        "Read-only exact source-step prerequisite check reports the captured missing-domain blocker. A generic recorded-options recipe exists.",
+        "Dedicated native same-step inactive variation creation or exact existing-variant reuse binds location, funnel, step, control/variant page IDs and public step URL.",
+        "Typed intake/compiler/runner and saved 100/0 receipt are implemented; completed replay independently re-reads the native inventory without another creation."
       ],
       "source_evidence": [
         {
-          "path": "06-ghl-install-pages/tools/playwright_recipes/pages_checkout.py",
-          "function": "check_split_prerequisites",
-          "line": 302
+          "path": "06-ghl-install-pages/tools/playwright_recipes/split_variant.py",
+          "function": "configure"
         },
         {
-          "path": "06-ghl-install-pages/tools/playwright_recipes/skill6_playwright.py",
-          "function": "options",
-          "line": 1424,
-          "current_line": 1466
+          "path": "06-ghl-install-pages/tools/playwright_recipes/split_variant.py",
+          "function": "validate"
         },
         {
-          "path": "06-ghl-install-pages/tools/playwright_recipes/recipe_cli.py",
-          "function": "compile_recipe",
-          "line": 13
+          "path": "06-ghl-install-pages/tools/playwright_recipes/editor_replay.py",
+          "function": "completed_editor_replay"
         }
       ],
       "deferred_live_proof": [
-        "Native creation/allocation/no-duplicate acceptance can be collected only after the missing dedicated implementation and actual control capture."
+        "Final installed inactive creation/reuse/no-duplicate acceptance remains separate from the captured UI and focused source tests."
       ],
       "input_or_capture_dependencies": [
-        "Configured funnel domain and current native variation/allocation controls."
+        "Exact native funnel/step/control/variant identities and public step URL. Active confirmation and saved active-state readback still need capture."
       ],
-      "retired_previous_gaps": []
+      "retired_previous_gaps": [],
+      "reconciliation": "Current source audit; historical frozen row retained separately."
     },
     {
       "operation": "pages.seo",
@@ -956,10 +1226,10 @@
       "recipe_name": "12_configure_form_options",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Remaining R24 advanced widget families have no dedicated typed placement/property/options path: numeric, checkbox/multiselect, file upload and signature, plus other visible uncaptured builder widgets. Radio is the only authored custom-schema dependency writer in this package.",
-        "Address parent Auto-Complete Address and Mandatory to Select Address in Search Bar controls have no authored native schema/action; existing child-property writers do not implement them.",
-        "Dropdown/LARGE_TEXT arbitrary legacy reuse cannot be proven from canvas shape because native wrappers expose no API field ID; an independently grounded reuse mechanism remains unavailable. Fresh one-field insertion and completed journal replay are implemented.",
-        "Native embed button color and alternate icon changes have no captured authored writer; existing color/icon data are preserved. Native integration surfaces outside the captured embed contract remain unaudited rather than assumed complete."
+        "Numeric, checkbox/multiselect, file-upload and signature field authoring still lack dedicated typed placement/property paths.",
+        "Address parent Auto-Complete Address and Mandatory to Select Address in Search Bar controls have no authored native path.",
+        "Arbitrary legacy Dropdown/LARGE_TEXT canvas adoption remains ungrounded; fresh API-inventoried insertion and completed replay are supported. Contact Dropdown creation lacks a documented option-array API request schema.",
+        "Native embed button color and alternate icon authoring are not implemented; captured existing values remain preserved."
       ],
       "requirements": [
         "R24",
@@ -973,7 +1243,8 @@
         "Edit inventoried existing consent copy and Required/Query Key controls.",
         "Place same-location API-inventoried Radio, Single Dropdown (SINGLE_OPTIONS) and multiline (LARGE_TEXT) custom fields. New Dropdown/LARGE_TEXT placement binds the exact API picker ID to the measured one-widget delta; arbitrary disabled-row legacy reuse is refused without durable placement evidence.",
         "Provision authored Radio definitions through the measured API dependency rail and chain them into an exact existing form with separate journals.",
-        "Export all four captured native embed layouts and Advanced activation/trigger/deactivation/cookie-consent settings, plus button corner/font/type/size appearance, with twice-read exact validated code bytes."
+        "Export all four captured native embed layouts and Advanced activation/trigger/deactivation/cookie-consent settings, plus button corner/font/type/size appearance, with twice-read exact validated code bytes.",
+        "Maintained Contact-field front door supports documented LARGE_TEXT creation and exact existing Dropdown reuse, followed by bound native placement."
       ],
       "source_evidence": [
         {
@@ -1032,7 +1303,8 @@
         "Address child properties beyond Query Keys.",
         "Radio, Single Dropdown and LARGE_TEXT placement with canonical API inventory; authored Radio-to-form dependency chain.",
         "Native consent editing; four embed layouts/Advanced and captured button appearance export."
-      ]
+      ],
+      "reconciliation": "Current source audit; historical frozen row retained separately."
     },
     {
       "operation": "forms.style",
@@ -1074,15 +1346,17 @@
       "recipe_name": "14_create_survey",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Survey-specific native question creation beyond the limited standard-field shell and Radio object-field placement is absent, including authored choices and other R31 question/widget types.",
-        "No typed complete new-survey slide/question authoring flow with independent complete saved inventory; the shell returns ASSESSMENT_SAVE_SUBMITTED and independent_readback REQUIRED."
+        "Native question authoring beyond captured standard fields, Radio and Single Line TEXT remains unimplemented; Paragraph/Multi Line capture is in progress and is not counted built here.",
+        "Media/question types outside those captured profiles have no dedicated authoring path."
       ],
       "requirements": [
         "R31"
       ],
       "implemented_executable_features": [
         "Native survey shell create/reuse and captured standard-field/page setup are executable.",
-        "Separate existing-survey flow provisions authored Radio definitions through API and places them on one exact existing slide."
+        "Separate existing-survey flow provisions authored Radio definitions through API and places them on one exact existing slide.",
+        "Owned new-survey shell creation supports explicitly empty slides and ordered Radio batches with saved aggregate slide/field/Query Key inventory.",
+        "Single Line TEXT creation supports authored label, placeholder, short label, Query Key, Required/Hidden/default; multiple same-slide questions and populated-slide append retain separate child journals and full saved order."
       ],
       "source_evidence": [
         {
@@ -1115,24 +1389,24 @@
       "retired_previous_gaps": [
         "Authored Radio dependency provisioning and exact existing-slide placement are implemented, but they are not a new-survey question builder."
       ],
-      "boundary": "Existing-survey Radio placement is shared implementation progress; it does not close creation of a complete requested survey."
+      "boundary": "Existing-survey Radio placement is shared implementation progress; it does not close creation of a complete requested survey.",
+      "reconciliation": "Current source audit; historical frozen row retained separately."
     },
     {
       "operation": "quizzes.create",
       "recipe_name": "15_create_marketing_quiz",
-      "status": "PARTIAL",
-      "missing_executable_features": [
-        "Native Multiple Dropdown and Picture Choice tile creation/identity/options are not implemented in this frozen source.",
-        "Reliable placement on an existing populated quiz page remains unresolved: the measured lower-edge attempt can create another page, which the writer now refuses during its first insertion poll. Explicit new-page mode is separate authored intent, not an append fallback.",
-        "No complete typed new-quiz shell-to-authored-questions-to-scoring/results flow with full independent shell readback. Existing-quiz question jobs do not establish that the new-shell path is complete."
-      ],
+      "status": "BUILT",
+      "missing_executable_features": [],
       "requirements": [
         "R33"
       ],
       "implemented_executable_features": [
         "Native marketing-quiz shell creation/reuse is distinct from survey/course quizzes.",
         "Existing-quiz configuration now creates seven captured tile profiles: Short Answer, Long Answer, Number, Single Choice, Yes/No, Multiple Choice and Single Dropdown, with full before-inventory and independent reopened readback.",
-        "An explicit create_page:true mode authors one question on an explicitly appended empty Page N+1, with generated caption/owner/empty-marker guards and the original request hash."
+        "An explicit create_page:true mode authors one question on an explicitly appended empty Page N+1, with generated caption/owner/empty-marker guards and the original request hash.",
+        "Owned native marketing-quiz creation saves and independently reopens the newly generated empty shell, then composes captured question batches, explicit scoring/categories and result-copy writers.",
+        "Final independent reopen verifies the full generated owner/page/question inventory and hash-bound child receipts; interrupted creation reuses its saved shell binding rather than adopting an unrelated existing quiz.",
+        "Bounded creation profile uses one captured question per page, supported native question families and explicit RADIO/CHECKBOX scoring coverage. Picture Choice uses exactly three approved catalog images. Existing populated-page append and broader result/media/tier controls belong to quizzes.configure."
       ],
       "source_evidence": [
         {
@@ -1163,6 +1437,11 @@
           "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_written_questions.py",
           "function": "configure",
           "line": 66
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_creation.py",
+          "function": "configure",
+          "current_line": 237
         }
       ],
       "deferred_live_proof": [
@@ -1171,7 +1450,9 @@
       "input_or_capture_dependencies": [],
       "retired_previous_gaps": [
         "Blanket absence of native question creation: six native field types/seven captured tiles and explicit new empty-page authoring now exist."
-      ]
+      ],
+      "reconciliation": "Current source audit; historical frozen row retained separately.",
+      "boundary": "SOURCE_BUILT for the explicit captured new-quiz profile, not every quiz configuration control or final native respondent acceptance."
     },
     {
       "operation": "communities.create",
@@ -1219,8 +1500,8 @@
       "recipe_name": "17_configure_community",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "First course association from zero native Learning cards has no authoritative loaded-empty identity proof and is refused; non-Private course visibility modes have no typed writer.",
-        "Classic channel/details/access handlers do not provide complete modern-portal settings parity. Existing inactive/ambiguous app-to-portal reuse handling remains incomplete."
+        "First course association from an authoritatively loaded empty Learning inventory and non-Private course visibility modes lack typed native paths.",
+        "Modern portal channel/details/access parity and inactive/ambiguous app-to-portal reuse remain unsupported."
       ],
       "requirements": [
         "R36"
@@ -1228,7 +1509,8 @@
       "implemented_executable_features": [
         "Classic portal channel creation, description editing and explicit privacy/access reconciliation using live same-session context and independent readback.",
         "Private course association binds native group/product identities to same-location Courses API inventory.",
-        "Modern portal logo/favicon/cover approved PNG upload uses exact slots, preserved sibling previews and independent saved reload."
+        "Modern portal logo/favicon/cover approved PNG upload uses exact slots, preserved sibling previews and independent saved reload.",
+        "Completed private course-association replay independently reloads Learning and verifies the target plus complete sibling inventory without another Add."
       ],
       "source_evidence": [
         {
@@ -1272,7 +1554,8 @@
         "Blanket community branding/media gap: modern logo/favicon/cover uploads exist.",
         "Blanket identity gap: new creation redirect and exact active Login-popup reuse identity are implemented.",
         "Private course associations are implemented on grounded nonempty inventories."
-      ]
+      ],
+      "reconciliation": "Current source audit; historical frozen row retained separately."
     },
     {
       "operation": "courses.create",
@@ -1310,14 +1593,16 @@
       "recipe_name": "19_configure_course_ui",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Native background transparency is observed and preserved but has no authored slider action. Background and Custom Block #remove-image controls are observed but have no removal schema/writer.",
-        "Other uncaptured template/block types and their media/settings remain unsupported; no activation/publication is included."
+        "Video Block upload/processing/save lifecycle and background/Custom Block image removal remain unimplemented; positive saved-empty image state for those two removal controls is not captured."
       ],
       "requirements": [
         "R40"
       ],
       "implemented_executable_features": [
-        "Captured inactive-theme text/visibility, hero spacing, six-color palette, fonts/weights, Custom Block append/edit, main background PNG replacement and exact existing Custom Block image replacement; preserve active template and protected siblings."
+        "Captured inactive-theme text/visibility, hero spacing, six-color palette, fonts/weights, Custom Block append/edit, main background PNG replacement and exact existing Custom Block image replacement; preserve active template and protected siblings. Authored background transparency uses measured single-point arrow keys with exact URL/percentage and independent saved reopen. Exact Image Block removal binds its UUID and inventoried empty preview/inspector URLs and preserves siblings.",
+        "Inactive-course background transparency has an authored measured integer slider action with saved receipts and independent reopen.",
+        "Inactive Text Block append/plain-text editing, Hero/Instructor PNG replacement, Image Block append/replacement/destination and exact Image Block image removal are implemented.",
+        "Exact inventoried Custom Block deletion uses captured confirmation, preserves siblings and independently reopens the saved order."
       ],
       "source_evidence": [
         {
@@ -1359,17 +1644,17 @@
       ],
       "input_or_capture_dependencies": [],
       "retired_previous_gaps": [
-        "Main background PNG upload and exact existing Custom Block image replacement are implemented.",
+        "Main background PNG upload, authored background transparency, exact existing Custom Block image replacement and exact Image Block image removal are implemented.",
         "Product poster/logo/hero/favicon/instructor-headshot uploads are implemented separately under courses.update."
-      ]
+      ],
+      "reconciliation": "Current source audit; historical frozen row retained separately."
     },
     {
       "operation": "meetings.setup",
       "recipe_name": "20_setup_meeting_room",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "First co-host assignment from an empty roster and clear-all removals are unsupported: no authoritative native loaded-empty roster marker is captured.",
-        "Co-host reconciliation requires an existing room with unchanged room metadata; creation/security edits and access-roster changes are separate jobs with fresh inventories. The missing empty-roster path prevents completing a newly empty room co-host setup."
+        "Authoritative loaded-empty co-host roster handling and first co-host assignment on a newly empty room remain unimplemented."
       ],
       "requirements": [
         "R41",
@@ -1407,17 +1692,17 @@
       "input_or_capture_dependencies": [],
       "retired_previous_gaps": [
         "Existing-room nonempty co-host assignment/removal writer, candidate preflight and saved roster readback are implemented."
-      ]
+      ],
+      "reconciliation": "Current source audit; historical frozen row retained separately."
     },
     {
       "operation": "meetings.integrate",
       "recipe_name": "21_integrate_meeting_room",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Native course live-session/Meeting Room association has no concrete typed implementation.",
-        "Dynamic calendar UI configuration is limited to the captured single-staff/single-location shape; multi-staff/multi-location variants and connecting a new conferencing provider or changing Connections staff remain unsupported.",
-        "Community event native association is limited to the captured existing free, nonrecurring, all-member event without thumbnail/reminders; other event shapes lack captured preserved-state handling.",
-        "Recording/transcription integration has no captured typed path in this package."
+        "Native course Live Sessions/Meeting Room association has no typed implementation.",
+        "Dynamic calendar multi-staff/multi-location and new-provider/Connections-staff changes remain unsupported beyond the captured single-staff/single-location profile.",
+        "Community event shapes beyond the captured existing free nonrecurring all-member event lack complete preserved-state handling."
       ],
       "requirements": [
         "R43"
@@ -1456,7 +1741,8 @@
       "retired_previous_gaps": [
         "Native single-staff dynamic appointment location setting.",
         "Native existing community-event Live Room creation/reuse association; this is more than a text link."
-      ]
+      ],
+      "reconciliation": "Current source audit; historical frozen row retained separately."
     },
     {
       "operation": "forms.settings",
@@ -1566,16 +1852,20 @@
       "recipe_name": "25_configure_form_condition",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Mixed AND/OR connectors within one predicate have no schema/writer: match is homogeneous all/any. Nested grouping is also unsupported, but native availability must be established before treating it as a separate captured platform control.",
-        "Condition-card deletion, card reordering and count-changing replacement are not implemented. Same-count edits apply to Show/Hide stacks; outcome stacks preserve an exact prefix and do not edit existing Redirect/message/disqualification cards.",
-        "Source/target field choice is limited to the captured built-in/TnC labels; conditions on additional custom/advanced field families need grounded native identity/control capture."
+        "Custom condition sources/targets beyond captured TEXT, including Radio, numerical, file and other option-valued families, remain unsupported.",
+        "Order recreation involving rich custom-message/disqualification content remains unsupported; non-message Show/Hide/Redirect permutations are supported."
       ],
       "requirements": [
         "R28"
       ],
       "implemented_executable_features": [
-        "Captured single rules and homogeneous one-to-twenty-clause AND/OR groups. Ordered Show/Hide stacks support one explicit rule per target and complete-inventory same-count edits, predicate growth and captured tail-clause shrink while protecting the initial If row.",
-        "Ordered mixed effect stacks append Show/Hide, HTTPS Redirect, literal Display custom message and Disqualify lead with explicit message/redirect mode, preserving all existing summary HTML."
+        "Complete single/group predicates with homogeneous or mixed AND/OR connectors; ordered Show/Hide stacks support same-count edits, predicate growth/shrink, card removal/count changes and explicit unchanged full-order recreation.",
+        "Mixed Show/Hide, HTTPS Redirect, literal custom-message and disqualification outcomes support append, exact expected-inventory removal, same-family existing edits, mapped removal/edit/tail append, independent reopen and preservation of untouched rich markup.",
+        "Custom TEXT source/target condition binding verifies complete label/type/Query Key inventories and exact searchable virtualized native choices before write and after reopen.",
+        "Explicit unchanged full permutations of non-message outcome stacks recreate only the changed suffix using captured Delete/author controls, preserve the unchanged prefix and reuse an already-desired order without deletion or outer Save.",
+        "Explicit ordered mixed AND/OR predicates, card deletion/clear/count changes and existing Redirect/message/disqualification edits are implemented.",
+        "Complete custom TEXT source/target identities bind label, Query Key and field type across predicate groups, Show/Hide stacks and outcomes.",
+        "Explicit unchanged Show/Hide and non-message mixed outcome permutations recreate only the changed suffix through captured Delete/author controls, retain the unchanged prefix and independently reopen the complete order."
       ],
       "source_evidence": [
         {
@@ -1612,6 +1902,11 @@
           "function": "configure",
           "line": 284,
           "current_line": 285
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_outcomes.py",
+          "function": "_recreate_order",
+          "evidence": "Captured shared Delete confirmation plus existing outcome authoring; explicit complete permutation, protected prefix, independent reopen. Focused test_form_outcome_recreate_order: 6 passed."
         }
       ],
       "deferred_live_proof": [
@@ -1622,7 +1917,8 @@
         "Multiple Show/Hide rule editing and homogeneous compound predicates, including tail-clause removal.",
         "Multiple targets via one ordered native rule per target; the observed native target select itself is single-valued.",
         "Other native effects: Redirect, Display custom message and both disqualification outcomes now exist."
-      ]
+      ],
+      "reconciliation": "Current source audit; historical frozen row retained separately."
     },
     {
       "operation": "checkout.configure_native",
@@ -1666,7 +1962,7 @@
       "recipe_name": "27_update_meeting_room",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Authoritative loaded-empty co-host evidence and the first-assignment/clear-all paths remain unimplemented; the writer requires nonempty expected and desired rosters."
+        "Authoritative loaded-empty co-host roster handling, first assignment and clear-all removal remain unimplemented; existing nonempty roster reconciliation is supported."
       ],
       "requirements": [
         "R41",
@@ -1698,16 +1994,17 @@
       "input_or_capture_dependencies": [],
       "retired_previous_gaps": [
         "Existing-room nonempty co-host assignment/removal with complete before/after roster binding and hash/count-bound replay."
-      ]
+      ],
+      "reconciliation": "Current source audit; historical frozen row retained separately."
     },
     {
       "operation": "quizzes.configure",
       "recipe_name": "28_configure_quiz_scores_and_tiers",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Native Multiple Dropdown and Picture Choice creation/option identity are absent. Reliable existing-populated-page append remains unresolved; explicit Page N+1 mode is not a silent substitute.",
-        "Answer Jump To routing and its complete destination identities have no writer; active jump/spread configurations are refused where complete preservation is not captured.",
-        "Tier creation/removal, result Header logo/media authoring and remaining result styling/media controls have no native schema/action. Existing-tier edits and the two Header layouts do not implement those controls."
+        "Reliable append on an existing populated quiz page remains unimplemented in this source; another session owns the native continuation.",
+        "Picture Choice option-count/style/layout/local-upload controls beyond the fixed-three existing-catalog writer remain unimplemented.",
+        "Answer Jump To destination authoring, tier creation/removal and result Header logo/media or remaining result styling controls have no complete native writer."
       ],
       "requirements": [
         "R34",
@@ -1716,7 +2013,9 @@
       "implemented_executable_features": [
         "Existing question/answer properties and appended answers, category create/rename, category/score bindings and arbitrary captured existing tier layouts/ranges with exact previous inventories.",
         "Header business-name text/visibility and Default/Reverse layout plus static/dynamic tier-specific CTA heading/button/HTTPS-link copy, preserving unrequested Header HTML/logo data.",
-        "Native TEXT, LARGE_TEXT, NUMERICAL, RADIO, CHECKBOX and SINGLE_OPTIONS question creation covers seven tiles; explicit new-empty-page mode is available for one question with full original-owner preservation."
+        "Native TEXT, LARGE_TEXT, NUMERICAL, RADIO, CHECKBOX and SINGLE_OPTIONS question creation covers seven tiles; explicit new-empty-page mode is available for one question with full original-owner preservation.",
+        "Native Multi Dropdown and fixed-three approved catalog Picture Choice authoring are implemented, including mixed captured question batches.",
+        "Existing captured scoring/category/answer/result-copy and tier-range edits remain implemented; explicit empty/new-page question authoring is supported."
       ],
       "source_evidence": [
         {
@@ -1760,15 +2059,16 @@
       "retired_previous_gaps": [
         "Blanket new-question creation gap: seven captured tile profiles and explicit one-question new-page mode are executable.",
         "Header business-name visibility and Default/Reverse layouts; tier-specific CTA copy/link editing."
-      ]
+      ],
+      "reconciliation": "Current source audit; historical frozen row retained separately."
     },
     {
       "operation": "surveys.configure",
       "recipe_name": "29_configure_survey_branch",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Other native question/widget types and authored choices lack survey-specific typed creation/placement/property paths; the Radio rail does not generalize automatically.",
-        "Compound/mixed conditional predicates, completion/redirect/custom-message/disqualification outcomes and editing/removal/reordering of arbitrary existing survey rules are not implemented by the forward-Jump-To stack schema."
+        "Question properties for families beyond captured Radio, TEXT and existing LARGE_TEXT remain unimplemented; Paragraph/LARGE_TEXT creation remains unsupported.",
+        "Compound predicates and completion/redirect/custom-message/disqualification rule editing, removal and ordering remain unimplemented; existing forward Jump To stacks remain supported."
       ],
       "requirements": [
         "R32",
@@ -1776,7 +2076,9 @@
       ],
       "implemented_executable_features": [
         "Ordered forward Jump To rule stacks bind exact existing numbered slides, source fields/operators/values and destination labels, preserve complete prior rules and independently reopen saved summaries.",
-        "Existing-slide Radio placement binds the same-location API field inventory; an optional separately journaled authored Radio API dependency chain preflights the exact survey/slide before schema writes."
+        "Existing-slide Radio placement binds the same-location API field inventory; an optional separately journaled authored Radio API dependency chain preflights the exact survey/slide before schema writes.",
+        "Existing inventoried TEXT property updates bind the full prior canvas and saved label/placeholder/short label/Query Key/Required/Hidden/default inventory.",
+        "Existing inventoried Multi Line/LARGE_TEXT properties, including Required/Hidden, bind exact location/editor and full prior inventory through saved reopen and fresh replay. This does not create Paragraph widgets."
       ],
       "source_evidence": [
         {
@@ -1801,7 +2103,8 @@
       "input_or_capture_dependencies": [],
       "retired_previous_gaps": [
         "Authored Radio API provisioning and exact existing-slide placement; ordered multiple forward Jump To rules."
-      ]
+      ],
+      "reconciliation": "Current source audit; historical frozen row retained separately."
     },
     {
       "operation": "checkout.configure_ui",
@@ -2022,5 +2325,250 @@
     "merge_commit": "d64498b35a8b1ec9c39429a46c9ab760403711a1",
     "current_batch": "Native control continuation on skill6/next-native-controls-20261109; predecessor PR #3018 tracked independently by GitHub",
     "not_revalidated_by_this_audit": true
+  },
+  "historical_frozen_operation_audit": {
+    "source_commit": "f5b039b0a186b2bc35784dbc2ff876fc91b41eb9",
+    "counts": {
+      "BUILT": 21,
+      "PARTIAL": 11,
+      "GENERIC_ONLY": 1
+    },
+    "remaining_named_operations_requiring_build_work": 12,
+    "operations": [
+      {
+        "operation": "funnels.create",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "funnels.add_page",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "websites.create",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "websites.add_page",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "pages.install_code",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "pages.install_embed",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "checkout.wrap_native",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "checkout.one_click_upsell",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "funnels.split_variant",
+        "status": "GENERIC_ONLY",
+        "missing_executable_features": [
+          "No dedicated executable native variant creation/reuse handler, source/variant ID binding, or traffic-allocation writer/readback. The domain prerequisite reader and generic profile do not implement these writes."
+        ]
+      },
+      {
+        "operation": "pages.seo",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "forms.create",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "forms.configure",
+        "status": "PARTIAL",
+        "missing_executable_features": [
+          "Remaining R24 advanced widget families have no dedicated typed placement/property/options path: numeric, checkbox/multiselect, file upload and signature, plus other visible uncaptured builder widgets. Radio is the only authored custom-schema dependency writer in this package.",
+          "Address parent Auto-Complete Address and Mandatory to Select Address in Search Bar controls have no authored native schema/action; existing child-property writers do not implement them.",
+          "Dropdown/LARGE_TEXT arbitrary legacy reuse cannot be proven from canvas shape because native wrappers expose no API field ID; an independently grounded reuse mechanism remains unavailable. Fresh one-field insertion and completed journal replay are implemented.",
+          "Native embed button color and alternate icon changes have no captured authored writer; existing color/icon data are preserved. Native integration surfaces outside the captured embed contract remain unaudited rather than assumed complete."
+        ]
+      },
+      {
+        "operation": "forms.style",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "surveys.create",
+        "status": "PARTIAL",
+        "missing_executable_features": [
+          "Survey-specific native question creation beyond the limited standard-field shell and Radio object-field placement is absent, including authored choices and other R31 question/widget types.",
+          "No typed complete new-survey slide/question authoring flow with independent complete saved inventory; the shell returns ASSESSMENT_SAVE_SUBMITTED and independent_readback REQUIRED."
+        ]
+      },
+      {
+        "operation": "quizzes.create",
+        "status": "PARTIAL",
+        "missing_executable_features": [
+          "Native Multiple Dropdown and Picture Choice tile creation/identity/options are not implemented in this frozen source.",
+          "Reliable placement on an existing populated quiz page remains unresolved: the measured lower-edge attempt can create another page, which the writer now refuses during its first insertion poll. Explicit new-page mode is separate authored intent, not an append fallback.",
+          "No complete typed new-quiz shell-to-authored-questions-to-scoring/results flow with full independent shell readback. Existing-quiz question jobs do not establish that the new-shell path is complete."
+        ]
+      },
+      {
+        "operation": "communities.create",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "communities.configure",
+        "status": "PARTIAL",
+        "missing_executable_features": [
+          "First course association from zero native Learning cards has no authoritative loaded-empty identity proof and is refused; non-Private course visibility modes have no typed writer.",
+          "Classic channel/details/access handlers do not provide complete modern-portal settings parity. Existing inactive/ambiguous app-to-portal reuse handling remains incomplete."
+        ]
+      },
+      {
+        "operation": "courses.create",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "courses.configure_ui",
+        "status": "PARTIAL",
+        "missing_executable_features": [
+          "Video lifecycle, background and Custom Block image removal lack complete captured schema/writers. Background transparency and exact Image Block removal are already implemented; do not rebuild them.",
+          "Other uncaptured template/block types and their media/settings remain unsupported; no activation/publication is included."
+        ]
+      },
+      {
+        "operation": "meetings.setup",
+        "status": "PARTIAL",
+        "missing_executable_features": [
+          "First co-host assignment from an empty roster and clear-all removals are unsupported: no authoritative native loaded-empty roster marker is captured.",
+          "Co-host reconciliation requires an existing room with unchanged room metadata; creation/security edits and access-roster changes are separate jobs with fresh inventories. The missing empty-roster path prevents completing a newly empty room co-host setup."
+        ]
+      },
+      {
+        "operation": "meetings.integrate",
+        "status": "PARTIAL",
+        "missing_executable_features": [
+          "Native course live-session/Meeting Room association has no concrete typed implementation.",
+          "Dynamic calendar UI configuration is limited to the captured single-staff/single-location shape; multi-staff/multi-location variants and connecting a new conferencing provider or changing Connections staff remain unsupported.",
+          "Community event native association is limited to the captured existing free, nonrecurring, all-member event without thumbnail/reminders; other event shapes lack captured preserved-state handling.",
+          "Recording/transcription integration has no captured typed path in this package."
+        ]
+      },
+      {
+        "operation": "forms.settings",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "courses.update",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "courses.lesson_quiz.create",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "forms.conditions",
+        "status": "PARTIAL",
+        "missing_executable_features": [
+          "Custom field families beyond captured TEXT require grounded native source/target identities and operator controls.",
+          "Explicit reordered recreation of message-bearing outcomes needs markup-preserving native authoring; rich-message cards currently refuse this mode.",
+          "Native nested grouping availability remains unverified; no nested-group writer is advertised."
+        ]
+      },
+      {
+        "operation": "checkout.configure_native",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "meetings.update",
+        "status": "PARTIAL",
+        "missing_executable_features": [
+          "Authoritative loaded-empty co-host evidence and the first-assignment/clear-all paths remain unimplemented; the writer requires nonempty expected and desired rosters."
+        ]
+      },
+      {
+        "operation": "quizzes.configure",
+        "status": "PARTIAL",
+        "missing_executable_features": [
+          "Native Multiple Dropdown and Picture Choice creation/option identity are absent. Reliable existing-populated-page append remains unresolved; explicit Page N+1 mode is not a silent substitute.",
+          "Answer Jump To routing and its complete destination identities have no writer; active jump/spread configurations are refused where complete preservation is not captured.",
+          "Tier creation/removal, result Header logo/media authoring and remaining result styling/media controls have no native schema/action. Existing-tier edits and the two Header layouts do not implement those controls."
+        ]
+      },
+      {
+        "operation": "surveys.configure",
+        "status": "PARTIAL",
+        "missing_executable_features": [
+          "Other native question/widget types and authored choices lack survey-specific typed creation/placement/property paths; the Radio rail does not generalize automatically.",
+          "Compound/mixed conditional predicates, completion/redirect/custom-message/disqualification outcomes and editing/removal/reordering of arbitrary existing survey rules are not implemented by the forward-Jump-To stack schema."
+        ]
+      },
+      {
+        "operation": "checkout.configure_ui",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "forms.submission",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "forms.notifications",
+        "status": "BUILT",
+        "missing_executable_features": []
+      },
+      {
+        "operation": "courses.lessons",
+        "status": "BUILT",
+        "missing_executable_features": []
+      }
+    ],
+    "notice": "Historical fifth-source classifications and gaps only. Current operations and current_source_audit supersede these rows; never report this frozen count as current.",
+    "complete_source_rows": "The immutable original audit source remains f5b039b0a186b2bc35784dbc2ff876fc91b41eb9; compact historical rows here preserve classifications and missing claims without duplicating source evidence."
+  },
+  "current_source_audit": {
+    "updated_at": "2026-11-10T11:32:16.161233+00:00",
+    "counts": {
+      "BUILT": 22,
+      "PARTIAL": 11,
+      "GENERIC_ONLY": 0
+    },
+    "remaining_named_operations_requiring_build_work": 11,
+    "basis": "Current combined source after reviewed seven additions, inactive split routing/preflight, non-message outcome order recreation and course ledger reconciliation. Quiz creation is assessed against its bounded new-owner contract; existing populated-page append belongs to configuration.",
+    "historical_count": "Frozen21BUILT/11PARTIAL/1GENERIC_ONLY is retained only in historical_frozen_operation_audit.",
+    "native_acceptance": "PENDING; source-built is not PASS, merged delivery or functional acceptance.",
+    "remaining_operations": [
+      "funnels.split_variant",
+      "forms.configure",
+      "surveys.create",
+      "communities.configure",
+      "courses.configure_ui",
+      "meetings.setup",
+      "meetings.integrate",
+      "forms.conditions",
+      "meetings.update",
+      "quizzes.configure",
+      "surveys.configure"
+    ],
+    "uncaptured_capabilities": "Native drag/nested grouping and unspecified other controls are not invented as required completion criteria; require observed platform inventory or an explicit owner requirement."
   }
 }
