@@ -746,7 +746,7 @@ python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py
 
 ### Image Generation Models
 
-**Model rule (owner order 2026-10-05, AGENTS.md N43 fleet pin):** every image this skill produces uses KIE **GPT Image 2.6 Sunburst**. Every image carries a baked text/headline overlay (Section 18), and 2.5 Sunburst renders baked text; the pre-generation gate (Section 8a) still enforces the verbatim-copy and spelling checks. Nano Banana is never a route.
+**Model rule (owner order 2026-10-05, AGENTS.md N43 fleet pin):** every image this skill produces uses KIE **GPT Image 2.6 Sunburst**. Every image carries a baked text/headline overlay (Section 18), and 2.6 Sunburst renders baked text; the pre-generation gate (Section 8a) still enforces the verbatim-copy and spelling checks. Nano Banana is never a route.
 
 | Model id | Role | When to use |
 |----------|------|-------------|
