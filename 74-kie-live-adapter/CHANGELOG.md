@@ -1,4 +1,8 @@
 # Changelog - Skill 74 KIE Live Adapter
+## [1.1.17] - 2026-11-10 - G3 patch bump for the PRMPT-001 submit-path prompt-gate test (test only, no behaviour change)
+
+- `tests/test_prompt_gate_submit.py` (merge-train integration of PR 3064, A3) locks the Kie submit path's pre-HTTP prompt band: 25,000 characters refused with zero createTask calls, 19,500 passes and submits once, and the 20,000 owner cap governs over the vendor schema's 32,000. No adapter code changed.
+
 ## [1.1.16] - 2026-11-09 - G3 lockstep bump for the GPT Image 2.6 owner-cap change (no behaviour change)
 
 - `SKILL.md` frontmatter and `skill-version.txt` rolled 1.1.15 -> 1.1.16 so this pull request's skill content change carries a version above main. No functional change.

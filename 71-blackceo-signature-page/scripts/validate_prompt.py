@@ -361,6 +361,32 @@ def _owner_image_cap(model):
     return {"max_chars": maximum, "cap_status": "OWNER_RULED", "unit": "chars",
             "source": str(path) + " owner_prompt_cap_chars for " + model}
 
+def _owner_cap_from(spec):
+    """Read a cap from the owner catalog row named by a policy `max_chars_from` block.
+
+    Same source as stage_executor._owner_cap_from: the owner catalog
+    (66-kie-image/models.json) is the one source; returns None when the row or
+    the field is absent, so the caller refuses instead of inventing a maximum.
+    """
+    if not isinstance(spec, dict):
+        return None
+    rel, field = spec.get("file"), spec.get("field")
+    sel_field, sel = spec.get("selector_field"), spec.get("selector")
+    if not (isinstance(rel, str) and isinstance(field, str) and isinstance(sel_field, str)
+            and isinstance(sel, str)):
+        return None
+    path = (SKILL_ROOT.parent / rel).resolve()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    for row in data.get("models") or data.get("entries") or []:
+        if isinstance(row, dict) and row.get(sel_field) == sel:
+            cap = row.get(field)
+            if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
+                return cap
+            return None
+    return None
 
 def cap_for_model(model, policy):
     """Resolve the policy entry for a model id (longest prefix wins)."""
@@ -371,10 +397,16 @@ def cap_for_model(model, policy):
             if best is None or len(match) > len(best.get("match", "")):
                 best = entry
     if best is not None:
+        if isinstance(best.get("max_chars_from"), dict):
+            cap = _owner_cap_from(best["max_chars_from"])
+            if cap is not None:
+                return dict(best, max_chars=cap, unit="chars")
+            # The named owner source did not resolve: refuse, never invent one.
+            return dict(best, max_chars=None, unit=best.get("unit", "chars"))
         return best
     if model and "gpt-image-2-6" in model:
-        # A missing local policy entry falls back to the same owner registry,
-        # not a duplicated literal or the vendor's larger schema maximum.
+        # Same owner catalog as _owner_cap_from, via the mockable registry
+        # locator so tests can substitute a synthetic registry.
         owner_cap = _owner_image_cap(model)
         if owner_cap is not None:
             return owner_cap

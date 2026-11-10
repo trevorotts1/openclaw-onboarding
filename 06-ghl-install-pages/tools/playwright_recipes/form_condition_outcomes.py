@@ -3,8 +3,9 @@
 Each saved card remains one native effect. A complete authored ordered stack
 and exact existing prefix protect unrelated conditions. An explicit complete
 expected_rules inventory also permits removal of identified cards or same-count
-in-place edits through the captured editor. Reordering and changing effect
-families require their own native controls. Native rich-message
+in-place edits through the captured editor. Explicit non-message permutations recreate only the changed suffix using captured
+Delete and author controls. Rich-message reordering still requires markup-aware
+authoring; changing effect families uses explicit removal and append. Native rich-message
 card markup is hashed and preserved through append and independent reopen.
 The parent runner owns tenant checks, writer lease and uncertain-write journal.
 """
@@ -168,15 +169,52 @@ def _reconciliation(expected,wanted,source_indices=_NO_MAPPING):
     return 'edit',list(range(len(expected)))
 
 
+def _validate_recreation(plan):
+    """Explicit unchanged permutation using captured deletion and authoring.
+
+    Rich-message cards require markup-aware reauthoring and are never flattened.
+    """
+    expected=plan['expected_rules'];order=plan['recreate_order']
+    if ('source_indices' in plan or not isinstance(order,list)
+            or len(order)!=len(expected) or any(type(i) is not int for i in order)
+            or sorted(order)!=list(range(len(expected)))
+            or plan['rules']!=[expected[i] for i in order]):
+        raise Stop('Outcome recreation requires one complete unchanged ordinal permutation')
+    if any('message' in rule for rule in expected):
+        raise Stop('Rich-message outcome recreation requires captured markup-preserving authoring')
+
+
+def _recreate_order(frame,dialog,plan,current,identity,inventory):
+    wanted=plan['rules']
+    if [record['rule'] for record in current]==wanted:return current
+    if [record['rule'] for record in current]!=plan['expected_rules']:
+        raise Stop('Native outcome recreation differs from complete previous inventory')
+    prefix=0
+    while prefix<len(current) and current[prefix]['rule']==wanted[prefix]:prefix+=1
+    for index in reversed(range(prefix,len(current))):
+        current=stack._delete_card(frame,dialog,current,identity,index=index,inventory=inventory)
+    for rule in wanted[prefix:]:
+        identity()
+        if inventory(dialog)!=current:
+            raise Stop('Native outcomes changed during explicit order recreation')
+        current=_author(frame,dialog,rule,current,identity,inventory=inventory)
+    return current
+
+
 def validate(step):
-    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules','source_indices','field_bindings'}
+    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules','source_indices','recreate_order','field_bindings'}
             or step.get('action','native_condition_outcomes')!='native_condition_outcomes'):
         raise Stop('Unsupported native conditional outcome stack')
     bindings=group.condition_bindings(step) if 'field_bindings' in step else None
     plan={**deepcopy(step),'rules':_rules(step.get('rules'),allow_empty='expected_rules' in step,field_bindings=bindings)}
     if 'expected_rules' in step:
         plan['expected_rules']=_rules(step['expected_rules'],allow_empty=True,reject_conflicts=False,field_bindings=bindings)
-        _reconciliation(plan['expected_rules'],plan['rules'],step.get('source_indices',_NO_MAPPING))
+        if 'recreate_order' in plan:
+            _validate_recreation(plan)
+        else:
+            _reconciliation(plan['expected_rules'],plan['rules'],step.get('source_indices',_NO_MAPPING))
+    elif 'recreate_order' in step:
+        raise Stop('Outcome recreation requires a complete expected_rules inventory')
     elif 'source_indices' in step:
         raise Stop('Outcome source_indices requires the complete expected_rules inventory')
     return plan
@@ -187,6 +225,7 @@ def configuration_hash(step):
     binding=({'expected_rules':plan['expected_rules'],'rules':plan['rules']}
              if 'expected_rules' in plan else plan['rules'])
     if 'source_indices' in plan:binding['source_indices']=plan['source_indices']
+    if 'recreate_order' in plan:binding['recreate_order']=plan['recreate_order']
     if 'field_bindings' in plan:
         binding={'rules':binding,'field_bindings':plan['field_bindings']}
     return hashlib.sha256(json.dumps(binding,sort_keys=True,separators=(',',':')).encode()).hexdigest()
@@ -468,7 +507,9 @@ def configure(page,step):
     dialog=open_conditions()
     before=inventory(dialog);wanted=plan['rules']
     current=before
-    if 'expected_rules' in plan:
+    if 'recreate_order' in plan:
+        current=_recreate_order(frame,dialog,plan,current,identity,inventory)
+    elif 'expected_rules' in plan:
         actual=[record['rule'] for record in before]
         if actual!=wanted:
             if actual!=plan['expected_rules']:

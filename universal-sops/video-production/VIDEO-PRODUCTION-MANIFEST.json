@@ -32,7 +32,7 @@
       ],
       "steps": [
         "P-INTAKE: verify consent (probe_consent), environment + SecretRefs (probe_environment), build project_manifest.yaml (probe_manifest)",
-        "P-LIKENESS: build identity bible + approved multi-view reference from authorized photos; every reference prompt clears the 5,000-19,000 band (probe_prompt_band)",
+        "P-LIKENESS: build identity bible + approved multi-view reference from authorized photos; every reference prompt clears the KIE prompt rule 12 budget (probe_prompt_band)",
         "P-SCRIPT: write for speech, pronunciation dictionary, Fish-tag + clean scripts",
         "P-AUDIO: generate ONE continuous Fish Audio master + timestamps; audio QC (probe_audio_master)",
         "P-STORYBOARD: audio-led scene cuts; Agnes frame plan satisfies 8n+1 and <= 441 (probe_frame_plan)",
@@ -87,8 +87,8 @@
     "final_lufs": -16,
     "lufs_tolerance": 1,
     "true_peak_db": -1.5,
-    "prompt_char_floor": 5000,
-    "prompt_char_ceiling": 19000,
+    "prompt_char_floor": 16000,
+    "prompt_char_ceiling": 20000,
     "agnes_max_frames": 441,
     "agnes_frame_rule": "8n+1"
   },

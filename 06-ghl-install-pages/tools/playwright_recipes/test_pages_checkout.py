@@ -99,6 +99,7 @@ class NativeCheckoutTests(unittest.TestCase):
         # Full preflight and final preservation reads supplement each write's
         # read-back; the last observation must cover the completed checkout.
         self.assertEqual(page.frames[0].calls[-1]['op'], 'get_state')
+        self.assertEqual(sum(call['op']=='get_state' for call in page.frames[0].calls),6)
 
     def test_main_price_only_change_preflights_preserved_bump_currency(self):
         page = Page()

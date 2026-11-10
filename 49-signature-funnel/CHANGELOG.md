@@ -1,3 +1,10 @@
+## [v2.1.52] - 2026-11-10 - merge-train integration of PRs 3064, 3071 and 3068: prompt-floor gapfill, final-mockups gated, unowned-18 fix plan
+
+- PR 3064 (PRMPT-001): `scripts/prove_sf_prompt_floor.py` no longer claims an over-max prompt was "NOT sent to Kie" and surfaces the 80-to-below-95 percent warn-and-expand warning; `signature-funnel-entry.sh` front door repaired; new `test_entry_front_door.py` and `test_prompt_floor_warn_surface.py`.
+- PR 3071: `scripts/prove_sf_build.py` gates `final-mockups` as a fourth certifying visual stage (`VISUAL_STAGES`, with the legacy three kept as `LEGACY_VISUAL_STAGES`); `test_legacy_structure_proofs.py` proves a run without final mockups cannot certify.
+- PR 3068 (fix plan G-2 to G-15): the visual stage is a real gate, the wireframe provider defaults to kie, the required per-section image set is bound to the wireframe inventory, the submit-path length check runs Skill 74's own prompt-budget check, an unexpanded warn-and-expand verdict fails closed, and `SKILL.md` carries the whole-read rule. The three overlapping stage-name tests from PRs 3071 and 3068 are both kept.
+- Known overlap: PR 3064's surfacing test and PR 3068's fail-closed G-9 verdict disagree about the warn-and-expand band; `test_prompt_floor_warn_surface.py` is expected to fail 3 of 4 until the follow-up lanes reconcile them. The SF prover pin is not touched here; it is re-minted by the bot mint.
+
 ## [v2.1.51] - 2026-11-09 - G3 lockstep roll for the RES-002 VERSION gate after merging main (no Skill 49 behaviour change)
 
 - main re-joined `VERSION` to `skill-version.txt` at v2.1.50 (VRD-001) while this branch did the same; both v2.1.50 entries below are kept. What this branch still adds is the `scripts/qc-assert-skill-frontmatter-version.sh` VERSION comparison, so the merge rolls `VERSION`, `skill-version.txt` and the SKILL.md frontmatter to v2.1.51 together. Not a pinned file; the SF prover pin is unchanged.

@@ -258,6 +258,12 @@ def validate_intake(operation, data):
             quiz_creation(data)
     if operation == 'surveys.configure' and isinstance(data.get('configuration'), dict):
         config = data['configuration']
+        if 'multiline_questions' in config:
+            if 'options' in data:raise Stop('Survey Multi Line properties require their own independently journaled job')
+            from playwright_recipes.survey_multiline_configuration import validate
+            if set(config).intersection({'location_id','location_name','start_url'}):
+                raise Stop('Survey Multi Line owner identity must come from its parent inputs')
+            validate({'payload':{**{key:data[key] for key in ('location_id','location_name','start_url')},**config}})
         if 'text_questions' in config:
             if 'options' in data:raise Stop('Survey TEXT properties require their own independently journaled job')
             from playwright_recipes.survey_text_configuration import validate

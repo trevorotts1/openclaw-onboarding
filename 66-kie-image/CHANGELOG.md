@@ -1,3 +1,21 @@
+## [2.2.15] - 2026-11-10 - registry_policy.house_band_chars follows the 20,000 owner cap (INST-001 #21)
+
+- `models.json` line 8: `registry_policy.house_band_chars` changed from the stale 5000/9000/19000 to
+  min 16000 (80 percent hard floor) / target 19000 (95 percent) / max 20000 (the owner cap, plan A0), the
+  same band every owner-capped route already carries. Added `tests/test_house_band.py`.
+- Merge-train integration of PR 3068 (fix plan G-1): `scripts/validate_prompt.py` self-test now resolves the real sibling Skill 74 adapter instead of blanking it, so the live 20,000 owner-cap path is exercised; `scripts/validate_payload.py` gains `_apply_prompt_policy`, the production caller that runs the prompt gate from the CLI after a payload validates (it can only add refusals). The models.json fallback is still proven, explicitly as the fallback.
+
+## [2.2.14] - 2026-11-09 - GPT Image 2.5 retired from the live scripts (2.6 is the only Sunburst family); merge of PR #3079
+
+- `scripts/normalize_alias.py`: the generation-named aliases `gpt-img2.5` and `gpt-image 2.5` keep their keys but now resolve to `gpt image 2.6`; the `gpt image 2.5` family row is removed from `FAMILY_OF`. Self-test assertions updated to match.
+- `scripts/select_image_model.py`: the `gpt-image-2-5-sunburst` registry family is removed; the `gpt image 2.5`, `gpt-image 2.5`, `gpt-image-2.5`, `gpt image 2.5 sunburst`, `gpt-img2.5` and `sunburst` alias keys are kept (none deleted) and point at `gpt-image-2-6/sunburst`. The 2.5-only ratio routing (`GPT_2_5_LEGACY_ONLY_RATIOS`, `GPT_2_5_RATIO_SUBSTITUTIONS` and their dispatch branches) is removed; 2.6 passes all 16 vendor ratios through unchanged.
+- `scripts/validate_payload.py`: the 2.5-specific 1K-only exclusion branch is replaced by one registry-driven `ratio_resolution_exclusions` check that applies to every model publishing a list (2.6 publishes an empty list, so nothing fires on it). The 2.5 self-test cases are removed.
+- The 2.5 rows stay in `models.json` marked legacy. `SKILL.md` frontmatter bumped to v2.2.14.
+
+## [2.2.13] - 2026-11-09 - fix(kie): correct stale GPT Image 2.5 claims to the 2.6 default
+
+- `SKILL.md`: the EXAMPLES.md entry in the reading list now says it ships GPT Image 2.6 t2i/i2i payloads (was 2.5). Part of the 20-claim 2.6-default correction that also touched Skills 45 and 62, `SOP-IMG-01` (both copies) and `SOP-FBAD-06`. No script or data change in Skill 66.
+
 ## [2.2.12] - 2026-11-09 - Ratio coherence: GPT Image 2.6 now matches the vendor 16-member enum (merge of main's 2.2.11 entry)
 
 - `models.json`: both `gpt-image-2-6/sunburst` rows' `aspect_ratios` set to the vendor live schema

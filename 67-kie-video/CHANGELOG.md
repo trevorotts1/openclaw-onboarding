@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.1.7] - 2026-11-10 - docs: retired band wording in INSTRUCTIONS.md and references/prompt-policy.md reworded to KIE prompt rule 12 (INST-001 #21)
+
+- Prose only; no executable, mapping, cap or test changed.
+
 ## [v2.1.6] - 2026-11-09 - fix: retired 5,000/9,000/19,000 prose band now states KIE prompt rule 12 (INST-001 #21)
 
 - `SKILL.md` Registry & Prompt Doctrine: the stale house-band sentence now states rule 12 (95-100% of verified max target, 80% floor, enforced by `validate_prompt.py` via the shared enforcer); no executable, mapping, cap or test changed. Self-test 23/23.

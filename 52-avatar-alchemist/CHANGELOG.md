@@ -1,5 +1,9 @@
 # Changelog — Skill 52 (Avatar Alchemist)
 
+## v2.0.4 - 2026-11-10 - docs: retired 5,000-19,000 prompt band reworded to KIE prompt rule 12 (INST-001 #21)
+
+- `INSTRUCTIONS.md`, `MASTERDOC.md`, the golden-lumen-rise README and its rejection-results record: prose and recorded strings now state the 16,000 floor, 19,000 target and 20,000 cap instead of the retired 5,000-19,000 band. No code or check logic changed.
+
 ## v2.0.3 - 2026-11-09 - fix: image-prompt band follows KIE rule 12 at the 2.6 owner cap (INST-001 #21)
 
 - `AA-PIPELINE-MANIFEST.json` + `AVATAR-MANIFEST.json` + `SKILL.md` + `aa_build_check.py` doc header: the `char_band` floors move [5000,19000] -> [16000,20000] (80% floor / 100% ceiling of the GPT Image 2.6 owner cap 20000); the self-test synth sizes fixtures from the manifest band. `AA-GATE-HASHES.json` re-recorded; integrity check + self-test + preflight negative suite PASS.

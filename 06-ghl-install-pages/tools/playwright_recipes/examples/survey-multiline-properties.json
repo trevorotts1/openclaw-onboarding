@@ -1,0 +1,12 @@
+{
+  "location_id":"LOC", "location_name":"Fixture Account",
+  "start_url":"https://app.convertandflow.com/v2/location/LOC/survey-builder-v2/SURVEY",
+  "configuration":{
+    "expected_survey_name":"Existing survey", "expected_slide_count":2,
+    "slide_labels":["P1 - Slide 1","P2 - Slide 2"],
+    "multiline_questions":{
+      "expected":[[],[{"label":"Details","placeholder":"Tell us more","short_label":"Details","query_key":"details","required":false,"hidden":false}]],
+      "desired":[[],[{"label":"Your details","placeholder":"Tell us more","short_label":"Details","query_key":"details","required":true,"hidden":false}]]
+    }
+  }
+}

@@ -1,3 +1,8 @@
+## [1.3.28] - 2026-11-10 - merge-train integration of PRs 3065 and 3068: type-only sections get no generated images, prompt policy reads the owner cap
+
+- PR 3065 (MOCK-001 B8): `scripts/stage_executor.py` plans no generated-image slots for a type-only section; `tests/test_mockup_slot_coverage_floor.py` covers it.
+- PR 3068 (fix plan G-6, G-11, G-15, G-18): `references/prompt-budget-policy.json` and `scripts/validate_prompt.py` read the owner cap, preserving exact owner-cap refusals and routing the GPT Image 2.6 fallback through the mockable owner registry reader; generated images reach the final-mockups draw; the pre-spend freeze gate is guarded.
+
 ## [v1.3.26] - 2026-11-09
 
 - Resolve the missing-policy GPT Image owner cap from the canonical Skill 66 registry. Refuse unknown or invalid owner caps instead of duplicating a numeric limit in the prompt gate.

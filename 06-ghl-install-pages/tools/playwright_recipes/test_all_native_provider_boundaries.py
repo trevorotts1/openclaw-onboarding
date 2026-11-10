@@ -29,6 +29,8 @@ def native_cases(root):
  yield 'marketing_quiz_creation','quizzes.create',marketing_quiz()
  from test_split_variant_native import inputs as split_variant
  yield 'native_split_variant','funnels.split_variant',split_variant()
+ from test_survey_multiline_configuration import configuration as survey_multiline_properties
+ yield 'survey_multiline_properties','surveys.configure',survey_multiline_properties()
  from test_survey_text_populated import configuration as survey_text_properties
  yield 'survey_text_properties','surveys.configure',survey_text_properties()
  from test_survey_creation import inputs as whole_survey
@@ -128,8 +130,8 @@ class CompleteNativeProviderBoundaries(unittest.TestCase):
                     and node.func.id=='add' and node.args):
                 named |= literal_action(node.args[0])
         self.assertTrue(named <= covered,named-covered)
-        self.assertEqual(len(covered),63,'Update the bounded fixtures for newly added dynamic compiler actions')
-        self.assertEqual(len(rows),76)
+        self.assertEqual(len(covered),64,'Update the bounded fixtures for newly added dynamic compiler actions')
+        self.assertEqual(len(rows),77)
 
     def test_no_current_native_job_delegates_to_status_only_api_or_extension_callback(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,5 +1,14 @@
-## [v27.1.103] - 2026-11-10
+## [v27.1.104] - 2026-11-10
 
+- Configure existing survey Multi Line/LARGE_TEXT questions through full
+  label/query-key/property inventories, exact parent editor binding, one save
+  and independent reopen, including fresh replay readback. Creation remains
+  uncaptured. Recreate unchanged non-message outcome stack order while
+  preserving rich-message refusals and the unchanged prefix.
+- Route dedicated native inactive same-step split variation creation/reuse through
+  exact funnel, step and page identities, bound completion/replay readback and
+  uncertain-write journals. Active allocation profiles refuse before browser
+  acquisition until their native confirmation/readback is captured.
 - Bind existing custom Single Line TEXT fields in condition groups, stacks and
   outcome predicates through complete label/Query Key/type inventories and exact
   searchable selector matches. Preserve all custom siblings and native readback.
@@ -21,6 +30,10 @@
 - Record v27.1.102 delivery through #3096 and the actual remaining executable
   controls. Whole-operation counts remain 21 BUILT / 11 PARTIAL / 1 GENERIC_ONLY;
   targeted checks and independent review stay separate from native acceptance.
+
+## [v27.1.103] - 2026-11-10 - checkout recipe test pins six get_state reads (test only, no behaviour change)
+
+- `tools/playwright_recipes/test_pages_checkout.py` `NativeCheckoutTests` gains one assertion: the checkout frame records exactly six `get_state` observations, so the preflight, per-write read-backs and final preservation reads stay counted. No recipe code changed; this is the G3 patch bump for that test-only change (merge-train integration, GAP-LAND5).
 
 ## [v27.1.102] - 2026-11-10
 

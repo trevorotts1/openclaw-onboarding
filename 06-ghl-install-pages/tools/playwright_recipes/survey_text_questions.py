@@ -87,13 +87,16 @@ def snapshot(frame,plan):
 
 def _item(frame,plan):
     owner=_owners(frame,plan).nth(plan['target_slide']-1)
-    items=owner.locator('.form-field-wrapper').filter(has=frame.locator('[data-field-type="TEXT"]'))
+    family=plan.get('_native_field_type','TEXT')
+    controls={'TEXT':'input.form-placeholder.form-control','LARGE_TEXT':'textarea.form-placeholder.form-control'}
+    if family not in controls:raise Stop('Uncaptured native survey text family')
+    items=owner.locator('.form-field-wrapper').filter(has=frame.locator('[data-field-type="'+family+'"]'))
     index=plan.get('text_index',1)
     if type(index) is not int or index<1 or items.count()<index or 'text_index' not in plan and items.count()!=1:
         raise Stop('Captured Single Line positional TEXT inventory changed')
-    item=items.nth(index-1);label=_one(item.locator('[data-field-type="TEXT"]'),'Survey Single Line TEXT label changed')
+    item=items.nth(index-1);label=_one(item.locator('[data-field-type="'+family+'"]'),'Survey native text label changed')
     if item.locator('[data-field-type]').count()!=1:raise Stop('Survey Single Line owner contains another widget type')
-    control=_one(item.locator('input.form-placeholder.form-control'),'Survey Single Line input changed')
+    control=_one(item.locator(controls[family]),'Survey native text control changed')
     if any(control.get_attribute(key) is not None for key in ('id','name','type')) or control.input_value()!='':
         raise Stop('Survey Single Line differs from its captured empty no-ID input')
     click(label);click(_one(item.get_by_role('button',name='Open settings',exact=True),'Survey Single Line settings control changed'))
