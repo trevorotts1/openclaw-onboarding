@@ -1,11 +1,11 @@
 # Create a survey with an authored Radio question list
 
 The maintained host now accepts `surveys.create` with `radio_questions`. This is
-a bounded single-slide flow: create a new survey containing one explicitly
-requested captured standard field, independently reopen that exact new editor,
-then create/reuse the authored Radio definitions and place them on its saved
-slide through the existing measured Radio API/native chain. It does not create
-additional slides or configure conditional completion rules.
+a bounded flow with one to four slides: supply distinct captured standard fields,
+one per slide, independently reopen every saved owner, then create/reuse the
+authored Radio definitions and place them on the explicit `target_slide`. It does
+not configure conditional completion rules or place Radio questions on several
+different slides in one creation job.
 
 Use the existing host entrypoint and an already measured same-location
 `radio_field_capability` in the probes JSON:
@@ -35,7 +35,8 @@ Example authored inputs (replace identities, name, field key and options):
   "start_url": "https://app.convertandflow.com/v2/location/LOC/survey-builder/main",
   "name": "New authored survey",
   "allow_creation": true,
-  "standard_fields": ["Email"],
+  "standard_fields": ["Email", "First Name"],
+  "target_slide": 2,
   "radio_questions": [{
     "name": "Service",
     "field_key": "contact.service",
@@ -47,9 +48,10 @@ Example authored inputs (replace identities, name, field key and options):
 }
 ```
 
-Exactly one standard field is required: `Email`, `First Name`, `Last Name` or
-`Phone`. It provides a positively loaded native owner instead of assuming an
-empty slide is ready. Existing same-name surveys are refused when this creation
+Use one to four distinct standard fields from `Email`, `First Name`, `Last Name`
+and `Phone`. Each creates one positively loaded native slide owner. For more
+than one field, `target_slide` must be an explicit integer from 1 through the
+number of fields. The legacy one-field plan may omit it and retains slide 1. Existing same-name surveys are refused when this creation
 plan requests its standard field; they are never silently adopted. Existing
 Radio definitions require their exact `expected_id` and `allow_creation:false`.
 Expected-absent name/key collisions refuse before another schema POST.

@@ -42,6 +42,12 @@ requires reconciliation; the same job cannot insert another question on retry.
 
 This handler is a bounded source implementation based on native capture and
 focused offline tests. Installed Python execution, respondent submissions,
-scoring/results and learner behavior still require separate acceptance. Picture
-Choice is deliberately excluded from `question_batches` until cross-writer
-Picture Choice inventory support is captured and implemented.
+scoring/results and learner behavior still require separate acceptance. Mixed `question_batches` now accept Picture Choice before or after the other
+captured writers. Supply each complete following page inventory with the
+persisted `unique_key` and only `label`/`image_url` in prior picture options.
+Creation-only media-button names and `expected_persisted_unique_key` belong only
+to the new Picture Choice request. Subsequent writers preserve the native media,
+owner and style inventory. Each batch keeps its own journal and receipt; an
+uncertain Picture save blocks later writers and never repeats the earlier prefix.
+Every later batch still requires an explicit new empty page. Short Answer
+batches use the complete-inventory written-answer writer with TEXT only.

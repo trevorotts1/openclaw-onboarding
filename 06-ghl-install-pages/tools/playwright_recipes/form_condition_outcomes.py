@@ -1,7 +1,9 @@
 """Ordered native field, redirect, message and disqualification conditions.
 
 Each saved card remains one native effect. A complete authored ordered stack
-and exact existing prefix protect unrelated conditions. Native rich-message
+and exact existing prefix protect unrelated conditions. An explicit complete
+expected_rules inventory also permits removal of identified cards, without
+editing or reordering retained outcomes. Native rich-message
 card markup is hashed and preserved through append and independent reopen.
 The parent runner owns tenant checks, writer lease and uncertain-write journal.
 """
@@ -12,12 +14,14 @@ import re
 
 if __package__:
     from . import form_conditions as group
+    from . import form_condition_stack as stack
     from .assessments import reopen_editor
     from .field_placement import _close_initial
     from .skill6_playwright import Stop, click, fill, form_builder, wait_until
     from .form_submission import validate as validate_submission
 else:
     import form_conditions as group
+    import form_condition_stack as stack
     from assessments import reopen_editor
     from field_placement import _close_initial
     from skill6_playwright import Stop, click, fill, form_builder, wait_until
@@ -83,13 +87,10 @@ def _rule(value):
     return result
 
 
-def validate(step):
-    if (not isinstance(step,dict) or set(step)-{'id','action','rules'}
-            or step.get('action','native_condition_outcomes')!='native_condition_outcomes'):
-        raise Stop('Unsupported native conditional outcome stack')
-    rules=step.get('rules')
-    if not isinstance(rules,list) or not 1<=len(rules)<=50:
-        raise Stop('Native conditional outcomes require 1 to 50 ordered rules')
+def _rules(rules,*,allow_empty=False,reject_conflicts=True):
+    minimum=0 if allow_empty else 1
+    if not isinstance(rules,list) or not minimum<=len(rules)<=50:
+        raise Stop('Native conditional outcomes require '+str(minimum)+' to 50 ordered rules')
     normalized=[];seen=set()
     for value in rules:
         rule=_rule(value)
@@ -97,14 +98,45 @@ def validate(step):
         # effects are distinct; retain their explicit authored order.
         target=('field',rule['target']) if rule['effect'] in ('Show Field','Hide Field') else ('outcome',rule['effect'])
         identity=(*group._predicate_identity(rule),target)
-        if identity in seen:
+        if reject_conflicts and identity in seen:
             raise Stop('Duplicate/conflicting predicates for the same native effect require reconciliation')
         seen.add(identity);normalized.append(rule)
-    return {**deepcopy(step),'rules':normalized}
+    return normalized
+
+
+def _retained_indices(expected,wanted):
+    """Resolve a removal-only subset before any UI operation.
+
+    Exact duplicate prior rules cannot identify which rich-message card the
+    owner meant to retain. Never choose one of those cards implicitly.
+    """
+    indices=[]
+    for rule in wanted:
+        matches=[index for index,value in enumerate(expected) if value==rule]
+        if len(matches)!=1:
+            raise Stop('Explicit outcome removal requires one unambiguous unchanged prior card per retained rule; additions and edits are separate')
+        indices.append(matches[0])
+    if indices!=sorted(indices):
+        raise Stop('Explicit outcome removal must preserve the existing card order')
+    return indices
+
+
+def validate(step):
+    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules'}
+            or step.get('action','native_condition_outcomes')!='native_condition_outcomes'):
+        raise Stop('Unsupported native conditional outcome stack')
+    plan={**deepcopy(step),'rules':_rules(step.get('rules'),allow_empty='expected_rules' in step)}
+    if 'expected_rules' in step:
+        plan['expected_rules']=_rules(step['expected_rules'],allow_empty=True,reject_conflicts=False)
+        _retained_indices(plan['expected_rules'],plan['rules'])
+    return plan
 
 
 def configuration_hash(step):
-    return hashlib.sha256(json.dumps(validate(step)['rules'],sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    plan=validate(step)
+    binding=({'expected_rules':plan['expected_rules'],'rules':plan['rules']}
+             if 'expected_rules' in plan else plan['rules'])
+    return hashlib.sha256(json.dumps(binding,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
 def _one(node,reason):
@@ -299,24 +331,36 @@ def configure(page,step):
         return _one(frame.get_by_role('dialog'),'Native outcome Conditions drawer is ambiguous')
     dialog=open_conditions()
     before=_inventory(dialog);wanted=plan['rules']
-    if len(before)>len(wanted) or [record['rule'] for record in before]!=wanted[:len(before)]:
-        raise Stop('Existing native outcomes are not the exact authored prefix; reconcile before writing')
     current=before
-    for rule in wanted[len(before):]:
-        if _inventory(dialog)!=current:raise Stop('Native outcome stack changed after full preflight')
-        current=_author(frame,dialog,rule,current,identity)
+    if 'expected_rules' in plan:
+        actual=[record['rule'] for record in before]
+        if actual!=wanted:
+            if actual!=plan['expected_rules']:
+                raise Stop('Existing native outcomes differ from the complete expected previous inventory; reconcile before removal')
+            retained=set(_retained_indices(plan['expected_rules'],wanted))
+            for index in reversed(range(len(before))):
+                if index not in retained:
+                    current=stack._delete_card(frame,dialog,current,identity,index=index,inventory=_inventory)
+        if not current:stack._empty_state(dialog)
+    else:
+        if len(before)>len(wanted) or [record['rule'] for record in before]!=wanted[:len(before)]:
+            raise Stop('Existing native outcomes are not the exact authored prefix; reconcile before writing')
+        for rule in wanted[len(before):]:
+            if _inventory(dialog)!=current:raise Stop('Native outcome stack changed after full preflight')
+            current=_author(frame,dialog,rule,current,identity)
     if _inventory(dialog)!=current or [record['rule'] for record in current]!=wanted:
         raise Stop('Native outcome stack differs before drawer Save')
     identity();click(_one(dialog.locator('#conditional-logic-save-close'),'Native outcome drawer Save changed'))
     dialog.wait_for(state='hidden',timeout=45000)
-    changed=len(before)!=len(wanted)
+    changed=before!=current
     if changed:
         identity();save=_one(frame.get_by_role('button',name='Save',exact=True),'Native outcome outer Save changed')
         click(save);group._wait_for_form_save(page,save)
     reopen_editor(page,'form',name,editor_url)
     frame=form_builder(page);dialog=open_conditions()
     if _inventory(dialog)!=current:
-        raise Stop('Native outcomes or protected message markup did not persist after independent reopen; do not repeat append')
+        raise Stop('Native outcomes or protected message markup did not persist after independent reopen; do not repeat the write')
+    if not current:stack._empty_state(dialog)
     click(_one(dialog.locator('#conditional-logic-save-close'),'Reopened native outcome drawer Save changed'))
     dialog.wait_for(state='hidden',timeout=45000)
     return {'status':'CONDITION_OUTCOMES_SAVED_AND_REOPENED' if changed else 'CONDITION_OUTCOMES_REUSED_AND_REOPENED',
