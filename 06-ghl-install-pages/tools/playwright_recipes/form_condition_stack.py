@@ -159,8 +159,7 @@ def _author(frame,dialog,rule,prefix,identity):
         group._choose(frame,'#selectedField-'+str(index),clause['if_field'])
         group._choose(frame,'#selectedOperation-'+str(index),clause['operator'])
         if clause['operator'] in group.BINARY:
-            value=group._one(modal.locator('#inputValue-'+str(index)),
-                             'Native condition value control changed')
+            value=group._value_input(modal,index)
             fill(value,clause['value'])
             if value.input_value()!=clause['value']:
                 raise Stop('Native condition value did not accept the authored text')
@@ -214,7 +213,7 @@ def _edit(frame,dialog,index,before_rule,rule,current,identity):
         group._choose(frame,'#selectedField-'+str(row),clause['if_field'])
         group._choose(frame,'#selectedOperation-'+str(row),clause['operator'])
         if clause['operator'] in group.BINARY:
-            value=group._one(modal.locator('#inputValue-'+str(row)),'Native edited condition value changed')
+            value=group._value_input(modal,row)
             fill(value,clause['value'])
             if value.input_value()!=clause['value']:
                 raise Stop('Native condition edit ignored the authored binary value')

@@ -308,10 +308,9 @@ def _predicate_modal(modal,rule):
         if (group._selected(modal.locator('#selectedField-'+str(index)))!=clause['if_field']
                 or group._selected(modal.locator('#selectedOperation-'+str(index)))!=clause['operator']):
             raise Stop('Native outcome modal source/operator differs')
-        value=modal.locator('#inputValue-'+str(index))
         if clause['operator'] in group.UNARY:
-            if value.count():raise Stop('Native unary outcome predicate has an ignored value control')
-        elif value.count()!=1 or value.input_value()!=clause['value']:
+            group._value_input(modal,index,unary=True)
+        elif group._value_input(modal,index).input_value()!=clause['value']:
             raise Stop('Native outcome predicate value differs')
     joins=modal.locator('.n-tabs')
     if joins.count()!=count:raise Stop('Native outcome connector count differs')
@@ -337,7 +336,7 @@ def _author(frame,dialog,rule,prefix,identity):
         group._choose(frame,'#selectedField-'+str(index),clause['if_field'])
         group._choose(frame,'#selectedOperation-'+str(index),clause['operator'])
         if clause['operator'] in group.BINARY:
-            value=_one(modal.locator('#inputValue-'+str(index)),'Native outcome predicate value input changed')
+            value=group._value_input(modal,index)
             fill(value,clause['value'])
         if index<len(rule['clauses'])-1:
             joins=modal.locator('.n-tabs')
@@ -396,7 +395,7 @@ def _edit(frame,dialog,index,before_rule,rule,current,identity):
         group._choose(frame,'#selectedField-'+str(row),clause['if_field'])
         group._choose(frame,'#selectedOperation-'+str(row),clause['operator'])
         if clause['operator'] in group.BINARY:
-            control=_one(modal.locator('#inputValue-'+str(row)),'Native edited outcome predicate value changed')
+            control=group._value_input(modal,row)
             fill(control,clause['value'])
             if control.input_value()!=clause['value']:
                 raise Stop('Native outcome edit ignored the authored predicate value')

@@ -1,9 +1,10 @@
-"""Captured Single Line survey questions on explicitly empty slide owners.
+"""Captured Single Line survey questions on empty or inventoried TEXT slides.
 
 Captured 2026-11-10: Single Line0 drag handle, empty slide canvas, TEXT input,
 General Settings and saved/reopened label, placeholder, short label and Query Key.
 Each invocation journals intent before its single insertion; uncertain writes are
-never retried. Populated-slide append and other widgets require separate captures.
+never retried. Populated append uses its captured positive blank-tail pointer path.
+Other widget types require separate captures.
 """
 from copy import deepcopy
 import hashlib
@@ -78,7 +79,7 @@ def snapshot(frame,plan):
     return [owners.nth(index).locator('.form-field-wrapper').evaluate_all('''items => items.map(item => ({
         types:Array.from(item.querySelectorAll('[data-field-type]')).map(e=>e.getAttribute('data-field-type')),
         labels:Array.from(item.querySelectorAll('[data-field-type]')).map(e=>e.textContent.trim()),
-        short_labels:Array.from(item.querySelectorAll('[aria-label="Short Label"]')).map(e=>e.textContent),
+        short_labels:Array.from(item.querySelectorAll('.short-label')).map(e=>e.textContent),
         controls:Array.from(item.querySelectorAll('input,textarea,select')).map(e=>
             [e.tagName,e.getAttribute('type'),e.getAttribute('name'),e.getAttribute('placeholder'),e.value])
     }))''') for index in range(owners.count())]
@@ -87,8 +88,10 @@ def snapshot(frame,plan):
 def _item(frame,plan):
     owner=_owners(frame,plan).nth(plan['target_slide']-1)
     items=owner.locator('.form-field-wrapper').filter(has=frame.locator('[data-field-type="TEXT"]'))
-    if items.count()!=1:raise Stop('Captured Single Line owner must contain exactly its sole authored TEXT question')
-    item=items.nth(0);label=_one(item.locator('[data-field-type="TEXT"]'),'Survey Single Line TEXT label changed')
+    index=plan.get('text_index',1)
+    if type(index) is not int or index<1 or items.count()<index or 'text_index' not in plan and items.count()!=1:
+        raise Stop('Captured Single Line positional TEXT inventory changed')
+    item=items.nth(index-1);label=_one(item.locator('[data-field-type="TEXT"]'),'Survey Single Line TEXT label changed')
     if item.locator('[data-field-type]').count()!=1:raise Stop('Survey Single Line owner contains another widget type')
     control=_one(item.locator('input.form-placeholder.form-control'),'Survey Single Line input changed')
     if any(control.get_attribute(key) is not None for key in ('id','name','type')) or control.input_value()!='':
@@ -116,6 +119,28 @@ def read_question(frame,plan):
     return values
 
 
+def write_question(frame,plan,question):
+    validate_question(question)
+    _item(frame,plan)
+    # Turn active exclusions off before enabling the requested counterpart.
+    for key,selector in FLAGS.items():
+        node=_one(frame.locator(selector),'Survey Single Line Boolean changed')
+        if not question[key] and node.get_attribute('aria-checked')=='true':node.set_checked(False)
+    for key,selector in PROPERTIES.items():
+        node=_one(frame.locator(selector),'Survey Single Line property changed')
+        if node.input_value()!=question[key]:fill(node,question[key]);node.press('Tab')
+    for key,selector in FLAGS.items():
+        node=_one(frame.locator(selector),'Survey Single Line Boolean changed')
+        if (node.get_attribute('aria-checked')=='true')!=question[key]:
+            if 'n-checkbox--disabled' in (node.get_attribute('class') or '').split():
+                raise Stop('Survey Single Line requested Boolean is disabled')
+            node.set_checked(question[key])
+    if question['hidden']:
+        fill(_one(frame.locator('#fieldHiddenvalue input'),'Survey Single Line Hidden value changed'),question['hidden_value'])
+    _close_properties(frame)
+    if read_question(frame,plan)!=question:raise Stop('Survey Single Line ignored an authored property')
+
+
 def _fingerprint(plan):
     return hashlib.sha256(json.dumps(plan,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
@@ -129,6 +154,29 @@ def validate_receipt(value,plan):
             or not isinstance(value['saved_snapshot'],list) or len(value['saved_snapshot'])!=plan['expected_slide_count']):
         raise Stop('Survey Single Line completion is unbound or malformed')
     return deepcopy(value)
+
+
+def _append_populated(page,handle,canvas,last):
+    """One real pointer drag into the captured blank tail, never a new page."""
+    handle.scroll_into_view_if_needed();canvas.scroll_into_view_if_needed()
+    source=handle.bounding_box();box=canvas.bounding_box();previous=last.bounding_box()
+    if not source or not box or not previous or min(source['width'],source['height'],box['width'],box['height'])<=0:
+        raise Stop('Populated survey append geometry is not measurable')
+    bottom=previous['y']+previous['height'];tail=box['y']+box['height']-bottom
+    if (previous['height']<=0 or previous['y']<box['y']-1 or tail<32
+            or previous['x']<box['x']-1 or previous['x']+previous['width']>box['x']+box['width']+1):
+        raise Stop('Populated survey append lacks the captured positive blank tail')
+    # Captured x450.879 within a766.758 canvas and y89.873 below the prior
+    # wrapper; stay inside that tail on smaller rendered layouts as well.
+    target=(box['x']+box['width']*(450.879/766.758),bottom+min(89.873,tail/2))
+    if not box['x']+8<target[0]<box['x']+box['width']-8 or not bottom+8<target[1]<box['y']+box['height']-8:
+        raise Stop('Populated survey append point is outside the captured safe tail')
+    page.mouse.move(source['x']+source['width']/2,source['y']+source['height']/2)
+    page.mouse.down()
+    try:
+        page.mouse.move(*target,steps=15)
+        for _ in range(3):page.mouse.move(*target)
+    finally:page.mouse.up()
 
 
 def configure(page,plan,evidence_root):
@@ -145,11 +193,19 @@ def configure(page,plan,evidence_root):
             raise Stop('Completed Survey Single Line saved owner changed')
         return done
     owners=_owners(frame,plan);owner=owners.nth(plan['target_slide']-1)
-    if (owner.locator('.form-field-wrapper').count()!=0
-            or owner.get_by_text('Drag and drop components',exact=True).count()!=1):
-        raise Stop('Survey Single Line insertion requires its positively empty captured owner')
+    prior=plan.get('expected_prior',[])
+    if not isinstance(prior,list) or owner.locator('.form-field-wrapper').count()!=len(prior):
+        raise Stop('Survey Single Line populated owner differs from the complete prior question inventory')
+    for index,question in enumerate(prior,1):
+        validate_question(question)
+        if read_question(frame,{**plan,'text_index':index})!=question:
+            raise Stop('Survey Single Line prior question properties changed before append')
+    if not prior and owner.get_by_text('Drag and drop components',exact=True).count()!=1:
+        raise Stop('Survey Single Line insertion lacks its positively empty captured owner')
     before=snapshot(frame,plan)
-    click(_one(owner.get_by_role('button',name='Add Elements',exact=True),'Survey empty-owner Add Elements changed'))
+    opener=(owner.locator('.form-field-wrapper').nth(len(prior)-1).get_by_role('button',name='Add Element',exact=True) if prior else
+        owner.get_by_role('button',name='Add Elements',exact=True))
+    click(_one(opener,'Survey Single Line element drawer opener changed'))
     dialog=_one(frame.get_by_role('dialog'),'Survey Element drawer changed')
     _one(dialog.get_by_text('Survey Element',exact=True),'Survey Element title changed')
     click(_one(dialog.get_by_text('Quick Add',exact=True),'Survey Quick Add tab changed'))
@@ -158,35 +214,28 @@ def configure(page,plan,evidence_root):
     canvas=_one(owner.locator('.builder_sub_container'),'Survey Single Line empty canvas changed')
     record={'configuration_sha256':fingerprint,'status':'INTENT_RECORDED'};secure_json(state,record)
     try:
-        handle.drag_to(canvas,timeout=45000)
-        wait_until(lambda:owner.locator('.form-field-wrapper').count()==1,'Survey Single Line insertion did not produce exactly one widget')
+        if prior:
+            _append_populated(page,handle,canvas,owner.locator('.form-field-wrapper').nth(len(prior)-1))
+        else:handle.drag_to(canvas,timeout=45000)
+        wait_until(lambda:owner.locator('.form-field-wrapper').count()==len(prior)+1,'Survey Single Line insertion did not produce exactly one widget')
         _close_initial(frame)
         after=snapshot(frame,plan)
-        if any(row!=before[index] for index,row in enumerate(after) if index!=plan['target_slide']-1):
+        if (any(row!=before[index] for index,row in enumerate(after) if index!=plan['target_slide']-1)
+                or after[plan['target_slide']-1][:-1]!=before[plan['target_slide']-1]):
             raise Stop('Survey Single Line insertion changed an unrequested owner')
+        for index,question in enumerate(prior,1):
+            if read_question(frame,{**plan,'text_index':index})!=question:
+                raise Stop('Survey Single Line append changed an existing question property')
         previous=read_question(frame,plan)
         if (not re.fullmatch(r'Single Line [a-z0-9]{6}',previous['label'])
                 or previous['query_key']!='single_line_'+previous['label'].rsplit(' ',1)[1]
                 or previous['placeholder']!='Enter your text' or previous['short_label']
                 or previous['required'] or previous['hidden']):
             raise Stop('New survey Single Line defaults differ from native capture')
-        _item(frame,plan)
-        for key,selector in PROPERTIES.items():
-            node=_one(frame.locator(selector),'Survey Single Line property changed')
-            fill(node,plan['question'][key]);node.press('Tab')
-        for key,selector in FLAGS.items():
-            node=_one(frame.locator(selector),'Survey Single Line Boolean changed')
-            wanted=plan['question'][key]
-            if (node.get_attribute('aria-checked')=='true')!=wanted:
-                if 'n-checkbox--disabled' in (node.get_attribute('class') or '').split():
-                    raise Stop('Survey Single Line requested Boolean is disabled')
-                node.set_checked(wanted)
-        if plan['question']['hidden']:
-            fill(_one(frame.locator('#fieldHiddenvalue input'),'Survey Single Line Hidden value changed'),plan['question']['hidden_value'])
-        _close_properties(frame)
-        if read_question(frame,plan)!=plan['question']:raise Stop('Survey Single Line ignored an authored property')
+        write_question(frame,plan,plan['question'])
         desired=snapshot(frame,plan)
-        if any(row!=before[index] for index,row in enumerate(desired) if index!=plan['target_slide']-1):
+        if (any(row!=before[index] for index,row in enumerate(desired) if index!=plan['target_slide']-1)
+                or desired[plan['target_slide']-1][:-1]!=before[plan['target_slide']-1]):
             raise Stop('Survey Single Line property edit changed an unrequested slide')
         save=_one(frame.get_by_role('button',name='Save',exact=True),'Survey Single Line Save changed')
         click(save);wait_until(lambda:save.is_enabled(),'Survey Single Line Save did not finish')

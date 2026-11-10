@@ -10,14 +10,37 @@
       "kind": "text",
       "target_slide": 1,
       "questions": [
-        {"label": "What is your goal?", "placeholder": "Your answer", "short_label": "Goal", "query_key": "intake_goal", "required": true, "hidden": false}
+        {
+          "label": "What is your goal?",
+          "placeholder": "Your answer",
+          "short_label": "Goal",
+          "query_key": "intake_goal",
+          "required": true,
+          "hidden": false
+        },
+        {
+          "label": "What is your timeline?",
+          "placeholder": "Your answer",
+          "short_label": "Goal",
+          "query_key": "intake_timeline",
+          "required": true,
+          "hidden": false
+        }
       ]
     },
     {
       "kind": "text",
       "target_slide": 2,
       "questions": [
-        {"label": "Source", "placeholder": "", "short_label": "", "query_key": "intake_source", "required": false, "hidden": true, "hidden_value": "approved-intake"}
+        {
+          "label": "Source",
+          "placeholder": "",
+          "short_label": "",
+          "query_key": "intake_source",
+          "required": false,
+          "hidden": true,
+          "hidden_value": "approved-intake"
+        }
       ]
     }
   ]

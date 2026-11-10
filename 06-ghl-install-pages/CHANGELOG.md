@@ -1,5 +1,11 @@
 ## [v27.1.103] - 2026-11-10
 
+- Bind native condition values to their captured nested text inputs; unary
+  clauses recognize the positive invisible-wrapper state without filling it.
+- Append ordered Single Line TEXT questions beneath complete populated survey
+  inventories, support multiple TEXT stages on one slide, and edit existing TEXT
+  properties through a bound action. Provider coverage now includes 62 dynamic
+  actions and 75 bounded jobs; keep separate journals and exact saved readback.
 - Recreate an explicitly requested complete Show/Hide order through captured
   controls, preserving the unchanged prefix and validating saved order on reopen.
 - Remove exact inactive course Image Block media against inventoried positive

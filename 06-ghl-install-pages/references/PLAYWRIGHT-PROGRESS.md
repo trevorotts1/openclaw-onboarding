@@ -11,7 +11,7 @@ rerun or competing batch is needed. Batch #3096 merged at `710b36e9c1c36d3c72a33
 on November 10 at 1:54:47 AM Eastern.
 Skill 6 v27.1.101 was delivered through #3090; v27.1.100 through #3085.
 
-The v27.1.103 continuation integrates four independently reviewed changes:
+The v27.1.103 continuation integrates six independently reviewed bounded changes:
 
 1. An explicit full Show/Hide rule permutation recreates only the changed suffix
    through captured Delete/author controls. The unchanged prefix is retained,
@@ -27,10 +27,22 @@ The v27.1.103 continuation integrates four independently reviewed changes:
    Short Label, Query Key, Required/Hidden and conditional Hidden value on an
    explicitly empty slide. TEXT can precede Radio on that slide; text-only
    creation requires no Radio schema API. Child journals and aggregate reopen
-   verify all saved properties and order. Populated-slide append remains separate.
+   verify all saved properties and order. The later continuation below also covers
+   populated-slide append and existing TEXT property edits.
 
-All additions passed their targeted builder checks. All four passed one
-independent source review without blocking defects or repeated tests. Integration
+5. Compound, Show/Hide and outcome condition writers bind the captured nested
+   text input. Unary clauses accept the positive invisible-wrapper shape; binary
+   clauses require the visible typed textbox and its exact authored value.
+6. Ordered survey TEXT batches can append beneath the complete populated canvas,
+   with a separate retained journal per question and multiple stages on one slide.
+   The new `native_survey_text_configuration` action edits exact inventoried TEXT
+   properties while preserving sibling widgets. The aggregate receipt checks all
+   saved properties and order. Radio dependencies remain separate.
+
+All six additions passed targeted builder checks and one independent source
+review without blocking defects or repeated tests. The latest condition fix's
+111 targeted checks passed in 0.212s; survey continuation's 24 checks passed and
+its matrix covers 62 dynamic actions and 75 bounded jobs. Integration
 uses changed-file AST/JSON/version/whitespace validation only; no optional full
 local suite or repeated builder tests ran. Final installed-script,
 respondent and learner acceptance remain separate.
@@ -45,8 +57,8 @@ bounded changes do not promote an entire operation prematurely.
 | `funnels.split_variant` | Native variation creation/reuse and traffic allocation/readback. |
 | `forms.configure` | Remaining widgets/properties, Address parent controls, Dropdown creation and embed controls. |
 | `forms.conditions` | Native drag, nested/mixed groups and broader field identities; explicit unchanged Show/Hide order recreation is built. |
-| `surveys.create` | Other widgets/properties, populated-slide TEXT append, media and broader flows; captured empty-slide Single Line flags are built. |
-| `surveys.configure` | Additional question controls, compound predicates and completion/rule lifecycle. |
+| `surveys.create` | Other widgets, media and broader flows; captured Single Line creation, populated append and existing TEXT property edits are built. |
+| `surveys.configure` | Other question controls, compound predicates and completion/rule lifecycle; existing TEXT property edits are built. |
 | `quizzes.create` | Reliable populated-page append; another active session owns the quiz editor and its continuation. |
 | `quizzes.configure` | Picture option/style/upload controls, populated-page append, Jump To, tier lifecycle and result media/styles. |
 | `courses.configure_ui` | Video lifecycle, background/Custom Block image removal and uncaptured controls; exact Image Block removal is built. |

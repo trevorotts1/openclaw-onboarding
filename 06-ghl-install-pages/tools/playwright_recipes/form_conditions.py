@@ -164,6 +164,33 @@ def _expected(plan):
              'outcome':[plan['effect'],plan['target']]}]
 
 
+def _value_input(modal,index,*,unary=False):
+    """Bind the captured n-input DIV to its actual nested text input.
+
+    Unary operators retain a positively invisible wrapper in the native DOM.
+    Its existence is not an ignored authored value. A visible value control,
+    ambiguous wrapper or changed nested-input shape still refuses.
+    """
+    wrapper=modal.locator('#inputValue-'+str(index))
+    if unary and wrapper.count()==0:return None  # previously captured absent shape
+    _one(wrapper,'Native condition value wrapper is missing or ambiguous')
+    classes=(wrapper.get_attribute('class') or '').split()
+    if 'n-input' not in classes:
+        raise Stop('Native condition value owner is not the captured n-input wrapper')
+    control=_one(wrapper.locator('input.n-input__input-el'),
+                 'Native condition nested value input is missing or ambiguous')
+    if (control.get_attribute('type')!='text'
+            or control.get_attribute('placeholder')!='Please Type a value here'):
+        raise Stop('Native condition nested value input identity changed')
+    if unary:
+        if 'invisible' not in classes or wrapper.is_visible() or control.is_visible():
+            raise Stop('Native unary condition unexpectedly exposes a value control')
+        return None
+    if 'invisible' in classes or not wrapper.is_visible() or not control.is_visible():
+        raise Stop('Native binary condition value input is not visible')
+    return control
+
+
 def _modal_state(modal,plan):
     count = len(plan['clauses'])
     sources = modal.locator('[id^="selectedField-"]')
@@ -176,11 +203,9 @@ def _modal_state(modal,plan):
                 or _selected(_one(modal.locator('#selectedOperation-'+str(index)),
                                   'Native compound operator is missing'))!=clause['operator']):
             raise Stop('Native compound clause differs from the authored source/operator')
-        value = modal.locator('#inputValue-'+str(index))
         if clause['operator'] in UNARY:
-            if value.count():
-                raise Stop('Unary compound clause unexpectedly contains a value control')
-        elif value.count()!=1 or value.input_value()!=clause['value']:
+            _value_input(modal,index,unary=True)
+        elif _value_input(modal,index).input_value()!=clause['value']:
             raise Stop('Native compound value differs from the authored clause')
     joins = modal.locator('.n-tabs')
     if joins.count()!=count:
@@ -256,8 +281,7 @@ def configure(page,step):
             _choose(frame,'#selectedField-'+str(index),clause['if_field'])
             _choose(frame,'#selectedOperation-'+str(index),clause['operator'])
             if clause['operator'] in BINARY:
-                value = _one(modal.locator('#inputValue-'+str(index)),
-                             'Native binary compound value control changed')
+                value = _value_input(modal,index)
                 fill(value,clause['value'])
                 if value.input_value()!=clause['value']:
                     raise Stop('Native compound value did not accept the authored text')
