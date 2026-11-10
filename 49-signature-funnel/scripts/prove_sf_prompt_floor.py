@@ -399,8 +399,8 @@ def verify(ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
         if receipt:
             # A4: the owner rule's 80-to-below-95 percent band PASSES with a warn-and-expand
             # warning naming the characters to ADD. That verdict was dropped here (the string
-            # "warning" appeared zero times in this file). SURFACE it (ledger ruling G-9: the
-            # UNIT says surface only, so this does not fail the prompt closed).
+            # "warning" appeared zero times in this file). Surfaced here; the same verdict
+            # fails closed at FLOOR 1c (AF-FUN-PROMPT-UNEXPANDED).
             for warning in (receipt.get("verdict") or {}).get("warnings") or []:
                 notes.append("WARNING (prompt policy) %s section %s: %s"
                              % (rec.get("page_type", "?"), rec.get("section", "?"), warning))
