@@ -1,3 +1,21 @@
+## [v27.1.108] - 2026-11-10
+
+- Configure captured survey completion plain Message or credential-free HTTPS
+  Redirect to URL through the existing On Submit executor and survey profile.
+  Keep exact editor identity, conditional-precedence acknowledgment, save/reopen
+  and receipt binding. Order Confirmation remains on the payment-contract rail.
+- Independently reopen saved survey state before completed replay checks its
+  mode/value. Retain the unchanged journal and perform no repeat write.
+- Reconcile actual v107 delivery through batch #3123/member #3122. Record 54
+  completed behavior families: 53 delivered on verified main and this one in
+  the prepared unit, with 69 dynamic actions and 97 bounded compiler jobs.
+  Broad counts stay 23 BUILT, 10 PARTIAL and 0 GENERIC_ONLY. Remaining compound
+  predicates, conditional disqualification and other rule lifecycle stay open.
+- Retain the confirmed source review and focused check results. Recover exact
+  reviewed source bytes after the executor outage using committed patches and
+  independently matching Git blob hashes. Native maintained-script/respondent
+  acceptance is NOT_RUN; manual saved/reopened settings are separate proof.
+
 ## [v27.1.107] - 2026-11-10
 
 - Create owned Number survey questions through the existing shell/slide pipeline.

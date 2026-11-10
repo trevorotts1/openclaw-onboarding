@@ -44,6 +44,9 @@ def native_cases(root):
  from test_survey_checkbox_creation import inputs as checkbox_survey, configuration as checkbox_properties
  yield 'checkbox_survey_creation','surveys.create',checkbox_survey()
  yield 'checkbox_survey_properties','surveys.configure',checkbox_properties()
+ from test_survey_submission import inputs as survey_submission
+ for mode in ('Message','Redirect to URL'):
+  yield 'survey_submission_'+mode,'surveys.configure',survey_submission(mode)
  from test_survey_dropdown_creation import inputs as dropdown_survey, configuration as dropdown_properties
  for family in ('single_dropdown','multi_dropdown'):
   yield family+'_survey_creation','surveys.create',dropdown_survey(family)
@@ -153,8 +156,8 @@ class CompleteNativeProviderBoundaries(unittest.TestCase):
                     and node.func.id=='add' and node.args):
                 named |= literal_action(node.args[0])
         self.assertTrue(named <= covered,named-covered)
-        self.assertEqual(len(covered),68,'Update the bounded fixtures for newly added dynamic compiler actions')
-        self.assertEqual(len(rows),95)
+        self.assertEqual(len(covered),69,'Update the bounded fixtures for newly added dynamic compiler actions')
+        self.assertEqual(len(rows),97)
 
     def test_no_current_native_job_delegates_to_status_only_api_or_extension_callback(self):
         with tempfile.TemporaryDirectory() as directory:

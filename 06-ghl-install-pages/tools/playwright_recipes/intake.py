@@ -276,6 +276,13 @@ def validate_intake(operation, data):
             quiz_creation(data)
     if operation == 'surveys.configure' and isinstance(data.get('configuration'), dict):
         config = data['configuration']
+        if 'submission' in config:
+            if set(config)!={'submission'} or 'options' in data:
+                raise Stop('Survey completion settings require their own independently journaled job')
+            if not isinstance(config['submission'],dict) or set(config['submission']).intersection({'id','action','_context'}):
+                raise Stop('Survey submission inputs must not override runner metadata')
+            from playwright_recipes.form_submission import validate
+            validate(config['submission'])
         if 'widget_fields' in config:
             if 'options' in data:raise Stop('Survey widget fields require their own independently journaled job')
             if set(config).intersection({'location_id','location_name','start_url'}):
