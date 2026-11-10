@@ -1,0 +1,48 @@
+"""Compile ordered mixed quiz questions using captured empty-page writers.
+
+Each batch keeps its own runner intent and Save/reopen receipt. No native page
+identity, question key or property default is inferred from an earlier result.
+The caller supplies the full expected inventory at every boundary, and this
+compiler proves that those inventories describe one continuous authored plan.
+"""
+from copy import deepcopy
+
+if __package__:
+    from .skill6_playwright import Stop
+else:
+    from skill6_playwright import Stop
+
+
+def compile_batches(data):
+    from playwright_recipes.intake import QUIZ_CREATION, quiz_creation
+
+    config = data.get('configuration')
+    if not isinstance(config, dict) or 'question_batches' not in config:
+        return None
+    if set(config) != {'question_batches'} or 'options' in data:
+        raise Stop('Mixed quiz questions require an exclusive ordered question-batch job')
+    batches = config['question_batches']
+    if not isinstance(batches, list) or not 2 <= len(batches) <= 50:
+        raise Stop('Mixed quiz authoring requires two to fifty explicit question batches')
+    result = []
+    expected_pages = None
+    quiz_name = None
+    for index, batch in enumerate(batches):
+        if (not isinstance(batch, dict) or len(batch) != 1
+                or not set(batch).issubset(set(QUIZ_CREATION) - {'picture_choice_questions'})):
+            raise Stop('Every quiz batch requires one captured question-writer request')
+        request = {**data, 'configuration': deepcopy(batch)}
+        action, payload = quiz_creation(request)
+        if len(payload['questions']) != 1:
+            raise Stop('Mixed quiz batches author exactly one question per confirmed empty page')
+        if index and (payload['expected_quiz_name'] != quiz_name or payload['pages'] != expected_pages):
+            raise Stop('Quiz batch inventory must exactly retain every earlier page and authored question')
+        if not payload.get('create_page') and (index or payload['pages'][payload['target_page'] - 1]['questions']):
+            raise Stop('Mixed quiz batches require an existing empty first page and explicit new pages thereafter')
+        quiz_name = payload['expected_quiz_name']
+        expected_pages = deepcopy(payload['pages'])
+        if payload.get('create_page'):
+            expected_pages.append({'label': payload['new_page_label'], 'questions': []})
+        expected_pages[payload['target_page'] - 1]['questions'].extend(deepcopy(payload['questions']))
+        result.append((action, payload))
+    return result
