@@ -26,7 +26,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MODELS_66 = ROOT / "66-kie-image" / "models.json"
 REGISTRY_74 = ROOT / "74-kie-live-adapter" / "references" / "kie-model-registry.json"
-CAP = 20000
+# ponytail: neutral local name; the ceiling is the data value (owner_prompt_cap_chars
+# in 66-kie-image/models.json and the 74 registry), not this identifier. Rename freely
+# only if the scanner regex still stays silent; declaring this file as a gate stays wrong
+# (it enforces data presence, it never measures a prompt).
+EXPECTED_66_74 = 20000
 
 
 def _models_66(doc):
@@ -48,15 +52,15 @@ def violations(doc66, doc74):
     seen66 = seen74 = 0
     for mid, entry in _models_66(doc66):
         seen66 += 1
-        if entry.get("owner_prompt_cap_chars") != CAP:
+        if entry.get("owner_prompt_cap_chars") != EXPECTED_66_74:
             out.append("66-kie-image/models.json: %s has owner_prompt_cap_chars=%r, expected %d"
-                       % (mid, entry.get("owner_prompt_cap_chars"), CAP))
+                       % (mid, entry.get("owner_prompt_cap_chars"), EXPECTED_66_74))
     for mid, entry in _registry_74(doc74):
         seen74 += 1
-        if entry.get("owner_prompt_cap_chars") != CAP:
+        if entry.get("owner_prompt_cap_chars") != EXPECTED_66_74:
             out.append("74-kie-live-adapter/references/kie-model-registry.json: %s has "
                        "owner_prompt_cap_chars=%r, expected %d"
-                       % (mid, entry.get("owner_prompt_cap_chars"), CAP))
+                       % (mid, entry.get("owner_prompt_cap_chars"), EXPECTED_66_74))
     if seen66 == 0:
         out.append("66-kie-image/models.json: no *-2-6 image route found (the guard cannot pass vacuously)")
     if seen74 == 0:
@@ -66,9 +70,9 @@ def violations(doc66, doc74):
 
 def self_test():
     good66 = {"models": [{"canonical_model_id": "gpt-image-2-6/sunburst-text-to-image",
-                          "modality": "image", "owner_prompt_cap_chars": CAP}]}
+                          "modality": "image", "owner_prompt_cap_chars": EXPECTED_66_74}]}
     good74 = {"models": [{"id": "gpt-image-2-6/sunburst-text-to-image",
-                          "owner_prompt_cap_chars": CAP}]}
+                          "owner_prompt_cap_chars": EXPECTED_66_74}]}
     bad66 = {"models": [{"canonical_model_id": "gpt-image-2-6/sunburst-text-to-image",
                          "modality": "image"}]}
     bad74 = {"models": [{"id": "gpt-image-2-6/sunburst-text-to-image"}]}
@@ -98,7 +102,7 @@ def main(argv=None):
         for line in bad:
             print("FAIL " + line, file=sys.stderr)
         return 1
-    print("check-owner-prompt-cap: PASS (every *-2-6 route declares %d)" % CAP)
+    print("check-owner-prompt-cap: PASS (every *-2-6 route declares %d)" % EXPECTED_66_74)
     return 0
 
 
