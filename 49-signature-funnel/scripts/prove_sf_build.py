@@ -76,8 +76,12 @@ GHL_TOOLS = SKILL_DIR.parent / "06-ghl-install-pages" / "tools"  # Skill 6: ghl_
 EVIDENCE_REL = Path("build") / "evidence"        # Skill 6 verify evidence root inside the run dir
 PAGE_IMAGES_REL = Path("page-images")            # legacy_downsell_images.py --out-dir
 PAGE_IMAGES_RECEIPT = "page-images-receipt.json"
-# Same tuple as legacy_downsell_images.STAGES (a test holds them equal).
-VISUAL_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
+# The three stages legacy_downsell_images.STAGES writes, plus Skill 71's fourth
+# stage (`final-mockups`). Fix plan B3: a run without the final mockups cannot
+# certify, so the fourth stage is gated here even though the legacy tool stops
+# at three. A test holds the three legacy stages a subset of this tuple.
+VISUAL_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup", "final-mockups")
+LEGACY_VISUAL_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
 MIN_SECTION_CHARS = 10   # a section marker around no real text is not a built section
 QC_TOLERANCE = 0.05
 
