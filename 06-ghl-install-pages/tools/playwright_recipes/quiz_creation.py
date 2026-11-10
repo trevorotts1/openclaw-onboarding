@@ -36,7 +36,7 @@ def _editor_url(plan,editor_url):
 
 
 def _questions(plan,editor_url):
-    """Compile complete ordered page inventories for a new empty quiz only."""
+    """Compile each captured insertion against the complete evolving page inventory."""
     from playwright_recipes.intake import QUIZ_CREATION,quiz_creation
     pages=[{'label':'Page 1','questions':[]}];steps=[]
     for index,batch in enumerate(plan['configuration']['question_batches']):
@@ -44,15 +44,19 @@ def _questions(plan,editor_url):
             raise Stop('Quiz creation requires one captured question writer in each ordered batch')
         key,value=next(iter(batch.items()))
         allowed={'questions','acknowledge_shared_field_options'} if key in ('multiple_choice_questions','picture_choice_questions') else {'questions'}
-        if not isinstance(value,dict) or set(value)!=allowed or not isinstance(value['questions'],list) or len(value['questions'])!=1:
-            raise Stop('Each new-quiz batch authors exactly one question without caller-owned page/editor identities')
+        if not isinstance(value,dict) or set(value)-{'target_page'}!=allowed or not isinstance(value['questions'],list) or len(value['questions'])!=1:
+            raise Stop('Each new-quiz batch authors one question and an optional exact target page; editor/page inventories remain owned')
         value=deepcopy(value)
+        target=value.pop('target_page',1 if index==0 else len(pages)+1)
+        if (type(target) is not int or not 1<=target<=len(pages)+1 or index==0 and target!=1):
+            raise Stop('New quiz target_page must identify an existing owner or its single next new page')
+        create_page=target==len(pages)+1
         if key=='short_answer_questions':
             if not isinstance(value['questions'][0],dict) or value['questions'][0].get('field_type')!='TEXT':
                 raise Stop('Short Answer creation requires its captured TEXT type')
             key='written_answer_questions'
-        payload={**value,'expected_quiz_name':plan['name'],'pages':deepcopy(pages),'target_page':index+1}
-        if index:payload.update(create_page=True,new_page_label='Page '+str(index+1))
+        payload={**value,'expected_quiz_name':plan['name'],'pages':deepcopy(pages),'target_page':target}
+        if create_page:payload.update(create_page=True,new_page_label='Page '+str(target))
         data={**{key:plan[key] for key in COMMON},'start_url':editor_url,'configuration':{key:payload}}
         action,payload=quiz_creation(data)
         steps.append({'id':'question_'+str(index+1),'action':action,'payload':payload})
@@ -60,8 +64,8 @@ def _questions(plan,editor_url):
         if action=='quiz_picture_choices':
             from playwright_recipes.quiz_picture_questions import _authored
             authored=_authored(authored)
-        if index:pages.append({'label':'Page '+str(index+1),'questions':[]})
-        pages[index]['questions'].append(authored)
+        if create_page:pages.append({'label':'Page '+str(target),'questions':[]})
+        pages[target-1]['questions'].append(authored)
     return {'location_id':plan['location_id'],'location_name':plan['location_name'],'start_url':editor_url,'steps':steps},pages
 
 
@@ -105,7 +109,7 @@ def validate_inputs(inputs):
     schema_url=source.scheme+'://'+source.netloc+'/v2/location/'+loc+'/quiz-builder-v2/SCHEMA_VALIDATION_ONLY'
     question_job,pages=_questions(plan,schema_url)
     configuration=_configuration(plan,schema_url)
-    scoring=configuration['steps'][0];questions=[owner['questions'][0] for owner in pages]
+    scoring=configuration['steps'][0];questions=[question for owner in pages for question in owner['questions']]
     scored=scoring.get('questions',[])
     indexes={index for index,question in enumerate(questions) if question['field_type'] in ('RADIO','CHECKBOX')}
     if (not indexes or scoring.get('expected_question_count')!=len(questions)
@@ -213,7 +217,7 @@ def validate_receipt(value,step):
     binding=_binding(value['shell_binding'],plan)
     if value['editor_url']!=binding['editor_url']:raise Stop('Quiz creation completion changed its generated editor')
     question_job,pages=_questions(plan,binding['editor_url']);configuration_job=_configuration(plan,binding['editor_url'])
-    if (type(value['question_count']) is not int or value['question_count']!=len(pages)
+    if (type(value['question_count']) is not int or value['question_count']!=sum(len(owner['questions']) for owner in pages)
             or type(value['scored_question_count']) is not int
             or value['scored_question_count']!=len(configuration_job['steps'][0]['questions'])):
         raise Stop('Quiz creation completion changed the authored question/score inventory')
@@ -271,6 +275,6 @@ def configure(page,step,evidence_root):
     reopen_editor(page,'quiz',plan['name'],editor_url);_final_inventory(page,plan,binding,pages)
     return validate_receipt({'status':'QUIZ_CREATED_SAVED_AND_REOPENED','location_id':plan['location_id'],
         'editor_url':editor_url,'configuration_sha256':configuration_hash(plan),'shell_binding':binding,
-        'question_receipts':questions,'configuration_receipts':configuration,'question_count':len(pages),
+        'question_receipts':questions,'configuration_receipts':configuration,'question_count':sum(len(owner['questions']) for owner in pages),
         'scored_question_count':len(configuration_job['steps'][0]['questions']),'independent_readback':'VERIFIED',
         'behavior_verified':False,'submission_verified':False},step)

@@ -35,6 +35,8 @@ def native_cases(root):
  yield 'address_parent','forms.configure',address_parent()
  from test_survey_text_populated import configuration as survey_text_properties
  yield 'survey_text_properties','surveys.configure',survey_text_properties()
+ from test_survey_widget_families import inputs as survey_number_properties
+ yield 'survey_number_properties','surveys.configure',survey_number_properties()
  from test_survey_creation import inputs as whole_survey
  yield 'whole_survey_creation','surveys.create',whole_survey()
  from test_survey_radio_creation import inputs as survey_radio
@@ -44,6 +46,9 @@ def native_cases(root):
  from test_field_placement_integration import inputs
  base=inputs();base.pop('add_fields')
  for k,extra in [('builtin',{'add_fields':['Website']}),('field_properties',{'fields':[{'field':'Last Name','required':True}]}),('address',{'address_fields':[{'field':'Street Address','current_query_key':'address','query_key':'street_address'}]}),('consent',{'consent':{'expected_query_key':'terms_and_conditions','required':True,'expected_required':False}})]:yield k,'forms.configure',{**base,**extra}
+ from test_form_widget_families import inputs as form_widgets
+ for family in ('number','checkbox','file_upload','signature','single_dropdown','multi_dropdown','url'):
+  yield 'form_widget_'+family,'forms.configure',form_widgets(family)
  yield 'settings','forms.settings',{**base,'settings':{'save_progress':True}}
  from test_form_schedule import spec
  yield 'schedule','forms.settings',{**base,'schedule':spec()['schedule']}
@@ -139,8 +144,8 @@ class CompleteNativeProviderBoundaries(unittest.TestCase):
                     and node.func.id=='add' and node.args):
                 named |= literal_action(node.args[0])
         self.assertTrue(named <= covered,named-covered)
-        self.assertEqual(len(covered),66,'Update the bounded fixtures for newly added dynamic compiler actions')
-        self.assertEqual(len(rows),80)
+        self.assertEqual(len(covered),68,'Update the bounded fixtures for newly added dynamic compiler actions')
+        self.assertEqual(len(rows),88)
 
     def test_no_current_native_job_delegates_to_status_only_api_or_extension_callback(self):
         with tempfile.TemporaryDirectory() as directory:

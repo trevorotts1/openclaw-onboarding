@@ -668,7 +668,7 @@ def _canvas_identity(scope):
         const types = Array.from(labels).map(e => e.getAttribute('data-field-type'));
         return {types,
             names:Array.from(item.querySelectorAll('input,textarea,select')).filter(e =>
-                !(types.length === 1 && types[0] === 'SINGLE_OPTIONS'
+                !(types.length === 1 && ['SINGLE_OPTIONS','MULTIPLE_OPTIONS'].includes(types[0])
                     && e.matches('input.dropdown-input.form-placeholder')
                     && !e.hasAttribute('id') && !e.hasAttribute('name'))).map(e =>
                 [e.tagName, e.getAttribute('type'), e.getAttribute('name')])};

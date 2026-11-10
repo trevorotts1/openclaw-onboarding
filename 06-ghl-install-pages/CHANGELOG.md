@@ -1,3 +1,23 @@
+## [v27.1.106] - 2026-11-10
+
+- Add owned native Number, Checkbox, File Upload and Signature form widgets,
+  plus Single Dropdown and Multi Dropdown authoring with captured options,
+  calculation and saved-identity controls through the shared widget adapter.
+- Author URL fields with captured all/allow-only/block domain modes and exact
+  saved readback. Export captured embed button palette colors and icons.
+- Append Multi Line questions to populated surveys while preserving complete
+  mixed TEXT/LARGE_TEXT inventories; configure existing survey Number properties.
+- Append captured quiz question profiles to an existing populated page while
+  preserving the same page owner and full prior question inventory.
+- Bind captured NUMERICAL condition sources and scalar comparisons. Numeric
+  targets and Between operators remain unsupported; do not infer broader scope.
+- Verify current saved community Details descriptions on completed replay.
+- Reconcile actual v104 #3102 and v105 #3105-through-#3107 delivery. Track all
+  49 completed feature additions separately: 36 delivered on examined main and
+  13 in this candidate until its batch actually merges. Coverage is 68 dynamic
+  actions and 88 bounded compiler jobs; broad operation counts stay 23 BUILT,
+  10 PARTIAL and 0 GENERIC_ONLY. Native final-script acceptance remains pending.
+
 ## [v27.1.105] - 2026-11-10
 
 - Complete the finite inactive NeoClassic course UI contract with captured

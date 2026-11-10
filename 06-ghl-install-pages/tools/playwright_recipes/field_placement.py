@@ -89,7 +89,7 @@ CAPTURED_FIELDS = {
     'Postal Code': {'field_type':'text', 'query_keys':('postal_code',)},
     'Address': {'field_type':'group', 'query_keys':('address', 'country', 'state', 'city', 'postal_code')},
 }
-SELECTABLE_INPUT_TYPES = frozenset(('text', 'email', 'date', 'select', 'RADIO'))
+SELECTABLE_INPUT_TYPES = frozenset(('text', 'email', 'date', 'select', 'RADIO', 'TEXT', 'LARGE_TEXT', 'SINGLE_OPTIONS'))
 NON_CONTACT_TYPES = frozenset(('terms_and_conditions', 'submit', 'h1'))
 CANVAS_ITEMS = '#form-builder-container > .form-field-wrapper'
 SUBMIT_DROP = CANVAS_ITEMS + ':has(button#submit-button)'
@@ -205,10 +205,25 @@ def _inventory(frame, *, allow_unknown_queries=False):
         field_type = labels.get_attribute('data-field-type')
         if field_type in NON_CONTACT_TYPES:
             continue
+        from playwright_recipes.form_widget_families import PROFILES as widget_profiles, _read as read_widget, _key as widget_key
+        family={profile['type']:kind for kind,profile in widget_profiles.items()}.get(field_type)
+        if family:
+            record=read_widget(frame,item,family)
+            key=record[widget_key(family)]
+            if key in inventory:
+                _stop('Duplicate native field query identities require reconciliation')
+            inventory[key]=field_type
+            _close_initial(frame)
+            continue
         if field_type not in SELECTABLE_INPUT_TYPES | {'group'}:
             _stop('Uncaptured existing native field type requires inventory capture')
         controls = item.locator('input')
-        if field_type == 'RADIO':
+        if field_type in ('TEXT','LARGE_TEXT','SINGLE_OPTIONS'):
+            # Existing captured custom text/dropdown writers already establish
+            # these label/Query Key panels. Select the wrapper's type label;
+            # textarea/dropdown inputs deliberately have no durable API ID.
+            selected=labels
+        elif field_type == 'RADIO':
             radios = item.locator('input[type="radio"]')
             if radios.count() < 1 or radios.count() != controls.count():
                 _stop('Native custom Radio input inventory is missing or changed')

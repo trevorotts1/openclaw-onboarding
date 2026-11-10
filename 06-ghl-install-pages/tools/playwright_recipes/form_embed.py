@@ -99,7 +99,11 @@ def validate(step):
                 or not appearance['changes'] or set(appearance['expected'])!=set(appearance['changes'])):
             raise Stop('Embed appearance requires matching nonempty previous/desired property keys')
         _appearance_values(appearance['expected']);_appearance_values(appearance['changes'])
-    return deepcopy(step)
+    plan=deepcopy(step)
+    if 'appearance' in config:
+        for values in plan['integration']['appearance'].values():
+            if 'button_color' in values:values['button_color']=_opaque_hex(values['button_color'])
+    return plan
 
 
 def configuration_hash(step):
@@ -352,8 +356,9 @@ def verify_export_configuration(code, config, desired, appearance=None):
                 or layout.get('fontSize')!=appearance['font_size']
                 or layout.get('buttonType')!=appearance['button_type']
                 or layout.get('buttonSize')!=appearance['button_size']
-                or layout.get('buttonIcon')!='chat'):
-            raise Stop('Native embed button appearance differs from its authored values or captured Chat icon')
+                or layout.get('buttonIcon')!=appearance.get('button_icon','chat')
+                or 'button_color' in appearance and _opaque_hex(layout.get('buttonColor'))!=appearance['button_color']):
+            raise Stop('Native embed button appearance differs from its authored values or captured color/icon binding')
     return validated
 
 
@@ -398,16 +403,20 @@ def _supported_desired(config, desired, *, layout_changed):
             raise Stop('Requested embed numeric value belongs to an inactive choice: ' + number)
 
 
-APPEARANCE_FIELDS=frozenset(('corner_radii','font_size','linked','button_type','button_size'))
+LEGACY_APPEARANCE_FIELDS=frozenset(('corner_radii','font_size','linked','button_type','button_size'))
+APPEARANCE_FIELDS=LEGACY_APPEARANCE_FIELDS|{'button_color','button_icon'}
 BUTTON_TYPES={'text':'Text','textIcon':'Icon + text','icon':'Icon only'}
 BUTTON_SIZES={'small':'Small','medium':'Medium','large':'Large'}
+# Captured native material-code/accessible-label catalog; no guessed icon names.
+BUTTON_ICONS={'send': 'Send', 'done': 'Done', 'check_circle': 'Check Circle', 'task_alt': 'Task Alt', 'checklist': 'Checklist', 'forward_to_inbox': 'Forward To Inbox', 'shopping_cart': 'Shopping Cart', 'shopping_bag': 'Shopping Bag', 'add_shopping_cart': 'Add Shopping Cart', 'payment': 'Payment', 'credit_card': 'Credit Card', 'account_balance_wallet': 'Account Balance Wallet', 'payments': 'Payments', 'monetization_on': 'Monetization On', 'attach_money': 'Attach Money', 'currency_exchange': 'Currency Exchange', 'receipt_long': 'Receipt Long', 'request_quote': 'Request Quote', 'description': 'Description', 'note_add': 'Note Add', 'upload_file': 'Upload File', 'cloud_upload': 'Cloud Upload', 'file_upload_off': 'File Upload Off', 'file_present': 'File Present', 'archive': 'Archive', 'fact_check': 'Fact Check', 'content_paste': 'Content Paste', 'content_copy': 'Content Copy', 'mail': 'Mail', 'email': 'Email', 'outgoing_mail': 'Outgoing Mail', 'sms': 'Sms', 'chat': 'Chat', 'forum': 'Forum', 'support_agent': 'Support Agent', 'approval': 'Approval', 'rule': 'Rule', 'verified': 'Verified', 'verified_user': 'Verified User', 'how_to_reg': 'How To Reg', 'person_add': 'Person Add', 'done_all': 'Done All', 'arrow_forward': 'Arrow Forward', 'chevron_right': 'Chevron Right', 'double_arrow': 'Double Arrow', 'arrow_circle_right': 'Arrow Circle Right', 'east': 'East', 'done_outline': 'Done Outline', 'exit_to_app': 'Exit To App', 'event_available': 'Event Available', 'event_note': 'Event Note', 'calendar_month': 'Calendar Month', 'book_online': 'Book Online', 'local_activity': 'Local Activity', 'local_offer': 'Local Offer', 'lock': 'Lock', 'login': 'Login', 'logout': 'Logout', 'fingerprint': 'Fingerprint', 'key': 'Key', 'publish': 'Publish', 'rocket_launch': 'Rocket Launch', 'send_and_archive': 'Send And Archive', 'campaign': 'Campaign', 'share': 'Share', 'visibility': 'Visibility', 'download_done': 'Download Done'}
 CORNERS=('tl','tr','bl','br')
 
 
 def _appearance_values(value, *, complete=False):
     if (not isinstance(value,dict) or not value or set(value)-APPEARANCE_FIELDS
-            or complete and set(value)!=APPEARANCE_FIELDS):
+            or complete and not LEGACY_APPEARANCE_FIELDS.issubset(value)):
         raise Stop('Embed appearance must use captured button properties')
+    if 'button_color' in value:_opaque_hex(value['button_color'])
     if 'corner_radii' in value:
         radii=value['corner_radii']
         if (not isinstance(radii,dict) or set(radii)!=set(CORNERS)
@@ -417,7 +426,7 @@ def _appearance_values(value, *, complete=False):
         raise Stop('Button font size must be an integer within the script limit of 1 to 256')
     if 'linked' in value and type(value['linked']) is not bool:
         raise Stop('Corner linking requires a real boolean')
-    for key,values in (('button_type',BUTTON_TYPES),('button_size',BUTTON_SIZES)):
+    for key,values in (('button_type',BUTTON_TYPES),('button_size',BUTTON_SIZES),('button_icon',BUTTON_ICONS)):
         if key in value and (not isinstance(value[key],str) or value[key] not in values):
             raise Stop('Uncaptured native button appearance choice: '+key)
 
@@ -434,7 +443,7 @@ def _appearance_select(frame,key,values):
     return next(value for value,label in values.items() if label==text),selected
 
 
-def _appearance(frame):
+def _appearance(frame, *, extra_fields=(), hidden_icon=None):
     general,_=_general(frame)
     if general['layout']=='Standard':
         raise Stop('Standard embeds have no native button appearance controls')
@@ -454,16 +463,109 @@ def _appearance(frame):
     state={'corner_radii':radii,'font_size':_number(font,'button font size'),
            'linked':linked.get_attribute('aria-pressed')=='true',
            'button_type':type_value,'button_size':size_value}
+    if 'button_color' in extra_fields:
+        state['button_color'],controls['button_color']=_button_color(frame)
+    if 'button_icon' in extra_fields:
+        state['button_icon'],controls['button_icon']=_button_icon(frame,type_value,hidden_icon=hidden_icon)
     _appearance_values(state,complete=True)
     return state,{**controls,'font_size':font,'linked':linked,
                   'button_type':type_control,'button_size':size_control}
 
 
+
+
+def _opaque_hex(value):
+    if not isinstance(value,str) or not re.fullmatch(r'#[0-9a-fA-F]{6}(?:[fF]{2})?',value):
+        raise Stop('Native embed button color is not a captured opaque HEX/RGBA value')
+    # Native default is RGB6; selecting a palette swatch emits uppercase RGBA8.
+    # Canonical input/state stays lowercase RGB6, exact exported bytes are retained.
+    return value[:7].lower()
+
+
+def _button_icon(frame,button_type,*,hidden_icon=None):
+    selector='div.cursor-pointer[aria-haspopup="listbox"][aria-expanded]'
+    controls=frame.locator(selector)
+    if button_type=='text':
+        if controls.count() or hidden_icon not in BUTTON_ICONS:
+            raise Stop('Hidden native icon requires its exact before-export binding')
+        return hidden_icon,None
+    control=_one(controls,'Native embed icon selector changed')
+    symbol=_one(control.locator('.material-symbols-outlined'),'Native embed selected material icon changed').inner_text().strip()
+    label=_one(control.locator('span.truncate.text-gray-900'),'Native embed selected icon label changed').inner_text().strip()
+    if symbol not in BUTTON_ICONS or BUTTON_ICONS[symbol]!=label or control.get_attribute('aria-expanded') not in ('true','false'):
+        raise Stop('Native embed icon code and label are unknown or disagree')
+    return symbol,control
+
+
+def _write_button_icon(frame,button_type,expected,desired,identity):
+    from playwright_recipes.skill6_playwright import click,fill,wait_until
+    if button_type=='text':raise Stop('Icon changes require an explicit Icon + text or Icon only button type')
+    current,control=_button_icon(frame,button_type)
+    # A deliberate button-type switch may reveal the retained icon. The exact
+    # authored expected icon has already been checked in the before export.
+    if current not in (expected,desired):raise Stop('Native embed icon changed before selection')
+    if current==desired:return
+    identity();click(control)
+    wait_until(lambda:control.get_attribute('aria-expanded')=='true','Native embed icon catalog did not open')
+    search=_one(frame.get_by_role('textbox',name='Icon search',exact=True),'Native embed icon search changed')
+    fill(search,BUTTON_ICONS[desired])
+    option=_one(frame.get_by_role('button',name=BUTTON_ICONS[desired],exact=True),'Native embed captured icon option is missing or ambiguous')
+    identity();click(option)
+    wait_until(lambda:_button_icon(frame,button_type)[0]==desired,'Native embed selected icon did not stick')
+
+def _color_hex(style):
+    if not isinstance(style,str):raise Stop('Native embed color swatch style is unavailable')
+    match=re.fullmatch(r'\s*background:\s*rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)\s*;?\s*',style)
+    if not match or any(int(value)>255 for value in match.groups()):
+        raise Stop('Native embed palette requires captured opaque RGB swatches')
+    return '#'+''.join(format(int(value),'02x') for value in match.groups())
+
+
+def _button_color(frame):
+    owner=_one(frame.locator('#colorPicker'),'Native embed Button color owner changed')
+    if owner.get_by_text('Button color',exact=True).count()!=1:
+        raise Stop('Native embed Button color label changed')
+    display=_one(owner.locator('.color-display .hl-text-sm-normal'),'Native button HEX display changed').inner_text().strip()
+    display=_opaque_hex(display)
+    _appearance_values({'button_color':display})
+    trigger=_one(owner.locator('.hr-swatch-tile__pad'),'Native button color picker trigger changed')
+    swatch=_one(trigger.locator('.hr-swatch-tile__pad-inner'),'Native button color swatch changed')
+    if _color_hex(swatch.get_attribute('style'))!=display:
+        raise Stop('Native button color display and swatch disagree')
+    return display,trigger
+
+
+def _write_button_color(frame,expected,desired,identity):
+    from playwright_recipes.skill6_playwright import click,wait_until
+    current,trigger=_button_color(frame)
+    if current!=expected:raise Stop('Native embed Button color changed before picker selection')
+    identity();click(trigger)
+    palette=_one(frame.locator('.hr-colorpicker__popover-content-section').filter(
+        has=frame.get_by_text('Default Colors',exact=True)), 'Captured native Default Colors palette changed')
+    tiles=palette.locator('.swatches-container .hr-swatch__container');matches=[]
+    for index in range(tiles.count()):
+        tile=tiles.nth(index)
+        if not tile.is_visible():continue
+        swatch=_one(tile.locator('.hr-swatch-tile__pad-inner'),'Native palette swatch is ambiguous')
+        if _color_hex(swatch.get_attribute('style'))==desired:
+            matches.append(_one(tile.locator('.hr-swatch-tile__pad'),'Native palette selectable tile changed'))
+    if len(matches)!=1:
+        raise Stop('NEEDS_PALETTE_COLOR: requested Button color is absent or ambiguous in the captured existing palette; no palette entry created or edited')
+    identity();click(matches[0])
+    wait_until(lambda:_button_color(frame)[0]==desired,'Native embed palette color selection did not stick')
+
+
+def _read_appearance(frame,reference):
+    extras=set(reference)-LEGACY_APPEARANCE_FIELDS
+    return _appearance(frame,extra_fields=extras,hidden_icon=reference.get('button_icon')) if extras else _appearance(frame)
+
 def _write_appearance(frame,before,desired,identity):
     from playwright_recipes.skill6_playwright import click,fill,wait_until
-    current,controls=_appearance(frame)
+    current,controls=_read_appearance(frame,before)
     if current!=before:
         raise Stop('Native button appearance changed after full preflight')
+    if 'button_icon' in desired and desired['button_type']=='text':
+        raise Stop('Icon changes require an explicit Icon + text or Icon only button type')
     if desired['linked'] and len(set(desired['corner_radii'].values()))!=1:
         raise Stop('Linked button corners require four equal authored radii')
     # Detach propagation while authoring explicit per-corner values, then
@@ -490,7 +592,11 @@ def _write_appearance(frame,before,desired,identity):
         identity();click(controls['linked'])
         wait_until(lambda:controls['linked'].get_attribute('aria-pressed')==str(desired['linked']).lower(),
                    'Native button corner link state did not stick')
-    if _appearance(frame)[0]!=desired:
+    if 'button_icon' in desired and (desired['button_icon']!=before['button_icon'] or desired['button_type']!=before['button_type']):
+        _write_button_icon(frame,desired['button_type'],before['button_icon'],desired['button_icon'],identity)
+    if 'button_color' in desired and desired['button_color']!=before['button_color']:
+        _write_button_color(frame,before['button_color'],desired['button_color'],identity)
+    if _read_appearance(frame,desired)[0]!=desired:
         raise Stop('Native button appearance did not match the complete desired and protected state')
 
 
@@ -499,9 +605,13 @@ def _layout_from_code(code):
     return _layout_data(parser.tags[0][1].get('data-layout'))
 
 
-def _preserved_layout(before,after,general_before,general_desired):
+def _preserved_layout(before,after,general_before,general_desired,appearance_before=None,appearance_desired=None):
     previous,current=_layout_from_code(before),_layout_from_code(after)
     allowed={'cornerRadius','fontSize','buttonType','buttonSize'}
+    if (appearance_before is not None and appearance_desired is not None
+            and appearance_before.get('button_color')!=appearance_desired.get('button_color')):allowed.add('buttonColor')
+    if (appearance_before is not None and appearance_desired is not None
+            and appearance_before.get('button_icon')!=appearance_desired.get('button_icon')):allowed.add('buttonIcon')
     if general_before['button_label']!=general_desired['button_label']:allowed.add('minimizedTitle')
     if general_before['position']!=general_desired['position']:allowed.update(('isLeftAligned','isRightAligned'))
     if general_before['width']!=general_desired['width']:allowed.add('formWidth')
@@ -547,12 +657,15 @@ def configure(page, step):
     if 'appearance' in config:
         if layout_changed:
             raise Stop('Layout changes and button appearance require separate fully inventoried export jobs')
-        appearance_before,_=_appearance(frame)
         authored=config['appearance']
+        extras=set(authored['changes'])-LEGACY_APPEARANCE_FIELDS
+        appearance_before,_=(_appearance(frame,extra_fields=extras,hidden_icon=authored['expected'].get('button_icon')) if extras else _appearance(frame))
         if any(appearance_before[key]!=value for key,value in authored['expected'].items()):
             raise Stop('Native button appearance differs from its inventoried previous values')
         appearance_desired={**deepcopy(appearance_before),**authored['changes']}
         _appearance_values(appearance_desired,complete=True)
+        if 'button_icon' in appearance_desired and appearance_desired['button_type']=='text':
+            raise Stop('Icon changes require an explicit Icon + text or Icon only button type')
         if appearance_desired['linked'] and len(set(appearance_desired['corner_radii'].values()))!=1:
             raise Stop('Linked button corners require four equal authored radii')
         appearance_export=_export(frame,config,before,appearance_before)
@@ -590,10 +703,10 @@ def configure(page, step):
     first = _export(frame, config, desired,appearance_desired) if appearance_desired is not None else _export(frame,config,desired)
     identity()
     second = _export(frame, config, desired,appearance_desired) if appearance_desired is not None else _export(frame,config,desired)
-    if first != second or _read(frame) != desired or (appearance_desired is not None and _appearance(frame)[0]!=appearance_desired):
+    if first != second or _read(frame) != desired or (appearance_desired is not None and _read_appearance(frame,appearance_desired)[0]!=appearance_desired):
         raise Stop('Native embed export changed during independent second code-dialog readback')
     if appearance_export is not None:
-        _preserved_layout(appearance_export['embed_code'],first['embed_code'],before,desired)
+        _preserved_layout(appearance_export['embed_code'],first['embed_code'],before,desired,appearance_before,appearance_desired)
     return {'status':'FORM_EMBED_EXPORTED_AND_REREAD', 'kind':'form_embed',
         'editor_url':editor_url, 'form_id':config['form_id'],
         'configuration_sha256':configuration_hash(plan), 'export_settings':desired, **first,
@@ -622,7 +735,9 @@ def validate_receipt(result, step):
     appearance=result.get('appearance_settings')
     if 'appearance' in config:
         _appearance_values(appearance,complete=True)
-        if (settings['layout']=='Standard'
+        if (not (set(config['appearance']['changes'])-LEGACY_APPEARANCE_FIELDS).issubset(appearance)
+                or settings['layout']=='Standard'
+                or 'button_icon' in appearance and appearance['button_type']=='text'
                 or any(appearance[key]!=value for key,value in config['appearance']['changes'].items())
                 or appearance['linked'] and len(set(appearance['corner_radii'].values()))!=1):
             raise Stop('Native embed appearance receipt differs from its authored configuration')

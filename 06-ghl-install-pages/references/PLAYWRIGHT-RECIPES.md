@@ -467,3 +467,13 @@ partial. Native creation and Required/Hidden property persistence were captured
 on November 10, 2026; reusable source contains no synthetic account identifiers.
 
 Parent Address autocomplete/search-required control configuration is available as a separate `forms.configure` `address_parent` job; see `examples/form-address-parent.json`. Full child properties and query/type sibling inventories are required. Native mandatory=true requires autocomplete=true. Fresh writes and public CLI completed replay verify full bound receipts and current native saved state.
+Native owned Multi Dropdown creation/editing uses `forms.configure` / `widget_fields` kind `multi_dropdown`; see `examples/form-multi-dropdown-native.json`. MULTIPLE_OPTIONS has no local Query Key: its canonical Advanced contact Unique Key owns identity. Required-only General controls plus ordered options/calculations are captured. Shared selected-state snapshots preserve dropdown input attributes across inactive button/active input renderer transitions; completed CLI replay remains a fresh native read.
+
+
+Form embed appearance now authors captured existing-palette opaque Button color
+and the captured material-code icon catalog. Explicit Text-to-icon button type
+changes are supported; missing palette colors and unknown icons refuse. Exact
+native code is read twice and retained as a per-export artifact; no form or
+palette Save is performed. See `examples/form-embed-button-color-icon.json` and
+`examples/form-native-embed.md`. Existing five-property appearance receipts remain
+valid. This is separate from installing or functionally testing an embed.

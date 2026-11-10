@@ -1,4 +1,4 @@
-"""Custom TEXT identities and virtualized native condition menus fail closed."""
+"""Typed text/Number identities and virtualized native condition menus."""
 from copy import deepcopy
 from pathlib import Path
 import unittest
@@ -87,11 +87,12 @@ def canvas_fixture(bindings):
     for binding in bindings:
         item,label,control,gear,query=[Mock() for _ in range(5)]
         label.count.return_value=control.count.return_value=gear.count.return_value=query.count.return_value=1
-        attributes={'data-field-type':'TEXT','contenteditable':'true','role':'textbox','aria-label':'Label'}
+        attributes={'data-field-type':binding['field_type'],'contenteditable':'true','role':'textbox','aria-label':'Label'}
         label.get_attribute.side_effect=attributes.get;label.inner_text.return_value=binding['label']
         control.get_attribute.return_value=None
         query.is_visible.return_value=True;query.input_value.return_value=binding['query_key']
         item.locator.side_effect={'[data-field-type]':label,'input.form-placeholder.form-control':control,
+            'input.form-control':control,
             '[aria-label="Open settings"]':gear}.__getitem__
         entries.append((item,label,gear));queries.append(query)
     items.nth.side_effect=lambda index:entries[index][0]
@@ -217,6 +218,68 @@ class BoundLifecycleTests(unittest.TestCase):
                     self.assertIsInstance(result,runner.Stop);self.assertNotIn(save,clicked)
                     self.assertEqual(len(checks),drift_at)
                     if drift_at==1:self.assertEqual(clicked,[])
+
+
+NUMBER={'label':'Fixture number','query_key':'fixture_number','field_type':'NUMERICAL'}
+
+
+def number_plans(operator='Greater Than',value='10'):
+    clause={'if_field':NUMBER['label'],'operator':operator}
+    if operator not in group.UNARY:clause['value']=value
+    rule={'match':'all','clauses':[clause],'effect':'Hide Field','target':'Last Name'}
+    return ((group,{**rule,'clauses':[clause,{'if_field':'Email','operator':'Is Filled'}],
+                    'field_bindings':[deepcopy(NUMBER)]}),
+            (stack,{'rules':[deepcopy(rule)],'field_bindings':[deepcopy(NUMBER)]}),
+            (outcomes,{'rules':[deepcopy(rule)],'field_bindings':[deepcopy(NUMBER)]}))
+
+
+class NumericBindingTests(unittest.TestCase):
+    def test_captured_numeric_operators_flow_through_existing_three_handlers(self):
+        for operator in ('Is Equal To','Is Not Equal To','Is Empty','Is Filled','Greater Than','Less Than'):
+            for module,data in number_plans(operator):
+                with self.subTest(operator=operator,module=module.__name__):
+                    self.assertEqual(module.validate(data),data)
+
+    def test_wrong_type_uncaptured_between_bad_values_and_numeric_targets_refuse_before_page(self):
+        for module,data in number_plans():
+            bad=[]
+            def clause(plan):return plan['clauses'][0] if module is group else plan['rules'][0]['clauses'][0]
+            for operator,value in (('Contains','10'),('Between','10'),('Greater Than','NaN'),
+                                   ('Greater Than','Infinity'),('Greater Than','not-a-number')):
+                changed=deepcopy(data);clause(changed).update(operator=operator,value=value);bad.append(changed)
+            changed=deepcopy(data);changed['field_bindings'][0]['field_type']='TEXT';bad.append(changed)
+            changed=deepcopy(data)
+            (changed if module is group else changed['rules'][0])['target']=NUMBER['label'];bad.append(changed)
+            for changed in bad:
+                page=Mock()
+                with self.subTest(module=module.__name__,plan=changed),self.assertRaises(runner.Stop):
+                    module.configure(page,changed)
+                self.assertFalse(page.mock_calls)
+
+    def test_compiler_routes_numeric_stack_and_outcome_without_new_action(self):
+        for effect in ('Hide Field',outcomes.REDIRECT):
+            rule=deepcopy(number_plans()[1][1]['rules'][0])
+            if effect==outcomes.REDIRECT:
+                rule.pop('target');rule.update(effect=effect,redirect_url='https://example.com/next')
+            data={'location_id':'LOC','location_name':'Fixture',
+                  'start_url':'https://app.example.com/v2/location/LOC/form-builder-v2/FORM',
+                  'condition':{'rules':[rule],'field_bindings':[deepcopy(NUMBER)]}}
+            job=runner.validate_job(recipe_cli.compile_recipe('forms.conditions',data),Path('.'))
+            self.assertEqual(job['steps'][0]['field_bindings'],[NUMBER])
+
+    def test_number_preflight_reads_its_existing_query_key_and_complete_typed_siblings(self):
+        bindings=[deepcopy(BINDING),deepcopy(NUMBER)]
+        frame,entries,queries,events,click=canvas_fixture(bindings)
+        with patch.object(fields,'_close_initial'),patch.object(fields,'_close_properties'), \
+             patch.object(fields,'click',side_effect=click):
+            self.assertEqual(fields.preflight(frame,bindings,lambda:None),bindings)
+        entries[1][0].locator.assert_any_call('input.form-control')
+        self.assertFalse(any('fill' in str(call) for call in frame.mock_calls))
+
+    def test_numeric_binding_refuses_query_key_drift(self):
+        result,events,_=CanvasBindingTests().exercise([NUMBER],wrong_key=True)
+        self.assertIsInstance(result,runner.Stop)
+        self.assertIn('Query Key differs',str(result))
 
 
 if __name__=='__main__':unittest.main()

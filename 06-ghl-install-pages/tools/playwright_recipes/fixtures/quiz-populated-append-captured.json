@@ -1,0 +1,84 @@
+{
+  "before": {
+    "canvas": {
+      "bottom": 380.78125,
+      "height": 207.16796875,
+      "left": 232.5,
+      "right": 1032.5,
+      "top": 173.61328125,
+      "width": 800,
+      "x": 232.5,
+      "y": 173.61328125
+    },
+    "html": "<div  id=\"the-form-builder\" class=\"form-element form-builder--wrap\" style=\"padding: 16px; background-color: rgb(255, 255, 255); border-width: 1px 1px medium; border-style: solid solid none; border-color: rgb(234, 236, 240) rgb(234, 236, 240) currentcolor; border-image: none; border-radius: 12px 12px 0px 0px; box-shadow: rgba(16, 24, 40, 0.08) 0px 12px 16px 4px; width: 800px; clip-path: inset(-20px -20px 0px);\"><div  class=\"drop\"><div  class=\"builder_sub_container\" group=\"elements\" sort=\"true\" animation=\"300\" handle=\".field-draggable-area\" ghost-class=\"field-drag-ghost\"  ><div  class=\"smooth-dnd-draggable-wrapper element-box menu-field-wrap col-12\" style=\"margin-bottom: 16px;\" ><div  class=\"menu-item\"><!----><div  class=\"menu-item\"><div  class=\"form-builder--item field-draggable-area\" data-active=\"false\"><!----><div  style=\"display: block; float: none;\"><div  class=\"label-container\"><div  class=\"label-input font-inter cursor-text border-0 bg-transparent p-0 text-sm shadow-none focus:border-gray-300 focus:ring-0\" data-field-type=\"TEXT\" data-placeholder=\"Type a label\" contenteditable=\"true\" role=\"textbox\" tabindex=\"0\" aria-label=\"Label\"  >Short Answer 780li7</div><!----></div><!----></div><div   class=\"relative flex flex-col\"><div  class=\"relative\"><!----><!----><!----><input  placeholder=\"\" class=\"form-placeholder form-control shadow-none focus:outline-transparent focus:ring-0\" value=\"\" style=\"font-size: 16px; width: 100%;\"  ></div><!----></div><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----></div><!----><!----><!----></div><!----><!----></div></div><div  class=\"smooth-dnd-draggable-wrapper element-box menu-field-wrap col-12\" style=\"margin-bottom: 16px;\" ><div  class=\"menu-item\"><!----><div  class=\"menu-item\"><div  class=\"form-builder--item field-draggable-area\" data-active=\"false\"><!----><div  style=\"display: block; float: none;\"><div  class=\"label-container\"><div  class=\"label-input font-inter cursor-text border-0 bg-transparent p-0 text-sm shadow-none focus:border-gray-300 focus:ring-0\" data-field-type=\"TEXT\" data-placeholder=\"Type a label\" contenteditable=\"true\" role=\"textbox\" tabindex=\"0\" aria-label=\"Label\"  >Short Answer 781ejd</div><!----></div><!----></div><div   class=\"relative flex flex-col\"><div  class=\"relative\"><!----><!----><!----><input  placeholder=\"\" class=\"form-placeholder form-control shadow-none focus:outline-transparent focus:ring-0\" value=\"\" style=\"font-size: 16px; width: 100%;\"  ></div><!----></div><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----></div><!----><!----><!----></div><!----><!----></div></div><!----></div><!----></div></div>",
+    "items": [
+      {
+        "rect": {
+          "bottom": 261.513671875,
+          "height": 71.279296875,
+          "left": 249.12109375,
+          "right": 1015.87890625,
+          "top": 190.234375,
+          "width": 766.7578125,
+          "x": 249.12109375,
+          "y": 190.234375
+        },
+        "text": "Short Answer 780li7"
+      },
+      {
+        "rect": {
+          "bottom": 348.7890625,
+          "height": 71.279296875,
+          "left": 249.12109375,
+          "right": 1015.87890625,
+          "top": 277.509765625,
+          "width": 766.7578125,
+          "x": 249.12109375,
+          "y": 277.509765625
+        },
+        "text": "Short Answer 781ejd"
+      }
+    ],
+    "sub": {
+      "bottom": 348.7890625,
+      "height": 158.5546875,
+      "left": 249.12109375,
+      "right": 1015.87890625,
+      "top": 190.234375,
+      "width": 766.7578125,
+      "x": 249.12109375,
+      "y": 190.234375
+    }
+  },
+  "source": {
+    "id": "Long Answer4",
+    "rect": {
+      "bottom": 376.640625,
+      "height": 9.47265625,
+      "left": 164.970703125,
+      "right": 182.96875,
+      "top": 367.16796875,
+      "width": 17.998046875,
+      "x": 164.970703125,
+      "y": 367.16796875
+    }
+  },
+  "after": {
+    "pages": 1,
+    "fields": [
+      {
+        "text": "Short Answer 780li7",
+        "type": "TEXT"
+      },
+      {
+        "text": "Short Answer 781ejd",
+        "type": "TEXT"
+      },
+      {
+        "text": "Long Answer 7200gj",
+        "type": "LARGE_TEXT"
+      }
+    ],
+    "html": "<div  id=\"the-form-builder\" class=\"form-element form-builder--wrap\" style=\"padding: 16px; background-color: rgb(255, 255, 255); border-width: 1px 1px medium; border-style: solid solid none; border-color: rgb(234, 236, 240) rgb(234, 236, 240) currentcolor; border-image: none; border-radius: 12px 12px 0px 0px; box-shadow: rgba(16, 24, 40, 0.08) 0px 12px 16px 4px; width: 800px; clip-path: inset(-20px -20px 0px);\"><div  class=\"drop\"><div  class=\"builder_sub_container\" group=\"elements\" sort=\"true\" animation=\"300\" handle=\".field-draggable-area\" ghost-class=\"field-drag-ghost\"  ><div  class=\"smooth-dnd-draggable-wrapper element-box menu-field-wrap col-12\" style=\"margin-bottom: 16px;\" ><div  class=\"menu-item\"><!----><div  class=\"menu-item\"><div  class=\"form-builder--item field-draggable-area\" data-active=\"false\"><!----><div  style=\"display: block; float: none;\"><div  class=\"label-container\"><div  class=\"label-input font-inter cursor-text border-0 bg-transparent p-0 text-sm shadow-none focus:border-gray-300 focus:ring-0\" data-field-type=\"TEXT\" data-placeholder=\"Type a label\" contenteditable=\"true\" role=\"textbox\" tabindex=\"0\" aria-label=\"Label\"  >Short Answer 780li7</div><!----></div><!----></div><div   class=\"relative flex flex-col\"><div  class=\"relative\"><!----><!----><!----><input  placeholder=\"\" class=\"form-placeholder form-control shadow-none focus:outline-transparent focus:ring-0\" value=\"\" style=\"font-size: 16px; width: 100%;\"  ></div><!----></div><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----></div><!----><!----><!----></div><!----><!----></div></div><div  class=\"smooth-dnd-draggable-wrapper element-box menu-field-wrap col-12\" style=\"margin-bottom: 16px;\" ><div  class=\"menu-item\"><!----><div  class=\"menu-item\"><div  class=\"form-builder--item field-draggable-area\" data-active=\"false\"><!----><div  style=\"display: block; float: none;\"><div  class=\"label-container\"><div  class=\"label-input font-inter cursor-text border-0 bg-transparent p-0 text-sm shadow-none focus:border-gray-300 focus:ring-0\" data-field-type=\"TEXT\" data-placeholder=\"Type a label\" contenteditable=\"true\" role=\"textbox\" tabindex=\"0\" aria-label=\"Label\"  >Short Answer 781ejd</div><!----></div><!----></div><div   class=\"relative flex flex-col\"><div  class=\"relative\"><!----><!----><!----><input  placeholder=\"\" class=\"form-placeholder form-control shadow-none focus:outline-transparent focus:ring-0\" value=\"\" style=\"font-size: 16px; width: 100%;\"  ></div><!----></div><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----></div><!----><!----><!----></div><!----><!----></div></div><div  class=\"smooth-dnd-draggable-wrapper element-box menu-field-wrap col-12\" style=\"margin-bottom: 16px;\" ><div  class=\"menu-item\"><!----><div  class=\"menu-item\"><div  class=\"form-builder--item field-draggable-area\" data-active=\"false\"><!----><div  style=\"display: block; float: none;\"><div  class=\"label-container\"><div  class=\"label-input font-inter cursor-text border-0 bg-transparent p-0 text-sm shadow-none focus:border-gray-300 focus:ring-0\" data-field-type=\"LARGE_TEXT\" data-placeholder=\"Type a label\" contenteditable=\"true\" role=\"textbox\" tabindex=\"0\" aria-label=\"Label\"  >Long Answer 7200gj</div><!----></div><!----></div><!----><div   class=\"flex flex-col\"><textarea  aria-label=\"Type your message here\" placeholder=\"\" class=\"form-placeholder form-control text-gray-400 placeholder-gray-400 shadow-none focus:outline-transparent focus:ring-0\" value=\"\" style=\"font-size: 16px; height: 108px; width: 100%;\"  ></textarea><!----></div><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----></div><!----><!----><!----></div><!----><!----></div></div><!----></div><!----></div></div>"
+  }
+}

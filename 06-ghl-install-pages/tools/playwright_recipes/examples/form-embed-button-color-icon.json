@@ -1,0 +1,25 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Approved account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/form-builder-v2/FORM_FROM_INVENTORY",
+  "integration": {
+    "form_id": "FORM_FROM_INVENTORY",
+    "expected_form_name": "Exact existing form name from native inventory",
+    "embed_origin": "https://links.example.com",
+    "script_origin": "https://links.example.com",
+    "expected": {},
+    "changes": {},
+    "appearance": {
+      "expected": {
+        "button_type": "text",
+        "button_color": "#101828",
+        "button_icon": "chat"
+      },
+      "changes": {
+        "button_type": "textIcon",
+        "button_color": "#188BF6FF",
+        "button_icon": "mail"
+      }
+    }
+  }
+}
