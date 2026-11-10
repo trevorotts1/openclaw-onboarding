@@ -252,6 +252,22 @@ def _platform(stage: str, template: str) -> str:
 GENERATED_IMAGES_DIR = "image-generation-qc"
 GENERATED_IMAGE_RE = re.compile(r"^Image-(\d+)\.png$")
 
+GENERATED_REF_DIRS = (GENERATED_IMAGES_DIR, "image-map-upload")
+
+
+def request_references(request: dict) -> list:
+    """The request-level references with this client's GENERATED images removed (fix plan B8/G-11).
+
+    The request carries the generated images (--references) so they are on record, but a
+    request-level reference rides into EVERY job and is labelled "structure only", so a section
+    whose plan holds no image would still receive them. A generated image reaches a job only
+    through prior_slices, per section. Anything under image-generation-qc/ or image-map-upload/
+    is therefore dropped here, in build_input, both reference_block calls and reference_bleed.
+    """
+    return [r for r in (request.get("references") or [])
+            if not set(re.split(r"[\\/]", str(r))) & set(GENERATED_REF_DIRS)]
+
+
 def planned_slot_ids(run_dir: Path, index: int):
     """The slot ids the wireframe section plan assigns to section ``index`` (1-based).
 
@@ -1380,7 +1396,7 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
                                # main threads default_count=0. Same outcome, explicit default wins.
                                step_rule=_step_rule(request.get("_step_band"), page_spec,
                                                     default_count=(7 if steps_ok else 0)))
-    ref_block = reference_use.reference_block(request.get("references"),
+    ref_block = reference_use.reference_block(request_references(request),
                                               request.get("reference_roles"))
     color_block = str(request.get("_brand_block") or "")
     roles = request.get("_hypersat")
@@ -1476,7 +1492,7 @@ def build_input(job: dict, request: dict) -> dict:
         refs = [str(r) for r in job["references"]]
     else:
         refs = list(dict.fromkeys(str(r) for r in (job.get("style_refs") or []) +
-                                  (request.get("references") or []) + job["references"]))
+                                  request_references(request) + job["references"]))
     base = {"prompt": job["prompt"], "input_urls": refs}
     if job.get("ratio"):
         base["aspect_ratio"] = job["ratio"]
@@ -2451,9 +2467,10 @@ def reference_bleed(out: Path, request: dict, provider):
     """QC leg: did the delivered image reproduce the reference's palette or
     brand text? None when no reference was attached or the image is a stub
     placeholder. Recorded, never gating here: the stage gate reads it."""
-    if provider.name == "stub" or not request.get("references"):
+    refs = request_references(request)
+    if provider.name == "stub" or not refs:
         return None
-    return reference_use.check(out, request["references"], request.get("client_palette") or ())
+    return reference_use.check(out, refs, request.get("client_palette") or ())
 
 
 def record_bleed(entry: dict, out: Path, request: dict, provider, stage: str) -> None:
@@ -2772,7 +2789,7 @@ def run_item(run_dir: Path, stage: str, item: str, request: dict, provider,
     if not prompt:
         raise ExecutorError(f"the item prompt {prompt_path} is empty")
     prompt = with_photo_rules(prompt, item, request)
-    ref_block = reference_use.reference_block(request.get("references"),
+    ref_block = reference_use.reference_block(request_references(request),
                                               request.get("reference_roles"))
     roles = request.get("_hypersat") or hypersaturation.roles_for_run(run_dir)
     if not roles:
