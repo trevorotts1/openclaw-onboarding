@@ -33,6 +33,12 @@ Before a page is drawn, every section funnel_structure.json image_coverage requi
 page's own production request (the stricter rule wins over Skill 71's type-only sections), and the wireframe
 section-plan.json and image-inventory.json are written from that request.
 
+After Skill 71's client-gated path has closed final-mockups for each page (Design Board approval first),
+--record-final-mockups --out-dir <dir> draws nothing and spends nothing: it reads each page's closed
+final-mockups/stage-executor-record.json, merges {record, sha256, images} into page-images-receipt.json, and
+exits 2 naming any page whose record is missing or carries no images (then the receipt is left as it was).
+A record changed after that is caught by the P7 build gate on the sha256.
+
 --page narrows the run. Each page is checked against structure/page_types.json (page_set.py): a page
 whose images are missing is refused. Provider DEFAULTS to kie (--allow-paid required); the offline stub
 is opt-in only and needs a recorded owner approval, --stub-approved-by <ref> (the review PDFs and boards
@@ -252,6 +258,35 @@ def draw(run, build_args, args, scripts, required=frozenset(), bands=None):
                         json.dumps({"images": inventory}, indent=2) + "\n", encoding="utf-8")
 
 
+def record_final_mockups(out_dir):
+    """--record-final-mockups: no draw, no spend. Merge each receipt page's closed final-mockups record
+    ({record, sha256, images}) into page-images-receipt.json; refuse, writing nothing, if any page lacks one."""
+    path = out_dir / "page-images-receipt.json"
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+        pages = report["pages"]
+    except (OSError, ValueError, KeyError, TypeError):
+        raise Refused(f"{path} is absent or unreadable: run this tool first, then record final-mockups")
+    found, missing = {}, []
+    for slug in pages:
+        record = out_dir / slug / "final-mockups" / "stage-executor-record.json"
+        try:
+            images = json.loads(record.read_text(encoding="utf-8")).get("images")
+        except (OSError, ValueError, AttributeError):
+            images = None
+        if not isinstance(images, list) or not images:
+            missing.append(slug)
+        else:
+            found[slug] = {"record": str(record), "sha256": hashlib.sha256(record.read_bytes()).hexdigest(),
+                           "images": len(images)}
+    if missing:
+        raise Refused(f"final-mockups has no closed record with images for page(s) {missing}; nothing recorded")
+    for slug, entry in found.items():
+        pages[slug].setdefault("stages", {})["final-mockups"] = entry
+    path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps({"recorded_final_mockups": {s: e["images"] for s, e in found.items()}}, indent=2))
+
+
 def run_page(slug, structure, ledger, args, scripts, entries):
     run = args.out_dir / slug
     run.mkdir(parents=True, exist_ok=True)
@@ -308,11 +343,13 @@ def run_page(slug, structure, ledger, args, scripts, entries):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--ledger", type=Path, required=True, help="the run's copy_ledger.json")
-    ap.add_argument("--skill71-root", type=Path, required=True)
-    ap.add_argument("--brand-file", type=Path, required=True)
-    ap.add_argument("--brand-owner", required=True)
+    ap.add_argument("--ledger", type=Path, help="the run's copy_ledger.json")
+    ap.add_argument("--skill71-root", type=Path)
+    ap.add_argument("--brand-file", type=Path)
+    ap.add_argument("--brand-owner")
     ap.add_argument("--out-dir", type=Path, required=True)
+    ap.add_argument("--record-final-mockups", action="store_true",
+                    help="no draw, no spend: merge each page's closed final-mockups record into page-images-receipt.json")
     ap.add_argument("--page", action="append", help="a matrix slug to build (repeatable)")
     ap.add_argument("--checkout-manuscript", type=Path,
                     help="the approved five-section checkout manuscript; without it checkout is reported not built")
@@ -333,6 +370,12 @@ def main(argv=None):
     ap.add_argument("--design-prose", type=Path)
     args = ap.parse_args(argv)
     try:
+        if args.record_final_mockups:
+            record_final_mockups(args.out_dir)
+            return 0
+        for flag in ("ledger", "skill71_root", "brand_file", "brand_owner"):
+            if not getattr(args, flag):
+                raise Refused(f"--{flag.replace('_', '-')} is required unless --record-final-mockups is given")
         if args.image_provider == "kie" and not args.allow_paid:
             raise Refused("--image-provider kie spends money; it needs --allow-paid, approved by the owner")
         if args.image_provider == "stub" and not (args.stub_approved_by or "").strip():
@@ -368,7 +411,8 @@ def main(argv=None):
         report["note"] = ("the image inventory, generation, Design Board approval and final-mockups "
                           "are client-gated stages downstream and were not run HERE. final-mockups is "
                           "NOT optional: prove_sf_build.VISUAL_STAGES requires it, so P7-BUILD refuses "
-                          "to certify until the client-gated final-mockups stage has closed (fix plan B3)")
+                          "to certify until the client-gated final-mockups stage has closed and "
+                          "--record-final-mockups has merged its record into this receipt (fix plan B3)")
         args.out_dir.mkdir(parents=True, exist_ok=True)
         (args.out_dir / "page-images-receipt.json").write_text(
             json.dumps(report, indent=2) + "\n", encoding="utf-8")
