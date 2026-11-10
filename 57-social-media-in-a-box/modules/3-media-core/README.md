@@ -10,8 +10,8 @@
 Visual Prompt Architect (05) → Kie.ai GPT Image 2.6 sunburst (`gpt-image-2-6/sunburst-text-to-image`, Skill 66 id, AGENTS.md N43) → **Prompt-Doctor** retry on 422 (06, shorten /
 remove banned words, preserve intent) → vision QC → winner staged → SeedDream resizes 9:16 / 16:9
 when a Reel/Story/TikTok/Short post type demands. The Gemini grid selector (07, returns a single
-digit 0–3; `AF-SM-GRID-DIGIT`) applies only when a provider returns a multi-image collage; GPT Image
-2.5 returns one image, so it is normally skipped. Midjourney is no longer used (F29).
+digit 0–3; `AF-SM-GRID-DIGIT`) applies only when a provider returns a multi-image collage; the default model uses a
+single-image return path (see Skill 66 catalog for current default model), so it is normally skipped. Midjourney is no longer used (F29).
 
 ### Video
 Storyboard Architect (08; **3–7 scenes, sum EXACTLY 25.0s**, max 1.5 spoken words/sec) →
