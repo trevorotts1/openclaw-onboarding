@@ -401,10 +401,10 @@ def _append_tile(frame,plan,tile_label,*,page=None):
     if (not box or box['width']<8 or box['height']<8 or before and not last):
         raise Stop('Native quiz append destination is not measurable')
     if last:
-        # Guarded attempted append geometry from the captured lower-edge drag.
-        # Populated-page acceptance remains unresolved: this can create a new
-        # page, which must stop before properties or Save. Normal canvases end
-        # at their last wrapper, so a blank-tail requirement is not usable.
+        # Captured populated Page 1 append: two retained TEXT questions, then
+        # one LARGE_TEXT question at the exact final wrapper's inside edge.
+        # The owner/delta checks below and the writer's full-prefix readback
+        # still refuse a new page or a displaced/replaced old question.
         x=last['x']+last['width']/2-box['x'];y=last['y']+last['height']-7-box['y']
         if last['width']<8 or last['height']<14:
             raise Stop('Native final question has no captured inside-edge drop area')

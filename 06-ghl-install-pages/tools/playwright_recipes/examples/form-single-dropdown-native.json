@@ -1,0 +1,40 @@
+{
+  "location_id": "LOC",
+  "location_name": "Fixture Account",
+  "start_url": "https://app.convertandflow.com/v2/location/LOC/form-builder-v2/FORM",
+  "widget_fields": {
+    "expected_form_name": "Approved fixture",
+    "expected_fields": [],
+    "fields": [
+      {
+        "kind": "single_dropdown",
+        "index": null,
+        "desired": {
+          "placeholder": "Select an option",
+          "short_label": "",
+          "width": 100,
+          "required": false,
+          "options": [
+            {
+              "label": "Small",
+              "value": "1"
+            },
+            {
+              "label": "Medium",
+              "value": "2"
+            },
+            {
+              "label": "Large",
+              "value": "3"
+            }
+          ],
+          "calculations": true,
+          "label": "Approved Single Dropdown",
+          "custom_field_name": "Approved Single Dropdown",
+          "unique_key": "contact.approved_single_dropdown",
+          "query_key": "approved_single_dropdown"
+        }
+      }
+    ]
+  }
+}

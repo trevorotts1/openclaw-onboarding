@@ -1,4 +1,4 @@
-"""Captured fixed-three-option Picture Choice authoring on an empty quiz page.
+"""Captured fixed-three-option Picture Choice authoring on an inventoried quiz page.
 
 The native field is RADIO, but its picture grid is a distinct owner shape.
 Media comes from explicitly approved existing Media Storage entries. Upload,
@@ -17,6 +17,7 @@ from playwright_recipes.skill6_playwright import Stop, assert_tenant, click, fil
 KIND = 'PICTURE_CHOICE'
 ACTION = 'quiz_picture_choices'
 DEFAULT_LABELS = ['Option1', 'Option2', 'Option3']
+DEFAULT_LABEL_PROFILES = (tuple(DEFAULT_LABELS), ('Option 1', 'Option 2', 'Option 3'))
 
 
 def _https(value):
@@ -62,7 +63,10 @@ def _question(value, *, new=False):
             raise Stop('Picture Choice media requires its exact approved catalog button name')
     if len({label.casefold() for label in labels}) != 3:
         raise Stop('Picture Choice labels must be unique')
-    if new:choice._option_transition(labels, DEFAULT_LABELS)
+    if new:
+        # Both complete initial vectors were captured. Refuse any authored
+        # rename collision under either profile before a native insertion.
+        for profile in DEFAULT_LABEL_PROFILES:choice._option_transition(labels, profile)
     return deepcopy(value)
 
 
@@ -87,7 +91,7 @@ def validate(step):
                 'RADIO' if original['field_type'] == KIND else original['field_type'])}
             if original['field_type'] == KIND:owner['questions'][index]['field_type'] = 'RADIO'
     if len(projected['questions']) != 1:
-        raise Stop('Captured Picture Choice authors one question on one confirmed empty page')
+        raise Stop('Captured Picture Choice authors exactly one question on its inventoried target page')
     original = _question(projected['questions'][0], new=True)
     # Picture Choice and Multi Dropdown share the native Unique Key namespace;
     # a Query Key is a different property. Preserve blank unresolved old keys
@@ -101,8 +105,6 @@ def validate(step):
     projected['questions'][0]['field_type'] = 'RADIO'
     native.validate({'action':'quiz_short_answers', 'payload':projected},
         field_types=choice.TYPES, new_types=('RADIO',), reserved_key=None)
-    if not payload.get('create_page') and payload['pages'][payload['target_page'] - 1]['questions']:
-        raise Stop('Picture Choice insertion requires a confirmed empty existing or explicitly appended page')
     return deepcopy(payload)
 
 
@@ -150,15 +152,30 @@ def _choices(item):
             raise Stop('Picture Choice option label is not bound to its exact input owner')
         media = native._one(card.locator('[data-testid="picture-choice-option-media"]'),
                             'Picture Choice option media owner changed')
-        if media.get_attribute('role') != 'button':raise Stop('Picture Choice media trigger is not its captured button')
+        media_role=media.get_attribute('role')
         empty = card.locator('img[data-testid="picture-choice-empty-image"]')
         if empty.count():
+            if media_role!='button':raise Stop('Empty Picture Choice media trigger is not its captured button')
             native._one(empty, 'Picture Choice empty media is ambiguous')
             if (empty.get_attribute('src') != '/assets/picture-choice-empty-42ddee2e.svg'
                     or card.locator('img').count() != 1):
                 raise Stop('Picture Choice empty image differs from capture')
             image_url = None
         else:
+            if media_role is None and media.get_attribute('tabindex')=='-1':
+                # Current filled media has a non-button wrapper and one exact
+                # index-bound Change Image action. Empty cards keep their
+                # captured Upload Image button; no generic role relaxation.
+                actions=native._one(media.locator('[data-testid="picture-choice-filled-image-actions"]'),
+                                    'Filled Picture Choice media action owner changed')
+                change=native._one(actions.locator('button[data-testid="picture-choice-change-image-'+str(index)+'"]'),
+                                   'Filled Picture Choice Change Image index changed')
+                if (change.get_attribute('aria-label')!='Change Image' or change.get_attribute('type')!='button'
+                        or change.get_attribute('tabindex')!='0' or not change.is_enabled()
+                        or media.locator('button[aria-label="Change Image"]').count()!=1):
+                    raise Stop('Filled Picture Choice media lacks its exact captured Change Image control')
+            elif media_role!='button':
+                raise Stop('Filled Picture Choice media differs from both captured container profiles')
             image = native._one(card.get_by_role('img', name=value, exact=True),
                                 'Picture Choice authored image is missing or bound to another label')
             image_url = _https(image.get_attribute('src'))
@@ -320,13 +337,21 @@ def _media(page, frame, item, index, option):
     wait_until(lambda:_choices(item) == desired, 'Picture Choice ignored media selection or changed a sibling option')
 
 
+
+def _default_label_profile(labels):
+    profile=tuple(labels)
+    if profile not in DEFAULT_LABEL_PROFILES:
+        raise Stop('New Picture Choice option labels differ from both complete captured default profiles')
+    return profile
+
+
 def _write(page, frame, item, question):
     before = _read_picture(frame, item)
+    _default_label_profile([option['label'] for option in before['options']])
     if (before['query_key'] != 'picture_choice' or before['placeholder'] or before['short_label']
             or before['required'] is not False or before['hidden'] is not False
             or before['unique_key'] != ''
             or before['_unique_key_enabled'] is not True
-            or [option['label'] for option in before['options']] != DEFAULT_LABELS
             or any(option['image_url'] is not None for option in before['options'])
             or before['_styles']['multiple_selection_present'] is not True):
         raise Stop('New Picture Choice differs from captured default properties, media or presentation')

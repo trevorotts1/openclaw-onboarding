@@ -89,6 +89,8 @@ def compile_recipe(operation, data):
     elif operation=='forms.configure' and 'contact_field_plan' in data:
         from playwright_recipes.contact_field_frontdoor import payload_from_inputs
         add('native_contact_field_chain', payload=payload_from_inputs(data))
+    elif operation=='forms.configure' and 'widget_fields' in data:
+        add('native_form_widget_fields',payload={**{key:data[key] for key in ('location_id','location_name','start_url')}, **data['widget_fields']})
     elif operation=='forms.configure' and 'large_text_fields' in data:
         add('native_large_text_fields',payload={key:data[key] for key in ('location_id','location_name','start_url','large_text_fields','field_dependencies')})
     elif operation=='forms.configure' and 'dropdown_fields' in data:
@@ -127,7 +129,9 @@ def compile_recipe(operation, data):
             add('quiz_results', result_page=result_page)
     elif operation=='surveys.configure':
         config = data['configuration']
-        if 'multiline_questions' in config:
+        if 'widget_fields' in config:
+            add('native_survey_widget_fields',payload={**{key:data[key] for key in ('location_id','location_name','start_url')},**config})
+        elif 'multiline_questions' in config:
             add('native_survey_multiline_configuration',payload={
                 **{key:data[key] for key in ('location_id','location_name','start_url')},**config})
         elif 'text_questions' in config:

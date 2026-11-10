@@ -9,8 +9,9 @@ Broad `surveys.create` and `surveys.configure` remain PARTIAL.
   Email.
 - Authored Radio question definitions and exact native placement.
 - Single Line TEXT creation, multiple questions and captured populated append.
-- Multi Line LARGE_TEXT creation: one question on each initially empty requested
-  slide, using the actual `Multi Line1` drag tile and native textarea. Label,
+- Multi Line LARGE_TEXT creation and populated append, including mixed Single
+  Line/Multi Line slides, using the actual `Multi Line1` drag tile and native
+  textarea. Label,
   Placeholder, Short Label, Query Key, Required, Hidden and Hidden value are
   authored and checked after saving and independently reopening.
 
@@ -21,10 +22,13 @@ survey receipt binds textarea identities, slide positions, Query Keys and other
 canvas controls. Completed whole-survey replay reopens and reads that inventory.
 Single Line plans retain their original serialization and hashes.
 
-Multi Line populated append and mixing Multi Line with other question families
-on the same target slide are refused before browser work until their separate
-native capture is available. Different captured families on different slides are
-supported. Existing Multi Line properties also have their separate typed action.
+Populated insertion binds the complete ordered prior TEXT/LARGE_TEXT canvas and
+all prior properties before one pointer drag into the measured positive blank
+tail. Later stages and the whole saved survey verify interleaved INPUT/TEXTAREA
+order and exact Query Keys. Existing homogeneous Single Line plan serialization
+is unchanged. Mixing Radio with Multi Line on the same slide still refuses until
+its specific placement is captured. Other widget families are not inferred from
+these text controls. Existing Multi Line properties retain their separate action.
 
 ## Remaining owned creation tiles
 

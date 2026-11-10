@@ -104,9 +104,30 @@ class CommunityReplayTests(unittest.TestCase):
                 result = run(page, data, root, portal_context=context)
                 self.assertEqual(result, {**original, 'replayed': True})
                 self.assertNotIn('SHOULD_NOT_LEAVE_JOURNAL', json.dumps(result))
-                self.assertEqual(page.clicks, clicks)
+                self.assertEqual(page.clicks, clicks + (['SETTINGS', 'Details', 'Cancel'] if kind == 'details' else []))
                 self.assertEqual(page.writes, writes)
                 self.assertEqual(path.read_text(), raw)
+
+    def test_details_replay_reloads_native_description_and_refuses_drift_without_rewrite(self):
+        data = details_inputs(); page = DetailsPage(data)
+        context = portal.capture_context(page, data, identity_reader=read_identity)
+        with tempfile.TemporaryDirectory() as root:
+            original = portal.run_details(page, data, root, portal_context=context)
+            journal = Path(root, 'community-details-state.json')
+            saved = journal.read_bytes()
+            writes, fills, reloads = page.writes, page.fills, page.reloads
+            unchanged = portal.run_details(page, data, root, portal_context=context)
+            self.assertEqual(unchanged, {**original, 'replayed': True})
+            self.assertEqual(page.reloads, reloads + 1)
+            page.saved_description = 'Changed independently after the completed write.'
+            clicks = list(page.clicks)
+            with self.assertRaisesRegex(core.Stop, 'description changed'):
+                portal.run_details(page, data, root, portal_context=context)
+            self.assertEqual(page.reloads, reloads + 2)
+            self.assertEqual(page.clicks, clicks + ['SETTINGS', 'Details', 'Cancel'])
+            self.assertEqual((page.writes, page.fills), (writes, fills))
+            self.assertFalse(page.modal)
+            self.assertEqual(journal.read_bytes(), saved)
 
     def test_malformed_json_and_nonobject_outcomes_stop_without_leaking(self):
         for kind in ('details', 'channels'):
