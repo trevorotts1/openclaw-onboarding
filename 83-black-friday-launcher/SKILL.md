@@ -280,7 +280,15 @@ a numbered directory, so the same code runs in both layouts.
 Read in this order. Each step names the file, so nothing here depends on guessing a path.
 
 1. This file, then `DISPATCH.md` (dispatch, designs, pictures and delivery in full) and
-   `DECISIONS-PENDING.md` (what is decided, what is open).
+   `DECISIONS-PENDING.md` (what is decided, what is open). Then read every SOP this skill
+   declares, in full, each named by its full repo path:
+   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md`,
+   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`,
+   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-602.md`,
+   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-607.md`,
+   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-610.md`,
+   and the registration SOP
+   `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-07-Full-Funnel-Build-Orchestration.md`.
 2. For the pages: `49-signature-funnel` (launch record, gates, dispatch), then the page skills 71, 78, 79,
    80, 81 and 82 that Skill 49 calls.
 3. For the launch automations (emails, texts, reminders, workflows): `50-email-engine` writes the DRAFT-ONLY
