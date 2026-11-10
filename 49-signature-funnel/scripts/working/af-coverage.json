@@ -199,9 +199,7 @@
     "AF-FUN-TY1-TITLE",
     "AF-FUN-TY2-STEPBAND",
     "AF-FUN-TY2-STEPS",
-    "AF-FUN-TY3-CHARBAND",
-    "AF-FUN-VISUAL-PHASE",
-    "AF-FUN-VISUAL-SLOTSET"
+    "AF-FUN-TY3-CHARBAND"
   ],
   "missing": [],
   "per_probe": {
@@ -312,9 +310,7 @@
       "AF-FUN-BUILD-FAB",
       "AF-FUN-DERIVE-LEDGER",
       "AF-FUN-FRONT-DOOR",
-      "AF-FUN-HTML-FRAGMENT",
-      "AF-FUN-VISUAL-PHASE",
-      "AF-FUN-VISUAL-SLOTSET"
+      "AF-FUN-HTML-FRAGMENT"
     ],
     "delegation": [
       "AF-FUN-DELEG-IMAGES",
