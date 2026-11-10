@@ -51,8 +51,8 @@ def _one(node,message):
     return node
 
 
-def _panel(frame):
-    panel=_one(frame.locator('#form_custom_sidebar'),'Native Single Dropdown sidebar changed')
+def _panel(frame, *, sidebar='#form_custom_sidebar'):
+    panel=_one(frame.locator(sidebar),'Native Single Dropdown sidebar changed')
     click(_one(panel.get_by_text('Options',exact=True),'Native Single Dropdown Options pane changed'))
     return panel
 
@@ -62,8 +62,8 @@ def _calculation_control(panel):
                 'Native Single Dropdown calculation switch changed')
 
 
-def read_options(frame):
-    panel=_panel(frame)
+def read_options(frame, *, sidebar='#form_custom_sidebar'):
+    panel=_panel(frame,sidebar=sidebar)
     state=_calculation_control(panel).get_attribute('aria-checked')
     if state not in ('true','false'):raise Stop('Native Single Dropdown calculation state is unavailable')
     labels=panel.locator('[id^="option-label-"] input');count=labels.count()
@@ -80,11 +80,11 @@ def read_options(frame):
     return validate_properties({'options':options,'calculations':state=='true'})
 
 
-def write_options(frame,before,desired):
-    observed=read_options(frame)
+def write_options(frame,before,desired, *, sidebar='#form_custom_sidebar'):
+    observed=read_options(frame,sidebar=sidebar)
     if any(observed[key]!=before[key] for key in ('options','calculations')):
         raise Stop('Native Single Dropdown choices changed after full preflight')
-    panel=frame.locator('#form_custom_sidebar')
+    panel=frame.locator(sidebar)
     calculation=_calculation_control(panel)
     if (calculation.get_attribute('aria-checked')=='true')!=desired['calculations']:
         click(calculation)
@@ -110,5 +110,5 @@ def write_options(frame,before,desired):
             score=_one(panel.locator('#option-value-'+str(index)+' input'),'Native Single Dropdown option value changed')
             if score.input_value()!=option['value']:
                 fill(score,option['value']);score.press('Tab')
-    if read_options(frame)!={key:deepcopy(desired[key]) for key in ('options','calculations')}:
+    if read_options(frame,sidebar=sidebar)!={key:deepcopy(desired[key]) for key in ('options','calculations')}:
         raise Stop('Native Single Dropdown authored options did not settle to exact desired values')
