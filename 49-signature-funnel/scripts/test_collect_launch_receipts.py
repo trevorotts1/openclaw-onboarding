@@ -30,7 +30,7 @@ def result(**kw):
 def review(**kw):
     r = {"schema": "signature-launch-review-record/v1",
          "reviewer_session": "rev-1", "reviewer_model": "m",
-         "request_id": "rq",
+         "verdict": "pass", "request_id": "rq",
          "reviewed_artifacts": [{"path": "a.png", "sha256": SHA}]}
     r.update(kw)
     return r

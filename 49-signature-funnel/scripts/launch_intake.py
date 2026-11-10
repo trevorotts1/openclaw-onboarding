@@ -1029,6 +1029,24 @@ def assemble_plan(session: Dict[str, Any]) -> Dict[str, Any]:
         if entry is not None:
             launch[carried] = {"value": entry["value"], "state": entry["state"],
                                "source_ref": entry.get("source_ref", "")}
+    # Free entry (BFL-001, validator rule of 11-07): the opt-in path is the client's own
+    # supplied material, never defaulted and never derived from the page set.
+    main_offer = next((o for o in offers if o["slot"] == "main"), None)
+    if journey == "free_entry" and main_offer is not None:
+        opt_in = _get(session, "free_entry.opt_in_path")
+        if (opt_in is None or opt_in["state"] == "unknown"
+                or not isinstance(opt_in["value"], str) or not opt_in["value"].strip()):
+            missing.append("free entry opt-in path (the form or landing path the "
+                           "client actually runs; never made up)")
+        else:
+            delivery = (_get(session, "free_entry.delivery_ref") or {}).get("value")
+            free_entry = {"offer_id": main_offer["offer_id"],
+                          "opt_in_path": opt_in["value"],
+                          "delivery_ref": delivery if isinstance(delivery, str)
+                          and delivery.strip() else None}
+            if str(opt_in.get("source_ref", "")).startswith("answers-file:"):
+                free_entry["source_ref"] = opt_in["source_ref"]
+            launch["free_entry"] = free_entry
     if missing:
         session["state"] = "awaiting_missing_fact"
         session["missing_facts"] = missing
@@ -1564,9 +1582,24 @@ def _self_test() -> int:
     answer(s4, "c1_bump", "No add-on")
     answer(s4, "c2_u1", "No upgrade")
     r4 = assemble_plan(s4)
+    say(r4["state"] == "awaiting_missing_fact" and
+        any("opt-in" in m for m in r4["missing"]),
+        "free entry: no opt-in path is a missing fact, never made up")
+    s4 = mk(known={"journey_mode": "free_entry",
+                   "free_entry.opt_in_path": "/free-community"})
+    answer(s4, "a1_offer", "Free community registration")
+    answer(s4, "b2_price", "It is free")
+    answer(s4, "c1_bump", "No add-on")
+    answer(s4, "c2_u1", "No upgrade")
+    r4 = assemble_plan(s4)
     say(r4["state"] == "awaiting_plan_approval" and
-        r4["plan"]["offers"][0]["prices"][0]["amount_minor"] == 0,
-        "free entry: amount 0 is a KNOWN free price and the plan assembles")
+        r4["plan"]["offers"][0]["prices"][0]["amount_minor"] == 0 and
+        r4["plan"]["free_entry"] == {"offer_id": "MAIN",
+                                     "opt_in_path": "/free-community",
+                                     "delivery_ref": None} and
+        not vlp.validate_launch(r4["plan"]),
+        "free entry: amount 0 is a KNOWN free price and the plan assembles "
+        "with the client's opt-in path")
     say("free" in render_summary(s4), "free entry: summary says free, not $0.00")
 
     # --- pause/resume with recap; cancel is terminal
