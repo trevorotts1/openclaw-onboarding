@@ -1,3 +1,7 @@
+## [v7.2.12] - 2026-11-10 - repack kie-setup.skill from current source (no behaviour change)
+
+- `kie-setup.skill` rebuilt so its SKILL.md and kie-setup-full.md members equal the files in this folder. G3 patch bump for the repack.
+
 ## [v7.2.11] - 2026-11-10 - official-docs port test pins 07 7.2.11 and 66 2.2.16 (test pin only, no behaviour change; INST-001 #21)
 
 - `tests/test_official_docs_port.py` `SKILL_VERSIONS` now reads 07 7.2.11 and 66 2.2.16 (was 7.2.10 and 2.2.15) after the INST-001 #21 Skill 66 doc bump. Touching a file inside this skill directory requires the G3 patch bump, so 07 rolls with it; the G3 lockstep, nothing else in Skill 07 changed.

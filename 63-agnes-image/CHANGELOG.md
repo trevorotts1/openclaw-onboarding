@@ -3,6 +3,10 @@
 All notable changes to this skill are documented here.
 
 ---
+## [2.1.9] - 2026-11-10 - repack agnes-image.skill from current source (no behaviour change)
+
+- `agnes-image.skill` rebuilt so all 19 members equal the files in this folder. G3 patch bump for the repack; SKILL.md frontmatter synced to the version file.
+
 ## [2.1.8] - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 
 - Version bumped so the folded content carries the version G3 requires above main. No functional change.
