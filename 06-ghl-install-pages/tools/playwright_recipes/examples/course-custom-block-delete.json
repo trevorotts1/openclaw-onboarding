@@ -1,0 +1,30 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Exact approved location name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/memberships/courses/course-creator-studio?view=manager&sub_view=customize&product_id=COURSE_FROM_INVENTORY",
+  "course_id": "COURSE_FROM_INVENTORY",
+  "template_id": "INACTIVE_TEMPLATE_FROM_INVENTORY",
+  "expected_template_title": "Exact inactive template title",
+  "publish": false,
+  "custom_blocks": {
+    "expected_inventory": [
+      {"id": "categoryBlock", "type": "Category Block"},
+      {"id": "CUSTOM_BLOCK_UUID_FROM_INVENTORY", "type": "Custom Block"}
+    ],
+    "deletion": {
+      "action": "delete",
+      "id": "CUSTOM_BLOCK_UUID_FROM_INVENTORY",
+      "expected": {
+        "heading": "Exact current heading",
+        "content": "Exact current plain content",
+        "button_text": "Exact current button text",
+        "button_url": "https://example.com/actual-current-destination",
+        "button_visibility": "show",
+        "button_type": "solid",
+        "button_alignment": "left"
+      },
+      "expected_content_html": "<p>Exact current rich HTML</p>",
+      "expected_media_url": "https://example.com/actual-current-image.svg"
+    }
+  }
+}

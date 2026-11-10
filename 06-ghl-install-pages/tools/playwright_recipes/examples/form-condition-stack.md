@@ -5,22 +5,21 @@ native Show/Hide rule list. The native target picker selects one field, so a
 single predicate affecting two targets is represented as two explicit rules.
 The example hides Phone and Email when First Name is filled.
 
-Supply 1 to 50 rules. Every rule has `match`, `clauses`, `effect`, and one
+Supply 1 to 50 rules, or an explicit empty desired list with the complete expected previous inventory when clearing. Every rule has `match`, `clauses`, `effect`, and one
 `target`. A rule accepts 1 to 20 captured source/operator clauses; compound
-rules use homogeneous AND (`all`) or OR (`any`). Binary operators require an
+rules use AND (`all`), OR (`any`), or explicit mixed ordered connectors (`mixed`). Binary operators require an
 explicit text value. Nested groups, unknown native effects, duplicate predicates
 for one target and conflicting Show/Hide predicates for one target are refused.
 
 Existing cards must be the exact prefix of the entire requested rule list.
 Their order, source/operator/value tokens and target/effect must match before
 any missing rule is added. The handler appends only the missing suffix through
-the observed Show/Hide Fields tile. It never deletes, edits or reorders existing
+the observed Show/Hide Fields tile. Without an expected previous inventory it does not edit, delete or reorder existing
 cards to force a match. Supply the full intended stack rather than an arbitrary
 append request.
 
 For editing existing Show/Hide cards, also supply `condition.expected_rules`
-with the entire inventoried previous rule list. It must have the same number
-of cards as desired `rules`. Every actual card must match the complete previous
+with the entire inventoried previous rule list. It may have fewer, the same number, or more cards than desired `rules`. Every actual card must match the complete previous
 stack before the first edit. Only changed cards are opened through their scoped
 Edit control. The existing native modal's full predicate, connectors, effect and
 target are independently checked before any authored edit. The complete changed
@@ -32,8 +31,9 @@ their count, grow through native append controls, or shrink by removing tail
 rows. Each removal is bound to the exact tail row's owner and captured trash
 SVG, never the first If row. There is no confirmation dialog in this captured
 flow. Every remaining prefix clause, connector, effect and target is checked
-after each removal. Changing the number/order of cards still requires a
-separate captured flow and is refused before writing. A conflicting previous Show/Hide pair may be
+after each removal. Card growth appends the exact desired suffix after protected edits. Card contraction
+removes exact tail cards through the measured second Delete confirmation; clearing
+requires positive loaded-empty proof. Drag reordering remains unsupported. A conflicting previous Show/Hide pair may be
 explicitly inventoried and corrected; conflicting desired predicates for one
 target remain refused. See `form-condition-stack-edit.json`.
 
