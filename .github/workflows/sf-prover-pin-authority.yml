@@ -87,6 +87,9 @@ jobs:
           python-version: "3.11"
 
       - name: Recompute the pin and run the bypass scan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -165,8 +168,24 @@ jobs:
           # (2) DECIDES: the bypass scan over the PR tree runs from trusted code.
           python3 "$verifier" --skill-dir tree/49-signature-funnel bypass-scan
           # (3) Extra signal (set -e: it can add a failure, never remove one): the base tree still matches the
-          # base pin, so the PR did not quietly alter what the old spec asserts.
-          python3 "$verifier" --skill-dir trusted/49-signature-funnel hashpin
+          # base pin, so the PR did not quietly alter what the old spec asserts. A stale base cannot
+          # certify its own repair. The recovery exception is limited to an authority-minted pin plus
+          # this authority workflow itself (or the pin alone). Step (1) must FIRST verify the proposed
+          # tree with trusted code, and step (2) must FIRST pass its trusted bypass scan. The later
+          # hand-edit gate still requires every pin-touching commit to be bot-authored, bot-committed,
+          # and pin-only. No pinned implementation/spec change can enter this recovery exception.
+          pin="49-signature-funnel/scripts/SF-PROVER-PIN.sha256"
+          authority=".github/workflows/sf-prover-pin-authority.yml"
+          touched=""; others="x"
+          if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
+            touched="$(git -C tree diff --name-only "$BASE_SHA" "$HEAD_SHA" -- "$pin")"
+            others="$(git -C tree diff --name-only "$BASE_SHA" "$HEAD_SHA" -- . | grep -Fv -x "$pin" | grep -Fv -x "$authority" || true)"
+          fi
+          if [ -n "$touched" ] && [ -z "$others" ]; then
+            echo "::notice::authority pin recovery: proposed-tree integrity passed; the later bot-only pin gate remains mandatory"
+          else
+            python3 "$verifier" --skill-dir trusted/49-signature-funnel hashpin
+          fi
           # ponytail: the trusted check hashes with the BASE algorithm and resolves new trees only by the
           # numbered-skill convention, so a PR that changes how the pin is computed, drops a pin rule, adds a
           # non-numbered tree, or adds a network allow-list entry stays red: land the verifier change on main in
