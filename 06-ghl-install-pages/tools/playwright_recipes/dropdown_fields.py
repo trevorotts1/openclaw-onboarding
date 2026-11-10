@@ -16,12 +16,12 @@ from urllib.parse import urlsplit
 if __package__:
     from .forms_advanced import _object_dialog,_object_row,_close_object_drawer,_canvas_identity
     from .field_placement import _close_properties
-    from .assessments import reopen_editor
+    from .assessments import reopen_editor, read_editor_title
     from .skill6_playwright import Stop,assert_tenant,click,fill,form_builder,wait_until
 else:
     from forms_advanced import _object_dialog,_object_row,_close_object_drawer,_canvas_identity
     from field_placement import _close_properties
-    from assessments import reopen_editor
+    from assessments import reopen_editor, read_editor_title
     from skill6_playwright import Stop,assert_tenant,click,fill,form_builder,wait_until
 
 
@@ -190,8 +190,8 @@ def configure(page,step):
     frame=form_builder(page)
     title=frame.get_by_role('textbox',name='Form Name',exact=True)
     title.wait_for(state='visible',timeout=45000)
-    if title.count()!=1 or not title.input_value().strip():raise Stop('Dropdown form identity is unavailable')
-    name=title.input_value();scope=_one(frame.locator('#form-builder-container'),'Native dropdown owner canvas changed')
+    if title.count()!=1 or not read_editor_title(title).strip():raise Stop('Dropdown form identity is unavailable')
+    name=read_editor_title(title);scope=_one(frame.locator('#form-builder-container'),'Native dropdown owner canvas changed')
     _close_object_drawer(frame,'form');click(frame.get_by_role('tab',name='Edit',exact=True))
     before_dropdowns=_inventory(frame,scope);before_canvas=_stable_canvas(scope)
     known={record['native_query_key']:record for _,record in before_dropdowns}
@@ -212,7 +212,7 @@ def configure(page,step):
     added=[]
     for field in pending:
         validate(plan,require_fresh=True);assert_tenant(page,data)
-        if page.url!=data['start_url'] or title.input_value()!=name:
+        if page.url!=data['start_url'] or read_editor_title(title)!=name:
             raise Stop('Native dropdown target changed before insertion')
         current=_inventory(frame,scope);canvas=_stable_canvas(scope)
         _preserved(before_canvas,before_dropdowns,canvas,current,added)
@@ -241,7 +241,7 @@ def configure(page,step):
     _preserved(before_canvas,before_dropdowns,final_canvas,final_dropdowns,added)
     if pending:
         assert_tenant(page,data)
-        if page.url!=data['start_url'] or title.input_value()!=name:raise Stop('Dropdown target changed before Save')
+        if page.url!=data['start_url'] or read_editor_title(title)!=name:raise Stop('Dropdown target changed before Save')
         save=_one(frame.get_by_role('button',name='Save',exact=True),'Native dropdown Save changed')
         click(save);wait_until(lambda:save.is_enabled(),'Native dropdown Save remains busy')
         try:page.wait_for_load_state('networkidle',timeout=45000)

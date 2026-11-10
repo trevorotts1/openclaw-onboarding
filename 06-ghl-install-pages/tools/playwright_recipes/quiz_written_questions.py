@@ -67,7 +67,7 @@ def configure(page,step):
     plan=validate(step);runtime=plan;frame=page.frame_locator('iframe[name="quiz-builder-app"]')
     title=frame.get_by_role('textbox',name='Form Name',exact=True)
     def identity():
-        if page.url!=plan['start_url'] or title.count()!=1 or title.input_value()!=plan['expected_quiz_name']:
+        if page.url!=plan['start_url'] or title.count()!=1 or native.read_editor_title(title)!=plan['expected_quiz_name']:
             raise Stop('Native written-answer quiz identity changed')
         assert_tenant(page,plan)
     def inventory():return choice._inventory(frame,runtime,field_types=TYPES)

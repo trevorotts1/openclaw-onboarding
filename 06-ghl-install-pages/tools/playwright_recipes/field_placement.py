@@ -277,17 +277,17 @@ def configure(page, step):
     """
     if __package__:
         from .skill6_playwright import click, form_builder, wait_until
-        from .assessments import reopen_editor
+        from .assessments import reopen_editor, read_editor_title
     else:
         from skill6_playwright import click, form_builder, wait_until
-        from assessments import reopen_editor
+        from assessments import reopen_editor, read_editor_title
     step = validate(step)
     if any(label not in CAPTURED_FIELDS for label in step['add_fields']):
         _stop('Requested native built-in still requires field/query capture')
     frame = form_builder(page)
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
-    name, editor_url = title.input_value(), page.url
+    name, editor_url = read_editor_title(title), page.url
     if not isinstance(name, str) or not name.strip():
         _stop('Saved native form identity is unavailable')
     _close_initial(frame)

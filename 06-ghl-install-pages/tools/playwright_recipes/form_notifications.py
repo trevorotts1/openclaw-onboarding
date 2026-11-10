@@ -14,10 +14,10 @@ import re
 
 if __package__:
     from .skill6_playwright import Stop, assert_tenant, click, fill, form_builder, visible, wait_until
-    from .assessments import reopen_editor
+    from .assessments import reopen_editor, read_editor_title
 else:
     from skill6_playwright import Stop, assert_tenant, click, fill, form_builder, visible, wait_until
-    from assessments import reopen_editor
+    from assessments import reopen_editor, read_editor_title
 
 
 CARDS = {
@@ -160,7 +160,7 @@ def configure_notifications(page, step):
     assert_tenant(page, context)
     editor_url = page.url
     frame = form_builder(page)
-    name = frame.get_by_role('textbox', name='Form Name', exact=True).input_value()
+    name = read_editor_title(frame.get_by_role('textbox', name='Form Name', exact=True))
     if not name:
         raise Stop('Native form identity is unreadable')
     close = frame.get_by_role('dialog').get_by_role('button', name='Close', exact=True)

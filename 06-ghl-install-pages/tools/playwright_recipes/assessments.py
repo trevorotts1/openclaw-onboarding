@@ -72,6 +72,24 @@ def _field_anchor(field):
     return field['current_placeholder'], field['current_query_key']
 
 
+
+def read_editor_title(title):
+    """Read the captured contenteditable Form Name or retained native input.
+
+    Marketing quiz title capture (2026-11-10) exposes a DIV, so Playwright's
+    input_value() is not a valid reader for that measured owner shape.
+    """
+    editable=title.get_attribute('contenteditable')
+    if isinstance(editable,str):
+        if (editable!='true' or title.get_attribute('role')!='textbox'
+                or title.get_attribute('aria-label')!='Form Name'):
+            raise AssessmentError('Native contenteditable Form Name identity changed')
+        value=title.inner_text()
+        if not isinstance(value,str):raise AssessmentError('Native contenteditable Form Name is unreadable')
+        return value
+    return title.input_value()
+
+
 def reopen_editor(page, kind, name, editor_url):
     """Independent list read-back without relying on browser history.
 
@@ -111,7 +129,7 @@ def reopen_editor(page, kind, name, editor_url):
             raise Stop('Reopened native editor identity changed')
         if (editor_frames.count()==0 or page.locator('iframe[name="'+kind+'-builder-app"]').count()!=1
                 or title.count()==0):return False
-        actual=title.input_value()
+        actual=read_editor_title(title)
         if not actual or not actual.strip():return False
         if actual!=name:raise Stop('Reopened native editor identity changed')
         return True
@@ -173,7 +191,7 @@ def configure_css(page, step):
     frame = form_builder(page)
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
-    name, editor_url = title.input_value(), page.url
+    name, editor_url = read_editor_title(title), page.url
 
     def close_initial():
         close = frame.get_by_role('dialog').get_by_role('button', name='Close', exact=True)
@@ -332,7 +350,7 @@ def configure_fields(page, step):
     title.wait_for(state='visible', timeout=45000)
     if title.count() != 1:
         raise Stop('Native form title is missing or ambiguous')
-    name, editor_url = title.input_value(), page.url
+    name, editor_url = read_editor_title(title), page.url
     if not isinstance(name, str) or not name.strip():
         raise Stop('Saved native form identity is unavailable')
 
@@ -551,7 +569,7 @@ def configure_condition(page, step):
     frame = form_builder(page)
     editor_url = page.url
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
-    form_name = title.input_value()
+    form_name = read_editor_title(title)
     close = frame.get_by_role('dialog').get_by_role('button', name='Close', exact=True)
     if visible(close):
         click(close)
@@ -656,7 +674,7 @@ def configure_condition(page, step):
                and frame.get_by_role('button', name='Save', exact=True).is_enabled(), 'Form save did not finish')
     page.goto(editor_url, wait_until='domcontentloaded', timeout=45000)
     title.wait_for(state='visible', timeout=45000)
-    if page.url != editor_url or title.input_value() != form_name:
+    if page.url != editor_url or read_editor_title(title) != form_name:
         raise Stop('Reopened form identity changed')
     if visible(close):
         click(close)

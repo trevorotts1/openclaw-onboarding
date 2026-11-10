@@ -244,7 +244,7 @@ def configure(page, step, *, catalog=None):
     """
     from playwright_recipes.skill6_playwright import assert_tenant, click, form_builder, wait_until
     from playwright_recipes.field_placement import _close_initial
-    from playwright_recipes.assessments import reopen_editor
+    from playwright_recipes.assessments import reopen_editor, read_editor_title
     plan = validate(step); data = plan['payload']; contract = data['checkout_contract']
     _fresh(contract)
     if page.url != data['start_url']:
@@ -253,10 +253,10 @@ def configure(page, step, *, catalog=None):
     frame = form_builder(page)
     title = _one(frame.get_by_role('textbox',name='Form Name',exact=True),
                  'Native payment form title changed')
-    if title.input_value() != data['expected_form_name']:
+    if read_editor_title(title) != data['expected_form_name']:
         raise Stop('Native payment form name differs from its inventoried identity')
     def identity():
-        if page.url != data['start_url'] or title.count()!=1 or title.input_value()!=data['expected_form_name']:
+        if page.url != data['start_url'] or title.count()!=1 or read_editor_title(title)!=data['expected_form_name']:
             raise Stop('Native payment form identity changed during outcome configuration')
         assert_tenant(page,data)
     def payment():

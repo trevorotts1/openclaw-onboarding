@@ -335,9 +335,10 @@ def build_survey_questions(inputs, evidence_root, *, page, capability, transport
     # Confirm the actual complete owner-slide inventory before creating any
     # shared contact-field definition, even though selection is read-only.
     frame=page.frame_locator('iframe[name="survey-builder-app"]')
+    from playwright_recipes.assessments import read_editor_title
     title=frame.get_by_role('textbox',name='Form Name',exact=True)
     title.wait_for(state='visible',timeout=45000)
-    if title.count()!=1 or not title.input_value().strip():
+    if title.count()!=1 or not read_editor_title(title).strip():
         raise Stop('Survey Radio chain cannot prove its native survey identity')
     survey_fields._close_initial(frame)
     survey_fields._owner(frame,inputs)

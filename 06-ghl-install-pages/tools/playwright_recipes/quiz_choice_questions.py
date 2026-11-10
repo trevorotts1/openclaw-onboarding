@@ -414,7 +414,7 @@ def configure(page,step):
     plan=validate(step);frame=page.frame_locator('iframe[name="quiz-builder-app"]')
     title=frame.get_by_role('textbox',name='Form Name',exact=True)
     def identity():
-        if page.url!=plan['start_url'] or title.count()!=1 or title.input_value()!=plan['expected_quiz_name']:
+        if page.url!=plan['start_url'] or title.count()!=1 or native.read_editor_title(title)!=plan['expected_quiz_name']:
             raise Stop('Native Multiple Choice quiz identity changed')
         assert_tenant(page,plan)
     title.wait_for(state='visible',timeout=45000);native._wait_editor_identity(page,title,plan);identity();native._wait_baseline(frame,plan)

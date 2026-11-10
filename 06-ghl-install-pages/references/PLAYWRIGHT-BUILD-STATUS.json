@@ -1,6 +1,6 @@
 {
   "schema": "skill6-build-inventory/2",
-  "updated_at": "2026-11-09T20:10:05.379816+00:00",
+  "updated_at": "2026-11-10T06:07:25.964649+00:00",
   "scope": "33 named catalog operations; equal-weight executable build coverage of frozen source, not elapsed effort, feature-weighted progress or live readiness.",
   "counts": {
     "BUILT": 21,
@@ -15,9 +15,9 @@
   },
   "current_feature_progress": {
     "schema": "skill6-current-feature-progress/1",
-    "updated_at": "2026-11-10T05:01:31.862626+00:00",
+    "updated_at": "2026-11-10T06:07:25.964649+00:00",
     "read_first": "The 21/11/1 counts and original row gaps are the frozen fifth-source operation audit, not a fresh unfinished-script count. This section records reviewed implementation added since that audit. SOURCE_BUILT does not mean native functional acceptance or deployed/merged.",
-    "source_branch": "skill6/finish-captured-flows-20261110",
+    "source_branch": "skill6/closure-pipelines-v102-20261110",
     "durable_core_source_commit": "554fc5c2b2d7587dcde85905417de81c4e668d22",
     "additional_reviewed_source": [
       "1a4daf06f4494cb297fa57552a5367323ffd54d1",
@@ -328,7 +328,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+        "delivery": "DELIVERED_THROUGH_BATCH_3090"
       },
       {
         "id": "survey-multiple-slide-radio",
@@ -349,7 +349,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+        "delivery": "DELIVERED_THROUGH_BATCH_3090"
       },
       {
         "id": "form-inventoried-outcome-removal",
@@ -370,13 +370,104 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
+        "delivery": "DELIVERED_THROUGH_BATCH_3090"
+      },
+      {
+        "id": "quiz-owned-new-shell-pipeline",
+        "feature": "Create a new quiz through captured question, scoring and result writers",
+        "operations": [
+          "quizzes.create"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/quiz_creation.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "Captured same-location generated empty Page 1 is saved and independently reopened before questions; no supplied editor ID.",
+          "One captured question per page, with separate child journals and strict count/false-claim receipts; populated-page append remains missing."
+        ],
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
+        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+      },
+      {
+        "id": "survey-empty-slide-radio-pipeline",
+        "feature": "Create empty survey slides and author Radio batches across requested slides",
+        "operations": [
+          "surveys.create"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_creation.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "One to 100 requested empty slides is an adapter input bound, not a measured platform maximum; standard-field shells remain available.",
+          "Read-only preflight of every Radio dependency precedes shell writes; bind all owners, fields and query keys through final independent reopen.",
+          "Additional non-Radio widgets/properties and compound/completion outcomes remain missing."
+        ],
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
+        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+      },
+      {
+        "id": "form-existing-outcome-edits",
+        "feature": "Edit inventoried existing conditional outcomes and combine count changes",
+        "operations": [
+          "forms.conditions"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_outcomes.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "Explicit source_indices bind retained original ordinals; reorder and arbitrary outcome-family changes refuse.",
+          "Preserve sibling rich content/order and verify the full expected native modal before edits; keep uncertain-write refusal."
+        ],
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
+        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+      },
+      {
+        "id": "native-contenteditable-editor-titles",
+        "feature": "Read captured contenteditable editor titles across existing writers",
+        "operations": [
+          "forms.configure",
+          "forms.conditions",
+          "surveys.create",
+          "surveys.configure",
+          "quizzes.create",
+          "quizzes.configure"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/assessments.py",
+            "function": "read_editor_title"
+          }
+        ],
+        "preserved_boundaries": [
+          "Require the exact Form Name textbox identity for contenteditable titles and retain old input titles.",
+          "Do not change reads for ordinary field labels or other input property controls."
+        ],
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
         "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
       }
     ],
     "new_control_capabilities_in_this_batch": [
-      "quiz-picture-mixed-batches",
-      "survey-multiple-slide-radio",
-      "form-inventoried-outcome-removal"
+      "quiz-owned-new-shell-pipeline",
+      "survey-empty-slide-radio-pipeline",
+      "form-existing-outcome-edits",
+      "native-contenteditable-editor-titles"
     ],
     "receipt_hardening": [
       "Fresh native course background-media completion now passes the same exact configuration/source/changed-image validator as completed replay."
@@ -388,23 +479,22 @@
         "Contact Dropdown creation lacks a documented option-array request schema and explicitly refuses."
       ],
       "forms.conditions": [
-        "Native card drag reordering, nested grouping and broader custom/advanced field identities.",
-        "Editing existing Redirect, custom-message and disqualification cards; removal is now built only for an explicitly inventoried unchanged ordered subset."
+        "Native card drag reordering, nested grouping and broader custom/advanced field identities. Existing Redirect, custom-message and disqualification edits/count changes are now built."
       ],
       "courses.configure_ui": [
         "Video Block upload/processing/save lifecycle, image-removal modes and other uncaptured template/block settings.",
         "Activation/publication remains a separate explicit operation, not implied by inactive-template edits."
       ],
       "quizzes.create": [
-        "Picture Choice, reliable existing populated-page append and a complete new-shell-to-authored-questions/scoring/results flow."
+        "Reliable existing populated-page append remains unimplemented. Captured new-shell question/scoring/result orchestration is now built; remaining styles/media/tier lifecycle are tracked under quizzes.configure."
       ],
       "quizzes.configure": [
         "Picture Choice option-count, style/layout, local-upload and broader media paths beyond the captured fixed-three-option existing-catalog writer.",
         "Reliable populated-page append, answer Jump To destinations, tier creation/removal and remaining result media/styling."
       ],
       "surveys.create": [
-        "Additional question/widget types and Radio batches targeting several different slides in one creation job.",
-        "Broader complete survey flows, compound predicates and completion outcomes; multiple standard-field slides with one chosen Radio target are now built."
+        "Non-Radio question/widget authoring, including requested properties, Required/Hidden and media controls.",
+        "Broader complete survey flows, compound predicates and completion outcomes. Empty slide shells and Radio batches targeting several slides are now built."
       ]
     },
     "other_partial_areas": [
@@ -420,20 +510,20 @@
       "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3053",
       "status_at_checkpoint": "MERGED 2026-11-09T23:22:27Z; merge commit 565a27d2f26526cab73ca750ea2be83f05bee50c"
     },
-    "current_batch_pr": "Three reviewed source additions await required merge checks and existing coordinator delivery. Previous #3078 source was delivered through #3085.",
+    "current_batch_pr": "v27.1.101 delivered through #3090. Four bounded source additions in v27.1.102 are independently reviewed; exact current-base publication and merge remain separate.",
     "verified_delivery": {
       "status": "MERGED",
-      "pr": 3085,
-      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3085",
-      "merged_at": "2026-11-10T04:53:00Z",
-      "merge_commit": "dd9e52592d52db6037d845ce5cd5d02326b15f99",
-      "unit_pr": 3078,
-      "unit_head": "8df0709717082c1325d5dda6064c42fae95c371e",
-      "source_feature_additions_since_frozen_audit": 14,
-      "native_final_script_acceptance": "DEFERRED"
+      "pr": 3090,
+      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3090",
+      "merge_commit": "83d44056f9620b60292872cbcff4f5f6423f9ffd",
+      "unit_pr": 3087,
+      "unit_head": "7a17c3d9ac518134148312fcf21bf0eb0e640717",
+      "unit_disposition": "DELIVERED_THROUGH_BATCH",
+      "source_feature_additions_since_frozen_audit": 17,
+      "native_final_script_acceptance": "PENDING"
     },
     "remaining_operation_reconciliation": {
-      "basis": "All twelve explicit operation areas still retain executable gaps after the fourteen delivered additions and these three reviewed source additions. No operation is promoted solely for focused checks or deferred native acceptance.",
+      "basis": "All twelve explicit operation areas retain executable gaps after seventeen delivered source additions and four newly reviewed bounded additions. Full-operation categories do not change because a subfeature is built or native proof is deferred.",
       "count": 12,
       "operations": [
         "funnels.split_variant",
@@ -451,32 +541,39 @@
       ]
     },
     "unmerged_source_additions": [
-      "quiz-picture-mixed-batches",
-      "survey-multiple-slide-radio",
-      "form-inventoried-outcome-removal"
+      "quiz-owned-new-shell-pipeline",
+      "survey-empty-slide-radio-pipeline",
+      "form-existing-outcome-edits",
+      "native-contenteditable-editor-titles"
     ],
-    "current_unmerged_source_branch": "skill6/finish-captured-flows-20261110",
+    "current_unmerged_source_branch": "skill6/closure-pipelines-v102-20261110",
     "current_unmerged_unit_pr": {
-      "source_branch": "skill6/finish-captured-flows-20261110",
-      "status": "SOURCE_REVIEWED_PENDING_MERGE; use this branch with the existing coordinator"
+      "source_branch": "skill6/closure-pipelines-v102-20261110",
+      "status": "SOURCE_REVIEWED_PENDING_PUBLICATION; exact current-base tree will be published once"
     },
     "previous_verified_delivery": {
       "status": "MERGED",
-      "pr": 3059,
-      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3059",
-      "merged_at": "2026-11-10T00:25:28Z",
-      "merge_commit": "4e052754cd683a09fca81d622bf2b341e62c8b66",
-      "skill6_subtree": "1be8cb2d1e916fb30f033e2598d39d8709d25d00",
-      "unit_pr": 3057,
-      "unit_disposition": "DELIVERED_THROUGH_BATCH",
-      "source_feature_additions_since_frozen_audit": 11,
+      "pr": 3085,
+      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3085",
+      "merged_at": "2026-11-10T04:53:00Z",
+      "merge_commit": "dd9e52592d52db6037d845ce5cd5d02326b15f99",
+      "unit_pr": 3078,
+      "unit_head": "8df0709717082c1325d5dda6064c42fae95c371e",
+      "source_feature_additions_since_frozen_audit": 14,
       "native_final_script_acceptance": "DEFERRED"
     },
     "execution_policy": {
       "local_tests": "Focused changed behavior once; rerun only affected failures after a fix. No optional whole local suite.",
       "review": "One independent source review of each final change.",
       "merge": "Existing coordinator and required repository checks; no competing train or bypass.",
-      "native": "Live acceptance remains separate; browser origin access denied by automatic review for this request."
+      "native": "Private test capture explicitly approved. Empty quiz and two empty survey slides were saved/reopened; originating browser connection then became unavailable. No alternate browser or credential workaround; final installed-script acceptance remains pending."
+    },
+    "focused_integration": {
+      "checks": "38 focused pipeline/provider/condition/title checks passed in 0.580s; after the actual survey name fix, nine affected survey tests passed in 0.073s.",
+      "dynamic_actions": 61,
+      "bounded_jobs": 74,
+      "independent_source_review": "CONFIRMED for quiz, survey, condition edits, title compatibility and shared routing",
+      "optional_whole_suite": "NOT_RUN"
     }
   },
   "operations": [

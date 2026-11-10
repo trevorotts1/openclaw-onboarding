@@ -172,15 +172,15 @@ def configure(page, step):
     """Save requested quiz settings and independently reopen their controls."""
     if __package__:
         from .skill6_playwright import click, fill, visible, exact_search, wait_until, Stop
-        from .assessments import reopen_editor
+        from .assessments import reopen_editor, read_editor_title
     else:
         from skill6_playwright import click, fill, visible, exact_search, wait_until, Stop
-        from assessments import reopen_editor
+        from assessments import reopen_editor, read_editor_title
     step = validate(step)
     frame = page.frame_locator('iframe[name="quiz-builder-app"]')
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
-    quiz_name, editor_url = title.input_value(), page.url
+    quiz_name, editor_url = read_editor_title(title), page.url
 
     def close_initial():
         close = frame.get_by_role('dialog').get_by_role('button', name='Close', exact=True)

@@ -1,0 +1,82 @@
+{
+  "location_id": "LOC",
+  "location_name": "Example Company",
+  "start_url": "https://app.convertandflow.com/v2/location/LOC/quiz-builder/main",
+  "name": "New marketing quiz",
+  "allow_creation": true,
+  "configuration": {
+    "question_batches": [
+      {
+        "multiple_choice_questions": {
+          "questions": [
+            {
+              "field_type": "CHECKBOX",
+              "question": "Which outcomes matter?",
+              "placeholder": "",
+              "short_label": "",
+              "query_key": "outcomes",
+              "required": false,
+              "hidden": false,
+              "options": [
+                "Growth",
+                "Clarity",
+                "Time"
+              ]
+            }
+          ],
+          "acknowledge_shared_field_options": true
+        }
+      },
+      {
+        "written_answer_questions": {
+          "questions": [
+            {
+              "field_type": "TEXT",
+              "question": "What will you do next?",
+              "placeholder": "",
+              "short_label": "",
+              "query_key": "next_step",
+              "required": false,
+              "hidden": false
+            }
+          ]
+        }
+      }
+    ],
+    "scoring": {
+      "expected_question_count": 2,
+      "questions": [
+        {
+          "index": 0,
+          "expected_question": "Which outcomes matter?",
+          "expected_query_key": "outcomes",
+          "options": [
+            {
+              "label": "Growth",
+              "category": "Overall Only",
+              "score": 0
+            },
+            {
+              "label": "Clarity",
+              "category": "Overall Only",
+              "score": 10
+            },
+            {
+              "label": "Time",
+              "category": "Overall Only",
+              "score": 20
+            }
+          ]
+        }
+      ]
+    },
+    "result_page": {
+      "expected": {
+        "business_name": "Fixture business"
+      },
+      "changes": {
+        "business_name": "Authored business"
+      }
+    }
+  }
+}
