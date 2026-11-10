@@ -1,6 +1,6 @@
 {
   "record": "ghl-hybrid/fixplan-unowned-18/v1",
-  "plan": "/Users/blackceomacmini/Downloads/GHL-HYBRID-FIX-PLAN-2026-11-09.md",
+  "plan": "GHL-HYBRID-FIX-PLAN-2026-11-09.md (operator Downloads copy, 2026-11-09; not tracked in this repo)",
   "ledger": "SCOPE-LEDGER.md section 5",
   "branches": "fixplan/unowned-18-batch",
   "note": "One line per unowned requirement. 'built-on-branch' = the behaviour did not exist on origin/main and this branch adds it. 'already-present-on-main' = the code was already correct on origin/main; what this branch adds is the missing verification, which is the requirement (G-14..G-18 asked for a failing-before test, not for new behaviour). Every entry names the artifact that proves it and the captured fail-before output.",
