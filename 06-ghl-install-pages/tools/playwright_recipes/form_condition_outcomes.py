@@ -70,7 +70,8 @@ def _rule(value,*,field_bindings=None):
         required.add('connectors');result['connectors']=predicate['connectors']
     if effect in ('Show Field','Hide Field'):
         required.add('target')
-        targets=group.TARGETS|{field['label'] for field in (field_bindings or [])}
+        targets=group.TARGETS|{field['label'] for field in (field_bindings or [])
+                               if field['field_type']=='TEXT'}
         if not isinstance(value.get('target'),str) or value['target'] not in targets:
             raise Stop('Native field outcome requires one captured target')
         result['target']=value['target']

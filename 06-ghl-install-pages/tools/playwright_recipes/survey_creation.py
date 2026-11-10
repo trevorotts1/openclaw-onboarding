@@ -60,30 +60,27 @@ def validate_inputs(value):
         raise Stop('New survey questions require one to 100 explicit ordered batches')
     expanded=[]
     for batch in batches:
-        if isinstance(batch,dict) and batch.get('kind')=='text' and isinstance(batch.get('questions'),list) and 1<=len(batch['questions'])<=100:
+        if isinstance(batch,dict) and batch.get('kind') in ('text','multiline') and isinstance(batch.get('questions'),list) and 1<=len(batch['questions'])<=100:
             expanded.extend([{**deepcopy(batch),'questions':[deepcopy(question)]} for question in batch['questions']])
         else:expanded.append(batch)
     if len(expanded)>100:raise Stop('Survey question stages exceed the explicit bounded batch limit')
     value=deepcopy(value);value['question_batches']=expanded;batches=expanded
-    questions=[];radio_occupied=set();native_occupied={};query_keys={STANDARD_FIELDS[field][1] for field in value.get('standard_fields',[])}
+    questions=[];radio_occupied=set();multiline_slides=set();query_keys={STANDARD_FIELDS[field][1] for field in value.get('standard_fields',[])}
     for batch in batches:
         if (not isinstance(batch,dict) or set(batch)!={'kind','target_slide','questions'}
                 or batch['kind'] not in ('radio','text','multiline') or type(batch['target_slide']) is not int
                 or not 1<=batch['target_slide']<=_slide_count(value)):
             raise Stop('Survey question batches need a captured writer and exact existing target slide')
         if batch['kind']=='radio':
-            if native_occupied.get(batch['target_slide'])=='multiline':
-                raise Stop('Multi Line creation cannot mix another question family on its captured empty slide')
+            if batch['target_slide'] in multiline_slides:
+                raise Stop('Multi Line and Radio mixed placement requires its separate native capture')
             radio.validate_inputs({'location_id':value['location_id'],'questions':batch['questions']})
             questions.extend(batch['questions'])
         else:
             if ('slide_count' not in value or batch['target_slide'] in radio_occupied
                     or not isinstance(batch['questions'],list) or len(batch['questions'])!=1):
                 raise Stop('Captured Single Line batches require an explicit empty-shell owner before any Radio stage')
-            previous=native_occupied.get(batch['target_slide'])
-            if batch['kind']=='multiline' and previous or previous=='multiline':
-                raise Stop('Multi Line creation needs one question on a captured initially empty slide')
-            native_occupied[batch['target_slide']]=batch['kind']
+            if batch['kind']=='multiline':multiline_slides.add(batch['target_slide'])
             question=text_questions.validate_question(batch['questions'][0])
             if question['query_key'] in query_keys:raise Stop('Survey Single Line Query Key repeats another owned question')
             query_keys.add(question['query_key'])
@@ -132,13 +129,16 @@ def _text_plan(plan,binding,batch):
         'slide_labels':deepcopy(binding['slide_labels']),'target_slide':batch['target_slide'],
         'question':deepcopy(batch['questions'][0])}
     if batch['kind']=='multiline':result['_native_field_type']='LARGE_TEXT'
-    same=[row for row in plan['question_batches'] if row['kind']==batch['kind'] and row['target_slide']==batch['target_slide']]
+    same=[row for row in plan['question_batches'] if row['kind'] in ('text','multiline') and row['target_slide']==batch['target_slide']]
     if len(same)>1:
         prior=[]
         for row in same:
             if row['questions'][0]['query_key']==batch['questions'][0]['query_key']:break
-            prior.append(deepcopy(row['questions'][0]))
-        result.update(text_index=len(prior)+1,expected_prior=prior)
+            prior.append({'kind':row['kind'],'question':deepcopy(row['questions'][0])})
+        result['text_index']=sum(row['kind']==batch['kind'] for row in prior)+1
+        # Preserve legacy homogeneous Single Line plans and receipt hashes.
+        if all(row['kind']=='text' for row in same):result['expected_prior']=[row['question'] for row in prior]
+        else:result['expected_prior_widgets']=prior
     return result
 
 
@@ -201,12 +201,12 @@ def _validate_inventory(value,plan,binding,completed):
             or len(value['slides'])!=_slide_count(plan)):
         raise Stop('Whole-survey completion lacks its complete saved slide inventory')
     fields_by_slide={index:[] for index in range(1,_slide_count(plan)+1)}
-    text_by_slide={};text_kind_by_slide={}
+    text_by_slide={};text_kinds_by_slide={}
     for authored,done in zip(plan['question_batches'],completed):
         if authored['kind']=='radio':fields_by_slide[authored['target_slide']].extend(done['api_fields'])
         else:
             text_by_slide.setdefault(authored['target_slide'],[]).append(authored['questions'][0])
-            text_kind_by_slide[authored['target_slide']]=authored['kind']
+            text_kinds_by_slide.setdefault(authored['target_slide'],[]).append(authored['kind'])
     globally_seen=set();native_queries={STANDARD_FIELDS[field][1] for field in plan.get('standard_fields',[])}
     native_queries.update(question['query_key'] for questions in text_by_slide.values() for question in questions)
     for index,slide in enumerate(value['slides'],1):
@@ -235,7 +235,11 @@ def _validate_inventory(value,plan,binding,completed):
             field=next((f for f in expected if row['types']==['RADIO']
                 and row['names']==[['INPUT','radio',f['id']] for _ in f['options']]),None)
             if field is not None:seen.append(field['id']);authored_order.append(('radio',field['id']))
-            elif index in text_by_slide and row==({'types':['LARGE_TEXT'],'names':[['TEXTAREA',None,None]]} if text_kind_by_slide[index]=='multiline' else {'types':['TEXT'],'names':[['INPUT',None,None]]}):authored_order.append((text_kind_by_slide[index],text_by_slide[index][text_seen]['query_key'] if text_seen<len(text_by_slide[index]) else None));text_seen+=1
+            elif index in text_by_slide and row in ({'types':['LARGE_TEXT'],'names':[['TEXTAREA',None,None]]},{'types':['TEXT'],'names':[['INPUT',None,None]]}):
+                kind='multiline' if row['types']==['LARGE_TEXT'] else 'text'
+                if text_seen>=len(text_by_slide[index]) or kind!=text_kinds_by_slide[index][text_seen]:
+                    raise Stop('Whole-survey saved native text family order changed')
+                authored_order.append((kind,text_by_slide[index][text_seen]['query_key']));text_seen+=1
             else:original.append(row)
         expected_order=[]
         for authored,done in zip(plan['question_batches'],completed):

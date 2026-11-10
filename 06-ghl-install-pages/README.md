@@ -12,16 +12,28 @@ all entry points, commands and remaining live verification work.
 
 ## Current build checkpoint - November 10, 2026
 
-The next reviewed source candidate has **23 BUILT / 10 PARTIAL / 0 GENERIC_ONLY**
-across 33 named operations, with **66 dynamic actions / 80 bounded jobs**.
-The finite inactive NeoClassic course contract now includes background/Custom Block
-image removal and Video Block lifecycle. Owned Multi Line survey creation and captured Address parent controls are built.
-Final native upload/removal/playback, respondent and learner proof remain pending.
+The v27.1.106 candidate has **23 BUILT / 10 PARTIAL / 0 GENERIC_ONLY**
+across 33 named operations (**69.7%** by equal-weight operation count), with
+**68 dynamic actions / 88 bounded compiler jobs** and **49 tracked completed
+feature additions**. This candidate adds captured form widgets and URL domain
+controls, survey Number properties and mixed append, populated quiz-page append,
+numeric condition comparisons, embed color/icon exports and community replay.
 
-This continuation is local only. Frozen v27.1.104 [#3102](https://github.com/trevorotts1/openclaw-onboarding/pull/3102)
-carries the prior ten reviewed additions and is not modified by this candidate.
-Publish the continuation only after that PR's actual main landing and a fresh
-single-parent integration. The old 21/11/1 audit remains archived history.
+Examined main `5ecb6a074421aab694cd7c9a02f951c3fd6a3f87` contains the prior
+**36 delivered additions**. Skill 6 v27.1.104
+[#3102](https://github.com/trevorotts1/openclaw-onboarding/pull/3102) merged at
+`efe9937173b8e3de31ba71fbb584e72eb8cc67dd`; v27.1.105 member
+[#3105](https://github.com/trevorotts1/openclaw-onboarding/pull/3105) was delivered
+through merged [batch #3107](https://github.com/trevorotts1/openclaw-onboarding/pull/3107)
+at `9dca0aaa1bcaa2fcbdb687a2816444cc832a0f02`.
+
+The **13 candidate additions remain unmerged** until actual batch delivery.
+Current tracked-addition delivery is **36/49 = 73.5%**; the recovered earlier
+baseline was 36/45 = 80%. The denominator grew through four new local source
+completions. These ratios are not effort or native-acceptance percentages.
+Publication of this source unit is approved; it uses the existing batch train,
+with direct unit auto-merge disabled. Final native script, respondent, learner
+and payment acceptance remain pending. The old 21/11/1 audit is historical.
 See [the current progress ledger](references/PLAYWRIGHT-PROGRESS.md) and
 [the machine-readable source ledger](references/PLAYWRIGHT-BUILD-STATUS.json).
 

@@ -24,8 +24,10 @@ FIELDS = frozenset(('First Name','Last Name','Phone','Email','Website','TnC1',
                     'TnC2','Organization','Full Name','Date of birth'))
 TARGETS = FIELDS | {'Privacy Policy | Terms of Service'}
 UNARY = frozenset(('Is Empty','Is Filled'))
-BINARY = frozenset(('Is Equal To','Is Not Equal To','Contains','Does Not Contain',
-                    'Starts With','Ends With'))
+TEXT_BINARY = frozenset(('Is Equal To','Is Not Equal To','Contains','Does Not Contain',
+                         'Starts With','Ends With'))
+NUMBER_BINARY = frozenset(('Is Equal To','Is Not Equal To','Greater Than','Less Than'))
+BINARY = TEXT_BINARY | NUMBER_BINARY
 CARD = 'div.flex.w-\\[32rem\\].flex-col'
 OUTCOME = '.flex.text-xs.leading-5.text-gray-600'
 
@@ -37,11 +39,13 @@ def validate(step, *, minimum_clauses=2):
         raise Stop('Unsupported native form condition group')
     bindings=condition_bindings(step)
     labels={field['label'] for field in bindings}
+    field_types={field['label']:field['field_type'] for field in bindings}
+    target_labels={field['label'] for field in bindings if field['field_type']=='TEXT'}
     if not isinstance(step.get('match'),str) or step['match'] not in ('all','any','mixed'):
         raise Stop('Condition group match must be all, any or explicit mixed')
     if not isinstance(step.get('effect'),str) or step['effect'] not in ('Hide Field','Show Field'):
         raise Stop('Condition groups support captured single-field Show/Hide effects')
-    if not isinstance(step.get('target'),str) or step['target'] not in TARGETS|labels:
+    if not isinstance(step.get('target'),str) or step['target'] not in TARGETS|target_labels:
         raise Stop('Condition target must use a captured native field label')
     clauses = step.get('clauses')
     if (type(minimum_clauses) is not int or minimum_clauses not in (1,2)
@@ -62,6 +66,9 @@ def validate(step, *, minimum_clauses=2):
                 or not isinstance(clause.get('if_field'),str) or clause['if_field'] not in FIELDS|labels
                 or not isinstance(clause.get('operator'),str) or clause['operator'] not in UNARY|BINARY):
             raise Stop('Compound clauses require captured fields and operators')
+        number=field_types.get(clause['if_field'])=='NUMERICAL'
+        if clause['operator'] not in UNARY|(NUMBER_BINARY if number else TEXT_BINARY):
+            raise Stop('Condition operator is not captured for its bound field type')
         if clause['operator'] in UNARY:
             if 'value' in clause:
                 raise Stop('Unary compound clauses must not carry ignored values')
@@ -69,6 +76,9 @@ def validate(step, *, minimum_clauses=2):
                 or clause['value']!=clause['value'].strip() or len(clause['value'])>5000
                 or any(ord(c)<32 for c in clause['value'])):
             raise Stop('Binary compound clauses require explicit nonempty text without surrounding whitespace')
+        if number and clause['operator'] in NUMBER_BINARY and not re.fullmatch(
+                r'-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?',clause['value']):
+            raise Stop('Number condition comparisons require finite decimal text')
         key = clause['if_field'],clause['operator'],clause.get('value')
         if key in seen:
             raise Stop('Duplicate compound clauses require reconciliation')

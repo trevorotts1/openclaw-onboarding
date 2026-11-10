@@ -1,0 +1,93 @@
+{
+  "location_id": "LOC",
+  "location_name": "Fixture Account",
+  "start_url": "https://app.convertandflow.com/v2/location/LOC/form-builder-v2/FORM",
+  "widget_fields": {
+    "expected_form_name": "Approved fixture",
+    "expected_fields": [],
+    "fields": [
+      {
+        "kind": "number",
+        "index": null,
+        "desired": {
+          "placeholder": "Enter a number",
+          "short_label": "",
+          "width": 100,
+          "required": false,
+          "hidden": false,
+          "label": "Approved Number",
+          "custom_field_name": "Approved Number",
+          "unique_key": "contact.approved_number",
+          "query_key": "approved_number"
+        }
+      },
+      {
+        "kind": "checkbox",
+        "index": null,
+        "desired": {
+          "placeholder": "",
+          "short_label": "",
+          "width": 100,
+          "required": false,
+          "hidden": false,
+          "options": [
+            {
+              "label": "Option 1",
+              "value": null
+            },
+            {
+              "label": "Option 2",
+              "value": null
+            },
+            {
+              "label": "Option 3",
+              "value": null
+            }
+          ],
+          "style": "bubble",
+          "calculations": false,
+          "columns": 2,
+          "other": {
+            "label": "Other",
+            "placeholder": "Describe another option"
+          },
+          "label": "Approved Checkbox",
+          "custom_field_name": "Approved Checkbox",
+          "unique_key": "contact.approved_checkbox",
+          "query_key": "approved_checkbox"
+        }
+      },
+      {
+        "kind": "file_upload",
+        "index": null,
+        "desired": {
+          "placeholder": "Click to upload",
+          "short_label": "",
+          "required": false,
+          "file_access": "private",
+          "file_types": [
+            "pdf"
+          ],
+          "multiple_files": true,
+          "max_files": 2,
+          "label": "Approved File Upload",
+          "custom_field_name": "Approved File Upload",
+          "unique_key": "contact.approved_file_upload"
+        }
+      },
+      {
+        "kind": "signature",
+        "index": null,
+        "desired": {
+          "placeholder": "Sign here",
+          "short_label": "",
+          "width": 100,
+          "required": false,
+          "label": "Approved Signature",
+          "custom_field_name": "Approved Signature",
+          "unique_key": "contact.approved_signature"
+        }
+      }
+    ]
+  }
+}

@@ -24,7 +24,7 @@ FIELDS = {
         'contact_fields', 'checkout_options', 'content', 'theme_inputs', 'legal_copy',
         'product_binding', 'product_id', 'price_id', 'charge', 'execute_payment'},
     'forms.create': {'name', 'required', 'allow_creation', 'radius'},
-    'forms.configure': {'address_parent', 'fields', 'add_fields', 'address_fields', 'consent', 'object_fields', 'dropdown_fields', 'large_text_fields', 'field_dependencies', 'integration', 'contact_field_plan'},
+    'forms.configure': {'address_parent', 'widget_fields', 'fields', 'add_fields', 'address_fields', 'consent', 'object_fields', 'dropdown_fields', 'large_text_fields', 'field_dependencies', 'integration', 'contact_field_plan'},
     'forms.style': {'custom_css', 'radius', 'css_key', 'expect_styles'},
     'forms.settings': {'settings', 'schedule', 'tracking'},
     'forms.submission': {'submission'}, 'forms.notifications': {'notifications'},
@@ -226,6 +226,14 @@ def validate_intake(operation, data):
         from playwright_recipes.form_embed import validate
         validate({'integration':data['integration']})
     if operation == 'forms.configure':
+        if 'widget_fields' in data:
+            if set(data).intersection(FIELDS['forms.configure'] - {'widget_fields'} | {'options'}):
+                raise Stop('Native form widget fields require their own independently journaled job')
+            from playwright_recipes.form_widget_families import validate
+            value=data['widget_fields']
+            if not isinstance(value,dict) or set(value).intersection({'location_id','location_name','start_url'}):
+                raise Stop('Form widget owner identity belongs to the parent inputs')
+            validate({'payload':{**{key:data[key] for key in ('location_id','location_name','start_url')},**value}})
         if 'contact_field_plan' in data:
             if set(data) - COMMON - {'contact_field_plan'}:
                 raise Stop('Contact field dependency creation and placement require their own independently journaled job')
@@ -268,6 +276,12 @@ def validate_intake(operation, data):
             quiz_creation(data)
     if operation == 'surveys.configure' and isinstance(data.get('configuration'), dict):
         config = data['configuration']
+        if 'widget_fields' in config:
+            if 'options' in data:raise Stop('Survey widget fields require their own independently journaled job')
+            if set(config).intersection({'location_id','location_name','start_url'}):
+                raise Stop('Survey widget owner identity belongs to its parent inputs')
+            from playwright_recipes.survey_widget_families import validate
+            validate({'payload':{**{key:data[key] for key in ('location_id','location_name','start_url')},**config}})
         if 'multiline_questions' in config:
             if 'options' in data:raise Stop('Survey Multi Line properties require their own independently journaled job')
             from playwright_recipes.survey_multiline_configuration import validate

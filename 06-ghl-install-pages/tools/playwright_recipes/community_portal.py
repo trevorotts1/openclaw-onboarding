@@ -524,17 +524,38 @@ def run_details(page, inputs, evidence_root, *, portal_context, clock=time.time)
         if _has_evidence(existing):
             fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
             replay = _replay_details(existing, data, fingerprint)
-            _check_context(page, data, portal_context, clock=clock)
+            _verify_completed_details(page, data, portal_context, clock)
             return replay
         _check_context(page, data, portal_context, clock=clock)
         return _run_details_owned(page, data, root, portal_context, clock)
 
 
+
+def _verify_completed_details(page, data, context, clock):
+    """A bound past receipt cannot establish the current native description.
+
+    Read through the same captured Details modal, then Cancel. Access controls
+    are inspected for valid group ownership but never changed or saved; the
+    receipt's protected-access claim describes the original completed write.
+    """
+    _check_context(page, data, context, clock=clock)
+    page.reload(wait_until='domcontentloaded', timeout=45000)
+    _check_context(page, data, context, clock=clock)
+    dialog, description, _ = _open_details(page, data)
+    actual = description.input_value()
+    _check_context(page, data, context, clock=clock, verify_control=False)
+    click(dialog.get_by_role('button', name='Cancel', exact=True))
+    _check_context(page, data, context, clock=clock)
+    if actual != data['details']['description']:
+        raise Stop('Completed community description changed in the native Details view; reconcile before replay')
+
 def _run_details_owned(page, data, root, context, clock):
     path = root / 'community-details-state.json'
     fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
     if _has_evidence(path):
-        return _replay_details(path, data, fingerprint)
+        replay = _replay_details(path, data, fingerprint)
+        _verify_completed_details(page, data, context, clock)
+        return replay
     dialog, description, protected = _open_details(page, data)
     requested = data['details']['description']
     current = description.input_value()

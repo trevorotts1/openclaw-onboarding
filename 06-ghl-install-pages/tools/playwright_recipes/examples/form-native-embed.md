@@ -73,3 +73,30 @@ in the editor; it is not claimed as a serialized embed property.
 The receipt retains validated `appearance_settings` on initial execution and
 replay. No global color-palette Add/Save operation is used. The same pending
 installation, publication and behavior boundaries remain in force.
+
+
+## Existing palette color and captured icon catalog
+
+`appearance` also supports `button_color` and `button_icon`; see
+`form-embed-button-color-icon.json`. Color accepts opaque six-digit HEX or native
+RGBA8 ending in `FF`, in either case. The plan/receipt normalizes this to lowercase
+RGB6 while retaining the exact native exported code bytes (including native
+RGBA8 spelling). The selected color must identify exactly one existing swatch in
+the captured Default Colors palette. An absent or ambiguous swatch returns
+`NEEDS_PALETTE_COLOR`. This operation never creates, edits or saves a palette entry.
+Transparent colors and arbitrary new palette values are outside this captured contract.
+
+Icons use exact captured material codes such as `chat`, `mail`, `email` and
+`arrow_forward`, mapped to their native accessible labels and selected through
+Icon search. Unknown codes refuse. Icon controls are visible only for `textIcon`
+or `icon` button types. A Text-to-icon job must explicitly author that type change.
+The prior hidden icon is bound to the before-export metadata before any edits;
+it is never inferred from an absent icon selector. Unrequested color/icon/layout
+properties remain protected. Existing five-property appearance jobs and receipts
+keep their original contract and hashes.
+
+Native capture confirmed color `#188BF6FF` and icon `mail` in the generated code;
+a fresh tab restored default local options. These are per-export artifacts,
+not saved form settings. The writer reads the code twice, retains exact bytes and
+revalidates them during receipt replay. It performs no form Save, palette Save,
+installation, publication or functional submission.

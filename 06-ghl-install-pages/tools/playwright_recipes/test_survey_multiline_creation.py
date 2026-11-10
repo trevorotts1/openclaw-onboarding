@@ -36,8 +36,8 @@ class SurveyMultiLineCreation(unittest.TestCase):
         legacy=front.validate_inputs(base.inputs())
         self.assertNotIn('_native_field_type',front._text_plan(legacy,binding(legacy),legacy['question_batches'][0]))
 
-    def test_nonempty_or_mixed_same_slide_creation_refuses_before_browser(self):
-        for kind in ('multiline','text','radio','radio_after'):
+    def test_uncaptured_radio_mixed_creation_refuses_before_browser(self):
+        for kind in ('radio','radio_after'):
             value=inputs()
             other=deepcopy(value['question_batches'][0]);other['kind']=kind
             if kind in ('radio','radio_after'):

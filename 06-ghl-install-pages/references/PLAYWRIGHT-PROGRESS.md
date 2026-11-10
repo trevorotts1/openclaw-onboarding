@@ -9,19 +9,52 @@ fifth-source audit. It is preserved as history, not reported as current. Later
 feature entries had accumulated without updating the original operation rows.
 This reconciliation removes those contradictory missing-feature claims.
 
-The next local source candidate completes the finite inactive NeoClassic R40
+Delivered v105 completes the finite inactive NeoClassic R40
 course contract: background and Custom Block image removal, plus Video Block
 append/replacement/removal and HTTPS destination handling. Final installed native
 upload/removal/playback and learner proof remain PENDING. Owned Multi Line survey
 creation and fresh whole-creation replay are also built; other question families
 remain enumerated in SURVEY-BUILD-REMAINDER.md.
 
-This continuation is local only and must wait for frozen v104 #3102 to actually
-land on main before a single-parent recut/publication. It does not change that PR.
+Delivered v27.1.105 is on main through batch #3107 at
+`9dca0aaa1bcaa2fcbdb687a2816444cc832a0f02`. The reviewed forms/Embed
+continuation is integrated locally on that exact base. The owner has now explicitly approved publishing the prepared source and ledger
+updates. No prior rejection was bypassed; the prepared source uses the existing
+batch train and remains unmerged until actual delivery.
 
 Captured Address Auto-Complete and mandatory search parent controls are also
 implemented, preserving full child inventories and checked-but-disabled native
 state across save/reopen and replay. Independent Address review is CONFIRMED.
+
+## Current resumed source and verified delivery
+
+Verified main is `5ecb6a074421aab694cd7c9a02f951c3fd6a3f87`; delivered Skill6 remains v27.1.105 through #3107. The combined candidate is local on `resume/skill6-reconciled-20261110`, source head `748427885c5a74763e45525d4d7f3add6599a428` before this ledger commit. **The 13 candidate additions are not merged yet.** The owner has explicitly approved publication of this combined source and ledger unit; direct unit auto-merge remains disabled.
+
+- Broad source closure:23/33 BUILT=69.7%;10 remain PARTIAL; all23 completed broad contracts are already delivered=100%.
+- Recovered checkpoint:36/45 tracked completed enhancements delivered=80.0%,9 local.
+- Current combined source:49 tracked completed enhancements,36 delivered and13 local/unmerged=73.5% delivery. The lower ratio reflects four additional local completions, not lost delivery. These are bounded feature records, not effort percentages or physical script counts.
+- Newly complete local source:URL domain-mode authoring (`6936fd86a1`), existing survey Number properties (`469d1c95cc`), captured same-page/populated quiz append (`6a8cea35a4`), and NUMERICAL condition comparisons (`748427885c`). No full operation was promoted.
+- Retained checks:Survey Number5PASS0.030s;quiz11PASS0.148s;Numeric18PASS0.133s. Combined provider boundary2PASS1.149s for68actions/88jobs;Numeric adds no action. Independent integration source review CONFIRMED with17checksPASS0.095s. No whole-suite rerun.
+- Native manual Number comparison Greater Than10 -> Hide Last Name was saved and reloaded. Full maintained-script execution is NOT_RUN; manual readback is not final script acceptance.
+- The earlier metadata-only push rejection is historical. The owner has explicitly approved publication of this source and ledger unit. Delivery corrections ride with the source changes; no separate metadata-only PR or competing merge vehicle is created.
+
+## Local reviewed continuation on delivered v105
+
+- [x] Native Number, Checkbox, File Upload and Signature creation/editing.
+- [x] Native Single Dropdown creation/editing and complete ordered options/calculations.
+- [x] Native Multi Dropdown creation/editing; canonical Advanced identity and Required-only captured controls.
+- [x] Selection-stable Dropdown snapshots preserve input attributes and normalize only transient values.
+- [x] Per-export Button palette color and captured icon authoring; exact native bytes retained without form/palette Save.
+- [x] Integrated the reviewed parent lineage once on exact main v105; preserved Address, split, survey and course guards/readbacks.
+- [x] One focused compiler coverage check: 67 actions / 86 jobs, PASS in0.387s.
+- [x] Community Details completed replay checks current saved description without another Save.
+- [x] Populated Multi Line append binds every ordered TEXT/LARGE_TEXT sibling and its full properties.
+- [x] Explicitly NEW saved/reopened Multi Dropdown General/Advanced fixture retained; it does not stand in for lost original capture bytes.
+- [ ] Owner-approved source publication through the existing batch train; pending actual PR and merge.
+- [ ] Installed native script/respondent proof.
+
+Broad source counts remain **23 BUILT / 10 PARTIAL / 0 GENERIC_ONLY**.
+Survey append source15604d17b8 is now independently confirmed and integrated. No new action or provider-job count was added.
 
 Earlier reconciled classifications remain:
 
@@ -38,11 +71,11 @@ Earlier reconciled classifications remain:
 | Operation still partial | Remaining executable scope |
 | --- | --- |
 | `funnels.split_variant` | Activation/allocation confirmation and saved active-state readback. |
-| `forms.configure` | Numeric/checkbox/file/signature authoring; ungrounded legacy adoption; Contact Dropdown creation and remaining embed color/icon controls. |
-| `forms.conditions` | Custom condition families beyond TEXT and rich-message outcome order recreation. Mixed connectors, deletion/count changes, existing outcome edits and non-message order recreation are built. |
+| `forms.configure` | Finite unowned Quick Add families: Text Box List, Picture Choice, Rating, customized Text/Html, Bot protection, Source, Score, Image, Monetary, Date & time; legacy custom-widget adoption without durable ownership evidence. Captured Number/Checkbox/File/Signature/Dropdown and per-export color/icon controls are built. |
+| `forms.conditions` | Custom condition families beyond TEXT/NUMERICAL and rich-message outcome order recreation. Mixed connectors, deletion/count changes, existing outcome edits and non-message order recreation are built. |
 | `surveys.create` | Question families beyond captured standard fields/Radio/TEXT/LARGE_TEXT and their media paths. Owned Multi Line/LARGE_TEXT creation is now built. Owned shell/slide orchestration and populated TEXT append are built. |
-| `surveys.configure` | Other question properties; compound predicates and completion/redirect/message/disqualification rule lifecycle. TEXT and existing Multi Line/LARGE_TEXT properties and forward Jump To stacks are built. |
-| `quizzes.configure` | Existing populated-page append; Picture option/style/upload controls; answer Jump To; tier lifecycle and result media/styles. Multi Dropdown and fixed-three Picture Choice are built. |
+| `surveys.configure` | Other question properties; compound predicates and completion/redirect/message/disqualification rule lifecycle. TEXT, existing Multi Line/LARGE_TEXT and existing Number properties and forward Jump To stacks are built. |
+| `quizzes.configure` | Picture option/style/upload controls beyond captured fixed-three support; answer Jump To; tier lifecycle and result media/styles. Multi Dropdown, fixed-three Picture Choice and captured populated-page append are built. |
 | `communities.configure` | Authoritative first-course empty state, non-Private course modes and modern portal settings/reuse gaps. Existing association replay is built. |
 | `meetings.setup` | Authoritative empty co-host roster and first-assignment path. |
 | `meetings.update` | Authoritative empty-roster, first-assignment and clear-all paths. |
@@ -59,14 +92,14 @@ one affected test in0.002s. The outcome reorder addition ran six focused tests
 in0.018s. Independent source reviews are CONFIRMED. Existing Multi Line/LARGE_TEXT property editing is also built, including Required/Hidden,
 exact location/editor binding, saved reopen and fresh replay. Its eight focused tests
 passed in0.340s and one affected three-drift test passed in0.002s; source review is
-CONFIRMED. Owned Multi Line creation is also built in the local continuation. The current
-matrix has66 dynamic actions and80 bounded jobs. This ledger reconciliation
+CONFIRMED. Owned Multi Line creation is already delivered in v27.1.105; the newer mixed populated append remains in this candidate. The current
+matrix has68 dynamic actions and88 bounded jobs. This ledger reconciliation
 uses JSON parsing and whitespace validation only; no tests were repeated.
 
 Merge train [#3101](https://github.com/trevorotts1/openclaw-onboarding/pull/3101)
 landed v27.1.103 at `a28b89970668ad097892664117170baf98765baa`. The frozen follow-on
 [#3102](https://github.com/trevorotts1/openclaw-onboarding/pull/3102) carries
-v27.1.104 with single-parent history; #3099 is closed and superseded.
+v27.1.104, merged at `efe9937173b8e3de31ba71fbb584e72eb8cc67dd`; #3099 is closed unmerged and superseded.
 Draft/publication/merge status is tracked independently of source counts.
 
 Final installed Mac/Linux execution, saved native script runs, respondent branches,
