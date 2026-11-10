@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 from urllib.parse import urlsplit
 
-from playwright_recipes import radio_dependencies as radio, survey_radio_creation as shell, survey_blank_shell as blank
+from playwright_recipes import radio_dependencies as radio, survey_radio_creation as shell, survey_blank_shell as blank, survey_text_questions as text_questions
 from playwright_recipes.assessments import STANDARD_FIELDS, reopen_editor, read_editor_title
 from playwright_recipes.evidence_lease import journal_present, read_journal
 from playwright_recipes.skill6_playwright import Stop, assert_tenant, click, secure_json, zhc
@@ -58,16 +58,25 @@ def validate_inputs(value):
     batches=value['question_batches']
     if not isinstance(batches,list) or not 1<=len(batches)<=100:
         raise Stop('New survey questions require one to 100 explicit ordered batches')
-    questions=[]
+    questions=[];occupied=set();query_keys={STANDARD_FIELDS[field][1] for field in value.get('standard_fields',[])}
     for batch in batches:
         if (not isinstance(batch,dict) or set(batch)!={'kind','target_slide','questions'}
-                or batch['kind']!='radio' or type(batch['target_slide']) is not int
+                or batch['kind'] not in ('radio','text') or type(batch['target_slide']) is not int
                 or not 1<=batch['target_slide']<=_slide_count(value)):
             raise Stop('Survey question batches need a captured writer and exact existing target slide')
-        radio.validate_inputs({'location_id':value['location_id'],'questions':batch['questions']})
-        questions.extend(batch['questions'])
+        if batch['kind']=='radio':
+            radio.validate_inputs({'location_id':value['location_id'],'questions':batch['questions']})
+            questions.extend(batch['questions'])
+        else:
+            if ('slide_count' not in value or batch['target_slide'] in occupied
+                    or not isinstance(batch['questions'],list) or len(batch['questions'])!=1):
+                raise Stop('Captured Single Line batches require exactly one question on an initially empty slide')
+            question=text_questions.validate_question(batch['questions'][0])
+            if question['query_key'] in query_keys:raise Stop('Survey Single Line Query Key repeats another owned question')
+            query_keys.add(question['query_key'])
+        occupied.add(batch['target_slide'])
     # Cross-batch conflicts must stop before the shell and the first API POST.
-    radio.validate_inputs({'location_id':value['location_id'],'questions':questions})
+    if questions:radio.validate_inputs({'location_id':value['location_id'],'questions':questions})
     result=deepcopy(value)
     result['name']=zhc(result['name'])
     return result
@@ -94,14 +103,21 @@ def validate_runtime(job,capability):
     plan=validate(job['steps'][0])
     if any(plan[key]!=job.get(key) for key in COMMON):
         raise Stop('Whole-survey creation belongs to another parent location/list')
-    questions=[question for batch in plan['question_batches'] for question in batch['questions']]
-    radio.validate_capability(capability,plan['location_id'],creation=any(q['expected_id'] is None for q in questions))
+    questions=[question for batch in plan['question_batches'] if batch['kind']=='radio' for question in batch['questions']]
+    if questions:radio.validate_capability(capability,plan['location_id'],creation=any(q['expected_id'] is None for q in questions))
 
 
 def _batch_plan(plan,binding,batch):
     return {**{key:plan[key] for key in COMMON},'start_url':binding['editor_url'],
         'expected_slide_count':_slide_count(plan),'slide_labels':binding['slide_labels'],
         'target_slide':batch['target_slide'],'questions':deepcopy(batch['questions'])}
+
+
+def _text_plan(plan,binding,batch):
+    return {**{key:plan[key] for key in COMMON},'start_url':binding['editor_url'],
+        'expected_survey_name':plan['name'],'expected_slide_count':_slide_count(plan),
+        'slide_labels':deepcopy(binding['slide_labels']),'target_slide':batch['target_slide'],
+        'question':deepcopy(batch['questions'][0])}
 
 
 def _native_step(plan,binding,batch,fields):
@@ -144,6 +160,7 @@ def _preflight_radio_definitions(plan,capability,api):
         if identity in identities:raise Stop('Whole-survey field preflight repeats an API identity')
         identities.add(identity)
     for batch in plan['question_batches']:
+        if batch['kind']!='radio':continue
         for question in batch['questions']:
             matches=[field for field in listed['customFields'] if field['id']==question['expected_id']
                 or field['name'].casefold()==question['name'].casefold()
@@ -162,13 +179,18 @@ def _validate_inventory(value,plan,binding,completed):
             or len(value['slides'])!=_slide_count(plan)):
         raise Stop('Whole-survey completion lacks its complete saved slide inventory')
     fields_by_slide={index:[] for index in range(1,_slide_count(plan)+1)}
+    text_by_slide={}
     for authored,done in zip(plan['question_batches'],completed):
-        fields_by_slide[authored['target_slide']].extend(done['api_fields'])
+        if authored['kind']=='radio':fields_by_slide[authored['target_slide']].extend(done['api_fields'])
+        else:text_by_slide[authored['target_slide']]=authored['questions'][0]
     globally_seen=set();native_queries={STANDARD_FIELDS[field][1] for field in plan.get('standard_fields',[])}
+    native_queries.update(question['query_key'] for question in text_by_slide.values())
     for index,slide in enumerate(value['slides'],1):
-        if (not isinstance(slide,dict) or set(slide)!={'canvas','radio_fields'}
+        if (not isinstance(slide,dict) or set(slide)!=({'canvas','radio_fields'}|({'text_fields'} if index in text_by_slide else set()))
                 or not isinstance(slide['canvas'],list) or not isinstance(slide['radio_fields'],list)):
             raise Stop('Whole-survey completion contains a malformed slide inventory')
+        if index in text_by_slide and slide['text_fields']!=[text_by_slide[index]]:
+            raise Stop('Whole-survey completion changed an authored Single Line property')
         expected=fields_by_slide[index]
         if len(slide['radio_fields'])!=len(expected):raise Stop('Whole-survey completion omits a saved Radio owner')
         ids={field['id'] for field in expected}
@@ -182,15 +204,22 @@ def _validate_inventory(value,plan,binding,completed):
             if observed['query_key'] in native_queries:raise Stop('Whole-survey saved native Query Keys are not unique')
             native_queries.add(observed['query_key'])
         canvas=slide['canvas'];baseline=binding['canvas'] if 'canvas' in binding else binding['slides'][index-1]['canvas']
-        original=[];seen=[]
+        original=[];seen=[];text_seen=0;authored_order=[]
         for row in canvas:
             if not isinstance(row,dict) or set(row)!={'types','names'} or not isinstance(row['names'],list):
                 raise Stop('Whole-survey saved canvas row is malformed')
             field=next((f for f in expected if row['types']==['RADIO']
                 and row['names']==[['INPUT','radio',f['id']] for _ in f['options']]),None)
-            if field is not None:seen.append(field['id'])
+            if field is not None:seen.append(field['id']);authored_order.append(('radio',field['id']))
+            elif index in text_by_slide and row=={'types':['TEXT'],'names':[['INPUT',None,None]]}:text_seen+=1;authored_order.append(('text',text_by_slide[index]['query_key']))
             else:original.append(row)
-        if original!=baseline or seen!=[field['id'] for field in expected]:
+        expected_order=[]
+        for authored,done in zip(plan['question_batches'],completed):
+            if authored['target_slide']!=index:continue
+            expected_order.extend([('text',authored['questions'][0]['query_key'])] if authored['kind']=='text'
+                else [('radio',field['id']) for field in done['api_fields']])
+        if (original!=baseline or seen!=[field['id'] for field in expected]
+                or text_seen!=int(index in text_by_slide) or authored_order!=expected_order):
             raise Stop('Whole-survey saved canvas changed an original control or authored question order')
     return deepcopy(value)
 
@@ -216,9 +245,14 @@ def _inventory(page,plan,binding,completed):
         fields=[]
         for authored,done in zip(plan['question_batches'],completed):
             if authored['target_slide']!=index:continue
+            if authored['kind']!='radio':continue
             for field in done['api_fields']:
                 fields.append({'id':field['id'],'query_key':_read_object_binding(frame,owner,field)})
-        rows.append({'canvas':_canvas_identity(owner),'radio_fields':fields})
+        row={'canvas':_canvas_identity(owner),'radio_fields':fields}
+        authored_text=next((batch for batch in plan['question_batches'] if batch['target_slide']==index and batch['kind']=='text'),None)
+        if authored_text is not None and any(batch['target_slide']==index and batch['kind']=='text' for batch in completed):
+            row['text_fields']=[text_questions.read_question(frame,_text_plan(plan,binding,authored_text))]
+        rows.append(row)
     return _validate_inventory({'slide_labels':deepcopy(binding['slide_labels']),'slides':rows},plan,binding,completed)
 
 
@@ -240,6 +274,10 @@ def validate_receipt(value,step):
         if (not isinstance(done,dict) or set(done)!={'kind','target_slide','api_fields','native_receipt'}
                 or done['kind']!=authored['kind'] or done['target_slide']!=authored['target_slide']):
             raise Stop('Whole-survey question stage changed its authored owner')
+        if authored['kind']=='text':
+            if done['api_fields']!=[]:raise Stop('Single Line survey stage must not fabricate API fields')
+            text_questions.validate_receipt(done['native_receipt'],_text_plan(plan,binding,authored))
+            continue
         fields=_definitions(plan,authored,done['api_fields'])
         native=_native_step(plan,binding,authored,fields)
         _result(native,done['native_receipt'],{**{key:plan[key] for key in COMMON},'start_url':binding['editor_url']})
@@ -252,16 +290,16 @@ def configure(page,step,evidence_root,*,capability):
     from playwright_recipes.skill6_playwright import run_on_page,validate_job
     from playwright_recipes.editor_replay import completed_editor_replay
     plan=validate(step)
-    questions=[q for batch in plan['question_batches'] for q in batch['questions']]
-    radio.validate_capability(capability,plan['location_id'],creation=any(q['expected_id'] is None for q in questions))
+    questions=[q for batch in plan['question_batches'] if batch['kind']=='radio' for q in batch['questions']]
+    if questions:radio.validate_capability(capability,plan['location_id'],creation=any(q['expected_id'] is None for q in questions))
     root=Path(evidence_root).resolve();shell_root=root/'shell';binding_path=root/'shell-binding.json'
     stage_roots=[root/('question-batch-'+str(index).zfill(3)) for index in range(len(plan['question_batches']))]
     if any(path.is_symlink() for path in [shell_root,binding_path,*stage_roots]):
         raise Stop('Whole-survey evidence contains a symlink')
-    api=radio.Skill44RadioTransport()
+    api=radio.Skill44RadioTransport() if questions else None
     # Once any stage intent exists, its exact retained journal governs replay;
     # newly created definitions must never be mistaken for pre-existing keys.
-    if not any(journal_present(path/'delivery-state.json') or journal_present(path/'native'/'state.json') for path in stage_roots):
+    if questions and not any(journal_present(path/'delivery-state.json') or journal_present(path/'native'/'state.json') for path in stage_roots):
         _preflight_radio_definitions(plan,capability,api)
     shell_inputs={key:value for key,value in plan.items() if key not in ('question_batches','slide_count')}
     shell_job=validate_job(compile_recipe('surveys.create',shell_inputs),root)
@@ -293,6 +331,11 @@ def configure(page,step,evidence_root,*,capability):
     if page.url!=binding['editor_url']:reopen_editor(page,'survey',plan['name'],binding['editor_url'])
     completed=[]
     for batch,stage_root in zip(plan['question_batches'],stage_roots):
+        if batch['kind']=='text':
+            receipt=text_questions.configure(page,_text_plan(plan,binding,batch),stage_root)
+            completed.append({'kind':'text','target_slide':batch['target_slide'],'api_fields':[],'native_receipt':receipt})
+            _inventory(page,plan,binding,completed)
+            continue
         child=radio.build_survey_questions(_batch_plan(plan,binding,batch),stage_root,page=page,capability=capability,transport=api)
         api_state=read_journal(stage_root/'delivery-state.json')
         if (api_state.get('schema')!=radio.SCHEMA or api_state.get('location_id')!=plan['location_id']

@@ -4,7 +4,10 @@ Each native rule still has exactly one target. The full authored rule list is
 the contract: existing cards must be its exact prefix before missing cards are
 appended, or exactly match an explicit full expected_rules list before edits.
 An explicit full expected inventory also permits captured tail-card removal;
-cards are never silently reordered. Complete independent saved readback is
+cards are never silently reordered. Explicit recreate_order permits a full
+permutation through captured Delete/author controls, retaining the unchanged
+prefix and recreating the suffix. It does not use or claim native drag order.
+Complete independent saved readback is
 mandatory, including when all cards appear before Save.
 """
 from copy import deepcopy
@@ -45,12 +48,20 @@ def _rules(rules,*,reject_conflicts=True,allow_empty=False):
 
 
 def validate(step):
-    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules'}
+    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules','recreate_order'}
             or step.get('action','native_condition_stack')!='native_condition_stack'):
         raise Stop('Unsupported native condition stack')
     value={**deepcopy(step),'rules':_rules(step.get('rules'),allow_empty='expected_rules' in step)}
     if 'expected_rules' in step:
         value['expected_rules']=_rules(step['expected_rules'],reject_conflicts=False,allow_empty=True)
+    if 'recreate_order' in step:
+        order=step['recreate_order'];expected=value.get('expected_rules')
+        if (expected is None or not isinstance(order,list) or len(expected)<2
+                or len(order)!=len(expected) or any(type(index) is not int for index in order)
+                or sorted(order)!=list(range(len(expected)))):
+            raise Stop('Explicit condition recreation requires a complete prior stack and one full ordinal permutation')
+        if value['rules']!=[expected[index] for index in order]:
+            raise Stop('Explicit condition recreation must retain every prior Show/Hide rule unchanged in the requested order')
     return value
 
 
@@ -58,6 +69,7 @@ def configuration_hash(step):
     plan=validate(step)
     binding=({'expected_rules':plan['expected_rules'],'rules':plan['rules']}
              if 'expected_rules' in plan else plan['rules'])
+    if 'recreate_order' in plan:binding['recreate_order']=plan['recreate_order']
     return hashlib.sha256(json.dumps(binding,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
@@ -275,6 +287,32 @@ def _remove_tail(modal,before_rule,count,identity,*,read_state=None):
     return count-1
 
 
+def _recreate_order(frame,dialog,plan,current,identity):
+    """Replace only the changed suffix using already captured native controls.
+
+    The caller's complete expected stack and explicit ordinal permutation are
+    checked before this function. Never reuse this for rich outcome cards or
+    infer permission to delete/recreate from an ordinary desired rule list.
+    Any partial failure propagates before drawer/outer Save; the parent intent
+    journal remains uncertain and requires reconciliation rather than retry.
+    """
+    wanted=_expected(plan)
+    if current==wanted:return current
+    expected=_expected({'rules':plan['expected_rules']})
+    if current!=expected:
+        raise Stop('Native condition recreation inventory differs from the complete expected previous stack')
+    prefix=0
+    while prefix<len(current) and current[prefix]==wanted[prefix]:prefix+=1
+    while len(current)>prefix:
+        current=_delete_tail(frame,dialog,current,identity)
+    for rule in plan['rules'][prefix:]:
+        identity()
+        if group._inventory(dialog)!=current:
+            raise Stop('Native condition stack changed during explicit order recreation')
+        current=_author(frame,dialog,rule,current,identity)
+    return current
+
+
 def configure(page,step):
     plan=validate(step)
     frame=form_builder(page)
@@ -299,7 +337,9 @@ def configure(page,step):
     dialog=open_conditions()
     before,wanted=group._inventory(dialog),_expected(plan)
     current=before
-    if 'expected_rules' in plan:
+    if 'recreate_order' in plan:
+        current=_recreate_order(frame,dialog,plan,current,identity)
+    elif 'expected_rules' in plan:
         expected=_expected({'rules':plan['expected_rules']})
         if before!=expected:
             raise Stop('Native condition edit inventory differs from the complete expected previous stack')

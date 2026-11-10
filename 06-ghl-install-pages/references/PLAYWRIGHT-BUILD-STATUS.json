@@ -1,6 +1,6 @@
 {
   "schema": "skill6-build-inventory/2",
-  "updated_at": "2026-11-10T06:07:25.964649+00:00",
+  "updated_at": "2026-11-10T06:57:02.572340+00:00",
   "scope": "33 named catalog operations; equal-weight executable build coverage of frozen source, not elapsed effort, feature-weighted progress or live readiness.",
   "counts": {
     "BUILT": 21,
@@ -15,14 +15,18 @@
   },
   "current_feature_progress": {
     "schema": "skill6-current-feature-progress/1",
-    "updated_at": "2026-11-10T06:07:25.964649+00:00",
+    "updated_at": "2026-11-10T06:57:02.572340+00:00",
     "read_first": "The 21/11/1 counts and original row gaps are the frozen fifth-source operation audit, not a fresh unfinished-script count. This section records reviewed implementation added since that audit. SOURCE_BUILT does not mean native functional acceptance or deployed/merged.",
-    "source_branch": "skill6/closure-pipelines-v102-20261110",
+    "source_branch": "resume/skill6-v103-1231216e",
     "durable_core_source_commit": "554fc5c2b2d7587dcde85905417de81c4e668d22",
     "additional_reviewed_source": [
       "1a4daf06f4494cb297fa57552a5367323ffd54d1",
       "e3718cf31a22fbb99cee02dd608e987368041815",
-      "53ca2cff0475fef0d4fe6b528c2fb0d587aa8b32"
+      "53ca2cff0475fef0d4fe6b528c2fb0d587aa8b32",
+      "d0a6a1d78d47a61859de85e050275a2d8561c4fd",
+      "d810952639d17df0a5f0c9f4ee7e00723aa9b48b",
+      "af7b1aaa1150c83daf84c0287e318ad786ff5c3d",
+      "6e580c419f479c4fdf61bc9ea15cbd5a0e8bba64"
     ],
     "completed_since_frozen_audit": [
       {
@@ -391,7 +395,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+        "delivery": "DELIVERED_THROUGH_BATCH_3096"
       },
       {
         "id": "survey-empty-slide-radio-pipeline",
@@ -413,7 +417,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+        "delivery": "DELIVERED_THROUGH_BATCH_3096"
       },
       {
         "id": "form-existing-outcome-edits",
@@ -434,7 +438,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+        "delivery": "DELIVERED_THROUGH_BATCH_3096"
       },
       {
         "id": "native-contenteditable-editor-titles",
@@ -460,17 +464,107 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
+        "delivery": "DELIVERED_THROUGH_BATCH_3096"
+      },
+      {
+        "id": "show-hide-explicit-order-recreation",
+        "feature": "Explicit complete Show/Hide order replacement through captured deletion and authoring",
+        "operations": [
+          "forms.conditions"
+        ],
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_stack.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "Explicit recreate_order is a full permutation of unchanged complete Show/Hide rules; preserve unchanged prefix and recreate only changed suffix.",
+          "No native drag or internal card identity preservation is claimed; rich outcome cards, combined edits/count changes and uncertain journal retries refuse."
+        ],
+        "status": "SOURCE_BUILT",
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
+        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+      },
+      {
+        "id": "inactive-course-image-block-removal",
+        "feature": "Remove an exact inactive course Image Block image with inventoried positive empty readback",
+        "operations": [
+          "courses.configure_ui"
+        ],
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/course_image_blocks.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "Bind exact block, current URLs and captured empty-placeholder URLs; preserve destinations, siblings, theme and block identity.",
+          "Save once and independently reopen the positive empty state; background/Custom Block removal and Video Block lifecycle remain unsupported."
+        ],
+        "status": "SOURCE_BUILT",
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
+        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+      },
+      {
+        "id": "community-course-completed-replay-readback",
+        "feature": "Reconcile completed community course-association replay against current Learning inventory",
+        "operations": [
+          "communities.configure"
+        ],
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/community_courses.py",
+            "function": "run_courses"
+          }
+        ],
+        "preserved_boundaries": [
+          "Reload the requested Learning group and verify the target and complete sibling inventory before completed replay.",
+          "Missing, renamed, duplicated, reordered or access-changed cards stop without another native Add, API read or journal rewrite; first-empty/non-Private paths remain gaps."
+        ],
+        "status": "SOURCE_BUILT",
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
+        "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+      },
+      {
+        "id": "survey-native-single-line-owned-creation",
+        "feature": "Native Single Line TEXT question authoring in the owned empty-slide survey creation pipeline",
+        "operations": [
+          "surveys.create",
+          "surveys.configure"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_text_questions.py",
+            "function": "configure"
+          },
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_creation.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "One Single Line batch on an explicitly empty target slide before any Radio batch; author exact label, placeholder, short label, Query Key, Required/Hidden and conditional Hidden value.",
+          "Required and Hidden are exclusive; populated-slide TEXT append and other widgets remain unsupported. Text-only creation has no Radio API-schema dependency. Child intent and independent full aggregate readback remain mandatory."
+        ],
+        "native_final_script_acceptance": "PENDING",
+        "independent_source_review": "CONFIRMED",
         "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
       }
     ],
     "new_control_capabilities_in_this_batch": [
-      "quiz-owned-new-shell-pipeline",
-      "survey-empty-slide-radio-pipeline",
-      "form-existing-outcome-edits",
-      "native-contenteditable-editor-titles"
+      "show-hide-explicit-order-recreation",
+      "inactive-course-image-block-removal",
+      "community-course-completed-replay-readback",
+      "survey-native-single-line-owned-creation"
     ],
     "receipt_hardening": [
-      "Fresh native course background-media completion now passes the same exact configuration/source/changed-image validator as completed replay."
+      "Fresh native course background-media completion now passes the same exact configuration/source/changed-image validator as completed replay.",
+      "Completed community course-association replay independently reloads Learning and verifies the actual target and complete sibling inventory without another add or API read."
     ],
     "remaining_controls_in_updated_areas": {
       "forms.configure": [
@@ -479,10 +573,10 @@
         "Contact Dropdown creation lacks a documented option-array request schema and explicitly refuses."
       ],
       "forms.conditions": [
-        "Native card drag reordering, nested grouping and broader custom/advanced field identities. Existing Redirect, custom-message and disqualification edits/count changes are now built."
+        "Native drag reordering, nested/mixed predicate groups and broader custom/advanced field identities remain unsupported. Explicit unchanged Show/Hide rule order replacement through captured recreation is now built; rich outcome order recreation remains unsupported."
       ],
       "courses.configure_ui": [
-        "Video Block upload/processing/save lifecycle, image-removal modes and other uncaptured template/block settings.",
+        "Video Block upload/processing/save lifecycle; background/Custom Block image removal and other uncaptured template/block settings. Exact inactive Image Block image removal is now built.",
         "Activation/publication remains a separate explicit operation, not implied by inactive-template edits."
       ],
       "quizzes.create": [
@@ -493,8 +587,8 @@
         "Reliable populated-page append, answer Jump To destinations, tier creation/removal and remaining result media/styling."
       ],
       "surveys.create": [
-        "Non-Radio question/widget authoring, including requested properties, Required/Hidden and media controls.",
-        "Broader complete survey flows, compound predicates and completion outcomes. Empty slide shells and Radio batches targeting several slides are now built."
+        "Other non-Radio widgets, populated-slide TEXT append, remaining question properties and media controls. Captured empty-slide Single Line text, Required/Hidden and conditional Hidden value are now built.",
+        "Broader complete survey flows, compound predicates and completion outcomes. Empty slide shells and ordered native Single Line/Radio batches are now built."
       ]
     },
     "other_partial_areas": [
@@ -510,20 +604,21 @@
       "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3053",
       "status_at_checkpoint": "MERGED 2026-11-09T23:22:27Z; merge commit 565a27d2f26526cab73ca750ea2be83f05bee50c"
     },
-    "current_batch_pr": "v27.1.101 delivered through #3090. Four bounded source additions in v27.1.102 are independently reviewed; exact current-base publication and merge remain separate.",
+    "current_batch_pr": "v27.1.102 unit #3095 at dc82b8c9928229920694d13445a2135127abae6b delivered through merged batch #3096 at 710b36e9c1c36d3c72a33ebb52b7054234c00a2e. Authority repair #3094 delivered at 461ff7c6591653b6bc1d61564f70405e20c2cb82. The v27.1.103 continuation has four locally integrated additions; all four source changes have independent review CONFIRMED; publication and merge remain separate.",
     "verified_delivery": {
       "status": "MERGED",
-      "pr": 3090,
-      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3090",
-      "merge_commit": "83d44056f9620b60292872cbcff4f5f6423f9ffd",
-      "unit_pr": 3087,
-      "unit_head": "7a17c3d9ac518134148312fcf21bf0eb0e640717",
+      "pr": 3096,
+      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3096",
+      "merged_at": "2026-11-10T06:54:47Z",
+      "merge_commit": "710b36e9c1c36d3c72a33ebb52b7054234c00a2e",
+      "unit_pr": 3095,
+      "unit_head": "dc82b8c9928229920694d13445a2135127abae6b",
       "unit_disposition": "DELIVERED_THROUGH_BATCH",
-      "source_feature_additions_since_frozen_audit": 17,
+      "source_feature_additions_since_frozen_audit": 21,
       "native_final_script_acceptance": "PENDING"
     },
     "remaining_operation_reconciliation": {
-      "basis": "All twelve explicit operation areas retain executable gaps after seventeen delivered source additions and four newly reviewed bounded additions. Full-operation categories do not change because a subfeature is built or native proof is deferred.",
+      "basis": "All twelve explicit operation areas retain executable gaps after twenty-one delivered bounded additions and the v103 local continuation. No operation category is promoted by a bounded addition or deferred native proof.",
       "count": 12,
       "operations": [
         "funnels.split_variant",
@@ -541,32 +636,32 @@
       ]
     },
     "unmerged_source_additions": [
-      "quiz-owned-new-shell-pipeline",
-      "survey-empty-slide-radio-pipeline",
-      "form-existing-outcome-edits",
-      "native-contenteditable-editor-titles"
+      "show-hide-explicit-order-recreation",
+      "inactive-course-image-block-removal",
+      "community-course-completed-replay-readback",
+      "survey-native-single-line-owned-creation"
     ],
-    "current_unmerged_source_branch": "skill6/closure-pipelines-v102-20261110",
+    "current_unmerged_source_branch": "resume/skill6-v103-1231216e",
     "current_unmerged_unit_pr": {
-      "source_branch": "skill6/closure-pipelines-v102-20261110",
-      "status": "SOURCE_REVIEWED_PENDING_PUBLICATION; exact current-base tree will be published once"
+      "source_branch": "resume/skill6-v103-1231216e",
+      "status": "V103_SOURCE_BUILT_INDEPENDENT_QC_CONFIRMED_PENDING_PUBLICATION"
     },
     "previous_verified_delivery": {
       "status": "MERGED",
-      "pr": 3085,
-      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3085",
-      "merged_at": "2026-11-10T04:53:00Z",
-      "merge_commit": "dd9e52592d52db6037d845ce5cd5d02326b15f99",
-      "unit_pr": 3078,
-      "unit_head": "8df0709717082c1325d5dda6064c42fae95c371e",
-      "source_feature_additions_since_frozen_audit": 14,
-      "native_final_script_acceptance": "DEFERRED"
+      "pr": 3090,
+      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3090",
+      "merge_commit": "83d44056f9620b60292872cbcff4f5f6423f9ffd",
+      "unit_pr": 3087,
+      "unit_head": "7a17c3d9ac518134148312fcf21bf0eb0e640717",
+      "unit_disposition": "DELIVERED_THROUGH_BATCH",
+      "source_feature_additions_since_frozen_audit": 17,
+      "native_final_script_acceptance": "PENDING"
     },
     "execution_policy": {
       "local_tests": "Focused changed behavior once; rerun only affected failures after a fix. No optional whole local suite.",
       "review": "One independent source review of each final change.",
       "merge": "Existing coordinator and required repository checks; no competing train or bypass.",
-      "native": "Private test capture explicitly approved. Empty quiz and two empty survey slides were saved/reopened; originating browser connection then became unavailable. No alternate browser or credential workaround; final installed-script acceptance remains pending."
+      "native": "Root uses the originating Chrome session for approved private captures. Other sessions own the populated quiz editor, so this continuation does not take it over or duplicate quiz changes. Final installed-script acceptance remains pending."
     },
     "focused_integration": {
       "checks": "38 focused pipeline/provider/condition/title checks passed in 0.580s; after the actual survey name fix, nine affected survey tests passed in 0.073s.",
@@ -574,6 +669,13 @@
       "bounded_jobs": 74,
       "independent_source_review": "CONFIRMED for quiz, survey, condition edits, title compatibility and shared routing",
       "optional_whole_suite": "NOT_RUN"
+    },
+    "continuation_v103": {
+      "independent_source_review": "CONFIRMED for all four final source changes; no blocking defects and no tests repeated by reviewers.",
+      "validation": "Targeted builder checks already passed for all four additions. Integration parsed six changed Python files once and the three survey files once, validated JSON/version/whitespace; no optional whole suite or repeated builder tests.",
+      "operation_counts_unchanged": true,
+      "survey_continuation": "SOURCE_INTEGRATED_INDEPENDENT_REVIEW_CONFIRMED",
+      "survey_source_commit": "6e580c419f479c4fdf61bc9ea15cbd5a0e8bba64"
     }
   },
   "operations": [

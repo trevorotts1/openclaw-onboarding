@@ -1,5 +1,76 @@
 # Current build recovery - November 10, 2026
 
+This section supersedes the preserved history below. Authority repair
+[#3094](https://github.com/trevorotts1/openclaw-onboarding/pull/3094) is merged at
+`461ff7c6591653b6bc1d61564f70405e20c2cb82`. The existing coordinator's merged
+[batch #3096](https://github.com/trevorotts1/openclaw-onboarding/pull/3096), head
+`feae7bc2696e69b6bdc995279a773280c5730bcc`, carries v27.1.102 unit #3095 at
+`dc82b8c9928229920694d13445a2135127abae6b`. The earlier Mac fixture failure
+was corrected on that unit head; its Mac and Ubuntu jobs passed. No old-head
+rerun or competing batch is needed. Batch #3096 merged at `710b36e9c1c36d3c72a33ebb52b7054234c00a2e`
+on November 10 at 1:54:47 AM Eastern.
+Skill 6 v27.1.101 was delivered through #3090; v27.1.100 through #3085.
+
+The v27.1.103 continuation integrates four independently reviewed changes:
+
+1. An explicit full Show/Hide rule permutation recreates only the changed suffix
+   through captured Delete/author controls. The unchanged prefix is retained,
+   rules cannot be edited/added/removed in the same job, and the complete saved
+   order must survive independent reopen. This does not author native drag.
+2. Exact inactive course Image Block image removal binds the existing image and
+   observed positive empty placeholders, protects the destination and siblings,
+   saves once, and independently reopens the full empty-image state.
+3. Completed community course-association replay reloads Learning and verifies
+   the actual target plus complete siblings. Drift stops for reconciliation
+   without another Add, API read or journal rewrite.
+4. Captured Single Line TEXT survey questions now author Label, Placeholder,
+   Short Label, Query Key, Required/Hidden and conditional Hidden value on an
+   explicitly empty slide. TEXT can precede Radio on that slide; text-only
+   creation requires no Radio schema API. Child journals and aggregate reopen
+   verify all saved properties and order. Populated-slide append remains separate.
+
+All additions passed their targeted builder checks. All four passed one
+independent source review without blocking defects or repeated tests. Integration
+uses changed-file AST/JSON/version/whitespace validation only; no optional full
+local suite or repeated builder tests ran. Final installed-script,
+respondent and learner acceptance remain separate.
+
+Current count: **33 operation groups, 21 BUILT, 11 PARTIAL, 1 GENERIC_ONLY**.
+Twelve broad operation areas still have explicit executable gaps. These are
+operation groups, not individual Python scripts or an effort percentage. New
+bounded changes do not promote an entire operation prematurely.
+
+| Operation | Remaining executable scope |
+| --- | --- |
+| `funnels.split_variant` | Native variation creation/reuse and traffic allocation/readback. |
+| `forms.configure` | Remaining widgets/properties, Address parent controls, Dropdown creation and embed controls. |
+| `forms.conditions` | Native drag, nested/mixed groups and broader field identities; explicit unchanged Show/Hide order recreation is built. |
+| `surveys.create` | Other widgets/properties, populated-slide TEXT append, media and broader flows; captured empty-slide Single Line flags are built. |
+| `surveys.configure` | Additional question controls, compound predicates and completion/rule lifecycle. |
+| `quizzes.create` | Reliable populated-page append; another active session owns the quiz editor and its continuation. |
+| `quizzes.configure` | Picture option/style/upload controls, populated-page append, Jump To, tier lifecycle and result media/styles. |
+| `courses.configure_ui` | Video lifecycle, background/Custom Block image removal and uncaptured controls; exact Image Block removal is built. |
+| `communities.configure` | Authoritative first-course empty state, non-Private modes and portal parity/reuse; completed association replay now checks live inventory. |
+| `meetings.setup` | Authoritative empty co-host roster and first-assignment path. |
+| `meetings.update` | Authoritative empty co-host roster and clear-all path. |
+| `meetings.integrate` | Course Live Sessions, wider provider/event shapes, recording/transcription. |
+
+## Execution policy for finishing quickly
+
+Build independent operation owners in isolated branches; root serializes native
+capture. Run focused changed checks once and one independent source review.
+Repeat affected checks only after actual changes/failures. Preserve required
+repository checks and the existing coordinator, freeze exact member heads and
+resolve current main before publication. Do not rebuild reviewed payloads,
+rerun old-head failures, take over another session's browser tab or open a
+competing merge train. Preserve production co-host assignments.
+
+---
+
+# Preserved v27.1.102 checkpoint
+
+# Current build recovery - November 10, 2026
+
 Skill 6 v27.1.101 is delivered through [batch #3090](https://github.com/trevorotts1/openclaw-onboarding/pull/3090),
 merge commit `83d44056f9620b60292872cbcff4f5f6423f9ffd`. This lands unit #3087:
 mixed Picture Choice batches, multiple standard-field survey slides and

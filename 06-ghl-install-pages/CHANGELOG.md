@@ -1,3 +1,18 @@
+## [v27.1.103] - 2026-11-10
+
+- Recreate an explicitly requested complete Show/Hide order through captured
+  controls, preserving the unchanged prefix and validating saved order on reopen.
+- Remove exact inactive course Image Block media against inventoried positive
+  empty placeholders, preserving block identity, destination and siblings.
+- Verify current community Learning cards before completed association replay;
+  stop on inventory drift without repeating creation or API reads.
+- Author captured Single Line TEXT survey questions, including Required/Hidden
+  and conditional Hidden value, within the owned empty-slide creation pipeline.
+  Text-only creation needs no Radio field-schema API dependency.
+- Record v27.1.102 delivery through #3096 and the actual remaining executable
+  controls. Whole-operation counts remain 21 BUILT / 11 PARTIAL / 1 GENERIC_ONLY;
+  targeted checks and independent review stay separate from native acceptance.
+
 ## [v27.1.102] - 2026-11-10
 
 - Compose captured new quiz creation, question batches, scoring and result copy
