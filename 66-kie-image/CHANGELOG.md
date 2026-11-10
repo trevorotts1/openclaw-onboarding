@@ -1,3 +1,9 @@
+## [2.2.15] - 2026-11-10 - registry_policy.house_band_chars follows the 20,000 owner cap (INST-001 #21)
+
+- `models.json` line 8: `registry_policy.house_band_chars` changed from the stale 5000/9000/19000 to
+  min 16000 (80 percent hard floor) / target 19000 (95 percent) / max 20000 (the owner cap, plan A0), the
+  same band every owner-capped route already carries. Added `tests/test_house_band.py`.
+
 ## [2.2.12] - 2026-11-09 - Ratio coherence: GPT Image 2.6 now matches the vendor 16-member enum (merge of main's 2.2.11 entry)
 
 - `models.json`: both `gpt-image-2-6/sunburst` rows' `aspect_ratios` set to the vendor live schema
