@@ -1,4 +1,10 @@
 ## [2.2.12] - 2026-11-09 - Ratio coherence: GPT Image 2.6 now matches the vendor 16-member enum (merge of main's 2.2.11 entry)
+## [2.2.12] - 2026-11-09 - House prompt band follows each model's verified cap (INST-001 #21)
+
+- `models.json`: both `gpt-image-2-6/sunburst` rows and every other entry now derive `house_prompt_min_chars` / `house_prompt_target_chars` / `house_prompt_max_chars` from that entry's own verified cap under `shared-utils/prompt_policy.py` (80 percent hard floor, 95 percent target, 100 percent ceiling; `null` when no verified maximum exists). GPT Image 2.6 at the 20,000 owner cap is floor 16,000, target 19,000, ceiling 20,000 -- 19,000 is retained as the 95 percent target (plan A0), not a stale ceiling. The retired fixed house band (5,000 / 9,000 / 19,000) no longer appears as a live rule.
+- `references/models.md`, `SKILL.md`: the two remaining "house band 5,000-19,000" prose claims replaced with the percentage band. Taken verbatim from the open gapfill PR's Skill 66 hunks (collision law), no competing wording.
+
+## [2.2.11] - 2026-11-09 - Ratio coherence: GPT Image 2.6 now matches the vendor 16-member enum
 
 - `models.json`: both `gpt-image-2-6/sunburst` rows' `aspect_ratios` set to the vendor live schema
   (`auto, 1:1, 3:2, 2:3, 4:3, 3:4, 5:4, 4:5, 16:9, 9:16, 2:1, 1:2, 21:9, 9:21, 3:1, 1:3` -- 16 members,
