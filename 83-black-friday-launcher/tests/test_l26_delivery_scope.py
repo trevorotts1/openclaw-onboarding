@@ -218,6 +218,39 @@ class CliScopeTests(_Base):
             rc = cli.main(argv)
         return rc, stdout.getvalue(), stderr.getvalue()
 
+    def test_cli_partial_design_set_refuses_and_seals_nothing(self):
+        # M3 (ASM-001): one page short of its mobile wireframe PDF. package.assemble refuses before its
+        # first write, so the out dir holds no manifest, no receipt and no copied piece.
+        from test_lane83_designs import make_piece
+        node = self.graph["nodes"][0]
+        piece = make_piece(Path(self.tmp.name) / "designs", self.normalized, node,
+                           omit=["wireframe_mobile_pdf"])
+        (self.run_dir / "pieces" / f"{node['role']}.json").write_text(json.dumps(piece), encoding="utf-8")
+        before = sorted(str(p) for p in self.run_dir.rglob("*"))
+        rc, out, err = self._assemble("--page-only")
+        self.assertEqual(rc, 2, err)
+        self.assertIn("AF-LAUNCH-ASSEMBLE-DESIGN", err)
+        self.assertEqual(out.strip(), "")
+        for name in ("package-manifest.json", "receipt.json", "assemble-steps.json"):
+            self.assertFalse((self.run_dir / name).exists(), name)
+        self.assertEqual(sorted(str(p) for p in self.run_dir.rglob("*")), before)  # nothing at all written
+
+    def test_cli_refused_spine_emits_no_stage_closed(self):
+        # M2 (G-5): with the graphics artifact removed the spine refuses; stage_closed must not precede it.
+        events = []
+        real = cli._close_step_spine
+
+        def drop_graphics(out_dir, steps):
+            (Path(out_dir) / "graphics-handoff.json").unlink()
+            return real(out_dir, steps)
+
+        with mock.patch.object(cli, "_launch_event", side_effect=lambda _id, ev: events.append(ev)), \
+                mock.patch.object(cli, "_close_step_spine", side_effect=drop_graphics):
+            rc, _out, err = self._assemble("--page-only")
+        self.assertEqual(rc, 2, err)
+        self.assertIn("AF-LAUNCH-STEP-ARTIFACT", err)
+        self.assertNotIn("stage_closed", [e.get("event_type") for e in events])
+
     def test_cli_full_launch_requires_the_plan(self):
         rc, _out, err = self._assemble()
         self.assertEqual(rc, 2)

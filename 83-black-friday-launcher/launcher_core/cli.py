@@ -232,6 +232,7 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         out = package.assemble(Path(args.out), normalized, graph, pieces,
                                source_root=source_root, council=advice,
                                require_designs=not args.allow_no_designs,
+                               refuse_incomplete_designs=not args.allow_no_designs,
                                design_waiver=_read_json(args.design_waiver) if args.design_waiver else None,
                                design_approvals=(_read_json(args.design_approvals)
                                                  if args.design_approvals else None),
@@ -291,7 +292,6 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         graphics = {"state": "failed", "reason": f"{type(exc).__name__}: {str(exc)[:400]}"}
         print(f"[graphics] handoff failed ({type(exc).__name__}); the package is sealed and `check` "
               "will name the missing image reviews", file=sys.stderr)
-    _launch_event(normalized["launch_id"], {"event_type": "stage_closed", "stage": "assemble"})
     # The graphics handoff writes its own record so the step has an artifact to prove.
     graphics_path = Path(args.out) / "graphics-handoff.json"
     try:
@@ -303,6 +303,8 @@ def cmd_assemble(args: argparse.Namespace) -> int:
                   "artifacts": [str(graphics_path)]})
     # THE SPINE CLOSES HERE: every declared step's artifacts must exist, or completion is refused.
     _close_step_spine(Path(args.out), steps)
+    # G-5: the stage is closed only after the spine has closed; a refused spine emits no stage_closed.
+    _launch_event(normalized["launch_id"], {"event_type": "stage_closed", "stage": "assemble"})
     _emit({"manifest": out["manifest_path"], "receipt": out["receipt_path"],
            "council": advice["status"], "designs_required": not args.allow_no_designs,
            "to_confirm": out["manifest"]["to_confirm"],
