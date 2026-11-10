@@ -405,18 +405,13 @@ def cap_for_model(model, policy):
             return dict(best, max_chars=None, unit=best.get("unit", "chars"))
         return best
     if model and "gpt-image-2-6" in model:
-        # Fail to the law, never to 32,000: owner ruling 2026-11-08 caps every
-        # 2.6 route at the 66-kie-image/models.json owner_prompt_cap_chars value.
-        cap = _owner_cap_from({"file": "66-kie-image/models.json",
-                               "selector_field": "canonical_model_id",
-                               "selector": "gpt-image-2-6/sunburst-text-to-image",
-                               "field": "owner_prompt_cap_chars"})
-        if cap is None:
-            return {"max_chars": None, "cap_status": "UNKNOWN", "unit": "chars",
-                    "source": "Owner ruling 2026-11-08: no owner cap recorded; refusing."}
-        return {"max_chars": cap, "cap_status": "OWNER_RULED", "unit": "chars",
-                "source": "Owner ruling 2026-11-08: %d read from 66-kie-image/models.json "
-                          "owner_prompt_cap_chars." % cap}
+        # Same owner catalog as _owner_cap_from, via the mockable registry
+        # locator so tests can substitute a synthetic registry.
+        owner_cap = _owner_image_cap(model)
+        if owner_cap is not None:
+            return owner_cap
+        return {"max_chars": None, "cap_status": "UNKNOWN", "unit": "chars",
+                "source": "Exact owner-policy registry cap unavailable for " + model}
     return policy.get("default", {"max_chars": None, "cap_status": "UNKNOWN",
                                    "unit": "chars"})
 
