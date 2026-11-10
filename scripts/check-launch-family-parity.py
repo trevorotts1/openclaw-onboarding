@@ -96,7 +96,7 @@ NINE_ONLY = {
 # (the 999 `questions` path). Copied only when absent, never overwritten; the
 # 999 copy must keep the listed seam tokens. launcher_core/cli.py is NOT here:
 # it is a pinned file (front_door.py pins every launcher_core/*.py by bytes and
-# 999 only receives the pin through the sync), so it is an ordinary neutral
+# each repository mints its own pin, see D6), so it is an ordinary neutral
 # file and must be byte-identical in both repos. experience/progress_report.py
 # is NOT here either: it is neutral because delivery_report.py, which is
 # neutral, calls its CON-19 API (RowsRefused, --manifest, --emit-rows).
@@ -115,6 +115,11 @@ DIVERGENT = {
     _LAUNCHER + "tests/test_hosting_admission.py": (
         "D5 999 has no Skill 45: route-evidence cases skip conditionally, admission matrix runs",
         ("_SKILL45_PUSH", "unittest.skipUnless", "hosted_admission")),
+    # D6: Skill 71 is in the pin spec and carries declared 999 differences, so the two
+    # repositories pin different files and must hold different digests; each pin is
+    # checked against its own files by hashpin and the Skill 49 self-test.
+    _N + "signature-funnel/scripts/SF-PROVER-PIN.sha256": (
+        "D6 per-repo pin: each repository's own sf-prover-pin-authority workflow mints it", ()),
 }
 
 # The parity gates themselves ride with the signature-page family, so 999 can
