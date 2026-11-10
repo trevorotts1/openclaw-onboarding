@@ -17,7 +17,7 @@ provers and drives the canonical no-skip orchestrator to a signed
   ____ Future" on the two upsells, "When Time Runs Out" on the two downsells, each
   exactly 7 items), and the three-part Thank-You (TY-1 120–180, TY-2 4–6 steps of
   89–116 chars, TY-3 ≤170).
-- **Image prompts (`prompt_ledger.json`):** 14 prompts, each 5,000–19,000 stripped
+- **Image prompts (`prompt_ledger.json`):** 14 prompts, each 16,000–20,000 stripped
   chars, each carrying the Signature Grade Block fingerprint, a `Do not …` negative
   block, ≥220 distinct words, no em/en dashes; Section 11 is typography-as-art with a
   spelling-lock directive over three baked words (`DECIDE` / `COMMIT` / `RISE`).
@@ -74,7 +74,7 @@ Each variant is the golden with **one** mutation and trips a **distinct** AF cod
 |---|---|---|---|
 | A `wrong_section_count` | main page missing Section 3 | `prove_sf_copy` | rejected — `AF-FUN-SECTION-MISSING` (exit 2) |
 | B `out_of_band_copy` | Section 1 = 20 chars (under 180) | `prove_sf_copy` | rejected — `AF-FUN-SEC1-CHARBAND` (exit 2) |
-| C `image_prompt_too_short` | a prompt under the 5,000-char floor | `prove_sf_prompt_floor` | rejected — `AF-FUN-PROMPT-FLOOR` (exit 2) |
+| C `image_prompt_too_short` | a prompt under the 16,000-char floor | `prove_sf_prompt_floor` | rejected — `AF-FUN-PROMPT-FLOOR` (exit 2) |
 | D `missing_provenance` | an image with a placeholder Kie taskId | `prove_sf_no_pitch` | rejected — `AF-FUN-IMG-PROVENANCE` (exit 2) |
 | E `unapproved` | brief never locked (human approval withheld) | `prove_sf_intake` | rejected — `AF-FUN-INTAKE-UNLOCKED` (exit 2); through the orchestrator: **no certificate** (P0 abort) |
 

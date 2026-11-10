@@ -502,7 +502,7 @@ def build_brief() -> dict:
 
 # ---------------------------------------------------------------------------
 # PROMPT LEDGER (prove_sf_prompt_floor) — 14 genuinely authored, per-page image
-# prompts, each 5,000-19,000 chars of REAL distinct detail. Each describes ONE
+# prompts, each 16,000-20,000 chars of REAL distinct detail. Each describes ONE
 # specific image (its own subject, scene, composition, lighting, mood, grade,
 # brand color, and negative block). No repeated vocabulary-list dump.
 # ---------------------------------------------------------------------------
@@ -1318,7 +1318,7 @@ PROMPT_UPSELL_2 = _p(
 
 # Per-prompt closing MATERIAL / ATMOSPHERE note. Each is authored for its own scene
 # (distinct air, temperature, particulate + material and skin texture), lifting every
-# prompt over the 5,000-char floor with more REAL specificity, never filler.
+# prompt over the 16,000-char floor with more REAL specificity, never filler.
 _TEXTURE = {
     "main-1":
         "ATMOSPHERE AND SURFACE TEXTURE. The air is cool and faintly humid with the first warmth "
@@ -2036,7 +2036,7 @@ def _emit_broken(ledgers: dict) -> list:
     _write_json(bv / "C_image_prompt_too_short" / "prompt_ledger.json", c)
     variants.append(("C_image_prompt_too_short", "prove_sf_prompt_floor.py",
                      ["--ledger", str(bv / "C_image_prompt_too_short" / "prompt_ledger.json")],
-                     "AF-FUN-PROMPT-FLOOR", "prompt is far under the 5,000-char floor -> never sent to Kie"))
+                     "AF-FUN-PROMPT-FLOOR", "prompt is far under the 16,000-char floor -> never sent to Kie"))
 
     # D — missing provenance: placeholder Kie taskId -> AF-FUN-IMG-PROVENANCE
     d = _c.deepcopy(ledgers["media_ledger.json"])
