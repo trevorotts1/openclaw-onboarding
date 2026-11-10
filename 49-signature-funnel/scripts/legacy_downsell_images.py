@@ -29,6 +29,10 @@ built and says what it needs. This tool never writes checkout copy.
   legacy_downsell_images.py --ledger <copy_ledger.json> --skill71-root <71 dir> \
       --brand-file <brand.json> --brand-owner <client> --out-dir <dir> [--page downsell-2]
 
+Before a page is drawn, every section funnel_structure.json image_coverage requires an image for gets a slot in the
+page's own production request (the stricter rule wins over Skill 71's type-only sections), and the wireframe
+section-plan.json and image-inventory.json are written from that request.
+
 --page narrows the run. Each page is checked against structure/page_types.json (page_set.py): a page
 whose images are missing is refused. Provider DEFAULTS to kie (--allow-paid required); the offline stub
 is opt-in only and needs a recorded owner approval, --stub-approved-by <ref> (the review PDFs and boards
@@ -48,6 +52,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import page_set  # noqa: E402
+import prove_sf_prompt_floor as psf  # noqa: E402  (the one source of the required per-section image set)
 from checkout_wrapper import CARD_FIELDS  # noqa: E402
 
 STRUCTURE = HERE.parent / "structure" / "funnel_structure.json"
@@ -177,7 +182,47 @@ def _image_model(args):
         raise Refused(f"images: Skill 66 did not resolve the image-to-image model ({exc}); nothing is drawn")
 
 
-def draw(run, build_args, args, scripts):
+IMG_ID = re.compile(r"^IMG-\d+$")
+
+
+def required_sections(slug, size):
+    """The numbered sections of this page that funnel_structure.json image_coverage says carry one
+    image (the stricter rule: Skill 71 marks some sections type-only, the funnel structure still
+    requires an image there, and prove_sf_build binds the wireframe inventory to this set)."""
+    pairs = psf.required_image_pairs(size, psf.load_structure())
+    return {str(sec) for page, sec in pairs if page == slug and sec != psf.ANY_IMAGE}
+
+
+def bind_slots(run, request_name, required, bands):
+    """Make the page's own production request carry a slot in every required section, then write the
+    wireframe plan and inventory from it. A required section the request left without a slot gets one
+    before any draw (the band's declared slot ratio when the page type declares bands, else 16:9);
+    IMG-NNN ids are renumbered in section order so they stay unique. Idempotent for one page: the
+    three stage requests are the same sections, so each gets the same slots and ids.
+    Returns (section plan, inventory entries)."""
+    path = run / request_name
+    request = json.loads(path.read_text(encoding="utf-8"))
+    sections = request.get("sections") or []
+    for sec in sections:
+        sid = str(sec.get("section_id"))
+        if sid in required and not sec.get("slots"):
+            sec["slots"] = [{"slot_id": "IMG-000", "aspect_ratio": (bands.get(sid) or {}).get("aspect_ratio") or "16:9",
+                             "art_direction": f"Editorial photograph that illustrates: {sec.get('section_name') or 'this section'}"}]
+    n = 0
+    for sec in sections:
+        for slot in sec.get("slots") or []:
+            if IMG_ID.match(str(slot.get("slot_id"))):
+                n += 1
+                slot["slot_id"] = f"IMG-{n:03d}"
+    path.write_text(json.dumps(request, indent=2) + "\n", encoding="utf-8")
+    plan = [{"section_id": str(sec.get("section_id")),
+             "image_slot_ids": [str(sl["slot_id"]) for sl in sec.get("slots") or []]} for sec in sections]
+    inventory = [{"id": str(sl["slot_id"]), "section_id": str(sec.get("section_id")), **sl}
+                 for sec in sections for sl in sec.get("slots") or []]
+    return plan, inventory
+
+
+def draw(run, build_args, args, scripts, required=frozenset(), bands=None):
     """The three stages through Skill 71's own builder and executor, in the run folder.
     args.image_model is already resolved (main, once per run)."""
     model = args.image_model
@@ -197,6 +242,14 @@ def draw(run, build_args, args, scripts):
             if proc.returncode != 0:
                 tail = (proc.stdout + proc.stderr).strip().splitlines()[-8:]
                 raise Refused(f"{run.name}: {Path(cmd[1]).name} {stage} exited {proc.returncode}: " + " | ".join(tail))
+            if cmd is build:  # slots are bound before the stage draws, never after
+                plan, inventory = bind_slots(run, f"production-request-{stage}.json", required, bands or {})
+                if stage in ("desktop-wireframe", "mobile-tablet"):
+                    (run / stage).mkdir(exist_ok=True)
+                    (run / stage / "section-plan.json").write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+                if stage == "desktop-wireframe":
+                    (run / stage / "image-inventory.json").write_text(
+                        json.dumps({"images": inventory}, indent=2) + "\n", encoding="utf-8")
 
 
 def run_page(slug, structure, ledger, args, scripts, entries):
@@ -234,7 +287,9 @@ def run_page(slug, structure, ledger, args, scripts, entries):
                         encoding="utf-8")
         build_args = ["--page-role", role, "--page-copy", str(copy)]
     (run / "intake.json").write_text(json.dumps(intake), encoding="utf-8")
-    draw(run, build_args, args, scripts)
+    layouts = json.loads((scripts.parent / "references" / "page-structures.json").read_text(encoding="utf-8"))
+    bands = {b["id"]: b.get("slot") or {} for b in ((layouts.get("layouts") or {}).get(role) or {}).get("sections") or []}
+    draw(run, build_args, args, scripts, required_sections(slug, ledger.get("funnel_size")), bands)
     out = {}
     for stage in STAGES:
         record = run / stage / "stage-executor-record.json"
