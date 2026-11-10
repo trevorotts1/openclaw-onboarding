@@ -75,6 +75,7 @@ class Node:
         return Node(self.frame,'close_drawer')
 
     def get_attribute(self, attribute):
+        if self.kind == 'title' and attribute == 'contenteditable':return None
         assert self.kind == 'field_type' and attribute == 'data-field-type'
         return self.item['type']
 

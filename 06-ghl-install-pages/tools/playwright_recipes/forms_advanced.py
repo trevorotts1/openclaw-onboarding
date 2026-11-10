@@ -19,14 +19,14 @@ if __package__:
         CANVAS_ITEMS, _ADDRESS_QUERIES, _close_initial, _close_properties,
         _inventory, _query_controls, _query_key, _address_headers,
     )
-    from .assessments import reopen_editor
+    from .assessments import reopen_editor, read_editor_title
     from .skill6_playwright import Stop, click, fill, form_builder, wait_until
 else:
     from field_placement import (
         CANVAS_ITEMS, _ADDRESS_QUERIES, _close_initial, _close_properties,
         _inventory, _query_controls, _query_key, _address_headers,
     )
-    from assessments import reopen_editor
+    from assessments import reopen_editor, read_editor_title
     from skill6_playwright import Stop, click, fill, form_builder, wait_until
 
 
@@ -237,9 +237,9 @@ def configure(page, step):
     frame = form_builder(page)
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
-    if title.count() != 1 or not title.input_value().strip():
+    if title.count() != 1 or not read_editor_title(title).strip():
         raise Stop('Native form identity is missing or ambiguous')
-    name, editor_url = title.input_value(), page.url
+    name, editor_url = read_editor_title(title), page.url
     inventory = _inventory(frame, allow_unknown_queries=True)
     _open_address(frame)
     before = _snapshot(frame)
@@ -419,7 +419,7 @@ def inspect_consent(page):
     frame = form_builder(page)
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
-    if title.count() != 1 or not title.input_value().strip():
+    if title.count() != 1 or not read_editor_title(title).strip():
         raise Stop('Native form identity is missing or ambiguous')
     editors, required, query = _open_consent(frame)
     state = _consent_snapshot(editors, required, query)
@@ -438,9 +438,9 @@ def configure_consent(page, step):
     frame = form_builder(page)
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
-    if title.count() != 1 or not title.input_value().strip():
+    if title.count() != 1 or not read_editor_title(title).strip():
         raise Stop('Native form identity is missing or ambiguous')
-    form_name, editor_url = title.input_value(), page.url
+    form_name, editor_url = read_editor_title(title), page.url
     query_inventory = None
     if consent.get('query_key', consent['expected_query_key']) != consent['expected_query_key']:
         query_inventory = _inventory(frame, allow_unknown_queries=True)
@@ -733,9 +733,9 @@ def configure_object_fields(page, step, *, kind='form', frame=None, canvas_scope
         raise Stop('Object-field owner canvas is absent or ambiguous')
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
-    if title.count() != 1 or not title.input_value().strip():
+    if title.count() != 1 or not read_editor_title(title).strip():
         raise Stop('Native editor identity is missing or ambiguous')
-    name, editor_url = title.input_value(), page.url
+    name, editor_url = read_editor_title(title), page.url
     fields = payload['object_fields']
     before = _canvas_identity(canvas_scope)
     dialog, search = _object_dialog(frame, kind)

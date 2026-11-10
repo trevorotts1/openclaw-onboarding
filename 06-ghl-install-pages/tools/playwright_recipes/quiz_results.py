@@ -12,10 +12,10 @@ from urllib.parse import urlsplit
 
 if __package__:
     from .skill6_playwright import Stop, click, fill, wait_until
-    from .assessments import reopen_editor
+    from .assessments import reopen_editor, read_editor_title
 else:
     from skill6_playwright import Stop, click, fill, wait_until
-    from assessments import reopen_editor
+    from assessments import reopen_editor, read_editor_title
 
 
 HEADER_FIELDS = {'business_name', 'business_name_enabled', 'header_layout'}
@@ -286,12 +286,12 @@ def configure(page, step):
     frame = page.frame_locator('iframe[name="quiz-builder-app"]')
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
-    name = title.input_value()
+    name = read_editor_title(title)
     if not isinstance(name, str) or not name.strip():
         raise Stop('Quiz identity is unavailable before result-copy editing')
 
     def identity():
-        if page.url != editor_url or title.input_value() != name:
+        if page.url != editor_url or read_editor_title(title) != name:
             raise Stop('Quiz identity changed during result-copy editing')
 
     def open_results():

@@ -2,8 +2,9 @@
 
 Each saved card remains one native effect. A complete authored ordered stack
 and exact existing prefix protect unrelated conditions. An explicit complete
-expected_rules inventory also permits removal of identified cards, without
-editing or reordering retained outcomes. Native rich-message
+expected_rules inventory also permits removal of identified cards or same-count
+in-place edits through the captured editor. Reordering and changing effect
+families require their own native controls. Native rich-message
 card markup is hashed and preserved through append and independent reopen.
 The parent runner owns tenant checks, writer lease and uncertain-write journal.
 """
@@ -15,14 +16,14 @@ import re
 if __package__:
     from . import form_conditions as group
     from . import form_condition_stack as stack
-    from .assessments import reopen_editor
+    from .assessments import reopen_editor, read_editor_title
     from .field_placement import _close_initial
     from .skill6_playwright import Stop, click, fill, form_builder, wait_until
     from .form_submission import validate as validate_submission
 else:
     import form_conditions as group
     import form_condition_stack as stack
-    from assessments import reopen_editor
+    from assessments import reopen_editor, read_editor_title
     from field_placement import _close_initial
     from skill6_playwright import Stop, click, fill, form_builder, wait_until
     from form_submission import validate as validate_submission
@@ -34,6 +35,7 @@ DISQUALIFY='Disqualify lead'
 SHOW_MESSAGE='Show custom message'
 EFFECTS=frozenset(('Show Field','Hide Field',REDIRECT,MESSAGE,DISQUALIFY))
 RTE='#richTextEditor .tiptap.ProseMirror[contenteditable="true"]'
+_NO_MAPPING=object()
 
 
 def _url(value):
@@ -121,14 +123,59 @@ def _retained_indices(expected,wanted):
     return indices
 
 
+def _reconciliation(expected,wanted,source_indices=_NO_MAPPING):
+    """Separate captured removal and editing from unsupported reordering.
+
+    The existing full-stack contract identifies the prior owner of each edit.
+    Moving an unchanged prior rule is never implemented by writing its copy
+    into another card; a native reorder needs a captured reorder control.
+    """
+    if source_indices is not _NO_MAPPING:
+        if not isinstance(source_indices,list) or len(source_indices)!=len(wanted):
+            raise Stop('Outcome source_indices must identify exactly one prior card or new tail card for every desired rule')
+        seen=set();last=-1;appending=False
+        for index,rule in zip(source_indices,wanted):
+            if index is None:
+                appending=True
+                if rule in expected:
+                    raise Stop('Recreating an unchanged prior outcome at a new position is not native card reordering')
+                continue
+            if type(index) is not int or index<0 or index>=len(expected) or index in seen:
+                raise Stop('Outcome source_indices contains an invalid or duplicate prior card ordinal')
+            if appending or index<=last:
+                raise Stop('Existing outcome card ordinals must retain their order before genuinely new tail cards')
+            previous=expected[index]
+            if rule!=previous:
+                if rule in expected:
+                    raise Stop('Moving an unchanged prior rule by overwriting another card is not native reordering')
+                if _tile(previous)!=_tile(rule):
+                    raise Stop('An existing outcome edit must retain its native effect family')
+            seen.add(index);last=index
+        return 'mapped',list(source_indices)
+    try:
+        return 'remove',_retained_indices(expected,wanted)
+    except Stop:
+        if len(expected)!=len(wanted):
+            raise Stop('Outcome replacement with a different card count requires explicit source_indices for existing owners and new tail cards') from None
+    for index,(previous,rule) in enumerate(zip(expected,wanted)):
+        if rule==previous:continue
+        if rule in expected:
+            raise Stop('Existing outcome card reordering requires a captured native order control')
+        if _tile(previous)!=_tile(rule):
+            raise Stop('Existing outcome edits must retain the native effect family; remove and append a different effect explicitly')
+    return 'edit',list(range(len(expected)))
+
+
 def validate(step):
-    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules'}
+    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules','source_indices'}
             or step.get('action','native_condition_outcomes')!='native_condition_outcomes'):
         raise Stop('Unsupported native conditional outcome stack')
     plan={**deepcopy(step),'rules':_rules(step.get('rules'),allow_empty='expected_rules' in step)}
     if 'expected_rules' in step:
         plan['expected_rules']=_rules(step['expected_rules'],allow_empty=True,reject_conflicts=False)
-        _retained_indices(plan['expected_rules'],plan['rules'])
+        _reconciliation(plan['expected_rules'],plan['rules'],step.get('source_indices',_NO_MAPPING))
+    elif 'source_indices' in step:
+        raise Stop('Outcome source_indices requires the complete expected_rules inventory')
     return plan
 
 
@@ -136,6 +183,7 @@ def configuration_hash(step):
     plan=validate(step)
     binding=({'expected_rules':plan['expected_rules'],'rules':plan['rules']}
              if 'expected_rules' in plan else plan['rules'])
+    if 'source_indices' in plan:binding['source_indices']=plan['source_indices']
     return hashlib.sha256(json.dumps(binding,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
@@ -314,15 +362,93 @@ def _author(frame,dialog,rule,prefix,identity):
     return current
 
 
+def _modal_state(frame,modal,rule):
+    _predicate_modal(modal,rule)
+    if rule['effect'] in ('Show Field','Hide Field'):
+        group._modal_state(modal,rule)
+    else:
+        _effect_value(frame,modal,rule,write=False)
+
+
+def _edit(frame,dialog,index,before_rule,rule,current,identity):
+    """Edit one exact existing outcome while preserving every sibling record."""
+    identity()
+    if _inventory(dialog)!=current:
+        raise Stop('Native outcome cards changed immediately before the requested edit')
+    cards=dialog.locator(group.CARD)
+    if cards.count()!=len(current):raise Stop('Native outcome card count changed before edit')
+    click(_one(cards.nth(index).locator('#edit-condition'),'Native outcome card Edit changed'))
+    modal=_one(frame.get_by_role('dialog'),'Native outcome edit dialog is ambiguous')
+    _one(modal.locator('.hl-modal-heading').get_by_text(_tile(before_rule),exact=True),
+         'Native existing outcome editor heading differs from the inventoried card')
+    # Before the first mutation, verify the entire persisted predicate and
+    # current effect value rather than accepting only the summary card text.
+    _modal_state(frame,modal,before_rule)
+    count=len(before_rule['clauses'])
+    while count>len(rule['clauses']):
+        identity()
+        count=stack._remove_tail(modal,before_rule,count,identity,
+            read_state=lambda node,snapshot:_modal_state(frame,node,snapshot))
+    for row,clause in enumerate(rule['clauses']):
+        identity()
+        if modal.locator('[id^="selectedField-"]').count()!=count:
+            raise Stop('Native outcome edit predicate inventory changed')
+        group._choose(frame,'#selectedField-'+str(row),clause['if_field'])
+        group._choose(frame,'#selectedOperation-'+str(row),clause['operator'])
+        if clause['operator'] in group.BINARY:
+            control=_one(modal.locator('#inputValue-'+str(row)),'Native edited outcome predicate value changed')
+            fill(control,clause['value'])
+            if control.input_value()!=clause['value']:
+                raise Stop('Native outcome edit ignored the authored predicate value')
+        if row<len(rule['clauses'])-1:
+            joins=modal.locator('.n-tabs')
+            if joins.count()!=count:raise Stop('Native outcome edit connector inventory changed')
+            connector=joins.nth(row)
+            active=_one(connector.locator('.n-tabs-tab--active'),'Native outcome edited connector is ambiguous')
+            wanted=group._connectors(rule)[row]
+            appending=row==count-1
+            if appending or active.get_attribute('data-name')!=wanted:
+                click(_one(connector.locator('[data-name="'+wanted+'"]'),'Native outcome edited AND/OR control changed'))
+                expected=count+int(appending)
+                wait_until(lambda:modal.locator('[id^="selectedField-"]').count()==expected,
+                           'Native outcome edited connector changed the wrong row count')
+                count=expected
+    previous_value={key:value for key,value in before_rule.items()
+                    if key not in ('match','clauses','connectors')}
+    desired_value={key:value for key,value in rule.items()
+                   if key not in ('match','clauses','connectors')}
+    effect_changed=previous_value!=desired_value
+    # Predicate-only edits must preserve existing rich text exactly. Filling
+    # unchanged copy would silently flatten the saved message formatting.
+    if effect_changed:_effect_value(frame,modal,rule,write=True,identity=identity)
+    _modal_state(frame,modal,rule)
+    identity()
+    save=_one(modal.locator('#modal-footer-btn-positive-action'),'Native existing outcome Save changed')
+    if not save.is_enabled():raise Stop('Native edited outcome is invalid; Save not attempted')
+    click(save)
+    wait_until(lambda:modal.locator('#modal-footer-btn-positive-action').count()==0
+               or not modal.locator('#modal-footer-btn-positive-action').is_visible(),
+               'Native existing outcome edit modal did not close')
+    wait_until(lambda:dialog.locator(group.CARD).count()==len(current),
+               'Native existing outcome edit changed the card count')
+    after=_inventory(dialog)
+    if (len(after)!=len(current) or after[:index]!=current[:index] or after[index+1:]!=current[index+1:]
+            or after[index]['rule']!=rule):
+        raise Stop('Native existing outcome edit changed a sibling, card order or authored value')
+    if not effect_changed and after[index]['rich_html_sha256']!=current[index]['rich_html_sha256']:
+        raise Stop('Native predicate-only outcome edit changed protected message markup')
+    return after
+
+
 def configure(page,step):
     plan=validate(step)
     frame=form_builder(page)
     title=frame.get_by_role('textbox',name='Form Name',exact=True)
     title.wait_for(state='visible',timeout=45000)
-    if title.count()!=1 or not title.input_value().strip():raise Stop('Native outcome form identity is unavailable')
-    name,editor_url=title.input_value(),page.url
+    if title.count()!=1 or not read_editor_title(title).strip():raise Stop('Native outcome form identity is unavailable')
+    name,editor_url=read_editor_title(title),page.url
     def identity():
-        if page.url!=editor_url or title.count()!=1 or title.input_value()!=name:
+        if page.url!=editor_url or title.count()!=1 or read_editor_title(title)!=name:
             raise Stop('Native outcome form identity changed')
     def open_conditions():
         identity();_close_initial(frame)
@@ -337,10 +463,18 @@ def configure(page,step):
         if actual!=wanted:
             if actual!=plan['expected_rules']:
                 raise Stop('Existing native outcomes differ from the complete expected previous inventory; reconcile before removal')
-            retained=set(_retained_indices(plan['expected_rules'],wanted))
+            _,indices=_reconciliation(plan['expected_rules'],wanted,plan.get('source_indices',_NO_MAPPING))
+            retained={index for index in indices if index is not None}
             for index in reversed(range(len(before))):
                 if index not in retained:
                     current=stack._delete_card(frame,dialog,current,identity,index=index,inventory=_inventory)
+            for index,(previous_index,rule) in enumerate(zip(indices,wanted)):
+                if previous_index is None:
+                    if _inventory(dialog)!=current:
+                        raise Stop('Native outcome stack changed before an explicit expected-inventory append')
+                    current=_author(frame,dialog,rule,current,identity)
+                elif plan['expected_rules'][previous_index]!=rule:
+                    current=_edit(frame,dialog,index,plan['expected_rules'][previous_index],rule,current,identity)
         if not current:stack._empty_state(dialog)
     else:
         if len(before)>len(wanted) or [record['rule'] for record in before]!=wanted[:len(before)]:

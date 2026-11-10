@@ -1,3 +1,22 @@
+## [v27.1.102] - 2026-11-10
+
+- Compose captured new quiz creation, question batches, scoring and result copy
+  as one owned job. Bind the generated empty Page 1 after Save and independent
+  reopen; keep every question and configuration stage journal separate.
+- Create positively empty survey slides without forced contact fields, then
+  author ordered Radio batches on requested slides. Preflight every dependency
+  before shell writes and verify the complete saved inventory after reopening.
+- Edit existing Redirect, custom-message and disqualification condition cards;
+  combine explicit retained source ordinals with removal, edits and tail append.
+  Preserve rich siblings and exact modal state before each write.
+- Read the captured contenteditable Form Name across form, survey and quiz
+  recipes while retaining the legacy input title shape. Fix survey name
+  normalization to match the actual maintained shell compiler.
+- Record v27.1.101 delivery through #3090 and preserve explicit remaining controls
+  for all twelve unfinished operation areas. Focused integration covers all 61
+  dynamic actions and 74 jobs; optional whole-suite reruns stay deferred.
+  Final native-script and behavioral acceptance remain pending.
+
 ## [v27.1.101] - 2026-11-09
 
 - Include Picture Choice in mixed quiz batches, with exact persisted media and

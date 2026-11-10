@@ -11,10 +11,10 @@ import json
 import re
 
 if __package__:
-    from .assessments import reopen_editor
+    from .assessments import reopen_editor, read_editor_title
     from .skill6_playwright import Stop, click, fill, form_builder, wait_until
 else:
-    from assessments import reopen_editor
+    from assessments import reopen_editor, read_editor_title
     from skill6_playwright import Stop, click, fill, form_builder, wait_until
 
 
@@ -216,12 +216,12 @@ def configure(page,step):
     frame = form_builder(page)
     title = frame.get_by_role('textbox',name='Form Name',exact=True)
     title.wait_for(state='visible',timeout=45000)
-    if title.count()!=1 or not title.input_value().strip():
+    if title.count()!=1 or not read_editor_title(title).strip():
         raise Stop('Native compound form identity is missing or ambiguous')
-    name, editor_url = title.input_value(),page.url
+    name, editor_url = read_editor_title(title),page.url
 
     def identity():
-        if page.url!=editor_url or title.count()!=1 or title.input_value()!=name:
+        if page.url!=editor_url or title.count()!=1 or read_editor_title(title)!=name:
             raise Stop('Native compound form identity changed during editing')
 
     def open_conditions():

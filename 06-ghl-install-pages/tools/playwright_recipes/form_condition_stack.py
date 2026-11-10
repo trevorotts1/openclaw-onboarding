@@ -13,12 +13,12 @@ import json
 
 if __package__:
     from . import form_conditions as group
-    from .assessments import reopen_editor
+    from .assessments import reopen_editor, read_editor_title
     from .field_placement import _close_initial
     from .skill6_playwright import Stop,click,fill,form_builder,wait_until
 else:
     import form_conditions as group
-    from assessments import reopen_editor
+    from assessments import reopen_editor, read_editor_title
     from field_placement import _close_initial
     from skill6_playwright import Stop,click,fill,form_builder,wait_until
 
@@ -239,13 +239,14 @@ def _edit(frame,dialog,index,before_rule,rule,current,identity):
     return wanted
 
 
-def _remove_tail(modal,before_rule,count,identity):
+def _remove_tail(modal,before_rule,count,identity,*,read_state=None):
     """Remove one captured noninitial predicate row and prove its exact prefix."""
     if type(count) is not int or count<2:
         raise Stop('Native predicate removal never deletes the initial If row')
+    read_state=group._modal_state if read_state is None else read_state
     current={**deepcopy(before_rule),'clauses':deepcopy(before_rule['clauses'][:count])}
     if 'connectors' in current:current['connectors']=current['connectors'][:count-1]
-    group._modal_state(modal,current)
+    read_state(modal,current)
     source=group._one(modal.locator('#selectedField-'+str(count-1)),
                       'Native tail predicate source changed')
     row=source.locator('..');owner=row.locator('..')
@@ -270,7 +271,7 @@ def _remove_tail(modal,before_rule,count,identity):
                'Native tail predicate did not remove exactly one complete row')
     expected={**deepcopy(before_rule),'clauses':deepcopy(before_rule['clauses'][:count-1])}
     if 'connectors' in expected:expected['connectors']=expected['connectors'][:count-2]
-    group._modal_state(modal,expected)
+    read_state(modal,expected)
     return count-1
 
 
@@ -279,12 +280,12 @@ def configure(page,step):
     frame=form_builder(page)
     title=frame.get_by_role('textbox',name='Form Name',exact=True)
     title.wait_for(state='visible',timeout=45000)
-    if title.count()!=1 or not title.input_value().strip():
+    if title.count()!=1 or not read_editor_title(title).strip():
         raise Stop('Native condition stack form identity is missing or ambiguous')
-    name,editor_url=title.input_value(),page.url
+    name,editor_url=read_editor_title(title),page.url
 
     def identity():
-        if page.url!=editor_url or title.count()!=1 or title.input_value()!=name:
+        if page.url!=editor_url or title.count()!=1 or read_editor_title(title)!=name:
             raise Stop('Native condition stack form identity changed')
 
     def open_conditions():

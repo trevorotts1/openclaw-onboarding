@@ -432,10 +432,10 @@ def configure(page, step):
     """Set an authored window once, save once and independently reopen the form."""
     if __package__:
         from .skill6_playwright import click, visible, form_builder, wait_until
-        from .assessments import reopen_editor
+        from .assessments import reopen_editor, read_editor_title
     else:
         from skill6_playwright import click, visible, form_builder, wait_until
-        from assessments import reopen_editor
+        from assessments import reopen_editor, read_editor_title
     step = validate(step)
     wanted = step['schedule']
     # An unobserved selector must not be discovered after a previous edit.
@@ -445,7 +445,7 @@ def configure(page, step):
     frame = form_builder(page)
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
-    form_name, editor_url = title.input_value(), page.url
+    form_name, editor_url = read_editor_title(title), page.url
     if not isinstance(form_name, str) or not form_name.strip():
         _stop('Saved native form identity is unavailable')
     parsed = urlsplit(editor_url)

@@ -206,7 +206,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
     branding_mode = operation == 'communities.configure' and 'branding' in inputs
     event_mode = operation == 'meetings.integrate' and inputs.get('integration_mode') == 'community_event_room'
     contact_mode = operation == 'forms.configure' and 'contact_field_plan' in inputs
-    survey_radio_mode = operation == 'surveys.create' and 'radio_questions' in inputs
+    survey_radio_mode = operation == 'surveys.create' and bool({'radio_questions','question_batches'}.intersection(inputs))
     captured_mode = captured_script_mode(operation, inputs)
     if event_mode and 'auth_activation' in inputs:
         return {'status':'STOP_INVALID_INPUT','browser_used':False,
@@ -437,7 +437,7 @@ def main(argv=None):
             status = 'ROUTE_VALIDATED_ONLY'
             if selected['lane'] == 'playwright':
                 job = validate_job(compile_recipe(args.operation, inputs), args.inputs.resolve().parent)
-                if args.operation == 'surveys.create' and 'radio_questions' in inputs:
+                if args.operation == 'surveys.create' and bool({'radio_questions','question_batches'}.intersection(inputs)):
                     from playwright_recipes.survey_radio_creation import validate_runtime
                     validate_runtime(job,observed.get('radio_field_capability'))
                 if args.operation == 'forms.configure' and 'contact_field_plan' in inputs:

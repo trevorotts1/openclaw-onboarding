@@ -25,7 +25,9 @@ class Control:
         if self.on_click: self.on_click()
     def fill(self, value): self.card.data[self.field] = value
     def input_value(self): return self.card.data[self.field]
-    def get_attribute(self, name): return str(self.card.data['enabled']).lower()
+    def get_attribute(self, name):
+        if self.field == 'name' and name == 'contenteditable':return None
+        return str(self.card.data['enabled']).lower()
     def evaluate(self, script): return self.outer if 'closest' in script else self.label
     def locator(self, value): return Control(count=0)
     def set_checked(self, value): self.card.data[self.field] = value

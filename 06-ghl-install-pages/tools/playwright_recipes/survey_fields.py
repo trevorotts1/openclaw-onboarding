@@ -13,10 +13,10 @@ from urllib.parse import urlsplit
 
 if __package__:
     from .skill6_playwright import Stop, assert_tenant, click
-    from .assessments import reopen_editor
+    from .assessments import reopen_editor, read_editor_title
 else:
     from skill6_playwright import Stop, assert_tenant, click
-    from assessments import reopen_editor
+    from assessments import reopen_editor, read_editor_title
 
 
 OWNER = {'expected_slide_count', 'slide_labels', 'target_slide'}
@@ -129,7 +129,7 @@ def configure(page, step):
     frame = page.frame_locator('iframe[name="survey-builder-app"]')
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
-    name, original_url = title.input_value(), page.url
+    name, original_url = read_editor_title(title), page.url
     if not isinstance(name, str) or not name.strip():
         raise Stop('Survey identity is unavailable before object-question placement')
     _close_initial(frame)
@@ -144,7 +144,7 @@ def configure(page, step):
         fresh = page.frame_locator('iframe[name="survey-builder-app"]')
         title = fresh.get_by_role('textbox', name='Form Name', exact=True)
         title.wait_for(state='visible', timeout=45000)
-        if title.input_value() != name:
+        if read_editor_title(title) != name:
             raise Stop('Survey name changed while reopening object questions')
         _close_initial(fresh)
         click(fresh.get_by_role('tab', name='Edit', exact=True))

@@ -12,10 +12,10 @@ import re
 from urllib.parse import urlsplit
 
 if __package__:
-    from .assessments import reopen_editor
+    from .assessments import reopen_editor,read_editor_title
     from .skill6_playwright import Stop,assert_tenant,click,fill,wait_until
 else:
-    from assessments import reopen_editor
+    from assessments import reopen_editor,read_editor_title
     from skill6_playwright import Stop,assert_tenant,click,fill,wait_until
 
 
@@ -292,7 +292,7 @@ def _wait_editor_identity(page,title,plan):
         if page.url!=plan['start_url']:raise Stop('Native quiz editor URL changed while loading')
         if title.count()>1:raise Stop('Native quiz title is ambiguous while loading')
         if title.count()==0:return False
-        name=title.input_value()
+        name=read_editor_title(title)
         if not name or not name.strip():return False
         if name!=plan['expected_quiz_name']:raise Stop('Native quiz title differs from its exact intended owner')
         return True
@@ -497,7 +497,7 @@ def configure(page,step):
     plan=validate(step);frame=page.frame_locator('iframe[name="quiz-builder-app"]')
     title=frame.get_by_role('textbox',name='Form Name',exact=True)
     def identity():
-        if page.url!=plan['start_url'] or title.count()!=1 or title.input_value()!=plan['expected_quiz_name']:
+        if page.url!=plan['start_url'] or title.count()!=1 or read_editor_title(title)!=plan['expected_quiz_name']:
             raise Stop('Short Answer quiz identity changed')
         assert_tenant(page,plan)
     title.wait_for(state='visible',timeout=45000);_wait_editor_identity(page,title,plan);identity();_wait_baseline(frame,plan)

@@ -1,0 +1,44 @@
+{
+  "location_id": "LOC",
+  "location_name": "Example Company",
+  "start_url": "https://app.convertandflow.com/v2/location/LOC/survey-builder/main",
+  "name": "New authored survey",
+  "allow_creation": true,
+  "question_batches": [
+    {
+      "kind": "radio",
+      "target_slide": 1,
+      "questions": [
+        {
+          "name": "Service",
+          "field_key": "contact.service",
+          "data_type": "RADIO",
+          "options": [
+            "Coaching",
+            "Consulting"
+          ],
+          "expected_id": null,
+          "allow_creation": true
+        }
+      ]
+    },
+    {
+      "kind": "radio",
+      "target_slide": 2,
+      "questions": [
+        {
+          "name": "Budget",
+          "field_key": "contact.budget",
+          "data_type": "RADIO",
+          "options": [
+            "Coaching",
+            "Consulting"
+          ],
+          "expected_id": null,
+          "allow_creation": true
+        }
+      ]
+    }
+  ],
+  "slide_count": 2
+}
