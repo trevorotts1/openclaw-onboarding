@@ -1,3 +1,7 @@
+## [v2.1.54] - 2026-11-10 - free-entry intake carries the client's opt-in path; receipt self-test fixture carries a verdict (version bump for G3)
+
+- `scripts/launch_intake.py` free-entry intake now carries the client's opt-in path; `scripts/collect_launch_receipts.py` self-test fixture carries a verdict (see commit 94bf6fd72). This entry is the G3 skill-version bump after merging main; no further behaviour change.
+
 ## [v2.1.53] - 2026-11-10 - docs: golden-daybreak README prompt-ledger row states the rule 12 band (INST-001 #21; no behaviour change)
 
 - `examples/golden-daybreak/README.md` line 39: the stale `5k–19k band` (en dash, which the ASCII grep missed) now reads `each 16,000–20,000 stripped chars, rule 12 band`, matching README line 20 and the `run_signature_funnel.py` line 29 fix. Doc only; the README is inside the pinned tree, so the SF prover pin is re-minted by the bot after merge and is not hand-edited here.
