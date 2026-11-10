@@ -12,30 +12,29 @@ all entry points, commands and remaining live verification work.
 
 ## Current build checkpoint - November 10, 2026
 
-The v27.1.106 candidate has **23 BUILT / 10 PARTIAL / 0 GENERIC_ONLY**
-across 33 named operations (**69.7%** by equal-weight operation count), with
-**68 dynamic actions / 88 bounded compiler jobs** and **49 tracked completed
-feature additions**. This candidate adds captured form widgets and URL domain
-controls, survey Number properties and mixed append, populated quiz-page append,
-numeric condition comparisons, embed color/icon exports and community replay.
+Actual v27.1.106 delivery is verified through [batch#3121](https://github.com/trevorotts1/openclaw-onboarding/pull/3121),
+merge `874cfdcdf1df9d4b4a3b5a9c908026db566c330b`. The entire Skill6 subtree
+exactly matches frozen member#3120 at `ea7f8210c350aca583c3c4c681e269dcc6ae458b`.
 
-Examined main `5ecb6a074421aab694cd7c9a02f951c3fd6a3f87` contains the prior
-**36 delivered additions**. Skill 6 v27.1.104
-[#3102](https://github.com/trevorotts1/openclaw-onboarding/pull/3102) merged at
-`efe9937173b8e3de31ba71fbb584e72eb8cc67dd`; v27.1.105 member
-[#3105](https://github.com/trevorotts1/openclaw-onboarding/pull/3105) was delivered
-through merged [batch #3107](https://github.com/trevorotts1/openclaw-onboarding/pull/3107)
-at `9dca0aaa1bcaa2fcbdb687a2816444cc832a0f02`.
+This separate v27.1.107 unit is prepared from that actual landed main. It adds
+owned survey Number creation and captured Checkbox,Single Dropdown and Multi
+Dropdown creation/configuration through existing inventory,option and replay adapters.
+The four source additions are independently CONFIRMED and present in this tree;
+they are not claimed delivered until this next unit merges.
 
-The **13 candidate additions remain unmerged** until actual batch delivery.
-Current tracked-addition delivery is **36/49 = 73.5%**; the recovered earlier
-baseline was 36/45 = 80%. The denominator grew through four new local source
-completions. These ratios are not effort or native-acceptance percentages.
-Publication of this source unit is approved; it uses the existing batch train,
-with direct unit auto-merge disabled. Final native script, respondent, learner
-and payment acceptance remain pending. The old 21/11/1 audit is historical.
-See [the current progress ledger](references/PLAYWRIGHT-PROGRESS.md) and
-[the machine-readable source ledger](references/PLAYWRIGHT-BUILD-STATUS.json).
+Current source inventory:**53 completed feature records,49 delivered and4 in
+this prepared unit**;merged delivery**49/53=92.5%**. Broad source coverage stays
+**23 BUILT/10 PARTIAL/0 GENERIC_ONLY** across33operations(**69.7%** equal-weight
+closure),with all23completed broad contracts on main. Remaining question/content/
+security/media and survey-rule paths remain explicit;no broad row was promoted.
+
+Retained final source proof:**68dynamic actions/95compiler jobs**,2provider-boundary
+tests PASS0.611s,9changedPython AST/1JSON parsed,whitespace PASS,binding5PASS0FAIL.
+No source tests were repeated for the actual-main recut. Native script/respondent
+acceptance remains pending. Earlier36/45,36/49 and36/53 percentages are historical
+checkpoint denominators,not current delivery. See the
+[current progress ledger](references/PLAYWRIGHT-PROGRESS.md) and
+[machine-readable ledger](references/PLAYWRIGHT-BUILD-STATUS.json).
 
 ## Start here
 

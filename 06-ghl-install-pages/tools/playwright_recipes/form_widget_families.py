@@ -278,9 +278,9 @@ def _activate(frame, item, kind, *, profile=None):
     if kind not in ('single_dropdown','multi_dropdown'):click(label)
     click(_one(item.locator('[aria-label="Open settings"]'), 'Native form widget settings owner changed'))
     if profile.get('sidebar_header',True):
-        frame.locator('#form_custom_sidebar').get_by_text(profile['tile'],exact=True).wait_for(state='visible',timeout=45000)
+        frame.locator(profile.get('sidebar','#form_custom_sidebar')).get_by_text(profile['tile'],exact=True).wait_for(state='visible',timeout=45000)
     if kind in ('file_upload','checkbox','single_dropdown','multi_dropdown','url'):
-        click(_one(frame.locator('#form_custom_sidebar').get_by_text('Content',exact=True),
+        click(_one(frame.locator(profile.get('sidebar','#form_custom_sidebar')).get_by_text('Content',exact=True),
                    'Native File Upload Content pane changed'))
     general = frame.locator('#general-settings')
     general.wait_for(state='visible', timeout=45000)
@@ -433,8 +433,9 @@ def _option_switch(panel,label):
                 'Native Checkbox '+label+' switch changed')
 
 
-def _checkbox_options(frame):
-    panel=_one(frame.locator('#form_custom_sidebar'),'Native Checkbox sidebar changed')
+def _checkbox_options(frame, *, profile=None):
+    profile=PROFILES['checkbox'] if profile is None else profile
+    panel=_one(frame.locator(profile.get('sidebar','#form_custom_sidebar')),'Native Checkbox sidebar changed')
     click(_one(panel.get_by_text('Options',exact=True),'Native Checkbox Options pane changed'))
     panel.locator('#option-label-0 input').wait_for(state='visible',timeout=45000)
     styles=[]
@@ -473,8 +474,9 @@ def _checkbox_options(frame):
     return {'options':options,'style':styles[0],'calculations':calc=='true','columns':columns,'other':other}
 
 
-def _write_checkbox_options(frame,before,desired):
-    _checkbox_options(frame);panel=frame.locator('#form_custom_sidebar')
+def _write_checkbox_options(frame,before,desired, *, profile=None):
+    profile=PROFILES['checkbox'] if profile is None else profile
+    _checkbox_options(frame,profile=profile);panel=frame.locator(profile.get('sidebar','#form_custom_sidebar'))
     if before['style']!=desired['style']:
         click(panel.get_by_role('img',name=desired['style'].title()+' checkbox style',exact=True).locator('..'))
     for label,target in (('Enable calculations',desired['calculations']),('Spread to columns',desired['columns'] is not None)):
@@ -540,8 +542,8 @@ def _read(frame, item, kind, *, profile=None):
         raise Stop('Native form widget exposes a Hidden value while Hidden is off')
     if kind=='url':result.update(_url_options(frame))
     if kind=='file_upload':result.update(_upload_options(frame))
-    if kind=='checkbox':result.update(_checkbox_options(frame))
-    if kind in ('single_dropdown','multi_dropdown'):result.update(single_dropdown.read_options(frame))
+    if kind=='checkbox':result.update(_checkbox_options(frame,profile=profile))
+    if kind in ('single_dropdown','multi_dropdown'):result.update(single_dropdown.read_options(frame,sidebar=profile.get('sidebar','#form_custom_sidebar')))
     _close_properties(frame)
     return _properties(kind, result, profile=profile)
 
@@ -622,8 +624,8 @@ def _write(frame, item, kind, before, desired, *, profile=None):
             target='' if desired['max_files'] is None else str(desired['max_files'])
             if node.input_value()!=target:fill(node,target);node.press('Tab')
     if kind=='url':_write_url_options(frame,before,desired)
-    if kind=='checkbox':_write_checkbox_options(frame,before,desired)
-    if kind in ('single_dropdown','multi_dropdown'):single_dropdown.write_options(frame,before,desired)
+    if kind=='checkbox':_write_checkbox_options(frame,before,desired,profile=profile)
+    if kind in ('single_dropdown','multi_dropdown'):single_dropdown.write_options(frame,before,desired,sidebar=profile.get('sidebar','#form_custom_sidebar'))
     _close_properties(frame)
     if _read(frame, item, kind, profile=profile) != desired:
         raise Stop('Native form widget ignored authored properties')

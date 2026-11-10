@@ -19,6 +19,16 @@ from playwright_recipes.skill6_playwright import Stop, assert_tenant, click, sec
 
 ACTION='native_survey_creation'
 COMMON=('location_id','location_name','start_url')
+WIDGET_KINDS=('number','checkbox','single_dropdown','multi_dropdown')
+TEXT_KINDS=('text','multiline',*WIDGET_KINDS)
+WIDGET_TYPES={'number':'NUMERICAL','checkbox':'CHECKBOX','single_dropdown':'SINGLE_OPTIONS','multi_dropdown':'MULTIPLE_OPTIONS'}
+
+
+def _question_key(kind,question):
+    if kind in WIDGET_KINDS:
+        from playwright_recipes.survey_widget_families import _key
+        return question[_key(kind)]
+    return question['query_key']
 
 
 def _slide_count(plan):
@@ -60,15 +70,16 @@ def validate_inputs(value):
         raise Stop('New survey questions require one to 100 explicit ordered batches')
     expanded=[]
     for batch in batches:
-        if isinstance(batch,dict) and batch.get('kind') in ('text','multiline') and isinstance(batch.get('questions'),list) and 1<=len(batch['questions'])<=100:
+        if isinstance(batch,dict) and batch.get('kind') in TEXT_KINDS and isinstance(batch.get('questions'),list) and 1<=len(batch['questions'])<=100:
             expanded.extend([{**deepcopy(batch),'questions':[deepcopy(question)]} for question in batch['questions']])
         else:expanded.append(batch)
     if len(expanded)>100:raise Stop('Survey question stages exceed the explicit bounded batch limit')
     value=deepcopy(value);value['question_batches']=expanded;batches=expanded
+    canonical_keys=set()
     questions=[];radio_occupied=set();multiline_slides=set();query_keys={STANDARD_FIELDS[field][1] for field in value.get('standard_fields',[])}
     for batch in batches:
         if (not isinstance(batch,dict) or set(batch)!={'kind','target_slide','questions'}
-                or batch['kind'] not in ('radio','text','multiline') or type(batch['target_slide']) is not int
+                or batch['kind'] not in ('radio',*TEXT_KINDS) or type(batch['target_slide']) is not int
                 or not 1<=batch['target_slide']<=_slide_count(value)):
             raise Stop('Survey question batches need a captured writer and exact existing target slide')
         if batch['kind']=='radio':
@@ -81,10 +92,19 @@ def validate_inputs(value):
                     or not isinstance(batch['questions'],list) or len(batch['questions'])!=1):
                 raise Stop('Captured Single Line batches require an explicit empty-shell owner before any Radio stage')
             if batch['kind']=='multiline':multiline_slides.add(batch['target_slide'])
-            question=text_questions.validate_question(batch['questions'][0])
-            if question['query_key'] in query_keys:raise Stop('Survey Single Line Query Key repeats another owned question')
-            query_keys.add(question['query_key'])
+            if batch['kind'] in WIDGET_KINDS:
+                from playwright_recipes.survey_widget_families import validate_creation_question
+                question=validate_creation_question(batch['questions'][0],batch['kind'])
+                if question['unique_key'] in canonical_keys:
+                    raise Stop('Survey widget canonical custom-field identity repeats another owned question')
+                canonical_keys.add(question['unique_key'])
+            else:question=text_questions.validate_question(batch['questions'][0])
+            if _question_key(batch['kind'],question) in query_keys:raise Stop('Survey Single Line Query Key repeats another owned question')
+            query_keys.add(_question_key(batch['kind'],question))
         if batch['kind']=='radio':radio_occupied.add(batch['target_slide'])
+    for batch in batches:
+        if batch['kind'] in WIDGET_KINDS and sum(row['target_slide']==batch['target_slide'] for row in batches)!=1:
+            raise Stop('Survey widget creation currently requires its own initially empty slide')
     # Cross-batch conflicts must stop before the shell and the first API POST.
     if questions:radio.validate_inputs({'location_id':value['location_id'],'questions':questions})
     result=deepcopy(value)
@@ -129,11 +149,12 @@ def _text_plan(plan,binding,batch):
         'slide_labels':deepcopy(binding['slide_labels']),'target_slide':batch['target_slide'],
         'question':deepcopy(batch['questions'][0])}
     if batch['kind']=='multiline':result['_native_field_type']='LARGE_TEXT'
-    same=[row for row in plan['question_batches'] if row['kind'] in ('text','multiline') and row['target_slide']==batch['target_slide']]
+    elif batch['kind'] in WIDGET_KINDS:result['_native_field_type']=WIDGET_TYPES[batch['kind']]
+    same=[row for row in plan['question_batches'] if row['kind'] in TEXT_KINDS and row['target_slide']==batch['target_slide']]
     if len(same)>1:
         prior=[]
         for row in same:
-            if row['questions'][0]['query_key']==batch['questions'][0]['query_key']:break
+            if _question_key(row['kind'],row['questions'][0])==_question_key(batch['kind'],batch['questions'][0]):break
             prior.append({'kind':row['kind'],'question':deepcopy(row['questions'][0])})
         result['text_index']=sum(row['kind']==batch['kind'] for row in prior)+1
         # Preserve legacy homogeneous Single Line plans and receipt hashes.
@@ -208,7 +229,8 @@ def _validate_inventory(value,plan,binding,completed):
             text_by_slide.setdefault(authored['target_slide'],[]).append(authored['questions'][0])
             text_kinds_by_slide.setdefault(authored['target_slide'],[]).append(authored['kind'])
     globally_seen=set();native_queries={STANDARD_FIELDS[field][1] for field in plan.get('standard_fields',[])}
-    native_queries.update(question['query_key'] for questions in text_by_slide.values() for question in questions)
+    native_queries.update(_question_key(kind,question) for index,questions in text_by_slide.items()
+                          for kind,question in zip(text_kinds_by_slide[index],questions))
     for index,slide in enumerate(value['slides'],1):
         if (not isinstance(slide,dict) or set(slide)!=({'canvas','radio_fields'}|({'text_fields'} if index in text_by_slide else set()))
                 or not isinstance(slide['canvas'],list) or not isinstance(slide['radio_fields'],list)):
@@ -229,14 +251,31 @@ def _validate_inventory(value,plan,binding,completed):
             native_queries.add(observed['query_key'])
         canvas=slide['canvas'];baseline=binding['canvas'] if 'canvas' in binding else binding['slides'][index-1]['canvas']
         original=[];seen=[];text_seen=0;authored_order=[]
+        widget_canvas={}
+        for authored,done in zip(plan['question_batches'],completed):
+            if authored['target_slide']!=index or authored['kind'] not in ('checkbox','single_dropdown','multi_dropdown'):continue
+            saved=done['native_receipt']['saved_snapshot'][index-1][0]
+            controls=saved.get('controls')
+            if (not isinstance(controls,list) or not controls
+                    or any(not isinstance(control,list) or len(control)!=5 for control in controls)):
+                raise Stop('Survey choice-widget child receipt omits its saved native control inventory')
+            widget_canvas[_question_key(authored['kind'],authored['questions'][0])]={'types':[WIDGET_TYPES[authored['kind']]],
+                'names':[control[:3] for control in controls]}
         for row in canvas:
             if not isinstance(row,dict) or set(row)!={'types','names'} or not isinstance(row['names'],list):
                 raise Stop('Whole-survey saved canvas row is malformed')
             field=next((f for f in expected if row['types']==['RADIO']
                 and row['names']==[['INPUT','radio',f['id']] for _ in f['options']]),None)
             if field is not None:seen.append(field['id']);authored_order.append(('radio',field['id']))
-            elif index in text_by_slide and row in ({'types':['LARGE_TEXT'],'names':[['TEXTAREA',None,None]]},{'types':['TEXT'],'names':[['INPUT',None,None]]}):
-                kind='multiline' if row['types']==['LARGE_TEXT'] else 'text'
+            elif index in text_by_slide and row['types'] in (['CHECKBOX'],['SINGLE_OPTIONS'],['MULTIPLE_OPTIONS']):
+                kind={'CHECKBOX':'checkbox','SINGLE_OPTIONS':'single_dropdown','MULTIPLE_OPTIONS':'multi_dropdown'}[row['types'][0]]
+                if text_seen>=len(text_by_slide[index]) or text_kinds_by_slide[index][text_seen]!=kind:
+                    raise Stop('Whole-survey saved choice-widget family order changed')
+                key=_question_key(kind,text_by_slide[index][text_seen])
+                if row!=widget_canvas.get(key):raise Stop('Whole-survey choice-widget saved control inventory changed')
+                authored_order.append((kind,key));text_seen+=1
+            elif index in text_by_slide and row in ({'types':['LARGE_TEXT'],'names':[['TEXTAREA',None,None]]},{'types':['TEXT'],'names':[['INPUT',None,None]]},{'types':['NUMERICAL'],'names':[['INPUT',None,None]]}):
+                kind={'LARGE_TEXT':'multiline','TEXT':'text','NUMERICAL':'number'}[row['types'][0]]
                 if text_seen>=len(text_by_slide[index]) or kind!=text_kinds_by_slide[index][text_seen]:
                     raise Stop('Whole-survey saved native text family order changed')
                 authored_order.append((kind,text_by_slide[index][text_seen]['query_key']));text_seen+=1
@@ -244,7 +283,7 @@ def _validate_inventory(value,plan,binding,completed):
         expected_order=[]
         for authored,done in zip(plan['question_batches'],completed):
             if authored['target_slide']!=index:continue
-            expected_order.extend([(authored['kind'],authored['questions'][0]['query_key'])] if authored['kind'] in ('text','multiline')
+            expected_order.extend([(authored['kind'],_question_key(authored['kind'],authored['questions'][0]))] if authored['kind'] in TEXT_KINDS
                 else [('radio',field['id']) for field in done['api_fields']])
         if (original!=baseline or seen!=[field['id'] for field in expected]
                 or text_seen!=len(text_by_slide.get(index,[])) or authored_order!=expected_order):
@@ -276,10 +315,20 @@ def _inventory(page,plan,binding,completed):
             if authored['kind']!='radio':continue
             for field in done['api_fields']:
                 fields.append({'id':field['id'],'query_key':_read_object_binding(frame,owner,field)})
-        row={'canvas':_canvas_identity(owner),'radio_fields':fields}
-        authored_text=[batch for batch,done in zip(plan['question_batches'],completed) if batch['target_slide']==index and batch['kind'] in ('text','multiline')]
+        canvas=_canvas_identity(owner)
+        if any(batch['target_slide']==index and batch['kind'] in ('single_dropdown','multi_dropdown')
+               for batch in plan['question_batches'][:len(completed)]):
+            selected=text_questions.snapshot(frame,{'expected_slide_count':_slide_count(plan),'slide_labels':binding['slide_labels']})[index-1]
+            canvas=[{'types':item['types'],'names':[control[:3] for control in item['controls']]} for item in selected]
+        row={'canvas':canvas,'radio_fields':fields}
+        authored_text=[batch for batch,done in zip(plan['question_batches'],completed) if batch['target_slide']==index and batch['kind'] in TEXT_KINDS]
         if authored_text:
-            row['text_fields']=[text_questions.read_question(frame,_text_plan(plan,binding,batch)) for batch in authored_text]
+            row['text_fields']=[]
+            for batch in authored_text:
+                if batch['kind'] in WIDGET_KINDS:
+                    from playwright_recipes.survey_widget_families import read_creation_question
+                    row['text_fields'].append(read_creation_question(frame,_text_plan(plan,binding,batch)))
+                else:row['text_fields'].append(text_questions.read_question(frame,_text_plan(plan,binding,batch)))
         rows.append(row)
     return _validate_inventory({'slide_labels':deepcopy(binding['slide_labels']),'slides':rows},plan,binding,completed)
 
@@ -302,9 +351,12 @@ def validate_receipt(value,step):
         if (not isinstance(done,dict) or set(done)!={'kind','target_slide','api_fields','native_receipt'}
                 or done['kind']!=authored['kind'] or done['target_slide']!=authored['target_slide']):
             raise Stop('Whole-survey question stage changed its authored owner')
-        if authored['kind'] in ('text','multiline'):
+        if authored['kind'] in TEXT_KINDS:
             if done['api_fields']!=[]:raise Stop('Single Line survey stage must not fabricate API fields')
-            text_questions.validate_receipt(done['native_receipt'],_text_plan(plan,binding,authored))
+            if authored['kind'] in WIDGET_KINDS:
+                from playwright_recipes.survey_widget_families import validate_creation_receipt
+                validate_creation_receipt(done['native_receipt'],_text_plan(plan,binding,authored))
+            else:text_questions.validate_receipt(done['native_receipt'],_text_plan(plan,binding,authored))
             continue
         fields=_definitions(plan,authored,done['api_fields'])
         native=_native_step(plan,binding,authored,fields)
@@ -359,8 +411,11 @@ def configure(page,step,evidence_root,*,capability):
     if page.url!=binding['editor_url']:reopen_editor(page,'survey',plan['name'],binding['editor_url'])
     completed=[]
     for batch,stage_root in zip(plan['question_batches'],stage_roots):
-        if batch['kind'] in ('text','multiline'):
-            receipt=text_questions.configure(page,_text_plan(plan,binding,batch),stage_root)
+        if batch['kind'] in TEXT_KINDS:
+            if batch['kind'] in WIDGET_KINDS:
+                from playwright_recipes.survey_widget_families import configure_creation
+                receipt=configure_creation(page,_text_plan(plan,binding,batch),stage_root)
+            else:receipt=text_questions.configure(page,_text_plan(plan,binding,batch),stage_root)
             completed.append({'kind':batch['kind'],'target_slide':batch['target_slide'],'api_fields':[],'native_receipt':receipt})
             _inventory(page,plan,binding,completed)
             continue

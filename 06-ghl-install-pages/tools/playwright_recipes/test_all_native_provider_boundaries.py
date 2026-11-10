@@ -39,6 +39,15 @@ def native_cases(root):
  yield 'survey_number_properties','surveys.configure',survey_number_properties()
  from test_survey_creation import inputs as whole_survey
  yield 'whole_survey_creation','surveys.create',whole_survey()
+ from test_survey_number_creation import inputs as number_survey
+ yield 'number_survey_creation','surveys.create',number_survey()
+ from test_survey_checkbox_creation import inputs as checkbox_survey, configuration as checkbox_properties
+ yield 'checkbox_survey_creation','surveys.create',checkbox_survey()
+ yield 'checkbox_survey_properties','surveys.configure',checkbox_properties()
+ from test_survey_dropdown_creation import inputs as dropdown_survey, configuration as dropdown_properties
+ for family in ('single_dropdown','multi_dropdown'):
+  yield family+'_survey_creation','surveys.create',dropdown_survey(family)
+  yield family+'_survey_properties','surveys.configure',dropdown_properties(family)
  from test_survey_radio_creation import inputs as survey_radio
  yield 'survey_radio_creation','surveys.create',survey_radio()
  from test_quiz_picture_questions import request as picture_choice
@@ -145,7 +154,7 @@ class CompleteNativeProviderBoundaries(unittest.TestCase):
                 named |= literal_action(node.args[0])
         self.assertTrue(named <= covered,named-covered)
         self.assertEqual(len(covered),68,'Update the bounded fixtures for newly added dynamic compiler actions')
-        self.assertEqual(len(rows),88)
+        self.assertEqual(len(rows),95)
 
     def test_no_current_native_job_delegates_to_status_only_api_or_extension_callback(self):
         with tempfile.TemporaryDirectory() as directory:
