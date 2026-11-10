@@ -113,6 +113,7 @@ class Control:
         return next(key for key, (ordinal, _) in FORM_SETTINGS.items() if ordinal == index)
 
     def get_attribute(self, name):
+        if self.kind == 'title' and name == 'contenteditable':return None
         assert self.kind == 'switch' and name == 'aria-checked'
         key = self.key()
         value = self.page.current['enabled'] if key == 'enabled' else self.page.current['protected'][key]
