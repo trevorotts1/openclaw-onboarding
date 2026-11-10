@@ -1,3 +1,15 @@
+## [v27.1.105] - 2026-11-10
+
+- Complete the finite inactive NeoClassic course UI contract with captured
+  background and Custom Block image removal, Video Block lifecycle and HTTPS
+  destination handling; preserve full inventories and fresh replay readback.
+- Create owned Multi Line/LARGE_TEXT survey questions with exact saved property
+  inventories, per-question journals and fresh whole-creation replay.
+- Add captured Address Auto-Complete and mandatory search parent controls while
+  preserving full child state, native disabled/checked semantics and fresh replay.
+- Record current captured source coverage as23 BUILT/10 PARTIAL/0 GENERIC_ONLY;
+  native execution, playback, respondent and learner acceptance remain pending.
+
 ## [v27.1.104] - 2026-11-10
 
 - Configure existing survey Multi Line/LARGE_TEXT questions through full

@@ -75,6 +75,7 @@ class NativeNode:
         if self.kind == 'address_headers':return len(f.address_queries())
         if self.kind == 'address_query_inputs':return int(f.address_expanded.get(self.name,False))
         if self.kind == 'input':return self.frame.items[self.index].get('input_count',1)
+        if self.kind == 'address_search':return int(self.frame.items[self.index].get('search_enabled',True))
         return 1
 
     def nth(self, index):
@@ -87,7 +88,7 @@ class NativeNode:
 
     def locator(self, selector):
         if self.kind == 'item':
-            return NativeNode(self.frame, {'[data-field-type]':'type','input':'input',
+            return NativeNode(self.frame, {'[data-field-type]':'type','input':'input','input[id^="address-search-"]':'address_search',
                 '[aria-label="Open settings"]':'gear'}[selector], self.index)
         if self.kind == 'tile_labels' and selector == '..':return NativeNode(self.frame,'source')
         if self.kind in ('address_header','address_header_parent') and selector == '..':
@@ -326,6 +327,13 @@ class AddressPlacementTests(unittest.TestCase):
         groups = [item for item in frame.items if item['type'] == 'group']
         self.assertEqual(len(groups), 1)
         self.assertEqual(groups[0]['queries'], field_placement._ADDRESS_QUERIES)
+
+    def test_autocomplete_off_group_reuses_five_children_without_duplicate_drag(self):
+        frame=NativeFrame([{'type':'group','input_count':5,'search_enabled':False,
+            'queries':dict(field_placement._ADDRESS_QUERIES)},{'type':'submit'}])
+        result=self.configure(frame)
+        self.assertEqual(result['fields'][0]['placement'],'reused')
+        self.assertEqual((frame.drags,frame.saves,frame.reopens),(0,0,1))
 
     def test_standalone_address_overlap_refuses_before_any_browser_call(self):
         for label in ('City','State','Country','Postal Code'):

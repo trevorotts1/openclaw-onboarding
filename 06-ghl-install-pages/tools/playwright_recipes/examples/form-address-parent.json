@@ -1,0 +1,71 @@
+{
+  "location_id": "LOC",
+  "location_name": "Fixture",
+  "start_url": "https://app.convertandflow.com/v2/location/LOC/form-builder-v2/FORM",
+  "address_parent": {
+    "form_name": "Fixture form",
+    "expected_inventory": {
+      "address": "group",
+      "country": "group",
+      "state": "group",
+      "city": "group",
+      "postal_code": "group",
+      "email": "email"
+    },
+    "expected_children": {
+      "Street Address": {
+        "query_key": "address",
+        "label": "Street Address",
+        "placeholder": "",
+        "short_label": "",
+        "required": false,
+        "hidden": false,
+        "hidden_value": null
+      },
+      "Country": {
+        "query_key": "country",
+        "label": "Country",
+        "placeholder": "",
+        "short_label": "",
+        "required": false,
+        "hidden": false,
+        "hidden_value": null
+      },
+      "State": {
+        "query_key": "state",
+        "label": "State",
+        "placeholder": "",
+        "short_label": "",
+        "required": false,
+        "hidden": false,
+        "hidden_value": null
+      },
+      "City": {
+        "query_key": "city",
+        "label": "City",
+        "placeholder": "",
+        "short_label": "",
+        "required": false,
+        "hidden": false,
+        "hidden_value": null
+      },
+      "Postal Code": {
+        "query_key": "postal_code",
+        "label": "Postal Code",
+        "placeholder": "",
+        "short_label": "",
+        "required": false,
+        "hidden": false,
+        "hidden_value": null
+      }
+    },
+    "expected_controls": {
+      "autocomplete": false,
+      "search_required": false
+    },
+    "controls": {
+      "autocomplete": true,
+      "search_required": true
+    }
+  }
+}

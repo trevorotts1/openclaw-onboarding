@@ -1,10 +1,11 @@
-"""Captured Single Line survey questions on empty or inventoried TEXT slides.
+"""Captured Single Line and Multi Line survey questions on inventoried slides.
 
 Captured 2026-11-10: Single Line0 drag handle, empty slide canvas, TEXT input,
 General Settings and saved/reopened label, placeholder, short label and Query Key.
 Each invocation journals intent before its single insertion; uncertain writes are
 never retried. Populated append uses its captured positive blank-tail pointer path.
-Other widget types require separate captures.
+Multi Line uses its separately captured LARGE_TEXT textarea and initially empty
+owner only; populated Multi Line append and other widgets need separate captures.
 """
 from copy import deepcopy
 import hashlib
@@ -148,9 +149,16 @@ def _fingerprint(plan):
     return hashlib.sha256(json.dumps(plan,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
+def _creation_profile(plan):
+    family=plan.get('_native_field_type','TEXT')
+    if family=='TEXT':return ('Single Line0','Single Line','single_line_','Enter your text','single-line-state.json','SURVEY_SINGLE_LINE_SAVED_AND_REOPENED')
+    if family=='LARGE_TEXT':return ('Multi Line1','Multi Line','multi_line_','Type your message here','multi-line-state.json','SURVEY_MULTI_LINE_SAVED_AND_REOPENED')
+    raise Stop('Uncaptured survey text creation family')
+
+
 def validate_receipt(value,plan):
     if (not isinstance(value,dict) or set(value)!={'status','editor_url','target_slide','question','configuration_sha256','saved_snapshot','independent_readback'}
-            or value['status']!='SURVEY_SINGLE_LINE_SAVED_AND_REOPENED'
+            or value['status']!=_creation_profile(plan)[5]
             or value['editor_url']!=plan['start_url'] or value['target_slide']!=plan['target_slide']
             or value['question']!=plan['question'] or value['configuration_sha256']!=_fingerprint(plan)
             or value['independent_readback']!='VERIFIED'
@@ -184,7 +192,8 @@ def _append_populated(page,handle,canvas,last):
 
 def configure(page,plan,evidence_root):
     validate_question(plan['question'])
-    root=Path(evidence_root).resolve();state=root/'single-line-state.json';fingerprint=_fingerprint(plan)
+    profile=_creation_profile(plan)
+    root=Path(evidence_root).resolve();state=root/profile[4];fingerprint=_fingerprint(plan)
     if state.is_symlink():raise Stop('Survey Single Line journal must not be a symlink')
     frame=_frame(page,plan)
     if journal_present(state):
@@ -197,6 +206,8 @@ def configure(page,plan,evidence_root):
         return done
     owners=_owners(frame,plan);owner=owners.nth(plan['target_slide']-1)
     prior=plan.get('expected_prior',[])
+    if plan.get('_native_field_type')=='LARGE_TEXT' and prior:
+        raise Stop('Multi Line creation requires its captured initially empty slide; populated append needs a separate capture')
     if not isinstance(prior,list) or owner.locator('.form-field-wrapper').count()!=len(prior):
         raise Stop('Survey Single Line populated owner differs from the complete prior question inventory')
     for index,question in enumerate(prior,1):
@@ -212,7 +223,7 @@ def configure(page,plan,evidence_root):
     dialog=_one(frame.get_by_role('dialog'),'Survey Element drawer changed')
     _one(dialog.get_by_text('Survey Element',exact=True),'Survey Element title changed')
     click(_one(dialog.get_by_text('Quick Add',exact=True),'Survey Quick Add tab changed'))
-    tile=_one(dialog.locator('[id="Single Line0"]'),'Captured Single Line tile changed')
+    tile=_one(dialog.locator('[id="'+profile[0]+'"]'),'Captured Single Line tile changed')
     handle=_one(tile.locator('.gui__builder-card--handler'),'Captured Single Line drag handle changed')
     canvas=_one(owner.locator('.builder_sub_container'),'Survey Single Line empty canvas changed')
     record={'configuration_sha256':fingerprint,'status':'INTENT_RECORDED'};secure_json(state,record)
@@ -230,9 +241,9 @@ def configure(page,plan,evidence_root):
             if read_question(frame,{**plan,'text_index':index})!=question:
                 raise Stop('Survey Single Line append changed an existing question property')
         previous=read_question(frame,plan)
-        if (not re.fullmatch(r'Single Line [a-z0-9]{6}',previous['label'])
-                or previous['query_key']!='single_line_'+previous['label'].rsplit(' ',1)[1]
-                or previous['placeholder']!='Enter your text' or previous['short_label']
+        if (not re.fullmatch(re.escape(profile[1])+r' [a-z0-9]{6}',previous['label'])
+                or previous['query_key']!=profile[2]+previous['label'].rsplit(' ',1)[1]
+                or previous['placeholder']!=profile[3] or previous['short_label']
                 or previous['required'] or previous['hidden']):
             raise Stop('New survey Single Line defaults differ from native capture')
         write_question(frame,plan,plan['question'])
@@ -246,7 +257,7 @@ def configure(page,plan,evidence_root):
         frame=_frame(page,plan)
         if read_question(frame,plan)!=plan['question'] or snapshot(frame,plan)!=desired:
             raise Stop('Survey Single Line did not persist after independent reopen')
-        done=validate_receipt({'status':'SURVEY_SINGLE_LINE_SAVED_AND_REOPENED','editor_url':plan['start_url'],
+        done=validate_receipt({'status':profile[5],'editor_url':plan['start_url'],
             'target_slide':plan['target_slide'],'question':deepcopy(plan['question']),'configuration_sha256':fingerprint,
             'saved_snapshot':desired,'independent_readback':'VERIFIED'},plan)
         secure_json(state,{'configuration_sha256':fingerprint,'status':'SAVED_AND_REOPENED','receipt':done})

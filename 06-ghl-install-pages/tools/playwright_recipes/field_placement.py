@@ -139,6 +139,19 @@ def _address_headers(frame):
     return headers
 
 
+def _address_input(item):
+    """Select the captured Street child with autocomplete on or off.
+
+    The search input exists only while parent autocomplete is enabled. Its
+    absence is not a missing child and must not force a duplicate Address.
+    """
+    controls=item.locator('input')
+    search=item.locator('input[id^="address-search-"]')
+    if search.count() not in (0,1) or controls.count()!=5+search.count():
+        _stop('Native Address search/child input shape changed')
+    return controls.nth(search.count())
+
+
 def _address_keys(frame, *, allow_unknown_queries=False):
     """Read the captured five child fields of one complete native Address group."""
     headers=_address_headers(frame)
@@ -204,12 +217,12 @@ def _inventory(frame, *, allow_unknown_queries=False):
                 _stop('Native custom Radio inputs do not share one existing field identity')
             selected = labels
         else:
-            expected_count = 6 if field_type == 'group' else 1
-            if controls.count() != expected_count:
-                _stop('Native field selectable input is missing or ambiguous')
-            # The complete Address group has search plus five child inputs. Its
-            # second input selects the whole group, including renamed labels.
-            selected = controls.nth(1) if field_type == 'group' else controls
+            if field_type == 'group':
+                selected = _address_input(item)
+            else:
+                if controls.count()!=1:
+                    _stop('Native field selectable input is missing or ambiguous')
+                selected=controls
         selected.click(timeout=45000)
         if field_type in ('date', 'select'):
             selected.press('Escape', timeout=45000)

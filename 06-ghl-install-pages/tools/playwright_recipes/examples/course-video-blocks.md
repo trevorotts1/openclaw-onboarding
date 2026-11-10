@@ -1,0 +1,7 @@
+# Captured inactive Neo Classic Video Blocks
+
+`courses.configure_ui` accepts `video_blocks` containing the full sidebar UUID/type/order inventory, `append` entries with an approved `video` file/SHA256, or `updates` entries binding an existing Video UUID, its exact `expected` source/poster URLs, and exclusive `changes.video` or `changes.remove_video: true`.
+
+The captured native Upload File input supports MP4, WebM and MOV below 5 GB. The handler streams an approved regular source into a private immutable copy and verifies its SHA256, media header and size before browser work. It never downloads an arbitrary caller URL. Upload requires a new HTTPS native source; removal requires the observed empty source/poster, No video marker and disabled Remove. Native player attributes and all sibling blocks/theme are preserved. Saved results require an independent reopen. Completed replay reopens the exact inactive template and checks its current UUID inventory and source/poster hashes before returning success.
+
+This finite implementation covers captured Neo Classic text/theme settings, supported block creation/editing, background and Custom Block image removal, and Video Block append/replacement/removal. New template families, unobserved controls, activation, publication and learner playback proof require separate evidence. Modal and empty-state captures support this source implementation; no actual video upload or media removal run is claimed by these examples.
