@@ -1,17 +1,25 @@
 ## [v27.1.104] - 2026-11-10
 
-- Complete the bounded captured marketing-quiz creation contract with explicit
-  existing-page targets and one-next-page creation. Keep complete evolving
-  inventories; flatten final page order for scoring and receipt question counts.
-- Add Picture Choice to populated quiz pages while retaining exact old-prefix,
-  image, style, first-Save owner/key and uncertain-write guards. Accept only the
-  two complete captured default-label vectors and the exact filled-media control.
-- Reconcile R33 after saved/reopened native captures and independent source QC:
-  quizzes.create is BUILT. Current source counts are 22 built, 10 partial and one
-  generic-only; keep the original frozen audit and separately pending live proof.
-- Keep this reviewed follow-up separate from the active finish-388 owner. Its
-  test-only v27.1.103 is reserved in #3097; merge this source onto the actual latest
-  base with that changelog and checkout-test change preserved. No duplicate train.
+- Complete bounded marketing-quiz creation: explicit existing/new-page targets,
+  flattened scoring/receipt counts and populated Picture Choice. Preserve all
+  prior question/media/style identities and the new field's first-Save transition;
+  accept only complete captured default vectors and exact filled-media controls.
+- Recreate an explicit complete permutation of unchanged Show/Hide rules through
+  captured deletion/authoring, preserving the unchanged prefix and full inventory.
+- Remove an exact inactive Image Block image and independently reopen its positive
+  empty placeholders while preserving destination, block, siblings and theme.
+- Revalidate the full current community Learning inventory before completed
+  course-association replay, without another Add or silent journal rewrite.
+- Author Single Line TEXT surveys with exact text/Query Key/properties, populated
+  append, multiple same-slide stages and existing property edits. Preserve complete
+  inventories, Required/Hidden exclusivity, conditional hidden value and journals;
+  text-only creation needs no Radio schema capability.
+- Bind existing custom TEXT condition fields by complete ordered label/Query Key/
+  type inventory across groups, stacks and outcomes. Support the measured nested
+  native value-input control; unsupported custom field families still refuse.
+- Reconcile the complete fixed R33 source contract: 22 built, 10 partial and one
+  generic-only. Archive the original audit; keep merged delivery and installed,
+  respondent and learner acceptance separate. Preserve both public source inputs.
 
 ## [v27.1.102] - 2026-11-10
 

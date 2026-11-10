@@ -4,7 +4,10 @@ Each native rule still has exactly one target. The full authored rule list is
 the contract: existing cards must be its exact prefix before missing cards are
 appended, or exactly match an explicit full expected_rules list before edits.
 An explicit full expected inventory also permits captured tail-card removal;
-cards are never silently reordered. Complete independent saved readback is
+cards are never silently reordered. Explicit recreate_order permits a full
+permutation through captured Delete/author controls, retaining the unchanged
+prefix and recreating the suffix. It does not use or claim native drag order.
+Complete independent saved readback is
 mandatory, including when all cards appear before Save.
 """
 from copy import deepcopy
@@ -26,7 +29,7 @@ else:
 _ROW_DELETE_PATH='M16 6v-.8c0-1.12 0-1.68-.218-2.108a2 2 0 00-.874-.874C14.48 2 13.92 2 12.8 2h-1.6c-1.12 0-1.68 0-2.108.218a2 2 0 00-.874.874C8 3.52 8 4.08 8 5.2V6M3 6h18m-2 0v11.2c0 1.68 0 2.52-.327 3.162a3 3 0 01-1.311 1.311C16.72 22 15.88 22 14.2 22H9.8c-1.68 0-2.52 0-3.162-.327a3 3 0 01-1.311-1.311C5 19.72 5 18.88 5 17.2V6'
 
 
-def _rules(rules,*,reject_conflicts=True,allow_empty=False):
+def _rules(rules,*,reject_conflicts=True,allow_empty=False,field_bindings=None):
     minimum=0 if allow_empty else 1
     if not isinstance(rules,list) or not minimum<=len(rules)<=50:
         raise Stop('Native condition stacks require '+str(minimum)+' to 50 ordered rules')
@@ -35,7 +38,8 @@ def _rules(rules,*,reject_conflicts=True,allow_empty=False):
         if (not isinstance(rule,dict) or set(rule)-{'match','connectors','clauses','effect','target'}
                 or not {'match','clauses','effect','target'}.issubset(rule)):
             raise Stop('Every condition stack rule needs its complete predicate, effect and one target')
-        valid=group.validate({'action':'native_condition_group',**rule},minimum_clauses=1)
+        valid=group.validate({'action':'native_condition_group',**rule,
+            **({'field_bindings':field_bindings} if field_bindings is not None else {})},minimum_clauses=1)
         identity=(*group._predicate_identity(valid),valid['target'])
         if reject_conflicts and identity in seen:
             raise Stop('Duplicate or conflicting condition predicates for the same target require reconciliation')
@@ -45,12 +49,21 @@ def _rules(rules,*,reject_conflicts=True,allow_empty=False):
 
 
 def validate(step):
-    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules'}
+    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules','recreate_order','field_bindings'}
             or step.get('action','native_condition_stack')!='native_condition_stack'):
         raise Stop('Unsupported native condition stack')
-    value={**deepcopy(step),'rules':_rules(step.get('rules'),allow_empty='expected_rules' in step)}
+    bindings=group.condition_bindings(step) if 'field_bindings' in step else None
+    value={**deepcopy(step),'rules':_rules(step.get('rules'),allow_empty='expected_rules' in step,field_bindings=bindings)}
     if 'expected_rules' in step:
-        value['expected_rules']=_rules(step['expected_rules'],reject_conflicts=False,allow_empty=True)
+        value['expected_rules']=_rules(step['expected_rules'],reject_conflicts=False,allow_empty=True,field_bindings=bindings)
+    if 'recreate_order' in step:
+        order=step['recreate_order'];expected=value.get('expected_rules')
+        if (expected is None or not isinstance(order,list) or len(expected)<2
+                or len(order)!=len(expected) or any(type(index) is not int for index in order)
+                or sorted(order)!=list(range(len(expected)))):
+            raise Stop('Explicit condition recreation requires a complete prior stack and one full ordinal permutation')
+        if value['rules']!=[expected[index] for index in order]:
+            raise Stop('Explicit condition recreation must retain every prior Show/Hide rule unchanged in the requested order')
     return value
 
 
@@ -58,6 +71,9 @@ def configuration_hash(step):
     plan=validate(step)
     binding=({'expected_rules':plan['expected_rules'],'rules':plan['rules']}
              if 'expected_rules' in plan else plan['rules'])
+    if 'recreate_order' in plan:binding['recreate_order']=plan['recreate_order']
+    if 'field_bindings' in plan:
+        binding={'rules':binding,'field_bindings':plan['field_bindings']}
     return hashlib.sha256(json.dumps(binding,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
@@ -147,8 +163,7 @@ def _author(frame,dialog,rule,prefix,identity):
         group._choose(frame,'#selectedField-'+str(index),clause['if_field'])
         group._choose(frame,'#selectedOperation-'+str(index),clause['operator'])
         if clause['operator'] in group.BINARY:
-            value=group._one(modal.locator('#inputValue-'+str(index)),
-                             'Native condition value control changed')
+            value=group._value_input(modal,index)
             fill(value,clause['value'])
             if value.input_value()!=clause['value']:
                 raise Stop('Native condition value did not accept the authored text')
@@ -202,7 +217,7 @@ def _edit(frame,dialog,index,before_rule,rule,current,identity):
         group._choose(frame,'#selectedField-'+str(row),clause['if_field'])
         group._choose(frame,'#selectedOperation-'+str(row),clause['operator'])
         if clause['operator'] in group.BINARY:
-            value=group._one(modal.locator('#inputValue-'+str(row)),'Native edited condition value changed')
+            value=group._value_input(modal,row)
             fill(value,clause['value'])
             if value.input_value()!=clause['value']:
                 raise Stop('Native condition edit ignored the authored binary value')
@@ -275,6 +290,32 @@ def _remove_tail(modal,before_rule,count,identity,*,read_state=None):
     return count-1
 
 
+def _recreate_order(frame,dialog,plan,current,identity):
+    """Replace only the changed suffix using already captured native controls.
+
+    The caller's complete expected stack and explicit ordinal permutation are
+    checked before this function. Never reuse this for rich outcome cards or
+    infer permission to delete/recreate from an ordinary desired rule list.
+    Any partial failure propagates before drawer/outer Save; the parent intent
+    journal remains uncertain and requires reconciliation rather than retry.
+    """
+    wanted=_expected(plan)
+    if current==wanted:return current
+    expected=_expected({'rules':plan['expected_rules']})
+    if current!=expected:
+        raise Stop('Native condition recreation inventory differs from the complete expected previous stack')
+    prefix=0
+    while prefix<len(current) and current[prefix]==wanted[prefix]:prefix+=1
+    while len(current)>prefix:
+        current=_delete_tail(frame,dialog,current,identity)
+    for rule in plan['rules'][prefix:]:
+        identity()
+        if group._inventory(dialog)!=current:
+            raise Stop('Native condition stack changed during explicit order recreation')
+        current=_author(frame,dialog,rule,current,identity)
+    return current
+
+
 def configure(page,step):
     plan=validate(step)
     frame=form_builder(page)
@@ -296,10 +337,13 @@ def configure(page,step):
         dialog=group._one(frame.get_by_role('dialog'),'Native Conditions drawer is missing or ambiguous')
         return dialog
 
+    group._preflight_fields(frame,plan,identity)
     dialog=open_conditions()
     before,wanted=group._inventory(dialog),_expected(plan)
     current=before
-    if 'expected_rules' in plan:
+    if 'recreate_order' in plan:
+        current=_recreate_order(frame,dialog,plan,current,identity)
+    elif 'expected_rules' in plan:
         expected=_expected({'rules':plan['expected_rules']})
         if before!=expected:
             raise Stop('Native condition edit inventory differs from the complete expected previous stack')
@@ -338,6 +382,7 @@ def configure(page,step):
     # therefore fail closed if persistence did not finish or did not succeed.
     reopen_editor(page,'form',name,editor_url)
     frame=form_builder(page)
+    group._preflight_fields(frame,plan,identity)
     dialog=open_conditions()
     if group._inventory(dialog)!=wanted:
         raise Stop('Native condition stack did not persist after independent reopen; do not repeat the write')

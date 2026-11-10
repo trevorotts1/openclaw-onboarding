@@ -251,6 +251,12 @@ def validate_intake(operation, data):
             quiz_creation(data)
     if operation == 'surveys.configure' and isinstance(data.get('configuration'), dict):
         config = data['configuration']
+        if 'text_questions' in config:
+            if 'options' in data:raise Stop('Survey TEXT properties require their own independently journaled job')
+            from playwright_recipes.survey_text_configuration import validate
+            if set(config).intersection({'location_id','location_name','start_url'}):
+                raise Stop('Survey TEXT owner identity must come from its parent inputs')
+            validate({'payload':{**{key:data[key] for key in ('location_id','location_name','start_url')},**config}})
         if set(config).intersection({'object_fields', 'field_dependencies'}):
             if set(config).intersection({'location_id', 'location_name', 'start_url'}):
                 raise Stop('Survey object-field owner identity must come from its parent inputs')

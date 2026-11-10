@@ -96,8 +96,16 @@ class NativeModal:
             if selector.startswith(prefix):return self.selection(self.rows[int(selector[len(prefix):])].get(key))
         if selector.startswith('#inputValue-'):
             row=self.rows[int(selector[len('#inputValue-'):])]
-            node=self.counted(lambda:int(row.get('operator') in group.BINARY))
-            node.input_value.side_effect=lambda:row.get('value','');node.row=row;return node
+            node=self.counted(lambda:1)
+            visible=lambda:row.get('operator') in group.BINARY
+            node.get_attribute.side_effect=lambda key:('n-input' if visible() else 'n-input invisible') if key=='class' else None
+            node.is_visible.side_effect=visible
+            control=self.counted(lambda:1);control.row=row
+            control.get_attribute.side_effect=lambda key:{'type':'text','placeholder':'Please Type a value here'}.get(key)
+            control.is_visible.side_effect=visible
+            control.input_value.side_effect=lambda:row.get('value','')
+            node.locator.side_effect={'input.n-input__input-el':control}.__getitem__
+            return node
         raise AssertionError('Unexpected modal selector '+selector)
 
     def tab(self,index):

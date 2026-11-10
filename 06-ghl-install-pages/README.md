@@ -10,6 +10,26 @@ then the current OpenClaw Chrome extension, managed Agent Browser and enabled
 computer use. The new [recipe guide](references/PLAYWRIGHT-RECIPES.md) lists
 all entry points, commands and remaining live verification work.
 
+## Current build checkpoint - November 10, 2026
+
+Authority repair [#3094](https://github.com/trevorotts1/openclaw-onboarding/pull/3094)
+is merged. The existing coordinator's merged [batch #3096](https://github.com/trevorotts1/openclaw-onboarding/pull/3096)
+carries v27.1.102 unit #3095 at `dc82b8c9928229920694d13445a2135127abae6b`,
+delivered at `710b36e9c1c36d3c72a33ebb52b7054234c00a2e`. The combined v27.1.104 source integrates
+explicit Show/Hide order recreation, inactive course Image Block image removal,
+current-inventory verification on completed community-course replay, and captured
+Single Line TEXT survey questions with Required/Hidden properties. The seven
+bounded additions now also include native nested condition-value compatibility,
+populated survey TEXT append/multiple stages and existing TEXT property edits.
+The seventh addition binds existing custom TEXT condition fields by complete
+label/Query Key/type inventory and exact searchable choices; its final source
+review is CONFIRMED. The provider matrix covers 62 dynamic
+actions and 75 bounded jobs.
+The complete R33 quiz-creation source is also included. The current source ledger
+records **22 BUILT / 10 PARTIAL / 1 GENERIC_ONLY**.
+See [the current progress ledger](references/PLAYWRIGHT-PROGRESS.md) for exact
+remaining controls and separate native acceptance.
+
 ## Start here
 
 1. SKILL.md - the governing doctrine for this skill. Read it first.

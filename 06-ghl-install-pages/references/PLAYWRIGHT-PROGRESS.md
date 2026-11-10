@@ -18,6 +18,22 @@ Fifty-one focused checks passed in 0.257s; independent source review CONFIRMED
 all three fixed R33 source gaps closed. Installed Python execution, respondent
 answers/backend effects and final scoring/client acceptance remain pending.
 
+
+## Combined public-source checkpoint
+
+This snapshot combines public R33 head `c12eccb17...` with public #3099 head
+`ad61e7c3...`. It preserves all seven of that source owner's completed controls:
+Show/Hide order recreation, inactive Image Block removal, current Learning replay
+verification, native survey TEXT creation, nested condition-value compatibility,
+populated survey TEXT/property editing and complete custom TEXT bindings.
+
+Runtime/test files match their public input blobs. Only the shared release and
+progress metadata is reconciled. Active launch owner #3097 and source owner #3099
+remain untouched. Do not publish a competing train or overwrite a later source
+head. The provider matrix covers 62 actions and 75 jobs. Final composition review
+and one focused integration pass are recorded separately from the reused input
+checks; no optional full suite is repeated.
+
 ## Actual delivery and collision-aware queue
 
 - Skill 6 v27.1.102 delivered through [#3096](https://github.com/trevorotts1/openclaw-onboarding/pull/3096),
@@ -38,11 +54,11 @@ answers/backend effects and final scoring/client acceptance remain pending.
 | --- | --- |
 | `funnels.split_variant` | Native variation creation/reuse and traffic allocation/readback. |
 | `forms.configure` | Remaining widgets/properties, Address parent controls, Dropdown creation and embed controls. |
-| `forms.conditions` | Card reordering, nested groups and broader field identities. Existing outcome edits/count changes are built. |
-| `surveys.create` | Non-Radio widget/property authoring, requested Required/Hidden/media controls and broader complete flows. |
-| `surveys.configure` | Additional question controls, compound predicates and completion/rule lifecycle. |
+| `forms.conditions` | Native drag, mixed/nested groups, rich-outcome reordering and custom field families beyond TEXT. Show/Hide recreation and custom TEXT bindings are built. |
+| `surveys.create` | Widgets beyond captured TEXT/Radio, further media/properties and complete flows. TEXT append, flags and property edits are built. |
+| `surveys.configure` | Other question families, compound predicates and completion/rule lifecycle. Bound existing TEXT properties are built. |
 | `quizzes.configure` | Picture option/style/upload controls, Jump To, tier lifecycle and result media/styles. |
-| `courses.configure_ui` | Video lifecycle, image removal and uncaptured controls. |
+| `courses.configure_ui` | Video lifecycle, background/Custom Block removal and uncaptured controls. Image Block removal is built. |
 | `communities.configure` | Authoritative first-course empty state, non-Private modes and portal parity/reuse. |
 | `meetings.setup` | Authoritative empty co-host roster and first-assignment path. |
 | `meetings.update` | Authoritative empty co-host roster and clear-all path. |
