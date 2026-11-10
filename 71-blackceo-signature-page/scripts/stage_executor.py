@@ -544,16 +544,13 @@ def _owner_cap_from(spec) -> int | None:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(data, dict):
-        return None
-    rows = data.get("models", data.get("entries"))
-    if not isinstance(rows, list):
-        return None
-    matches = [row for row in rows if isinstance(row, dict) and row.get(sel_field) == sel]
-    if len(matches) != 1:
-        return None
-    cap = matches[0].get(field)
-    return cap if type(cap) is int and cap > 0 else None
+    for row in data.get("models") or data.get("entries") or []:
+        if isinstance(row, dict) and row.get(sel_field) == sel:
+            cap = row.get(field)
+            if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0:
+                return cap
+            return None
+    return None
 
 def prompt_budget(model: str | None):
     """The model's recorded rule 12 band: maximum, 95 percent target, 80 percent hard floor.
@@ -575,9 +572,8 @@ def prompt_budget(model: str | None):
         resolved_from = None
         if isinstance(entry.get("max_chars_from"), dict):
             cap = _owner_cap_from(entry["max_chars_from"])
-            if cap is None:
-                return None  # an unresolved named owner source never falls back to a literal
-            resolved_from = entry["max_chars_from"].get("file")
+            if cap is not None:
+                resolved_from = entry["max_chars_from"].get("file")
         if cap is None:
             try:
                 cap = int(entry.get("max_chars"))
@@ -596,7 +592,7 @@ def prompt_budget(model: str | None):
         # 2.6 route at the 66-kie-image/models.json owner_prompt_cap_chars value.
         cap = _owner_cap_from({"file": "66-kie-image/models.json",
                                "selector_field": "canonical_model_id",
-                               "selector": model,
+                               "selector": "gpt-image-2-6/sunburst-text-to-image",
                                "field": "owner_prompt_cap_chars"})
         if cap is None:
             return None  # an absent owner cap never becomes an invented maximum
