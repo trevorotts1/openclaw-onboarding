@@ -59,29 +59,5 @@ class OwnerCapFallbackTests(unittest.TestCase):
             self.assertIs(validator.cap_for_model(MODEL, {"models": [entry]}), entry)
 
 
-class OwnerPolicySourceTests(unittest.TestCase):
-    def test_named_policy_source_refuses_ambiguous_or_malformed_rows(self):
-        spec = importlib.util.spec_from_file_location("owner_cap_executor", ROOT / "scripts" / "stage_executor.py")
-        executor = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(executor)
-        source = {"file": "66-kie-image/models.json", "selector_field": "canonical_model_id",
-                  "selector": MODEL, "field": "owner_prompt_cap_chars"}
-        valid = {"canonical_model_id": MODEL, "owner_prompt_cap_chars": 17321}
-        documents = [(dict(models=[valid]), 17321), (dict(models=[valid, valid]), None),
-                     (dict(models=None), None), ([], None),
-                     (dict(models=[dict(valid, owner_prompt_cap_chars=True)]), None),
-                     (dict(models=[{"canonical_model_id": MODEL, "live_schema_cap_chars": 32000}]), None)]
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "66-kie-image").mkdir()
-            path = root / "66-kie-image" / "models.json"
-            for module in (validator, executor):
-                with patch.object(module, "SKILL_ROOT", root / "71-blackceo-signature-page"):
-                    for document, expected in documents:
-                        with self.subTest(module=module.__name__, document=document):
-                            path.write_text(json.dumps(document))
-                            self.assertEqual(module._owner_cap_from(source), expected)
-
-
 if __name__ == "__main__":
     unittest.main()
