@@ -7,7 +7,7 @@ description: >
   platform (apihub.agnes-ai.com). One API key, one POST, one JSON response
   with an image URL or Base64 — no task polling.
 metadata:
-  version: "2.1.6"
+  version: "2.1.9"
   priority: HIGH
 ---
 
