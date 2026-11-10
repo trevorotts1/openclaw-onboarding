@@ -41,6 +41,7 @@ import datetime
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -612,11 +613,6 @@ def orchestrate(run_dir: Path, key: str) -> Tuple[int, Dict]:
     # scorecard the QC>=8.5 seam requires at P7). Best-effort here; P7 fails closed if
     # the file is still absent, so this can never silently skip the gate.
     _emit_fab_artifact_from_ledger(run_dir)
-    # Fix plan B1 (unowned G-2): the visual stage is a MANDATORY step of the orchestrator,
-    # not a sentence in SKILL.md. It runs when the briefing asks for it; a failure here is
-    # recorded and the P7 visual gate still refuses to certify, so it can never be a skip.
-    visual_ok, visual_detail = _run_visual_stage(run_dir)
-    print(f"  [{'PASS' if visual_ok else 'FAIL':4s}] VISUAL-STEP  (legacy_downsell_images.py) :: {visual_detail}")
     gates = _phase_gates(run_dir)
     print(f"== Signature Funnel orchestrator :: run {run_dir} ==")
     _resolve_persona(run_dir)
@@ -633,6 +629,13 @@ def orchestrate(run_dir: Path, key: str) -> Tuple[int, Dict]:
             manifest = {"run_id": run_dir.name, "aborted_at": pid, "phases": phases_attested}
             (run_dir / "process_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             return EXIT_GATE_FAIL, manifest
+        if pid == "P1-COPY":
+            # Fix plan B1 (unowned G-2): the visual stage is a MANDATORY step of the orchestrator,
+            # not a sentence in SKILL.md. It runs only AFTER P0 and P1 pass (it can spend with
+            # --allow-paid, so never on unproven copy). A failure is recorded and the P7 visual
+            # gate still refuses to certify, so it can never be a skip.
+            visual_ok, visual_detail = _run_visual_stage(run_dir)
+            print(f"  [{'PASS' if visual_ok else 'FAIL':4s}] VISUAL-STEP  (legacy_downsell_images.py) :: {visual_detail}")
 
     # all phases passed -> mint the signed certificate
     size = None
@@ -1078,10 +1081,44 @@ def self_test() -> int:
             print(f"SELF-TEST FAIL: incomplete funnel build still certified (code={code}, "
                   f"aborted_at={manifesto.get('aborted_at') if isinstance(manifesto, dict) else '?'}).")
 
+        # (p) G-2/G-17 — the visual step (which can spend with --allow-paid) runs only after
+        #     P1-COPY passes. Spy on subprocess.run: a failing copy ledger -> zero calls to
+        #     legacy_downsell_images; a passing one -> exactly one.
+        import types
+        real_run = subprocess.run
+        for label, copy_ok, want in (("failing copy", False, 0), ("passing copy", True, 1)):
+            rdp = tmp / ("run-visual-" + label.split()[0])
+            rdp.mkdir()
+            _write_valid_run(rdp, key)
+            shutil.rmtree(rdp / "page-images", ignore_errors=True)
+            brief = json.loads((rdp / "brief.json").read_text(encoding="utf-8"))
+            brief["visual_stage"] = "required"
+            brief["visual"] = {"skill71_root": str(tmp), "brand_file": str(tmp / "b.json"),
+                               "brand_owner": "selftest", "provider": "kie", "allow_paid": True}
+            (rdp / "brief.json").write_text(json.dumps(brief), encoding="utf-8")
+            if not copy_ok:
+                (rdp / "copy_ledger.json").write_text("{}", encoding="utf-8")
+            calls: List[List[str]] = []
+
+            def _spy(cmd, *a, **kw):
+                if any("legacy_downsell_images" in str(c) for c in cmd):
+                    calls.append(list(cmd))
+                    return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+                return real_run(cmd, *a, **kw)
+            subprocess.run = _spy
+            try:
+                orchestrate(rdp, key)
+            finally:
+                subprocess.run = real_run
+            if len(calls) == want:
+                print(f"SELF-TEST ok: {label} -> {want} legacy_downsell_images call(s).")
+            else:
+                ok = False
+                print(f"SELF-TEST FAIL: {label} -> {len(calls)} legacy_downsell_images call(s), wanted {want}.")
+
         print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
         return 0 if ok else 1
     finally:
-        import shutil
         for k, v in saved_env.items():
             if v is None:
                 os.environ.pop(k, None)
