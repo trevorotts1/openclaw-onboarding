@@ -68,7 +68,7 @@ There is one maintained executor, with multiple named recipes. Names below are
 | `06_install_hosted_embed` / `pages.install_embed` | Supplied hosted-app embed | Executor; embeddability PASS receipt required |
 | `07_wrap_native_checkout` / `checkout.wrap_native` | Code before/after a native GHL order form | Component path exercised; payments unverified |
 | `08_configure_native_upsell` / `checkout.one_click_upsell` | Native one-click purchase-action binding | Recorded profile still required |
-| `09_create_split_variant` / `funnels.split_variant` | Native variant and traffic allocation | Recorded profile still required; live alert blocked capture |
+| `09_create_split_variant` / `funnels.split_variant` | Native variant and traffic allocation | Dedicated same-step inactive control/variation creation or exact reuse, native page IDs, and saved 100/0 allocation readback. Active traffic changes refuse before mutation pending native confirmation capture. |
 | `10_fill_page_seo` / `pages.seo` | Title, description, keywords, author, canonical, language | Rendered metadata checked |
 | `11_create_form` / `forms.create` | Native form and standard required fields | Saved and reopened live |
 | `12_configure_form_options` / `forms.configure` | Existing standard-field labels, placeholders, keys, width, required/hidden/default values | Concrete saved-editor read-back; other field types and controls require capture |

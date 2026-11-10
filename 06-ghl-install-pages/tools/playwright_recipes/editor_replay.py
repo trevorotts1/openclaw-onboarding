@@ -15,6 +15,7 @@ else:
 
 
 STATUSES = {
+    'native_split_variant': {'SPLIT_VARIANT_SAVED_AND_REOPENED', 'SPLIT_VARIANT_REUSED_AND_REOPENED'},
     'native_survey_text_configuration': {'SURVEY_TEXT_PROPERTIES_SAVED_AND_REOPENED'},
     'quiz_picture_choices': {'QUIZ_PICTURE_CHOICES_SAVED_AND_REOPENED'},
     'native_survey_radio_creation': {'SURVEY_RADIO_SAVED_AND_REOPENED'},
@@ -67,6 +68,7 @@ STATUSES = {
     'native_checkout_ui': {'NATIVE_CHECKOUT_UI_READBACK_VERIFIED'},
 }
 REQUIRED = {
+    'native_split_variant': ('editor_url','configuration_sha256','control_page_id','variant_page_id','control_traffic','variant_traffic','active','created','independent_readback','functional_verified'),
     'native_survey_text_configuration': ('editor_url','configuration_sha256','text_questions','independent_readback','behavior_verified','submission_verified'),
     'quiz_picture_choices': ('kind','editor_url','configuration_sha256','question_count','target_page','independent_readback','dependency_api_used','behavior_verified','submission_verified','field_id','persisted_unique_key','image_urls_sha256'),
     'native_quiz_creation': ('location_id','editor_url','configuration_sha256','shell_binding','question_receipts','configuration_receipts','question_count','scored_question_count','independent_readback','behavior_verified','submission_verified'),
@@ -185,6 +187,10 @@ def _operation(value):
 
 def _result(step, value, job):
     action = step['action']
+    if action == 'native_split_variant':
+        from playwright_recipes.split_variant import validate_receipt
+        if any(step['payload'][key]!=job[key] for key in ('location_id','location_name','start_url')):_fail()
+        return validate_receipt(value,step)
     if action == 'native_survey_text_configuration':
         from playwright_recipes.survey_text_configuration import validate_receipt
         if any(step['payload'][key]!=job[key] for key in ('location_id','location_name','start_url')):_fail()

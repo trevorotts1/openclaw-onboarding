@@ -45,6 +45,9 @@ def compile_recipe(operation, data):
         add('seo',**data['seo'])
     elif operation=='pages.seo':
         add('seo',**data['seo'])
+    elif operation == 'funnels.split_variant' and 'funnel_id' in data:
+        from playwright_recipes.split_variant import COMMON, PLAN
+        add('native_split_variant', payload={key:data[key] for key in COMMON | PLAN})
     elif operation=='forms.create':
         add('form',name=data['name'],required=data.get('required',{}),allow_creation=data.get('allow_creation',False))
         add('form_css',radius=data.get('radius',12))
