@@ -38,7 +38,6 @@ class MultiDropdownContracts(unittest.TestCase):
         change['desired']['unique_key']='contact.foreign'
         with self.assertRaises(runner.Stop):recipe_cli.compile_recipe('forms.configure',source)
 
-    @unittest.skipUnless(shutil.which('node'),'Node required for offline DOM projection')
     def test_api_canvas_identity_preserves_multi_dropdown_across_selection(self):
         selected={'types':['MULTIPLE_OPTIONS'],'controls':[{'tag':'INPUT','type':'text',
             'classes':['dropdown-input','form-placeholder']}]}
@@ -77,7 +76,6 @@ class Item:
     def evaluate(self,projection):return self.scene.project(projection,single=self.index)
 
 
-@unittest.skipUnless(shutil.which('node'),'Node required for offline DOM projection')
 class MixedDropdownSnapshot(unittest.TestCase):
     def test_selected_state_preserves_all_attributes_without_selection_false_drift(self):
         scene=Scene();before=native._snapshot(scene)

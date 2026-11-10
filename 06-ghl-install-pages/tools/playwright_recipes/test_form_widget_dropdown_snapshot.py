@@ -23,7 +23,6 @@ function widget(data){const rows={'[data-field-type]':data.types.map(type=>eleme
 process.stdout.write(JSON.stringify(eval('('+input.projection+')')(input.widgets.map(widget))));'''
 
 
-@unittest.skipUnless(shutil.which('node'),'Node is required for the offline DOM projection')
 class DropdownSnapshotPreservation(unittest.TestCase):
     def test_only_selection_value_is_normalized_and_sibling_attributes_remain_protected(self):
         frame=MagicMock();native._snapshot(frame)
