@@ -84,6 +84,8 @@ def compile_recipe(operation, data):
                 **{key:value for key,value in data['submission'].items() if key != 'mode'}})
         else:
             add('form_submission', **data['submission'])
+    elif operation=='forms.configure' and 'address_parent' in data:
+        add('native_address_parent',payload={**{key:data[key] for key in ('location_id','location_name','start_url')},**data['address_parent']})
     elif operation=='forms.configure' and 'contact_field_plan' in data:
         from playwright_recipes.contact_field_frontdoor import payload_from_inputs
         add('native_contact_field_chain', payload=payload_from_inputs(data))
@@ -185,7 +187,7 @@ def compile_recipe(operation, data):
         add('native_dynamic_meeting_location', payload={key:value for key,value in data.items()
             if key not in ('integration_mode', 'publish', 'auth_activation')})
     elif operation == 'courses.configure_ui' and 'template_id' in data:
-        add('native_course_image_blocks' if 'image_blocks' in data else 'native_course_section_media' if 'theme_images' in data else 'native_course_text_blocks' if 'text_blocks' in data else 'native_course_blocks' if 'custom_blocks' in data else 'native_course_theme_media' if 'background_image' in data or 'background_transparency' in data else 'native_course_block_media' if 'custom_block_image' in data else 'native_course_theme', payload=data)
+        add('native_course_video_blocks' if 'video_blocks' in data else 'native_course_image_blocks' if 'image_blocks' in data else 'native_course_section_media' if 'theme_images' in data else 'native_course_text_blocks' if 'text_blocks' in data else 'native_course_blocks' if 'custom_blocks' in data else 'native_course_theme_media' if 'background_image' in data or 'background_transparency' in data or 'background_removal' in data else 'native_course_block_media' if 'custom_block_image' in data else 'native_course_theme', payload=data)
     elif operation in ('forms.configure','checkout.one_click_upsell','funnels.split_variant','communities.configure','courses.configure_ui','meetings.integrate'):
         if operation=='checkout.one_click_upsell':
             receipt=data.get('checkout_contract',{})

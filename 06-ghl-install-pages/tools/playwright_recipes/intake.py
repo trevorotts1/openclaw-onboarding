@@ -24,7 +24,7 @@ FIELDS = {
         'contact_fields', 'checkout_options', 'content', 'theme_inputs', 'legal_copy',
         'product_binding', 'product_id', 'price_id', 'charge', 'execute_payment'},
     'forms.create': {'name', 'required', 'allow_creation', 'radius'},
-    'forms.configure': {'fields', 'add_fields', 'address_fields', 'consent', 'object_fields', 'dropdown_fields', 'large_text_fields', 'field_dependencies', 'integration', 'contact_field_plan'},
+    'forms.configure': {'address_parent', 'fields', 'add_fields', 'address_fields', 'consent', 'object_fields', 'dropdown_fields', 'large_text_fields', 'field_dependencies', 'integration', 'contact_field_plan'},
     'forms.style': {'custom_css', 'radius', 'css_key', 'expect_styles'},
     'forms.settings': {'settings', 'schedule', 'tracking'},
     'forms.submission': {'submission'}, 'forms.notifications': {'notifications'},
@@ -36,7 +36,7 @@ FIELDS = {
     'communities.configure': {'portal_url', 'group_name', 'channels', 'details', 'access', 'course_associations', 'api_capability', 'branding'},
     'meetings.setup': {'meeting'}, 'meetings.update': {'meeting'},
     'meetings.integrate': {'integration_mode', 'calendar_id', 'calendar_name', 'staff_id', 'connection_staff_label', 'expected_staff_locations', 'staff_dependency', 'portal_url', 'group_name', 'group_id', 'event_id', 'allow_room_creation', 'expected'},
-    'courses.configure_ui': {'course_id', 'template_id', 'expected_template_title', 'changes', 'expected_values', 'custom_blocks', 'background_image', 'background_transparency', 'custom_block_image', 'text_blocks', 'theme_images', 'image_blocks'},
+    'courses.configure_ui': {'course_id', 'template_id', 'expected_template_title', 'changes', 'expected_values', 'custom_blocks', 'background_image', 'background_transparency', 'background_removal', 'custom_block_image', 'text_blocks', 'theme_images', 'image_blocks', 'video_blocks'},
     'funnels.split_variant': {'funnel_id', 'step_id', 'funnel_name', 'page_name', 'step_url',
         'control_page_id', 'expected_variant_id', 'allow_creation', 'expected_control_traffic',
         'control_traffic', 'expected_active', 'active', 'traffic_change_authorized'},
@@ -182,7 +182,9 @@ def validate_intake(operation, data):
         if native and 'options' in data:
             raise Stop('Native course theme edits and recorded options require separate jobs')
         if native:
-            if 'image_blocks' in data:
+            if 'video_blocks' in data:
+                from playwright_recipes.course_video_blocks import validate_inputs
+            elif 'image_blocks' in data:
                 from playwright_recipes.course_image_blocks import validate_inputs
             elif 'theme_images' in data:
                 from playwright_recipes.course_section_media import validate_inputs
@@ -190,7 +192,7 @@ def validate_intake(operation, data):
                 from playwright_recipes.course_text_blocks import validate_inputs
             elif 'custom_blocks' in data:
                 from playwright_recipes.course_blocks import validate_inputs
-            elif 'background_image' in data or 'background_transparency' in data:
+            elif 'background_image' in data or 'background_transparency' in data or 'background_removal' in data:
                 from playwright_recipes.course_theme_media import validate_inputs
             elif 'custom_block_image' in data:
                 from playwright_recipes.course_block_media import validate_inputs
@@ -209,6 +211,14 @@ def validate_intake(operation, data):
         for flag in ('allow_creation', 'inactive', 'discovery'):
             if nested in data and flag in data[nested] and type(data[nested][flag]) is not bool:
                 raise Stop(nested + '.' + flag + ' requires a real boolean')
+    if operation == 'forms.configure' and 'address_parent' in data:
+        if set(data).intersection((FIELDS['forms.configure']-{'address_parent'})|{'options'}):
+            raise Stop('Parent Address controls require an independent preservation-bound job')
+        from playwright_recipes.address_parent import validate
+        config=data['address_parent']
+        if not isinstance(config,dict) or set(config).intersection({'location_id','location_name','start_url'}):
+            raise Stop('Parent Address configuration must not override parent job identity')
+        validate({'payload':{**{key:data[key] for key in ('location_id','location_name','start_url')},**config}})
     if operation == 'forms.configure' and 'integration' in data:
         if set(data).intersection({'fields', 'add_fields', 'address_fields', 'consent',
                                     'object_fields', 'dropdown_fields', 'large_text_fields', 'field_dependencies', 'options'}):

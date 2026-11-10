@@ -1,7 +1,7 @@
 # Current source build status — November 10, 2026
 
-**33 named operations: 22 BUILT, 11 PARTIAL, 0 GENERIC_ONLY.**
-Eleven bounded operation areas still require code. This is a current source inventory,
+**33 named operations: 23 BUILT, 10 PARTIAL, 0 GENERIC_ONLY.**
+Ten bounded operation areas still require code. This is a current source inventory,
 not an effort percentage, merged-delivery count or native functional PASS.
 
 The previous repeated **21 BUILT / 11 PARTIAL / 1 GENERIC_ONLY** was the frozen
@@ -9,7 +9,21 @@ fifth-source audit. It is preserved as history, not reported as current. Later
 feature entries had accumulated without updating the original operation rows.
 This reconciliation removes those contradictory missing-feature claims.
 
-Two classifications now reflect the actual code:
+The next local source candidate completes the finite inactive NeoClassic R40
+course contract: background and Custom Block image removal, plus Video Block
+append/replacement/removal and HTTPS destination handling. Final installed native
+upload/removal/playback and learner proof remain PENDING. Owned Multi Line survey
+creation and fresh whole-creation replay are also built; other question families
+remain enumerated in SURVEY-BUILD-REMAINDER.md.
+
+This continuation is local only and must wait for frozen v104 #3102 to actually
+land on main before a single-parent recut/publication. It does not change that PR.
+
+Captured Address Auto-Complete and mandatory search parent controls are also
+implemented, preserving full child inventories and checked-but-disabled native
+state across save/reopen and replay. Independent Address review is CONFIRMED.
+
+Earlier reconciled classifications remain:
 
 - `quizzes.create` is BUILT for its captured new-quiz profile: owned shell creation,
   independent reopen, question/scoring/result jobs and final full inventory.
@@ -24,12 +38,11 @@ Two classifications now reflect the actual code:
 | Operation still partial | Remaining executable scope |
 | --- | --- |
 | `funnels.split_variant` | Activation/allocation confirmation and saved active-state readback. |
-| `forms.configure` | Numeric/checkbox/file/signature authoring; Address parent controls; ungrounded legacy adoption; Contact Dropdown creation and remaining embed color/icon controls. |
+| `forms.configure` | Numeric/checkbox/file/signature authoring; ungrounded legacy adoption; Contact Dropdown creation and remaining embed color/icon controls. |
 | `forms.conditions` | Custom condition families beyond TEXT and rich-message outcome order recreation. Mixed connectors, deletion/count changes, existing outcome edits and non-message order recreation are built. |
-| `surveys.create` | Question families beyond captured standard fields/Radio/TEXT and their media paths. Paragraph/Multi Line remains pending this checkpoint. Owned shell/slide orchestration and populated TEXT append are built. |
+| `surveys.create` | Question families beyond captured standard fields/Radio/TEXT/LARGE_TEXT and their media paths. Owned Multi Line/LARGE_TEXT creation is now built. Owned shell/slide orchestration and populated TEXT append are built. |
 | `surveys.configure` | Other question properties; compound predicates and completion/redirect/message/disqualification rule lifecycle. TEXT and existing Multi Line/LARGE_TEXT properties and forward Jump To stacks are built. |
 | `quizzes.configure` | Existing populated-page append; Picture option/style/upload controls; answer Jump To; tier lifecycle and result media/styles. Multi Dropdown and fixed-three Picture Choice are built. |
-| `courses.configure_ui` | Video lifecycle and background/Custom Block image removal. Background transparency, Text/Image blocks, Custom Block deletion and exact Image Block image removal are built. |
 | `communities.configure` | Authoritative first-course empty state, non-Private course modes and modern portal settings/reuse gaps. Existing association replay is built. |
 | `meetings.setup` | Authoritative empty co-host roster and first-assignment path. |
 | `meetings.update` | Authoritative empty-roster, first-assignment and clear-all paths. |
@@ -46,14 +59,14 @@ one affected test in0.002s. The outcome reorder addition ran six focused tests
 in0.018s. Independent source reviews are CONFIRMED. Existing Multi Line/LARGE_TEXT property editing is also built, including Required/Hidden,
 exact location/editor binding, saved reopen and fresh replay. Its eight focused tests
 passed in0.340s and one affected three-drift test passed in0.002s; source review is
-CONFIRMED. Paragraph creation remains pending. The current matrix has64 dynamic
-actions and77 bounded jobs. This ledger reconciliation
+CONFIRMED. Owned Multi Line creation is also built in the local continuation. The current
+matrix has66 dynamic actions and80 bounded jobs. This ledger reconciliation
 uses JSON parsing and whitespace validation only; no tests were repeated.
 
 Merge train [#3101](https://github.com/trevorotts1/openclaw-onboarding/pull/3101)
-landed v27.1.103 at `a28b89970668ad097892664117170baf98765baa`. The follow-on
-[#3099](https://github.com/trevorotts1/openclaw-onboarding/pull/3099) reconciles
-release metadata as v27.1.104 and preserves the other train's implementation.
+landed v27.1.103 at `a28b89970668ad097892664117170baf98765baa`. The frozen follow-on
+[#3102](https://github.com/trevorotts1/openclaw-onboarding/pull/3102) carries
+v27.1.104 with single-parent history; #3099 is closed and superseded.
 Draft/publication/merge status is tracked independently of source counts.
 
 Final installed Mac/Linux execution, saved native script runs, respondent branches,
@@ -153,7 +166,7 @@ bounded changes do not promote an entire operation prematurely.
 | `surveys.configure` | Other question controls, compound predicates and completion/rule lifecycle; existing TEXT property edits are built. |
 | `quizzes.create` | Reliable populated-page append; another active session owns the quiz editor and its continuation. |
 | `quizzes.configure` | Picture option/style/upload controls, populated-page append, Jump To, tier lifecycle and result media/styles. |
-| `courses.configure_ui` | Video lifecycle, background/Custom Block image removal and uncaptured controls; exact Image Block removal is built. |
+| `courses.configure_ui` | Video lifecycle, Custom Block image removal and uncaptured controls; captured Neo Classic background removal and exact Image Block removal are built. |
 | `communities.configure` | Authoritative first-course empty state, non-Private modes and portal parity/reuse; completed association replay now checks live inventory. |
 | `meetings.setup` | Authoritative empty co-host roster and first-assignment path. |
 | `meetings.update` | Authoritative empty co-host roster and clear-all path. |
@@ -214,7 +227,7 @@ been delivered since the frozen audit; four more are built in this source.
 | `surveys.configure` | Additional question controls, compound predicates and completion/rule lifecycle. |
 | `quizzes.create` | Reliable populated-page append. The captured new-shell question/scoring/result pipeline is now built. |
 | `quizzes.configure` | Picture option/style/upload controls, populated-page append, Jump To, tier lifecycle and result media/styles. |
-| `courses.configure_ui` | Video lifecycle, background/Custom Block image removal and uncaptured controls; background transparency and exact Image Block removal are built. |
+| `courses.configure_ui` | Video lifecycle, Custom Block image removal and uncaptured controls; background transparency, captured Neo Classic background removal and exact Image Block removal are built. |
 | `communities.configure` | Authoritative first-course empty state, non-Private modes and portal parity/reuse. |
 | `meetings.setup` | Authoritative empty co-host roster and first-assignment path. |
 | `meetings.update` | Authoritative empty co-host roster and clear-all path. |

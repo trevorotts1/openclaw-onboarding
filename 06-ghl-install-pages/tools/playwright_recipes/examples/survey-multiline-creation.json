@@ -1,0 +1,20 @@
+{
+  "location_id":"LOC",
+  "location_name":"Fixture Account",
+  "start_url":"https://app.convertandflow.com/v2/location/LOC/survey-builder/main",
+  "name":"Native Multi Line survey",
+  "allow_creation":true,
+  "slide_count":2,
+  "question_batches":[{
+    "kind":"multiline",
+    "target_slide":2,
+    "questions":[{
+      "label":"Tell us more",
+      "placeholder":"Describe your goals",
+      "short_label":"Details",
+      "query_key":"owned_details",
+      "required":true,
+      "hidden":false
+    }]
+  }]
+}

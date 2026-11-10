@@ -26,13 +26,14 @@ def validate_inputs(inputs):
     theme.validate_inputs({**base,'changes':{'template_title':inputs.get('expected_template_title')},
         'expected_values':{'template_title':inputs.get('expected_template_title')}})
     config=inputs.get('custom_block_image')
-    if (not isinstance(config,dict) or set(config)!={'block_id','expected_inventory','file','sha256','expected_url'}
+    if (not isinstance(config,dict) or set(config) not in ({'block_id','expected_inventory','file','sha256','expected_url'},
+            {'block_id','expected_inventory','expected_url','remove_image'})
             or not isinstance(config.get('expected_inventory'),list)):
         raise Stop('Custom Block image requires exact UUID/inventory and approved PNG source')
     theme._id(config.get('block_id'));identities=[]
     for row in config['expected_inventory']:
         if (not isinstance(row,dict) or set(row)!={'id','type'}
-                or row.get('type') not in ('Category Block','Custom Block','Text Block','Image Block')):
+                or row.get('type') not in ('Category Block','Custom Block','Text Block','Image Block','Video Block')):
             raise Stop('Custom Block image requires a captured Category/Custom Block inventory')
         theme._id(row.get('id'));identities.append(row['id'])
     if (len(set(identities))!=len(identities)
@@ -40,6 +41,17 @@ def validate_inputs(inputs):
             or any((row['id']=='categoryBlock')!=(row['type']=='Category Block') for row in config['expected_inventory'])
             or {'id':config['block_id'],'type':'Custom Block'} not in config['expected_inventory']):
         raise Stop('Custom Block image UUID does not identify one unique existing custom entry')
+    if 'remove_image' in config:
+        if config['remove_image'] is not True:
+            raise Stop('Custom Block image removal requires explicit true')
+        media._url(config['expected_url'])
+        if __package__:
+            from .course_custom_image_removal import EMPTY_INSPECTOR,EMPTY_PREVIEW
+        else:
+            from course_custom_image_removal import EMPTY_INSPECTOR,EMPTY_PREVIEW
+        if config['expected_url'] in (EMPTY_INSPECTOR,EMPTY_PREVIEW):
+            raise Stop('Custom Block removal requires a present image, not an empty placeholder')
+        return deepcopy(inputs)
     media.validate_inputs({'location_id':base['location_id'],'product_id':base['course_id'],
         'expected_updated_at':'native-custom-block-validation','media_assets':[{
             'field':'heroImage','file':config['file'],'sha256':config['sha256'],
@@ -86,6 +98,12 @@ def _protected(page,plan):
 
 def configure(page,step):
     plan=validate(step);config=plan['custom_block_image'];identity=config['block_id']
+    if 'remove_image' in config:
+        if __package__:
+            from .course_custom_image_removal import configure as remove
+        else:
+            from course_custom_image_removal import configure as remove
+        return remove(page,step)
     content=media._bytes(config)
     if len(content)>=10*1024*1024:raise Stop('Native Custom Block PNG must be smaller than 10 MiB')
     before_active=theme._open(page,plan,plan['expected_template_title'])

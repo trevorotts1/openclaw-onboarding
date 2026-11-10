@@ -12,23 +12,18 @@ all entry points, commands and remaining live verification work.
 
 ## Current build checkpoint - November 10, 2026
 
-Merge train [#3101](https://github.com/trevorotts1/openclaw-onboarding/pull/3101)
-delivered v27.1.103 at `a28b89970668ad097892664117170baf98765baa`.
-The v27.1.104 follow-on [#3099](https://github.com/trevorotts1/openclaw-onboarding/pull/3099)
-contains ten reviewed bounded additions: Show/Hide order recreation, Image Block
-image removal, community-course replay readback, survey TEXT creation, native
-condition-value compatibility, populated TEXT append/property edits, custom TEXT
-condition bindings, inactive same-step split routing, non-message outcome order
-recreation, and existing Multi Line survey property editing.
+The next reviewed source candidate has **23 BUILT / 10 PARTIAL / 0 GENERIC_ONLY**
+across 33 named operations, with **66 dynamic actions / 80 bounded jobs**.
+The finite inactive NeoClassic course contract now includes background/Custom Block
+image removal and Video Block lifecycle. Owned Multi Line survey creation and captured Address parent controls are built.
+Final native upload/removal/playback, respondent and learner proof remain pending.
 
-The current source ledger is **22 BUILT / 11 PARTIAL / 0 GENERIC_ONLY** across
-33 named operations; provider coverage is **64 dynamic actions / 77 bounded jobs**.
-The old 21/11/1 count is a frozen historical audit, not current source status.
-Split activation/allocation and Multi Line creation remain unfinished. Source
-coverage does not claim installed-script, respondent, learner or payment PASS.
+This continuation is local only. Frozen v27.1.104 [#3102](https://github.com/trevorotts1/openclaw-onboarding/pull/3102)
+carries the prior ten reviewed additions and is not modified by this candidate.
+Publish the continuation only after that PR's actual main landing and a fresh
+single-parent integration. The old 21/11/1 audit remains archived history.
 See [the current progress ledger](references/PLAYWRIGHT-PROGRESS.md) and
-[the machine-readable source ledger](references/PLAYWRIGHT-BUILD-STATUS.json)
-for current operation scope and separate delivery/acceptance evidence.
+[the machine-readable source ledger](references/PLAYWRIGHT-BUILD-STATUS.json).
 
 ## Start here
 
