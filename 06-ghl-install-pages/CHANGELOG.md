@@ -1,3 +1,7 @@
+## [v27.1.103] - 2026-11-10 - checkout recipe test pins six get_state reads (test only, no behaviour change)
+
+- `tools/playwright_recipes/test_pages_checkout.py` `NativeCheckoutTests` gains one assertion: the checkout frame records exactly six `get_state` observations, so the preflight, per-write read-backs and final preservation reads stay counted. No recipe code changed; this is the G3 patch bump for that test-only change (merge-train integration, GAP-LAND5).
+
 ## [v27.1.102] - 2026-11-10
 
 - Compose captured new quiz creation, question batches, scoring and result copy

@@ -3,6 +3,7 @@
 - `models.json` line 8: `registry_policy.house_band_chars` changed from the stale 5000/9000/19000 to
   min 16000 (80 percent hard floor) / target 19000 (95 percent) / max 20000 (the owner cap, plan A0), the
   same band every owner-capped route already carries. Added `tests/test_house_band.py`.
+- Merge-train integration of PR 3068 (fix plan G-1): `scripts/validate_prompt.py` self-test now resolves the real sibling Skill 74 adapter instead of blanking it, so the live 20,000 owner-cap path is exercised; `scripts/validate_payload.py` gains `_apply_prompt_policy`, the production caller that runs the prompt gate from the CLI after a payload validates (it can only add refusals). The models.json fallback is still proven, explicitly as the fallback.
 
 ## [2.2.14] - 2026-11-09 - GPT Image 2.5 retired from the live scripts (2.6 is the only Sunburst family); merge of PR #3079
 

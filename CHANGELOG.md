@@ -1,3 +1,12 @@
+## [Unreleased]  -  2026-11-10  -  Merge train: integration of the finish-388 pull requests (presentation-funnel gap fixes for Skills 49, 66, 71, 74 and 83, plus test-only bumps for Skills 6 and 7)
+
+- One linear integration of PR 3075, 3066, 3065, 3064, 3071 and 3068 plus the gap patches GAP-INST21, GAP-RES3 and GAP-LAND5 on top of main 710b36e9c1 (PR 3077 is already on main). Resolved on integration: Skill 49 `prove_sf_build.py` keeps the four-stage `VISUAL_STAGES` block, both stage-name tests are kept, and Skill 83 `cmd_assemble` keeps the step spine, the `AF-LAUNCH-ASSEMBLE-DESIGN` refusal and then the receipt re-open check.
+- Skill 83 v0.2.32 (no per-skill CHANGELOG file): LAND-003 #13 drift-order test, assemble re-opens the sealed package and re-proves the receipt before handoff (B5), assemble refuses a design-less package and closes a step spine (G-5), generated images reach the final-mockups draw (G-11).
+- Versions: Skill 49 v2.1.51 -> v2.1.52, Skill 66 v2.2.14 -> v2.2.15, Skill 71 1.3.27 -> 1.3.28, Skill 74 v1.1.16 -> v1.1.17, Skill 83 0.2.31 -> 0.2.32, Skill 6 v27.1.102 -> v27.1.103 (test only), Skill 7 v7.2.9 -> v7.2.10 (test pin only). Each skill's own CHANGELOG.md carries its entry.
+- Known and expected: `49-signature-funnel/scripts/test_prompt_floor_warn_surface.py` fails 3 of 4 tests (PR 3064 surfaces the warn-and-expand warning, PR 3068 G-9 fails it closed) until the follow-up lanes reconcile them, and the SF prover pin check fails until the bot mint re-pins. The pin file is not edited here.
+- Migration: repository changes only; this draft has not been merged, deployed or rolled onto any client box.
+- Risk: MEDIUM. Assemble now refuses a package with no complete design set, and the certifying visual gate requires final mockups.
+
 ## [Unreleased]  -  2026-11-08  -  KIE GPT Image 2.6 moves to slash model ids, a 16-value ratio enum and an owner prompt cap of 20,000
 
 - KIE model ids migrate to slash form across the tree: `gpt-image-2-6/sunburst-text-to-image` and `gpt-image-2-6/sunburst-image-to-image`. The hyphen form returns HTTP 422 "The model name you specified is not supported" on a live probe, so every dispatch, registry, selector and gate now emits the slash form.
