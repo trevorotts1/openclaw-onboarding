@@ -205,9 +205,22 @@ class P7ToolRunTests(Tmp):
 
 
 class VisualDirectionTests(Tmp):
-    def test_stage_names_match_the_tool_that_writes_them(self):
+    def test_stage_names_include_the_tool_that_writes_them(self):
         import legacy_downsell_images
-        self.assertEqual(build.VISUAL_STAGES, legacy_downsell_images.STAGES)
+        # Fix plan B3: the legacy tool writes three stages; the certifying gate
+        # requires those three AND Skill 71's `final-mockups`.
+        self.assertEqual(build.LEGACY_VISUAL_STAGES, legacy_downsell_images.STAGES)
+        self.assertEqual(build.VISUAL_STAGES, legacy_downsell_images.STAGES + ("final-mockups",))
+
+    def test_a_run_without_final_mockups_cannot_certify(self):
+        rd = self.run_dir(5)
+        receipt_path = rd / build.PAGE_IMAGES_REL / build.PAGE_IMAGES_RECEIPT
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        for page in receipt["pages"].values():
+            page["stages"].pop("final-mockups", None)
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        cfails = build.visual_direction_violations(rd, 5)
+        self.assertTrue(any("final-mockups" in msg for _, msg in cfails), cfails)
 
     def test_a_funnel_with_no_wireframe_or_mockup_set_fails(self):
         rd = self.run_dir(5)
