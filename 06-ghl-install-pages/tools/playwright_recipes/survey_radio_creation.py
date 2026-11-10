@@ -3,6 +3,8 @@
 Uses the maintained assessment creator and measured Radio dependency/placement
 chain. Shell, API and native writes retain separate uncertain-intent journals.
 The enclosing editor runner owns the same-location lease and final receipt.
+Each captured standard field owns one new slide; multi-slide plans explicitly
+identify the target slide and bind every untouched slide before placement.
 """
 from copy import deepcopy
 import hashlib
@@ -21,11 +23,19 @@ COMMON=('location_id','location_name','start_url')
 
 
 def validate_inputs(inputs):
-    if (not isinstance(inputs,dict) or set(inputs)!=set(COMMON)|{'name','allow_creation','standard_fields','radio_questions'}
+    if (not isinstance(inputs,dict)
+            or set(inputs)-{'target_slide'}!=set(COMMON)|{'name','allow_creation','standard_fields','radio_questions'}
             or inputs['allow_creation'] is not True
-            or not isinstance(inputs['standard_fields'],list) or len(inputs['standard_fields'])!=1
-            or inputs['standard_fields'][0] not in STANDARD_FIELDS):
-        raise Stop('Survey Radio creation requires explicit creation, one captured standard field and authored Radio questions')
+            or not isinstance(inputs['standard_fields'],list)
+            or not 1<=len(inputs['standard_fields'])<=len(STANDARD_FIELDS)
+            or any(not isinstance(field,str) or field not in STANDARD_FIELDS for field in inputs['standard_fields'])
+            or len(set(inputs['standard_fields']))!=len(inputs['standard_fields'])):
+        raise Stop('Survey Radio creation requires explicit creation, unique captured standard fields and authored Radio questions')
+    count=len(inputs['standard_fields'])
+    target=inputs.get('target_slide',1)
+    if (count>1 and 'target_slide' not in inputs
+            or type(target) is not int or not 1<=target<=count):
+        raise Stop('Multi-slide Survey Radio creation requires its explicit existing target slide')
     for key in ('name','location_name'):
         value=inputs[key]
         if not isinstance(value,str) or not value.strip() or value!=value.strip() or len(value)>500 or any(ord(c)<32 for c in value):
@@ -64,20 +74,15 @@ def validate_runtime(job,capability):
     radio.validate_capability(capability,plan['location_id'],creation=any(q['expected_id'] is None for q in plan['radio_questions']))
 
 
-def _binding(value,plan):
-    if (not isinstance(value,dict) or set(value)!={'editor_url','slide_labels','canvas','standard_field'}
-            or not isinstance(value['editor_url'],str)):
-        raise Stop('Survey shell binding is incomplete')
-    url=urlsplit(value['editor_url']);origin=urlsplit(plan['start_url'])
-    if ((url.scheme,url.netloc)!=(origin.scheme,origin.netloc) or url.query or url.fragment
-            or not re.fullmatch('/v2/location/'+re.escape(plan['location_id'])+r'/survey-builder-v2/[A-Za-z0-9_-]+',url.path)):
-        raise Stop('Survey shell binding changed its exact created origin/location/editor')
-    labels=value['slide_labels']
-    if (not isinstance(labels,list) or len(labels)!=1 or not isinstance(labels[0],str)
-            or not re.fullmatch(r'P1 - .+',labels[0]) or any(ord(c)<32 for c in labels[0])):
-        raise Stop('Survey shell binding needs one exact native slide label')
-    standard=plan['standard_fields'][0];kind='email' if standard=='Email' else 'text'
-    if value['standard_field']!={'label':standard,'placeholder':STANDARD_FIELDS[standard][0],'type':kind}:
+def _standard_binding(standard):
+    return {'label':standard,'placeholder':STANDARD_FIELDS[standard][0],
+        'type':'email' if standard=='Email' else 'text'}
+
+
+def _canvas_binding(value,standard):
+    expected=_standard_binding(standard);kind=expected['type']
+    if (not isinstance(value,dict) or set(value)!={'canvas','standard_field'}
+            or value['standard_field']!=expected):
         raise Stop('Survey shell binding changed its authored standard field')
     rows=value['canvas'];standard_count=0
     if not isinstance(rows,list) or not rows:raise Stop('Survey shell canvas is not positively loaded')
@@ -95,7 +100,32 @@ def _binding(value,plan):
             if len(row['names'])!=1 or row['names'][0][:2]!=['INPUT',kind]:
                 raise Stop('Survey shell standard field lacks its captured native input type')
             standard_count+=1
-    if standard_count!=1:raise Stop('Survey shell binding must retain exactly one authored standard field')
+    if standard_count!=1:raise Stop('Each survey shell slide must retain exactly one authored standard field')
+    return deepcopy(value)
+
+
+def _binding(value,plan):
+    count=len(plan['standard_fields'])
+    keys={'editor_url','slide_labels','canvas','standard_field'} if count==1 else {'editor_url','slide_labels','slides'}
+    if (not isinstance(value,dict) or set(value)!=keys
+            or not isinstance(value['editor_url'],str)):
+        raise Stop('Survey shell binding is incomplete')
+    url=urlsplit(value['editor_url']);origin=urlsplit(plan['start_url'])
+    if ((url.scheme,url.netloc)!=(origin.scheme,origin.netloc) or url.query or url.fragment
+            or not re.fullmatch('/v2/location/'+re.escape(plan['location_id'])+r'/survey-builder-v2/[A-Za-z0-9_-]+',url.path)):
+        raise Stop('Survey shell binding changed its exact created origin/location/editor')
+    labels=value['slide_labels']
+    if (not isinstance(labels,list) or len(labels)!=count
+            or any(not isinstance(label,str) or not re.fullmatch('P'+str(index)+r' - .+',label)
+                or any(ord(c)<32 for c in label) for index,label in enumerate(labels,1))):
+        raise Stop('Survey shell binding needs its complete exact numbered slide inventory')
+    if count==1:
+        _canvas_binding({key:value[key] for key in ('canvas','standard_field')},plan['standard_fields'][0])
+    else:
+        if not isinstance(value['slides'],list) or len(value['slides'])!=count:
+            raise Stop('Survey shell binding omits a slide owner')
+        for slide,standard in zip(value['slides'],plan['standard_fields']):
+            _canvas_binding(slide,standard)
     return deepcopy(value)
 
 
@@ -115,29 +145,71 @@ def _shell(page,plan,editor_url):
     survey_fields._close_initial(frame)
     click(frame.get_by_role('tab',name='Edit',exact=True))
     slides=frame.locator('.survey-form-container')
-    if slides.count()!=1 or frame.get_by_role('button',name='Add Slide',exact=True).count()!=1:
-        raise Stop('New survey shell differs from the requested single-slide inventory')
-    owner=slides.nth(0);label=owner.locator('.builder-form-name')
-    if label.count()!=1 or not label.inner_text().strip():raise Stop('New survey slide label is unavailable')
-    standard=plan['standard_fields'][0];placeholder,_=STANDARD_FIELDS[standard]
-    field=owner.get_by_placeholder(placeholder,exact=True)
-    if (field.count()!=1 or not field.is_visible()
-            or field.get_attribute('type')!=('email' if standard=='Email' else 'text')):
-        raise Stop('New survey shell does not contain its captured authored standard-field type')
-    inventory=_canvas_identity(owner)
-    return _binding({'editor_url':editor_url,'slide_labels':['P1 - '+label.inner_text().strip()],
-        'canvas':inventory,'standard_field':{'label':standard,'placeholder':field.get_attribute('placeholder'),
-            'type':field.get_attribute('type')}},plan)
+    count=len(plan['standard_fields'])
+    if slides.count()!=count or frame.get_by_role('button',name='Add Slide',exact=True).count()!=count:
+        raise Stop('New survey shell differs from the requested complete slide inventory')
+    labels=[];owners=[]
+    for index,standard in enumerate(plan['standard_fields']):
+        owner=slides.nth(index);label=owner.locator('.builder-form-name')
+        if label.count()!=1 or not label.inner_text().strip():raise Stop('New survey slide label is unavailable')
+        placeholder,_=STANDARD_FIELDS[standard]
+        field=owner.get_by_placeholder(placeholder,exact=True)
+        if (field.count()!=1 or not field.is_visible()
+                or field.get_attribute('type')!=('email' if standard=='Email' else 'text')):
+            raise Stop('New survey slide does not contain its captured authored standard-field type')
+        labels.append('P'+str(index+1)+' - '+label.inner_text().strip())
+        owners.append({'canvas':_canvas_identity(owner),
+            'standard_field':{'label':standard,'placeholder':field.get_attribute('placeholder'),
+                'type':field.get_attribute('type')}})
+    value={'editor_url':editor_url,'slide_labels':labels}
+    if count==1:value.update(owners[0])
+    else:value['slides']=owners
+    return _binding(value,plan)
 
 
 def _native_step(plan,binding,fields):
     from playwright_recipes.recipe_cli import compile_recipe
     return compile_recipe('surveys.configure',{**{key:plan[key] for key in COMMON},
-        'start_url':binding['editor_url'],'configuration':{'expected_slide_count':1,
-            'slide_labels':binding['slide_labels'],'target_slide':1,'object_fields':fields,
+        'start_url':binding['editor_url'],'configuration':{'expected_slide_count':len(plan['standard_fields']),
+            'slide_labels':binding['slide_labels'],'target_slide':plan.get('target_slide',1),'object_fields':fields,
             'field_dependencies':{'status':'VERIFIED','provider':'skill44',
                 'location_id':plan['location_id'],'observed_at':0,
                 'operation':'custom_fields.get','http_status':200,'fields':deepcopy(fields)}}})['steps'][0]
+
+
+def _untouched_slides(page,plan,binding):
+    """Read every non-target owner after the native writer's independent reopen.
+
+    The object-field writer proves its target's full before/after inventory.
+    Its shared slide guard counts other owners, so multi-slide creation also
+    retains their complete control identity, including same-count replacements.
+    """
+    if len(plan['standard_fields'])==1:return
+    from playwright_recipes.forms_advanced import _canvas_identity
+    from playwright_recipes.skill6_playwright import click
+    if page.url!=binding['editor_url']:raise Stop('Survey changed after its Radio placement read-back')
+    assert_tenant(page,plan)
+    frame=page.frame_locator('iframe[name="survey-builder-app"]')
+    title=frame.get_by_role('textbox',name='Form Name',exact=True)
+    title.wait_for(state='visible',timeout=45000)
+    if title.count()!=1 or title.input_value()!=plan['name']:raise Stop('Survey name changed after Radio placement')
+    survey_fields._close_initial(frame)
+    click(frame.get_by_role('tab',name='Edit',exact=True))
+    slides=frame.locator('.survey-form-container')
+    if (slides.count()!=len(plan['standard_fields'])
+            or frame.get_by_role('button',name='Add Slide',exact=True).count()!=len(plan['standard_fields'])):
+        raise Stop('Survey slide inventory changed after Radio placement')
+    for index,standard in enumerate(plan['standard_fields']):
+        owner=slides.nth(index);label=owner.locator('.builder-form-name')
+        if label.count()!=1 or 'P'+str(index+1)+' - '+label.inner_text().strip()!=binding['slide_labels'][index]:
+            raise Stop('Survey slide order changed after Radio placement')
+        if index+1==plan['target_slide']:continue
+        expected=binding['slides'][index]
+        field=owner.get_by_placeholder(STANDARD_FIELDS[standard][0],exact=True)
+        if (field.count()!=1 or not field.is_visible()
+                or field.get_attribute('type')!=expected['standard_field']['type']
+                or _canvas_identity(owner)!=expected['canvas']):
+            raise Stop('Radio placement changed an unrequested survey slide control identity')
 
 
 def validate_receipt(value,step):
@@ -154,7 +226,8 @@ def validate_receipt(value,step):
     if binding['editor_url']!=value['editor_url']:
         raise Stop('Survey Radio completion changed its created editor binding')
     radio._survey_plan({**{key:plan[key] for key in COMMON},'start_url':binding['editor_url'],
-        'expected_slide_count':1,'slide_labels':binding['slide_labels'],'target_slide':1,
+        'expected_slide_count':len(plan['standard_fields']),'slide_labels':binding['slide_labels'],
+        'target_slide':plan.get('target_slide',1),
         'questions':plan['radio_questions']})
     fields=value['api_fields']
     if not isinstance(fields,list) or len(fields)!=len(plan['radio_questions']):raise Stop('Survey Radio completion omits authored definitions')
@@ -184,7 +257,7 @@ def configure(page,step,evidence_root,*,capability):
     binding_path=root/'shell-binding.json'
     if any(path.is_symlink() for path in (shell_root,question_root,binding_path)):
         raise Stop('Survey creation evidence contains a symlink')
-    shell_inputs={key:value for key,value in plan.items() if key!='radio_questions'}
+    shell_inputs={key:value for key,value in plan.items() if key not in ('radio_questions','target_slide')}
     shell_job=validate_job(compile_recipe('surveys.create',shell_inputs),root)
     if journal_present(binding_path):
         binding=read_journal(binding_path)
@@ -220,9 +293,11 @@ def configure(page,step,evidence_root,*,capability):
             or not journal_present(question_root/'native'/'state.json') and current!=shell):
         raise Stop('Survey shell changed before its authored Radio dependency/placement chain')
     questions={**{key:plan[key] for key in COMMON},'start_url':shell['editor_url'],
-        'expected_slide_count':1,'slide_labels':shell['slide_labels'],'target_slide':1,
+        'expected_slide_count':len(plan['standard_fields']),'slide_labels':shell['slide_labels'],
+        'target_slide':plan.get('target_slide',1),
         'questions':plan['radio_questions']}
     raw=radio.build_survey_questions(questions,question_root,page=page,capability=capability)
+    _untouched_slides(page,plan,shell)
     api=read_journal(question_root/'delivery-state.json')
     if (api.get('schema')!=radio.SCHEMA or api.get('location_id')!=plan['location_id']
             or api.get('fingerprint')!=radio.configuration_hash({'location_id':plan['location_id'],'questions':plan['radio_questions']})

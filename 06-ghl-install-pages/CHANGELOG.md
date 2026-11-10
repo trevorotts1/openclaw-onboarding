@@ -1,3 +1,18 @@
+## [v27.1.101] - 2026-11-09
+
+- Include Picture Choice in mixed quiz batches, with exact persisted media and
+  Unique Key inventory across subsequent choice and written-answer writers.
+  Short Answer batches retain the TEXT-only contract; standalone paths stay compatible.
+- Create one to four survey slides from distinct captured standard fields and
+  place authored Radio questions on an explicit chosen slide. Bind every saved
+  owner and untouched slide through independent reopen; preserve legacy receipts.
+- Remove explicitly inventoried form Redirect, custom-message and disqualification
+  cards, including middle cards and clear-all. Preserve unchanged ordered rich
+  content, exact delete confirmation, positive empty state and uncertain journals.
+- Record actual delivery of #3078 through merged batch #3085. Keep the twelve
+  broad unfinished operation areas visible. Run focused changed-behavior checks
+  and independent source review; retain required merge checks and pending native acceptance.
+
 ## [v27.1.100] - 2026-11-09
 
 - Add the maintained surveys.create Radio composition: create a single-slide

@@ -49,6 +49,21 @@ class ShellDom(BaseDom):
 
 
 class SurveyShellDom(unittest.TestCase):
+    def multi_shell(self):
+        root=ElementTree.fromstring("""<main><input aria-label="Form Name" value="New authored survey" />
+            <button role="tab">Edit</button><button>Add Slide</button><button>Add Slide</button>
+            <section class="survey-form-container"><div class="builder-form-name">Contact</div>
+              <div class="form-field-wrapper"><label data-field-type="text">First Name</label>
+                <input type="text" name="first_name" placeholder="Enter your first name" /></div>
+            </section>
+            <section class="survey-form-container"><div class="builder-form-name">Questions</div>
+              <div class="form-field-wrapper"><label data-field-type="email">Email</label>
+                <input type="email" name="email" placeholder="your@email.com" /></div>
+            </section></main>""")
+        plan={**inputs(),'standard_fields':['First Name','Email'],'target_slide':2}
+        page=MagicMock();page.url=plan['start_url'].replace('survey-builder/main','survey-builder-v2/CREATED')
+        page.frame_locator.return_value=ShellDom([root])
+        return root,plan,page
     def test_loaded_single_slide_standard_field_and_complete_control_inventory_are_bound(self):
         root=ElementTree.fromstring("""<main><input aria-label="Form Name" value="New authored survey" />
             <button role="tab">Edit</button><button>Add Slide</button>
@@ -65,6 +80,21 @@ class SurveyShellDom(unittest.TestCase):
             self.assertEqual(value['canvas'],[{'types':['email'],'names':[['INPUT','email','email']]}])
             root.find('.//section//input').set('type','text')
             with self.assertRaises(runner.Stop):front._shell(page,plan,page.url)
+    def test_multi_slide_shell_binds_every_exact_field_and_refuses_swapped_owners(self):
+        root,plan,page=self.multi_shell()
+        with patch.object(front,'assert_tenant'):
+            value=front._shell(page,plan,page.url)
+            self.assertEqual(value['slide_labels'],['P1 - Contact','P2 - Questions'])
+            self.assertEqual([slide['standard_field']['label'] for slide in value['slides']],['First Name','Email'])
+            root.findall('.//section')[0].find('.//input').set('placeholder','your@email.com')
+            with self.assertRaises(runner.Stop):front._shell(page,plan,page.url)
+    def test_post_placement_preserves_other_slide_full_identity_even_when_count_is_unchanged(self):
+        root,plan,page=self.multi_shell()
+        with patch.object(front,'assert_tenant'):
+            value=front._shell(page,plan,page.url)
+            front._untouched_slides(page,plan,value)
+            root.findall('.//section')[0].find('.//input').set('name','other_field')
+            with self.assertRaises(runner.Stop):front._untouched_slides(page,plan,value)
 
 
 
@@ -86,14 +116,14 @@ class SurveyRadioCreation(unittest.TestCase):
     def receipt(self,page,step):
         self.assertTrue((self.root/'survey-radio-creation'/'questions'/'delivery-state.json').exists())
         return {'status':'SURVEY_OBJECT_FIELDS_SAVED_AND_REOPENED','kind':'survey_object_fields',
-            'editor_url':self.editor,'target_slide':1,'field_count':1,
+            'editor_url':self.editor,'target_slide':step['payload']['target_slide'],'field_count':1,
             'configuration_sha256':native.configuration_hash(step),'independent_readback':'VERIFIED',
             'behavior_verified':False,'submission_verified':False}
     def patches(self,writer=None):
         stack=ExitStack()
         for owner,name,value in ((runner,'assert_tenant',None),(front,'assert_tenant',None),
                 (front.survey_fields,'_close_initial',None),(front.survey_fields,'_owner',None),
-                (front,'_shell',self.snapshot)):
+                (front,'_shell',self.snapshot),(front,'_untouched_slides',None)):
             stack.enter_context(patch.object(owner,name,return_value=value))
         stack.enter_context(patch.object(front,'reopen_editor',side_effect=lambda page,*a:setattr(page,'url',self.editor)))
         stack.enter_context(patch.object(front.radio,'Skill44RadioTransport',return_value=self.api))
@@ -120,6 +150,44 @@ class SurveyRadioCreation(unittest.TestCase):
         self.assertEqual(result['status'],'NEEDS_VERIFICATION')
         self.assertEqual(result['result']['results'][0]['result']['status'],'SURVEY_RADIO_SAVED_AND_REOPENED')
         self.writer.assert_called_once();self.assertEqual(self.shell_calls,1)
+    def test_multi_slide_host_retains_complete_inventory_and_authored_radio_target_without_duplicate_writes(self):
+        self.data.update(standard_fields=['First Name','Email'],target_slide=2)
+        self.snapshot={'editor_url':self.editor,'slide_labels':['P1 - Contact','P2 - Questions'],
+            'slides':[{'canvas':[{'types':['text'],'names':[['INPUT','text','first_name']]}],
+                'standard_field':{'label':'First Name','placeholder':'Enter your first name','type':'text'}},
+                {'canvas':[{'types':['email'],'names':[['INPUT','email','email']]}],
+                'standard_field':{'label':'Email','placeholder':'your@email.com','type':'email'}}]}
+        probes={'lanes':{'playwright':{'available':True,'current':True,'enabled':True}},'radio_field_capability':capability()}
+        with self.patches():
+            result=host.run_recipe('surveys.create',self.data,probes,self.root,input_dir=self.temp.name,page=self.page)
+            replay=host.run_recipe('surveys.create',self.data,probes,self.root,input_dir=self.temp.name,page=self.page)
+        self.assertEqual(result['status'],'NEEDS_VERIFICATION');self.assertEqual(replay['status'],'NEEDS_VERIFICATION')
+        self.assertEqual(self.shell_calls,1);self.writer.assert_called_once()
+        payload=self.writer.call_args.args[1]['payload']
+        self.assertEqual(payload['target_slide'],2);self.assertEqual(payload['expected_slide_count'],2)
+        self.assertEqual(payload['slide_labels'],self.snapshot['slide_labels'])
+        self.assertEqual(sum(call[0]=='POST' for call in self.api.calls),1)
+        receipt=result['result']['results'][0]['result']
+        self.assertEqual(receipt['shell_binding'],self.snapshot)
+        self.assertEqual(receipt['native_receipt']['target_slide'],2)
+        step=recipe_cli.compile_recipe('surveys.create',self.data)['steps'][0]
+        for change in ('missing_owner','wrong_field','reordered_labels','other_target'):
+            value=deepcopy(receipt)
+            if change=='missing_owner':value['shell_binding']['slides'].pop()
+            elif change=='wrong_field':value['shell_binding']['slides'][0]['standard_field']['label']='Phone'
+            elif change=='reordered_labels':value['shell_binding']['slide_labels'].reverse()
+            else:value['native_receipt']['target_slide']=1
+            with self.subTest(change=change),self.assertRaises(runner.Stop):front.validate_receipt(value,step)
+    def test_invalid_multi_slide_plan_is_refused_at_compile_before_shell_or_api(self):
+        plan={**self.data,'standard_fields':['First Name','Email'],'target_slide':2}
+        for key,value in (('target_slide',0),('target_slide',3),('target_slide',True),('target_slide','2'),
+                ('standard_fields',['Email','Email']),('standard_fields',[{}]),
+                ('standard_fields',['Full Name','Email'])):
+            with self.subTest(key=key,value=value),self.assertRaises(runner.Stop):
+                recipe_cli.compile_recipe('surveys.create',{**plan,key:value})
+        del plan['target_slide']
+        with self.assertRaises(runner.Stop):recipe_cli.compile_recipe('surveys.create',plan)
+        self.assertEqual(self.api.calls,[]);self.assertEqual(self.shell_calls,0)
     def test_shell_reopen_mismatch_stops_before_any_schema_or_native_write(self):
         with self.patches(),patch.object(front,'_shell',side_effect=[self.snapshot,{**self.snapshot,'canvas':[]}]),self.assertRaises(runner.Stop):
             self.run_job()

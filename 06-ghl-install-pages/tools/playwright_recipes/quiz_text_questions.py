@@ -322,7 +322,8 @@ def _wait_baseline(frame,plan,*,expected=None):
                 _one(label,'Native quiz baseline Label is ambiguous')
                 value=label.inner_text().strip();kind=label.get_attribute('data-field-type')
                 if not value or not kind:return False
-                if (kind!=question['field_type'] or value not in (question['question'],question['question']+'*',question['question']+' *')):
+                expected_kind='RADIO' if question['field_type']=='PICTURE_CHOICE' else question['field_type']
+                if (kind!=expected_kind or value not in (question['question'],question['question']+'*',question['question']+' *')):
                     raise Stop('Loaded native quiz question owner differs from its expected baseline')
         return True
     wait_until(ready,'Native quiz baseline widgets did not finish loading')

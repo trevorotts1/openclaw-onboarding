@@ -60,6 +60,10 @@ class IntakeCompletenessTests(unittest.TestCase):
             with self.subTest(extra=extra), self.assertRaises(runner.Stop):
                 prepare('meetings.setup',{'meeting':{**room,**extra}})
 
+    def test_survey_target_without_radio_flow_is_not_discarded(self):
+        with self.assertRaisesRegex(runner.Stop, 'target_slide requires'):
+            prepare('surveys.create', {'name':'Fixture', 'target_slide':2})
+
     def test_assertion_before_last_mutation_is_not_a_readback(self):
         target={'by':'role','role':'textbox','value':'Course title'}
         cases=[
