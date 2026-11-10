@@ -590,6 +590,43 @@ def selftest():
     return 0
 
 
+def _apply_prompt_policy(payload, result):
+    """The Skill 66 SUBMIT PATH (fix plan A5, unowned requirement G-1).
+
+    `scripts/validate_prompt.py` had NO production caller — repo-wide only a CI guard and its
+    own tests ran it — and its self-test blanked KIE_LIVE_ADAPTER_PATH, so the green 33/33 said
+    nothing about the live owner cap. This is the command a caller runs before dispatch, so the
+    prompt gate is enforced HERE, with the adapter path NOT blanked.
+
+    It can only ADD refusals to a payload that already validated; a short prompt that used to be
+    accepted for its model contract is now refused for its length, never the other way round.
+    """
+    inp = payload.get("input") if isinstance(payload.get("input"), dict) else {}
+    prompt = inp.get("prompt")
+    model = payload.get("model") or result.get("model_id")
+    if not isinstance(prompt, str) or not prompt.strip() or not model:
+        return result
+    try:
+        import validate_prompt as vp  # sibling script, same folder
+        verdict = vp.validate_prompt(prompt, str(model))
+    except Exception as exc:  # noqa: BLE001  (a gate that cannot run refuses the payload)
+        result.setdefault("errors", []).append("prompt policy could not run: %s" % exc)
+        result["valid"] = False
+        return result
+    result["prompt_policy"] = {k: verdict.get(k) for k in
+                               ("valid", "status", "max", "limit_source", "ratio", "chars")}
+    for e in verdict.get("errors") or []:
+        msg = "prompt policy: %s" % e
+        if msg not in result["errors"]:
+            result["errors"].append(msg)
+    for w in verdict.get("warnings") or []:
+        msg = "prompt policy: %s" % w
+        if msg not in result["warnings"]:
+            result["warnings"].append(msg)
+    if not verdict.get("valid"):
+        result["valid"] = False
+    return result
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="KIE payload validator (skill 66)")
     parser.add_argument("payload", nargs="?", help="path to payload JSON, or '-' for stdin")
@@ -614,6 +651,8 @@ def main(argv=None):
                           "errors": ["invalid JSON: %s" % exc], "warnings": [], "checked": {}}))
         return 1
     result = validate(payload, model_id_override=args.model)
+    if result["valid"]:
+        result = _apply_prompt_policy(payload, result)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result["valid"] else 1
 

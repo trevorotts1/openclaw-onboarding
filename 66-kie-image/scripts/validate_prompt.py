@@ -241,10 +241,44 @@ def _run_cases(cases, failures):
     return failures
 
 
+def _find_adapter():
+    """The sibling Skill 74 adapter, or None. Same resolution rule the bridge uses."""
+    env = os.environ.get("KIE_LIVE_ADAPTER_PATH")
+    if env is not None and env:
+        return env if os.path.isfile(env) else None
+    roots = [str(Path(__file__).resolve().parents[2]),
+             os.path.join(os.path.expanduser("~"), ".openclaw", "skills"), "/data/.openclaw/skills"]
+    for r in roots:
+        for name in ("74-kie-live-adapter", "kie-live-adapter"):
+            p = os.path.join(r, name, "scripts", "kie_live_adapter.py")
+            if os.path.isfile(p):
+                return p
+    return None
+
 def selftest():
     import tempfile
     failures = []
     saved = os.environ.get("KIE_LIVE_ADAPTER_PATH")
+    # Fix plan A5: the adapter is NOT blanked for the whole self-test. A green test that never
+    # exercises the live prompt-budget path measures nothing about the live cap.
+    os.environ.pop("KIE_LIVE_ADAPTER_PATH", None)
+    real = _find_adapter()
+    if real is None:
+        failures.append("FAIL no sibling Skill 74 adapter resolves: the live prompt-budget path "
+                        "was never exercised, so this self-test would measure nothing")
+    else:
+        res = validate_prompt("x" * 19500, "gpt-image-2-6/sunburst-text-to-image")
+        if not res["valid"]:
+            failures.append("FAIL 19,500 chars must be compliant at the 20,000 owner cap via the "
+                            "live adapter: %s" % res["errors"])
+        if res.get("max") != 20000:
+            failures.append("FAIL live adapter resolved max=%r, expected the owner cap 20000"
+                            % res.get("max"))
+        if not str(res.get("limit_source") or "").startswith("owner-ruling:"):
+            failures.append("FAIL the live adapter did not answer for the 2.6 cap "
+                            "(limit_source=%r) — the models.json fallback was measured instead"
+                            % res.get("limit_source"))
+    # The models.json fallback is still proven, but explicitly as the FALLBACK path.
     os.environ["KIE_LIVE_ADAPTER_PATH"] = ""
     _run_cases(STATIC_CASES, failures)
     res = validate_prompt("   " + "m" * 4500 + "   ", "wan/2-7-image")

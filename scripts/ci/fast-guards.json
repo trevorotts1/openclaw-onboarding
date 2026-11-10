@@ -3580,5 +3580,37 @@
     ]
    }
   }
+ },
+ {
+  "name": "kie-owner-cap-2-6-guard",
+  "was": "kie-owner-cap-2-6-guard.yml",
+  "script": "scripts/ci/fast-guards.d/kie-owner-cap-2-6-guard.sh",
+  "python311": true,
+  "events": {
+   "push": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "66-kie-image/models.json",
+     "71-blackceo-signature-page/references/prompt-budget-policy.json",
+     "74-kie-live-adapter/scripts/kie_live_adapter.py",
+     "tests/unit/kie-owner-cap-2-6.test.py",
+     "scripts/ci/fast-guards.d/kie-owner-cap-2-6-guard.sh"
+    ]
+   },
+   "pull_request": {
+    "branches": [
+     "main"
+    ],
+    "paths": [
+     "66-kie-image/models.json",
+     "71-blackceo-signature-page/references/prompt-budget-policy.json",
+     "74-kie-live-adapter/scripts/kie_live_adapter.py",
+     "tests/unit/kie-owner-cap-2-6.test.py",
+     "scripts/ci/fast-guards.d/kie-owner-cap-2-6-guard.sh"
+    ]
+   }
+  }
  }
 ]

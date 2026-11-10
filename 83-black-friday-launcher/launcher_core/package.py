@@ -1155,8 +1155,11 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     renamed hash. Two different files that would land on one path are refused.
 
     require_designs makes AF-LAUNCH-PAGE-DESIGNS part of the package's own checks: every page
-    must carry its full labeled set of desktop and mobile wireframes and mockups. Explicit False
-    (the CLI's --allow-no-designs) always needs a verified design_waiver bound to the approved hash.
+    must carry its full labeled set of desktop and mobile wireframes and mockups. It is also
+    enforced HERE, not only by `check`: a package whose pages carry no design artifact at all is
+    refused (AF-LAUNCH-PKG-PAGE-DESIGNS) and nothing is sealed, so a launch can never be handed
+    off with the wireframes and mockups simply skipped. Explicit False (the CLI's
+    --allow-no-designs) always needs a verified design_waiver bound to the approved hash.
     An unchosen value (None) is designs required for any dispatched or live package, and stays
     not-required only for a hand-built test fixture with no dispatch run (recorded
     dispatch_binding.state = "unbound_fixture"). checkout_readback, when given, is passed to
@@ -1557,6 +1560,19 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             "conversation_ai": plan_record["conversation_ai"],
         }
         manifest["launch_calendar"] = plan_record["calendar"]
+    # B4: the design proof is enforced at assembly, not left to `check`. Every copy has already
+    # landed, so the artifacts name the pages the same way `check` does; a package carrying no
+    # design artifact at all (every wireframe and mockup skipped) is refused before the seal.
+    if designs_required:
+        from . import checks as checks_module  # local: checks imports this module
+        carried = any(kind in page_designs.KINDS
+                      for _, _, kind in checks_module._design_artifacts(manifest))
+        if not carried:
+            _, design_fails = checks_module._design_level(manifest, run_dir, None)
+            raise PackageError(
+                "AF-LAUNCH-PKG-PAGE-DESIGNS",
+                "no page carries a wireframe or a mockup, so the package is not assembled: "
+                + "; ".join(design_fails or ["every page is missing its design set"]))
     manifest_path = run_dir / "package-manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 

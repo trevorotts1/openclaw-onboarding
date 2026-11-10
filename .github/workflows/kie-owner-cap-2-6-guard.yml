@@ -1,0 +1,56 @@
+name: KIE owner prompt cap present for every GPT Image 2.6 route (G-7)
+
+# Fix plan A2 (unowned requirement G-7). The 20,000-character owner ruling existed ONLY as
+# prose while `owner_prompt_cap_chars` was absent from the data, so Skill 74 fell through to
+# the vendor schema and resolved 32,000. A prompt of 25,001-32,000 characters was therefore
+# accepted by one gate and refused by the other.
+#
+# This guard makes the absence loud forever:
+#   * every `gpt-image-2-6/*` route in 66-kie-image/models.json (the catalog Skill 74 actually
+#     reads, via kie_live_adapter._policy_rows) declares a positive integer owner cap;
+#   * every such route resolves to ONE value (no split maxima);
+#   * Skill 71's policy does not carry a second hard-coded copy of the number.
+#
+# Scope note: `wan/2-6-*` are VIDEO routes with their own limits. They are printed as
+# out-of-scope so a reader can see they were considered, never silently skipped.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "66-kie-image/models.json"
+      - "71-blackceo-signature-page/references/prompt-budget-policy.json"
+      - "74-kie-live-adapter/scripts/kie_live_adapter.py"
+      - "tests/unit/kie-owner-cap-2-6.test.py"
+      - "scripts/ci/fast-guards.d/kie-owner-cap-2-6-guard.sh"
+  pull_request:
+    branches: [main]
+    paths:
+      - "66-kie-image/models.json"
+      - "71-blackceo-signature-page/references/prompt-budget-policy.json"
+      - "74-kie-live-adapter/scripts/kie_live_adapter.py"
+      - "tests/unit/kie-owner-cap-2-6.test.py"
+      - "scripts/ci/fast-guards.d/kie-owner-cap-2-6-guard.sh"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  kie-owner-cap-2-6-guard:
+    name: owner_prompt_cap_chars present and single-valued for every GPT Image 2.6 route
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Owner cap present, equal, and not duplicated as a literal
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/unit/kie-owner-cap-2-6.test.py
