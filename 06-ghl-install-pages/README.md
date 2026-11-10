@@ -12,29 +12,34 @@ all entry points, commands and remaining live verification work.
 
 ## Current build checkpoint - November 10, 2026
 
-Actual v27.1.106 delivery is verified through [batch#3121](https://github.com/trevorotts1/openclaw-onboarding/pull/3121),
-merge `874cfdcdf1df9d4b4a3b5a9c908026db566c330b`. The entire Skill6 subtree
-exactly matches frozen member#3120 at `ea7f8210c350aca583c3c4c681e269dcc6ae458b`.
+Actual v27.1.107 delivery is verified through
+[batch #3123](https://github.com/trevorotts1/openclaw-onboarding/pull/3123),
+merge `f859b9c72eedacf020686598247e51741a4eb625`, delivering member #3122 at
+`b48d02e0f27cffe7dabd38576258a3c790231647`. The full Skill 6 subtree matches that
+frozen member. The previous v106 unit was delivered through batch #3121.
 
-This separate v27.1.107 unit is prepared from that actual landed main. It adds
-owned survey Number creation and captured Checkbox,Single Dropdown and Multi
-Dropdown creation/configuration through existing inventory,option and replay adapters.
-The four source additions are independently CONFIRMED and present in this tree;
-they are not claimed delivered until this next unit merges.
+This v27.1.108 unit adds one captured survey completion family: caller-approved
+plain Message or HTTPS Redirect to URL through the existing executor. Exact
+survey identity, conditional precedence, saved reopen and fresh completed replay
+are bound; replay never repeats the write. The final source review is CONFIRMED.
 
-Current source inventory:**53 completed feature records,49 delivered and4 in
-this prepared unit**;merged delivery**49/53=92.5%**. Broad source coverage stays
-**23 BUILT/10 PARTIAL/0 GENERIC_ONLY** across33operations(**69.7%** equal-weight
-closure),with all23completed broad contracts on main. Remaining question/content/
-security/media and survey-rule paths remain explicit;no broad row was promoted.
+Current source coverage is **54 completed behavior records: 53 delivered on
+verified main and one in this prepared unit**, or **53/54 = 98.1%** delivered
+for these records. The compiler covers **69 dynamic actions / 97 bounded jobs**.
+Broad source coverage remains **23 BUILT / 10 PARTIAL / 0 GENERIC_ONLY**
+across 33 operations (**69.7%** by equal-weight operation count). No broad row
+was promoted. Compound predicates, conditional rich-message/disqualification
+outcomes and other rule lifecycle remain explicit gaps.
 
-Retained final source proof:**68dynamic actions/95compiler jobs**,2provider-boundary
-tests PASS0.611s,9changedPython AST/1JSON parsed,whitespace PASS,binding5PASS0FAIL.
-No source tests were repeated for the actual-main recut. Native script/respondent
-acceptance remains pending. Earlier36/45,36/49 and36/53 percentages are historical
-checkpoint denominators,not current delivery. See the
-[current progress ledger](references/PLAYWRIGHT-PROGRESS.md) and
-[machine-readable ledger](references/PLAYWRIGHT-BUILD-STATUS.json).
+Retained checks: four new tests PASS (0.068s), ten prior form regressions PASS,
+two compiler/provider tests PASS (1.166s), and the one affected freshness replay
+check PASS (0.032s). After the executor outage, all seven reviewed source files
+were recovered from committed patches and independently matched by Git blob
+hash. No source checks or reviews were repeated during release preparation.
+Both modes were manually saved/reopened; final native maintained-script and
+respondent acceptance is **NOT_RUN**. Source and delivery are separate from
+that acceptance. See the [progress ledger](references/PLAYWRIGHT-PROGRESS.md)
+and [machine-readable ledger](references/PLAYWRIGHT-BUILD-STATUS.json).
 
 ## Start here
 
