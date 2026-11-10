@@ -45,6 +45,9 @@ def compile_recipe(operation, data):
         add('seo',**data['seo'])
     elif operation=='pages.seo':
         add('seo',**data['seo'])
+    elif operation == 'funnels.split_variant' and 'funnel_id' in data:
+        from playwright_recipes.split_variant import COMMON, PLAN
+        add('native_split_variant', payload={key:data[key] for key in COMMON | PLAN})
     elif operation=='forms.create':
         add('form',name=data['name'],required=data.get('required',{}),allow_creation=data.get('allow_creation',False))
         add('form_css',radius=data.get('radius',12))
@@ -122,7 +125,13 @@ def compile_recipe(operation, data):
             add('quiz_results', result_page=result_page)
     elif operation=='surveys.configure':
         config = data['configuration']
-        if 'object_fields' in config:
+        if 'multiline_questions' in config:
+            add('native_survey_multiline_configuration',payload={
+                **{key:data[key] for key in ('location_id','location_name','start_url')},**config})
+        elif 'text_questions' in config:
+            add('native_survey_text_configuration',payload={
+                **{key:data[key] for key in ('location_id','location_name','start_url')},**config})
+        elif 'object_fields' in config:
             add('native_survey_object_fields', payload={
                 **{key:data[key] for key in ('location_id', 'location_name', 'start_url')}, **config})
         else:

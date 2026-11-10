@@ -1,3 +1,36 @@
+## [v27.1.104] - 2026-11-10
+
+- Configure existing survey Multi Line/LARGE_TEXT questions through full
+  label/query-key/property inventories, exact parent editor binding, one save
+  and independent reopen, including fresh replay readback. Creation remains
+  uncaptured. Recreate unchanged non-message outcome stack order while
+  preserving rich-message refusals and the unchanged prefix.
+- Route dedicated native inactive same-step split variation creation/reuse through
+  exact funnel, step and page identities, bound completion/replay readback and
+  uncertain-write journals. Active allocation profiles refuse before browser
+  acquisition until their native confirmation/readback is captured.
+- Bind existing custom Single Line TEXT fields in condition groups, stacks and
+  outcome predicates through complete label/Query Key/type inventories and exact
+  searchable selector matches. Preserve all custom siblings and native readback.
+- Bind native condition values to their captured nested text inputs; unary
+  clauses recognize the positive invisible-wrapper state without filling it.
+- Append ordered Single Line TEXT questions beneath complete populated survey
+  inventories, support multiple TEXT stages on one slide, and edit existing TEXT
+  properties through a bound action. Provider coverage now includes 62 dynamic
+  actions and 75 bounded jobs; keep separate journals and exact saved readback.
+- Recreate an explicitly requested complete Show/Hide order through captured
+  controls, preserving the unchanged prefix and validating saved order on reopen.
+- Remove exact inactive course Image Block media against inventoried positive
+  empty placeholders, preserving block identity, destination and siblings.
+- Verify current community Learning cards before completed association replay;
+  stop on inventory drift without repeating creation or API reads.
+- Author captured Single Line TEXT survey questions, including Required/Hidden
+  and conditional Hidden value, within the owned empty-slide creation pipeline.
+  Text-only creation needs no Radio field-schema API dependency.
+- Record v27.1.102 delivery through #3096 and the actual remaining executable
+  controls. Whole-operation counts remain 21 BUILT / 11 PARTIAL / 1 GENERIC_ONLY;
+  targeted checks and independent review stay separate from native acceptance.
+
 ## [v27.1.103] - 2026-11-10 - checkout recipe test pins six get_state reads (test only, no behaviour change)
 
 - `tools/playwright_recipes/test_pages_checkout.py` `NativeCheckoutTests` gains one assertion: the checkout frame records exactly six `get_state` observations, so the preflight, per-write read-backs and final preservation reads stay counted. No recipe code changed; this is the G3 patch bump for that test-only change (merge-train integration, GAP-LAND5).

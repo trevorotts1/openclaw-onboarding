@@ -68,7 +68,7 @@ There is one maintained executor, with multiple named recipes. Names below are
 | `06_install_hosted_embed` / `pages.install_embed` | Supplied hosted-app embed | Executor; embeddability PASS receipt required |
 | `07_wrap_native_checkout` / `checkout.wrap_native` | Code before/after a native GHL order form | Component path exercised; payments unverified |
 | `08_configure_native_upsell` / `checkout.one_click_upsell` | Native one-click purchase-action binding | Recorded profile still required |
-| `09_create_split_variant` / `funnels.split_variant` | Native variant and traffic allocation | Recorded profile still required; live alert blocked capture |
+| `09_create_split_variant` / `funnels.split_variant` | Native variant and traffic allocation | Dedicated same-step inactive control/variation creation or exact reuse, native page IDs, and saved 100/0 allocation readback. Active traffic changes refuse before mutation pending native confirmation capture. |
 | `10_fill_page_seo` / `pages.seo` | Title, description, keywords, author, canonical, language | Rendered metadata checked |
 | `11_create_form` / `forms.create` | Native form and standard required fields | Saved and reopened live |
 | `12_configure_form_options` / `forms.configure` | Existing standard-field labels, placeholders, keys, width, required/hidden/default values | Concrete saved-editor read-back; other field types and controls require capture |
@@ -447,3 +447,21 @@ confirmation. Retained sidebar/preview order and surrounding content must agree
 before one Save and independent reopen; see
 `examples/course-custom-block-delete.md`. This does not add arbitrary block or
 image removal and does not activate or publish a template.
+
+Explicit outcome ordering: `forms.conditions` accepts `recreate_order` with a complete `expected_rules` inventory and `rules` equal to that unchanged ordinal permutation. Non-message outcomes only; messages fail closed to preserve markup. The writer retains the common prefix, recreates the changed suffix using captured Delete/author controls, saves once and independently reopens. No native drag claim.
+# Captured survey Multi Line properties
+
+`surveys.configure` accepts `configuration.multiline_questions` with complete
+`expected` and `desired` inventories for every numbered slide. This edits existing
+native `LARGE_TEXT` textarea questions: Label, Placeholder, Short Label, Query Key,
+Required, Hidden and Hidden value. Required and Hidden remain mutually exclusive.
+See `tools/playwright_recipes/examples/survey-multiline-properties.json`.
+
+The writer checks all current Multi Line properties before editing, preserves
+other widgets, saves once and independently reopens the survey. Completed replay
+reads the current native properties again and never rewrites a changed record.
+Query Key changes alongside other widget families refuse until their complete
+key inventory is available. This action does not create Multi Line questions or
+claim survey branching/completion outcomes. The broad survey operations remain
+partial. Native creation and Required/Hidden property persistence were captured
+on November 10, 2026; reusable source contains no synthetic account identifiers.

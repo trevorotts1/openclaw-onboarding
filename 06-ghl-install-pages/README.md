@@ -10,6 +10,26 @@ then the current OpenClaw Chrome extension, managed Agent Browser and enabled
 computer use. The new [recipe guide](references/PLAYWRIGHT-RECIPES.md) lists
 all entry points, commands and remaining live verification work.
 
+## Current build checkpoint - November 10, 2026
+
+Merge train [#3101](https://github.com/trevorotts1/openclaw-onboarding/pull/3101)
+delivered v27.1.103 at `a28b89970668ad097892664117170baf98765baa`.
+The v27.1.104 follow-on [#3099](https://github.com/trevorotts1/openclaw-onboarding/pull/3099)
+contains ten reviewed bounded additions: Show/Hide order recreation, Image Block
+image removal, community-course replay readback, survey TEXT creation, native
+condition-value compatibility, populated TEXT append/property edits, custom TEXT
+condition bindings, inactive same-step split routing, non-message outcome order
+recreation, and existing Multi Line survey property editing.
+
+The current source ledger is **22 BUILT / 11 PARTIAL / 0 GENERIC_ONLY** across
+33 named operations; provider coverage is **64 dynamic actions / 77 bounded jobs**.
+The old 21/11/1 count is a frozen historical audit, not current source status.
+Split activation/allocation and Multi Line creation remain unfinished. Source
+coverage does not claim installed-script, respondent, learner or payment PASS.
+See [the current progress ledger](references/PLAYWRIGHT-PROGRESS.md) and
+[the machine-readable source ledger](references/PLAYWRIGHT-BUILD-STATUS.json)
+for current operation scope and separate delivery/acceptance evidence.
+
 ## Start here
 
 1. SKILL.md - the governing doctrine for this skill. Read it first.

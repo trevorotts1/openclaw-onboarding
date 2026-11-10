@@ -1,0 +1,30 @@
+{
+  "location_id": "LOC",
+  "location_name": "Fixture Account",
+  "start_url": "https://app.example.com/v2/location/LOC/memberships/courses/course-creator-studio?view=manager&sub_view=customize&product_id=COURSE",
+  "course_id": "COURSE",
+  "template_id": "INACTIVE_TEMPLATE",
+  "expected_template_title": "Inventoried inactive template",
+  "image_blocks": {
+    "expected_inventory": [
+      {"id": "categoryBlock", "type": "Category Block"},
+      {"id": "IMAGE_A", "type": "Image Block"}
+    ],
+    "updates": [
+      {
+        "id": "IMAGE_A",
+        "expected": {
+          "inspector_url": "https://example.com/inventoried-current.png",
+          "preview_url": "https://example.com/inventoried-current.png",
+          "url": "https://example.com/keep-destination"
+        },
+        "changes": {
+          "remove_image": {
+            "inspector_url": "https://example.com/inventoried-native-empty.svg",
+            "preview_url": "https://example.com/inventoried-native-empty.svg"
+          }
+        }
+      }
+    ]
+  }
+}

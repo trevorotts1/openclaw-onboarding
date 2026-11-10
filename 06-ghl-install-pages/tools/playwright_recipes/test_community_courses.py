@@ -80,6 +80,50 @@ class CommunityCourseTests(unittest.TestCase):
         self.assertTrue(self.run_courses()['replayed'])
         self.assertEqual(len(self.api.calls),calls);self.assertEqual(self.add.call_count,1)
 
+    def test_completed_replay_reloads_native_cards_and_refuses_lost_saved_association(self):
+        self.run_courses();journal=Path(self.root.name,'community-details-state.json')
+        saved=journal.read_bytes();calls=len(self.api.calls)
+        # The in-memory card is still present until the independent reload.
+        self.assertEqual(len(self.page.cards),1);self.page.lose_save=True
+        with self.assertRaisesRegex(Stop,'reconcile before replay'):self.run_courses()
+        self.assertEqual(self.page.cards,[])
+        self.assertEqual(journal.read_bytes(),saved)
+        self.assertEqual(len(self.api.calls),calls);self.assertEqual(self.add.call_count,1)
+
+    def test_completed_replay_checks_target_and_complete_sibling_inventory_without_rewriting(self):
+        siblings=[{'course_id':'KEEP','title':'Keep course','visibility':None},
+                  {'course_id':'SECOND','title':'Second course','visibility':'Private'}]
+        self.page.cards=deepcopy(siblings)
+        self.data['course_associations']['expected_courses']=deepcopy(siblings)
+        self.run_courses();persisted=deepcopy(self.page.cards)
+        journal=Path(self.root.name,'community-details-state.json');saved=journal.read_bytes()
+        calls=len(self.api.calls)
+        variants=[]
+        for key,value in (('title','Renamed course'),('visibility',None),('course_id','OTHER')):
+            changed=deepcopy(persisted);changed[0][key]=value;variants.append(changed)
+        variants.extend([persisted[1:],persisted[:1],persisted+[deepcopy(persisted[0])],
+                         [persisted[0],persisted[2],persisted[1]]])
+        for cards in variants:
+            self.page.cards=deepcopy(cards)
+            with self.subTest(cards=cards),self.assertRaisesRegex(Stop,'reconcile before replay'):
+                self.run_courses()
+            self.assertEqual(journal.read_bytes(),saved)
+        self.assertEqual(len(self.api.calls),calls);self.assertEqual(self.add.call_count,1)
+        # A new association's native position is not a guaranteed contract;
+        # moving only that card while retaining sibling order remains valid.
+        self.page.cards=[*deepcopy(siblings),persisted[0]]
+        self.assertTrue(self.run_courses()['replayed'])
+
+    def test_completed_existing_association_replay_requires_unchanged_native_inventory(self):
+        card={'course_id':'COURSE','title':'Exact course','visibility':'Private'}
+        sibling={'course_id':'KEEP','title':'Keep course','visibility':None}
+        self.page.cards=[card,sibling]
+        self.data['course_associations']['expected_courses']=deepcopy(self.page.cards)
+        self.assertTrue(self.run_courses()['reused']);calls=len(self.api.calls)
+        self.page.cards.reverse()
+        with self.assertRaisesRegex(Stop,'reconcile before replay'):self.run_courses()
+        self.add.assert_not_called();self.assertEqual(len(self.api.calls),calls)
+
     def test_unique_native_option_is_bound_against_all_api_pages(self):
         self.api.pages=[{'products':[{'id':'OTHER','title':'Other course'}],'nextCursor':'next'},
             {'products':[{'id':'COURSE','title':'Exact course'}],'nextCursor':None}]

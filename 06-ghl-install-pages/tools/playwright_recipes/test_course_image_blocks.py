@@ -29,6 +29,9 @@ def protected(identity='IMAGE_A',src=None):
     return {'preview_attributes':{'alt':'Image block '+identity,'src':src or state()['preview_url'],'class':'native-image'},'remove_enabled':True}
 
 
+EMPTY={'inspector_url':'https://example.com/placeholder.svg','preview_url':'https://example.com/placeholder.svg'}
+
+
 class ImageIdentityAndSchema(unittest.TestCase):
     def test_actual_image_alt_uuid_and_full_wrapper_order_bind_the_active_image(self):
         page,owner=preview_page();inventory=inputs()['image_blocks']['expected_inventory']
@@ -66,6 +69,16 @@ class ImageIdentityAndSchema(unittest.TestCase):
             other=deepcopy(value);other['images'][0].update(change);invalid.append(other)
         for other in invalid:
             with self.subTest(other=other),self.assertRaises(Stop):images.validate_receipt(other,step)
+    def test_removal_requires_inventoried_empty_urls_and_excludes_upload(self):
+        data=inputs();changes=data['image_blocks']['updates'][0]['changes'];changes.clear()
+        changes['remove_image']=deepcopy(EMPTY)
+        self.assertEqual(images.validate_inputs(data)['image_blocks']['updates'][0]['changes'],changes)
+        for removal in (True,{},state(),{'inspector_url':state()['inspector_url'],'preview_url':state()['preview_url']},
+                {**EMPTY,'preview_url':'https://example.com/different.svg'}):
+            other=deepcopy(data);other['image_blocks']['updates'][0]['changes']['remove_image']=removal
+            with self.subTest(removal=removal),self.assertRaises(Stop):images.validate_inputs(other)
+        other=deepcopy(data);other['image_blocks']['updates'][0]['changes']['image']={'file':'/tmp/approved.png','sha256':'a'*64}
+        with self.assertRaises(Stop):images.validate_inputs(other)
 
 
 class NativeDestinationWriter(unittest.TestCase):
@@ -88,15 +101,35 @@ class NativeDestinationWriter(unittest.TestCase):
                 patch.object(images,'_open') as select,patch.object(images.theme,'_identity'),patch.object(images,'assert_tenant'):
             result=images._write(page,{},'IMAGE_A',{'url':'https://example.com/new'})
         select.assert_called_once();self.assertEqual(result[0]['url'],'https://example.com/new');self.assertEqual(result[1],keep)
+    def test_removal_needs_disabled_remove_and_preserves_bound_image_attributes(self):
+        for defect in (None,'enabled','wrong_placeholder','attribute'):
+            current=state();keep=protected();page=MagicMock();remove=MagicMock()
+            remove.count.return_value=1;remove.is_visible.return_value=True;remove.is_enabled.return_value=True
+            def remove_image(**kwargs):
+                current.update(EMPTY);keep['preview_attributes']['src']=EMPTY['preview_url'];keep['remove_enabled']=defect=='enabled'
+                if defect=='wrong_placeholder':current['preview_url']='https://example.com/other.png'
+                if defect=='attribute':keep['preview_attributes']['class']='unrequested-change'
+            remove.click.side_effect=remove_image;page.get_by_role.return_value=remove
+            with patch.object(images,'read_image_block',side_effect=lambda *a:(deepcopy(current),deepcopy(keep))), \
+                    patch.object(images,'_open'),patch.object(images.theme,'_identity'),patch.object(images,'assert_tenant'), \
+                    patch.object(images,'wait_until',side_effect=lambda fn,message:fn() or (_ for _ in ()).throw(Stop(message))):
+                with self.subTest(defect=defect):
+                    if defect:
+                        with self.assertRaises(Stop):images._write(page,{},'IMAGE_A',{'remove_image':EMPTY})
+                    else:
+                        result=images._write(page,{},'IMAGE_A',{'remove_image':EMPTY})
+                        self.assertEqual(result[0],{**state(),**EMPTY});self.assertIs(result[1]['remove_enabled'],False)
+            self.assertEqual(remove.click.call_count,1)
 
 
 class ImageWriteBoundaries(unittest.TestCase):
-    def execute(self,*,defect=None,append=False,upload=False):
+    def execute(self,*,defect=None,append=False,upload=False,remove=False):
         with tempfile.TemporaryDirectory() as root:
             file=Path(root)/'approved.png';file.write_bytes(b'\x89PNG\r\n\x1a\nAPPROVED_IMAGE_BYTES')
             asset={'file':str(file),'sha256':hashlib.sha256(file.read_bytes()).hexdigest()}
             data=inputs()
             if upload:data['image_blocks']['updates'][0]['changes']['image']=asset
+            if remove:data['image_blocks']['updates'][0]['changes']={'remove_image':deepcopy(EMPTY)}
             if append:data['image_blocks']['append']=[{'image':asset,'url':'https://example.com/append'}]
             if defect=='source':data['image_blocks']['append'][0]['image']['sha256']='0'*64
             if defect=='stale':data['image_blocks']['updates'][0]['expected']['url']='https://example.com/stale'
@@ -127,6 +160,8 @@ class ImageWriteBoundaries(unittest.TestCase):
                     self.assertNotEqual(path,file);self.assertEqual(path.stat().st_mode&0o777,0o600)
                     actual.update(inspector_url='https://cdn.example.com/'+identity+'.png',preview_url='https://cdn.example.com/'+identity+'.png')
                     keep['preview_attributes']['src']=actual['preview_url'];keep['remove_enabled']=True
+                if 'remove_image' in changes:
+                    actual.update(changes['remove_image']);keep['preview_attributes']['src']=actual['preview_url'];keep['remove_enabled']=False
                 actual['url']=changes.get('url',actual['url']);current[identity]=(actual,keep)
                 if defect=='sibling':current['TEXT_B'][1]['content_html']='<p>Unauthorized sibling edit</p>'
                 return deepcopy(current[identity])
@@ -161,6 +196,20 @@ class ImageWriteBoundaries(unittest.TestCase):
             result,_,saves,_,_=self.execute(defect=defect)
             with self.subTest(defect=defect):
                 self.assertIsInstance(result,Stop);self.assertEqual(len(saves),int(defect=='lost'))
+    def test_removal_saves_once_reopens_and_does_not_delete_block_or_change_destination(self):
+        result,writes,saves,current,opened=self.execute(remove=True)
+        self.assertEqual(writes,['IMAGE_A']);self.assertEqual(len(saves),1);self.assertEqual(opened,2)
+        self.assertEqual(result['block_ids'],['categoryBlock','IMAGE_A','TEXT_B'])
+        self.assertIs(result['images'][0]['media_removed'],True)
+        self.assertEqual(current['IMAGE_A'][0],{**state(),**EMPTY})
+        self.assertIs(current['IMAGE_A'][1]['remove_enabled'],False)
+        data=inputs();data['image_blocks']['updates'][0]['changes']={'remove_image':deepcopy(EMPTY)}
+        for key,value in (('media_removed',False),('inspector_url_sha256',images._sha(state()['inspector_url']))):
+            other=deepcopy(result);other['images'][0][key]=value
+            with self.subTest(key=key),self.assertRaises(Stop):images.validate_receipt(other,{'payload':data})
+    def test_removal_lost_on_reopen_cannot_emit_completion(self):
+        result,writes,saves,_,_=self.execute(remove=True,defect='lost')
+        self.assertIsInstance(result,Stop);self.assertEqual(writes,['IMAGE_A']);self.assertEqual(len(saves),1)
 
 
 if __name__=='__main__':unittest.main()
