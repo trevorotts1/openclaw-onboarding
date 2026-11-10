@@ -555,8 +555,8 @@
         "slide-submitter",
         "typography-architect"
       ],
-      "content_sha": "sha256:1513809a5b0a0607290cdf83828218e46cb504ff3fa00fa032c4e4195c090088",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_sha": "sha256:f0f2a6a2536c50003bd52e459d736afed060343d574584933d43e20132da92b9",
+      "content_hashed_at": "2026-11-10T05:00:35.850842+00:00"
     },
     "product-production": {
       "count": 4,
@@ -5799,10 +5799,10 @@
       "path": "templates/role-library/presentations/slide-image-creator.md",
       "capability_class": "GENERATION",
       "vision_flag": false,
-      "content_sha": "sha256:218f818b7e2b98d386ad768c36dcaaae36d64aea1f64e75918c6260e4c60da59",
+      "content_sha": "sha256:dd42aba3c1872bf632b0324ea6eeedaf92d8b9b855bd12f58fbe394445cb08e2",
       "render_sha": "sha256:UNAVAILABLE",
-      "content_version": "1.0.40",
-      "content_hashed_at": "2026-11-09T23:25:05.532974+00:00"
+      "content_version": "1.0.41",
+      "content_hashed_at": "2026-11-10T05:00:35.850842+00:00"
     },
     {
       "slug": "slide-submitter",
