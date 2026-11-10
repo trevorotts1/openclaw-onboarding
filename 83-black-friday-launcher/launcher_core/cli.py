@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, List
 
 from . import (checks, council, dependencies, image_plan, intake, launch_bridge,
-               launch_plan, package, route)
+               launch_plan, package, page_designs, route)
 from .constants import DECIDED, SEAMS
 
 _TEST_ONLY_REF = "TEST-ONLY"  # the placeholder approval ref on test fixtures
@@ -147,6 +147,40 @@ def cmd_route(args: argparse.Namespace) -> int:
     return 0
 
 
+def _close_step_spine(out_dir: Path, steps: list) -> dict:
+    """Every DECLARED step must have written its artifact; completion is refused otherwise.
+
+    Fix plan C6 (unowned requirement G-5, part 2). Skill 49 has a phase spine that aborts on
+    the first failure and writes a process manifest; Skill 83 had none — `assemble` simply
+    returned. This is that spine in miniature: the steps this invocation declared are recorded
+    with the artifact each one owes, every artifact is checked, and an absent one refuses the
+    completion instead of being noticed later (or never).
+
+    Returns the record it wrote (also persisted as <out>/assemble-steps.json).
+    """
+    record = {"steps": [], "closed": True}
+    for entry in steps:
+        missing = [a for a in entry.get("artifacts") or [] if not Path(a).is_file()]
+        record["steps"].append({"step": entry.get("step"), "required": bool(entry.get("required")),
+                                "artifacts": list(entry.get("artifacts") or []),
+                                "missing": missing,
+                                "status": "closed" if not missing else "open"})
+        if missing and entry.get("required", True):
+            record["closed"] = False
+    try:
+        (Path(out_dir) / "assemble-steps.json").write_text(
+            json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    if not record["closed"]:
+        bad = [f"{s['step']} (missing {', '.join(s['missing'])})"
+               for s in record["steps"] if s["missing"]]
+        raise package.PackageError(
+            "AF-LAUNCH-STEP-ARTIFACT",
+            "a declared assembly step wrote no artifact, so the package cannot be called "
+            "complete: " + "; ".join(bad))
+    return record
+
 def cmd_assemble(args: argparse.Namespace) -> int:
     dependencies.require(mode="assemble")
     run_dir = Path(args.run_dir) if args.run_dir else None
@@ -154,6 +188,10 @@ def cmd_assemble(args: argparse.Namespace) -> int:
     if pieces_dir is None:
         raise CliError("AF-LAUNCH-ASSEMBLE-ARGS", "give --run-dir (the dispatch run folder) or --pieces")
     source_root = run_dir or pieces_dir.parent
+    # FIX PLAN C6 (unowned requirement G-5): THE STEP SPINE. Every step this invocation
+    # DECLARES must write its artifact; completion is refused if any is absent. The spine is
+    # written to <out>/assemble-steps.json so a reader can see what ran and what it produced.
+    steps: list = []
     # F12: the real image producer runs at the asset handoff, before the pieces are read, so a page
     # whose images were just finished is listed with them. It is Skill 71's own stage driver: it never
     # draws before the client's layout approval and never spends without the paid approval.
@@ -168,6 +206,8 @@ def cmd_assemble(args: argparse.Namespace) -> int:
                                           allow_paid=bool(args.allow_paid),
                                           layout_approval_file=Path(args.layout_approval)
                                           if args.layout_approval else None)
+        steps.append({"step": "image-stages", "required": True,
+                      "artifacts": [str(Path(run_dir) / "qc" / "image_stages_report.json")]})
     normalized = intake.validate(_read_json(args.intake))
     launch = _json_object(source_root / "launch.json")
     if launch:  # the dispatch record: its plan hash and approval ref are what the receipt binds
@@ -205,6 +245,21 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         _launch_event(normalized["launch_id"], {"event_type": "stage_blocked", "stage": "assemble",
                                                 "failures": [exc.code]})
         raise
+    steps.append({"step": "assemble", "required": True,
+                  "artifacts": [str(out["manifest_path"]), str(out["receipt_path"])]})
+    # FIX PLAN B4 (unowned requirement G-5, part 1): assemble used to bypass `checks` entirely,
+    # so a package with NO designs at all could be assembled and handed off. design_violations is
+    # called HERE, on the sealed manifest, and refuses.
+    if not args.allow_no_designs:
+        designs = page_designs.design_violations(out["manifest"], Path(args.out))
+        if designs:
+            _launch_event(normalized["launch_id"],
+                          {"event_type": "stage_blocked", "stage": "assemble",
+                           "failures": ["AF-LAUNCH-ASSEMBLE-DESIGN"]})
+            raise package.PackageError(
+                "AF-LAUNCH-ASSEMBLE-DESIGN",
+                "the package has no complete design set (call `check` for the full list): "
+                + " | ".join(designs[:5]))
     # B5: re-open the just-sealed package and re-prove its receipt and artifact bytes from disk
     # before anything is handed off. `checks.verify_package_receipt` is the recovery entry point
     # L03 and L12 call; running it on the delivery path means a receipt that cannot be re-read, or
@@ -237,6 +292,17 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         print(f"[graphics] handoff failed ({type(exc).__name__}); the package is sealed and `check` "
               "will name the missing image reviews", file=sys.stderr)
     _launch_event(normalized["launch_id"], {"event_type": "stage_closed", "stage": "assemble"})
+    # The graphics handoff writes its own record so the step has an artifact to prove.
+    graphics_path = Path(args.out) / "graphics-handoff.json"
+    try:
+        graphics_path.write_text(json.dumps(graphics, indent=2, sort_keys=True) + "\n",
+                                 encoding="utf-8")
+    except OSError:
+        pass  # the spine check below refuses if it is absent
+    steps.append({"step": "graphics-handoff", "required": True,
+                  "artifacts": [str(graphics_path)]})
+    # THE SPINE CLOSES HERE: every declared step's artifacts must exist, or completion is refused.
+    _close_step_spine(Path(args.out), steps)
     _emit({"manifest": out["manifest_path"], "receipt": out["receipt_path"],
            "council": advice["status"], "designs_required": not args.allow_no_designs,
            "to_confirm": out["manifest"]["to_confirm"],

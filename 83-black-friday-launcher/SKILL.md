@@ -275,6 +275,24 @@ a numbered directory, so the same code runs in both layouts.
    independent work continues. Folded levels are reported from the per-offer checkout instances
    (`combined_single_offer` per main price choice), not from the obsolete contract-gap claim.
 
+## Reading rule (BINDING — applies before any step of this skill runs)
+
+**READ EVERYTHING BEFORE YOU TOUCH ANYTHING.** Read this entire file from top to bottom before executing a
+single step. This is the wording already proven at `06-ghl-install-pages/INSTALL.md:72`; it governs this
+skill and every skill it calls, and it is not optional.
+
+**Read each declared dependency WHOLE.** Every file the read order below names — this file, `DISPATCH.md`,
+`DECISIONS-PENDING.md`, the page skills, the SOP files under
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/`, and the launcher's own
+`launcher_core/dependencies.json` — must be read from top to bottom before you act on it. Read order is not
+completeness: knowing WHICH file comes first is not knowing WHAT it says. A dependency you have not read
+whole is a dependency you cannot claim to have followed.
+
+**GREPPING IS NOT READING.** A search hit is a pointer, never knowledge: open the file and read it whole.
+"No grepping allowed." (`50-email-engine/SOURCE-EMAIL-CORPUS.md:25`). Do not skim, do not read only the
+lines a search returned, and never act on a file you have not read end to end. If you catch yourself
+searching for the answer instead of reading the source, stop and read the source.
+
 ## Read order
 
 Read in this order. Each step names the file, so nothing here depends on guessing a path.
