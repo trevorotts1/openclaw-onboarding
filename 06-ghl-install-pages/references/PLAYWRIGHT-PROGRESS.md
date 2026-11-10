@@ -11,7 +11,7 @@ rerun or competing batch is needed. Batch #3096 merged at `710b36e9c1c36d3c72a33
 on November 10 at 1:54:47 AM Eastern.
 Skill 6 v27.1.101 was delivered through #3090; v27.1.100 through #3085.
 
-The v27.1.103 continuation integrates six independently reviewed bounded changes:
+The v27.1.103 continuation integrates seven independently reviewed bounded changes:
 
 1. An explicit full Show/Hide rule permutation recreates only the changed suffix
    through captured Delete/author controls. The unchanged prefix is retained,
@@ -39,8 +39,14 @@ The v27.1.103 continuation integrates six independently reviewed bounded changes
    properties while preserving sibling widgets. The aggregate receipt checks all
    saved properties and order. Radio dependencies remain separate.
 
-All six additions passed targeted builder checks and one independent source
-review without blocking defects or repeated tests. The latest condition fix's
+7. Existing custom TEXT condition sources and targets bind the complete ordered
+   label, Query Key and field-type inventory, including unused siblings. Searchable
+   virtualized choices require one exact visible label. The same bindings cover
+   compound groups, Show/Hide stacks and outcome predicates. Other custom widget
+   families remain unsupported; final source review is CONFIRMED.
+
+All seven additions passed their targeted builder checks and one independent
+source review without blocking defects or repeated tests. The latest condition fix's
 111 targeted checks passed in 0.212s; survey continuation's 24 checks passed and
 its matrix covers 62 dynamic actions and 75 bounded jobs. Integration
 uses changed-file AST/JSON/version/whitespace validation only; no optional full
@@ -56,7 +62,7 @@ bounded changes do not promote an entire operation prematurely.
 | --- | --- |
 | `funnels.split_variant` | Native variation creation/reuse and traffic allocation/readback. |
 | `forms.configure` | Remaining widgets/properties, Address parent controls, Dropdown creation and embed controls. |
-| `forms.conditions` | Native drag, nested/mixed groups and broader field identities; explicit unchanged Show/Hide order recreation is built. |
+| `forms.conditions` | Native drag, mixed/nested groups, rich-outcome reorder recreation and custom families beyond TEXT; existing custom TEXT condition bindings are built. |
 | `surveys.create` | Other widgets, media and broader flows; captured Single Line creation, populated append and existing TEXT property edits are built. |
 | `surveys.configure` | Other question controls, compound predicates and completion/rule lifecycle; existing TEXT property edits are built. |
 | `quizzes.create` | Reliable populated-page append; another active session owns the quiz editor and its continuation. |

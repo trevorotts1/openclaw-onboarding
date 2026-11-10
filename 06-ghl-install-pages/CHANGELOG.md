@@ -1,5 +1,8 @@
 ## [v27.1.103] - 2026-11-10
 
+- Bind existing custom Single Line TEXT fields in condition groups, stacks and
+  outcome predicates through complete label/Query Key/type inventories and exact
+  searchable selector matches. Preserve all custom siblings and native readback.
 - Bind native condition values to their captured nested text inputs; unary
   clauses recognize the positive invisible-wrapper state without filling it.
 - Append ordered Single Line TEXT questions beneath complete populated survey

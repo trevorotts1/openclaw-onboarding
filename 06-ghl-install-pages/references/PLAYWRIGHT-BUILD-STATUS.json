@@ -1,6 +1,6 @@
 {
   "schema": "skill6-build-inventory/2",
-  "updated_at": "2026-11-10T06:57:02.572340+00:00",
+  "updated_at": "2026-11-10T07:37:13.751527+00:00",
   "scope": "33 named catalog operations; equal-weight executable build coverage of frozen source, not elapsed effort, feature-weighted progress or live readiness.",
   "counts": {
     "BUILT": 21,
@@ -15,9 +15,9 @@
   },
   "current_feature_progress": {
     "schema": "skill6-current-feature-progress/1",
-    "updated_at": "2026-11-10T06:57:02.572340+00:00",
+    "updated_at": "2026-11-10T07:37:13.751527+00:00",
     "read_first": "The 21/11/1 counts and original row gaps are the frozen fifth-source operation audit, not a fresh unfinished-script count. This section records reviewed implementation added since that audit. SOURCE_BUILT does not mean native functional acceptance or deployed/merged.",
-    "source_branch": "resume/skill6-v103-1231216e",
+    "source_branch": "skill6/reviewed-controls-v103-checkpoint-20261110",
     "durable_core_source_commit": "554fc5c2b2d7587dcde85905417de81c4e668d22",
     "additional_reviewed_source": [
       "1a4daf06f4494cb297fa57552a5367323ffd54d1",
@@ -26,7 +26,10 @@
       "d0a6a1d78d47a61859de85e050275a2d8561c4fd",
       "d810952639d17df0a5f0c9f4ee7e00723aa9b48b",
       "af7b1aaa1150c83daf84c0287e318ad786ff5c3d",
-      "6e580c419f479c4fdf61bc9ea15cbd5a0e8bba64"
+      "6e580c419f479c4fdf61bc9ea15cbd5a0e8bba64",
+      "ddecd2e96e41031c7e09b476db5bda2829726009",
+      "ce78012ba5c9a0c0a8d52512156483619806a237",
+      "c9d9dd91aad2cffcd566032c50f87de6a008a730"
     ],
     "completed_since_frozen_audit": [
       {
@@ -554,13 +557,84 @@
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
         "delivery": "SOURCE_REVIEWED_PENDING_MERGE"
+      },
+      {
+        "id": "native-condition-nested-value-compatibility",
+        "feature": "Native nested text-value input and positive invisible unary-wrapper compatibility",
+        "operations": [
+          "forms.conditions"
+        ],
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_conditions.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "Binary clauses bind the captured visible nested typed textbox; unary clauses recognize the positive invisible wrapper and do not fill it.",
+          "Changed native shape refuses. This adds no custom widget family, nested expression group or respondent acceptance."
+        ],
+        "independent_source_review": "CONFIRMED",
+        "status": "SOURCE_BUILT",
+        "native_final_script_acceptance": "PENDING",
+        "delivery": "PUBLISHED_DRAFT_3099"
+      },
+      {
+        "id": "survey-populated-text-and-existing-properties",
+        "feature": "Populated survey TEXT append, multiple TEXT stages and existing TEXT property action",
+        "operations": [
+          "surveys.create",
+          "surveys.configure"
+        ],
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_text_questions.py",
+            "function": "configure"
+          },
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_text_configuration.py",
+            "function": "configure"
+          }
+        ],
+        "preserved_boundaries": [
+          "Use the captured blank tail beneath complete prior canvas inventory; retain a separate child intent journal for every question and exact aggregate saved order.",
+          "Existing property edits preflight every TEXT position/property, protect other widgets and refuse Query Key swaps or ungrounded mixed-widget key edits."
+        ],
+        "independent_source_review": "CONFIRMED",
+        "status": "SOURCE_BUILT",
+        "native_final_script_acceptance": "PENDING",
+        "delivery": "PUBLISHED_DRAFT_3099"
+      },
+      {
+        "id": "native-custom-text-condition-field-bindings",
+        "feature": "Existing custom TEXT source/target bindings in native condition groups, stacks and outcomes",
+        "operations": [
+          "forms.conditions"
+        ],
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/form_condition_fields.py",
+            "function": "preflight"
+          }
+        ],
+        "preserved_boundaries": [
+          "Require the complete ordered custom TEXT label/Query Key/type inventory including unused siblings; independently verify before and after condition writes.",
+          "Filter virtualized searchable choices by exact label; duplicate/shadowed labels, ambiguous keys and unsupported custom families refuse. Native capture is not installed-script or respondent acceptance."
+        ],
+        "independent_source_review": "CONFIRMED",
+        "status": "SOURCE_BUILT",
+        "native_final_script_acceptance": "PENDING",
+        "delivery": "SOURCE_REVIEWED_DRAFT_CANDIDATE"
       }
     ],
     "new_control_capabilities_in_this_batch": [
       "show-hide-explicit-order-recreation",
       "inactive-course-image-block-removal",
       "community-course-completed-replay-readback",
-      "survey-native-single-line-owned-creation"
+      "survey-native-single-line-owned-creation",
+      "native-condition-nested-value-compatibility",
+      "survey-populated-text-and-existing-properties",
+      "native-custom-text-condition-field-bindings"
     ],
     "receipt_hardening": [
       "Fresh native course background-media completion now passes the same exact configuration/source/changed-image validator as completed replay.",
@@ -573,7 +647,8 @@
         "Contact Dropdown creation lacks a documented option-array request schema and explicitly refuses."
       ],
       "forms.conditions": [
-        "Native drag reordering, nested/mixed predicate groups and broader custom/advanced field identities remain unsupported. Explicit unchanged Show/Hide rule order replacement through captured recreation is now built; rich outcome order recreation remains unsupported."
+        "Native drag, mixed/nested expression groups, rich-outcome reorder recreation and custom condition field families beyond captured TEXT remain unsupported. Explicit unchanged Show/Hide recreation and current built-in/custom TEXT predicate profiles are tracked separately.",
+        "Existing custom TEXT bindings are built and independently reviewed; Radio, numerical, file and other custom/option-valued condition families remain unsupported. No entire operation is promoted."
       ],
       "courses.configure_ui": [
         "Video Block upload/processing/save lifecycle; background/Custom Block image removal and other uncaptured template/block settings. Exact inactive Image Block image removal is now built.",
@@ -587,8 +662,11 @@
         "Reliable populated-page append, answer Jump To destinations, tier creation/removal and remaining result media/styling."
       ],
       "surveys.create": [
-        "Other non-Radio widgets, populated-slide TEXT append, remaining question properties and media controls. Captured empty-slide Single Line text, Required/Hidden and conditional Hidden value are now built.",
-        "Broader complete survey flows, compound predicates and completion outcomes. Empty slide shells and ordered native Single Line/Radio batches are now built."
+        "Other widgets, remaining media/property controls and broader complete flows. Captured TEXT creation, populated append, multiple same-slide stages and existing TEXT property editing are built.",
+        "Compound predicates and completion outcomes remain separate gaps; preserve Radio API dependency boundaries."
+      ],
+      "surveys.configure": [
+        "Other question families, compound predicates and completion/redirect/message/disqualification rule lifecycle. Existing TEXT properties are now implemented through a bound action."
       ]
     },
     "other_partial_areas": [
@@ -604,7 +682,7 @@
       "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3053",
       "status_at_checkpoint": "MERGED 2026-11-09T23:22:27Z; merge commit 565a27d2f26526cab73ca750ea2be83f05bee50c"
     },
-    "current_batch_pr": "v27.1.102 unit #3095 at dc82b8c9928229920694d13445a2135127abae6b delivered through merged batch #3096 at 710b36e9c1c36d3c72a33ebb52b7054234c00a2e. Authority repair #3094 delivered at 461ff7c6591653b6bc1d61564f70405e20c2cb82. The v27.1.103 continuation has four locally integrated additions; all four source changes have independent review CONFIRMED; publication and merge remain separate.",
+    "current_batch_pr": "v27.1.102 delivered through merged #3096 at710b36e9c1c36d3c72a33ebb52b7054234c00a2e. Own Draft #3099 publishes six reviewed additions atfb45d8842861f9b712e9bb43ec269a11c97c3792. A seventh custom TEXT condition-binding source is integrated and independently reviewed CONFIRMED for the same Draft candidate; no operation count is promoted. Owned #3097 remains the sole active seven-unit integration.",
     "verified_delivery": {
       "status": "MERGED",
       "pr": 3096,
@@ -618,7 +696,7 @@
       "native_final_script_acceptance": "PENDING"
     },
     "remaining_operation_reconciliation": {
-      "basis": "All twelve explicit operation areas retain executable gaps after twenty-one delivered bounded additions and the v103 local continuation. No operation category is promoted by a bounded addition or deferred native proof.",
+      "basis": "All twelve broad areas retain explicit executable gaps. The current Draft candidate includes seven independently reviewed bounded additions; original21/11/1 operation counts remain unchanged.",
       "count": 12,
       "operations": [
         "funnels.split_variant",
@@ -639,12 +717,20 @@
       "show-hide-explicit-order-recreation",
       "inactive-course-image-block-removal",
       "community-course-completed-replay-readback",
-      "survey-native-single-line-owned-creation"
+      "survey-native-single-line-owned-creation",
+      "native-condition-nested-value-compatibility",
+      "survey-populated-text-and-existing-properties",
+      "native-custom-text-condition-field-bindings"
     ],
-    "current_unmerged_source_branch": "resume/skill6-v103-1231216e",
+    "current_unmerged_source_branch": "skill6/reviewed-controls-v103-checkpoint-20261110",
     "current_unmerged_unit_pr": {
-      "source_branch": "resume/skill6-v103-1231216e",
-      "status": "V103_SOURCE_BUILT_INDEPENDENT_QC_CONFIRMED_PENDING_PUBLICATION"
+      "pr": 3099,
+      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3099",
+      "source_branch": "skill6/reviewed-controls-v103-checkpoint-20261110",
+      "status": "DRAFT_SEVEN_REVIEWED_ADDITIONS_INTEGRATED",
+      "auto_merge": false,
+      "coordination": "Queued behind owned integration #3097; preserve finish-388 lock and reconcile only shared release metadata on actual merged base.",
+      "previous_published_head": "fb45d8842861f9b712e9bb43ec269a11c97c3792"
     },
     "previous_verified_delivery": {
       "status": "MERGED",
@@ -664,19 +750,24 @@
       "native": "Root uses the originating Chrome session for approved private captures. Other sessions own the populated quiz editor, so this continuation does not take it over or duplicate quiz changes. Final installed-script acceptance remains pending."
     },
     "focused_integration": {
-      "checks": "38 focused pipeline/provider/condition/title checks passed in 0.580s; after the actual survey name fix, nine affected survey tests passed in 0.073s.",
-      "dynamic_actions": 61,
-      "bounded_jobs": 74,
-      "independent_source_review": "CONFIRMED for quiz, survey, condition edits, title compatibility and shared routing",
+      "checks": "Native condition compatibility111targetedPASS0.212s; populated survey/property24targetedPASS; integration14changedPythonASTonce, JSON/whitespace and2authoredcompilerexamplesPASS. No optional whole suite or repeated builder tests.",
+      "dynamic_actions": 62,
+      "bounded_jobs": 75,
+      "independent_source_review": "All seven additions CONFIRMED; no blocking defects or tests repeated by reviewers.",
       "optional_whole_suite": "NOT_RUN"
     },
     "continuation_v103": {
-      "independent_source_review": "CONFIRMED for all four final source changes; no blocking defects and no tests repeated by reviewers.",
-      "validation": "Targeted builder checks already passed for all four additions. Integration parsed six changed Python files once and the three survey files once, validated JSON/version/whitespace; no optional whole suite or repeated builder tests.",
+      "independent_source_review": "All seven additions CONFIRMED.",
+      "validation": "Targeted builder checks and independent reviews are retained; integration uses changed-file mechanical checks only. No optional full suite or repeated review.",
       "operation_counts_unchanged": true,
       "survey_continuation": "SOURCE_INTEGRATED_INDEPENDENT_REVIEW_CONFIRMED",
-      "survey_source_commit": "6e580c419f479c4fdf61bc9ea15cbd5a0e8bba64"
-    }
+      "survey_source_commit": "6e580c419f479c4fdf61bc9ea15cbd5a0e8bba64",
+      "new_custom_text_source_commit": "c9d9dd91aad2cffcd566032c50f87de6a008a730",
+      "new_custom_text_review": "CONFIRMED",
+      "dynamic_actions": 62,
+      "bounded_jobs": 75
+    },
+    "native_split_current_prerequisite": "Only the existing synthetic split probe is now bound to the managed sites.convertandflow.com staging domain; capture is in progress. No production funnel was changed and no dedicated native variation/allocation writer is implemented by that observation."
   },
   "operations": [
     {

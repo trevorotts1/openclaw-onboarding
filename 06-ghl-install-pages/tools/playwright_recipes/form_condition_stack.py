@@ -29,7 +29,7 @@ else:
 _ROW_DELETE_PATH='M16 6v-.8c0-1.12 0-1.68-.218-2.108a2 2 0 00-.874-.874C14.48 2 13.92 2 12.8 2h-1.6c-1.12 0-1.68 0-2.108.218a2 2 0 00-.874.874C8 3.52 8 4.08 8 5.2V6M3 6h18m-2 0v11.2c0 1.68 0 2.52-.327 3.162a3 3 0 01-1.311 1.311C16.72 22 15.88 22 14.2 22H9.8c-1.68 0-2.52 0-3.162-.327a3 3 0 01-1.311-1.311C5 19.72 5 18.88 5 17.2V6'
 
 
-def _rules(rules,*,reject_conflicts=True,allow_empty=False):
+def _rules(rules,*,reject_conflicts=True,allow_empty=False,field_bindings=None):
     minimum=0 if allow_empty else 1
     if not isinstance(rules,list) or not minimum<=len(rules)<=50:
         raise Stop('Native condition stacks require '+str(minimum)+' to 50 ordered rules')
@@ -38,7 +38,8 @@ def _rules(rules,*,reject_conflicts=True,allow_empty=False):
         if (not isinstance(rule,dict) or set(rule)-{'match','connectors','clauses','effect','target'}
                 or not {'match','clauses','effect','target'}.issubset(rule)):
             raise Stop('Every condition stack rule needs its complete predicate, effect and one target')
-        valid=group.validate({'action':'native_condition_group',**rule},minimum_clauses=1)
+        valid=group.validate({'action':'native_condition_group',**rule,
+            **({'field_bindings':field_bindings} if field_bindings is not None else {})},minimum_clauses=1)
         identity=(*group._predicate_identity(valid),valid['target'])
         if reject_conflicts and identity in seen:
             raise Stop('Duplicate or conflicting condition predicates for the same target require reconciliation')
@@ -48,12 +49,13 @@ def _rules(rules,*,reject_conflicts=True,allow_empty=False):
 
 
 def validate(step):
-    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules','recreate_order'}
+    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules','recreate_order','field_bindings'}
             or step.get('action','native_condition_stack')!='native_condition_stack'):
         raise Stop('Unsupported native condition stack')
-    value={**deepcopy(step),'rules':_rules(step.get('rules'),allow_empty='expected_rules' in step)}
+    bindings=group.condition_bindings(step) if 'field_bindings' in step else None
+    value={**deepcopy(step),'rules':_rules(step.get('rules'),allow_empty='expected_rules' in step,field_bindings=bindings)}
     if 'expected_rules' in step:
-        value['expected_rules']=_rules(step['expected_rules'],reject_conflicts=False,allow_empty=True)
+        value['expected_rules']=_rules(step['expected_rules'],reject_conflicts=False,allow_empty=True,field_bindings=bindings)
     if 'recreate_order' in step:
         order=step['recreate_order'];expected=value.get('expected_rules')
         if (expected is None or not isinstance(order,list) or len(expected)<2
@@ -70,6 +72,8 @@ def configuration_hash(step):
     binding=({'expected_rules':plan['expected_rules'],'rules':plan['rules']}
              if 'expected_rules' in plan else plan['rules'])
     if 'recreate_order' in plan:binding['recreate_order']=plan['recreate_order']
+    if 'field_bindings' in plan:
+        binding={'rules':binding,'field_bindings':plan['field_bindings']}
     return hashlib.sha256(json.dumps(binding,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
@@ -333,6 +337,7 @@ def configure(page,step):
         dialog=group._one(frame.get_by_role('dialog'),'Native Conditions drawer is missing or ambiguous')
         return dialog
 
+    group._preflight_fields(frame,plan,identity)
     dialog=open_conditions()
     before,wanted=group._inventory(dialog),_expected(plan)
     current=before
@@ -377,6 +382,7 @@ def configure(page,step):
     # therefore fail closed if persistence did not finish or did not succeed.
     reopen_editor(page,'form',name,editor_url)
     frame=form_builder(page)
+    group._preflight_fields(frame,plan,identity)
     dialog=open_conditions()
     if group._inventory(dialog)!=wanted:
         raise Stop('Native condition stack did not persist after independent reopen; do not repeat the write')

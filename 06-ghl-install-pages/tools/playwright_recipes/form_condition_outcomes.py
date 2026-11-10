@@ -52,7 +52,7 @@ def _message(value):
     return value.replace('\r\n','\n').replace('\r','\n').strip()
 
 
-def _rule(value):
+def _rule(value,*,field_bindings=None):
     if not isinstance(value,dict) or not {'match','clauses','effect'}.issubset(value):
         raise Stop('Each native outcome rule requires an explicit complete predicate and effect')
     effect=value['effect']
@@ -60,7 +60,8 @@ def _rule(value):
         raise Stop('Native condition effect was not captured')
     predicate=group.validate({'action':'native_condition_group','match':value['match'],
         'clauses':value['clauses'],'effect':'Hide Field','target':'Phone',
-        **({'connectors':value['connectors']} if 'connectors' in value else {})},minimum_clauses=1)
+        **({'connectors':value['connectors']} if 'connectors' in value else {}),
+        **({'field_bindings':field_bindings} if field_bindings is not None else {})},minimum_clauses=1)
     result={'match':predicate['match'] if len(predicate['clauses'])>1 else 'all',
             'clauses':predicate['clauses'],'effect':effect}
     required={'match','clauses','effect'}
@@ -68,7 +69,8 @@ def _rule(value):
         required.add('connectors');result['connectors']=predicate['connectors']
     if effect in ('Show Field','Hide Field'):
         required.add('target')
-        if not isinstance(value.get('target'),str) or value['target'] not in group.TARGETS:
+        targets=group.TARGETS|{field['label'] for field in (field_bindings or [])}
+        if not isinstance(value.get('target'),str) or value['target'] not in targets:
             raise Stop('Native field outcome requires one captured target')
         result['target']=value['target']
     elif effect==REDIRECT:
@@ -89,13 +91,13 @@ def _rule(value):
     return result
 
 
-def _rules(rules,*,allow_empty=False,reject_conflicts=True):
+def _rules(rules,*,allow_empty=False,reject_conflicts=True,field_bindings=None):
     minimum=0 if allow_empty else 1
     if not isinstance(rules,list) or not minimum<=len(rules)<=50:
         raise Stop('Native conditional outcomes require '+str(minimum)+' to 50 ordered rules')
     normalized=[];seen=set()
     for value in rules:
-        rule=_rule(value)
+        rule=_rule(value,field_bindings=field_bindings)
         # Show/Hide on the same target is one conflict domain. Other native
         # effects are distinct; retain their explicit authored order.
         target=('field',rule['target']) if rule['effect'] in ('Show Field','Hide Field') else ('outcome',rule['effect'])
@@ -167,12 +169,13 @@ def _reconciliation(expected,wanted,source_indices=_NO_MAPPING):
 
 
 def validate(step):
-    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules','source_indices'}
+    if (not isinstance(step,dict) or set(step)-{'id','action','rules','expected_rules','source_indices','field_bindings'}
             or step.get('action','native_condition_outcomes')!='native_condition_outcomes'):
         raise Stop('Unsupported native conditional outcome stack')
-    plan={**deepcopy(step),'rules':_rules(step.get('rules'),allow_empty='expected_rules' in step)}
+    bindings=group.condition_bindings(step) if 'field_bindings' in step else None
+    plan={**deepcopy(step),'rules':_rules(step.get('rules'),allow_empty='expected_rules' in step,field_bindings=bindings)}
     if 'expected_rules' in step:
-        plan['expected_rules']=_rules(step['expected_rules'],allow_empty=True,reject_conflicts=False)
+        plan['expected_rules']=_rules(step['expected_rules'],allow_empty=True,reject_conflicts=False,field_bindings=bindings)
         _reconciliation(plan['expected_rules'],plan['rules'],step.get('source_indices',_NO_MAPPING))
     elif 'source_indices' in step:
         raise Stop('Outcome source_indices requires the complete expected_rules inventory')
@@ -184,6 +187,8 @@ def configuration_hash(step):
     binding=({'expected_rules':plan['expected_rules'],'rules':plan['rules']}
              if 'expected_rules' in plan else plan['rules'])
     if 'source_indices' in plan:binding['source_indices']=plan['source_indices']
+    if 'field_bindings' in plan:
+        binding={'rules':binding,'field_bindings':plan['field_bindings']}
     return hashlib.sha256(json.dumps(binding,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
@@ -214,7 +219,7 @@ def _predicate(card):
     return {'match':'any' if joins and joins[0]=='Or' else 'all','clauses':clauses}
 
 
-def _inventory(dialog):
+def _inventory(dialog,*,field_bindings=None):
     cards=dialog.locator(group.CARD)
     empty=dialog.get_by_text('No existing conditions yet',exact=True)
     if not cards.count():
@@ -248,7 +253,7 @@ def _inventory(dialog):
             elif mode=='SHOW':rule.update(mode=SHOW_MESSAGE,message=text);rich=spans.nth(1).inner_html()
             else:raise Stop('Native disqualification summary mode is unknown')
         else:raise Stop('Unknown existing native outcome requires reconciliation before append')
-        canonical=_rule(rule)
+        canonical=_rule(rule,field_bindings=field_bindings)
         result.append({'rule':canonical,'rich_html_sha256':(
             hashlib.sha256(rich.encode()).hexdigest() if isinstance(rich,str) else None)})
     return result
@@ -320,7 +325,8 @@ def _predicate_modal(modal,rule):
             raise Stop('Native outcome AND/OR connector differs')
 
 
-def _author(frame,dialog,rule,prefix,identity):
+def _author(frame,dialog,rule,prefix,identity,*,inventory=None):
+    inventory=_inventory if inventory is None else inventory
     identity()
     # A redirect summary card repeats the Redirect to URL text. The measured
     # tile lives under the drawer heading, so never use global text matching.
@@ -355,7 +361,7 @@ def _author(frame,dialog,rule,prefix,identity):
     click(save)
     wait_until(lambda:dialog.locator(group.CARD).count()==len(prefix)+1,
                'Native outcome card did not append once')
-    current=_inventory(dialog)
+    current=inventory(dialog)
     if (len(current)!=len(prefix)+1 or current[:-1]!=prefix or current[-1]['rule']!=rule):
         raise Stop('Native outcome append changed a prior card, authored order or outcome value')
     return current
@@ -369,10 +375,11 @@ def _modal_state(frame,modal,rule):
         _effect_value(frame,modal,rule,write=False)
 
 
-def _edit(frame,dialog,index,before_rule,rule,current,identity):
+def _edit(frame,dialog,index,before_rule,rule,current,identity,*,inventory=None):
     """Edit one exact existing outcome while preserving every sibling record."""
+    inventory=_inventory if inventory is None else inventory
     identity()
-    if _inventory(dialog)!=current:
+    if inventory(dialog)!=current:
         raise Stop('Native outcome cards changed immediately before the requested edit')
     cards=dialog.locator(group.CARD)
     if cards.count()!=len(current):raise Stop('Native outcome card count changed before edit')
@@ -430,7 +437,7 @@ def _edit(frame,dialog,index,before_rule,rule,current,identity):
                'Native existing outcome edit modal did not close')
     wait_until(lambda:dialog.locator(group.CARD).count()==len(current),
                'Native existing outcome edit changed the card count')
-    after=_inventory(dialog)
+    after=inventory(dialog)
     if (len(after)!=len(current) or after[:index]!=current[:index] or after[index+1:]!=current[index+1:]
             or after[index]['rule']!=rule):
         raise Stop('Native existing outcome edit changed a sibling, card order or authored value')
@@ -454,8 +461,12 @@ def configure(page,step):
         click(frame.get_by_role('tab',name='Edit',exact=True))
         click(frame.get_by_role('button',name='Open Conditional Logic',exact=True))
         return _one(frame.get_by_role('dialog'),'Native outcome Conditions drawer is ambiguous')
+    bindings=plan.get('field_bindings')
+    inventory=(lambda dialog:_inventory(dialog,field_bindings=bindings)) if bindings is not None else _inventory
+    reader_options={'inventory':inventory} if bindings is not None else {}
+    group._preflight_fields(frame,plan,identity)
     dialog=open_conditions()
-    before=_inventory(dialog);wanted=plan['rules']
+    before=inventory(dialog);wanted=plan['rules']
     current=before
     if 'expected_rules' in plan:
         actual=[record['rule'] for record in before]
@@ -466,22 +477,22 @@ def configure(page,step):
             retained={index for index in indices if index is not None}
             for index in reversed(range(len(before))):
                 if index not in retained:
-                    current=stack._delete_card(frame,dialog,current,identity,index=index,inventory=_inventory)
+                    current=stack._delete_card(frame,dialog,current,identity,index=index,inventory=inventory)
             for index,(previous_index,rule) in enumerate(zip(indices,wanted)):
                 if previous_index is None:
-                    if _inventory(dialog)!=current:
+                    if inventory(dialog)!=current:
                         raise Stop('Native outcome stack changed before an explicit expected-inventory append')
-                    current=_author(frame,dialog,rule,current,identity)
+                    current=_author(frame,dialog,rule,current,identity,**reader_options)
                 elif plan['expected_rules'][previous_index]!=rule:
-                    current=_edit(frame,dialog,index,plan['expected_rules'][previous_index],rule,current,identity)
+                    current=_edit(frame,dialog,index,plan['expected_rules'][previous_index],rule,current,identity,**reader_options)
         if not current:stack._empty_state(dialog)
     else:
         if len(before)>len(wanted) or [record['rule'] for record in before]!=wanted[:len(before)]:
             raise Stop('Existing native outcomes are not the exact authored prefix; reconcile before writing')
         for rule in wanted[len(before):]:
-            if _inventory(dialog)!=current:raise Stop('Native outcome stack changed after full preflight')
-            current=_author(frame,dialog,rule,current,identity)
-    if _inventory(dialog)!=current or [record['rule'] for record in current]!=wanted:
+            if inventory(dialog)!=current:raise Stop('Native outcome stack changed after full preflight')
+            current=_author(frame,dialog,rule,current,identity,**reader_options)
+    if inventory(dialog)!=current or [record['rule'] for record in current]!=wanted:
         raise Stop('Native outcome stack differs before drawer Save')
     identity();click(_one(dialog.locator('#conditional-logic-save-close'),'Native outcome drawer Save changed'))
     dialog.wait_for(state='hidden',timeout=45000)
@@ -490,8 +501,10 @@ def configure(page,step):
         identity();save=_one(frame.get_by_role('button',name='Save',exact=True),'Native outcome outer Save changed')
         click(save);group._wait_for_form_save(page,save)
     reopen_editor(page,'form',name,editor_url)
-    frame=form_builder(page);dialog=open_conditions()
-    if _inventory(dialog)!=current:
+    frame=form_builder(page)
+    group._preflight_fields(frame,plan,identity)
+    dialog=open_conditions()
+    if inventory(dialog)!=current:
         raise Stop('Native outcomes or protected message markup did not persist after independent reopen; do not repeat the write')
     if not current:stack._empty_state(dialog)
     click(_one(dialog.locator('#conditional-logic-save-close'),'Reopened native outcome drawer Save changed'))
