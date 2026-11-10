@@ -2,6 +2,10 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
+## Unreleased - 2026-11-10
+
+- fix(update-interview-state): the internal build kick is never sent to the client's own chat, even when the operator chat setting points there. The send is skipped with a warning and the resume cron drives the build.
+
 ## [Unreleased] - 2026-10-28 - fix(interview): finishing the interview through the script path now sets the Command Center's interview flag
 
 `update-interview-state.sh --complete` now calls `shared-utils/ensure_cc_interview_flag.py` right after it writes `interviewComplete=true`, so `clients.interview_complete` (is_self=1) in the Command Center database follows the build state. Before this only the Command Center interview web page set it, and task ingest read the flag as "not provisioned" and parked every task in General Task. The call is idempotent, never fatal, and never sets the flag when the build state is not exactly true (a refused completion, exit 87, never reaches it). Pinned by R8a/R8b in `scripts/test-interview-completion-evidence-gate.sh`.
