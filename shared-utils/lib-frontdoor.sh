@@ -113,7 +113,7 @@ print("[front-door] stage status: %s" % d.get("status","failed"), file=sys.stder
   esac
 }
 
-# ── 999-setup refresh (every box carries 999) ───────────────────────────────
+# ── 999-setup refresh (Mac boxes only) ──────────────────────────────────────
 # Every roll must leave a CLEAN, current trevorotts1/999-setup checkout and the
 # bundled skills linked to it (NFX001 owner order). Steps:
 #  1. Find every checkout (HOME/999-setup, Documents/999-setup, .claude-nine,
@@ -128,6 +128,12 @@ print("[front-door] stage status: %s" % d.get("status","failed"), file=sys.stder
 #     directory is skipped alone, every other skill is linked; symlinks that
 #     pointed at an untouched copy are repointed. Symlinks only, nothing deleted.
 frontdoor_update_999() {
+  # 999 is for Mac-type boxes only (owner order 2026-11-10). A box that is not a Mac is
+  # skipped; an existing 999 checkout on it is left exactly as found.
+  if [ "$(uname -s 2>/dev/null)" != "Darwin" ] && [ "${FRONTDOOR_999_ALL_PLATFORMS:-0}" != "1" ]; then
+    echo "[front-door] 999-setup: not a Mac — skipped (999 is Mac-only)"
+    return 0
+  fi
   local _home canon cand real repo="" origin before after pull_out
   local _seen=" " _fail=0 _untouched="" _ffs _ffrc
   _home="$HOME"
