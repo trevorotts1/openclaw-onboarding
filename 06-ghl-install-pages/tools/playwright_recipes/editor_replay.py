@@ -15,6 +15,7 @@ else:
 
 
 STATUSES = {
+    'survey_submission': {'SURVEY_SUBMISSION_SAVED_AND_REOPENED'},
     'native_survey_widget_fields': {'SURVEY_WIDGET_FIELDS_SAVED_AND_REOPENED'},
     'native_split_variant': {'SPLIT_VARIANT_SAVED_AND_REOPENED', 'SPLIT_VARIANT_REUSED_AND_REOPENED'},
     'native_address_parent': {'ADDRESS_PARENT_SAVED_AND_REOPENED'},
@@ -73,6 +74,7 @@ STATUSES = {
     'native_checkout_ui': {'NATIVE_CHECKOUT_UI_READBACK_VERIFIED'},
 }
 REQUIRED = {
+    'survey_submission': ('mode','editor_url','value_sha256','conditional_precedence_present','conditional_precedence_acknowledged','independent_readback','behavior_verified','submission_verified'),
     'native_survey_widget_fields': ('editor_url','configuration_sha256','widget_fields','saved_snapshot','independent_readback','behavior_verified','submission_verified'),
     'native_split_variant': ('editor_url','configuration_sha256','control_page_id','variant_page_id','control_traffic','variant_traffic','active','created','independent_readback','functional_verified'),
     'native_survey_multiline_configuration': ('editor_url','configuration_sha256','multiline_questions','independent_readback','behavior_verified','submission_verified'),
@@ -197,6 +199,9 @@ def _operation(value):
 
 def _result(step, value, job):
     action = step['action']
+    if action == 'survey_submission':
+        from playwright_recipes.form_submission import validate_completion
+        return validate_completion(value,step,job['start_url'])
     if action == 'native_survey_widget_fields':
         from playwright_recipes.survey_widget_families import validate_receipt
         if any(step['payload'][key]!=job[key] for key in ('location_id','location_name','start_url')):_fail()

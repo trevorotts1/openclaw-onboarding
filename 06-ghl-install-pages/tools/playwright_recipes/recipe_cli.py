@@ -129,7 +129,9 @@ def compile_recipe(operation, data):
             add('quiz_results', result_page=result_page)
     elif operation=='surveys.configure':
         config = data['configuration']
-        if 'widget_fields' in config:
+        if 'submission' in config:
+            add('survey_submission',**config['submission'])
+        elif 'widget_fields' in config:
             add('native_survey_widget_fields',payload={**{key:data[key] for key in ('location_id','location_name','start_url')},**config})
         elif 'multiline_questions' in config:
             add('native_survey_multiline_configuration',payload={
