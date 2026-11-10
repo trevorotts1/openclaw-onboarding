@@ -334,7 +334,7 @@ Create `01_likeness/identity_bible.md` recording immutable facial characteristic
 
 The templates below are **scaffolds**. Each `[BRACKET]` is filled from the identity bible, and the prompt is then expanded with the subject's specific, non-repeating identity detail until it clears the rule 12 floor. Padding by repeating one paragraph is caught by the distinct-words density floor in the probe.
 
-### GPT Image 2 reference prompt template (expand to ≥ 5,000 stripped chars)
+### GPT Image 2 reference prompt template (expand to the rule 12 floor: 16,000 stripped chars at the 20,000 cap)
 
 ```text
 Use the supplied authorized reference images as the IDENTITY SOURCE and treat
@@ -859,7 +859,7 @@ The v1.0 standard config is preserved (9:16 1080×1920 24fps libx264 crf 18/20 y
 
 # 32. Common Mistakes This SOP Prevents
 
-(Preserved, plus v2.0 additions:) Do not send a likeness/reference image prompt under 5,000 stripped chars; do not hardcode an API key or voice ID anywhere; do not route the job outside the `video` department card; do not swap a provider without recording the substitution and re-running downstream QC; do not retry lip-sync past the budget on a bad source.
+(Preserved, plus v2.0 additions:) Do not send a likeness/reference image prompt under the rule 12 floor (80% of the model cap); do not hardcode an API key or voice ID anywhere; do not route the job outside the `video` department card; do not swap a provider without recording the substitution and re-running downstream QC; do not retry lip-sync past the budget on a bad source.
 
 ---
 

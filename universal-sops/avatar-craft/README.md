@@ -79,7 +79,7 @@ is exactly one source of truth.
   separate Avatar Alchemist Book skill (53) or PARKS fail-closed `book-skill-not-available`
   (`AF-AV-BOOK-SKILL-MISSING`) — it is NEVER served by the brand pipeline.
 - **Measured counts (self-report ignored):** exactly 39 image prompts / top-39 (3x13) (`AF-AV-COUNT-39`);
-  12 + 12 + 12 headlines (`AF-AV-COUNT-HEADLINE`); 10 ads per set (`AF-AV-ADCOUNT`); the 5,000-19,000
+  12 + 12 + 12 headlines (`AF-AV-COUNT-HEADLINE`); 10 ads per set (`AF-AV-ADCOUNT`); the 16,000-20,000 (KIE prompt rule 12)
   stripped-char image-prompt band (`AF-AV-IMG-BAND`); no repeated artist/photographer token
   (`AF-AV-UNIQUE-ARTIST`); the 13 restored ad-set categories (`AF-AV-ADSET-CAT`); bot-doc structure
   (`AF-AV-BOTDOC`); the 12-section hero page (`AF-AV-HERO-12`); per-artifact stripped-word floors

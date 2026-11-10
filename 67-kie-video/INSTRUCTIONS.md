@@ -103,7 +103,7 @@ Validate prompt against model caps:
 
   python3 scripts/validate_prompt.py "<prompt text>" --model "<canonical_model_id>"
 
-- Verified ≥20K (Rule A): 5,000–19,000 house band (target ~9,000).
+- Verified ≥20K (Rule A): KIE prompt rule 12 budget, 95-100% of the verified maximum, never below 80% (for a 20,000 cap: floor 16,000, target 19,000 to 20,000).
 - Verified 5K–19,999 (Rule B): conservative ceiling below cap (MiniMax ~6,500, PixVerse/Wan2.7 ~4,500).
 - Verified <5K (Rule C): high-density compression (Kling Omni ~2,800, Kling 2.5 ~2,200).
 - NOT_PUBLISHED / LIVE_PROBE_REQUIRED (Rule E): soft-pass with proposed band.

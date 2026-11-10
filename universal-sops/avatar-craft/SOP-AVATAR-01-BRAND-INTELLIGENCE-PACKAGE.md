@@ -70,7 +70,7 @@ is never trusted.
 | P-AV-COUNT | `AF-AV-COUNT-39` | image-prompt / top-39 artifact carries exactly 39 numbered items (3x13). |
 | P-AV-COUNT | `AF-AV-COUNT-HEADLINE` | the headline doc is 12 headlines + 12 short-form + 12 long-form. |
 | P-AV-COUNT | `AF-AV-ADCOUNT` | each ad set carries exactly 10 ads. |
-| P-AV-IMG-BAND | `AF-AV-IMG-BAND` | image-prompt artifact within the 5,000-19,000 stripped-char band. |
+| P-AV-IMG-BAND | `AF-AV-IMG-BAND` | image-prompt artifact within the 16,000-20,000 stripped-char band (KIE prompt rule 12). |
 | P-AV-IMG-BAND | `AF-AV-UNIQUE-ARTIST` | no repeated artist/photographer/producer token across image prompts. |
 | P-AV-ADSET-CAT | `AF-AV-ADSET-CAT` | each ad-set artifact matches its restored R4 category signature (no "category 2" drift). |
 | P-AV-BOTDOC | `AF-AV-BOTDOC` | each bot doc carries the H1 skeleton / XML labels / merge-tag rules. |
