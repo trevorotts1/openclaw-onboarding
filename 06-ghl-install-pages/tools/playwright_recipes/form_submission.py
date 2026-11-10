@@ -56,15 +56,15 @@ def configure(page, step):
     """Read precedence first, then write, save and independently reopen values."""
     if __package__:
         from .skill6_playwright import click, fill, visible, form_builder, wait_until, Stop
-        from .assessments import reopen_editor
+        from .assessments import reopen_editor, read_editor_title
     else:
         from skill6_playwright import click, fill, visible, form_builder, wait_until, Stop
-        from assessments import reopen_editor
+        from assessments import reopen_editor, read_editor_title
     step = validate(step)
     frame = form_builder(page)
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
-    form_name, editor_url = title.input_value(), page.url
+    form_name, editor_url = read_editor_title(title), page.url
     parsed = urlsplit(editor_url)
     if parsed.scheme != 'https' or parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment or not re.fullmatch(r'/v2/location/[A-Za-z0-9_-]+/form-builder-v2/[A-Za-z0-9_-]+/?', parsed.path):
         raise Stop('Native form editor identity is not a captured exact HTTPS route')

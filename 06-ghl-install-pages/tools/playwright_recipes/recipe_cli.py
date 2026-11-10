@@ -131,6 +131,12 @@ def compile_recipe(operation, data):
         add('native_checkout_ui', payload=data)
     elif operation in ('checkout.configure_native','checkout.one_click_upsell') and data.get('adapter_capture'):
         add('native_checkout', payload=data)
+    elif operation=='quizzes.create' and 'configuration' in data:
+        from playwright_recipes.quiz_creation import payload_from_inputs
+        add('native_quiz_creation',payload=payload_from_inputs(data))
+    elif operation=='surveys.create' and 'question_batches' in data:
+        from playwright_recipes.survey_creation import payload_from_inputs
+        add('native_survey_creation',payload=payload_from_inputs(data))
     elif operation=='surveys.create' and 'radio_questions' in data:
         from playwright_recipes.survey_radio_creation import payload_from_inputs
         add('native_survey_radio_creation',payload=payload_from_inputs(data))

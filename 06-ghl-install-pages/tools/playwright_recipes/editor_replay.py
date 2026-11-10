@@ -17,6 +17,8 @@ else:
 STATUSES = {
     'quiz_picture_choices': {'QUIZ_PICTURE_CHOICES_SAVED_AND_REOPENED'},
     'native_survey_radio_creation': {'SURVEY_RADIO_SAVED_AND_REOPENED'},
+    'native_quiz_creation': {'QUIZ_CREATED_SAVED_AND_REOPENED'},
+    'native_survey_creation': {'SURVEY_CREATED_SAVED_AND_REOPENED'},
     'html': {'RENDERED'}, 'seo': {'SEO_RENDERED'}, 'checkout': {'COMPONENT_SAVED'},
     'form': {'SAVED_AND_REOPENED'}, 'form_css': {'FORM_CSS_RENDERED'},
     'native_form_css': {'NATIVE_FORM_CSS_SAVED_AND_REOPENED'},
@@ -65,6 +67,8 @@ STATUSES = {
 }
 REQUIRED = {
     'quiz_picture_choices': ('kind','editor_url','configuration_sha256','question_count','target_page','independent_readback','dependency_api_used','behavior_verified','submission_verified','field_id','persisted_unique_key','image_urls_sha256'),
+    'native_quiz_creation': ('location_id','editor_url','configuration_sha256','shell_binding','question_receipts','configuration_receipts','question_count','scored_question_count','independent_readback','behavior_verified','submission_verified'),
+    'native_survey_creation': ('location_id','editor_url','configuration_sha256','shell_binding','question_batches','saved_inventory','independent_readback','behavior_verified','submission_verified'),
     'native_survey_radio_creation': ('location_id','editor_url','configuration_sha256','shell_binding','api_fields','native_receipt','independent_readback','behavior_verified','submission_verified'),
     'navigate': ('area',), 'container': ('container_url', 'name'), 'page': ('editor_url',),
     'html': ('editor_url', 'html_sha256'), 'seo': ('canonical',),
@@ -183,7 +187,11 @@ def _result(step, value, job):
         from playwright_recipes.quiz_picture_questions import validate_receipt
         if any(step['payload'][key] != job[key] for key in ('location_id','location_name','start_url')):_fail()
         return validate_receipt(value,step)
-    if action == 'native_survey_radio_creation':
+    if action == 'native_quiz_creation':
+        from playwright_recipes.quiz_creation import validate_receipt
+        if any(step['payload'][key]!=job[key] for key in ('location_id','location_name','start_url')):_fail()
+        return validate_receipt(value,step)
+    if action in ('native_survey_radio_creation','native_survey_creation'):
         from playwright_recipes.survey_radio_creation import validate_receipt
         if any(step['payload'][key]!=job[key] for key in ('location_id','location_name','start_url')):_fail()
         return validate_receipt(value,step)

@@ -141,7 +141,7 @@ def validate_job(job, base):
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_course_theme", "native_course_blocks", "native_course_text_blocks", "native_course_section_media", "native_course_image_blocks", "native_course_theme_media", "native_course_block_media", "native_fields", "native_field_placement", "native_address_fields", "native_form_consent", "native_object_fields", "native_contact_field_chain", "native_survey_radio_creation", "native_dropdown_fields", "native_large_text_fields", "quiz_short_answers", "quiz_multiple_choices", "quiz_written_answers", "quiz_picture_choices", "native_survey_object_fields", "native_condition", "native_condition_group", "native_condition_stack", "native_condition_outcomes", "quiz_configuration", "quiz_results", "survey_configuration", "survey_rule_stack", "form", "form_css", "native_form_css", "native_form_schedule", "native_form_tracking", "native_form_embed", "native_order_confirmation", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "community_access", "community_courses", "community_event_room", "community_branding", "assessment", "meeting", "meeting_cohosts", "native_dynamic_meeting_location", "options"}
+    allowed = {"navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_course_theme", "native_course_blocks", "native_course_text_blocks", "native_course_section_media", "native_course_image_blocks", "native_course_theme_media", "native_course_block_media", "native_fields", "native_field_placement", "native_address_fields", "native_form_consent", "native_object_fields", "native_contact_field_chain", "native_survey_radio_creation", "native_quiz_creation", "native_survey_creation", "native_dropdown_fields", "native_large_text_fields", "quiz_short_answers", "quiz_multiple_choices", "quiz_written_answers", "quiz_picture_choices", "native_survey_object_fields", "native_condition", "native_condition_group", "native_condition_stack", "native_condition_outcomes", "quiz_configuration", "quiz_results", "survey_configuration", "survey_rule_stack", "form", "form_css", "native_form_css", "native_form_schedule", "native_form_tracking", "native_form_embed", "native_order_confirmation", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "community_access", "community_courses", "community_event_room", "community_branding", "assessment", "meeting", "meeting_cohosts", "native_dynamic_meeting_location", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -163,7 +163,12 @@ def validate_job(job, base):
         if s['action']=='native_form_consent':
             from playwright_recipes.forms_advanced import validate_consent
             validate_consent(s)
-        if s['action']=='native_survey_radio_creation':
+        if s['action']=='native_quiz_creation':
+            from playwright_recipes.quiz_creation import validate
+            payload=validate(s)
+            if len(prepared['steps'])!=1 or any(payload[key]!=job[key] for key in ('location_id','location_name','start_url')):
+                raise Stop('Quiz creation requires its own exact same-location list job')
+        if s['action'] in ('native_survey_radio_creation','native_survey_creation'):
             from playwright_recipes.survey_radio_creation import validate
             payload=validate(s)
             if len(prepared['steps'])!=1 or any(payload[key]!=job[key] for key in ('location_id','location_name','start_url')):
@@ -416,6 +421,8 @@ def validate_job(job, base):
                 raise Stop("Custom fields use the existing Skill 6 builder after Skill 44 creates dependencies")
         if s["action"] == "assessment":
             s["name"] = zhc(s.get("name"))
+            if 'require_new' in s and s['require_new'] is not True:
+                raise Stop('An explicit require_new assessment guard must be true')
             if s.get("kind") not in ("survey", "quiz"):
                 raise Stop("assessment kind must be survey or quiz")
             if not isinstance(s.get('standard_fields',[]),list) or any(q not in ("Email", "First Name", "Last Name", "Full Name", "Phone") for q in s.get("standard_fields", [])):
@@ -1127,6 +1134,8 @@ def assessment(page, step):
     cell = exact_search(page,area.lower(),step['name']) if search.count() else None
     reused=cell is not None
     if reused:
+        if step.get('require_new'):
+            raise Stop('New assessment creation refuses an existing exact-name owner')
         if step.get('standard_fields'):
             raise Stop('Existing assessment must be inventoried for requested fields; refusing an unverified reuse')
         click(cell.get_by_text(step['name'],exact=True))
@@ -1690,7 +1699,7 @@ def run_on_page(page, job, evidence_root, *, contact_field_capability=None, radi
             raise Stop('Editor recovery handoff has no journal; reconciliation required before execution')
         arguments = ({'contact_field_capability':contact_field_capability}
             if any(step['action'] == 'native_contact_field_chain' for step in job.get('steps', [])) else {})
-        if any(step['action']=='native_survey_radio_creation' for step in job.get('steps', [])):
+        if any(step['action'] in ('native_survey_radio_creation','native_survey_creation') for step in job.get('steps', [])):
             arguments['radio_field_capability']=radio_field_capability
         return _run_on_page(page, job, root, **arguments)
     finally:
@@ -1719,7 +1728,7 @@ def _run_on_page(page, job, evidence_root, *, contact_field_capability=None, rad
         replay = completed_editor_replay(state_path, job, fingerprint)
         assert_tenant(page, job)
         return replay
-    if any(step['action']=='native_survey_radio_creation' for step in job.get('steps', [])):
+    if any(step['action'] in ('native_survey_radio_creation','native_survey_creation') for step in job.get('steps', [])):
         from playwright_recipes.survey_radio_creation import validate_runtime
         validate_runtime(job,radio_field_capability)
     if any(step['action'] == 'native_contact_field_chain' for step in job.get('steps', [])):
@@ -1749,9 +1758,15 @@ def _run_on_page(page, job, evidence_root, *, contact_field_capability=None, rad
                     raise Stop('Recorded options identity differs from its parent job')
                 result = options(page, {**step, '_context':context})
                 fresh_container = None
-            elif step['action']=='native_survey_radio_creation':
+            elif step['action']=='native_quiz_creation':
+                from playwright_recipes.quiz_creation import configure
+                chain_root=root/'quiz-creation'
+                if chain_root.is_symlink():raise Stop('Quiz creation evidence directory is a symlink')
+                result=configure(page,step,chain_root)
+                fresh_container=None
+            elif step['action'] in ('native_survey_radio_creation','native_survey_creation'):
                 from playwright_recipes.survey_radio_creation import configure
-                chain_root=root/'survey-radio-creation'
+                chain_root=root/('survey-creation' if step['action']=='native_survey_creation' else 'survey-radio-creation')
                 if chain_root.is_symlink():raise Stop('Survey creation evidence directory is a symlink')
                 result=configure(page,step,chain_root,capability=radio_field_capability)
                 fresh_container=None
@@ -1769,7 +1784,7 @@ def _run_on_page(page, job, evidence_root, *, contact_field_capability=None, rad
                     else None)
             if not isinstance(result, dict):
                 raise Stop('Handler returned no structured outcome')
-            if step['action'] in ('native_survey_radio_creation','native_contact_field_chain','native_dropdown_fields','native_large_text_fields',
+            if step['action'] in ('native_quiz_creation','native_survey_creation','native_survey_radio_creation','native_contact_field_chain','native_dropdown_fields','native_large_text_fields',
                     'quiz_short_answers','quiz_multiple_choices','quiz_written_answers','quiz_picture_choices',
                     'native_condition_stack','native_condition_outcomes',
                     'native_order_confirmation','native_course_blocks','native_course_theme_media','native_course_block_media','native_course_text_blocks','native_course_section_media','native_course_image_blocks') or (
@@ -1781,7 +1796,7 @@ def _run_on_page(page, job, evidence_root, *, contact_field_capability=None, rad
                 result = _result(step, result, job)
             status = result.get('status')
             completed = {
-                'CONTACT_FIELDS_SAVED_AND_REOPENED', 'SURVEY_RADIO_SAVED_AND_REOPENED',
+                'CONTACT_FIELDS_SAVED_AND_REOPENED', 'SURVEY_RADIO_SAVED_AND_REOPENED', 'QUIZ_CREATED_SAVED_AND_REOPENED', 'SURVEY_CREATED_SAVED_AND_REOPENED',
                 'RENDERED', 'SEO_RENDERED', 'COMPONENT_SAVED', 'SAVED_AND_REOPENED',
                 'FORM_CSS_RENDERED', 'NATIVE_FORM_CSS_SAVED_AND_REOPENED', 'FORM_SETTINGS_PERSISTED',
                 'FORM_SCHEDULE_SAVED_AND_REOPENED', 'COURSE_THEME_SAVED_AND_REOPENED',
@@ -1852,7 +1867,7 @@ def execute(job, root, *, contact_field_capability=None, radio_field_capability=
     elif any(step['action'] == 'native_contact_field_chain' for step in job.get('steps', [])):
         from playwright_recipes.contact_field_frontdoor import validate_runtime
         validate_runtime(job, contact_field_capability)
-    if any(step['action']=='native_survey_radio_creation' for step in job.get('steps', [])):
+    if any(step['action'] in ('native_survey_radio_creation','native_survey_creation') for step in job.get('steps', [])):
         if journal_present(state_path):return replay
         from playwright_recipes.survey_radio_creation import validate_runtime
         validate_runtime(job,radio_field_capability)
@@ -1889,7 +1904,7 @@ def execute(job, root, *, contact_field_capability=None, radio_field_capability=
                 managed.assert_alive()
                 arguments = ({'contact_field_capability':contact_field_capability}
                     if any(step['action'] == 'native_contact_field_chain' for step in job.get('steps', [])) else {})
-                if any(step['action']=='native_survey_radio_creation' for step in job.get('steps', [])):
+                if any(step['action'] in ('native_survey_radio_creation','native_survey_creation') for step in job.get('steps', [])):
                     arguments['radio_field_capability']=radio_field_capability
                 return run_on_page(page,job,root,**arguments)
         finally:
@@ -1914,7 +1929,7 @@ def execute(job, root, *, contact_field_capability=None, radio_field_capability=
                 raise Stop("Exactly one existing tab must match start_url")
             arguments = ({'contact_field_capability':contact_field_capability}
                 if any(step['action'] == 'native_contact_field_chain' for step in job.get('steps', [])) else {})
-            if any(step['action']=='native_survey_radio_creation' for step in job.get('steps', [])):
+            if any(step['action'] in ('native_survey_radio_creation','native_survey_creation') for step in job.get('steps', [])):
                 arguments['radio_field_capability']=radio_field_capability
             return run_on_page(pages[0], job, root, **arguments)
             # Exiting Playwright detaches this client; do not browser.close() a host-owned session.

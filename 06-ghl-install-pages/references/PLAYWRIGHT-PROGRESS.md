@@ -1,38 +1,43 @@
-# Current build recovery - November 9, 2026
+# Current build recovery - November 10, 2026
 
-Skill 6 v27.1.100 is delivered through [batch #3085](https://github.com/trevorotts1/openclaw-onboarding/pull/3085),
-merge commit `dd9e52592d52db6037d845ce5cd5d02326b15f99`. This lands unit #3078:
-survey shell/Radio creation, mixed quiz questions and fixed-three Picture Choice.
-The exact batch head completed 45 successful checks and two expected skips.
-Earlier batches #3059, #3053 and #3042 remain delivered.
+Skill 6 v27.1.101 is delivered through [batch #3090](https://github.com/trevorotts1/openclaw-onboarding/pull/3090),
+merge commit `83d44056f9620b60292872cbcff4f5f6423f9ffd`. This lands unit #3087:
+mixed Picture Choice batches, multiple standard-field survey slides and
+inventoried condition-outcome removal. Earlier #3085 delivers v27.1.100.
 
-The v27.1.101 source adds three independently reviewed capabilities:
+The v27.1.102 source adds four independently reviewed capabilities:
 
-1. Picture Choice within mixed quiz batches, preserving its persisted media,
-   Unique Key and full prior inventory through the other captured writers.
-2. One to four standard-field survey slides, with an explicit chosen slide for
-   authored Radio placement and complete untouched-slide preservation.
-3. Removal of fully inventoried form condition outcomes, including middle cards
-   and clear-all, preserving retained order and rich-message content.
+1. One new-quiz job composes the captured empty shell, ordered questions, scoring
+   and result copy. It binds the generated editor after a saved independent reopen,
+   then keeps question/configuration journals and exact aggregate receipts.
+2. New surveys can start with positively empty slides without forced contact
+   fields. Ordered Radio batches can target several slides, after a complete
+   read-only dependency preflight. Full saved slide/field/query inventories bind
+   the final independently reopened survey.
+3. Existing Redirect, custom-message and disqualification cards support captured
+   edits, predicate count changes and explicit retained-source ordinals. Rich
+   siblings and original order stay protected through removal/edit/tail append.
+4. Form, survey and quiz writers read the actual contenteditable Form Name while
+   retaining old input titles. Survey shell names use the maintained compiler rule.
 
-These changes have focused source checks and independent review. Publication
-and merge delivery are recorded separately in `PLAYWRIGHT-BUILD-STATUS.json`.
-Native installed Python execution and behavioral acceptance remain pending.
+These changes passed focused integration checks and independent source review.
+The shared provider matrix includes all 61 dynamic actions and 74 bounded jobs.
+No optional complete local suite was rerun. Installed native-script execution,
+respondent behavior and other final acceptance remain pending.
 
-The full operation audit still identifies 21 built, 11 partial and one generic
-operation across 33 named operations. Twelve operation areas retain missing code;
-these operation groups are not counts of Python files or a feature-weighted percent.
-Fourteen additions were delivered after the original audit; three more are built
-in the current source. Neither count means all twelve areas are complete.
+Current count: **33 operation groups, 21 BUILT, 11 PARTIAL, 1 GENERIC_ONLY**.
+Twelve operation areas still need code. These are operation groups, not Python
+file counts or a feature-weighted percentage. Seventeen bounded additions have
+been delivered since the frozen audit; four more are built in this source.
 
 | Operation | Remaining executable scope |
 | --- | --- |
 | `funnels.split_variant` | Native variation creation/reuse and traffic allocation/readback. |
-| `forms.configure` | Remaining widgets/properties, Address controls, Dropdown creation and embed controls. |
-| `forms.conditions` | Reordering/nested groups, broader identities and existing outcome edits. Inventoried outcome removal is now built. |
-| `surveys.create` | Additional question types, multiple Radio target slides and complete survey flows. |
+| `forms.configure` | Remaining widgets/properties, Address parent controls, Dropdown creation and embed controls. |
+| `forms.conditions` | Card reordering, nested groups and broader field identities. Existing outcome edits/count changes are now built. |
+| `surveys.create` | Non-Radio widget/property authoring, requested Required/Hidden/media controls and broader complete flows. |
 | `surveys.configure` | Additional question controls, compound predicates and completion/rule lifecycle. |
-| `quizzes.create` | Picture Choice creation chain, populated-page append and complete scoring/results flow. |
+| `quizzes.create` | Reliable populated-page append. The captured new-shell question/scoring/result pipeline is now built. |
 | `quizzes.configure` | Picture option/style/upload controls, populated-page append, Jump To, tier lifecycle and result media/styles. |
 | `courses.configure_ui` | Video lifecycle, image removal and uncaptured controls. |
 | `communities.configure` | Authoritative first-course empty state, non-Private modes and portal parity/reuse. |
@@ -42,19 +47,21 @@ in the current source. Neither count means all twelve areas are complete.
 
 ## Execution policy for finishing quickly
 
-Build independent features in parallel. Run only focused new/changed checks,
-then one independent source review. Repeat a check only for a new change or an
-actual failure. Preserve required repository checks and the existing merge
-coordinator. Do not rerun the optional complete local suite or rebuild landed work.
-Do not wait for one merge to finish before building the next independent feature.
+Build independent operation owners in parallel. Run focused changed checks once,
+then one independent source review. Repeat only affected checks after a real
+change or failure. Preserve required repository checks and the existing merge
+coordinator. Do not rerun the optional full suite or rebuild delivered work.
 
-The private Convert and Flow origin was denied by automatic approval review for
-this request. Remaining native capture is blocked until explicitly authorized;
-do not recreate that access through another browser, API or credential path.
-No native acceptance is claimed for the source changes above.
+The user explicitly approved private test captures and the reviewed CI authority
+repair. The empty quiz and two-slide blank survey were saved and reopened. The
+originating browser connection then became unavailable; further captures and the
+fresh real authority mint require that connection to resume. Approval remains
+active. Keep production co-host assignments unchanged when no safe empty fixture
+exists. No alternate access or credential path is substituted.
 
-See `tools/playwright_recipes/examples/survey-radio-creation.md`,
-`quiz-picture-choice.md` and `form-condition-outcome-removal.md` for inputs.
+Use `tools/playwright_recipes/examples/owned-assessment-creation.md` with the
+new-quiz and new-survey examples. Current publication/delivery is recorded in
+`PLAYWRIGHT-BUILD-STATUS.json` and the persistent recovery file.
 
 ---
 

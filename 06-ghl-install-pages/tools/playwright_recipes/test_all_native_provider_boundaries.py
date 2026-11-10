@@ -25,6 +25,10 @@ def native_cases(root):
  for k in ('short','choice','radio','yes_no','quiz_dropdown','quiz_multi','written'):
   from test_fourth_control_integration import request
   o,d,_=request(k);yield 'quiz_'+k,o,d
+ from test_quiz_creation import inputs as marketing_quiz
+ yield 'marketing_quiz_creation','quizzes.create',marketing_quiz()
+ from test_survey_creation import inputs as whole_survey
+ yield 'whole_survey_creation','surveys.create',whole_survey()
  from test_survey_radio_creation import inputs as survey_radio
  yield 'survey_radio_creation','surveys.create',survey_radio()
  from test_quiz_picture_questions import request as picture_choice
@@ -120,8 +124,8 @@ class CompleteNativeProviderBoundaries(unittest.TestCase):
                     and node.func.id=='add' and node.args):
                 named |= literal_action(node.args[0])
         self.assertTrue(named <= covered,named-covered)
-        self.assertEqual(len(covered),59,'Update the bounded fixtures for newly added dynamic compiler actions')
-        self.assertEqual(len(rows),72)
+        self.assertEqual(len(covered),61,'Update the bounded fixtures for newly added dynamic compiler actions')
+        self.assertEqual(len(rows),74)
 
     def test_no_current_native_job_delegates_to_status_only_api_or_extension_callback(self):
         with tempfile.TemporaryDirectory() as directory:

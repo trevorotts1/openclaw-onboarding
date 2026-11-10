@@ -12,10 +12,12 @@ import re
 from urllib.parse import urlsplit
 
 if __package__:
+    from .assessments import read_editor_title
     from . import contact_field_dependencies as dependencies,dropdown_fields,large_text_fields
     from .evidence_lease import guard_delivery,journal_present,read_journal
     from .skill6_playwright import Stop,assert_tenant,click,secure_json
 else:
+    from assessments import read_editor_title
     import contact_field_dependencies as dependencies
     import dropdown_fields,large_text_fields
     from evidence_lease import guard_delivery,journal_present,read_journal
@@ -93,7 +95,7 @@ def build_form_fields(inputs,evidence_root,*,page,capability,transport=None):
     if page.url!=plan['start_url']:raise Stop('Contact form chain must start on its exact editor URL')
     assert_tenant(page,plan);frame=form_builder(page)
     title=frame.get_by_role('textbox',name='Form Name',exact=True);title.wait_for(state='visible',timeout=45000)
-    if title.count()!=1 or title.input_value()!=plan['expected_form_name']:
+    if title.count()!=1 or read_editor_title(title)!=plan['expected_form_name']:
         raise Stop('Contact form chain cannot prove its exact existing form name')
     _close_object_drawer(frame,'form');click(frame.get_by_role('tab',name='Edit',exact=True))
     canvas=frame.locator('#form-builder-container')
@@ -105,7 +107,7 @@ def build_form_fields(inputs,evidence_root,*,page,capability,transport=None):
         raise Stop('Contact form chain owner inventory is missing or malformed')
     secure_json(binding_path,binding)
     prepared=dependencies._provision({key:plan[key] for key in ('location_id','fields')},root,capability=capability,transport=transport)
-    if page.url!=plan['start_url'] or title.count()!=1 or title.input_value()!=plan['expected_form_name']:
+    if page.url!=plan['start_url'] or title.count()!=1 or read_editor_title(title)!=plan['expected_form_name']:
         raise Stop('Contact form editor changed while API dependencies were prepared')
     assert_tenant(page,plan)
     if _canvas_identity(canvas)!=before:raise Stop('Contact form owner fields changed during API preparation')

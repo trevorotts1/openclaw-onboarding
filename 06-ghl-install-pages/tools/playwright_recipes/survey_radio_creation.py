@@ -14,7 +14,7 @@ import re
 from urllib.parse import urlsplit
 
 from playwright_recipes import radio_dependencies as radio, survey_fields
-from playwright_recipes.assessments import reopen_editor, STANDARD_FIELDS
+from playwright_recipes.assessments import reopen_editor, STANDARD_FIELDS, read_editor_title
 from playwright_recipes.evidence_lease import journal_present, read_journal
 from playwright_recipes.skill6_playwright import Stop, assert_tenant, secure_json
 
@@ -56,6 +56,9 @@ def payload_from_inputs(data):
 
 
 def validate(step):
+    if isinstance(step,dict) and step.get('action')=='native_survey_creation':
+        from playwright_recipes.survey_creation import validate as whole_validate
+        return whole_validate(step)
     if not isinstance(step,dict) or set(step)-{'id','action','payload'} or step.get('action',ACTION)!=ACTION:
         raise Stop('Unsupported survey Radio creation action')
     return validate_inputs(step.get('payload'))
@@ -66,6 +69,9 @@ def configuration_hash(plan):
 
 
 def validate_runtime(job,capability):
+    if any(step.get('action')=='native_survey_creation' for step in job.get('steps',[]) if isinstance(step,dict)):
+        from playwright_recipes.survey_creation import validate_runtime as whole_runtime
+        return whole_runtime(job,capability)
     steps=job.get('steps')
     if not isinstance(steps,list) or len(steps)!=1:
         raise Stop('Survey Radio creation requires its own independently journaled job')
@@ -141,7 +147,7 @@ def _shell(page,plan,editor_url):
     frame=page.frame_locator('iframe[name="survey-builder-app"]')
     title=frame.get_by_role('textbox',name='Form Name',exact=True)
     title.wait_for(state='visible',timeout=45000)
-    if title.count()!=1 or title.input_value()!=plan['name']:raise Stop('Created survey name differs from its authored name')
+    if title.count()!=1 or read_editor_title(title)!=plan['name']:raise Stop('Created survey name differs from its authored name')
     survey_fields._close_initial(frame)
     click(frame.get_by_role('tab',name='Edit',exact=True))
     slides=frame.locator('.survey-form-container')
@@ -192,7 +198,7 @@ def _untouched_slides(page,plan,binding):
     frame=page.frame_locator('iframe[name="survey-builder-app"]')
     title=frame.get_by_role('textbox',name='Form Name',exact=True)
     title.wait_for(state='visible',timeout=45000)
-    if title.count()!=1 or title.input_value()!=plan['name']:raise Stop('Survey name changed after Radio placement')
+    if title.count()!=1 or read_editor_title(title)!=plan['name']:raise Stop('Survey name changed after Radio placement')
     survey_fields._close_initial(frame)
     click(frame.get_by_role('tab',name='Edit',exact=True))
     slides=frame.locator('.survey-form-container')
@@ -213,6 +219,9 @@ def _untouched_slides(page,plan,binding):
 
 
 def validate_receipt(value,step):
+    if isinstance(step,dict) and step.get('action')=='native_survey_creation':
+        from playwright_recipes.survey_creation import validate_receipt as whole_receipt
+        return whole_receipt(value,step)
     from playwright_recipes.editor_replay import _result
     plan=validate(step)
     keys={'status','location_id','editor_url','configuration_sha256','shell_binding','api_fields',
@@ -248,6 +257,9 @@ def validate_receipt(value,step):
 
 
 def configure(page,step,evidence_root,*,capability):
+    if isinstance(step,dict) and step.get('action')=='native_survey_creation':
+        from playwright_recipes.survey_creation import configure as whole_configure
+        return whole_configure(page,step,evidence_root,capability=capability)
     from playwright_recipes.recipe_cli import compile_recipe
     from playwright_recipes.skill6_playwright import run_on_page,validate_job
     from playwright_recipes.editor_replay import completed_editor_replay

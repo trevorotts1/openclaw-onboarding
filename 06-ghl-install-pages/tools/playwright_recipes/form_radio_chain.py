@@ -13,10 +13,12 @@ import re
 from urllib.parse import urlsplit
 
 if __package__:
+    from .assessments import read_editor_title
     from . import radio_dependencies as dependencies
     from .evidence_lease import guard_delivery, journal_present, read_journal
     from .skill6_playwright import Stop, assert_tenant, click, secure_json
 else:
+    from assessments import read_editor_title
     import radio_dependencies as dependencies
     from evidence_lease import guard_delivery, journal_present, read_journal
     from skill6_playwright import Stop, assert_tenant, click, secure_json
@@ -95,7 +97,7 @@ def build_form_questions(inputs,evidence_root,*,page,capability,transport=None):
     frame=form_builder(page)
     title=frame.get_by_role('textbox',name='Form Name',exact=True)
     title.wait_for(state='visible',timeout=45000)
-    if title.count()!=1 or title.input_value()!=plan['expected_form_name']:
+    if title.count()!=1 or read_editor_title(title)!=plan['expected_form_name']:
         raise Stop('Form Radio chain cannot prove its exact existing form name')
     _close_object_drawer(frame,'form')
     click(frame.get_by_role('tab',name='Edit',exact=True))
@@ -114,7 +116,7 @@ def build_form_questions(inputs,evidence_root,*,page,capability,transport=None):
     prepared=dependencies._provision({key:plan[key] for key in ('location_id','questions')},
         root,capability=capability,transport=api)
     if (page.url!=plan['start_url'] or title.count()!=1
-            or title.input_value()!=plan['expected_form_name']):
+            or read_editor_title(title)!=plan['expected_form_name']):
         raise Stop('Form Radio native target changed while API dependencies were prepared')
     assert_tenant(page,plan)
     if _canvas_identity(canvas)!=before:

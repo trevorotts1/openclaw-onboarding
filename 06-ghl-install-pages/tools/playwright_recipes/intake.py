@@ -29,8 +29,8 @@ FIELDS = {
     'forms.settings': {'settings', 'schedule', 'tracking'},
     'forms.submission': {'submission'}, 'forms.notifications': {'notifications'},
     'forms.conditions': {'condition'},
-    'surveys.create': {'name', 'allow_creation', 'standard_fields', 'radio_questions', 'target_slide'},
-    'quizzes.create': {'name', 'allow_creation', 'standard_fields', 'fixture'},
+    'surveys.create': {'name', 'allow_creation', 'standard_fields', 'radio_questions', 'target_slide', 'question_batches', 'slide_count'},
+    'quizzes.create': {'name', 'allow_creation', 'standard_fields', 'fixture', 'configuration'},
     'surveys.configure': {'configuration'}, 'quizzes.configure': {'configuration'},
     'communities.create': {'community'},
     'communities.configure': {'portal_url', 'group_name', 'channels', 'details', 'access', 'course_associations', 'api_capability', 'branding'},
@@ -159,10 +159,16 @@ def validate_intake(operation, data):
             raise Stop('Portal identity requires a concrete channel or details operation')
     if missing:
         raise Stop('Missing required recipe inputs: ' + ', '.join(sorted(missing)))
-    if operation == 'surveys.create' and 'radio_questions' in data:
+    if operation == 'quizzes.create' and 'configuration' in data:
+        from playwright_recipes.quiz_creation import payload_from_inputs
+        payload_from_inputs(data)
+    if operation == 'surveys.create' and 'question_batches' in data:
+        from playwright_recipes.survey_creation import payload_from_inputs
+        payload_from_inputs(data)
+    elif operation == 'surveys.create' and 'radio_questions' in data:
         from playwright_recipes.survey_radio_creation import payload_from_inputs
         payload_from_inputs(data)
-    elif operation == 'surveys.create' and 'target_slide' in data:
+    elif operation == 'surveys.create' and set(data).intersection({'target_slide','slide_count'}):
         raise Stop('Survey target_slide requires the authored Radio creation flow')
     if operation == 'courses.configure_ui':
         native = set(data).intersection(FIELDS[operation])

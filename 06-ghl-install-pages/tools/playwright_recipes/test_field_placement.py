@@ -105,6 +105,7 @@ class NativeNode:
         return self
 
     def get_attribute(self, name):
+        if self.kind == 'title' and name == 'contenteditable':return None
         assert self.kind == 'type' and name == 'data-field-type'
         return self.frame.items[self.index]['type']
 

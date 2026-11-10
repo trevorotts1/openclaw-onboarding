@@ -14,8 +14,10 @@ import tokenize
 from urllib.parse import urlsplit
 
 if __package__:
+    from .assessments import read_editor_title
     from .skill6_playwright import Stop
 else:
+    from assessments import read_editor_title
     from skill6_playwright import Stop
 
 
@@ -521,7 +523,7 @@ def configure(page, step):
     frame = form_builder(page)
     title = _one(frame.get_by_role('textbox', name='Form Name', exact=True), 'Native embed form title changed')
     expected_name = config['expected_form_name']
-    if title.input_value() != expected_name:
+    if read_editor_title(title) != expected_name:
         raise Stop('Native embed form title differs from its inventoried identity')
     editor_url = page.url
     parsed = urlsplit(editor_url)
@@ -530,7 +532,7 @@ def configure(page, step):
                                re.escape(config['form_id']) + '/?', parsed.path)):
         raise Stop('Native embed editor does not belong to the exact inventoried form')
     def identity():
-        if page.url != editor_url or title.count() != 1 or title.input_value() != expected_name:
+        if page.url != editor_url or title.count() != 1 or read_editor_title(title) != expected_name:
             raise Stop('Native embed form identity changed during configuration')
     _close_initial(frame)
     click(_one(frame.get_by_role('tab', name='Integrate', exact=True), 'Native form Integrate tab changed'))

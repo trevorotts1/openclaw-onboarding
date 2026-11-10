@@ -128,14 +128,16 @@ def _configure_rule(page, step, *, preflight=False, read_only=False):
     opening the rule editor. Save completion does not claim preview behavior.
     """
     if __package__:
+        from .assessments import read_editor_title
         from .skill6_playwright import click, fill, visible, wait_until, Stop
     else:
+        from assessments import read_editor_title
         from skill6_playwright import click, fill, visible, wait_until, Stop
     step = _validate_rule(step)
     frame = page.frame_locator('iframe[name="survey-builder-app"]')
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
-    survey_name, editor_url = title.input_value(), page.url
+    survey_name, editor_url = read_editor_title(title), page.url
     unary = step['operator'] in {'Is Empty', 'Is Filled'}
     target_label = step['slide_labels'][step['target_slide'] - 1]
     summary = 'If' + step['if_field'] + step['operator'] + ('' if unary else step['value'])
@@ -257,7 +259,7 @@ def _configure_rule(page, step, *, preflight=False, read_only=False):
                and frame.get_by_role('button', name='Save', exact=True).is_enabled(), 'Survey save did not finish')
     page.goto(editor_url, wait_until='domcontentloaded', timeout=45000)
     title.wait_for(state='visible', timeout=45000)
-    if page.url != editor_url or title.input_value() != survey_name:
+    if page.url != editor_url or read_editor_title(title) != survey_name:
         raise Stop('Reopened survey identity changed')
     close_initial()
     click(frame.get_by_role('tab', name='Edit', exact=True))
