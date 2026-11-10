@@ -3,8 +3,11 @@
 `forms.conditions` accepts one complete ordered `condition.rules` list. Lists
 containing Redirect to URL, Display custom message or Disqualify lead use the
 dedicated `native_condition_outcomes` handler. The same list can retain captured
-Show Field/Hide Field rules as an existing prefix. It never deletes, reorders or
-overwrites an existing card. Replace all identities, fields, URLs and copy in the
+Show Field/Hide Field rules as an existing prefix. Without `expected_rules`, it
+retains append-only behavior. With an explicit complete `expected_rules` list,
+`rules` may be an unambiguous unchanged ordered subset, including an empty list.
+This removes inventoried cards through the captured confirmation; it does not
+reorder or overwrite retained cards. See `form-condition-outcome-removal.md`. Replace all identities, fields, URLs and copy in the
 example with the actual approved form inventory and authored intent.
 
 Every rule has `match` (`all`/`any`), ordered `clauses`, and one exact `effect`:

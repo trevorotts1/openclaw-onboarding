@@ -30,11 +30,11 @@ def validate(step):
         for page in projected['pages']:
             if isinstance(page,dict) and isinstance(page.get('questions'),list):
                 for index,question in enumerate(page['questions']):
-                    if isinstance(question,dict) and question.get('field_type') in ('RADIO','CHECKBOX','SINGLE_OPTIONS','MULTIPLE_OPTIONS'):
-                        choice._question(question)
-                        page['questions'][index]={key:question[key] for key in native.properties_for(question['field_type'])}
+                    if isinstance(question,dict) and question.get('field_type') in ('RADIO','CHECKBOX','SINGLE_OPTIONS','MULTIPLE_OPTIONS','PICTURE_CHOICE'):
+                        page['questions'][index]=choice._project_existing(question)
     projected=native.validate({'action':'quiz_short_answers','payload':projected},field_types=TYPES,
                               new_types=tuple(PROFILES),reserved_key=None)
+    choice._unique_keys([question for page in payload['pages'] for question in page['questions']])
     return deepcopy(payload)
 
 

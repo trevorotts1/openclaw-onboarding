@@ -1,67 +1,60 @@
-# Verified build recovery — November 9, 2026, 7:25 PM Eastern
+# Current build recovery - November 9, 2026
 
-The reviewed Skill 6 v27.1.99 batch is merged through
-[PR #3059](https://github.com/trevorotts1/openclaw-onboarding/pull/3059), merge
-commit `4e052754cd683a09fca81d622bf2b341e62c8b66`. It contains the six additions
-listed in `PLAYWRIGHT-BUILD-STATUS.json` under
-`current_feature_progress.new_control_capabilities_in_this_batch`. Unit #3057
-was delivered through this batch; do not reopen or rebuild it. Earlier batches
-#3053 and #3042 are also delivered. This checkpoint overrides the pending-merge
-and draft-branch instructions in the preserved history below.
+Skill 6 v27.1.100 is delivered through [batch #3085](https://github.com/trevorotts1/openclaw-onboarding/pull/3085),
+merge commit `dd9e52592d52db6037d845ce5cd5d02326b15f99`. This lands unit #3078:
+survey shell/Radio creation, mixed quiz questions and fixed-three Picture Choice.
+The exact batch head completed 45 successful checks and two expected skips.
+Earlier batches #3059, #3053 and #3042 remain delivered.
 
-The 33-operation audit classified 21 BUILT, 11 PARTIAL and 1 GENERIC_ONLY **at
-its frozen source checkpoint**. Eleven source-built feature additions have
-landed since that audit. Do not present those frozen counts as a fresh feature
-percentage or claim only testing remains. Twelve catalog operations still have
-identified executable gaps; each retains missing code after accounting for the
-new features:
+The v27.1.101 source adds three independently reviewed capabilities:
+
+1. Picture Choice within mixed quiz batches, preserving its persisted media,
+   Unique Key and full prior inventory through the other captured writers.
+2. One to four standard-field survey slides, with an explicit chosen slide for
+   authored Radio placement and complete untouched-slide preservation.
+3. Removal of fully inventoried form condition outcomes, including middle cards
+   and clear-all, preserving retained order and rich-message content.
+
+These changes have focused source checks and independent review. Publication
+and merge delivery are recorded separately in `PLAYWRIGHT-BUILD-STATUS.json`.
+Native installed Python execution and behavioral acceptance remain pending.
+
+The full operation audit still identifies 21 built, 11 partial and one generic
+operation across 33 named operations. Twelve operation areas retain missing code;
+these operation groups are not counts of Python files or a feature-weighted percent.
+Fourteen additions were delivered after the original audit; three more are built
+in the current source. Neither count means all twelve areas are complete.
 
 | Operation | Remaining executable scope |
 | --- | --- |
-| `funnels.split_variant` | Native variation creation/reuse, identity and traffic allocation/readback. |
-| `forms.configure` | Remaining widget/property families, parent Address controls, Dropdown schema creation and uncaptured embed controls. |
-| `forms.conditions` | Native reordering/nested groups, broader field identities and arbitrary existing outcome edits/removal. |
-| `surveys.create` | Additional question types, multiple-slide authoring and broader complete survey flows beyond the bounded single-slide Radio chain. |
-| `surveys.configure` | Additional question controls, compound predicates and broader completion/outcome/rule lifecycle. |
-| `quizzes.create` | Picture Choice, reliable populated-page append and complete shell/questions/scoring/results flow. |
-| `quizzes.configure` | Picture Choice controls beyond the bounded three-option existing-catalog writer; populated-page append, Jump To destinations, tier creation/removal and result media/styles. |
-| `courses.configure_ui` | Video upload/processing/save lifecycle, image removal and other uncaptured controls. |
-| `communities.configure` | Authoritative first-course empty-state handling, non-Private course modes and portal parity/reuse shapes. |
+| `funnels.split_variant` | Native variation creation/reuse and traffic allocation/readback. |
+| `forms.configure` | Remaining widgets/properties, Address controls, Dropdown creation and embed controls. |
+| `forms.conditions` | Reordering/nested groups, broader identities and existing outcome edits. Inventoried outcome removal is now built. |
+| `surveys.create` | Additional question types, multiple Radio target slides and complete survey flows. |
+| `surveys.configure` | Additional question controls, compound predicates and completion/rule lifecycle. |
+| `quizzes.create` | Picture Choice creation chain, populated-page append and complete scoring/results flow. |
+| `quizzes.configure` | Picture option/style/upload controls, populated-page append, Jump To, tier lifecycle and result media/styles. |
+| `courses.configure_ui` | Video lifecycle, image removal and uncaptured controls. |
+| `communities.configure` | Authoritative first-course empty state, non-Private modes and portal parity/reuse. |
 | `meetings.setup` | Authoritative empty co-host roster and first-assignment path. |
 | `meetings.update` | Authoritative empty co-host roster and clear-all path. |
-| `meetings.integrate` | Course Live Sessions, broader staff/location/provider and community-event shapes, recording/transcription. |
+| `meetings.integrate` | Course Live Sessions, wider provider/event shapes, recording/transcription. |
 
-Testing policy: run focused checks for new or changed behavior and required
-repository merge checks. Do not repeat the complete local suite on the already
-merged #3059 source. Optional/manual full native acceptance remains deferred;
-source implementation, native acceptance and merge delivery remain separate.
-Private incomplete meeting-empty-roster work is not part of the delivered batch
-and must not be promoted from mocked proof.
+## Execution policy for finishing quickly
 
-## Current source unit — PR #3078, not yet merged
+Build independent features in parallel. Run only focused new/changed checks,
+then one independent source review. Repeat a check only for a new change or an
+actual failure. Preserve required repository checks and the existing merge
+coordinator. Do not rerun the optional complete local suite or rebuild landed work.
+Do not wait for one merge to finish before building the next independent feature.
 
-The maintained `surveys.create` host/CLI now accepts `radio_questions` to create
-a single-slide shell with one explicit captured standard field, independently
-reopen it, then provision/reuse and place authored Radio questions. Exact
-created editor identity, complete structured owner snapshot and original
-API/native journals bind the result and completed replay. Uncertain writes
-refuse retry. Seven focused source tests pass; independent source review is
-CONFIRMED. The same reviewed source batch also adds mixed quiz question batch
-compilation through the existing type-specific writers, with exact inventory
-continuity on one quiz and refusal after an interrupted later batch. Picture
-Choice and populated-page append remain outside that batch contract. This is source implementation, with native final acceptance pending.
-A separate reviewed Picture Choice action now authors exactly three options
-using approved existing Media Storage images and the captured default style.
-It binds the first Save owner-ID transition and caller-declared persisted Unique
-Key, then independently reopens the saved question. Eleven focused tests pass;
-independent source review is CONFIRMED. Native installed Python acceptance
-remains pending. This action is deliberately outside mixed question batches.
-See `tools/playwright_recipes/examples/quiz-picture-choice.md`.
+The private Convert and Flow origin was denied by automatic approval review for
+this request. Remaining native capture is blocked until explicitly authorized;
+do not recreate that access through another browser, API or credential path.
+No native acceptance is claimed for the source changes above.
 
-See `tools/playwright_recipes/examples/survey-radio-creation.md` for the actual
-host command and input/capability contract. Additional question types and
-multiple-slide authoring still require code; all twelve operation areas above
-remain incomplete.
+See `tools/playwright_recipes/examples/survey-radio-creation.md`,
+`quiz-picture-choice.md` and `form-condition-outcome-removal.md` for inputs.
 
 ---
 
