@@ -37,7 +37,9 @@ FIELDS = {
     'meetings.setup': {'meeting'}, 'meetings.update': {'meeting'},
     'meetings.integrate': {'integration_mode', 'calendar_id', 'calendar_name', 'staff_id', 'connection_staff_label', 'expected_staff_locations', 'staff_dependency', 'portal_url', 'group_name', 'group_id', 'event_id', 'allow_room_creation', 'expected'},
     'courses.configure_ui': {'course_id', 'template_id', 'expected_template_title', 'changes', 'expected_values', 'custom_blocks', 'background_image', 'background_transparency', 'custom_block_image', 'text_blocks', 'theme_images', 'image_blocks'},
-    'funnels.split_variant': set(),
+    'funnels.split_variant': {'funnel_id', 'step_id', 'funnel_name', 'page_name', 'step_url',
+        'control_page_id', 'expected_variant_id', 'allow_creation', 'expected_control_traffic',
+        'control_traffic', 'expected_active', 'active', 'traffic_change_authorized'},
 }
 REQUIRED = {
     **{name: {'container_name', 'page_name', 'path'} for name in ('funnels.create', 'funnels.add_page', 'websites.create', 'websites.add_page')},
@@ -159,6 +161,11 @@ def validate_intake(operation, data):
             raise Stop('Portal identity requires a concrete channel or details operation')
     if missing:
         raise Stop('Missing required recipe inputs: ' + ', '.join(sorted(missing)))
+    if operation == 'funnels.split_variant' and set(data).intersection(FIELDS[operation]):
+        from playwright_recipes.split_variant import validate, COMMON as SPLIT_COMMON, PLAN
+        if 'options' in data:
+            raise Stop('Native split variants and recorded options require separate jobs')
+        validate({'action':'native_split_variant', 'payload':{key:data[key] for key in SPLIT_COMMON | PLAN if key in data}})
     if operation == 'quizzes.create' and 'configuration' in data:
         from playwright_recipes.quiz_creation import payload_from_inputs
         payload_from_inputs(data)
@@ -251,6 +258,18 @@ def validate_intake(operation, data):
             quiz_creation(data)
     if operation == 'surveys.configure' and isinstance(data.get('configuration'), dict):
         config = data['configuration']
+        if 'multiline_questions' in config:
+            if 'options' in data:raise Stop('Survey Multi Line properties require their own independently journaled job')
+            from playwright_recipes.survey_multiline_configuration import validate
+            if set(config).intersection({'location_id','location_name','start_url'}):
+                raise Stop('Survey Multi Line owner identity must come from its parent inputs')
+            validate({'payload':{**{key:data[key] for key in ('location_id','location_name','start_url')},**config}})
+        if 'text_questions' in config:
+            if 'options' in data:raise Stop('Survey TEXT properties require their own independently journaled job')
+            from playwright_recipes.survey_text_configuration import validate
+            if set(config).intersection({'location_id','location_name','start_url'}):
+                raise Stop('Survey TEXT owner identity must come from its parent inputs')
+            validate({'payload':{**{key:data[key] for key in ('location_id','location_name','start_url')},**config}})
         if set(config).intersection({'object_fields', 'field_dependencies'}):
             if set(config).intersection({'location_id', 'location_name', 'start_url'}):
                 raise Stop('Survey object-field owner identity must come from its parent inputs')

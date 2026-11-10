@@ -1,0 +1,21 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "ACCOUNT_FROM_INVENTORY",
+  "start_url": "https://app.example.com/v2/location/LOCATION_FROM_INVENTORY/form-builder-v2/FORM_FROM_INVENTORY",
+  "condition": {
+    "field_bindings": [
+      {"label": "Fixture custom text", "query_key": "fixture_custom_text", "field_type": "TEXT"}
+    ],
+    "rules": [
+      {
+        "match": "any",
+        "clauses": [
+          {"if_field": "Fixture custom text", "operator": "Contains", "value": "probe"},
+          {"if_field": "First Name", "operator": "Is Filled"}
+        ],
+        "effect": "Hide Field",
+        "target": "Fixture custom text"
+      }
+    ]
+  }
+}

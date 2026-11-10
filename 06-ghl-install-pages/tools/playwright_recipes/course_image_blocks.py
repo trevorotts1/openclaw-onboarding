@@ -1,4 +1,4 @@
-"""Captured Image Block append, approved PNG replacement and HTTPS destination.
+"""Captured Image Block append, PNG replacement/removal and HTTPS destination.
 
 Exact sidebar UUID/type/order and active preview img alt bind each inspector.
 The parent runner owns durable intent, the write lease and uncertain-run refusal.
@@ -65,8 +65,18 @@ def validate_inputs(inputs):
             raise Stop('Image Block edits require exact unique inventoried Image UUIDs')
         seen.add(update['id']);update['expected']=_state(update['expected'])
         changes=update['changes']
-        if not isinstance(changes,dict) or not changes or set(changes)-{'image','url'}:
-            raise Stop('Image Block changes support approved PNG and explicit HTTPS destination only')
+        if not isinstance(changes,dict) or not changes or set(changes)-{'image','remove_image','url'}:
+            raise Stop('Image Block changes support approved PNG, explicit image removal and HTTPS destination only')
+        if 'remove_image' in changes:
+            removal=changes['remove_image']
+            if ('image' in changes or not isinstance(removal,dict)
+                    or set(removal)!={'inspector_url','preview_url'}):
+                raise Stop('Image removal requires its exact inventoried empty inspector/rendered URLs and no replacement')
+            removal={key:media._url(value) for key,value in removal.items()}
+            if (removal['inspector_url']!=removal['preview_url']
+                    or any(removal[key]==update['expected'][key] for key in removal)):
+                raise Stop('Image removal requires a matching empty placeholder distinct from both previous image URLs')
+            changes['remove_image']=removal
         if 'image' in changes:_asset(changes['image'],plan)
         if 'url' in changes:changes['url']=blocks._text(changes['url'],'button_url')
     for value in appends:
@@ -123,13 +133,19 @@ def validate_receipt(value,step):
         raise Stop('Native Image Block outcome omitted authored targets')
     for proof,(identity,changes,old) in zip(value['images'],requests):
         expected_source=changes['image']['sha256'] if 'image' in changes else None
-        if (not isinstance(proof,dict) or set(proof)!={'block_id','source_sha256','inspector_url_sha256','preview_url_sha256','url_sha256'}
+        proof_keys={'block_id','source_sha256','inspector_url_sha256','preview_url_sha256','url_sha256'}
+        if 'remove_image' in changes:proof_keys.add('media_removed')
+        if (not isinstance(proof,dict) or set(proof)!=proof_keys
                 or proof['block_id']!=identity or proof['source_sha256']!=expected_source
                 or any(not isinstance(proof[key],str) or not re.fullmatch(r'[a-f0-9]{64}',proof[key])
                     for key in ('inspector_url_sha256','preview_url_sha256','url_sha256'))
                 or proof['url_sha256']!=_sha(changes.get('url',old['url'] if old else ''))):
             raise Stop('Native Image Block outcome target/source/destination hashes are unbound')
-        if expected_source is not None:
+        if 'remove_image' in changes:
+            if (proof['media_removed'] is not True
+                    or any(proof[key+'_sha256']!=_sha(url) for key,url in changes['remove_image'].items())):
+                raise Stop('Removed Image Block outcome does not bind its exact empty placeholder')
+        elif expected_source is not None:
             if proof['inspector_url_sha256']!=proof['preview_url_sha256']:
                 raise Stop('Uploaded Image Block inspector/rendered previews do not identify one image')
             if old and (proof['inspector_url_sha256']==_sha(old['inspector_url']) or proof['preview_url_sha256']==_sha(old['preview_url'])):
@@ -168,6 +184,18 @@ def read_image_block(page,plan,identity):
 
 def _write(page,plan,identity,changes,path=None,size=None):
     before=read_image_block(page,plan,identity)
+    if 'remove_image' in changes:
+        if before[1]['remove_enabled'] is not True:
+            raise Stop('Native Image Block has no removable image; reconcile before removing')
+        _open(page,plan,identity);theme._identity(page,plan);assert_tenant(page,plan)
+        remove=theme._one(page.get_by_role('button',name='Remove',exact=True),'Native Image Block Remove changed')
+        if not remove.is_enabled():raise Stop('Native Image Block Remove is disabled')
+        click(remove)
+        def removed():
+            current=read_image_block(page,plan,identity)
+            return (all(current[0][key]==value for key,value in changes['remove_image'].items())
+                and current[0]['url']==before[0]['url'] and current[1]['remove_enabled'] is False)
+        wait_until(removed,'Native image removal did not establish the exact empty placeholder and disabled Remove')
     if 'image' in changes:
         def inspect(page,plan):
             state,_=read_image_block(page,plan,identity)
@@ -183,7 +211,12 @@ def _write(page,plan,identity,changes,path=None,size=None):
         if field.input_value()!=changes['url']:fill(field,changes['url']);field.press('Tab')
     actual=read_image_block(page,plan,identity)
     if actual[0]['url']!=changes.get('url',before[0]['url']):raise Stop('Native Image Block ignored destination URL')
-    if 'image' not in changes and actual!=({**before[0],'url':actual[0]['url']},before[1]):
+    if 'remove_image' in changes:
+        expected_state={**before[0],**changes['remove_image'],'url':changes.get('url',before[0]['url'])}
+        expected_attrs={**before[1]['preview_attributes'],'src':changes['remove_image']['preview_url']}
+        if actual!=(expected_state,{'preview_attributes':expected_attrs,'remove_enabled':False}):
+            raise Stop('Image removal changed unrequested native image attributes or destination')
+    elif 'image' not in changes and actual!=({**before[0],'url':actual[0]['url']},before[1]):
         raise Stop('Image Block destination editing changed preserved media/attributes')
     if 'image' in changes:
         expected_attrs={key:value for key,value in before[1]['preview_attributes'].items() if key!='src'}
@@ -203,6 +236,8 @@ def configure(page,step):
     text._preview_order(page,inventory);before=blocks._snapshot(page,plan,inventory)
     for update in config['updates']:
         if before[update['id']][0]!=update['expected']:raise Stop('Image Block differs from expected previous native state')
+        if 'remove_image' in update['changes'] and before[update['id']][1]['remove_enabled'] is not True:
+            raise Stop('Inventoried Image Block has no removable image; no image writes performed')
     desired=deepcopy(before);wanted=deepcopy(inventory);added=[]
     with tempfile.TemporaryDirectory(prefix='skill6-native-image-block-') as temporary:
         paths={}
@@ -249,6 +284,7 @@ def configure(page,step):
         'images':[{'block_id':identity,'source_sha256':changes['image']['sha256'] if 'image' in changes else None,
             'inspector_url_sha256':_sha(desired[identity][0]['inspector_url']),
             'preview_url_sha256':_sha(desired[identity][0]['preview_url']),
-            'url_sha256':_sha(desired[identity][0]['url'])} for identity,changes in targets],
+            'url_sha256':_sha(desired[identity][0]['url']),
+            **({'media_removed':True} if 'remove_image' in changes else {})} for identity,changes in targets],
         'functional_verified':False,'activation_performed':False}
     return validate_receipt(result,step)
