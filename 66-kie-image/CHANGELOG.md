@@ -1,3 +1,7 @@
+## [2.2.16] - 2026-11-10 - docs: "All other families" prompt-cap wording no longer teaches the retired 19,000 ceiling (INST-001 #21)
+
+- `SKILL.md` Prompt rules and `EXAMPLES.md` MISTAKE 3: the "house band is a TARGET ... no hard rejections above 19,000" sentences are replaced. The limit comes from Skill 74 (live schema first); with no verified maximum `validate_prompt.py` refuses a pass (UNKNOWN_MAX); the retired 19,000 house ceiling is not applied. Prose only; no executable, mapping, cap or test changed. `07-kie-setup/tests/test_official_docs_port.py` SKILL_VERSIONS follows to 2.2.16.
+
 ## [2.2.15] - 2026-11-10 - registry_policy.house_band_chars follows the 20,000 owner cap (INST-001 #21)
 
 - `models.json` line 8: `registry_policy.house_band_chars` changed from the stale 5000/9000/19000 to

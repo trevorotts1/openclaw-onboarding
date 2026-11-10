@@ -4,6 +4,12 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v2.1.8] - 2026-11-10 - fix: retired house band removed from wire.sh, CORE_UPDATES.md and models.json (INST-001 #21)
+
+- `wire.sh` (the AGENTS.md block written to the box) and `CORE_UPDATES.md`: "house band 5K-19K" replaced by the rule 12 budget (95-100% of the verified max, never below 80%, limit from Skill 74).
+- `models.json`: `registry_policy.house_band_chars` changed from 5000/9000/19000 to 16000/19000/20000 (same as Skill 66 v2.2.15); every model's `house_prompt_min/target/max_chars` is now 80/95/100 percent of its `vendor_hard_cap_chars` (rounded up), null when the cap is not published. Skill 75 `video_router.py` reads only the registry max (19000 -> 20000), a warn-only unknown-cap threshold.
+- New `tests/test_house_band.py`. No change to `validate_prompt.py`.
+
 ## [v2.1.7] - 2026-11-10 - docs: retired band wording in INSTRUCTIONS.md and references/prompt-policy.md reworded to KIE prompt rule 12 (INST-001 #21)
 
 - Prose only; no executable, mapping, cap or test changed.

@@ -8,9 +8,9 @@
     "role": "CURATED POLICY and verified-override registry (routing hierarchy, owner-confirmed caps, per-family rules, dedicated Runway and Veo routes). Not the exhaustive KIE catalog and not the live source of limits or prices: Skill 74 (live schema, price) is, with its generated snapshot as fallback. A model missing here is DISCOVERED, never an automatic default. There is no auto-latest for video.",
     "encoding_source": "First-party KIE.ai research dated 2026-08-26 (docs.kie.ai market pages + runway-api/veo3-api pages, curl-verified). Every numeric limit traced to a quoted vendor value. NOT_EXPOSED / NOT_PUBLISHED stored as null, never invented.",
     "house_band_chars": {
-      "min": 5000,
-      "target": 9000,
-      "max": 19000
+      "min": 16000,
+      "target": 19000,
+      "max": 20000
     },
     "cap_status_legend": {
       "VERIFIED": "quoted from a vendor page verbatim; hard cap, hard-fail",
@@ -42,9 +42,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 16000,
+      "house_prompt_target_chars": 19000,
+      "house_prompt_max_chars": 20000,
       "duration_window_seconds": "2-30s (or -1 auto)",
       "resolutions": [
         "480P",
@@ -85,9 +85,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 16000,
+      "house_prompt_target_chars": 19000,
+      "house_prompt_max_chars": 20000,
       "duration_window_seconds": "2-30s (or -1 auto)",
       "resolutions": [
         "480P",
@@ -129,9 +129,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 2458,
+      "house_prompt_target_chars": 2919,
+      "house_prompt_max_chars": 3072,
       "duration_window_seconds": "3-15s (1-15s/shot)",
       "resolutions": [
         "720p",
@@ -173,9 +173,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 2458,
+      "house_prompt_target_chars": 2919,
+      "house_prompt_max_chars": 3072,
       "duration_window_seconds": [
         3,
         15
@@ -222,9 +222,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 2458,
+      "house_prompt_target_chars": 2919,
+      "house_prompt_max_chars": 3072,
       "duration_window_seconds": "3-15.5s (input matched)",
       "resolutions": [
         "720p",
@@ -265,9 +265,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 2458,
+      "house_prompt_target_chars": 2919,
+      "house_prompt_max_chars": 3072,
       "duration_window_seconds": [
         3,
         15
@@ -313,9 +313,9 @@
       "known_inconsistencies": [
         "single-shot prompt cap NOT_PUBLISHED (500/shot segmental); no 2500 hard cap exists for kling-3.0/video — 2500 applies only to motion-control variants"
       ],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": null,
+      "house_prompt_target_chars": null,
+      "house_prompt_max_chars": null,
       "duration_window_seconds": "3-15s ('3'-'15')",
       "resolutions": [
         "std (720p)",
@@ -357,9 +357,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 2000,
+      "house_prompt_target_chars": 2375,
+      "house_prompt_max_chars": 2500,
       "duration_window_seconds": "3-30s (input matched)",
       "resolutions": [
         "std (720p)",
@@ -395,9 +395,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 2000,
+      "house_prompt_target_chars": 2375,
+      "house_prompt_max_chars": 2500,
       "duration_window_seconds": "Max 10s (img orient) / 30s (vid orient)",
       "resolutions": [
         "720p",
@@ -433,9 +433,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 2000,
+      "house_prompt_target_chars": 2375,
+      "house_prompt_max_chars": 2500,
       "duration_window_seconds": "5s or 10s ('5', '10')",
       "resolutions": [],
       "max_media_refs": "None",
@@ -468,9 +468,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 2000,
+      "house_prompt_target_chars": 2375,
+      "house_prompt_max_chars": 2500,
       "duration_window_seconds": "5s or 10s ('5', '10')",
       "resolutions": [],
       "max_media_refs": "1 start image (<=10MB) + 1 optional tail image",
@@ -508,9 +508,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 24000,
+      "house_prompt_target_chars": 28500,
+      "house_prompt_max_chars": 30000,
       "duration_window_seconds": "4-30s (or -1 auto)",
       "resolutions": [
         "480p",
@@ -551,9 +551,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "NOT_PUBLISHED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": null,
+      "house_prompt_target_chars": null,
+      "house_prompt_max_chars": null,
       "duration_window_seconds": [
         4,
         15
@@ -594,9 +594,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "1-15s (default 5)",
       "resolutions": [
         "360p",
@@ -636,9 +636,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "1-15s (default 5)",
       "resolutions": [
         "360p",
@@ -680,9 +680,9 @@
       "known_inconsistencies": [
         "Frame field names aligned 2026-08-27 to docs.kie.ai/market/pixverse/transition, which documents input.first_frame_image_url and input.last_frame_image_url (both required) verbatim: \"first_frame_image_url: type: string, format: uri. First frame image URL. HTTP, HTTPS, OSS; JPG/JPEG/PNG/WebP; <=20 MB.\" The registry's earlier control_fields (first_frame/last_frame) and EXAMPLES.md's earlier image_url/last_frame_url both disagreed with the docs; docs win."
       ],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "1-15s (default 5)",
       "resolutions": [
         "360p",
@@ -724,9 +724,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "1-15s (default 5)",
       "resolutions": [
         "360p",
@@ -766,9 +766,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "1-15s (default 5)",
       "resolutions": [
         "360p",
@@ -818,9 +818,9 @@
         "above_hard_max": "REFUSE"
       },
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 5600,
+      "house_prompt_target_chars": 6650,
+      "house_prompt_max_chars": 7000,
       "duration_window_seconds": "4-15s (default 6)",
       "resolutions": [
         "768P",
@@ -866,9 +866,9 @@
         "above_hard_max": "REFUSE"
       },
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 5600,
+      "house_prompt_target_chars": 6650,
+      "house_prompt_max_chars": 7000,
       "duration_window_seconds": "4-15s (default 6)",
       "resolutions": [
         "768P",
@@ -918,9 +918,9 @@
         "above_hard_max": "REFUSE"
       },
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 5600,
+      "house_prompt_target_chars": 6650,
+      "house_prompt_max_chars": 7000,
       "duration_window_seconds": "4-15s (default 6)",
       "resolutions": [
         "768P",
@@ -956,9 +956,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "2-10s (default 5)",
       "resolutions": [
         "720p",
@@ -997,9 +997,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "0 (full length) or 2-10s",
       "resolutions": [
         "720p",
@@ -1037,9 +1037,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "2-15s (default 5)",
       "resolutions": [
         "720p",
@@ -1078,9 +1078,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "2-15s (default 5)",
       "resolutions": [
         "720p",
@@ -1122,9 +1122,9 @@
       "known_inconsistencies": [
         "5,000 characters for non-Chinese prompt; 2,500 characters for Chinese prompt"
       ],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "3-15s (default 5)",
       "resolutions": [
         "720p",
@@ -1163,9 +1163,9 @@
       "known_inconsistencies": [
         "5,000 characters for non-Chinese prompt; 2,500 characters for Chinese prompt"
       ],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "3-15s (default 5)",
       "resolutions": [
         "720p",
@@ -1205,9 +1205,9 @@
       "known_inconsistencies": [
         "5,000 characters for non-Chinese prompt; 2,500 characters for Chinese prompt"
       ],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "3-15s (default 5)",
       "resolutions": [
         "720p",
@@ -1246,9 +1246,9 @@
       "known_inconsistencies": [
         "5,000 characters for non-Chinese prompt; 2,500 characters for Chinese prompt"
       ],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "3-15s (default 5)",
       "resolutions": [
         "720p",
@@ -1287,9 +1287,9 @@
       "known_inconsistencies": [
         "5,000 characters for non-Chinese prompt; 2,500 characters for Chinese prompt"
       ],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "3-15s (default 5)",
       "resolutions": [
         "720p",
@@ -1328,9 +1328,9 @@
       "known_inconsistencies": [
         "5,000 characters for non-Chinese prompt; 2,500 characters for Chinese prompt"
       ],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "3-15s (default 5)",
       "resolutions": [
         "720p",
@@ -1370,9 +1370,9 @@
       "known_inconsistencies": [
         "5,000 characters for non-Chinese prompt; 2,500 characters for Chinese prompt"
       ],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 4000,
+      "house_prompt_target_chars": 4750,
+      "house_prompt_max_chars": 5000,
       "duration_window_seconds": "Source 3-60s",
       "resolutions": [
         "720p",
@@ -1413,9 +1413,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "VERIFIED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": 16000,
+      "house_prompt_target_chars": 19000,
+      "house_prompt_max_chars": 20000,
       "duration_window_seconds": "4, 6, 8, 10s (auto if video)",
       "resolutions": [
         "720p",
@@ -1457,9 +1457,9 @@
       "known_inconsistencies": [
         "docs.kie.ai states 1800; API error string states 2048 — conflict, LIVE_PROBE_REQUIRED"
       ],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": null,
+      "house_prompt_target_chars": null,
+      "house_prompt_max_chars": null,
       "duration_window_seconds": "5s or 10s (10s 720p only)",
       "resolutions": [
         "720p",
@@ -1500,9 +1500,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "NOT_PUBLISHED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": null,
+      "house_prompt_target_chars": null,
+      "house_prompt_max_chars": null,
       "duration_window_seconds": "4, 6, 8s (default 8)",
       "resolutions": [
         "720p (base)",
@@ -1543,9 +1543,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "NOT_PUBLISHED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": null,
+      "house_prompt_target_chars": null,
+      "house_prompt_max_chars": null,
       "duration_window_seconds": "4, 6, 8s (default 8)",
       "resolutions": [
         "720p (base)",
@@ -1586,9 +1586,9 @@
       "vendor_hard_cap_tokens": null,
       "cap_status": "NOT_PUBLISHED",
       "known_inconsistencies": [],
-      "house_prompt_min_chars": 5000,
-      "house_prompt_target_chars": 9000,
-      "house_prompt_max_chars": 19000,
+      "house_prompt_min_chars": null,
+      "house_prompt_target_chars": null,
+      "house_prompt_max_chars": null,
       "duration_window_seconds": "4, 6, 8s (default 8)",
       "resolutions": [
         "720p (base)",
