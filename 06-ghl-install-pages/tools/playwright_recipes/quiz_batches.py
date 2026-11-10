@@ -1,4 +1,4 @@
-"""Compile ordered mixed quiz questions using captured empty-page writers.
+"""Compile ordered mixed quiz questions using captured native question writers.
 
 Each batch keeps its own runner intent and Save/reopen receipt. No native page
 identity, question key or property default is inferred from an earlier result.
@@ -45,11 +45,9 @@ def compile_batches(data):
         request = {**data, 'configuration': compiled}
         action, payload = quiz_creation(request)
         if len(payload['questions']) != 1:
-            raise Stop('Mixed quiz batches author exactly one question per confirmed empty page')
+            raise Stop('Mixed quiz batches author exactly one question per inventoried target page')
         if index and (payload['expected_quiz_name'] != quiz_name or payload['pages'] != expected_pages):
             raise Stop('Quiz batch inventory must exactly retain every earlier page and authored question')
-        if not payload.get('create_page') and (index or payload['pages'][payload['target_page'] - 1]['questions']):
-            raise Stop('Mixed quiz batches require an existing empty first page and explicit new pages thereafter')
         quiz_name = payload['expected_quiz_name']
         expected_pages = deepcopy(payload['pages'])
         if payload.get('create_page'):

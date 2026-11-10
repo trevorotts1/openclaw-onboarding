@@ -51,8 +51,12 @@ Creation-only media-button names and `expected_persisted_unique_key` belong only
 to the new Picture Choice request. Subsequent writers preserve the native media,
 owner and style inventory. Each batch keeps its own journal and receipt; an
 uncertain Picture save blocks later writers and never repeats the earlier prefix.
-The mixed `quizzes.configure` batch compiler retains its explicit new-empty-page
-contract for later batches. Separately, the owned `quizzes.create` pipeline accepts
-an optional `target_page` inside each writer batch: an existing page appends with
-its complete prefix, while exactly the next page creates a new empty owner.
+The mixed `quizzes.configure` compiler follow-up permits any batch to append to
+an existing populated target page or an earlier page when its complete preceding
+inventory matches exactly. Explicit next-new-page batches remain supported. This
+compiler follow-up is `IMPLEMENTED_PENDING_EXECUTION`; its focused checks have
+not run in the unavailable execution environment. Separately, the owned
+`quizzes.create` pipeline accepts an optional `target_page` inside each writer
+batch: an existing page appends with its complete prefix, while exactly the next
+page creates a new empty owner.
 Short Answer batches use the complete-inventory written writer with TEXT only.

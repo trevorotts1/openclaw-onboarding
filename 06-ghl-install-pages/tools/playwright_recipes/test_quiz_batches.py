@@ -33,6 +33,28 @@ def request():
     return {**common, 'configuration': {'question_batches': batches}}
 
 
+def existing_request(data=None, targets=None):
+    data = deepcopy(request() if data is None else data)
+    batches = data['configuration']['question_batches']
+    targets = targets or [1] * len(batches)
+    pages = [
+        {'label': 'Page 1', 'questions': [question('Retained owner', 'retained_owner', 'TEXT')]},
+        {'label': 'Page 2', 'questions': [question('Other saved page', 'other_saved_page', 'TEXT')]},
+    ]
+    for batch, target in zip(batches, targets):
+        key, payload = next(iter(batch.items()))
+        payload.pop('create_page', None)
+        payload.pop('new_page_label', None)
+        payload['pages'] = deepcopy(pages)
+        payload['target_page'] = target
+        authored = deepcopy(payload['questions'])
+        if key == 'picture_choice_questions':
+            from playwright_recipes.quiz_picture_questions import _authored
+            authored = [_authored(value) for value in authored]
+        pages[target - 1]['questions'].extend(authored)
+    return data
+
+
 def receipt(step):
     from playwright_recipes import quiz_choice_questions, quiz_written_questions
     action = step['action']
@@ -47,8 +69,8 @@ def receipt(step):
 
 
 class QuizBatches(unittest.TestCase):
-    def job(self):
-        return runner.validate_job(recipe_cli.compile_recipe('quizzes.configure', request()), Path('.'))
+    def job(self, data=None):
+        return runner.validate_job(recipe_cli.compile_recipe('quizzes.configure', request() if data is None else data), Path('.'))
 
     def test_mixed_native_actions_keep_separate_intents_and_full_inventories(self):
         value = request(); original = deepcopy(value)
@@ -60,15 +82,15 @@ class QuizBatches(unittest.TestCase):
         quiz_batches.compile_batches(value)
         self.assertEqual(value, original)
 
-    def test_dropped_prior_options_renamed_owner_or_unsafe_append_refuse_before_execution(self):
-        for defect in ('options', 'name', 'prior_text', 'append', 'many', 'foreign', 'mixed', 'malformed'):
+    def test_dropped_prior_options_renamed_owner_or_invalid_target_refuse_before_execution(self):
+        for defect in ('options', 'name', 'prior_text', 'target', 'many', 'foreign', 'mixed', 'malformed'):
             data = request(); batches = data['configuration']['question_batches']
             if defect == 'options':
                 batches[2]['written_answer_questions']['pages'][1]['questions'][0]['options'][0] = 'Lost option'
             elif defect == 'name':batches[1]['multiple_choice_questions']['expected_quiz_name'] = 'Other quiz'
             elif defect == 'prior_text':batches[1]['multiple_choice_questions']['pages'][0]['questions'][0]['question'] = 'Other'
-            elif defect == 'append':
-                item = batches[1]['multiple_choice_questions'];item.pop('create_page');item.pop('new_page_label');item['target_page'] = 1
+            elif defect == 'target':
+                item = batches[1]['multiple_choice_questions'];item.pop('create_page');item.pop('new_page_label');item['target_page'] = len(item['pages']) + 1
             elif defect == 'many':batches[0]['written_answer_questions']['questions'].append(question('Other?', 'other', 'TEXT'))
             elif defect == 'foreign':batches[0]['written_answer_questions']['location_id'] = 'FOREIGN'
             elif defect == 'mixed':data['configuration']['result_page'] = {}
@@ -76,32 +98,76 @@ class QuizBatches(unittest.TestCase):
             with self.subTest(defect=defect), self.assertRaises(runner.Stop):
                 recipe_cli.compile_recipe('quizzes.configure', data)
 
+
+    def test_populated_first_target_and_later_existing_or_earlier_page_keep_full_inventory(self):
+        for targets in ([1, 1, 1], [1, 2, 1]):
+            value = existing_request(targets=targets); original = deepcopy(value)
+            job = self.job(value)
+            self.assertEqual(value, original)
+            self.assertEqual([step['payload']['target_page'] for step in job['steps']], targets)
+            self.assertTrue(all('create_page' not in step['payload'] for step in job['steps']))
+            self.assertEqual(job['steps'][0]['payload']['pages'][0]['questions'][0],
+                             question('Retained owner', 'retained_owner', 'TEXT'))
+            self.assertEqual(job['steps'][2]['payload']['pages'][targets[1] - 1]['questions'][-1], new_question())
+        legacy = self.job()
+        self.assertEqual([step['payload']['target_page'] for step in legacy['steps']], [1, 2, 3])
+        self.assertTrue(all(step['payload']['create_page'] is True for step in legacy['steps'][1:]))
+
+    def test_existing_picture_prefix_uses_persisted_media_and_stale_inventory_refuses(self):
+        from test_quiz_picture_batches import request as picture_request
+        value = existing_request(picture_request())
+        job = self.job(value)
+        prior = job['steps'][2]['payload']['pages'][0]['questions'][2]
+        authored = job['steps'][1]['payload']['questions'][0]
+        self.assertEqual(prior['unique_key'], authored['expected_persisted_unique_key'])
+        self.assertNotIn('expected_persisted_unique_key', prior)
+        self.assertTrue(all('media_button_name' not in option for option in prior['options']))
+        for defect in ('old_text', 'drop_authored', 'picture_image', 'picture_key', 'picture_order'):
+            changed = deepcopy(value)
+            batches = changed['configuration']['question_batches']
+            if defect == 'old_text':
+                batches[1]['picture_choice_questions']['pages'][0]['questions'][0]['question'] = 'Wrong retained owner'
+            elif defect == 'drop_authored':
+                batches[1]['picture_choice_questions']['pages'][0]['questions'].pop()
+            else:
+                retained = batches[2]['multiple_choice_questions']['pages'][0]['questions'][2]
+                if defect == 'picture_image':retained['options'][0]['image_url'] = 'https://example.com/foreign.png'
+                elif defect == 'picture_key':retained['unique_key'] = 'contact.foreign_picture'
+                else:retained['options'].reverse()
+            with self.subTest(defect=defect), self.assertRaises(runner.Stop):
+                self.job(changed)
+
     def test_actual_runner_saves_typed_results_and_replays_without_repeating_writers(self):
-        job = self.job(); observed = []
-        def write(page, step):
-            observed.append(step['id']);return receipt(step)
-        with tempfile.TemporaryDirectory() as root, patch.object(runner, 'assert_tenant'), \
-                patch.object(runner, 'quiz_written_answers', side_effect=write) as written, \
-                patch.object(runner, 'quiz_multiple_choices', side_effect=write) as choices:
-            first = runner.run_on_page(object(), job, root)
-            repeated = runner.run_on_page(object(), job, root)
-            self.assertEqual(first['status'], 'NEEDS_VERIFICATION')
-            self.assertEqual(repeated['status'], 'NEEDS_VERIFICATION')
-            self.assertEqual(written.call_count, 2);self.assertEqual(choices.call_count, 1)
-            self.assertEqual(observed, [step['id'] for step in job['steps']])
-            self.assertEqual(len(json.loads(Path(root, 'state.json').read_text())['results']), 3)
+        for data in (request(), existing_request()):
+            job = self.job(data); observed = []
+            def write(page, step):
+                observed.append(step['id']);return receipt(step)
+            with self.subTest(targets=[step['payload']['target_page'] for step in job['steps']]), \
+                    tempfile.TemporaryDirectory() as root, patch.object(runner, 'assert_tenant'), \
+                    patch.object(runner, 'quiz_written_answers', side_effect=write) as written, \
+                    patch.object(runner, 'quiz_multiple_choices', side_effect=write) as choices:
+                first = runner.run_on_page(object(), job, root)
+                repeated = runner.run_on_page(object(), job, root)
+                self.assertEqual(first['status'], 'NEEDS_VERIFICATION')
+                self.assertEqual(repeated['status'], 'NEEDS_VERIFICATION')
+                self.assertTrue(repeated['replayed'])
+                self.assertEqual(written.call_count, 2);self.assertEqual(choices.call_count, 1)
+                self.assertEqual(observed, [step['id'] for step in job['steps']])
+                self.assertEqual(len(json.loads(Path(root, 'state.json').read_text())['results']), 3)
 
     def test_interrupted_later_batch_never_replays_earlier_question_insertion(self):
-        job = self.job()
-        with tempfile.TemporaryDirectory() as root, patch.object(runner, 'assert_tenant'), \
-                patch.object(runner, 'quiz_written_answers', side_effect=lambda page, step: receipt(step)) as written, \
-                patch.object(runner, 'quiz_multiple_choices', side_effect=runner.Stop('uncertain native write')) as choice:
-            with self.assertRaises(runner.Stop):runner.run_on_page(object(), job, root)
-            with self.assertRaises(runner.Stop):runner.run_on_page(object(), job, root)
-            self.assertEqual(written.call_count, 1);self.assertEqual(choice.call_count, 1)
-            saved = json.loads(Path(root, 'state.json').read_text())
-            self.assertEqual(saved['status'], 'NEEDS_BROWSER_RECOVERY')
-            self.assertEqual(len(saved['results']), 1)
+        for data in (request(), existing_request()):
+            job = self.job(data)
+            with self.subTest(targets=[step['payload']['target_page'] for step in job['steps']]), \
+                    tempfile.TemporaryDirectory() as root, patch.object(runner, 'assert_tenant'), \
+                    patch.object(runner, 'quiz_written_answers', side_effect=lambda page, step: receipt(step)) as written, \
+                    patch.object(runner, 'quiz_multiple_choices', side_effect=runner.Stop('uncertain native write')) as choice:
+                with self.assertRaises(runner.Stop):runner.run_on_page(object(), job, root)
+                with self.assertRaises(runner.Stop):runner.run_on_page(object(), job, root)
+                self.assertEqual(written.call_count, 1);self.assertEqual(choice.call_count, 1)
+                saved = json.loads(Path(root, 'state.json').read_text())
+                self.assertEqual(saved['status'], 'NEEDS_BROWSER_RECOVERY')
+                self.assertEqual(len(saved['results']), 1)
 
 
 if __name__ == '__main__':unittest.main()

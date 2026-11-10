@@ -19,7 +19,26 @@ all three fixed R33 source gaps closed. Installed Python execution, respondent
 answers/backend effects and final scoring/client acceptance remain pending.
 
 
-## Combined public-source checkpoint
+
+## Existing-page mixed quiz compiler follow-up
+
+Public baseline: [`bef33f56ae7ad763d41f281aa6e7332a57634b4d`](https://github.com/trevorotts1/openclaw-onboarding/commit/bef33f56ae7ad763d41f281aa6e7332a57634b4d).
+
+Status: **IMPLEMENTED_PENDING_EXECUTION** on the bounded
+`quizzes.configure` mixed-question compiler only. The obsolete empty-first-page
+and later-new-page restriction is removed. Each batch still authors one question,
+retains the same exact quiz owner and complete preceding page/question inventory,
+and uses the existing captured leaf writer and separate intent journal.
+
+The candidate adds same-page and earlier-page composition coverage, persisted
+Picture Choice inventory drift refusals, and legacy/new-page plus populated-page
+replay/uncertainty cases. Execution is unavailable, so those focused checks are
+**NOT RUN**. Earlier passing checks belong to their exact prior checkpoints and
+do not cover this follow-up. No new native selector or UI contract is introduced.
+Whole `quizzes.configure` remains PARTIAL; current counts stay **22 BUILT,
+10 PARTIAL, 1 GENERIC_ONLY**.
+
+## Combined public-source checkpoint before this follow-up
 
 This snapshot combines public R33 head `c12eccb17...` with public #3099 head
 `ad61e7c3...`. It preserves all seven of that source owner's completed controls:
