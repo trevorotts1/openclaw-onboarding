@@ -25,6 +25,10 @@ def native_cases(root):
  for k in ('short','choice','radio','yes_no','quiz_dropdown','quiz_multi','written'):
   from test_fourth_control_integration import request
   o,d,_=request(k);yield 'quiz_'+k,o,d
+ from test_survey_radio_creation import inputs as survey_radio
+ yield 'survey_radio_creation','surveys.create',survey_radio()
+ from test_quiz_picture_questions import request as picture_choice
+ yield 'quiz_picture_choice','quizzes.configure',picture_choice()
  from test_field_placement_integration import inputs
  base=inputs();base.pop('add_fields')
  for k,extra in [('builtin',{'add_fields':['Website']}),('field_properties',{'fields':[{'field':'Last Name','required':True}]}),('address',{'address_fields':[{'field':'Street Address','current_query_key':'address','query_key':'street_address'}]}),('consent',{'consent':{'expected_query_key':'terms_and_conditions','required':True,'expected_required':False}})]:yield k,'forms.configure',{**base,**extra}
@@ -116,8 +120,8 @@ class CompleteNativeProviderBoundaries(unittest.TestCase):
                     and node.func.id=='add' and node.args):
                 named |= literal_action(node.args[0])
         self.assertTrue(named <= covered,named-covered)
-        self.assertEqual(len(covered),57,'Update the bounded fixtures for newly added dynamic compiler actions')
-        self.assertEqual(len(rows),70)
+        self.assertEqual(len(covered),59,'Update the bounded fixtures for newly added dynamic compiler actions')
+        self.assertEqual(len(rows),72)
 
     def test_no_current_native_job_delegates_to_status_only_api_or_extension_callback(self):
         with tempfile.TemporaryDirectory() as directory:

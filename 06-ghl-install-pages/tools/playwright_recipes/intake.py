@@ -29,7 +29,7 @@ FIELDS = {
     'forms.settings': {'settings', 'schedule', 'tracking'},
     'forms.submission': {'submission'}, 'forms.notifications': {'notifications'},
     'forms.conditions': {'condition'},
-    'surveys.create': {'name', 'allow_creation', 'standard_fields'},
+    'surveys.create': {'name', 'allow_creation', 'standard_fields', 'radio_questions'},
     'quizzes.create': {'name', 'allow_creation', 'standard_fields', 'fixture'},
     'surveys.configure': {'configuration'}, 'quizzes.configure': {'configuration'},
     'communities.create': {'community'},
@@ -54,6 +54,7 @@ REQUIRED = {
 
 
 QUIZ_CREATION = {
+    'picture_choice_questions': ('quiz_picture_choices', 'quiz_picture_questions'),
     'short_answer_questions': ('quiz_short_answers', 'quiz_text_questions'),
     'multiple_choice_questions': ('quiz_multiple_choices', 'quiz_choice_questions'),
     'written_answer_questions': ('quiz_written_answers', 'quiz_written_questions'),
@@ -155,6 +156,9 @@ def validate_intake(operation, data):
             raise Stop('Portal identity requires a concrete channel or details operation')
     if missing:
         raise Stop('Missing required recipe inputs: ' + ', '.join(sorted(missing)))
+    if operation == 'surveys.create' and 'radio_questions' in data:
+        from playwright_recipes.survey_radio_creation import payload_from_inputs
+        payload_from_inputs(data)
     if operation == 'courses.configure_ui':
         native = set(data).intersection(FIELDS[operation])
         if native and 'options' in data:
@@ -231,7 +235,9 @@ def validate_intake(operation, data):
         if action == 'native_condition_outcomes' and 'options' in data:
             raise Stop('Native conditional outcomes require their own independently journaled job')
     if operation == 'quizzes.configure':
-        quiz_creation(data)
+        from playwright_recipes.quiz_batches import compile_batches
+        if compile_batches(data) is None:
+            quiz_creation(data)
     if operation == 'surveys.configure' and isinstance(data.get('configuration'), dict):
         config = data['configuration']
         if set(config).intersection({'object_fields', 'field_dependencies'}):

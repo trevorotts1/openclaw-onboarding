@@ -206,6 +206,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
     branding_mode = operation == 'communities.configure' and 'branding' in inputs
     event_mode = operation == 'meetings.integrate' and inputs.get('integration_mode') == 'community_event_room'
     contact_mode = operation == 'forms.configure' and 'contact_field_plan' in inputs
+    survey_radio_mode = operation == 'surveys.create' and 'radio_questions' in inputs
     captured_mode = captured_script_mode(operation, inputs)
     if event_mode and 'auth_activation' in inputs:
         return {'status':'STOP_INVALID_INPUT','browser_used':False,
@@ -264,6 +265,12 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
             return {'status':'CONTACT_FIELD_CAPABILITY_REQUIRED', 'route':route,
                 'browser_used':False, 'error_type':type(exc).__name__,
                 'reason':'A fresh same-location Contact v3 capability with the requested read/write scopes is required before browser or API execution'}
+    if survey_radio_mode and not journal_present(Path(evidence_root).resolve()/'state.json'):
+        try:
+            from playwright_recipes.survey_radio_creation import validate_runtime
+            validate_runtime(compile_recipe(operation,inputs),observed.get('radio_field_capability'))
+        except Exception as exc:
+            return {'status':'RADIO_FIELD_CAPABILITY_REQUIRED','route':route,'browser_used':False,'error_type':type(exc).__name__}
     if 'auth_activation' in inputs and route['lane'] != 'playwright':
         return {'status':'STOP_FRESH_ACTIVATION_REQUIRED', 'route':route,
                 'browser_used':False,
@@ -361,6 +368,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
                     'browser_used': True, 'result': result}
         contact_arguments = ({'contact_field_capability':observed.get('contact_field_capability')}
             if operation == 'forms.configure' and 'contact_field_plan' in inputs else {})
+        if survey_radio_mode:contact_arguments['radio_field_capability']=observed.get('radio_field_capability')
         result = (run_on_page(page, job, root, **contact_arguments) if page is not None
             else execute(job, root, **contact_arguments))
         return {'status': result['status'], 'route': route, 'result': result}
@@ -429,6 +437,9 @@ def main(argv=None):
             status = 'ROUTE_VALIDATED_ONLY'
             if selected['lane'] == 'playwright':
                 job = validate_job(compile_recipe(args.operation, inputs), args.inputs.resolve().parent)
+                if args.operation == 'surveys.create' and 'radio_questions' in inputs:
+                    from playwright_recipes.survey_radio_creation import validate_runtime
+                    validate_runtime(job,observed.get('radio_field_capability'))
                 if args.operation == 'forms.configure' and 'contact_field_plan' in inputs:
                     from playwright_recipes.contact_field_frontdoor import validate_capability
                     validate_capability(job['steps'][0], observed.get('contact_field_capability'))

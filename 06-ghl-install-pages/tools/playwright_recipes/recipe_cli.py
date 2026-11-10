@@ -105,6 +105,10 @@ def compile_recipe(operation, data):
     elif operation=='forms.conditions':
         action, condition = condition_request(data['condition'])
         add(action, **condition)
+    elif operation=='quizzes.configure' and 'question_batches' in data['configuration']:
+        from playwright_recipes.quiz_batches import compile_batches
+        for action, payload in compile_batches(data):
+            add(action, payload=payload)
     elif operation=='quizzes.configure' and quiz_creation(data) is not None:
         action, payload = quiz_creation(data)
         add(action, payload=payload)
@@ -127,6 +131,9 @@ def compile_recipe(operation, data):
         add('native_checkout_ui', payload=data)
     elif operation in ('checkout.configure_native','checkout.one_click_upsell') and data.get('adapter_capture'):
         add('native_checkout', payload=data)
+    elif operation=='surveys.create' and 'radio_questions' in data:
+        from playwright_recipes.survey_radio_creation import payload_from_inputs
+        add('native_survey_radio_creation',payload=payload_from_inputs(data))
     elif operation in ('surveys.create','quizzes.create'):
         add('assessment',kind='survey' if operation=='surveys.create' else 'quiz',name=data['name'],allow_creation=data.get('allow_creation',False),standard_fields=data.get('standard_fields',[]))
         if operation=='quizzes.create' and not data.get('options') and not data.get('fixture'):

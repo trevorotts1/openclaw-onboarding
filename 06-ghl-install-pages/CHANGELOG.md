@@ -1,3 +1,24 @@
+## [v27.1.100] - 2026-11-09
+
+- Add the maintained surveys.create Radio composition: create a single-slide
+  shell with one captured standard field, independently reopen its complete
+  owner identity, then provision/reuse and place authored Radio questions.
+  Keep shell, API and native journals separate; retain uncertain-write refusal.
+- Add mixed captured quiz question batch compilation with exact same-quiz page
+  inventory continuity and existing type-specific writers/receipts. A later
+  interrupted batch does not become permission to repeat earlier insertions.
+- Add one Picture Choice question on a positively inventoried empty/new page,
+  using exactly three approved existing-catalog images and the captured default
+  style. Bind thumbnail/canonical media, the first Save owner-ID transition and
+  the caller-declared persisted Unique Key. Keep Picture Choice outside mixed
+  batches until cross-writer inventory support is implemented.
+- Reconcile #3059 delivery and current source additions in the recovery ledger.
+  All twelve broad partial/generic operation areas retain missing executable
+  controls. Source checks and manual capture do not establish installed Python,
+  respondent, scoring/results or other final functional acceptance.
+- Run focused changed-behavior checks and required repository checks. Preserve
+  the existing guards, auth lifecycle, capability scopes and global release.
+
 ## [v27.1.99] - 2026-11-09
 
 - Add explicit ordered mixed AND/OR form predicates while retaining legacy all/any

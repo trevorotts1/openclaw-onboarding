@@ -217,6 +217,32 @@ def _commits_touching(base, head, path):
     return rows
 
 
+def _merge_carries_pin_forward(sha: str, pin: str) -> bool:
+    """True when merge commit sha resolves pin to a blob identical to one parent.
+
+    A merge that resolves a pin file to the exact blob already present on one
+    of its parents introduces no new pin content: it carries a previously
+    minted blob forward. Such a merge must not be blamed as a hand edit.
+    Any merge whose tree blob matches NO parent blob wrote new content and
+    still fails L5.
+    """
+    cp = git("rev-list", "--parents", "-n", "1", sha)
+    parts = cp.stdout.split()
+    if len(parts) < 3 or parts[0] != sha:
+        return False
+    tree = git("rev-parse", f"{sha}:{pin}")
+    if tree.returncode != 0:
+        return False
+    tree_blob = tree.stdout.strip()
+    if not tree_blob:
+        return False
+    for parent in parts[1:]:
+        cp = git("rev-parse", f"{parent}:{pin}")
+        if cp.returncode == 0 and cp.stdout.strip() == tree_blob:
+            return True
+    return False
+
+
 def check_pin_not_hand_written(spec, laws, base, head) -> Result:
     """L5: only a declared bot identity may write a declared pin file."""
     bot_emails = set(laws["bot_emails"])
@@ -225,10 +251,15 @@ def check_pin_not_hand_written(spec, laws, base, head) -> Result:
     for pin in laws["pin_files"]:
         for sha, ae, ce in _commits_touching(base, head, pin):
             checked += 1
-            if ae not in bot_emails or ce not in bot_emails:
-                violations.append(
-                    f"{pin}: commit {sha[:12]} author={ae} committer={ce} -- only the mint job may write it"
-                )
+            if ae in bot_emails and ce in bot_emails:
+                continue
+            cp = git("rev-list", "--parents", "-n", "1", sha)
+            is_merge = len(cp.stdout.split()) > 2
+            if is_merge and _merge_carries_pin_forward(sha, pin):
+                continue
+            violations.append(
+                f"{pin}: commit {sha[:12]} author={ae} committer={ce} -- only the mint job may write it"
+            )
     if violations:
         return Result("L5", spec["check"], "tree", "FAIL", violations)
     return Result(
