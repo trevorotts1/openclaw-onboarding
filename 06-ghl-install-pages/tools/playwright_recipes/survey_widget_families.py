@@ -1,18 +1,20 @@
 """Survey property edits reuse captured field-family controls, not form layouts.
 
-Number is grounded by the saved/reopened November 10 survey capture. Checkbox,
-File Upload and Signature remain unavailable here until their survey controls
-are captured; a form capture is not treated as survey evidence.
+Number and Checkbox use separately captured November 10 survey controls.
+File Upload and Signature remain unavailable until their survey profiles are
+captured; a form capture is not treated as survey evidence.
 """
 from copy import deepcopy
 import hashlib
 import json
 import re
 from urllib.parse import urlsplit
+from pathlib import Path
 
 from playwright_recipes import form_widget_families as shared
 from playwright_recipes import survey_text_questions as survey
-from playwright_recipes.skill6_playwright import Stop,click,wait_until
+from playwright_recipes.skill6_playwright import Stop,click,wait_until,secure_json
+from playwright_recipes.evidence_lease import journal_present, read_journal
 from playwright_recipes.assessments import reopen_editor
 
 ACTION='native_survey_widget_fields'
@@ -23,7 +25,31 @@ NUMBER['properties']={key:selector for key,selector in NUMBER['properties'].item
 NUMBER['properties']['label']='#fieldTitle input'
 NUMBER['defaults'].pop('width',None)
 NUMBER['sidebar_header']=False  # Survey capture proves its General Settings, not the form sidebar ID.
-PROFILES={'number':NUMBER}
+CHECKBOX=deepcopy(shared.PROFILES['checkbox'])
+CHECKBOX['properties']={key:selector for key,selector in CHECKBOX['properties'].items() if key!='width'}
+CHECKBOX['properties']['label']='#fieldTitle input'
+CHECKBOX['defaults'].pop('width',None)
+CHECKBOX['sidebar']='#survey_custom_sidebar'
+SINGLE_DROPDOWN=deepcopy(shared.PROFILES['single_dropdown'])
+SINGLE_DROPDOWN['properties']={key:selector for key,selector in SINGLE_DROPDOWN['properties'].items() if key!='width'}
+SINGLE_DROPDOWN['properties']['label']='#fieldTitle input'
+SINGLE_DROPDOWN['defaults'].pop('width',None)
+SINGLE_DROPDOWN['sidebar']='#survey_custom_sidebar'
+SINGLE_DROPDOWN['creation_drag']='tile'
+MULTI_DROPDOWN=deepcopy(shared.PROFILES['multi_dropdown'])
+MULTI_DROPDOWN['properties']={key:selector for key,selector in MULTI_DROPDOWN['properties'].items() if key!='width'}
+MULTI_DROPDOWN['properties']['label']='#fieldTitle input'
+MULTI_DROPDOWN['defaults'].pop('width',None)
+MULTI_DROPDOWN['sidebar']='#survey_custom_sidebar'
+MULTI_DROPDOWN['creation_drag']='tile'
+PROFILES={'number':NUMBER,'checkbox':CHECKBOX,'single_dropdown':SINGLE_DROPDOWN,'multi_dropdown':MULTI_DROPDOWN}
+# Survey Quick Add drawer and drag handle captured 2026-11-10.
+NUMBER_CREATION_TILE='Number3'
+CREATION_TILES={'number':NUMBER_CREATION_TILE,'checkbox':'Checkbox2','single_dropdown':'Single Dropdown0','multi_dropdown':'Multi Dropdown1'}
+
+
+def _key(kind):
+    return PROFILES[kind].get('key_property','query_key')
 
 
 def _properties(kind,value):
@@ -69,14 +95,14 @@ def validate(step):
                         or type(field['index']) is not int or field['index']<1):
                     raise Stop('Survey widgets require exact one-based positions within each slide')
                 props=_properties(field['kind'],field['properties'])
-                keys.append(props['query_key']);indices.append(field['index'])
+                keys.append(props[_key(field['kind'])]);indices.append(field['index'])
             if indices!=sorted(set(indices)):
                 raise Stop('Survey widget positions must be unique and ordered')
         if len(keys)!=len(set(keys)):
             raise Stop('Survey widget Query Keys must be unique across all slides')
     before=fields['expected'];after=fields['desired']
     if not any(before):raise Stop('Survey widget property jobs require existing captured widgets')
-    old_keys={field['properties']['query_key']:(slide,field['index']) for slide,row in enumerate(before) for field in row}
+    old_keys={field['properties'][_key(field['kind'])]:(slide,field['index']) for slide,row in enumerate(before) for field in row}
     for slide,(old,new) in enumerate(zip(before,after)):
         if len(old)!=len(new):raise Stop('Survey widget property edits cannot create or remove questions')
         for previous,desired in zip(old,new):
@@ -85,7 +111,7 @@ def validate(step):
             for key in ('custom_field_name','unique_key'):
                 if previous['properties'][key]!=desired['properties'][key]:
                     raise Stop('Existing survey custom-field canonical metadata is immutable')
-            key=desired['properties']['query_key']
+            key=desired['properties'][_key(desired['kind'])]
             if key in old_keys and old_keys[key]!=(slide,desired['index']):
                 raise Stop('Survey widget Query Key collides with another current question')
     return deepcopy(plan)
@@ -142,7 +168,7 @@ def configure(page,step):
     if _inventory(frame,plan)!=before:
         raise Stop('Survey widget full previous property inventory changed before edits')
     snapshot=survey.snapshot(frame,plan)
-    renamed=any(old['properties']['query_key']!=new['properties']['query_key']
+    renamed=any(old['properties'][_key(old['kind'])]!=new['properties'][_key(new['kind'])]
                 for a,b in zip(before,desired) for old,new in zip(a,b))
     if renamed and any(widget['types'] not in ([profile['type']] for profile in PROFILES.values())
                        for owner in snapshot for widget in owner):
@@ -182,3 +208,121 @@ def verify_completed(page,step,receipt):
     if _inventory(frame,plan)!=value['widget_fields'] or survey.snapshot(frame,plan)!=value['saved_snapshot']:
         raise Stop('Completed survey widget properties or siblings drifted; no writes repeated')
     return value
+
+
+
+def validate_creation_question(value,kind='number'):
+    """Authoring uses an independently captured survey property profile."""
+    return _properties(kind,value)
+
+
+def _creation_kind(plan):
+    families={profile['type']:kind for kind,profile in PROFILES.items()}
+    kind=families.get(plan.get('_native_field_type','NUMERICAL'))
+    if kind not in CREATION_TILES:raise Stop('Uncaptured native survey creation family')
+    return kind
+
+
+def read_creation_question(frame,plan):
+    owner=survey._owners(frame,plan).nth(plan['target_slide']-1)
+    items=owner.locator('.form-field-wrapper')
+    if items.count()!=1:
+        raise Stop('Survey widget creation requires its exact single-widget owner')
+    kind=_creation_kind(plan)
+    return shared._read(frame,items.nth(0),kind,profile=PROFILES[kind])
+
+
+def _creation_hash(plan):
+    return hashlib.sha256(json.dumps(plan,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+
+
+def validate_creation_receipt(value,plan):
+    kind=_creation_kind(plan);profile=PROFILES[kind]
+    validate_creation_question(plan['question'],kind)
+    if (not isinstance(value,dict) or set(value)!={'status','editor_url','target_slide','question',
+                'configuration_sha256','saved_snapshot','independent_readback'}
+            or value['status']!='SURVEY_'+kind.upper()+'_SAVED_AND_REOPENED'
+            or value['editor_url']!=plan['start_url'] or value['target_slide']!=plan['target_slide']
+            or value['question']!=plan['question'] or value['configuration_sha256']!=_creation_hash(plan)
+            or value['independent_readback']!='VERIFIED'
+            or not isinstance(value['saved_snapshot'],list)
+            or len(value['saved_snapshot'])!=plan['expected_slide_count']):
+        raise Stop('Survey widget creation completion is malformed or unbound')
+    row=value['saved_snapshot'][plan['target_slide']-1]
+    if not isinstance(row,list) or len(row)!=1 or not isinstance(row[0],dict) or row[0].get('types')!=[profile['type']]:
+        raise Stop('Survey widget completion changed its exact saved owner')
+    return deepcopy(value)
+
+
+def configure_creation(page,plan,evidence_root):
+    """One captured widget insertion on an owned empty slide, then Save/reopen."""
+    kind=_creation_kind(plan);profile=PROFILES[kind]
+    validate_creation_question(plan['question'],kind)
+    root=Path(evidence_root).resolve();state=root/(kind+'-state.json');fingerprint=_creation_hash(plan)
+    if state.is_symlink():raise Stop('Survey widget journal must not be a symlink')
+    frame=survey._frame(page,plan)
+    if journal_present(state):
+        stored=read_journal(state)
+        if stored.get('configuration_sha256')!=fingerprint or stored.get('status')!='SAVED_AND_REOPENED':
+            raise Stop('Survey widget insertion or Save is uncertain; reconcile without retrying')
+        done=validate_creation_receipt(stored.get('receipt'),plan)
+        reopen_editor(page,'survey',plan['expected_survey_name'],plan['start_url'])
+        frame=survey._frame(page,plan)
+        if read_creation_question(frame,plan)!=plan['question'] or survey.snapshot(frame,plan)!=done['saved_snapshot']:
+            raise Stop('Completed Survey widget owner or siblings drifted; no insertion repeated')
+        return done
+    owner=survey._owners(frame,plan).nth(plan['target_slide']-1)
+    if owner.locator('.form-field-wrapper').count()!=0 or owner.get_by_text('Drag and drop components',exact=True).count()!=1:
+        raise Stop('Survey widget insertion requires its positively empty captured owner')
+    before=survey.snapshot(frame,plan)
+    click(shared._one(owner.get_by_role('button',name='Add Elements',exact=True),'Survey widget element drawer opener changed'))
+    dialog=shared._one(frame.get_by_role('dialog'),'Survey widget element drawer changed')
+    shared._one(dialog.get_by_text('Survey Element',exact=True),'Survey widget element drawer title changed')
+    click(shared._one(dialog.get_by_text('Quick Add',exact=True),'Survey widget Quick Add tab changed'))
+    tile=shared._one(dialog.locator('[id="'+CREATION_TILES[kind]+'"]'),'Captured survey widget tile changed')
+    handle=(tile if profile.get('creation_drag')=='tile' else
+        shared._one(tile.locator('.gui__builder-card--handler'),'Captured survey widget drag handle changed'))
+    drag_options={}
+    if profile.get('creation_drag')=='tile':
+        icon=shared._one(tile.locator('.gui__builder-card--icon'),'Survey dropdown drag icon changed')
+        box=tile.bounding_box();icon_box=icon.bounding_box()
+        if (not box or not icon_box or min(box['width'],box['height'],icon_box['width'],icon_box['height'])<4):
+            raise Stop('Survey dropdown drag source has no safe geometry')
+        drag_options['source_position']={'x':icon_box['x']-box['x']+icon_box['width']/2,
+                                         'y':icon_box['y']-box['y']+icon_box['height']/2}
+    canvas=shared._one(owner.locator('.builder_sub_container'),'Survey widget insertion boundary changed')
+    record={'configuration_sha256':fingerprint,'status':'INTENT_RECORDED'};secure_json(state,record)
+    try:
+        handle.drag_to(canvas,timeout=45000,**drag_options)
+        wait_until(lambda:owner.locator('.form-field-wrapper').count()==1,'Survey widget insertion did not create exactly one widget')
+        survey._close_initial(frame)
+        after=survey.snapshot(frame,plan);target=plan['target_slide']-1
+        if (len(after)!=len(before) or len(after[target])!=1 or after[target][0]['types']!=[profile['type']]
+                or any(row!=before[index] for index,row in enumerate(after) if index!=target)):
+            raise Stop('Survey widget insertion changed another slide or field family')
+        previous=read_creation_question(frame,plan)
+        suffix=re.fullmatch(re.escape(profile['tile'])+r' ([a-z0-9]{'+str(profile['suffix'])+'})',previous['label'])
+        if (not suffix or not shared._default_key(profile,previous[_key(kind)],suffix.group(1))
+                or previous['custom_field_name']!=previous['label']
+                or not previous['unique_key'].startswith('contact.'+profile['key_prefix'])
+                or previous['unique_key'][len('contact.'+profile['key_prefix']):].replace('_','')!=suffix.group(1)
+                or any(previous[key]!=value for key,value in profile['defaults'].items())):
+            raise Stop('New survey widget defaults differ from its captured native identity')
+        shared._write(frame,owner.locator('.form-field-wrapper').nth(0),kind,previous,plan['question'],profile=profile)
+        desired=survey.snapshot(frame,plan)
+        if (len(desired)!=len(before) or len(desired[target])!=1
+                or any(row!=before[index] for index,row in enumerate(desired) if index!=target)):
+            raise Stop('Survey widget property authoring changed another slide')
+        save=shared._one(frame.get_by_role('button',name='Save',exact=True),'Survey widget Save changed')
+        click(save);wait_until(lambda:save.count()==1 and save.is_enabled(),'Survey widget Save did not finish')
+        reopen_editor(page,'survey',plan['expected_survey_name'],plan['start_url']);frame=survey._frame(page,plan)
+        if read_creation_question(frame,plan)!=plan['question'] or survey.snapshot(frame,plan)!=desired:
+            raise Stop('Survey widget did not persist after independent reopen')
+        done=validate_creation_receipt({'status':'SURVEY_'+kind.upper()+'_SAVED_AND_REOPENED','editor_url':plan['start_url'],
+            'target_slide':plan['target_slide'],'question':deepcopy(plan['question']),
+            'configuration_sha256':fingerprint,'saved_snapshot':desired,'independent_readback':'VERIFIED'},plan)
+        secure_json(state,{'configuration_sha256':fingerprint,'status':'SAVED_AND_REOPENED','receipt':done})
+        return done
+    except Exception as error:
+        record.update(status='NEEDS_RECONCILIATION',error_type=type(error).__name__);secure_json(state,record)
+        raise

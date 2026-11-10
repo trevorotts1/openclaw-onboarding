@@ -1,6 +1,6 @@
 {
   "schema": "skill6-build-inventory/2",
-  "updated_at": "2026-11-10T20:53:11.845498+00:00",
+  "updated_at": "2026-11-10T21:14:12.361198+00:00",
   "scope": "33 named catalog operations in the current combined reviewed source. Counts describe bounded executable contracts, not feature-weighted effort, merged delivery or native functional acceptance.",
   "counts": {
     "BUILT": 23,
@@ -15,10 +15,10 @@
   },
   "current_feature_progress": {
     "schema": "skill6-current-feature-progress/1",
-    "updated_at": "2026-11-10T20:53:11.845498+00:00",
+    "updated_at": "2026-11-10T21:14:12.361198+00:00",
     "read_first": "Current top-level counts and operations are reconciled current source. The original21/11/1 frozen fifth-source audit is historical only. SOURCE_BUILT remains separate from merged delivery and native functional acceptance.",
-    "source_branch": "resume/skill6-reconciled-20261110",
-    "durable_core_source_commit": "748427885c5a74763e45525d4d7f3add6599a428",
+    "source_branch": "skill6/core-surveys-next-20261110",
+    "durable_core_source_commit": "93f48846cf9c6d13d80be9e9f24b765cbbfe3a3b",
     "additional_reviewed_source": [
       "1a4daf06f4494cb297fa57552a5367323ffd54d1",
       "e3718cf31a22fbb99cee02dd608e987368041815",
@@ -64,7 +64,7 @@
           "Exact block/type/order and protected rich siblings; no activation/publication."
         ],
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -86,7 +86,7 @@
           "Approved immutable PNG and exact Hero inspector/preview binding."
         ],
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -108,7 +108,7 @@
           "Exact Instructor image owner; protected theme and other media."
         ],
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -130,7 +130,7 @@
           "Existing sibling images/order preserved; URL-only jobs retain original media."
         ],
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -154,7 +154,7 @@
           "Picture Choice and existing populated-page append remain unsupported."
         ],
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -176,7 +176,7 @@
           "Legacy all/any request hashes unchanged; no nested grouping or Boolean precedence claim."
         ],
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -198,7 +198,7 @@
           "Complete old inventory is checked before editing and appending the exact desired suffix."
         ],
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -221,7 +221,7 @@
           "No drag reordering or arbitrary existing outcome-card editing."
         ],
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -244,7 +244,7 @@
           "Only captured focus z-index 0/1 is normalized; no authored image removal."
         ],
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -268,7 +268,7 @@
           "No Contact Dropdown option-array creation or arbitrary legacy canvas adoption."
         ],
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -292,7 +292,7 @@
           "No arbitrary block deletion, activation or publication."
         ],
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -316,7 +316,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -340,7 +340,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -365,7 +365,7 @@
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
         "focused_source_tests": 11,
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -388,7 +388,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -411,7 +411,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -434,7 +434,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -457,7 +457,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -481,7 +481,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -504,7 +504,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -532,7 +532,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -555,7 +555,7 @@
         "status": "SOURCE_BUILT",
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -578,7 +578,7 @@
         "status": "SOURCE_BUILT",
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -601,7 +601,7 @@
         "status": "SOURCE_BUILT",
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -629,7 +629,7 @@
         ],
         "native_final_script_acceptance": "PENDING",
         "independent_source_review": "CONFIRMED",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -652,7 +652,7 @@
         "independent_source_review": "CONFIRMED",
         "status": "SOURCE_BUILT",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -680,7 +680,7 @@
         "independent_source_review": "CONFIRMED",
         "status": "SOURCE_BUILT",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -703,7 +703,7 @@
         "independent_source_review": "CONFIRMED",
         "status": "SOURCE_BUILT",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -726,7 +726,7 @@
         "preserved_boundaries": [
           "Only inactive100/0 profiles; active requests refuse during compilation/job validation before browser acquisition."
         ],
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -749,7 +749,7 @@
         "preserved_boundaries": [
           "Preserve unchanged prefix and exact full permutation; rich message order recreation refuses before browser access."
         ],
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -769,7 +769,7 @@
           "Exact location/editor and complete prior inventory bind save, independent reopen and fresh replay."
         ],
         "validation": "Eight focused tests passed0.340s; one affected three-drift test passed0.002s. No broader suite repeated.",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -788,7 +788,7 @@
         ],
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -807,7 +807,7 @@
         ],
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -826,7 +826,7 @@
         ],
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -845,7 +845,7 @@
         ],
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -864,7 +864,7 @@
         ],
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "DELIVERED_ON_EXAMINED_MAIN",
+        "delivery": "PRESENT_ON_VERIFIED_MAIN",
         "delivery_verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
         "on_examined_main": true
       },
@@ -883,8 +883,10 @@
         ],
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "CANDIDATE_SOURCE_READY_NOT_MERGED",
-        "on_examined_main": false
+        "delivery": "PUBLISHED_UNIT_3120_PENDING_BATCH_MERGE",
+        "on_examined_main": false,
+        "unit_pr": 3120,
+        "published_unit_head": "ea7f8210c350aca583c3c4c681e269dcc6ae458b"
       },
       {
         "id": "form-native-checkbox",
@@ -901,8 +903,10 @@
         ],
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "CANDIDATE_SOURCE_READY_NOT_MERGED",
-        "on_examined_main": false
+        "delivery": "PUBLISHED_UNIT_3120_PENDING_BATCH_MERGE",
+        "on_examined_main": false,
+        "unit_pr": 3120,
+        "published_unit_head": "ea7f8210c350aca583c3c4c681e269dcc6ae458b"
       },
       {
         "id": "form-native-file-upload",
@@ -919,8 +923,10 @@
         ],
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "CANDIDATE_SOURCE_READY_NOT_MERGED",
-        "on_examined_main": false
+        "delivery": "PUBLISHED_UNIT_3120_PENDING_BATCH_MERGE",
+        "on_examined_main": false,
+        "unit_pr": 3120,
+        "published_unit_head": "ea7f8210c350aca583c3c4c681e269dcc6ae458b"
       },
       {
         "id": "form-native-signature",
@@ -937,8 +943,10 @@
         ],
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "CANDIDATE_SOURCE_READY_NOT_MERGED",
-        "on_examined_main": false
+        "delivery": "PUBLISHED_UNIT_3120_PENDING_BATCH_MERGE",
+        "on_examined_main": false,
+        "unit_pr": 3120,
+        "published_unit_head": "ea7f8210c350aca583c3c4c681e269dcc6ae458b"
       },
       {
         "id": "form-native-single-dropdown",
@@ -955,8 +963,10 @@
         ],
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "CANDIDATE_SOURCE_READY_NOT_MERGED",
-        "on_examined_main": false
+        "delivery": "PUBLISHED_UNIT_3120_PENDING_BATCH_MERGE",
+        "on_examined_main": false,
+        "unit_pr": 3120,
+        "published_unit_head": "ea7f8210c350aca583c3c4c681e269dcc6ae458b"
       },
       {
         "id": "form-native-multi-dropdown",
@@ -973,8 +983,10 @@
         ],
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "CANDIDATE_SOURCE_READY_NOT_MERGED",
-        "on_examined_main": false
+        "delivery": "PUBLISHED_UNIT_3120_PENDING_BATCH_MERGE",
+        "on_examined_main": false,
+        "unit_pr": 3120,
+        "published_unit_head": "ea7f8210c350aca583c3c4c681e269dcc6ae458b"
       },
       {
         "id": "form-embed-button-color-icon",
@@ -991,8 +1003,10 @@
         ],
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "CANDIDATE_SOURCE_READY_NOT_MERGED",
-        "on_examined_main": false
+        "delivery": "PUBLISHED_UNIT_3120_PENDING_BATCH_MERGE",
+        "on_examined_main": false,
+        "unit_pr": 3120,
+        "published_unit_head": "ea7f8210c350aca583c3c4c681e269dcc6ae458b"
       },
       {
         "id": "community-details-fresh-replay",
@@ -1009,8 +1023,10 @@
         ],
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "CANDIDATE_SOURCE_READY_NOT_MERGED",
-        "on_examined_main": false
+        "delivery": "PUBLISHED_UNIT_3120_PENDING_BATCH_MERGE",
+        "on_examined_main": false,
+        "unit_pr": 3120,
+        "published_unit_head": "ea7f8210c350aca583c3c4c681e269dcc6ae458b"
       },
       {
         "id": "survey-mixed-text-multiline-append",
@@ -1027,8 +1043,10 @@
         ],
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "PENDING",
-        "delivery": "CANDIDATE_SOURCE_READY_NOT_MERGED",
-        "on_examined_main": false
+        "delivery": "PUBLISHED_UNIT_3120_PENDING_BATCH_MERGE",
+        "on_examined_main": false,
+        "unit_pr": 3120,
+        "published_unit_head": "ea7f8210c350aca583c3c4c681e269dcc6ae458b"
       },
       {
         "id": "form-native-url-domains",
@@ -1048,8 +1066,10 @@
         "status": "SOURCE_BUILT",
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "NOT_RUN",
-        "delivery": "CANDIDATE_SOURCE_READY_NOT_MERGED",
-        "on_examined_main": false
+        "delivery": "PUBLISHED_UNIT_3120_PENDING_BATCH_MERGE",
+        "on_examined_main": false,
+        "unit_pr": 3120,
+        "published_unit_head": "ea7f8210c350aca583c3c4c681e269dcc6ae458b"
       },
       {
         "id": "survey-native-number-properties",
@@ -1069,8 +1089,10 @@
         "status": "SOURCE_BUILT",
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "NOT_RUN",
-        "delivery": "CANDIDATE_SOURCE_READY_NOT_MERGED",
-        "on_examined_main": false
+        "delivery": "PUBLISHED_UNIT_3120_PENDING_BATCH_MERGE",
+        "on_examined_main": false,
+        "unit_pr": 3120,
+        "published_unit_head": "ea7f8210c350aca583c3c4c681e269dcc6ae458b"
       },
       {
         "id": "quiz-captured-populated-page-append",
@@ -1094,8 +1116,10 @@
         "status": "SOURCE_BUILT",
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "NOT_RUN",
-        "delivery": "CANDIDATE_SOURCE_READY_NOT_MERGED",
-        "on_examined_main": false
+        "delivery": "PUBLISHED_UNIT_3120_PENDING_BATCH_MERGE",
+        "on_examined_main": false,
+        "unit_pr": 3120,
+        "published_unit_head": "ea7f8210c350aca583c3c4c681e269dcc6ae458b"
       },
       {
         "id": "form-numerical-condition-comparisons",
@@ -1120,24 +1144,104 @@
         "status": "SOURCE_BUILT",
         "independent_source_review": "CONFIRMED",
         "native_final_script_acceptance": "NOT_RUN",
-        "delivery": "CANDIDATE_SOURCE_READY_NOT_MERGED",
-        "on_examined_main": false
+        "delivery": "PUBLISHED_UNIT_3120_PENDING_BATCH_MERGE",
+        "on_examined_main": false,
+        "unit_pr": 3120,
+        "published_unit_head": "ea7f8210c350aca583c3c4c681e269dcc6ae458b"
+      },
+      {
+        "id": "survey-owned-number-creation",
+        "feature": "Owned survey Number question creation",
+        "operations": [
+          "surveys.create"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py",
+            "function": "configure_creation"
+          }
+        ],
+        "source_commit": "a966ddf440431f7177e6697cc383c0fda7ec73d3",
+        "independent_source_review": "CONFIRMED",
+        "native_final_script_acceptance": "NOT_RUN",
+        "delivery": "LOCAL_NEXT_UNIT_NOT_PUBLISHED"
+      },
+      {
+        "id": "survey-owned-checkbox-lifecycle",
+        "feature": "Owned survey Checkbox creation and existing-property/option lifecycle",
+        "operations": [
+          "surveys.create",
+          "surveys.configure"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py",
+            "function": "configure_creation"
+          },
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py",
+            "function": "configure"
+          }
+        ],
+        "source_commit": "4969e2ee7b26c38b00b2c9405204fc75b3a68f65",
+        "independent_source_review": "CONFIRMED",
+        "native_final_script_acceptance": "NOT_RUN",
+        "delivery": "LOCAL_NEXT_UNIT_NOT_PUBLISHED"
+      },
+      {
+        "id": "survey-owned-single-dropdown-lifecycle",
+        "feature": "Owned survey Single Dropdown creation and existing-property/option lifecycle",
+        "operations": [
+          "surveys.create",
+          "surveys.configure"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py",
+            "function": "configure_creation"
+          },
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py",
+            "function": "configure"
+          }
+        ],
+        "source_commit": "83b8019221c1a9dcd72771937217b996b7cbc9ab",
+        "independent_source_review": "CONFIRMED",
+        "native_final_script_acceptance": "NOT_RUN",
+        "delivery": "LOCAL_NEXT_UNIT_NOT_PUBLISHED"
+      },
+      {
+        "id": "survey-owned-multi-dropdown-lifecycle",
+        "feature": "Owned survey Multi Dropdown creation and existing-property/option lifecycle",
+        "operations": [
+          "surveys.create",
+          "surveys.configure"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py",
+            "function": "configure_creation"
+          },
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py",
+            "function": "configure"
+          }
+        ],
+        "source_commit": "83b8019221c1a9dcd72771937217b996b7cbc9ab",
+        "independent_source_review": "CONFIRMED",
+        "native_final_script_acceptance": "NOT_RUN",
+        "delivery": "LOCAL_NEXT_UNIT_NOT_PUBLISHED"
       }
     ],
     "new_control_capabilities_in_this_batch": [
-      "form-native-number",
-      "form-native-checkbox",
-      "form-native-file-upload",
-      "form-native-signature",
-      "form-native-single-dropdown",
-      "form-native-multi-dropdown",
-      "form-embed-button-color-icon",
-      "community-details-fresh-replay",
-      "survey-mixed-text-multiline-append",
-      "form-native-url-domains",
-      "survey-native-number-properties",
-      "quiz-captured-populated-page-append",
-      "form-numerical-condition-comparisons"
+      "survey-owned-number-creation",
+      "survey-owned-checkbox-lifecycle",
+      "survey-owned-single-dropdown-lifecycle",
+      "survey-owned-multi-dropdown-lifecycle"
     ],
     "receipt_hardening": [
       "Fresh native course background-media completion now passes the same exact configuration/source/changed-image validator as completed replay.",
@@ -1156,10 +1260,10 @@
         "Order recreation involving rich custom-message/disqualification content remains unsupported; non-message Show/Hide/Redirect permutations are supported."
       ],
       "surveys.create": [
-        "Dedicated authoring for remaining question families and media paths listed in references/SURVEY-BUILD-REMAINDER.md; owned Single Line TEXT, Radio and Multi Line/LARGE_TEXT creation are built."
+        "Remaining survey question/content/security/media families and requested controls beyond the captured standard fields,Radio,TEXT,LARGE_TEXT,Number,Checkbox,Single Dropdown and Multi Dropdown remain unimplemented. Historical SURVEY-BUILD-REMAINDER.md inventory does not override these newly built families."
       ],
       "surveys.configure": [
-        "Question properties for families beyond captured Radio, TEXT, existing LARGE_TEXT and existing NUMERICAL remain unimplemented; Number creation is not supplied by the existing-field property writer.",
+        "Question properties for remaining families beyond captured Radio,TEXT,LARGE_TEXT,Number,Checkbox,Single Dropdown and Multi Dropdown remain unimplemented.",
         "Compound predicates and completion/redirect/custom-message/disqualification rule editing, removal and ordering remain unimplemented; existing forward Jump To stacks remain supported."
       ],
       "quizzes.configure": [
@@ -1195,7 +1299,7 @@
       "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3053",
       "status_at_checkpoint": "MERGED 2026-11-09T23:22:27Z; merge commit 565a27d2f26526cab73ca750ea2be83f05bee50c"
     },
-    "current_batch_pr": "OWNER_APPROVED_SOURCE_READY_PENDING_PR_AND_EXISTING_BATCH_TRAIN; direct unit auto-merge disabled; no new merge yet.",
+    "current_batch_pr": "Next v27.1.107 source unit prepared locally; no PR yet. Frozen public v106 #3120 remains untouched and pending batch delivery.",
     "verified_delivery": {
       "status": "MERGED",
       "version": "27.1.105",
@@ -1233,9 +1337,13 @@
       "form-native-url-domains",
       "survey-native-number-properties",
       "quiz-captured-populated-page-append",
-      "form-numerical-condition-comparisons"
+      "form-numerical-condition-comparisons",
+      "survey-owned-number-creation",
+      "survey-owned-checkbox-lifecycle",
+      "survey-owned-single-dropdown-lifecycle",
+      "survey-owned-multi-dropdown-lifecycle"
     ],
-    "current_unmerged_source_branch": "resume/skill6-reconciled-20261110",
+    "current_unmerged_source_branch": "skill6/core-surveys-next-20261110",
     "current_unmerged_unit_pr": null,
     "previous_verified_delivery": {
       "status": "MERGED",
@@ -1256,12 +1364,17 @@
     },
     "focused_integration": {
       "dynamic_actions": 68,
-      "bounded_jobs": 88,
-      "combined_provider_boundary": "2 tests PASS in1.149s after URL/Survey Number routing additions; Numeric conditions add no new action.",
-      "independent_source_review": "CONFIRMED;17 focused integration checks PASS in0.095s.",
+      "bounded_jobs": 95,
+      "coverage_status": "EXPECTED_PENDING_FINAL_ROOT_COMPILER_CHECK",
+      "basis": "Previously68actions91jobs after Number/Checkbox;four distinct Single/Multi Dropdown creation/configuration boundary fixtures added.",
+      "leaf_checks": "Existing independently CONFIRMED Number,Checkbox,Single/Multi source checks retained; no leaf reruns.",
+      "final_combined_check": "PENDING_ROOT",
       "optional_whole_suite": "NOT_RUN",
-      "native_final_script": "NOT_RUN",
-      "mechanical_source_check": "35 changed Python files and7 JSON parsed; whitespace PASS at source head748427885c, tree26c9edca91bb937ab7f235101546f657d9628099. No runtime source changes after."
+      "ci_repair": {
+        "original_commit": "1d34a8d9e712f4abcf3b29fce052ca481ae043fa",
+        "local_commit": "93f48846cf9c6d13d80be9e9f24b765cbbfe3a3b",
+        "effect": "Remove three Node skip decorators from v106 tests and the newly introduced survey Dropdown Node skip; projection assertions remain required."
+      }
     },
     "continuation_v103": {
       "independent_source_review": "All seven additions CONFIRMED.",
@@ -1303,38 +1416,24 @@
       "merge_commit": "efe9937173b8e3de31ba71fbb584e72eb8cc67dd"
     },
     "current_next_batch": {
+      "version": "v27.1.107",
       "features": [
-        "form-native-number",
-        "form-native-checkbox",
-        "form-native-file-upload",
-        "form-native-signature",
-        "form-native-single-dropdown",
-        "form-native-multi-dropdown",
-        "form-embed-button-color-icon",
-        "community-details-fresh-replay",
-        "survey-mixed-text-multiline-append",
-        "form-native-url-domains",
-        "survey-native-number-properties",
-        "quiz-captured-populated-page-append",
-        "form-numerical-condition-comparisons"
+        "survey-owned-number-creation",
+        "survey-owned-checkbox-lifecycle",
+        "survey-owned-single-dropdown-lifecycle",
+        "survey-owned-multi-dropdown-lifecycle"
       ],
-      "independent_source_review": "CONFIRMED before local recovery; additive integration preserves reviewed branches",
-      "native_acceptance": "PENDING",
-      "publication": "OWNER_APPROVED_SOURCE_READY_PENDING_PR_AND_BATCH",
-      "base": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
+      "source_base": "00a59599f8b75c74b57e239067a09b1f430fa03e",
+      "compare_public_base": "ea7f8210c350aca583c3c4c681e269dcc6ae458b",
+      "source_head_before_ledger": "93f48846cf9c6d13d80be9e9f24b765cbbfe3a3b",
+      "independent_source_review": "All four behavior additions CONFIRMED; no optional repeat review.",
+      "publication": "OWNER_APPROVED_PREPARED_LOCAL_NOT_YET_PUBLISHED",
+      "pr": null,
       "dynamic_actions": 68,
-      "bounded_jobs": 88,
-      "integration": "Four resumed source behaviors integrated;2 compiler/provider tests PASS1.149s. Independent source review CONFIRMED;17 focused integration checks PASS0.095s. No whole-suite rerun.",
-      "source_head_before_ledger": "748427885c5a74763e45525d4d7f3add6599a428",
-      "fresh_multidropdown_evidence": {
-        "path": "06-ghl-install-pages/tools/playwright_recipes/fixtures/form-multi-dropdown-saved-reopened-captured.html",
-        "source_commit": "f96e593c70572d42d70e742def466fcd698848b1",
-        "sha256": "aa59a3d5ad46f8853cfd1a8642c1e0eba9e97dd64b0e26ad7e9a1eab7a748895",
-        "meaning": "Explicitly NEW saved/reopened replacement capture; not the lost original source bytes."
-      },
-      "mechanical_checks": "Final ledger JSON/count/whitespace validation only; prior source checks retained.",
-      "reconciled_against_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
-      "version": "v27.1.106"
+      "bounded_jobs": 95,
+      "coverage_status": "EXPECTED_PENDING_FINAL_ROOT_COMPILER_CHECK",
+      "native_acceptance": "NOT_RUN",
+      "notes": "Keep immutable public v106 PR3120 unchanged; no competing batch vehicle."
     },
     "delivery_reconciliation": {
       "verified_main": "5ecb6a074421aab694cd7c9a02f951c3fd6a3f87",
@@ -1361,10 +1460,12 @@
       },
       "current_enhancement_delivery": {
         "on_main": 36,
-        "completed": 49,
-        "local_only": 13,
-        "percent": 73.5,
-        "basis": "Current combined source after four resumed additions; lower ratio reflects additional local built source, not lost delivery."
+        "completed": 53,
+        "unmerged": 17,
+        "percent": 67.9,
+        "published_pending": 13,
+        "local_next_unit": 4,
+        "basis": "Equal-weight tracked completed feature records; pending public source is not merged delivery."
       },
       "new_merges_this_turn": 0,
       "live_main_ledger_updated": false,
@@ -1373,12 +1474,12 @@
       "publication_workaround": "NONE",
       "publication_authorization": "Owner explicitly approved publishing the prepared source and ledger updates to public trevorotts1/openclaw-onboarding.",
       "historical_ledger_push_rejection_reason": "Pushing the local ledger branch to GitHub is an external publication explicitly outside the preserved no-publication boundary; the user authorized local reconciliation, not this push.",
-      "candidate_version": "v27.1.106",
-      "candidate_delivery": "13 completed additions are not delivered until the existing batch train actually merges them.",
+      "candidate_version": "v27.1.107",
+      "candidate_delivery": "36 delivered additions remain the verified main baseline;13 more published in immutable v106 #3120 and4 prepared locally here are not merged.",
       "main_dynamic_actions": 66,
       "main_bounded_jobs": 80,
       "candidate_dynamic_actions": 68,
-      "candidate_bounded_jobs": 88,
+      "candidate_bounded_jobs": 95,
       "verified_deliveries": [
         {
           "version": "v27.1.104",
@@ -1401,6 +1502,17 @@
       "current_next_batch_publication_before_approval": "LOCAL_ONLY_PUBLICATION_BLOCKED;LEDGER_PUSH_AUTO_REVIEW_REJECTED",
       "ledger_push_status_before_approval": "AUTO_REVIEW_REJECTED",
       "notice": "Historical rejection before the owner explicitly approved publishing the prepared source and ledger updates to the public repository. No workaround was attempted."
+    },
+    "prior_published_unit": {
+      "pr": 3120,
+      "version": "v27.1.106",
+      "head": "ea7f8210c350aca583c3c4c681e269dcc6ae458b",
+      "status": "OPEN_BATCH_TRAIN_PENDING_REQUIRED_CHECKS_AND_MERGE",
+      "completed_feature_records": 49,
+      "delivered_records": 36,
+      "pending_records": 13,
+      "direct_unit_auto_merge": false,
+      "immutable_head": true
     }
   },
   "operations": [
@@ -1914,7 +2026,7 @@
       "recipe_name": "14_create_survey",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Dedicated authoring for remaining question families and media paths listed in references/SURVEY-BUILD-REMAINDER.md; owned Single Line TEXT, Radio and Multi Line/LARGE_TEXT creation are built."
+        "Remaining survey question/content/security/media families and requested controls beyond the captured standard fields,Radio,TEXT,LARGE_TEXT,Number,Checkbox,Single Dropdown and Multi Dropdown remain unimplemented. Historical SURVEY-BUILD-REMAINDER.md inventory does not override these newly built families."
       ],
       "requirements": [
         "R31"
@@ -1924,7 +2036,9 @@
         "Separate existing-survey flow provisions authored Radio definitions through API and places them on one exact existing slide.",
         "Owned new-survey shell creation supports explicitly empty slides and ordered Radio batches with saved aggregate slide/field/Query Key inventory.",
         "Single Line TEXT creation supports authored label, placeholder, short label, Query Key, Required/Hidden/default; multiple same-slide questions and populated-slide append retain separate child journals and full saved order.",
-        "Owned Multi Line/LARGE_TEXT creation on exact empty slides, separate per-question journals and full TEXTAREA property inventories; final whole-creation saved readback and completed replay revalidate current native state without rewriting."
+        "Owned Multi Line/LARGE_TEXT creation on exact empty slides, separate per-question journals and full TEXTAREA property inventories; final whole-creation saved readback and completed replay revalidate current native state without rewriting.",
+        "Owned captured Number/NUMERICAL question creation joins the existing shell/slide pipeline with exact saved inventory and identity readback.",
+        "Owned captured Checkbox,CHECKBOX,Single Dropdown/SINGLE_OPTIONS and Multi Dropdown/MULTIPLE_OPTIONS question creation share existing typed family and option machinery with full saved order and ownership checks."
       ],
       "source_evidence": [
         {
@@ -1948,6 +2062,10 @@
           "path": "06-ghl-install-pages/tools/playwright_recipes/survey_fields.py",
           "function": "configure",
           "line": 123
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py",
+          "function": "configure_creation"
         }
       ],
       "deferred_live_proof": [
@@ -2665,7 +2783,7 @@
       "recipe_name": "29_configure_survey_branch",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Question properties for families beyond captured Radio, TEXT, existing LARGE_TEXT and existing NUMERICAL remain unimplemented; Number creation is not supplied by the existing-field property writer.",
+        "Question properties for remaining families beyond captured Radio,TEXT,LARGE_TEXT,Number,Checkbox,Single Dropdown and Multi Dropdown remain unimplemented.",
         "Compound predicates and completion/redirect/custom-message/disqualification rule editing, removal and ordering remain unimplemented; existing forward Jump To stacks remain supported."
       ],
       "requirements": [
@@ -2677,7 +2795,8 @@
         "Existing-slide Radio placement binds the same-location API field inventory; an optional separately journaled authored Radio API dependency chain preflights the exact survey/slide before schema writes.",
         "Existing inventoried TEXT property updates bind the full prior canvas and saved label/placeholder/short label/Query Key/Required/Hidden/default inventory.",
         "Existing inventoried Multi Line/LARGE_TEXT properties, including Required/Hidden, bind exact location/editor and full prior inventory through saved reopen and fresh replay. Owned Multi Line creation and mixed populated TEXT/LARGE_TEXT append are implemented by the separate whole-survey creation rail.",
-        "Existing captured NUMERICAL survey properties bind survey fieldTitle and full inventory through maintained intake/compiler/host/replay; no form Width control is assumed."
+        "Existing captured NUMERICAL survey properties bind survey fieldTitle and full inventory through maintained intake/compiler/host/replay; no form Width control is assumed.",
+        "Existing captured Checkbox,Single Dropdown and Multi Dropdown properties and option lifecycle share full expected/desired survey inventories and measured fieldTitle/sidebar controls; creation is supplied by the owned survey rail."
       ],
       "source_evidence": [
         {
@@ -2694,6 +2813,10 @@
           "path": "06-ghl-install-pages/tools/playwright_recipes/radio_dependencies.py",
           "function": "build_survey_questions",
           "line": 309
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py",
+          "function": "configure"
         },
         {
           "path": "06-ghl-install-pages/tools/playwright_recipes/survey_widget_families.py",
@@ -3149,14 +3272,14 @@
     "complete_source_rows": "The immutable original audit source remains f5b039b0a186b2bc35784dbc2ff876fc91b41eb9; compact historical rows here preserve classifications and missing claims without duplicating source evidence."
   },
   "current_source_audit": {
-    "updated_at": "2026-11-10T20:43:39.677767+00:00",
+    "updated_at": "2026-11-10T21:14:12.361198+00:00",
     "counts": {
       "BUILT": 23,
       "PARTIAL": 10,
       "GENERIC_ONLY": 0
     },
     "remaining_named_operations_requiring_build_work": 10,
-    "basis": "Verified delivered v105 plus13 locally complete enhancements, including captured URL domain modes, existing survey Number properties, captured populated quiz append and NUMERICAL conditions. All33 broad contracts remain23BUILT/10PARTIAL/0GENERIC_ONLY; source completion, native acceptance and delivery remain distinct.",
+    "basis": "Delivered v105 main baseline plus immutable published v106 PR3120 pending delivery and four newly complete core survey behaviors:owned Number creation,Checkbox lifecycle,Single Dropdown lifecycle and Multi Dropdown lifecycle. Broad operation coverage remains23BUILT/10PARTIAL/0GENERIC_ONLY; other widget/media/rule scope remains explicit.",
     "historical_count": "Frozen21BUILT/11PARTIAL/1GENERIC_ONLY is retained only in historical_frozen_operation_audit.",
     "native_acceptance": "PENDING; source-built is not PASS, merged delivery or functional acceptance.",
     "remaining_operations": [

@@ -74,16 +74,45 @@ def _frame(page,plan):
     return frame
 
 
-def snapshot(frame,plan):
-    """Stable semantic canvas inventory, excluding transient selection controls."""
-    owners=_owners(frame,plan)
-    return [owners.nth(index).locator('.form-field-wrapper').evaluate_all('''items => items.map(item => ({
+_SNAPSHOT_PROJECTION = '''items => items.map(item => ({
         types:Array.from(item.querySelectorAll('[data-field-type]')).map(e=>e.getAttribute('data-field-type')),
         labels:Array.from(item.querySelectorAll('[data-field-type]')).map(e=>e.textContent.trim()),
         short_labels:Array.from(item.querySelectorAll('.short-label')).map(e=>e.textContent),
-        controls:Array.from(item.querySelectorAll('input,textarea,select')).map(e=>
-            [e.tagName,e.getAttribute('type'),e.getAttribute('name'),e.getAttribute('placeholder'),e.value])
-    }))''') for index in range(owners.count())]
+        controls:Array.from(item.querySelectorAll('input,textarea,select')).filter(e=>
+            !(item.querySelectorAll('[data-field-type]').length===1
+              && ['SINGLE_OPTIONS','MULTIPLE_OPTIONS'].includes(item.querySelector('[data-field-type]').getAttribute('data-field-type'))
+              && e.closest('#options-card'))).map(e=>
+            [e.tagName,e.getAttribute('type'),e.getAttribute('name'),e.getAttribute('placeholder'),
+             (item.querySelectorAll('[data-field-type]').length===1
+               && ['SINGLE_OPTIONS','MULTIPLE_OPTIONS'].includes(item.querySelector('[data-field-type]').getAttribute('data-field-type'))
+               && e.matches('input.dropdown-input.form-placeholder') && !e.hasAttribute('id') && !e.hasAttribute('name')
+               ? '' : e.value)])
+    }))'''
+
+
+def snapshot(frame,plan):
+    """Stable semantic inventory; dropdowns compare selected to selected.
+
+    Captured survey dropdown previews switch between an inactive anchor and a
+    selected input with transient choice editors. Bind only their real field
+    input; complete options are separately verified by the family reader.
+    """
+    owners=_owners(frame,plan);result=[]
+    for index in range(owners.count()):
+        items=owners.nth(index).locator('.form-field-wrapper')
+        records=items.evaluate_all(_SNAPSHOT_PROJECTION)
+        for position,record in enumerate(records):
+            if record['types'] not in (['SINGLE_OPTIONS'],['MULTIPLE_OPTIONS']):continue
+            if items.count()!=len(records):raise Stop('Survey dropdown owner changed during selected inventory')
+            item=items.nth(position);label=item.locator('[data-field-type]')
+            if label.count()!=1:raise Stop('Survey dropdown selected owner is ambiguous')
+            click(label)
+            selected=item.evaluate('(item)=> ('+_SNAPSHOT_PROJECTION+')([item])[0]')
+            if selected['types']!=record['types']:
+                raise Stop('Survey dropdown family changed during selected inventory')
+            records[position]=selected
+        result.append(records)
+    return result
 
 
 def _item(frame,plan):

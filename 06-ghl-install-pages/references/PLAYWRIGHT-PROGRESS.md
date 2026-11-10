@@ -26,7 +26,17 @@ Captured Address Auto-Complete and mandatory search parent controls are also
 implemented, preserving full child inventories and checked-but-disabled native
 state across save/reopen and replay. Independent Address review is CONFIRMED.
 
-## Current resumed source and verified delivery
+## Core survey continuation prepared as v27.1.107
+
+The immutable public v106 unit is PR[#3120](https://github.com/trevorotts1/openclaw-onboarding/pull/3120),head `ea7f8210c350aca583c3c4c681e269dcc6ae458b`,enrolled in the existing batch train and **not merged at this checkpoint**. Do not modify or repin it. Verified main delivery remains36 tracked additions and23 completed broad operations.
+
+This separate next unit adds four independently CONFIRMED behaviors:owned survey Number creation,Checkbox creation/configuration,Single Dropdown creation/configuration and Multi Dropdown creation/configuration. Complete saved inventories,identity,option and replay behavior use the existing adapters. Remaining question/content/security/media families and compound/completion/redirect/message/disqualification rules remain explicit; no broad operation is promoted.
+
+Current source inventory:53 completed feature records,36 delivered,13 published-pending through#3120 and4 local-next-unit;merged delivery36/53=67.9%. This denominator grew through new local source. Historical checkpoint36/45=80% and v106 checkpoint36/49=73.5% remain valid only for their stated denominators. Broad closure stays23/33=69.7%,with23/23 already completed contracts delivered. Native final-script acceptance is NOT_RUN/PENDING.
+
+Provider coverage expected after four distinct Dropdown creation/configuration fixtures:68 dynamic actions/95jobs. Final combined compiler check is PENDING_ROOT;existing leaf checks/reviews stand without reruns. The original three Node projection test skips were removed by cherry-picking the existing CI repair,and the newly introduced survey Dropdown Node skip was removed too;assertions remain required. Version107 is a separate unit,not a change to frozen106.
+
+## Previous v106 preparation — published #3120, pending delivery
 
 Verified main is `5ecb6a074421aab694cd7c9a02f951c3fd6a3f87`; delivered Skill6 remains v27.1.105 through #3107. The combined candidate is local on `resume/skill6-reconciled-20261110`, source head `748427885c5a74763e45525d4d7f3add6599a428` before this ledger commit. **The 13 candidate additions are not merged yet.** The owner has explicitly approved publication of this combined source and ledger unit; direct unit auto-merge remains disabled.
 
@@ -38,7 +48,7 @@ Verified main is `5ecb6a074421aab694cd7c9a02f951c3fd6a3f87`; delivered Skill6 re
 - Native manual Number comparison Greater Than10 -> Hide Last Name was saved and reloaded. Full maintained-script execution is NOT_RUN; manual readback is not final script acceptance.
 - The earlier metadata-only push rejection is historical. The owner has explicitly approved publication of this source and ledger unit. Delivery corrections ride with the source changes; no separate metadata-only PR or competing merge vehicle is created.
 
-## Local reviewed continuation on delivered v105
+## Historical local continuation incorporated in public #3120
 
 - [x] Native Number, Checkbox, File Upload and Signature creation/editing.
 - [x] Native Single Dropdown creation/editing and complete ordered options/calculations.
@@ -73,8 +83,8 @@ Earlier reconciled classifications remain:
 | `funnels.split_variant` | Activation/allocation confirmation and saved active-state readback. |
 | `forms.configure` | Finite unowned Quick Add families: Text Box List, Picture Choice, Rating, customized Text/Html, Bot protection, Source, Score, Image, Monetary, Date & time; legacy custom-widget adoption without durable ownership evidence. Captured Number/Checkbox/File/Signature/Dropdown and per-export color/icon controls are built. |
 | `forms.conditions` | Custom condition families beyond TEXT/NUMERICAL and rich-message outcome order recreation. Mixed connectors, deletion/count changes, existing outcome edits and non-message order recreation are built. |
-| `surveys.create` | Question families beyond captured standard fields/Radio/TEXT/LARGE_TEXT and their media paths. Owned Multi Line/LARGE_TEXT creation is now built. Owned shell/slide orchestration and populated TEXT append are built. |
-| `surveys.configure` | Other question properties; compound predicates and completion/redirect/message/disqualification rule lifecycle. TEXT, existing Multi Line/LARGE_TEXT and existing Number properties and forward Jump To stacks are built. |
+| `surveys.create` | Question/content/security/media families beyond captured standard fields/Radio/TEXT/LARGE_TEXT/Number/Checkbox/Single Dropdown/Multi Dropdown and their media paths. Owned Multi Line/LARGE_TEXT creation is now built. Owned shell/slide orchestration and populated TEXT append are built. |
+| `surveys.configure` | Other question properties; compound predicates and completion/redirect/message/disqualification rule lifecycle. TEXT, Multi Line/LARGE_TEXT,Number,Checkbox,Single Dropdown,Multi Dropdown properties and forward Jump To stacks are built. |
 | `quizzes.configure` | Picture option/style/upload controls beyond captured fixed-three support; answer Jump To; tier lifecycle and result media/styles. Multi Dropdown, fixed-three Picture Choice and captured populated-page append are built. |
 | `communities.configure` | Authoritative first-course empty state, non-Private course modes and modern portal settings/reuse gaps. Existing association replay is built. |
 | `meetings.setup` | Authoritative empty co-host roster and first-assignment path. |

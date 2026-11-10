@@ -12,30 +12,33 @@ all entry points, commands and remaining live verification work.
 
 ## Current build checkpoint - November 10, 2026
 
-The v27.1.106 candidate has **23 BUILT / 10 PARTIAL / 0 GENERIC_ONLY**
-across 33 named operations (**69.7%** by equal-weight operation count), with
-**68 dynamic actions / 88 bounded compiler jobs** and **49 tracked completed
-feature additions**. This candidate adds captured form widgets and URL domain
-controls, survey Number properties and mixed append, populated quiz-page append,
-numeric condition comparisons, embed color/icon exports and community replay.
+The next v27.1.107 source unit adds owned survey Number creation and captured
+Checkbox,Single Dropdown and Multi Dropdown creation/configuration through the
+existing survey and shared option adapters. Each addition is independently
+CONFIRMED;final native-script/respondent acceptance remains pending.
 
-Examined main `5ecb6a074421aab694cd7c9a02f951c3fd6a3f87` contains the prior
-**36 delivered additions**. Skill 6 v27.1.104
-[#3102](https://github.com/trevorotts1/openclaw-onboarding/pull/3102) merged at
-`efe9937173b8e3de31ba71fbb584e72eb8cc67dd`; v27.1.105 member
-[#3105](https://github.com/trevorotts1/openclaw-onboarding/pull/3105) was delivered
-through merged [batch #3107](https://github.com/trevorotts1/openclaw-onboarding/pull/3107)
-at `9dca0aaa1bcaa2fcbdb687a2816444cc832a0f02`.
+Broad source inventory remains **23 BUILT / 10 PARTIAL / 0 GENERIC_ONLY** across
+33 operations (**69.7%** equal-weight closure). Other question/content/security/
+media paths and compound/completion/redirect/message/disqualification rules remain
+explicitly unfinished. No broad row was promoted for another bounded behavior.
 
-The **13 candidate additions remain unmerged** until actual batch delivery.
-Current tracked-addition delivery is **36/49 = 73.5%**; the recovered earlier
-baseline was 36/45 = 80%. The denominator grew through four new local source
-completions. These ratios are not effort or native-acceptance percentages.
-Publication of this source unit is approved; it uses the existing batch train,
-with direct unit auto-merge disabled. Final native script, respondent, learner
-and payment acceptance remain pending. The old 21/11/1 audit is historical.
-See [the current progress ledger](references/PLAYWRIGHT-PROGRESS.md) and
-[the machine-readable source ledger](references/PLAYWRIGHT-BUILD-STATUS.json).
+The preceding **v27.1.106 PR[#3120](https://github.com/trevorotts1/openclaw-onboarding/pull/3120)**
+is public,enrolled with `batch-train`,and immutable at `ea7f8210c350aca583c3c4c681e269dcc6ae458b`. It remains
+pending merge at this checkpoint;direct unit auto-merge is disabled. This next
+unit does not modify that branch. Examined main `5ecb6a074421aab694cd7c9a02f951c3fd6a3f87`
+contains36 delivered feature records through v105#3105-in-batch#3107.
+
+Current tracked additions: **53 completed,36 delivered,13 published-pending and4
+local-next-unit**;merged delivery **36/53=67.9%**. Earlier checkpoint ratios
+36/45=80% and36/49=73.5% apply only to those earlier denominators. These are not
+effort or native-acceptance percentages. All23 completed broad contracts are
+already on main;the remaining10 broad contracts stay partial.
+
+Expected boundary coverage is **68 dynamic actions/95 bounded compiler jobs**
+after four new Dropdown creation/configuration cases. Final root compiler check
+is pending. Source checks are separate from live acceptance. See the
+[current progress ledger](references/PLAYWRIGHT-PROGRESS.md) and
+[machine-readable ledger](references/PLAYWRIGHT-BUILD-STATUS.json).
 
 ## Start here
 

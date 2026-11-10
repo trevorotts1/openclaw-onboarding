@@ -1,3 +1,15 @@
+## [v27.1.107] - 2026-11-10
+
+- Create owned Number survey questions through the existing shell/slide pipeline.
+- Create and configure captured survey Checkbox,Single Dropdown and Multi Dropdown
+  families with the existing option,inventory,identity and replay machinery.
+- Add four explicit Dropdown creation/configuration compiler-boundary fixtures;
+  expected coverage68actions/95jobs awaits the final combined check.
+- Require Node projection assertions instead of skipping them. Preserve frozen
+  public v106 PR3120;this separate next unit keeps source and merge delivery
+  distinct. Counts remain23BUILT/10PARTIAL/0GENERIC_ONLY;53 tracked completed
+  additions include36 delivered,13 published-pending and4 local-next-unit.
+
 ## [v27.1.106] - 2026-11-10
 
 - Add owned native Number, Checkbox, File Upload and Signature form widgets,
