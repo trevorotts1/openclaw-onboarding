@@ -536,7 +536,7 @@ def _self_test() -> int:
     def rec(role, reviewer="r1"):
         return {"schema": "signature-launch-review-record/v1",
                 "reviewer_session": reviewer, "reviewer_model": "m",
-                "request_id": f"rq-{role}",
+                "verdict": "pass", "request_id": f"rq-{role}",
                 "reviewed_artifacts": [{"path": f"{role}.png", "sha256": SHA}]}
 
     recs = {f"rq-{r}": rec(r) for r in ("landing", "checkout", "thank_you")}
