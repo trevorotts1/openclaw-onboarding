@@ -315,7 +315,7 @@ def evaluate_prompt(record: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], Opti
             code = "AF-FUN-PROMPT-CEILING" if exit_code == 4 else "AF-FUN-PROMPT-FLOOR"
             msg = (adapter.get("error") or {}).get("msg") or adapter.get("status") or "refused"
             fails.append((code, f"{who}: Skill 74 prompt-budget --check refused it "
-                                f"({msg}, exit {exit_code}); NOT sent to Kie"))
+                                f"({msg}, exit {exit_code}); refused before any Kie submit"))
 
     # FLOOR 1c (G-9) — WARN-AND-EXPAND IS NOT A PASS. The 80-to-below-95 band emits a warning
     # naming the characters to ADD. If that warning is still on the verdict, the prompt was never
