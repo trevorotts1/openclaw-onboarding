@@ -29,7 +29,7 @@ FIELDS = {
     'forms.settings': {'settings', 'schedule', 'tracking'},
     'forms.submission': {'submission'}, 'forms.notifications': {'notifications'},
     'forms.conditions': {'condition'},
-    'surveys.create': {'name', 'allow_creation', 'standard_fields', 'radio_questions'},
+    'surveys.create': {'name', 'allow_creation', 'standard_fields', 'radio_questions', 'target_slide'},
     'quizzes.create': {'name', 'allow_creation', 'standard_fields', 'fixture'},
     'surveys.configure': {'configuration'}, 'quizzes.configure': {'configuration'},
     'communities.create': {'community'},
@@ -87,7 +87,10 @@ def condition_request(value):
         if (not isinstance(rules,list) or not rules and 'expected_rules' not in condition
                 or any(not isinstance(rule,dict) for rule in rules)):
             raise Stop('Native conditions require a complete ordered rule list; clearing also needs the full expected inventory')
-        outcomes = any(rule.get('effect') not in ('Hide Field','Show Field') for rule in rules)
+        expected = condition.get('expected_rules', [])
+        if not isinstance(expected,list) or any(not isinstance(rule,dict) for rule in expected):
+            raise Stop('Expected native conditions require a complete ordered rule inventory')
+        outcomes = any(rule.get('effect') not in ('Hide Field','Show Field') for rule in rules + expected)
         if outcomes:
             from playwright_recipes.form_condition_outcomes import validate
             action = 'native_condition_outcomes'
@@ -159,6 +162,8 @@ def validate_intake(operation, data):
     if operation == 'surveys.create' and 'radio_questions' in data:
         from playwright_recipes.survey_radio_creation import payload_from_inputs
         payload_from_inputs(data)
+    elif operation == 'surveys.create' and 'target_slide' in data:
+        raise Stop('Survey target_slide requires the authored Radio creation flow')
     if operation == 'courses.configure_ui':
         native = set(data).intersection(FIELDS[operation])
         if native and 'options' in data:

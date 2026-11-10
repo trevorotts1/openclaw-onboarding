@@ -77,20 +77,27 @@ def _empty_state(dialog):
         raise Stop('Native cleared condition empty-state image changed')
 
 
-def _delete_tail(frame,dialog,current,identity):
-    """Delete exactly the inventoried final card through its captured confirmation."""
+def _delete_card(frame,dialog,current,identity,*,index,inventory=None):
+    """Delete one inventoried ordinal through the shared captured confirmation.
+
+    A caller-specific inventory reader can preserve richer outcome records;
+    both reads before confirmation and the complete post-delete read use it.
+    """
+    if type(index) is not int or not 0<=index<len(current):
+        raise Stop('Native condition Delete requires an exact existing card ordinal')
+    inventory=group._inventory if inventory is None else inventory
     identity()
-    if not current or group._inventory(dialog)!=current:
+    if inventory(dialog)!=current:
         raise Stop('Native condition cards changed before the requested tail-card removal')
     # Binding the original drawer by its own save-close descendant keeps it
     # distinct from the second role=dialog introduced by Delete Condition.
     dialogs=frame.get_by_role('dialog')
     drawer=group._one(dialogs.filter(has=frame.locator('#conditional-logic-save-close')),
                       'Native condition delete drawer owner is unavailable or ambiguous')
-    if group._inventory(drawer)!=current:
+    if inventory(drawer)!=current:
         raise Stop('Native condition delete drawer differs from the inventoried full stack')
     cards=drawer.locator(group.CARD)
-    remove=group._one(cards.nth(len(current)-1).locator('#delete-condition'),
+    remove=group._one(cards.nth(index).locator('#delete-condition'),
                       'Native tail-card Delete control changed')
     click(remove)
     heading=frame.get_by_role('heading',name='Delete Condition',exact=True)
@@ -111,16 +118,21 @@ def _delete_tail(frame,dialog,current,identity):
     # Opening a confirmation does not authorize deleting a concurrently
     # changed card. Recheck the complete protected inventory before confirm.
     identity()
-    if group._inventory(drawer)!=current:
+    if inventory(drawer)!=current:
         raise Stop('Native condition cards changed before Delete confirmation')
     click(delete)
-    expected=deepcopy(current[:-1])
+    expected=deepcopy(current[:index]+current[index+1:])
     wait_until(lambda:dialogs.count()==1 and drawer.locator(group.CARD).count()==len(expected),
                'Native condition Delete did not remove exactly one tail card and close confirmation')
-    if group._inventory(drawer)!=expected:
+    if inventory(drawer)!=expected:
         raise Stop('Native condition Delete changed a retained card or removed the wrong card')
     if not expected:_empty_state(drawer)
     return expected
+
+
+def _delete_tail(frame,dialog,current,identity):
+    """Delete exactly the inventoried final Show/Hide card."""
+    return _delete_card(frame,dialog,current,identity,index=len(current)-1)
 
 
 def _author(frame,dialog,rule,prefix,identity):

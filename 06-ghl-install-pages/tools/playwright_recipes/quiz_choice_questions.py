@@ -25,6 +25,9 @@ UUID=r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}'
 def _question(value,*,new=False):
     if not isinstance(value,dict):raise Stop('Multiple Choice question inventory must be an object')
     kind=value.get('field_type')
+    if kind=='PICTURE_CHOICE' and not new:
+        from playwright_recipes.quiz_picture_questions import _question as picture_question
+        return picture_question(value)
     has_options=kind in ('CHECKBOX',*DROPDOWNS) or kind=='RADIO' and (new or 'options' in value)
     expected=native.properties_for(kind)|({'options'} if has_options else set())
     if set(value)!=expected or new and kind not in ('RADIO','CHECKBOX',*DROPDOWNS):
@@ -38,6 +41,24 @@ def _question(value,*,new=False):
                 or len({option.casefold() for option in options})!=len(options)):
             raise Stop('Choice options exceed this adapter\'s bounded unique-option authoring profiles')
     return deepcopy(value)
+
+
+def _project_existing(question):
+    """Validate a complete prior owner, then project native scalar properties.
+
+    Picture Choice is natively RADIO, but retains its distinct media/Unique Key
+    inventory in the original payload and in every actual DOM readback.
+    """
+    original=_question(question)
+    kind='RADIO' if original['field_type']=='PICTURE_CHOICE' else original['field_type']
+    return {**{key:original[key] for key in native.properties_for(kind)},'field_type':kind}
+
+
+def _unique_keys(questions):
+    keys=[question['unique_key'].casefold() for question in questions
+          if isinstance(question.get('unique_key'),str) and question['unique_key']]
+    if len(keys)!=len(set(keys)):
+        raise Stop('Quiz existing/new Unique Keys must be unambiguous in their shared native namespace')
 
 
 def _option_transition(desired,defaults=OPTIONS):
@@ -82,12 +103,12 @@ def validate(step):
         if not isinstance(page,dict) or not isinstance(page.get('questions'),list):
             raise Stop('Multiple Choice prior page inventory is malformed')
         for index,question in enumerate(page['questions']):
-            original=_question(question)
-            page['questions'][index]={key:original[key] for key in native.properties_for(original['field_type'])}
+            page['questions'][index]=_project_existing(question)
     for index,question in enumerate(projected['questions']):
         original=_question(question,new=True)
         _option_transition(original['options'],_desired_defaults(original))
         projected['questions'][index]={key:original[key] for key in native.properties_for(original['field_type'])}
+    _unique_keys([question for page in payload['pages'] for question in page['questions']] + payload['questions'])
     native.validate({'action':'quiz_short_answers','payload':projected},field_types=TYPES,
                     new_types=('RADIO','CHECKBOX',*DROPDOWNS),reserved_key=None)
     return deepcopy(payload)
@@ -190,13 +211,20 @@ def _inventory(frame,plan,*,field_types=TYPES):
                  if question['field_type']=='RADIO' and 'options' in question}
     option_keys.update(question['query_key'] for question in plan['questions']
                        if question['field_type']=='RADIO' and 'options' in question)
+    pictures=any(question['field_type']=='PICTURE_CHOICE'
+                 for owner in plan['pages'] for question in owner['questions'])
     for _,canvas in native._owners(frame,plan):
         items=native._items(canvas);count=items.count();questions=[]
         if not count:native._one(canvas.get_by_text('Drag and drop components',exact=True),
                                 'Empty native quiz page is not confirmed')
         for index in range(count):
             if items.count()!=count:raise Stop('Native quiz changed during question inventory')
-            item=items.nth(index);question=native._read_question(frame,item,field_types=field_types,metadata_reader=_metadata)
+            item=items.nth(index)
+            if pictures and item.locator('[data-testid="picture-choice-grid"]').count():
+                from playwright_recipes.quiz_picture_questions import _read_picture
+                questions.append(_read_picture(frame,item))
+                continue
+            question=native._read_question(frame,item,field_types=field_types,metadata_reader=_metadata)
             if question['field_type']=='RADIO':question['_radio_input_ids']=_radio_input_ids(item)
             if question['field_type'] in DROPDOWNS:
                 label,_=native._item_kind(item,field_types=field_types);native._activate_item(frame,item,label)
