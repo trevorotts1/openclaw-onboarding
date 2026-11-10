@@ -1,3 +1,7 @@
+## [v7.2.9] - 2026-11-09 - official-docs port test reads Skill 66 at v2.2.11 (test-pin only, no behaviour change)
+
+- `tests/test_official_docs_port.py` `SKILL_VERSIONS` still pinned 66 at 2.2.9 after Skill 66 moved to 2.2.11 (merge #2985 landed one second after the FAST-001 pin fix #2976), so `test_skill_version_files` and `test_skill_md_frontmatter` failed on main. It now reads 07 7.2.9 / 74 1.1.14 / 66 2.2.11 / 68 2.3.7, the versions main ships. Test-only change; the skill-version bump is the G3 lockstep for touching a file inside this skill directory.
+
 ## [v7.2.8] - 2026-11-09 - official-docs port test reads the shipped versions (no behaviour change)
 
 - `tests/test_official_docs_port.py` `SKILL_VERSIONS` pinned 07 7.2.4 / 74 1.1.12 / 66 2.2.6 / 68 2.3.6, so two version tests failed on main. It now reads 07 7.2.8 / 74 1.1.14 / 66 2.2.9 / 68 2.3.7, the versions main ships. Test-only change.
