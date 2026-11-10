@@ -279,6 +279,17 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         # writes (as CliScopeTests does); the real pieces keep their own artifacts, and the fake consumer's
         # pictures are added only after the real-file checks above, which would reject them. Assemble binds each
         # piece to the dispatch's stored result for its page, so the same entries are added to that stored result.
+        intake_path = self.root / "intake.json"
+        intake_path.write_text(json.dumps(doc), encoding="utf-8")
+        readback = self.root / "checkout-readback.json"  # what the Skill 06 install read-back records for the order form
+        readback.write_text(json.dumps(TEST_ONLY_CHECKOUT_READBACK), encoding="utf-8")
+        # tested here: a stub run labels no designs, so assemble refuses it (exit 2) and writes no package files
+        bare = self.root / "package-bare"
+        code, shown = self._cli("assemble", "--intake", str(intake_path), "--pieces", str(out / "pieces"),
+                                "--out", str(bare), "--page-only", "--checkout-readback", str(readback))
+        self.assertEqual(code, 2, shown)
+        self.assertFalse((bare / "package-manifest.json").exists())
+        self.assertFalse((bare / "receipt.json").exists())
         from test_lane83_designs import make_piece  # noqa: E402  (a late import: it pulls in its own test module)
         normalized = cli.intake.validate(doc)
         designs = self.root / "designs"
@@ -288,7 +299,6 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
             # the real landing piece is the sales page (page_kind "sales"), so its design files are labelled for it
             added = make_piece(designs, normalized, node,
                                extra_args=("--pages", "sales") if node["role"] == "landing" else ())["artifacts"]
-            self.assertTrue(added, f"{node['role']}: the labelled design set added no artifacts")
             stored = [out / "dispatch" / f"{prefix}-{node['role']}.json" for prefix in ("result", "page-result")]
             for path in [piece_path] + [p for p in stored if p.is_file()]:
                 record = json.loads(path.read_text(encoding="utf-8"))
@@ -296,11 +306,7 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
                 path.write_text(json.dumps(record), encoding="utf-8")
 
         # assemble, exactly as a client runs it (pages alone: the calendar and automations are other skills')
-        intake_path = self.root / "intake.json"
-        intake_path.write_text(json.dumps(doc), encoding="utf-8")
         package_dir = self.root / "package"
-        readback = self.root / "checkout-readback.json"  # what the Skill 06 install read-back records for the order form
-        readback.write_text(json.dumps(TEST_ONLY_CHECKOUT_READBACK), encoding="utf-8")
         code, shown = self._cli("assemble", "--intake", str(intake_path), "--pieces", str(out / "pieces"),
                                 "--out", str(package_dir), "--page-only", "--checkout-readback", str(readback))
         self.assertEqual(code, 0, shown)

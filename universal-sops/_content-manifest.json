@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-11-10T09:55:54Z",
+  "generated_at": "2026-11-10T10:19:54Z",
   "file_count": 116,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -429,8 +429,8 @@
       "bytes": 6522
     },
     "video-production/SOP-PVC-01-PERSONAL-VIDEO-CREATOR.md": {
-      "sha256": "6d71881005937a5fc3e187a6bb484ffb9510d7944e571b0504a5b97377a31ef1",
-      "bytes": 64996
+      "sha256": "53b97f433d46af64025449d924d0405a72c819ac4b365b2f728bde6a507d14aa",
+      "bytes": 65075
     },
     "video-production/VIDEO-PRODUCTION-MANIFEST.json": {
       "sha256": "4f65f4ef2db8fad20d6fae16d88468030433bbd531fc8a6f2f35447711b720b5",
