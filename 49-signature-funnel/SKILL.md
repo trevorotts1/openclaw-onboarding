@@ -1,7 +1,7 @@
 ---
 name: signature-funnel
 description: Builds a Trevor Otts Signature Funnel — the SACRED 12-section Hero copy system, per-section long-form image prompts sized to the model's own character budget (95 to 100 percent of its maximum, never below 80 percent), GHL media + funnel build, and a configurable 3/5/7-step funnel (Main -> Checkout -> Upsell-1 -> Downsell-1 -> Upsell-2 -> Downsell-2 -> Thank-You with accept/decline branching). Gates the sacred method with fail-closed deterministic provers: the intake gate, the 12-section copy contract (per-section char/word bands, six page profiles), the image-prompt two-floor gate (length and structure), and a no-pitch (clean thank-you) + image-provenance gate. A canonical fail-closed entry (deps/bypass-scan/hash-pin/0600-nonce) drives a no-skip orchestrator that issues a signed PROCESS-CERTIFICATE only on all-phases-pass. Delegates image generation to Skill 66 (model policy) then Skill 74 (the one approved KIE transport) and ALL GHL media + build to Skill 6. Client runtime uses the client's own providers, never Anthropic.
-version: v2.1.51
+version: v2.1.52
 ---
 
 # Signature Funnel (Skill 49)
@@ -28,6 +28,23 @@ REST call.
 > The method captured in `MASTERDOC.md` is **SACRED** — never floored, reordered, or reinterpreted.
 > Every band below is machine-enforced by a fail-closed prover, never advisory. The provers measure
 > STRIPPED text and IGNORE any self-reported count.
+
+## Reading rule (BINDING — applies before any step of this skill runs)
+
+**READ EVERYTHING BEFORE YOU TOUCH ANYTHING.** Read this entire file from top to bottom before executing
+a single step. This is the wording already proven at `06-ghl-install-pages/INSTALL.md:72`; it governs this
+skill and every skill on its delivery path, and it is not optional.
+
+**Read each declared dependency WHOLE.** Every file this skill names — `MASTERDOC.md`, the scripts in the
+phase spine, `structure/funnel_structure.json`, `structure/page_types.json`, the SOPs in
+`universal-sops/funnel-craft/` — must be read from top to bottom before you act on it. Read order is not
+completeness: knowing WHICH file comes first is not knowing WHAT it says. A dependency you have not read
+whole is a dependency you cannot claim to have followed.
+
+**GREPPING IS NOT READING.** A search hit is a pointer, never knowledge: open the file and read it whole.
+"No grepping allowed." (`50-email-engine/SOURCE-EMAIL-CORPUS.md:25`). Do not skim, do not read only the
+lines a search returned, and never act on a file you have not read end to end. If you catch yourself
+searching for the answer instead of reading the source, stop and read the source.
 
 ## What this skill produces / owns
 
@@ -85,6 +102,7 @@ P4 Media       -> Skill 6 ghl_media.py       (media folder + upload)
 P5 HTML        -> per-page fragment assembly    (pages/<profile>.fragment.html per matrix page, PARSED for the profile's data-section markers: 12 main, 8 derived, TY-1..TY-3 thank-you; AF-FUN-HTML-FRAGMENT / AF-FUN-HTML-SECTIONS)
 P6 Compose     -> prove_sf_graph.py              (funnel_graph.json vs MASTERDOC §3: nodes/branch/reachability)
 P7 Build       -> prove_sf_build.py              (build_receipt.json: QC >= 8.5 + preview URL per page, read against the TOOL evidence: see below)
+                                                  FIRST: the visual gate (--visual-only): desktop wireframe + mobile wireframe + visual mockup + final mockups per page, else AF-FUN-VISUAL-PHASE
 P8 Derive      -> derived_pages.json ledger      (U1/D1/U2/D2/TY derived-page set; AF-FUN-DERIVE-LEDGER)
 P9 Certify     -> prove_sf_no_pitch.py + prove_sf_cert.py  (signed PROCESS-CERTIFICATE)
 P10 Email      -> optional handoff to the Email Skill project (10 promo emails)
@@ -96,11 +114,18 @@ raw Kie `createTask`, a copied KIE client script) is the ungoverned path and is 
 (`AF-FUN-CANONICAL-BYPASS`). A direct `python3 run_signature_funnel.py` without the front-door nonce dies
 `AF-FUN-FRONT-DOOR`.
 
-## Wireframes and mockups for every page
+## Wireframes and mockups for every page — a GATED PHASE, not a prose step
 
-After P1 copy passes, run `python3 scripts/legacy_downsell_images.py --ledger <RUN_DIR>/copy_ledger.json --skill71-root <71 dir> --brand-file <brand.json> --brand-owner <client> --out-dir <dir>`. It builds every page the funnel size carries (7-step: `main`, `upsell`, `downsell`, `upsell-2`, `downsell-2`, `thank-you`; 5-step: the same without `downsell-2`; 3-step: `main`, `upsell`, `thank-you`), plus the design-only `checkout` of a 7-step funnel when the owner stages the approved five-section checkout manuscript with `--checkout-manuscript <file>` (the legacy copy ledger has no checkout copy, so without it the receipt lists `checkout` as not built and names the flag; the real order form stays the native Skill 06 form), offline stub provider unless the owner approves `--image-provider kie --allow-paid`. Each page is checked against `structure/page_types.json`; a page missing its images is refused. It writes `page-images-receipt.json`. The image inventory, generation, Design Board and final mockups stay client-gated downstream of it.
+The visual stage is a mandatory step of the orchestrator and a named gate, so it can never be skipped
+silently: `_run_visual_stage` invokes the tool when the locked brief sets `visual_stage` to `auto` or
+`required` (refusing with the exact command when `brief.visual` lacks `skill71_root`, `brand_file` or
+`brand_owner`), and P7-BUILD runs the standalone visual gate **first** — `python3 scripts/prove_sf_build.py
+--visual-only --run-dir <RUN_DIR> --funnel-size <n>` — so a run with no visual set fails as
+`AF-FUN-VISUAL-PHASE` before any FAB or QC seam is consulted.
 
-Run it with `--out-dir <RUN_DIR>/page-images`. That folder is the funnel's **visual direction**, and P7 refuses to clear without it: every page of the funnel size (the design-only `checkout` may be named in the receipt's `not_built` instead) needs its `desktop-wireframe`, `mobile-tablet` and `visual-mockup` `stage-executor-record.json` with images, matching the receipt's sha256 (`AF-FUN-BUILD-VISUAL`). A funnel with copy and prompt ledgers but no wireframes or mockups cannot be certified.
+Run the tool: `python3 scripts/legacy_downsell_images.py --ledger <RUN_DIR>/copy_ledger.json --skill71-root <71 dir> --brand-file <brand.json> --brand-owner <client> --out-dir <dir>`. It builds every page the funnel size carries (7-step: `main`, `upsell`, `downsell`, `upsell-2`, `downsell-2`, `thank-you`; 5-step: the same without `downsell-2`; 3-step: `main`, `upsell`, `thank-you`), plus the design-only `checkout` of a 7-step funnel when the owner stages the approved five-section checkout manuscript with `--checkout-manuscript <file>` (the legacy copy ledger has no checkout copy, so without it the receipt lists `checkout` as not built and names the flag; the real order form stays the native Skill 06 form). The provider DEFAULTS to `kie` and needs `--allow-paid`; the offline `stub` is opt-in only and needs a recorded owner approval, `--stub-approved-by <reference>`, which the receipt carries — an unapproved stub receipt is refused at P7 (`AF-FUN-BUILD-VISUAL-STUB`). Each page is checked against `structure/page_types.json`; a page missing its images is refused. It writes `page-images-receipt.json`. The image inventory, generation, Design Board and final mockups stay client-gated downstream of it.
+
+Run it with `--out-dir <RUN_DIR>/page-images`. That folder is the funnel's **visual direction**, and P7 refuses to clear without it: every page of the funnel size (the design-only `checkout` may be named in the receipt's `not_built` instead) needs its `desktop-wireframe`, `mobile-tablet`, `visual-mockup` **and `final-mockups`** `stage-executor-record.json` with images, matching the receipt's sha256 (`AF-FUN-BUILD-VISUAL`). `final-mockups` is drawn by the client-gated Skill 71 path after Design Board approval, not by this tool, and the build gate requires it. A funnel with copy and prompt ledgers but no wireframes or mockups cannot be certified.
 
 ## What P7 reads: tool evidence, never the receipt's word
 

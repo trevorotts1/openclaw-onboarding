@@ -225,6 +225,24 @@ class BoundToDispatchTests(DispatchedRun):
         err = self.refused("AF-LAUNCH-PKG-PLAN-DRIFT", doc=doc)
         self.assertIn("price", err.detail)
 
+    def test_both_drifts_at_once_are_reported_as_intake_drift_before_plan_drift(self):
+        """LAND-003 #13: another intake that ALSO moves the plan is still reported as intake drift.
+
+        The cure is named 'intake-drift-before-plan-drift': the dispatch-time intake identity is compared
+        first, so a caller holding a different intake is told that, not the plan drift it implies."""
+        run = self.copy_run("both")
+        (run / package.INTAKE_SNAPSHOT_REL).write_text(
+            json.dumps(intake.validate(self.doc), sort_keys=True), encoding="utf-8")
+        both = copy.deepcopy(self.doc)
+        both["copy_profile"] = "long_form"
+        first = both["offers"][0]
+        reprice(both, first["offer_id"], amount_minor=first["price"]["amount_minor"] + 1)
+        # both drifts really are present before asserting which one is reported
+        self.assertNotEqual(both["copy_profile"], self.doc["copy_profile"], "intake drift not present")
+        self.assertNotEqual(plan_hash(both), plan_hash(self.doc), "plan drift not present")
+        err = self.refused("AF-LAUNCH-PKG-INTAKE-DRIFT", name="both", doc=both, run=run)
+        self.assertIn("copy_profile", err.detail)
+
     def test_another_approval_hash_is_refused_and_the_computed_hash_is_what_is_recorded(self):
         doc = copy.deepcopy(self.doc)
         doc["approval"]["hash"] = "e" * 64
