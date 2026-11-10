@@ -288,6 +288,7 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
             # the real landing piece is the sales page (page_kind "sales"), so its design files are labelled for it
             added = make_piece(designs, normalized, node,
                                extra_args=("--pages", "sales") if node["role"] == "landing" else ())["artifacts"]
+            self.assertTrue(added, f"{node['role']}: the labelled design set added no artifacts")
             stored = [out / "dispatch" / f"{prefix}-{node['role']}.json" for prefix in ("result", "page-result")]
             for path in [piece_path] + [p for p in stored if p.is_file()]:
                 record = json.loads(path.read_text(encoding="utf-8"))
