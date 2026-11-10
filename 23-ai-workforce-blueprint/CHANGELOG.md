@@ -2,7 +2,7 @@
 <!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 `scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
 
-## 27.1.72 - 2026-11-10
+## Unreleased - 2026-11-10
 
 - fix(update-interview-state): the internal build kick is never sent to the client's own chat, even when the operator chat setting points there. The send is skipped with a warning and the resume cron drives the build.
 
