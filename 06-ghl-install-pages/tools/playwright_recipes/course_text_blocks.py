@@ -18,7 +18,7 @@ else:
 
 
 COMMON=blocks.COMMON
-TYPES=('Category Block','Custom Block','Text Block','Image Block')
+TYPES=('Category Block','Custom Block','Text Block','Image Block','Video Block')
 EDITOR='div[contenteditable="true"].tiptap.ProseMirror.general-courses-editor'
 PREVIEW_OWNER='#content-container > div.col-span-9.flex.flex-col.gap-4'
 AUTHORED_PREVIEWS='#content-container, .welcome-hero-image, .instructor-card'
@@ -145,6 +145,9 @@ def _preview_order(page,inventory):
             valid='text-block' in classes and block.locator('.editor-content.rich-text-viewer').count()==1
         elif row['type']=='Custom Block':
             valid='custom-block' in classes and block.get_attribute('id')=='custom-block-'+row['id']
+        elif row['type']=='Video Block':
+            valid=(block.locator('video').count()==1 and 'text-block' not in classes
+                and 'custom-block' not in classes and block.locator('.category-list-block').count()==0)
         elif row['type']=='Image Block':
             valid=(block.locator('img[alt="Image block '+row['id']+'"]').count()==1
                 and 'text-block' not in classes and 'custom-block' not in classes)

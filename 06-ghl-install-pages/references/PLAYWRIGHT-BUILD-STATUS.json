@@ -1,13 +1,13 @@
 {
   "schema": "skill6-build-inventory/2",
-  "updated_at": "2026-11-10T11:32:16.161233+00:00",
+  "updated_at": "2026-11-10T12:01:32.370118+00:00",
   "scope": "33 named catalog operations in the current combined reviewed source. Counts describe bounded executable contracts, not feature-weighted effort, merged delivery or native functional acceptance.",
   "counts": {
-    "BUILT": 22,
-    "PARTIAL": 11,
+    "BUILT": 23,
+    "PARTIAL": 10,
     "GENERIC_ONLY": 0
   },
-  "remaining_named_operations_requiring_build_work": 11,
+  "remaining_named_operations_requiring_build_work": 10,
   "definition": {
     "BUILT": "Concrete executable implementation exists for the named operation contract; provider/capture/input credentials and deferred proof alone are not missing code.",
     "PARTIAL": "Concrete implementation exists, but identified requested controls or native identity/action paths within the recorded operation area remain unimplemented or cannot complete on the measured native shape.",
@@ -15,9 +15,9 @@
   },
   "current_feature_progress": {
     "schema": "skill6-current-feature-progress/1",
-    "updated_at": "2026-11-10T11:32:16.161233+00:00",
+    "updated_at": "2026-11-10T12:01:32.370118+00:00",
     "read_first": "Current top-level counts and operations are reconciled current source. The original21/11/1 frozen fifth-source audit is historical only. SOURCE_BUILT remains separate from merged delivery and native functional acceptance.",
-    "source_branch": "skill6/reviewed-controls-v103-checkpoint-20261110",
+    "source_branch": "LOCAL_NEXT_BATCH_NOT_PUBLISHED",
     "durable_core_source_commit": "554fc5c2b2d7587dcde85905417de81c4e668d22",
     "additional_reviewed_source": [
       "1a4daf06f4494cb297fa57552a5367323ffd54d1",
@@ -29,7 +29,15 @@
       "6e580c419f479c4fdf61bc9ea15cbd5a0e8bba64",
       "ddecd2e96e41031c7e09b476db5bda2829726009",
       "ce78012ba5c9a0c0a8d52512156483619806a237",
-      "c9d9dd91aad2cffcd566032c50f87de6a008a730"
+      "c9d9dd91aad2cffcd566032c50f87de6a008a730",
+      "61a2b464ba20bd955d6b2efbb4073132f2cfd55a",
+      "69d61327d865dd7d49af5ba672121b364398c284",
+      "d273c6492ba7fb367a660816e6a1120bbda53dff",
+      "5d83fd3b49a9b5576fc37663e4d250ed193f93b6",
+      "28fa7eed0e15ffbd2928f816ac86d196c47d3de9",
+      "620e0ce93a242f1018ea8ffa6b363ad6608a481a",
+      "e6ee64e5a5d6f9050c5dfe727bf466f5416ad510",
+      "71b4a7e1e01ed5ab91fed7136e21c9394910f7ce"
     ],
     "completed_since_frozen_audit": [
       {
@@ -682,6 +690,86 @@
           "Exact location/editor and complete prior inventory bind save, independent reopen and fresh replay."
         ],
         "validation": "Eight focused tests passed0.340s; one affected three-drift test passed0.002s. No broader suite repeated."
+      },
+      {
+        "id": "course-background-removal",
+        "feature": "Inactive NeoClassic background image removal",
+        "operations": [
+          "courses.configure_ui"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/course_theme_media.py",
+            "function": "configure"
+          }
+        ],
+        "independent_source_review": "CONFIRMED",
+        "native_final_script_acceptance": "PENDING"
+      },
+      {
+        "id": "course-custom-image-removal",
+        "feature": "Inactive NeoClassic Custom Block image removal",
+        "operations": [
+          "courses.configure_ui"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/course_custom_image_removal.py",
+            "function": "configure"
+          }
+        ],
+        "independent_source_review": "CONFIRMED",
+        "native_final_script_acceptance": "PENDING"
+      },
+      {
+        "id": "course-video-blocks",
+        "feature": "Inactive NeoClassic Video Block lifecycle and HTTPS destination",
+        "operations": [
+          "courses.configure_ui"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/course_video_blocks.py",
+            "function": "configure"
+          }
+        ],
+        "independent_source_review": "CONFIRMED",
+        "native_final_script_acceptance": "PENDING"
+      },
+      {
+        "id": "survey-owned-multiline-creation",
+        "feature": "Owned Multi Line/LARGE_TEXT survey question creation and fresh whole-creation replay",
+        "operations": [
+          "surveys.create"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/survey_creation.py",
+            "function": "configure"
+          }
+        ],
+        "independent_source_review": "CONFIRMED",
+        "native_final_script_acceptance": "PENDING"
+      },
+      {
+        "id": "address-parent-controls",
+        "feature": "Captured Address Auto-Complete and mandatory search controls",
+        "operations": [
+          "forms.configure"
+        ],
+        "status": "SOURCE_BUILT",
+        "source_evidence": [
+          {
+            "path": "06-ghl-install-pages/tools/playwright_recipes/address_parent.py",
+            "function": "configure"
+          }
+        ],
+        "independent_source_review": "CONFIRMED",
+        "native_final_script_acceptance": "PENDING"
       }
     ],
     "new_control_capabilities_in_this_batch": [
@@ -691,7 +779,12 @@
       "survey-native-single-line-owned-creation",
       "native-condition-nested-value-compatibility",
       "survey-populated-text-and-existing-properties",
-      "native-custom-text-condition-field-bindings"
+      "native-custom-text-condition-field-bindings",
+      "course-background-removal",
+      "course-custom-image-removal",
+      "course-video-blocks",
+      "survey-owned-multiline-creation",
+      "address-parent-controls"
     ],
     "receipt_hardening": [
       "Fresh native course background-media completion now passes the same exact configuration/source/changed-image validator as completed replay.",
@@ -702,18 +795,15 @@
         "Active split activation and authored traffic-allocation confirmation/save/readback remain unimplemented. Current native requests refuse active or non-100/0 profiles before browser acquisition."
       ],
       "forms.configure": [
-        "Numeric, checkbox/multiselect, file-upload and signature field authoring still lack dedicated typed placement/property paths.",
-        "Address parent Auto-Complete Address and Mandatory to Select Address in Search Bar controls have no authored native path.",
-        "Arbitrary legacy Dropdown/LARGE_TEXT canvas adoption remains ungrounded; fresh API-inventoried insertion and completed replay are supported. Contact Dropdown creation lacks a documented option-array API request schema.",
-        "Native embed button color and alternate icon authoring are not implemented; captured existing values remain preserved."
+        "Numeric, checkbox/multiselect, file-upload and signature widget authoring; ungrounded legacy canvas adoption and remaining embed color/icon controls.",
+        "Contact Dropdown option-array creation lacks a documented request schema."
       ],
       "forms.conditions": [
         "Custom condition sources/targets beyond captured TEXT, including Radio, numerical, file and other option-valued families, remain unsupported.",
         "Order recreation involving rich custom-message/disqualification content remains unsupported; non-message Show/Hide/Redirect permutations are supported."
       ],
       "surveys.create": [
-        "Native question authoring beyond captured standard fields, Radio and Single Line TEXT remains unimplemented; Paragraph/Multi Line capture is in progress and is not counted built here.",
-        "Media/question types outside those captured profiles have no dedicated authoring path."
+        "Dedicated authoring for remaining question families and media paths listed in references/SURVEY-BUILD-REMAINDER.md; owned Single Line TEXT, Radio and Multi Line/LARGE_TEXT creation are built."
       ],
       "surveys.configure": [
         "Question properties for families beyond captured Radio, TEXT and existing LARGE_TEXT remain unimplemented; Paragraph/LARGE_TEXT creation remains unsupported.",
@@ -723,9 +813,6 @@
         "Reliable append on an existing populated quiz page remains unimplemented in this source; another session owns the native continuation.",
         "Picture Choice option-count/style/layout/local-upload controls beyond the fixed-three existing-catalog writer remain unimplemented.",
         "Answer Jump To destination authoring, tier creation/removal and result Header logo/media or remaining result styling controls have no complete native writer."
-      ],
-      "courses.configure_ui": [
-        "Video Block upload/processing/save lifecycle and background/Custom Block image removal remain unimplemented; positive saved-empty image state for those two removal controls is not captured."
       ],
       "communities.configure": [
         "First course association from an authoritatively loaded empty Learning inventory and non-Private course visibility modes lack typed native paths.",
@@ -756,7 +843,7 @@
       "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3053",
       "status_at_checkpoint": "MERGED 2026-11-09T23:22:27Z; merge commit 565a27d2f26526cab73ca750ea2be83f05bee50c"
     },
-    "current_batch_pr": "Current follow-on Draft #3099 carries reviewed Skill6 additions; v103 merge train #3101 is merged at a28b89970668ad097892664117170baf98765baa. Follow-on release metadata is reconciled as v27.1.104; publication/merge status must be checked independently.",
+    "current_batch_pr": "Next reviewed source candidate is local only. Frozen v104 #3102 remains separate; publish this continuation only after its actual main landing and a fresh single-parent recut.",
     "verified_delivery": {
       "status": "MERGED",
       "pr": 3096,
@@ -770,14 +857,13 @@
       "native_final_script_acceptance": "PENDING"
     },
     "remaining_operation_reconciliation": {
-      "basis": "Current combined source after reviewed seven additions, inactive split routing/preflight, non-message outcome order recreation and course ledger reconciliation. Quiz creation is assessed against its bounded new-owner contract; existing populated-page append belongs to configuration.",
-      "count": 11,
+      "basis": "Current finite source contract; R40 captured inactive NeoClassic controls are complete. Native execution acceptance remains pending.",
+      "count": 10,
       "operations": [
         "funnels.split_variant",
         "forms.configure",
         "surveys.create",
         "communities.configure",
-        "courses.configure_ui",
         "meetings.setup",
         "meetings.integrate",
         "forms.conditions",
@@ -795,16 +881,8 @@
       "survey-populated-text-and-existing-properties",
       "native-custom-text-condition-field-bindings"
     ],
-    "current_unmerged_source_branch": "skill6/reviewed-controls-v103-checkpoint-20261110",
-    "current_unmerged_unit_pr": {
-      "pr": 3099,
-      "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3099",
-      "source_branch": "skill6/reviewed-controls-v103-checkpoint-20261110",
-      "status": "DRAFT_CURRENT_REVIEWED_FOLLOW_ON",
-      "auto_merge": false,
-      "coordination": "Owner train #3101 has landed at a28b89970668ad097892664117170baf98765baa; current follow-on reconciles only shared release metadata as104 and preserves other-owner implementation.",
-      "previous_published_head": "fb45d8842861f9b712e9bb43ec269a11c97c3792"
-    },
+    "current_unmerged_source_branch": "LOCAL_NEXT_BATCH_NOT_PUBLISHED",
+    "current_unmerged_unit_pr": null,
     "previous_verified_delivery": {
       "status": "MERGED",
       "pr": 3090,
@@ -824,8 +902,8 @@
     },
     "focused_integration": {
       "checks": "Native condition compatibility111targetedPASS0.212s; populated survey/property24targetedPASS; integration14changedPythonASTonce, JSON/whitespace and2authoredcompilerexamplesPASS. No optional whole suite or repeated builder tests.",
-      "dynamic_actions": 64,
-      "bounded_jobs": 77,
+      "dynamic_actions": 66,
+      "bounded_jobs": 80,
       "independent_source_review": "All seven additions CONFIRMED; no blocking defects or tests repeated by reviewers.",
       "optional_whole_suite": "NOT_RUN"
     },
@@ -837,14 +915,50 @@
       "survey_source_commit": "6e580c419f479c4fdf61bc9ea15cbd5a0e8bba64",
       "new_custom_text_source_commit": "c9d9dd91aad2cffcd566032c50f87de6a008a730",
       "new_custom_text_review": "CONFIRMED",
-      "dynamic_actions": 64,
-      "bounded_jobs": 77
+      "dynamic_actions": 66,
+      "bounded_jobs": 80
     },
     "native_split_current_prerequisite": "The existing synthetic split probe has a managed domain and saved same-step control/variant at100/0. Inactive native creation/reuse is now implemented; active confirmation/readback remains unimplemented.",
     "public_split_checkpoint": {
       "commit": "cb5b624365a9d8d60452413cc1611061897f1a76",
       "status": "PRESERVED_SOURCE_CHECKPOINT",
       "notice": "No CI or release-ref advancement implied."
+    },
+    "historical_source_publications": [
+      {
+        "pr": 3099,
+        "url": "https://github.com/trevorotts1/openclaw-onboarding/pull/3099",
+        "source_branch": "skill6/reviewed-controls-v103-checkpoint-20261110",
+        "status": "DRAFT_CURRENT_REVIEWED_FOLLOW_ON",
+        "auto_merge": false,
+        "coordination": "Owner train #3101 has landed at a28b89970668ad097892664117170baf98765baa; current follow-on reconciles only shared release metadata as104 and preserves other-owner implementation.",
+        "previous_published_head": "fb45d8842861f9b712e9bb43ec269a11c97c3792"
+      }
+    ],
+    "predecessor_release": {
+      "pr": 3102,
+      "head": "1f656091e7d51e5f1ef6326e58e4b088cc22a94a",
+      "status_at_checkpoint": "READY_AUTO_MERGE_ENABLED_REQUIRED_CHECKS_PENDING",
+      "source_counts": {
+        "BUILT": 22,
+        "PARTIAL": 11,
+        "GENERIC_ONLY": 0
+      }
+    },
+    "current_next_batch": {
+      "features": [
+        "course-background-removal",
+        "course-custom-image-removal",
+        "course-video-blocks",
+        "survey-owned-multiline-creation",
+        "address-parent-controls"
+      ],
+      "independent_source_review": "All source additions CONFIRMED",
+      "native_acceptance": "PENDING",
+      "publication": "LOCAL_ONLY_WAIT_FOR_3102_MAIN",
+      "dynamic_actions": 66,
+      "bounded_jobs": 80,
+      "integration": "One compiler coverage check verifies66actions80boundedjobs; changed AST/JSON/whitespace checks only. No builder tests repeated."
     }
   },
   "operations": [
@@ -1226,10 +1340,8 @@
       "recipe_name": "12_configure_form_options",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Numeric, checkbox/multiselect, file-upload and signature field authoring still lack dedicated typed placement/property paths.",
-        "Address parent Auto-Complete Address and Mandatory to Select Address in Search Bar controls have no authored native path.",
-        "Arbitrary legacy Dropdown/LARGE_TEXT canvas adoption remains ungrounded; fresh API-inventoried insertion and completed replay are supported. Contact Dropdown creation lacks a documented option-array API request schema.",
-        "Native embed button color and alternate icon authoring are not implemented; captured existing values remain preserved."
+        "Numeric, checkbox/multiselect, file-upload and signature widget authoring; ungrounded legacy canvas adoption and remaining embed color/icon controls.",
+        "Contact Dropdown option-array creation lacks a documented request schema."
       ],
       "requirements": [
         "R24",
@@ -1244,7 +1356,8 @@
         "Place same-location API-inventoried Radio, Single Dropdown (SINGLE_OPTIONS) and multiline (LARGE_TEXT) custom fields. New Dropdown/LARGE_TEXT placement binds the exact API picker ID to the measured one-widget delta; arbitrary disabled-row legacy reuse is refused without durable placement evidence.",
         "Provision authored Radio definitions through the measured API dependency rail and chain them into an exact existing form with separate journals.",
         "Export all four captured native embed layouts and Advanced activation/trigger/deactivation/cookie-consent settings, plus button corner/font/type/size appearance, with twice-read exact validated code bytes.",
-        "Maintained Contact-field front door supports documented LARGE_TEXT creation and exact existing Dropdown reuse, followed by bound native placement."
+        "Maintained Contact-field front door supports documented LARGE_TEXT creation and exact existing Dropdown reuse, followed by bound native placement.",
+        "Captured parent Address Auto-Complete and Mandatory Search controls with full expected/desired Address and child inventories, disabled-checked persistence handling, one save and independent reopen; completed replay checks current native state. Child-only edits preserve parent switches."
       ],
       "source_evidence": [
         {
@@ -1291,6 +1404,10 @@
           "path": "06-ghl-install-pages/tools/playwright_recipes/form_embed.py",
           "function": "configure",
           "line": 511
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/address_parent.py",
+          "function": "configure"
         }
       ],
       "deferred_live_proof": [
@@ -1346,8 +1463,7 @@
       "recipe_name": "14_create_survey",
       "status": "PARTIAL",
       "missing_executable_features": [
-        "Native question authoring beyond captured standard fields, Radio and Single Line TEXT remains unimplemented; Paragraph/Multi Line capture is in progress and is not counted built here.",
-        "Media/question types outside those captured profiles have no dedicated authoring path."
+        "Dedicated authoring for remaining question families and media paths listed in references/SURVEY-BUILD-REMAINDER.md; owned Single Line TEXT, Radio and Multi Line/LARGE_TEXT creation are built."
       ],
       "requirements": [
         "R31"
@@ -1356,7 +1472,8 @@
         "Native survey shell create/reuse and captured standard-field/page setup are executable.",
         "Separate existing-survey flow provisions authored Radio definitions through API and places them on one exact existing slide.",
         "Owned new-survey shell creation supports explicitly empty slides and ordered Radio batches with saved aggregate slide/field/Query Key inventory.",
-        "Single Line TEXT creation supports authored label, placeholder, short label, Query Key, Required/Hidden/default; multiple same-slide questions and populated-slide append retain separate child journals and full saved order."
+        "Single Line TEXT creation supports authored label, placeholder, short label, Query Key, Required/Hidden/default; multiple same-slide questions and populated-slide append retain separate child journals and full saved order.",
+        "Owned Multi Line/LARGE_TEXT creation on exact empty slides, separate per-question journals and full TEXTAREA property inventories; final whole-creation saved readback and completed replay revalidate current native state without rewriting."
       ],
       "source_evidence": [
         {
@@ -1591,10 +1708,8 @@
     {
       "operation": "courses.configure_ui",
       "recipe_name": "19_configure_course_ui",
-      "status": "PARTIAL",
-      "missing_executable_features": [
-        "Video Block upload/processing/save lifecycle and background/Custom Block image removal remain unimplemented; positive saved-empty image state for those two removal controls is not captured."
-      ],
+      "status": "BUILT",
+      "missing_executable_features": [],
       "requirements": [
         "R40"
       ],
@@ -1602,7 +1717,10 @@
         "Captured inactive-theme text/visibility, hero spacing, six-color palette, fonts/weights, Custom Block append/edit, main background PNG replacement and exact existing Custom Block image replacement; preserve active template and protected siblings. Authored background transparency uses measured single-point arrow keys with exact URL/percentage and independent saved reopen. Exact Image Block removal binds its UUID and inventoried empty preview/inspector URLs and preserves siblings.",
         "Inactive-course background transparency has an authored measured integer slider action with saved receipts and independent reopen.",
         "Inactive Text Block append/plain-text editing, Hero/Instructor PNG replacement, Image Block append/replacement/destination and exact Image Block image removal are implemented.",
-        "Exact inventoried Custom Block deletion uses captured confirmation, preserves siblings and independently reopens the saved order."
+        "Exact inventoried Custom Block deletion uses captured confirmation, preserves siblings and independently reopens the saved order.",
+        "Native background image removal with positive empty inspector/preview, protected theme state, saved reopen and fresh completed replay.",
+        "Exact Custom Block image removal with bound owner/siblings and positive saved-empty readback.",
+        "Video Block MP4 append/replacement/removal and HTTPS destination handling with immutable approved source, exact native media preflight, processing completion, sibling preservation, saved reopen and fresh replay."
       ],
       "source_evidence": [
         {
@@ -1637,17 +1755,29 @@
           "path": "06-ghl-install-pages/tools/playwright_recipes/course_block_media.py",
           "function": "_image",
           "line": 65
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/course_custom_image_removal.py",
+          "function": "configure",
+          "line": 58
+        },
+        {
+          "path": "06-ghl-install-pages/tools/playwright_recipes/course_video_blocks.py",
+          "function": "configure",
+          "line": 243
         }
       ],
       "deferred_live_proof": [
-        "Final native inactive-template save/reopen, preview media/rendering and learner appearance receipts."
+        "Final installed native inactive-template upload/removal/save/reopen, preview playback/rendering and learner appearance receipts remain PENDING."
       ],
       "input_or_capture_dependencies": [],
       "retired_previous_gaps": [
         "Main background PNG upload, authored background transparency, exact existing Custom Block image replacement and exact Image Block image removal are implemented.",
-        "Product poster/logo/hero/favicon/instructor-headshot uploads are implemented separately under courses.update."
+        "Product poster/logo/hero/favicon/instructor-headshot uploads are implemented separately under courses.update.",
+        "Reviewed background/Custom Block removal and Video Block lifecycle now implement the remaining finite captured R40 contract."
       ],
-      "reconciliation": "Current source audit; historical frozen row retained separately."
+      "reconciliation": "Current captured source contract is BUILT; final native/learner acceptance is separate and remains pending.",
+      "captured_contract": "R40 finite inactive NeoClassic template controls: existing captured theme/media/block operations plus background and Custom Block image removal and Video Block append/replace/remove/destination; no activation/publication or unspecified widget families."
     },
     {
       "operation": "meetings.setup",
@@ -2546,14 +2676,14 @@
     "complete_source_rows": "The immutable original audit source remains f5b039b0a186b2bc35784dbc2ff876fc91b41eb9; compact historical rows here preserve classifications and missing claims without duplicating source evidence."
   },
   "current_source_audit": {
-    "updated_at": "2026-11-10T11:32:16.161233+00:00",
+    "updated_at": "2026-11-10T12:01:32.370118+00:00",
     "counts": {
-      "BUILT": 22,
-      "PARTIAL": 11,
+      "BUILT": 23,
+      "PARTIAL": 10,
       "GENERIC_ONLY": 0
     },
-    "remaining_named_operations_requiring_build_work": 11,
-    "basis": "Current combined source after reviewed seven additions, inactive split routing/preflight, non-message outcome order recreation and course ledger reconciliation. Quiz creation is assessed against its bounded new-owner contract; existing populated-page append belongs to configuration.",
+    "remaining_named_operations_requiring_build_work": 10,
+    "basis": "Current reviewed source includes finite inactive NeoClassic R40 background/Custom Block removal and Video Block lifecycle plus owned Multi Line survey creation. Source-built is bounded to explicit captured contracts; native execution remains pending.",
     "historical_count": "Frozen21BUILT/11PARTIAL/1GENERIC_ONLY is retained only in historical_frozen_operation_audit.",
     "native_acceptance": "PENDING; source-built is not PASS, merged delivery or functional acceptance.",
     "remaining_operations": [
@@ -2561,7 +2691,6 @@
       "forms.configure",
       "surveys.create",
       "communities.configure",
-      "courses.configure_ui",
       "meetings.setup",
       "meetings.integrate",
       "forms.conditions",

@@ -31,6 +31,8 @@ def native_cases(root):
  yield 'native_split_variant','funnels.split_variant',split_variant()
  from test_survey_multiline_configuration import configuration as survey_multiline_properties
  yield 'survey_multiline_properties','surveys.configure',survey_multiline_properties()
+ from test_address_parent import inputs as address_parent
+ yield 'address_parent','forms.configure',address_parent()
  from test_survey_text_populated import configuration as survey_text_properties
  yield 'survey_text_properties','surveys.configure',survey_text_properties()
  from test_survey_creation import inputs as whole_survey
@@ -70,6 +72,13 @@ def native_cases(root):
  access=json.loads((Path(__file__).parent/'examples/community-access.json').read_text());yield 'access','communities.configure',access
  from test_course_block_media import inputs as block
  yield 'course_block_image','courses.configure_ui',block(asset)
+ from test_course_custom_image_removal import inputs as custom_image_removal
+ yield 'course_custom_image_removal','courses.configure_ui',custom_image_removal()
+ from test_course_video_blocks import base as video_base
+ video_asset=root/'approved.mp4';video_asset.write_bytes(b'\x00\x00\x00\x18ftypmp42APPROVED_VIDEO')
+ yield 'course_video_blocks','courses.configure_ui',{**video_base(),'video_blocks':{
+  'expected_inventory':[{'id':'categoryBlock','type':'Category Block'}],
+  'append':[{'video':{'file':str(video_asset),'sha256':hashlib.sha256(video_asset.read_bytes()).hexdigest()}}]}}
  from test_course_text_blocks import inputs as text
  yield 'course_text_blocks','courses.configure_ui',text()
  from test_course_section_media import inputs as section_images
@@ -130,8 +139,8 @@ class CompleteNativeProviderBoundaries(unittest.TestCase):
                     and node.func.id=='add' and node.args):
                 named |= literal_action(node.args[0])
         self.assertTrue(named <= covered,named-covered)
-        self.assertEqual(len(covered),64,'Update the bounded fixtures for newly added dynamic compiler actions')
-        self.assertEqual(len(rows),77)
+        self.assertEqual(len(covered),66,'Update the bounded fixtures for newly added dynamic compiler actions')
+        self.assertEqual(len(rows),80)
 
     def test_no_current_native_job_delegates_to_status_only_api_or_extension_callback(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,0 +1,11 @@
+{
+  "location_id": "LOCATION_FROM_INVENTORY",
+  "location_name": "Exact location name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOCATION_FROM_INVENTORY/memberships/courses/course-creator-studio?view=manager&sub_view=customize&product_id=COURSE_FROM_INVENTORY",
+  "course_id": "COURSE_FROM_INVENTORY",
+  "template_id": "INACTIVE_TEMPLATE_FROM_INVENTORY",
+  "expected_template_title": "Exact inactive template title",
+  "background_removal": {
+    "expected_url": "https://example.com/actual-current-background.png"
+  }
+}

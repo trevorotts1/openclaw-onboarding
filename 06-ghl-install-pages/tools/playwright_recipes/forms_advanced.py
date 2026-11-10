@@ -17,14 +17,14 @@ from urllib.parse import urlsplit
 if __package__:
     from .field_placement import (
         CANVAS_ITEMS, _ADDRESS_QUERIES, _close_initial, _close_properties,
-        _inventory, _query_controls, _query_key, _address_headers,
+        _inventory, _query_controls, _query_key, _address_headers, _address_input,
     )
     from .assessments import reopen_editor, read_editor_title
     from .skill6_playwright import Stop, click, fill, form_builder, wait_until
 else:
     from field_placement import (
         CANVAS_ITEMS, _ADDRESS_QUERIES, _close_initial, _close_properties,
-        _inventory, _query_controls, _query_key, _address_headers,
+        _inventory, _query_controls, _query_key, _address_headers, _address_input,
     )
     from assessments import reopen_editor, read_editor_title
     from skill6_playwright import Stop, click, fill, form_builder, wait_until
@@ -115,10 +115,7 @@ def _open_address(frame):
     kind = groups.locator('[data-field-type]')
     if kind.count() != 1 or kind.get_attribute('data-field-type') != 'group':
         raise Stop('Address wrapper belongs to an unexpected native field type')
-    controls = groups.locator('input')
-    if controls.count() != 6:
-        raise Stop('Native Address selectable input shape changed')
-    click(controls.nth(1))
+    click(_address_input(groups))
     gear = groups.locator('[aria-label="Open settings"]')
     if gear.count() != 1:
         raise Stop('Native Address settings control is missing or ambiguous')

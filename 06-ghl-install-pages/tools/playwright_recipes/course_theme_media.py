@@ -24,17 +24,26 @@ else:
 COMMON=theme.COMMON|{'course_id','template_id','expected_template_title'}
 _ACCEPT=frozenset(('image/svg+xml','image/png','image/webp','image/jpg','image/jpeg'))
 _MAX_BYTES=10*1024*1024
+_EMPTY_BACKGROUND='https://staging.cdn.apisystem.tech/assets/membership/image-placeholder.svg'
 
 
 def validate_inputs(inputs):
-    if not isinstance(inputs,dict) or set(inputs)-COMMON-{'background_image','background_transparency'}:
+    if not isinstance(inputs,dict) or set(inputs)-COMMON-{'background_image','background_transparency','background_removal'}:
         raise Stop('Unsupported inactive-template Background Image input')
     base={key:value for key,value in inputs.items() if key in COMMON}
     validated=theme.validate_inputs({**base,
         'expected_values':{'template_title':inputs.get('expected_template_title')},
         'changes':{'template_title':inputs.get('expected_template_title')}})
-    if ('background_image' in inputs)==('background_transparency' in inputs):
-        raise Stop('Background upload and transparency require separate explicit jobs')
+    if len(set(inputs).intersection({'background_image','background_transparency','background_removal'}))!=1:
+        raise Stop('Background upload, removal and transparency require separate explicit jobs')
+    if 'background_removal' in inputs:
+        control=inputs['background_removal']
+        if not isinstance(control,dict) or set(control)!={'expected_url'}:
+            raise Stop('Background removal requires its exact inventoried present image URL')
+        media._url(control['expected_url'])
+        if control['expected_url']==_EMPTY_BACKGROUND:
+            raise Stop('Background removal requires a present image, not the native empty placeholder')
+        return {**base,'background_removal':dict(control)}
     if 'background_transparency' in inputs:
         control=inputs['background_transparency']
         if (not isinstance(control,dict) or set(control)!={'expected_url','expected_percentage','percentage'}
@@ -65,7 +74,7 @@ def validate(step):
 def configuration_hash(inputs):
     plan=validate_inputs(inputs)
     bound={key:plan[key] for key in ('location_id','course_id','template_id','expected_template_title')}
-    field='background_transparency' if 'background_transparency' in plan else 'background_image'
+    field=next(key for key in ('background_transparency','background_removal','background_image') if key in plan)
     bound[field]={key:value for key,value in plan[field].items() if key!='file'}
     return hashlib.sha256(json.dumps(bound,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
@@ -174,7 +183,9 @@ def validate_receipt(value,step):
     fields={'status','editor_url','course_id','template_id','configuration_sha256','independent_readback',
         'background_url_sha256','functional_verified','activation_performed'}
     transparency='background_transparency' in plan
-    fields|={'media_operation','transparency_percentage'} if transparency else {'source_sha256'}
+    removal='background_removal' in plan
+    fields|=({'media_operation','transparency_percentage'} if transparency else
+             {'media_operation','background_removed'} if removal else {'source_sha256'})
     if (not isinstance(value,dict) or set(value)!=fields
             or value.get('status')!='COURSE_THEME_MEDIA_SAVED_AND_REOPENED'
             or value.get('editor_url')!=theme.editor_url(plan)
@@ -191,6 +202,10 @@ def validate_receipt(value,step):
                 or value['transparency_percentage']!=control['percentage']
                 or value['background_url_sha256']!=hashlib.sha256(control['expected_url'].encode()).hexdigest()):
             raise Stop('Background transparency receipt changed image or authored percentage')
+    elif removal:
+        if (value['media_operation']!='removal' or value['background_removed'] is not True
+                or value['background_url_sha256']!=hashlib.sha256(_EMPTY_BACKGROUND.encode()).hexdigest()):
+            raise Stop('Background removal receipt lacks the exact captured empty-state proof')
     elif (value['source_sha256']!=plan['background_image']['sha256']
             or value['background_url_sha256']==hashlib.sha256(plan['background_image']['expected_url'].encode()).hexdigest()):
         raise Stop('Background upload receipt lacks approved source or new image proof')
@@ -247,26 +262,83 @@ def upload_captured_image(page,plan,path,content_size,*,inspect,expected_url):
     return dict(observed)
 
 
+
+def _removal_state(page,plan):
+    _,state=_background(page,plan)
+    image=_background_nodes(page,plan)[1]
+    panel=theme._one(image.locator('xpath:ancestor::div[contains(concat(" ",normalize-space(@class)," ")," h-full ") and contains(concat(" ",normalize-space(@class)," ")," w-full ")][1]'),
+        'Native Background Image removal owner changed')
+    remove=theme._one(panel.locator('#remove-image'),'Native Background Image Remove changed')
+    root=theme._one(page.locator('.neo-classic-template-container'),'Native course background preview is ambiguous')
+    styles=root.evaluate('(element)=>Object.fromEntries(Array.from(element.style).map(key=>[key,element.style.getPropertyValue(key)]))')
+    if not isinstance(styles,dict) or '--lyt-bg-image' not in styles:
+        raise Stop('Native course background CSS identity is unavailable')
+    return {**state,'remove_enabled':remove.is_enabled(),'preview_styles':styles}
+
+
+def _css_image(css,expected):
+    # CSSOM preserves the captured quote spelling. Never write a style value.
+    return css in ('url("'+expected+'")',"url('"+expected+"')",'url('+expected+')')
+
+
+def _remove_background(page,plan,before):
+    if (before['remove_enabled'] is not True
+            or not _css_image(before['preview_styles']['--lyt-bg-image'],before['url'])):
+        raise Stop('Background removal requires matching present inspector/preview and enabled Remove')
+    theme._identity(page,plan);assert_tenant(page,plan)
+    image=_background_nodes(page,plan)[1]
+    panel=theme._one(image.locator('xpath:ancestor::div[contains(concat(" ",normalize-space(@class)," ")," h-full ") and contains(concat(" ",normalize-space(@class)," ")," w-full ")][1]'),
+        'Native Background Image removal owner changed')
+    remove=theme._one(panel.locator('#remove-image'),'Native Background Image Remove changed')
+    if not remove.is_enabled():raise Stop('Native Background Image Remove is disabled')
+    if _removal_state(page,plan)!=before:
+        raise Stop('Native Background Image changed immediately before removal')
+    theme._identity(page,plan);assert_tenant(page,plan)
+    click(remove)
+    desired={**before,'url':_EMPTY_BACKGROUND,'remove_enabled':False,
+        'preview_styles':{**before['preview_styles'],'--lyt-bg-image':"url('')"}}
+    wait_until(lambda:_removal_state(page,plan)==desired,
+        'Background removal did not establish the captured empty inspector/preview and disabled Remove')
+    return desired
+
+
+def verify_completed(page,step,outcome):
+    """Fresh native empty state is required before replaying a removal receipt."""
+    plan=validate(step)
+    validate_receipt(outcome,step)
+    if 'background_removal' not in plan:
+        raise Stop('Fresh background removal verification requires its exact removal job')
+    theme._open(page,plan,plan['expected_template_title'])
+    observed=_removal_state(page,plan)
+    theme._identity(page,plan);assert_tenant(page,plan)
+    if (observed['url']!=_EMPTY_BACKGROUND or observed['remove_enabled'] is not False
+            or observed['preview_styles'].get('--lyt-bg-image')!="url('')"):
+        raise Stop('Completed background removal no longer matches the native empty state; reconcile before replay')
+    return True
+
 def configure(page,step):
     plan=validate(step)
     transparency='background_transparency' in plan
-    content=None if transparency else media._bytes(plan['background_image'])
+    removal='background_removal' in plan
+    content=None if transparency or removal else media._bytes(plan['background_image'])
     if content is not None and len(content)>=_MAX_BYTES:
         raise Stop('Native template Background Image PNG must be smaller than 10 MiB')
     before_active=theme._open(page,plan,plan['expected_template_title'])
     protected=_protected(page,plan)
-    _,before=_background(page,plan)
-    control=plan['background_transparency' if transparency else 'background_image']
+    before=_removal_state(page,plan) if removal else _background(page,plan)[1]
+    control=plan['background_removal' if removal else 'background_transparency' if transparency else 'background_image']
     if before['url']!=control['expected_url']:
         raise Stop('Background Image preview differs from its inventoried previous URL')
-    if transparency:
+    if removal:
+        desired=_remove_background(page,plan,before)
+    elif transparency:
         desired=_write_transparency(page,plan,before)
     else:
         with tempfile.TemporaryDirectory(prefix='skill6-theme-background-') as temporary:
             path=Path(temporary)/'approved-background.png';path.write_bytes(content);path.chmod(0o600)
             desired=_upload(page,plan,path,len(content))
     protected_after=_protected(page,plan)
-    readback=_background(page,plan)[1]
+    readback=_removal_state(page,plan) if removal else _background(page,plan)[1]
     if (protected_after!=protected or
             (_transparency_readback(readback)!=_transparency_readback(desired) if transparency else readback!=desired)):
         raise Stop('Background authoring changed protected theme/body settings before Save')
@@ -280,7 +352,7 @@ def configure(page,step):
     except Exception:raise Stop('Background Save remains unsettled; reconcile before another upload') from None
     after_active=theme._open(page,plan,plan['expected_template_title'])
     protected_reopened=_protected(page,plan)
-    reopened=_background(page,plan)[1]
+    reopened=_removal_state(page,plan) if removal else _background(page,plan)[1]
     if (after_active!=before_active or protected_reopened!=protected
             or (_transparency_readback(reopened)!=_transparency_readback(desired) if transparency else reopened!=desired)):
         raise Stop('Background Image independent reopen failed or protected theme changed')
@@ -291,5 +363,7 @@ def configure(page,step):
         'functional_verified':False,'activation_performed':False}
     if transparency:
         result.update(media_operation='transparency',transparency_percentage=_percentage(desired))
+    elif removal:
+        result.update(media_operation='removal',background_removed=True)
     else:result['source_sha256']=plan['background_image']['sha256']
     return validate_receipt(result,step)

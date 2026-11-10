@@ -465,3 +465,5 @@ key inventory is available. This action does not create Multi Line questions or
 claim survey branching/completion outcomes. The broad survey operations remain
 partial. Native creation and Required/Hidden property persistence were captured
 on November 10, 2026; reusable source contains no synthetic account identifiers.
+
+Parent Address autocomplete/search-required control configuration is available as a separate `forms.configure` `address_parent` job; see `examples/form-address-parent.json`. Full child properties and query/type sibling inventories are required. Native mandatory=true requires autocomplete=true. Fresh writes and public CLI completed replay verify full bound receipts and current native saved state.
