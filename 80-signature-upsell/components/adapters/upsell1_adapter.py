@@ -123,6 +123,7 @@ def build_bundle(
     copy_sha256: str,
     copy_artifact_path: str,
     launch: Optional[Mapping] = None,
+    review: Optional[Mapping] = None,
 ) -> Dict[str, object]:
     common.validate_request(request, "upsell_1")
     common.validate_routes_for_instance(request, "upsell_1")
@@ -197,6 +198,7 @@ def build_bundle(
         eligibility_check=eligibility_check,
         disposition=disposition,
         test_outcomes=test_outcomes,
+        review=review,
     )
     page_plan = common.build_page_plan(
         request=request,

@@ -251,7 +251,7 @@ class ShippedAdapterTests(Fixture):
         images = self.dir / "work" / "order-page-images"
         self.assertTrue((images / "visual-mockup" / "mobile" / "part-05.png").is_file())
         result = json.loads(self.result.read_text())
-        self.assertEqual((result["page_id"], result["status"]), ("page-select-1", "locally_verified"))
+        self.assertEqual((result["page_id"], result["status"]), ("page-select-1", "authored"))
         self.assertNotIn("--allow-paid", " ".join(self.command("x")))  # dispatch never spends
         self.assertLessEqual((images / "intake.json").stat().st_mtime, self.result.stat().st_mtime)
 

@@ -266,6 +266,7 @@ def build_bundle(
     copy_sha256: str,
     copy_artifact_path: str,
     launch: Optional[Mapping] = None,
+    review: Optional[Mapping] = None,
 ) -> Dict[str, object]:
     common.validate_request(request, "upsell_2")
     common.validate_routes_for_instance(request, "upsell_2")
@@ -329,6 +330,7 @@ def build_bundle(
         eligibility_check=eligibility_check,
         disposition=disposition,
         test_outcomes=test_outcomes,
+        review=review,
         extra_blockers=[
             "U2 eligibility problems: %s" % p for p in check["problems"]
         ],

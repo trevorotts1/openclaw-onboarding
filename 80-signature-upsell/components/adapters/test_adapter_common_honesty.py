@@ -6,10 +6,12 @@ Run: python3 -m pytest 80-signature-upsell/components/adapters/test_adapter_comm
 
 import copy
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ADAPTERS_DIR = Path(__file__).resolve().parent
 SKILL_DIR = ADAPTERS_DIR.parent / "80-signature-upsell"
@@ -117,6 +119,121 @@ class CopyValidationIsNeverALiteral(unittest.TestCase):
         )
         self.assertEqual(result["copy_validation"], given)
         self.assertEqual(result["status"], "blocked")
+
+
+class IndependentReviewIsEarned(unittest.TestCase):
+    """Issue 30: independent_review true only with a valid review record."""
+
+    def test_no_review_record_leaves_review_pending_blocker(self):
+        request, journey = u1_inputs()
+        result = build_u1(request, journey)["result"]
+        self.assertIs(result["independent_review"], False)
+        self.assertIn("REVIEW-PENDING", " ".join(result["blockers"]))
+
+    def test_invalid_review_record_stays_pending(self):
+        request, journey = u1_inputs()
+        bundle = upsell1_adapter.build_bundle(
+            request, load(U1_COPY), journey, copy_sha256=common.sha256_file(U1_COPY),
+            copy_artifact_path=str(U1_COPY_ARTIFACT),
+            review={"record": {"schema": "x", "verdict": "pass"}, "ledger": []})
+        self.assertIs(bundle["result"]["independent_review"], False)
+        self.assertIn("REVIEW-PENDING", " ".join(bundle["result"]["blockers"]))
+
+    def test_valid_review_record_sets_independent_review(self):
+        request, journey = u1_inputs()
+        sha = common.sha256_file(U1_COPY)
+        record = {"schema": "signature-launch-review-record/v1", "verdict": "pass",
+                  "reviewer_session": "rev-1", "reviewer_model": "model-b",
+                  "request_id": request["request_id"],
+                  "reviewed_artifacts": [{"path": str(U1_COPY_ARTIFACT), "sha256": sha}]}
+        bundle = upsell1_adapter.build_bundle(
+            request, load(U1_COPY), journey, copy_sha256=sha,
+            copy_artifact_path=str(U1_COPY_ARTIFACT),
+            review={"record": record, "ledger": ["rev-1"]})
+        result = bundle["result"]
+        self.assertEqual((result["independent_review"], result["reviewer_session"]), (True, "rev-1"))
+        self.assertNotIn("REVIEW-PENDING", " ".join(result["blockers"]))
+
+
+def _review(request_id, copy_path, reviewer="rev-1", **kw):
+    """A review record that the shared validator accepts, plus its ledger."""
+    record = {"schema": "signature-launch-review-record/v1", "verdict": "pass",
+              "reviewer_session": reviewer, "reviewer_model": "model-b",
+              "request_id": request_id,
+              "reviewed_artifacts": [{"path": "copy.json", "sha256": common.sha256_file(copy_path)}]}
+    record.update(kw)
+    return {"record": record, "ledger": [reviewer]}
+
+
+def _u1_with(review):
+    request, journey = u1_inputs()
+    return upsell1_adapter.build_bundle(
+        request, load(U1_COPY), journey, copy_sha256=common.sha256_file(U1_COPY),
+        copy_artifact_path=str(U1_COPY_ARTIFACT), review=review)["result"]
+
+
+class ReviewEnforcementIsPinned(unittest.TestCase):
+    """Each enforcement line of the 80 review passthrough has a test that fails without it."""
+
+    def test_control_valid_review_is_earned(self):
+        request, _ = u1_inputs()
+        result = _u1_with(_review(request["request_id"], U1_COPY))
+        self.assertIs(result["independent_review"], True)
+
+    def test_missing_validator_fails_closed_never_earns_review(self):
+        request, _ = u1_inputs()
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(common, "ADAPTERS_DIR", Path(td) / "a" / "b"):
+                self.assertIn("validator not found", " ".join(common._review_fails({}, [], [], "r")))
+                result = _u1_with(_review(request["request_id"], U1_COPY))
+        self.assertIs(result["independent_review"], False)
+        self.assertIn("validator not found", " ".join(result["blockers"]))
+
+    def test_record_for_another_request_is_not_accepted(self):
+        result = _u1_with(_review("SOME-OTHER-REQUEST", U1_COPY))
+        self.assertIs(result["independent_review"], False)
+        self.assertIn("does not echo the request", " ".join(result["blockers"]))
+
+    def test_author_cannot_review_own_work(self):
+        request, _ = u1_inputs()
+        result = _u1_with(_review(request["request_id"], U1_COPY, reviewer=common.AUTHOR_SESSION))
+        self.assertIs(result["independent_review"], False)
+        self.assertIn("reviewer session == author session", " ".join(result["blockers"]))
+
+    def test_u2_adapter_passes_the_review_through(self):
+        request, journey = u2_inputs()
+        result = upsell2_adapter.build_bundle(
+            request, load(U2_COPY), journey, copy_sha256=common.sha256_file(U2_COPY),
+            copy_artifact_path=U2_COPY_ARTIFACT,
+            review=_review(request["request_id"], U2_COPY))["result"]
+        self.assertEqual((result["independent_review"], result["reviewer_session"]), (True, "rev-1"))
+        self.assertNotIn("REVIEW-PENDING", " ".join(result["blockers"]))
+
+    def test_produce_cli_reads_and_passes_the_review(self):
+        request_path = SKILL_DIR / "fixtures" / "request-upsell1.testonly.json"
+        review = _review(load(request_path)["request_id"], U1_COPY)
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            (td / "review.json").write_text(json.dumps(review["record"]))
+            (td / "ledger.json").write_text(json.dumps(review["ledger"]))
+
+            def produce(*extra):
+                out = td / "bundle.json"
+                out.unlink(missing_ok=True)
+                run = subprocess.run(
+                    [sys.executable, str(ADAPTERS_DIR / "produce.py"), "--instance", "upsell_1",
+                     "--request", str(request_path), "--copy", str(U1_COPY),
+                     "--journey", str(FIXTURES / "journey-main-only.testonly.json"),
+                     "--copy-artifact-path", U1_COPY_ARTIFACT, "--out", str(out)] + list(extra),
+                    capture_output=True, text=True)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                return load(out)["result"]
+
+            earned = produce("--review", str(td / "review.json"), "--review-ledger", str(td / "ledger.json"))
+            self.assertEqual((earned["independent_review"], earned["reviewer_session"]), (True, "rev-1"))
+            pending = produce()
+            self.assertIs(pending["independent_review"], False)
+            self.assertIn("REVIEW-PENDING", " ".join(pending["blockers"]))
 
 
 class EligibilityIsDesignOnlyAtBuild(unittest.TestCase):

@@ -42,7 +42,7 @@ what this result claims.
 Usage:
   emit_page_result.py <plan.json> --output <result.json> \
       --author-session <id> --request <request.json> \
-      [--status authored|locally_verified|blocked] [--test-only] \
+      [--status authored|locally_verified|blocked] [--review <record.json> --review-ledger <ledger.json>] [--test-only] \
       [--artifact <path> ...] [--image-run-dir <dir>] [--reviewer-session <id>] \
       [--native-bindings-ref <ref>] [--blocker <text> ...]
   emit_page_result.py <plan.json> --output <result.json> \
@@ -95,7 +95,7 @@ def run_dir_artifacts(plan, run_dir):
 
 
 def emit(plan, *, author_session, request_id=None, page_id=None, input_hash=None,
-         request=None, artifact_paths=(), status="locally_verified",
+         request=None, artifact_paths=(), status="authored",
          test_only=False, reviewer_session=None, native_bindings_ref=None, blockers=(),
          image_run_dir=None):
     if status not in LOCAL_STATUSES:
@@ -114,6 +114,8 @@ def emit(plan, *, author_session, request_id=None, page_id=None, input_hash=None
         raise ValueError("input_hash must be echoed from the request (pass --input-hash or a request document); the emitter does not hash the plan in its place.")
     if request is not None and "test_only" in request:
         test_only = bool(request["test_only"])
+    if status == "locally_verified" and reviewer_session is None:
+        raise ValueError("status locally_verified needs --reviewer-session and a valid review record; the default is authored.")
     if reviewer_session is not None and reviewer_session == author_session:
         raise ValueError("reviewer_session equals author_session; an independent review needs a different session.")
     artifact_paths = list(artifact_paths)
@@ -160,6 +162,26 @@ def emit_selection_result(plan, **kwargs):
         if key == "page_id":
             profile["outcome"] = plan.get("outcome")
     return profile
+
+
+def check_review(result, record, ledger):
+    """A reviewer_session / locally_verified claim needs a record the shared validator accepts."""
+    for parent in Path(__file__).resolve().parents:
+        path = parent / "shared-utils" / "signature_launch_contract" / "review_record.py"
+        if path.is_file():
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("review_record", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            fails = mod.validate_review_record(
+                record, ledger=ledger, author_session=result["author_session"],
+                artifacts=result["artifacts"], request_id=result["request_id"])
+            if fails:
+                raise ValueError("review record refused: " + "; ".join(fails))
+            if record.get("reviewer_session") != result["reviewer_session"]:
+                raise ValueError("review record reviewer_session differs from --reviewer-session")
+            return
+    raise ValueError("review_record validator not found; cannot accept a review")
 
 
 def self_test():
@@ -241,12 +263,17 @@ def main(argv):
             request=request,
             artifact_paths=[argv[i + 1] for i, a in enumerate(argv) if a == "--artifact"],
             image_run_dir=opt("--image-run-dir"),
-            status=opt("--status", "locally_verified"),
+            status=opt("--status", "authored"),
             test_only="--test-only" in argv,
             reviewer_session=opt("--reviewer-session"),
             native_bindings_ref=opt("--native-bindings-ref"),
             blockers=[argv[i + 1] for i, a in enumerate(argv) if a == "--blocker"],
         )
+        if result["reviewer_session"] is not None or result["status"] == "locally_verified":
+            if "--review" not in argv:
+                raise ValueError("--reviewer-session / locally_verified need --review <record.json> (--review-ledger <ledger.json>)")
+            ledger = json.loads(Path(opt("--review-ledger")).read_text()) if "--review-ledger" in argv else None
+            check_review(result, json.loads(Path(opt("--review")).read_text()), ledger)
         out_path = Path(output)
         if out_path.parent and str(out_path.parent) not in ("", "."):
             out_path.parent.mkdir(parents=True, exist_ok=True)

@@ -864,6 +864,21 @@ def run_copy_validation(
 # ---------------------------------------------------------------------------
 
 
+def _review_fails(record, ledger, artifacts, request_id) -> List[str]:
+    """Refusals from the shared review_record validator; fail closed if absent."""
+    for parent in ADAPTERS_DIR.parents:
+        path = parent / "shared-utils" / "signature_launch_contract" / "review_record.py"
+        if path.is_file():
+            spec = importlib.util.spec_from_file_location("review_record", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod.validate_review_record(
+                record, ledger=ledger, author_session=AUTHOR_SESSION,
+                artifacts=artifacts, request_id=request_id,
+            )
+    return ["review_record validator not found; cannot accept a review"]
+
+
 def build_result(
     *,
     request: Mapping,
@@ -875,6 +890,7 @@ def build_result(
     test_outcomes: Sequence[Mapping],
     extra_blockers: Sequence[str] = (),
     copy_validation: Optional[Mapping] = None,
+    review: Optional[Mapping] = None,
 ) -> Dict[str, object]:
     disclosure = request["disclosure"]
     offer = request["offer"]
@@ -929,6 +945,24 @@ def build_result(
             "emitted, no duplicate charge."
             % (disposition["action"], disposition["reason"])
         )
+    # Issue 30: independent_review is true ONLY when a valid review record
+    # (review_record.validate_review_record) accepts this artifact set;
+    # otherwise it stays false and the REVIEW-PENDING blocker says why.
+    reviewer_session, review_fails = None, ["no review record supplied (--review)"]
+    if review is not None:
+        record = review.get("record")
+        review_fails = _review_fails(
+            record, review.get("ledger"),
+            [{"path": copy_artifact_path, "sha256": copy_sha256}],
+            request["request_id"],
+        )
+        if not review_fails:
+            reviewer_session = record["reviewer_session"]
+    if review_fails:
+        blockers.append(
+            "REVIEW-PENDING: no valid independent review record; %s"
+            % "; ".join(review_fails)
+        )
     disclosure_text = render_disclosure(disclosure)
     result = {
         "schema_version": "1.0",
@@ -942,8 +976,8 @@ def build_result(
         "status": "blocked" if blocked else "authored",
         "artifacts": [{"path": copy_artifact_path, "sha256": copy_sha256}],
         "author_session": AUTHOR_SESSION,
-        "reviewer_session": None,
-        "independent_review": False,
+        "reviewer_session": reviewer_session,
+        "independent_review": not review_fails,
         "proof_class": "L1",
         "blockers": blockers,
         "native_bindings_ref": None,

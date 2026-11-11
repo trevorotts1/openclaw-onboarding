@@ -25,7 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from build_selection_plan import SELF_TEST_LAUNCH, build_plan  # noqa: E402
-from emit_page_result import PAGE_RESULT_FIELDS, emit, emit_selection_result  # noqa: E402
+import emit_page_result  # noqa: E402
+from emit_page_result import PAGE_RESULT_FIELDS, check_review, emit, emit_selection_result  # noqa: E402
 
 REQUEST = {
     "request_id": "TEST-REQ-78-PATHA",
@@ -100,6 +101,134 @@ class EmitFunctionTests(unittest.TestCase):
             emit(self.plan, author_session="test", request_id="r-only")
         with self.assertRaises(ValueError):
             emit(self.plan, author_session="test", request_id="r", page_id="P")
+
+
+class ReviewGateTests(unittest.TestCase):
+    """Issue 79: one meaning of locally_verified - it needs a reviewer and a review record."""
+
+    def setUp(self):
+        self.plan = build_plan(SELF_TEST_LAUNCH)
+
+    def test_default_status_is_authored_l1_unreviewed(self):
+        res = emit(self.plan, author_session="test", request=dict(REQUEST))
+        self.assertEqual((res["status"], res["proof_class"], res["independent_review"]), ("authored", "L1", False))
+
+    def test_locally_verified_without_reviewer_is_refused(self):
+        with self.assertRaises(ValueError):
+            emit(self.plan, author_session="test", request=dict(REQUEST), status="locally_verified")
+
+    def test_cli_locally_verified_or_reviewer_without_record_is_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            plan = Path(td) / "plan.json"
+            plan.write_text(json.dumps(self.plan))
+            req = Path(td) / "request.json"
+            req.write_text(json.dumps(REQUEST))
+            for extra in (["--status", "locally_verified", "--reviewer-session", "rev-1"],
+                          ["--reviewer-session", "rev-1"]):
+                out = Path(td) / "out.json"
+                run = subprocess.run(
+                    [sys.executable, str(ROOT / "scripts" / "emit_page_result.py"), str(plan),
+                     "--author-session", "a", "--request", str(req), "--output", str(out)] + extra,
+                    capture_output=True, text=True)
+                self.assertEqual(run.returncode, 3, run.stdout + run.stderr)
+                self.assertIn("--review", run.stderr)
+                self.assertFalse(out.exists())
+
+    def test_cli_valid_review_record_and_ledger_emit_locally_verified(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            plan = td / "plan.json"
+            plan.write_text(json.dumps(self.plan))
+            req = td / "request.json"
+            req.write_text(json.dumps(REQUEST))
+            artifact = td / "page.txt"
+            artifact.write_text("reviewed page bytes")
+            sha = hashlib.sha256(artifact.read_bytes()).hexdigest()
+            record = td / "review.json"
+            record.write_text(json.dumps({
+                "schema": "signature-launch-review-record/v1", "verdict": "pass",
+                "reviewer_session": "rev-1", "reviewer_model": "model-b",
+                "request_id": REQUEST["request_id"],
+                "reviewed_artifacts": [{"path": str(artifact), "sha256": sha}]}))
+            ledger = td / "ledger.json"
+            ledger.write_text(json.dumps(["rev-1"]))
+            out = td / "out.json"
+            run = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "emit_page_result.py"), str(plan),
+                 "--author-session", "a", "--request", str(req), "--output", str(out),
+                 "--artifact", str(artifact), "--status", "locally_verified",
+                 "--reviewer-session", "rev-1", "--review", str(record),
+                 "--review-ledger", str(ledger)],
+                capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            doc = json.loads(out.read_text())
+            self.assertEqual((doc["status"], doc["reviewer_session"], doc["independent_review"]),
+                             ("locally_verified", "rev-1", True))
+            self.assertEqual(doc["artifacts"][0]["sha256"], sha)
+            validate(doc, ROOT / "schema" / "page-result.schema.json")
+
+
+class CheckReviewEnforcementTests(unittest.TestCase):
+    """Each enforcement line in check_review and the CLI call to it is pinned:
+    remove the line and exactly the matching test here fails."""
+
+    SHA = "c" * 64
+
+    def _result(self, **kw):
+        base = {"author_session": "a", "request_id": "REQ-1", "reviewer_session": "rev-1",
+                "artifacts": [{"path": "page.txt", "sha256": self.SHA}]}
+        base.update(kw)
+        return base
+
+    def _record(self, **kw):
+        base = {"schema": "signature-launch-review-record/v1", "verdict": "pass",
+                "reviewer_session": "rev-1", "reviewer_model": "model-b", "request_id": "REQ-1",
+                "reviewed_artifacts": [{"path": "page.txt", "sha256": self.SHA}]}
+        base.update(kw)
+        return base
+
+    def test_valid_record_is_accepted(self):
+        self.assertIsNone(check_review(self._result(), self._record(), ["rev-1"]))
+
+    def test_validator_refusal_raises(self):
+        # reviewer is not in the dispatch ledger
+        with self.assertRaisesRegex(ValueError, "review record refused"):
+            check_review(self._result(), self._record(), ["someone-else"])
+
+    def test_reviewer_session_mismatch_raises(self):
+        with self.assertRaisesRegex(ValueError, "differs from --reviewer-session"):
+            check_review(self._result(reviewer_session="rev-2"), self._record(), ["rev-1"])
+
+    def test_validator_not_found_fails_closed(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(emit_page_result, "__file__", str(Path(td) / "emit_page_result.py")):
+                with self.assertRaisesRegex(ValueError, "validator not found"):
+                    check_review(self._result(), self._record(), ["rev-1"])
+
+    def test_record_for_another_request_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "does not echo the request"):
+            check_review(self._result(), self._record(request_id="OTHER"), ["rev-1"])
+
+    def test_reviewer_equal_to_author_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "reviewer session == author session"):
+            check_review(self._result(reviewer_session="a"), self._record(reviewer_session="a"), ["a"])
+
+    def test_cli_junk_review_record_is_refused_and_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            (td / "plan.json").write_text(json.dumps(build_plan(SELF_TEST_LAUNCH)))
+            (td / "request.json").write_text(json.dumps(REQUEST))
+            (td / "junk.json").write_text(json.dumps({"verdict": "pass"}))
+            out = td / "out.json"
+            run = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "emit_page_result.py"), str(td / "plan.json"),
+                 "--author-session", "a", "--request", str(td / "request.json"), "--output", str(out),
+                 "--reviewer-session", "rev-1", "--review", str(td / "junk.json")],
+                capture_output=True, text=True)
+            self.assertEqual(run.returncode, 3, run.stdout + run.stderr)
+            self.assertIn("review record refused", run.stderr)
+            self.assertFalse(out.exists())
 
 
 class EmitCliTests(unittest.TestCase):

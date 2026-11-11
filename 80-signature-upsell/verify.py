@@ -10,6 +10,7 @@ non-zero on ANY failure:
   4. page checker in place       (components/pages/check_pages.py)
   5. adapters test suite         (components/adapters/tests, incl. the
      binding wiring tests tests/test_binding_wiring.py) — staged, see below
+     plus the adapter_common honesty tests (test_adapter_common_honesty.py)
   6. binding core test suite     (components/binding/test_binding.py) —
      staged; proves the S80-06 extra-offer binding at L1 interface level
      against the TEST-ONLY fixture driver only
@@ -175,6 +176,23 @@ def main():
             not_run.append(
                 "adapters routing differential tests (test_routing_state.py) "
                 "— packet/reference not found above this package")
+
+        # adapter_common honesty suite (earned independent_review, design-only
+        # eligibility, ledger-ref claims): lives beside the adapters, outside
+        # tests/, so the discover runs above do not reach it. Runs in both modes.
+        # adapter_common finds the shared review validator by walking up from the
+        # adapters dir, so the mirror carries a copy of it (repo checkout or
+        # installed skills root); absent, the earned-review test fails, not skips.
+        for anc in SKILL.parents:
+            rr = anc / "shared-utils" / "signature_launch_contract" / "review_record.py"
+            if rr.is_file():
+                dst = stage_work / "shared-utils" / "signature_launch_contract"
+                dst.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(rr, dst / "review_record.py")
+                break
+        run("adapter_common honesty tests (staged mirror)",
+            [sys.executable, "-m", "unittest", "test_adapter_common_honesty"],
+            stage_work / "adapters")
 
         # binding core suite: L1 interface-level proof against the
         # TEST-ONLY fixture driver; needs only the sibling adapters tree,

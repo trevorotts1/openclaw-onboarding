@@ -43,6 +43,8 @@ def main(argv=None) -> int:
         default=None,
         help="Path string recorded in result.artifacts (default: the --copy value).",
     )
+    parser.add_argument("--review", default=None, help="Review record JSON (signature-launch-review-record/v1).")
+    parser.add_argument("--review-ledger", default=None, help="Dispatch ledger JSON the review record is checked against.")
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
 
@@ -57,6 +59,12 @@ def main(argv=None) -> int:
         journey = common.load_json(args.journey)
         launch = common.load_json(args.launch) if args.launch else None
         copy_sha256 = common.sha256_file(args.copy)
+        review = None
+        if args.review:
+            review = {
+                "record": common.load_json(args.review),
+                "ledger": common.load_json(args.review_ledger) if args.review_ledger else None,
+            }
         bundle = builder(
             request,
             copy_doc,
@@ -64,6 +72,7 @@ def main(argv=None) -> int:
             copy_sha256=copy_sha256,
             copy_artifact_path=args.copy_artifact_path or args.copy,
             launch=launch,
+            review=review,
         )
     except (common.AdapterError, OSError, ValueError) as exc:
         print("FAIL-CLOSED: %s" % exc, file=sys.stderr)
