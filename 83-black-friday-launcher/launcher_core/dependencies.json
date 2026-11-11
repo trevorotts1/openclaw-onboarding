@@ -33,7 +33,7 @@
       "min_version": "0.2.7",
       "interface_sha256": {
         "scripts/build_selection_plan.py": "f15394a971606cd3355d0cd11a498a291309f3c19ccaafd02d1a95e19f150d98",
-        "scripts/emit_page_result.py": "5290cbac5b5c7acd228818fbdb7f1bfb7cc713479d0d1add6c1a7b60adfb22f2",
+        "scripts/emit_page_result.py": "bd32cfa76e452d3c7586139c1f1a3385dc6404b8a4076cf87a57abe923e080f9",
         "scripts/run_image_stages.py": "24c8f3a52eee3ff8861201e7283cc39121c588da3a71f5b9464017b94a70b84a"
       },
       "required": true,
@@ -45,7 +45,7 @@
       "ref": "79-signature-order-form",
       "min_version": "0.1.8",
       "interface_sha256": {
-        "scripts/validate_checkout.py": "45feac09266c88030b125412407c0d042400aba03f2fd5213e7613eb70fa23c6",
+        "scripts/validate_checkout.py": "5548acaaf69286f2179fbb506be15a71499b60925844884f2406077e2cde610e",
         "references/checkout.schema.json": "1cc25a2823d69a475a86e1e7bdb6b8e80d77819f15616835785584732dd77614"
       },
       "required": true,
@@ -57,7 +57,7 @@
       "ref": "80-signature-upsell",
       "min_version": "0.2.7",
       "interface_sha256": {
-        "components/adapters/produce.py": "4797368ede5db7ec03165f6f5898252861c3a6929ae4c0ff70f1b64b27043247",
+        "components/adapters/produce.py": "3656ad1ea61d7e63cabfad8937d7389cb7ab451d493d26f3844890231c376cbf",
         "components/adapters/routing_state.py": "9f7081ce23009c044bc6c63a9c2c486b62b83e53dd41453cdf3e83996c508979"
       },
       "required": true,

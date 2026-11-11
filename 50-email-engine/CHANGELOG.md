@@ -1,5 +1,10 @@
 # Changelog — Skill 50 (email-engine)
 
+## [2.0.11] - 2026-11-11 - Harmony-95 Batch T: email engine producers and seams (WP-05b)
+
+- Batch T member WP-05b lands in this skill; `ENGINE-PIN.sha256` is recomputed with the CI formula over the final file set.
+- Version bump so the Batch T pull request carries a version above main (G3).
+
 ## [2.0.10] - 2026-11-10 - Harmony-95 Batch P: stop-on-purchase flags in the launch email family registry (X-96)
 
 - `profiles/launch-email-families.json` adds `stop_on_verified_purchase` and `suppress_promotion_after_verified_purchase` rules, and the `verified_purchase` eligibility check, to the launch email families that kept sending after a verified purchase; `ENGINE-PIN.sha256` re-derived with the CI formula over the changed enforcement set; `SKILL.md` states the visual-design boundary (WP-12); tests `test_stop_on_purchase.py` and the WP-12 boundary test.

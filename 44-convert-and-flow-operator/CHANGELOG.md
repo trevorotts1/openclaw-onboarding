@@ -1,3 +1,8 @@
+## [v2.1.48] - 2026-11-11 - Harmony-95 Batch T: terminal nodes, export object, QC session record, plan-mode gate, thank-you host
+
+- Batch T members WP-05b, WP-06b, WP-07, WP-11b and WP-18 land in this skill: `_terminate` ends every compiled path on a terminal node (issue 64), the typed export object and `--deliveries-out`, the signed QC session record (`--qc-session`) and the PLAN MODE gate (`--plan-mode-file`), the thank-you host, and the launch-family seam workflow. The two X-96 follow-up gate tests now select the purchase goal only (INT-T-1).
+- Version bump so the Batch T pull request carries a version above main (G3).
+
 ## [v2.1.47] - 2026-11-10 - Harmony-95 Batch P: purchase stops the follow-up flows (X-96); visual-design boundary statement
 
 - `launch_step_compiler.py` and `workflow_builder.py` stop a follow-up email flow once the buyer has a verified purchase of the offer it follows (`followed_offer_id`, X-96); `plan_reader.py` and `automation-build.schema.json` carry the field; tests `test_follow_up_purchase_gate.py`, `test_registry_stop_on_purchase.py` and `test_plan_reader_law.py`.
