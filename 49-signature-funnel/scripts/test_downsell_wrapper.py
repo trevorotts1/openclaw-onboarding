@@ -231,6 +231,19 @@ def stage_and_run(request):
     return paths, run_wrapper(paths)
 
 
+def _readback(paths, journey=None, **binding):
+    """An install read-back document (schema signature-launch-install-readback/v1) beside the staged run."""
+    doc = {"schema": dw.INSTALL_READBACK_SCHEMA, "role": "downsell_1", "page_id": D1_PAGE_ID,
+           "route_guard_binding": {
+               "journey": journey or {"main_purchased_verified": True,
+                                      "u1_event": "explicit_decline", "u1_accepted": False},
+               "observed_at": "2026-11-10T12:00:00-05:00",
+               "evidence_ref": "TEST-RAIL-READBACK-1", **binding}}
+    path = paths["workdir"] / "install-readback-downsell_1.json"
+    path.write_text(json.dumps(doc, indent=2) + "\n")
+    return path
+
+
 class DownsellWrapperEndToEndTests(unittest.TestCase):
     def test_1_0_request_consumed_end_to_end(self):
         paths, proc = stage_and_run(_request(None, "1.0"))
@@ -645,7 +658,7 @@ class DownsellNativeIdTests(unittest.TestCase):
 
     def test_install_stage_accepts_real_ids(self):
         paths = stage(_request(None))
-        proc = run_wrapper(paths, "--stage", "install")
+        proc = run_wrapper(paths, "--stage", "install", "--install-readback", str(_readback(paths)))
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
     def test_placeholder_ids_refused_at_install_and_design(self):
@@ -1017,7 +1030,8 @@ class DownsellPinTests(unittest.TestCase):
     PINS = {"validators/validate_downsell.py": dw.PIN_VALIDATE_DOWNSELL,
             "schemas/downsell-request.schema.json": dw.PIN_REQUEST_SCHEMA,
             "schemas/downsell-result-extension.schema.json":
-                dw.PIN_EXTENSION_SCHEMA}
+                dw.PIN_EXTENSION_SCHEMA,
+            "validators/validate_request.py": dw.PIN_VALIDATE_REQUEST}
 
     def copy_tree(self):
         root = pathlib.Path(tempfile.mkdtemp(prefix="d1-pins-"))
@@ -1061,13 +1075,312 @@ class DownsellPinTests(unittest.TestCase):
 
         dw._read_bytes = read_then_swap
         try:
-            mod, _, _ = dw._load_skill81(root)
+            mod, _, _, _ = dw._load_skill81(root)
         finally:
             dw._read_bytes = real_read
         self.assertTrue(swapped)
         self.assertNotEqual(mod.check_entry_guard({}), ["TAMPERED"])
         self.assertIn("D1-GUARD-NO-VERIFIED-MAIN-PURCHASE",
                       mod.check_entry_guard({}))
+
+
+class DownsellInstallReadbackGuardTests(unittest.TestCase):
+    """Issue 49: the entry guard runs over the READ-BACK journey at the install stage, never the constant,
+    and D1-ENTRY-GUARD-RUNTIME-ONLY is cleared only then."""
+
+    def blockers(self, paths):
+        return json.loads(paths["result"].read_text())["blockers"]
+
+    def guard_blocked(self, paths):
+        return any(b.startswith("D1-ENTRY-GUARD-RUNTIME-ONLY") for b in self.blockers(paths))
+
+    def test_blocker_present_at_design_and_absent_after_the_install_read_back(self):
+        design = stage(_request(None))
+        self.assertEqual(run_wrapper(design).returncode, 0)
+        self.assertTrue(self.guard_blocked(design))
+        installed = stage(_request(None))
+        proc = run_wrapper(installed, "--stage", "install", "--install-readback", str(_readback(installed)))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertFalse(self.guard_blocked(installed))
+        record = json.loads((installed["workdir"] / "entry-guard-downsell_1.json").read_text())
+        self.assertEqual(record["mode"], "INSTALL-READBACK")
+        self.assertTrue(record["readback_journey_evaluated"])
+        arts = {a["path"] for a in json.loads(installed["result"].read_text())["artifacts"]}
+        self.assertIn(str(installed["workdir"] / "install-readback-downsell_1.json"), arts)
+
+    def test_install_stage_without_a_read_back_is_refused(self):
+        paths = stage(_request(None))
+        proc = run_wrapper(paths, "--stage", "install")
+        self.assertEqual(proc.returncode, 2, proc.stdout)
+        self.assertIn("--stage install needs --install-readback", proc.stderr)
+        self.assertFalse(paths["result"].exists())
+
+    def test_a_read_back_at_the_design_stage_is_refused(self):
+        paths = stage(_request(None))
+        proc = run_wrapper(paths, "--install-readback", str(_readback(paths)))
+        self.assertEqual(proc.returncode, 2, proc.stdout)
+        self.assertIn("only accepted with --stage install", proc.stderr)
+
+    def test_the_guard_runs_over_the_read_back_journey_not_the_constant(self):
+        """A read-back that says the installed guard does NOT see a verified main purchase is refused by
+        the real guard: the design-time constant (which says True) is not consulted at install."""
+        paths = stage(_request(None))
+        rb = _readback(paths, journey={"main_purchased_verified": False,
+                                       "u1_event": "explicit_decline", "u1_accepted": False})
+        proc = run_wrapper(paths, "--stage", "install", "--install-readback", str(rb))
+        self.assertEqual(proc.returncode, 2, proc.stdout)
+        self.assertIn("D1-GUARD-NO-VERIFIED-MAIN-PURCHASE", proc.stderr)
+        self.assertFalse(paths["result"].exists())
+
+    def test_a_malformed_or_foreign_read_back_is_refused(self):
+        for label, mutate in (
+                ("schema", lambda d: d.update(schema="other/v1")),
+                ("page", lambda d: d.update(page_id="OTHER-PAGE")),
+                ("role", lambda d: d.update(role="upsell_1")),
+                ("evidence", lambda d: d["route_guard_binding"].update(evidence_ref=" ")),
+                ("key", lambda d: d["route_guard_binding"]["journey"].update(extra=True)),
+                ("type", lambda d: d["route_guard_binding"]["journey"].update(u1_accepted="no"))):
+            with self.subTest(label):
+                paths = stage(_request(None))
+                rb = _readback(paths)
+                doc = json.loads(rb.read_text())
+                mutate(doc)
+                rb.write_text(json.dumps(doc))
+                proc = run_wrapper(paths, "--stage", "install", "--install-readback", str(rb))
+                self.assertEqual(proc.returncode, 2, proc.stdout)
+                self.assertIn("install read-back", proc.stderr)
+                self.assertFalse(paths["result"].exists())
+
+
+class DownsellRequestValidatorIsSkill81sTests(unittest.TestCase):
+    """Issue 91: the wrapper runs Skill 81's own validate_request on the enriched request."""
+
+    def test_the_loader_returns_the_pinned_validate_request(self):
+        _, schema, _, validator = dw._load_skill81(SKILL81)
+        self.assertEqual(validator({}, schema)[0], "D1-REQUEST-MISSING-SCHEMA_VERSION")
+        # fail closed on a keyword the evaluator does not implement (the wrapper's old subset evaluator
+        # ignored it): this is the behaviour issue 91 imports
+        widened = {"type": "object", "properties": {"x": {"type": "string", "pattern": "^a"}}}
+        self.assertIn("D1-REQUEST-UNSUPPORTED-SCHEMA-CONSTRAINT-PATTERN", validator({"x": "b"}, widened))
+
+    def test_run_refuses_on_a_violation_code_from_the_pinned_validator(self):
+        """The enriched request is judged by Skill 81's validator: a code it returns stops the run, naming
+        the code, and no result is written."""
+        paths = stage(_request(None))
+        real = dw._load_skill81
+
+        def load(root):
+            vd, schema, ext, _ = real(root)
+            return vd, schema, ext, lambda request, schema: ["D1-REQUEST-UNSUPPORTED-SCHEMA-CONSTRAINT-PATTERN"]
+
+        dw._load_skill81 = load
+        try:
+            import argparse
+            ns = argparse.Namespace(
+                request=str(paths["request-downsell_1.json"]), result=str(paths["result"]),
+                launch=str(paths["launch.json"]), route_graph=str(paths["route-graph.json"]),
+                copy=str(paths["copy-downsell_1.json"]), journey=None,
+                enrichment=str(paths["enrichment-downsell_1.json"]),
+                extension=str(paths["extension-downsell_1.json"]), skill81_root=str(SKILL81),
+                stage="design", install_readback=None, image_inputs=None, role_instance=None,
+                skill71_root=None, disclosure=None, author_session=None)
+            with self.assertRaises(dw.WrapperError) as ctx:
+                dw.run(ns)
+        finally:
+            dw._load_skill81 = real
+        self.assertIn("D1-REQUEST-UNSUPPORTED-SCHEMA-CONSTRAINT-PATTERN", str(ctx.exception))
+        self.assertFalse(paths["result"].exists())
+
+    def test_the_wrapper_no_longer_evaluates_the_request_with_its_own_subset(self):
+        src = (SCRIPTS / "downsell_wrapper.py").read_text(encoding="utf-8")
+        self.assertNotIn("_schema_violations(enriched", src)
+
+    def test_the_wrapper_validator_fails_closed_on_a_keyword_it_does_not_evaluate(self):
+        """Question WP-10a-1: a schema keyword outside the handled set is a finding, at any depth, while
+        annotations are ignored and the two real documents' schemas still carry no such keyword."""
+        schema = {"$schema": "x", "$id": "y", "$comment": "c", "title": "t", "description": "d",
+                  "type": "object", "properties": {"when": {"type": "string"}}}
+        self.assertEqual(dw._schema_violations({"when": "2026"}, schema), [])
+        formatted = {"type": "object", "properties": {"when": {"type": "string", "format": "date-time"}}}
+        found = dw._schema_violations({"when": "not a date"}, formatted)
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("'format'", found[0])
+        self.assertIn("$.when", found[0])
+        # a property the instance omits is still unevaluated
+        self.assertEqual(len(dw._schema_violations({}, formatted)), 1)
+        # a keyword at the top level, inside allOf, items and then
+        for bad in ({"format": "uri"}, {"allOf": [{"uniqueItems": True}]},
+                    {"type": "array", "items": {"$ref": "#/x"}},
+                    {"if": {"type": "object"}, "then": {"oneOf": []}},
+                    {"if": {"type": "object"}, "else": {"oneOf": []}},
+                    {"if": {"format": "uri"}, "then": {"type": "object"}}):
+            with self.subTest(schema=bad):
+                self.assertTrue(dw._schema_violations({} if "items" not in bad else [], bad))
+
+    def test_the_two_real_documents_schemas_use_only_handled_keywords_and_annotations(self):
+        _, _, extension_schema, _ = dw._load_skill81(SKILL81)
+        result_schema = json.loads((SCRIPTS / "vendor" / "page-result.schema.json").read_text(encoding="utf-8"))
+        for schema in (extension_schema, result_schema):
+            self.assertEqual(dw._unevaluated_keywords(schema), [])
+
+    def test_the_fourth_file_is_declared_in_skill_81s_consumer_list(self):
+        decl = json.loads((SKILL81 / "VALIDATOR-CONSUMERS.json").read_text())
+        entry = decl["pinned"]["validators/validate_request.py"]
+        self.assertEqual(entry["sha256"], dw.PIN_VALIDATE_REQUEST)
+        self.assertEqual(entry["consumers"][0]["pin_constant"], "PIN_VALIDATE_REQUEST")
+
+
+class DownsellStageVocabularyAndSchemaOnlyTests(unittest.TestCase):
+    """Judge round 8: the --stage design|install vocabulary is enforced at the CLI and in enrich, and the two
+    wrapper-side schema checks (result extension, page-result) each refuse a violation only they can see."""
+
+    def namespace(self, paths, **over):
+        import argparse
+        base = dict(
+            request=str(paths["request-downsell_1.json"]), result=str(paths["result"]),
+            launch=str(paths["launch.json"]), route_graph=str(paths["route-graph.json"]),
+            copy=str(paths["copy-downsell_1.json"]), journey=None,
+            enrichment=str(paths["enrichment-downsell_1.json"]),
+            extension=str(paths["extension-downsell_1.json"]), skill81_root=str(SKILL81),
+            stage="design", install_readback=None, image_inputs=None, role_instance=None,
+            skill71_root=None, disclosure=None, author_session=None)
+        base.update(over)
+        return argparse.Namespace(**base)
+
+    def test_the_cli_refuses_an_unknown_stage_at_argument_parsing(self):
+        paths = stage(_request(None))
+        proc = run_wrapper(paths, "--stage", "bogus")
+        self.assertNotEqual(proc.returncode, 0, proc.stdout)
+        self.assertIn("invalid choice: 'bogus'", proc.stderr)
+        self.assertFalse(paths["result"].exists())
+
+    def test_enrich_refuses_an_unknown_stage_without_the_cli(self):
+        paths = stage(_request(None))
+        load = lambda name: json.loads(paths[name].read_text())  # noqa: E731
+        graph_bytes = paths["route-graph.json"].read_bytes()
+        with self.assertRaises(dw.WrapperError) as ctx:
+            dw.enrich(load("request-downsell_1.json"), load("launch.json"), json.loads(graph_bytes),
+                      graph_bytes, load("copy-downsell_1.json"), None, load("enrichment-downsell_1.json"),
+                      "bogus")
+        self.assertIn("stage: 'bogus' is not one of ['design', 'install']", str(ctx.exception))
+
+    def test_a_schema_only_result_extension_violation_is_refused(self):
+        """An unknown key is something only the extension schema (additionalProperties false) sees:
+        Skill 81's validate_result_extension returns no code for it."""
+        paths = stage(_request(None))
+        bad = dict(RESULT_FIXTURE.get("downsell_result_extension", RESULT_FIXTURE), zzz_unknown_key=1)
+        _edit(paths, "extension-downsell_1.json", lambda d: d.update(bad) if "downsell_result_extension" not in d
+              else d["downsell_result_extension"].update(zzz_unknown_key=1))
+        with self.assertRaises(dw.WrapperError) as ctx:
+            dw.run(self.namespace(paths))
+        self.assertIn("result extension violates the landed downsell-result-extension schema",
+                      str(ctx.exception))
+        self.assertIn("zzz_unknown_key", str(ctx.exception))
+        self.assertFalse(paths["result"].exists())
+
+    def test_a_schema_only_page_result_violation_is_refused(self):
+        """With the S49 receipt validator accepting everything, the vendored page-result schema is the only
+        layer left: a result with an unknown key must still be refused before placement."""
+        paths = stage(_request(None))
+        self.assertEqual(run_wrapper(paths).returncode, 0)
+        result = json.loads(paths["result"].read_text())
+        request = json.loads(paths["request-downsell_1.json"].read_text())
+        self.assertEqual(dw._schema_violations(result, json.loads(
+            (SCRIPTS / "vendor" / "page-result.schema.json").read_text())), [])
+        result["zzz_unknown_key"] = 1
+        real = dw._load_receipts_validator
+        dw._load_receipts_validator = lambda: (lambda res, req: [], None)
+        try:
+            with self.assertRaises(dw.WrapperError) as ctx:
+                dw._validate_result(result, request)
+        finally:
+            dw._load_receipts_validator = real
+        self.assertIn("violates the page-result 1.0 schema", str(ctx.exception))
+        self.assertIn("zzz_unknown_key", str(ctx.exception))
+
+
+class DownsellReadbackJourneyMessageTests(unittest.TestCase):
+    """Judge round 9: each way a read-back can be wrong is refused for its own stated reason, so no check can
+    be dropped while another happens to refuse the same document."""
+
+    REQUEST = {"page_id": D1_PAGE_ID}
+    GOOD = {"schema": dw.INSTALL_READBACK_SCHEMA, "role": "downsell_1", "page_id": D1_PAGE_ID,
+            "route_guard_binding": {
+                "journey": {"main_purchased_verified": True, "u1_event": "explicit_decline", "u1_accepted": False},
+                "observed_at": "2026-11-10T12:00:00-05:00", "evidence_ref": "TEST-RAIL-READBACK-1"}}
+
+    def refused(self, mutate=None, doc=None):
+        import copy
+        doc = copy.deepcopy(self.GOOD) if doc is None else doc
+        if mutate:
+            mutate(doc)
+        with self.assertRaises(dw.WrapperError) as ctx:
+            dw.readback_journey(doc, self.REQUEST)
+        return " | ".join(ctx.exception.problems)
+
+    def test_a_good_read_back_returns_its_journey(self):
+        self.assertEqual(dw.readback_journey(self.GOOD, self.REQUEST), self.GOOD["route_guard_binding"]["journey"])
+
+    def test_each_defect_is_refused_for_its_own_reason(self):
+        cases = [
+            ("not an object", lambda d: None, "the document is not a JSON object", ["a", "list"]),
+            ("schema", lambda d: d.update(schema="other/v1"), "schema is 'other/v1'", None),
+            ("role", lambda d: d.update(role="upsell_1"), "role is 'upsell_1'", None),
+            ("page", lambda d: d.update(page_id="OTHER-PAGE"), "page_id 'OTHER-PAGE'", None),
+            ("no binding", lambda d: d.pop("route_guard_binding"), "no route_guard_binding object", None),
+            ("binding not an object", lambda d: d.update(route_guard_binding="x"),
+             "no route_guard_binding object", None),
+            ("observed_at", lambda d: d["route_guard_binding"].update(observed_at=""),
+             "route_guard_binding.observed_at is blank", None),
+            ("evidence_ref", lambda d: d["route_guard_binding"].update(evidence_ref=None),
+             "route_guard_binding.evidence_ref is blank", None),
+            ("journey not an object", lambda d: d["route_guard_binding"].update(journey="x"),
+             "route_guard_binding.journey is not an object", None),
+            ("unknown key", lambda d: d["route_guard_binding"]["journey"].update(extra=True),
+             "unknown journey key 'extra'", None),
+            ("main flag", lambda d: d["route_guard_binding"]["journey"].update(main_purchased_verified="yes"),
+             "journey.main_purchased_verified must be a boolean", None),
+            ("accepted flag", lambda d: d["route_guard_binding"]["journey"].update(u1_accepted=1),
+             "journey.u1_accepted must be a boolean", None),
+            ("event", lambda d: d["route_guard_binding"]["journey"].update(u1_event=5),
+             "journey.u1_event must be a string or null", None),
+        ]
+        for label, mutate, expected, doc in cases:
+            with self.subTest(label):
+                self.assertIn(expected, self.refused(mutate, doc))
+
+    def test_a_null_event_is_accepted(self):
+        import copy
+        doc = copy.deepcopy(self.GOOD)
+        doc["route_guard_binding"]["journey"]["u1_event"] = None
+        self.assertIsNone(dw.readback_journey(doc, self.REQUEST)["u1_event"])
+
+    def test_every_problem_is_reported_together(self):
+        def many(d):
+            d.update(schema="other/v1", role="upsell_1")
+            d["route_guard_binding"]["journey"].update(extra=1, u1_event=5)
+        found = self.refused(many)
+        for part in ("schema is", "role is", "unknown journey key", "u1_event must be"):
+            self.assertIn(part, found)
+
+    def test_the_install_guard_file_records_no_standing_blocker(self):
+        paths = stage(_request(None))
+        proc = run_wrapper(paths, "--stage", "install", "--install-readback", str(_readback(paths)))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        record = json.loads((paths["workdir"] / "entry-guard-downsell_1.json").read_text())
+        self.assertIsNone(record["blocker"])
+        design = stage(_request(None))
+        self.assertEqual(run_wrapper(design).returncode, 0)
+        self.assertEqual(json.loads((design["workdir"] / "entry-guard-downsell_1.json").read_text())["blocker"],
+                         "D1-ENTRY-GUARD-RUNTIME-ONLY")
+
+
+class DownsellSchemaEvaluatorAllOfTests(unittest.TestCase):
+    def test_an_allof_member_that_the_instance_violates_is_reported(self):
+        schema = {"allOf": [{"type": "string"}, {"minLength": 3}]}
+        self.assertEqual(dw._schema_violations("abc", schema), [])
+        self.assertTrue(dw._schema_violations(5, schema))
+        self.assertTrue(dw._schema_violations("ab", schema))
 
 
 if __name__ == "__main__":

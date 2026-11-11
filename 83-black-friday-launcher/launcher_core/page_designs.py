@@ -20,6 +20,8 @@ approval that resolves to a Skill 71 Design Board production record whose hash i
 
 WHAT MAKES A SET COMPLETE (F17). Completeness is proved per INSTANCE, never by a role or a count:
 
+* a design file with no recorded image provider is refused outright (provider unknown), so the
+  placeholder rule can never be skipped by leaving the provider out;
 * the page set is the launch's (``route-graph.json``), so a page the launch plans and the package
   does not carry is named missing, and a piece the launch did not plan is named unexpected;
 * every section image is bound by its own path AND hash to the closed stage that produced it, so a
@@ -508,9 +510,17 @@ def design_violations(manifest: Dict[str, Any], root: Path,
                     problem = _evidence_problem(kind, path, digest, closed)
                 if problem:
                     fails.append(f"{CODE}: {key} {kind} {name!r} {problem}")
-            if (_provider_of(piece, art) == "stub" and kind != "board" and not test_only):
+            provider = _provider_of(piece, art)
+            if provider == "stub" and kind != "board" and not test_only:
                 fails.append(f"{CODE}: {key} {kind} {name!r} was made by the stub provider; "
                              "placeholder pictures are only allowed in a test_only package")
+            elif not provider and kind != "board" and not test_only:
+                # UPS-23 / issue 16: the stub rule above can only fire when a provider is named, so a
+                # design file that names none (the upsell pages' results used to carry none) is a
+                # finding, never a pass: nobody can tell a placeholder from a real render.
+                fails.append(f"{CODE}: {key} {kind} {name!r} names no image provider (provider unknown); "
+                             "a client delivery must say which provider drew each design file, so the "
+                             "placeholder rule can be applied")
         for kind in required_kinds(piece, spec):
             if kind not in found:
                 fails.append(f"{CODE}: {key} is missing {kind.replace('_', ' ')}")

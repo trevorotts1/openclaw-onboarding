@@ -241,6 +241,35 @@ class ClientDeliveryTests(unittest.TestCase):
         fails = self.fails(client_package(self.root, "checkout", 5, provider="stub"))
         self.assertTrue(any("made by the stub provider" in f for f in fails), fails[:2])
 
+    def test_a_design_file_with_no_provider_fails_as_provider_unknown(self):
+        """Issue 16 / UPS-23: the stub rule only fires when a provider is named; a file that names none
+        (the upsell pages' results used to carry none) is a finding on a client delivery, not a pass."""
+        piece = client_package(self.root, "upsell_1", 8)
+        piece.pop("image_provider")
+        for art in piece["artifacts"]:
+            art.pop("provider", None)
+        fails = self.fails(piece)
+        unknown = [f for f in fails if "provider unknown" in f]
+        self.assertTrue(unknown, fails[:3])
+        self.assertTrue(all(f.startswith("AF-LAUNCH-PAGE-DESIGNS: upsell_1 ") for f in unknown))
+        # the same piece, test_only: placeholders are allowed there, so no provider is not a finding
+        manifest = {**manifest_of(piece), "test_only": True}
+        self.assertFalse([f for f in page_designs.design_violations(manifest, self.root) if "provider unknown" in f])
+
+    def test_a_design_board_that_names_no_provider_is_not_a_provider_unknown_finding(self):
+        piece = client_package(self.root, "upsell_1", 8)
+        piece.pop("image_provider")  # no piece-level provider: each file speaks for itself
+        for art in piece["artifacts"]:
+            if art["kind"] == "board":
+                art.pop("provider")
+        self.assertEqual([f for f in self.fails(piece) if "provider unknown" in f], [])
+
+    def test_the_piece_level_provider_names_a_file_the_artifact_leaves_blank(self):
+        piece = client_package(self.root, "upsell_1", 8)
+        for art in piece["artifacts"]:
+            art.pop("provider", None)
+        self.assertEqual([f for f in self.fails(piece) if "provider unknown" in f], [])
+
     def test_a_one_byte_file_in_a_closed_run_still_fails(self):
         piece = client_package(self.root, "checkout", 5)
         victim = next(a for a in piece["artifacts"] if a["kind"] == "wireframe_desktop_section")

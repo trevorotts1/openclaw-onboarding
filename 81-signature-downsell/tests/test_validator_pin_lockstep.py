@@ -130,6 +130,25 @@ class ValidatorPinLockstep(unittest.TestCase):
             "the declaration must name Skill 49's downsell wrapper; saw %r"
             % sorted(consumers))
 
+    def test_the_four_files_the_wrapper_loads_are_all_declared(self):
+        """Issue 91: validate_request.py joined the validator and the two schemas as the fourth pinned file
+        the wrapper hash-checks and RUNS; a fifth or a missing one changes who must move a pin."""
+        self.assertEqual(sorted(declared()["pinned"]),
+                         ["schemas/downsell-request.schema.json",
+                          "schemas/downsell-result-extension.schema.json",
+                          "validators/validate_downsell.py",
+                          "validators/validate_request.py"])
+
+    def test_every_declared_enforcement_point_is_a_function_in_the_consumer(self):
+        """enforced_at tells a reader where the pin is checked; a name that no longer exists is a lie."""
+        for rel, entry in declared()["pinned"].items():
+            for consumer in entry["consumers"]:
+                module, _, function = consumer["enforced_at"].rpartition(".")
+                with self.subTest(file=rel, enforced_at=consumer["enforced_at"]):
+                    self.assertEqual(module, Path(consumer["path"]).stem)
+                    tree = ast.parse((repo_root_for(consumer["path"]) / consumer["path"]).read_text(encoding="utf-8"))
+                    self.assertIn(function, {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)})
+
     def test_declared_hash_equals_the_bytes_on_disk(self):
         decl = declared()
         for rel, entry in sorted(decl["pinned"].items()):

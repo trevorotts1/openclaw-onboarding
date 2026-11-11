@@ -498,6 +498,31 @@ package that is not `test_only`. The decided Black Friday deliverable is finishe
 (final mockups closed on the paid run), with layout proofs as an explicit first approval checkpoint
 (IMG-01); a stub package is labeled "images only, render pending" and is never a finished delivery.
 
+## Production pages and the install hand-off (operator reference)
+
+`dispatch` and `assemble` end at DESIGNS. Two further commands carry an approved design to a page and to
+the delivery rail, in this order and never skipped:
+
+1. `python3 -m launcher_core.cli produce --package <assembled package> --run-dir <dispatch run> ...`
+   runs only after `check` exits 0. It calls Skill 80's `build_production_pages.py` (U1, D1, U2),
+   Skill 81's `production_handoff` (D1) and Skill 82's `build_thank_you_page.py`, and writes
+   `production/<role>.html` plus `production/manifest.json` (sha256 per page) into the package. A copy
+   document marked `test_only` on a launch that is not `test_only` is refused. Skill 82 renders a verified
+   order view, so without `--thank-you-view` and `--thank-you-fulfillment` the thank-you page is recorded
+   `not_built` with the reason, and a client package is then not complete. `AF-LAUNCH-PRODUCTION`
+   (`check_rules/production.py`) fails a client package whose approved pieces lack a built page, and any
+   page changed after it was produced.
+2. `python3 -m launcher_core.cli install --package <package> --run-dir <dispatch run> --rail <skill>/<module>.py:<entry>`
+   (decision D-E: Skill 83 is the caller of the delivery rail; Skill 49 never is). The rail receives
+   `install/install-handoff.json` and must return what it READ BACK from the installed pages; Skill 81's
+   entry guard runs over that read-back journey. `install/install-readback-downsell_1.json` is what Skill
+   49's `downsell_wrapper.py --stage install --install-readback` reads, which is the only thing that
+   clears `D1-ENTRY-GUARD-RUNTIME-ONLY`.
+
+The lines the client is told (`launch_bridge.summary_lines`) follow what is on disk: design only, built, or
+installed. The upsell and downsell pages are dispatched with `--stage design`: eligibility is a runtime
+gate (`U1-ELIGIBILITY-RUNTIME-ONLY`), never an asserted purchase.
+
 ## Tracked items (not built here)
 
 Each item is tracked, not forgotten. Where Skill 83 does not do something, the owner and the place it is

@@ -26,8 +26,8 @@ import sys
 from pathlib import Path
 from typing import Any, List
 
-from . import (checks, council, dependencies, image_plan, intake, launch_bridge,
-               launch_plan, package, page_designs, route)
+from . import (checks, council, dependencies, image_plan, install_handoff, intake, launch_bridge,
+               launch_plan, package, page_designs, production, route)
 from .constants import DECIDED, SEAMS
 
 _TEST_ONLY_REF = "TEST-ONLY"  # the placeholder approval ref on test fixtures
@@ -371,6 +371,70 @@ def cmd_assemble(args: argparse.Namespace) -> int:
                              "report": str(Path(args.run_dir) / "qc/image_stages_report.json")}
                             if stage_report else {"state": "not_invoked"}),
            "graphics": graphics})
+    return 0
+
+
+def _client_lines(args: argparse.Namespace, root: Path) -> None:
+    """What the client is told after produce/install: the same plain lines dispatch prints, now driven by
+    the production manifest and the install read-back that exist on disk (issue 80)."""
+    report = _json_object(Path(args.run_dir) / "dispatch-report.json")
+    if report.get("pages"):
+        print()
+        for line in launch_bridge.summary_lines(launch_bridge.with_production(report, root)):
+            print(line)
+
+
+def cmd_produce(args: argparse.Namespace) -> int:
+    """Build the production pages for the approved designs (after `check` exits 0, before any install)."""
+    root = Path(args.package)
+    manifest = _json_object(root / "package-manifest.json")
+    launch_id = str(manifest.get("launch_id") or "")
+    copies = {}
+    for item in args.copy or []:
+        role, _, path = item.partition("=")
+        if not role or not path:
+            raise CliError("AF-LAUNCH-PRODUCE-ARGS", f"--copy needs ROLE=PATH, got {item!r}")
+        copies[role] = Path(path)
+    try:
+        record = production.produce(
+            root, run_dir=Path(args.run_dir), copies=copies,
+            downsell_page=Path(args.downsell_page) if args.downsell_page else None,
+            brand=Path(args.brand) if args.brand else None, checkout_family=args.checkout_family,
+            thank_you_view=Path(args.thank_you_view) if args.thank_you_view else None,
+            thank_you_fulfillment=Path(args.thank_you_fulfillment) if args.thank_you_fulfillment else None,
+            u2_entry_context=args.u2_entry_context)
+        # the stage closes only after production.produce has run the production rule on what it wrote
+    except production.ProductionError as exc:
+        if launch_id:
+            _launch_event(launch_id, {"event_type": "stage_blocked", "stage": "produce",
+                                      "failures": [exc.code]})
+        raise
+    if launch_id:
+        _launch_event(launch_id, {"event_type": "stage_closed", "stage": "produce"})
+    _emit({"production_manifest": str(root / production.MANIFEST_REL),
+           "pages": {role: row.get("state") for role, row in sorted(record["pages"].items())},
+           "test_only": record["test_only"]})
+    _client_lines(args, root)
+    return 0
+
+
+def cmd_install(args: argparse.Namespace) -> int:
+    """Hand the produced pages to the delivery rail named at the call and record what it read back."""
+    root = Path(args.package)
+    manifest = _json_object(root / "package-manifest.json")
+    launch_id = str(manifest.get("launch_id") or "")
+    try:
+        record = install_handoff.install(root, rail=install_handoff.load_rail(args.rail), rail_name=args.rail,
+                                         run_dir=Path(args.run_dir))
+    except install_handoff.InstallError as exc:
+        if launch_id:
+            _launch_event(launch_id, {"event_type": "stage_blocked", "stage": "install", "failures": [exc.code]})
+        raise
+    if launch_id:
+        _launch_event(launch_id, {"event_type": "stage_closed", "stage": "install"})
+    _emit({"install_readback": str(root / install_handoff.READBACK_REL), "rail": record["rail"],
+           "pages": sorted(record["pages"])})
+    _client_lines(args, root)
     return 0
 
 
@@ -747,6 +811,33 @@ def build_parser() -> argparse.ArgumentParser:
                         "delivery record's missing-capability list")
     a.set_defaults(fn=cmd_assemble)
 
+    pr = sub.add_parser("produce", help="build the production pages (Skill 80/81/82 builders) for the approved "
+                                        "designs; runs after `check` exits 0 and before `install`")
+    pr.add_argument("--package", required=True, help="the assembled package folder (assemble --out)")
+    pr.add_argument("--run-dir", required=True, help="the dispatch run folder: launch.json, dispatch-report.json "
+                                                     "and dispatch/downsell-request-enriched.json")
+    pr.add_argument("--copy", action="append", help="ROLE=PATH of an approved upsell copy document "
+                                                    "(upsell_1, upsell_2); repeat for each")
+    pr.add_argument("--downsell-page", help="the approved D1 page document (needed when downsell_1 is routed)")
+    pr.add_argument("--brand", help="the brand tokens JSON the pages use")
+    pr.add_argument("--checkout-family", default="order_upsell_v2_funnel",
+                    choices=["order_upsell_v2_funnel", "store_upsell_website"])
+    pr.add_argument("--u2-entry-context", choices=["from_upsell_1", "from_downsell_1"],
+                    help="which entry path the upsell_2 acknowledgement is written for (the launch record "
+                         "carries none, and the canonical U2 page can be entered from either)")
+    pr.add_argument("--thank-you-view", help="the verified order view the thank-you page renders (Skill 82)")
+    pr.add_argument("--thank-you-fulfillment", help="the fulfillment read for that view")
+    pr.set_defaults(fn=cmd_produce)
+
+    ins = sub.add_parser("install", help="hand the produced pages to the delivery rail and record its read-back "
+                                         "(Skill 83 is the caller; Skill 49 never is)")
+    ins.add_argument("--package", required=True)
+    ins.add_argument("--run-dir", required=True)
+    ins.add_argument("--rail", required=True,
+                     help="the delivery rail: '<skill folder>/<module>.py:<entry>', a callable that takes the "
+                          "handoff and returns what it read back from the installed pages")
+    ins.set_defaults(fn=cmd_install)
+
     pl = sub.add_parser("plan", help="show the client the launch in plain words with the plan hash to approve "
                                      "(--intake), or validate a shared launch plan's calendar (--plan)")
     pl.add_argument("--intake", help="the intake: prints every page, offer, price, billing term and route, "
@@ -842,8 +933,8 @@ def main(argv: List[str] | None = None) -> int:
         return args.fn(args)
     except (intake.IntakeError, route.RouteError, package.PackageError,
             launch_bridge.BridgeError, image_plan.ImagePlanError,
-            launch_plan.LaunchPlanError, CliError,
-            dependencies.DependencyError) as exc:
+            launch_plan.LaunchPlanError, CliError, production.ProductionError,
+            install_handoff.InstallError, dependencies.DependencyError) as exc:
         print(f"FAIL {exc}", file=sys.stderr)
         return 2
 

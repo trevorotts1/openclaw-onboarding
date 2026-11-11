@@ -265,6 +265,39 @@ class RunGateTests(unittest.TestCase):
                 self.run_bridge(payload(), {})
         self.assertEqual(self.calls, [])
 
+    def stamped_pieces(self, doc, approval):
+        """Run the bridge past a dispatch that hands back one built page, stopping right after the pieces are
+        written: returns the piece file the run left (issue 16: it must name the run's image provider)."""
+        real = substrate.dispatch()
+
+        def finished(launch, approval_, **kw):
+            out = Path(kw["out_dir"])
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "result-thank_you.json").write_text(json.dumps({"page_id": "p-ty", "artifacts": []}))
+            return {"results": [{"request_id": "r1"}], "requests": [{"request_id": "r1", "page_role": "thank_you"}]}
+
+        class Done(self.spy()):
+            dispatch = staticmethod(finished)
+        with mock.patch.object(launch_bridge, "_validate_supplied_adapters", lambda *a, **k: None), \
+                mock.patch.object(launch_bridge.substrate, "dispatch", return_value=Done), \
+                mock.patch.object(substrate.dispatch().swarm, "kie_limiter", return_value=object()), \
+                mock.patch.object(launch_bridge.delivery, "run", side_effect=RuntimeError("stopped after the pieces")):
+            with self.assertRaises(RuntimeError):
+                launch_bridge.run(doc, self.out, approval=approval, client_identity_ref="client-1",
+                                  worker_identity_ref="worker-9", adapters_config={"adapters": {}})
+        return json.loads((self.out / "pieces" / "thank_you.json").read_text())
+
+    def test_a_practice_run_stamps_the_pieces_it_wrote_with_the_practice_provider(self):
+        piece = self.stamped_pieces(payload(), {"approval_id": "APPR-TEST-1", "plan_hash": plan_hash(record(payload()))})
+        self.assertEqual(piece["image_provider"], "stub")
+
+    def test_a_paid_run_stamps_the_pieces_it_wrote_with_the_paid_provider(self):
+        doc = self.live()
+        digest = plan_hash(record(doc))
+        doc["approval"] = {"ref": "APPR-LIVE-1", "hash": digest}
+        piece = self.stamped_pieces(doc, {"approval_id": "APPR-LIVE-1", "plan_hash": digest})
+        self.assertEqual(piece["image_provider"], "kie")
+
     def bridge_config(self, version, **landing):
         path = Path(self.tmp.name) / f"bridge-{version}.json"
         path.write_text(json.dumps({"landing": {"page_version": version, **landing}}), encoding="utf-8")

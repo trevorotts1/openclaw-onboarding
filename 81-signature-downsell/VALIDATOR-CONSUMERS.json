@@ -35,6 +35,17 @@
           "enforced_at": "downsell_wrapper._load_skill81"
         }
       ]
+    },
+    "validators/validate_request.py": {
+      "sha256": "d0cc190cfbbb8c84d7d70cf0268b658b1b55356f556c74f7039dbe9155be5cc6",
+      "consumers": [
+        {
+          "repo": "openclaw-onboarding",
+          "path": "49-signature-funnel/scripts/downsell_wrapper.py",
+          "pin_constant": "PIN_VALIDATE_REQUEST",
+          "enforced_at": "downsell_wrapper._load_skill81"
+        }
+      ]
     }
   }
 }

@@ -215,15 +215,23 @@ agent can follow the chain by hand. Commands are run from the repo root; file pa
    (`--slot upsell_1|upsell_2`)
    enriches the S49 page-request, calls this skill's
    `components/adapters/produce.py`, and projects the page-result. It takes
-   `--request`, `--result`, `--launch`, `--copy`, `--journey`, `--produce`, and
-   optionally `--route-graph`, `--enrichment`, `--bridge-config`.
-   `python3 49-signature-funnel/scripts/upsell_wrapper.py --slot upsell_1 --request <request.json> --result <result.json> --launch <launch.json> --copy <copy.json> --journey <journey.json> --produce 80-signature-upsell/components/adapters/produce.py`
+   `--request`, `--result`, `--launch`, `--copy`, `--journey`, `--produce` and
+   `--enrichment` (required: the landing-copy reference comes only from that sidecar, so a run without
+   it can never pass), and optionally `--route-graph`, `--bridge-config` and `--stage design|install`
+   (default `design`).
+   `python3 49-signature-funnel/scripts/upsell_wrapper.py --slot upsell_1 --request <request.json> --result <result.json> --launch <launch.json> --copy <copy.json> --journey <journey.json> --enrichment <enrichment.json> --produce 80-signature-upsell/components/adapters/produce.py`
 4. **Journey source.** The `--journey` file is the verified journey state
    (trusted-adapter purchase records with an adapter-enum
    `verification_source`). It comes from the native purchase ledger, provider
    event read-back or the S44 event adapter, never from a client claim and never
    typed in by hand. At design time the real guard is not evaluated: record
-   that fact, do not assert a verified purchase.
+   that fact, do not assert a verified purchase. At `--stage design` the wrapper evaluates the eligibility
+   block over the design marker (`original_purchase.status = design_marker`, and for U2 a
+   `design_marker` qualifying purchase), this skill accepts the marker only when the request says
+   `stage: design`, and the result carries `U1-ELIGIBILITY-RUNTIME-ONLY` (`U2-...` for the second upsell):
+   eligibility is enforced at runtime from the native purchase ledger. A launch that is not `test_only`
+   whose staged journey asserts verified purchases is refused at design. `--stage install` keeps the
+   strict path: adapter-verified journey records only.
 5. **Wireframes and mockups.** With `--bridge-config`, the wrapper hands the
    page to Skill 71's page-type runner
    (`71-blackceo-signature-page/scripts/run_page_type.py`, spec

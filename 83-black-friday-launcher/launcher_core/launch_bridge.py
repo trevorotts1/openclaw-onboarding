@@ -681,6 +681,8 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         _carry_stage_state(pieces_dir / f"{lane}.json", lane, out_dir, bases)
         written.append(lane)
 
+    _stamp_image_provider(pieces_dir, written, inputs["executor_provider"])
+
     # F08 delivery: produce each offer's delivery sheet, bind it, and record what the
     # run did and did not make. A failed dispatch above leaves no product record.
     try:
@@ -741,6 +743,42 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
     return report
 
 
+def _stamp_image_provider(pieces_dir: Path, slots: Sequence[str], provider: str) -> None:
+    """Record which provider drew each page, on the piece, when its own result names none (issue 16).
+
+    The package check refuses a client delivery whose design files name no provider (a placeholder cannot
+    be told from a real render). A page-result 1.0 carries no provider field, so the run's approved image
+    plan (the executor provider every adapter was handed) is the piece-level record. An artifact that
+    names its own provider keeps it: the artifact wins over the piece in page_designs._provider_of."""
+    for slot in slots:
+        path = Path(pieces_dir) / f"{slot}.json"
+        piece = json.loads(path.read_text(encoding="utf-8"))
+        if not (isinstance(piece.get("image_provider"), str) and piece["image_provider"].strip()):
+            piece["image_provider"] = provider
+            path.write_text(json.dumps(piece, indent=2) + "\n", encoding="utf-8")
+
+
+def with_production(report: Dict[str, Any], root: Path) -> Dict[str, Any]:
+    """The dispatch report plus what the produce and install stages left in the package (issue 80)."""
+    out = dict(report)
+    root = Path(root)
+
+    def read(rel: str) -> Dict[str, Any]:
+        try:
+            doc = json.loads((root / rel).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return doc if isinstance(doc, dict) else {}
+
+    pages = read("production/manifest.json").get("pages")
+    if isinstance(pages, dict):
+        out["production"] = {role: row.get("state") for role, row in pages.items() if isinstance(row, dict)}
+    back = read("install/install-readback.json").get("pages")
+    if isinstance(back, dict):
+        out["install_readbacks"] = back
+    return out
+
+
 def summary_lines(report: Dict[str, Any]) -> List[str]:
     """What the client is told after a dispatch, in plain English."""
     plan = report["lane_plan"]
@@ -767,15 +805,31 @@ def summary_lines(report: Dict[str, Any]) -> List[str]:
     for message, step in zip(linked.get("client_blockers") or [],
                              linked.get("next_steps") or []):
         lines.append(f"Still to sort out: {message} Next step: {step}")
+    # Issue 80: these lines are DATA-DRIVEN. What a page is called depends on what exists on disk, not on a
+    # fixed sentence: the production manifest (report["production"]: role -> "built" | "not_built") and the
+    # install read-back (report["install_readbacks"]), both added by with_production(). A page with no
+    # production record is a design; one that was produced is a finished page; one that was read back from
+    # the install is installed. skill06_readbacks is the older, role-keyed record Skill 6 may leave.
+    produced = report.get("production") or {}
+    installed = report.get("install_readbacks") or {}
     readbacks = report.get("skill06_readbacks") or {}
-    for role, label in (("downsell_1", "Downsell (D1)"), ("thank_you", "Thank-you page")):
-        if role in report["pages"] and not readbacks.get(role):
-            lines.append(f"{label}: design only; not installed. Skill 6 has not recorded an install read-back "
-                         "for it (scheduled: S06-02 / UPS-08).")
-    for role, label in (("upsell_1", "Upsell 1 (U1)"), ("upsell_2", "Upsell 2 (U2)")):
-        if role in report["pages"]:
-            lines.append(f"{label}: design only. Skill 80 has no production page builder, so the approved "
-                         "upsell design is not a publishable page (see 80-signature-upsell/SKILL.md, Status).")
+    for role, label in (("upsell_1", "Upsell 1 (U1)"), ("downsell_1", "Downsell (D1)"),
+                        ("upsell_2", "Upsell 2 (U2)"), ("thank_you", "Thank-you page")):
+        if role not in report["pages"]:
+            continue
+        if produced.get(role) == "built":
+            if installed.get(role):
+                lines.append(f"{label}: built as a finished page and installed in your account; the install was "
+                             "read back and matched.")
+            else:
+                lines.append(f"{label}: built as a finished page; not installed yet. The install step has not "
+                             "recorded a read-back for it.")
+        elif role in ("upsell_1", "upsell_2"):
+            lines.append(f"{label}: design only. The finished page has not been built yet; the production step "
+                         "builds it from the approved design.")
+        elif not readbacks.get(role):
+            lines.append(f"{label}: design only; not installed. No install read-back is recorded for it "
+                         "(scheduled: S06-02 / UPS-08).")
     return lines
 
 

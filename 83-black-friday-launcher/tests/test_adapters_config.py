@@ -127,6 +127,20 @@ class PaidFlagTests(unittest.TestCase):
             inputs.build(allow_paid=False, image_plan={"allow_paid": True})
 
 
+class DesignStageTests(unittest.TestCase):
+    """Issue 72: dispatch runs the upsell wrapper at the design stage, where eligibility is a design marker."""
+
+    def test_dispatch_runs_both_upsell_wrappers_at_the_design_stage(self):
+        config = Inputs(self, "all").build()
+        for role in ("upsell_1", "upsell_2"):
+            command = config["adapters"][role]["command"]
+            at = command.index("--stage")
+            self.assertEqual(command[at + 1], "design", role)
+            self.assertEqual(command.count("--stage"), 1, role)
+        for role in ("downsell_1",):
+            self.assertNotIn("--stage", config["adapters"][role]["command"])
+
+
 class RoutedRolesTests(unittest.TestCase):
     """UPS-16: inputs and entries only for the roles the launch routes."""
 

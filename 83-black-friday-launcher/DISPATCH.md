@@ -158,8 +158,10 @@ review PDF, and an overview board, each file labeled with its own page (`upsell-
 The required set is read from `49-signature-funnel/structure/page_types.json` when its entries name these
 kinds, else the built-in set above. Today the file's entries do not map to these kinds, so the check reports
 `builtin` for every run (tracked as IMG-13). Placeholder pictures fail a package that is not `test_only`, but
-the rule reads the image provider from each page's design artifacts and the upsell pages' results carry none,
-so it cannot fire for them yet (tracked as UPS-23).
+the rule reads the image provider from each page's design artifacts or its piece. A design file that names no
+provider on a client delivery is itself a finding (`provider unknown`), and `launch_bridge` records the run's
+approved image provider on each piece whose result names none, so the stub rule can no longer be skipped by
+leaving the provider out (UPS-23 closed).
 The design board and the final mockups are recorded as `awaiting_client_approval` until the client approves.
 
 ## Graphics department hooks

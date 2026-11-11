@@ -52,6 +52,35 @@ def enabled_entry_slots(launch: Optional[Mapping]) -> Optional[list]:
     ]
 
 
+def _design_marker_eligibility(request: Mapping, journey: Optional[Mapping],
+                               launch: Optional[Mapping], problems: list) -> Dict:
+    """Issue 72: the DESIGN-stage U2 verdict. Nothing was bought, so the qualifying purchase is a
+    marker for an entry slot the launch enables, and the entry context must agree with it. No purchase
+    proof is read or asserted; the runtime guard verifies the real purchase."""
+    check = common.original_purchase_check(request, journey)
+    problems.extend("original purchase: %s" % p for p in check["problems"])
+    qual = (request.get("eligibility") or {}).get("qualifying_purchase")
+    entry_context = request.get("entry_context")
+    slot = qual.get("slot") if isinstance(qual, Mapping) else None
+    qualifying_slot = None
+    if not isinstance(qual, Mapping) or qual.get("status") != common.DESIGN_MARKER:
+        problems.append("no design-marker qualifying purchase: at the design stage U2 carries a "
+                        "design_marker qualifying purchase for upsell_1 or downsell_1")
+    elif slot not in ENTRY_CONTEXT_BY_SLOT:
+        problems.append("qualifying slot %r is not upsell_1/downsell_1" % (slot,))
+    else:
+        enabled = enabled_entry_slots(launch)
+        if enabled is not None and slot not in enabled:
+            problems.append("qualifying slot %r is not enabled in the launch record" % slot)
+        elif entry_context != ENTRY_CONTEXT_BY_SLOT[slot]:
+            problems.append("entry_context %r does not agree with the design-marker qualifying "
+                            "slot %r" % (entry_context, slot))
+        else:
+            qualifying_slot = slot
+    return {"verified": not problems, "problems": problems,
+            "qualifying_slot": qualifying_slot, "entry_context": entry_context}
+
+
 def check_u2_eligibility(
     request: Mapping, journey: Optional[Mapping], launch: Optional[Mapping] = None
 ) -> Dict:
@@ -60,6 +89,8 @@ def check_u2_eligibility(
     excluded = u1.mutual_exclusion_problem(journey)
     if excluded:
         problems.append(excluded)
+    if common.is_design_marker(request):
+        return _design_marker_eligibility(request, journey, launch, problems)
     orig = common.original_purchase_check(request, journey)
     if not orig["verified"]:
         problems.extend("original purchase: %s" % p for p in orig["problems"])

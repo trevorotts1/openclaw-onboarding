@@ -95,7 +95,8 @@ ADAPTERS: Dict[str, Dict[str, Any]] = {
         "consumer_module": "80-signature-upsell/components/adapters/produce.py",
         "consumer_entry": "main",
         "timeout_s": 1800,
-        "note": "one wrapper invocation per instance, --slot upsell_1",
+        "note": "one wrapper invocation per instance, --slot upsell_1; dispatch runs --stage design (no "
+                "purchase has happened, so eligibility is a design marker); the install stage reads back",
     },
     "upsell_2": {
         "dispatch": True,
@@ -135,6 +136,22 @@ ADAPTERS: Dict[str, Dict[str, Any]] = {
                  "draw the page, then the translator runs with --design-only (no S82 "
                  "result or manifest exists before a sale)"),
     },
+}
+
+# The production builders the `produce` stage (launcher_core/production.py) calls after `check` exits 0.
+# Dispatch builds DESIGNS; these turn an approved design into a production page. Nothing here is a
+# dispatch adapter, and none of them installs anything: `install` (launcher_core/install_handoff.py)
+# hands the pages to the delivery rail named at the call, which is Skill 83's step (decision D-E).
+PRODUCTION_BUILDERS: Dict[str, Dict[str, Any]] = {
+    "upsell_1": {"skill": 80, "module": "80-signature-upsell/components/pages/build_production_pages.py",
+                 "entry": "build"},
+    "downsell_1": {"skill": 80, "module": "80-signature-upsell/components/pages/build_production_pages.py",
+                   "entry": "build", "handoff_module": "81-signature-downsell/adapters/s06_install_wrapper.py",
+                   "handoff_entry": "production_handoff"},
+    "upsell_2": {"skill": 80, "module": "80-signature-upsell/components/pages/build_production_pages.py",
+                 "entry": "build"},
+    "thank_you": {"skill": 82, "module": "82-signature-thank-you/scripts/build_thank_you_page.py",
+                  "entry": "build"},
 }
 
 # Surfaces that are deliberately not dispatch adapters.
@@ -701,6 +718,7 @@ def build_dispatch_config(*, work_dir: str | Path,
         adapters[role] = {
             "command": [python, str(root49 / "upsell_wrapper.py"),
                         "--slot", role,
+                        "--stage", "design",  # M8: dispatch builds the DESIGN; eligibility is a runtime gate
                         "--request", "{request}",
                         "--result", "{result}",
                         "--launch", str(launch_path),
