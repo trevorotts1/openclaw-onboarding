@@ -17,7 +17,7 @@
       "repo": "trevorotts1/openclaw-onboarding"
     },
     {
-      "blob_sha": "ad69a3f81d9e46b473027dc31bbb982fb70eab57",
+      "blob_sha": "4749cd84e7b72de0d0678732d86c200350dd86eb",
       "checked_on": "2026-11-10",
       "description": "Skill 74 KIE live adapter: the transport, live model registry source, and prompt-budget authority this skill dispatches image generation through (see references/kie-generation-route.md).",
       "name": "skill-74-kie-live-adapter",
