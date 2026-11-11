@@ -227,7 +227,8 @@ def _derived_page(page_type: str, cta: str, s1, pains, why, who, personas, s7_co
     secs.append({"section": 6, "name": "The Big Bold Who",
                  "copy": _wordcap(who, 30, f"{page_type} S6"), "personas": personas})
     _wordband(s7_copy + " " + " ".join(s7_bullets), 70, 120, f"{page_type} S7")
-    secs.append({"section": 7, "name": "The Big Bold What", "copy": s7_copy, "bullets": s7_bullets})
+    secs.append({"section": 7, "name": "The Big Bold What", "copy": s7_copy, "bullets": s7_bullets,
+                 "cta": cta})  # the derived-page profile requires a CTA here (AF-FUN-SEC7-CTA)
     secs.append(sec8)
     return {"page_type": page_type, "sections": secs}
 

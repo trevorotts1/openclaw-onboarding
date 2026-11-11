@@ -45,10 +45,14 @@ def buildable_plan(source=PLAN_FIXTURE):
 
 BUILDABLE_PLAN = buildable_plan()
 
+# Fixed clock before every fixture date (doors_close_at is 2026-11-10): the reader's
+# default is wall-clock now, which silently suppresses every send once the fixture passes.
+FIXED_NOW = "2026-11-01T00:00:00-05:00"
+
 
 def run_reader(build_plans, plan_path=BUILDABLE_PLAN, sequence_map=None):
     out = Path(tempfile.mkdtemp()) / "automation-builds.json"
-    argv = ["--launch-plan", str(plan_path), "--out", str(out)]
+    argv = ["--launch-plan", str(plan_path), "--out", str(out), "--now", FIXED_NOW]
     for path in build_plans:
         argv += ["--build-plan", str(path)]
     if sequence_map:

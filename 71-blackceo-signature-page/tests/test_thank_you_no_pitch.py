@@ -107,6 +107,14 @@ class CopyCloseTests(RunCase):
         manuscript.write_text(manuscript.read_text(encoding="utf-8") + "\n" + PITCH + "\n", encoding="utf-8")
         self.assertIn("changed since", self.failure() or "")
 
+    def test_a_clean_receipt_does_not_close_once_the_manuscript_is_deleted(self):
+        write_intake(self.run, page_role="thank_you", copy_version="thank-you")
+        proc = subprocess.run([PY, str(SCRIPTS / "no_pitch_scan.py"), str(self.run)],
+                              capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        (self.run / "copy" / "internal-manuscript.md").unlink()
+        self.assertIn("changed since", no_pitch_scan.receipt_failure(self.run) or "")
+
     def test_a_receipt_with_findings_never_closes(self):
         write_intake(self.run, page_role="thank_you", copy_version="thank-you")
         receipt = self.run / "private" / "receipts" / "no-pitch-scan.json"

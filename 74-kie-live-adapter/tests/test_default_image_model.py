@@ -5,6 +5,7 @@
 """
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -72,9 +73,43 @@ class Default(Base):
         a = self.make(LIVE_2_6 + [(A27, T2I, "7 credits ($0.035) per image"), (A27_I, I2I, "7 credits ($0.035) per image")])
         self.assertEqual(a.default_model("gpt-image"), S26)
 
+    def test_a_newer_per_picture_sunburst_whose_image_to_image_schema_is_unreadable_is_skipped(self):
+        # both routes must be readable: a newer generation with an unreadable edit schema leaves the 2.6 pin on both routes
+        a, tr, c = self.adapter([["GET", "/models/%s/schema" % S27_I, [(200, {"code": 200, "data": {"model": "x", "openapi": None}})]],
+                                 ["GET", "/schema", [schema(20000)]],
+                                 ["GET", "/api/v1/models", [cat(*(LIVE_2_6 + [(S27, T2I, "7 credits ($0.035) per image"),
+                                                                              (S27_I, I2I, "7 credits ($0.035) per image")]))]]])
+        self.assertEqual((a.default_model("gpt-image"), a.default_model("gpt-image", edit=True)), (S26, S26_I))
+
     def test_no_catalog_means_the_pin(self):
         a, tr, c = self.adapter([["GET", "/api/v1/models", [(200, {"code": 500, "msg": "down"})]]])
         self.assertEqual((a.default_model("gpt-image"), a.default_model("gpt-image", edit=True)), (S26, S26_I))
+
+    def assert_edit_route(self, a, text_id, edit_id):
+        self.assertEqual((a.default_model("gpt-image"), a.default_model("gpt-image", edit=True)), (text_id, edit_id))
+        self.assertIn("image-to-image", edit_id)
+        self.assertNotIn("text-to-image", a.default_model("gpt-image", edit=True))
+        self.assertNotIn("image-to-image", a.default_model("gpt-image", edit=False))
+
+    # one adapter per test: the catalog is cached in the test's folder
+    def test_a_source_image_gets_the_newest_sunburst_image_to_image_route_never_the_text_one(self):
+        self.assert_edit_route(self.make(LIVE_2_6), S26, S26_I)
+
+    def test_a_newer_generation_hands_a_source_image_its_own_edit_route(self):
+        newer = LIVE_2_6 + [(S27, T2I, "7 credits ($0.035) per image"), (S27_I, I2I, "7 credits ($0.035) per image")]
+        self.assert_edit_route(self.make(newer), S27, S27_I)
+
+    def test_a_newer_generation_without_a_picture_price_leaves_a_source_image_the_pinned_edit_route(self):
+        self.assert_edit_route(self.make(LIVE_2_6 + [(S27, T2I, TOKEN), (S27_I, I2I, TOKEN)]), S26, S26_I)
+
+    def test_with_no_catalog_a_source_image_gets_the_pinned_image_to_image_route(self):
+        a, tr, c = self.adapter([["GET", "/api/v1/models", [(200, {"code": 500, "msg": "down"})]]])
+        self.assert_edit_route(a, S26, S26_I)
+
+    def test_the_edit_route_is_looked_up_by_its_own_key_not_the_text_to_image_key(self):
+        # the catalog spells the text route in lower case: only the edit route's own key may find the newer id
+        rows = LIVE_2_6 + [(S27, ["text to image"], "7 credits ($0.035) per image"), (S27_I, I2I, "7 credits ($0.035) per image")]
+        self.assertEqual(self.make(rows).default_model("gpt-image", edit=True), S27_I)
 
 
 class DefaultPrice(Base):
@@ -99,8 +134,12 @@ class DefaultPrice(Base):
 
     def test_auto_and_unknown_qualities_have_no_picture_price(self):
         a = self.make()
-        self.assertEqual(a.cmd_default_price("gpt-image", quality="auto")["error"]["code"], "no_picture_price")
-        self.assertEqual(a.cmd_default_price("gpt-image", quality="ultra")["error"]["code"], "bad_quality")
+        r = a.cmd_default_price("gpt-image", quality="auto")
+        self.assertEqual(r["error"]["code"], "no_picture_price")
+        self.assertEqual(r["error"]["msg"], "no per-picture price for %s at quality auto" % S26)  # the refusal names model and quality
+        r = a.cmd_default_price("gpt-image", quality="ultra")
+        self.assertEqual(r["error"]["code"], "bad_quality")
+        self.assertEqual(r["error"]["msg"], "quality 'ultra' is not one of low, medium, high, xhigh, max, auto")
 
     def test_a_token_priced_model_without_a_reference_row_is_refused(self):
         p = os.path.join(self.tmp, "none.json")
@@ -115,6 +154,11 @@ class DefaultPrice(Base):
         a = self.make([(S26, T2I, "6 credits ($0.03) per image"), (S26_I, I2I, "6 credits ($0.03) per image")])
         d = a.cmd_default_price("gpt-image", quality="high")["data"]
         self.assertEqual((d["model"], d["unit"], d["pricing_desc"]), (S26, "per-image", "6 credits ($0.03) per image"))
+
+    def test_a_catalog_picture_price_is_scaled_by_the_requested_units(self):
+        a = self.make([(S26, T2I, "6 credits ($0.03) per image"), (S26_I, I2I, "6 credits ($0.03) per image")])
+        d = a.cmd_default_price("gpt-image", units=3)["data"]
+        self.assertEqual((d["units"], d["credits_estimate"]), (3, 18))
 
     def test_edit_prices_the_image_to_image_route_and_units_scale(self):
         d = self.make().cmd_default_price("gpt-image", edit=True, units=3)["data"]
@@ -203,6 +247,11 @@ class DefaultCheck(unittest.TestCase):
             ev = json.loads(json.dumps(K.load_price_evidence()))
             ev["tables"][0]["credits_per_picture"]["medium"]["2K"] = v
             self.assertTrue(self.defects(ev), v)
+
+    def test_an_integer_price_cell_is_a_valid_price(self):
+        ev = json.loads(json.dumps(K.load_price_evidence()))
+        ev["tables"][0]["credits_per_picture"]["medium"]["2K"] = 16
+        self.assertEqual(self.defects(ev), [])
 
     def test_a_default_with_no_row_at_all_is_refused(self):
         self.assertTrue(any("no per-picture reference price" in b for b in self.defects({"tables": [], "request_field": {"enum": list(K.QUALITY_ENUM)}})))
@@ -312,6 +361,17 @@ class LoadPriceEvidence(Base):
     def test_the_shipped_file_loads_strictly(self):
         self.assertEqual(K.load_price_evidence(strict=True), K.load_price_evidence())
 
+    def test_with_missing_or_broken_evidence_a_newer_per_picture_sunburst_is_still_the_default(self):
+        a = self.make_newer()
+        for text in (None, "{not json"):
+            p = self.write(text) if text else os.path.join(self.tmp, "gone.json")
+            with mock.patch.object(K, "PRICE_EVIDENCE", p):
+                self.assertEqual((a.default_model("gpt-image"), a.default_model("gpt-image", edit=True)), (S27, S27_I), text)
+
+    def make_newer(self):
+        rows = LIVE_2_6 + [(S27, T2I, "7 credits ($0.035) per image"), (S27_I, I2I, "7 credits ($0.035) per image")]
+        return self.adapter([["GET", "/schema", [schema(20000)]], ["GET", "/api/v1/models", [cat(*rows)]]])[0]
+
     def test_with_no_evidence_a_token_priced_default_is_refused_not_guessed(self):
         a = self.adapter([["GET", "/schema", [schema(20000)]], ["GET", "/api/v1/models", [cat((S26, T2I, TOKEN), (S26_I, I2I, TOKEN))]]])[0]
         for text in (None, "[]"):
@@ -370,6 +430,16 @@ class DefaultPriceAnswer(Base):
         self.assertEqual(d["adders"]["credits_per_reference_image"], 2.2)
         self.assertEqual((d["price_source"], d["units"]), ("reference-evidence", 1))
 
+    def test_the_reference_answer_echoes_the_requested_units_and_totals_that_many_pictures(self):
+        one = self.make().cmd_default_price("gpt-image")["data"]["credits_estimate"]
+        self.assertEqual(one, 26.43)
+        for units in (2, 3, 5):
+            d = self.make().cmd_default_price("gpt-image", units=units)["data"]
+            self.assertEqual((d["units"], d["credits_estimate"]), (units, round(one * units, 4)))
+            self.assertEqual(d["preflight_required"], K.preflight_amount(round(one * units, 4)))
+        self.assertEqual(self.make().cmd_default_price("gpt-image", units=3)["data"]["credits_estimate"], 79.29)
+        self.assertEqual(self.make().cmd_default_price("gpt-image", edit=True, units=3)["data"]["units"], 3)
+
     def test_the_reference_answer_is_preflighted_with_the_conservative_multiplier(self):
         d = self.make().cmd_default_price("gpt-image", quality="max", units=2)["data"]
         self.assertEqual(d["preflight_multiplier"], 1.3)
@@ -382,9 +452,12 @@ class DefaultPriceAnswer(Base):
             m = ev["tables"][0]["credits_per_picture"]["medium"]
             ev["tables"][0]["credits_per_picture"]["medium"] = {"4K": m["4K"], "1K": m["1K"], "2K": m["2K"]}
         with mock.patch.object(K, "PRICE_EVIDENCE", self.evidence(shuffle)):
-            desc = self.make().cmd_default_price("gpt-image")["data"]["pricing_desc"]
+            d = self.make().cmd_default_price("gpt-image")["data"]
+        desc = d["pricing_desc"]
         self.assertLess(desc.index("for 1 K"), desc.index("for 2 K"))
         self.assertLess(desc.index("for 2 K"), desc.index("for 4 K"))
+        self.assertEqual((d["credits_min"], d["credits_max"], d["credits_estimate"]), (7.82, 26.43, 26.43))
+        self.assertEqual(d["preflight_required"], K.preflight_amount(26.43))
 
     def test_a_file_without_a_dollar_rate_uses_half_a_cent_per_credit(self):
         with mock.patch.object(K, "PRICE_EVIDENCE", self.evidence(lambda ev: ev.pop("usd_per_credit"))):
@@ -417,7 +490,8 @@ class DefaultCheckCannotRun(unittest.TestCase):
 
     def assert_could_not_run(self, r):
         self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
-        self.assertIn("could not run", r.stdout)
+        self.assertIn("check_default_image_model: could not run: ", r.stdout)
+        self.assertRegex(r.stdout, r"could not run: \w+: \S")  # the failure is named by its kind and message
         self.assertNotIn("OK", r.stdout)
 
     def test_missing_evidence_exits_2(self):
@@ -491,6 +565,38 @@ class DefaultCheckIsWired(unittest.TestCase):
             out = self.qc_line(d)
         self.assertIn("  FAIL - default image model is priced per picture (X-97)", out)
         self.assertIn("PASS=0 FAIL=1", out)
+
+    def present_loop(self):
+        """The qc script's `for f in <files>; do chk "present: $f" ...; done` block: (files, whole block)."""
+        text = read(QC)
+        m = re.search(r"^for f in (.*?); do\n(.*?)\ndone$", text, re.S | re.M)
+        self.assertIsNotNone(m)
+        self.assertIn('chk "present: $f"', m.group(2))
+        return m.group(1).replace("\\\n", " ").split(), m.group(0)
+
+    def test_the_qc_present_list_names_the_check_script_and_the_evidence_file(self):
+        files, _ = self.present_loop()
+        for rel in ("scripts/check_default_image_model.py", "references/kie-default-price-evidence.json", "tests/test_default_image_model.py"):
+            self.assertIn(rel, files)
+
+    def test_the_qc_present_loop_fails_when_the_check_script_or_the_evidence_is_missing(self):
+        files, block = self.present_loop()
+        defs = [l for l in read(QC).splitlines() if l.startswith(("PASS=0", "ok()", "bad()", "chk()"))]
+
+        def run(drop):
+            with tempfile.TemporaryDirectory() as d:
+                for rel in files:
+                    if rel != drop:
+                        os.makedirs(os.path.dirname(os.path.join(d, rel)), exist_ok=True)
+                        open(os.path.join(d, rel), "w").close()
+                script = "D=%s\n%s\n%s\necho \"PASS=$PASS FAIL=$FAIL\"\n" % (shlex.quote(d), "\n".join(defs), block)
+                return subprocess.run(["/bin/bash", "-c", script], capture_output=True, text=True).stdout
+
+        self.assertIn("FAIL=0", run(None))
+        for rel in ("scripts/check_default_image_model.py", "references/kie-default-price-evidence.json"):
+            out = run(rel)
+            self.assertIn("  FAIL - present: %s" % rel, out)
+            self.assertIn("FAIL=1", out)
 
     def test_the_ci_step_runs_the_check_and_lets_any_non_zero_exit_fail_the_job(self):
         if not os.path.exists(WORKFLOW):

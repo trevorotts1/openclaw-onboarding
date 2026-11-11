@@ -186,6 +186,18 @@ class DefaultModelPriceTests(unittest.TestCase):
         self.assertLess(seen["medium"], seen["high"])
         self.assertLess(seen["high"], seen["max"])
 
+    def test_a_model_the_caller_names_is_preflighted_at_its_own_picture_price_not_the_defaults_reference_price(self):
+        self.use_catalog(TIERED)
+        q = image_plan.live_price("kie", "USD", model=S25, resolution="2K", quality="max")
+        self.assertFalse(q["reference_price"])
+        pf = image_plan.preflight(q, 4)
+        self.assertEqual(pf["state"], "ok")
+        self.assertEqual(pf["required"], self.module.preflight_amount(16.0))  # S25's own per-picture price, its dearest tier (16 credits, 4 K), x1.3
+        self.assertNotEqual(pf["required"], self.module.preflight_amount(round(128.08 * 4, 4)))  # not the default's "max" reference price
+        inputs, _ = self.paid(image_model=S25, image_resolution="2K")  # and the same through a paid run that names the model
+        self.assertEqual(inputs["image_preflight"]["state"], "ok")
+        self.assertEqual(inputs["image_preflight"]["required"], self.module.preflight_amount(16.0))
+
     def test_a_practice_run_records_the_quality_it_was_given(self):
         self.use_catalog(TIERED)
         raw = {"brand_file": self.brand, "brand_owner": "TEST-ONLY Client", "design_style": "B",

@@ -12,7 +12,7 @@ description: >
   it observes and records drift but never dispatches a paid job. Submit never
   chooses or changes a model. Infrastructure skill for skills 66, 67 and 68;
   not a client-facing feature.
-version: v1.1.18
+version: v1.1.19
 priority: MEDIUM
 ---
 
@@ -63,7 +63,7 @@ Descriptive prompt fields (image prompt, video prompt, music style) use 95 to 10
 
 `Adapter.default_model("gpt-image", edit=False)` is the newest Sunburst generation in the live catalog that has a per-picture price (a per-picture catalog price, or a row in `references/kie-default-price-evidence.json`), never a Flare or other variant. The fallback pin is GPT Image 2.6 Sunburst: `gpt-image-2-6/sunburst-text-to-image`, and `gpt-image-2-6/sunburst-image-to-image` when an edit (a source image) is given; slash form, a hyphenated `gpt-image-2-6-sunburst-*` is HTTP 422. The KIE request field is `quality` (`low`, `medium`, `high`, `xhigh`, `max`, `auto`); the default is `medium` when the caller names none, and a caller-named model or quality is never replaced.
 
-2.6 is billed by tokens. `Adapter.cmd_default_price(family, quality, resolution, edit, units)` returns KIE's published per-picture reference price (the "Credits per Image" table, image output only, 1:1) as a per-image price at that quality and size (medium: 1K 7.82, 2K 15.90, 4K 26.43 credits), marked "estimate; actual billed by tokens"; add about 0.1 credit per prompt and about 2.2 per reference image. Skill 83's image plan reads it when no model is named. A token-priced model with no reference row (and `auto`, which has no row) has no picture price and is refused; a model the caller names is priced from its own catalog text as before. `scripts/check_default_image_model.py` requires a gpt-image Sunburst default, medium default quality, and a reference price for 1K, 2K and 4K at that quality; it runs in `qc-74-kie-live-adapter.sh` and in CI.
+2.6 is billed by tokens. `Adapter.cmd_default_price(family, quality, edit, units)` returns KIE's published per-picture reference price (the "Credits per Image" table, image output only, 1:1) as a per-image price at that quality and size (medium: 1K 7.82, 2K 15.90, 4K 26.43 credits), marked "estimate; actual billed by tokens"; add about 0.1 credit per prompt and about 2.2 per reference image. Skill 83's image plan reads it when no model is named. A token-priced model with no reference row (and `auto`, which has no row) has no picture price and is refused; a model the caller names is priced from its own catalog text as before. `scripts/check_default_image_model.py` requires a gpt-image Sunburst default, medium default quality, and a reference price for 1K, 2K and 4K at that quality; it runs in `qc-74-kie-live-adapter.sh` and in CI.
 
 ## Modes
 

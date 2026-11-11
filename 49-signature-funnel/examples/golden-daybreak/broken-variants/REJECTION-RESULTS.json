@@ -6,7 +6,7 @@
     "expected_code": "AF-FUN-SECTION-MISSING",
     "code_present": true,
     "why": "main page is missing SACRED Section 3 (Pain 2)",
-    "out_tail": "NOTE: page 'checkout': microcopy-only profile \u2014 12-section gate not applied\nFAIL: 1 copy violation(s) \u2014 funnel is NOT run, NOT rendered, NOT built.\n  VIOLATION [AF-FUN-SECTION-MISSING] page 'main': required Section 3 is absent"
+    "out_tail": "NOTE: page 'upsell-2': CTA precedence \u2014 the profile requires a CTA in every section where the section contract is silent; the section's own prohibition (Section 6, Benefits 1/2) still wins\nNOTE: page 'downsell-2': CTA precedence \u2014 the profile requires a CTA in every section where the section contract is silent; the section's own prohibition (Section 6, Benefits 1/2) still wins\nFAIL: 1 copy violation(s) \u2014 funnel is NOT run, NOT rendered, NOT built.\n  VIOLATION [AF-FUN-SECTION-MISSING] page 'main': required Section 3 is absent"
   },
   "B_out_of_band_copy": {
     "prover": "prove_sf_copy.py",
@@ -15,7 +15,7 @@
     "expected_code": "AF-FUN-SEC1-CHARBAND",
     "code_present": true,
     "why": "Section 1 is 20 stripped chars, under the 180 floor",
-    "out_tail": "NOTE: page 'checkout': microcopy-only profile \u2014 12-section gate not applied\nFAIL: 2 copy violation(s) \u2014 funnel is NOT run, NOT rendered, NOT built.\n  VIOLATION [AF-FUN-SEC1-CHARBAND] page 'main' Section 1 (The Big Bold Claim): 20 stripped chars, outside the sacred band [180, 225]\n  VIOLATION [AF-FUN-SEC1-TITLE] page 'main' Section 1 (The Big Bold Claim): does not contain the product title 'The Daybreak Method'"
+    "out_tail": "NOTE: page 'downsell-2': CTA precedence \u2014 the profile requires a CTA in every section where the section contract is silent; the section's own prohibition (Section 6, Benefits 1/2) still wins\nFAIL: 2 copy violation(s) \u2014 funnel is NOT run, NOT rendered, NOT built.\n  VIOLATION [AF-FUN-SEC1-CHARBAND] page 'main' Section 1 (The Big Bold Claim): visible copy is 20 chars, under the profile minimum 180 (copy profile band [180, 225] chars)\n  VIOLATION [AF-FUN-SEC1-TITLE] page 'main' Section 1 (The Big Bold Claim): does not contain the product title 'The Daybreak Method'"
   },
   "C_image_prompt_too_short": {
     "prover": "prove_sf_prompt_floor.py",
@@ -24,7 +24,7 @@
     "expected_code": "AF-FUN-PROMPT-FLOOR",
     "code_present": true,
     "why": "prompt is far under the 16,000-char floor -> never sent to Kie",
-    "out_tail": "  VIOLATION [AF-FUN-PROMPT-FLOOR] page 'main' section 1: prompt is 43 chars (0.2% of max 20000); floor is 16000: ADD at least 15957 chars (18957 to reach the 95% target of 19000); NOT sent to Kie\n  VIOLATION [AF-FUN-PROMPT-DENSITY] page 'main' section 1: only 8 distinct words (< 220) \u2014 reads as repetition padding, not a genuinely rich prompt\n  VIOLATION [AF-FUN-PROMPT-GRADE] page 'main' section 1: the SIGNATURE GRADE BLOCK is not embedded (no fingerprint of ['140 percent', 'signature color', 'melanin-true', 'signature aesthetic', 'signature grade'] present)\n  VIOLATION [AF-FUN-PROMPT-NEGATIVE] page 'main' section 1: no negative block ('Do not ...' imperative) in the prompt"
+    "out_tail": "  VIOLATION [AF-FUN-PROMPT-FLOOR] page 'main' section 1: Skill 74 prompt-budget --check refused it (prompt is 43 chars (0.2% of max 20000), below the 80 percent floor: ADD at least 15957 chars of genuine specification to reach 16000, and ADD at least 18957 chars to reach the 19000 target (reject and rewrite, never pad), exit 3); refused before any Kie submit\n  VIOLATION [AF-FUN-PROMPT-DENSITY] page 'main' section 1: only 8 distinct words (< 220) \u2014 reads as repetition padding, not a genuinely rich prompt\n  VIOLATION [AF-FUN-PROMPT-GRADE] page 'main' section 1: the SIGNATURE GRADE BLOCK is not embedded (no fingerprint of ['140 percent', 'signature color', 'melanin-true', 'signature aesthetic', 'signature grade'] present)\n  VIOLATION [AF-FUN-PROMPT-NEGATIVE] page 'main' section 1: no negative block ('Do not ...' imperative) in the prompt"
   },
   "D_missing_provenance": {
     "prover": "prove_sf_no_pitch.py",

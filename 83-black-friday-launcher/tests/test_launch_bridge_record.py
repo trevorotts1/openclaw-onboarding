@@ -483,6 +483,34 @@ class LandingBridgeConfigTests(unittest.TestCase):  # STR-16
         landing_bridge = substrate.load("49-signature-funnel/scripts/landing_bridge.py", "launcher_s49_landing_bridge")
         landing_bridge.load_bridge_config(Path(seen[0]["bridge_config"]))  # Skill 49 accepts the file
 
+    def test_a_symlinked_spelling_of_the_approved_inputs_file_is_not_a_disagreement(self):
+        # macOS /tmp is a symlink to /private/tmp: the same file, spelled through a link, must pass
+        link = self.root.parent / (self.root.name + "-link")
+        link.symlink_to(self.root, target_is_directory=True)
+        self.addCleanup(link.unlink)
+        spelled = str(link / "run" / "image_inputs.json")
+        self.assertNotEqual(spelled, str((self.out / "image_inputs.json").resolve()))
+        # the plan's own fields are the run's fixed answers; only the inputs path is spelled through the link
+        inputs = image_plan.resolve(payload()["image_plan"], test_only=True)[0]
+        plan = {**image_plan.image_inputs_file(inputs), "image_inputs": spelled}
+        plan = {k: plan[k] for k in ("image_inputs", "image_cap", "brand_owner", "design_style", "image_provider")}
+        error, seen = self.run_to_adapter_builder(self.config(image_inputs=spelled, image_plan=plan))
+        self.assertEqual(error.detail, "spy: stopped at the adapter builder")
+        landing = json.loads(Path(seen[0]["bridge_config"]).read_text(encoding="utf-8"))["landing"]
+        self.assertEqual(landing["image_inputs"], str((self.out / "image_inputs.json").resolve()))
+
+    def test_a_different_inputs_file_through_a_symlink_is_still_refused(self):
+        link = self.root.parent / (self.root.name + "-link")
+        link.symlink_to(self.root, target_is_directory=True)
+        self.addCleanup(link.unlink)
+        with mock.patch.object(launch_bridge, "_build_adapters") as build:
+            with self.assertRaises(launch_bridge.BridgeError) as ctx:
+                launch_bridge.run(payload(), self.out, approval={}, client_identity_ref="c", worker_identity_ref="w",
+                                  adapter_inputs={"bridge_config": self.config(
+                                      image_inputs=str(link / "run" / "other.json"))})
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-IMAGE-PLAN")
+        build.assert_not_called()
+
     def test_a_config_that_disagrees_with_the_approved_plan_is_refused_before_any_adapter_is_built(self):
         wrong = self.config(image_cap=self.cap + 1)
         with mock.patch.object(launch_bridge, "_build_adapters") as build:

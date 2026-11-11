@@ -31,6 +31,10 @@ SCRIPTS="$SKILL_DIR/scripts"
 ORCH="$SKILL_DIR/run_signature_funnel.py"
 GOLDEN="$SKILL_DIR/examples/golden-daybreak"
 PY="${PYTHON:-python3}"
+# The orchestrator and entry self-tests call detect_platform(), which dies on a fresh HOME with no
+# OpenClaw install (CI, env -i). Name a platform the way the sibling tests and qc-static.yml do; an
+# explicit OPENCLAW_PLATFORM from the caller still wins. Test harness only, product detection is unchanged.
+export OPENCLAW_PLATFORM="${OPENCLAW_PLATFORM:-mac}"
 fails=0
 
 run() {                    # run "<label>" <cmd...>  — PASS iff rc==0
