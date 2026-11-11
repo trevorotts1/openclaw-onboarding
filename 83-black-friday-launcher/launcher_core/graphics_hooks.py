@@ -38,9 +38,13 @@ public URLs into the package's artifact records and page HTML; ``delivery_record
 the ledger that script writes (``media_library.json``). With no approval nothing is uploaded and the
 record says so.
 
+Hosting is gated on the package check too (issue 37): ``handle_handoff`` runs the check after the QC
+report and writes ``check-result.json``, and ``host_assets`` uploads nothing unless that result passed
+and was made for the ``package-manifest.json`` on disk now (``needs_check`` otherwise).
+
 ``handle_handoff`` is the orchestration seam ``cli.cmd_assemble`` calls after
-``package.assemble``: request, report from real receipts, optional approved hosting, page URL
-replacement, then the delivery record. It is also the producer of the F09 brand asset path
+``package.assemble``: request, report from real receipts, the package check, optional approved hosting,
+page URL replacement, then the delivery record. It is also the producer of the F09 brand asset path
 (``brand_asset``): the client's brand answer becomes a brief and, only with the paid approval and
 a working image capability, a real logo file carried into the brand file every page reads.
 
@@ -68,6 +72,10 @@ DELIVERY_REL = "delivery_record.json"
 LEDGER_REL = "media_library.json"
 HOSTING_BINDING_REL = "hosting-binding.json"   # the hosting decision a launcher emits and this reads
 PIPELINE_REL = "qc/graphics_pipeline.json"
+# Issue 37: hosting is gated on the package check. `assemble` writes this record from the check_package
+# run it just made; host_assets refuses unless it passed and was made for the manifest as it is NOW.
+CHECK_RESULT_REL = "check-result.json"
+CHECK_RESULT_SCHEMA = "launcher.check-result/v1"
 # The module the uploader itself loads (45-design-intelligence-library/scripts/graphics_ghl_push.py
 # resolves 48's canonical GHL media module and Skill 6's publish-approval check). The capability
 # probe names these, not a module the push never imports. GHL_MEDIA_REF names the Skill 06 copy of
@@ -705,6 +713,48 @@ def report_violations(manifest: Dict[str, Any], package_root: Path,
 
 # --------------------------------------------------------------------------- SOP-GIP-03 hosting
 
+def write_check_result(package_root: Path, verification: Dict[str, Any]) -> Dict[str, Any]:
+    """Write <package>/check-result.json from one ``checks.verify_package_receipt`` run (the check_package
+    violations plus the re-read of every sealed artifact). It names the manifest it judged by sha256, so a
+    package edited after its check no longer matches; it never invents a pass."""
+    package_root = Path(package_root)
+    manifest = package_root / "package-manifest.json"
+    violations = [str(v) for v in verification.get("violations") or []]
+    record = {
+        "schema": CHECK_RESULT_SCHEMA,
+        "passed": verification.get("state") == "verified" and not violations,
+        "state": verification.get("state"),
+        "violation_count": len(violations),
+        "violations": violations[:50],
+        "manifest": {"path": "package-manifest.json",
+                     "sha256": _sha(manifest) if manifest.is_file() else None},
+    }
+    _write(package_root / CHECK_RESULT_REL, record)
+    return record
+
+
+def check_result_problem(package_root: Path) -> Optional[str]:
+    """Why hosting may not run on this package, or None. It needs a check-result.json that passed AND was
+    made for the package-manifest.json on disk now: a result for an older manifest, a failed one and no
+    result at all are each refused by name. (The manifest's sha256 is the newer-than test: any edit to the
+    manifest after the check changes it.)"""
+    package_root = Path(package_root)
+    record = _read(package_root / CHECK_RESULT_REL)
+    if not isinstance(record, dict) or record.get("schema") != CHECK_RESULT_SCHEMA:
+        return (f"{CHECK_RESULT_REL} does not exist; the package check must run, and pass, before anything "
+                "is hosted (assemble writes it)")
+    manifest = package_root / "package-manifest.json"
+    if not manifest.is_file():
+        return "package-manifest.json does not exist, so the package cannot have been checked"
+    if (record.get("manifest") or {}).get("sha256") != _sha(manifest):
+        return (f"{CHECK_RESULT_REL} was written for a different package-manifest.json; the package changed "
+                "after it was checked, so run the check again")
+    if record.get("passed") is not True:
+        return (f"the package check did not pass ({record.get('violation_count', '?')} violation(s)); only a "
+                "package that passes its check is hosted")
+    return None
+
+
 def ghl_media_present(repo_root: Optional[Path] = None) -> bool:
     """True only when every file the uploader loads is installed: the push script, the canonical
     GHL media module it resolves, and the Skill 6 publish-approval check it refuses without."""
@@ -747,6 +797,9 @@ def host_assets(package_root: Path, job_dir: Optional[Path] = None, approval_ref
         return {"state": "not_authorized",
                 "reason": "no approved hosting approval_ref was supplied; hosting is its own approved step",
                 "uploaded": []}
+    unchecked = check_result_problem(package_root)
+    if unchecked:  # issue 37: nothing is uploaded from a package whose check has not passed
+        return {"state": "needs_check", "reason": unchecked, "uploaded": []}
     if not (job_dir / QC_REPORT_REL).is_file():
         return {"state": "needs_qc", "reason": f"{QC_REPORT_REL} does not exist; only QC-passed assets are hosted",
                 "uploaded": []}
@@ -1027,6 +1080,10 @@ def handle_handoff(manifest: Dict[str, Any], package_root: Path, job_dir: Option
     identities = prompt_authors(manifest, package_root, roots)
     request = qc_request(manifest, package_root, job_dir, author_identities=identities, repo_root=repo_root)
     report = qc_report(manifest, package_root, job_dir, roots=roots, repo_root=repo_root)
+    # Issue 37: the package is checked with its image reviews in hand and BEFORE hosting; hosting reads the
+    # result and refuses without a pass. (cli.assemble checks again afterwards: hosting rewrites page files.)
+    from . import checks  # local: checks imports this module through the rule modules
+    write_check_result(package_root, checks.verify_package_receipt(package_root))
     hosting = host_assets(package_root, job_dir, approval_ref=host_approval_ref,
                           folder_name=folder_name, repo_root=repo_root)
     # Idempotent: a live ledger from an earlier approved upload is applied too; with no live entry

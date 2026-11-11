@@ -4,6 +4,7 @@
   "location_id": "TEST-LOCATION",
   "launch_id": "test-fixture-7figurepreneur",
   "revision": 1,
+  "test_only": true,
   "answers_file": "fixtures/seven-figure-preneur/answers.json",
   "journey_mode": "folded_levels",
   "brand": {

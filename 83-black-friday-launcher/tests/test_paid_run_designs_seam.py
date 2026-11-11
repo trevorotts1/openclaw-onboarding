@@ -25,7 +25,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import substrate  # noqa: E402
 from launcher_core import checks, image_stages, launch_bridge, package, page_designs  # noqa: E402
-from test_page_designs_real import write_stage_state  # noqa: E402
 
 S71 = "71-blackceo-signature-page/scripts"
 combine = substrate.load(f"{S71}/combine_review_pdf.py", "seam_combine_review_pdf", S71)
@@ -111,8 +110,14 @@ class PaidRunDesignsSeamTests(unittest.TestCase):
             stage = STAGE_OF.get(page_designs.classify(art["path"]))
             if stage:
                 hashes[stage][art["path"]] = art["sha256"]
-        piece = {"role": PAGE, "page_kind": PAGE, "image_provider": "kie", "artifacts": arts,
-                 "stage_state": write_stage_state(paid.run, "stage-state.json", hashes)}
+        # the page run's own state, and the carrier launch_bridge writes (issue 57): the design gate below reads the
+        # copy the bridge made and recorded on the piece, not a record this test composed beside it
+        stages = {s: {"status": "closed", "receipt_status": "pass", "artifact_hashes": h} for s, h in hashes.items()}
+        (paid.run / "private").mkdir(exist_ok=True)
+        (paid.run / "private" / "state.json").write_text(json.dumps({"stages": stages}), encoding="utf-8")
+        piece = {"role": PAGE, "page_kind": PAGE, "image_provider": "kie", "artifacts": arts}
+        self.assertTrue(launch_bridge.attach_stage_state(piece, PAGE, paid.run, [paid.run]))
+        self.assertEqual(piece["stage_state"]["path"], f"pieces/{PAGE}.stage-state.json")
         manifest = {"test_only": False, "designs_required": True, "pieces": [piece],
                     "design_approvals": page_designs.default_approvals()}
         self.assertEqual(page_designs.design_violations(manifest, paid.run), [])

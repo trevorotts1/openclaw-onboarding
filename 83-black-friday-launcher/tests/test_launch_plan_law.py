@@ -172,6 +172,41 @@ class PlannedUnitCompletenessTests(unittest.TestCase):
         self.assertEqual(result["missing"], [])
         self.assertEqual(result["percentage"], 100)
 
+    def test_a_bare_true_or_a_bare_complete_string_is_a_claim_never_a_delivery(self):
+        # Issue 18: `{unit: true}` used to print 100% complete with no artifact behind it.
+        plan = plan_fixture()
+        ids = [unit["id"] for unit in launch_plan.planned_units(plan)]
+        self.assertEqual(launch_plan._delivery_state(True), "claimed")
+        self.assertEqual(launch_plan._delivery_state("complete"), "claimed")
+        self.assertEqual(launch_plan._delivery_state({"state": "complete"}), "complete")  # a lane's mapping counts
+        for claim in (True, "complete", "delivered"):
+            with self.subTest(claim=claim):
+                result = launch_plan.completeness(plan, {unit_id: claim for unit_id in ids})
+                self.assertFalse(result["complete"])
+                self.assertEqual(result["missing"], ids)
+                self.assertEqual({row["state"] for row in result["units"]}, {"claimed"})
+                self.assertEqual(result["percentage"], 0)
+                with self.assertRaises(launch_plan.LaunchPlanError) as ctx:
+                    launch_plan.assert_complete(result)
+                self.assertEqual(ctx.exception.code, "AF-LAUNCH-PLAN-MISSING")
+                self.assertIn("claimed but not delivered", ctx.exception.detail)
+
+    def test_the_plan_command_shows_a_claim_as_claimed_not_complete(self):
+        import contextlib
+        import io
+        from launcher_core import cli
+        plan = plan_fixture()
+        with tempfile.TemporaryDirectory() as tmp:
+            plan_path, claims = Path(tmp) / "plan.json", Path(tmp) / "claims.json"
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+            claims.write_text(json.dumps({u["id"]: True for u in launch_plan.planned_units(plan)}), encoding="utf-8")
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = cli.main(["plan", "--plan", str(plan_path), "--deliveries", str(claims)])
+        self.assertEqual(rc, 2)
+        self.assertNotIn('"percentage": 100', out.getvalue())
+        self.assertIn("claimed but not delivered", err.getvalue())
+
     def test_a_missing_email_text_automation_or_requested_ai_fails(self):
         drops = {
             "email_doors_closing": "email",
@@ -295,6 +330,7 @@ def _answers_doc(offers: list) -> dict:
 def with_checkout_facts(payload: dict) -> dict:
     """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer,
     and the price provenance (source_ref per offer plus the answers file they resolve in)."""
+    payload.setdefault("test_only", True)  # said explicitly (issue 36): these inline intakes are practice builds
     payload.setdefault("checkout_terms", dict(CHECKOUT_TERMS))
     mains = 0
     for o in payload["offers"]:

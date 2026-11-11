@@ -52,12 +52,17 @@ REQUIRED_FIELDS = {
 # field -> operational default only. Nothing here changes an offer, a level,
 # a price, an entitlement, or the route shape.
 PERMITTED_DEFAULTS = {
-    "test_only": ("test_only", True, "offline build; a live run must supply false"),
     "allowed_write_target": ("allowed_write_target", "local_only",
                              "publication carries its own approval type"),
     "locale": ("locale", "en", "presentation locale, not a commercial fact"),
     "automation_execution": ("automation_execution", "not_requested",
                              "contract section 7: a JSON file does not execute a workflow"),
+}
+
+# Said out loud every time, never defaulted (issue 36): a forgotten ``false`` used to build a practice
+# package with every live gate off. ``test_only`` is true (practice) or false (client delivery).
+EXPLICIT_FIELDS = {
+    "test_only": "say true (practice) or false (client); a build is never practice or live by omission",
 }
 
 # Optional intake blocks. image_plan carries the picture choices (style, brand file, owner, spend
@@ -711,6 +716,9 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     for key in REQUIRED_FIELDS:
         if key not in payload:
             _fail("AF-LAUNCH-INTAKE-MISSING", key, "required; no default exists")
+    for key, why in EXPLICIT_FIELDS.items():
+        if key not in payload:
+            _fail("AF-LAUNCH-INTAKE-TEST-ONLY", key, why)
 
     if payload["schema_version"] != SCHEMA_VERSION:
         _fail("AF-LAUNCH-INTAKE-SCHEMA", "schema_version", f"must be {SCHEMA_VERSION!r}")
@@ -751,9 +759,9 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         _fail("AF-LAUNCH-INTAKE-MISSING", "copy_profile", "must be a non-empty string")
 
     _refuse_payment_plans("<root>", payload)
-    if "test_only" in payload and not isinstance(payload["test_only"], bool):
+    if not isinstance(payload["test_only"], bool):
         _fail("AF-LAUNCH-INTAKE-TEST-ONLY", "test_only",
-              "must be true or false; 0, null or '' never means live")
+              "must be true (practice) or false (client); 0, null or '' never means live")
     if "allowed_write_target" in payload and payload["allowed_write_target"] not in WRITE_TARGETS:
         _fail("AF-LAUNCH-INTAKE-WRITE-TARGET", "allowed_write_target",
               f"not one of {WRITE_TARGETS!r}; publication is a separate approved step")
@@ -799,7 +807,7 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         # carrying them into a stale page set, follow-up emails and route nodes.
         offers = [o for o in offers if (o.get("role") if isinstance(o, dict) else None) not in dropped]
     clean_offers: List[Dict[str, Any]] = [_validate_offer(i, o) for i, o in enumerate(offers)]
-    _bind_provenance(offers, clean_offers, answers_doc, payload.get("test_only", True) is not False)
+    _bind_provenance(offers, clean_offers, answers_doc, payload["test_only"] is not False)
     _check_relationship_targets(clean_offers)
     _check_offer_set(clean_offers, mode)
 
@@ -836,7 +844,7 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         _fail("AF-LAUNCH-INTAKE-ROUTE", "offers",
               "when upsell_1 is disabled, downsell_1 and upsell_2 cannot remain enabled")
 
-    known = (set(REQUIRED_FIELDS) | set(PERMITTED_DEFAULTS) | set(OPTIONAL_FIELDS)
+    known = (set(REQUIRED_FIELDS) | set(EXPLICIT_FIELDS) | set(PERMITTED_DEFAULTS) | set(OPTIONAL_FIELDS)
              | set(LEGACY_IGNORED_FIELDS))
     unknown = set(payload) - known
     if unknown:
@@ -853,7 +861,7 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     linked_destinations = _validate_linked_destinations(payload.get("linked_destinations"))
     activation = _validate_activation(
         payload.get("activation"), location_id=payload["location_id"].strip(),
-        test_only=payload.get("test_only", True) is not False)
+        test_only=payload["test_only"] is not False)
 
     provenance: Dict[str, str] = {k: "supplied" for k in payload}
     for i, offer in enumerate(clean_offers):
@@ -879,6 +887,7 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "entitlement": dict(ENTITLEMENT_UNKNOWN),
         "answers_file": str(answers_path),
         "activation": activation,
+        "test_only": payload["test_only"],
     }
     if "activation" in payload:
         provenance["activation"] = "supplied"

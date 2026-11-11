@@ -723,6 +723,7 @@ def _answers_doc(offers: list) -> dict:
 def with_checkout_facts(payload: dict) -> dict:
     """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer,
     and the price provenance (source_ref per offer plus the answers file they resolve in)."""
+    payload.setdefault("test_only", True)  # said explicitly (issue 36): these inline intakes are practice builds
     payload.setdefault("checkout_terms", dict(CHECKOUT_TERMS))
     mains = 0
     for o in payload["offers"]:

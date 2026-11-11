@@ -39,6 +39,7 @@ RECEIPT_PROOF_KEYS = PROOF_KEYS
 RECEIPT_UNIT_TYPES = ("page", "email", "text", "automation", "conversation_ai")
 DRAFT_UNIT_TYPES = ("email", "text", "automation")
 IDENTITY_KEYS = ("tenant_id", "location_id", "launch_id", "revision")
+PRACTICE_CODE = "AF-LAUNCH-PKG-PRACTICE"
 
 
 def _sha256_file(path: Path) -> str:
@@ -601,8 +602,12 @@ def _proof_floor_violations(manifest: Dict[str, Any]) -> List[str]:
 def check_package(manifest_path: Path, root: Path,
                   skill_root: Path | None = None,
                   require_designs: bool | None = None,
-                  announce: bool = True) -> List[str]:
+                  announce: bool = True,
+                  client_rows: bool = False) -> List[str]:
     """All package-completeness violations. Empty list means the package holds.
+
+    client_rows is set by a caller that turns the package into rows a CLIENT reads (progress_report's
+    per-page status): a practice package (test_only true) fails then, so the client never receives one.
 
     AF-LAUNCH-PAGE-DESIGNS runs when the package was assembled as a designs-required delivery
     (manifest.designs_required) or when require_designs is True; require_designs=False skips it.
@@ -623,6 +628,10 @@ def check_package(manifest_path: Path, root: Path,
         fails.append(f"AF-LAUNCH-PKG-MANIFEST: schema_version is {manifest.get('schema_version')!r}")
     # test_only and the image provider must agree; a paid (test_only false) package is allowed.
     fails.extend(_provider_consistency_violations(manifest))
+    if client_rows and manifest.get("test_only") is not False:
+        fails.append(f"{PRACTICE_CODE}: this is a practice package (test_only is "
+                     f"{manifest.get('test_only')!r}); it is never handed to the client, so no client rows "
+                     "are made from it. Rebuild it with test_only false.")
 
     # Required pieces: every enabled route role, exactly once.
     pieces = manifest.get("pieces") or []

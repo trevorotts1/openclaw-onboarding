@@ -392,11 +392,17 @@ def planned_units(plan: Mapping[str, Any]) -> List[Dict[str, Any]]:
     return units
 
 
+CLAIMED_STATE = "claimed"
+
+
 def _delivery_state(result: Any) -> Optional[str]:
+    """The state a delivery result states. A bare ``true`` or a bare "complete" string is a CLAIM
+    (state "claimed"), never a delivery: only a mapping the producing lane wrote counts, and
+    ``package._lane_receipt`` then demands its artifacts, request echo and passed lane validation."""
     if result is True:
-        return "complete"
+        return CLAIMED_STATE
     if isinstance(result, str):
-        return result
+        return CLAIMED_STATE if result in COMPLETE_STATES else result
     if isinstance(result, Mapping):
         state = result.get("state") or result.get("status")
         return state if isinstance(state, str) else None
@@ -437,10 +443,13 @@ def assert_complete(result: Mapping[str, Any]) -> None:
     """Fail closed when a planned unit is missing or not complete."""
     if not result.get("complete"):
         counts = result.get("counts") or {}
+        claimed = [u["id"] for u in result.get("units") or [] if u.get("state") == CLAIMED_STATE]
         raise LaunchPlanError(
             "AF-LAUNCH-PLAN-MISSING",
             f"planned item(s) not delivered: {', '.join(result.get('missing') or [])} "
-            f"({counts.get('delivered', 0)}/{counts.get('planned', 0)} complete)")
+            f"({counts.get('delivered', 0)}/{counts.get('planned', 0)} complete)"
+            + (f"; claimed but not delivered (a bare true is not a lane receipt): {', '.join(claimed)}"
+               if claimed else ""))
 
 
 def scope_violations(plan: Any, client_choices: Any = None) -> List[str]:

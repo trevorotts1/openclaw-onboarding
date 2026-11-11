@@ -161,11 +161,18 @@ def _close_step_spine(out_dir: Path, steps: list) -> dict:
     record = {"steps": [], "closed": True}
     for entry in steps:
         missing = [a for a in entry.get("artifacts") or [] if not Path(a).is_file()]
+        # Issue 29: a file that exists is not a step that succeeded. An artifact that says
+        # "state": "failed" (graphics-handoff.json records its own failure that way) or a step that
+        # declares a failed state keeps the spine open, exactly as a missing artifact does.
+        failed = [a for a in entry.get("artifacts") or []
+                  if a not in missing and _json_object(Path(a)).get("state") == "failed"]
+        if entry.get("state") == "failed":
+            failed.append(f"declared state {entry['state']!r}")
         record["steps"].append({"step": entry.get("step"), "required": bool(entry.get("required")),
                                 "artifacts": list(entry.get("artifacts") or []),
-                                "missing": missing,
-                                "status": "closed" if not missing else "open"})
-        if missing and entry.get("required", True):
+                                "missing": missing, "failed": failed, "state": entry.get("state"),
+                                "status": "failed" if failed else "closed" if not missing else "open"})
+        if (missing or failed) and entry.get("required", True):
             record["closed"] = False
     try:
         (Path(out_dir) / "assemble-steps.json").write_text(
@@ -175,11 +182,38 @@ def _close_step_spine(out_dir: Path, steps: list) -> dict:
     if not record["closed"]:
         bad = [f"{s['step']} (missing {', '.join(s['missing'])})"
                for s in record["steps"] if s["missing"]]
+        if bad:
+            raise package.PackageError(
+                "AF-LAUNCH-STEP-ARTIFACT",
+                "a declared assembly step wrote no artifact, so the package cannot be called "
+                "complete: " + "; ".join(bad))
         raise package.PackageError(
-            "AF-LAUNCH-STEP-ARTIFACT",
-            "a declared assembly step wrote no artifact, so the package cannot be called "
-            "complete: " + "; ".join(bad))
+            "AF-LAUNCH-STEP-FAILED",
+            "a declared assembly step ran and failed, so the package cannot be called complete: "
+            + "; ".join(f"{s['step']} ({', '.join(Path(f).name for f in s['failed'])})"
+                        for s in record["steps"] if s["failed"]))
     return record
+
+def _handoff_blockers(verification: dict, test_only: bool) -> list:
+    """Why the sealed package may not be handed off: the reasons, or [] when it may.
+
+    Issue 29. A client delivery (test_only false) must VERIFY: every violation `check` would print blocks the
+    handoff, and a verification that is not in state "verified" blocks it even with no violation to name. Only a
+    practice package keeps the byte-level filter (a receipt or manifest that is missing, an artifact whose bytes
+    moved), because a practice run has no image reviews for the check to find."""
+    violations = list(verification["violations"])
+    if test_only:
+        if verification["state"] != "failed":
+            return []
+        return [v for v in violations
+                if ": artifact " in v
+                or "AF-LAUNCH-PKG-RECEIPT: receipt.json is missing" in v
+                or "AF-LAUNCH-PKG-MANIFEST: package-manifest.json is missing" in v]
+    if violations:
+        return violations
+    return [] if verification["state"] == "verified" else \
+        [f"the package check state is {verification['state']!r}, not 'verified'"]
+
 
 def cmd_assemble(args: argparse.Namespace) -> int:
     dependencies.require(mode="assemble")
@@ -206,9 +240,12 @@ def cmd_assemble(args: argparse.Namespace) -> int:
                                           allow_paid=bool(args.allow_paid),
                                           layout_approval_file=Path(args.layout_approval)
                                           if args.layout_approval else None)
+        # issue 57: final-mockups closes in this driver, AFTER dispatch copied each page's stage_gate state
+        launch_bridge.refresh_stage_states(Path(run_dir))
         steps.append({"step": "image-stages", "required": True,
                       "artifacts": [str(Path(run_dir) / "qc" / "image_stages_report.json")]})
     normalized = intake.validate(_read_json(args.intake))
+    test_only = bool(normalized.get("test_only", True))
     launch = _json_object(source_root / "launch.json")
     if launch:  # the dispatch record: its plan hash and approval ref are what the receipt binds
         normalized["approval"] = _bind(normalized, _plan_hash(launch), launch.get("plan_approval_ref", ""))
@@ -246,8 +283,9 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         _launch_event(normalized["launch_id"], {"event_type": "stage_blocked", "stage": "assemble",
                                                 "failures": [exc.code]})
         raise
-    steps.append({"step": "assemble", "required": True,
-                  "artifacts": [str(out["manifest_path"]), str(out["receipt_path"])]})
+    assemble_step = {"step": "assemble", "required": True,
+                     "artifacts": [str(out["manifest_path"]), str(out["receipt_path"])]}
+    steps.append(assemble_step)
     # FIX PLAN B4 (unowned requirement G-5, part 1): assemble used to bypass `checks` entirely,
     # so a package with NO designs at all could be assembled and handed off. design_violations is
     # called HERE, on the sealed manifest, and refuses.
@@ -261,26 +299,13 @@ def cmd_assemble(args: argparse.Namespace) -> int:
                 "AF-LAUNCH-ASSEMBLE-DESIGN",
                 "the package has no complete design set (call `check` for the full list): "
                 + " | ".join(designs[:5]))
-    # B5: re-open the just-sealed package and re-prove its receipt and artifact bytes from disk
-    # before anything is handed off. `checks.verify_package_receipt` is the recovery entry point
-    # L03 and L12 call; running it on the delivery path means a receipt that cannot be re-read, or
-    # an artifact whose bytes moved after sealing, stops the handoff instead of shipping.
-    verification = checks.verify_package_receipt(Path(args.out))
-    broken = [v for v in verification["violations"]
-              if ": artifact " in v
-              or "AF-LAUNCH-PKG-RECEIPT: receipt.json is missing" in v
-              or "AF-LAUNCH-PKG-MANIFEST: package-manifest.json is missing" in v]
-    if verification["state"] == "failed" and broken:
-        _launch_event(normalized["launch_id"],
-                      {"event_type": "stage_blocked", "stage": "assemble_reopen",
-                       "failures": broken[:20]})
-        raise CliError("AF-LAUNCH-ASSEMBLY-NOT-DELIVERABLE",
-                       "the sealed package does not re-open: " + "; ".join(broken[:10]))
     # SOP-GIP-02/03 at the real handoff: the request, the report built from real Review Receipt v2
-    # files, the authorised upload only when an approval was named, the hosted URLs in the pages and
-    # the delivery record. A missing review, provider or hosting capability is recorded, never faked.
-    # The package is already sealed, so a failure here is reported, never raised over it; `check`
-    # still fails the package for the missing reviews.
+    # files, the package check (check-result.json, which hosting needs: issue 37), the authorised upload
+    # only when an approval was named, the hosted URLs in the pages and the delivery record. A missing
+    # review, provider or hosting capability is recorded, never faked. The package is already sealed, so a
+    # failure here is recorded in graphics-handoff.json (state "failed") and the step spine below refuses
+    # to close over it (issue 29); the handoff runs BEFORE the re-open check so the check sees the image
+    # reviews it demands.
     from . import graphics_hooks
     try:
         graphics = graphics_hooks.handle_handoff(
@@ -288,10 +313,10 @@ def cmd_assemble(args: argparse.Namespace) -> int:
             review_roots_extra=[Path(p) for p in (args.review_root or [])],
             host_approval_ref=args.host_media, folder_name=args.hosting_folder_name,
             probe_env=os.environ if args.probe_hosting else None)
-    except Exception as exc:  # noqa: BLE001  (recorded for the operator; the sealed package stands)
+    except Exception as exc:  # noqa: BLE001  (recorded for the operator; the spine then refuses)
         graphics = {"state": "failed", "reason": f"{type(exc).__name__}: {str(exc)[:400]}"}
-        print(f"[graphics] handoff failed ({type(exc).__name__}); the package is sealed and `check` "
-              "will name the missing image reviews", file=sys.stderr)
+        print(f"[graphics] handoff failed ({type(exc).__name__}); the step spine will not close over it",
+              file=sys.stderr)
     # The graphics handoff writes its own record so the step has an artifact to prove.
     graphics_path = Path(args.out) / "graphics-handoff.json"
     try:
@@ -301,8 +326,33 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         pass  # the spine check below refuses if it is absent
     steps.append({"step": "graphics-handoff", "required": True,
                   "artifacts": [str(graphics_path)]})
+    # B5: re-open the just-sealed package and re-prove its receipt and artifact bytes from disk
+    # before anything is handed off. `checks.verify_package_receipt` runs the same check_package that
+    # `check` runs. Issue 29: for a client delivery (test_only false) EVERY violation blocks the handoff
+    # and the package must verify; only a practice package keeps the byte-level filter, because a
+    # practice run has no image reviews to find. Issue 37: the result is written to check-result.json
+    # (what hosting reads) from this same run.
+    verification = checks.verify_package_receipt(Path(args.out))
+    check_record = graphics_hooks.write_check_result(Path(args.out), verification)
+    blocking = _handoff_blockers(verification, test_only)
+    blocked = bool(blocking)
+    if test_only:
+        assemble_step["state"] = "verified" if verification["state"] == "verified" else "practice"
+    else:
+        assemble_step["state"] = "failed" if blocked else "verified"
+    if blocked:
+        _launch_event(normalized["launch_id"],
+                      {"event_type": "stage_blocked", "stage": "assemble_reopen",
+                       "failures": blocking[:20]})
+        raise CliError("AF-LAUNCH-ASSEMBLY-NOT-DELIVERABLE",
+                       "the sealed package does not pass its own check: " + "; ".join(blocking[:10]))
     # THE SPINE CLOSES HERE: every declared step's artifacts must exist, or completion is refused.
-    _close_step_spine(Path(args.out), steps)
+    try:
+        _close_step_spine(Path(args.out), steps)
+    except package.PackageError as exc:
+        _launch_event(normalized["launch_id"], {"event_type": "stage_blocked", "stage": "assemble_spine",
+                                                "failures": [exc.code]})
+        raise
     # G-5: the stage is closed only after the spine has closed; a refused spine emits no stage_closed.
     _launch_event(normalized["launch_id"], {"event_type": "stage_closed", "stage": "assemble"})
     _emit({"manifest": out["manifest_path"], "receipt": out["receipt_path"],
@@ -315,6 +365,7 @@ def cmd_assemble(args: argparse.Namespace) -> int:
            "launch_plan_completeness":
                (out["manifest"].get("launch_plan") or {}).get("completeness"),
            "receipt_verified": verification["state"],
+           "package_check": {"passed": check_record["passed"], "path": graphics_hooks.CHECK_RESULT_REL},
            "receipt_artifacts_checked": verification["artifacts_checked"],
            "image_stages": ({"complete": stage_report.get("complete"),
                              "report": str(Path(args.run_dir) / "qc/image_stages_report.json")}

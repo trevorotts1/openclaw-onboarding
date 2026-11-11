@@ -215,7 +215,36 @@ def receipt_evidence(run_dir: Path) -> Dict[str, Any]:
     }
 
 
-def _validate_piece(piece: Any, node: Dict[str, str], intake: Dict[str, Any]) -> Dict[str, Any]:
+PRACTICE_PACKAGE_REL = "PRACTICE-PACKAGE.txt"
+PRACTICE_PACKAGE_TEXT = (
+    "PRACTICE PACKAGE - NOT FOR A CLIENT.\n"
+    "This package was assembled with test_only true: placeholder pictures, practice approvals and every\n"
+    "live gate off. It was built to rehearse the launch, not to deliver it. Never hand it to the client;\n"
+    "rebuild with test_only false and a real dispatch run for a client delivery.\n")
+
+
+def _stage_state_ref(role: str, ref: Any, source_root: Optional[Path]) -> Dict[str, str]:
+    """M5 (issue 57): the piece's stage_state carrier, verified. It is {path, sha256}: a copy of the page
+    run's private/state.json laid beside the piece by launch_bridge, and it must hash to the recorded
+    digest. page_designs.load_stage_state then reads it from the package and judges which stages closed."""
+    bad = f"{role}: stage_state does not verify"
+    if not isinstance(ref, dict) or not _nonempty_str(ref.get("path")) \
+            or not isinstance(ref.get("sha256"), str) or not _SHA256_RE.match(ref["sha256"]):
+        raise PackageError("AF-LAUNCH-PKG-PIECE", f"{bad} (it must be an object with a path and a sha256)")
+    target = None
+    if source_root is not None and not Path(ref["path"]).is_absolute():
+        target = (Path(source_root) / ref["path"]).resolve()
+        if not target.is_relative_to(Path(source_root).resolve()):
+            target = None
+    if target is None or not target.is_file() or _sha256_file(target) != ref["sha256"]:
+        raise PackageError("AF-LAUNCH-PKG-PIECE",
+                           f"{bad} ({ref['path']!r} is missing, is outside the run, or does not hash to "
+                           "its recorded sha256)")
+    return {"path": ref["path"], "sha256": ref["sha256"]}
+
+
+def _validate_piece(piece: Any, node: Dict[str, str], intake: Dict[str, Any],
+                    source_root: Optional[Path] = None) -> Dict[str, Any]:
     role = node["role"]
     if not isinstance(piece, dict):
         raise PackageError("AF-LAUNCH-PKG-PIECE", f"{role}: page result must be an object")
@@ -296,6 +325,14 @@ def _validate_piece(piece: Any, node: Dict[str, str], intake: Dict[str, Any]) ->
     }
     if isinstance(piece.get("image_provider"), str) and piece["image_provider"].strip():
         out_piece["image_provider"] = piece["image_provider"].strip()
+    # M5 (issue 57): the stage_gate state the design files came from rides with the piece. It was stripped
+    # here before, so no client package could ever pass page_designs; a client delivery now requires it.
+    if piece.get("stage_state") is not None:
+        out_piece["stage_state"] = _stage_state_ref(role, piece["stage_state"], source_root)
+    elif not bool(intake.get("test_only", True)):
+        raise PackageError("AF-LAUNCH-PKG-PIECE",
+                           f"{role}: stage_state is required for a client delivery (test_only false): the page "
+                           "run's closed stage_gate state must ride with the piece (dispatch writes it)")
     return out_piece
 
 
@@ -866,8 +903,16 @@ def _bind_bridge_receipts(binding: Dict[str, Any], delivery: bool) -> List[Tuple
     return files
 
 
-def _verify_design_waiver(waiver: Any, approved_hash: str) -> Dict[str, Any]:
-    """STR-01: designs may be waived only by a recorded owner approval bound to THIS plan hash."""
+def _verify_design_waiver(waiver: Any, approved_hash: str, test_only: bool = False) -> Dict[str, Any]:
+    """STR-01: designs may be waived only by a recorded owner approval bound to THIS plan hash.
+
+    Issue 88: and only for a practice package. The CLI help says the waiver is never accepted for a client
+    delivery (test_only false); this is the line that makes the code agree. ``test_only`` defaults to False
+    so a caller that forgets to say is refused, never waived."""
+    if not test_only:
+        raise PackageError("AF-LAUNCH-ASSEMBLE-DESIGN-WAIVER",
+                           "never for a client delivery: a package with test_only false carries the full "
+                           "design set, and no owner approval waives it")
     if not isinstance(waiver, Mapping) or not _nonempty_str(waiver.get("approval_ref")):
         raise PackageError("AF-LAUNCH-PKG-DESIGN-WAIVER",
                            "assembling without the page designs needs a verified owner approval "
@@ -922,22 +967,9 @@ def _resolve_delivery_scope(requested: Optional[str],
 
 
 def _landing_run_roots(dispatch_root: Optional[Path]) -> List[Path]:
-    """The landing bridge's run folder(s), from the config the dispatch wrote beside its run. The bridge lists
-    its files relative to that folder (an opt-in run's carry its folder name, so they resolve from its parent)."""
-    if dispatch_root is None:
-        return []
-    try:
-        landing = json.loads((Path(dispatch_root) / "dispatch" / "landing-bridge.json")
-                             .read_text(encoding="utf-8")).get("landing")
-    except (OSError, ValueError, AttributeError):
-        return []
-    if not isinstance(landing, dict) or not landing.get("run_dir"):
-        return []
-    roots = [Path(landing["run_dir"])]
-    opt_in = landing.get("opt_in")
-    if isinstance(opt_in, dict) and opt_in.get("run_dir"):
-        roots.append(Path(opt_in["run_dir"]).parent)
-    return roots
+    """The landing bridge's run folder(s); launch_bridge owns the reader (it also finds each page's
+    stage_gate state from them), and this keeps the name assemble and its tests already use."""
+    return launch_bridge.landing_run_roots(dispatch_root)
 
 
 def _artifact_source(path: str, source_root: Path, landing_roots: Sequence[Path]) -> Path:
@@ -1379,7 +1411,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         if piece is None:
             raise PackageError("AF-LAUNCH-PKG-MISSING",
                                f"route node {node['role']} has no delivered piece")
-        ordered.append(_validate_piece(piece, node, intake))
+        ordered.append(_validate_piece(piece, node, intake, source_root))
         if binding is not None:
             _bind_piece(binding, piece, node["role"], node["role"], False)
     if landing_pages and set(landing_pages) == {"landing", "sales"} and "sales" not in pieces:
@@ -1395,7 +1427,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                                f"a {slot} piece was delivered but the route has no {parent} page")
         node = {"role": parent, "role_instance": slot, "echoed_page_id": parent_node["page_id"],
                 "page_id": route_module.route_law._page_id(intake["launch_id"], slot)}
-        ordered.append(_validate_piece(pieces[slot], node, intake))
+        ordered.append(_validate_piece(pieces[slot], node, intake, source_root))
         if binding is not None:
             _bind_piece(binding, pieces[slot], parent, slot, True)
 
@@ -1406,7 +1438,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     designs_required = require_designs if require_designs is not None else (binding is not None or not test_only)
     waiver = None
     if require_designs is False:
-        waiver = _verify_design_waiver(design_waiver, approved)
+        waiver = _verify_design_waiver(design_waiver, approved, test_only)
     approval_copies: List[Tuple[Path, Path]] = []   # written after the design refusal, never before
     if design_approvals is not None:
         # STR-25: an approved Design Board must resolve to a recorded Skill 71 approval, and a relative
@@ -1472,6 +1504,14 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             entry = {k: v for k, v in art.items() if k not in ("path", "sha256")}
             copied.append({"path": rel, "sha256": actual, **entry})
         piece["artifacts"] = copied
+        ref = piece.get("stage_state")
+        if ref:  # M5: the verified stage_gate state rides into the package at the path the piece names
+            rel = ref["path"]
+            if staged.get(rel, ref["sha256"]) != ref["sha256"]:
+                raise PackageError("AF-LAUNCH-PKG-COLLISION",
+                                   f"{piece['role']}: two different files would both be delivered as {rel!r}")
+            staged[rel] = ref["sha256"]
+            to_write.append((rel, (source_root / rel).read_bytes(), ref["sha256"], piece["role"]))
 
     # M3 (ASM-001): the design set is judged HERE, before the first byte is written, so a refused
     # package seals nothing (no manifest, no receipt, no copies). It is checked on a scratch copy laid
@@ -1488,6 +1528,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
     for src, dest in approval_copies:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(src.read_bytes())
+    if test_only:  # issue 36: a practice package says so at its root, so it is never handed over as a delivery
+        (run_dir / PRACTICE_PACKAGE_REL).write_text(PRACTICE_PACKAGE_TEXT, encoding="utf-8")
     activation_path = run_dir / ACTIVATION_RECORD_REL
     activation_path.write_text(json.dumps(activation_record, indent=2, sort_keys=True) + "\n",
                                encoding="utf-8")

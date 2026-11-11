@@ -101,6 +101,23 @@ class OperationalFields(IntakeCase):  # PRD-13
             payload["test_only"] = good
             self.assertIs(intake.validate(payload)["test_only"], good)
 
+    def test_test_only_has_no_default_and_an_absent_one_is_refused(self):
+        # Issue 36: a forgotten `false` used to build a practice package with every live gate off.
+        payload = load("elevation")
+        del payload["test_only"]
+        err = self.refuses(payload, "AF-LAUNCH-INTAKE-TEST-ONLY", "test_only")
+        self.assertIn("say true (practice) or false (client)", err.detail)
+        self.assertNotIn("test_only", intake.PERMITTED_DEFAULTS)  # the default is gone, not just unused
+        self.assertIn("test_only", intake.EXPLICIT_FIELDS)
+
+    def test_a_said_test_only_is_recorded_as_supplied_never_as_a_default(self):
+        for said in (True, False):
+            payload = load("elevation")
+            payload["test_only"] = said
+            normalized = intake.validate(payload)
+            self.assertIs(normalized["test_only"], said)
+            self.assertEqual(normalized["provenance"]["test_only"], "supplied")
+
     def test_write_target_enum(self):
         for bad in ("approved_live_publication", "anywhere", "", None):
             payload = load("elevation")

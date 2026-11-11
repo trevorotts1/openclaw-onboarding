@@ -4,6 +4,7 @@
   "location_id": "TEST-LOCATION",
   "launch_id": "test-fixture-elevation",
   "revision": 1,
+  "test_only": true,
   "answers_file": "fixtures/elevation/answers.json",
   "journey_mode": "multiple_options",
   "brand": {

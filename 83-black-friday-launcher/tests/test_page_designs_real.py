@@ -411,5 +411,41 @@ class ApprovalTests(unittest.TestCase):
         self.assertTrue(any("lacks evidence_sha256" in f for f in fails), fails)
 
 
+class DesignWaiverIsNeverForAClientDeliveryTests(unittest.TestCase):
+    """Issue 88: the --allow-no-designs help says a design waiver is never accepted for a client delivery
+    (test_only false); package._verify_design_waiver is the line that makes the code say the same."""
+
+    PLAN = "a" * 64
+    WAIVER = {"approval_ref": "APPR-WAIVE-1", "subject_type": "design_waiver", "subject_hash": PLAN,
+              "owner_identity_ref": "owner-1", "revoked": False}
+
+    def test_a_fully_valid_waiver_is_refused_for_a_client_delivery(self):
+        from launcher_core import package
+        for test_only in (False, None):  # a caller that does not say is refused, never waived
+            with self.subTest(test_only=test_only), self.assertRaises(package.PackageError) as ctx:
+                package._verify_design_waiver(self.WAIVER, self.PLAN, test_only)
+            self.assertEqual(ctx.exception.code, "AF-LAUNCH-ASSEMBLE-DESIGN-WAIVER")
+            self.assertIn("never for a client delivery", ctx.exception.detail)
+
+    def test_the_same_waiver_still_serves_a_practice_package(self):
+        from launcher_core import package
+        record = package._verify_design_waiver(self.WAIVER, self.PLAN, True)  # control, same instrument
+        self.assertEqual(record["approval_ref"], "APPR-WAIVE-1")
+
+    def test_the_other_waiver_refusals_keep_their_own_code_for_a_practice_package(self):
+        from launcher_core import package
+        for bad in ({"approval_ref": ""}, {"subject_hash": "9" * 64}, {"revoked": True}):
+            with self.subTest(bad=bad), self.assertRaises(package.PackageError) as ctx:
+                package._verify_design_waiver({**self.WAIVER, **bad}, self.PLAN, True)
+            self.assertEqual(ctx.exception.code, "AF-LAUNCH-PKG-DESIGN-WAIVER")
+
+    def test_the_cli_help_and_the_code_agree(self):
+        import inspect
+        from launcher_core import cli
+        source = inspect.getsource(cli.build_parser)
+        self.assertIn('"--allow-no-designs"', source)
+        self.assertIn("never accepted for a client", source)  # the help line this test holds the code to
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -35,7 +35,7 @@ intake83 = importlib.import_module("launcher_core.intake")
 
 ELEVATION = json.loads((PKG / "fixtures" / "answers.elevation.json").read_text())
 _FIX83 = json.loads((SKILL83 / "fixtures" / "elevation" / "intake.json").read_text())
-SYSTEM = {k: _FIX83[k] for k in ("tenant_id", "location_id", "launch_id", "brand", "approval")}
+SYSTEM = {k: _FIX83[k] for k in ("tenant_id", "location_id", "launch_id", "brand", "approval", "test_only")}  # test_only is said, never defaulted (issue 36)
 HOUSE = "House look (recommended)"
 
 

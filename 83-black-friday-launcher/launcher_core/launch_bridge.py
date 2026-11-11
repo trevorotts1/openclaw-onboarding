@@ -18,6 +18,7 @@ will run first and what runs together; if the dispatcher has no parallel mode ye
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import shutil
@@ -331,6 +332,98 @@ def split_landing(result: Dict[str, Any], landing_pages: Sequence[str]) -> Dict[
                                         "artifacts": sales_arts}}
 
 
+# Issue 57 (M5): the carrier for a page piece's ``stage_state``. Skill 71 writes the closed-stage record of
+# every page run at <page run>/private/state.json; page_designs.load_stage_state reads a copy of it that rides
+# in the package. Nothing wrote that copy, so every client package was refused. This is the writer: the copy
+# is laid down beside the piece (pieces/<slot>.stage-state.json) with its sha256 recorded on the piece, and
+# package._validate_piece / page_designs refuse a piece whose copy does not verify or whose stages never closed.
+STAGE_STATE_REL = Path("private") / "state.json"
+STAGE_STATE_SUFFIX = ".stage-state.json"
+
+
+def landing_run_roots(dispatch_root: Optional[Path]) -> List[Path]:
+    """The landing bridge's run folder(s), from the config the dispatch wrote beside its run. The bridge lists
+    its files relative to that folder (an opt-in run's carry its folder name, so they resolve from its parent)."""
+    if dispatch_root is None:
+        return []
+    try:
+        landing = json.loads((Path(dispatch_root) / "dispatch" / "landing-bridge.json")
+                             .read_text(encoding="utf-8")).get("landing")
+    except (OSError, ValueError, AttributeError):
+        return []
+    if not isinstance(landing, dict) or not landing.get("run_dir"):
+        return []
+    roots = [Path(landing["run_dir"])]
+    opt_in = landing.get("opt_in")
+    if isinstance(opt_in, dict) and opt_in.get("run_dir"):
+        roots.append(Path(opt_in["run_dir"]).parent)
+    return roots
+
+
+def stage_state_bases(run_dir: Path) -> List[Path]:
+    """Where a piece's relative artifact paths resolve: the launch run, its dispatch folder, the landing runs."""
+    run_dir = Path(run_dir)
+    return [run_dir, run_dir / "dispatch", *landing_run_roots(run_dir)]
+
+
+def _page_run_dir(piece: Dict[str, Any], bases: Sequence[Path]) -> Optional[Path]:
+    """The Skill 71 page run that made this piece's files: the nearest folder above one of its design files
+    that holds private/state.json. None when no file resolves into a stage_gate run (a fixture, a stub)."""
+    arts = [a for a in piece.get("artifacts") or [] if isinstance(a, dict) and a.get("path")]
+    for art in [a for a in arts if page_designs.classify(str(a["path"]))] or arts:
+        raw = Path(str(art["path"]))
+        for found in ([raw] if raw.is_absolute() else [Path(b) / raw for b in bases]):
+            if not found.is_file():
+                continue
+            for parent in found.resolve().parents:
+                if (parent / STAGE_STATE_REL).is_file():
+                    return parent
+    return None
+
+
+def attach_stage_state(piece: Dict[str, Any], slot: str, run_dir: Path, bases: Sequence[Path]) -> bool:
+    """Copy the page run's private/state.json to <run_dir>/pieces/<slot>.stage-state.json and record
+    {path, sha256} on the piece. False (the piece is left as it was) when the piece names no stage_gate run."""
+    page_run = _page_run_dir(piece, bases)
+    if page_run is None:
+        return False
+    data = (page_run / STAGE_STATE_REL).read_bytes()
+    rel = f"pieces/{slot}{STAGE_STATE_SUFFIX}"
+    dest = Path(run_dir) / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    piece["stage_state"] = {"path": rel, "sha256": hashlib.sha256(data).hexdigest()}
+    return True
+
+
+def _carry_stage_state(piece_path: Path, slot: str, out_dir: Path, bases: Sequence[Path]) -> None:
+    """Add the stage_state carrier to a piece file that was copied from the dispatch's stored result."""
+    try:
+        piece = json.loads(piece_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return  # package.assemble names an unreadable piece
+    if isinstance(piece, dict) and attach_stage_state(piece, slot, out_dir, bases):
+        piece_path.write_text(json.dumps(piece, indent=2) + "\n", encoding="utf-8")
+
+
+def refresh_stage_states(run_dir: Path) -> List[str]:
+    """Re-copy every piece's stage_gate state after a later stage closed (final-mockups closes AFTER dispatch,
+    so the copy made at dispatch is stale by then). Returns the slots refreshed."""
+    run_dir = Path(run_dir)
+    bases, done = stage_state_bases(run_dir), []
+    for path in sorted((run_dir / "pieces").glob("*.json")):
+        if path.name.endswith(STAGE_STATE_SUFFIX):
+            continue
+        try:
+            piece = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(piece, dict) and attach_stage_state(piece, path.stem, run_dir, bases):
+            path.write_text(json.dumps(piece, indent=2) + "\n", encoding="utf-8")
+            done.append(path.stem)
+    return done
+
+
 def _bind_approval(launch: Dict[str, Any], normalized: Dict[str, Any], approval: Any) -> None:
     """Take the approval ref from the verified --approval record, never from the intake.
 
@@ -570,17 +663,21 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
 
     pieces_dir.mkdir(parents=True, exist_ok=True)
     written: List[str] = []
+    bases = stage_state_bases(out_dir)
     for result in manifest["results"]:
         role = next(r["page_role"] for r in manifest["requests"] if r["request_id"] == result["request_id"])
         if role == FIRST_ROLE:  # one landing result carries every landing page Skill 49 planned
             for slot, piece in split_landing(result, planned).items():
+                attach_stage_state(piece, slot, out_dir, bases)  # each landing page carries its OWN run's state
                 (pieces_dir / f"{slot}.json").write_text(json.dumps(piece, indent=2) + "\n", encoding="utf-8")
                 written.append(slot)
             continue
         shutil.copyfile(dispatch_dir / f"result-{role}.json", pieces_dir / f"{role}.json")
+        _carry_stage_state(pieces_dir / f"{role}.json", role, out_dir, bases)
         written.append(role)
     for lane in manifest.get("page_results", {}):  # an extra page rides on its parent's request
         shutil.copyfile(dispatch_dir / f"page-result-{lane}.json", pieces_dir / f"{lane}.json")
+        _carry_stage_state(pieces_dir / f"{lane}.json", lane, out_dir, bases)
         written.append(lane)
 
     # F08 delivery: produce each offer's delivery sheet, bind it, and record what the
