@@ -18,6 +18,7 @@ import hashlib
 import importlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -32,6 +33,11 @@ sys.path.insert(0, str(SKILL_ROOT / "routes"))
 import adapters  # noqa: E402
 import substrate  # noqa: E402
 from launcher_core import image_plan, intake, launch_bridge, route  # noqa: E402
+
+# AF-71-UNGATED (harmony issue 10): the stub runs in this module draw on a directory with no gate state, which
+# Skill 71's executor now allows only under this test-harness marker (no product script sets it); child
+# processes inherit it.
+os.environ["SKILL71_FIXTURE_RUN"] = "1"
 
 S78 = substrate.source("78-signature-product-selection")
 S71 = substrate.source("71-blackceo-signature-page")

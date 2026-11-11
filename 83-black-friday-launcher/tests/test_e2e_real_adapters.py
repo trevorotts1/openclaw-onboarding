@@ -39,6 +39,11 @@ import test_lane83_dispatch as dispatch_tests  # noqa: E402  run_dispatch carrie
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402  (its path is added by test_lane83_dispatch)
 from launcher_core import cli, launch_bridge, page_designs  # noqa: E402
 
+# AF-71-UNGATED (harmony issue 10): the stub runs in this module draw on a directory with no gate state, which
+# Skill 71's executor now allows only under this test-harness marker (no product script sets it); child
+# processes inherit it.
+os.environ["SKILL71_FIXTURE_RUN"] = "1"
+
 S71 = REPO_ROOT / "71-blackceo-signature-page"
 COPY_EXAMPLES = S71 / "tests" / "fixtures" / "copy_examples"
 S80_FIXTURES = REPO_ROOT / "80-signature-upsell" / "components" / "80-signature-upsell" / "fixtures"
