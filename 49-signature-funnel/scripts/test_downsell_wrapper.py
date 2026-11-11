@@ -54,6 +54,11 @@ REPO = SCRIPTS.parents[1]
 SKILL81 = REPO / "81-signature-downsell"
 WRAPPER = SCRIPTS / "downsell_wrapper.py"
 
+# AF-71-UNGATED (harmony issue 10): the stub image runs this module starts draw on a directory with no gate state, which
+# Skill 71's executor now allows only under this test-harness marker (no product script sets it); child processes
+# inherit it.
+os.environ["SKILL71_FIXTURE_RUN"] = "1"
+
 sys.path.insert(0, str(SKILL81 / "validators"))
 sys.path.insert(0, str(SCRIPTS))
 from validate_request import validate_request  # noqa: E402
