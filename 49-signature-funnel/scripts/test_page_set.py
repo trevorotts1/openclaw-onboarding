@@ -450,10 +450,14 @@ class ProviderOnEveryArtifact(unittest.TestCase):  # UPS-23
         self.assertFalse(any("stub provider" in f for f in fails))
 
 
+# 40 pictures at 8 cents each is 320 cents (issue 76: the count travels with the money that justifies it).
+MONEY = {"image_cap_minor": 320, "image_currency": "USD", "image_price_minor": 8}
+
+
 class ImageInputs(unittest.TestCase):
     def write(self, **over):
         doc = {"design_style": "B", "brand_file": "/x/brand.json", "brand_owner": "Acme", "image_cap": 40,
-               "image_provider": "stub"}
+               "image_provider": "stub", "test_only": True}
         doc.update(over)
         path = Path(tempfile.mkdtemp()) / "image_inputs.json"
         path.write_text(json.dumps({k: v for k, v in doc.items() if v != "__drop__"}), encoding="utf-8")
@@ -465,9 +469,10 @@ class ImageInputs(unittest.TestCase):
 
     def test_the_paid_provider_needs_the_clients_recorded_approval(self):
         with self.assertRaises(ps.PageSetError) as cm:
-            ps.load_image_inputs(self.write(image_provider="kie"))
+            ps.load_image_inputs(self.write(image_provider="kie", test_only=False))
         self.assertIn("paid_render_approval_ref", str(cm.exception))
-        got = ps.load_image_inputs(self.write(image_provider="kie", paid_render_approval_ref="APPR-PAID-9"))
+        got = ps.load_image_inputs(self.write(image_provider="kie", paid_render_approval_ref="APPR-PAID-9",
+                                             test_only=False, **MONEY))
         self.assertTrue(got["allow_paid"])
         got = ps.load_image_inputs(self.write(image_provider="kie", test_only=True))
         self.assertFalse(got["allow_paid"])
@@ -484,6 +489,72 @@ class ImageInputs(unittest.TestCase):
             with self.subTest(over=over), self.assertRaises(ps.PageSetError) as cm:
                 ps.load_image_inputs(self.write(**over))
             self.assertIn(needle, str(cm.exception))
+
+    # ---- issue 76: the money keys travel with the count ---------------------------------------
+    def test_the_three_money_keys_are_accepted_and_returned(self):
+        got = ps.load_image_inputs(self.write(image_provider="kie", paid_render_approval_ref="APPR-PAID-9", **MONEY))
+        self.assertEqual({k: got[k] for k in MONEY}, MONEY)
+        for key in MONEY:
+            self.assertIn(key, ps.IMAGE_INPUT_KEYS)
+
+    def test_a_count_that_costs_more_than_the_money_is_refused(self):
+        for over in ({"image_cap": 41}, {"image_price_minor": 9}, {"image_cap_minor": 319}):
+            with self.subTest(over=over), self.assertRaises(ps.PageSetError) as cm:
+                ps.load_image_inputs(self.write(**dict(MONEY, **over)))
+            self.assertIn("AF-FUN-IMAGE-CAP-MONEY", str(cm.exception))
+        self.assertEqual(ps.load_image_inputs(self.write(**MONEY))["image_cap"], 40)  # exactly the money is fine
+
+    def test_a_real_run_with_a_count_and_missing_money_keys_is_refused(self):
+        for drop in MONEY:
+            with self.subTest(drop=drop), self.assertRaises(ps.PageSetError) as cm:
+                ps.load_image_inputs(self.write(**dict(MONEY, test_only=False, **{drop: "__drop__"})))
+            self.assertIn("AF-FUN-IMAGE-CAP-MONEY", str(cm.exception))
+            self.assertIn(drop, str(cm.exception))
+        with self.assertRaises(ps.PageSetError) as cm:  # null is not money either; no test_only key counts as real
+            ps.load_image_inputs(self.write(**dict(MONEY, test_only=False, image_price_minor=None)))
+        self.assertIn("AF-FUN-IMAGE-CAP-MONEY", str(cm.exception))
+
+    def test_a_file_with_no_test_only_key_is_a_real_run(self):
+        doc = {"design_style": "B", "brand_file": "/x/b.json", "brand_owner": "Acme", "image_cap": 4, "image_provider": "stub"}
+        path = Path(tempfile.mkdtemp()) / "image_inputs.json"
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        with self.assertRaises(ps.PageSetError) as cm:
+            ps.load_image_inputs(path)
+        self.assertIn("AF-FUN-IMAGE-CAP-MONEY", str(cm.exception))
+
+    def test_a_practice_run_needs_no_money_keys_and_null_money_is_allowed(self):
+        self.assertEqual(ps.load_image_inputs(self.write(test_only=True))["image_cap"], 40)
+        got = ps.load_image_inputs(self.write(test_only=True, image_cap_minor=None, image_currency=None,
+                                              image_price_minor=None))
+        self.assertIsNone(got["image_cap_minor"])
+
+    def test_bad_money_values_are_refused_plainly(self):
+        for over in ({"image_cap_minor": True}, {"image_cap_minor": 0}, {"image_cap_minor": "320"},
+                     {"image_currency": "usd"}, {"image_price_minor": 0}, {"image_price_minor": 8.5}):
+            with self.subTest(over=over), self.assertRaises(ps.PageSetError) as cm:
+                ps.load_image_inputs(self.write(**dict(MONEY, **over)))
+            self.assertIn("AF-FUN-IMAGE-CAP-MONEY", str(cm.exception))
+
+    def test_a_boolean_is_never_a_whole_number_of_minor_units(self):
+        # True is 1 in Python. Each case below would otherwise pass the count-versus-money comparison,
+        # so only the boolean check itself refuses it (an image_cap of 0 makes the comparison pass).
+        for over in ({"image_cap_minor": True, "image_cap": 0}, {"image_price_minor": True}):
+            with self.subTest(over=over), self.assertRaises(ps.PageSetError) as cm:
+                ps.load_image_inputs(self.write(**dict(MONEY, **over)))
+            self.assertIn("AF-FUN-IMAGE-CAP-MONEY", str(cm.exception))
+            self.assertIn("whole number", str(cm.exception))
+
+    def test_the_currency_is_exactly_three_uppercase_letters_and_money_edges_hold(self):
+        for cur in ("USDX", "US", "U$D", "US1", 5, ""):
+            with self.subTest(cur=cur), self.assertRaises(ps.PageSetError) as cm:
+                ps.load_image_inputs(self.write(**dict(MONEY, image_currency=cur)))
+            self.assertIn("AF-FUN-IMAGE-CAP-MONEY", str(cm.exception))
+        # one minor unit is a real amount, and a count that costs exactly the money is allowed
+        self.assertEqual(ps.load_image_inputs(self.write(**dict(MONEY, image_price_minor=1, image_cap=320)))["image_price_minor"], 1)
+        # a practice run with only one of the two amounts compares nothing
+        for part in ({"image_cap_minor": None}, {"image_price_minor": None}):
+            got = ps.load_image_inputs(self.write(**dict(MONEY, test_only=True, **part)))
+            self.assertEqual(got["image_cap"], 40)
 
     def test_a_missing_design_style_is_allowed_it_means_ask_the_client(self):
         self.assertIsNone(ps.load_image_inputs(self.write(design_style=None))["design_style"])

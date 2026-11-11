@@ -490,7 +490,7 @@ class RealTreeCase(LandingBridgeCase):
         self.inputs = self.td / "image_inputs.json"
         self.inputs.write_text(json.dumps({
             "design_style": "A", "brand_file": str(self.brand_path), "brand_owner": "blackceo",
-            "image_cap": 12, "image_provider": "stub"}), encoding="utf-8")
+            "image_cap": 12, "image_provider": "stub", "test_only": True}), encoding="utf-8")
         self.manuscript = SKILL71_MAIN / "tests" / "fixtures" / "copy_examples" / "standard-path-b.md"
 
     def plan(self, **over):
@@ -538,7 +538,7 @@ class TestLandingDrawsItsImages(RealTreeCase):
         self.inputs.write_text(json.dumps({
             "design_style": "A", "design_style_source": "client_choice", "creative_direction": direction,
             "brand_file": str(self.brand_path), "brand_owner": "blackceo",
-            "image_cap": 12, "image_provider": "stub"}), encoding="utf-8")
+            "image_cap": 12, "image_provider": "stub", "test_only": True}), encoding="utf-8")
         self.config()
         manifest, out = self.emit_dispatch()
         self.run_landing_adapter(out)
@@ -726,7 +726,8 @@ class TestImageModelResolvedThroughSkill66(RealTreeCase):
         adapter.write_text(FAKE_ADAPTER, encoding="utf-8")
         self.inputs.write_text(json.dumps({
             "design_style": "A", "brand_file": str(self.brand_path), "brand_owner": "blackceo",
-            "image_cap": 12, "image_provider": "kie", "paid_render_approval_ref": "APPR-FIXTURE-1"}),
+            "image_cap": 12, "image_provider": "kie", "paid_render_approval_ref": "APPR-FIXTURE-1",
+            "image_cap_minor": 96, "image_currency": "USD", "image_price_minor": 8}),
             encoding="utf-8")
         self.config(image_plan=self.plan(image_provider="kie"))
         manifest, out = self.emit_dispatch()
@@ -930,7 +931,7 @@ class TestStageGateAndReceipts(LandingBridgeCase):
         inputs = self.td / "image_inputs.json"
         inputs.write_text(json.dumps({
             "design_style": "A", "brand_file": str(self.brand_path),
-            "brand_owner": "Fixture Brand Owner", "image_cap": 12, "image_provider": "stub"}), encoding="utf-8")
+            "brand_owner": "Fixture Brand Owner", "image_cap": 12, "image_provider": "stub", "test_only": True}), encoding="utf-8")
         plan = {"image_inputs": str(inputs), "image_cap": 12, "brand_owner": "Fixture Brand Owner",
                 "design_style": "A", "image_provider": "stub"}
         self.write_bridge_config(draft=False, image_inputs=str(inputs), image_plan=plan)

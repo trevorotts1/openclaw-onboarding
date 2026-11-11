@@ -326,7 +326,10 @@ IMAGE_INPUT_KEYS = ("design_style", "brand_file", "brand_owner", "image_cap", "i
                     "design_style_source", "creative_direction",
                     # F16 items 6 and 11: the plan's brand hash and the resolved creative-direction
                     # precedence travel with the style, so no page invents its own.
-                    "brand_sha256", "creative_direction_source", "creative_direction_grade_mode")
+                    "brand_sha256", "creative_direction_source", "creative_direction_grade_mode",
+                    # Issue 76 (M10): the money the picture count is held in, so a count never travels alone.
+                    "image_cap_minor", "image_currency", "image_price_minor")
+MONEY_KEYS = ("image_cap_minor", "image_currency", "image_price_minor")
 
 GRADE_MODES = ("FULL", "ADAPT", "SUPPRESS")
 DIRECTION_STATES = ("house_look", "recorded", "not_asked", "unknown")
@@ -346,6 +349,33 @@ def _brand_record():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _check_money(doc: Dict[str, Any]) -> None:
+    """AF-FUN-IMAGE-CAP-MONEY (issue 76): the picture count is enforced against the money that justifies
+    it. A real run (test_only is not true) that carries an image_cap must carry all three money keys, and
+    image_cap * image_price_minor may not exceed image_cap_minor. A practice run may leave them null."""
+    code = "AF-FUN-IMAGE-CAP-MONEY"
+    minor, cur, price = (doc.get(k) for k in MONEY_KEYS)
+    for key, value in zip(MONEY_KEYS, (minor, cur, price)):
+        if value is None:
+            continue
+        ok = (isinstance(cur, str) and len(cur) == 3 and cur.isupper() and cur.isalpha()) if key == "image_currency" \
+            else (isinstance(value, int) and not isinstance(value, bool) and value >= 1)
+        if not ok:
+            raise PageSetError(f"image inputs: {code}: {key} must be "
+                               + ("a 3-letter uppercase currency code such as USD" if key == "image_currency"
+                                  else "a whole number of minor currency units, 1 or more") + f", got {value!r}")
+    if doc.get("test_only") is not True and doc.get("image_cap") is not None:
+        missing = [k for k, v in zip(MONEY_KEYS, (minor, cur, price)) if v is None]
+        if missing:
+            raise PageSetError(f"image inputs: {code}: a real run carries its picture count image_cap="
+                               f"{doc['image_cap']} only with the money that pays for it; missing {missing}")
+    if minor is not None and price is not None and doc.get("image_cap") is not None \
+            and doc["image_cap"] * price > minor:
+        raise PageSetError(f"image inputs: {code}: image_cap {doc['image_cap']} x image_price_minor {price} = "
+                           f"{doc['image_cap'] * price} exceeds image_cap_minor {minor}; the count costs more "
+                           "than the approved money")
 
 
 def load_image_inputs(path) -> Dict[str, Any]:
@@ -429,6 +459,7 @@ def load_image_inputs(path) -> Dict[str, Any]:
                            "recorded approval of the spend); without it only the free stub provider runs")
     if "test_only" in doc and not isinstance(doc["test_only"], bool):
         raise PageSetError("image inputs: test_only must be true or false")
+    _check_money(doc)
     out = dict(doc, image_provider=provider)
     if source is not None:  # the canonical spelling, so every consumer reads one vocabulary
         out["design_style_source"] = source

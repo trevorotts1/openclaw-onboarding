@@ -26,6 +26,8 @@ sys.path.insert(0, str(SKILL_ROOT))
 sys.path.insert(0, str(SKILL_ROOT / "routes"))
 
 import substrate  # noqa: E402
+sys.path.insert(0, str(HERE))  # the dotted form `-m unittest tests.test_lane83_dispatch` needs tests/ on the path
+from price_cache_fixture import seed_price_cache  # noqa: E402
 sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
 from launcher_core import (checks, cli, image_plan, intake, launch_bridge,  # noqa: E402
@@ -161,6 +163,7 @@ class DispatchTests(unittest.TestCase):
         patcher = mock.patch.dict(os.environ, {"SKILL71_KIE_ADAPTER": str(self.adapter)})
         patcher.start()
         self.addCleanup(patcher.stop)
+        seed_price_cache(self)  # a paid run is priced from a seeded cache, never the machine's own
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -490,6 +493,10 @@ class LandingPagesTests(unittest.TestCase):
         # accepts. The F20 money keys (image_cap_minor/image_currency) are carried where a reader lists
         # them and never written past a strict reader that refuses unknown keys.
         self.assertEqual(sorted(shared), sorted(image_plan._c3_keys()))
+        # Issue 76: the money the picture count is held in always travels with it (49 lists all three keys).
+        for money in ("image_cap_minor", "image_currency", "image_price_minor"):
+            self.assertIn(money, shared)
+            self.assertIn(money, image_plan._c3_keys())
         self.assertLessEqual(set(shared), set(substrate.dispatch().pset.IMAGE_INPUT_KEYS))
         order = json.loads((self.out / "order-page-inputs.json").read_text())
         self.assertEqual((order["provider"], order["test_run"]), ("stub", True))

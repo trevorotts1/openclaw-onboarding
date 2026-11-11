@@ -683,7 +683,7 @@ class Upsell1ImagesTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, wd, True)
         inputs = wd / "image_inputs.json"
         inputs.write_text(json.dumps({"design_style": "C", "brand_file": str(brand), "brand_owner": "blackceo",
-                                      "image_cap": 40, "image_provider": "stub"}))
+                                      "image_cap": 40, "image_provider": "stub", "test_only": True}))
         cmd = [sys.executable, str(WRAPPER), "--slot", "upsell_1",
                "--request", str(wd / "request-upsell_1.json"), "--result", str(wd / "result-upsell_1.json"),
                "--launch", str(wd / "launch.json"), "--copy", str(S80_FIX / "copy-upsell1-public.valid.json"),

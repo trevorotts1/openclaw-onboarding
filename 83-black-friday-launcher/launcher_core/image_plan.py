@@ -49,6 +49,7 @@ DEFAULT_STUB_IMAGE_CAP = 400
 # from the same live text. No row, no numeric price: the paid run is refused by name, never guessed.
 PRICE_MODULE_REF = "74-kie-live-adapter/scripts/kie_live_adapter.py"
 MODEL_FAMILY_BY_PROVIDER = {"kie": "gpt-image"}
+PICTURE_PRICE_UNITS = ("per-image", "per-job")  # parse_pricing()'s unit strings in Skill 74
 LIVE_PRICE_CURRENCIES = ("USD",)  # KIE's pricing text quotes US dollars only
 USD_MINOR = 100
 PAID_APPROVAL_KIND = "paid_asset_budget"
@@ -152,7 +153,7 @@ def validate_raw(raw: Any) -> Dict[str, Any]:
                "brand_version", "image_cap", "image_cap_minor", "image_currency", "creative_direction",
                "creative_direction_kind", "creative_direction_blend", "creative_direction_approval_ref",
                "image_provider", "paid_render_approval_ref", "design_prose_ref", "visual_bible_ref",
-               "image_model", "image_resolution"}
+               "image_model", "image_resolution", "image_model_override_approval_ref"}
     extra = sorted(set(raw) - allowed)
     if extra:
         raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-SHAPE", "image_plan",
@@ -162,6 +163,16 @@ def validate_raw(raw: Any) -> Dict[str, Any]:
         if value is not None and not (isinstance(value, str) and value.strip()):
             raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-PRICE", f"image_plan.{key}",
                                  "must be a non-empty piece of text when given")
+    # Issue 60: image_model is free text at intake. A model outside the provider's image family is a
+    # model whose price is not a picture price; it is refused unless an approval reference names it.
+    model = _clean_str(raw.get("image_model"))
+    family = MODEL_FAMILY_BY_PROVIDER.get(raw.get("image_provider") or DEFAULT_PROVIDER)
+    if model and family and not model.lower().startswith(family) \
+            and not _clean_str(raw.get("image_model_override_approval_ref")):
+        raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan.image_model",
+                             f"{model!r} is not a {family} picture model. Choose an image model, or give "
+                             "image_model_override_approval_ref for an approved exception. "
+                             "Nothing has been sent and nothing has been spent.")
     minor = raw.get("image_cap_minor")
     if minor is not None and (isinstance(minor, bool) or not isinstance(minor, int) or minor < 1):
         raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-CAP", "image_plan.image_cap_minor",
@@ -296,7 +307,8 @@ def pricing_pairs(text: str) -> List[Dict[str, Any]]:
     """[(clause, credits, usd)] from an live pricing description: the credits AND dollars of one tier."""
     out: List[Dict[str, Any]] = []
     for clause in re.split(r"[;|\n]", text or ""):
-        for part in re.split(r",(?=\s*[\d])", clause):
+        # "..., and 16 credits ($0.08) for 4 K": the last tier is its own clause (issue 59).
+        for part in re.split(r",(?=\s*(?:and\s+)?\d)|\band\s+(?=\d)", clause):
             for m in _CREDIT_USD_RE.finditer(part):
                 out.append({"clause": part, "credits": float(m.group(1).replace(",", "")),
                             "usd": float(m.group(2))})
@@ -316,6 +328,11 @@ def pick_price(desc: str, resolution: Optional[str]) -> Optional[Dict[str, Any]]
         if token:
             want = re.compile(r"(?i)\b" + re.escape(token.group(1)) + r"\s*[kK]\b")
             matched = [p for p in pairs if want.search(p["clause"])]
+            if len({(p["credits"], p["usd"]) for p in matched}) > 1:  # never matched[0]: money
+                raise ImagePlanError(
+                    "AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan.image_resolution",
+                    f"The live price text is ambiguous for {resolution}: it names more than one price "
+                    f"({sorted({(p['credits'], p['usd']) for p in matched})!r}). Nothing has been spent.")
             if matched:
                 return matched[0]
     return max(pairs, key=lambda p: p["credits"])
@@ -351,6 +368,11 @@ def live_price(provider: str, currency: str, *, model: Optional[str] = None,
                              f"The live price checker has no numeric price for {chosen} ({code}). Nothing has "
                              "been sent and nothing has been spent.")
     data = got.get("data") or {}
+    unit = data.get("unit")  # Skill 74's unit vocabulary; only a per-picture (or per-job) price is a picture price
+    if unit not in PICTURE_PRICE_UNITS:
+        raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan.image_model",
+                             f"{chosen} is priced per {unit}, not per picture; "
+                             "choose an image model. Nothing has been sent and nothing has been spent.")
     picked = pick_price(str(data.get("pricing_desc") or ""), resolution)
     if not picked or picked["credits"] <= 0 or picked["usd"] <= 0:
         raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan",
@@ -642,7 +664,8 @@ C3_KEYS = ("design_style", "brand_file", "brand_owner", "image_cap", "image_prov
 # (F16 items 6 and 11) so every page and every rendered image obeys the SAME approved brand/style; and
 # — F20 — the approved MONEY the cap is held in, so a consumer never re-reads a count as a ceiling.
 C3_CARRIED_KEYS = ("design_style_source", "creative_direction", "creative_direction_source",
-                   "creative_direction_grade_mode", "brand_sha256", "image_cap_minor", "image_currency")
+                   "creative_direction_grade_mode", "brand_sha256", "image_cap_minor", "image_currency",
+                   "image_price_minor")
 
 
 def _c3_keys() -> Tuple[str, ...]:

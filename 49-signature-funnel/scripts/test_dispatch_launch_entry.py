@@ -268,7 +268,7 @@ class AnImageCapBelowThePlanIsRefusedBeforeAnythingStarts(unittest.TestCase):
             rd = make_run_dir(tdp, adapters=False, parallel=1)
             inputs = tdp / "image-inputs.json"
             inputs.write_text(json.dumps({"design_style": "B", "brand_file": "/x/brand.json", "brand_owner": "Acme",
-                                          "image_cap": cap, "image_provider": "stub"}), encoding="utf-8")
+                                          "image_cap": cap, "image_provider": "stub", "test_only": True}), encoding="utf-8")
             p = run([sys.executable, str(HERE / "dispatch_launch.py"), "--run-dir", str(rd),
                      "--simulate-executor", "--image-inputs", str(inputs)])
             return p, rd

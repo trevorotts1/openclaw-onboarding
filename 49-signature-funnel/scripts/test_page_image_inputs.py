@@ -24,7 +24,7 @@ REPO = HERE.parents[1]
 
 def write_inputs(directory, brand_file, **over):
     doc = {"design_style": "B", "brand_file": str(brand_file), "brand_owner": "blackceo", "image_cap": 40,
-           "image_provider": "stub"}
+           "image_provider": "stub", "test_only": True}
     doc.update(over)
     path = Path(directory) / "image_inputs.json"
     path.write_text(json.dumps(doc), encoding="utf-8")
@@ -59,7 +59,7 @@ class CheckoutTakesTheSharedInputs(CheckoutWrapperCase):
         self.assertEqual(len(got["render_pending"]), 5)
 
     def test_the_paid_provider_without_the_clients_approval_is_refused_plainly(self):
-        proc = self.run_checkout(write_inputs(self.td, self.brand_path, image_provider="kie"))
+        proc = self.run_checkout(write_inputs(self.td, self.brand_path, image_provider="kie", test_only=False))
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("paid_render_approval_ref", proc.stderr)
         self.assertFalse(self.result_path.exists())
