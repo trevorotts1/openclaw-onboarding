@@ -15,10 +15,12 @@ build_dispatch_config(checkout_design=...); it never builds or binds the form.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import inspect
 import json
 import re
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
@@ -333,6 +335,39 @@ def _python() -> str:
     return sys.executable or "python3"
 
 
+# The order-form copy's source stamp (Skill 79's emitter writes it; Skill 49's checkout wrapper re-checks it).
+SOURCE_STAMP = re.compile(r"^<!--\s*source_request_sha256:\s*([0-9a-f]{64})\s*-->\s*$", re.M)
+
+
+def _require_stamped(manuscript: Path, request: Path) -> None:
+    """The checkout copy is the Skill 79 emitter's output for THIS checkout request, or it is refused here,
+    before any page is built: the stamp is the request file's sha256. No hand-staged copy-checkout.md passes."""
+    stamps = SOURCE_STAMP.findall(manuscript.read_text(encoding="utf-8", errors="replace"))
+    if len(stamps) != 1 or stamps[0] != hashlib.sha256(request.read_bytes()).hexdigest():
+        raise AdapterError(f"checkout_design.manuscript: {manuscript} is not the Skill 79 emitter's output for "
+                           f"{request}: its source_request_sha256 stamp is missing or is another request's. "
+                           "The order form's copy is never staged by hand.")
+
+
+def emit_checkout_manuscript(*, request: str | Path, launch: str | Path, terms: str | Path,
+                             out: str | Path, python: Optional[str] = None) -> Path:
+    """Write the order form's copy with Skill 79's emitter, before the checkout design lane runs.
+
+    The copy is built from the approved Skill 79 checkout request, the launch record and the approved
+    checkout_terms; it is stamped with the request's sha256, which Skill 49's checkout_wrapper.py (CHK-13)
+    requires. Nobody stages this file by hand. The emitter refuses by name (exit 2) and leaves no file."""
+    emitter = substrate.source("79-signature-order-form/scripts/emit_checkout_manuscript.py")
+    if not emitter.is_file():
+        raise AdapterError(f"checkout copy: the Skill 79 emitter is not installed at {emitter}")
+    proc = subprocess.run([python or _python(), str(emitter), "--request", str(request), "--launch", str(launch),
+                           "--checkout-terms", str(terms), "--out", str(out)],
+                          capture_output=True, text=True, timeout=120)
+    if proc.returncode != 0 or not Path(out).is_file():
+        raise AdapterError("checkout copy: " + ((proc.stderr or proc.stdout).strip()[-500:] or
+                                                f"the Skill 79 emitter exited {proc.returncode}"))
+    return Path(out)
+
+
 class AdapterNotAllowed(AdapterError):
     """An adapter command is not one of the pinned wrapper paths."""
 
@@ -522,8 +557,9 @@ def build_dispatch_config(*, work_dir: str | Path,
 
     No /path/to entry, no <...> token and no missing file may be emitted as
     executable configuration. The native checkout form is not configurable by
-    design; checkout_design (manuscript, brand_file, brand_owner, image_cap and
-    optionally design_style) wires only the checkout page's design stages.
+    design; checkout_design (manuscript, checkout_request, brand_file, brand_owner, image_cap and
+    optionally design_style) wires only the checkout page's design stages. The manuscript must be
+    Skill 79's emitter output for checkout_request (emit_checkout_manuscript; stamped with its sha256).
 
     image_inputs (required) is the per-launch inputs file for the order page's
     wireframes and mockups (78 run_image_stages.py --inputs). Every funnel that
@@ -718,10 +754,16 @@ def build_dispatch_config(*, work_dir: str | Path,
     if checkout_design is not None:
         surface = NATIVE_SURFACES["checkout"]
         manuscript_file = _require_file("checkout_design.manuscript", checkout_design["manuscript"])
+        if not checkout_design.get("checkout_request"):
+            raise AdapterError("checkout_design.checkout_request: the Skill 79 checkout request the order form "
+                               "page's copy was written from is required (emit_checkout_manuscript)")
+        request_file = _require_file("checkout_design.checkout_request", checkout_design["checkout_request"])
+        _require_stamped(manuscript_file, request_file)
         brand_file = _require_file("checkout_design.brand_file", checkout_design["brand_file"])
         command = [python, str(substrate.source(surface["design_module"])),
                    "--request", "{request}", "--result", "{result}",
                    "--manuscript", str(manuscript_file),
+                   "--checkout-request", str(request_file),
                    "--design-prose", "{work_dir}/design-prose-checkout.json",
                    "--launch", str(launch_path),
                    "--route-graph", "{work_dir}/route-graph.json",

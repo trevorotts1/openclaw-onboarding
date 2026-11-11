@@ -9,7 +9,7 @@
   "brand_ref": "TEST-ONLY-BRAND",
   "brand_hash": "TEST-ONLY-NOT-A-REAL-ASSET-HASH",
   "route_graph_ref": "reference/route-graph-example.json",
-  "route_graph_hash": "43017b1e5678d2904f1eccdd4d21f07093d51faaefa0922e0d76564e06cf2638",
+  "route_graph_hash": "b61889a8b2c9c0fa68703991b28e7d73fdc3ad3b059750d683710062e115b143",
   "plan_approval_ref": null,
   "offers": [
     {

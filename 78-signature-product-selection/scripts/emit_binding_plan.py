@@ -43,9 +43,9 @@ V_BINDING_ALLOWLIST = "S78-BINDING-NOT-ALLOWLISTED"
 def emit_plan(launch, targets, *, route, allowlist=None, approval_verifier=None):
     if route not in ("per_offer_targets", "platform_native_selection"):
         raise Violation(V_BINDING_INCOMPLETE, f"Unknown handoff route {route!r}.")
-    if check_invocation(launch) != "proceed":
+    if check_invocation(launch, route=route) != "proceed":
         raise Violation(V_BINDING_INCOMPLETE, "Binding plan requires a multiple_options launch.")
-    validate_catalog(launch, approval_verifier=approval_verifier)
+    validate_catalog(launch, approval_verifier=approval_verifier, route=route)
     mains = [o for o in launch["offers"] if o.get("slot") == "main"]
     production = launch.get("test_only") is not True
     if production:

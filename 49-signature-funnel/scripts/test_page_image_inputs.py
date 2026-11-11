@@ -34,7 +34,8 @@ def write_inputs(directory, brand_file, **over):
 class CheckoutTakesTheSharedInputs(CheckoutWrapperCase):
     def run_checkout(self, inputs):
         cmd = [sys.executable, str(CHECKOUT), "--request", str(self.request_path), "--result", str(self.result_path),
-               "--manuscript", str(MANUSCRIPT), "--launch", str(self.launch_path),
+               "--manuscript", str(self.stamped_copy(MANUSCRIPT)), "--launch", str(self.launch_path),
+               "--checkout-request", str(self.checkout_request_path),
                "--route-graph", str(self.graph_path), "--run-dir", str(self.run_dir),
                "--model", "STUB-NO-MODEL", "--image-inputs", str(inputs)]
         return subprocess.run(cmd, capture_output=True, text=True, timeout=600)
@@ -72,7 +73,8 @@ class CheckoutTakesTheSharedInputs(CheckoutWrapperCase):
     def test_a_flag_typed_on_the_command_line_still_wins(self):
         inputs = write_inputs(self.td, self.brand_path, design_style="A")
         cmd = [sys.executable, str(CHECKOUT), "--request", str(self.request_path), "--result", str(self.result_path),
-               "--manuscript", str(MANUSCRIPT), "--launch", str(self.launch_path),
+               "--manuscript", str(self.stamped_copy(MANUSCRIPT)), "--launch", str(self.launch_path),
+               "--checkout-request", str(self.checkout_request_path),
                "--route-graph", str(self.graph_path), "--run-dir", str(self.run_dir),
                "--model", "STUB-NO-MODEL", "--image-inputs", str(inputs), "--design-style", "C"]
         self.assertEqual(subprocess.run(cmd, capture_output=True, text=True).returncode, 0)

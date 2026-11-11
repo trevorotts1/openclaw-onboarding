@@ -69,6 +69,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import re
 import sys
@@ -205,6 +206,11 @@ PLANNED_EMAIL_KINDS = ("pre_launch", "main_launch", "doors_closing", "upsell_fol
 
 _MISSING = object()
 
+# The billing vocabulary and the plan-time refusal sentence are shared with Skills 79 and 83
+# (shared-utils/signature_launch_contract/billing.py): the client hears "payment plans are not supported in
+# this release" here, before the plan is approved, not at checkout afterwards (D-D).
+_BILLING = HERE.parents[1] / "shared-utils" / "signature_launch_contract" / "billing.py"
+
 
 class LaunchPlanError(ValueError):
     pass
@@ -241,6 +247,20 @@ def email_counts(registry: Optional[Path] = None) -> Dict[str, int]:
     if absent:
         raise refuse("the registry has no row for: " + ", ".join(absent))
     return counts
+
+
+def _billing():
+    """The shared billing module, loaded once by path. Missing = the plan cannot be judged, so it fails closed."""
+    mod = sys.modules.get("signature_launch_billing")
+    if mod is None:
+        if not _BILLING.is_file():
+            raise LaunchPlanError("the shared billing vocabulary (billing.py) is not installed, so the plan's "
+                                  "billing types cannot be checked")
+        spec = importlib.util.spec_from_file_location("signature_launch_billing", _BILLING)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["signature_launch_billing"] = mod
+        spec.loader.exec_module(mod)
+    return mod
 
 
 # ---------------------------------------------------------------------------
@@ -449,6 +469,9 @@ def _offer_block(launch: Dict[str, Any], answers: Dict[str, Any],
         elif not (package["currency"].isupper() and len(package["currency"]) == 3):
             missing.append("the ISO-4217 currency code of %s (got %r)"
                            % (label, package["currency"]))
+        refusal = _billing().plan_time_refusal(package.get("billing_type"))
+        if refusal:
+            missing.append("a billing type the checkout can take for %s (%s)" % (label, refusal))
         raw_schedule = package.get("billing_schedule_raw")
         if raw_schedule is not None and not isinstance(raw_schedule, list):
             missing.append("a billing schedule for %s must be a list of due/amount rows "
@@ -457,6 +480,10 @@ def _offer_block(launch: Dict[str, Any], answers: Dict[str, Any],
                 and not package.get("billing_schedule") and not package.get("terms_source"):
             missing.append("the exact %s terms for %s (unsupported without a schedule or "
                            "terms source)" % (package["billing_type"], label))
+
+    answered = _billing().plan_time_refusal(fact(answers, "offers.main.billing_type"))
+    if answered:
+        missing.append("a billing type the checkout can take for the main offer (%s)" % answered)
 
     price_usd = None
     if primary is not None and primary.get("amount_minor") is not None:

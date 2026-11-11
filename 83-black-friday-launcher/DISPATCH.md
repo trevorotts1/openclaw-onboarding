@@ -48,8 +48,11 @@ python3 -m launcher_core.cli check --manifest PACKAGE/package-manifest.json --ro
    sales page, `sales-page_...` files). A planned page with no file of its own is refused by name, and
    `assemble` refuses a plan for both landing pages that has no sales piece. `dispatch-report.json` carries
    `page_labels` and `landing_pages` so the summary names every page.
-5. With `--adapter-inputs` the bridge builds the real adapter commands itself. It needs `checkout_manuscript`
-   (the order form page's copy, so its wireframes and mockups can be drawn) and refuses plainly without it.
+5. With `--adapter-inputs` the bridge builds the real adapter commands itself. The order form page's copy is
+   never an input: the bridge writes the Skill 79 checkout request from the intake, runs Skill 79's
+   `emit_checkout_manuscript.py` on it (the copy carries `source_request_sha256`, the request's sha256), and hands
+   that file to the checkout design lane. It refuses a hand-staged `checkout_manuscript` by name, and Skill 49's
+   `checkout_wrapper.py` refuses copy stamped with any other request.
    Two image-input files are written: `image_inputs.json` holds only the shared contract keys (Skill 49's
    wrappers refuse any other key) and `order-page-inputs.json` holds the same values in the shape Skill 78 reads.
 6. `assemble` requires every page's designs by default. `--allow-no-designs` exists for old-style plan-only

@@ -152,26 +152,6 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         doc["answers_file"] = str(self.answers_file)
         return doc
 
-    def _checkout_manuscript(self, doc: dict) -> str:
-        """The order-form copy for THIS launch: the fixture's five-section shape, with the offer, price, bump and
-        the approved guarantee, terms and consent written from the launch record and the intake (the checkout
-        wrapper refuses a price, name or terms text that differs from them)."""
-        main = next(o for o in doc["offers"] if o["role"] == "main")
-        bump = next(o for o in doc["offers"] if o["role"] == "bump")
-        terms = doc.get("checkout_terms")
-        if not terms:  # an intake from before the approved-terms block: the fixture's own copy, as shipped
-            return (COPY_EXAMPLES / "checkout-example.md").read_text(encoding="utf-8")
-        money = lambda o: f"${o['price']['amount_minor'] // 100}"  # noqa: E731  whole-dollar test prices
-        shape = (COPY_EXAMPLES / "checkout-example.md").read_text(encoding="utf-8")
-        head, rest = shape.split("## Section 2", 1)
-        tail = "## Section 5" + rest.split("## Section 5", 1)[1]
-        return (f"{head}## Section 2: Offer details and price\n\n{main['name']}, one payment of {money(main)}.\n\n"
-                f"Due today: {money(main)}.\n\n"
-                f"## Section 3: Order bump\n\nYes, add the {bump['name']} to my order.\n\n"
-                f"Ten ready-to-use planning templates. One-time price of {money(bump)}.\n\n"
-                f"## Section 4: Guarantee and terms\n\n{terms['guarantee_text']}\n\n{terms['terms_text']}\n\n"
-                f"{terms['consent_text']}\n\n{tail}")
-
     def _adapter_inputs(self, out: Path, doc: dict) -> dict:
         """The per-page inputs `cli dispatch --adapter-inputs` takes. Every file is a repo fixture or derived
         from one; nothing is a stand-in for a page skill's output."""
@@ -201,7 +181,6 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         return {
             "bridge_config": str(bridge),
             "author_session": "e2e-real-adapters",
-            "checkout_manuscript": str(write("checkout-manuscript.md", self._checkout_manuscript(doc))),
             "copy": {"upsell_1": rebound(S80_FIXTURES / "copy-upsell1-public.valid.json", "copy-upsell_1.json"),
                      "upsell_2": rebound(S80_FIXTURES / "copy-upsell2-public.valid.json", "copy-upsell_2.json"),
                      "downsell_1": write("copy-downsell_1.json", _one_time_d1_page()),

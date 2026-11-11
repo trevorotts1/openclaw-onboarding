@@ -12,6 +12,7 @@ builder, the page-result emitter and the new attach step are the real ones, wire
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shlex
@@ -56,6 +57,16 @@ def segments(script: str) -> list:
 
 def step(config: dict, role: str, wrapper: str) -> list:
     return next(s for s in segments(config["adapters"][role]["command"][2]) if wrapper in " ".join(s))
+
+
+def stamped_checkout(directory: Path):
+    """A checkout request and a manuscript carrying its source stamp, as Skill 79's emitter leaves them."""
+    request = Path(directory) / "checkout-request.json"
+    request.write_text('{"main_offer_id": "TEST-ONLY"}', encoding="utf-8")
+    manuscript = Path(directory) / "checkout.md"
+    manuscript.write_text("<!-- source_request_sha256: %s -->\n\nx\n"
+                          % hashlib.sha256(request.read_bytes()).hexdigest(), encoding="utf-8")
+    return manuscript, request
 
 
 class Inputs:
@@ -190,16 +201,85 @@ class ThankYouTests(unittest.TestCase):
         self.assertEqual(steps[1][steps[1].index("--author-session") + 1], "session-test")
 
 
+class CheckoutCopyDispatchTests(unittest.TestCase):
+    """Issue 12: the order form's copy reaches the checkout lane only as Skill 79's stamped output, and the
+    refusal is made by build_dispatch_config itself (these go THROUGH the builder, not the helper)."""
+
+    def design(self, inputs, manuscript, request):
+        brand = inputs.write("checkout-brand.md")
+        return {"manuscript": manuscript, "brand_file": brand, "brand_owner": "o", "image_cap": 1,
+                **({"checkout_request": request} if request is not None else {})}
+
+    def test_a_stamped_manuscript_for_its_own_request_is_dispatched(self):
+        inputs = Inputs(self)
+        manuscript, request = stamped_checkout(inputs.root)
+        command = inputs.build(checkout_design=self.design(inputs, manuscript, request))["adapters"]["checkout"]["command"]
+        self.assertEqual(command[command.index("--checkout-request") + 1], str(request))  # the wrapper re-checks the stamp
+
+    def test_an_unstamped_manuscript_is_refused_by_the_builder(self):
+        inputs = Inputs(self)
+        _, request = stamped_checkout(inputs.root)
+        staged = inputs.root / "staged.md"
+        staged.write_text("## Section 1: Offer\n\nHand-written.\n", encoding="utf-8")
+        with self.assertRaises(adapters.AdapterError) as ctx:
+            inputs.build(checkout_design=self.design(inputs, staged, request))
+        self.assertIn("never staged by hand", str(ctx.exception))
+
+    def test_a_manuscript_stamped_for_another_request_is_refused_by_the_builder(self):
+        inputs = Inputs(self)
+        manuscript, request = stamped_checkout(inputs.root)
+        request.write_text('{"main_offer_id": "SOMETHING-ELSE"}', encoding="utf-8")  # the request moved on
+        with self.assertRaises(adapters.AdapterError) as ctx:
+            inputs.build(checkout_design=self.design(inputs, manuscript, request))
+        self.assertIn("never staged by hand", str(ctx.exception))
+
+    def test_a_manuscript_with_two_stamps_is_refused_by_the_builder(self):
+        inputs = Inputs(self)
+        manuscript, request = stamped_checkout(inputs.root)
+        manuscript.write_text(manuscript.read_text(encoding="utf-8") + manuscript.read_text(encoding="utf-8"),
+                              encoding="utf-8")
+        with self.assertRaises(adapters.AdapterError):
+            inputs.build(checkout_design=self.design(inputs, manuscript, request))
+
+    def test_an_emitter_that_exits_clean_without_writing_the_copy_is_refused(self):
+        inputs = Inputs(self)
+        out = inputs.root / "never-written.md"
+        done = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with mock.patch.object(adapters.subprocess, "run", return_value=done):
+            with self.assertRaises(adapters.AdapterError):
+                adapters.emit_checkout_manuscript(request=inputs.root / "r.json", launch=inputs.root / "launch.json",
+                                                  terms=inputs.root / "t.json", out=out)
+
+    def test_a_launcher_without_the_skill_79_emitter_refuses_by_name(self):
+        inputs = Inputs(self)
+        with mock.patch.object(adapters.substrate, "source", return_value=inputs.root / "absent.py"):
+            with self.assertRaises(adapters.AdapterError) as ctx:
+                adapters.emit_checkout_manuscript(request=inputs.root / "r.json", launch=inputs.root / "launch.json",
+                                                  terms=inputs.root / "t.json", out=inputs.root / "o.md")
+        self.assertIn("not installed", str(ctx.exception))
+
+    def test_no_checkout_request_is_refused_by_the_builder(self):
+        inputs = Inputs(self)
+        manuscript, _ = stamped_checkout(inputs.root)
+        for missing in (None, ""):
+            with self.assertRaises(adapters.AdapterError) as ctx:
+                inputs.build(checkout_design=self.design(inputs, manuscript, missing))
+            self.assertIn("checkout_request", str(ctx.exception))
+
+
 class AllowListTests(unittest.TestCase):
     """ENF-08: a supplied adapter config is held to the pinned wrappers."""
 
     def test_what_the_builder_emits_passes_its_own_allow_list(self):
         inputs = Inputs(self)
         checkout = inputs.write("checkout.md")
-        config = inputs.build(checkout_design={"manuscript": checkout, "brand_file": checkout, "brand_owner": "o",
-                                               "image_cap": 1})
+        manuscript, request = stamped_checkout(inputs.root)
+        config = inputs.build(checkout_design={"manuscript": manuscript, "checkout_request": request,
+                                               "brand_file": checkout, "brand_owner": "o", "image_cap": 1})
         adapters.validate_adapter_config(config)
         self.assertIn("checkout", config["adapters"])
+        command = config["adapters"]["checkout"]["command"]
+        self.assertEqual(command[command.index("--checkout-request") + 1], str(request))
 
     def refused(self, command, **kw):
         with self.assertRaises(adapters.AdapterNotAllowed) as ctx:
@@ -341,7 +421,7 @@ class SelectionAssemblyTests(unittest.TestCase):
             return str(path)
         roles = ("upsell_1", "upsell_2", "downsell_1")
         # the bridge refuses a config with no landing section; it fills landing.image_inputs from the approved plan
-        adapter_inputs = {"bridge_config": f("bridge.json", '{"landing": {}}'), "author_session": "sess", "checkout_manuscript": f("checkout.md"),
+        adapter_inputs = {"bridge_config": f("bridge.json", '{"landing": {}}'), "author_session": "sess",
                           "copy": {r: f(f"copy-{r}.json") for r in roles},
                           "journey": {r: f(f"journey-{r}.json") for r in roles},
                           "enrichment": {r: f(f"enrichment-{r}.json") for r in roles}}

@@ -489,8 +489,11 @@ def _route_graph_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
                          f"{piece.get('page_id')!r} is not the route node's {node.get('page_id')!r}")
     try:
         launch = route_module.launch_record(intake_doc)
+        checkout = manifest.get("checkout") or {}
+        runtime = {"selection_ref": (checkout.get("supplied") or {}).get("selection_ref"),
+                   "binding_plan": checkout.get("binding_plan")}
         fails.extend(f"AF-LAUNCH-ROUTE-LAW: {v}"
-                     for v in route_module.route_law.graph_violations(launch, graph))
+                     for v in route_module.route_law.graph_violations(launch, graph, runtime=runtime))
     except Exception as exc:  # the law that cannot be evaluated is not a pass
         fails.append(f"AF-LAUNCH-ROUTE-LAW: the route law could not be evaluated "
                      f"({type(exc).__name__}: {exc})")

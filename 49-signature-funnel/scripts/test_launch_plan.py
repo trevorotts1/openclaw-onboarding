@@ -4,8 +4,9 @@
 emails + texts + automations + the AI choice, and every plan it emits validates
 against the shared launch-plan contract.
 
-Run from anywhere: `python3 49-signature-funnel/scripts/test_launch_plan.py`
-Exit 0 = all checks pass; 1 = at least one failed.
+Run as a script (`python3 49-signature-funnel/scripts/test_launch_plan.py`, exit 0 = all checks pass, 1 = at
+least one failed) or under pytest / unittest, where every check is a real assertion: a failing check raises
+AssertionError, so the run fails (issue 70).
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ import importlib.util
 import json
 import sys
 import tempfile
+import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -45,6 +47,8 @@ def say(good: bool, msg: str) -> None:
     global _ok
     _ok = _ok and bool(good)
     print(f"TEST {'ok' if good else 'FAIL'}: {msg}")
+    if not good:
+        raise AssertionError(msg)
 
 
 def _launch(**over):
@@ -239,6 +243,47 @@ def test_choices() -> None:
         "Black Friday timing is carried when the calendar supplies it (Skill 83's calendar)")
 
 
+SHARED_REFUSAL = "payment plans are not supported in this release"  # billing.py, the sentence Skill 83's intake says
+
+
+def test_installment_and_trial_are_refused_at_plan_time() -> None:
+    """D-D (issue 70): the client hears it when the plan is built, before approval, not at checkout."""
+    for billing in ("installment", "trial"):
+        launch = _launch()
+        launch["offers"][0]["prices"][0].update(billing_type=billing, schedule=[{"amount_minor": 49700, "due": "today"}])
+        result = launch_plan.build_launch_plan(launch, ANSWERS)
+        say(result["state"] == "awaiting_missing_fact" and result["plan"] is None,
+            f"a {billing} main price blocks the launch plan")
+        say(any(SHARED_REFUSAL in m and repr(billing) in m for m in result["missing"]),
+            f"the {billing} refusal carries the shared sentence ({SHARED_REFUSAL!r})")
+    answered = launch_plan.build_launch_plan(_launch(), dict(ANSWERS, **{"offers.main.billing_type": "installment"}))
+    say(answered["state"] == "awaiting_missing_fact" and any(SHARED_REFUSAL in m for m in answered["missing"]),
+        "an installment billing ANSWER is refused at plan time too")
+    for billing in ("one_time", "recurring"):
+        launch = _launch()
+        launch["offers"][0]["prices"][0]["billing_type"] = billing
+        launch["offers"][0]["prices"][0]["schedule"] = [{"amount_minor": 49700, "due": "today"}]
+        say(launch_plan.build_launch_plan(launch, ANSWERS)["state"] == "ready",
+            f"a {billing} price is not refused at plan time")
+    shared = sys.modules["signature_launch_billing"]
+    say(shared.PAYMENT_PLANS_UNSUPPORTED == SHARED_REFUSAL and shared.plan_time_refusal("installment")
+        and shared.plan_time_refusal("one_time") is None,
+        "the plan-time refusal is the shared billing module's, not a local copy")
+
+
+def test_without_the_shared_billing_file_the_plan_fails_closed() -> None:
+    """No vocabulary installed means the plan's billing types cannot be judged: refused by name, never passed."""
+    from unittest import mock
+    with mock.patch.object(launch_plan, "_BILLING", HERE / "absent-billing.py"), mock.patch.dict(sys.modules):
+        sys.modules.pop("signature_launch_billing", None)
+        try:
+            launch_plan.build_launch_plan(_launch(), ANSWERS)
+        except launch_plan.LaunchPlanError as exc:
+            say("not installed" in str(exc), "a missing billing.py is a named LaunchPlanError")
+        else:
+            say(False, "a missing billing.py must stop the plan")
+
+
 def test_intake_integration() -> None:
     known = {
         "offers.main.description": "Sunrise Coaching",
@@ -276,13 +321,27 @@ def test_intake_integration() -> None:
         "the plan the client approves records the AI choice")
 
 
+CHECKS = (test_full_plan, test_email_counts_come_from_skill_50, test_missing_or_broken_registry_refuses,
+          test_missing_facts, test_choices,
+          test_installment_and_trial_are_refused_at_plan_time,
+          test_without_the_shared_billing_file_the_plan_fails_closed, test_intake_integration)
+
+
+class LaunchPlanTests(unittest.TestCase):
+    """The same checks for unittest discovery (module-level test_* functions are what pytest collects)."""
+
+    def test_every_check_holds(self):
+        for check in CHECKS:
+            with self.subTest(check=check.__name__):
+                check()
+
+
 def main() -> int:
-    test_full_plan()
-    test_email_counts_come_from_skill_50()
-    test_missing_or_broken_registry_refuses()
-    test_missing_facts()
-    test_choices()
-    test_intake_integration()
+    for check in CHECKS:
+        try:
+            check()
+        except AssertionError:
+            pass  # say() already printed the FAIL line and cleared _ok
     print("RESULT:", "PASS" if _ok else "FAIL")
     return 0 if _ok else 1
 

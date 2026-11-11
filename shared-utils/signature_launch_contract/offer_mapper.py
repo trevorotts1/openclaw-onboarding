@@ -34,11 +34,7 @@ SCHEMA_VERSION = "1.2"
 ANSWERS_SCHEMA = "client-intake-answers/v1"
 REPO = Path(__file__).resolve().parents[2]
 SLOTS = ("bump", "upsell_1", "downsell_1", "upsell_2")
-BILLING_TYPES = ("one_time", "recurring", "installment", "trial")
 REF = re.compile(r"^answers-file:([A-Za-z0-9_.]+)(?:\[(\d+)\])?$")
-# record billing_type -> Skill 79 price_choice billing_type. None = 79 has no such type, so it is refused.
-CHECKOUT_BILLING = {"one_time": "one_time", "recurring": "recurring", "trial": "trial_then_recurring",
-                    "installment": None}
 CHECKOUT_CONTEXT = ("approved_plan_hash", "brand_revision", "terms_ref", "native_capability_evidence_ref",
                     "successful_payment_next_route", "fulfillment_mapping_ref", "consent_ref",
                     "failed_pending_requirements")
@@ -61,6 +57,12 @@ def _load(name: str, path: Path):
     return mod
 
 
+# The billing vocabulary and the record -> Skill 79 translation live in billing.py (one table, every importer).
+_billing_vocab = _load("signature_launch_billing", Path(__file__).resolve().parent / "billing.py")
+BILLING_TYPES = _billing_vocab.BILLING_TYPES
+CHECKOUT_BILLING = _billing_vocab.CHECKOUT_BILLING
+
+
 def _engine():
     return _load("client_intake_engine", REPO / "shared-utils" / "client_intake" / "engine.py")
 
@@ -72,6 +74,16 @@ def _78():
              REPO / "78-signature-product-selection")
     build = _load("build_selection_plan", d / "scripts" / "build_selection_plan.py")
     return build, sys.modules["selection_core"]
+
+
+def currency_exponent(currency: str) -> int:
+    """The currency's ISO 4217 minor-unit exponent. Skill 78 owns the table; this is the one door to it."""
+    return _78()[1].currency_exponent(currency)
+
+
+def format_money(amount_minor: int, currency: str) -> str:
+    """An amount as a buyer reads it, with the currency's own exponent and symbol (Skill 78's rule)."""
+    return _78()[1].format_money(amount_minor, currency)
 
 
 # ---------------------------------------------------------------- answers -> offers

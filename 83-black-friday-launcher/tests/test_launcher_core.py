@@ -222,7 +222,7 @@ class RouteTest(unittest.TestCase):
         graph = route.compile_route(intake.validate(base_intake("multiple_options")))
         self.assertEqual([n["role"] for n in graph["nodes"]],
                          ["landing", "product_selection", "checkout", "thank_you"])
-        self.assertTrue(any(e["event"] == "selection_validated" for e in graph["edges"]))
+        self.assertTrue(any((e["event"], e["guard"]) == ("offer_selected", "native_price_bound") for e in graph["edges"]))
 
     def test_full_chain_branches_match_the_contract(self):
         graph = route.compile_route(intake.validate(with_upsells(base_intake())))

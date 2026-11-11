@@ -119,8 +119,9 @@ PRICE_MIN_MINOR = 100
 PRICE_MAX_MINOR = 10_000_000
 
 # One order, one payment, one currency. Anything that implies instalments or recurring billing
-# is refused by name until the checkout contract can carry it.
-PAYMENT_PLANS_UNSUPPORTED = "payment plans are not supported in this release"
+# is refused by name until the checkout contract can carry it. The refusal sentence is the shared
+# one (shared-utils/signature_launch_contract/billing.py), so the client hears the same words from
+# Skill 49's plan, Skill 83's intake and the checkout.
 _PAYMENT_PLAN_KEYS = ("installment", "installments", "payment_plan", "payment_plans",
                       "recurring", "subscription", "billing_interval", "billing_cycle")
 CHECKOUT_OPTIONAL = ("billing_type", "schedule", "native_product_id", "native_price_id",
@@ -168,12 +169,12 @@ def _refuse_payment_plans(field: str, block: Any) -> None:
         return
     for key in block:
         if key in _PAYMENT_PLAN_KEYS and block[key] not in (None, False, [], {}, ""):
-            _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.{key}", PAYMENT_PLANS_UNSUPPORTED)
+            _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.{key}", billing_module().PAYMENT_PLANS_UNSUPPORTED)
     if block.get("billing_type") not in (None, "one_time"):
         _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.billing_type",
-              f"{block['billing_type']!r}: {PAYMENT_PLANS_UNSUPPORTED}; only 'one_time' is accepted")
+              f"{block['billing_type']!r}: {billing_module().PAYMENT_PLANS_UNSUPPORTED}; only 'one_time' is accepted")
     if block.get("schedule") not in (None, []):
-        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.schedule", PAYMENT_PLANS_UNSUPPORTED)
+        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.schedule", billing_module().PAYMENT_PLANS_UNSUPPORTED)
 
 
 def _level_question(offer: Dict[str, Any]) -> str:
@@ -569,6 +570,23 @@ def _offer_mapper():
     spec = importlib.util.spec_from_file_location("offer_mapper", path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules["offer_mapper"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def billing_module():
+    """shared-utils/signature_launch_contract/billing.py, loaded once by path (stdlib only): the one
+    billing vocabulary and refusal sentence Skill 49, Skill 83 and the offer mapper share."""
+    mod = sys.modules.get("signature_launch_billing")
+    if mod is not None:
+        return mod
+    path = REPO_ROOT / "shared-utils" / "signature_launch_contract" / "billing.py"
+    if not path.is_file():
+        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", "billing_type",
+              "the shared billing vocabulary is not installed, so no price can be checked against it")
+    spec = importlib.util.spec_from_file_location("signature_launch_billing", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["signature_launch_billing"] = mod
     spec.loader.exec_module(mod)
     return mod
 

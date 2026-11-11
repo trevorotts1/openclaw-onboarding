@@ -432,7 +432,7 @@ class LandingPagesTests(unittest.TestCase):
             return str(path)
         roles = ("upsell_1", "upsell_2", "downsell_1")
         # the bridge refuses a bridge config with no landing section, so this one carries an empty one
-        return {"bridge_config": f("bridge.json", '{"landing": {}}'), "author_session": "sess", "checkout_manuscript": f("checkout.md"),
+        return {"bridge_config": f("bridge.json", '{"landing": {}}'), "author_session": "sess",
                 "copy": {r: f(f"copy-{r}.json") for r in roles},
                 "journey": {r: f(f"journey-{r}.json") for r in roles},
                 "enrichment": {r: f(f"enr-{r}.json") for r in roles}}
@@ -511,14 +511,17 @@ class LandingPagesTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-ADAPTERS")
         self.assertIn("Nothing was dispatched", ctx.exception.detail)
 
-    def test_a_launch_without_the_order_forms_copy_is_refused_before_any_page_is_built(self):
+    def test_a_hand_staged_order_form_copy_is_refused_before_any_page_is_built(self):
+        """Issue 12: the order form's copy is Skill 79's emitter output for the checkout request, never a file
+        somebody staged: the bridge refuses the old input by name instead of designing pages from it."""
         inputs = self.adapter_inputs()
-        del inputs["checkout_manuscript"]
+        inputs["checkout_manuscript"] = str(Path(inputs["bridge_config"]).parent / "checkout.md")
+        Path(inputs["checkout_manuscript"]).write_text("## Section 1: x\n", encoding="utf-8")
         with self.assertRaises(launch_bridge.BridgeError) as ctx:
             run_dispatch(payload("elevation", brand_file=str(self.brand)), self.out, adapters_config=None,
                          adapter_inputs=inputs)
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-BRIDGE-ADAPTERS")
-        self.assertIn("checkout_manuscript", ctx.exception.detail)
+        self.assertIn("never staged by hand", ctx.exception.detail)
         self.assertFalse((self.out / "pieces").exists())
 
     def build(self, landing_pages=None, **consumer_extra):

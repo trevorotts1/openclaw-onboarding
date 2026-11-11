@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT))
@@ -467,6 +468,17 @@ class CheckoutFacts(IntakeCase):  # CHK-16
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         module.validate_request(request)  # raises on rejection
+
+
+class SharedBillingVocabularyMissing(IntakeCase):  # issue 70: no vocabulary installed means nothing is judged against it
+    def test_a_launcher_without_the_shared_billing_file_refuses_by_name(self):
+        with tempfile.TemporaryDirectory() as empty, mock.patch.object(intake, "REPO_ROOT", Path(empty)), \
+                mock.patch.dict(sys.modules):
+            sys.modules.pop("signature_launch_billing", None)
+            with self.assertRaises(intake.IntakeError) as ctx:
+                intake.billing_module()
+        self.assertTrue(ctx.exception.code.startswith("AF-LAUNCH-INTAKE-PAYMENT-PLAN"))
+        self.assertIn("not installed", ctx.exception.detail)
 
 
 if __name__ == "__main__":

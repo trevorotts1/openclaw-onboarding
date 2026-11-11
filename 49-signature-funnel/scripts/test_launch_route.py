@@ -90,6 +90,64 @@ class CompileTests(unittest.TestCase):
                 clr.run_test_cases(clr.generate_test_cases(f), u1, d1, u2), [])
 
 
+class SelectionEdgeTests(unittest.TestCase):
+    """Issue 45: the allowlist guard is asserted only where a selection_ref backs it; otherwise the per-offer edge."""
+
+    def edge(self, graph):
+        ids = {n["page_id"]: n["role"] for n in graph["nodes"]}
+        return [e for e in graph["edges"] if ids[e["from"]] == "product_selection" and ids[e["to"]] == "checkout"]
+
+    def test_without_a_selection_ref_the_edge_is_the_per_offer_one(self):
+        launch = launch_fixture()
+        graph = clr.compile_route(launch)
+        self.assertEqual([(e["event"], e["guard"]) for e in self.edge(graph)],
+                         [("offer_selected", "native_price_bound")])
+        self.assertEqual(clr.selection_edge(launch), ("offer_selected", "native_price_bound"))
+        self.assertEqual(clr.validate_graph(graph, launch), [])
+        for blank in (None, "", "  ", 7):
+            self.assertEqual(clr.selection_edge(dict(launch, selection_ref=blank))[0], "offer_selected")
+
+    def test_with_a_selection_ref_the_edge_asserts_the_allowlist(self):
+        launch = dict(launch_fixture(), selection_ref="sel-1")
+        graph = clr.compile_route(launch)
+        self.assertEqual([(e["event"], e["guard"]) for e in self.edge(graph)],
+                         [("selection_validated", "allowlisted_offer_price")])
+        self.assertEqual(clr.validate_graph(graph, launch), [])
+
+    def test_a_graph_for_the_other_kind_of_launch_is_refused(self):
+        plain, backed = launch_fixture(), dict(launch_fixture(), selection_ref="sel-1")
+        self.assertTrue(clr.validate_graph(clr.compile_route(plain), backed))
+        self.assertTrue(clr.validate_graph(clr.compile_route(backed), plain))
+
+    def test_each_selection_event_must_carry_its_own_guard(self):
+        for launch, guard in ((launch_fixture(), "allowlisted_offer_price"),
+                              (dict(launch_fixture(), selection_ref="sel-1"), "native_price_bound")):
+            graph = clr.compile_route(launch)
+            self.edge(graph)[0]["guard"] = guard
+            self.assertTrue(any("selection edge" in f for f in clr.validate_graph(graph)), guard)
+
+    def test_each_selection_edge_must_land_on_checkout(self):
+        for launch in (launch_fixture(), dict(launch_fixture(), selection_ref="sel-1")):
+            graph = clr.compile_route(launch)
+            thank_you = next(n["page_id"] for n in graph["nodes"] if n["role"] == "thank_you")
+            self.edge(graph)[0]["to"] = thank_you
+            self.assertTrue(clr.validate_graph(graph), launch.get("selection_ref"))
+
+    def test_a_stray_second_selection_edge_may_not_lead_anywhere_but_checkout(self):
+        for launch, stray in ((dict(launch_fixture(), selection_ref="sel-1"), ("offer_selected", "native_price_bound")),
+                              (launch_fixture(), ("selection_validated", "allowlisted_offer_price"))):
+            graph = clr.compile_route(launch)
+            thank_you = next(n["page_id"] for n in graph["nodes"] if n["role"] == "thank_you")
+            graph["edges"].append(dict(self.edge(graph)[0], event=stray[0], guard=stray[1], to=thank_you))
+            self.assertTrue(any("product_selection" in f for f in clr.validate_graph(graph)), stray)
+
+    def test_product_selection_must_route_to_checkout(self):
+        graph = clr.compile_route(launch_fixture())
+        gone = self.edge(graph)[0]
+        graph["edges"] = [e for e in graph["edges"] if e is not gone]
+        self.assertTrue(any("product_selection must route to checkout" in f for f in clr.validate_graph(graph)))
+
+
 class ResolverLawTests(unittest.TestCase):
     def test_pending_never_traverses(self):
         for ev in ("payment_pending", "payment_failed",

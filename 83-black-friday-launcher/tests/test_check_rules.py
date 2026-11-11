@@ -580,6 +580,29 @@ class RouteGraphTests(PackageCase):
         fails, _ = self.check({"manifest_path": manifest_path}, root)
         self.assertTrue(any(f.startswith("AF-LAUNCH-ROUTE-LAW: missing contract edges") for f in fails), fails)
 
+    def test_the_check_judges_the_selection_guard_by_the_packages_own_runtime(self):
+        """Issue 45 at the package check: a carried graph that asserts allowlisted_offer_price is accepted only
+        where the manifest holds a selection_ref or a per-offer binding plan, and refused by name otherwise."""
+        built, root = self.build()
+        graph = json.loads((root / "route-graph.json").read_text(encoding="utf-8"))
+        edges = [e for e in graph["edges"] if e["guard"] == "native_price_bound"]
+        self.assertEqual(len(edges), 1, "the elevation route carries the per-offer selection edge")
+        edges[0].update(event="selection_validated", guard="allowlisted_offer_price")
+        (root / "route-graph.json").write_text(json.dumps(graph, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        plan = {"route": "per_offer_targets", "mappings": [{"offer_id": "A", "checkout_target_ref": "page-a"}]}
+        cases = {"no runtime": (None, None, True), "per-offer plan": (None, plan, False),
+                 "selection_ref": ("sel-1", None, False)}
+        for name, (ref, binding_plan, refused) in cases.items():
+            def mutate(m, ref=ref, binding_plan=binding_plan):
+                m["route_graph"].update(sha256=sha(root / "route-graph.json"))
+                m.setdefault("checkout", {})["binding_plan"] = binding_plan
+                m["checkout"]["supplied"] = {"selection_ref": ref}
+            manifest_path = self.reseal(root, mutate)
+            fails, _ = self.check({"manifest_path": manifest_path}, root)
+            named = [f for f in fails if "AF-LAUNCH-ROUTE-GUARD-NO-RUNTIME" in f]
+            with self.subTest(case=name):
+                self.assertEqual(bool(named), refused, fails)
+
     def test_an_intact_graph_holds_the_law(self):
         built, root = self.build()
         graph = json.loads((root / "route-graph.json").read_text(encoding="utf-8"))

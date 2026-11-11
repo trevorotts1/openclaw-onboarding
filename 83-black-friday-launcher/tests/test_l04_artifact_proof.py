@@ -504,6 +504,21 @@ class CheckoutProducerTests(unittest.TestCase):
         self.assertEqual(probe["probe"]["result"], "rejected")
         self.assertIn("Additional properties", probe["probe"]["error"])
 
+    def test_the_validation_clock_rides_only_a_live_request(self):
+        import types
+        from launcher_core import checkout as checkout_module
+        calls = []
+        stub = types.SimpleNamespace(validate_request=lambda *a: calls.append(a))
+        original = checkout_module._load_validator
+        checkout_module._load_validator = lambda: stub
+        try:
+            self.assertEqual(checkout_module.replay({"test_only": True})[0], "accepted")
+            self.assertEqual(checkout_module.replay({"test_only": False})[0], "accepted")
+        finally:
+            checkout_module._load_validator = original
+        self.assertEqual([len(a) for a in calls], [1, 2])
+        self.assertIsInstance(calls[1][1], str)
+
 
 
 CHECKOUT_TERMS = {

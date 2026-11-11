@@ -71,6 +71,10 @@ APPROVED_STATUSES = ("approved", "provided")
 RECOMMENDED_STATUSES = ("recommended_unapproved", "approved_recommendation")
 APPROVED_RECORD_STATUSES = ("approved", "building")
 SELECTION_JOURNEY_MODES = ("multiple_options", "standalone_comparison")
+# The binding route that builds no selection page: one native checkout target per price choice. Any
+# journey mode (folded_levels included) is legal for it; the caller states the route, the record is
+# never rewritten to fit (U-products-07 declined every other mode for the selection-page route).
+PER_OFFER_ROUTE = "per_offer_targets"
 
 
 def plan_approval_covers(launch: Optional[Mapping[str, Any]], verifier=None) -> bool:
@@ -140,20 +144,25 @@ def _main_offers(launch: Mapping[str, Any]) -> List[Mapping[str, Any]]:
     return [o for o in launch.get("offers", []) if o.get("slot") == "main"]
 
 
-def check_invocation(launch: Mapping[str, Any]) -> str:
+def check_invocation(launch: Mapping[str, Any], *, route: Optional[str] = None) -> str:
     """Return 'proceed', 'decline_single_offer' or 'decline'. Raise Violation
     if the catalog itself is unusable. A single simple offer is always
     declined, whatever the journey mode claims. Only multiple_options and an
     explicitly requested standalone_comparison (its own approved brief)
     proceed; any other stated journey mode (folded_levels, free_entry, ...)
     has no selection page in its route graph and returns 'decline'. A record
-    that states no mode is judged on the multiple-offer rule alone."""
+    that states no mode is judged on the multiple-offer rule alone.
+
+    ``route="per_offer_targets"`` states that no selection page is built (one native
+    checkout target per price choice), so every journey mode proceeds for it."""
     mains = _main_offers(launch)
     mode = launch.get("journey_mode")
     if mode == "single_simple" or len(mains) == 1:
         return "decline_single_offer"
     if len(mains) == 0:
         raise Violation(V_NO_MAIN_OFFERS, "No main offers in catalog; nothing to select.")
+    if route == PER_OFFER_ROUTE:
+        return "proceed"
     if mode is not None and mode not in SELECTION_JOURNEY_MODES:
         return "decline"
     return "proceed"
@@ -206,10 +215,12 @@ def _check_price(price: Mapping[str, Any], offer_id: Any, launch: Optional[Mappi
         )
 
 
-def validate_catalog(launch: Mapping[str, Any], *, production: bool = False, approval_verifier=None) -> None:
+def validate_catalog(launch: Mapping[str, Any], *, production: bool = False, approval_verifier=None,
+                     route: Optional[str] = None) -> None:
     """Fail closed on any catalog fact that would make a comparison page lie."""
     mode = launch.get("journey_mode")
-    if mode is not None and mode not in SELECTION_JOURNEY_MODES and mode != "single_simple":
+    if (route != PER_OFFER_ROUTE and mode is not None and mode not in SELECTION_JOURNEY_MODES
+            and mode != "single_simple"):
         raise Violation(
             V_JOURNEY_MODE,
             f"Journey mode {mode!r} has no selection page; this skill declines it.",

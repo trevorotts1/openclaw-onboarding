@@ -1,0 +1,7 @@
+{
+  "_comment": "Which ISO 4217 currencies a printed symbol can mean (CHK-13 in scripts/checkout_wrapper.py). A shared symbol such as the dollar sign lists every code that prints it, so it never proves one currency alone. Currency data lives here, not in the wrapper's logic.",
+  "$": ["USD", "CAD", "AUD", "NZD", "SGD", "HKD", "MXN"],
+  "€": ["EUR"],
+  "£": ["GBP"],
+  "¥": ["JPY", "CNY"]
+}

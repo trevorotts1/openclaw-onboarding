@@ -87,6 +87,7 @@ def _offer(normalized: Dict[str, Any], offer: Dict[str, Any], by_role: Dict[str,
     }
 
 
+INTAKE_SNAPSHOT = "intake-at-dispatch.json"
 STRUCTURE_PREFIX = "launcher-structure:"
 
 
@@ -592,7 +593,7 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         (out_dir / "checkout-terms.json").write_text(
             json.dumps({"checkout_terms": normalized["checkout_terms"]}, indent=2, sort_keys=True) + "\n",
             encoding="utf-8")
-    (out_dir / "intake-at-dispatch.json").write_text(json.dumps(normalized, indent=2, sort_keys=True) + "\n",
+    (out_dir / INTAKE_SNAPSHOT).write_text(json.dumps(normalized, indent=2, sort_keys=True) + "\n",
                                                      encoding="utf-8")  # the dispatch-time intake package.assemble binds to (package.INTAKE_SNAPSHOT_REL)
     # F22: the launch's linked delivery/access destinations, recorded before any page is
     # built. Same inputs give the same ordered inventory and the same fingerprint.
@@ -778,6 +779,23 @@ def summary_lines(report: Dict[str, Any]) -> List[str]:
     return lines
 
 
+def _checkout_request_file(out_dir: Path, launch_path: Path) -> Path:
+    """The Skill 79 checkout request the order form page is written and designed from.
+
+    It is the first main price choice's own request, built by checkout_instances from the intake at dispatch
+    and the launch record being dispatched (the read-back facts that only Skill 06 can supply stay missing;
+    the copy needs none of them). Skill 79's emitter stamps the page copy with this file's sha256 and Skill 49's
+    checkout wrapper refuses copy stamped with any other request."""
+    from . import checkout_instances  # imports this module, so it is loaded here, not at the top
+    snapshot = json.loads((out_dir / INTAKE_SNAPSHOT).read_text(encoding="utf-8"))
+    launch = json.loads(launch_path.read_text(encoding="utf-8"))
+    built = checkout_instances.record(snapshot, route.compile_route(snapshot), launch=launch)
+    request = out_dir / "checkout-request.json"
+    request.write_text(json.dumps(built["instances"][0]["request"], indent=2, sort_keys=True) + "\n",
+                       encoding="utf-8")
+    return request
+
+
 def _build_adapters(adapter_inputs: Dict[str, Any], out_dir: Path, launch_path: Path,
                     inputs: Dict[str, Any], inputs_path: Path, order_inputs_path: Path) -> Dict[str, Any]:
     import adapters  # routes/adapters.py (on sys.path through substrate)
@@ -793,12 +811,16 @@ def _build_adapters(adapter_inputs: Dict[str, Any], out_dir: Path, launch_path: 
 
 def _bind_adapters(adapters, adapter_inputs: Dict[str, Any], out_dir: Path, launch_path: Path,
                    inputs: Dict[str, Any], inputs_path: Path, order_inputs_path: Path) -> Dict[str, Any]:
-    if not adapter_inputs.get("checkout_manuscript"):
+    if adapter_inputs.get("checkout_manuscript"):
         raise BridgeError("AF-LAUNCH-BRIDGE-ADAPTERS",
-                          "the order form page gets its wireframes and mockups like every other page, and "
-                          "they are drawn from its copy: give me checkout_manuscript (the path to the order "
-                          "form page's copy). Nothing was dispatched.")
-    checkout_design = {"manuscript": adapter_inputs["checkout_manuscript"],
+                          "the order form page's copy is written by Skill 79 from the approved checkout "
+                          "request, never staged by hand: remove checkout_manuscript. Nothing was dispatched.")
+    request = _checkout_request_file(out_dir, launch_path)
+    # Skill 79 writes the order form's copy from that request, before the checkout design lane runs.
+    manuscript = adapters.emit_checkout_manuscript(
+        request=request, launch=launch_path, terms=out_dir / "checkout-terms.json",
+        out=out_dir / "dispatch" / "copy-checkout.md")
+    checkout_design = {"manuscript": str(manuscript), "checkout_request": str(request),
                        "brand_file": inputs["brand_file"], "brand_owner": inputs["brand_owner"],
                        "image_cap": inputs["image_cap"], "design_style": inputs["design_style"]}
     return adapters.build_dispatch_config(
