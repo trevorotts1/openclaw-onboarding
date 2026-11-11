@@ -45,7 +45,7 @@ from . import launch_plan as launch_plan_module
 from . import linked_delivery
 from . import page_designs
 from . import route as route_module
-from .check_rules import delivery_units
+from .check_rules import checkout_runtime, delivery_units
 from .intake import offer_facts
 
 # A second page of a role that the route graph does not repeat. The piece is keyed by its slot
@@ -1459,6 +1459,14 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
         if binding is not None:
             _bind_piece(binding, pieces[slot], parent, slot, True, test_only)
 
+    # AF-LAUNCH-CHECKOUT-RUNTIME: a checkout that claims ready_for_activation or live_verified needs
+    # the runtime binding in the package. Refused here, before the first write, so nothing is sealed.
+    runtime_claims = checkout_runtime.piece_claims(ordered)
+    runtime_home = checkout_runtime.home(run_dir, source_root)
+    runtime_why = checkout_runtime.problems(runtime_claims, runtime_home, intake)
+    if runtime_why:
+        raise PackageError(checkout_runtime.CODE, "; ".join(runtime_why))
+
     bridge_files: List[Tuple[Path, bytes]] = []
     if binding is not None:
         bridge_files = _bind_bridge_receipts(binding, delivery=client_delivery)
@@ -1685,6 +1693,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
             "conversation_ai": plan_record["conversation_ai"],
         }
         manifest["launch_calendar"] = plan_record["calendar"]
+    if runtime_claims:  # sealed like activation.json: a binding swapped after assembly fails `check`
+        manifest["runtime_binding"] = checkout_runtime.seal(runtime_home, run_dir)
     manifest_path = run_dir / "package-manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
