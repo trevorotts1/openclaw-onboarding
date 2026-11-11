@@ -354,6 +354,21 @@ class CompileTests(unittest.TestCase):
         self.assertEqual(dict(result), {})
         self.assertEqual([r["code"] for r in result.refusals], ["BUILD-BLOCKED"])
 
+    def test_ready_build_with_blocked_by_is_refused_by_both_compile_paths(self):
+        # State alone must not clear a build: a "ready" build that still lists a blocker
+        # is refused by compile_automation_build and by compile_launch_builds alike.
+        build = copy.deepcopy(synthetic_document()["builds"][0])
+        build["state"] = "ready"
+        build["blocked_by"] = ["lifecycle"]
+        with self.assertRaises(wb.WorkflowCompileError) as raised:
+            wb.compile_automation_build(build)
+        self.assertEqual(raised.exception.code, "BUILD-BLOCKED")
+        self.assertEqual(raised.exception.detail["blocked_by"], ["lifecycle"])
+        result = wb.compile_launch_builds({"draft_only": True, "builds": [build]})
+        self.assertEqual(dict(result), {})
+        self.assertEqual([r["code"] for r in result.refusals], ["BUILD-BLOCKED"])
+        self.assertEqual(result.refusals[0]["detail"]["blocked_by"], ["lifecycle"])
+
     def test_compile_settings_marketing_follows_promotional(self):
         kw = dict(sender={}, lifecycle={}, phase=None, close_at=None)
         self.assertIs(wb.compile_settings(promotional=True, **kw)["marketing"], True)
