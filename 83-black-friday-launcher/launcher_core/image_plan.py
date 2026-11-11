@@ -349,12 +349,27 @@ def live_price(provider: str, currency: str, *, model: Optional[str] = None,
     module = _price_module()
     family = MODEL_FAMILY_BY_PROVIDER.get(provider)
     known = getattr(module, "KNOWN_DEFAULTS", {}) or {}
-    chosen = _clean_str(model) or _clean_str(known.get(family))
+    adapter = _price_adapter(module)
+    # X-97: no model named means Skill 74's default, resolved as the newest per-picture model (never a
+    # token-priced one); its pin is the fallback. A model the caller names is never replaced.
+    resolve = getattr(adapter, "default_model", None)
+
+    def default_for(tier: Optional[str]) -> Optional[str]:
+        got = resolve(family, tier) if callable(resolve) and family else None
+        return _clean_str(got) if (got or tier) else _clean_str(known.get(family))
+    requested = _clean_str(model)
+    tier = _clean_str(resolution)
+    tier = tier if tier and re.match(r"(?i)^\d+(?:\.\d+)?\s*k$", tier) else None
+    chosen = requested or default_for(tier)
+    if not chosen and tier and not requested:
+        # Ruling X-97-1: the default has no such tier and no per-picture model publishes it. Never the 1K price.
+        raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan.image_resolution",
+                             f"No per-picture {provider} image model publishes a {tier} price, so I cannot price "
+                             "pictures at that size. Nothing has been sent and nothing has been spent.")
     if not chosen:
         raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan.image_model",
                              f"I cannot tell which {provider} image model draws these pictures, so I cannot "
                              "price them. Nothing has been sent and nothing has been spent.")
-    adapter = _price_adapter(module)
     try:
         got = adapter.cmd_price(chosen, units=1)
     except Exception as exc:  # noqa: BLE001
@@ -384,7 +399,19 @@ def live_price(provider: str, currency: str, *, model: Optional[str] = None,
         raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan",
                              f"The live price for {chosen} rounds below one cent, so I cannot hold a money "
                              "ceiling against it. Nothing has been spent.")
-    return {"model": chosen, "resolution": resolution, "credits": picked["credits"],
+    # Not silent (ruling X-97-1): what was asked for, what was priced, why, and that tier's price.
+    base = None if requested or not tier else default_for(None)
+    if requested:
+        reason = "the plan names this model"
+    elif base and base != chosen:
+        reason = (f"the default {base} publishes no {tier} price, so the newest per-picture model that does "
+                  f"was used ({tier} price {picked['credits']} credits)")
+    else:
+        reason = "the default: the newest model KIE prices per picture"
+    selection = {"requested_model": requested, "resolved_model": chosen, "resolution": resolution,
+                 "reason": reason, "tier_price_credits": picked["credits"],
+                 "tier_price_minor": per_picture_minor}
+    return {"model": chosen, "resolution": resolution, "credits": picked["credits"], "selection": selection,
             "usd_per_credit": round(per_credit, 6), "per_picture_minor": per_picture_minor,
             "price_source": f"74-kie-live-adapter price ({data.get('price_source') or 'live'})",
             "pricing_desc": str(data.get("pricing_desc") or ""),
@@ -638,6 +665,7 @@ def resolve(raw: Optional[Dict[str, Any]], *, test_only: bool,
         "image_price_credits": (quote or {}).get("credits"),
         "image_price_source": (quote or {}).get("price_source"),
         "image_model": (quote or {}).get("model") or _clean_str(raw.get("image_model")),
+        "image_model_selection": (quote or {}).get("selection"),
         "image_resolution": _clean_str(raw.get("image_resolution")),
         "image_preflight": spent_check,
         "creative_direction": _clean_str(raw.get("creative_direction")),

@@ -32,6 +32,7 @@ def cat(*rows):
 
 T2I, I2I = ["Text to Image"], ["Image to Image"]
 G25S, G25S_I = "gpt-image-2-6/sunburst-text-to-image", "gpt-image-2-6/sunburst-image-to-image"
+E26, E26_I = "gpt-image-2-6/economy-text-to-image", "gpt-image-2-6/economy-image-to-image"  # the pinned per-picture default (X-97)
 G3A, G3A_I = "gpt-image-3-aurora-text-to-image", "gpt-image-3-aurora-image-to-image"
 G3B, G3B_I = "gpt-image-3-borealis-text-to-image", "gpt-image-3-borealis-image-to-image"
 
@@ -258,19 +259,19 @@ class LatestFamily(Base):
         r.append(["GET", "/api/v1/models", [cat(*rows)]])
         return r
 
-    BASE = [(G25S, T2I, "6 credits"), (G25S_I, I2I, "6 credits")]
+    BASE = [(E26, T2I, "5 credits ($0.025) per 1K image"), (E26_I, I2I, "5 credits ($0.025) per 1K image")]
 
     def test_current_default_when_nothing_newer(self):
         a, tr, c = self.adapter(self.routes(self.BASE))
         d = a.cmd_latest_family("gpt-image")["data"]
-        self.assertEqual((d["default"], d["changed"], d["chosen_by"]), (G25S, False, "variant-match"))
+        self.assertEqual((d["default"], d["changed"], d["chosen_by"]), (E26, False, "variant-match"))
 
     def test_newer_generation_becomes_default_with_receipt(self):
         rows = self.BASE + [(G3A, T2I, "7 credits"), (G3A_I, I2I, "7 credits")]
         a, tr, c = self.adapter(self.routes(rows, rates={G3A: 99.0}))
         r = a.cmd_latest_family("gpt-image")
         d = r["data"]
-        self.assertEqual((d["default"], d["routes"]["Image to Image"], d["changed"], d["previous_default"]), (G3A, G3A_I, True, G25S))
+        self.assertEqual((d["default"], d["routes"]["Image to Image"], d["changed"], d["previous_default"]), (G3A, G3A_I, True, E26))
         self.assertTrue(any("DEFAULT CHANGED" in w for w in r["warnings"]))
         rd = os.path.join(self.tmp, "cache", "receipts")
         self.assertTrue(os.path.isdir(os.path.join(rd, "promotions")))
@@ -283,12 +284,12 @@ class LatestFamily(Base):
     def test_needs_both_routes_and_readable_schema(self):
         rows = self.BASE + [(G3A, T2I, "7 credits")]  # no image-to-image: not eligible
         a, tr, c = self.adapter(self.routes(rows))
-        self.assertEqual(a.cmd_latest_family("gpt-image")["data"]["default"], G25S)
+        self.assertEqual(a.cmd_latest_family("gpt-image")["data"]["default"], E26)
         rows = self.BASE + [(G3A, T2I, "7"), (G3A_I, I2I, "7")]
         bad = (200, {"code": 200, "data": {"model": "x", "openapi": None}})
         a, tr, c = self.adapter(self.routes(rows, schemas={G3A_I: bad}), env={"KIE_LIVE_CACHE_DIR": os.path.join(self.tmp, "c9")})
         r = a.cmd_latest_family("gpt-image")
-        self.assertEqual(r["data"]["default"], G25S)
+        self.assertEqual(r["data"]["default"], E26)
         self.assertTrue(any("schema not readable" in w for w in r["warnings"]))
 
     def test_variant_preference_then_success_rate_then_price(self):
@@ -304,7 +305,7 @@ class LatestFamily(Base):
         # a sunburst variant in the new generation wins over better numbers
         sun = [("gpt-image-3-sunburst-text-to-image", T2I, "20"), ("gpt-image-3-sunburst-image-to-image", I2I, "20")]
         a, tr, c = self.adapter(self.routes(self.BASE + two + sun, rates={G3A: 99.0, G3B: 99.0}), env={"KIE_LIVE_CACHE_DIR": os.path.join(self.tmp, "c3")})
-        d = a.cmd_latest_family("gpt-image")["data"]
+        d = a.cmd_latest_family("gpt-image", current="gpt-image-3-sunburst-text-to-image")["data"]  # the caller's own default is sunburst
         self.assertEqual((d["default"], d["chosen_by"]), ("gpt-image-3-sunburst-text-to-image", "variant-match"))
 
     def test_numeric_version_order(self):

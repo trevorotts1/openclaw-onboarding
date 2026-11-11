@@ -1,0 +1,32 @@
+{
+  "source": "KIE live catalog GET /api/v1/models, rows copied verbatim",
+  "fetched": "2026-11-10",
+  "note": "economy is the per-picture GPT Image 2.6 default; the sunburst row is the token-priced control that is why it is not the default. Re-copy from the live catalog when KIE reprices.",
+  "rows": [
+    {
+      "model": "gpt-image-2-6/economy-text-to-image",
+      "title": "GPT Image 2.6 (Economy) Text to Image",
+      "taskType": [
+        "Text to Image"
+      ],
+      "pricingDesc": "GPT Image 2.6 (Economy) — just 5 credits ($0.025) per 1K image. Same GPT Image 2.6 model, served through our economy channel at a flat per-image price, 1K only. High-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates."
+    },
+    {
+      "model": "gpt-image-2-6/economy-image-to-image",
+      "title": "GPT Image 2.6 (Economy) Image to Image",
+      "taskType": [
+        "Image to Image",
+        "Image Editing"
+      ],
+      "pricingDesc": "GPT Image 2.6 (Economy) — just 5 credits ($0.025) per 1K image. Same GPT Image 2.6 model, served through our economy channel at a flat per-image price, 1K only. High-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates."
+    },
+    {
+      "model": "gpt-image-2-6/sunburst-text-to-image",
+      "title": "GPT Image 2.6 Sunburst Text to Image",
+      "taskType": [
+        "Text to Image"
+      ],
+      "pricingDesc": "Text input 900 credits / 1M tokens ($4.50), cached text input 225 ($1.125), image input 1,440 ($7.20), cached image input 360 ($1.80), image output 5,400 ($27.00) — 10% below official pricing. SVG output: image tokens as above, plus the SVG author model's tokens — gpt-5.6-luna (default): input 36 credits / 1M tokens ($0.18), output 216 ($1.08); gpt-6-sol: input 360 ($1.80), output 1,800 ($9.00); gpt-5.6-terra: input 360 ($1.80), output 2,160 ($10.80). High-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates."
+    }
+  ]
+}

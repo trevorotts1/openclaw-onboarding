@@ -239,7 +239,14 @@ FLOOR_PCT, TARGET_PCT, PREFLIGHT_MULT = 95, 95, 1.30
 # percent of a model's verified max passes; 80 to below 95 percent warns and expands (it PASSES
 # and names the characters to add); below 80 percent is the hard reject; above the max is the
 # ceiling reject. The arithmetic itself lives in shared-utils/prompt_policy.py only.
-KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-6/sunburst-text-to-image"}  # last-resort default (N43 today)
+# X-97 (owner order 2026-11-10): the GPT Image default is the newest KIE.ai GPT Image model that is priced PER
+# PICTURE, resolved from the live catalog (latest-family / default_model); never a token-priced model. The pin
+# below is only the fallback when nothing can be resolved: GPT Image 2.6, the one 2.6 variant the catalog
+# prices per picture (sunburst and flare are per 1M tokens). check_default_image_model.py enforces the unit.
+PINNED_DEFAULT = "gpt-image-2-6/economy-text-to-image"
+KNOWN_DEFAULTS = {"gpt-image": PINNED_DEFAULT}  # last-resort default (N43 today)
+PICTURE_PRICE_UNITS = ("per-image", "per-job")  # a picture price; same pair Skill 83 image_plan accepts
+PICTURE_PRICED_FAMILIES = ("gpt-image",)  # families whose default must be picture-priced
 DEFAULT_CAPS = {"gpt-image": ["Text to Image", "Image to Image"]}
 LATEST_TTL = CATALOG_TTL
 REGISTRY_STALE_DAYS = 30
@@ -321,6 +328,26 @@ def parse_pricing(raw):
             "per-image" if _PER_IMAGE_RE.search(text) else "per-job")
     return {"credits_min": min(nums) if nums else None, "credits_max": max(nums) if nums else None,
             "unit": unit, "all": nums}
+
+
+def is_picture_priced(raw):
+    """True when a pricingDesc is a per-picture price (see PICTURE_PRICE_UNITS), false for tokens, seconds, characters."""
+    return parse_pricing(raw)["unit"] in PICTURE_PRICE_UNITS
+
+
+_TIER_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*k\s*$", re.I)
+
+
+def tier_of(resolution):
+    """'2K' -> '2'; anything that is not a K tier (None, '1024x1024') -> None."""
+    m = _TIER_RE.match(resolution or "")
+    return m.group(1) if m else None
+
+
+def publishes_tier(raw, resolution):
+    """True when a pricingDesc names a price for that K tier ('1K', '2 K', '4K'). A text that names no tier does not."""
+    t = tier_of(resolution)
+    return bool(t) and bool(re.search(r"(?i)(?<![\d.])" + re.escape(t) + r"\s*k\b", raw or ""))
 
 
 def estimate_credits(parsed, units=1):
@@ -1678,11 +1705,14 @@ class Adapter:
             return ranked[0], ("success-rate" if rk[id(ranked[0])][0] != rk[id(ranked[-1])][0] else "price"), notes, viable
         return None, "none", notes, []
 
-    def cmd_latest_family(self, family, capabilities=None, current=None, refresh=False):
+    def cmd_latest_family(self, family, capabilities=None, current=None, refresh=False, resolution=None):
         caps = capabilities or DEFAULT_CAPS.get(family) or []
         st = self._promo_state().get(family) or {}
         cur = current or (st.get("routes") or {}).get(caps[0] if caps else "") or KNOWN_DEFAULTS.get(family)
-        key = hashlib.sha256(json.dumps([family, sorted(caps), variant_of(cur) if cur else None]).encode()).hexdigest()[:20]
+        only_pics = family in PICTURE_PRICED_FAMILIES
+        tier = tier_of(resolution) and resolution  # a named K tier narrows to models that publish a price for it
+        keep = lambda raw: (not only_pics or is_picture_priced(raw)) and (not tier or publishes_tier(raw, tier))
+        key = hashlib.sha256(json.dumps([family, sorted(caps), variant_of(cur) if cur else None, only_pics, tier]).encode()).hexdigest()[:20]
         cp = self._cpath("latest", key + ".json")
         c = self._read(cp)
         if c and not refresh and self.now() - c.get("fetched_at", 0) < LATEST_TTL:
@@ -1692,7 +1722,8 @@ class Adapter:
         try:
             models, fetched, csrc = self.catalog()
             entries = [{"id": m.get("model"), "taskType": m.get("taskType") or [], "price": m.get("pricingDesc")}
-                       for m in models if family_of(m.get("model")) == family]
+                       for m in models if family_of(m.get("model")) == family
+                       and keep(m.get("pricingDesc"))]
             readable = lambda i: self._readable(i)
             by_id = {e["id"]: e for e in entries}
 
@@ -1713,7 +1744,8 @@ class Adapter:
             source, fetched = "registry", None
             w += self._reg_note()
             entries = [{"id": i, "taskType": m.get("taskType") or [], "ok": (m.get("schema") or {}).get("readable")}
-                       for i, m in reg.items() if family_of(i) == family]
+                       for i, m in reg.items() if family_of(i) == family
+                       and keep((m.get("pricing") or {}).get("raw"))]
             ok = {e["id"]: e["ok"] for e in entries}
             readable = lambda i: bool(ok.get(i))
 
@@ -1727,11 +1759,11 @@ class Adapter:
         routes = g["routes"]
         first = routes[caps[0]] if caps and caps[0] in routes else next(iter(routes.values()))
         prev = (st.get("routes") or {}).get(caps[0] if caps else "") or KNOWN_DEFAULTS.get(family)
-        changed = bool(prev) and first != prev
+        changed = bool(prev) and first != prev and not tier
         d = {"family": family, "version": g["version"], "variant": g["variant"], "routes": routes, "default": first,
              "chosen_by": by, "previous_default": prev, "changed": changed, "source": source,
              "candidates": [{"version": x["version"], "variant": x["variant"], "routes": x["routes"]} for x in viable]}
-        if source == "live":
+        if source == "live" and not tier:  # a tier answer is per request: it never moves the family default
             if changed or not st:
                 self._write(self._cpath("promotion-state.json"), dict(self._promo_state(), **{family: {
                     "routes": routes, "at": int(self.now())}}))
@@ -1744,6 +1776,31 @@ class Adapter:
             self._write(cp, {"fetched_at": self.now(), "data": d, "warnings": w + notes})
         return self.result(capability=family, schema_source="latest:" + source, schema_fetched_at=fetched,
                            warnings=w + notes, data=d)
+
+    def default_model(self, family="gpt-image", resolution=None):
+        """The fleet default model id for a family: the newest picture-priced one in the live catalog, else the pin.
+
+        With a K tier named (ruling X-97-1), the newest picture-priced model that publishes a price for that tier;
+        none means None (the caller refuses), never a lower tier's price; the pin counts only when the catalog
+        shows it priced per picture and publishing that tier.
+        Never raises and never returns a model that latest-family refused (so never a token-priced one)."""
+        try:
+            r = self.cmd_latest_family(family, resolution=resolution)
+            if r.get("state") != "fail" and (r.get("data") or {}).get("default"):
+                return r["data"]["default"]
+        except Exception:  # noqa: BLE001  (an unresolvable default is the pin, not a crash)
+            pass
+        pin = KNOWN_DEFAULTS.get(family)
+        if not tier_of(resolution):
+            return pin
+        try:  # a named tier: the pin only if the catalog shows the pin priced per picture AND publishing that tier
+            for m in self.catalog()[0]:
+                raw = m.get("pricingDesc")
+                if m.get("model") == pin and is_picture_priced(raw) and publishes_tier(raw, resolution):
+                    return pin
+        except Exception:  # noqa: BLE001
+            pass
+        return None
 
     def _readable(self, model):
         try:
@@ -1821,7 +1878,7 @@ def main(argv=None, adapter=None, out=sys.stdout):
     add("prompt-budget", ("--model", {"required": True}), ("--check", {"action": "store_true"}),
         ("--prompt-file", {}))
     add("latest-family", ("--family", {"required": True}), ("--capability", {"action": "append"}),
-        ("--current-default", {}), ("--refresh", {"action": "store_true"}))
+        ("--current-default", {}), ("--refresh", {"action": "store_true"}), ("--resolution", {}))
     add("save", ("--task-id", {"required": True}), ("--save-dir", {"required": True}),
         ("--info", {"help": "envelope JSON from a SYNC submit: its data.response is the "
                             "result. Without it save re-queries the task."}), ua, ah)
@@ -1881,7 +1938,7 @@ def main(argv=None, adapter=None, out=sys.stdout):
             exit_code = r["data"].get("exit_code", 0)
         elif a.cmd == "latest-family":
             caps = [c.strip() for x in (a.capability or []) for c in x.split(",") if c.strip()]
-            r = ad.cmd_latest_family(a.family, caps or None, a.current_default, a.refresh)
+            r = ad.cmd_latest_family(a.family, caps or None, a.current_default, a.refresh, a.resolution)
         else:
             r = ad.cmd_save(a.task_id, a.save_dir,
                             info=(_load_json(a.info) if getattr(a, "info", None) else None))
