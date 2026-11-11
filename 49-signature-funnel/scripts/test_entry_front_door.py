@@ -74,15 +74,13 @@ def test_the_documented_entry_script_certifies_a_valid_run_end_to_end():
         key_file.chmod(0o600)          # the operator-key loader refuses group/other access
         env = {k: v for k, v in os.environ.items() if not k.startswith("SF_")}
         env.update({"HOME": str(tmp), "OPENCLAW_PLATFORM": "mac",
-                    "SF_OPERATOR_KEY_FILE": str(key_file),
-                    "GHL_VERIFY_NONCE_DIR": str(tmp / "ghl-nonces")})
+                    "SF_OPERATOR_KEY_FILE": str(key_file)})
         rd = tmp / "run"
         rd.mkdir()
-        # The fixture writes the Skill 6 run-nonce files the P7 gate re-reads, so the SAME
-        # directory must be visible while it builds the run and while the door runs it.
-        prior = {k: os.environ.get(k) for k in ("SF_OPERATOR_KEY_FILE", "GHL_VERIFY_NONCE_DIR")}
+        # The fixture signs the delivery rail's receipts with the operator key, so the SAME key
+        # must be visible while it builds the run and while the door runs it.
+        prior = {k: os.environ.get(k) for k in ("SF_OPERATOR_KEY_FILE",)}
         os.environ["SF_OPERATOR_KEY_FILE"] = str(key_file)
-        os.environ["GHL_VERIFY_NONCE_DIR"] = str(tmp / "ghl-nonces")
         try:
             runner._write_valid_run(rd, KEY)
         finally:

@@ -20,6 +20,11 @@
       "desktop-wireframe": {"file": "wireframes/chatgpt-wireframe-1.png", "label": "Standard Desktop (sheet grammar for the upsell)"},
       "mobile-tablet": {"file": "wireframes/chatgpt-wireframe-4.png", "label": "Long-Form Mobile (phone stack for the upsell)",
         "extra_rule": "UPSELL MOBILE — the attached phone reference is the long-form phone stack; draw this upsell section the same way: a true single-column phone stack with the full-width CTA, its terms line and the decline link in reading order, never side-by-side text-and-image rows."}
+    },
+    "downsell": {
+      "desktop-wireframe": {"file": "wireframes/chatgpt-wireframe-1.png", "label": "Standard Desktop (sheet grammar for the downsell)"},
+      "mobile-tablet": {"file": "wireframes/chatgpt-wireframe-4.png", "label": "Long-Form Mobile (phone stack for the downsell)",
+        "extra_rule": "DOWNSELL MOBILE — the attached phone reference is the long-form phone stack; draw this downsell section the same way: a true single-column phone stack with the full-width primary button, the outlined decline button and the money terms line in reading order, never side-by-side text-and-image rows."}
     }
   },
   "form_layouts": {

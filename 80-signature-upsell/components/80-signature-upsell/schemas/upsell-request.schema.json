@@ -873,6 +873,13 @@
     "1.1"
    ]
   },
+  "stage": {
+   "description": "Issue 72: the stage this request is built for. At 'design' no purchase has happened, so original_purchase (and a U2 qualifying_purchase) may carry the status 'design_marker' instead of verified purchase proof; the adapters refuse the marker at any other stage. Absent: only verified proof is accepted.",
+   "enum": [
+    "design",
+    "install"
+   ]
+  },
   "source_landing_copy_ref": {
    "description": "Reference to the source landing copy this upsell derives from (spec 10 section 3).",
    "minLength": 1,

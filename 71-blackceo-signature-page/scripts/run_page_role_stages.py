@@ -14,7 +14,12 @@ script never starts them.
 
 Usage:
   run_page_role_stages.py <run_dir> [--manuscript FILE] [--stages a,b,c] [--design-prose FILE]
-      [--model ID] [--provider stub|kie] [--allow-paid] [--preflight]
+      [--model ID] [--provider stub|kie] [--allow-paid] [--preflight] [--no-pitch-scan SCRIPT]
+
+A thank_you run is scanned before its first stage: scripts/no_pitch_scan.py runs Skill 82's
+semantic_scan.py (or --no-pitch-scan SCRIPT) on the manuscript and refuses on any FLAG line
+(AF-71-THANK-YOU-PITCH); a clean scan writes private/receipts/no-pitch-scan.json, which the copy
+stage's gate row (gate:no_pitch_receipt) requires. The scan cannot be turned off.
 
 The run's intake.json must carry a page type's own copy_version (write_intake.py --page-version
 thank-you); a landing run is refused, because its stages are driven by stage_gate as before.
@@ -33,6 +38,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import no_pitch_scan  # noqa: E402  AF-71-THANK-YOU-PITCH: the thank-you no-pitch scan and receipt
 import page_role  # noqa: E402
 import governed_runner  # noqa: E402  F14: the one admission caller
 
@@ -83,6 +89,9 @@ def main(argv=None) -> int:
     p.add_argument("--allow-paid", action="store_true")
     p.add_argument("--preflight", action="store_true",
                    help="compose and validate every prompt; no provider call, no image file")
+    p.add_argument("--no-pitch-scan", type=Path, default=None, metavar="SCRIPT",
+                   help="the no-pitch scanner for a thank_you run (default: Skill 82's semantic_scan.py); "
+                        "a missing or failing scanner refuses the run")
     a = p.parse_args(argv)
     run_dir = a.run_dir.resolve()
     try:
@@ -97,6 +106,11 @@ def main(argv=None) -> int:
               f"({', '.join(page_role.role_specs()) or 'none'}); a landing run is driven by stage_gate.py")
         return 2
     manuscript = a.manuscript or run_dir / "copy" / "internal-manuscript.md"
+    if spec.get("page_role") == no_pitch_scan.ROLE:  # before any model lookup, request or stage
+        ok, lines = no_pitch_scan.scan_and_receipt(run_dir, manuscript, a.no_pitch_scan)
+        print("\n".join(lines))
+        if not ok:
+            return 1
     try:
         model = a.model or resolve_model(a.provider)
     except Exception as exc:  # a model that cannot be resolved is a refusal, never a literal

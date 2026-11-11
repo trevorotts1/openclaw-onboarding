@@ -17,6 +17,9 @@ THE TWO FLOORS (both must clear or the prompt NEVER reaches a paid Kie call):
     * TYPOGRAPHY discipline: a text-bearing prompt (e.g. Sec 11) carries a
       spelling-lock directive AND the exact baked words; a non-text prompt states
       "no text / no letters / no words".                                          -> AF-FUN-PROMPT-TYPO
+    * STYLE CARD (Q18, fix spec M4): when the intake names a Skill 45 style_card_id, every
+      prompt carries that card's LONG tier VERBATIM as the Brand-Style portion of block 8,
+      ahead of the negative directives (the slice is hashed against the card).   -> AF-FUN-PROMPT-STYLE-CARD
 
 CLONE PROVENANCE (cited): build_deck.py REQUIRED_STRUCTURAL_BLOCKS
 + _missing_structural_blocks, PROMPT_MIN_DISTINCT_WORDS density gate. Measured on the SAME
@@ -28,12 +31,15 @@ stdlib only. Exit 0 = pass, exit 2 = violation, exit 3 = usage/fail-closed.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -71,6 +77,26 @@ def _load_prompt_policy():
 
 
 POLICY = _load_prompt_policy()
+
+
+def _load_design_intelligence():
+    """shared-utils/signature_launch/design_intelligence.py (the one read-only Skill 45 reader)."""
+    import importlib.util
+    envd = os.environ.get("OPENCLAW_SKILLS_DIR")
+    dirs = [p / "shared-utils" for p in Path(__file__).resolve().parents]
+    dirs += ([Path(envd) / "shared-utils"] if envd else []) + [
+        Path.home() / ".openclaw" / "skills" / "shared-utils", Path("/data/.openclaw/skills/shared-utils")]
+    for d in dirs:
+        path = d / "signature_launch" / "design_intelligence.py"
+        if path.is_file():
+            spec = importlib.util.spec_from_file_location("signature_launch_design_intelligence", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+    return None
+
+
+DI = _load_design_intelligence()
 
 EXIT_OK = 0
 EXIT_VIOLATION = 2
@@ -192,6 +218,65 @@ def _check_grade_block(stripped: str, lc: str, who: str) -> List[Tuple[str, str]
              f">={GRADE_CONTIGUOUS_NORM_CHARS}-char verbatim run) — missing e.g.: {miss_preview}")]
 
 
+STYLE_CARD_CODE = "AF-FUN-PROMPT-STYLE-CARD"
+
+
+def _check_style_card(stripped: str, card: Dict[str, str], who: str) -> List[Tuple[str, str]]:
+    """AF-FUN-PROMPT-STYLE-CARD: the registered Skill 45 card's LONG tier is embedded VERBATIM in
+    block 8 (Brand-Style), ahead of the always-on negative directives. The slice found in the prompt
+    is hashed and must equal the card's own hash, so a paraphrase, a truncation or a card the run
+    never read cannot pass. A global 'Do not' is not enough: a negative must FOLLOW the card text."""
+    tier = card["long_tier"]
+    at = stripped.rfind(tier)
+    if at < 0:
+        return [(STYLE_CARD_CODE,
+                 f"{who}: the intake names style card {card['id']} (Q18) but its LONG tier "
+                 f"(sha256 {card['sha256'][:12]}, {len(tier)} chars) is not embedded verbatim as the "
+                 "Brand-Style portion of block 8; a requested style is never silently dropped")]
+    found = hashlib.sha256(stripped[at:at + len(tier)].encode("utf-8")).hexdigest()
+    if found != card["sha256"]:
+        return [(STYLE_CARD_CODE, f"{who}: the style card slice hashes to {found[:12]}, not the card's "
+                                  f"{card['sha256'][:12]}")]
+    if NEGATIVE_IMPERATIVE not in stripped[at + len(tier):].lower():
+        return [(STYLE_CARD_CODE,
+                 f"{who}: style card {card['id']} is present but no negative directive ('Do not ...') "
+                 "follows it; block 8 is the card text ahead of the always-on negatives")]
+    return []
+
+
+def _resolve_requested_card(ledger: Dict[str, Any], intake_card_id: Optional[str]
+                            ) -> Tuple[Optional[Dict[str, str]], List[Tuple[str, str]]]:
+    """(card, violations). The intake (the brief) is authoritative; a ledger that names another card
+    than the intake does is a violation. No card requested -> (None, [])."""
+    ledger_id = str(ledger.get("style_card_id") or "").strip() or None
+    intake_id = str(intake_card_id or "").strip() or None
+    if intake_id and ledger_id and ledger_id.lower() != intake_id.lower():
+        return None, [(STYLE_CARD_CODE, f"the prompt ledger names style card {ledger_id!r} but the intake "
+                                        f"asked for {intake_id!r}")]
+    card_id = intake_id or ledger_id
+    if not card_id:
+        return None, []
+    if DI is None:
+        return None, [(STYLE_CARD_CODE, f"style card {card_id!r} was requested but the shared Skill 45 reader "
+                                        "(shared-utils/signature_launch/design_intelligence.py) is not installed")]
+    try:
+        return DI.resolve_style_card(card_id), []
+    except DI.DesignIntelligenceError as exc:
+        return None, [(STYLE_CARD_CODE, f"style card {card_id!r} cannot be read: {exc}")]
+
+
+def _brief_style_card_id(brief_path: Optional[str]) -> Optional[str]:
+    """The Q18 answer in the locked brief (answers.q18_style_card_id, else a top-level style_card_id)."""
+    if not brief_path:
+        return None
+    brief = json.loads(Path(brief_path).read_text(encoding="utf-8"))
+    if not isinstance(brief, dict):
+        raise ValueError("the brief is not a JSON object")
+    answers = brief.get("answers") if isinstance(brief.get("answers"), dict) else {}
+    value = answers.get("q18_style_card_id", brief.get("style_card_id"))
+    return str(value).strip() or None if value is not None else None
+
+
 def _adapter_path() -> Optional[Path]:
     """Skill 74's transport, or None. KIE_LIVE_ADAPTER_PATH="" disables the bridge (66's own rule)."""
     env = os.environ.get("KIE_LIVE_ADAPTER_PATH")
@@ -260,7 +345,8 @@ def _adapter_prompt_budget(model: str, text: str) -> Optional[Dict[str, Any]]:
     _ADAPTER_CACHE[key] = got
     return got
 
-def evaluate_prompt(record: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], Optional[Dict[str, Any]]]:
+def evaluate_prompt(record: Dict[str, Any], style_card: Optional[Dict[str, str]] = None
+                    ) -> Tuple[List[Tuple[str, str]], Optional[Dict[str, Any]]]:
     """Return (list of (AF-code, message), frozen policy receipt). Empty failures == clean.
 
     The length verdict and the frozen hash come from the ONE canonical policy service.
@@ -380,12 +466,22 @@ def evaluate_prompt(record: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], Opti
             fails.append(("AF-FUN-PROMPT-TYPO",
                           f"{who}: non-text prompt does not state 'no text / no letters / no words'"))
 
+    # FLOOR 2 — Q18 style card (fix spec M4): the card's LONG tier, verbatim, in block 8
+    if style_card is not None:
+        fails.extend(_check_style_card(stripped, style_card, who))
+
     return fails, receipt
 
 
-def verify(ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
+def verify(ledger: Dict[str, Any], style_card_id: Optional[str] = None
+           ) -> Tuple[List[Tuple[str, str]], List[str]]:
     violations: List[Tuple[str, str]] = []
     notes: List[str] = []
+    card, card_violations = _resolve_requested_card(ledger, style_card_id)
+    violations.extend(card_violations)
+    if card is not None:
+        notes.append(f"style card {card['id']} (LONG tier sha256 {card['sha256']}) is required in block 8 "
+                     "of every prompt (Q18)")
     prompts = ledger.get("prompts")
     if not isinstance(prompts, list) or not prompts:
         violations.append(("AF-FUN-PROMPT-FLOOR", "prompt ledger carries no non-empty 'prompts' array"))
@@ -394,7 +490,7 @@ def verify(ledger: Dict[str, Any]) -> Tuple[List[Tuple[str, str]], List[str]]:
         if not isinstance(rec, dict):
             violations.append(("AF-FUN-PROMPT-FLOOR", "a prompt entry is not an object"))
             continue
-        got, receipt = evaluate_prompt(rec)
+        got, receipt = evaluate_prompt(rec, card)
         violations.extend(got)
         if receipt:
             # A4: the owner rule's 80-to-below-95 percent band PASSES with a warn-and-expand
@@ -693,6 +789,43 @@ def _valid_typography_prompt(target: Optional[int] = None) -> str:
     return body
 
 
+FIXTURE_CARD_ID = "FN-TEST-001"
+FIXTURE_CARD_TIER = ("Bold cinematic gold funnel style: hero subject on the left third, headline room on the "
+                     "right, rich metallic gold accents against deep emerald. Do not place text over any face.")
+
+
+@contextlib.contextmanager
+def fixture_library():
+    """A throwaway Skill 45 library holding one funnel style card (FN-TEST-001), for the self-test and the
+    negative-test battery. DIU_LIBRARY_DIR points at it for the block and is restored on exit."""
+    tmp = Path(tempfile.mkdtemp(prefix="sf_style_card_"))
+    saved = os.environ.get("DIU_LIBRARY_DIR")
+    try:
+        (tmp / "funnel-page-designs").mkdir(parents=True)
+        (tmp / "INDEX.md").write_text(
+            "| Sig # | ID | Style Name | One-Line Summary | Status | Ver | Date | File Path |\n|---|---|---|---|---|---|---|---|\n"
+            f"| 1 | {FIXTURE_CARD_ID} | Fixture | fixture | production | v1.0 | 2026-11-10 | "
+            "funnel-page-designs/FN-TEST-001.md |\n", encoding="utf-8")
+        (tmp / "funnel-page-designs" / "FN-TEST-001.md").write_text(
+            f"# {FIXTURE_CARD_ID}\n\n### LONG (<=19,000 chars)\n```\n{FIXTURE_CARD_TIER}\n```\n", encoding="utf-8")
+        os.environ["DIU_LIBRARY_DIR"] = str(tmp)
+        yield tmp
+    finally:
+        if saved is None:
+            os.environ.pop("DIU_LIBRARY_DIR", None)
+        else:
+            os.environ["DIU_LIBRARY_DIR"] = saved
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _carded_photo_prompt() -> str:
+    """A passing photo prompt whose block 8 carries the fixture card's LONG tier ahead of the negatives."""
+    marker = "BRAND STYLE AND NEGATIVE BLOCK:"
+    base = _valid_photo_prompt()
+    assert marker in base
+    return base.replace(marker, f"{marker} {FIXTURE_CARD_TIER} ", 1)
+
+
 def _valid_ledger() -> Dict[str, Any]:
     return {
         "funnel_type": "signature_funnel",
@@ -745,6 +878,18 @@ def _violation_cases():
             _GRADE_BLOCK, "The overall look should feel like signature grade work. ")
         led["prompts"][0]["prompt"] = p
 
+    def style_card_missing(led):
+        # Q18 answered, block 8 never got the card: the default Signature look would ship instead.
+        led["style_card_id"] = FIXTURE_CARD_ID
+
+    def style_card_paraphrased(led):
+        led["style_card_id"] = FIXTURE_CARD_ID
+        for rec in led["prompts"]:
+            rec["prompt"] = _carded_photo_prompt().replace("rich metallic gold accents", "gold-ish accents")
+
+    def style_card_unregistered(led):
+        led["style_card_id"] = "FN-NOPE-404"
+
     def _mk(fn):
         led = _valid_ledger()
         fn(led)
@@ -760,6 +905,9 @@ def _violation_cases():
         ("typo_missing_spelling_lock", "AF-FUN-PROMPT-TYPO", lambda: _mk(typo_nolock)),
         ("density_padding", "AF-FUN-PROMPT-DENSITY", lambda: _mk(density)),
         ("grade_fingerprint_only", "AF-FUN-PROMPT-GRADE", lambda: _mk(grade_fingerprint_only)),
+        ("style_card_missing_from_block_8", STYLE_CARD_CODE, lambda: _mk(style_card_missing)),
+        ("style_card_paraphrased", STYLE_CARD_CODE, lambda: _mk(style_card_paraphrased)),
+        ("style_card_unregistered", STYLE_CARD_CODE, lambda: _mk(style_card_unregistered)),
     ]
 
 
@@ -871,10 +1019,23 @@ def run_self_test() -> int:
         print(f"SELF-TEST FAIL: valid fixture produced {len(v)} violation(s): {v}")
     else:
         print("SELF-TEST ok: valid fixture PASSES (0 violations).")
+    # Q18: a ledger whose every prompt carries the card's LONG tier verbatim passes (with the intake's id too)
+    with fixture_library():
+        carded = _valid_ledger()
+        carded["prompts"][0]["prompt"] = _carded_photo_prompt()
+        carded["prompts"][1]["prompt"] = _carded_photo_prompt()
+        carded["prompts"][1]["text_bearing"] = False
+        vc, _ = verify(carded, FIXTURE_CARD_ID)
+        if vc:
+            ok = False
+            print(f"SELF-TEST FAIL: a prompt ledger carrying the style card verbatim produced {vc}")
+        else:
+            print("SELF-TEST ok: style card embedded verbatim in block 8 PASSES (Q18).")
     cases = _violation_cases()
     caught = 0
     for name, expected, build in cases:
-        vio, _ = verify(build())
+        with fixture_library():
+            vio, _ = verify(build())
         codes = {c for c, _ in vio}
         if not vio:
             ok = False
@@ -912,7 +1073,8 @@ def main(argv: List[str]) -> int:
                     help="coverage mode: prove the ledger covers the required (page_type, section) "
                          "image set for the funnel size (AF-FUN-PROMPT-COVERAGE / AF-FUN-IMG-COVERAGE)")
     ap.add_argument("--funnel-size", help="funnel size 3/5/7 (coverage mode; or use --brief)")
-    ap.add_argument("--brief", help="brief.json to read funnel_size from (coverage mode)")
+    ap.add_argument("--brief", help="brief.json: funnel_size in coverage mode; in the prompt gate, its "
+                                    "answers.q18_style_card_id (the Skill 45 card every prompt must embed)")
     ap.add_argument("--structure-source",
                     help="path to funnel_structure.json (default: the skill's structure/funnel_structure.json)")
     args = ap.parse_args(argv)
@@ -952,7 +1114,12 @@ def main(argv: List[str]) -> int:
             print(f"  VIOLATION [{code}] {msg}")
         return EXIT_VIOLATION
 
-    violations, notes = verify(ledger)
+    try:
+        card_id = _brief_style_card_id(args.brief)  # Q18: the intake decides whether a card is required
+    except (OSError, ValueError) as exc:
+        print(f"USAGE/IO ERROR: cannot read --brief {args.brief!r}: {exc}")
+        return EXIT_FAILCLOSED
+    violations, notes = verify(ledger, card_id)
     _report(violations, notes)
     return EXIT_OK if not violations else EXIT_VIOLATION
 

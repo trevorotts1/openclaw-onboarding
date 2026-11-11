@@ -21,7 +21,20 @@
   ],
   "needs_legend": {
     "images": "the section images; the free stub provider draws placeholders for these. `glob` is the raw layout proof every provider draws; `labeled_glob` is the labeled client copy Skill 71 writes on the paid provider (the files AF-LAUNCH-PAGE-DESIGNS counts; the mockup ones exist only after final-mockups closes)",
-    "render": "the review PDFs and overview boards; composed only on the paid provider, so a stub run reports them as pending, never as present"
+    "render": "the review PDFs and overview boards; composed only on the paid provider, so a stub run reports them as pending, never as present",
+    "design_only": "true: the role has no production page by design (its page is a design deliverable only, or the native form is installed elsewhere); false: a production builder exists and the `produce` stage builds the page from the approved design",
+    "order": "the page's place in the funnel's page list, ascending",
+    "role": "the route-graph role of the page's node",
+    "page_kind": "tells two pages of one role apart (landing: opt_in or sales); null when the role has one kind",
+    "role_instance": "an extra page carried by another role's request (downsell_2 rides the downsell_1 request); never a route node; null otherwise",
+    "request_role": "the role of the page-request that builds this page",
+    "skill": "the number of the skill that builds the page",
+    "wrapper": "the Skill 49 wrapper (or chain) that builds the page",
+    "label": "the name the client sees for the page",
+    "label_role": "the role word Skill 71 puts in the page's file labels",
+    "matrix_slug": "the page's slug in Skill 71's page matrix; null when it has none",
+    "sections": "how many sections the page's standard copy form has",
+    "long_form_sections": "how many sections the long copy form has, where it differs from `sections`"
   },
   "pages": {
     "landing": {

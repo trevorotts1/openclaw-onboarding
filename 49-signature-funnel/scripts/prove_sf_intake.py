@@ -8,6 +8,9 @@ WHAT IT ENFORCES (the locked, provenance-gated brief that unlocks generation):
   * every REQUIRED intake answer is present + non-empty. The required set is gated by
     funnel size (Q1-Q11 + Q15-Q17 always; +Q12/Q13 for 5/7-step; +Q14 for 7-step).
                                                                  -> AF-FUN-INTAKE-MISSING
+  * the brief names its delivery rail (`delivery_rail`, a free string: the rail that hosts the
+    images and builds the pages and signs the P4/P7 receipts; Skill 49 never resolves it to
+    code).                                                       -> AF-FUN-INTAKE-MISSING
   * funnel_size is one of 3 / 5 / 7 (Q10).                       -> AF-FUN-INTAKE-SIZE
   * offer_token_ledger is non-empty — the exact offer name(s) from Q1 (the provenance
     seed the no-pitch + provenance gates depend on).             -> AF-FUN-INTAKE-OFFER
@@ -177,6 +180,9 @@ def evaluate(intake: Any, persona_log: Optional[str] = None) -> List[Tuple[str, 
         missing = [q for q in required if not _answered(answers.get(q))]
         if missing:
             failures.append((AF_MISSING, "missing/empty required answers: " + ", ".join(missing)))
+        if not _nonempty_str(intake.get("delivery_rail")):
+            failures.append((AF_MISSING, "missing/empty delivery_rail: the brief must name the delivery rail "
+                                         "that signs the P4-MEDIA and P7-BUILD receipts"))
 
         rep = answers.get("q8_representation")
         if not _answered(rep) or intake.get("representation_assumed") is True:
@@ -312,6 +318,7 @@ def _valid_runtime(size: int = 3) -> Dict[str, Any]:
         "one_question_per_turn": True,
         "locked": True,
         "funnel_size": size,
+        "delivery_rail": "selftest-delivery-rail",
         "answers": answers,
         "offer_token_ledger": ["The 5AM Reset"],
     }
@@ -359,6 +366,12 @@ def self_test() -> int:
 
     f = _valid_runtime(3); del f["answers"]["q5_goods"]
     check_fail("missing-answer", f, AF_MISSING)
+
+    f = _valid_runtime(3); del f["delivery_rail"]
+    check_fail("missing-delivery-rail", f, AF_MISSING)
+
+    f = _valid_runtime(3); f["delivery_rail"] = "  "
+    check_fail("blank-delivery-rail", f, AF_MISSING)
 
     f = _valid_runtime(7); del f["answers"]["q14_downsell2"]
     check_fail("missing-d2-on-7step", f, AF_MISSING)

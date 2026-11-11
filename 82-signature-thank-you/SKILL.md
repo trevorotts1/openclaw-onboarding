@@ -1,7 +1,7 @@
 ---
 name: signature-thank-you
 description: Builds the terminal Signature Launch thank-you / confirmation page — the final purchase-confirmation and access experience that shows exactly what the customer actually purchased (verified against the normalized purchase snapshot and S44 entitlement state), its actual charges and terms, and what happens next. This is NOT an upsell page and carries NO new pitch, new offer, or new-charge CTA; a page that says "thank you" while selling something is an upsell page owned by Skill 80. Purchased product names, amounts, totals, order numbers, and billing schedules are allowed and required here because they identify completed purchases. Fulfillment authority is S44 — this skill consumes entitlement state, never grants it, and fulfillment never depends on the buyer reaching this page.
-version: 0.3.4
+version: 0.3.5
 ---
 
 # Signature Thank-You and Fulfillment (Skill 82)
@@ -163,6 +163,10 @@ No raw payment credentials ever enter a request, view, log, or fixture.
 Fixtures use TEST ONLY dummy identities. Receipt data must not leak
 through URL parameters, analytics, cached HTML, or screenshots; a shared
 computer's next visitor must not see a previous buyer's receipt.
+
+## Design direction (Skill 45)
+
+Design direction = Skill 71 structure + Skill 45 card/rules via `design_prose.py`. The thank-you page's design stages follow the same direction; the live page stays purchase truth only. The page's sections are Skill 71's; its look comes from the client's chosen Skill 45 style card (a registered `FN-` id, optional) and the design library's funnel page rules, composed into `design-prose.json` by `shared-utils/signature_launch/design_prose.py` and passed to Skill 71 as `--design-prose`. The file records the sha256 of every Skill 45 file it read, so a hand-typed file, an edited one, or one built against rules that have since changed is refused (`design_prose.check_design_prose`). Skill 45 is only read, never written.
 
 ## Running the validators
 

@@ -18,7 +18,7 @@ consumption, but it is NOT a bare adapter-config entry:
   * it needs operator arguments the S49 page-request does not carry:
     --page-version (standard|long-form), --page-kind (sales|opt_in),
     --brand-owner, --image-cap;
-  * production is the 14-stage stage_gate.py pipeline run inside that
+  * production is the 15-stage stage_gate.py pipeline run inside that
     run directory, and the result emitter (scripts/write_page_result.py)
     writes page-result.json INSIDE the run directory, while dispatch
     expects the result at its own {result} path.

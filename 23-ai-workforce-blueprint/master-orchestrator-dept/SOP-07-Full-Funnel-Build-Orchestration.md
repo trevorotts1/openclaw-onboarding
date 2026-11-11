@@ -38,6 +38,8 @@ The orchestrator applies this check BEFORE the normal single-department routing 
 - Owner message describes a multi-stage conversion flow: top-of-funnel capture → nurture → sales → automation.
 - Owner message explicitly names both a page-builder output (landing page, funnel, website) AND a follow-up automation (email sequence, workflow, CRM automation) in the same request.
 
+**Seasonal sale launch (Black Friday / holiday sale / launch-week sale) is NOT a P0→P5 funnel request.** When the owner asks to get a Black Friday or other seasonal sale launch ready (sales page, order form, upsell, downsell, thank-you page, launch emails and texts), do NOT create the parent funnel epic here. Route it to the `black-friday-launcher` skill (Skill 83, `83-black-friday-launcher`): the department-map entry for slug `black-friday-launcher` (`23-ai-workforce-blueprint/skill-department-map.json`) is the source of truth for its intent triggers and departments, and Skill 83 reads this SOP (a read receipt is required before it assembles). A request that is a plain full-funnel build with no seasonal sale launch stays here.
+
 **If full-funnel intent is detected:** do NOT single-route. Proceed to Step 2. Acknowledge to the owner:
 
 ```

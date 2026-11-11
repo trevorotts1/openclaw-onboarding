@@ -103,7 +103,7 @@ INTENT = {
 # (MASTERDOC section 3: "payment captured once at the order form"), so
 # checkout and downsell continuations are success edges.
 LABEL_KIND = {"accept": "accept", "decline": "decline"}
-EVENT_KIND = {"interest_submitted": "submit", "selection_validated": "submit",
+EVENT_KIND = {"interest_submitted": "submit", "selection_validated": "submit", "offer_selected": "submit",
               "payment_succeeded": "success", "explicit_decline": "decline"}
 PROCEED_KIND_BY_ROLE = {"landing": "submit", "product_selection": "submit",
                         "checkout": "success", "downsell_1": "success"}

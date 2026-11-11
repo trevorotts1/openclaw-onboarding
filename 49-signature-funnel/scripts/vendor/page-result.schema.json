@@ -128,6 +128,7 @@
     "request_id",
     "input_hash",
     "page_id",
+    "page_role",
     "status",
     "artifacts",
     "author_session",

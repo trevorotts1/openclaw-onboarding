@@ -89,6 +89,12 @@ PROMOTIONAL_KINDS = {
 }
 # Access/entitlement mail is transactional: a purchase never cancels it.
 TRANSACTIONAL_KINDS = {"welcome_access"}
+# An upsell/downsell follow-up goes only to a verified buyer of the main offer, so
+# its stop must name the offer it follows (purchase_of); the launch-wide buyer tag
+# is already on that buyer.  Must equal launch_step_compiler.FOLLOW_UP_FAMILY's
+# sequence kinds (a test asserts it).
+FOLLOW_UP_KINDS = {"upsell_followup", "downsell_followup"}
+FOLLOWED_OFFER_KEY = "followed_offer_id"
 
 WAIT_SECONDS = {
     "minutes": 60, "minute": 60,
@@ -465,6 +471,12 @@ def read_launch_plan(plan, source="launch-plan"):
                 # Declared settings are proved here so a typo refuses the plan
                 # instead of silently reaching the build as "not declared".
                 automation_settings(item)
+                followed = item.get(FOLLOWED_OFFER_KEY)
+                if followed is not None:
+                    _require(isinstance(followed, str) and bool(VARIANT_TAG_RE.match(followed)),
+                             "LAUNCH-PLAN-FOLLOWED-OFFER",
+                             "automation %r %s %r is not a contact-tag-safe offer id"
+                             % (item["id"], FOLLOWED_OFFER_KEY, followed))
                 automations.append(item)
             elif kind in targets:
                 targets[kind][item["id"]] = item
@@ -838,6 +850,11 @@ def _compile_guard_issues(lifecycle, kind):
         issues.append("stop_on_unsubscribe")
     if "stop_on_verified_purchase" not in stops:
         issues.append("stop_on_verified_purchase")
+    elif kind in FOLLOW_UP_KINDS and any(
+            rule.get("rule") == "stop_on_verified_purchase"
+            and not str(rule.get("purchase_of") or "").strip()
+            for rule in lifecycle.get("stop_rules", []) or []):
+        issues.append("stop_on_verified_purchase.purchase_of")
     if "suppress_promotion_after_verified_purchase" not in suppressions:
         issues.append("suppress_promotion_after_verified_purchase")
     if "recheck_eligibility_immediately_before_send" not in suppressions:
@@ -1013,6 +1030,10 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
             # the launch plan.  Always present (null when the plan declares none)
             # so the key set a compiler reads never depends on the plan's mood.
             VARIANT_TAG_KEY: automation.get(VARIANT_TAG_KEY),
+            # The offer an upsell/downsell follow-up follows, declared once on the
+            # launch plan's automation unit (null when none).  The compiler gates
+            # on purchased-<this id>; without it the follow-up build is blocked.
+            FOLLOWED_OFFER_KEY: automation.get(FOLLOWED_OFFER_KEY),
             # Reentry/enrolment exactly as the plan declared them.  allow_reentry
             # is the native boolean CampaignBuilder applies and reads back; None
             # means "not declared" and the compiler records it insufficient.

@@ -17,9 +17,11 @@ BEFORE="$(snap)"
 for f in SKILL.md INSTALL.md INSTRUCTIONS.md CORE_UPDATES.md QC.md CHANGELOG.md PREREQS.json skill-version.txt wire.sh \
          vendor-approval.json scripts/kie_live_adapter.py scripts/build_model_registry.py references/kie-model-registry.json scripts/vendor_skill_probe.sh scripts/live_smoke.sh \
          references/adapter-contract.md references/integration-policy.md references/vendor-research.md references/decision-log.md \
-         tests/test_adapter_contract.py tests/test_shadow_mode.py tests/test_no_chat_agent_mutation.py tests/test_registry_commands.py tests/test_consumer_options.py; do
+         tests/test_adapter_contract.py tests/test_shadow_mode.py tests/test_no_chat_agent_mutation.py tests/test_registry_commands.py tests/test_consumer_options.py \
+         scripts/check_default_image_model.py references/kie-default-price-evidence.json tests/test_default_image_model.py; do
   chk "present: $f" "[ -f '$D/$f' ]"
 done
+chk "default image model is priced per picture (X-97)" "python3 -I '$D/scripts/check_default_image_model.py'"
 chk "wire.sh executable" "[ -x '$D/wire.sh' ]"
 chk "this script executable" "[ -x '$D/qc-74-kie-live-adapter.sh' ]"
 # INF002: the version is READ from the skill's own version file, never hardcoded here

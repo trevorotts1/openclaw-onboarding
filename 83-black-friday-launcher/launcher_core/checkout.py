@@ -21,6 +21,7 @@ import hashlib
 import importlib.util
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -161,6 +162,23 @@ def currency_exponent(currency: str) -> int:
                           sibling_dir="78-signature-product-selection/scripts").currency_exponent(currency)
 
 
+def production_approval_status(offer: Dict[str, Any]) -> Optional[str]:
+    """The Skill 79 ``approval_status`` of a live price, by the rule ``checkout_instances`` uses.
+
+    The canonical offer the intake resolved in the client's answers file decides: a recommendation
+    the client's plan approval covers stays ``recommended_unapproved`` (the real Skill 79 validator
+    then judges it); an owner-stated price (``provided`` / ``approved``) is ``approved``. A price the
+    intake never resolved has no status here: unknown stays unknown, it is never defaulted to approved.
+    """
+    prices = (offer.get("canonical") or {}).get("prices") or [{}]
+    status = prices[0].get("approval_status")
+    if status == "recommended_unapproved":
+        return status
+    if status in ("provided", "approved"):
+        return "approved"
+    return None
+
+
 def _price_choice(offer: Dict[str, Any], intake: Dict[str, Any],
                   readback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """One price choice. Native ids come only from the intake's checkout block or the
@@ -190,6 +208,10 @@ def _price_choice(offer: Dict[str, Any], intake: Dict[str, Any],
         choice["currency_exponent"] = currency_exponent(price["currency"])
     if intake.get("test_only"):
         choice["approval_status"] = "test_only"
+    else:
+        live_status = production_approval_status(offer)
+        if live_status is not None:
+            choice["approval_status"] = live_status
     unknown = [n for n in ("billing_type", "approval_status")
                if n not in choice]
     if unknown:  # an annotation, never part of the probe request (contract_request)
@@ -416,6 +438,13 @@ def missing_facts(request: Dict[str, Any]) -> List[str]:
     return sorted(set(out))
 
 
+def validation_clock(request: Dict[str, Any]) -> Optional[str]:
+    """The `now` Skill 79's validator needs to judge a LIVE request (test_only false): it refuses a
+    production-bound request that is not given the time to check mapping expiry against. A practice
+    request is judged without a clock, exactly as before."""
+    return datetime.now(timezone.utc).isoformat() if request.get("test_only") is False else None
+
+
 def replay(request: Dict[str, Any]) -> Tuple[str, str]:
     """Run a request through the real S79 validator: ("accepted"|"rejected"|"unavailable", detail)."""
     try:
@@ -425,7 +454,9 @@ def replay(request: Dict[str, Any]) -> Tuple[str, str]:
     if module is None or not callable(getattr(module, "validate_request", None)):
         return "unavailable", f"validate_request is absent (interpreter {sys.executable})"
     try:
-        module.validate_request(request)
+        clock = validation_clock(request)
+        # A practice request is judged without a clock, exactly as before: the clock argument rides only a live request.
+        module.validate_request(*((request,) if clock is None else (request, clock)))
     except Exception as exc:  # the contract's own typed validation error
         return "rejected", str(exc)
     return "accepted", ""

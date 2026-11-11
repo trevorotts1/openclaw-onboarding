@@ -38,7 +38,7 @@ Before writing a single section, ground the copy in the matched copywriter perso
 fail-closed gate — generation MUST NOT unlock without it.
 
 1. **Select** the copy VOICE for this task — consume the task's already-acquired persona bundle
-   (Skill 6's persona-bundle-acquisition ladder, B-U1/U15: `routing/persona-bundle-receipt.json` /
+   (the persona-bundle-acquisition ladder, B-U1/U15: `routing/persona-bundle-receipt.json` /
    `task['persona_bundle']`) when one is present, or **run the selector WITH `--blend`** against the
    CLIENT's providers when none was threaded:
    `python3 23-ai-workforce-blueprint/scripts/persona-selector-v2.py --blend --task "<page-type> <funnel-type> <ICP>" --department marketing`
@@ -72,8 +72,8 @@ fail-closed gate — generation MUST NOT unlock without it.
    declared bundle and the written copy stayed in agreement:
    `python3 49-signature-funnel/scripts/copy_persona_blend_seam.py --run-dir <run-dir> --report-persona-used
    --task-id <CC task id> --page <page-slug> [--goal <conversion goal>]`
-   (delegates to `06-ghl-install-pages/tools/cc_board.py:report_persona_used()` / a
-   `BuildPhaseDriver.persona_used()` call when the build already holds a driver instance). The Command
+   (posts through Skill 49's own board client, `scripts/mc_board.py:report_persona_used()`, to the
+   client's own Command Center). The Command
    Center compares the reported voice against the card's DECLARED `voice_persona_id` and renders a
    `persona_mismatch` chip + one operator event on divergence; agreement renders nothing. Best-effort —
    a missing task_id or unreachable board never blocks generation (fail-soft, matches every other
@@ -106,7 +106,7 @@ with the renumbered **Section 8**:
 ## 4. VERIFY BEFORE ADVANCING
 
 ```
-python3 49-signature-funnel/scripts/prove_sf_copy.py working/copy/copy_ledger.json
+python3 49-signature-funnel/scripts/prove_sf_copy.py --ledger working/copy/copy_ledger.json
 ```
 
 Exit 0 = every profile cleared its SACRED bands and P2-PROMPTS may begin. A failing section re-authors

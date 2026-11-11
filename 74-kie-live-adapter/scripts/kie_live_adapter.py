@@ -239,7 +239,20 @@ FLOOR_PCT, TARGET_PCT, PREFLIGHT_MULT = 95, 95, 1.30
 # percent of a model's verified max passes; 80 to below 95 percent warns and expands (it PASSES
 # and names the characters to add); below 80 percent is the hard reject; above the max is the
 # ceiling reject. The arithmetic itself lives in shared-utils/prompt_policy.py only.
-KNOWN_DEFAULTS = {"gpt-image": "gpt-image-2-6/sunburst-text-to-image"}  # last-resort default (N43 today)
+# X-97 (owner order 2026-11-10): the GPT Image default is KIE.ai GPT Image 2.6 SUNBURST (repo rule N43; never flare,
+# slash not hyphen), future-proofed to the newest Sunburst generation in the live catalog that has a per-picture
+# price; the pin below is the fallback. 2.6 is billed by tokens, so its per-picture price is KIE's published
+# reference table in references/kie-default-price-evidence.json (an estimate; actual billed by tokens).
+# check_default_image_model.py enforces the unit; Skill 83's image plan reads cmd_default_price.
+PINNED_DEFAULTS = {"Text to Image": "gpt-image-2-6/sunburst-text-to-image",
+                   "Image to Image": "gpt-image-2-6/sunburst-image-to-image"}  # edit / source-image route
+PINNED_DEFAULT = PINNED_DEFAULTS["Text to Image"]
+KNOWN_DEFAULTS = {"gpt-image": PINNED_DEFAULT}  # last-resort default (N43)
+DEFAULT_VARIANT = "sunburst"
+DEFAULT_QUALITY = "medium"  # the KIE request field is `quality`; this is its default when the caller names none
+QUALITY_ENUM = ("low", "medium", "high", "xhigh", "max", "auto")
+PICTURE_PRICE_UNITS = ("per-image", "per-job")  # a picture price; same pair Skill 83 image_plan accepts
+PRICE_EVIDENCE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "references", "kie-default-price-evidence.json")
 DEFAULT_CAPS = {"gpt-image": ["Text to Image", "Image to Image"]}
 LATEST_TTL = CATALOG_TTL
 REGISTRY_STALE_DAYS = 30
@@ -321,6 +334,37 @@ def parse_pricing(raw):
             "per-image" if _PER_IMAGE_RE.search(text) else "per-job")
     return {"credits_min": min(nums) if nums else None, "credits_max": max(nums) if nums else None,
             "unit": unit, "all": nums}
+
+
+def is_picture_priced(raw):
+    """True when a pricingDesc is a per-picture price (see PICTURE_PRICE_UNITS), false for tokens, seconds, characters."""
+    return parse_pricing(raw)["unit"] in PICTURE_PRICE_UNITS
+
+
+def load_price_evidence(path=None, strict=False):
+    """KIE's published per-picture reference table for token-billed GPT Image models.
+
+    A missing, unreadable or non-object file gives {} (callers then refuse: no row means no picture price);
+    strict=True raises ValueError naming the file instead (the check script treats that as "could not run")."""
+    p = path or PRICE_EVIDENCE
+    try:
+        with open(p, encoding="utf-8") as f:
+            d = json.load(f)
+        if not isinstance(d, dict):
+            raise ValueError("not a JSON object")
+    except (OSError, ValueError) as exc:
+        if strict:
+            raise ValueError("price evidence %s is unusable: %s" % (os.path.basename(p), exc)) from exc
+        return {}
+    return d
+
+
+def reference_table(evidence, model):
+    """{quality: {tier: credits}} published for this exact model id, else None (no row means no picture price)."""
+    for t in (evidence or {}).get("tables") or []:
+        if model in (t.get("models") or []):
+            return t.get("credits_per_picture")
+    return None
 
 
 def estimate_credits(parsed, units=1):
@@ -1423,8 +1467,8 @@ class Adapter:
              "preflight_required": preflight_amount(est), "preflight_multiplier": PREFLIGHT_MULT, "price_source": src}
         return self.result(model_id=model, schema_source=src, warnings=w, data=d)
 
-    def cmd_preflight(self, model, units=1):
-        p = self.cmd_price(model, units)
+    def cmd_preflight(self, model, units=1, price=None):
+        p = price or self.cmd_price(model, units)  # `price`: a cmd_default_price answer for a reference-priced default
         if p["state"] == "fail":
             return p
         need = p["data"]["preflight_required"]
@@ -1744,6 +1788,57 @@ class Adapter:
             self._write(cp, {"fetched_at": self.now(), "data": d, "warnings": w + notes})
         return self.result(capability=family, schema_source="latest:" + source, schema_fetched_at=fetched,
                            warnings=w + notes, data=d)
+
+    def default_model(self, family="gpt-image", edit=False):
+        """The fleet default model id: the newest Sunburst generation in the live catalog that has a per-picture
+        price (a per-picture catalog price, or a row in the reference evidence), else the 2.6 Sunburst pin.
+        edit=True gives the image-to-image route (a source image is given). Never raises; never picks a
+        generation that has no picture price, and never a variant other than Sunburst."""
+        cap = "Image to Image" if edit else "Text to Image"
+        pin = PINNED_DEFAULTS[cap]
+        try:
+            ev = load_price_evidence()
+            entries = [{"id": m.get("model"), "taskType": m.get("taskType") or []} for m in self.catalog()[0]
+                       if family_of(m.get("model")) == family and variant_of(m.get("model")) == DEFAULT_VARIANT
+                       and (is_picture_priced(m.get("pricingDesc")) or reference_table(ev, m.get("model")))]
+            g = self._resolve_latest(entries, DEFAULT_CAPS[family], pin, self._readable, lambda g: (0.0, 0.0))[0]
+            if g and g["routes"].get(cap):
+                return g["routes"][cap]
+        except Exception:  # noqa: BLE001  (an unresolvable default is the pin, not a crash)
+            pass
+        return pin
+
+    def cmd_default_price(self, family="gpt-image", quality=None, edit=False, units=1):
+        """cmd_price-shaped answer for the default model at a quality (default medium): a per-picture price.
+
+        The text lists every size tier (1K, 2K, 4K); the caller picks its size from it.
+
+        The catalog's own text when it is already per picture; else KIE's published per-picture reference row
+        for that quality (an estimate; actual billed by tokens). No row for the model or quality: a failure,
+        never a token price (a token-priced model without a picture row stays refused)."""
+        if isinstance(quality, str) and not quality.strip():
+            quality = None  # a blank quality is not a named quality: medium applies
+        q = DEFAULT_QUALITY if quality is None else quality  # a caller-named quality is never replaced
+        model = self.default_model(family, edit)
+        if q not in QUALITY_ENUM:
+            return self.fail(KieError("bad_quality", "quality %r is not one of %s" % (q, ", ".join(QUALITY_ENUM))), model_id=model)
+        p = self.cmd_price(model, units)
+        if p["state"] != "fail" and p["data"]["unit"] in PICTURE_PRICE_UNITS:
+            return dict(p, data=dict(p["data"], model=model, quality=q))
+        ev = load_price_evidence()
+        rows = (reference_table(ev, model) or {}).get(q)
+        if not rows:
+            return self.fail(KieError("no_picture_price", "no per-picture price for %s at quality %s" % (model, q)), model_id=model)
+        per = ev.get("usd_per_credit") or 0.005
+        desc = "; ".join("%s credits ($%s) for %s K" % (rows[t], round(rows[t] * per, 6), t[:-1])
+                         for t in sorted(rows, key=lambda t: int(t[:-1]))) + " (reference price per picture, quality %s)" % q
+        nums = sorted(rows.values())
+        d = {"pricing_desc": desc, "credits_min": nums[0], "credits_max": nums[-1], "unit": "per-image", "units": units,
+             "credits_estimate": round(nums[-1] * units, 4), "price_source": "reference-evidence", "model": model,
+             "quality": q, "price_note": ev.get("label"), "adders": ev.get("adders")}
+        d["preflight_required"] = preflight_amount(d["credits_estimate"])
+        d["preflight_multiplier"] = PREFLIGHT_MULT
+        return self.result(model_id=model, schema_source="reference-evidence", warnings=[ev.get("label") or ""], data=d)
 
     def _readable(self, model):
         try:

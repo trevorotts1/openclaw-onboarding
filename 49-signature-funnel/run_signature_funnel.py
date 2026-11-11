@@ -19,9 +19,12 @@ by prove_sf_cert.py --mint-model-receipt), never from SF_CONTENT_* environment v
 the delegated image/media phases require harness-signed provider receipts (ENF-17).
 
 DELEGATION SEAMS (never forked here): image generation is delegated to Skill 66 (model
-policy) and Skill 74 (the one KIE transport, kie_live_adapter.py); GHL media folder + upload and the funnel/page build are delegated to
-Skill 6 (ghl_media.py / ghl_rest_canvas.py). Those phases are attested in order; the
-image PROVENANCE (Kie taskId + GHL media host) is enforced at P9 by prove_sf_no_pitch.py.
+policy) and Skill 74 (the one KIE transport, kie_live_adapter.py); media hosting (P4) and the funnel/page
+build (P7) are delegated to the DELIVERY RAIL the brief names (brief.delivery_rail), which records one
+operator-key-signed receipt line per hosted image and per built page (schema/delivery-rail-receipt.schema.json).
+Skill 49 never imports or resolves the rail: P4 and P7 certify only on those signed lines. Those phases
+are attested in order; the image PROVENANCE (Kie taskId + the hosted URL the P4 receipt recorded) is
+enforced at P9 by prove_sf_no_pitch.py.
 
 Run-dir inputs:
   brief.json          — locked intake brief        (P0 gate: prove_sf_intake.py)
@@ -97,23 +100,16 @@ def _delegation_seam(run_dir: Path, required_file: Optional[str], label: str) ->
 #
 # THE DEFECT: P3-IMAGES and P4-MEDIA attested "delegated" the moment
 # media_ledger.json EXISTED. The run writes that file, so the phase claiming to
-# prove image generation through Skill 74 and upload through Skill 6 was
+# prove image generation through Skill 74 and upload through the delivery rail was
 # satisfied by a file its own subject authored — with no provider ever contacted.
 #
-# THE FIX, IN TWO LANDINGS (sequencing: writer before requirer):
-#   (this release) the seams read the ledger's CONTENT — every image record must
-#     carry a real provider task id (P3) and resolve to a GHL media host (P4) —
-#     and any provider receipt that IS present must hold, strictly. Both content
-#     rules already gate P9 via prove_sf_no_pitch, so no run that could certify
-#     before can fail now: this only moves the truth forward to the phase that
-#     claims it, and kills "the file exists, therefore a provider ran".
-#   (next)         delegation_receipt.require() replaces validate_if_present()
-#     once Skill 74 (via scripts/kie74_receipt.py) / Skill 6 emit a receipt on every path. The certificate
-#     records which of the two states applied, so it can never imply
-#     provider-backed delegation it does not have.
+# THE FIX (ENF-17): the seams read the ledger's CONTENT — every image record must
+# carry a real provider task id (P3) and equal the hosted URL the delivery rail's
+# signed receipt recorded (P4) — and the signed receipt store must hold, strictly:
+# an absent, unsigned or forged store is a failure, not a state to record. This kills
+# "the file exists, therefore a provider ran". The certificate records the store
+# state, so it can never imply provider-backed delegation it does not have.
 # ---------------------------------------------------------------------------
-_GHL_HOST_FINGERPRINTS = ("gohighlevel", "leadconnector", "leadconnectorhq", "msgsndr",
-                          "highlevel", "storage.googleapis.com/highlevel")
 _BAD_TASK_IDS = frozenset({"", "native", "placeholder", "none", "null", "n/a", "tbd", "todo"})
 
 
@@ -138,7 +134,7 @@ def _image_key(img: Dict) -> str:
 
 
 def _receipt_seam(run_dir: Path, phase: str, keys: List[str], label: str,
-                  content_detail: str) -> Tuple[bool, str]:
+                  content_detail: str, rail: bool = False) -> Tuple[bool, str]:
     try:
         import delegation_receipt
     except ImportError as exc:  # noqa: BLE001 — a missing contract module is fail-closed
@@ -147,11 +143,50 @@ def _receipt_seam(run_dir: Path, phase: str, keys: List[str], label: str,
     # ENF-17: a client delivery never attests on an absent or hand-written store. Only
     # harness-signed provider receipts (signed by the adapter process under the operator
     # key) count; 'absent' is a failure, not a state to record.
-    ok, detail = delegation_receipt.require_signed(
-        run_dir, phase, must_cover=keys, af="AF-FUN-DELEG-RECEIPT")
+    # rail=True is the delivery-rail form (P4): the same signed check plus the schema in
+    # schema/delivery-rail-receipt.schema.json.
+    check = delegation_receipt.require_rail if rail else delegation_receipt.require_signed
+    ok, detail = check(run_dir, phase, must_cover=keys, af="AF-FUN-DELEG-RECEIPT")
     if not ok:
         return False, detail
     return True, f"delegated: {label} :: {content_detail} :: receipts verified ({detail})"
+
+
+EMAILS_REL = Path("working") / "emails" / "emails.json"
+
+
+def _gate_p10_emails(run_dir: Path) -> Tuple[bool, str]:
+    """P10-EMAIL — the optional 10 promo emails. The brief's email_offer is `accepted` or `declined`
+    (absent = declined). A client who accepted gets no certificate until working/emails/emails.json
+    carries a Skill 50 certificate sha (a 64-hex `certificate_sha`); anything else fails
+    AF-FUN-P10-EMAILS. A value that is neither word fails too, so a typo can never read as `declined`.
+    Returns (ok, 'declined' | 'accepted:<sha>' | the failure)."""
+    try:
+        offer = json.loads((run_dir / "brief.json").read_text(encoding="utf-8")).get("email_offer", "declined")
+    except (OSError, ValueError):
+        offer = "declined"
+    if offer == "declined":
+        return True, "declined"
+    if offer != "accepted":
+        return False, f"AF-FUN-P10-EMAILS: brief email_offer {offer!r} is neither 'accepted' nor 'declined'"
+    try:
+        sha = json.loads((run_dir / EMAILS_REL).read_text(encoding="utf-8")).get("certificate_sha")
+    except (OSError, ValueError, AttributeError):
+        sha = None
+    if not (isinstance(sha, str) and len(sha) == 64 and all(c in "0123456789abcdef" for c in sha)):
+        return False, (f"AF-FUN-P10-EMAILS: the client accepted the email offer but {EMAILS_REL} is missing or "
+                       "carries no Skill 50 certificate sha (a 64-hex certificate_sha)")
+    return True, f"accepted:{sha}"
+
+
+def _gate_p10_emails_value(run_dir: Path, offer: str) -> Tuple[bool, str]:
+    """Self-test/probe helper: judge the gate as if the brief said `offer`, on a scratch copy."""
+    scratch = Path(tempfile.mkdtemp(prefix="sf_p10_"))
+    try:
+        (scratch / "brief.json").write_text(json.dumps({"email_offer": offer}), encoding="utf-8")
+        return _gate_p10_emails(scratch)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def _gate_p3_images(run_dir: Path) -> Tuple[bool, str]:
@@ -174,25 +209,35 @@ def _gate_p3_images(run_dir: Path) -> Tuple[bool, str]:
                          f"{len(imgs)} image record(s) carry a provider task id")
 
 
+def _ledger_url(img: Dict) -> str:
+    return str(img.get("media_url", img.get("url", ""))).strip()
+
+
 def _gate_p4_media(run_dir: Path) -> Tuple[bool, str]:
-    """P4-MEDIA — every ledger image must resolve to a GHL media host."""
+    """P4-MEDIA — every ledger image must carry the hosted URL the delivery rail's signed receipt
+    recorded for its key. No host name is recognised here: the rail named in brief.delivery_rail is a
+    free string and the receipt, not a URL fingerprint, is the proof something was uploaded."""
     imgs, err = _ledger_images(run_dir)
     if imgs is None:
-        return False, f"AF-FUN-DELEG-MEDIA: {err} (Skill 6 ghl_media.py uploaded nothing)"
-    bad = []
-    for img in imgs:
-        url = str(img.get("media_url", img.get("ghl_media_url", img.get("url", "")))).strip()
-        hay = url.lower()
-        if not hay.startswith(("http://", "https://")) or not any(
-                fp in hay for fp in _GHL_HOST_FINGERPRINTS):
-            bad.append(f"{img.get('page_type', '?')}/{img.get('section', '?')}={url!r}")
+        return False, f"AF-FUN-DELEG-MEDIA: {err} (the delivery rail recorded nothing)"
+    keys = [_image_key(i) for i in imgs]
+    ok, detail = _receipt_seam(run_dir, "P4-MEDIA", keys, "delivery-rail receipt (P4)",
+                               f"{len(imgs)} image record(s)", rail=True)
+    if not ok:
+        return False, detail
+    import delegation_receipt
+    hosted: Dict[str, set] = {}
+    for line in delegation_receipt.load(run_dir):
+        if str(line.get("phase", "")).strip() == "P4-MEDIA":
+            for key in line.get("covers") or []:
+                hosted.setdefault(str(key), set()).add(str(line.get("hosted_url", "")).strip())
+    bad = [f"{img.get('page_type', '?')}/{img.get('section', '?')}={_ledger_url(img)!r}"
+           for img, key in zip(imgs, keys) if _ledger_url(img) not in hosted.get(key, set())]
     if bad:
-        return False, (f"AF-FUN-DELEG-MEDIA: {len(bad)} image record(s) do not resolve to a "
-                       f"GHL media host (e.g. {bad[:3]}) — an un-uploaded image is not a "
-                       "delegated upload")
-    return _receipt_seam(run_dir, "P4-MEDIA", [_image_key(i) for i in imgs],
-                         "Skill 6 ghl_media.py (media folder + upload)",
-                         f"{len(imgs)} image record(s) on a GHL media host")
+        return False, (f"AF-FUN-DELEG-MEDIA: {len(bad)} image record(s) carry a URL the delivery rail "
+                       f"never recorded for that image (e.g. {bad[:3]}) — an image whose URL is not the "
+                       "rail's signed hosted_url is not a delegated upload")
+    return True, f"{detail} :: {len(imgs)} ledger URL(s) equal the rail's hosted_url"
 
 
 def _sha256_file(path: Path) -> str:
@@ -275,14 +320,14 @@ def _run_visual_stage(run_dir: Path) -> Tuple[bool, str]:
         return False, ("AF-FUN-VISUAL-ARGS: brief.visual is missing %s; run "
                        "scripts/legacy_downsell_images.py --ledger <copy_ledger.json> "
                        "--skill71-root <71-dir> --brand-file <brand.json> --brand-owner <client> "
-                       "--out-dir <run-dir> (the P7 visual gate will refuse until it is done)"
+                       "--out-dir <run-dir>/page-images (the P7 visual gate will refuse until it is done)"
                        % ", ".join(missing))
     cmd = [sys.executable, str(_SCRIPTS / "legacy_downsell_images.py"),
            "--ledger", str(run_dir / "copy_ledger.json"),
            "--skill71-root", str(vs["skill71_root"]),
            "--brand-file", str(vs["brand_file"]),
            "--brand-owner", str(vs["brand_owner"]),
-           "--out-dir", str(run_dir),
+           "--out-dir", str(run_dir / "page-images"),  # issue 61: the folder prove_sf_build reads
            "--image-provider", str(vs.get("provider") or "kie")]
     if str(vs.get("provider") or "kie") == "kie" and vs.get("allow_paid") is True:
         cmd.append("--allow-paid")
@@ -360,8 +405,12 @@ def _gate_p2_prompts(run_dir: Path) -> Tuple[bool, str]:
     the coverage assert proves the ledger carries a prompt for EVERY required
     (page_type, section) slot for the brief's funnel_size (per MASTERDOC §4) — so a
     2-prompt ledger can no longer clear P2 for a full funnel. Both must pass."""
+    # Q18 (fix spec M4): the locked brief is handed to the prover so a style_card_id the client chose
+    # at intake binds every prompt (AF-FUN-PROMPT-STYLE-CARD); the ledger cannot omit the decision.
+    brief = run_dir / "brief.json"
     ok, detail = _shell_prover("prove_sf_prompt_floor.py",
-                               ["--ledger", str(run_dir / "prompt_ledger.json")])
+                               ["--ledger", str(run_dir / "prompt_ledger.json"),
+                                *(["--brief", str(brief)] if brief.is_file() else [])])
     if not ok:
         return ok, detail
     size = _brief_size(run_dir)
@@ -382,7 +431,8 @@ def _gate_p9_certify(run_dir: Path) -> Tuple[bool, str]:
     coverage assert proves the media ledger carries an image for EVERY required
     (page_type, section) slot for the brief's funnel_size (per MASTERDOC §4) — so a
     2-image ledger can no longer certify a ~40-image funnel. Both must pass."""
-    ok, detail = _shell_prover("prove_sf_no_pitch.py", ["--ledger", str(run_dir / "media_ledger.json")])
+    ok, detail = _shell_prover("prove_sf_no_pitch.py", ["--ledger", str(run_dir / "media_ledger.json"),
+                                                        "--run-dir", str(run_dir)])
     if not ok:
         return ok, detail
     size = _brief_size(run_dir)
@@ -398,8 +448,8 @@ def _gate_p9_certify(run_dir: Path) -> Tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # FAB-artifact producer + P7 FAB-scorecard requirement (FIX-COPY-02)
 # ---------------------------------------------------------------------------
-# The engine authors its copy in copy_ledger.json then delegates GHL delivery to
-# Skill 6. On the engine-routed path Skill 6 produced NO template-match receipt, so
+# The engine authors its copy in copy_ledger.json then delegates the funnel/page build to
+# the delivery rail. On the engine-routed path the rail produced NO template-match receipt, so
 # the shared FAB-QC copy-substance gate (>=8.5) silently SKIPPED the flagship funnel.
 # Here the engine ITSELF echoes copy_ledger.json into build/fab-artifact.json — the
 # FAB scorecard file the QC seam scores — and P7-BUILD fail-closed REQUIRES that file
@@ -537,13 +587,13 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
          lambda: _gate_p2_prompts(run_dir)),
         ("P3-IMAGES", "kie_live_adapter.py",
          lambda: _gate_p3_images(run_dir)),
-        ("P4-MEDIA", "ghl_media.py",
+        ("P4-MEDIA", "delivery-rail receipt (P4)",
          lambda: _gate_p4_media(run_dir)),
         ("P5-HTML", "html_fragments",
          lambda: _gate_html_fragments(run_dir)),
         ("P6-COMPOSE", "prove_sf_graph.py",
          lambda: _shell_prover("prove_sf_graph.py", ["--graph", str(run_dir / "funnel_graph.json")])),
-        ("P7-BUILD", "prove_sf_build.py",
+        ("P7-BUILD", "delivery-rail receipt (P7)",
          lambda: _gate_build(run_dir)),
         ("P8-DERIVE", "derived_pages_ledger",
          lambda: _gate_derived_pages(run_dir)),
@@ -629,14 +679,23 @@ def orchestrate(run_dir: Path, key: str) -> Tuple[int, Dict]:
             manifest = {"run_id": run_dir.name, "aborted_at": pid, "phases": phases_attested}
             (run_dir / "process_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             return EXIT_GATE_FAIL, manifest
-        if pid == "P1-COPY":
+        if pid == "P2-PROMPTS":
             # Fix plan B1 (unowned G-2): the visual stage is a MANDATORY step of the orchestrator,
-            # not a sentence in SKILL.md. It runs only AFTER P0 and P1 pass (it can spend with
-            # --allow-paid, so never on unproven copy). A failure is recorded and the P7 visual
-            # gate still refuses to certify, so it can never be a skip.
+            # not a sentence in SKILL.md. Issue 52: it runs only AFTER P0, P1 and P2 pass (it can spend
+            # with --allow-paid, so never on unproven copy and never on a run whose prompt ledger then
+            # fails P2). A failure is recorded and the P7 visual gate still refuses to certify, so it
+            # can never be a skip.
             visual_ok, visual_detail = _run_visual_stage(run_dir)
             print(f"  [{'PASS' if visual_ok else 'FAIL':4s}] VISUAL-STEP  (legacy_downsell_images.py) :: {visual_detail}")
 
+    # P10-EMAIL — an accepted email offer must be backed by a Skill 50 certificate sha before we certify.
+    email_ok, email_detail = _gate_p10_emails(run_dir)
+    print(f"  [{'PASS' if email_ok else 'FAIL':4s}] P10-EMAIL    (emails.json) :: {email_detail}")
+    if not email_ok:
+        print("ABORT: phase P10-EMAIL failed its fail-closed gate. NO certificate issued.")
+        manifest = {"run_id": run_dir.name, "aborted_at": "P10-EMAIL", "phases": phases_attested}
+        (run_dir / "process_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        return EXIT_GATE_FAIL, manifest
     # all phases passed -> mint the signed certificate
     size = None
     brief_p = run_dir / "brief.json"
@@ -672,7 +731,9 @@ def orchestrate(run_dir: Path, key: str) -> Tuple[int, Dict]:
         "delegation_receipts": _delegation_receipt_state(run_dir),
         "delivery": {"publish": "human-approval-required",
                      "preview_only": True,
-                     "email_offer": "P10 optional handoff to the Email Skill project after downsell approval"},
+                     "email_offer": email_detail.split(":")[0],
+                     **({"email_certificate_sha": email_detail.split(":", 1)[1]}
+                        if email_detail.startswith("accepted:") else {})},
     }
     # F4.3 — name the canonical governing persona on the signed certificate when one
     # was resolved at the brief stage (added BEFORE signing, so it is covered by the
@@ -703,7 +764,7 @@ def orchestrate(run_dir: Path, key: str) -> Tuple[int, Dict]:
 # ---------------------------------------------------------------------------
 def _full_coverage_images(size: int) -> List[Dict]:
     """Full image set covering every required (page_type, section) slot for the size
-    (per prove_sf_prompt_floor.required_image_pairs), each with valid Kie+GHL provenance
+    (per prove_sf_prompt_floor.required_image_pairs), each with valid Kie + hosted-URL provenance
     so the P9 no-pitch AND coverage asserts both pass."""
     import prove_sf_prompt_floor  # noqa: E402
     pairs = prove_sf_prompt_floor.required_image_pairs(size, prove_sf_prompt_floor.load_structure())
@@ -742,16 +803,18 @@ def _write_valid_run(rd: Path, key: str, size: int = 3, receipts: bool = True) -
     (rd / "derived_pages.json").write_text(
         json.dumps(prove_sf_graph._valid_derived_ledger(size)), encoding="utf-8")
     # P5-HTML + P7-BUILD read what the TOOLS wrote, not the receipt (STR-18 / S06-08 / IMG-16): parsed
-    # page fragments, a sealed Skill 6 verify run (ghl_gate.require_pass) and the wireframe + mockup set.
+    # page fragments, the delivery rail's signed P7-BUILD receipt lines and the wireframe + mockup set.
     prove_sf_build.write_valid_run_evidence(rd, size)
     # ENF-16 — the authoring model comes from the HARNESS routing record, signed by the operator key.
     prove_sf_cert.mint_model_receipt(
         rd, {"model": "selftest-strong-model", "provider": "selftest", "tier": "content"}, key)
     # ENF-17 — delegated phases are backed by harness-signed provider receipts (stub adapter).
+    # receipts=False leaves the WHOLE store absent (the P7 lines write_valid_run_evidence just emitted go too).
     if receipts:
-        keys = [_image_key(i) for i in media["images"]]
-        _stub_provider_emit(rd, "P3-IMAGES", keys)
-        _stub_provider_emit(rd, "P4-MEDIA", keys)
+        _stub_provider_emit(rd, "P3-IMAGES", [_image_key(i) for i in media["images"]])
+        _stub_rail_media_emit(rd)
+    else:
+        (rd / "delegation_receipts.jsonl").unlink(missing_ok=True)
 
 
 def _stub_provider_emit(run_dir: Path, phase: str, remote_ids: List[str]) -> None:
@@ -760,6 +823,15 @@ def _stub_provider_emit(run_dir: Path, phase: str, remote_ids: List[str]) -> Non
     `run_signature_funnel` and refused — which is the property the self-test proves."""
     import stub_provider_adapter
     stub_provider_adapter.emit(run_dir, phase, remote_ids)
+
+
+def _stub_rail_media_emit(run_dir: Path) -> None:
+    """The delivery rail's P4-MEDIA lines, from the same stub module: one signed line per ledger image,
+    carrying the hosted URL the ledger names (fixtures only; a real rail records what it uploaded)."""
+    import stub_provider_adapter
+    imgs, _ = _ledger_images(run_dir)
+    stub_provider_adapter.emit_rail(
+        run_dir, "P4-MEDIA", [(_image_key(i), {"hosted_url": _ledger_url(i)}) for i in imgs or []])
 
 
 def self_test() -> int:
@@ -836,6 +908,34 @@ def self_test() -> int:
             else:
                 ok = False; print(f"SELF-TEST FAIL: happy path did not certify (code={code}).")
 
+        # (c2) P10-EMAIL — accepted offer: no emails file -> abort, NO cert; with a cert sha -> certified
+        #      and the certificate names the state; declined (absent) is recorded as declined.
+        rde = tmp / "run-emails"
+        rde.mkdir()
+        _write_valid_run(rde, key)
+        brief = json.loads((rde / "brief.json").read_text(encoding="utf-8"))
+        brief["email_offer"] = "accepted"
+        (rde / "brief.json").write_text(json.dumps(brief), encoding="utf-8")
+        code, _ = orchestrate(rde, key)
+        refused = code == EXIT_GATE_FAIL and not (rde / "PROCESS-CERTIFICATE.json").exists()
+        (rde / EMAILS_REL).parent.mkdir(parents=True, exist_ok=True)
+        (rde / EMAILS_REL).write_text(json.dumps({"certificate_sha": "ab" * 32, "emails": []}), encoding="utf-8")
+        code, _ = orchestrate(rde, key)
+        named = {}
+        if (rde / "PROCESS-CERTIFICATE.json").exists():
+            named = json.loads((rde / "PROCESS-CERTIFICATE.json").read_text(encoding="utf-8")).get("delivery", {})
+        declined = json.loads((rd / "PROCESS-CERTIFICATE.json").read_text(encoding="utf-8")).get("delivery", {}) \
+            if (rd / "PROCESS-CERTIFICATE.json").exists() else {}
+        typo_ok, typo_msg = _gate_p10_emails_value(rde, "accept")
+        if refused and code == EXIT_OK and named.get("email_offer") == "accepted" \
+                and named.get("email_certificate_sha") == "ab" * 32 and declined.get("email_offer") == "declined" \
+                and not typo_ok and "AF-FUN-P10-EMAILS" in typo_msg:
+            print("SELF-TEST ok: P10-EMAIL — accepted offer without a Skill 50 certificate sha aborts "
+                  "(AF-FUN-P10-EMAILS, no certificate); with it the certificate names accepted; absent = declined.")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: P10-EMAIL (refused={refused}, code={code}, named={named}, declined={declined}, typo={typo_msg})")
+
         # (d) no-skip / fail-closed abort — break the copy ledger, expect NO cert
         rd2 = tmp / "run-bad"
         rd2.mkdir()
@@ -887,6 +987,25 @@ def self_test() -> int:
             ok = False
             print(f"SELF-TEST FAIL: under-covered prompt ledger still advanced "
                   f"(code={code}, aborted_at={manifest0.get('aborted_at') if isinstance(manifest0, dict) else '?'}).")
+
+        # (g0b) Q18 (fix spec M4) — the brief names a Skill 45 style card but no prompt embeds it:
+        # the run aborts at P2 with AF-FUN-PROMPT-STYLE-CARD and NO certificate (it used to certify).
+        rdq = tmp / "run-style-card-missing"
+        rdq.mkdir()
+        _write_valid_run(rdq, key)
+        briefq = json.loads((rdq / "brief.json").read_text(encoding="utf-8"))
+        briefq.setdefault("answers", {})["q18_style_card_id"] = _pf.FIXTURE_CARD_ID
+        (rdq / "brief.json").write_text(json.dumps(briefq), encoding="utf-8")
+        with _pf.fixture_library():
+            code, manifestq = orchestrate(rdq, key)
+        last_q = (manifestq.get("phases") or [{}])[-1].get("detail", "") if isinstance(manifestq, dict) else ""
+        if (code == EXIT_GATE_FAIL and not (rdq / "PROCESS-CERTIFICATE.json").exists()
+                and manifestq.get("aborted_at") == "P2-PROMPTS" and "AF-FUN-PROMPT-STYLE-CARD" in last_q):
+            print("SELF-TEST ok: a brief naming a style card the prompts never embed aborts at P2 "
+                  "(AF-FUN-PROMPT-STYLE-CARD), NO certificate.")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: Q18 style card not enforced at P2 (code={code}, detail={last_q[:160]!r}).")
 
         # (g) FIX-IMG-07 — a partial media ledger (2 of N required images) aborts at
         # P9 with AF-FUN-IMG-COVERAGE and NO certificate.
@@ -953,7 +1072,8 @@ def self_test() -> int:
             ok = False
             print(f"SELF-TEST FAIL: P3-IMAGES attested a ledger with no provenance: {g_ok} {g_detail}")
 
-        # (k) P4-MEDIA no longer attests on file existence: an off-host URL is not an upload.
+        # (k) P4-MEDIA no longer attests on file existence: a ledger URL the delivery rail's signed
+        #     receipt never recorded for that image is not an upload (no host-name fingerprint is used).
         rdk = tmp / "run-offhost"
         rdk.mkdir()
         _write_valid_run(rdk, key)
@@ -962,10 +1082,26 @@ def self_test() -> int:
         (rdk / "media_ledger.json").write_text(json.dumps(led), encoding="utf-8")
         g_ok, g_detail = _gate_p4_media(rdk)
         if not g_ok and "AF-FUN-DELEG-MEDIA" in g_detail:
-            print("SELF-TEST ok: P4-MEDIA fails closed on an off-host media URL.")
+            print("SELF-TEST ok: P4-MEDIA fails closed on a ledger URL that differs from the rail's hosted_url "
+                  "(AF-FUN-DELEG-MEDIA).")
         else:
             ok = False
-            print(f"SELF-TEST FAIL: P4-MEDIA attested an off-host media URL: {g_ok} {g_detail}")
+            print(f"SELF-TEST FAIL: P4-MEDIA attested a URL the rail never recorded: {g_ok} {g_detail}")
+
+        # (k2) a P4 line in the old provider shape (signed, but no hosted_url) breaks the delivery-rail
+        #      schema: the rail must say WHICH URL it hosted, not just that it ran.
+        rdk2 = tmp / "run-rail-schema"
+        rdk2.mkdir()
+        _write_valid_run(rdk2, key, receipts=False)
+        led = json.loads((rdk2 / "media_ledger.json").read_text(encoding="utf-8"))
+        _stub_provider_emit(rdk2, "P4-MEDIA", [_image_key(i) for i in led["images"]])
+        g_ok, g_detail = _gate_p4_media(rdk2)
+        if not g_ok and "AF-FUN-DELEG-RECEIPT-SCHEMA" in g_detail:
+            print("SELF-TEST ok: P4-MEDIA fails closed on a signed line with no hosted_url "
+                  "(AF-FUN-DELEG-RECEIPT-SCHEMA).")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: P4-MEDIA attested a line that breaks the rail schema: {g_ok} {g_detail}")
 
         # (l) SELF-AUTHORED RECEIPT — the run stamps its own provider receipt. The
         #     subject of a certificate may not author the evidence it is judged on,
@@ -997,7 +1133,7 @@ def self_test() -> int:
         _write_valid_run(rdm, key, receipts=False)
         led = json.loads((rdm / "media_ledger.json").read_text(encoding="utf-8"))
         _stub_provider_emit(rdm, "P3-IMAGES", [_image_key(i) for i in led["images"]])
-        _stub_provider_emit(rdm, "P4-MEDIA", [_image_key(i) for i in led["images"]])
+        _stub_rail_media_emit(rdm)
         g_ok, g_detail = _gate_p3_images(rdm)
         g_ok4, g_detail4 = _gate_p4_media(rdm)
         if g_ok and g_ok4 and "receipts verified" in g_detail and "receipts verified" in g_detail4:
@@ -1081,13 +1217,16 @@ def self_test() -> int:
             print(f"SELF-TEST FAIL: incomplete funnel build still certified (code={code}, "
                   f"aborted_at={manifesto.get('aborted_at') if isinstance(manifesto, dict) else '?'}).")
 
-        # (p) G-2/G-17 — the visual step (which can spend with --allow-paid) runs only after
-        #     P1-COPY passes. Spy on subprocess.run: a failing copy ledger -> zero calls to
-        #     legacy_downsell_images; a passing one -> exactly one.
+        # (p) G-2/G-17 + issue 52 — the visual step (which can spend with --allow-paid) runs only after
+        #     P2-PROMPTS passes. Spy on subprocess.run and keep the WHOLE call log in order: a failing copy
+        #     ledger and a failing prompt ledger -> zero calls to legacy_downsell_images; a passing run ->
+        #     exactly one, AFTER both P2 provers (floor + coverage) have run, and no --allow-paid command
+        #     appears anywhere in the log before that point.
         import types
         real_run = subprocess.run
-        for label, copy_ok, want in (("failing copy", False, 0), ("passing copy", True, 1)):
-            rdp = tmp / ("run-visual-" + label.split()[0])
+        for label, break_it, want in (("failing copy", "copy", 0), ("failing prompts", "prompts", 0),
+                                      ("passing run", None, 1)):
+            rdp = tmp / ("run-visual-" + label.replace(" ", "-"))
             rdp.mkdir()
             _write_valid_run(rdp, key)
             shutil.rmtree(rdp / "page-images", ignore_errors=True)
@@ -1096,13 +1235,16 @@ def self_test() -> int:
             brief["visual"] = {"skill71_root": str(tmp), "brand_file": str(tmp / "b.json"),
                                "brand_owner": "selftest", "provider": "kie", "allow_paid": True}
             (rdp / "brief.json").write_text(json.dumps(brief), encoding="utf-8")
-            if not copy_ok:
+            if break_it == "copy":
                 (rdp / "copy_ledger.json").write_text("{}", encoding="utf-8")
-            calls: List[List[str]] = []
+            if break_it == "prompts":  # clears the floor gate, fails the coverage cross-check
+                import prove_sf_prompt_floor as _ppf  # noqa: E402
+                (rdp / "prompt_ledger.json").write_text(json.dumps(_ppf._valid_ledger()), encoding="utf-8")
+            log: List[List[str]] = []
 
             def _spy(cmd, *a, **kw):
+                log.append([str(c) for c in cmd])
                 if any("legacy_downsell_images" in str(c) for c in cmd):
-                    calls.append(list(cmd))
                     return types.SimpleNamespace(returncode=0, stdout="", stderr="")
                 return real_run(cmd, *a, **kw)
             subprocess.run = _spy
@@ -1110,11 +1252,71 @@ def self_test() -> int:
                 orchestrate(rdp, key)
             finally:
                 subprocess.run = real_run
-            if len(calls) == want:
-                print(f"SELF-TEST ok: {label} -> {want} legacy_downsell_images call(s).")
+            legacy = [i for i, c in enumerate(log) if any("legacy_downsell_images" in x for x in c)]
+            floor = [i for i, c in enumerate(log) if any("prove_sf_prompt_floor" in x for x in c)]
+            if len(legacy) != want:
+                ok = False
+                print(f"SELF-TEST FAIL: {label} -> {len(legacy)} legacy_downsell_images call(s), wanted {want}.")
+            elif want == 1 and not (len(floor) >= 2 and legacy[0] > floor[1]
+                                    and not any("--allow-paid" in x for c in log[:floor[1] + 1] for x in c)):
+                ok = False
+                print(f"SELF-TEST FAIL: {label} -> the visual step did not run AFTER both P2 provers, or a "
+                      f"--allow-paid command came before P2 passed (legacy call at {legacy}, P2 provers at {floor}).")
+            else:
+                print(f"SELF-TEST ok: {label} -> {want} legacy_downsell_images call(s)"
+                      + (f", after both P2 provers, no --allow-paid before P2 (call log: P2 at {floor[:2]}, "
+                         f"visual step at {legacy[0]})." if want else "."))
+
+        # (p2) issue 61 — the visual step must write where the P7 gate reads. No spy: a REAL stub-provider run
+        #      of legacy_downsell_images.py into a temp run dir (the stub is approved by a Command Center
+        #      record from a loopback fake, and this self-test is the test harness that sets
+        #      SKILL71_FIXTURE_RUN), then prove_sf_build.visual_direction_violations (the function behind
+        #      --visual-only) must find the whole wireframe/mockup set and ask only for final-mockups.
+        skill71 = _SCRIPT_DIR.parent / "71-blackceo-signature-page"
+        golden = _SCRIPT_DIR / "examples" / "golden-daybreak" / "copy_ledger.json"
+        if not (skill71 / "scripts" / "run_governed_stage.py").is_file() or not golden.is_file():
+            ok = False
+            print(f"SELF-TEST FAIL: the real visual-step case needs Skill 71 ({skill71}) and the golden copy "
+                  "ledger beside Skill 49; one is missing, so the --out-dir fix cannot be proven here.")
+        else:
+            sys.path.insert(0, str(_SCRIPT_DIR / "tests"))  # the loopback stand-in lives in tests/, which the bypass scan skips
+            import fake_command_center  # noqa: E402
+            rdq = tmp / "run-visual-real"
+            rdq.mkdir()
+            _write_valid_run(rdq, key)
+            shutil.rmtree(rdq / "page-images", ignore_errors=True)
+            (rdq / "copy_ledger.json").write_text(
+                json.dumps(dict(json.loads(golden.read_text(encoding="utf-8")), funnel_size=3)), encoding="utf-8")
+            with fake_command_center.FakeCommandCenter() as cc:
+                brief = json.loads((rdq / "brief.json").read_text(encoding="utf-8"))
+                brief["visual_stage"] = "required"
+                brief["visual"] = {"skill71_root": str(skill71),
+                                   "brand_file": str(skill71 / "assets" / "brand" / "blackceo-brand.json"),
+                                   "brand_owner": "blackceo", "provider": "stub",
+                                   "stub_approved_by": cc.mint("stub_render", _sha256_file(rdq / "copy_ledger.json"))}
+                (rdq / "brief.json").write_text(json.dumps(brief), encoding="utf-8")
+                env_keys = (*cc.env(), "SKILL71_FIXTURE_RUN")
+                saved_visual_env = {k: os.environ.get(k) for k in env_keys}
+                os.environ.update(cc.env())
+                os.environ["SKILL71_FIXTURE_RUN"] = "1"
+                try:
+                    ran_ok, ran_detail = _run_visual_stage(rdq)
+                    found = prove_sf_build.visual_direction_violations(rdq, 3)
+                finally:
+                    for k, v in saved_visual_env.items():
+                        if v is None:
+                            os.environ.pop(k, None)
+                        else:
+                            os.environ[k] = v
+            receipt_there = (rdq / "page-images" / "page-images-receipt.json").is_file()
+            only_final = bool(found) and all(c == "AF-FUN-BUILD-VISUAL" and "final-mockups" in m for c, m in found)
+            if ran_ok and receipt_there and only_final and not (rdq / "page-images-receipt.json").exists():
+                print("SELF-TEST ok: a real stub run writes <run>/page-images/ and the P7 visual gate reads it "
+                      "(only final-mockups, the client-gated stage, is still asked for).")
             else:
                 ok = False
-                print(f"SELF-TEST FAIL: {label} -> {len(calls)} legacy_downsell_images call(s), wanted {want}.")
+                print(f"SELF-TEST FAIL: the visual step's output is not where P7 reads it: ran_ok={ran_ok} "
+                      f"({ran_detail}), receipt in page-images/={receipt_there}, violations={found[:3]}")
 
         print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
         return 0 if ok else 1

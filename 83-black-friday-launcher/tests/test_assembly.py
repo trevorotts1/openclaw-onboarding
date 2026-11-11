@@ -64,7 +64,8 @@ class OneRouteDialectTests(unittest.TestCase):
         guards = {edge["guard"] for edge in graph["edges"]}
         self.assertIn("verified_main_payment", guards)
         self.assertIn("verified_native_contact_submit", guards)
-        self.assertIn("allowlisted_offer_price", guards)
+        self.assertIn("native_price_bound", guards)
+        self.assertNotIn("allowlisted_offer_price", guards)
         self.assertNotIn("upsell_1_enabled", guards)
 
 

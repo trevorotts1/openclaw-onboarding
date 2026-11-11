@@ -163,6 +163,6 @@ under N43, and 3:1, 1:3, 9:21 use the legacy route).
 Output JSON per prompt: `{"page_type":"…","section":N,"aspect_ratio":"16:9","text_bearing":false,"prompt":"…sized to the model budget…"}`
 (for Sec 11: `"text_bearing":true,"words":["DECIDE","COMMIT","RISE"]`; Sec 12: `"aspect_ratio":"3:4"`).
 
-Then generation is DELEGATED to Skill 66 (model policy) and Skill 74 (the one KIE transport); media folder +
-upload and the GHL build are DELEGATED to Skill 6. This skill never hand-rolls a Kie call or a GHL REST call
-(the entry shell's bypass-scan refuses it).
+Then generation is DELEGATED to Skill 66 (model policy) and Skill 74 (the one KIE transport); media hosting
+and the GHL build are DELEGATED to the delivery rail the brief names (it proves each with signed receipts). This
+skill never hand-rolls a Kie call or a GHL REST call (the entry shell's bypass-scan refuses it).

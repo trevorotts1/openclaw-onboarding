@@ -26,8 +26,8 @@ import sys
 from pathlib import Path
 from typing import Any, List
 
-from . import (checks, council, dependencies, image_plan, intake, launch_bridge,
-               launch_plan, package, page_designs, route)
+from . import (checks, council, dependencies, image_plan, install_handoff, intake, launch_bridge,
+               launch_plan, package, page_designs, production, route)
 from .constants import DECIDED, SEAMS
 
 _TEST_ONLY_REF = "TEST-ONLY"  # the placeholder approval ref on test fixtures
@@ -161,11 +161,18 @@ def _close_step_spine(out_dir: Path, steps: list) -> dict:
     record = {"steps": [], "closed": True}
     for entry in steps:
         missing = [a for a in entry.get("artifacts") or [] if not Path(a).is_file()]
+        # Issue 29: a file that exists is not a step that succeeded. An artifact that says
+        # "state": "failed" (graphics-handoff.json records its own failure that way) or a step that
+        # declares a failed state keeps the spine open, exactly as a missing artifact does.
+        failed = [a for a in entry.get("artifacts") or []
+                  if a not in missing and _json_object(Path(a)).get("state") == "failed"]
+        if entry.get("state") == "failed":
+            failed.append(f"declared state {entry['state']!r}")
         record["steps"].append({"step": entry.get("step"), "required": bool(entry.get("required")),
                                 "artifacts": list(entry.get("artifacts") or []),
-                                "missing": missing,
-                                "status": "closed" if not missing else "open"})
-        if missing and entry.get("required", True):
+                                "missing": missing, "failed": failed, "state": entry.get("state"),
+                                "status": "failed" if failed else "closed" if not missing else "open"})
+        if (missing or failed) and entry.get("required", True):
             record["closed"] = False
     try:
         (Path(out_dir) / "assemble-steps.json").write_text(
@@ -175,14 +182,45 @@ def _close_step_spine(out_dir: Path, steps: list) -> dict:
     if not record["closed"]:
         bad = [f"{s['step']} (missing {', '.join(s['missing'])})"
                for s in record["steps"] if s["missing"]]
+        if bad:
+            raise package.PackageError(
+                "AF-LAUNCH-STEP-ARTIFACT",
+                "a declared assembly step wrote no artifact, so the package cannot be called "
+                "complete: " + "; ".join(bad))
         raise package.PackageError(
-            "AF-LAUNCH-STEP-ARTIFACT",
-            "a declared assembly step wrote no artifact, so the package cannot be called "
-            "complete: " + "; ".join(bad))
+            "AF-LAUNCH-STEP-FAILED",
+            "a declared assembly step ran and failed, so the package cannot be called complete: "
+            + "; ".join(f"{s['step']} ({', '.join(Path(f).name for f in s['failed'])})"
+                        for s in record["steps"] if s["failed"]))
     return record
 
+def _handoff_blockers(verification: dict, test_only: bool) -> list:
+    """Why the sealed package may not be handed off: the reasons, or [] when it may.
+
+    Issue 29. A client delivery (test_only false) must VERIFY: every violation `check` would print blocks the
+    handoff, and a verification that is not in state "verified" blocks it even with no violation to name. Only a
+    practice package keeps the byte-level filter (a receipt or manifest that is missing, an artifact whose bytes
+    moved), because a practice run has no image reviews for the check to find."""
+    violations = list(verification["violations"])
+    if test_only:
+        if verification["state"] != "failed":
+            return []
+        return [v for v in violations
+                if ": artifact " in v
+                or "AF-LAUNCH-PKG-RECEIPT: receipt.json is missing" in v
+                or "AF-LAUNCH-PKG-MANIFEST: package-manifest.json is missing" in v]
+    if violations:
+        return violations
+    return [] if verification["state"] == "verified" else \
+        [f"the package check state is {verification['state']!r}, not 'verified'"]
+
+
 def cmd_assemble(args: argparse.Namespace) -> int:
-    dependencies.require(mode="assemble")
+    # A client package needs Skill 45 to be styled and hosted (dependencies.json rows marked
+    # "when": "not_test_only"); a practice package does not. Absent test_only is a practice build.
+    raw_intake = _read_json(args.intake)
+    dependencies.require(mode="assemble",
+                         test_only=isinstance(raw_intake, dict) and raw_intake.get("test_only", True) is True)
     run_dir = Path(args.run_dir) if args.run_dir else None
     pieces_dir = Path(args.pieces) if args.pieces else (run_dir / "pieces" if run_dir else None)
     if pieces_dir is None:
@@ -206,9 +244,12 @@ def cmd_assemble(args: argparse.Namespace) -> int:
                                           allow_paid=bool(args.allow_paid),
                                           layout_approval_file=Path(args.layout_approval)
                                           if args.layout_approval else None)
+        # issue 57: final-mockups closes in this driver, AFTER dispatch copied each page's stage_gate state
+        launch_bridge.refresh_stage_states(Path(run_dir))
         steps.append({"step": "image-stages", "required": True,
                       "artifacts": [str(Path(run_dir) / "qc" / "image_stages_report.json")]})
     normalized = intake.validate(_read_json(args.intake))
+    test_only = bool(normalized.get("test_only", True))
     launch = _json_object(source_root / "launch.json")
     if launch:  # the dispatch record: its plan hash and approval ref are what the receipt binds
         normalized["approval"] = _bind(normalized, _plan_hash(launch), launch.get("plan_approval_ref", ""))
@@ -246,8 +287,9 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         _launch_event(normalized["launch_id"], {"event_type": "stage_blocked", "stage": "assemble",
                                                 "failures": [exc.code]})
         raise
-    steps.append({"step": "assemble", "required": True,
-                  "artifacts": [str(out["manifest_path"]), str(out["receipt_path"])]})
+    assemble_step = {"step": "assemble", "required": True,
+                     "artifacts": [str(out["manifest_path"]), str(out["receipt_path"])]}
+    steps.append(assemble_step)
     # FIX PLAN B4 (unowned requirement G-5, part 1): assemble used to bypass `checks` entirely,
     # so a package with NO designs at all could be assembled and handed off. design_violations is
     # called HERE, on the sealed manifest, and refuses.
@@ -261,26 +303,13 @@ def cmd_assemble(args: argparse.Namespace) -> int:
                 "AF-LAUNCH-ASSEMBLE-DESIGN",
                 "the package has no complete design set (call `check` for the full list): "
                 + " | ".join(designs[:5]))
-    # B5: re-open the just-sealed package and re-prove its receipt and artifact bytes from disk
-    # before anything is handed off. `checks.verify_package_receipt` is the recovery entry point
-    # L03 and L12 call; running it on the delivery path means a receipt that cannot be re-read, or
-    # an artifact whose bytes moved after sealing, stops the handoff instead of shipping.
-    verification = checks.verify_package_receipt(Path(args.out))
-    broken = [v for v in verification["violations"]
-              if ": artifact " in v
-              or "AF-LAUNCH-PKG-RECEIPT: receipt.json is missing" in v
-              or "AF-LAUNCH-PKG-MANIFEST: package-manifest.json is missing" in v]
-    if verification["state"] == "failed" and broken:
-        _launch_event(normalized["launch_id"],
-                      {"event_type": "stage_blocked", "stage": "assemble_reopen",
-                       "failures": broken[:20]})
-        raise CliError("AF-LAUNCH-ASSEMBLY-NOT-DELIVERABLE",
-                       "the sealed package does not re-open: " + "; ".join(broken[:10]))
     # SOP-GIP-02/03 at the real handoff: the request, the report built from real Review Receipt v2
-    # files, the authorised upload only when an approval was named, the hosted URLs in the pages and
-    # the delivery record. A missing review, provider or hosting capability is recorded, never faked.
-    # The package is already sealed, so a failure here is reported, never raised over it; `check`
-    # still fails the package for the missing reviews.
+    # files, the package check (check-result.json, which hosting needs: issue 37), the authorised upload
+    # only when an approval was named, the hosted URLs in the pages and the delivery record. A missing
+    # review, provider or hosting capability is recorded, never faked. The package is already sealed, so a
+    # failure here is recorded in graphics-handoff.json (state "failed") and the step spine below refuses
+    # to close over it (issue 29); the handoff runs BEFORE the re-open check so the check sees the image
+    # reviews it demands.
     from . import graphics_hooks
     try:
         graphics = graphics_hooks.handle_handoff(
@@ -288,10 +317,10 @@ def cmd_assemble(args: argparse.Namespace) -> int:
             review_roots_extra=[Path(p) for p in (args.review_root or [])],
             host_approval_ref=args.host_media, folder_name=args.hosting_folder_name,
             probe_env=os.environ if args.probe_hosting else None)
-    except Exception as exc:  # noqa: BLE001  (recorded for the operator; the sealed package stands)
+    except Exception as exc:  # noqa: BLE001  (recorded for the operator; the spine then refuses)
         graphics = {"state": "failed", "reason": f"{type(exc).__name__}: {str(exc)[:400]}"}
-        print(f"[graphics] handoff failed ({type(exc).__name__}); the package is sealed and `check` "
-              "will name the missing image reviews", file=sys.stderr)
+        print(f"[graphics] handoff failed ({type(exc).__name__}); the step spine will not close over it",
+              file=sys.stderr)
     # The graphics handoff writes its own record so the step has an artifact to prove.
     graphics_path = Path(args.out) / "graphics-handoff.json"
     try:
@@ -301,8 +330,33 @@ def cmd_assemble(args: argparse.Namespace) -> int:
         pass  # the spine check below refuses if it is absent
     steps.append({"step": "graphics-handoff", "required": True,
                   "artifacts": [str(graphics_path)]})
+    # B5: re-open the just-sealed package and re-prove its receipt and artifact bytes from disk
+    # before anything is handed off. `checks.verify_package_receipt` runs the same check_package that
+    # `check` runs. Issue 29: for a client delivery (test_only false) EVERY violation blocks the handoff
+    # and the package must verify; only a practice package keeps the byte-level filter, because a
+    # practice run has no image reviews to find. Issue 37: the result is written to check-result.json
+    # (what hosting reads) from this same run.
+    verification = checks.verify_package_receipt(Path(args.out))
+    check_record = graphics_hooks.write_check_result(Path(args.out), verification)
+    blocking = _handoff_blockers(verification, test_only)
+    blocked = bool(blocking)
+    if test_only:
+        assemble_step["state"] = "verified" if verification["state"] == "verified" else "practice"
+    else:
+        assemble_step["state"] = "failed" if blocked else "verified"
+    if blocked:
+        _launch_event(normalized["launch_id"],
+                      {"event_type": "stage_blocked", "stage": "assemble_reopen",
+                       "failures": blocking[:20]})
+        raise CliError("AF-LAUNCH-ASSEMBLY-NOT-DELIVERABLE",
+                       "the sealed package does not pass its own check: " + "; ".join(blocking[:10]))
     # THE SPINE CLOSES HERE: every declared step's artifacts must exist, or completion is refused.
-    _close_step_spine(Path(args.out), steps)
+    try:
+        _close_step_spine(Path(args.out), steps)
+    except package.PackageError as exc:
+        _launch_event(normalized["launch_id"], {"event_type": "stage_blocked", "stage": "assemble_spine",
+                                                "failures": [exc.code]})
+        raise
     # G-5: the stage is closed only after the spine has closed; a refused spine emits no stage_closed.
     _launch_event(normalized["launch_id"], {"event_type": "stage_closed", "stage": "assemble"})
     _emit({"manifest": out["manifest_path"], "receipt": out["receipt_path"],
@@ -315,11 +369,76 @@ def cmd_assemble(args: argparse.Namespace) -> int:
            "launch_plan_completeness":
                (out["manifest"].get("launch_plan") or {}).get("completeness"),
            "receipt_verified": verification["state"],
+           "package_check": {"passed": check_record["passed"], "path": graphics_hooks.CHECK_RESULT_REL},
            "receipt_artifacts_checked": verification["artifacts_checked"],
            "image_stages": ({"complete": stage_report.get("complete"),
                              "report": str(Path(args.run_dir) / "qc/image_stages_report.json")}
                             if stage_report else {"state": "not_invoked"}),
            "graphics": graphics})
+    return 0
+
+
+def _client_lines(args: argparse.Namespace, root: Path) -> None:
+    """What the client is told after produce/install: the same plain lines dispatch prints, now driven by
+    the production manifest and the install read-back that exist on disk (issue 80)."""
+    report = _json_object(Path(args.run_dir) / "dispatch-report.json")
+    if report.get("pages"):
+        print()
+        for line in launch_bridge.summary_lines(launch_bridge.with_production(report, root)):
+            print(line)
+
+
+def cmd_produce(args: argparse.Namespace) -> int:
+    """Build the production pages for the approved designs (after `check` exits 0, before any install)."""
+    root = Path(args.package)
+    manifest = _json_object(root / "package-manifest.json")
+    launch_id = str(manifest.get("launch_id") or "")
+    copies = {}
+    for item in args.copy or []:
+        role, _, path = item.partition("=")
+        if not role or not path:
+            raise CliError("AF-LAUNCH-PRODUCE-ARGS", f"--copy needs ROLE=PATH, got {item!r}")
+        copies[role] = Path(path)
+    try:
+        record = production.produce(
+            root, run_dir=Path(args.run_dir), copies=copies,
+            downsell_page=Path(args.downsell_page) if args.downsell_page else None,
+            brand=Path(args.brand) if args.brand else None, checkout_family=args.checkout_family,
+            thank_you_view=Path(args.thank_you_view) if args.thank_you_view else None,
+            thank_you_fulfillment=Path(args.thank_you_fulfillment) if args.thank_you_fulfillment else None,
+            u2_entry_context=args.u2_entry_context)
+        # the stage closes only after production.produce has run the production rule on what it wrote
+    except production.ProductionError as exc:
+        if launch_id:
+            _launch_event(launch_id, {"event_type": "stage_blocked", "stage": "produce",
+                                      "failures": [exc.code]})
+        raise
+    if launch_id:
+        _launch_event(launch_id, {"event_type": "stage_closed", "stage": "produce"})
+    _emit({"production_manifest": str(root / production.MANIFEST_REL),
+           "pages": {role: row.get("state") for role, row in sorted(record["pages"].items())},
+           "test_only": record["test_only"]})
+    _client_lines(args, root)
+    return 0
+
+
+def cmd_install(args: argparse.Namespace) -> int:
+    """Hand the produced pages to the delivery rail named at the call and record what it read back."""
+    root = Path(args.package)
+    manifest = _json_object(root / "package-manifest.json")
+    launch_id = str(manifest.get("launch_id") or "")
+    try:
+        record = install_handoff.install(root, rail=install_handoff.load_rail(args.rail), rail_name=args.rail,
+                                         run_dir=Path(args.run_dir))
+    except install_handoff.InstallError as exc:
+        if launch_id:
+            _launch_event(launch_id, {"event_type": "stage_blocked", "stage": "install", "failures": [exc.code]})
+        raise
+    if launch_id:
+        _launch_event(launch_id, {"event_type": "stage_closed", "stage": "install"})
+    _emit({"install_readback": str(root / install_handoff.READBACK_REL), "rail": record["rail"],
+           "pages": sorted(record["pages"])})
+    _client_lines(args, root)
     return 0
 
 
@@ -573,6 +692,14 @@ def cmd_seams(_args: argparse.Namespace) -> int:
 def cmd_dependencies(args: argparse.Namespace) -> int:
     root = Path(args.root) if args.root else None
     mode = args.mode
+    if args.stamp_interfaces:
+        try:
+            changed = dependencies.stamp_interfaces(root)
+        except dependencies.DependencyError as exc:
+            print(f"FAIL {exc}", file=sys.stderr)
+            return 2
+        print(f"{len(changed)} interface hash(es) re-stamped" + "".join(f"\n  {f}" for f in changed))
+        return 0
     try:
         # --install is the sanctioned fix: a missing runtime package goes into the shared pydeps folder
         report = (dependencies.ensure_runtime_packages(root, mode=mode) if args.install
@@ -587,6 +714,8 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
           f"would_enable={report['would_enable']}")
     for entry in report["entries"]:
         print(f"  {entry['status'].upper():12s} {entry['id']}  ({entry['evidence']})")
+        for h in entry.get("interfaces") or []:
+            print(f"      interface {h['file']} expected sha256={h['expected']} observed sha256={h['observed']}")
     # The metadata spines (registration.json, skill.json) are pointers, not a second
     # requirement list. A disagreement is printed as a finding and never changes the
     # exit code: those two files record nothing that runs.
@@ -611,6 +740,19 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
     if cl["selected_missing"]:
         print("  SELECTED BUT MISSING: " + ", ".join(cl["selected_missing"]))
     return 2 if args.install and report["blockers"] else 0
+
+
+def cmd_sop_ack(args: argparse.Namespace) -> int:
+    """Write the read receipt for one declared SOP, after the reader proves the file was opened."""
+    try:
+        result = dependencies.ack_sop(args.sop, args.session, args.sections,
+                                      Path(args.root) if args.root else None)
+    except dependencies.DependencyError as exc:
+        print(f"FAIL {exc}", file=sys.stderr)
+        return 2
+    print(f"OK read receipt written: {result['receipt']}")
+    print(f"   {result['sop']} has {result['sections']} section headings (matches --sections)")
+    return 0
 
 
 _LANDING_HELP = ("the landing pages the client wants: landing, sales or landing,sales (default: the set "
@@ -696,6 +838,33 @@ def build_parser() -> argparse.ArgumentParser:
                         "delivery record's missing-capability list")
     a.set_defaults(fn=cmd_assemble)
 
+    pr = sub.add_parser("produce", help="build the production pages (Skill 80/81/82 builders) for the approved "
+                                        "designs; runs after `check` exits 0 and before `install`")
+    pr.add_argument("--package", required=True, help="the assembled package folder (assemble --out)")
+    pr.add_argument("--run-dir", required=True, help="the dispatch run folder: launch.json, dispatch-report.json "
+                                                     "and dispatch/downsell-request-enriched.json")
+    pr.add_argument("--copy", action="append", help="ROLE=PATH of an approved upsell copy document "
+                                                    "(upsell_1, upsell_2); repeat for each")
+    pr.add_argument("--downsell-page", help="the approved D1 page document (needed when downsell_1 is routed)")
+    pr.add_argument("--brand", help="the brand tokens JSON the pages use")
+    pr.add_argument("--checkout-family", default="order_upsell_v2_funnel",
+                    choices=["order_upsell_v2_funnel", "store_upsell_website"])
+    pr.add_argument("--u2-entry-context", choices=["from_upsell_1", "from_downsell_1"],
+                    help="which entry path the upsell_2 acknowledgement is written for (the launch record "
+                         "carries none, and the canonical U2 page can be entered from either)")
+    pr.add_argument("--thank-you-view", help="the verified order view the thank-you page renders (Skill 82)")
+    pr.add_argument("--thank-you-fulfillment", help="the fulfillment read for that view")
+    pr.set_defaults(fn=cmd_produce)
+
+    ins = sub.add_parser("install", help="hand the produced pages to the delivery rail and record its read-back "
+                                         "(Skill 83 is the caller; Skill 49 never is)")
+    ins.add_argument("--package", required=True)
+    ins.add_argument("--run-dir", required=True)
+    ins.add_argument("--rail", required=True,
+                     help="the delivery rail: '<skill folder>/<module>.py:<entry>', a callable that takes the "
+                          "handoff and returns what it read back from the installed pages")
+    ins.set_defaults(fn=cmd_install)
+
     pl = sub.add_parser("plan", help="show the client the launch in plain words with the plan hash to approve "
                                      "(--intake), or validate a shared launch plan's calendar (--plan)")
     pl.add_argument("--intake", help="the intake: prints every page, offer, price, billing term and route, "
@@ -770,17 +939,33 @@ def build_parser() -> argparse.ArgumentParser:
                    help="first install any missing runtime package (jsonschema) into the shared pydeps "
                         "folder <root>/pydeps/py<X.Y>/ with pip --target, never --break-system-packages "
                         "and never a venv; exit 2 if one is still missing")
+    d.add_argument("--stamp-interfaces", action="store_true",
+                   help="after a reviewed change to a sibling skill's interface file, re-stamp the "
+                        "interface_sha256 values in dependencies.json to the files' current sha256")
     d.add_argument("--mode", default=dependencies.DEFAULT_MODE,
                    choices=list(dependencies.LAUNCH_MODES),
                    help="the launch mode whose transitive closure to report (default: plan). "
                         "dispatch-kie selects the paid KIE transport, receipts and image helpers; "
                         "dispatch selects the stub practice closure")
     d.set_defaults(fn=cmd_dependencies)
+
+    k = sub.add_parser("sop-ack",
+                       help="write the read receipt for ONE declared SOP, after you open it and count "
+                            "its section headings")
+    k.add_argument("sop", help="the declared SOP: its manifest id, repository path or file stem")
+    k.add_argument("--session", required=True,
+                   help="the reading session's id; it may not equal the assembling session "
+                        "(env SKILL83_SESSION)")
+    k.add_argument("--sections", type=int, default=None,
+                   help="the number of section headings (#-lines) in the SOP; must match the file. "
+                        "The count is printed only after it matches")
+    k.add_argument("--root", default=None, help="repository root (default: the repo containing this skill)")
+    k.set_defaults(fn=cmd_sop_ack)
     return p
 
 
 # These commands read data only and never import the runtime packages, so they must not start an install.
-_NO_RUNTIME_PACKAGES = ("seams", "dependencies", "questions", "brand", "revise-image")
+_NO_RUNTIME_PACKAGES = ("seams", "dependencies", "questions", "brand", "revise-image", "sop-ack")
 
 
 def main(argv: List[str] | None = None) -> int:
@@ -791,8 +976,8 @@ def main(argv: List[str] | None = None) -> int:
         return args.fn(args)
     except (intake.IntakeError, route.RouteError, package.PackageError,
             launch_bridge.BridgeError, image_plan.ImagePlanError,
-            launch_plan.LaunchPlanError, CliError,
-            dependencies.DependencyError) as exc:
+            launch_plan.LaunchPlanError, CliError, production.ProductionError,
+            install_handoff.InstallError, dependencies.DependencyError) as exc:
         print(f"FAIL {exc}", file=sys.stderr)
         return 2
 

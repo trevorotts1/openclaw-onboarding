@@ -178,6 +178,10 @@ class ClientFacingLanguage(unittest.TestCase):
             self.assertEqual(violations(sentence, terms), [], where)
             self.assertIn("Black Friday", sentence)
             self.assertGreater(len(sentence.split()), 12, f"{where}: the stamper cut the sentence short: {sentence!r}")
+            # Issue 75: the operator-detail sentences after the first are read by agents too, so every
+            # sentence is held to the same banned words, not only the one the stamper keeps.
+            for each in re.split(r"(?<=[.!?])\s+", map_description(path)):
+                self.assertEqual(violations(each, terms), [], f"{where}: {each[:80]!r}")
         self.assertEqual(map_description(DEPT_MAP), map_description(DEPT_MAP_ENTRY), "the entry mirrors the map")
         stamped = 0
         for guide in GUIDES:
@@ -186,6 +190,18 @@ class ClientFacingLanguage(unittest.TestCase):
                     stamped += 1
                     self.assertEqual(violations(line.split("|")[2], terms), [], str(guide.relative_to(REPO_ROOT)))
         self.assertEqual(stamped, len(GUIDES), "each department guide carries the Skill 83 row")
+
+    def test_no_copy_of_the_stale_department_map_description_survives_in_the_root_readme(self):
+        # Issue 75: README.md repeats the map description; a stale copy anywhere in it must fail.
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        stale = [p for p in ("entitlement attestation", "entitlement gate", "School of AI alone does not",
+                             "delivery-blocked until Skill 79")
+                 if p.lower() in readme.lower()]
+        self.assertEqual(stale, [], "README.md still carries the old Skill 83 description")
+        row = next(line for line in readme.splitlines() if line.startswith("| 83-black-friday-launcher |"))
+        self.assertIn("no membership question", row)
+        self.assertIn("checkout mode is resolved", row)
+        self.assertIn("no membership question", map_description(DEPT_MAP))
 
     def test_the_detector_catches_what_it_is_for(self):  # control: the guard is not always green
         terms = banned_words(SKILL_MD)

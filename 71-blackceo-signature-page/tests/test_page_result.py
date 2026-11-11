@@ -22,9 +22,11 @@ Repair coverage (independent review defects D1-D5):
   D2 a receipt naming a different tenant/launch/request never
      authorizes (receipt binding); a receipt whose identity fields
      all match authorizes and records "bound"; a partial
-     contradiction fails closed; an identifier-less receipt (bare
-     string, or the contact/form dict shape) authorizes on presence
-     alone and records "no_identity_fields";
+     contradiction fails closed; a receipt with no submission_id or
+     contact_id and a source of native_form or api (a bare string
+     included) is refused as AF-71-ROUTE-RECEIPT and records
+     "unidentified" (tests/test_routing_guard_receipt.py covers the
+     whole rule);
   D3 a present-but-corrupt page-request.json is an error state
      (writer exit 2 naming the corruption; the report pass prints
      the FAIL line), never the legacy skip;
@@ -60,7 +62,7 @@ VERIFIED_SUBMISSION = {
     "event": "interest_verified",
     "state": "verified",
     "receipt": {"contact_id": "TEST-CONTACT-1", "form_id": "TEST-FORM-1",
-                "source": "test fixture (TEST ONLY)"},
+                "source": "native_form"},
     "recorded_at": "2026-10-15T00:00:00+00:00",
 }
 PENDING_SUBMISSION = {
@@ -487,7 +489,8 @@ def main():
                         "launch_id": "TEST-LAUNCH",
                         "request_id": "TEST-REQUEST-1",
                         "page_id": "TEST-LANDING",
-                        "contact_id": "TEST-CONTACT-9"},
+                        "contact_id": "TEST-CONTACT-9",
+                        "source": "native_form"},
             "recorded_at": "2026-10-15T00:00:00+00:00"}
         run = make_run(tmp, submission=bound)
         r = run_writer(run)
@@ -515,9 +518,9 @@ def main():
         assert handoff["submission"]["receipt_binding"] == "contradicted"
 
     with tempfile.TemporaryDirectory() as tmp:
-        # D2: a bare-string receipt carries no identity fields and is
-        # accepted on presence alone (documented choice in
-        # scripts/page_result.py), recorded honestly in the handoff.
+        # Harmony issue 42: a bare-string receipt carries no submission
+        # identifier and no source, so it no longer authorizes on
+        # presence alone: AF-71-ROUTE-RECEIPT, recorded in the handoff.
         string_receipt = {
             "event": "interest_verified", "state": "verified",
             "receipt": "API-RECEIPT-TEST-1",
@@ -527,9 +530,11 @@ def main():
         assert r.returncode == 0, r.stdout + r.stderr
         assert_valid_result(run)
         handoff = load(run, "page-handoff.json")
-        assert handoff["routing"]["authorized"] is True, handoff["routing"]
+        assert handoff["routing"]["authorized"] is False, handoff["routing"]
+        assert "AF-71-ROUTE-RECEIPT" in handoff["routing"]["basis"], \
+            handoff["routing"]
         assert handoff["submission"]["receipt_binding"] == \
-            "no_identity_fields", handoff["submission"]
+            "unidentified", handoff["submission"]
 
     with tempfile.TemporaryDirectory() as tmp:
         # D1: the CTA action map attributes the capture event to the

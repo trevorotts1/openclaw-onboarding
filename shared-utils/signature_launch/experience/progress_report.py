@@ -52,7 +52,8 @@ def derive_rows(manifest_path, root=None):
     finally:
         sys.path.pop(0)
     try:
-        fails = checks.check_package(mp, Path(root) if root else mp.parent)
+        # client_rows: a practice package (test_only true) fails here, so no client row is ever made from one
+        fails = checks.check_package(mp, Path(root) if root else mp.parent, client_rows=True)
         manifest = json.loads(mp.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise RowsRefused(f"cannot read the package manifest ({exc})")

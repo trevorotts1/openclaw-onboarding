@@ -293,8 +293,13 @@ class ApprovalBindingTests(_Tmp):
                              "activation_label": "draft_constructed: local draft package"}}
         # package.assemble is mocked whole and the fake manifest holds no designs, so cli's design backstop
         # is stubbed out here; the real design refusal is proven by test_l26_delivery_scope CliScopeTests.
+        # The same goes for the sealed-package check: this test is about the approval binding, and a client
+        # delivery (this intake is test_only false) must verify before it is handed off, which a package
+        # assemble never wrote cannot. The refusal itself is proved in test_assemble_spine_state.
+        verified = {"state": "verified", "violations": [], "artifacts_checked": 0, "units": {}}
         with mock.patch.object(cli.package, "assemble", return_value=fake) as built, \
                 mock.patch.object(cli.page_designs, "design_violations", return_value=[]), \
+                mock.patch.object(cli.checks, "verify_package_receipt", return_value=verified), \
                 mock.patch.object(cli.council, "planning_step", return_value={"status": "ok"}):
             rc, out, err = run_cli("assemble", "--intake", self.write("intake.json", doc),
                                    "--run-dir", run, "--out", self.dir / "out", "--page-only")

@@ -15,10 +15,12 @@ build_dispatch_config(checkout_design=...); it never builds or binds the form.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import inspect
 import json
 import re
 import shlex
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
@@ -50,6 +52,44 @@ def _require_file(label: str, value: str | Path) -> Path:
     path = Path(value)
     if not path.is_file():
         raise AdapterError(f"{label}: no file at {path}")
+    return path
+
+
+def design_prose_problems(path: str | Path) -> List[str]:
+    """Why a design-prose file is not one Skill 45's composer wrote (empty when it is, and is current).
+
+    The composer is loaded from the shared-utils copy beside this skill, so 83 and Skill 71 read one checker.
+    A hand-typed file, an edited one and one composed against changed Skill 45 files are all refused."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return [f"AF-DI-PROSE: the design prose cannot be read ({type(exc).__name__})"]
+    module = substrate.load("shared-utils/signature_launch/design_prose.py", "launcher_design_prose")
+    return list(module.check_design_prose(doc))
+
+
+def compose_design_prose(launch_record: str | Path, style: str, roles: Sequence[str], out: str | Path,
+                         measured: str | Path | None = None) -> Path:
+    """Write the design prose with Skill 45's composer (shared-utils design_prose.py), replacing whatever is at
+    ``out``. The run's measured design system is appended inside the composer, before its digest is stamped, so
+    the file passes the check and nothing here is typed or placed by an operator."""
+    module = substrate.load("shared-utils/signature_launch/design_prose.py", "launcher_design_prose")
+    try:
+        launch = json.loads(Path(launch_record).read_text(encoding="utf-8"))
+        text = Path(measured).read_text(encoding="utf-8") if measured else ""
+        doc = module.compose(launch, style, None, roles=list(roles), measured=text)
+    except Exception as exc:  # OSError, the composer's ValueError refusals, DesignIntelligenceError (AF-DI-ABSENT)
+        raise AdapterError(f"design prose: {exc}") from exc
+    out = Path(out)
+    out.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return out
+
+
+def _require_design_prose(label: str, value: str | Path) -> Path:
+    path = _require_file(label, value)
+    problems = design_prose_problems(path)
+    if problems:
+        raise AdapterError(f"{label}: {problems[0]} (run design_prose.py; a hand-typed file is refused)")
     return path
 
 
@@ -93,7 +133,8 @@ ADAPTERS: Dict[str, Dict[str, Any]] = {
         "consumer_module": "80-signature-upsell/components/adapters/produce.py",
         "consumer_entry": "main",
         "timeout_s": 1800,
-        "note": "one wrapper invocation per instance, --slot upsell_1",
+        "note": "one wrapper invocation per instance, --slot upsell_1; dispatch runs --stage design (no "
+                "purchase has happened, so eligibility is a design marker); the install stage reads back",
     },
     "upsell_2": {
         "dispatch": True,
@@ -130,9 +171,25 @@ ADAPTERS: Dict[str, Dict[str, Any]] = {
         ),
         "timeout_s": 600,
         "note": ("design-only at launch: 71 shared_page_service + run_page_role_stages "
-                 "draw the page, then the translator runs with --design-only (no S82 "
-                 "result or manifest exists before a sale)"),
+                 "(with --no-pitch-scan, Skill 82's semantic_scan.py) draw the page, then the "
+                 "translator runs with --design-only (no S82 result or manifest exists before a sale)"),
     },
+}
+
+# The production builders the `produce` stage (launcher_core/production.py) calls after `check` exits 0.
+# Dispatch builds DESIGNS; these turn an approved design into a production page. Nothing here is a
+# dispatch adapter, and none of them installs anything: `install` (launcher_core/install_handoff.py)
+# hands the pages to the delivery rail named at the call, which is Skill 83's step (decision D-E).
+PRODUCTION_BUILDERS: Dict[str, Dict[str, Any]] = {
+    "upsell_1": {"skill": 80, "module": "80-signature-upsell/components/pages/build_production_pages.py",
+                 "entry": "build"},
+    "downsell_1": {"skill": 80, "module": "80-signature-upsell/components/pages/build_production_pages.py",
+                   "entry": "build", "handoff_module": "81-signature-downsell/adapters/s06_install_wrapper.py",
+                   "handoff_entry": "production_handoff"},
+    "upsell_2": {"skill": 80, "module": "80-signature-upsell/components/pages/build_production_pages.py",
+                 "entry": "build"},
+    "thank_you": {"skill": 82, "module": "82-signature-thank-you/scripts/build_thank_you_page.py",
+                  "entry": "build"},
 }
 
 # Surfaces that are deliberately not dispatch adapters.
@@ -333,6 +390,39 @@ def _python() -> str:
     return sys.executable or "python3"
 
 
+# The order-form copy's source stamp (Skill 79's emitter writes it; Skill 49's checkout wrapper re-checks it).
+SOURCE_STAMP = re.compile(r"^<!--\s*source_request_sha256:\s*([0-9a-f]{64})\s*-->\s*$", re.M)
+
+
+def _require_stamped(manuscript: Path, request: Path) -> None:
+    """The checkout copy is the Skill 79 emitter's output for THIS checkout request, or it is refused here,
+    before any page is built: the stamp is the request file's sha256. No hand-staged copy-checkout.md passes."""
+    stamps = SOURCE_STAMP.findall(manuscript.read_text(encoding="utf-8", errors="replace"))
+    if len(stamps) != 1 or stamps[0] != hashlib.sha256(request.read_bytes()).hexdigest():
+        raise AdapterError(f"checkout_design.manuscript: {manuscript} is not the Skill 79 emitter's output for "
+                           f"{request}: its source_request_sha256 stamp is missing or is another request's. "
+                           "The order form's copy is never staged by hand.")
+
+
+def emit_checkout_manuscript(*, request: str | Path, launch: str | Path, terms: str | Path,
+                             out: str | Path, python: Optional[str] = None) -> Path:
+    """Write the order form's copy with Skill 79's emitter, before the checkout design lane runs.
+
+    The copy is built from the approved Skill 79 checkout request, the launch record and the approved
+    checkout_terms; it is stamped with the request's sha256, which Skill 49's checkout_wrapper.py (CHK-13)
+    requires. Nobody stages this file by hand. The emitter refuses by name (exit 2) and leaves no file."""
+    emitter = substrate.source("79-signature-order-form/scripts/emit_checkout_manuscript.py")
+    if not emitter.is_file():
+        raise AdapterError(f"checkout copy: the Skill 79 emitter is not installed at {emitter}")
+    proc = subprocess.run([python or _python(), str(emitter), "--request", str(request), "--launch", str(launch),
+                           "--checkout-terms", str(terms), "--out", str(out)],
+                          capture_output=True, text=True, timeout=120)
+    if proc.returncode != 0 or not Path(out).is_file():
+        raise AdapterError("checkout copy: " + ((proc.stderr or proc.stdout).strip()[-500:] or
+                                                f"the Skill 79 emitter exited {proc.returncode}"))
+    return Path(out)
+
+
 class AdapterNotAllowed(AdapterError):
     """An adapter command is not one of the pinned wrapper paths."""
 
@@ -386,6 +476,25 @@ def _check_program(key: str, argv: List[str], tables: tuple) -> None:
             except ValueError as exc:
                 raise AdapterNotAllowed(f"adapter not in allow-list: {key}: unreadable --pipeline-command ({exc})")
             _check_program(key, inner, (PIPELINE_WRAPPERS,))
+            _check_no_pitch_scanner(key, inner)
+
+
+# The no-pitch scanner a thank-you pipeline may name (AF-71-THANK-YOU-PITCH): Skill 82's own script, so the
+# flag cannot be pointed at a stand-in that always passes.
+NO_PITCH_SCANNER = "82-signature-thank-you/scripts/semantic_scan.py"
+
+
+def _check_no_pitch_scanner(key: str, inner: List[str]) -> None:
+    for index, part in enumerate(inner):
+        if part != "--no-pitch-scan":
+            continue
+        try:
+            pinned = (index + 1 < len(inner)
+                      and Path(inner[index + 1]).resolve() == substrate.source(NO_PITCH_SCANNER).resolve())
+        except Exception:  # an uninstalled Skill 82 pins nothing
+            pinned = False
+        if not pinned:
+            raise AdapterNotAllowed(f"adapter not in allow-list: {key}: --no-pitch-scan must name {NO_PITCH_SCANNER}")
 
 
 def _check_script(key: str, script: str, tables: tuple) -> None:
@@ -517,13 +626,15 @@ def build_dispatch_config(*, work_dir: str | Path,
                           image_plan: Optional[Dict[str, Any]] = None,
                           extra_pages: Sequence[str] = (),
                           thank_you_manuscript: str | Path | None = None,
-                          thank_you_design_prose: str | Path | None = None) -> Dict[str, Any]:
+                          thank_you_design_prose: str | Path | None = None,
+                          measured_design_system: str | Path | None = None) -> Dict[str, Any]:
     """Bind the real adapter commands for one launch. Fails closed.
 
     No /path/to entry, no <...> token and no missing file may be emitted as
     executable configuration. The native checkout form is not configurable by
-    design; checkout_design (manuscript, brand_file, brand_owner, image_cap and
-    optionally design_style) wires only the checkout page's design stages.
+    design; checkout_design (manuscript, checkout_request, brand_file, brand_owner, image_cap and
+    optionally design_style) wires only the checkout page's design stages. The manuscript must be
+    Skill 79's emitter output for checkout_request (emit_checkout_manuscript; stamped with its sha256).
 
     image_inputs (required) is the per-launch inputs file for the order page's
     wireframes and mockups (78 run_image_stages.py --inputs). Every funnel that
@@ -611,10 +722,23 @@ def build_dispatch_config(*, work_dir: str | Path,
     thank_you_run = abs_work / "thank_you-run"
     manuscript = (_require_file("thank_you_manuscript", thank_you_manuscript) if thank_you_manuscript
                   else abs_work / "copy-thank_you.md")
-    prose = (_require_file("thank_you_design_prose", thank_you_design_prose) if thank_you_design_prose
+    prose = (_require_design_prose("thank_you_design_prose", thank_you_design_prose) if thank_you_design_prose
              else abs_work / "design-prose.json")
+    for staged, label in ((abs_work / "design-prose.json", "design-prose.json"),
+                          (abs_work / "design-prose-checkout.json", "design-prose-checkout.json")):
+        if staged.is_file():  # a file already in the dispatch folder is checked now; the run checks it again
+            _require_design_prose(label, staged)
+    measured = _require_file("measured_design_system", measured_design_system) if measured_design_system else None
+    style = str((image_plan or {}).get("design_style") or (checkout_design or {}).get("design_style") or "A")
+    # nothing here is operator-staged: the design prose of the thank_you page (and the order form page's) is
+    # composed now, and the thank_you chain composes it again before it checks it
+    compose_design_prose(launch_path, style, ["thank_you"], prose, measured)
+    if checkout_design is not None:
+        compose_design_prose(launch_path, style, ["checkout"], abs_work / "design-prose-checkout.json", measured)
     thank_you_stages = [python, root71 / "scripts" / "run_page_role_stages.py", thank_you_run,
                         "--manuscript", manuscript, "--design-prose", prose, "--provider", image_provider,
+                        # the thank-you page sells nothing: scan the manuscript before any stage (AF-71-THANK-YOU-PITCH)
+                        "--no-pitch-scan", substrate.source(NO_PITCH_SCANNER),
                         *(["--allow-paid"] if paid else [])]
 
     adapters: Dict[str, Dict[str, Any]] = {
@@ -648,6 +772,11 @@ def build_dispatch_config(*, work_dir: str | Path,
             "command": [
                 "bash", "-c",
                 " && ".join([
+                    # the run composes the design prose itself with Skill 45's composer (replacing anything placed
+                    # there), then refuses a file the composer did not write, before any image is made
+                    sh(python, _THIS_FILE, "compose-design-prose", "--launch", launch_path, "--style", style,
+                       "--role", "thank_you", *(["--measured", measured] if measured else []), "--out", prose),
+                    sh(python, _THIS_FILE, "check-design-prose", "--file", prose),
                     sh(python, root71 / "scripts" / "shared_page_service.py", "--request", "{request}",
                        "--run-dir", thank_you_run, "--page-version", "thank-you", "--image-inputs", images_path,
                        "--launch-record", launch_path, "--route-graph", "{work_dir}/route-graph.json",
@@ -665,6 +794,7 @@ def build_dispatch_config(*, work_dir: str | Path,
         adapters[role] = {
             "command": [python, str(root49 / "upsell_wrapper.py"),
                         "--slot", role,
+                        "--stage", "design",  # M8: dispatch builds the DESIGN; eligibility is a runtime gate
                         "--request", "{request}",
                         "--result", "{result}",
                         "--launch", str(launch_path),
@@ -718,10 +848,16 @@ def build_dispatch_config(*, work_dir: str | Path,
     if checkout_design is not None:
         surface = NATIVE_SURFACES["checkout"]
         manuscript_file = _require_file("checkout_design.manuscript", checkout_design["manuscript"])
+        if not checkout_design.get("checkout_request"):
+            raise AdapterError("checkout_design.checkout_request: the Skill 79 checkout request the order form "
+                               "page's copy was written from is required (emit_checkout_manuscript)")
+        request_file = _require_file("checkout_design.checkout_request", checkout_design["checkout_request"])
+        _require_stamped(manuscript_file, request_file)
         brand_file = _require_file("checkout_design.brand_file", checkout_design["brand_file"])
         command = [python, str(substrate.source(surface["design_module"])),
                    "--request", "{request}", "--result", "{result}",
                    "--manuscript", str(manuscript_file),
+                   "--checkout-request", str(request_file),
                    "--design-prose", "{work_dir}/design-prose-checkout.json",
                    "--launch", str(launch_path),
                    "--route-graph", "{work_dir}/route-graph.json",
@@ -796,7 +932,29 @@ def main(argv: Optional[List[str]] = None) -> int:
     attach.add_argument("--result", required=True)
     attach.add_argument("--run-dir", required=True)
     attach.add_argument("--page-key", default="product_selection")
+    compose = sub.add_parser("compose-design-prose",
+                             help="write the design prose with Skill 45's composer (never typed by hand)")
+    compose.add_argument("--launch", required=True)
+    compose.add_argument("--style", required=True, choices=("A", "B", "C"))
+    compose.add_argument("--role", action="append", required=True)
+    compose.add_argument("--measured", default=None)
+    compose.add_argument("--out", required=True)
+    check = sub.add_parser("check-design-prose",
+                           help="refuse a design-prose file that Skill 45's composer did not write")
+    check.add_argument("--file", required=True)
     args = parser.parse_args(argv)
+    if args.step == "compose-design-prose":
+        try:
+            compose_design_prose(args.launch, args.style, args.role, args.out, args.measured)
+        except AdapterError as exc:
+            print(f"FAIL-CLOSED: {exc}", file=sys.stderr)
+            return 3
+        return 0
+    if args.step == "check-design-prose":
+        problems = design_prose_problems(args.file)
+        for problem in problems:
+            print(f"FAIL-CLOSED: {problem}", file=sys.stderr)
+        return 3 if problems else 0
     try:
         result = attach_design_artifacts(args.result, args.run_dir, args.page_key)
     except (AdapterError, OSError, ValueError, KeyError) as exc:

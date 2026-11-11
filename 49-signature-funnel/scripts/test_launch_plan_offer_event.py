@@ -227,14 +227,10 @@ def test_installment_terms() -> None:
         _offer("MAIN-A", "main", "Package A",
                _price("MAIN-A-USD", 49700, billing="installment", schedule=schedule))])
     result = launch_plan.build_launch_plan(terms, _answers())
-    say(result["state"] == "ready", "an installment with exact terms assembles")
-    plan = result["plan"]
-    _contract(plan, "installment")
-    say(plan["offer"]["packages"][0]["billing_schedule"] == schedule,
-        "installment terms are retained verbatim")
-    say(plan["offer"]["payment_plans"] is True
-        and any(a["family"] == "failed_payment" for a in plan["automations"]),
-        "installment terms open the failed-payment family")
+    say(result["state"] == "awaiting_missing_fact"
+        and any("payment plans are not supported in this release" in m for m in result["missing"]),
+        "an installment is refused at plan time with the shared client-facing sentence, even with exact terms "
+        "(D-D: Skill 79 carries no installment type in this release)")
 
     trial = _launch(offers=[
         _offer("MAIN-A", "main", "Package A",

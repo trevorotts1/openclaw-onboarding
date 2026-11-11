@@ -86,7 +86,7 @@
       "id": "email_upsell_strategy",
       "kind": "upsell_followup",
       "provider": "skill50",
-      "email_count": 2,
+      "email_count": 3,
       "draft_only": true,
       "waits_for": ["page_upsell_strategy"]
     },
@@ -94,7 +94,7 @@
       "id": "email_upsell_implementation",
       "kind": "upsell_followup",
       "provider": "skill50",
-      "email_count": 2,
+      "email_count": 3,
       "draft_only": true,
       "waits_for": ["page_upsell_implementation"]
     },
@@ -102,7 +102,7 @@
       "id": "email_downsell_group",
       "kind": "downsell_followup",
       "provider": "skill50",
-      "email_count": 2,
+      "email_count": 3,
       "draft_only": true,
       "waits_for": ["page_downsell_group"]
     },
@@ -110,7 +110,7 @@
       "id": "email_downsell_diy",
       "kind": "downsell_followup",
       "provider": "skill50",
-      "email_count": 2,
+      "email_count": 3,
       "draft_only": true,
       "waits_for": ["page_downsell_diy"]
     },
@@ -197,7 +197,7 @@
     {
       "id": "auto_pre_launch",
       "family": "pre_launch",
-      "template": "indoctrination-multichannel-preframe",
+      "template": "launch-a/launch-a-prelaunch-window",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {
@@ -209,7 +209,7 @@
     {
       "id": "auto_opt_in",
       "family": "opt_in",
-      "template": "post-optin-multichannel-stack",
+      "template": "launch-a/launch-optin-register-login",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {
@@ -221,7 +221,7 @@
     {
       "id": "auto_post_sale",
       "family": "post_sale",
-      "template": "new",
+      "template": "launch-b/launch-post-sale-purchase",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {
@@ -233,7 +233,7 @@
     {
       "id": "auto_upsell_branch",
       "family": "upsell_downsell",
-      "template": "new",
+      "template": "launch-b/upsell-downsell-branch",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {
@@ -245,7 +245,7 @@
     {
       "id": "auto_abandoned_checkout",
       "family": "abandoned_checkout",
-      "template": "abandoned-cart-multichannel-recovery",
+      "template": "launch-b/abandoned-checkout-recovery",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {
@@ -257,7 +257,7 @@
     {
       "id": "auto_failed_payment",
       "family": "failed_payment",
-      "template": "new",
+      "template": "launch-c/failed-payment-recovery",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {
@@ -269,7 +269,7 @@
     {
       "id": "auto_ai_reply",
       "family": "conversation_ai_reply",
-      "template": "new",
+      "template": "launch-ai/customer-replied-conversation-ai",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {

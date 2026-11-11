@@ -175,9 +175,10 @@ record at the responsive-html stage, and the funnel-completion receipt proves th
 ### Launch-context import and the `signature_launch_landing` profile (S71-02)
 
 `write_intake.py --launch-context <page-request.json>` imports the approved Signature Launch context for the
-run and activates the `signature_launch_landing` profile. The page-request is validated against the frozen 1.0
-schema vendored at `references/page-request.schema.json` (byte-identical to S49's candidate PR #2137 at commit
-a2bd2c5a; SHA-256 af0bb5738421f99dc9c6a7ba5a8618c2f6991fad061c7fc826b29caf229d847c). Optional companions are
+run and activates the `signature_launch_landing` profile. The page-request is validated against the
+schema vendored at `references/page-request.schema.json` (schema_version 1.0 or 1.1; byte-identical to the canonical
+copy at `shared-utils/signature_launch/domain/page-request.schema.json`, which
+`shared-utils/signature_launch/tests/test_schema_copies_identical.py` enforces). Optional companions are
 validated the same way: `--launch-record <launch.json>` (`references/launch.schema.json`, SHA-256
 b8e93f92b5d863fa31966b056e8905a1ace14808073892725dd4b3a5b04865a3) and `--route-graph <file>`
 (`references/route-graph.schema.json`, SHA-256 be055305fd96787b89a52cada50362e4eaa580dadbe7db8d1f5dd47b9ad99d27).
@@ -361,6 +362,12 @@ determination from the code:
   and is never counted. A run that declares no CTAs anywhere passes
   vacuously; a production run's closed copy always declares them,
   because the spec's CTA map requires the buttons.
+- The thank-you no-pitch check is `gate:no_pitch_receipt` (also a copy stage
+  validator): a `thank_you` run's copy stage closes only on
+  `private/receipts/no-pitch-scan.json` (`findings` 0, `manuscript_sha256`
+  equal to `copy/internal-manuscript.md`), written by `scripts/no_pitch_scan.py`
+  or by `run_page_role_stages.py` before its first stage (refusal
+  `AF-71-THANK-YOU-PITCH`). Other page roles are not asked for the receipt.
 
 ## Font map (`font-action-plan/font-map.json`)
 

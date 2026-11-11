@@ -57,11 +57,13 @@
       ],
       "lifecycle": {
         "stop_rules": [
+          {"rule": "stop_on_verified_purchase", "scope": "this_campaign_only"},
           {"rule": "stop_on_unsubscribe", "scope": "this_campaign_only"},
           {"rule": "stop_on_launch_calendar_superseded", "scope": "this_campaign_only"}
         ],
         "suppression_rules": [
-          {"rule": "recheck_eligibility_immediately_before_send", "applies_to": "each_scheduled_email_step", "checks": ["unsubscribe", "launch_calendar_current"]}
+          {"rule": "suppress_promotion_after_verified_purchase", "event": "purchase_verified", "applies_to": "all_remaining_email_steps", "scope": "this_campaign"},
+          {"rule": "recheck_eligibility_immediately_before_send", "applies_to": "each_scheduled_email_step", "checks": ["verified_purchase", "unsubscribe", "launch_calendar_current"]}
         ]
       },
       "sender": {"required_refs": ["sender_profile_ref", "reply_to_ref"], "source": "approved shared-launch brief (sender name + reply-to)", "transactional": false},
@@ -223,12 +225,14 @@
       ],
       "lifecycle": {
         "stop_rules": [
+          {"rule": "stop_on_verified_purchase", "purchase_of": "followed_offer", "scope": "this_campaign_only"},
           {"rule": "stop_on_unsubscribe", "scope": "this_campaign_only"},
           {"rule": "stop_on_purchase_of_followed_offer", "scope": "this_campaign_only"},
           {"rule": "stop_on_refund_of_original_purchase", "scope": "this_campaign_only"}
         ],
         "suppression_rules": [
-          {"rule": "recheck_eligibility_immediately_before_send", "applies_to": "each_scheduled_email_step", "checks": ["unsubscribe", "already_owned", "payment_state"]}
+          {"rule": "suppress_promotion_after_verified_purchase", "event": "purchase_verified", "applies_to": "all_remaining_email_steps", "scope": "this_campaign", "purchase_of": "followed_offer"},
+          {"rule": "recheck_eligibility_immediately_before_send", "applies_to": "each_scheduled_email_step", "checks": ["verified_purchase", "unsubscribe", "already_owned", "payment_state"]}
         ]
       },
       "sender": {"required_refs": ["sender_profile_ref", "reply_to_ref"], "source": "approved shared-launch brief (sender name + reply-to)", "transactional": false},
@@ -271,11 +275,13 @@
       ],
       "lifecycle": {
         "stop_rules": [
+          {"rule": "stop_on_verified_purchase", "purchase_of": "main_smaller_or_later_upsell", "scope": "this_campaign_only"},
           {"rule": "stop_on_purchase_of_main_smaller_or_later_upsell", "scope": "this_campaign_only"},
           {"rule": "second_decline_ends_the_sequence", "scope": "this_campaign_only"},
           {"rule": "stop_on_unsubscribe", "scope": "this_campaign_only"}
         ],
         "suppression_rules": [
+          {"rule": "suppress_promotion_after_verified_purchase", "event": "purchase_verified", "applies_to": "all_remaining_email_steps", "scope": "this_campaign", "purchase_of": "main_smaller_or_later_upsell"},
           {"rule": "recheck_eligibility_immediately_before_send", "applies_to": "each_scheduled_email_step", "checks": ["unsubscribe", "verified_purchase", "decline_recorded"]}
         ]
       },
@@ -325,6 +331,7 @@
           {"rule": "stop_on_unsubscribe", "scope": "this_campaign_only"}
         ],
         "suppression_rules": [
+          {"rule": "suppress_promotion_after_verified_purchase", "event": "purchase_verified", "applies_to": "all_remaining_email_steps", "scope": "this_campaign"},
           {"rule": "suppress_recovery_after_verified_purchase", "event": "purchase_verified", "applies_to": "all_remaining_email_steps", "scope": "this_campaign"},
           {"rule": "recheck_eligibility_immediately_before_send", "applies_to": "each_scheduled_email_step", "checks": ["verified_purchase", "active_order", "unsubscribe", "offer_version_current"]}
         ]

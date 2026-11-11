@@ -1,9 +1,8 @@
 """Legacy Skill 49 structure proofs read the BUILT pages and tool runs, not the agent's ledgers.
 
 STR-18  P5 parses each fragment for the profile's section markers (a fragment of 'x' fails);
-        P7 recomputes QC from a Skill 6 tool run and re-runs ghl_gate.require_pass on the
-        evidence root (a receipt that only says qc_score 9.0 fails); preview URLs must be ones
-        a passing verify record checked.
+        P7 recomputes QC from the delivery rail's signed P7-BUILD receipt lines (a receipt that
+        only says qc_score 9.0 fails); preview URLs must be ones a passing rail line recorded.
 STR-19  P1 derives the required page types from the locked funnel size (main-only fails).
 IMG-16  P7, which the orchestrator runs before it certifies, needs wireframes and mockups
         for every page (legacy_downsell_images.py output): no visual direction, no certificate.
@@ -44,10 +43,10 @@ class Tmp(unittest.TestCase):
         return pathlib.Path(d)
 
     def isolate_gate_state(self, with_operator_key=False):
-        """Keep the Skill 6 run-nonce files (and, for the orchestrator, the operator key) in a
+        """Keep the operator key (the delivery rail's receipts are signed with it) in a
         throwaway dir outside every run dir, never in the real HOME."""
         state = self.tmp()
-        env = {"GHL_VERIFY_NONCE_DIR": str(state / "nonces")}
+        env = {}
         if with_operator_key:
             key_file = state / "operator.key"
             key_file.write_text(OPERATOR_KEY + "\n", encoding="utf-8")
@@ -152,9 +151,16 @@ class P7ToolRunTests(Tmp):
     def test_complete_run_passes(self):
         self.assertEqual(self.verify(self.run_dir(5)), [])
 
+    def re_record(self, rd, size=5, overrides=None):
+        """Replace the rail's lines with freshly signed ones (provider stub + operator key)."""
+        import stub_provider_adapter
+        (rd / "delegation_receipts.jsonl").unlink()
+        receipt = json.loads((rd / "build_receipt.json").read_text())
+        stub_provider_adapter.emit_rail(rd, build.P7_PHASE, build.rail_rows(receipt, overrides))
+
     def test_receipt_saying_9_0_with_no_tool_run_record_fails(self):
         rd = self.run_dir(5)
-        shutil.rmtree(rd / build.EVIDENCE_REL)
+        (rd / "delegation_receipts.jsonl").unlink()
         receipt = json.loads((rd / "build_receipt.json").read_text())
         receipt["qc_score"] = 9.0
         self.assertIn("AF-FUN-BUILD-QC-RECORD", codes(self.verify(rd, receipt=receipt)))
@@ -164,32 +170,52 @@ class P7ToolRunTests(Tmp):
         cmd = [sys.executable, str(SCRIPTS / "prove_sf_build.py"), "--receipt",
                str(rd / "build_receipt.json"), "--funnel-size", "5"]
         self.assertEqual(subprocess.run(cmd, capture_output=True, text=True).returncode, 0)
-        shutil.rmtree(rd / build.EVIDENCE_REL)
+        (rd / "delegation_receipts.jsonl").unlink()
         proc = subprocess.run(cmd, capture_output=True, text=True)
         self.assertEqual(proc.returncode, 2, proc.stdout)
         self.assertIn("AF-FUN-BUILD-QC-RECORD", proc.stdout)
 
-    def test_a_failing_verify_run_fails_even_with_a_9_receipt(self):
+    def test_a_failing_rail_line_fails_even_with_a_9_receipt(self):
         rd = self.run_dir(5)
-        path = rd / build.EVIDENCE_REL / "scorecard" / "verify-summary.json"
-        summary = json.loads(path.read_text())
-        summary["overall_pass"] = False
-        path.write_text(json.dumps(summary))
-        self.assertIn("AF-FUN-BUILD-QC-RECORD", codes(self.verify(rd)))
+        self.re_record(rd, overrides={"main": {"PASS": False}})   # 4/5 = 8.0 recomputed
+        receipt = json.loads((rd / "build_receipt.json").read_text())
+        receipt["qc_score"] = 9.0
+        v = self.verify(rd, receipt=receipt)
+        self.assertIn("AF-FUN-BUILD-QC-RECORD", codes(v))
+        self.assertTrue(any("below the 8.5 floor" in m for _, m in v), v)
 
-    def test_tampered_raw_log_fails_the_gate(self):
-        rd = self.run_dir(5)
-        path = rd / build.EVIDENCE_REL / "logs" / "final-preview-verify.json"
-        path.write_text(path.read_text().replace('"PASS": true', '"PASS": false', 1))
-        self.assertIn("AF-FUN-BUILD-QC-RECORD", codes(self.verify(rd)))
+    def test_a_claim_above_the_recomputed_score_fails_even_when_the_floor_is_met(self):
+        rd = self.run_dir(7)
+        self.re_record(rd, 7, overrides={"checkout": {"PASS": False}})   # 6/7 = 8.57 recomputed
+        receipt = json.loads((rd / "build_receipt.json").read_text())
+        receipt["qc_score"] = 8.6                                        # within the 0.05 tolerance
+        v = self.verify(rd, 7, receipt=receipt)
+        self.assertFalse(any("below the 8.5 floor" in m or "exceeds the QC" in m for _, m in v), v)
+        receipt["qc_score"] = 9.9
+        v = self.verify(rd, 7, receipt=receipt)
+        self.assertTrue(any("exceeds the QC 8.57" in m for _, m in v), v)
+        # the page the rail failed is not a URL any PASSING line recorded, so it cannot be previewed
+        self.assertIn("AF-FUN-BUILD-PREVIEW-UNBOUND", codes(v))
 
-    def test_a_hand_written_summary_is_not_a_tool_run(self):
+    def test_an_edited_signed_line_fails_the_gate(self):
         rd = self.run_dir(5)
-        path = rd / build.EVIDENCE_REL / "scorecard" / "verify-summary.json"
-        summary = json.loads(path.read_text())
-        summary["writer"] = "the agent"
-        path.write_text(json.dumps(summary))
-        self.assertIn("AF-FUN-BUILD-QC-RECORD", codes(self.verify(rd)))
+        path = rd / "delegation_receipts.jsonl"
+        lines = [json.loads(x) for x in path.read_text().splitlines()]
+        lines[0]["PASS"] = False
+        path.write_text("".join(json.dumps(x) + "\n" for x in lines))
+        v = self.verify(rd)
+        self.assertIn("AF-FUN-BUILD-QC-RECORD", codes(v))
+        self.assertTrue(any("forged" in m for _, m in v), v)
+
+    def test_hand_written_unsigned_lines_are_not_the_rails_receipts(self):
+        rd = self.run_dir(5)
+        path = rd / "delegation_receipts.jsonl"
+        lines = [json.loads(x) for x in path.read_text().splitlines()]
+        path.write_text("".join(json.dumps({k: v for k, v in x.items() if k != "harness_sig"}) + "\n"
+                                for x in lines))
+        v = self.verify(rd)
+        self.assertIn("AF-FUN-BUILD-QC-RECORD", codes(v))
+        self.assertTrue(any("UNSIGNED" in m for _, m in v), v)
 
     def test_a_preview_url_no_passing_record_checked_fails(self):
         rd = self.run_dir(5)
@@ -324,7 +350,9 @@ class OrchestratorCertifyTests(Tmp):
 
     def test_a_receipt_saying_9_0_with_no_tool_run_never_certifies(self):
         rd = self.run_for(3)
-        shutil.rmtree(rd / build.EVIDENCE_REL)
+        store = rd / "delegation_receipts.jsonl"      # keep P3/P4, drop the rail's P7-BUILD lines
+        kept = [x for x in store.read_text().splitlines() if json.loads(x)["phase"] != build.P7_PHASE]
+        store.write_text("".join(x + "\n" for x in kept))
         self.assert_aborts_at(rd, "P7-BUILD")
 
     def test_a_main_only_copy_ledger_aborts_at_p1(self):

@@ -7,6 +7,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT))
@@ -158,6 +159,43 @@ class CheckoutInstanceTests(unittest.TestCase):
         self.assertEqual([i["page_id"] for i in built["instances"]], [checkout_page])
         self.assertIsNone(built["binding_plan"])
         self.assertEqual(built["violations"], [])
+
+
+class ValidationClockWiringTests(unittest.TestCase):
+    """Skill 79's validator is handed the time exactly when the request is live, at build and at replay."""
+
+    class Recorder:
+        def __init__(self):
+            self.calls = []
+
+        def validate_request(self, *args):
+            self.calls.append(args)
+
+    def seen(self, test_only):
+        normalized, graph, launch = prepared("multiple_options")
+        recorder = self.Recorder()
+        with mock.patch.object(checkout_instances.substrate, "s79_validate_checkout", return_value=recorder):
+            native = {price["price_choice_id"]: {"native_product_id": "P-" + str(i), "native_price_id": "R-" + str(i)}
+                      for i, price in enumerate(p for o in launch["offers"] for p in o["prices"])}
+            built = checkout_instances.build(normalized, graph, dict(launch, test_only=test_only),
+                                             dict(COMMERCIAL, native=native))
+            built_calls, recorder.calls = list(recorder.calls), []
+            checkout_instances.replay_violations({"instances": built["instances"], "binding_plan": built["binding_plan"]})
+        return built_calls, recorder.calls
+
+    def test_a_live_request_carries_the_clock_at_build_and_at_replay(self):
+        for calls in self.seen(False):
+            self.assertTrue(calls)
+            for args in calls:
+                self.assertEqual(len(args), 2)
+                self.assertIsInstance(args[1], str)
+
+    def test_a_practice_request_carries_no_clock_at_build_and_at_replay(self):
+        for calls in self.seen(True):
+            self.assertTrue(calls)
+            for args in calls:
+                self.assertEqual(len(args), 2)
+                self.assertIsNone(args[1])
 
 
 if __name__ == "__main__":

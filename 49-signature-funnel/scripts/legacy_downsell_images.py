@@ -6,8 +6,8 @@
 
 The legacy Signature Funnel (P0..P10) has no wireframe or mockup stage. Every page of the funnel
 size gets desktop wireframes, mobile wireframes and the visual mockup here, by running Skill 71's
-own pipeline (build_production_request.py, then stage_executor.py); Skill 71 code is reused, never
-copied. The page copy comes from the run's copy ledger, and nothing is invented to fill a gap:
+own pipeline (build_production_request.py, then Skill 71's one admission door, run_governed_stage.py, which
+runs the stage gate check before the executor); Skill 71 code is reused, never copied. The page copy comes from the run's copy ledger, and nothing is invented to fill a gap:
 
   main        the 12-section signature sales page (copy form standard, page kind sales)
   upsell,     the 8-section upsell form, as page role upsell_1 / upsell_2
@@ -41,8 +41,11 @@ A record changed after that is caught by the P7 build gate on the sha256.
 
 --page narrows the run. Each page is checked against structure/page_types.json (page_set.py): a page
 whose images are missing is refused. Provider DEFAULTS to kie (--allow-paid required); the offline stub
-is opt-in only and needs a recorded owner approval, --stub-approved-by <ref> (the review PDFs and boards
-are composed only on kie; the receipt lists them as render pending). Exit 0 ok, 2 refused or a stage failed.
+is opt-in only and needs the owner's approval as a Command Center record, --stub-approved-by <approval id>: it
+is verified (kind stub_render, bound to the sha256 of --ledger) before anything is drawn and the receipt carries
+the verified record; free text is refused (the review PDFs and boards are composed only on kie; the receipt
+lists them as render pending). Skill 71's stage gate governs every draw: a stub run needs a gate-driven run or a
+test harness, a kie run needs the earlier stages closed. Exit 0 ok, 2 refused or a stage failed.
 """
 from __future__ import annotations
 
@@ -59,6 +62,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import page_set  # noqa: E402
 import prove_sf_prompt_floor as psf  # noqa: E402  (the one source of the required per-section image set)
+import stub_approval  # noqa: E402  (issue 38: a stub run needs a verified Command Center approval)
 from checkout_wrapper import CARD_FIELDS  # noqa: E402
 
 STRUCTURE = HERE.parent / "structure" / "funnel_structure.json"
@@ -238,8 +242,9 @@ def draw(run, build_args, args, scripts, required=frozenset(), bands=None):
                  "--model", model, "--out", f"production-request-{stage}.json", "--run-dir", "."]
         if args.design_prose:
             build += ["--design-prose", str(args.design_prose.resolve())]
-        execute = [py, str(scripts / "stage_executor.py"), ".", "--request",
-                   f"production-request-{stage}.json", "--stages", stage,
+        # issues 2, 10, 62: the ONE door into Skill 71's drawing: it runs the stage gate check first
+        execute = [py, str(scripts / "run_governed_stage.py"), ".", "--request",
+                   f"production-request-{stage}.json", "--stage", stage,
                    "--provider", args.image_provider]
         if args.image_provider == "kie":
             execute.append("--allow-paid")
@@ -363,8 +368,9 @@ def main(argv=None):
                     help="kie (default) draws real wireframes and needs --allow-paid; stub writes "
                          "placeholders and needs a recorded owner approval (--stub-approved-by)")
     ap.add_argument("--stub-approved-by",
-                    help="the owner approval reference that permits a STUB run; without it a stub "
-                         "run is refused and, if a receipt claims one, P7-BUILD refuses to certify")
+                    help="the Command Center approval id (kind stub_render, bound to the sha256 of --ledger) "
+                         "that permits a STUB run; it is verified here, free text is refused, and "
+                         "P7-BUILD verifies the receipt's record again")
     ap.add_argument("--allow-paid", action="store_true")
     ap.add_argument("--image-model")
     ap.add_argument("--design-prose", type=Path)
@@ -378,17 +384,23 @@ def main(argv=None):
                 raise Refused(f"--{flag.replace('_', '-')} is required unless --record-final-mockups is given")
         if args.image_provider == "kie" and not args.allow_paid:
             raise Refused("--image-provider kie spends money; it needs --allow-paid, approved by the owner")
-        if args.image_provider == "stub" and not (args.stub_approved_by or "").strip():
+        stub_record = None
+        if args.image_provider == "stub":
             # Fix plan B2: the provider must never DEFAULT to placeholder wireframes. A stub run
-            # is allowed only with a recorded owner approval, written into the receipt so the
-            # build gate can refuse an unapproved one.
-            raise Refused("--image-provider stub writes PLACEHOLDER wireframes and needs a recorded "
-                          "owner approval: pass --stub-approved-by <owner approval reference>. The "
-                          "default provider is kie.")
+            # is allowed only with the owner's approval, and (issue 38) that approval is a Command
+            # Center record verified now and carried verified in the receipt, never a free-text string.
+            if not (args.stub_approved_by or "").strip():
+                raise Refused("--image-provider stub writes PLACEHOLDER wireframes and needs the owner's "
+                              "approval: pass --stub-approved-by <Command Center approval id>. The "
+                              "default provider is kie.")
+            try:
+                stub_record = stub_approval.verify_for_ledger(args.stub_approved_by, args.ledger)
+            except stub_approval.StubApprovalRefused as exc:
+                raise Refused(f"--stub-approved-by: {exc}")
         root = args.skill71_root.resolve()
         scripts = root / "scripts"
         entries_file = root / "references" / "page-structures.json"
-        for need in (scripts / "build_production_request.py", scripts / "stage_executor.py", entries_file):
+        for need in (scripts / "build_production_request.py", scripts / "run_governed_stage.py", entries_file):
             if not need.is_file():
                 raise Refused(f"the Skill 71 tree lacks {need}")
         entries = json.loads(entries_file.read_text(encoding="utf-8"))["roles"]
@@ -403,7 +415,7 @@ def main(argv=None):
         args.image_model = _image_model(args)  # once per run: every page records the same id
         report = {"funnel_size": size, "pages": {},
                   "provider": args.image_provider,
-                  "stub_approval": (args.stub_approved_by or None) if args.image_provider == "stub" else None,
+                  "stub_approval": stub_record,
                   "not_built": {s: NOT_BUILT[s] for s in structure["funnel_matrix"][str(size)]
                                 if s in NOT_BUILT and not (s == "checkout" and args.checkout_manuscript)}}
         for slug in slugs:

@@ -25,7 +25,7 @@ PAGE_ROLES = (
     "thank_you",
 )
 PURCHASE_STAGES = ("checkout", "upsell_1", "downsell_1", "upsell_2")
-ENTRY_EVENTS = ("interest_submitted", "selection_validated")
+ENTRY_EVENTS = ("interest_submitted", "selection_validated", "offer_selected")
 STAY_EVENTS = ("payment_pending", "payment_failed", "requires_customer_action")
 PAID_GUARD = {
     "checkout": "verified_main_payment",
@@ -36,6 +36,10 @@ PAID_GUARD = {
 DECLINE_GUARD = "no_charge_decline"
 CONTACT_GUARD = "verified_native_contact_submit"
 SELECTION_GUARD = "allowlisted_offer_price"
+NATIVE_PRICE_GUARD = "native_price_bound"
+# The per-offer binding route Skill 78 emits when no selection page session exists (one native
+# checkout target per price choice). It is the only runtime the selection guard has in this release.
+PER_OFFER_ROUTE = "per_offer_targets"
 
 
 class RouteInvariantError(ValueError):
@@ -93,8 +97,15 @@ def _expected_edges(launch: Dict[str, Any]) -> List[tuple]:
     if mode == "multiple_options":
         edges.append((pid("landing"), "interest_submitted",
                       pid("product_selection"), CONTACT_GUARD))
-        edges.append((pid("product_selection"), "selection_validated",
-                      pid("checkout"), SELECTION_GUARD))
+        # Issue 45: the allowlist guard is asserted only where a selection_ref backs it; otherwise the
+        # per-offer edge, whose price is bound by the native checkout target itself.
+        ref = launch.get("selection_ref")
+        if isinstance(ref, str) and ref.strip():
+            edges.append((pid("product_selection"), "selection_validated",
+                          pid("checkout"), SELECTION_GUARD))
+        else:
+            edges.append((pid("product_selection"), "offer_selected",
+                          pid("checkout"), NATIVE_PRICE_GUARD))
     else:
         edges.append((pid("landing"), "interest_submitted",
                       pid("checkout"), CONTACT_GUARD))
@@ -122,9 +133,37 @@ def _expected_edges(launch: Dict[str, Any]) -> List[tuple]:
     return edges
 
 
+def selection_guard_violations(graph: Dict[str, Any], *, selection_ref: Any = None,
+                               binding_plan: Any = None) -> List[str]:
+    """A graph may assert ``allowlisted_offer_price`` only where something enforces it (issue 45).
+
+    The edge tells a reader that the buyer's pick was validated against an allowlist before checkout.
+    That is true only when the package holds the runtime behind it: a ``selection_ref`` (a validated
+    selection session) or Skill 78's per-offer binding plan, which maps each price choice to the one
+    native target the allowlist names. With neither, the guard is prose, so the graph is refused by name.
+    """
+    edges = [e for e in graph.get("edges", []) if e.get("guard") == SELECTION_GUARD]
+    if not edges:
+        return []
+    if isinstance(selection_ref, str) and selection_ref.strip():
+        return []
+    if (isinstance(binding_plan, dict) and binding_plan.get("route") == PER_OFFER_ROUTE
+            and binding_plan.get("mappings")):
+        return []
+    return [f"AF-LAUNCH-ROUTE-GUARD-NO-RUNTIME: edge {e.get('event')!r} {e.get('from')!r} -> {e.get('to')!r} "
+            f"asserts guard {SELECTION_GUARD!r}, but the package holds no selection_ref and no "
+            f"{PER_OFFER_ROUTE} binding plan, so nothing enforces it" for e in edges]
+
+
 def graph_violations(launch: Dict[str, Any],
-                     graph: Optional[Dict[str, Any]] = None) -> List[str]:
-    """Every route invariant, each named. Empty list == the graph holds."""
+                     graph: Optional[Dict[str, Any]] = None, *,
+                     runtime: Optional[Dict[str, Any]] = None) -> List[str]:
+    """Every route invariant, each named. Empty list == the graph holds.
+
+    ``runtime`` is the package's evidence for the guards the graph asserts
+    (``{"selection_ref": ..., "binding_plan": ...}``, see ``selection_guard_violations``). The selection
+    guard is always judged: ``runtime=None`` means the caller holds no runtime, so a graph that asserts
+    the guard is refused (a caller that compiles from a record passes the record's own selection_ref)."""
     if graph is None:
         graph = compile_route(launch)["graph"]
     compiler = substrate.compiler()
@@ -252,6 +291,9 @@ def graph_violations(launch: Dict[str, Any],
     if declared and declared != compiler.graph_hash(graph):
         violations.append(
             "declared route_graph_hash does not match the compiled graph")
+
+    # 7. A guard the graph asserts has a runtime in the package (issue 45); no runtime given is no runtime.
+    violations.extend(selection_guard_violations(graph, **(runtime or {})))
     return violations
 
 
@@ -259,7 +301,7 @@ def assert_route_law(launch: Dict[str, Any],
                      graph: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Fail closed on the first named invariant set violation."""
     graph = graph if graph is not None else compile_route(launch)["graph"]
-    violations = graph_violations(launch, graph)
+    violations = graph_violations(launch, graph, runtime={"selection_ref": launch.get("selection_ref")})
     if violations:
         raise RouteInvariantError("; ".join(violations))
     return graph

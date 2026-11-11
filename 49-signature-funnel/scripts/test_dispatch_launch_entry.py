@@ -108,7 +108,8 @@ def pinned_copy(td: Path) -> Path:
     (root / "71-blackceo-signature-page").symlink_to(
         SKILL.parent / "71-blackceo-signature-page", target_is_directory=True)
     # the pin set also covers the Skill 83 launcher tree and the shared launch packages beside Skill 49
-    for sibling in ("83-black-friday-launcher", "shared-utils"):
+    # the front door also needs the department map (Skill 49's own routing row) beside the skill
+    for sibling in ("83-black-friday-launcher", "shared-utils", "23-ai-workforce-blueprint"):
         (root / sibling).symlink_to(SKILL.parent / sibling, target_is_directory=True)
     # the fixture's own mint, through the only legal path (CI); the repository pin is untouched
     fd.mint_pin_ci(dst, env={"GITHUB_ACTIONS": "true", "GITHUB_EVENT_NAME": "push",
@@ -267,7 +268,7 @@ class AnImageCapBelowThePlanIsRefusedBeforeAnythingStarts(unittest.TestCase):
             rd = make_run_dir(tdp, adapters=False, parallel=1)
             inputs = tdp / "image-inputs.json"
             inputs.write_text(json.dumps({"design_style": "B", "brand_file": "/x/brand.json", "brand_owner": "Acme",
-                                          "image_cap": cap, "image_provider": "stub"}), encoding="utf-8")
+                                          "image_cap": cap, "image_provider": "stub", "test_only": True}), encoding="utf-8")
             p = run([sys.executable, str(HERE / "dispatch_launch.py"), "--run-dir", str(rd),
                      "--simulate-executor", "--image-inputs", str(inputs)])
             return p, rd
@@ -551,6 +552,118 @@ class ALoneInstallStillEmits(unittest.TestCase):
             self.assertEqual(p.returncode, dl.EXIT_VIOLATION, out)
             self.assertIn("71-blackceo-signature-page", out)
             self.assertIn("swarm_runner.py", out)
+
+
+SHA = "a" * 64
+# A consumer whose result claims a finished, independently reviewed page.
+REVIEWED_CONSUMER = CONSUMER.replace("'status': 'authored', 'artifacts': []", "'status': 'locally_verified', 'artifacts': [{'path': 'a.png', 'sha256': '" + SHA + "'}]"
+    ).replace("'reviewer_session': None, 'independent_review': False,\n       'proof_class': 'L0'", "'reviewer_session': 'rev-1', 'independent_review': True,\n       'proof_class': 'L2'")
+
+
+class ClientDeliveryNeedsAnIndependentReview(unittest.TestCase):
+    """Issue 30 / M2: the executor validates at scope client_delivery unless the request is a local rehearsal
+    (test_only AND local_only), so an unreviewed result can no longer pass a launch that is going to a client."""
+
+    def run_lane(self, td, consumer_src, *, test_only, target, review=None, ledger=None,
+                 extra=(), lane=None, review_name="review-checkout.json", ledger_text=None):
+        consumer = td / "consumer.py"
+        consumer.write_text(consumer_src, encoding="utf-8")
+        launch, _approval = approved_launch()
+        req = next(r for r in dl.build_requests(launch, clr.compile_route(launch), copy_profile="standard",
+                                                allowed_write_target=target) if r["page_role"] == "checkout")
+        req["test_only"] = test_only
+        (td / "request-checkout.json").write_text(json.dumps(req), encoding="utf-8")  # dispatch stages it first
+        cfg = {"adapters": {lane or "checkout": {"command": [sys.executable, str(consumer), "{request}", "{result}",
+                                                              *extra]}}}
+        if review is not None:
+            (td / review_name).write_text(review if isinstance(review, str) else json.dumps(review), encoding="utf-8")
+        if ledger is not None:
+            (td / 'dispatch-session-registry.json').write_text(
+                ledger if isinstance(ledger, str) else json.dumps(ledger), encoding="utf-8")
+        return dl.executor_from_config(cfg, td)(req, lane)
+
+    def review(self, **over):
+        rec = {"schema": "signature-launch-review-record/v1", "reviewer_session": "rev-1", "reviewer_model": "m",
+               "verdict": "PASS", "request_id": None, "reviewed_artifacts": [{"path": "a.png", "sha256": SHA}]}
+        rec.update(over)
+        return rec
+
+    LEDGER = {"sessions": [{"session_id": "rev-1", "model": "m"}]}
+
+    def test_the_review_placeholder_in_an_adapter_command_names_the_staged_record(self):
+        # a consumer that records the {review} argument it was handed
+        spy = CONSUMER + "open(sys.argv[2] + '.review-arg', 'w').write(sys.argv[3])\n"
+        for lane, name in ((None, "review-checkout.json"), ("downsell_2", "review-downsell_2.json")):
+            with self.subTest(lane=lane), tempfile.TemporaryDirectory() as td:
+                td = Path(td)
+                self.run_lane(td, spy, test_only=True, target="local_only", extra=("{review}",), lane=lane)
+                seen = list(td.glob("*.review-arg"))
+                self.assertEqual(len(seen), 1)
+                self.assertEqual(seen[0].read_text(encoding="utf-8"), str(td / name))
+
+    def test_a_local_rehearsal_needs_no_review(self):
+        with tempfile.TemporaryDirectory() as td:
+            res = self.run_lane(Path(td), CONSUMER, test_only=True, target="local_only")
+            self.assertFalse(res["independent_review"])
+
+    def test_an_unreviewed_result_is_refused_for_a_client_delivery(self):
+        for test_only, target in ((False, "local_only"), (True, "approved_test_location")):
+            with self.subTest(test_only=test_only, target=target), tempfile.TemporaryDirectory() as td:
+                with self.assertRaises(dl.DispatchError) as ctx:
+                    self.run_lane(Path(td), CONSUMER, test_only=test_only, target=target)
+                self.assertIn("client_delivery needs an independent review record", str(ctx.exception))
+
+    def test_a_valid_review_record_passes_a_client_delivery(self):
+        with tempfile.TemporaryDirectory() as td:
+            req_id = None
+            launch, _ = approved_launch()
+            req_id = next(r for r in dl.build_requests(launch, clr.compile_route(launch), copy_profile="standard",
+                                                       allowed_write_target="local_only")
+                          if r["page_role"] == "checkout")["request_id"]
+            res = self.run_lane(Path(td), REVIEWED_CONSUMER, test_only=False, target="local_only",
+                                review=self.review(request_id=req_id), ledger=self.LEDGER)
+            self.assertTrue(res["independent_review"])
+            self.assertEqual(res["reviewer_session"], "rev-1")
+
+    def test_a_review_claim_with_a_failed_verdict_is_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(dl.DispatchError) as ctx:
+                self.run_lane(Path(td), REVIEWED_CONSUMER, test_only=False, target="local_only",
+                              review=self.review(verdict="FAIL"), ledger=self.LEDGER)
+            self.assertIn("no recognised successful verdict", str(ctx.exception))
+
+    def test_a_lane_reads_its_own_review_record_not_its_parents(self):
+        with tempfile.TemporaryDirectory() as td:
+            launch, _ = approved_launch()
+            req_id = next(r for r in dl.build_requests(launch, clr.compile_route(launch), copy_profile="standard",
+                                                       allowed_write_target="local_only")
+                          if r["page_role"] == "checkout")["request_id"]
+            kw = dict(test_only=False, target="local_only", lane="downsell_2", ledger=self.LEDGER)
+            res = self.run_lane(Path(td), REVIEWED_CONSUMER, review=self.review(request_id=req_id),
+                                review_name="review-downsell_2.json", **kw)
+            self.assertTrue(res["independent_review"])
+        with tempfile.TemporaryDirectory() as td:  # a record under the parent's name does not count for the lane
+            with self.assertRaises(dl.DispatchError):
+                self.run_lane(Path(td), REVIEWED_CONSUMER, review=self.review(request_id=req_id),
+                              review_name="review-checkout.json", **kw)
+
+    def test_an_unparseable_review_or_ledger_file_is_a_refusal_not_a_crash(self):
+        launch, _ = approved_launch()
+        req_id = next(r for r in dl.build_requests(launch, clr.compile_route(launch), copy_profile="standard",
+                                                   allowed_write_target="local_only")
+                      if r["page_role"] == "checkout")["request_id"]
+        for label, review, ledger in (("review", "{not json", self.LEDGER),
+                                      ("ledger", self.review(request_id=req_id), "{not json")):
+            with self.subTest(bad=label), tempfile.TemporaryDirectory() as td:
+                with self.assertRaises(dl.DispatchError):
+                    self.run_lane(Path(td), REVIEWED_CONSUMER, test_only=False, target="local_only",
+                                  review=review, ledger=ledger)
+
+    def test_a_review_claim_with_no_record_on_disk_is_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(dl.DispatchError) as ctx:
+                self.run_lane(Path(td), REVIEWED_CONSUMER, test_only=False, target="local_only")
+            self.assertIn("without a review record", str(ctx.exception))
 
 
 if __name__ == "__main__":

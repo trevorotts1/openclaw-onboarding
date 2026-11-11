@@ -7,11 +7,16 @@ absent (a lone install of Skill 78) the cases that need them skip.
 """
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+# AF-71-UNGATED (harmony issue 10): these stub runs draw on a directory with no gate state, which Skill 71's
+# executor now allows only under this test-harness marker (no product script sets it); children inherit it.
+os.environ["SKILL71_FIXTURE_RUN"] = "1"
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -230,6 +235,15 @@ class ShippedAdapterTests(Fixture):
                 .replace("<per-launch: order page image inputs JSON>", inputs)
                 .replace("{request}", str(self.dir / "page-request.json")).replace("{result}", str(self.result))
                 .replace("{work_dir}", str(work)) for part in spec["command"]]
+
+    def test_every_shell_adapter_path_token_is_quoted_so_a_path_with_spaces_holds(self):
+        import re
+        adapters = json.loads(S49_CONFIG.read_text())["adapters"]
+        for role, spec in adapters.items():
+            cmd = spec["command"]
+            if cmd[:2] == ["bash", "-c"]:
+                for m in re.finditer(r"/path/to", cmd[2]):
+                    self.assertIn(cmd[2][m.start() - 1], "\"'", f"{role}: unquoted /path/to in {cmd[2][m.start():m.start() + 60]!r}")
 
     def test_dispatch_makes_the_order_page_images_before_it_writes_the_page_result(self):
         proc = subprocess.run(self.command(str(self.dir / "inputs.json")), capture_output=True, text=True)

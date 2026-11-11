@@ -18,6 +18,7 @@ import hashlib
 import importlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -32,6 +33,11 @@ sys.path.insert(0, str(SKILL_ROOT / "routes"))
 import adapters  # noqa: E402
 import substrate  # noqa: E402
 from launcher_core import image_plan, intake, launch_bridge, route  # noqa: E402
+
+# AF-71-UNGATED (harmony issue 10): the stub runs in this module draw on a directory with no gate state, which
+# Skill 71's executor now allows only under this test-harness marker (no product script sets it); child
+# processes inherit it.
+os.environ["SKILL71_FIXTURE_RUN"] = "1"
 
 S78 = substrate.source("78-signature-product-selection")
 S71 = substrate.source("71-blackceo-signature-page")
@@ -308,10 +314,30 @@ class CheckRuleTests(unittest.TestCase):
         self.assertEqual(len(fails), 1)
         self.assertIn("Compare section", fails[0])
 
-    def test_selection_does_not_fail_a_piece_that_lists_no_manuscript(self):
+    def test_selection_does_not_fail_a_practice_piece_that_lists_no_manuscript(self):
         selection = load_rule("selection")
         piece = self.piece("product_selection", "desktop-wireframe/section-01.png", "png")
-        self.assertEqual(selection.violations({"test_only": False, "pieces": [piece]}, self.root, SKILL_ROOT), [])
+        self.assertEqual(selection.violations({"test_only": True, "pieces": [piece]}, self.root, SKILL_ROOT), [])
+
+    def test_selection_fails_a_non_test_piece_that_lists_no_manuscript(self):
+        """Issue 17: a real package passes the Compare check only by having a manuscript to check."""
+        selection = load_rule("selection")
+        piece = self.piece("product_selection", "desktop-wireframe/section-01.png", "png")
+        for manifest in ({"test_only": False, "pieces": [piece]}, {"pieces": [piece]}):
+            fails = selection.violations(manifest, self.root, SKILL_ROOT)
+            self.assertEqual(len(fails), 1, fails)
+            self.assertIn("AF-LAUNCH-SELECTION", fails[0])
+            self.assertIn("lists no internal-manuscript.md", fails[0])
+
+    def test_selection_fails_a_non_test_piece_whose_manuscript_is_not_on_disk(self):
+        selection = load_rule("selection")
+        piece = {"role": "product_selection", "slot": "product_selection",
+                 "artifacts": [{"path": "pieces/product_selection/copy/internal-manuscript.md", "sha256": "0" * 64}]}
+        self.assertEqual(selection.violations({"test_only": True, "pieces": [piece]}, self.root, SKILL_ROOT), [])
+        fails = selection.violations({"test_only": False, "pieces": [piece]}, self.root, SKILL_ROOT)
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn("AF-LAUNCH-SELECTION", fails[0])
+        self.assertIn("is not in the package", fails[0])
 
     def test_check_package_runs_both_rules_when_the_seam_is_present(self):
         seam = importlib.import_module("launcher_core.check_rules")

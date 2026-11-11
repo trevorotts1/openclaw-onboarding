@@ -1,3 +1,8 @@
+## [v2.1.47] - 2026-11-10 - Harmony-95 Batch P: purchase stops the follow-up flows (X-96); visual-design boundary statement
+
+- `launch_step_compiler.py` and `workflow_builder.py` stop a follow-up email flow once the buyer has a verified purchase of the offer it follows (`followed_offer_id`, X-96); `plan_reader.py` and `automation-build.schema.json` carry the field; tests `test_follow_up_purchase_gate.py`, `test_registry_stop_on_purchase.py` and `test_plan_reader_law.py`.
+- `SKILL.md` states the visual-design boundary: this skill carries approved copy and produces no imagery (WP-12). Version bump so the Batch P pull request carries a version above main (G3).
+
 ## [v2.1.46] - 2026-11-09 - BWX-020 recut: the plan's reentry/enrolment decision reaches the build
 
 `plan_reader` refuses a `settings` block outside the shared contract vocabulary instead of reading a typo as "not declared", blocks `successive` delivery with reentry blocked, and emits `enrollment` on the build document so the installable compiler can state why an order-level purchase basis will not do. `launch_step_compiler.purchase_identity()` carries that reason and `compile_installable()` passes `enrollment` through; the build schema gains the additive `enrollment` property. Recut of #2855's delta (merge train #2889 was closed unlanded) onto current main. `skill-version.txt` and the `SKILL.md` frontmatter move v2.1.45 -> v2.1.46 for G3.

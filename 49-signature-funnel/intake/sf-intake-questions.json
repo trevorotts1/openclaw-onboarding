@@ -65,6 +65,7 @@
       "funnel_type": "must equal \"signature_funnel\" (else AF-FUN-INTAKE-TYPE)",
       "locked": "must be true before generation (else AF-FUN-INTAKE-UNLOCKED)",
       "funnel_size": "one of 3 | 5 | 7 (else AF-FUN-INTAKE-SIZE)",
+      "delivery_rail": "non-empty string naming the delivery rail that hosts the images and builds the pages and signs the P4-MEDIA / P7-BUILD receipts (else AF-FUN-INTAKE-MISSING). Free text: Skill 49 never resolves it to code.",
       "answers": "object carrying the required q*_* keys for the chosen size (else AF-FUN-INTAKE-MISSING)",
       "answers.q8_representation": "explicit representation, never assumed (else AF-FUN-INTAKE-REPRESENTATION)",
       "answers.q16_truth_gate": "object {community_url, bonus, founder_text_confirmed:true} (else AF-FUN-INTAKE-TRUTHGATE)",

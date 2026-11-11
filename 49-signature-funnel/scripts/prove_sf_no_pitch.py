@@ -15,10 +15,13 @@ TWO SACRED GUARANTEES, one prover (both fail-closed):
        AF-FUN-TY-CTA    — sale/enroll/offer CTA (non-utility) appears on the thank-you page
 
   B) IMAGE PROVENANCE (PRD §7 gate 3 + gate 4; clone of delivery_gate.py _BAD_TASK_IDS)
-     — every generated image must carry a real Kie taskId (no native/placeholder) AND
-     resolve to the GHL media host (no off-host / placeholder URLs).
+     — every generated image must carry a real Kie taskId (no native/placeholder) AND a
+     hosted URL. With --run-dir (the orchestrator always passes it) that URL must EQUAL the
+     hosted_url the delivery rail's signed P4-MEDIA receipt recorded for that image key; with
+     only --ledger the check is limited to a well-formed, non-placeholder http(s) URL.
        AF-FUN-IMG-PROVENANCE — missing / placeholder / native Kie taskId
-       AF-FUN-IMG-HOST       — media URL does not resolve to a GHL media host
+       AF-FUN-IMG-HOST       — media URL is not the hosted URL the P4 delivery-rail receipt recorded
+                               (or, ledger-only, is not a well-formed non-placeholder http(s) URL)
 
 FAIL-CLOSED PRECONDITIONS (exit 3 — never a vacuous PASS):
   * a required input is missing / unreadable JSON;
@@ -73,11 +76,9 @@ UTILITY_BUTTONS = (
     "download", "open module", "book your call", "get started",
 )
 
-# GHL media host fingerprints (a media URL must resolve to one of these hosts).
-GHL_HOST_FINGERPRINTS = (
-    "gohighlevel", "leadconnector", "leadconnectorhq", "msgsndr",
-    "highlevel", "storage.googleapis.com/highlevel",
-)
+# Hosts that are never a real hosted image (ledger-only check; the receipt binding is the real one).
+PLACEHOLDER_HOSTS = ("example.com", "example.org", "example.net", "example.edu", "invalid",
+                     "localhost", "127.0.0.1", "0.0.0.0", "test.com")
 
 # A taskId that is NOT a real Kie bake (clone of delivery_gate.py:160 _BAD_TASK_IDS).
 _BAD_TASK_IDS = frozenset({"", "native", "placeholder", "none", "null", "n/a", "tbd", "todo"})
@@ -140,19 +141,42 @@ def _is_utility_only(cta_hit: str, button_blob: str) -> bool:
 
 
 def _host_ok(url: str) -> bool:
+    """Ledger-only: a well-formed http(s) URL whose host is not a placeholder host."""
     if not isinstance(url, str) or not url.strip():
         return False
     try:
         parsed = urlparse(url.strip())
+        host = (parsed.hostname or "").lower()
     except (ValueError, TypeError):
         return False
-    if parsed.scheme not in ("http", "https"):
+    if parsed.scheme not in ("http", "https") or not host:
         return False
-    hay = (parsed.netloc + parsed.path).lower()
-    return any(fp in hay for fp in GHL_HOST_FINGERPRINTS)
+    return not any(host == ph or host.endswith("." + ph) for ph in PLACEHOLDER_HOSTS)
 
 
-def evaluate(ledger: Dict[str, Any]) -> List[Tuple[str, str]]:
+def _image_key(img: Dict[str, Any]) -> str:
+    """The identifier the delivery rail's receipt covers for this ledger row (same rule as
+    run_signature_funnel._image_key)."""
+    return str(img.get("kie_task_id") or img.get("task_id")
+               or f"{img.get('page_type', '?')}/{img.get('section', '?')}")
+
+
+def _rail_hosted_urls(run_dir: Path) -> Tuple[Dict[str, set], str]:
+    """({image key: {hosted_url}}, problem) from the signed P4-MEDIA lines in the run's receipt store."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import delegation_receipt  # sibling module; the one receipt contract
+    ok, detail = delegation_receipt.require_rail(run_dir, "P4-MEDIA", af="AF-FUN-IMG-HOST")
+    if not ok:
+        return {}, f"no verifiable P4-MEDIA delivery-rail receipts ({detail})"
+    hosted: Dict[str, set] = {}
+    for line in delegation_receipt.load(run_dir):
+        if str(line.get("phase", "")).strip() == "P4-MEDIA":
+            for key in line.get("covers") or []:
+                hosted.setdefault(str(key), set()).add(str(line.get("hosted_url", "")).strip())
+    return hosted, ""
+
+
+def evaluate(ledger: Dict[str, Any], run_dir: Optional[Path] = None) -> List[Tuple[str, str]]:
     fails: List[Tuple[str, str]] = []
 
     offer_tokens = _offer_tokens(ledger)
@@ -200,8 +224,11 @@ def evaluate(ledger: Dict[str, Any]) -> List[Tuple[str, str]]:
     images = ledger.get("images")
     if not isinstance(images, list) or not images:
         raise ProverInputError(
-            "AF-FUN-IMG-EMPTY: the funnel carries no image records. Kie taskId + GHL-host "
+            "AF-FUN-IMG-EMPTY: the funnel carries no image records. Kie taskId + hosted-URL "
             "provenance cannot be proven on zero images -> fail-closed.")
+    hosted, why = _rail_hosted_urls(Path(run_dir)) if run_dir is not None else ({}, "")
+    if why:
+        fails.append(("AF-FUN-IMG-HOST", why))
     for img in images:
         who = (f"page '{img.get('page_type', '?')}' section {img.get('section', '?')}"
                if isinstance(img, dict) else "an image record")
@@ -217,16 +244,20 @@ def evaluate(ledger: Dict[str, Any]) -> List[Tuple[str, str]]:
         url = img.get("media_url", img.get("url", ""))
         if not _host_ok(url):
             fails.append(("AF-FUN-IMG-HOST",
-                          f"{who}: media URL {url!r} does not resolve to a GHL media host"))
+                          f"{who}: media URL {url!r} is not a well-formed, non-placeholder http(s) URL"))
+        elif run_dir is not None and not why and str(url).strip() not in hosted.get(_image_key(img), set()):
+            fails.append(("AF-FUN-IMG-HOST",
+                          f"{who}: media URL {url!r} is not the hosted URL the P4 delivery-rail receipt "
+                          "recorded for this image"))
 
     return fails
 
 
-def evaluate_ledger(ledger: Any) -> Tuple[int, List[Tuple[str, str]]]:
+def evaluate_ledger(ledger: Any, run_dir: Optional[Path] = None) -> Tuple[int, List[Tuple[str, str]]]:
     if not isinstance(ledger, dict):
         return EXIT_FAILCLOSED, [("AF-FUN-INPUT", "ledger is not a JSON object")]
     try:
-        fails = evaluate(ledger)
+        fails = evaluate(ledger, run_dir)
     except ProverInputError as exc:
         return EXIT_FAILCLOSED, [("FAIL-CLOSED", str(exc))]
     if fails:
@@ -245,7 +276,7 @@ def _load_json(path: str) -> Any:
 
 def _report(code: int, fails: List[Tuple[str, str]]) -> None:
     if code == EXIT_OK:
-        print("PASS: thank-you page carries no pitch, and every image has Kie taskId + GHL-host provenance.")
+        print("PASS: thank-you page carries no pitch, and every image has Kie taskId + hosted-URL provenance.")
         return
     label = "FAIL-CLOSED" if code == EXIT_FAILCLOSED else "VIOLATION"
     print(f"{label}: no-pitch/provenance gate failed ({len(fails)} finding(s)):")
@@ -289,7 +320,7 @@ def _violation_cases():
     def img_task(led):
         led["images"][0]["kie_task_id"] = "placeholder"
     def img_host(led):
-        led["images"][1]["media_url"] = "https://example.com/random/rise.png"
+        led["images"][1]["media_url"] = "https://example.com/random/rise.png"   # placeholder host
 
     def _mk(fn):
         import copy as _c
@@ -354,16 +385,47 @@ def run_self_test() -> int:
     else:
         ok = False; print(f"SELF-TEST FAIL: no images -> exit {code}: {fails}")
 
-    print(f"SELF-TEST FIXTURES: {1 if ok or True else 0} valid-pass, {caught}/{len(cases)} violation-catch, {fc}/3 fail-closed")
+    # run-dir binding: the URL must equal the hosted_url the delivery rail's signed P4 receipt recorded.
+    import tempfile
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import stub_provider_adapter  # TEST-ONLY provider stub; fixtures only
+    stub_provider_adapter.ensure_fixture_operator_key()
+    rail = 0
+    with tempfile.TemporaryDirectory(prefix="sf_nopitch_rail_") as td:
+        rd, led = Path(td), _c.deepcopy(_valid_ledger())
+        stub_provider_adapter.emit_rail(
+            rd, "P4-MEDIA", [(_image_key(i), {"hosted_url": i["media_url"]}) for i in led["images"]])
+        code, fails = evaluate_ledger(led, rd)
+        if code == EXIT_OK:
+            rail += 1; print("SELF-TEST ok: URLs equal to the rail's signed hosted_url PASS with --run-dir.")
+        else:
+            ok = False; print(f"SELF-TEST FAIL: rail-bound ledger -> exit {code}: {fails}")
+        moved = _c.deepcopy(led); moved["images"][0]["media_url"] = "https://cdn.other.test/hero.png"
+        code, fails = evaluate_ledger(moved, rd)
+        if code == EXIT_VIOLATION and any(c == "AF-FUN-IMG-HOST" for c, _ in fails):
+            rail += 1; print("SELF-TEST ok: a URL the rail never recorded -> AF-FUN-IMG-HOST.")
+        else:
+            ok = False; print(f"SELF-TEST FAIL: unrecorded URL -> exit {code}: {fails}")
+        code, fails = evaluate_ledger(led, Path(td) / "no-such-run")
+        if code == EXIT_VIOLATION and any(c == "AF-FUN-IMG-HOST" for c, _ in fails):
+            rail += 1; print("SELF-TEST ok: no signed P4 receipts -> AF-FUN-IMG-HOST (fail-closed).")
+        else:
+            ok = False; print(f"SELF-TEST FAIL: absent P4 receipts -> exit {code}: {fails}")
+
+    print(f"SELF-TEST FIXTURES: 1 valid-pass, {caught}/{len(cases)} violation-catch, {fc}/3 fail-closed, {rail}/3 rail-bound")
     print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
 
 
 def main(argv: List[str]) -> int:
     ap = argparse.ArgumentParser(
-        description="Fail-closed no-pitch (thank-you) + image-provenance (Kie taskId + GHL host) "
+        description="Fail-closed no-pitch (thank-you) + image-provenance (Kie taskId + the delivery rail's hosted URL) "
                     "gate for the Signature Funnel. Exit 0 pass, 2 violation, 3 usage/fail-closed.")
     ap.add_argument("--ledger", help="path to the funnel media/copy ledger JSON ('-' reads stdin)")
+    ap.add_argument("--run-dir", default=None,
+                    help="the run directory: when given, every image URL must equal the hosted_url the "
+                         "delivery rail's signed P4-MEDIA receipt recorded for it (the orchestrator always "
+                         "passes it); omitted, only the ledger-only URL shape check runs")
     ap.add_argument("--self-test", action="store_true",
                     help="construct VALID + VIOLATION + FAIL-CLOSED fixtures and assert")
     args = ap.parse_args(argv)
@@ -380,7 +442,7 @@ def main(argv: List[str]) -> int:
         print(f"USAGE/IO ERROR: cannot load ledger {args.ledger!r}: {exc}")
         return EXIT_FAILCLOSED
 
-    code, fails = evaluate_ledger(ledger)
+    code, fails = evaluate_ledger(ledger, Path(args.run_dir).resolve() if args.run_dir else None)
     _report(code, fails)
     return code
 

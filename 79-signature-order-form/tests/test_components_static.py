@@ -12,7 +12,7 @@ SKILL = COMPONENTS.parents[1]
 # Every html/css draft is review-only (CHK-18/CHK-24); globbed so new drafts are covered.
 REVIEW_ONLY_DRAFTS = tuple(sorted(p.name for p in COMPONENTS.glob("*.html"))) + ("components.css",)
 # Docs scanned for stale strings and unresolvable paths. checkout.schema.json is
-# excluded: its title belongs to U-checkout-commerce-06 (carried).
+# checked by test_schema_title_and_version_are_not_draft below.
 DOC_FILES = ([SKILL / "SKILL.md"] + sorted((SKILL / "references").glob("*.md"))
              + sorted(p for p in COMPONENTS.iterdir() if p.is_file()))
 
@@ -110,6 +110,14 @@ class ComponentStaticTests(unittest.TestCase):
         for name in ("combined-checkout.html", "post-selection-checkout.html"):
             title = re.search(r"<title>(.*?)</title>", read(name)).group(1)
             self.assertNotIn("TEST", title, name)
+
+    def test_schema_title_and_version_are_not_draft(self):
+        import json
+        doc = json.loads((SKILL / "references" / "checkout.schema.json").read_text())
+        self.assertEqual(doc["properties"]["schema_version"]["const"], "0.3")
+        for needle in ("draft", "fixture level"):
+            self.assertNotIn(needle, doc["title"].lower())
+        self.assertNotIn("0.2-draft", json.dumps(doc))
 
     def test_paths_named_in_docs_resolve(self):
         # Backticked tokens shaped like dir/file.ext must exist under the 79

@@ -59,7 +59,12 @@ upsell_2 roles (SEPARATE invocations; --slot names the role). It:
              real launch, after writing its blocked result).
   6. Writes the projected result at the {result} path dispatch expects.
 
-Operator-staged run inputs (sidecar): an optional enrichment JSON file
+STAGES (issue 72). --stage design (the default) is what dispatch runs: no purchase has happened, so the
+eligibility block is evaluated over the design marker (DESIGN_JOURNEY_U1) and the result carries
+U1-/U2-ELIGIBILITY-RUNTIME-ONLY; a journey that asserts verified purchases on a launch that is not
+test_only is refused. --stage install keeps the strict path (adapter-verified journey records only).
+
+Operator-staged run inputs (sidecar): the enrichment JSON file (REQUIRED: --enrichment)
 may supply ONLY the keys this wrapper cannot source in-band:
   source_landing_copy_ref            (string)
   disclosure.recurring_terms        (object; required for non-one_time)
@@ -97,6 +102,21 @@ EXIT_FAILCLOSED = 2
 EXIT_USAGE = 3
 
 INSTANCES = ("upsell_1", "upsell_2")
+# Issue 72 / M8: the same stage vocabulary as downsell_wrapper.STAGES. At "design" no purchase has
+# happened, so the eligibility block is evaluated over the design marker, never over purchase proof
+# somebody typed in; at "install" the strict path stands (adapter-verified journey records only).
+STAGES = ("design", "install")
+DESIGN_JOURNEY_U1 = {"original_purchase": "design_marker"}
+U1_ELIGIBILITY_BLOCKER = (
+    "U1-ELIGIBILITY-RUNTIME-ONLY: the original purchase is a design marker, not purchase proof; no "
+    "purchase was observed at design. Eligibility (a verified main purchase) is a runtime-stage gate "
+    "enforced from the native purchase ledger and is not claimed here")
+U2_ELIGIBILITY_BLOCKER = (
+    "U2-ELIGIBILITY-RUNTIME-ONLY: the original and qualifying purchases are design markers, not "
+    "purchase proof; no purchase was observed at design. Eligibility (a verified main purchase plus a "
+    "verified upsell_1 or downsell_1 purchase) is a runtime-stage gate enforced from the native "
+    "purchase ledger and is not claimed here")
+ELIGIBILITY_BLOCKERS = {"upsell_1": U1_ELIGIBILITY_BLOCKER, "upsell_2": U2_ELIGIBILITY_BLOCKER}
 UPSELL_COPY_PROFILE = "signature-upsell-eight-section"
 ADAPTER_VERIFICATION_SOURCES = frozenset(
     {"native_purchase_ledger", "provider_event_readback", "s44_event_adapter"})
@@ -452,24 +472,46 @@ def _purchase_block(rec: Mapping[str, Any], label: str,
     return out
 
 
+def _design_slot(launch: Mapping[str, Any], problems: List[str]) -> Optional[str]:
+    """The U2 entry slot a design-stage request names: upsell_1 when the launch enables it, else
+    downsell_1. The canonical U2 page serves both entry paths; the runtime guard checks the real one."""
+    extras = launch.get("extras") if isinstance(launch.get("extras"), dict) else {}
+    for slot in ("upsell_1", "downsell_1"):
+        if extras.get(slot) is True:
+            return slot
+    problems.append("eligibility.qualifying_purchase: the launch record enables neither upsell_1 nor "
+                    "downsell_1, so upsell_2 has no entry path to design for")
+    return None
+
+
 def _eligibility_block(instance: str, offer: Mapping[str, Any],
                        journey: Mapping[str, Any], sidecar: Mapping[str, Any],
-                       problems: List[str]) -> Optional[Dict[str, Any]]:
-    main_rec = _journey_record(journey, "main")
-    if main_rec is None:
-        problems.append(
-            "eligibility.original_purchase: the journey state carries no "
-            "verified main purchase record; purchase proof cannot be "
-            "sourced from the request or the launch record")
-        return None
-    original = _purchase_block(main_rec, "eligibility.original_purchase", problems)
-    if original is None:
-        return None
+                       problems: List[str], design_slot: Optional[str] = None,
+                       design: bool = False) -> Optional[Dict[str, Any]]:
     qualifying = None
-    if instance == "upsell_2":
-        qualifying = _qualifying_block(journey, problems)
-        if qualifying is None:
+    if design:
+        # DESIGN_JOURNEY_U1: nothing was bought, so the purchases are markers (80's validate_request
+        # accepts them only with stage == "design"). No journey record is read or asserted.
+        original = {"status": DESIGN_JOURNEY_U1["original_purchase"]}
+        if instance == "upsell_2":
+            if design_slot is None:
+                return None
+            qualifying = {"slot": design_slot, "status": DESIGN_JOURNEY_U1["original_purchase"]}
+    else:
+        main_rec = _journey_record(journey, "main")
+        if main_rec is None:
+            problems.append(
+                "eligibility.original_purchase: the journey state carries no "
+                "verified main purchase record; purchase proof cannot be "
+                "sourced from the request or the launch record")
             return None
+        original = _purchase_block(main_rec, "eligibility.original_purchase", problems)
+        if original is None:
+            return None
+        if instance == "upsell_2":
+            qualifying = _qualifying_block(journey, problems)
+            if qualifying is None:
+                return None
     owned = set(journey.get("owned_entitlement_ids") or [])
     already_owned = bool(owned & set(offer.get("entitlement_ids") or []))
     out: Dict[str, Any] = {
@@ -515,9 +557,12 @@ def _qualifying_block(journey: Mapping[str, Any],
 
 
 def _entry_context(instance: str, journey: Mapping[str, Any],
-                   problems: List[str]) -> Optional[str]:
+                   problems: List[str], design_slot: Optional[str] = None,
+                   design: bool = False) -> Optional[str]:
     if instance == "upsell_1":
         return None  # Contract: U1 follows checkout; it has no entry context.
+    if design:
+        return {"upsell_1": "from_upsell_1", "downsell_1": "from_downsell_1"}.get(design_slot)
     for slot, ctx in (("upsell_1", "from_upsell_1"),
                       ("downsell_1", "from_downsell_1")):
         if _journey_record(journey, slot) is not None:
@@ -632,13 +677,22 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
            graph: Mapping[str, Any], graph_bytes: bytes,
            copy_doc: Mapping[str, Any], journey: Mapping[str, Any],
            sidecar: Mapping[str, Any], work_dir: Path,
-           instance: str) -> Dict[str, Any]:
+           instance: str, stage: str = "design") -> Dict[str, Any]:
     """Build the Skill 80 superset request, or raise EnrichmentError
-    naming every block that has no honest source."""
+    naming every block that has no honest source.
+
+    stage "design" (the default): a journey that carries no verified purchase records is evaluated as
+    the design marker (DESIGN_JOURNEY_U1) and the request carries stage "design"; a journey that DOES
+    carry verified purchase records is refused on a launch that is not test_only (a design-time run
+    observes no purchase, so the claim is asserted proof, exactly as downsell_wrapper refuses it) and
+    keeps the staged-fixture path on a test_only launch. stage "install": only adapter-verified journey
+    records are accepted, as before."""
     identity = launch_identity_problems(request, launch)
     if identity:
         raise EnrichmentError(identity)
     problems: List[str] = []
+    if stage not in STAGES:
+        problems.append(f"stage: {stage!r} is not one of {list(STAGES)}")
     # Input shape (DEFECT 1 cure): the request must be exactly
     # page-request shaped. Any key outside REQUEST_FIELDS fails closed
     # by name here, before the enriched request is built, instead of
@@ -695,11 +749,19 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
     if offer and _norm(copy_doc.get("offer_name")) != _norm(offer.get("display_name")):
         problems.append("copy.offer_name: the copy names a different offer than the "
                         "launch record's display_name for this slot")
+    carries_purchases = bool(journey.get("verified_purchases"))
+    if stage == "design" and carries_purchases and not test_only:
+        problems.append(
+            "journey.verified_purchases: the staged journey carries verified purchase records while "
+            "the launch is not test_only; a design-time run observes no purchase, so the claim is "
+            "refused (eligibility is a runtime-stage gate; run --stage install on the read-back)")
+    design = stage == "design" and not carries_purchases
+    design_slot = _design_slot(launch, problems) if design and instance == "upsell_2" else None
     offer_block = _offer_block(offer, problems) if offer else None
     disclosure = _disclosure_block(offer, sidecar, problems) if offer else None
-    eligibility = _eligibility_block(instance, offer, journey, sidecar,
-                                      problems) if offer else None
-    entry_context = _entry_context(instance, journey, problems)
+    eligibility = _eligibility_block(instance, offer, journey, sidecar, problems,
+                                      design_slot=design_slot, design=design) if offer else None
+    entry_context = _entry_context(instance, journey, problems, design_slot=design_slot, design=design)
     routes = _routes_block(request, graph, graph_bytes, instance, problems)
     capability = _payment_capability_block(offer, sidecar, problems) if offer else None
     landing_ref = _source_landing_copy_ref(sidecar, work_dir, problems)
@@ -724,6 +786,8 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
     enriched["routes"] = routes
     enriched["payment_capability"] = capability
     enriched["factual_scarcity_evidence"] = scarcity
+    if design:
+        enriched["stage"] = "design"  # 80 accepts the design marker only with this
     enriched["action_binding"] = {
         "expected_action_ref": "native-one-click:" + offer["offer_id"],
         "binding_kind": "native_one_click_guarded",
@@ -733,7 +797,8 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
 
 
 # ---------------------------------------------------------------------------
-# Projection - bundle result -> exactly the 17 page-result 1.0 fields.
+# Projection - bundle result -> the 17 page-result 1.0 fields below plus page_role, which the one
+# canonical schema requires and the projection echoes from the request.
 # ---------------------------------------------------------------------------
 def project_result(bundle: Mapping[str, Any],
                    request: Mapping[str, Any]) -> Dict[str, Any]:
@@ -745,6 +810,14 @@ def project_result(bundle: Mapping[str, Any],
         raise EnrichmentError([f"bundle result is missing page-result "
                                 f"field(s) {missing}"])
     projected = {f: result[f] for f in RESULT_FIELDS}
+    # The one canonical page-result schema requires page_role (Harmony issue 85). Skill 80's result
+    # may not carry it: copy it from the request, and refuse a result that names another role.
+    role = result.get("page_role", request.get("page_role"))
+    if role != request.get("page_role"):
+        raise EnrichmentError([
+            f"result does not echo its request on page_role: {role!r} != "
+            f"{request.get('page_role')!r} (refused, never repaired)"])
+    projected["page_role"] = role
     for f in ECHO_FIELDS:
         if projected[f] != request.get(f):
             raise EnrichmentError([
@@ -821,6 +894,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--slot", required=True, choices=INSTANCES,
                     help="the dispatch role (upsell_1|upsell_2); separate "
                          "invocation per role")
+    ap.add_argument("--stage", choices=list(STAGES), default="design",
+                    help="design (default): no purchase has happened, so a journey with no verified "
+                         "purchase records is evaluated as the design marker and the result carries "
+                         "U1/U2-ELIGIBILITY-RUNTIME-ONLY; a non-test launch whose journey asserts a "
+                         "verified purchase is refused. install: adapter-verified journey records "
+                         "only")
     ap.add_argument("--request", required=True, help="S49 page-request JSON")
     ap.add_argument("--result", required=True, help="page-result JSON to write")
     ap.add_argument("--launch", required=True, help="launch record JSON")
@@ -831,8 +910,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="staged 8-section copy document JSON for this instance")
     ap.add_argument("--journey", required=True,
                     help="verified journey state JSON (trusted-adapter records)")
-    ap.add_argument("--enrichment",
-                    help="optional sidecar JSON for the documented keys only")
+    ap.add_argument("--enrichment", required=True,
+                    help="sidecar JSON for the documented keys only; REQUIRED: "
+                         "source_landing_copy_ref comes only from it (UPS-18), so "
+                         "a run without it can never pass")
     ap.add_argument("--produce", required=True, help="path to Skill 80 produce.py")
     ap.add_argument("--copy-artifact-path",
                     help="path string recorded in result.artifacts "
@@ -886,7 +967,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         sidecar = _load_json(Path(args.enrichment), "enrichment sidecar") \
             if args.enrichment else {}
         enriched = enrich(request, launch, graph, graph_bytes, copy_doc,
-                          journey, sidecar, work_dir, args.slot)
+                          journey, sidecar, work_dir, args.slot, args.stage)
     except EnrichmentError as exc:
         for p in exc.problems:
             print(f"FAIL-CLOSED: {p}", file=sys.stderr)
@@ -959,6 +1040,8 @@ def main(argv: Optional[List[str]] = None) -> int:
              for o in result.get("test_outcomes") or []]
         bundle_path.write_text(json.dumps(bundle, indent=2) + "\n", encoding="utf-8")
         projected = project_result(bundle, request)
+        if enriched.get("stage") == "design":  # the design marker was used: say so in the result
+            projected["blockers"] = list(projected["blockers"]) + [ELIGIBILITY_BLOCKERS[args.slot]]
     except EnrichmentError as exc:
         for p in exc.problems:
             print(f"FAIL-CLOSED: {p}", file=sys.stderr)

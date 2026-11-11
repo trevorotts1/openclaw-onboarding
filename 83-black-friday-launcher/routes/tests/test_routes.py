@@ -9,6 +9,7 @@ path; none of them is stubbed.
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
 import inspect
 import json
@@ -276,7 +277,7 @@ class BuyerRouteTests(unittest.TestCase):
         first = route_law.navigate(graph, "landing", "interest_submitted", set())
         self.assertEqual(first["to_stage"], "product_selection")
         second = route_law.navigate(graph, "product_selection",
-                                    "selection_validated", set())
+                                    "offer_selected", set())
         self.assertEqual(second["to_stage"], "checkout")
 
 
@@ -389,17 +390,21 @@ class AdapterWiringTests(unittest.TestCase):
     def test_checkout_design_adapter_is_wired_only_on_request_and_never_for_the_form(self):
         with tempfile.TemporaryDirectory() as tmp:
             inputs = self.make_inputs(Path(tmp))
-            manuscript = Path(tmp) / "checkout.md"
             brand = Path(tmp) / "brand.json"
-            for path in (manuscript, brand):
-                path.write_text("x", encoding="utf-8")
-            design = {"manuscript": manuscript, "brand_file": brand, "brand_owner": "blackceo",
-                      "image_cap": 2, "design_style": "B"}
+            brand.write_text("x", encoding="utf-8")
+            request = Path(tmp) / "checkout-request.json"
+            request.write_text('{"main_offer_id": "TEST-ONLY"}', encoding="utf-8")
+            manuscript = Path(tmp) / "checkout.md"
+            manuscript.write_text("<!-- source_request_sha256: %s -->\n\nx\n"
+                                  % hashlib.sha256(request.read_bytes()).hexdigest(), encoding="utf-8")
+            design = {"manuscript": manuscript, "checkout_request": request, "brand_file": brand,
+                      "brand_owner": "blackceo", "image_cap": 2, "design_style": "B"}
             config = adapters.build_dispatch_config(**inputs, checkout_design=design)
             command = config["adapters"]["checkout"]["command"]
             self.assertTrue(any(part.endswith("checkout_wrapper.py") for part in command))
             self.assertTrue(Path([p for p in command if p.endswith("checkout_wrapper.py")][0]).is_file())
             self.assertEqual(command[command.index("--design-style") + 1], "B")
+            self.assertEqual(command[command.index("--checkout-request") + 1], str(request))
             self.assertIsNone(re.search(r"<[^>]+>|/path/to", json.dumps(config)))
             self.assertEqual(set(config["adapters"]) - {"checkout"},
                              {"landing", "product_selection", "upsell_1", "upsell_2", "downsell_1", "thank_you"})
@@ -410,6 +415,18 @@ class AdapterWiringTests(unittest.TestCase):
                 adapters.adapter_for("checkout")
             design["manuscript"] = "/path/to/checkout.md"
             with self.assertRaises(adapters.PlaceholderRefused):
+                adapters.build_dispatch_config(**inputs, checkout_design=design)
+            design["manuscript"] = manuscript
+            handwritten = Path(tmp) / "handwritten.md"  # a staged copy: no source stamp
+            handwritten.write_text("## Section 1: x\n", encoding="utf-8")
+            with self.assertRaises(adapters.AdapterError) as ctx:
+                adapters.build_dispatch_config(**inputs, checkout_design=dict(design, manuscript=handwritten))
+            self.assertIn("never staged by hand", str(ctx.exception))
+            request.write_text('{"main_offer_id": "EDITED"}', encoding="utf-8")  # the request moved on after the copy
+            with self.assertRaises(adapters.AdapterError):
+                adapters.build_dispatch_config(**inputs, checkout_design=design)
+            del design["checkout_request"]
+            with self.assertRaises(adapters.AdapterError):
                 adapters.build_dispatch_config(**inputs, checkout_design=design)
 
     def test_config_refuses_placeholder_paths(self):
@@ -656,7 +673,7 @@ class BrowserDiagnosticTests(unittest.TestCase):
             self.assertEqual(step["to_stage"], expected_stage, mode)
             if expected_stage == "product_selection":
                 step = route_law.navigate(graph, "product_selection",
-                                          "selection_validated", set())
+                                          "offer_selected", set())
             self.assertEqual(step["to_stage"], "checkout", mode)
             checkout_page = next(page for page in build_time.plan(record)["pages"]
                                  if page["role"] == "checkout")

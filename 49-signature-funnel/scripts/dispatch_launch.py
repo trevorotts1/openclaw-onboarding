@@ -690,6 +690,7 @@ def executor_from_config(config: Dict[str, Any], work_dir: Path,
                     .replace("{image_inputs}", str(work_dir / swarm.INPUTS_NAME))
                     .replace("{landing_pages}", ",".join(landing_pages or ()))
                     .replace("{page_key}", key)
+                    .replace("{review}", str(work_dir / f"review-{key}.json"))
                     .replace("{role_instance}", lane or "")
                for part in spec["command"]]
         proc = subprocess.run(cmd, capture_output=True, text=True,
@@ -706,7 +707,15 @@ def executor_from_config(config: Dict[str, Any], work_dir: Path,
             raise DispatchError(f"consumer adapter for {role} produced no "
                                 f"result file at {res_path}")
         result = json.loads(res_path.read_text(encoding="utf-8"))
-        fails = receipts.validate_result(result, req)
+        # Issue 30 / M2: only a local rehearsal may skip the independent review.
+        # Anything else is a client delivery: the result must be locally_verified
+        # (L2) and carry a review record from a reviewer in the dispatch ledger.
+        rehearsal = req.get("test_only") is True \
+            and req.get("allowed_write_target") == "local_only"
+        fails = receipts.validate_result(
+            result, req, scope="client_delivery" if not rehearsal else "rehearsal",
+            ledger=_read_json(work_dir / receipts.LEDGER_NAME),
+            review=_read_json(work_dir / f"review-{key}.json"))
         if fails:
             raise DispatchError(f"consumer result for {role} failed receipt "
                                 "validation: " + "; ".join(fails))
@@ -715,16 +724,27 @@ def executor_from_config(config: Dict[str, Any], work_dir: Path,
     return run
 
 
+def _read_json(path: Path) -> Any:
+    """The parsed file, or None when it is absent or unreadable (the validator
+    then refuses any review claim made without it)."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
 def _simulated_executor(author: str):
     def run(req: Dict[str, Any], lane: Optional[str] = None) -> Dict[str, Any]:
         return {"schema_version": "1.0", "tenant_id": req["tenant_id"],
                 "location_id": req["location_id"], "launch_id": req["launch_id"],
                 "revision": req["revision"], "request_id": req["request_id"],
                 "input_hash": req["input_hash"], "page_id": req["page_id"],
+                "page_role": req["page_role"],
                 "status": "authored", "artifacts": [],
                 "author_session": author, "reviewer_session": None,
                 "independent_review": False, "proof_class": "L0",
-                "blockers": [], "native_bindings_ref": None,
+                "blockers": ["REVIEW-PENDING: simulated result, never reviewed"],
+                "native_bindings_ref": None,
                 "test_only": True}
     run.simulated = True  # ENF-26: dispatch labels and gates fabricated runs
     return run
@@ -935,7 +955,8 @@ def _self_test() -> int:
             "'input_hash':req['input_hash'],'page_id':req['page_id'],"
             "'status':'authored','artifacts':[],"
             "'author_session':'consumer-test','reviewer_session':None,"
-            "'independent_review':False,'proof_class':'L0','blockers':[],"
+            "'independent_review':False,'proof_class':'L0',"
+            "'blockers':['REVIEW-PENDING: self-test consumer result, never reviewed'],"
             "'native_bindings_ref':None,'test_only':req['test_only']}\n"
             "json.dump(res,open(sys.argv[2],'w'))\n", encoding="utf-8")
         cfg = {"adapters": {role: {"command": [sys.executable, str(consumer),

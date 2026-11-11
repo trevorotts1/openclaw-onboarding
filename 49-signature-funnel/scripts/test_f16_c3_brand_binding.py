@@ -34,7 +34,7 @@ class C3Tests(unittest.TestCase):
         path = self.tmp / name
         base = {"design_style": "B", "design_style_source": "client_choice",
                 "brand_file": str(self.brand), "brand_owner": "TEST-ONLY Client",
-                "image_cap": 40, "image_provider": "stub"}
+                "image_cap": 40, "image_provider": "stub", "test_only": True}
         base.update(doc)
         path.write_text(json.dumps(base), encoding="utf-8")
         return path

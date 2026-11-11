@@ -3,9 +3,9 @@
 """prove_sf_build.py — fail-closed P7-BUILD gate for the Signature Funnel.
 
 FIX-XC-03a: P7-BUILD was an unconditional no-op (`_delegation_seam(..., None, ...)`) —
-a certificate could mint with no build receipt and no proof the GHL funnel/page build
-ever cleared QC. This prover requires a real `build_receipt.json` produced by the Skill 6
-build rail and enforces the two documented invariants (FUNNEL-MANIFEST P7):
+a certificate could mint with no build receipt and no proof the funnel/page build
+ever cleared QC. This prover requires a real `build_receipt.json` produced by the delivery
+rail named in brief.delivery_rail and enforces the two documented invariants (FUNNEL-MANIFEST P7):
   * funnel-build QC score >= 8.5 (the OpenClaw QC threshold), MEASURED from the receipt
     and NEVER assumed — a missing/non-numeric/below-floor score FAILS.   -> AF-FUN-BUILD-QC
   * a non-empty http(s) preview URL for every built page (preview-only
@@ -30,11 +30,13 @@ the receipt's folder):
   * pages/<profile>.fragment.html is PARSED for the profile's section markers
     (data-section="N", "TY-N") and count, never accepted as "any non-empty text".
                                                               -> AF-FUN-HTML-SECTIONS
-  * the QC score is RECOMPUTED from the Skill 6 verify run under build/evidence
-    (ghl_gate.require_pass re-run on that evidence root, then 10 x passing / total
-    raw page records). No tool-run record, a failing gate, a recomputed score below the
-    floor, or a receipt score above the recomputed one FAILS.   -> AF-FUN-BUILD-QC-RECORD
-  * every receipt preview URL must be a URL a PASSING raw verify record checked.
+  * the QC score is RECOMPUTED from the delivery rail's signed P7-BUILD receipt lines in
+    <run>/delegation_receipts.jsonl (delegation_receipt.require_signed: operator-key HMAC, bound
+    to this run, not authored by the certified modules; one line per required page type, shape
+    per schema/delivery-rail-receipt.schema.json), then 10 x passing / total lines. An absent,
+    unsigned, forged or incomplete store, a recomputed score below the floor, or a receipt score
+    above the recomputed one FAILS.                           -> AF-FUN-BUILD-QC-RECORD
+  * every receipt preview URL must be a URL a PASSING P7 receipt line recorded.
                                                               -> AF-FUN-BUILD-PREVIEW-UNBOUND
   * every page of the funnel carries a wireframe + mockup set from
     legacy_downsell_images.py (page-images/page-images-receipt.json and one
@@ -51,14 +53,12 @@ stdlib only. Exit 0 = pass, exit 2 = violation, exit 3 = usage / fail-closed.
 from __future__ import annotations
 
 import argparse
-import atexit
 import hashlib
+import importlib
 import json
-import os
 import shutil
 import sys
 import tempfile
-import uuid
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -72,14 +72,16 @@ FUNNEL_TYPE = "signature_funnel"
 QC_FLOOR = 8.5  # OpenClaw QC Protocol threshold (>= 8.5 auto-approves)
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
-GHL_TOOLS = SKILL_DIR.parent / "06-ghl-install-pages" / "tools"  # Skill 6: ghl_gate / ghl_verify
-EVIDENCE_REL = Path("build") / "evidence"        # Skill 6 verify evidence root inside the run dir
+P7_PHASE = "P7-BUILD"                            # the delivery rail's signed per-page receipt phase
 PAGE_IMAGES_REL = Path("page-images")            # legacy_downsell_images.py --out-dir
 PAGE_IMAGES_RECEIPT = "page-images-receipt.json"
 # The three stages legacy_downsell_images.STAGES writes, plus Skill 71's fourth
 # stage (`final-mockups`). Fix plan B3: a run without the final mockups cannot
 # certify, so the fourth stage is gated here even though the legacy tool stops
-# at three. A test holds the three legacy stages a subset of this tuple.
+# at three. final-mockups is drawn by the client-gated path (design_board.py approve,
+# then run_governed_stage.py --stage final-mockups; the exact commands are in SKILL.md)
+# and the legacy tool only VERIFIES that its record exists (--record-final-mockups).
+# A test holds the three legacy stages a subset of this tuple.
 VISUAL_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup", "final-mockups")
 LEGACY_VISUAL_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
 MIN_SECTION_CHARS = 10   # a section marker around no real text is not a built section
@@ -92,6 +94,15 @@ PLACEHOLDER_HOSTS = (
     "example.com", "example.org", "example.net", "example.edu", "invalid",
     "localhost", "127.0.0.1", "0.0.0.0", "test.com", "changeme.com", "todo.com",
 )
+
+
+def _sibling(name: str):
+    """Import a sibling script module (delegation_receipt, stub_provider_adapter) whatever the caller's
+    sys.path is: the tests load this prover from several directories."""
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    return importlib.import_module(name)
 
 
 def _host_of(url: str) -> str:
@@ -248,51 +259,48 @@ def html_fragment_violations(run_dir: Path, size: int) -> List[Tuple[str, str]]:
 
 
 # ---------------------------------------------------------------------------
-# S06-08 / STR-18 — QC and preview URLs come from a TOOL RUN, not the receipt.
+# S06-08 / STR-18 / M1 — QC and preview URLs come from the DELIVERY RAIL's signed receipts.
 # ---------------------------------------------------------------------------
 def _sha256_file(path: Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def tool_run_violations(receipt: Dict[str, Any], evidence_root: Path) -> List[Tuple[str, str]]:
-    """Re-run Skill 6's ghl_gate.require_pass on the evidence root, recompute the QC score
-    from the raw verify records and bind the receipt's preview URLs to passing records."""
+def tool_run_violations(receipt: Dict[str, Any], run_dir: Path, size: int) -> List[Tuple[str, str]]:
+    """Recompute the QC score from the delivery rail's signed P7-BUILD lines and bind the receipt's
+    preview URLs to passing lines. delegation_receipt.require_signed is the fail-closed core: an absent
+    store, an unsigned / forged / other-run line, a line authored by a certified module, or a required
+    page type with no line all fail (AF-FUN-BUILD-QC-RECORD)."""
     qc_code, bind_code = "AF-FUN-BUILD-QC-RECORD", "AF-FUN-BUILD-PREVIEW-UNBOUND"
-    root = Path(evidence_root)
-    if not root.is_dir():
-        return [(qc_code, f"no tool-run QC record: evidence root {root} is absent, so the receipt's "
-                          "qc_score is a claim nothing measured (fail-closed)")]
     try:
-        if str(GHL_TOOLS) not in sys.path:
-            sys.path.append(str(GHL_TOOLS))
-        import ghl_gate  # noqa: E402  (Skill 6 verdict reader — the one gate)
-        import ghl_verify  # noqa: E402
-        rc = ghl_gate.require_pass(str(root))
-        raw = json.loads((root / ghl_verify.RAW_REL).read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001 — an unusable gate is a fail, never a pass
-        return [(qc_code, f"ghl_gate.require_pass cannot be re-run on {root} ({exc}) (fail-closed)")]
-    if rc != 0:
-        return [(qc_code, f"ghl_gate.require_pass rc={rc} on {root}: the Skill 6 verify run is missing, "
-                          "tampered, mock or failing")]
-    records = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
-    if not records:
-        return [(qc_code, "the verify run carries no page records to score")]
+        delegation_receipt = _sibling("delegation_receipt")  # the one receipt contract
+    except ImportError as exc:  # noqa: BLE001 — a missing contract module is fail-closed
+        return [(qc_code, f"delegation_receipt.py is not importable ({exc}) (fail-closed)")]
+    ok, detail = delegation_receipt.require_rail(Path(run_dir), P7_PHASE, must_cover=required_page_types(size),
+                                                 af=qc_code)
+    if not ok:
+        return [(qc_code, f"no signed delivery-rail P7-BUILD receipts: {detail}")]
+    latest: Dict[str, Dict[str, Any]] = {}      # one line per page type; a re-verify's later line wins
+    for line in delegation_receipt.load(Path(run_dir)):
+        if str(line.get("phase", "")).strip() == P7_PHASE:
+            for page_type in line.get("covers") or []:
+                latest[str(page_type)] = line
+    records = list(latest.values())
     passing = [r for r in records if r.get("PASS") is True]
     qc = round(10.0 * len(passing) / len(records), 2)
     out: List[Tuple[str, str]] = []
     if qc < QC_FLOOR:
-        out.append((qc_code, f"QC recomputed from the verify run is {qc} "
+        out.append((qc_code, f"QC recomputed from the delivery rail's receipts is {qc} "
                              f"({len(passing)}/{len(records)} pages), below the {QC_FLOOR} floor"))
     claimed = receipt.get("qc_score")
     if isinstance(claimed, (int, float)) and not isinstance(claimed, bool) and float(claimed) > qc + QC_TOLERANCE:
         out.append((qc_code, f"receipt qc_score {float(claimed)} exceeds the QC {qc} recomputed from "
-                             "the verify run — the receipt may not claim more than the tool measured"))
+                             "the rail's receipts — the receipt may not claim more than the rail measured"))
     checked = {str(r.get("preview_url") or "").strip() for r in passing}
     for pg in receipt.get("pages") or []:
         url = pg.get("preview_url") if isinstance(pg, dict) else None
         if isinstance(url, str) and url.strip() and url.strip() not in checked:
             out.append((bind_code, f"page '{pg.get('page_type')}': preview_url {url!r} is not a URL "
-                                   "any passing verify record checked"))
+                                   "any passing delivery-rail receipt recorded"))
     return out
 
 
@@ -371,12 +379,18 @@ def visual_direction_violations(run_dir: Path, size: int) -> List[Tuple[str, str
     not_built = receipt.get("not_built") if isinstance(receipt.get("not_built"), dict) else {}
     # Fix plan B2: a STUB run writes placeholder wireframes. It may exist only when the receipt
     # carries the owner approval that permitted it; an unapproved stub receipt never certifies.
+    # Issue 38: "approved" is a Command Center record, verified again HERE against this run's
+    # copy_ledger.json, never the receipt's own word (a bare string is only a claim).
     stub_code = "AF-FUN-BUILD-VISUAL-STUB"
-    if str(receipt.get("provider") or "").lower() == "stub" and not str(receipt.get("stub_approval") or "").strip():
-        out.append((stub_code,
-                    f"{PAGE_IMAGES_REL}/{PAGE_IMAGES_RECEIPT} records an UNAPPROVED stub run: the "
-                    "wireframes and mockups are placeholders. Re-run with the real provider, or record "
-                    "the owner approval with --stub-approved-by <reference>."))
+    if str(receipt.get("provider") or "").lower() == "stub":
+        if str(SKILL_DIR / "scripts") not in sys.path:
+            sys.path.insert(0, str(SKILL_DIR / "scripts"))
+        import stub_approval  # noqa: PLC0415  (sibling helper, one verifier call)
+        for problem in stub_approval.recheck(receipt.get("stub_approval"), Path(run_dir) / "copy_ledger.json"):
+            out.append((stub_code,
+                        f"{PAGE_IMAGES_REL}/{PAGE_IMAGES_RECEIPT} records an UNAPPROVED stub run: the "
+                        f"wireframes and mockups are placeholders and {problem}. Re-run with the real "
+                        "provider, or pass --stub-approved-by <Command Center stub_render approval id>."))
     for slug in required_page_types(size):
         if slug == "checkout" and slug not in claimed_pages and slug in not_built:
             continue  # design-only: the receipt names it as not built and says what it needs
@@ -431,8 +445,7 @@ def visual_direction_violations(run_dir: Path, size: int) -> List[Tuple[str, str
 
 
 def verify(receipt: Dict[str, Any], funnel_size: Optional[int] = None,
-           run_dir: Optional[Path] = None,
-           evidence_root: Optional[Path] = None) -> Tuple[List[Tuple[str, str]], List[str]]:
+           run_dir: Optional[Path] = None) -> Tuple[List[Tuple[str, str]], List[str]]:
     fails: List[Tuple[str, str]] = []
     notes: List[str] = []
 
@@ -500,18 +513,18 @@ def verify(receipt: Dict[str, Any], funnel_size: Optional[int] = None,
             notes.append(f"page-set completeness checked against the {size}-step matrix "
                          f"({len(required)} required page type(s))")
 
-    # STR-18 / S06-08 / IMG-16 — the evidence the tools wrote, not the receipt's word.
+    # STR-18 / S06-08 / IMG-16 — the evidence the tools and the delivery rail wrote, not the receipt's word.
     if run_dir is None:
         for code in ("AF-FUN-HTML-SECTIONS", "AF-FUN-BUILD-QC-RECORD",
                      "AF-FUN-BUILD-PREVIEW-UNBOUND", "AF-FUN-BUILD-VISUAL"):
-            fail(code, "no run directory supplied: the built pages, the tool-run QC record and the "
-                       "visual-direction set cannot be read, so they cannot be proven (fail-closed)")
+            fail(code, "no run directory supplied: the built pages, the delivery rail's signed QC receipts and "
+                       "the visual-direction set cannot be read, so they cannot be proven (fail-closed)")
     elif size is not None and not any(c == "AF-FUN-BUILD-SIZE" for c, _ in fails):
         rd = Path(run_dir)
         fails.extend(html_fragment_violations(rd, size))
-        fails.extend(tool_run_violations(receipt, Path(evidence_root) if evidence_root else rd / EVIDENCE_REL))
+        fails.extend(tool_run_violations(receipt, rd, size))
         fails.extend(visual_direction_violations(rd, size))
-        notes.append(f"run-dir evidence checked under {rd} (fragments, tool-run QC, visual direction)")
+        notes.append(f"run-dir evidence checked under {rd} (fragments, delivery-rail receipts, visual direction)")
 
     notes.append(f"checked build receipt: qc_score={receipt.get('qc_score')!r} (floor {QC_FLOOR}), "
                  f"{len(pages)} page(s) with preview URLs")
@@ -573,57 +586,41 @@ def _valid_fragment(slug: str) -> str:
     return f'<section class="sf-page" data-page="{slug}">\n{body}</section>\n'
 
 
+def rail_rows(receipt: Dict[str, Any], overrides: Optional[Dict[str, Dict[str, Any]]] = None):
+    """The (page_type, fields) rows a delivery rail records for a build receipt: one passing P7 line per
+    built page, bound to the receipt's own preview URL. overrides maps a page type to fields that replace
+    the passing defaults (fixtures use it to make one page fail)."""
+    rows = []
+    for pg in receipt["pages"]:
+        page = pg["page_type"]
+        fields = {"preview_url": pg["preview_url"], "PASS": True,
+                  "checks": {"http_200": True, "marker_in_rendered_dom": True, "render_errors": []},
+                  "dom_sha256": hashlib.sha256(f"dom:{page}".encode()).hexdigest(),
+                  "screenshot_sha256": hashlib.sha256(f"png:{page}".encode()).hexdigest()}
+        fields.update((overrides or {}).get(page, {}))
+        rows.append((page, fields))
+    return rows
+
+
 def write_valid_run_evidence(run_dir: Path, size: int,
                              receipt: Optional[Dict[str, Any]] = None) -> None:
     """Write, under run_dir, everything the strict P7 reads that the TOOLS produce — the
     fixture the orchestrator's own self-test and the golden sample call so their runs
-    keep certifying: valid page fragments, a Skill 6 verify evidence tree that clears
-    ghl_gate.require_pass (build/evidence), and a legacy_downsell_images.py output set
-    (page-images). Test fixtures only; never a substitute for a real tool run."""
+    keep certifying: valid page fragments, the delivery rail's signed P7-BUILD
+    receipt lines (delegation_receipts.jsonl, signed with the operator key through the provider
+    stub, never by this module), and a legacy_downsell_images.py output set (page-images).
+    Test fixtures only; never a substitute for a real tool run."""
+    stub_provider_adapter = _sibling("stub_provider_adapter")  # TEST-ONLY stand-in for the rail; fixtures only
     rd = Path(run_dir)
     receipt = receipt or _valid_receipt(size)
     (rd / "build_receipt.json").write_text(json.dumps(receipt), encoding="utf-8")
     (rd / "pages").mkdir(parents=True, exist_ok=True)
     for slug in required_page_types(size):
         (rd / "pages" / f"{slug}.fragment.html").write_text(_valid_fragment(slug), encoding="utf-8")
-    # Skill 6 verify evidence, sealed the way ghl_verify.verify_all leaves it: raw records, a render
-    # manifest naming a dom/png/console file per page (re-hashed by the gate), the summary ghl_verify
-    # derives, and the 0600 run-nonce file OUTSIDE the evidence tree (ghl_gate.require_pass reads all).
-    sys.path.append(str(GHL_TOOLS))
-    import ghl_verify  # noqa: E402
-    nonce = str(uuid.uuid4())
-    ev = rd / EVIDENCE_REL
-    (ev / "scorecard").mkdir(parents=True, exist_ok=True)
-    (ev / "logs").mkdir(parents=True, exist_ok=True)
-    (ev / "render").mkdir(parents=True, exist_ok=True)
-    raw: List[Dict[str, Any]] = []
-    manifest: Dict[str, Any] = {}
-    for pg in receipt["pages"]:
-        step, marker = pg["page_type"], f"sf-fixture-marker-{pg['page_type']}"
-        entry: Dict[str, Any] = {}
-        for key, ext, data in (("dom", "dom.html", f"<html><body><p>{marker}</p></body></html>".encode()),
-                               ("png", "png", b"\x89PNG\r\n\x1a\n" + b"x" * 64),
-                               ("console", "console.json", b"[]")):
-            path = ev / "render" / f"{step}.{ext}"
-            path.write_bytes(data)
-            entry[f"{key}_path"] = str(path)
-            entry[f"{key}_sha256"] = _sha256_file(path)
-        manifest[step] = entry
-        raw.append({"step": step, "page_id": f"p-{step}", "preview_url": pg["preview_url"],
-                    "marker": marker, "http": 200, "http_code": 200, "marker_in_rendered_dom": True,
-                    "marker_in_preview": True, "render_errors": [], "PASS": True})
-    raw_bytes = json.dumps(raw).encode("utf-8")
-    (ev / ghl_verify.RAW_REL).write_bytes(raw_bytes)
-    (ev / ghl_verify.RENDER_MANIFEST_REL).write_text(json.dumps(manifest), encoding="utf-8")
-    summary = ghl_verify.derive_summary(raw, run_id=rd.name, run_nonce=nonce)
-    summary["raw_sha256"] = hashlib.sha256(raw_bytes).hexdigest()
-    (ev / ghl_verify.SUMMARY_REL).write_text(json.dumps(summary), encoding="utf-8")
-    if not os.environ.get(ghl_verify.NONCE_DIR_ENV):   # never write the fixture nonce into a real HOME
-        nd = tempfile.mkdtemp(prefix="sf_ghl_nonces_")
-        os.environ[ghl_verify.NONCE_DIR_ENV] = nd
-        atexit.register(shutil.rmtree, nd, True)
-    ghl_verify.write_run_nonce(str(rd), nonce, str(ev / ghl_verify.RAW_REL),
-                               str(ev / ghl_verify.RENDER_MANIFEST_REL))
+    # The delivery rail's P7 receipts, signed under the operator key the process holds (a throwaway
+    # fixture key when it holds none) and authored by the stub adapter module.
+    stub_provider_adapter.ensure_fixture_operator_key()
+    stub_provider_adapter.emit_rail(rd, P7_PHASE, rail_rows(receipt))
     # legacy_downsell_images.py output shape: one record per page and stage, plus the receipt.
     out = rd / PAGE_IMAGES_REL
     pages: Dict[str, Any] = {}
@@ -660,6 +657,8 @@ def write_valid_run_evidence(run_dir: Path, size: int,
 def _evidence_cases():
     """(name, expected AF code, mutate(run_dir)) — each breaks ONE thing in a run dir that
     write_valid_run_evidence made, and must produce its code."""
+    stub_provider_adapter = _sibling("stub_provider_adapter")
+
     def frag(slug, text):
         return lambda rd: (rd / "pages" / f"{slug}.fragment.html").write_text(text, encoding="utf-8")
 
@@ -672,24 +671,48 @@ def _evidence_cases():
         p.write_text(p.read_text(encoding="utf-8").replace("upsell section 3 copy that carries real words.", ""),
                      encoding="utf-8")
 
-    def drop_evidence(rd):
-        shutil.rmtree(rd / EVIDENCE_REL)
+    def re_record(overrides=None, drop=()):
+        """Replace the rail's lines with freshly SIGNED ones (the stub adapter, operator key)."""
+        def go(rd):
+            receipt = json.loads((rd / "build_receipt.json").read_text(encoding="utf-8"))
+            (rd / "delegation_receipts.jsonl").unlink()
+            rows = [r for r in rail_rows(receipt, overrides) if r[0] not in drop]
+            stub_provider_adapter.emit_rail(rd, P7_PHASE, rows)
+        return go
 
-    def failing_summary(rd):
-        sp = rd / EVIDENCE_REL / "scorecard" / "verify-summary.json"
-        d = json.loads(sp.read_text(encoding="utf-8"))
-        d["overall_pass"] = False
-        sp.write_text(json.dumps(d), encoding="utf-8")
+    def drop_receipts(rd):
+        (rd / "delegation_receipts.jsonl").unlink()
 
-    def tamper_raw(rd):
-        rp = rd / EVIDENCE_REL / "logs" / "final-preview-verify.json"
-        rp.write_text(rp.read_text(encoding="utf-8").replace('"PASS": true', '"PASS": false', 1), encoding="utf-8")
+    def hand_written(rd):   # honest-looking lines nobody signed
+        lines = [json.loads(x) for x in (rd / "delegation_receipts.jsonl").read_text(encoding="utf-8").splitlines()]
+        (rd / "delegation_receipts.jsonl").write_text(
+            "".join(json.dumps({k: v for k, v in e.items() if k != "harness_sig"}) + "\n" for e in lines),
+            encoding="utf-8")
+
+    def edited_after_signing(rd):   # change a signed line without the operator key
+        path = rd / "delegation_receipts.jsonl"
+        lines = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()]
+        lines[0]["preview_url"] = "https://rail.test.invalid/never-built"
+        path.write_text("".join(json.dumps(e) + "\n" for e in lines), encoding="utf-8")
+
+    def schema_break(rd):   # signed, but a required field of the delivery-rail schema is missing
+        receipt = json.loads((rd / "build_receipt.json").read_text(encoding="utf-8"))
+        (rd / "delegation_receipts.jsonl").unlink()
+        rows = [(p, {k: v for k, v in f.items() if k != "dom_sha256"}) for p, f in rail_rows(receipt)]
+        stub_provider_adapter.emit_rail(rd, P7_PHASE, rows)
 
     def unbound_url(rd):
         p = rd / "build_receipt.json"
         d = json.loads(p.read_text(encoding="utf-8"))
         d["pages"][0]["preview_url"] = "https://app.gohighlevel.com/funnels/preview/never-verified"
         p.write_text(json.dumps(d), encoding="utf-8")
+
+    def claims_more(rd):    # 5-step: 4/5 pass -> 8.0 recomputed; the receipt claims 9.5
+        p = rd / "build_receipt.json"
+        d = json.loads(p.read_text(encoding="utf-8"))
+        d["qc_score"] = 9.5
+        p.write_text(json.dumps(d), encoding="utf-8")
+        re_record({"main": {"PASS": False}})(rd)
 
     def drop_visuals(rd):
         shutil.rmtree(rd / PAGE_IMAGES_REL)
@@ -704,9 +727,13 @@ def _evidence_cases():
         ("fragment_empty_section", "AF-FUN-HTML-SECTIONS", empty_section),
         ("fragment_missing_file", "AF-FUN-HTML-FRAGMENT",
          lambda rd: (rd / "pages" / "thank-you.fragment.html").unlink()),
-        ("no_tool_run_record", "AF-FUN-BUILD-QC-RECORD", drop_evidence),
-        ("tool_run_failing", "AF-FUN-BUILD-QC-RECORD", failing_summary),
-        ("tool_run_raw_tampered", "AF-FUN-BUILD-QC-RECORD", tamper_raw),
+        ("no_rail_receipts", "AF-FUN-BUILD-QC-RECORD", drop_receipts),
+        ("rail_receipts_unsigned", "AF-FUN-BUILD-QC-RECORD", hand_written),
+        ("rail_receipt_edited_after_signing", "AF-FUN-BUILD-QC-RECORD", edited_after_signing),
+        ("rail_receipt_breaks_schema", "AF-FUN-BUILD-QC-RECORD", schema_break),
+        ("rail_page_missing", "AF-FUN-BUILD-QC-RECORD", re_record(drop=("upsell",))),
+        ("rail_qc_below_floor", "AF-FUN-BUILD-QC-RECORD", re_record({"main": {"PASS": False}})),
+        ("receipt_claims_more_than_rail", "AF-FUN-BUILD-QC-RECORD", claims_more),
         ("preview_url_not_verified", "AF-FUN-BUILD-PREVIEW-UNBOUND", unbound_url),
         ("no_visual_direction", "AF-FUN-BUILD-VISUAL", drop_visuals),
         ("one_page_missing_mockup", "AF-FUN-BUILD-VISUAL", drop_one_stage),
@@ -851,10 +878,9 @@ def main(argv: List[str]) -> int:
                          "completeness is computed from it; without it the receipt's own "
                          "funnel_size is used and an unresolvable size is fail-closed.")
     ap.add_argument("--run-dir", default=None,
-                    help="the run directory holding pages/, build/evidence and page-images/ "
+                    help="the run directory holding pages/, delegation_receipts.jsonl (the delivery rail's "
+                         "signed P7-BUILD lines; needs SF_OPERATOR_KEY_FILE to verify) and page-images/ "
                          "(default: the folder of --receipt; stdin receipts have none and fail closed)")
-    ap.add_argument("--evidence-root", default=None,
-                    help="Skill 6 verify evidence root (default <run-dir>/build/evidence)")
     ap.add_argument("--self-test", action="store_true",
                     help="construct a VALID receipt (must PASS) + each VIOLATION fixture (must FAIL)")
     ap.add_argument("--visual-only", action="store_true",
@@ -890,8 +916,7 @@ def main(argv: List[str]) -> int:
 
     run_dir = args.run_dir or (None if receipt_path == "-" else str(Path(receipt_path).resolve().parent))
     violations, notes = verify(receipt, funnel_size=args.funnel_size,
-                               run_dir=Path(run_dir) if run_dir else None,
-                               evidence_root=Path(args.evidence_root) if args.evidence_root else None)
+                               run_dir=Path(run_dir) if run_dir else None)
     _report(violations, notes)
     return EXIT_OK if not violations else EXIT_VIOLATION
 

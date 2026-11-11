@@ -148,7 +148,8 @@
       "validators": [
         "python3 scripts/validate_copy_structure.py {run_dir} --spec {copy_spec}",
         "python3 scripts/validate_public_copy.py {run_dir}/copy/public-copy.md",
-        "gate:copy_handoff --manifest {run_dir}/copy/copy-manifest.json --public-copy {run_dir}/copy/public-copy.md --manuscript {run_dir}/copy/internal-manuscript.md"
+        "gate:copy_handoff --manifest {run_dir}/copy/copy-manifest.json --public-copy {run_dir}/copy/public-copy.md --manuscript {run_dir}/copy/internal-manuscript.md",
+        "gate:no_pitch_receipt"
       ],
       "note": "Button handoff (update plan Item 8): the renderer-facing source for button labels and destinations is copy/public-copy.md, where each button is a Markdown link carrying the exact label and the destination; the full [CTA BUTTON: ...] / [CTA MICROCOPY: ...] marker forms live only in copy/internal-manuscript.md. gate:copy_handoff refuses to close this stage while any declared CTA fails to resolve a label and a destination from the public file. Contract: references/artifact-contracts.md, 'Copy manifest and the button handoff'.",
       "review_required": true,
@@ -435,7 +436,11 @@
         "assets/brand/signature-grade-block.txt",
         "references/qc-contract.md",
         "desktop-wireframe/section-plan.json (each slot's treatment, mask, copy_zone and subject_zone: the photo prompt gets its copy-space or crop-safe sentence from the slot's treatment)",
-        "references/composition-treatments.json (the treatments, role defaults, prompt sentences and QC thresholds; every slot declares one treatment)"
+        "references/composition-treatments.json (the treatments, role defaults, prompt sentences and QC thresholds; every slot declares one treatment)",
+        "45-design-intelligence-library/library/_system/prompt-bands.json (Skill 45, read-only: the prompt bands; its sha256 goes in private/receipts/design-intelligence.json, which this stage cannot close without)",
+        "45-design-intelligence-library/library/_system/NEGATIVE-PROMPTING-SOP.md (Skill 45, read-only: the negative-prompting rules the prompts obey; sha256 in the same receipt)",
+        "45-design-intelligence-library/library/funnel-page-designs/_RULES.md (Skill 45, read-only: the funnel page category rules; sha256 in the same receipt)",
+        "45-design-intelligence-library/library/INDEX.md (Skill 45, read-only: resolves intake style_card_id to its card, whose LONG tier is embedded verbatim in every section prompt; card sha256 in the same receipt)"
       ],
       "may_be_not_authorized": false
     },

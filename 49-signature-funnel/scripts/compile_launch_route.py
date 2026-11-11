@@ -56,8 +56,11 @@ PENDING_BEHAVIOR = "retain_current_purchase_state_until_resolved_or_explicit_dec
 
 ROLES = ("landing", "product_selection", "checkout", "upsell_1", "downsell_1",
          "upsell_2", "thank_you")
-EVENTS = ("interest_submitted", "selection_validated", "payment_succeeded",
-          "explicit_decline")
+EVENTS = ("interest_submitted", "selection_validated", "offer_selected",
+          "payment_succeeded", "explicit_decline")
+# Both events leave product_selection for checkout; which one a graph carries depends on whether a
+# selection session (selection_ref) backs the pick (see selection_edge).
+SELECTION_EVENTS = ("selection_validated", "offer_selected")
 PURCHASE_STAGES = ("checkout", "upsell_1", "downsell_1", "upsell_2")
 SLOT_OF_STAGE = {"upsell_1": "U1", "downsell_1": "D1", "upsell_2": "U2"}
 STAGE_OF_SLOT = {v: k for k, v in SLOT_OF_STAGE.items()}
@@ -71,6 +74,7 @@ GUARD_D1_PAYMENT = "verified_d1_payment"
 GUARD_U2_PAYMENT = "verified_u2_payment"
 GUARD_CONTACT_SUBMIT = "verified_native_contact_submit"
 GUARD_SELECTION = "allowlisted_offer_price"
+GUARD_NATIVE_PRICE_BOUND = "native_price_bound"
 GUARD_NO_CHARGE_DECLINE = "no_charge_decline"
 
 
@@ -100,6 +104,18 @@ def _extras(launch: Dict[str, Any]) -> Tuple[bool, bool, bool]:
         raise RouteError("U1 disabled requires D1 and U2 disabled "
                          "(this launch profile requires U1 for D1/U2 qualification)")
     return u1, d1, u2
+
+
+def selection_edge(launch: Dict[str, Any]) -> Tuple[str, str]:
+    """(event, guard) of the product_selection -> checkout edge.
+
+    ``allowlisted_offer_price`` is asserted only when the launch record carries a ``selection_ref``
+    (a validated selection session backs the pick). Without one, each price choice is its own native
+    checkout target, so the edge is the per-offer ``offer_selected`` guarded by ``native_price_bound``."""
+    ref = launch.get("selection_ref")
+    if isinstance(ref, str) and ref.strip():
+        return "selection_validated", GUARD_SELECTION
+    return "offer_selected", GUARD_NATIVE_PRICE_BOUND
 
 
 def expected_roles(launch: Dict[str, Any]) -> List[str]:
@@ -159,8 +175,8 @@ def compile_route(launch: Dict[str, Any]) -> Dict[str, Any]:
     if "product_selection" in roles:
         edge(pid("landing"), "interest_submitted", pid("product_selection"),
              GUARD_CONTACT_SUBMIT)
-        edge(pid("product_selection"), "selection_validated", pid("checkout"),
-             GUARD_SELECTION)
+        sel_event, sel_guard = selection_edge(launch)
+        edge(pid("product_selection"), sel_event, pid("checkout"), sel_guard)
     else:
         edge(pid("landing"), "interest_submitted", pid("checkout"),
              GUARD_CONTACT_SUBMIT)
@@ -208,6 +224,13 @@ def serialize_graph(graph: Dict[str, Any]) -> bytes:
 
 def graph_hash(graph: Dict[str, Any]) -> str:
     return hashlib.sha256(serialize_graph(graph)).hexdigest()
+
+
+def graph_file_hash(path: Any) -> str:
+    """The hash of record for a graph FILE: SHA-256 of its bytes as stored. Builders that
+    read a stored graph (Skills 80 and 82) use these same bytes, so a re-saved or
+    re-indented file is a different graph for every reader, never a silent match."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def route_table(graph: Dict[str, Any]) -> str:
@@ -306,9 +329,11 @@ def validate_graph(graph: Any, launch: Optional[Dict[str, Any]] = None) -> List[
         if role_of[frm] == "landing" and event == "interest_submitted" \
                 and guard != GUARD_CONTACT_SUBMIT:
             fail(f"landing edge guard {guard!r} is not {GUARD_CONTACT_SUBMIT!r}")
-        if role_of[frm] == "product_selection" \
-                and event == "selection_validated" and guard != GUARD_SELECTION:
-            fail(f"selection edge guard {guard!r} is not {GUARD_SELECTION!r}")
+        if role_of[frm] == "product_selection" and event in SELECTION_EVENTS:
+            want_guard = (GUARD_SELECTION if event == "selection_validated"
+                          else GUARD_NATIVE_PRICE_BOUND)
+            if guard != want_guard:
+                fail(f"selection edge {event} guard {guard!r} is not {want_guard!r}")
         edge_map[(role_of[frm], event)] = role_of[to]
         if event == "explicit_decline" and guard != GUARD_NO_CHARGE_DECLINE:
             fail(f"decline edge {role_of[frm]}->{role_of[to]} guard must be "
@@ -335,7 +360,8 @@ def validate_graph(graph: Any, launch: Optional[Dict[str, Any]] = None) -> List[
                   "product_selection" if "product_selection" in role_set
                   else "checkout")
     if "product_selection" in role_set:
-        expect_target("product_selection", "selection_validated", "checkout")
+        for sel_event in SELECTION_EVENTS:
+            expect_target("product_selection", sel_event, "checkout")
     expect_target("checkout", "payment_succeeded",
                   "upsell_1" if "upsell_1" in role_set else "thank_you")
     if "upsell_1" in role_set:
@@ -423,8 +449,8 @@ def validate_graph(graph: Any, launch: Optional[Dict[str, Any]] = None) -> List[
     if "product_selection" in roles:
         if has_edge("landing", "interest_submitted") != "product_selection":
             fail("with a selection node, landing must route to product_selection")
-        if has_edge("product_selection", "selection_validated") != "checkout":
-            fail("product_selection must route to checkout on selection_validated")
+        if all(has_edge("product_selection", ev) != "checkout" for ev in SELECTION_EVENTS):
+            fail("product_selection must route to checkout on selection_validated or offer_selected")
     else:
         if has_edge("landing", "interest_submitted") != "checkout":
             fail("without a selection node, landing must route directly to checkout")
@@ -439,6 +465,11 @@ def validate_graph(graph: Any, launch: Optional[Dict[str, Any]] = None) -> List[
             if sorted(roles) != sorted(want_roles):
                 fail(f"graph roles {sorted(roles)} do not equal the roles the launch "
                      f"record compiles to {sorted(want_roles)}")
+            elif "product_selection" in want_roles:
+                want_ev, want_gd = selection_edge(launch)
+                if has_edge("product_selection", want_ev) != "checkout":
+                    fail(f"the launch record compiles to the {want_ev!r} [{want_gd}] edge out of "
+                         "product_selection; the graph does not carry it")
         for field in ("tenant_id", "location_id", "launch_id", "revision"):
             if graph.get(field) != launch.get(field):
                 fail(f"graph {field} {graph.get(field)!r} != launch {field} "
@@ -757,8 +788,9 @@ def main(argv: List[str]) -> int:
         for f in fails:
             print(f"  - {f}")
         return EXIT_VIOLATION
+    shown = graph_file_hash(args.graph) if args.graph else graph_hash(graph)
     print(f"PASS: route graph valid ({len(graph['nodes'])} nodes, "
-          f"{len(graph['edges'])} edges, hash {graph_hash(graph)}).")
+          f"{len(graph['edges'])} edges, hash {shown}).")
     return EXIT_OK
 
 

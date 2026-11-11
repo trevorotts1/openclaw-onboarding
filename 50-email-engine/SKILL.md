@@ -1,7 +1,7 @@
 ---
 name: email-engine
 description: The Email Engine — a governed skill + Email Superlibrary that SELECTS the right framework, GENERATES corpus-faithful email copy, QCs it against fail-closed provers, and hands a DRAFT-ONLY deploy plan to the Convert & Flow (GoHighLevel) operator. Owns the reusable IP — 13 email frameworks, 12 persona styles, the buyer-type -> email# -> framework map, the 4 sequence objectives, the 10-email landing-page promo sequence and the 12-email buyer-type / high-ticket-appointment sequences — and gates every one of those SACRED structures with a deterministic, model-free floor prover (prove-email.py). Runs P1 SELECT -> P2 GENERATE -> P3 QC -> P4 DEPLOY through one canonical entry (email-engine-entry.sh) with a deps/bypass/hash-pin/nonce gate; nothing is ever sent without explicit human approval.
-version: 2.0.9
+version: 2.0.10
 ---
 
 # Email Engine (Skill 50)
@@ -58,6 +58,8 @@ email itself.
 - `email-engine-entry.sh` — the ONE sanctioned command. Deps / bypass-scan / hash-pin / nonce,
   fail-closed. Refuses any hand-rolled email sender in the run directory.
 - `run_email_engine.py` — the deterministic state machine over the manifest (P1 -> P4, no phase skips).
+
+This skill produces no visual design and does not read Skill 45 (the Design Intelligence Library); its brand voice comes from its 12 persona styles and the brand voice field of the locked brief.
 
 ## The SACRED invariants the prover enforces
 

@@ -66,8 +66,9 @@ echo "== route invariants, adapter wiring and the offline browser diagnostic =="
 # BrowserDiagnosticTests lives in this file and runs here exactly once, through
 # discovery. It probes this machine for browser tooling, prints exactly what it
 # found, and proves the landing -> checkout route wiring and the Skill 79 order
-# form binding without driving a browser; a failure fails this script.
-run_unittest -s "$HERE/routes/tests" -p 'test_routes.py' -v
+# form binding without driving a browser; a failure fails this script. Every test
+# file in routes/tests runs (test_selection_guard_runtime.py polices the issue 45 guard).
+run_unittest -s "$HERE/routes/tests" -p 'test_*.py' -v
 
 echo "== worked-example fixtures =="
 "$PY" "$HERE/fixtures/run_fixtures.py"

@@ -4,11 +4,14 @@
 Produces the four image stages (desktop wireframe, mobile wireframe,
 desktop mockup, mobile mockup) for ONE page of a named page_role, for
 every role in the page-request enum. The owning skill's wrapper calls
-this script ONCE per page; the 14-stage production contract is never
+this script ONCE per page; the 15-stage production contract is never
 duplicated into Skills 78, 79, 80, 81 or 82. Wired today: the upsell roles
 (scripts/run_page_type.py calls this service, then builds and runs the
-stages; Skill 49's upsell_wrapper.py --bridge-config calls that runner).
-The other sharing skills' wrappers do not call it yet.
+stages; Skill 49's upsell_wrapper.py --bridge-config calls that runner);
+the downsell page (Skill 49's downsell_wrapper.py, --page-version downsell);
+the checkout page (Skill 49's checkout_wrapper.py); the order page (Skill
+78's run_image_stages.py, --page-version product-selection); and the
+thank-you page (Skill 83's launch adapter, --page-version thank-you).
 
 The service stages the page-request, launch record, route graph and
 brand file where Skill 71's launch-context import expects them, stamps
@@ -54,6 +57,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import copy_forms  # noqa: E402  the one registry of copy forms
 import page_role  # noqa: E402  a page type's own spec: role to form check below
+import role_spec  # noqa: E402  a role with its own section structure (checkout)
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = SKILL_ROOT / "scripts"
@@ -69,6 +73,17 @@ SHARED_SKILLS = (71, 78, 79, 80, 81, 82)
 
 class ServiceError(Exception):
     """The request cannot enter the shared image service; fail closed."""
+
+def require_role_form(role, form) -> None:
+    """A page role that is not the landing page must have a copy form of its own (copy_forms.py)
+    or its own role structure (references/copy-specs/roles/<role>.json). A role with neither would
+    compare two Nones in the form guard and admit any --page-version label, so it is refused."""
+    if role != page_role.LANDING_ROLE and form is None and role_spec.load(role) is None:
+        raise ServiceError(
+            f"page-request: page_role {role!r} has no copy form in scripts/copy_forms.py and no "
+            "role structure in references/copy-specs/roles/; register one before this role can "
+            "enter the shared image service (a page type is never admitted under another page "
+            "type's label)")
 
 def _read(path: Path, label: str) -> bytes:
     try:
@@ -107,6 +122,7 @@ def main(argv=None) -> int:
                    help="the page's form: standard or long-form for a landing page, "
                         "product-selection for the order page (page_role product_selection), "
                         "upsell for the upsell pages (page_roles upsell_1, upsell_2), "
+                        "downsell for the downsell page (page_role downsell_1), "
                         "thank-you for page_role thank_you")
     p.add_argument("--test-run", action="store_true")
     p.add_argument("--brand-owner")
@@ -188,6 +204,7 @@ def main(argv=None) -> int:
                 f"{request.get('assigned_skill')!r}; the shared image "
                 f"service serves skills {SHARED_SKILLS} only")
         form = copy_forms.form_for_role(role)
+        require_role_form(role, form)
         if form != (a.page_version if a.page_version not in copy_forms.LANDING_FORMS else None):
             raise ServiceError(
                 f"--page-version {a.page_version!r} does not fit page_role {role!r}: "

@@ -119,6 +119,11 @@ LEDGER_REF_RE = re.compile(
 )
 # UPS-02: what a build-time eligibility verdict may honestly say.
 DESIGN_ONLY_VERDICT = "design_only/unverified_at_build"
+# Issue 72: at the DESIGN stage no purchase has happened, so the original purchase (and a U2 qualifying
+# purchase) is a marker, never verified proof. The marker is accepted only when the request says
+# stage == "design"; the runtime guard (Skill 6/44, from the native purchase ledger) is what verifies it.
+DESIGN_MARKER = "design_marker"
+STAGES = ("design", "install")
 COPY_PROFILE_ID = "signature-upsell-eight-section"
 COPY_VALIDATOR = "scripts/validate_upsell_copy.py"
 
@@ -463,6 +468,23 @@ def validate_request(request: Mapping, instance: str) -> None:
         )
     if request.get("assigned_skill") != 80:
         raise AdapterError("Request is not assigned to Skill 80.")
+    stage = request.get("stage")
+    if stage is not None and stage not in STAGES:
+        raise AdapterError("Request stage %r is not one of %s." % (stage, list(STAGES)))
+    markers = [
+        label
+        for label, block in (
+            ("original_purchase", (request.get("eligibility") or {}).get("original_purchase")),
+            ("qualifying_purchase", (request.get("eligibility") or {}).get("qualifying_purchase")),
+        )
+        if isinstance(block, Mapping) and block.get("status") == DESIGN_MARKER
+    ]
+    if markers and stage != "design":
+        raise AdapterError(
+            "eligibility.%s is a %r marker, which is accepted only when the request's stage is "
+            "'design' (got %r); a marker is never purchase proof at any other stage."
+            % (markers[0], DESIGN_MARKER, stage)
+        )
     if request.get("instance") != instance or request.get("page_role") != instance:
         raise AdapterError(
             "Request instance/page_role must both be %r." % (instance,)
@@ -654,10 +676,29 @@ def journey_record_for(journey: Optional[Mapping], slot: str) -> Optional[Mappin
     return None
 
 
+def is_design_marker(request: Mapping) -> bool:
+    """True when this request is a DESIGN-stage request whose original purchase is the design marker
+    (issue 72). validate_request has already refused the marker at any other stage."""
+    orig = (request.get("eligibility") or {}).get("original_purchase") or {}
+    return request.get("stage") == "design" and orig.get("status") == DESIGN_MARKER
+
+
 def original_purchase_check(request: Mapping, journey: Optional[Mapping]) -> Dict:
     """Cross-check the request's original-purchase claim against journey
     evidence recorded by a trusted adapter. Both must agree, and the
-    verification source must be an adapter source - never client-side."""
+    verification source must be an adapter source - never client-side.
+
+    At the design stage (issue 72) the original purchase is a marker: nothing was bought, nothing is
+    verified, and the answer says so (``design_marker`` True, no record). The page is designed to be
+    presented; whether a buyer sees it is decided at runtime from the native purchase ledger."""
+    if is_design_marker(request):
+        elig_problems = [
+            p for p in eligibility_schema_problems(request)
+            if "$.eligibility.original_purchase" not in p
+            and "$.eligibility.qualifying_purchase" not in p
+        ]
+        return {"verified": not elig_problems, "problems": elig_problems,
+                "record": None, "design_marker": True}
     orig = (request.get("eligibility") or {}).get("original_purchase") or {}
     problems: List[str] = []
     if orig.get("status") != "verified_succeeded":
@@ -850,7 +891,7 @@ def build_result(
     # "eligible" verdict can only come from the staged journey this result
     # was built from, so it is stamped design_only/unverified_at_build.
     eligibility = dict(eligibility_check)
-    if not test_only and eligibility.get("verdict") == "eligible":
+    if (not test_only or is_design_marker(request)) and eligibility.get("verdict") == "eligible":
         eligibility["verdict"] = DESIGN_ONLY_VERDICT
     blocked = disposition["action"] != "present_offer" or copy_failed
     blockers: List[str] = [

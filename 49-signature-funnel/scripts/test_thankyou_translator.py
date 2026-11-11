@@ -5,7 +5,7 @@ Path B). Each case stages the three inputs in a temp dir, runs the
 translator as a subprocess exactly as a dispatch adapter would, and
 checks exit codes, refusal messages and the emitted page-result.
 
-The happy-path page-result is validated three ways: exact 17-field set,
+The happy-path page-result is validated three ways: exact 18-field set,
 real JSON Schema validation against the packet page-result 1.0 schema,
 and collect_launch_receipts' own validate_result + collect rollup.
 
@@ -47,7 +47,7 @@ sys.path.insert(0, str(WAVE1_SCRIPTS))
 import collect_launch_receipts as receipts  # noqa: E402
 
 RESULT_FIELDS = {"schema_version", "tenant_id", "location_id", "launch_id",
-                 "revision", "request_id", "input_hash", "page_id",
+                 "revision", "request_id", "input_hash", "page_id", "page_role",
                  "status", "artifacts", "author_session", "reviewer_session",
                  "independent_review", "proof_class", "blockers",
                  "native_bindings_ref", "test_only"}
@@ -187,6 +187,7 @@ def review_kw(out) -> dict:
             "review": {"schema": "signature-launch-review-record/v1",
                        "reviewer_session": reviewer,
                        "reviewer_model": "fixture-reviewer-model",
+                       "verdict": "pass",
                        "request_id": out["request_id"],
                        "reviewed_artifacts": [
                            {"path": a["path"], "sha256": a["sha256"]}
@@ -227,7 +228,7 @@ def main() -> int:
                                   f"{proc.returncode}: {proc.stderr.strip()})")
         out = json.loads(out_path.read_text(encoding="utf-8"))
         say(set(out.keys()) == RESULT_FIELDS,
-            "happy path emits exactly the 17 page-result fields")
+            "happy path emits exactly the 18 page-result fields")
         try:
             import jsonschema
             schema = json.loads((PACKET_SCHEMAS /
@@ -420,7 +421,7 @@ def main() -> int:
         out10 = json.loads(out_path10.read_text(encoding="utf-8"))
     if out11 is not None:
         say(set(out11.keys()) == RESULT_FIELDS,
-            "1.1 translation emits exactly the 17 page-result fields")
+            "1.1 translation emits exactly the 18 page-result fields")
         say("prompt_policy_id" not in out11,
             "1.1 translation does not echo the citation into the "
             "page-result")
@@ -460,7 +461,7 @@ def main() -> int:
         view,
         independent_review={
             "status": "recorded", "reviewer": "SWARM",
-            "verdict": "verified",
+            "verdict": "PASS",
             "record_ref": "rooms/S82/work/review-a13-l3-verification.md"},
         envelope_ref=("rooms/S44/work/l4/l4-refund-results.json"
                       "#map_after_refund"),
@@ -641,8 +642,155 @@ def main() -> int:
             f"{cp['problems']}, closed {closed})")
 
     new_cases(req0)
+    review_cases(req0)
     print("TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
     return 0 if ok else 1
+
+
+def _translator_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ty_translator", TRANSLATOR)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _rec(verdict, reviewer="REVIEWER-1"):
+    return {"status": "recorded", "reviewer": reviewer, "verdict": verdict,
+            "record_ref": "r.md"}
+
+
+def review_cases(req0) -> None:
+    """Issues 63 and 30: a FAIL verdict is never an independent review, and a
+    page with no accepted review says REVIEW-PENDING."""
+    tr = _translator_module()
+    say(tr._derive_review({"independent_review": _rec("FAIL")}, "AUTHOR-1")
+        == (False, None), "issue 63: verdict FAIL is not an independent review")
+    say(tr._derive_review({"independent_review": _rec("PASS")}, "AUTHOR-1")
+        == (True, "REVIEWER-1"), "issue 63: verdict PASS is an independent review")
+    say(tr._derive_review({"independent_review": _rec("looks fine")}, "AUTHOR-1")
+        == (False, None), "issue 63: an unrecognised verdict string is not a review")
+    for verdict, want in (("FAIL", False), ("PASS", True)):
+        with tempfile.TemporaryDirectory() as tds:
+            td = Path(tds)
+            man = load("thank-you-run-manifest.json")
+            man["independent_review"]["verdict"] = verdict
+            out_path = stage(td, man=man)
+            proc = run(td)
+            out = json.loads(out_path.read_text(encoding="utf-8"))
+            pending = any(b.startswith("REVIEW-PENDING") for b in out["blockers"])
+            say(proc.returncode == 0 and out["independent_review"] is want
+                and (out["reviewer_session"] is not None) is want
+                and pending is (not want)
+                and any(b == f"REVIEW-FAILED: {verdict}" for b in out["blockers"]) is (not want),
+                f"issue 63: manifest verdict {verdict} gives independent_review "
+                f"{want}, and the blockers say so (got {proc.returncode}: {proc.stderr.strip()})")
+            # the fixture result is locally_verified / L2: only an accepted review keeps it there
+            say((out["status"], out["proof_class"]) == (("locally_verified", "L2") if want
+                                                        else ("authored", "L1")),
+                f"issue 30: manifest verdict {verdict} gives status/proof_class "
+                f"{(out['status'], out['proof_class'])}")
+            if not want:
+                fails = receipts.validate_result(out, req0, scope="client_delivery")
+                say(any("needs an independent review record" in f for f in fails),
+                    "issue 63: a FAIL-reviewed thank-you is refused at client_delivery")
+
+    # Issue 30: no review at all (status none) is authored, at most L1, REVIEW-PENDING.
+    with tempfile.TemporaryDirectory() as tds:
+        td = Path(tds)
+        man = load("thank-you-run-manifest.json")
+        man["independent_review"] = {"status": "none", "reviewer": None,
+                                     "verdict": None, "record_ref": None}
+        out_path = stage(td, man=man)
+        proc = run(td)
+        out = json.loads(out_path.read_text(encoding="utf-8"))
+        say(proc.returncode == 0 and out["status"] == "authored"
+            and out["proof_class"] in ("L0", "L1") and out["independent_review"] is False
+            and any(b.startswith("REVIEW-PENDING") for b in out["blockers"])
+            and not any(b.startswith("REVIEW-FAILED") for b in out["blockers"]),
+            f"issue 30: a missing review keeps the thank-you authored / L1 at most "
+            f"({proc.returncode}: {proc.stderr.strip()}; {out.get('status')}, {out.get('proof_class')})")
+
+    # A blocked page stays blocked whatever its review says: it is not relabelled authored.
+    for label, rev in (("no review", {"status": "none", "reviewer": None,
+                                     "verdict": None, "record_ref": None}),
+                       ("a FAIL review", _rec("FAIL"))):
+        with tempfile.TemporaryDirectory() as tds:
+            td = Path(tds)
+            res = load("thank-you-result.json")
+            res["errors"] = ["entitlement ev1 version unreadable at resolver"]
+            res["status"] = "blocked"
+            man = load("thank-you-run-manifest.json")
+            man["independent_review"] = rev
+            out_path = stage(td, res=res, man=man)
+            proc = run(td)
+            out = json.loads(out_path.read_text(encoding="utf-8"))
+            say(proc.returncode == 0 and out["status"] == "blocked"
+                and not any(b.startswith(("REVIEW-PENDING", "REVIEW-FAILED")) for b in out["blockers"]),
+                f"issue 30: a blocked thank-you with {label} stays blocked, with no review blockers added")
+
+    # Fail closed: with the review_record module unavailable no verdict passes.
+    saved = tr._receipts.review_record
+    tr._receipts.review_record = None
+    try:
+        say(tr._verdict_passes("PASS") is False,
+            "issue 63: _verdict_passes fails closed when review_record is unavailable")
+        say(tr._derive_review({"independent_review": _rec("PASS")}, "AUTHOR-1")
+            == (False, None), "issue 63: no review_record module, no independent review")
+    finally:
+        tr._receipts.review_record = saved
+    say(tr._verdict_passes("PASS") is True and tr._verdict_passes("FAIL") is False
+        and tr._verdict_passes(None) is False,
+        "issue 63: _verdict_passes accepts PASS only, once review_record is back")
+
+    # Issue 30: design-only takes --review.
+    with tempfile.TemporaryDirectory() as tds:
+        td = Path(tds)
+        (td / "page-request.json").write_text(json.dumps(req0), encoding="utf-8")
+        images = _images_dir(td)
+
+        def design(*extra):
+            proc = subprocess.run(
+                [sys.executable, str(TRANSLATOR), str(td / "page-request.json"),
+                 str(td / "page-result.json"), str(td), "--design-only",
+                 "--images-run-dir", str(images), "--author-session", AUTHOR,
+                 *extra], capture_output=True, text=True)
+            return proc, json.loads((td / "page-result.json").read_text(encoding="utf-8"))
+
+        proc, bare = design()
+        say(bare["independent_review"] is False and any(
+            b.startswith("REVIEW-PENDING") for b in bare["blockers"]),
+            "issue 30: design-only with no --review carries REVIEW-PENDING")
+        kw = review_kw(dict(bare, independent_review=True,
+                            reviewer_session="REVIEWER-1"))
+        (td / "dispatch-session-registry.json").write_text(
+            json.dumps(kw["ledger"]), encoding="utf-8")
+        (td / "review-ok.json").write_text(json.dumps(kw["review"]), encoding="utf-8")
+        (td / "review-fail.json").write_text(
+            json.dumps(dict(kw["review"], verdict="FAIL")), encoding="utf-8")
+        proc, good = design("--review", str(td / "review-ok.json"))
+        say(proc.returncode == 0 and good["independent_review"] is True
+            and good["reviewer_session"] == "REVIEWER-1"
+            and not any(b.startswith("REVIEW-PENDING") for b in good["blockers"]),
+            f"issue 30: design-only with a valid --review records the reviewer ({proc.stderr.strip()})")
+        # --session-registry is honoured in design-only mode: the ledger may live anywhere
+        (td / "elsewhere").mkdir()
+        moved = td / "elsewhere" / "ledger.json"
+        moved.write_text(json.dumps(kw["ledger"]), encoding="utf-8")
+        (td / "dispatch-session-registry.json").unlink()
+        proc, good2 = design("--review", str(td / "review-ok.json"), "--session-registry", str(moved))
+        say(proc.returncode == 0 and good2["independent_review"] is True,
+            f"issue 30: design-only reads the ledger named by --session-registry ({proc.stderr.strip()})")
+        proc, noledger = design("--review", str(td / "review-ok.json"))
+        say(noledger["independent_review"] is False and any(
+            b.startswith("REVIEW-PENDING") for b in noledger["blockers"]),
+            "issue 30: design-only with no ledger at the default place stays REVIEW-PENDING")
+        (td / "dispatch-session-registry.json").write_text(json.dumps(kw["ledger"]), encoding="utf-8")
+        proc, bad = design("--review", str(td / "review-fail.json"))
+        say(bad["independent_review"] is False and bad["status"] == "authored"
+            and any(b.startswith("REVIEW-PENDING") and "no recognised successful verdict" in b
+                    for b in bad["blockers"]),
+            "issue 30: design-only with a FAIL --review stays REVIEW-PENDING")
 
 
 def _images_dir(td: Path) -> Path:

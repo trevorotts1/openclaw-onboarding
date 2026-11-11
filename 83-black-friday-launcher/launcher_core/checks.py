@@ -39,6 +39,7 @@ RECEIPT_PROOF_KEYS = PROOF_KEYS
 RECEIPT_UNIT_TYPES = ("page", "email", "text", "automation", "conversation_ai")
 DRAFT_UNIT_TYPES = ("email", "text", "automation")
 IDENTITY_KEYS = ("tenant_id", "location_id", "launch_id", "revision")
+PRACTICE_CODE = "AF-LAUNCH-PKG-PRACTICE"
 
 
 def _sha256_file(path: Path) -> str:
@@ -488,8 +489,11 @@ def _route_graph_violations(manifest: Dict[str, Any], root: Path) -> List[str]:
                          f"{piece.get('page_id')!r} is not the route node's {node.get('page_id')!r}")
     try:
         launch = route_module.launch_record(intake_doc)
+        checkout = manifest.get("checkout") or {}
+        runtime = {"selection_ref": (checkout.get("supplied") or {}).get("selection_ref"),
+                   "binding_plan": checkout.get("binding_plan")}
         fails.extend(f"AF-LAUNCH-ROUTE-LAW: {v}"
-                     for v in route_module.route_law.graph_violations(launch, graph))
+                     for v in route_module.route_law.graph_violations(launch, graph, runtime=runtime))
     except Exception as exc:  # the law that cannot be evaluated is not a pass
         fails.append(f"AF-LAUNCH-ROUTE-LAW: the route law could not be evaluated "
                      f"({type(exc).__name__}: {exc})")
@@ -601,8 +605,12 @@ def _proof_floor_violations(manifest: Dict[str, Any]) -> List[str]:
 def check_package(manifest_path: Path, root: Path,
                   skill_root: Path | None = None,
                   require_designs: bool | None = None,
-                  announce: bool = True) -> List[str]:
+                  announce: bool = True,
+                  client_rows: bool = False) -> List[str]:
     """All package-completeness violations. Empty list means the package holds.
+
+    client_rows is set by a caller that turns the package into rows a CLIENT reads (progress_report's
+    per-page status): a practice package (test_only true) fails then, so the client never receives one.
 
     AF-LAUNCH-PAGE-DESIGNS runs when the package was assembled as a designs-required delivery
     (manifest.designs_required) or when require_designs is True; require_designs=False skips it.
@@ -623,6 +631,10 @@ def check_package(manifest_path: Path, root: Path,
         fails.append(f"AF-LAUNCH-PKG-MANIFEST: schema_version is {manifest.get('schema_version')!r}")
     # test_only and the image provider must agree; a paid (test_only false) package is allowed.
     fails.extend(_provider_consistency_violations(manifest))
+    if client_rows and manifest.get("test_only") is not False:
+        fails.append(f"{PRACTICE_CODE}: this is a practice package (test_only is "
+                     f"{manifest.get('test_only')!r}); it is never handed to the client, so no client rows "
+                     "are made from it. Rebuild it with test_only false.")
 
     # Required pieces: every enabled route role, exactly once.
     pieces = manifest.get("pieces") or []
@@ -731,7 +743,7 @@ def _artifact_violations(label: str, artifacts: Any, root: Path) -> List[str]:
         if not _nonempty_str(path):
             fails.append(f"AF-LAUNCH-PKG-RECEIPT-ARTIFACT: {label} artifacts[{index}].path is missing")
             continue
-        if not isinstance(digest, str) or not _SHA256_RE.match(digest):
+        if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
             fails.append(f"AF-LAUNCH-PKG-RECEIPT-ARTIFACT: {label} artifacts[{index}].sha256 "
                          f"is not 64 lowercase hex")
             continue
@@ -909,7 +921,7 @@ def _receipt_violations(manifest: Dict[str, Any], manifest_path: Path,
             fails.append(f"AF-LAUNCH-PKG-RECEIPT-BINDING: receipt {key} "
                          f"{receipt.get(key)!r} is not the manifest's {manifest.get(key)!r}")
     approved = receipt.get("approved_plan_hash")
-    if not isinstance(approved, str) or not _SHA256_RE.match(approved):
+    if not isinstance(approved, str) or not _SHA256_RE.fullmatch(approved):
         fails.append("AF-LAUNCH-PKG-RECEIPT-BINDING: approved_plan_hash is not a sha256")
     elif approved != manifest.get("approved_plan_hash"):
         fails.append("AF-LAUNCH-PKG-RECEIPT-BINDING: approved_plan_hash is not the "

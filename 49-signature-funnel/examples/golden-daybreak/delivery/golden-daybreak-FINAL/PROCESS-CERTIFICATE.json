@@ -40,7 +40,7 @@
     },
     {
       "id": "P4-MEDIA",
-      "prover": "ghl_media.py",
+      "prover": "delivery-rail receipt (P4)",
       "status": "pass",
       "order": 4
     },
@@ -58,7 +58,7 @@
     },
     {
       "id": "P7-BUILD",
-      "prover": "prove_sf_build.py",
+      "prover": "delivery-rail receipt (P7)",
       "status": "pass",
       "order": 7
     },

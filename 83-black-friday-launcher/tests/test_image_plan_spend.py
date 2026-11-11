@@ -9,9 +9,11 @@ palette must each stop before allow_paid can be True.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,6 +23,8 @@ SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT))
 sys.path.insert(0, str(SKILL_ROOT / "routes"))
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from price_cache_fixture import seed_price_cache  # noqa: E402
 from launcher_core import image_plan  # noqa: E402
 from launcher_core.image_plan import ImagePlanError, resolve  # noqa: E402
 
@@ -38,6 +42,7 @@ def ok_record(**over):
 
 class PaidSpendTests(unittest.TestCase):
     def setUp(self):
+        seed_price_cache(self)  # never the machine's own price cache
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.tmp = Path(self._tmp.name)
@@ -96,7 +101,13 @@ class PaidSpendTests(unittest.TestCase):
             image_plan._approval_verify()
         except ImagePlanError:
             return  # checker not in this checkout: already proven to fail closed above
-        with mock.patch.dict("os.environ", {}, clear=True):
+        # The price is fixed here: clearing the environment makes the live-price reader fall back to the
+        # machine's own cached catalog, which prices this model per million tokens (issue 60 now refuses
+        # that), and this test is about the approval gate, not the price source.
+        quote = {"model": "gpt-image-2-6/sunburst-text-to-image", "per_picture_minor": 8, "credits": 16.0,
+                 "price_source": "test"}
+        with mock.patch.dict("os.environ", {}, clear=True), mock.patch.object(image_plan, "live_price",
+                                                                              return_value=quote):
             with self.assertRaises(ImagePlanError) as ctx:
                 resolve(self.raw(paid_render_approval_ref="ok"), test_only=False, plan_hash=PLAN_HASH)
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-APPROVAL")
@@ -124,6 +135,20 @@ class PaidSpendTests(unittest.TestCase):
         self.assertEqual(args[1:3], ("paid_asset_budget", PLAN_HASH))
         self.assertEqual(kwargs["cap"], {"cap_minor": 4000, "currency": "USD"})
         self.assertIs(kwargs["test_only"], False)
+
+    def test_a_paid_run_is_priced_from_the_seeded_cache_never_the_machines_own(self):
+        # The machine's own cache (HOME/.openclaw/cache/kie-live-adapter) prices the default model per million
+        # tokens. A paid-run price must not depend on it: the seeded per-picture cache (setUp) wins.
+        machine = self.tmp / "machine-home" / ".openclaw" / "cache" / "kie-live-adapter"
+        machine.mkdir(parents=True)
+        token_catalog = json.dumps({"fetched_at": time.time(), "models": [
+            {"model": "gpt-image-2-6/sunburst-text-to-image", "pricingDesc": TOKEN_TEXT}]})
+        (machine / "catalog.json").write_text(token_catalog, encoding="utf-8")
+        with mock.patch.dict(os.environ, {"HOME": str(self.tmp / "machine-home")}):
+            (inputs, _), _v = self.paid()
+        self.assertEqual(inputs["image_price_minor"], 8)  # the seeded 4 K tier, not a refusal
+        self.assertIn("catalog:cache", inputs["image_price_source"])  # read from the seeded catalog itself
+        self.assertEqual((machine / "catalog.json").read_text(encoding="utf-8"), token_catalog)  # read-only
 
     def test_the_picture_ceiling_is_priced_live_not_from_a_table(self):
         (inputs, _), _v = self.paid()
@@ -248,6 +273,189 @@ class PaidSpendTests(unittest.TestCase):
             IMAGE_INPUT_KEYS=image_plan.C3_KEYS)))
         with mock.patch.dict(sys.modules, {"substrate": takes_base}):  # Skill 49 refuses unknown keys
             self.assertEqual(sorted(image_plan.image_inputs_file(inputs)), sorted(image_plan.C3_KEYS))
+
+    def test_the_price_travels_into_both_shared_files(self):
+        # Issue 76: the money that justifies the count is written beside it, to Skill 49's file and Skill 78's.
+        inputs, _ = resolve(self.raw(), test_only=True)
+        inputs = dict(inputs, image_price_minor=8, image_cap_minor=320, image_currency="USD")
+        takes_all = SimpleNamespace(dispatch=lambda: SimpleNamespace(pset=SimpleNamespace(
+            IMAGE_INPUT_KEYS=image_plan.C3_KEYS + image_plan.C3_CARRIED_KEYS)))
+        with mock.patch.dict(sys.modules, {"substrate": takes_all}):
+            doc = image_plan.image_inputs_file(inputs)
+        self.assertEqual((doc["image_price_minor"], doc["image_cap_minor"], doc["image_currency"]), (8, 320, "USD"))
+        order = image_plan.order_page_inputs_file(inputs, route_graph="route-graph.json")
+        self.assertEqual((order["image_price_minor"], order["image_cap_minor"], order["image_currency"]), (8, 320, "USD"))
+
+
+GPT_IMAGE_TEXT = ("GPT Image 2.6 \u2014 now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, "
+                  "and 16 credits ($0.08) for 4 K.")
+TOKEN_TEXT = ("Input 800 credits / 1M tokens (\u2248 $4.00), Output 4,000 credits / 1M tokens "
+              "(\u2248 $20.00)")
+
+
+class PriceTierAndUnitTests(unittest.TestCase):
+    """Issues 59 and 60: the named tier is the price, and only a per-picture price is a picture price."""
+
+    def setUp(self):
+        seed_price_cache(self)  # never the machine's own price cache
+
+    def quote(self, desc, unit, model="gpt-image-2-6/sunburst-text-to-image", resolution=None):
+        adapter = mock.Mock()
+        adapter.cmd_price.return_value = {"state": "ok", "data": {"pricing_desc": desc, "unit": unit,
+                                                                  "price_source": "test"}}
+        module = SimpleNamespace(KNOWN_DEFAULTS={"gpt-image": model})
+        with mock.patch.object(image_plan, "_price_module", return_value=module), \
+                mock.patch.object(image_plan, "_price_adapter", return_value=adapter):
+            return image_plan.live_price("kie", "USD", model=model, resolution=resolution)
+
+    # ---- issue 59 ----------------------------------------------------------------------------
+    def test_each_named_tier_picks_its_own_price_from_the_real_gpt_image_text(self):
+        for res, credits, usd in (("1K", 6.0, 0.03), ("2K", 10.0, 0.05), ("4K", 16.0, 0.08)):
+            got = image_plan.pick_price(GPT_IMAGE_TEXT, res)
+            self.assertEqual((got["credits"], got["usd"]), (credits, usd), res)
+
+    def test_each_named_tier_prices_from_text_with_no_comma_before_the_and(self):
+        # Issue 59: "... for 1 K and 10 credits ($0.05) for 2 K and 16 credits ($0.08) for 4 K" has no
+        # comma at all; the `and` half of the clause splitter is what keeps each tier apart.
+        text = "6 credits ($0.03) for 1 K and 10 credits ($0.05) for 2 K and 16 credits ($0.08) for 4 K"
+        for res, usd in (("1K", 0.03), ("2K", 0.05), ("4K", 0.08)):
+            self.assertEqual(image_plan.pick_price(text, res)["usd"], usd, res)
+
+    def test_each_clause_boundary_keeps_its_own_tier(self):
+        # One text per branch of the clause splitter: the tier word may sit after a comma that is
+        # followed by words, directly after a comma with no space, inside a word that ends in "and",
+        # or in a tier that names two resolutions before its price.
+        for text, res, usd in (
+                ("6 credits ($0.03), each at 1 K, 16 credits ($0.08), each at 4 K", "1K", 0.03),
+                ("6 credits ($0.03) for 1 K,16 credits ($0.08) for 4 K", "1K", 0.03),
+                ("6 credits ($0.03) for 1 K,16 credits ($0.08) for 4 K", "4K", 0.08),
+                ("6 credits ($0.03) for Brand 1 K, 16 credits ($0.08) for 4 K", "1K", 0.03),
+                ("6 credits ($0.03) for 1 K and the 2 K tier, 16 credits ($0.08) for 4 K", "2K", 0.03),
+                ("6 credits ($0.03) for 1 K, and 16 credits ($0.08) for 4 K", "4K", 0.08),
+                ("6 credits ($0.03) for 1 K and 16 credits ($0.08) for 4 K", "1K", 0.03)):
+            self.assertEqual(image_plan.pick_price(text, res)["usd"], usd, (text, res))
+
+    def test_a_tier_name_is_matched_whole_and_with_or_without_a_space(self):
+        text = "10 credits ($0.05) for 12 K, 16 credits ($0.08) for 2 K"
+        self.assertEqual(image_plan.pick_price(text, "2K")["usd"], 0.08)
+        self.assertEqual(image_plan.pick_price("6 credits ($0.03) for 1K, 16 credits ($0.08) for 4K", "4K")["usd"], 0.08)
+        self.assertEqual(image_plan.pick_price("6 credits ($0.03) for 1K, 16 credits ($0.08) for 4K", "1")["usd"], 0.03)
+        self.assertEqual(image_plan.pick_price("10 credits ($0.05) for 2 Kb, 16 credits ($0.08) for 2 K", "2K")["usd"], 0.08)
+        self.assertEqual(image_plan.pick_price("10 credits ($0.05) for 2 K, 16 credits ($0.08) for 4 K", " 2K ")["usd"], 0.05)
+
+    def test_tiers_that_cannot_be_told_apart_are_refused_not_guessed(self):
+        # "and" glued to the next price or a comma-and with no space leaves both prices in one clause.
+        for text in ("6 credits ($0.03) for 1 K and16 credits ($0.08) for 4 K",
+                     "6 credits ($0.03) for 1 K,and16 credits ($0.08) for 4 K"):
+            with self.assertRaises(ImagePlanError, msg=text) as ctx:
+                image_plan.pick_price(text, "1K")
+            self.assertIn("ambiguous", ctx.exception.detail)
+
+    def test_a_tier_that_differs_only_in_credits_or_only_in_dollars_is_still_ambiguous(self):
+        for text in ("4 K is 16 credits ($0.08); 4 K is 16 credits ($0.09)",
+                     "4 K is 16 credits ($0.08); 4 K is 20 credits ($0.08)"):
+            with self.assertRaises(ImagePlanError, msg=text) as ctx:
+                image_plan.pick_price(text, "4K")
+            self.assertEqual((ctx.exception.code, ctx.exception.field),
+                             ("AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan.image_resolution"))
+            self.assertIn("ambiguous", ctx.exception.detail)
+
+    def test_the_tier_price_reaches_image_price_minor_exactly(self):
+        for res, minor in (("1K", 3), ("2K", 5), ("4K", 8)):
+            self.assertEqual(self.quote(GPT_IMAGE_TEXT, "per-job", resolution=res)["per_picture_minor"], minor, res)
+
+    def test_a_ten_dollar_cap_at_4k_buys_125_pictures_not_200(self):
+        price = self.quote(GPT_IMAGE_TEXT, "per-job", resolution="4K")["per_picture_minor"]
+        self.assertEqual(1000 // price, 125)
+
+    def test_two_different_prices_for_the_named_tier_are_refused_not_the_first(self):
+        text = "4 K costs 16 credits ($0.08) per image; 4 K is also 10 credits ($0.05) per image"
+        with self.assertRaises(ImagePlanError) as ctx:
+            image_plan.pick_price(text, "4K")
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-PRICE")
+        self.assertIn("ambiguous", ctx.exception.detail)
+
+    def test_the_same_price_repeated_for_the_tier_is_not_ambiguous(self):
+        text = "4 K is 16 credits ($0.08) per image; 4 K: 16 credits ($0.08)"
+        self.assertEqual(image_plan.pick_price(text, "4K")["usd"], 0.08)
+
+    # ---- issue 60 ----------------------------------------------------------------------------
+    def test_a_token_priced_model_is_refused_as_not_a_picture_price(self):
+        with self.assertRaises(ImagePlanError) as ctx:
+            self.quote(TOKEN_TEXT, "per-1m-tokens", model="gpt-image-chat-model")
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-PRICE")
+        self.assertEqual(ctx.exception.field, "image_plan.image_model")
+        self.assertIn("per-1m-tokens", ctx.exception.detail)
+        self.assertIn("not per picture", ctx.exception.detail)
+
+    def test_per_image_and_per_job_prices_are_accepted_and_no_unit_is_refused(self):
+        for unit in ("per-image", "per-job"):
+            self.assertEqual(self.quote(GPT_IMAGE_TEXT, unit, resolution="1K")["per_picture_minor"], 3, unit)
+        for unit in (None, "", "per-second", "per-1k-chars"):
+            with self.assertRaises(ImagePlanError, msg=repr(unit)):
+                self.quote(GPT_IMAGE_TEXT, unit)
+
+    def test_a_free_text_image_model_outside_the_family_is_refused_without_an_override_approval(self):
+        base = {"brand_file": "b.json", "brand_owner": "X", "image_provider": "kie"}
+        with self.assertRaises(ImagePlanError) as ctx:
+            image_plan.validate_raw(dict(base, image_model="some-chat-model"))
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-PRICE")
+        image_plan.validate_raw(dict(base, image_model="gpt-image-2-6/sunburst-text-to-image"))
+        image_plan.validate_raw(dict(base, image_model="some-chat-model", image_model_override_approval_ref="APPR-1"))
+
+
+    def test_the_model_family_check_is_exact_about_case_provider_and_the_override_text(self):
+        base = {"brand_file": "b.json", "brand_owner": "X", "image_provider": "kie"}
+        image_plan.validate_raw(dict(base, image_model="GPT-Image-2-6/Sunburst"))  # case is not a difference
+        image_plan.validate_raw(dict(base, image_model="  gpt-image-2-6  "))  # nor is stray whitespace
+        for model in ("gpt-chat-4", "my-gpt-image"):  # same start letters, or the family name not at the start
+            with self.assertRaises(ImagePlanError, msg=model):
+                image_plan.validate_raw(dict(base, image_model=model))
+        for ref in ("   ", "", 5):  # an override that names nothing is not an approval reference
+            with self.assertRaises(ImagePlanError, msg=repr(ref)):
+                image_plan.validate_raw(dict(base, image_model="some-chat-model", image_model_override_approval_ref=ref))
+        no_provider = {"brand_file": "b.json", "brand_owner": "X", "image_model": "some-chat-model"}
+        with self.assertRaises(ImagePlanError) as ctx:  # no provider given means the default provider's family
+            image_plan.validate_raw(no_provider)
+        self.assertEqual((ctx.exception.code, ctx.exception.field),
+                         ("AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan.image_model"))
+        image_plan.validate_raw(dict(no_provider, image_provider="stub"))  # a provider with no family map is not checked
+
+
+REAL_TOKEN_CATALOG_TEXT = (
+    "Text input 900 credits / 1M tokens ($4.50), cached text input 225 ($1.125), image input 1,440 ($7.20), "
+    "cached image input 360 ($1.80), image output 5,400 ($27.00) \u2014 10% below official pricing.")
+
+
+class RealCatalogEntryTests(unittest.TestCase):
+    """Issue 60, the e2e reproduction: Skill 74's REAL adapter reads a cached live catalog whose entry for
+    the default image model is priced per million tokens. Before the unit check, 'credits ($usd)' in that
+    text was read as a picture price ('72 minor USD does not pay for one picture (450 each)')."""
+
+    MODEL = "gpt-image-2-6/sunburst-text-to-image"
+
+    def setUp(self):
+        seed_price_cache(self)  # the env var is re-pointed per quote below
+
+    def _quote(self, entries, model, resolution=None):
+        with tempfile.TemporaryDirectory() as cache:
+            Path(cache, "catalog.json").write_text(json.dumps(
+                {"fetched_at": time.time(),
+                 "models": [{"model": m, "pricingDesc": d} for m, d in entries]}), encoding="utf-8")
+            with mock.patch.dict(os.environ, {"KIE_LIVE_CACHE_DIR": cache}):
+                return image_plan.live_price("kie", "USD", model=model, resolution=resolution)
+
+    def test_the_default_model_with_a_per_token_catalog_entry_is_refused_not_priced_450(self):
+        with self.assertRaises(ImagePlanError) as ctx:
+            self._quote([(self.MODEL, REAL_TOKEN_CATALOG_TEXT)], self.MODEL)
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-PRICE")
+        self.assertIn("per-1m-tokens", ctx.exception.detail)
+        self.assertNotIn("450", ctx.exception.detail)
+
+    def test_control_the_same_harness_prices_a_per_picture_catalog_entry(self):
+        got = self._quote([("gpt-image-2-text-to-image", GPT_IMAGE_TEXT)], "gpt-image-2-text-to-image",
+                          resolution="1K")
+        self.assertEqual(got["per_picture_minor"], 3)
 
 
 if __name__ == "__main__":

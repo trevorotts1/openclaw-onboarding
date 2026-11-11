@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SKILL_ROOT))
@@ -100,6 +101,23 @@ class OperationalFields(IntakeCase):  # PRD-13
             payload = load("elevation")
             payload["test_only"] = good
             self.assertIs(intake.validate(payload)["test_only"], good)
+
+    def test_test_only_has_no_default_and_an_absent_one_is_refused(self):
+        # Issue 36: a forgotten `false` used to build a practice package with every live gate off.
+        payload = load("elevation")
+        del payload["test_only"]
+        err = self.refuses(payload, "AF-LAUNCH-INTAKE-TEST-ONLY", "test_only")
+        self.assertIn("say true (practice) or false (client)", err.detail)
+        self.assertNotIn("test_only", intake.PERMITTED_DEFAULTS)  # the default is gone, not just unused
+        self.assertIn("test_only", intake.EXPLICIT_FIELDS)
+
+    def test_a_said_test_only_is_recorded_as_supplied_never_as_a_default(self):
+        for said in (True, False):
+            payload = load("elevation")
+            payload["test_only"] = said
+            normalized = intake.validate(payload)
+            self.assertIs(normalized["test_only"], said)
+            self.assertEqual(normalized["provenance"]["test_only"], "supplied")
 
     def test_write_target_enum(self):
         for bad in ("approved_live_publication", "anywhere", "", None):
@@ -450,6 +468,17 @@ class CheckoutFacts(IntakeCase):  # CHK-16
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         module.validate_request(request)  # raises on rejection
+
+
+class SharedBillingVocabularyMissing(IntakeCase):  # issue 70: no vocabulary installed means nothing is judged against it
+    def test_a_launcher_without_the_shared_billing_file_refuses_by_name(self):
+        with tempfile.TemporaryDirectory() as empty, mock.patch.object(intake, "REPO_ROOT", Path(empty)), \
+                mock.patch.dict(sys.modules):
+            sys.modules.pop("signature_launch_billing", None)
+            with self.assertRaises(intake.IntakeError) as ctx:
+                intake.billing_module()
+        self.assertTrue(ctx.exception.code.startswith("AF-LAUNCH-INTAKE-PAYMENT-PLAN"))
+        self.assertIn("not installed", ctx.exception.detail)
 
 
 if __name__ == "__main__":

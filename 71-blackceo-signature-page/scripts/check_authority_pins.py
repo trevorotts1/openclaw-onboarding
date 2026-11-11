@@ -12,12 +12,11 @@ prints, per authority:
   PIN DRIFT:  <name>  expected <sha> found <sha>  (at <path>)
   PIN MISSING: <name>  no installed counterpart found at <path>
 
-Drift is a WARNING, not a failure: the external source may have moved
-legitimately, but it stops being invisible. Updating a pin is a
+Drift and a missing counterpart are failures: with --strict they exit 1,
+and verify.sh runs this script with --strict, so drift turns verify.sh red.
+Without --strict they only warn (a local look). Updating a pin is a
 deliberate act: change the SHA in external-authorities.json, bump
-checked_on, and note it in the skill CHANGELOG. With --strict, drift
-and missing both exit 1 (for CI use); verify.sh calls this script
-without --strict.
+checked_on, and note it in the skill CHANGELOG.
 
 Resolution: each pin's repo-relative path is resolved against every
 search root: --repo-root values, the SKILL71_REPO_ROOT environment

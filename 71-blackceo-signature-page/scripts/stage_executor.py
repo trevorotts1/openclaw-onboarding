@@ -23,7 +23,9 @@ contract's `generation-record.json`.
 Providers:
   stub  (default) never touches the network. Writes deterministic
         placeholder PNGs so the whole path is provable without a paid
-        call, and stamps every record provider="stub".
+        call, and stamps every record provider="stub". On a run with no
+        gate state it runs only inside a test harness (SKILL71_FIXTURE_RUN=1);
+        anywhere else it is refused with AF-71-UNGATED before anything is written.
   kie   the real path. Shells to Skill 74:
         `run --request <req> --save-dir <dir> --mode active`.
         Refuses unless BOTH --allow-paid is passed and KIE_API_KEY is
@@ -109,6 +111,7 @@ DEFAULT_REQUEST = "production-request.json"
 RECORD = "stage-executor-record.json"
 BOARD_STAGE = "design-board"  # SPF021: one client-approved board per page, after the images, before final-mockups
 GATE = SKILL_ROOT / "scripts" / "stage_gate.py"  # the one authority for whether a stage may start
+FIXTURE_MARKER = "SKILL71_FIXTURE_RUN"  # AF-71-UNGATED: set to 1 ONLY by test harnesses, never by a product script
 
 STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup", "final-mockups")
 # per stage: list of (output template, width, height-hint)
@@ -926,7 +929,9 @@ def require_stage_start(run_dir: Path, stage: str, provider: str, item: str | No
     A paid run always refuses: it would spend money on a stage the run has not reached. A stub run
     on a gate-driven run (one that carries private/state.json) refuses too, because that run claims
     to be a gated pipeline and is held to the gate. A stub run on a bare fixture with no gate state
-    still proves the wire end to end; it records the gate's own lines as status
+    proves the wire end to end ONLY inside a test harness (AF-71-UNGATED, issue 10): the harness sets
+    SKILL71_FIXTURE_RUN=1, no product script does, and outside it an ungated stub run is refused
+    before a single placeholder is written. A fixture run records the gate's own lines as status
     "ungated_fixture" in every record it writes, so its placeholders can never be read as a gated
     stage. Nothing here writes a receipt: the verdict travels in this command's own record.
     """
@@ -938,16 +943,22 @@ def require_stage_start(run_dir: Path, stage: str, provider: str, item: str | No
     if rc == 0:
         return verdict
     where = f"{stage} item {item}" if item else f"stage {stage}"
+    first = next((line for line in text.splitlines() if line.startswith("- ")), text or "no output")
+    first = first.lstrip("- ").strip()
+    # the gate already names the stage ("stage X cannot start: ..."); keep its reason only
+    first = re.sub(rf"^(?:stage|item) .*? cannot start:\s*", "", first)
     if provider == "kie" or (Path(run_dir) / "private" / "state.json").is_file():
-        first = next((line for line in text.splitlines() if line.startswith("- ")), text or "no output")
-        first = first.lstrip("- ").strip()
-        # the gate already names the stage ("stage X cannot start: ..."); keep its reason only
-        first = re.sub(rf"^(?:stage|item) .*? cannot start:\s*", "", first)
         raise ExecutorError(f"{where} cannot start: {first} "
                             "(stage_gate.py check refused it; no provider call was made)")
-    print(f"WARN start_check {where}: the run carries no gate state, so this is an ungated "
-          f"fixture; the gate's refusal is recorded, never hidden: "
-          f"{next((l for l in text.splitlines() if l.startswith('- ')), text)[:200]}", file=sys.stderr)
+    if provider != "stub" or os.environ.get(FIXTURE_MARKER) != "1":
+        raise ExecutorError(
+            f"AF-71-UNGATED: {where} cannot start: the run carries no gate state (no private/state.json) "
+            f"and the gate refused it ({first[:200]}). An ungated stub run is allowed only for a test "
+            f"fixture ({FIXTURE_MARKER}=1, set by test harnesses). Open the run with stage_gate.py init "
+            "and close the earlier stages first (no image was written)")
+    print(f"WARN start_check {where}: {FIXTURE_MARKER}=1 is set and the run carries no gate state, so this is "
+          f"an UNGATED TEST FIXTURE; its placeholders are not a gated stage. The gate's refusal is recorded, "
+          f"never hidden: {first[:200]}", file=sys.stderr)
     verdict["status"] = "ungated_fixture"
     return verdict
 

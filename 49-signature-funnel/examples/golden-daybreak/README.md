@@ -22,12 +22,13 @@ provers and drives the canonical no-skip orchestrator to a signed
   block, ≥220 distinct words, no em/en dashes; Section 11 is typography-as-art with a
   spelling-lock directive over three baked words (`DECIDE` / `COMMIT` / `RISE`).
 - **Provenance + no-pitch (`media_ledger.json`):** every image carries a real Kie
-  `taskId` and a GHL-media-host URL; the Thank-You page carries only utility buttons
+  `taskId` and the hosted URL the delivery rail's P4 receipt recorded; the Thank-You page carries only utility buttons
   (Join The Community / Share With A Friend / Add To Calendar) — no offer name, no
   price, no sale CTA.
 - **Delegation seams (attested, never forked here):** image generation → Skill 66
   (model policy) then Skill 74 (`kie_live_adapter.py`; the committed specimen certificate predates the rename and
-  still labels the phase `kie_image.py`, a regenerated one labels it `kie_live_adapter.py`); GHL media folder/upload + funnel/page build → Skill 6. The
+  still labels the phase `kie_image.py`, a regenerated one labels it `kie_live_adapter.py`); media hosting (P4) and the funnel/page build (P7) → the delivery rail named in the brief
+  (`delivery_rail`), which signs one receipt line per hosted image and per built page. The
   orchestrator attests those phases in order; provenance is enforced at P9.
 
 ## Files

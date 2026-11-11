@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import stage_gate  # noqa: E402  (module import loads the real contract)
 sys.path.insert(0, str(ROOT / "tests"))
 import fit_prompt  # noqa: E402
+import di_receipt  # noqa: E402
 
 
 def write_review_parts(run, stage):
@@ -485,6 +486,7 @@ class StageGateTest(unittest.TestCase):
               json.dumps({"schema_version": 1, "selections": [
                   {"applies_to": "all", "source_library": "image-guide-sauce-only",
                    "style_id": "signature-grade", "branded_name": "Signature Grade"}]}))
+        di_receipt.put(run)  # fix spec M4: the prompts stage closes only on the Skill 45 receipt
         write(run / "image-generation-qc" / "image-qc.json", "{}")
 
         def gate(*args, expect=None, env=fixture_env):
@@ -922,6 +924,7 @@ class StageGateTest(unittest.TestCase):
               json.dumps({"schema_version": 1, "selections": [
                   {"applies_to": "all", "source_library": "image-guide-sauce-only",
                    "style_id": "signature-grade", "branded_name": "Signature Grade"}]}))
+        di_receipt.put(run)  # fix spec M4: the prompts stage closes only on the Skill 45 receipt
         write(run / "image-generation-qc" / "Image-001.png", "stub")
         write(run / "image-generation-qc" / "Image-002.png", "stub")
         write(run / "image-generation-qc" / "image-qc.json", "{}")

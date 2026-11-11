@@ -4,7 +4,7 @@
   "manifest_version": "1.1.0",
   "skill": "49-signature-funnel",
   "funnel_type": "signature_funnel",
-  "description": "The deterministic phase spine for the Signature Funnel. Each P-phase names its produces_artifact, its thin _chk_sf_* preflight wrapper (DEFERS unless funnel_type == signature_funnel), and its fail-closed gate. The orchestrator run_signature_funnel.py runs this spine IN ORDER with no skips (front-door nonce required) and issues the signed PROCESS-CERTIFICATE only on all-phases-pass. Image gen delegates to Skill 66 (model policy) then Skill 74 (kie_live_adapter.py, the one approved KIE transport; results recorded by scripts/kie74_receipt.py); ALL GHL media + build delegate to Skill 6 (ghl_media.py / ghl_rest_canvas.py). CLIENT runtime uses the client's OWN providers, never Anthropic.",
+  "description": "The deterministic phase spine for the Signature Funnel. Each P-phase names its produces_artifact, its thin _chk_sf_* preflight wrapper (DEFERS unless funnel_type == signature_funnel), and its fail-closed gate. The orchestrator run_signature_funnel.py runs this spine IN ORDER with no skips (operator key required) and issues the signed PROCESS-CERTIFICATE only on all-phases-pass. Image gen delegates to Skill 66 (model policy) then Skill 74 (kie_live_adapter.py, the one approved KIE transport; results recorded by scripts/kie74_receipt.py); media hosting (P4) and the funnel/page build (P7) delegate to the DELIVERY RAIL named by brief.delivery_rail, which signs one receipt line per hosted image and per built page (sf-delivery-rail-receipt/v1, schema/delivery-rail-receipt.schema.json); Skill 49 never imports or resolves the rail. CLIENT runtime uses the client's OWN providers, never Anthropic.",
   "front_door": {
     "entry": "signature-funnel-entry.sh",
     "guards": [
@@ -12,10 +12,10 @@
       "version",
       "hash-pin",
       "bypass-scan",
-      "run-scoped-0600-nonce"
+      "operator-key"
     ],
     "hash_pin_file": "scripts/SF-PROVER-PIN.sha256",
-    "nonce": "the run-scoped 0600 nonce keys the certificate HMAC; a direct orchestrator call without it dies AF-FUN-FRONT-DOOR",
+    "operator_key": "the certificate HMAC is keyed by the operator key (ENF-16); a caller-supplied nonce is refused (AF-FUN-FRONT-DOOR); a direct orchestrator call without the operator key dies AF-FUN-FRONT-DOOR",
     "rule": "NOTHING generates copy/prompts, calls Kie, touches GHL, or mints a certificate except THROUGH signature-funnel-entry.sh."
   },
   "phases": [
@@ -60,10 +60,10 @@
     {
       "id": "P4-MEDIA",
       "order": 4,
-      "name": "GHL media folder + upload (DELEGATED to Skill 6)",
-      "produces_artifact": "media_ledger.json (GHL media URLs) + the hosting binding the launcher admits",
-      "delegate": "06-ghl-install-pages :: ghl_media.py (ensure_funnel_media_folders + upload_media)",
-      "gate": "GHL-host assertion enforced at P9",
+      "name": "Media hosting (DELEGATED to the delivery rail named in the brief)",
+      "produces_artifact": "media_ledger.json (hosted media URLs) + the hosting binding the launcher admits",
+      "delegate": "delivery rail named by brief.delivery_rail :: sf-delivery-rail-receipt/v1",
+      "gate": "run_signature_funnel._gate_p4_media (one operator-key-signed P4-MEDIA receipt line per ledger image; the ledger URL must equal the line's hosted_url; AF-FUN-DELEG-MEDIA); the same URL equality is re-checked at P9 (AF-FUN-IMG-HOST)",
       "hosting_binding": {
         "consumer": "83-black-friday-launcher/launcher_core/image_stages.py::hosted_admission",
         "producer": "83-black-friday-launcher/launcher_core/image_stages.py::write_hosting_binding",
@@ -73,17 +73,7 @@
         ],
         "binding_file": "hosting-binding.json",
         "schema": "launcher.hosting-binding/1",
-        "required_keys": [
-          "local_path",
-          "sha256",
-          "location_id",
-          "page",
-          "slot",
-          "ghl_folder_id",
-          "ghl_media_id",
-          "ghl_upload_status",
-          "public_url"
-        ],
+        "required_keys": "83-black-friday-launcher/launcher_core/image_stages.py :: BINDING_KEYS (the launcher owns the binding schema; the key list is read from there, never copied)",
         "rule": "A hosted URL alone is not an upload. The binding binds the CURRENT local artifact's SHA-256 to the exact run/page/revision, tenant/location, verified folder, remote media id and final URL. CDN transformations are expected: the local hash is the identity, the remote bytes are never compared to it. No record with a missing key is admitted."
       }
     },
@@ -108,11 +98,11 @@
     {
       "id": "P7-BUILD",
       "order": 7,
-      "name": "GHL funnel/page build (DELEGATED to Skill 6)",
-      "produces_artifact": "build_receipt.json (GHL funnel + preview URLs)",
-      "delegate": "06-ghl-install-pages :: ghl_rest_canvas.py / ghl_builder.py",
+      "name": "Funnel/page build (DELEGATED to the delivery rail named in the brief)",
+      "produces_artifact": "build_receipt.json (funnel + preview URLs)",
+      "delegate": "delivery rail named by brief.delivery_rail :: sf-delivery-rail-receipt/v1",
       "chk_wrapper": "_chk_sf_build",
-      "gate": "run_signature_funnel._gate_build (FIX-COPY-02: requires the FAB scorecard build/fab-artifact.json — copy echoed from copy_ledger.json — THEN prove_sf_build.py funnel-build QC >= 8.5 + non-empty preview URL per page; fail-closed). prove_sf_build.py also reads the TOOL evidence under the run dir (STR-18/S06-08/IMG-16): parsed page fragments, the Skill 6 verify run under build/evidence (ghl_gate.require_pass re-run, QC recomputed, preview URLs bound to passing records) and the page-images wireframe + mockup set for every page",
+      "gate": "run_signature_funnel._gate_build (FIX-COPY-02: requires the FAB scorecard build/fab-artifact.json — copy echoed from copy_ledger.json — THEN prove_sf_build.py funnel-build QC >= 8.5 + non-empty preview URL per page; fail-closed). prove_sf_build.py also reads the evidence under the run dir (STR-18/S06-08/IMG-16): parsed page fragments, the delivery rail's operator-key-signed P7-BUILD receipt lines in delegation_receipts.jsonl (delegation_receipt.require_rail; one line per page type; QC recomputed as 10 x passing / total, preview URLs bound to passing lines) and the page-images wireframe + mockup set for every page",
       "produces_fab_scorecard": "build/fab-artifact.json (copy_ledger echoed; the >=8.5 copy-substance gate scores this)",
       "py_symbol": "run_signature_funnel._gate_build"
     },
@@ -140,7 +130,8 @@
       "name": "Optional 10 promo emails (handoff)",
       "produces_artifact": "handoff to Email Skill project",
       "delegate": "Email-Skill-Library (post-downsell, after human approval)",
-      "gate": "out of scope for Skill 49 (hand off brief + copy, receive 10 emails)"
+      "gate": "AF-FUN-P10-EMAILS: when the brief's email_offer is accepted, working/emails/emails.json must carry a Skill 50 certificate sha before the certificate is minted; the certificate names the state (accepted or declined)",
+      "py_symbol": "run_signature_funnel._gate_p10_emails"
     }
   ],
   "chk_wrappers": {
@@ -172,8 +163,8 @@
   },
   "delegation_seams": {
     "images": "66-kie-image (model policy, N43 ratio rules) -> 74-kie-live-adapter / kie_live_adapter.py (16:9 and 3:4 slots, 2K default; reference hook uses the live schema's image field)",
-    "ghl_media": "06-ghl-install-pages / ghl_media.py",
-    "ghl_build": "06-ghl-install-pages / ghl_rest_canvas.py + ghl_builder.py",
+    "media_hosting": "delivery rail named by brief.delivery_rail :: sf-delivery-rail-receipt/v1 (P4-MEDIA, one signed line per ledger image)",
+    "page_build": "delivery rail named by brief.delivery_rail :: sf-delivery-rail-receipt/v1 (P7-BUILD, one signed line per page type)",
     "emails": "Email-Skill-Library (10 promo emails)",
     "client_provider_rule": "CLIENT runtime tiers the client's OWN configured providers (strongest -> copy+QC; mid -> prompts/HTML/JSON; cheapest -> catalog/poll). NEVER Anthropic on a client box."
   },
@@ -438,6 +429,11 @@
       "enforced_by": "P2-PROMPTS",
       "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"
     },
+    "AF-FUN-PROMPT-STYLE-CARD": {
+      "trigger": "the intake names a Skill 45 style_card_id (Q18) but a prompt does not carry that card's LONG tier verbatim in block 8 ahead of the negatives, or the card cannot be read from the design library",
+      "enforced_by": "P2-PROMPTS",
+      "py_symbol": "prove_sf_prompt_floor._check_style_card"
+    },
     "AF-FUN-PROMPT-COVERAGE": {
       "trigger": "prompt ledger is missing a required (page_type, section) image slot for the funnel size (partial ledger)",
       "enforced_by": "P2-PROMPTS",
@@ -447,6 +443,11 @@
       "trigger": "media ledger is missing a required (page_type, section) image slot for the funnel size (partial image set)",
       "enforced_by": "P9-CERTIFY",
       "py_symbol": "prove_sf_prompt_floor.coverage_violations"
+    },
+    "AF-FUN-P10-EMAILS": {
+      "trigger": "P10-EMAIL: the brief's email_offer is accepted but working/emails/emails.json is missing or carries no Skill 50 certificate sha (64-hex certificate_sha), or email_offer is neither accepted nor declined",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "run_signature_funnel._gate_p10_emails"
     },
     "AF-FUN-HTML-FRAGMENT": {
       "trigger": "a pages/<profile>.fragment.html is missing/empty for a matrix page",
@@ -539,7 +540,7 @@
       "py_symbol": "prove_sf_no_pitch.evaluate"
     },
     "AF-FUN-IMG-HOST": {
-      "trigger": "media URL does not resolve to a GHL media host",
+      "trigger": "media URL is not the hosted URL the P4 delivery-rail receipt recorded for that image (ledger-only: not a well-formed non-placeholder http(s) URL)",
       "enforced_by": "P9-CERTIFY",
       "py_symbol": "prove_sf_no_pitch.evaluate"
     },
@@ -574,7 +575,7 @@
       "py_symbol": "prove_sf_cert.verify"
     },
     "AF-FUN-CERT-SIGNATURE": {
-      "trigger": "HMAC signature invalid for the nonce (tamper/forgery)",
+      "trigger": "HMAC signature invalid for the operator key (tamper/forgery)",
       "enforced_by": "P9-CERTIFY",
       "py_symbol": "prove_sf_cert.verify"
     },
@@ -584,7 +585,7 @@
       "py_symbol": "prove_sf_cert.verify"
     },
     "AF-FUN-FRONT-DOOR": {
-      "trigger": "orchestrator called without the run-scoped front-door nonce",
+      "trigger": "orchestrator called without the operator key, or with a caller-supplied nonce (refused; ENF-16)",
       "enforced_by": "front-door",
       "py_symbol": "run_signature_funnel._check_front_door"
     },
@@ -634,12 +635,12 @@
       "py_symbol": "prove_sf_build.html_fragment_violations"
     },
     "AF-FUN-BUILD-QC-RECORD": {
-      "trigger": "no tool-run QC record: build/evidence is absent, ghl_gate.require_pass re-run on it is non-zero, the QC recomputed from the raw verify records is below the 8.5 floor, or the receipt qc_score is higher than the recomputed one (a receipt that only says 9.0 fails; STR-18/S06-08)",
+      "trigger": "no signed delivery-rail QC record: the P7-BUILD receipt lines are absent, unsigned, forged, for another run, authored by a certified module, break schema/delivery-rail-receipt.schema.json or miss a required page type; or the QC recomputed from the lines (10 x passing / total) is below the 8.5 floor, or the receipt qc_score is higher than the recomputed one (a receipt that only says 9.0 fails; STR-18/S06-08)",
       "enforced_by": "P7-BUILD",
       "py_symbol": "prove_sf_build.tool_run_violations"
     },
     "AF-FUN-BUILD-PREVIEW-UNBOUND": {
-      "trigger": "a receipt preview_url is not a URL that a passing raw verify record checked (a real-looking host the tool never visited; STR-18)",
+      "trigger": "a receipt preview_url is not a URL that a passing delivery-rail P7 receipt line recorded (a real-looking host the rail never built; STR-18)",
       "enforced_by": "P7-BUILD",
       "py_symbol": "prove_sf_build.tool_run_violations"
     },
@@ -654,7 +655,7 @@
       "py_symbol": "run_signature_funnel._gate_p3_images"
     },
     "AF-FUN-DELEG-MEDIA": {
-      "trigger": "P4-MEDIA: a ledger image does not resolve to a GHL media host (an un-uploaded image is not a delegated upload); A10/T0-09",
+      "trigger": "P4-MEDIA: a ledger image carries a URL that differs from the hosted_url the delivery rail's signed receipt recorded for it, or the ledger is absent (an un-uploaded image is not a delegated upload); A10/T0-09",
       "enforced_by": "P4-MEDIA",
       "py_symbol": "run_signature_funnel._gate_p4_media"
     },

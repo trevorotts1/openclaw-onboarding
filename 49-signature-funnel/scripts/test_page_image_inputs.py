@@ -24,7 +24,7 @@ REPO = HERE.parents[1]
 
 def write_inputs(directory, brand_file, **over):
     doc = {"design_style": "B", "brand_file": str(brand_file), "brand_owner": "blackceo", "image_cap": 40,
-           "image_provider": "stub"}
+           "image_provider": "stub", "test_only": True}
     doc.update(over)
     path = Path(directory) / "image_inputs.json"
     path.write_text(json.dumps(doc), encoding="utf-8")
@@ -34,7 +34,8 @@ def write_inputs(directory, brand_file, **over):
 class CheckoutTakesTheSharedInputs(CheckoutWrapperCase):
     def run_checkout(self, inputs):
         cmd = [sys.executable, str(CHECKOUT), "--request", str(self.request_path), "--result", str(self.result_path),
-               "--manuscript", str(MANUSCRIPT), "--launch", str(self.launch_path),
+               "--manuscript", str(self.stamped_copy(MANUSCRIPT)), "--launch", str(self.launch_path),
+               "--checkout-request", str(self.checkout_request_path),
                "--route-graph", str(self.graph_path), "--run-dir", str(self.run_dir),
                "--model", "STUB-NO-MODEL", "--image-inputs", str(inputs)]
         return subprocess.run(cmd, capture_output=True, text=True, timeout=600)
@@ -59,7 +60,7 @@ class CheckoutTakesTheSharedInputs(CheckoutWrapperCase):
         self.assertEqual(len(got["render_pending"]), 5)
 
     def test_the_paid_provider_without_the_clients_approval_is_refused_plainly(self):
-        proc = self.run_checkout(write_inputs(self.td, self.brand_path, image_provider="kie"))
+        proc = self.run_checkout(write_inputs(self.td, self.brand_path, image_provider="kie", test_only=False))
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("paid_render_approval_ref", proc.stderr)
         self.assertFalse(self.result_path.exists())
@@ -72,7 +73,8 @@ class CheckoutTakesTheSharedInputs(CheckoutWrapperCase):
     def test_a_flag_typed_on_the_command_line_still_wins(self):
         inputs = write_inputs(self.td, self.brand_path, design_style="A")
         cmd = [sys.executable, str(CHECKOUT), "--request", str(self.request_path), "--result", str(self.result_path),
-               "--manuscript", str(MANUSCRIPT), "--launch", str(self.launch_path),
+               "--manuscript", str(self.stamped_copy(MANUSCRIPT)), "--launch", str(self.launch_path),
+               "--checkout-request", str(self.checkout_request_path),
                "--route-graph", str(self.graph_path), "--run-dir", str(self.run_dir),
                "--model", "STUB-NO-MODEL", "--image-inputs", str(inputs), "--design-style", "C"]
         self.assertEqual(subprocess.run(cmd, capture_output=True, text=True).returncode, 0)

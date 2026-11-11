@@ -95,6 +95,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import collect_launch_receipts as _receipts  # noqa: E402  review_record + REVIEW-PENDING (issues 30, 63)
+
 EXIT_OK = 0
 EXIT_VIOLATION = 2
 EXIT_FAILCLOSED = 3
@@ -298,6 +301,11 @@ def _check_manifest_binds_result(man: Dict[str, Any],
             f"document supplied ({res_path.name!r})")
 
 
+def _verdict_passes(verdict: Any) -> bool:
+    rr = _receipts.review_record  # None when shared-utils is unreachable: fail closed
+    return rr is not None and rr.verdict_of({"verdict": verdict}) is not None
+
+
 def _derive_review(man: Dict[str, Any], author_session: str):
     rev = man["independent_review"]
     status = rev["status"]
@@ -329,6 +337,11 @@ def _derive_review(man: Dict[str, Any], author_session: str):
                 "run manifest independent_review.reviewer equals the "
                 "author session; an artifact's reviewer is never its "
                 "author, so this review cannot be claimed")
+        # Issue 63: a recorded review counts only with a recognised successful
+        # verdict. A FAIL (or any unrecognised string) is a review that
+        # happened and refused the page, never an independent review of it.
+        if not _verdict_passes(rev["verdict"]):
+            return False, None
         return True, reviewer
     raise TranslationError(
         f"run manifest independent_review.status {status!r} is not a "
@@ -604,6 +617,7 @@ def _page_result(req: Dict[str, Any], *, status: str,
         "request_id": req["request_id"],
         "input_hash": req["input_hash"],
         "page_id": req["page_id"],
+        "page_role": req["page_role"],
         "status": status,
         "artifacts": artifacts,
         "author_session": author_session,
@@ -628,7 +642,9 @@ def _merge_design(artifacts: List[Dict[str, str]],
 
 
 def translate_design_only(req: Dict[str, Any], *, author_session: str,
-                          images_run_dir: Optional[Path]) -> Dict[str, Any]:
+                          images_run_dir: Optional[Path],
+                          review_path: Optional[Path] = None,
+                          ledger_path: Optional[Path] = None) -> Dict[str, Any]:
     """A launch-time thank-you: design artifacts only, never a sale's proof."""
     artifacts = _merge_design([], images_run_dir)
     if not artifacts:
@@ -636,12 +652,14 @@ def translate_design_only(req: Dict[str, Any], *, author_session: str,
             "no artifacts: design-only needs the thank-you page's design "
             "files; pass --images-run-dir pointing at its Skill 71 run "
             "folder (it holds none)")
-    return _page_result(
+    out = _page_result(
         req, status="authored", artifacts=artifacts,
         author_session=author_session, reviewer_session=None,
         independent_review=False, proof_class="L0",
         blockers=[DESIGN_BLOCKER, DESIGN_BLOCKER_TEXT],
         native_bindings_ref=None)
+    _receipts.apply_review(out, review_path, ledger_path)  # issue 30: REVIEW-PENDING
+    return out
 
 
 def translate(req: Dict[str, Any], res: Dict[str, Any],
@@ -680,12 +698,22 @@ def translate(req: Dict[str, Any], res: Dict[str, Any],
                         "design files were supplied")
     if problems:
         raise TranslationError("; ".join(problems))
-    return _page_result(
+    out = _page_result(
         req, status=status, artifacts=artifacts,
         author_session=author_session, reviewer_session=reviewer_session,
         independent_review=independent_review,
         proof_class=_cap_proof(res["proof_class"]), blockers=blockers,
         native_bindings_ref=man["native_bindings_ref"]["envelope_ref"])
+    if not independent_review and status != "blocked":
+        rev = man["independent_review"]
+        if rev["status"] == "recorded":  # issue 63: the review ran and did not pass
+            out["blockers"].append(f"REVIEW-FAILED: {rev['verdict']}")
+        out["status"] = "authored"
+        out["proof_class"] = min(out["proof_class"], "L1")
+        out["blockers"].append(
+            f"{_receipts.REVIEW_PENDING}: no accepted independent review "
+            "of this page; it stays authored and a client delivery refuses it")
+    return out
 
 
 def _author_session_from_context(args) -> Optional[str]:
@@ -724,6 +752,10 @@ def main(argv: List[str]) -> int:
                          "purchase snapshot is read; needs --images-run-dir; "
                          "emits authored/L0 with the standing blocker "
                          + DESIGN_BLOCKER)
+    ap.add_argument("--review", default=None,
+                    help="design-only mode: independent review record JSON "
+                         "(review_record schema). Without an accepted one "
+                         "the result carries a REVIEW-PENDING blocker")
     ap.add_argument("--session-registry", default=None,
                     help="JSON list of dispatch-recorded session ids a "
                          "recorded reviewer must appear in (default: "
@@ -749,8 +781,11 @@ def main(argv: List[str]) -> int:
     try:
         req = _check_request(_load(req_path, "page-request"))
         if args.design_only:
-            out = translate_design_only(req, author_session=author_session,
-                                        images_run_dir=images)
+            out = translate_design_only(
+                req, author_session=author_session, images_run_dir=images,
+                review_path=Path(args.review) if args.review else None,
+                ledger_path=Path(args.session_registry) if args.session_registry
+                else base / SESSION_REGISTRY_NAME)
         else:
             res_path = Path(args.s82_result) if args.s82_result else \
                 base / "thank-you-result.json"

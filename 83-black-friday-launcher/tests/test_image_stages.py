@@ -26,6 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from launcher_core import checks, cli, graphics_hooks, image_stages  # noqa: E402
 from launcher_core.image_stages import STAGES, page_role  # noqa: E402
 from test_lane83_designs import Base  # noqa: E402  (a real stub-provider package, no tests of its own)
+sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
+from vision_log_fixture import write_vision_log  # noqa: E402
 
 RULE_FILE = SKILL_ROOT / "launcher_core" / "check_rules" / "image_qc.py"
 SKILL71 = SKILL_ROOT.parent / "71-blackceo-signature-page"
@@ -160,6 +162,7 @@ def inhouse_qc(run: Path):
                         "review_ref": str(review.relative_to(run)),
                         "review_sha256": hashlib.sha256(review.read_bytes()).hexdigest()})
     write(run / graphics_hooks.QC_REPORT_REL, json.dumps({"assets": records}))
+    write_vision_log(run, [r["sha256"] for r in records])
 
 
 class ReviewedSkill71(FakeSkill71):
@@ -280,7 +283,7 @@ class ReportViolationTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def report(self, **rec):
+    def report(self, vision=True, **rec):
         digest = hashlib.sha256(self.image.read_bytes()).hexdigest()
         review = self.root / "qc" / "reviews" / "hero.review.json"
         review.parent.mkdir(parents=True, exist_ok=True)
@@ -298,6 +301,8 @@ class ReportViolationTests(unittest.TestCase):
                   "review_sha256": hashlib.sha256(review.read_bytes()).hexdigest()}
         record.update(rec)
         write(self.root / graphics_hooks.QC_REPORT_REL, json.dumps({"assets": [record]}))
+        if vision:
+            write_vision_log(self.root, [digest])
 
     def fails(self):
         return graphics_hooks.report_violations(self.manifest, self.root)
@@ -308,6 +313,57 @@ class ReportViolationTests(unittest.TestCase):
     def test_a_clean_report_passes(self):
         self.report()
         self.assertEqual(self.fails(), [])
+
+    def test_a_review_with_no_vision_log_fails_af_g_vision(self):
+        """Issue 21: a Review Receipt names who scored; SOP-GIP-02 also needs the vision pass on record."""
+        self.report(vision=False)
+        fails = self.fails()
+        self.assertTrue(any(f.startswith("AF-G-VISION") and "vision_qc_log.json" in f for f in fails), fails)
+        self.report()  # control: the same report with the log passes
+        self.assertEqual(self.fails(), [])
+
+    def test_a_vision_log_that_is_null_or_for_other_bytes_fails_af_g_vision(self):
+        digest = hashlib.sha256(self.image.read_bytes()).hexdigest()
+        log = self.root / graphics_hooks.VISION_LOG_REL
+        self.report()
+        for bad in ([{"artifact_sha256": digest, "vision_api_response": None}],
+                    [{"artifact_sha256": digest, "vision_api_response": ""}],
+                    [{"artifact_sha256": digest}],
+                    [{"artifact_sha256": "0" * 64, "vision_api_response": {"model": "m"}}],
+                    {"assets": "not a list"}, "not json at all"):
+            log.write_text(bad if isinstance(bad, str) else json.dumps(bad), encoding="utf-8")
+            self.assertTrue(any(f.startswith("AF-G-VISION") for f in self.fails()), bad)
+        log.write_text(json.dumps([{"artifact_sha256": digest.upper(), "vision_api_response": {"model": "m"}}]),
+                       encoding="utf-8")
+        self.assertEqual(self.fails(), [], "a bare list of records and an upper-case hash are accepted")
+
+    def test_a_vision_log_with_junk_entries_beside_a_real_record_neither_crashes_nor_passes_by_itself(self):
+        digest = hashlib.sha256(self.image.read_bytes()).hexdigest()
+        log = self.root / graphics_hooks.VISION_LOG_REL
+        self.report()
+        real = {"artifact_sha256": digest, "vision_api_response": {"model": "m"}}
+        log.write_text(json.dumps(["junk", None, 7, ["x"], real]), encoding="utf-8")
+        self.assertEqual(self.fails(), [], "a non-record entry is skipped, the real record still counts")
+        log.write_text(json.dumps(["junk", None, 7, ["x"]]), encoding="utf-8")
+        self.assertTrue(any(f.startswith("AF-G-VISION") for f in self.fails()), "junk alone is not a vision pass")
+
+    def test_a_vision_log_empty_response_padded_hash_and_refusal_text(self):
+        digest = hashlib.sha256(self.image.read_bytes()).hexdigest()
+        log = self.root / graphics_hooks.VISION_LOG_REL
+        self.report()
+        for empty in ({}, [], "", None):
+            log.write_text(json.dumps([{"artifact_sha256": digest, "vision_api_response": empty}]), encoding="utf-8")
+            fails = [f for f in self.fails() if f.startswith("AF-G-VISION:")]
+            self.assertEqual(len(fails), 1, empty)
+            self.assertIn(self.image.name, fails[0])  # names the image it refused
+        log.write_text(json.dumps([{"artifact_sha256": f"  {digest}  ", "vision_api_response": {"m": 1}}]),
+                       encoding="utf-8")
+        self.assertEqual(self.fails(), [], "a hash with stray spaces still names the bytes")
+
+    def test_the_qc_request_tells_the_reviewer_to_write_the_vision_log(self):
+        request = graphics_hooks.qc_request(self.manifest, self.root, self.root)
+        self.assertIn(graphics_hooks.VISION_LOG_REL, request["vision_log"])
+        self.assertIn("AF-G-VISION", request["vision_log"])
 
     def test_an_average_under_the_bar_fails(self):
         self.report(average=8.4)
@@ -374,6 +430,7 @@ class PackageCheckTests(Base):
                             "review_ref": str(review.relative_to(root)),
                             "review_sha256": hashlib.sha256(review.read_bytes()).hexdigest()})
         write(root / graphics_hooks.QC_REPORT_REL, json.dumps({"assets": records}))
+        write_vision_log(root, [r["sha256"] for r in records])
 
     def edit_review(self, root, index, **changes):
         """Change the REVIEW the record cites, the way a reviewer who really scored it that way would,
@@ -496,9 +553,17 @@ class ModelIsNeverALiteralTests(unittest.TestCase):
                 module.IMAGE_MODEL_PATH = Path(tmp) / "absent" / "image_model.py"
             else:
                 module.IMAGE_MODEL_PATH = write(Path(tmp) / "image_model.py", resolver_source)
-            with mock.patch.object(module.subprocess, "run", return_value=mock.Mock(returncode=0)) as sub:
+            # a thank-you run is pitch-scanned first (AF-71-THANK-YOU-PITCH): give it the clean fixture manuscript and let
+            # that one call run for real; only the request builder and the executor are stood in for
+            clean = SKILL71 / "tests" / "fixtures" / "copy_examples" / "thank-you-path-b.md"
+            write(run / "copy" / "internal-manuscript.md", clean.read_text(encoding="utf-8"))
+            real_run = subprocess.run
+            stand_in = mock.Mock(returncode=0)
+            with mock.patch.object(module.subprocess, "run",
+                                   side_effect=lambda cmd, *a, **k: real_run(cmd, *a, **k)
+                                   if Path(str(cmd[1])).name == "semantic_scan.py" else stand_in) as sub:
                 rc = module.main([str(run), "--provider", provider, "--stages", "visual-mockup"])
-            return rc, [c.args[0] for c in sub.call_args_list]
+            return rc, [c.args[0] for c in sub.call_args_list if Path(str(c.args[0][1])).name != "semantic_scan.py"]
 
     def test_the_source_holds_no_model_id_literal(self):
         self.assertNotIn("gpt-image", self.SCRIPT.read_text(encoding="utf-8"))

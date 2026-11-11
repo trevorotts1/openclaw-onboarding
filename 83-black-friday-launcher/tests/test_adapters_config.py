@@ -12,6 +12,7 @@ builder, the page-result emitter and the new attach step are the real ones, wire
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shlex
@@ -56,6 +57,16 @@ def segments(script: str) -> list:
 
 def step(config: dict, role: str, wrapper: str) -> list:
     return next(s for s in segments(config["adapters"][role]["command"][2]) if wrapper in " ".join(s))
+
+
+def stamped_checkout(directory: Path):
+    """A checkout request and a manuscript carrying its source stamp, as Skill 79's emitter leaves them."""
+    request = Path(directory) / "checkout-request.json"
+    request.write_text('{"main_offer_id": "TEST-ONLY"}', encoding="utf-8")
+    manuscript = Path(directory) / "checkout.md"
+    manuscript.write_text("<!-- source_request_sha256: %s -->\n\nx\n"
+                          % hashlib.sha256(request.read_bytes()).hexdigest(), encoding="utf-8")
+    return manuscript, request
 
 
 class Inputs:
@@ -114,6 +125,20 @@ class PaidFlagTests(unittest.TestCase):
             inputs.build(allow_paid=True, image_plan={"allow_paid": False})
         with self.assertRaises(adapters.AdapterError):  # plan says paid, caller says free
             inputs.build(allow_paid=False, image_plan={"allow_paid": True})
+
+
+class DesignStageTests(unittest.TestCase):
+    """Issue 72: dispatch runs the upsell wrapper at the design stage, where eligibility is a design marker."""
+
+    def test_dispatch_runs_both_upsell_wrappers_at_the_design_stage(self):
+        config = Inputs(self, "all").build()
+        for role in ("upsell_1", "upsell_2"):
+            command = config["adapters"][role]["command"]
+            at = command.index("--stage")
+            self.assertEqual(command[at + 1], "design", role)
+            self.assertEqual(command.count("--stage"), 1, role)
+        for role in ("downsell_1",):
+            self.assertNotIn("--stage", config["adapters"][role]["command"])
 
 
 class RoutedRolesTests(unittest.TestCase):
@@ -180,7 +205,11 @@ class ThankYouTests(unittest.TestCase):
     def test_the_entry_chains_the_image_service_the_stages_and_the_design_only_translator(self):
         config = Inputs(self).build()
         steps = segments(config["adapters"]["thank_you"]["command"][2])
-        self.assertEqual([Path(s[1]).name for s in steps], ["shared_page_service.py", "translate_thank_you_result.py"])
+        self.assertEqual([Path(s[1]).name for s in steps],
+                         ["adapters.py", "adapters.py", "shared_page_service.py", "translate_thank_you_result.py"])
+        # first the run composes the design prose itself, then checks it: a hand-typed one never reaches an image
+        self.assertEqual([steps[0][2], steps[1][2]], ["compose-design-prose", "check-design-prose"])
+        steps = steps[2:]
         service = steps[0]
         self.assertEqual(service[service.index("--page-version") + 1], "thank-you")
         pipeline = shlex.split(service[service.index("--pipeline-command") + 1])
@@ -189,6 +218,85 @@ class ThankYouTests(unittest.TestCase):
         self.assertEqual(steps[1][steps[1].index("--images-run-dir") + 1], pipeline[2])  # the translator reads what the stages drew
         self.assertEqual(steps[1][steps[1].index("--author-session") + 1], "session-test")
 
+    def test_the_thank_you_pipeline_passes_skill_82s_no_pitch_scanner(self):
+        """AF-71-THANK-YOU-PITCH: the runner is told to scan the manuscript with Skill 82's own script."""
+        service = step(Inputs(self).build(), "thank_you", "shared_page_service.py")  # the chain now heads with compose and check
+        pipeline = shlex.split(service[service.index("--pipeline-command") + 1])
+        self.assertIn("--no-pitch-scan", pipeline)
+        scanner = Path(pipeline[pipeline.index("--no-pitch-scan") + 1])
+        self.assertEqual(scanner, substrate.source("82-signature-thank-you/scripts/semantic_scan.py"))
+        self.assertTrue(scanner.is_file())
+
+
+def adapters_thank_you_script(test: unittest.TestCase) -> str:
+    return Inputs(test).build()["adapters"]["thank_you"]["command"][2]
+
+
+class CheckoutCopyDispatchTests(unittest.TestCase):
+    """Issue 12: the order form's copy reaches the checkout lane only as Skill 79's stamped output, and the
+    refusal is made by build_dispatch_config itself (these go THROUGH the builder, not the helper)."""
+
+    def design(self, inputs, manuscript, request):
+        brand = inputs.write("checkout-brand.md")
+        return {"manuscript": manuscript, "brand_file": brand, "brand_owner": "o", "image_cap": 1,
+                **({"checkout_request": request} if request is not None else {})}
+
+    def test_a_stamped_manuscript_for_its_own_request_is_dispatched(self):
+        inputs = Inputs(self)
+        manuscript, request = stamped_checkout(inputs.root)
+        command = inputs.build(checkout_design=self.design(inputs, manuscript, request))["adapters"]["checkout"]["command"]
+        self.assertEqual(command[command.index("--checkout-request") + 1], str(request))  # the wrapper re-checks the stamp
+
+    def test_an_unstamped_manuscript_is_refused_by_the_builder(self):
+        inputs = Inputs(self)
+        _, request = stamped_checkout(inputs.root)
+        staged = inputs.root / "staged.md"
+        staged.write_text("## Section 1: Offer\n\nHand-written.\n", encoding="utf-8")
+        with self.assertRaises(adapters.AdapterError) as ctx:
+            inputs.build(checkout_design=self.design(inputs, staged, request))
+        self.assertIn("never staged by hand", str(ctx.exception))
+
+    def test_a_manuscript_stamped_for_another_request_is_refused_by_the_builder(self):
+        inputs = Inputs(self)
+        manuscript, request = stamped_checkout(inputs.root)
+        request.write_text('{"main_offer_id": "SOMETHING-ELSE"}', encoding="utf-8")  # the request moved on
+        with self.assertRaises(adapters.AdapterError) as ctx:
+            inputs.build(checkout_design=self.design(inputs, manuscript, request))
+        self.assertIn("never staged by hand", str(ctx.exception))
+
+    def test_a_manuscript_with_two_stamps_is_refused_by_the_builder(self):
+        inputs = Inputs(self)
+        manuscript, request = stamped_checkout(inputs.root)
+        manuscript.write_text(manuscript.read_text(encoding="utf-8") + manuscript.read_text(encoding="utf-8"),
+                              encoding="utf-8")
+        with self.assertRaises(adapters.AdapterError):
+            inputs.build(checkout_design=self.design(inputs, manuscript, request))
+
+    def test_an_emitter_that_exits_clean_without_writing_the_copy_is_refused(self):
+        inputs = Inputs(self)
+        out = inputs.root / "never-written.md"
+        done = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        with mock.patch.object(adapters.subprocess, "run", return_value=done):
+            with self.assertRaises(adapters.AdapterError):
+                adapters.emit_checkout_manuscript(request=inputs.root / "r.json", launch=inputs.root / "launch.json",
+                                                  terms=inputs.root / "t.json", out=out)
+
+    def test_a_launcher_without_the_skill_79_emitter_refuses_by_name(self):
+        inputs = Inputs(self)
+        with mock.patch.object(adapters.substrate, "source", return_value=inputs.root / "absent.py"):
+            with self.assertRaises(adapters.AdapterError) as ctx:
+                adapters.emit_checkout_manuscript(request=inputs.root / "r.json", launch=inputs.root / "launch.json",
+                                                  terms=inputs.root / "t.json", out=inputs.root / "o.md")
+        self.assertIn("not installed", str(ctx.exception))
+
+    def test_no_checkout_request_is_refused_by_the_builder(self):
+        inputs = Inputs(self)
+        manuscript, _ = stamped_checkout(inputs.root)
+        for missing in (None, ""):
+            with self.assertRaises(adapters.AdapterError) as ctx:
+                inputs.build(checkout_design=self.design(inputs, manuscript, missing))
+            self.assertIn("checkout_request", str(ctx.exception))
+
 
 class AllowListTests(unittest.TestCase):
     """ENF-08: a supplied adapter config is held to the pinned wrappers."""
@@ -196,10 +304,13 @@ class AllowListTests(unittest.TestCase):
     def test_what_the_builder_emits_passes_its_own_allow_list(self):
         inputs = Inputs(self)
         checkout = inputs.write("checkout.md")
-        config = inputs.build(checkout_design={"manuscript": checkout, "brand_file": checkout, "brand_owner": "o",
-                                               "image_cap": 1})
+        manuscript, request = stamped_checkout(inputs.root)
+        config = inputs.build(checkout_design={"manuscript": manuscript, "checkout_request": request,
+                                               "brand_file": checkout, "brand_owner": "o", "image_cap": 1})
         adapters.validate_adapter_config(config)
         self.assertIn("checkout", config["adapters"])
+        command = config["adapters"]["checkout"]["command"]
+        self.assertEqual(command[command.index("--checkout-request") + 1], str(request))
 
     def refused(self, command, **kw):
         with self.assertRaises(adapters.AdapterNotAllowed) as ctx:
@@ -229,12 +340,26 @@ class AllowListTests(unittest.TestCase):
         inputs = Inputs(self)
         config = inputs.build()
         script = config["adapters"]["thank_you"]["command"][2]
-        steps = segments(script)
-        inner = steps[0][steps[0].index("--pipeline-command") + 1]
+        service = step(config, "thank_you", "shared_page_service.py")
+        inner = service[service.index("--pipeline-command") + 1]
         evil = script.replace(shlex.quote(inner), shlex.quote(f"{sys.executable} -c 'print(1)'"))
         self.assertNotEqual(evil, script)
         with self.assertRaises(adapters.AdapterNotAllowed):
             adapters.validate_adapter_config({"adapters": {"thank_you": {"command": ["bash", "-c", evil]}}})
+
+    def test_the_no_pitch_flag_may_name_only_skill_82s_scanner(self):
+        """A stand-in scanner that always passes would void AF-71-THANK-YOU-PITCH, so it is refused by name."""
+        script = adapters_thank_you_script(self)
+        service = next(s for s in segments(script) if "shared_page_service.py" in " ".join(s))  # not steps[0]: compose and check head the chain
+        inner = service[service.index("--pipeline-command") + 1]
+        pipeline = shlex.split(inner)
+        adapters.validate_adapter_config({"adapters": {"thank_you": {"command": ["bash", "-c", script]}}})
+        pipeline[pipeline.index("--no-pitch-scan") + 1] = "/tmp/always_pass.py"
+        evil = script.replace(shlex.quote(inner), shlex.quote(shlex.join(pipeline)))
+        self.assertNotEqual(evil, script)
+        with self.assertRaises(adapters.AdapterNotAllowed) as ctx:
+            adapters.validate_adapter_config({"adapters": {"thank_you": {"command": ["bash", "-c", evil]}}})
+        self.assertIn("--no-pitch-scan", str(ctx.exception))
 
     def test_the_fake_design_consumer_passes_only_for_a_test_only_launch(self):
         command = [sys.executable, str(CONSUMER), "{request}", "{result}", str(LABELS)]
@@ -341,7 +466,7 @@ class SelectionAssemblyTests(unittest.TestCase):
             return str(path)
         roles = ("upsell_1", "upsell_2", "downsell_1")
         # the bridge refuses a config with no landing section; it fills landing.image_inputs from the approved plan
-        adapter_inputs = {"bridge_config": f("bridge.json", '{"landing": {}}'), "author_session": "sess", "checkout_manuscript": f("checkout.md"),
+        adapter_inputs = {"bridge_config": f("bridge.json", '{"landing": {}}'), "author_session": "sess",
                           "copy": {r: f(f"copy-{r}.json") for r in roles},
                           "journey": {r: f(f"journey-{r}.json") for r in roles},
                           "enrichment": {r: f(f"enrichment-{r}.json") for r in roles}}

@@ -1,3 +1,9 @@
+## [1.3.29] - 2026-11-10 - Harmony-95 Batch P: the 71 side of WP-02, WP-09a, WP-11a, WP-12 and WP-14
+
+- Stage executor refuses an ungated stub run outside a test harness and the governed stage runner admits through the stage gate (WP-02); `--no-pitch-scan` and the thank-you copy-close receipt (WP-11a); prompts receipt that reads Skill 45 read-only (WP-12); strict authority pins, copy forms for every role, routing guard receipt fields and the page-result role echo (WP-14).
+- `references/external-authorities.json`: the pin of Skill 74's `kie_live_adapter.py` is re-stamped to the git blob of the Batch P tree (X-97 changes that file); `check_authority_pins.py --strict` passes.
+- Version bump so the Batch P pull request carries a version above main (G3).
+
 ## [1.3.28] - 2026-11-10 - merge-train integration of PRs 3065 and 3068: type-only sections get no generated images, prompt policy reads the owner cap
 
 - PR 3065 (MOCK-001 B8): `scripts/stage_executor.py` plans no generated-image slots for a type-only section; `tests/test_mockup_slot_coverage_floor.py` covers it.

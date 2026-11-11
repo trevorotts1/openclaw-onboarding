@@ -70,6 +70,7 @@
             "enum": [
               "interest_submitted",
               "selection_validated",
+              "offer_selected",
               "payment_succeeded",
               "explicit_decline"
             ]

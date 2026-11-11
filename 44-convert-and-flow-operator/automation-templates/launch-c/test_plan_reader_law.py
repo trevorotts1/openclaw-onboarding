@@ -249,19 +249,21 @@ class SharedValidatorFirstTests(unittest.TestCase):
         self.assertNotIn("CREDENTIAL-IN-PLAN", err)
 
     def test_a_plan_the_shared_validator_accepts_is_not_refused_by_a_private_rule(self):
-        # elevation.json is the contract's own fixture. Its template ids predate the buildable
-        # manifest, so the only refusal is the buildability gate; mapped to the buildable
-        # keys the reader takes it.
+        # elevation.json is the contract's own fixture. Since the shared validator itself
+        # refuses an unbuildable template (issue 73), the fixture names only buildable keys
+        # and the reader takes it as it stands.
         fixture = CONTRACT_DIR / "fixtures" / "elevation.json"
         plan = json.loads(fixture.read_text())
-        rc, doc, err = run(copy.deepcopy(plan))
-        self.assertEqual((rc, doc), (2, None))
-        self.assertIn("LAUNCH-PLAN-TEMPLATE-UNBUILDABLE", err)
-        for item in plan["automations"]:
-            item["template"] = FAMILY_TEMPLATE[item["family"]]
-        rc, doc, _ = run(plan)
+        rc, doc, _ = run(copy.deepcopy(plan))
         self.assertEqual(rc, 4)   # parsed and compiled; blocked only for want of build plans
         self.assertEqual(doc["launch_id"], "elevation-2026-11")
+        # One non-manifest template on the same plan is refused by the shared validator
+        # first, and the refusal still carries the template code.
+        plan["automations"][0]["template"] = "cart-open-cart-close-launch-sequence"
+        rc, doc, err = run(plan)
+        self.assertEqual((rc, doc), (2, None))
+        self.assertIn("LAUNCH-PLAN-CONTRACT", err)
+        self.assertIn("LAUNCH-PLAN-TEMPLATE-UNBUILDABLE", err)
 
 
 class TemplateBuildabilityTests(unittest.TestCase):

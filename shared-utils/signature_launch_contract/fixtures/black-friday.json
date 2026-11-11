@@ -11,6 +11,8 @@
         "offer_id": null,
         "slot": "main",
         "display_name": "Black Friday Power Bundle",
+        "deliverables": [],
+        "exclusions": [],
         "price_id": null,
         "amount_minor": 19700,
         "amount_raw": 19700,
@@ -30,12 +32,15 @@
           "test_only": false,
           "price_approval_status": null,
           "amount_state": "provided"
-        }
+        },
+        "deliverables_detail": []
       },
       {
         "offer_id": null,
         "slot": "upsell_1",
         "display_name": "Fast Start Upgrade",
+        "deliverables": [],
+        "exclusions": [],
         "price_id": null,
         "amount_minor": 9700,
         "amount_raw": 9700,
@@ -55,12 +60,15 @@
           "test_only": false,
           "price_approval_status": null,
           "amount_state": "provided"
-        }
+        },
+        "deliverables_detail": []
       },
       {
         "offer_id": null,
         "slot": "downsell_1",
         "display_name": "Small Start",
+        "deliverables": [],
+        "exclusions": [],
         "price_id": null,
         "amount_minor": 4700,
         "amount_raw": 4700,
@@ -80,7 +88,8 @@
           "test_only": false,
           "price_approval_status": null,
           "amount_state": "provided"
-        }
+        },
+        "deliverables_detail": []
       }
     ],
     "landing_url": "https://example.com/black-friday",
@@ -216,7 +225,7 @@
       "id": "email_upsell_1",
       "kind": "upsell_followup",
       "provider": "skill50",
-      "email_count": 2,
+      "email_count": 3,
       "draft_only": true,
       "waits_for": [
         "page_upsell_1"
@@ -227,7 +236,7 @@
       "id": "email_downsell_1",
       "kind": "downsell_followup",
       "provider": "skill50",
-      "email_count": 2,
+      "email_count": 3,
       "draft_only": true,
       "waits_for": [
         "page_downsell_1"
@@ -396,12 +405,13 @@
         "page_thank_you",
         "text_access_link"
       ],
+      "variant_tag": "main",
       "access_destination": "https://example.com/black-friday/access",
       "entitlements": [],
       "prerequisites": []
     },
     {
-      "id": "auto_upsell_branch",
+      "id": "auto_upsell_1",
       "family": "upsell_downsell",
       "template": "launch-b/upsell-downsell-branch",
       "build_rail": "skill44_engine",
@@ -411,7 +421,20 @@
         "detail": "bought or declined routes to the matching follow-up"
       },
       "waits_for": [
-        "email_upsell_1",
+        "email_upsell_1"
+      ]
+    },
+    {
+      "id": "auto_downsell_1",
+      "family": "upsell_downsell",
+      "template": "launch-b/upsell-downsell-branch",
+      "build_rail": "skill44_engine",
+      "draft_only": true,
+      "trigger": {
+        "type": "upsell_decision",
+        "detail": "bought or declined routes to the matching follow-up"
+      },
+      "waits_for": [
         "email_downsell_1"
       ]
     },
@@ -473,5 +496,20 @@
         "text_last_call"
       ]
     }
-  ]
+  ],
+  "deliverables": {
+    "record_type": "signature-launch.deliverables.v1",
+    "state": "not_produced",
+    "run_dir": null,
+    "items": [],
+    "counts": {
+      "produced": 0,
+      "not_produced": 0
+    },
+    "free_item": null,
+    "missing_capability": [],
+    "files": [],
+    "record": null
+  },
+  "personas": null
 }

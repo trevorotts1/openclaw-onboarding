@@ -8,6 +8,9 @@
 #   1. DEPS        — python3 present (else abort).
 #   2. VERSION     : skill-version.txt is present, vMAJOR.MINOR.PATCH on the pinned
 #                    major (2), and equals the SKILL.md frontmatter version.
+#   2b. DEPT-MAP   — Skill 49's own row (slug signature-funnel, with intent triggers) is in
+#                    23-ai-workforce-blueprint/skill-department-map.json: the routing door
+#                    is this skill's own, never a sibling skill's registry.
 #   3. HASH-PIN    — recompute the sha256 of every file the dispatch/launch path
 #                    executes or reads for decisions (scripts/front_door.py generates
 #                    the list: provers, wrappers, page types, the 83 launcher tree, the
@@ -15,7 +18,9 @@
 #                    SF-PROVER-PIN.sha256.
 #                    The pin is CI-minted only. Skill 83's launcher runs the same gate.
 #   4. BYPASS-SCAN — refuse a run (or a skill tree) whose files hand-roll GHL REST calls or
-#                    mail/senders instead of delegating to Skill 6 / Skill 66 + Skill 74.
+#                    mail/senders instead of delegating to the delivery rail named in the
+#                    brief / Skill 66 + Skill 74, and any reference from this tree to a sibling
+#                    skill it must not touch (front_door.FORBIDDEN_SIBLING_REFS).
 #                    Skill 74 (74-kie-live-adapter) is the ONE approved KIE path: its own
 #                    result files under <RUN_DIR>/receipts/kie74/ are allow-listed (each is
 #                    re-checked by scripts/kie74_receipt.py --check); anything else that
@@ -123,6 +128,10 @@ step_version() {
   [ "$fm" = "$v" ] || die "VERSION" "SKILL.md frontmatter version ($fm) != skill-version.txt ($v) - drift"
 }
 
+step_departmap() {
+  "$PY" "$FRONT_DOOR" departmap >/dev/null || exit 1
+}
+
 step_hashpin() {
   "$PY" "$FRONT_DOOR" hashpin --must-cover "${PINNED_FILES[@]}" >/dev/null || exit 1
 }
@@ -165,9 +174,10 @@ run_launch_pipeline() {
   [ -f "$rd/launch-request.json" ] || die "MODE" "launch run dir has no launch-request.json (mode + identities)"
   step_deps
   step_version
+  step_departmap
   step_hashpin
   step_bypass_scan "$rd"
-  echo "== signature-funnel-entry :: launch mode front door cleared (deps/version/hash-pin/bypass) =="
+  echo "== signature-funnel-entry :: launch mode front door cleared (deps/version/dept-map/hash-pin/bypass) =="
   # The approved adapters ride in launch-request.json (read by the dispatcher);
   # --simulate-executor is deliberately NOT forwardable from this guarded door.
   "$PY" "$SCRIPTS_DIR/dispatch_launch.py" --run-dir "$rd"
@@ -185,10 +195,11 @@ run_pipeline() {
   fi
   step_deps
   step_version
+  step_departmap
   step_hashpin
   step_bypass_scan "$rd"
   step_model_receipt "$rd"
-  echo "== signature-funnel-entry :: front door cleared (deps/version/hash-pin/bypass/model-tier) =="
+  echo "== signature-funnel-entry :: front door cleared (deps/version/dept-map/hash-pin/bypass/model-tier) =="
   # A6: the runner refuses a caller-supplied nonce (AF-FUN-FRONT-DOOR). The operator key is
   # the authorization, so this shell mints none and forwards none.
   env -u SF_RUN_NONCE "$PY" "$SKILL_DIR/run_signature_funnel.py" --run-dir "$rd"
@@ -198,6 +209,7 @@ self_test() {
   echo "== signature-funnel-entry :: --self-test =="
   step_deps
   step_version
+  step_departmap
   if [ -f "$PIN_FILE" ]; then step_hashpin; echo "  [PASS] hash-pin verified"; else echo "  [WARN] no pin file yet (mint with --write-pin)"; fi
   local fails=0
   for p in prove_sf_intake prove_sf_copy prove_sf_prompt_floor prove_sf_graph prove_sf_build prove_sf_no_pitch prove_sf_cert; do

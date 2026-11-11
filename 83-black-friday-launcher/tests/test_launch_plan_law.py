@@ -155,7 +155,7 @@ class PlannedUnitCompletenessTests(unittest.TestCase):
         units = launch_plan.planned_units(plan_fixture())
         kinds = {u["type"] for u in units}
         self.assertEqual(kinds, {"page", "email", "text", "automation"})
-        self.assertEqual(len(units), 25)  # 6 pages + 7 emails + 5 texts + 7 automations
+        self.assertEqual(len(units), 26)  # 5 pages + 7 emails + 5 texts + 9 automations (X-96 plans one follow-up unit per followed offer)
         self.assertNotIn(launch_plan.AI_UNIT_ID, {u["id"] for u in units})
 
     def test_a_requested_conversation_ai_becomes_a_planned_unit(self):
@@ -163,7 +163,7 @@ class PlannedUnitCompletenessTests(unittest.TestCase):
         plan["conversation_ai"] = {"requested": True, "mode": "faq", "channels": ["sms"]}
         units = launch_plan.planned_units(plan)
         self.assertIn(launch_plan.AI_UNIT_ID, {u["id"] for u in units})
-        self.assertEqual(len(units), 26)
+        self.assertEqual(len(units), 27)
 
     def test_complete_delivery_is_100_percent(self):
         plan = plan_fixture()
@@ -171,6 +171,41 @@ class PlannedUnitCompletenessTests(unittest.TestCase):
         self.assertTrue(result["complete"])
         self.assertEqual(result["missing"], [])
         self.assertEqual(result["percentage"], 100)
+
+    def test_a_bare_true_or_a_bare_complete_string_is_a_claim_never_a_delivery(self):
+        # Issue 18: `{unit: true}` used to print 100% complete with no artifact behind it.
+        plan = plan_fixture()
+        ids = [unit["id"] for unit in launch_plan.planned_units(plan)]
+        self.assertEqual(launch_plan._delivery_state(True), "claimed")
+        self.assertEqual(launch_plan._delivery_state("complete"), "claimed")
+        self.assertEqual(launch_plan._delivery_state({"state": "complete"}), "complete")  # a lane's mapping counts
+        for claim in (True, "complete", "delivered"):
+            with self.subTest(claim=claim):
+                result = launch_plan.completeness(plan, {unit_id: claim for unit_id in ids})
+                self.assertFalse(result["complete"])
+                self.assertEqual(result["missing"], ids)
+                self.assertEqual({row["state"] for row in result["units"]}, {"claimed"})
+                self.assertEqual(result["percentage"], 0)
+                with self.assertRaises(launch_plan.LaunchPlanError) as ctx:
+                    launch_plan.assert_complete(result)
+                self.assertEqual(ctx.exception.code, "AF-LAUNCH-PLAN-MISSING")
+                self.assertIn("claimed but not delivered", ctx.exception.detail)
+
+    def test_the_plan_command_shows_a_claim_as_claimed_not_complete(self):
+        import contextlib
+        import io
+        from launcher_core import cli
+        plan = plan_fixture()
+        with tempfile.TemporaryDirectory() as tmp:
+            plan_path, claims = Path(tmp) / "plan.json", Path(tmp) / "claims.json"
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+            claims.write_text(json.dumps({u["id"]: True for u in launch_plan.planned_units(plan)}), encoding="utf-8")
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = cli.main(["plan", "--plan", str(plan_path), "--deliveries", str(claims)])
+        self.assertEqual(rc, 2)
+        self.assertNotIn('"percentage": 100', out.getvalue())
+        self.assertIn("claimed but not delivered", err.getvalue())
 
     def test_a_missing_email_text_automation_or_requested_ai_fails(self):
         drops = {
@@ -200,12 +235,15 @@ class PlannedUnitCompletenessTests(unittest.TestCase):
 @unittest.skipUnless(BF_PLAN.is_file(), "shared launch-plan contract fixture is not installed")
 class PackagePlanTests(unittest.TestCase):
     def setUp(self):
+        from test_delivery_units import install_stand_in_validator, with_sales_piece
+        install_stand_in_validator(self)  # Skill 83 re-runs Skill 50's validator on every email unit
         self.tmp = tempfile.TemporaryDirectory()
         self.run_dir = Path(self.tmp.name) / "run"
-        self.normalized = intake.validate(base_intake())
+        self.normalized = intake.validate(plan_intake())
         self.advice = council.planning_step(self.normalized, runner=stub_council)
         self.graph = route.compile_route(self.normalized, self.advice)
-        self.pieces = pieces_for(self.run_dir, self.graph, self.normalized)
+        self.pieces = with_sales_piece(pieces_for(self.run_dir, self.graph, self.normalized),
+                                       self.run_dir, self.normalized)
         self.plan = plan_fixture()
 
     def tearDown(self):
@@ -295,6 +333,7 @@ def _answers_doc(offers: list) -> dict:
 def with_checkout_facts(payload: dict) -> dict:
     """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer,
     and the price provenance (source_ref per offer plus the answers file they resolve in)."""
+    payload.setdefault("test_only", True)  # said explicitly (issue 36): these inline intakes are practice builds
     payload.setdefault("checkout_terms", dict(CHECKOUT_TERMS))
     mains = 0
     for o in payload["offers"]:
@@ -319,6 +358,19 @@ def with_checkout_facts(payload: dict) -> dict:
 
 def base_intake(*args, **kwargs) -> dict:
     return with_checkout_facts(_base_intake_raw(*args, **kwargs))
+
+
+def plan_intake() -> dict:
+    """An intake whose route carries every page the Black Friday plan lists (the order form, a one-click
+    upsell and downsell, the thank-you; the sales page is added by with_sales_piece). A page another lane
+    delivers has no producer contract, so a full launch needs a launcher piece for each of its pages."""
+    raw = _base_intake_raw()
+    raw["offers"] += [
+        {"offer_id": "up-1", "name": "Upgrade", "role": "upsell_1",
+         "price": {"amount_minor": 9700, "currency": "USD"}},
+        {"offer_id": "down-1", "name": "Lite", "role": "downsell_1",
+         "price": {"amount_minor": 1700, "currency": "USD"}}]
+    return with_checkout_facts(raw)
 
 
 if __name__ == "__main__":

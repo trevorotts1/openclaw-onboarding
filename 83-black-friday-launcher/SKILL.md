@@ -2,7 +2,7 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.32
+version: 0.2.33
 priority: HIGH
 ---
 
@@ -13,9 +13,8 @@ priority: HIGH
 **READ THIS ENTIRE FILE BEFORE TOUCHING ANYTHING ELSE.**
 
 Read this entire document from top to bottom before executing a single step.
-Then read every SOP this skill declares, in full, in this order:
-`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md`,
-`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`.
+Then read every SOP this skill declares, in full, in the order of the one SOP list under "Read order"
+step 4 below (six SOPs, each a `sop` row in `launcher_core/dependencies.json`).
 
 ## Your role with the client (BINDING, for the WHOLE conversation, not only the opening)
 
@@ -303,22 +302,32 @@ Read in this order. Each step names the file, so nothing here depends on guessin
    80, 81 and 82 that Skill 49 calls.
 3. For the launch automations (emails, texts, reminders, workflows): `50-email-engine` writes the DRAFT-ONLY
    build plans, then `44-convert-and-flow-operator/automation-templates/launch-c/plan_reader.py` reads them,
-   and `44-convert-and-flow-operator/tools/siglaunch/` is the pipeline that builds and receipts them. See
-   "Launch mode" below. Skill 83 depends on Skill 44 and Skill 50 for this reason.
+   and `44-convert-and-flow-operator/tools/siglaunch/` receives the hand-off but is **not** a production entry
+   (`PRODUCTION_ENTRY_ENABLED = False`): a Skill 71 `automation-request.json` is built through
+   `caf workflows build --from-automation-build` after the plan reader, and the receipt is the build journal.
+   See "Launch mode" below. Skill 83 depends on Skill 44 and Skill 50 for this reason.
    The executable requirement set is `launcher_core/dependencies.json` alone (read by
    `launcher_core/dependencies.py`). `skill.json` and `registration.json` carry only a
    NON-AUTHORITATIVE pointer to it (target, digest, counts); `dependencies.py:metadata_spine`
    reports any disagreement as a finding in the `dependencies` report, never as a crash.
-4. The SOPs this skill declares, read in full before the assembly step:
-   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md` and
-   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`,
-   plus `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-602.md`,
-   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-607.md`,
-   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-610.md` and
-   `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-07-Full-Funnel-Build-Orchestration.md`
-   (today tracked follow-ups in `DISPATCH.md`, not enforced gates).
-   Each GIP SOP is a `sop` entry in `launcher_core/dependencies.json`; `assemble` refuses when its read
-   receipt in `receipts/sop-read/` is absent or does not match the SOP file's sha256.
+4. The SOPs this skill declares (the ONE list; `launcher_core/dependencies.json` carries one `sop` row per
+   item and a test keeps the two equal), read in full before the assembly step:
+   1. `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md`
+   2. `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`
+   3. `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-602.md`
+   4. `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-607.md`
+   5. `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-610.md`
+   6. `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-07-Full-Funnel-Build-Orchestration.md`
+
+   `assemble` refuses (`AF-LAUNCH-DEPENDENCY`) when a SOP's read receipt in `receipts/sop-read/` is absent,
+   does not match the SOP file's sha256, or does not prove reading: `read_in_full` true, a `reader_session`
+   other than the assembling session (`SKILL83_SESSION`), the SOP's section-heading count in `sections`, and a
+   `read_at` that is not earlier than the SOP's last commit date (minus a short slack). Write a receipt only
+   after opening the file: `python3 -m launcher_core.cli sop-ack <id|path|stem> --session <reader-id>
+   --sections <heading count>` refuses a count that does not match the file.
+   Skill 45 itself (`45-design-intelligence-library`, and its `graphics_ghl_push.py`) is a dependency
+   entry that `assemble` requires for a client package (not for a `test_only` practice one): a box that cannot
+   style and host the pages is refused before anything is packaged.
 
 ## Entry
 
@@ -359,7 +368,8 @@ python3 -m launcher_core.cli revise-image --run <page-run> --item IMG-001 --defe
                  [--provider kie --allow-paid]
 python3 -m launcher_core.cli check        --manifest <package-dir>/package-manifest.json --root <package-dir>
 python3 -m launcher_core.cli seams
-python3 -m launcher_core.cli dependencies [--root <repo>] [--install]
+python3 -m launcher_core.cli dependencies [--root <repo>] [--install] [--stamp-interfaces]
+python3 -m launcher_core.cli sop-ack      <sop> --session <reader-id> --sections <heading count>
 ```
 
 `assemble` also produces the graphics handoff every time: the
@@ -428,13 +438,39 @@ steps, all DRAFT-ONLY (nothing is sent and nothing goes live):
    (`PRODUCTION_ENTRY_ENABLED = False`): the declared Black Friday purchase path is the native GHL
    post-sale workflows, and repairing a launch goes through this command, never by enabling that
    runner.
-3. **QC.** `44-convert-and-flow-operator/qc-built-workflow.sh <workflow-id> --json` checks the built workflow;
-   a build that fails QC is not delivered.
+3. **QC.** Run from `44-convert-and-flow-operator/`, the one full command (a shorter one cannot exit 0: the
+   plan file, the QC model, the grades and the dependency manifest are required, and a launch build needs its wait schedule). The second
+   line adds the script's own exit status to the saved result as `exit_code`:
+
+   ```
+   ./qc-built-workflow.sh <workflow-id> --json --plan-mode-file <plan.json> --qc-model <model> \
+       --grades <grades.json> --deps <deps.json> --launch --launch-schedule <schedule.json> [--fab] > qc-<workflow-id>.json; rc=$?
+   python3 -I -c 'import json,sys; p,rc=sys.argv[1],int(sys.argv[2]); d=json.load(open(p)); d["exit_code"]=rc; json.dump(d,open(p,"w"),indent=2)' qc-<workflow-id>.json "$rc"
+   ```
+
+   `<schedule.json>` is the `{"waits": [...]}` file `44-convert-and-flow-operator/automation-templates/launch-c/emit_launch_schedule.py
+   --automation-build automation-builds.json --unit <unit-id> --out <schedule.json>` writes from the reader's
+   `schedule.nodes`. A build that fails QC is not delivered: the saved `qc-<workflow-id>.json` is one of the
+   automation's delivery artifacts, and `assemble` and `check` refuse the unit when it is missing, names another
+   workflow, or does not carry `exit_code` 0, `exit_gate` PASS, `overall_mechanical` PASS and
+   `plan_mode_gate.status` PASS (`AF-LAUNCH-UNIT-AUTOMATION`).
 4. **Receipt.** The build journal is that build's receipt (unit key, remote id, phase, expected and
-   read-back hash), so a re-run is safe; for a Skill 71 hand-off the `siglaunch` receiver issues its
-   own receipt. Skill 83 reads delivery results
-   through `assemble --launch-plan <plan> --deliveries <deliveries.json>` and requires every planned email,
-   text and automation to be delivered before the package counts as a full launch.
+   read-back hash), so a re-run is safe; the `siglaunch` receiver is not a production entry and issues
+   no receipt of its own. Each planned email, text and automation reaches Skill 83 as the producing lane's delivery
+   row, never one typed by hand: an automation is Skill 44's build export (`skill44.workflow-export.v1`, the
+   first artifact) plus its QC result; an email sequence is the row `50-email-engine/tools/validate_delivery.py
+   <run-dir> --launch-plan <plan> --unit <id> --out <receipt.json>` writes (`skill50.email-delivery.v1`, with its
+   certificate); a text set is Skill 44's `skill44.sms-set.v1`. Skill 83 reads them through
+   `assemble --launch-plan <plan> --deliveries <deliveries.json>` and requires every planned email, text and
+   automation to be delivered before the package counts as a full launch. `assemble` and `check` accept a lane
+   delivery only when `lane_validation.contract` is that unit type's producer contract above (any other string,
+   including a self-declared one, is refused) and, for an email, when `validate_delivery.py --check`, run by path
+   from the package folder, exits 0; an absent validator or a failed re-check refuses the unit
+   (`AF-LAUNCH-PKG-RECEIPT-LANE`). A text set is checked against its contract id only until Skill 44 ships a
+   text-set validator. A page the launcher builds itself is proved by its own page row. A page another lane
+   delivers and the Conversation AI have no producer contract yet (their allow-list is empty), so `assemble` and
+   `check` refuse any lane delivery for them with `AF-LAUNCH-PKG-RECEIPT-LANE` ("has no producer yet"), whatever
+   contract string it carries.
 
 Skill 83 builds pages; it does not build workflows itself. See Skill 44's own SKILL.md and INSTRUCTIONS.md for
 the same four steps from the other side.
@@ -471,6 +507,31 @@ review PDFs and an overview board (AF-LAUNCH-PAGE-DESIGNS), with real pictures: 
 package that is not `test_only`. The decided Black Friday deliverable is finished pages with real images
 (final mockups closed on the paid run), with layout proofs as an explicit first approval checkpoint
 (IMG-01); a stub package is labeled "images only, render pending" and is never a finished delivery.
+
+## Production pages and the install hand-off (operator reference)
+
+`dispatch` and `assemble` end at DESIGNS. Two further commands carry an approved design to a page and to
+the delivery rail, in this order and never skipped:
+
+1. `python3 -m launcher_core.cli produce --package <assembled package> --run-dir <dispatch run> ...`
+   runs only after `check` exits 0. It calls Skill 80's `build_production_pages.py` (U1, D1, U2),
+   Skill 81's `production_handoff` (D1) and Skill 82's `build_thank_you_page.py`, and writes
+   `production/<role>.html` plus `production/manifest.json` (sha256 per page) into the package. A copy
+   document marked `test_only` on a launch that is not `test_only` is refused. Skill 82 renders a verified
+   order view, so without `--thank-you-view` and `--thank-you-fulfillment` the thank-you page is recorded
+   `not_built` with the reason, and a client package is then not complete. `AF-LAUNCH-PRODUCTION`
+   (`check_rules/production.py`) fails a client package whose approved pieces lack a built page, and any
+   page changed after it was produced.
+2. `python3 -m launcher_core.cli install --package <package> --run-dir <dispatch run> --rail <skill>/<module>.py:<entry>`
+   (decision D-E: Skill 83 is the caller of the delivery rail; Skill 49 never is). The rail receives
+   `install/install-handoff.json` and must return what it READ BACK from the installed pages; Skill 81's
+   entry guard runs over that read-back journey. `install/install-readback-downsell_1.json` is what Skill
+   49's `downsell_wrapper.py --stage install --install-readback` reads, which is the only thing that
+   clears `D1-ENTRY-GUARD-RUNTIME-ONLY`.
+
+The lines the client is told (`launch_bridge.summary_lines`) follow what is on disk: design only, built, or
+installed. The upsell and downsell pages are dispatched with `--stage design`: eligibility is a runtime
+gate (`U1-ELIGIBILITY-RUNTIME-ONLY`), never an asserted purchase.
 
 ## Tracked items (not built here)
 

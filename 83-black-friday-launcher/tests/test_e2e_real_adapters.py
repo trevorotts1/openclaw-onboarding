@@ -37,7 +37,12 @@ import substrate  # noqa: E402
 import lane83_fake_consumer  # noqa: E402  only for its marker constants: proves we did NOT use it
 import test_lane83_dispatch as dispatch_tests  # noqa: E402  run_dispatch carries the approval and plan choices
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402  (its path is added by test_lane83_dispatch)
-from launcher_core import cli, page_designs  # noqa: E402
+from launcher_core import cli, launch_bridge, page_designs  # noqa: E402
+
+# AF-71-UNGATED (harmony issue 10): the stub runs in this module draw on a directory with no gate state, which
+# Skill 71's executor now allows only under this test-harness marker (no product script sets it); child
+# processes inherit it.
+os.environ["SKILL71_FIXTURE_RUN"] = "1"
 
 S71 = REPO_ROOT / "71-blackceo-signature-page"
 COPY_EXAMPLES = S71 / "tests" / "fixtures" / "copy_examples"
@@ -152,26 +157,6 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         doc["answers_file"] = str(self.answers_file)
         return doc
 
-    def _checkout_manuscript(self, doc: dict) -> str:
-        """The order-form copy for THIS launch: the fixture's five-section shape, with the offer, price, bump and
-        the approved guarantee, terms and consent written from the launch record and the intake (the checkout
-        wrapper refuses a price, name or terms text that differs from them)."""
-        main = next(o for o in doc["offers"] if o["role"] == "main")
-        bump = next(o for o in doc["offers"] if o["role"] == "bump")
-        terms = doc.get("checkout_terms")
-        if not terms:  # an intake from before the approved-terms block: the fixture's own copy, as shipped
-            return (COPY_EXAMPLES / "checkout-example.md").read_text(encoding="utf-8")
-        money = lambda o: f"${o['price']['amount_minor'] // 100}"  # noqa: E731  whole-dollar test prices
-        shape = (COPY_EXAMPLES / "checkout-example.md").read_text(encoding="utf-8")
-        head, rest = shape.split("## Section 2", 1)
-        tail = "## Section 5" + rest.split("## Section 5", 1)[1]
-        return (f"{head}## Section 2: Offer details and price\n\n{main['name']}, one payment of {money(main)}.\n\n"
-                f"Due today: {money(main)}.\n\n"
-                f"## Section 3: Order bump\n\nYes, add the {bump['name']} to my order.\n\n"
-                f"Ten ready-to-use planning templates. One-time price of {money(bump)}.\n\n"
-                f"## Section 4: Guarantee and terms\n\n{terms['guarantee_text']}\n\n{terms['terms_text']}\n\n"
-                f"{terms['consent_text']}\n\n{tail}")
-
     def _adapter_inputs(self, out: Path, doc: dict) -> dict:
         """The per-page inputs `cli dispatch --adapter-inputs` takes. Every file is a repo fixture or derived
         from one; nothing is a stand-in for a page skill's output."""
@@ -200,8 +185,10 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
                         "manuscript": str(COPY_EXAMPLES / "standard-path-b.md")}}))
         return {
             "bridge_config": str(bridge),
+            # Skill 71's prompt floor needs more than the composed direction alone: the run's measured design system
+            # (synthetic text here), appended to rules_md by the composer, which trims line by line to each stage's budget
+            "measured_design_system": str(write("measured-design-system.txt", json.loads(_design_prose())["rules_md"])),
             "author_session": "e2e-real-adapters",
-            "checkout_manuscript": str(write("checkout-manuscript.md", self._checkout_manuscript(doc))),
             "copy": {"upsell_1": rebound(S80_FIXTURES / "copy-upsell1-public.valid.json", "copy-upsell_1.json"),
                      "upsell_2": rebound(S80_FIXTURES / "copy-upsell2-public.valid.json", "copy-upsell_2.json"),
                      "downsell_1": write("copy-downsell_1.json", _one_time_d1_page()),
@@ -224,8 +211,8 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         built before any sale has none, and nothing here may hand-write them.)"""
         work = out / "dispatch"
         work.mkdir(parents=True)
-        for name in ("design-prose.json", "design-prose-checkout.json"):
-            (work / name).write_text(_design_prose(), encoding="utf-8")
+        # no design prose is staged: the launch composes it itself (Skill 45's composer) from the launch record,
+        # the chosen style and the run's measured design system handed in through adapter_inputs
         # the downsell wrapper assembles its result around the extension record the Skill 81 side stages beside it
         # (the fixture matched to the page fixture above); it checks it against the launch record and the route,
         # so it names this launch's upsell_2 page (Skill 49 ids a page <launch_id>-<ROLE>: the launch id as
@@ -331,6 +318,28 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         self.assertEqual(got, expected, shown)
         # the package says the client has approved nothing yet: no approval was recorded, none is claimed
         self.assertEqual(manifest["design_approvals"], page_designs.default_approvals())
+
+    def test_a_pitched_thank_you_manuscript_fails_the_thank_you_lane(self):
+        """AF-71-THANK-YOU-PITCH: the clean thank-you copy passes in the test above; the same launch with a
+        pitch in the thank-you manuscript stops at the thank_you lane, before that page is drawn."""
+        doc = self._intake()
+        out = self.root / "run"
+        self._stage_operator_inputs(out, doc["launch_id"])
+        pitched = out / "dispatch" / "copy-thank_you.md"
+        pitched.write_text(pitched.read_text(encoding="utf-8") + "\nOne more thing - add it for $47.\n",
+                           encoding="utf-8")
+        doc["image_plan"]["design_prose_ref"] = str(out / "dispatch" / "design-prose.json")
+        doc["approval"] = {"ref": "APPR-TEST", "hash": substrate.dispatch().vlp.plan_document_hash(
+            dispatch_tests.launch_for(doc, landing_pages=["sales"]))}
+        with self.assertRaises(launch_bridge.BridgeError) as ctx:
+            dispatch_tests.run_dispatch(doc, out, adapters_config=None,
+                                        adapter_inputs=self._adapter_inputs(out, doc), landing_pages=["sales"])
+        message = str(ctx.exception)
+        self.assertIn("thank_you failed", message)
+        self.assertIn("AF-71-THANK-YOU-PITCH", message)
+        self.assertNotIn("product_selection failed", message)  # only the thank-you lane stopped
+        self.assertFalse((out / "dispatch" / "thank_you-run" / "production-request.json").exists())
+        self.assertFalse((out / "dispatch" / "thank_you-run" / "private" / "receipts" / "no-pitch-scan.json").exists())
 
 
 if __name__ == "__main__":

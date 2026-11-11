@@ -18,6 +18,7 @@ will run first and what runs together; if the dispatcher has no parallel mode ye
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import shutil
@@ -86,6 +87,7 @@ def _offer(normalized: Dict[str, Any], offer: Dict[str, Any], by_role: Dict[str,
     }
 
 
+INTAKE_SNAPSHOT = "intake-at-dispatch.json"
 STRUCTURE_PREFIX = "launcher-structure:"
 
 
@@ -331,6 +333,98 @@ def split_landing(result: Dict[str, Any], landing_pages: Sequence[str]) -> Dict[
                                         "artifacts": sales_arts}}
 
 
+# Issue 57 (M5): the carrier for a page piece's ``stage_state``. Skill 71 writes the closed-stage record of
+# every page run at <page run>/private/state.json; page_designs.load_stage_state reads a copy of it that rides
+# in the package. Nothing wrote that copy, so every client package was refused. This is the writer: the copy
+# is laid down beside the piece (pieces/<slot>.stage-state.json) with its sha256 recorded on the piece, and
+# package._validate_piece / page_designs refuse a piece whose copy does not verify or whose stages never closed.
+STAGE_STATE_REL = Path("private") / "state.json"
+STAGE_STATE_SUFFIX = ".stage-state.json"
+
+
+def landing_run_roots(dispatch_root: Optional[Path]) -> List[Path]:
+    """The landing bridge's run folder(s), from the config the dispatch wrote beside its run. The bridge lists
+    its files relative to that folder (an opt-in run's carry its folder name, so they resolve from its parent)."""
+    if dispatch_root is None:
+        return []
+    try:
+        landing = json.loads((Path(dispatch_root) / "dispatch" / "landing-bridge.json")
+                             .read_text(encoding="utf-8")).get("landing")
+    except (OSError, ValueError, AttributeError):
+        return []
+    if not isinstance(landing, dict) or not landing.get("run_dir"):
+        return []
+    roots = [Path(landing["run_dir"])]
+    opt_in = landing.get("opt_in")
+    if isinstance(opt_in, dict) and opt_in.get("run_dir"):
+        roots.append(Path(opt_in["run_dir"]).parent)
+    return roots
+
+
+def stage_state_bases(run_dir: Path) -> List[Path]:
+    """Where a piece's relative artifact paths resolve: the launch run, its dispatch folder, the landing runs."""
+    run_dir = Path(run_dir)
+    return [run_dir, run_dir / "dispatch", *landing_run_roots(run_dir)]
+
+
+def _page_run_dir(piece: Dict[str, Any], bases: Sequence[Path]) -> Optional[Path]:
+    """The Skill 71 page run that made this piece's files: the nearest folder above one of its design files
+    that holds private/state.json. None when no file resolves into a stage_gate run (a fixture, a stub)."""
+    arts = [a for a in piece.get("artifacts") or [] if isinstance(a, dict) and a.get("path")]
+    for art in [a for a in arts if page_designs.classify(str(a["path"]))] or arts:
+        raw = Path(str(art["path"]))
+        for found in ([raw] if raw.is_absolute() else [Path(b) / raw for b in bases]):
+            if not found.is_file():
+                continue
+            for parent in found.resolve().parents:
+                if (parent / STAGE_STATE_REL).is_file():
+                    return parent
+    return None
+
+
+def attach_stage_state(piece: Dict[str, Any], slot: str, run_dir: Path, bases: Sequence[Path]) -> bool:
+    """Copy the page run's private/state.json to <run_dir>/pieces/<slot>.stage-state.json and record
+    {path, sha256} on the piece. False (the piece is left as it was) when the piece names no stage_gate run."""
+    page_run = _page_run_dir(piece, bases)
+    if page_run is None:
+        return False
+    data = (page_run / STAGE_STATE_REL).read_bytes()
+    rel = f"pieces/{slot}{STAGE_STATE_SUFFIX}"
+    dest = Path(run_dir) / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    piece["stage_state"] = {"path": rel, "sha256": hashlib.sha256(data).hexdigest()}
+    return True
+
+
+def _carry_stage_state(piece_path: Path, slot: str, out_dir: Path, bases: Sequence[Path]) -> None:
+    """Add the stage_state carrier to a piece file that was copied from the dispatch's stored result."""
+    try:
+        piece = json.loads(piece_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return  # package.assemble names an unreadable piece
+    if isinstance(piece, dict) and attach_stage_state(piece, slot, out_dir, bases):
+        piece_path.write_text(json.dumps(piece, indent=2) + "\n", encoding="utf-8")
+
+
+def refresh_stage_states(run_dir: Path) -> List[str]:
+    """Re-copy every piece's stage_gate state after a later stage closed (final-mockups closes AFTER dispatch,
+    so the copy made at dispatch is stale by then). Returns the slots refreshed."""
+    run_dir = Path(run_dir)
+    bases, done = stage_state_bases(run_dir), []
+    for path in sorted((run_dir / "pieces").glob("*.json")):
+        if path.name.endswith(STAGE_STATE_SUFFIX):
+            continue
+        try:
+            piece = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(piece, dict) and attach_stage_state(piece, path.stem, run_dir, bases):
+            path.write_text(json.dumps(piece, indent=2) + "\n", encoding="utf-8")
+            done.append(path.stem)
+    return done
+
+
 def _bind_approval(launch: Dict[str, Any], normalized: Dict[str, Any], approval: Any) -> None:
     """Take the approval ref from the verified --approval record, never from the intake.
 
@@ -499,7 +593,7 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
         (out_dir / "checkout-terms.json").write_text(
             json.dumps({"checkout_terms": normalized["checkout_terms"]}, indent=2, sort_keys=True) + "\n",
             encoding="utf-8")
-    (out_dir / "intake-at-dispatch.json").write_text(json.dumps(normalized, indent=2, sort_keys=True) + "\n",
+    (out_dir / INTAKE_SNAPSHOT).write_text(json.dumps(normalized, indent=2, sort_keys=True) + "\n",
                                                      encoding="utf-8")  # the dispatch-time intake package.assemble binds to (package.INTAKE_SNAPSHOT_REL)
     # F22: the launch's linked delivery/access destinations, recorded before any page is
     # built. Same inputs give the same ordered inventory and the same fingerprint.
@@ -570,18 +664,24 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
 
     pieces_dir.mkdir(parents=True, exist_ok=True)
     written: List[str] = []
+    bases = stage_state_bases(out_dir)
     for result in manifest["results"]:
         role = next(r["page_role"] for r in manifest["requests"] if r["request_id"] == result["request_id"])
         if role == FIRST_ROLE:  # one landing result carries every landing page Skill 49 planned
             for slot, piece in split_landing(result, planned).items():
+                attach_stage_state(piece, slot, out_dir, bases)  # each landing page carries its OWN run's state
                 (pieces_dir / f"{slot}.json").write_text(json.dumps(piece, indent=2) + "\n", encoding="utf-8")
                 written.append(slot)
             continue
         shutil.copyfile(dispatch_dir / f"result-{role}.json", pieces_dir / f"{role}.json")
+        _carry_stage_state(pieces_dir / f"{role}.json", role, out_dir, bases)
         written.append(role)
     for lane in manifest.get("page_results", {}):  # an extra page rides on its parent's request
         shutil.copyfile(dispatch_dir / f"page-result-{lane}.json", pieces_dir / f"{lane}.json")
+        _carry_stage_state(pieces_dir / f"{lane}.json", lane, out_dir, bases)
         written.append(lane)
+
+    _stamp_image_provider(pieces_dir, written, inputs["executor_provider"])
 
     # F08 delivery: produce each offer's delivery sheet, bind it, and record what the
     # run did and did not make. A failed dispatch above leaves no product record.
@@ -643,6 +743,42 @@ def run(payload: Dict[str, Any], out_dir: Path, *, approval: Dict[str, Any],
     return report
 
 
+def _stamp_image_provider(pieces_dir: Path, slots: Sequence[str], provider: str) -> None:
+    """Record which provider drew each page, on the piece, when its own result names none (issue 16).
+
+    The package check refuses a client delivery whose design files name no provider (a placeholder cannot
+    be told from a real render). A page-result 1.0 carries no provider field, so the run's approved image
+    plan (the executor provider every adapter was handed) is the piece-level record. An artifact that
+    names its own provider keeps it: the artifact wins over the piece in page_designs._provider_of."""
+    for slot in slots:
+        path = Path(pieces_dir) / f"{slot}.json"
+        piece = json.loads(path.read_text(encoding="utf-8"))
+        if not (isinstance(piece.get("image_provider"), str) and piece["image_provider"].strip()):
+            piece["image_provider"] = provider
+            path.write_text(json.dumps(piece, indent=2) + "\n", encoding="utf-8")
+
+
+def with_production(report: Dict[str, Any], root: Path) -> Dict[str, Any]:
+    """The dispatch report plus what the produce and install stages left in the package (issue 80)."""
+    out = dict(report)
+    root = Path(root)
+
+    def read(rel: str) -> Dict[str, Any]:
+        try:
+            doc = json.loads((root / rel).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return doc if isinstance(doc, dict) else {}
+
+    pages = read("production/manifest.json").get("pages")
+    if isinstance(pages, dict):
+        out["production"] = {role: row.get("state") for role, row in pages.items() if isinstance(row, dict)}
+    back = read("install/install-readback.json").get("pages")
+    if isinstance(back, dict):
+        out["install_readbacks"] = back
+    return out
+
+
 def summary_lines(report: Dict[str, Any]) -> List[str]:
     """What the client is told after a dispatch, in plain English."""
     plan = report["lane_plan"]
@@ -669,16 +805,49 @@ def summary_lines(report: Dict[str, Any]) -> List[str]:
     for message, step in zip(linked.get("client_blockers") or [],
                              linked.get("next_steps") or []):
         lines.append(f"Still to sort out: {message} Next step: {step}")
+    # Issue 80: these lines are DATA-DRIVEN. What a page is called depends on what exists on disk, not on a
+    # fixed sentence: the production manifest (report["production"]: role -> "built" | "not_built") and the
+    # install read-back (report["install_readbacks"]), both added by with_production(). A page with no
+    # production record is a design; one that was produced is a finished page; one that was read back from
+    # the install is installed. skill06_readbacks is the older, role-keyed record Skill 6 may leave.
+    produced = report.get("production") or {}
+    installed = report.get("install_readbacks") or {}
     readbacks = report.get("skill06_readbacks") or {}
-    for role, label in (("downsell_1", "Downsell (D1)"), ("thank_you", "Thank-you page")):
-        if role in report["pages"] and not readbacks.get(role):
-            lines.append(f"{label}: design only; not installed. Skill 6 has not recorded an install read-back "
-                         "for it (scheduled: S06-02 / UPS-08).")
-    for role, label in (("upsell_1", "Upsell 1 (U1)"), ("upsell_2", "Upsell 2 (U2)")):
-        if role in report["pages"]:
-            lines.append(f"{label}: design only. Skill 80 has no production page builder, so the approved "
-                         "upsell design is not a publishable page (see 80-signature-upsell/SKILL.md, Status).")
+    for role, label in (("upsell_1", "Upsell 1 (U1)"), ("downsell_1", "Downsell (D1)"),
+                        ("upsell_2", "Upsell 2 (U2)"), ("thank_you", "Thank-you page")):
+        if role not in report["pages"]:
+            continue
+        if produced.get(role) == "built":
+            if installed.get(role):
+                lines.append(f"{label}: built as a finished page and installed in your account; the install was "
+                             "read back and matched.")
+            else:
+                lines.append(f"{label}: built as a finished page; not installed yet. The install step has not "
+                             "recorded a read-back for it.")
+        elif role in ("upsell_1", "upsell_2"):
+            lines.append(f"{label}: design only. The finished page has not been built yet; the production step "
+                         "builds it from the approved design.")
+        elif not readbacks.get(role):
+            lines.append(f"{label}: design only; not installed. No install read-back is recorded for it "
+                         "(scheduled: S06-02 / UPS-08).")
     return lines
+
+
+def _checkout_request_file(out_dir: Path, launch_path: Path) -> Path:
+    """The Skill 79 checkout request the order form page is written and designed from.
+
+    It is the first main price choice's own request, built by checkout_instances from the intake at dispatch
+    and the launch record being dispatched (the read-back facts that only Skill 06 can supply stay missing;
+    the copy needs none of them). Skill 79's emitter stamps the page copy with this file's sha256 and Skill 49's
+    checkout wrapper refuses copy stamped with any other request."""
+    from . import checkout_instances  # imports this module, so it is loaded here, not at the top
+    snapshot = json.loads((out_dir / INTAKE_SNAPSHOT).read_text(encoding="utf-8"))
+    launch = json.loads(launch_path.read_text(encoding="utf-8"))
+    built = checkout_instances.record(snapshot, route.compile_route(snapshot), launch=launch)
+    request = out_dir / "checkout-request.json"
+    request.write_text(json.dumps(built["instances"][0]["request"], indent=2, sort_keys=True) + "\n",
+                       encoding="utf-8")
+    return request
 
 
 def _build_adapters(adapter_inputs: Dict[str, Any], out_dir: Path, launch_path: Path,
@@ -696,12 +865,16 @@ def _build_adapters(adapter_inputs: Dict[str, Any], out_dir: Path, launch_path: 
 
 def _bind_adapters(adapters, adapter_inputs: Dict[str, Any], out_dir: Path, launch_path: Path,
                    inputs: Dict[str, Any], inputs_path: Path, order_inputs_path: Path) -> Dict[str, Any]:
-    if not adapter_inputs.get("checkout_manuscript"):
+    if adapter_inputs.get("checkout_manuscript"):
         raise BridgeError("AF-LAUNCH-BRIDGE-ADAPTERS",
-                          "the order form page gets its wireframes and mockups like every other page, and "
-                          "they are drawn from its copy: give me checkout_manuscript (the path to the order "
-                          "form page's copy). Nothing was dispatched.")
-    checkout_design = {"manuscript": adapter_inputs["checkout_manuscript"],
+                          "the order form page's copy is written by Skill 79 from the approved checkout "
+                          "request, never staged by hand: remove checkout_manuscript. Nothing was dispatched.")
+    request = _checkout_request_file(out_dir, launch_path)
+    # Skill 79 writes the order form's copy from that request, before the checkout design lane runs.
+    manuscript = adapters.emit_checkout_manuscript(
+        request=request, launch=launch_path, terms=out_dir / "checkout-terms.json",
+        out=out_dir / "dispatch" / "copy-checkout.md")
+    checkout_design = {"manuscript": str(manuscript), "checkout_request": str(request),
                        "brand_file": inputs["brand_file"], "brand_owner": inputs["brand_owner"],
                        "image_cap": inputs["image_cap"], "design_style": inputs["design_style"]}
     return adapters.build_dispatch_config(
@@ -713,4 +886,5 @@ def _bind_adapters(adapters, adapter_inputs: Dict[str, Any], out_dir: Path, laun
         order_page_inputs=order_inputs_path,
         skill80_root=adapter_inputs.get("skill80_root"), skill81_root=adapter_inputs.get("skill81_root"),
         image_provider=inputs["executor_provider"], allow_paid=inputs["allow_paid"],
-        checkout_design=checkout_design, image_plan=inputs)
+        checkout_design=checkout_design, image_plan=inputs,
+        measured_design_system=adapter_inputs.get("measured_design_system"))

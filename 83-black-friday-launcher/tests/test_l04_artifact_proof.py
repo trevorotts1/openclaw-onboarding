@@ -134,9 +134,15 @@ class _RunFixture(unittest.TestCase):
     plan: dict | None = None
 
     def setUp(self):
+        from test_delivery_units import install_stand_in_validator
+        install_stand_in_validator(self)  # Skill 83 re-runs Skill 50's validator on every email unit
         self.tmp = tempfile.TemporaryDirectory()
         self.run_dir = Path(self.tmp.name) / "run"
-        self.payload = base_intake()
+        if self.plan:
+            from test_launch_plan_law import plan_intake
+            self.payload = plan_intake()  # a full launch: the route carries every page of the plan
+        else:
+            self.payload = base_intake()
         self.normalized = intake.validate(self.payload)
         self.advice = council.planning_step(self.normalized, runner=stub_council)
         self.graph = route.compile_route(self.normalized)
@@ -152,6 +158,8 @@ class _RunFixture(unittest.TestCase):
             plan = self.plan
         kwargs = {"council": self.advice}
         if plan is not None:
+            from test_delivery_units import with_sales_piece
+            pieces = with_sales_piece(pieces or self.pieces, self.run_dir, self.normalized)  # page_sales
             kwargs["launch_plan"] = plan
             if deliveries is _UNSET:
                 plan_sha = hashlib.sha256(
@@ -496,6 +504,21 @@ class CheckoutProducerTests(unittest.TestCase):
         self.assertEqual(probe["probe"]["result"], "rejected")
         self.assertIn("Additional properties", probe["probe"]["error"])
 
+    def test_the_validation_clock_rides_only_a_live_request(self):
+        import types
+        from launcher_core import checkout as checkout_module
+        calls = []
+        stub = types.SimpleNamespace(validate_request=lambda *a: calls.append(a))
+        original = checkout_module._load_validator
+        checkout_module._load_validator = lambda: stub
+        try:
+            self.assertEqual(checkout_module.replay({"test_only": True})[0], "accepted")
+            self.assertEqual(checkout_module.replay({"test_only": False})[0], "accepted")
+        finally:
+            checkout_module._load_validator = original
+        self.assertEqual([len(a) for a in calls], [1, 2])
+        self.assertIsInstance(calls[1][1], str)
+
 
 
 CHECKOUT_TERMS = {
@@ -527,6 +550,7 @@ def _answers_doc(offers: list) -> dict:
 def with_checkout_facts(payload: dict) -> dict:
     """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer,
     and the price provenance (source_ref per offer plus the answers file they resolve in)."""
+    payload.setdefault("test_only", True)  # said explicitly (issue 36): these inline intakes are practice builds
     payload.setdefault("checkout_terms", dict(CHECKOUT_TERMS))
     mains = 0
     for o in payload["offers"]:

@@ -38,9 +38,13 @@ public URLs into the package's artifact records and page HTML; ``delivery_record
 the ledger that script writes (``media_library.json``). With no approval nothing is uploaded and the
 record says so.
 
+Hosting is gated on the package check too (issue 37): ``handle_handoff`` runs the check after the QC
+report and writes ``check-result.json``, and ``host_assets`` uploads nothing unless that result passed
+and was made for the ``package-manifest.json`` on disk now (``needs_check`` otherwise).
+
 ``handle_handoff`` is the orchestration seam ``cli.cmd_assemble`` calls after
-``package.assemble``: request, report from real receipts, optional approved hosting, page URL
-replacement, then the delivery record. It is also the producer of the F09 brand asset path
+``package.assemble``: request, report from real receipts, the package check, optional approved hosting,
+page URL replacement, then the delivery record. It is also the producer of the F09 brand asset path
 (``brand_asset``): the client's brand answer becomes a brief and, only with the paid approval and
 a working image capability, a real logo file carried into the brand file every page reads.
 
@@ -64,10 +68,15 @@ from . import page_designs
 PASS_AVERAGE = 8.5
 QC_REPORT_REL = "qc/image_qc_report.json"
 QC_REQUEST_REL = "qc/image_qc_request.json"
+VISION_LOG_REL = "qc/vision_qc_log.json"
 DELIVERY_REL = "delivery_record.json"
 LEDGER_REL = "media_library.json"
 HOSTING_BINDING_REL = "hosting-binding.json"   # the hosting decision a launcher emits and this reads
 PIPELINE_REL = "qc/graphics_pipeline.json"
+# Issue 37: hosting is gated on the package check. `assemble` writes this record from the check_package
+# run it just made; host_assets refuses unless it passed and was made for the manifest as it is NOW.
+CHECK_RESULT_REL = "check-result.json"
+CHECK_RESULT_SCHEMA = "launcher.check-result/v1"
 # The module the uploader itself loads (45-design-intelligence-library/scripts/graphics_ghl_push.py
 # resolves 48's canonical GHL media module and Skill 6's publish-approval check). The capability
 # probe names these, not a module the push never imports. GHL_MEDIA_REF names the Skill 06 copy of
@@ -84,6 +93,7 @@ STAGES_REPORT_REL = "qc/image_stages_report.json"
 REVIEWS_REL = Path("private") / "reviews"
 IMAGE_STAGE = "image-generation-qc"
 QC_CODE = "AF-LAUNCH-IMAGE-QC"
+VISION_CODE = "AF-G-VISION"
 UNKNOWN = "UNKNOWN"
 _PAGE_SUFFIXES = (".html", ".htm", ".css", ".svg")
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -326,6 +336,8 @@ def qc_request(manifest: Dict[str, Any], package_root: Path, job_dir: Path,
                         "with no automatic failure, and its average must be the mean of its own "
                         "criterion scores. A hand-written average or a request file is not a review"),
         "vision_read": "mandatory: a real multimodal read of every image, never graded from file names or prompts",
+        "vision_log": (f"{VISION_LOG_REL}: one record per image with its artifact_sha256 and a non-null "
+                       f"vision_api_response (SOP-GIP-02 step 1); a package without it is refused ({VISION_CODE})"),
         "review_producer": REVIEW_PRODUCER_REF,
         "review_record": (f"{REVIEWS_REL.as_posix()}/{IMAGE_STAGE}/<item-id>.review.json (Review Receipt v2; "
                           "artifact_sha256 is computed by the producer from the file on disk)"),
@@ -557,6 +569,26 @@ def _mean_score(review: Dict[str, Any]) -> Optional[float]:
     return round(sum(real) / len(real), 2) if real else None
 
 
+def _vision_log_problem(img: Dict[str, Any], job_dir: Path, cache: Dict[Path, Any]) -> Optional[str]:
+    """SOP-GIP-02 step 1: the asset's bytes carry a non-null ``vision_api_response`` in
+    ``qc/vision_qc_log.json`` (a list of records, or ``{"assets": [...]}``), each record naming the
+    ``artifact_sha256`` it looked at. A Review Receipt says who scored; this says a real multimodal
+    pass opened the pixels. Both are demanded (issue 21)."""
+    path = Path(job_dir) / VISION_LOG_REL
+    if path not in cache:
+        cache[path] = _read(path)
+    log = cache[path]
+    records = log.get("assets") if isinstance(log, dict) else log
+    where = f"{img['page']} {Path(img['local_path']).name}"
+    for record in records if isinstance(records, list) else []:
+        if isinstance(record, dict) \
+                and str(record.get("artifact_sha256") or "").strip().lower() == img["sha256"] \
+                and record.get("vision_api_response") not in (None, "", {}, []):
+            return None
+    return (f"{VISION_CODE}: {where} has no record with a non-null vision_api_response for its bytes in "
+            f"{VISION_LOG_REL} (SOP-GIP-02 step 1); a review graded from filenames or prompt text is refused")
+
+
 def _review_problems(rec: Dict[str, Any], img: Dict[str, Any], job_dir: Path,
                      cache: Dict[Path, Any]) -> List[str]:
     """Why one report record is not a review of THESE bytes by two named, different models.
@@ -633,6 +665,9 @@ def _review_problems(rec: Dict[str, Any], img: Dict[str, Any], job_dir: Path,
     if _text(review.get("model_independence")) not in ("", "independent"):
         problems.append(f"{QC_CODE}: {where} its review records model independence "
                         f"as {review.get('model_independence')!r}, not independent")
+    vision = _vision_log_problem(img, job_dir, cache)
+    if vision:
+        problems.append(vision)
     return problems
 
 
@@ -705,6 +740,48 @@ def report_violations(manifest: Dict[str, Any], package_root: Path,
 
 # --------------------------------------------------------------------------- SOP-GIP-03 hosting
 
+def write_check_result(package_root: Path, verification: Dict[str, Any]) -> Dict[str, Any]:
+    """Write <package>/check-result.json from one ``checks.verify_package_receipt`` run (the check_package
+    violations plus the re-read of every sealed artifact). It names the manifest it judged by sha256, so a
+    package edited after its check no longer matches; it never invents a pass."""
+    package_root = Path(package_root)
+    manifest = package_root / "package-manifest.json"
+    violations = [str(v) for v in verification.get("violations") or []]
+    record = {
+        "schema": CHECK_RESULT_SCHEMA,
+        "passed": verification.get("state") == "verified" and not violations,
+        "state": verification.get("state"),
+        "violation_count": len(violations),
+        "violations": violations[:50],
+        "manifest": {"path": "package-manifest.json",
+                     "sha256": _sha(manifest) if manifest.is_file() else None},
+    }
+    _write(package_root / CHECK_RESULT_REL, record)
+    return record
+
+
+def check_result_problem(package_root: Path) -> Optional[str]:
+    """Why hosting may not run on this package, or None. It needs a check-result.json that passed AND was
+    made for the package-manifest.json on disk now: a result for an older manifest, a failed one and no
+    result at all are each refused by name. (The manifest's sha256 is the newer-than test: any edit to the
+    manifest after the check changes it.)"""
+    package_root = Path(package_root)
+    record = _read(package_root / CHECK_RESULT_REL)
+    if not isinstance(record, dict) or record.get("schema") != CHECK_RESULT_SCHEMA:
+        return (f"{CHECK_RESULT_REL} does not exist; the package check must run, and pass, before anything "
+                "is hosted (assemble writes it)")
+    manifest = package_root / "package-manifest.json"
+    if not manifest.is_file():
+        return "package-manifest.json does not exist, so the package cannot have been checked"
+    if (record.get("manifest") or {}).get("sha256") != _sha(manifest):
+        return (f"{CHECK_RESULT_REL} was written for a different package-manifest.json; the package changed "
+                "after it was checked, so run the check again")
+    if record.get("passed") is not True:
+        return (f"the package check did not pass ({record.get('violation_count', '?')} violation(s)); only a "
+                "package that passes its check is hosted")
+    return None
+
+
 def ghl_media_present(repo_root: Optional[Path] = None) -> bool:
     """True only when every file the uploader loads is installed: the push script, the canonical
     GHL media module it resolves, and the Skill 6 publish-approval check it refuses without."""
@@ -747,6 +824,9 @@ def host_assets(package_root: Path, job_dir: Optional[Path] = None, approval_ref
         return {"state": "not_authorized",
                 "reason": "no approved hosting approval_ref was supplied; hosting is its own approved step",
                 "uploaded": []}
+    unchecked = check_result_problem(package_root)
+    if unchecked:  # issue 37: nothing is uploaded from a package whose check has not passed
+        return {"state": "needs_check", "reason": unchecked, "uploaded": []}
     if not (job_dir / QC_REPORT_REL).is_file():
         return {"state": "needs_qc", "reason": f"{QC_REPORT_REL} does not exist; only QC-passed assets are hosted",
                 "uploaded": []}
@@ -1027,6 +1107,10 @@ def handle_handoff(manifest: Dict[str, Any], package_root: Path, job_dir: Option
     identities = prompt_authors(manifest, package_root, roots)
     request = qc_request(manifest, package_root, job_dir, author_identities=identities, repo_root=repo_root)
     report = qc_report(manifest, package_root, job_dir, roots=roots, repo_root=repo_root)
+    # Issue 37: the package is checked with its image reviews in hand and BEFORE hosting; hosting reads the
+    # result and refuses without a pass. (cli.assemble checks again afterwards: hosting rewrites page files.)
+    from . import checks  # local: checks imports this module through the rule modules
+    write_check_result(package_root, checks.verify_package_receipt(package_root))
     hosting = host_assets(package_root, job_dir, approval_ref=host_approval_ref,
                           folder_name=folder_name, repo_root=repo_root)
     # Idempotent: a live ledger from an earlier approved upload is applied too; with no live entry

@@ -29,10 +29,11 @@ import route_law  # noqa: E402
 import substrate  # noqa: E402
 sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
+from vision_log_fixture import write_vision_log  # noqa: E402
 from launcher_core import (check_rules, checks, cli, intake, launch_bridge, package,  # noqa: E402
                            page_designs, route)
 from test_lane83_designs import COUNCIL, make_piece  # noqa: E402
-from test_page_designs_real import make_client_delivery  # noqa: E402
+from test_page_designs_real import make_client_delivery, write_stage_state  # noqa: E402
 
 PDF_AND_BOARD = ["wireframe_desktop_pdf", "wireframe_mobile_pdf", "mockup_desktop_pdf",
                  "mockup_mobile_pdf", "board"]
@@ -91,6 +92,7 @@ def write_bound_qc(root, assets):
                         "review_ref": str(review.relative_to(root)),
                         "review_sha256": hashlib.sha256(review.read_bytes()).hexdigest()})
     (root / "qc" / "image_qc_report.json").write_text(json.dumps({"assets": records}), encoding="utf-8")
+    write_vision_log(root, [a["sha256"] for a in assets])
 
 
 def store(ok=True, detail="verified"):
@@ -279,6 +281,25 @@ class DesignLevelTests(PackageCase):
         fails, _ = self.check({"manifest_path": path}, root)
         self.assertTrue(any("not an owner approval bound to this plan hash" in f for f in fails), fails)
 
+    def test_a_hand_edited_client_manifest_that_keeps_a_waiver_still_fails_the_check(self):
+        # assemble refuses a waived client delivery (issue 88); this is the check's second defence against a
+        # practice package edited, with its receipt re-sealed, to say test_only false.
+        built, root = self.build(require_designs=False)
+        plan_hash = built["manifest"]["approved_plan_hash"]
+        path = self.reseal(root, lambda m: m.update(
+            test_only=False, delivery_label="designs waived",
+            design_waiver={"approval_ref": "owner-ok-2026-11-02", "owner_identity_ref": "client-test-1",
+                           "subject_hash": plan_hash}))
+        fails, _ = self.check({"manifest_path": path}, root)
+        self.assertIn("AF-LAUNCH-PAGE-DESIGNS: designs are never waived for a client delivery "
+                      "(test_only false); a paid package carries the full design set", fails)
+
+    def test_control_a_practice_package_accepts_the_same_verified_waiver(self):
+        # same instrument and same waiver as the refusals in PaidPackageTests: only test_only differs
+        built, _ = self.build(require_designs=False)
+        self.assertIs(built["manifest"]["test_only"], True)
+        self.assertEqual(built["manifest"]["design_waiver"]["approval_ref"], "APPR-WAIVE-TEST")
+
     def test_a_label_that_claims_a_waiver_with_no_record_fails(self):
         (fails, _), _ = self.waived(None)
         self.assertIn("AF-LAUNCH-PAGE-DESIGNS: the delivery label claims designs waived but the "
@@ -340,6 +361,11 @@ class PaidPackageTests(PackageCase):
         (run / "dispatch" / "bridge-receipt-result-landing.json").write_text(json.dumps(
             {"request_id": "req-landing", "draft": False, "receipt_validation": "schema",
              "pipeline_exit": 0}), encoding="utf-8")
+        # Issue 57: a client piece must carry the stage_gate state it came from. This one is a stand-in that
+        # verifies (its hash is recorded); make_client_delivery below replaces it with a closed run's real state.
+        pieces = pieces if pieces is not None else self.pieces()
+        for role, piece in pieces.items():
+            piece.setdefault("stage_state", write_stage_state(self.work, f"stage-state-initial-{role}-{name}.json", {}))
         approved = self.normalized["approval"]["hash"]
         # a production launch needs the native product and price ids the Skill 06 read-back returns
         launch = launch_bridge.to_launch_record(self.normalized, self.graph,
@@ -403,20 +429,19 @@ class PaidPackageTests(PackageCase):
                             and "stub provider" in f for f in fails), fails[:3])
 
     def test_a_paid_package_cannot_skip_designs(self):
-        built, root = self.build(self.pieces(provider="kie"), require_designs=False)
-        self.assertIs(built["manifest"]["designs_required"], False)
-        fails, _ = self.check(built, root)
-        self.assertIn("AF-LAUNCH-PAGE-DESIGNS: designs are never waived for a client delivery "
-                      "(test_only false); a paid package carries the full design set", fails)
+        # Issue 88: assemble itself refuses the waiver for a client delivery, as the CLI help always said.
+        # (The check's own second defence against a hand-edited manifest is proved in DesignLevelTests.)
+        with self.assertRaises(package.PackageError) as ctx:
+            self.build(self.pieces(provider="kie"), require_designs=False)
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ASSEMBLE-DESIGN-WAIVER")
+        self.assertIn("never for a client delivery", ctx.exception.detail)
+        self.assertFalse((self.work / "pkg" / "package-manifest.json").exists())  # nothing was sealed
 
     def test_a_valid_design_waiver_does_not_open_a_client_delivery(self):
-        built, root = self.build(self.pieces(provider="kie"), require_designs=False)
-        plan_hash = built["manifest"]["approved_plan_hash"]
-        path = self.reseal(root, lambda m: m.update(
-            design_waiver={"approval_ref": "owner-ok-2026-11-02", "owner_identity_ref": "client-test-1",
-                           "subject_hash": plan_hash}, delivery_label="designs waived"))
-        fails, _ = self.check({"manifest_path": path}, root)
-        self.assertTrue(any("designs are never waived for a client delivery" in f for f in fails), fails)
+        waiver = verified_design_waiver(self.normalized["approval"]["hash"])  # every field good: still refused
+        with self.assertRaises(package.PackageError) as ctx:
+            self.build(self.pieces(provider="kie"), require_designs=False, design_waiver=waiver)
+        self.assertEqual(ctx.exception.code, "AF-LAUNCH-ASSEMBLE-DESIGN-WAIVER")
 
     def test_a_paid_package_of_authored_pieces_fails_the_proof_floor(self):
         built, root = self.build(self.pieces(provider="kie"))
@@ -556,6 +581,29 @@ class RouteGraphTests(PackageCase):
             sha256=sha(root / "route-graph.json")))
         fails, _ = self.check({"manifest_path": manifest_path}, root)
         self.assertTrue(any(f.startswith("AF-LAUNCH-ROUTE-LAW: missing contract edges") for f in fails), fails)
+
+    def test_the_check_judges_the_selection_guard_by_the_packages_own_runtime(self):
+        """Issue 45 at the package check: a carried graph that asserts allowlisted_offer_price is accepted only
+        where the manifest holds a selection_ref or a per-offer binding plan, and refused by name otherwise."""
+        built, root = self.build()
+        graph = json.loads((root / "route-graph.json").read_text(encoding="utf-8"))
+        edges = [e for e in graph["edges"] if e["guard"] == "native_price_bound"]
+        self.assertEqual(len(edges), 1, "the elevation route carries the per-offer selection edge")
+        edges[0].update(event="selection_validated", guard="allowlisted_offer_price")
+        (root / "route-graph.json").write_text(json.dumps(graph, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        plan = {"route": "per_offer_targets", "mappings": [{"offer_id": "A", "checkout_target_ref": "page-a"}]}
+        cases = {"no runtime": (None, None, True), "per-offer plan": (None, plan, False),
+                 "selection_ref": ("sel-1", None, False)}
+        for name, (ref, binding_plan, refused) in cases.items():
+            def mutate(m, ref=ref, binding_plan=binding_plan):
+                m["route_graph"].update(sha256=sha(root / "route-graph.json"))
+                m.setdefault("checkout", {})["binding_plan"] = binding_plan
+                m["checkout"]["supplied"] = {"selection_ref": ref}
+            manifest_path = self.reseal(root, mutate)
+            fails, _ = self.check({"manifest_path": manifest_path}, root)
+            named = [f for f in fails if "AF-LAUNCH-ROUTE-GUARD-NO-RUNTIME" in f]
+            with self.subTest(case=name):
+                self.assertEqual(bool(named), refused, fails)
 
     def test_an_intact_graph_holds_the_law(self):
         built, root = self.build()

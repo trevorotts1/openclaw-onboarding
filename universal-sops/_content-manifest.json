@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-11-10T10:19:54Z",
+  "generated_at": "2026-11-11T04:06:09Z",
   "file_count": 116,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -193,36 +193,36 @@
       "bytes": 9411
     },
     "funnel-craft/FUNNEL-PIPELINE-MANIFEST.json": {
-      "sha256": "bbbe06849b1833ab280733e34e54712c7dc86f05feaf6fd6c6675f4081bd8cb6",
-      "bytes": 9814
+      "sha256": "863e41b53cff26dcf1441eb610474b7a902ba1b9c07223cd89550f05ce291d08",
+      "bytes": 10034
     },
     "funnel-craft/MASTER-FUNNEL-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "4bce829b2d979895c8246166ee7459e20e16e350b7d5b929597b75841d2dac89",
-      "bytes": 5277
+      "sha256": "3ba263c192258c47fcaec998d9a111f957e5b04b1bd332aa2008a7ae5364e2f9",
+      "bytes": 12355
     },
     "funnel-craft/README.md": {
-      "sha256": "0c5573a0b962a065f5ba7b5eec1e8544d3cf0e0a3bb4d16107b78a1188fa8f5d",
-      "bytes": 7851
+      "sha256": "f00ae5ecfa9f11b2df3d48bf7c8844784719386db6e6646682fa76dd84e1487f",
+      "bytes": 8027
     },
     "funnel-craft/SOP-FUNNEL-01-INTAKE.md": {
       "sha256": "cdb549b858cf2b831b2c69675d404dacce45baebd148b8831c87f18805256221",
       "bytes": 4452
     },
     "funnel-craft/SOP-FUNNEL-02-COPY.md": {
-      "sha256": "3f19c738821a6d10c607bc6b2a248c4ea2c11cc924af2b2f896959a1346ddf51",
-      "bytes": 7900
+      "sha256": "ff2f1e2f554a7767dcd5b44a3a30e95a846e2f20c386a49b25742c7b63050d8f",
+      "bytes": 7860
     },
     "funnel-craft/SOP-FUNNEL-03-PROMPTS-IMAGES.md": {
       "sha256": "cf3750f97cedfd170d8aa30644ec5ac5e60821caa4b7f6ece32949dbe6bb2a85",
       "bytes": 6128
     },
     "funnel-craft/SOP-FUNNEL-04-BUILD.md": {
-      "sha256": "15216ef46a39b8aa49b3de1e7a2e7f99624a6a133680e379a9032441f0afecf3",
-      "bytes": 2730
+      "sha256": "e3da69a90c2f0e104779bccc2e414149e852764bf34b3f37484a624a34c42ba5",
+      "bytes": 3671
     },
     "funnel-craft/SOP-FUNNEL-05-CERTIFY.md": {
-      "sha256": "c4d25a5df0b6623cd2dbe0f7ac81e6487d88a0bf119780cc3b07631cca6e672b",
-      "bytes": 2963
+      "sha256": "7906cbc52f3e045ff0da9f334ce074200ab909fe98c196d2c112b641ccb18cb4",
+      "bytes": 3101
     },
     "interdepartmental-communication-guidelines.md": {
       "sha256": "5b6f7ec3d6b00cc4c476729b49223ee49230d9f5f034cf889e0290e1204d6e94",
@@ -373,7 +373,7 @@
       "bytes": 10834
     },
     "signature-page-craft/README.md": {
-      "sha256": "242b6a2f57adc99b9a4378c8bf12deceffa74a6df4c01f7fd13bc4d9069e0823",
+      "sha256": "58139e984f29a9e2f637b7f36a3f7fe8aa7e4ce52c80c64b904fb600d52a42b8",
       "bytes": 13423
     },
     "social-media-craft/MASTER-SOCIAL-QC-AUTOFAIL-RULESET.md": {

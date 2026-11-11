@@ -1,0 +1,136 @@
+{
+  "spec_id": "copy-spec-downsell-v1",
+  "spec_version": 1,
+  "copy_version": "downsell",
+  "page_roles": [
+    "downsell_1"
+  ],
+  "status": "Structure only. The eight-section downsell sequence is the one in references/page-structures.json roles.downsell_1 (derived from Skill 81's downsell-page schema); this file registers it as a copy form so scripts/copy_forms.py gives the downsell page a form of its own and Skill 71's form guards (shared_page_service.py, the request builder, the section-count check) stop treating it as a Standard landing page. Skill 81's validators stay the authority on the copy itself, and references/page-structures.json stays the authority on each section's layout and image slots; tests/test_copy_forms_cover_all_roles.py fails if the two sequences, names or jobs drift apart. It names its role with the plural page_roles (like the upsell form), so a request that has lost its page_role marker is still refused as a landing page instead of recovering the role from a copy_version.",
+  "source": {
+    "structure_file": "references/page-structures.json",
+    "structure_key": "roles.downsell_1",
+    "owner_skill": 81,
+    "copy_source": "81-signature-downsell/schemas/downsell-page.schema.json (prefixItems order)"
+  },
+  "sequence": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8"
+  ],
+  "sections": [
+    {
+      "id": "1",
+      "framework_name": "Opening offer",
+      "job": "make the alternative clear immediately, and state in the first screen that the original order is confirmed and safe",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    },
+    {
+      "id": "2",
+      "framework_name": "First problem",
+      "job": "a specific pain or objection this alternative answers, distinct from the next two",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    },
+    {
+      "id": "3",
+      "framework_name": "Second problem",
+      "job": "a second, different pain or objection",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    },
+    {
+      "id": "4",
+      "framework_name": "Third problem",
+      "job": "a third, different pain or objection",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    },
+    {
+      "id": "5",
+      "framework_name": "Why this option",
+      "job": "the real reason this alternative exists",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    },
+    {
+      "id": "6",
+      "framework_name": "Who it is for",
+      "job": "who the alternative fits, without shaming anyone who declines",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    },
+    {
+      "id": "7",
+      "framework_name": "Included and not included",
+      "job": "the exact inclusions and the material limitations, shown with equal honesty",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    },
+    {
+      "id": "8",
+      "framework_name": "When time runs out",
+      "job": "exactly seven optional benefits the visitor will not receive by declining; never a loss of the original purchase",
+      "cta": {
+        "counts_toward_total": true,
+        "standalone": "required"
+      },
+      "required": true,
+      "limits": []
+    }
+  ],
+  "cta_map": {
+    "required_in_sections": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8"
+    ],
+    "forbidden_in_sections": [],
+    "standalone_total": {
+      "kind": "hard",
+      "value": 8
+    },
+    "note": "A primary button in every section, each with the outlined decline button beside it (references/page-structures.json roles.downsell_1.decline)."
+  },
+  "containment": {
+    "no_extras_rule": "A section id outside 1 to 8, a duplicate, or a lettered child id fails."
+  }
+}

@@ -133,7 +133,9 @@ never inside the artifact under review) containing:
 - per-surface result for each section 1 surface, and for every
   section 2 test a PASS or a FAIL with the **quoted offending text**
   (verbatim, with its surface named) for any fail;
-- the overall verdict: `PASS` or `FAIL`;
+- the overall verdict: `PASS` or `FAIL` (exactly these two words; the run manifest's
+  `independent_review.verdict` is an enum of them, and a `FAIL` is a review that
+  happened and refused the page, never an independent review of it);
 - defect IDs opened for any fail (doc 18 section 9: append a new
   attempt after repair; never edit a failing record into a pass).
 

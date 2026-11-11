@@ -89,12 +89,23 @@ MODULES = [
     "test_page_structures.py",
     # Page types: the thank-you page's own canonical sections reach every image stage.
     "test_page_role_thank_you.py",
+    # AF-71-THANK-YOU-PITCH: the thank-you no-pitch scan, its copy-close receipt and gate row.
+    "test_thank_you_no_pitch.py",
     # SPF030: signature sales page vs signature landing (opt-in) page kinds.
     "test_page_kinds.py",
     # Diagnostic repair 2026-10-19: a zero-image generation run is FAILED.
     "test_shared_page_service_generation.py",
     # ANN-001: wireframe annotations must never reach a mockup or the built page.
     "test_annotation_leak.py",
+    # Harmony issue 10: an ungated stub run is refused (AF-71-UNGATED) outside a test harness.
+    "test_stage_executor_ungated.py",
+    # Harmony issues 2 and 62: the one admission door (stage gate check before the executor).
+    "test_run_governed_stage.py",
+    # Harmony-95 WP-14: strict authority pins, downsell copy form, routing receipt fields.
+    "test_authority_pins_strict.py",
+    "test_copy_forms_cover_all_roles.py",
+    "test_routing_guard_receipt.py",
+    "test_page_result_role_echo.py",
 ]
 
 def skip_reason(stdout):

@@ -4,7 +4,7 @@
 Proves the "mc_board six" (49-signature-funnel, 50-email-engine,
 53-book-writer, 55-product-bio, 56-sales-page-assets,
 57-social-media-in-a-box) got the SAME B-U13/U27 self-heal `reconcile --json`
-verb + drift/clean/unwired classification as Skill 6's `cc_board.py reconcile`
+verb + drift/clean/unwired classification as the sibling board clients' reconcile
 and the Anthology Engine's `mc_board.py reconcile` (U79 precedent).
 
 It is BYTE-IDENTICAL alongside mc_board.py in every one of the six skills that

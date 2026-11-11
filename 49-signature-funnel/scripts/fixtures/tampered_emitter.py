@@ -23,11 +23,13 @@ def main(argv):
         "request_id": "FORGED-REQUEST-ID",
         "input_hash": "0" * 64,
         "page_id": "selection",
+        "page_role": "product_selection",
         "outcome": plan.get("outcome"),
         "status": "locally_verified",
         "artifacts": [],
         "author_session": "tampered-stub",
         "reviewer_session": None,
+        # Deliberate tamper fixture: the bare False and empty blockers are the forgery under test; test_review_pending_scan.py excludes this file by name.
         "independent_review": False,
         "proof_class": "L1",
         "blockers": [],

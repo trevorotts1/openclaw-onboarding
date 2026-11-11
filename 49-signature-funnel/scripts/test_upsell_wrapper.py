@@ -33,12 +33,17 @@ No network, no live calls: produce.py reads local JSON only.
 import copy
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+# AF-71-UNGATED (harmony issue 10): the image tests below draw stub images on a directory with no gate state, which
+# Skill 71's executor allows only under this test-harness marker (no product script sets it); children inherit it.
+os.environ["SKILL71_FIXTURE_RUN"] = "1"
 
 STAGE = Path(__file__).resolve().parent
 FIXTURES = STAGE / "fixtures"
@@ -72,7 +77,9 @@ def _load_wrapper_module():
 
 wrapper = _load_wrapper_module()
 
-IDENTITY_FIELDS = ("request_id", "input_hash", "page_id")
+# page_role is added by the wrapper from the S49 request (Skill 80's own result does not carry it),
+# so the parity comparison with Skill 80's stored result ignores it like the other S49-side fields.
+IDENTITY_FIELDS = ("request_id", "input_hash", "page_id", "page_role")
 
 
 def load(path):
@@ -135,8 +142,10 @@ def run_wrapper(wd, slot, *, copy_path, journey_path, enrichment=None,
 
 def assert_receipt_valid(testcase, wd, slot, request):
     result = load(wd / f"result-{slot}.json")
-    testcase.assertEqual(set(result), set(wrapper.RESULT_FIELDS),
-                         "projected result must carry exactly the 17 fields")
+    testcase.assertEqual(set(result), set(wrapper.RESULT_FIELDS) | {"page_role"},
+                         "projected result must carry exactly the 17 fields plus page_role")
+    testcase.assertEqual(result["page_role"], request["page_role"],
+                         "the canonical page-result schema requires page_role, echoed from the request")
     testcase.assertEqual(receipts.validate_result(result, request), [],
                          "collect_launch_receipts must accept the result "
                          "with an exact request echo")
@@ -162,17 +171,52 @@ class S49InputTests(unittest.TestCase):
 
     def test_wrapper_request_fields_match_packet_schema(self):
         # The wrapper's input-shape allowlist (DEFECT 1 cure) is tied to
-        # the packet page-request 1.0 schema: same field set, and the
-        # schema really is additionalProperties: false. Genuine dispatch
-        # requests carry exactly those fields, so the guard admits every
-        # lawful request.
+        # the packet page-request schema: the 1.0 field set plus the two
+        # properties the one canonical schema (Harmony issue 85, identical
+        # in shared-utils, Skill 49 and Skill 71) adds beyond it, each
+        # handled outside REQUEST_FIELDS: the 1.1 policy id (POLICY_FIELD,
+        # admitted only on a 1.1 request) and Skill 71's shared-service
+        # marker (stamped by the service onto its own staged copy, never
+        # carried by a dispatch request, so the guard keeps refusing it).
+        # The schema really is additionalProperties: false. Genuine
+        # dispatch requests carry exactly the 1.0 fields, so the guard
+        # admits every lawful request.
         schema = load(PACKET_SCHEMAS / "page-request.schema.json")
         self.assertIs(schema["additionalProperties"], False)
-        self.assertEqual(set(wrapper.REQUEST_FIELDS),
+        self.assertEqual(set(wrapper.REQUEST_FIELDS) | {wrapper.POLICY_FIELD, "shared_image_service"},
                          set(schema["properties"]))
+        self.assertNotIn("shared_image_service", wrapper.REQUEST_FIELDS)
         _, _, _, by_role = make_workdir()
         for role in ("upsell_1", "upsell_2"):
             self.assertEqual(set(by_role[role]), set(wrapper.REQUEST_FIELDS))
+
+
+class ProjectionPageRoleEchoTests(unittest.TestCase):
+    """Harmony issue 85, proven without jsonschema (the end-to-end classes below skip when it is
+    missing): project_result copies page_role from the request and refuses a result naming another."""
+
+    def _bundle_and_request(self):
+        wd, _, _, by_role = make_workdir()
+        self.addCleanup(shutil.rmtree, wd, True)
+        request = by_role["upsell_1"]
+        result = dict(load(ADAPT_FIX / "expected-bundle-upsell1.testonly.json")["result"])
+        for field in wrapper.ECHO_FIELDS:
+            result[field] = request[field]
+        result.pop("page_role", None)
+        return {"result": result}, request
+
+    def test_projection_echoes_the_requests_page_role(self):
+        bundle, request = self._bundle_and_request()
+        projected = wrapper.project_result(bundle, request)
+        self.assertEqual(projected["page_role"], "upsell_1")
+        self.assertEqual(set(projected), set(wrapper.RESULT_FIELDS) | {"page_role"})
+
+    def test_a_result_naming_another_role_is_refused(self):
+        bundle, request = self._bundle_and_request()
+        bundle["result"]["page_role"] = "upsell_2"
+        with self.assertRaises(wrapper.EnrichmentError) as ctx:
+            wrapper.project_result(bundle, request)
+        self.assertIn("page_role", str(ctx.exception))
 
 
 @unittest.skipUnless(jsonschema, "jsonschema not available")
@@ -683,7 +727,7 @@ class Upsell1ImagesTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, wd, True)
         inputs = wd / "image_inputs.json"
         inputs.write_text(json.dumps({"design_style": "C", "brand_file": str(brand), "brand_owner": "blackceo",
-                                      "image_cap": 40, "image_provider": "stub"}))
+                                      "image_cap": 40, "image_provider": "stub", "test_only": True}))
         cmd = [sys.executable, str(WRAPPER), "--slot", "upsell_1",
                "--request", str(wd / "request-upsell_1.json"), "--result", str(wd / "result-upsell_1.json"),
                "--launch", str(wd / "launch.json"), "--copy", str(S80_FIX / "copy-upsell1-public.valid.json"),
@@ -841,9 +885,12 @@ class UpsellRepairTests(unittest.TestCase):
             wd, U1_COPY, ADAPT_FIX / "journey-main-only.testonly.json")
         kw = dict(copy_path=copy_path, journey_path=journey_path,
                   enrichment=FIXTURES / "enrichment-upsell_1.json")
-        self.assert_refused(run_wrapper(wd, "upsell_1", **kw), wd, "upsell_1",
-                            "--skip-images-approval")
-        proc = run_wrapper(wd, "upsell_1", extra=("--skip-images-approval", "APPR-SKIP-1"), **kw)
+        # --stage install: the strict path, where the journey's verified purchase records are read
+        # (at design a real launch's journey must carry none; see UpsellDesignStageTests)
+        self.assert_refused(run_wrapper(wd, "upsell_1", extra=("--stage", "install"), **kw), wd,
+                            "upsell_1", "--skip-images-approval")
+        proc = run_wrapper(wd, "upsell_1", extra=("--stage", "install", "--skip-images-approval",
+                                                  "APPR-SKIP-1"), **kw)
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
     # UPS-33
@@ -864,7 +911,8 @@ class UpsellRepairTests(unittest.TestCase):
             "brand_owner": "blackceo", "image_cap": 40, "brand_file": str(brand)}}))
         proc = run_wrapper(wd, "upsell_2", copy_path=copy_path, journey_path=journey_path,
                            enrichment=FIXTURES / "enrichment-upsell_2-onetime.json",
-                           extra=("--bridge-config", str(config)))
+                           extra=("--bridge-config", str(config))
+                           + (() if test_only else ("--stage", "install")))
         return wd, proc
 
     def test_owned_entitlement_draws_no_images(self):
@@ -878,6 +926,254 @@ class UpsellRepairTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertEqual(load(wd / "result-upsell_2.json")["status"], "blocked")
         self.assertFalse((wd / "images-upsell_2").exists())
+
+
+class UpsellDesignStageTests(unittest.TestCase):
+    """Issue 72 / M8: the design stage evaluates the eligibility block over the design marker, so a
+    real launch passes WITHOUT asserting a purchase that never happened; asserted purchase proof at
+    design is refused; the install stage keeps the strict path. Issue 55: --enrichment is required."""
+
+    def workdir(self, mutator=None):
+        wd, record, graph, by_role = make_workdir(mutator)
+        self.addCleanup(shutil.rmtree, wd, True)
+        return wd
+
+    def real_workdir(self):
+        return self.workdir(lambda r: r.__setitem__("test_only", False))
+
+    def marker_inputs(self, wd, copy_src, journey_src):
+        """Real-launch copy and a journey that records NO purchase (what a design run really has)."""
+        copy_path, journey_path = real_inputs(wd, copy_src, journey_src)
+        doc = load(journey_path)
+        doc["verified_purchases"] = []
+        journey_path.write_text(json.dumps(doc))
+        return copy_path, journey_path
+
+    def test_stage_switch_exists_with_design_as_default(self):
+        src = (STAGE / "upsell_wrapper.py").read_text(encoding="utf-8")
+        self.assertIn('"--stage"', src)
+        self.assertEqual(wrapper.STAGES, ("design", "install"))
+        self.assertEqual(wrapper.DESIGN_JOURNEY_U1, {"original_purchase": "design_marker"})
+        down = (STAGE / "downsell_wrapper.py").read_text(encoding="utf-8")
+        self.assertIn("STAGES = (\"design\", \"install\")", down)  # both wrappers agree
+
+    def test_upsell_1_real_launch_passes_on_the_design_marker_with_the_blocker(self):
+        wd = self.real_workdir()
+        copy_path, journey_path = self.marker_inputs(
+            wd, U1_COPY, ADAPT_FIX / "journey-main-only.testonly.json")
+        proc = run_wrapper(wd, "upsell_1", copy_path=copy_path, journey_path=journey_path,
+                           enrichment=FIXTURES / "enrichment-upsell_1.json",
+                           extra=("--skip-images-approval", "APPR-SKIP-1"))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = load(wd / "result-upsell_1.json")
+        self.assertTrue(any(b.startswith("U1-ELIGIBILITY-RUNTIME-ONLY") for b in result["blockers"]))
+        self.assertEqual(result["status"], "authored")
+        enriched = load(wd / "upsell-request-upsell_1.json")
+        self.assertEqual(enriched["stage"], "design")
+        self.assertEqual(enriched["eligibility"]["original_purchase"], {"status": "design_marker"})
+        verdict = load(wd / "bundle-upsell_1.json")["result"]["eligibility_check"]["verdict"]
+        self.assertEqual(verdict, "design_only/unverified_at_build")
+
+    def test_upsell_2_real_launch_passes_on_the_design_marker_with_its_blocker(self):
+        wd = self.real_workdir()
+        copy_path, journey_path = self.marker_inputs(
+            wd, S80_FIX / "copy-upsell2-public.valid.json",
+            ADAPT_FIX / "journey-upsell2-from-upsell1.testonly.json")
+        proc = run_wrapper(wd, "upsell_2", copy_path=copy_path, journey_path=journey_path,
+                           enrichment=FIXTURES / "enrichment-upsell_2-onetime.json",
+                           extra=("--skip-images-approval", "APPR-SKIP-1"))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = load(wd / "result-upsell_2.json")
+        self.assertTrue(any(b.startswith("U2-ELIGIBILITY-RUNTIME-ONLY") for b in result["blockers"]))
+        enriched = load(wd / "upsell-request-upsell_2.json")
+        self.assertEqual(enriched["entry_context"], "from_upsell_1")
+        self.assertEqual(enriched["eligibility"]["qualifying_purchase"],
+                         {"slot": "upsell_1", "status": "design_marker"})
+
+    def test_asserted_purchase_proof_on_a_real_launch_at_design_is_refused(self):
+        wd = self.real_workdir()
+        copy_path, journey_path = real_inputs(
+            wd, U1_COPY, ADAPT_FIX / "journey-main-only.testonly.json")  # keeps its verified_purchases
+        proc = run_wrapper(wd, "upsell_1", copy_path=copy_path, journey_path=journey_path,
+                           enrichment=FIXTURES / "enrichment-upsell_1.json",
+                           extra=("--skip-images-approval", "APPR-SKIP-1"))
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("journey.verified_purchases", proc.stderr)
+        self.assertFalse((wd / "result-upsell_1.json").exists())
+
+    def test_the_fixture_journey_still_passes_on_a_test_only_launch_at_design(self):
+        wd = self.workdir()
+        proc = run_wrapper(wd, "upsell_1", copy_path=U1_COPY,
+                           journey_path=ADAPT_FIX / "journey-main-only.testonly.json",
+                           enrichment=FIXTURES / "enrichment-upsell_1.json")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertFalse(any("ELIGIBILITY-RUNTIME-ONLY" in b for b in load(wd / "result-upsell_1.json")["blockers"]))
+        self.assertNotIn("stage", load(wd / "upsell-request-upsell_1.json"))
+
+    def test_the_install_stage_does_not_accept_the_marker(self):
+        wd = self.real_workdir()
+        copy_path, journey_path = self.marker_inputs(
+            wd, U1_COPY, ADAPT_FIX / "journey-main-only.testonly.json")
+        proc = run_wrapper(wd, "upsell_1", copy_path=copy_path, journey_path=journey_path,
+                           enrichment=FIXTURES / "enrichment-upsell_1.json",
+                           extra=("--stage", "install", "--skip-images-approval", "APPR-SKIP-1"))
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("no verified main purchase record", proc.stderr)
+
+    def test_enrichment_is_required(self):
+        wd = self.workdir()
+        proc = run_wrapper(wd, "upsell_1", copy_path=U1_COPY,
+                           journey_path=ADAPT_FIX / "journey-main-only.testonly.json", enrichment=None)
+        self.assertEqual(proc.returncode, 2, proc.stdout)
+        self.assertIn("--enrichment", proc.stderr)
+        self.assertIn("required", proc.stderr)
+        self.assertFalse((wd / "result-upsell_1.json").exists())
+
+
+class UpsellDesignEntrySlotTests(unittest.TestCase):
+    """Issue 72, round 3: the design stage picks the U2 entry slot from the launch record's enabled extras,
+    and names the entry context for that slot. The route compiler never emits a launch with upsell_1 off and
+    upsell_2 on, so a launch that does is built here by editing the record and re-deriving the request hash."""
+
+    def run_u2(self, extras):
+        wd, record, graph, by_role = make_workdir(lambda r: r.__setitem__("test_only", False))
+        self.addCleanup(shutil.rmtree, wd, True)
+        launch = load(wd / "launch.json")
+        launch["extras"].update(extras)
+        (wd / "launch.json").write_text(json.dumps(launch))
+        request = load(wd / "request-upsell_2.json")
+        import dispatch_launch
+        request["input_hash"] = dispatch_launch.request_input_hash(dict(launch), request["page_id"], request["page_role"])
+        (wd / "request-upsell_2.json").write_text(json.dumps(request))
+        copy_path, journey_path = real_inputs(wd, S80_FIX / "copy-upsell2-public.valid.json",
+                                              ADAPT_FIX / "journey-upsell2-from-upsell1.testonly.json")
+        doc = load(journey_path)
+        doc["verified_purchases"] = []
+        journey_path.write_text(json.dumps(doc))
+        proc = run_wrapper(wd, "upsell_2", copy_path=copy_path, journey_path=journey_path,
+                           enrichment=FIXTURES / "enrichment-upsell_2-onetime.json",
+                           extra=("--skip-images-approval", "APPR-SKIP-1"))
+        return wd, proc
+
+    def test_a_launch_enabling_only_downsell_1_designs_u2_for_the_downsell_entry(self):
+        wd, proc = self.run_u2({"upsell_1": False, "downsell_1": True})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        enriched = load(wd / "upsell-request-upsell_2.json")
+        self.assertEqual(enriched["entry_context"], "from_downsell_1")
+        self.assertEqual(enriched["eligibility"]["qualifying_purchase"], {"slot": "downsell_1", "status": "design_marker"})
+        self.assertEqual(enriched["eligibility"]["original_purchase"], {"status": "design_marker"})
+        self.assertEqual(enriched["stage"], "design")
+        self.assertTrue(any(b.startswith("U2-ELIGIBILITY-RUNTIME-ONLY") for b in load(wd / "result-upsell_2.json")["blockers"]))
+
+    def test_a_launch_enabling_both_entries_designs_u2_for_the_upsell_1_entry(self):
+        wd, proc = self.run_u2({"upsell_1": True, "downsell_1": True})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        enriched = load(wd / "upsell-request-upsell_2.json")
+        self.assertEqual(enriched["entry_context"], "from_upsell_1")
+        self.assertEqual(enriched["eligibility"]["qualifying_purchase"]["slot"], "upsell_1")
+
+    def test_a_launch_enabling_upsell_1_only_designs_u2_for_the_upsell_1_entry(self):
+        wd, proc = self.run_u2({"upsell_1": True, "downsell_1": False})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(load(wd / "upsell-request-upsell_2.json")["entry_context"], "from_upsell_1")
+
+    def test_a_launch_enabling_no_entry_path_cannot_design_u2(self):
+        wd, proc = self.run_u2({"upsell_1": False, "downsell_1": False})
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("enables neither upsell_1 nor downsell_1", proc.stderr)
+        self.assertFalse((wd / "result-upsell_2.json").exists())
+
+    def test_an_extra_that_is_merely_truthy_does_not_enable_a_slot(self):
+        wd, proc = self.run_u2({"upsell_1": "yes", "downsell_1": True})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(load(wd / "upsell-request-upsell_2.json")["entry_context"], "from_downsell_1")
+
+    def test_design_slot_and_entry_context_are_pure_functions_of_the_slot(self):
+        problems = []
+        self.assertEqual(wrapper._design_slot({"extras": {"downsell_1": True}}, problems), "downsell_1")
+        self.assertEqual(problems, [])
+        self.assertEqual(wrapper._design_slot({"extras": {"upsell_1": True, "downsell_1": True}}, problems), "upsell_1")
+        self.assertIsNone(wrapper._design_slot({"extras": None}, problems))
+        self.assertEqual(len(problems), 1)
+        for slot, ctx in (("upsell_1", "from_upsell_1"), ("downsell_1", "from_downsell_1"), (None, None)):
+            self.assertEqual(wrapper._entry_context("upsell_2", {}, [], design_slot=slot, design=True), ctx)
+        self.assertIsNone(wrapper._entry_context("upsell_1", {}, [], design_slot="upsell_1", design=True))
+
+
+class UpsellStageVocabularyTests(unittest.TestCase):
+    """Judge round 8: --stage accepts exactly design|install. Two layers each refuse anything else: the CLI's
+    own choices, and the stage check inside enrich (reached by a direct call that never parses arguments)."""
+
+    def workdir(self):
+        wd, record, graph, by_role = make_workdir()
+        self.addCleanup(shutil.rmtree, wd, True)
+        return wd
+
+    def test_the_cli_refuses_an_unknown_stage_at_argument_parsing(self):
+        wd = self.workdir()
+        proc = run_wrapper(wd, "upsell_1", copy_path=U1_COPY,
+                           journey_path=ADAPT_FIX / "journey-main-only.testonly.json",
+                           enrichment=FIXTURES / "enrichment-upsell_1.json", extra=("--stage", "bogus"))
+        self.assertNotEqual(proc.returncode, 0, proc.stdout)
+        self.assertIn("invalid choice: 'bogus'", proc.stderr)
+        self.assertFalse((wd / "result-upsell_1.json").exists())
+
+    def test_enrich_refuses_an_unknown_stage_without_the_cli(self):
+        wd = self.workdir()
+        graph_bytes = (wd / "route-graph.json").read_bytes()
+        args = (load(wd / "request-upsell_1.json"), load(wd / "launch.json"), json.loads(graph_bytes),
+                graph_bytes, load(U1_COPY), load(ADAPT_FIX / "journey-main-only.testonly.json"),
+                load(FIXTURES / "enrichment-upsell_1.json"), wd, "upsell_1")
+        for good in ("design", "install"):
+            wrapper.enrich(*args, stage=good)  # the same inputs are accepted at both real stages
+        with self.assertRaises(wrapper.EnrichmentError) as ctx:
+            wrapper.enrich(*args, stage="bogus")
+        self.assertIn("stage: 'bogus' is not one of ['design', 'install']", " ".join(ctx.exception.problems))
+
+
+class UpsellEntrySlotOnlyForDesignU2Tests(unittest.TestCase):
+    """Judge round 9: the 'launch enables neither upsell_1 nor downsell_1' refusal belongs to the design stage
+    of upsell_2 alone. At install, and for upsell_1, no entry slot is chosen, so it must never be raised."""
+
+    NEITHER = "enables neither upsell_1 nor downsell_1"
+
+    def problems(self, slot, stage, journey_src, no_purchases):
+        wd, record, graph, by_role = make_workdir()
+        self.addCleanup(shutil.rmtree, wd, True)
+        launch = load(wd / "launch.json")
+        launch["extras"].update({"upsell_1": False, "downsell_1": False})
+        import dispatch_launch
+        request = load(wd / f"request-{slot}.json")
+        request["input_hash"] = dispatch_launch.request_input_hash(dict(launch), request["page_id"], request["page_role"])
+        journey = load(journey_src)
+        if no_purchases:
+            journey["verified_purchases"] = []
+        graph_bytes = (wd / "route-graph.json").read_bytes()
+        sidecar = load(FIXTURES / ("enrichment-upsell_1.json" if slot == "upsell_1"
+                                   else "enrichment-upsell_2-onetime.json"))
+        copy_doc = load(U1_COPY if slot == "upsell_1" else S80_FIX / "copy-upsell2-public.valid.json")
+        try:
+            wrapper.enrich(request, launch, json.loads(graph_bytes), graph_bytes, copy_doc, journey, sidecar, wd,
+                           slot, stage)
+        except wrapper.EnrichmentError as exc:
+            return " ".join(exc.problems)
+        return ""
+
+    def test_the_design_stage_of_upsell_2_needs_an_entry_slot(self):
+        found = self.problems("upsell_2", "design", ADAPT_FIX / "journey-upsell2-from-upsell1.testonly.json", True)
+        self.assertIn(self.NEITHER, found)
+
+    def test_upsell_1_at_design_never_picks_an_entry_slot(self):
+        found = self.problems("upsell_1", "design", ADAPT_FIX / "journey-main-only.testonly.json", True)
+        self.assertNotIn(self.NEITHER, found)
+
+    def test_upsell_2_at_install_never_picks_an_entry_slot(self):
+        found = self.problems("upsell_2", "install", ADAPT_FIX / "journey-upsell2-from-upsell1.testonly.json", False)
+        self.assertNotIn(self.NEITHER, found)
+
+    def test_a_design_u2_block_with_no_entry_slot_is_not_built(self):
+        problems = []
+        self.assertIsNone(wrapper._eligibility_block("upsell_2", {}, {}, {}, problems, design_slot=None, design=True))
 
 
 if __name__ == "__main__":

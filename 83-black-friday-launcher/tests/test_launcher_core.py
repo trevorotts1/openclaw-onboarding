@@ -154,7 +154,10 @@ class IntakeTest(unittest.TestCase):
         result = intake.validate(base_intake())
         self.assertEqual(result["journey_mode"], "single_simple")
         self.assertTrue(result["test_only"])
-        self.assertTrue(result["provenance"]["test_only"].startswith("default:"))
+        # issue 36: test_only is no longer defaulted; it is said, so it is recorded as supplied ...
+        self.assertEqual(result["provenance"]["test_only"], "supplied")
+        # ... and the operational fields that still default are recorded as defaults, not silently
+        self.assertTrue(result["provenance"]["allowed_write_target"].startswith("default:"))
         self.assertEqual(result["provenance"]["tenant_id"], "supplied")
 
     def test_missing_price_fails_closed(self):
@@ -219,7 +222,7 @@ class RouteTest(unittest.TestCase):
         graph = route.compile_route(intake.validate(base_intake("multiple_options")))
         self.assertEqual([n["role"] for n in graph["nodes"]],
                          ["landing", "product_selection", "checkout", "thank_you"])
-        self.assertTrue(any(e["event"] == "selection_validated" for e in graph["edges"]))
+        self.assertTrue(any((e["event"], e["guard"]) == ("offer_selected", "native_price_bound") for e in graph["edges"]))
 
     def test_full_chain_branches_match_the_contract(self):
         graph = route.compile_route(intake.validate(with_upsells(base_intake())))
@@ -414,6 +417,7 @@ def _answers_doc(offers: list) -> dict:
 def with_checkout_facts(payload: dict) -> dict:
     """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer,
     and the price provenance (source_ref per offer plus the answers file they resolve in)."""
+    payload.setdefault("test_only", True)  # said explicitly (issue 36): these inline intakes are practice builds
     payload.setdefault("checkout_terms", dict(CHECKOUT_TERMS))
     mains = 0
     for o in payload["offers"]:

@@ -52,12 +52,17 @@ REQUIRED_FIELDS = {
 # field -> operational default only. Nothing here changes an offer, a level,
 # a price, an entitlement, or the route shape.
 PERMITTED_DEFAULTS = {
-    "test_only": ("test_only", True, "offline build; a live run must supply false"),
     "allowed_write_target": ("allowed_write_target", "local_only",
                              "publication carries its own approval type"),
     "locale": ("locale", "en", "presentation locale, not a commercial fact"),
     "automation_execution": ("automation_execution", "not_requested",
                              "contract section 7: a JSON file does not execute a workflow"),
+}
+
+# Said out loud every time, never defaulted (issue 36): a forgotten ``false`` used to build a practice
+# package with every live gate off. ``test_only`` is true (practice) or false (client delivery).
+EXPLICIT_FIELDS = {
+    "test_only": "say true (practice) or false (client); a build is never practice or live by omission",
 }
 
 # Optional intake blocks. image_plan carries the picture choices (style, brand file, owner, spend
@@ -114,8 +119,9 @@ PRICE_MIN_MINOR = 100
 PRICE_MAX_MINOR = 10_000_000
 
 # One order, one payment, one currency. Anything that implies instalments or recurring billing
-# is refused by name until the checkout contract can carry it.
-PAYMENT_PLANS_UNSUPPORTED = "payment plans are not supported in this release"
+# is refused by name until the checkout contract can carry it. The refusal sentence is the shared
+# one (shared-utils/signature_launch_contract/billing.py), so the client hears the same words from
+# Skill 49's plan, Skill 83's intake and the checkout.
 _PAYMENT_PLAN_KEYS = ("installment", "installments", "payment_plan", "payment_plans",
                       "recurring", "subscription", "billing_interval", "billing_cycle")
 CHECKOUT_OPTIONAL = ("billing_type", "schedule", "native_product_id", "native_price_id",
@@ -163,12 +169,12 @@ def _refuse_payment_plans(field: str, block: Any) -> None:
         return
     for key in block:
         if key in _PAYMENT_PLAN_KEYS and block[key] not in (None, False, [], {}, ""):
-            _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.{key}", PAYMENT_PLANS_UNSUPPORTED)
+            _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.{key}", billing_module().PAYMENT_PLANS_UNSUPPORTED)
     if block.get("billing_type") not in (None, "one_time"):
         _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.billing_type",
-              f"{block['billing_type']!r}: {PAYMENT_PLANS_UNSUPPORTED}; only 'one_time' is accepted")
+              f"{block['billing_type']!r}: {billing_module().PAYMENT_PLANS_UNSUPPORTED}; only 'one_time' is accepted")
     if block.get("schedule") not in (None, []):
-        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.schedule", PAYMENT_PLANS_UNSUPPORTED)
+        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", f"{field}.schedule", billing_module().PAYMENT_PLANS_UNSUPPORTED)
 
 
 def _level_question(offer: Dict[str, Any]) -> str:
@@ -568,6 +574,23 @@ def _offer_mapper():
     return mod
 
 
+def billing_module():
+    """shared-utils/signature_launch_contract/billing.py, loaded once by path (stdlib only): the one
+    billing vocabulary and refusal sentence Skill 49, Skill 83 and the offer mapper share."""
+    mod = sys.modules.get("signature_launch_billing")
+    if mod is not None:
+        return mod
+    path = REPO_ROOT / "shared-utils" / "signature_launch_contract" / "billing.py"
+    if not path.is_file():
+        _fail("AF-LAUNCH-INTAKE-PAYMENT-PLAN", "billing_type",
+              "the shared billing vocabulary is not installed, so no price can be checked against it")
+    spec = importlib.util.spec_from_file_location("signature_launch_billing", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["signature_launch_billing"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _load_answers(raw: Any):
     """The client's answers file: a relative path resolves against the Skill 83 root. Returns (path, doc)."""
     if not _nonempty_str(raw):
@@ -711,6 +734,9 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     for key in REQUIRED_FIELDS:
         if key not in payload:
             _fail("AF-LAUNCH-INTAKE-MISSING", key, "required; no default exists")
+    for key, why in EXPLICIT_FIELDS.items():
+        if key not in payload:
+            _fail("AF-LAUNCH-INTAKE-TEST-ONLY", key, why)
 
     if payload["schema_version"] != SCHEMA_VERSION:
         _fail("AF-LAUNCH-INTAKE-SCHEMA", "schema_version", f"must be {SCHEMA_VERSION!r}")
@@ -751,9 +777,9 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         _fail("AF-LAUNCH-INTAKE-MISSING", "copy_profile", "must be a non-empty string")
 
     _refuse_payment_plans("<root>", payload)
-    if "test_only" in payload and not isinstance(payload["test_only"], bool):
+    if not isinstance(payload["test_only"], bool):
         _fail("AF-LAUNCH-INTAKE-TEST-ONLY", "test_only",
-              "must be true or false; 0, null or '' never means live")
+              "must be true (practice) or false (client); 0, null or '' never means live")
     if "allowed_write_target" in payload and payload["allowed_write_target"] not in WRITE_TARGETS:
         _fail("AF-LAUNCH-INTAKE-WRITE-TARGET", "allowed_write_target",
               f"not one of {WRITE_TARGETS!r}; publication is a separate approved step")
@@ -799,7 +825,7 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         # carrying them into a stale page set, follow-up emails and route nodes.
         offers = [o for o in offers if (o.get("role") if isinstance(o, dict) else None) not in dropped]
     clean_offers: List[Dict[str, Any]] = [_validate_offer(i, o) for i, o in enumerate(offers)]
-    _bind_provenance(offers, clean_offers, answers_doc, payload.get("test_only", True) is not False)
+    _bind_provenance(offers, clean_offers, answers_doc, payload["test_only"] is not False)
     _check_relationship_targets(clean_offers)
     _check_offer_set(clean_offers, mode)
 
@@ -836,7 +862,7 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         _fail("AF-LAUNCH-INTAKE-ROUTE", "offers",
               "when upsell_1 is disabled, downsell_1 and upsell_2 cannot remain enabled")
 
-    known = (set(REQUIRED_FIELDS) | set(PERMITTED_DEFAULTS) | set(OPTIONAL_FIELDS)
+    known = (set(REQUIRED_FIELDS) | set(EXPLICIT_FIELDS) | set(PERMITTED_DEFAULTS) | set(OPTIONAL_FIELDS)
              | set(LEGACY_IGNORED_FIELDS))
     unknown = set(payload) - known
     if unknown:
@@ -853,7 +879,7 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     linked_destinations = _validate_linked_destinations(payload.get("linked_destinations"))
     activation = _validate_activation(
         payload.get("activation"), location_id=payload["location_id"].strip(),
-        test_only=payload.get("test_only", True) is not False)
+        test_only=payload["test_only"] is not False)
 
     provenance: Dict[str, str] = {k: "supplied" for k in payload}
     for i, offer in enumerate(clean_offers):
@@ -879,6 +905,7 @@ def _validate(payload: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "entitlement": dict(ENTITLEMENT_UNKNOWN),
         "answers_file": str(answers_path),
         "activation": activation,
+        "test_only": payload["test_only"],
     }
     if "activation" in payload:
         provenance["activation"] = "supplied"

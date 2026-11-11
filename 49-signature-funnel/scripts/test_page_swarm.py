@@ -269,7 +269,7 @@ class CommandLine(unittest.TestCase):
         (td / "adapters.json").write_text(json.dumps(cfg), encoding="utf-8")
         inputs = td / "image_inputs.json"
         inputs.write_text(json.dumps({"design_style": "A", "brand_file": "/x/b.json", "brand_owner": "Acme",
-                                      "image_cap": 10 ** 4, "image_provider": "stub"}), encoding="utf-8")  # covers every page: a smaller cap is refused
+                                      "image_cap": 10 ** 4, "image_provider": "stub", "test_only": True}), encoding="utf-8")  # covers every page: a smaller cap is refused
         proc = subprocess.run(
             [sys.executable, str(HERE / "dispatch_launch.py"), "--launch", str(td / "launch.json"),
              "--approval", str(td / "approval.json"), "--client", CLIENT, "--worker", WORKER,

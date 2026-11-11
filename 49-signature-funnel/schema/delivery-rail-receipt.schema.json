@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sf-delivery-rail-receipt/v1",
+  "title": "Signature Funnel delivery-rail receipt line (P4-MEDIA and P7-BUILD)",
+  "description": "One line of <run_dir>/delegation_receipts.jsonl written by the delivery rail named in brief.delivery_rail, through delegation_receipt.record() at call time. Skill 49 never resolves the rail name to code: it only checks that the rail signed these lines with the operator key (delegation_receipt.require_signed) and that each line has this shape (delegation_receipt.require_rail). P4-MEDIA carries one line per ledger image key; P7-BUILD carries one line per page type.",
+  "type": "object",
+  "required": ["phase", "provider", "operation", "provider_response_id", "http_status", "remote_id", "covers", "recorded_by", "run_id", "at", "harness_sig"],
+  "properties": {
+    "phase": {"enum": ["P4-MEDIA", "P7-BUILD"]},
+    "provider": {"type": "string", "minLength": 1, "description": "the delivery rail's own name, as brief.delivery_rail"},
+    "operation": {"type": "string", "minLength": 1},
+    "provider_response_id": {"type": "string", "minLength": 1},
+    "http_status": {"type": "integer"},
+    "remote_id": {"type": "string", "minLength": 1, "description": "P4: the hosted media id; P7: the built page id"},
+    "covers": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "description": "P4: the ledger image key; P7: the page type"},
+    "recorded_by": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "at": {"type": "string", "minLength": 1},
+    "harness_sig": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"phase": {"const": "P4-MEDIA"}}, "required": ["phase"]},
+      "then": {
+        "required": ["hosted_url"],
+        "properties": {"hosted_url": {"type": "string", "pattern": "^https?://[^/\\s]+"}}
+      }
+    },
+    {
+      "if": {"properties": {"phase": {"const": "P7-BUILD"}}, "required": ["phase"]},
+      "then": {
+        "required": ["preview_url", "PASS", "checks", "dom_sha256", "screenshot_sha256"],
+        "properties": {
+          "preview_url": {"type": "string", "pattern": "^https?://[^/\\s]+"},
+          "PASS": {"type": "boolean"},
+          "checks": {"type": "object"},
+          "dom_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "screenshot_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    }
+  ]
+}

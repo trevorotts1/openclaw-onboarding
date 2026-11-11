@@ -9,7 +9,7 @@ Item 20 = proposal P10 + the P12 remainder:
   (b) validate_state.py appears in the README only in legacy-marked
       lines, and the retired workflow-state rail claims are gone;
   (c) the README's restated stage list matches
-      references/stage-contract.json stage for stage (14 stages, the
+      references/stage-contract.json stage for stage (15 stages, the
       conditional automation-wiring stage named), and the README states
       the regeneration rule;
   (d) the SOP's scope section carries P12's website-craft boundary
@@ -130,6 +130,72 @@ class TestBlastRadius(unittest.TestCase):
             "visual-mockup", "image-inventory-prompts", "image-generation-qc",
             "image-map-upload", "design-board", "final-mockups", "responsive-html", "ghl-install-test",
             "publish-verify", "automation-wiring"])
+
+
+STAGES = len(CONTRACT["stage_order"])
+SCRIPTS = ROOT / "scripts"
+SHARED_SERVICE = (SCRIPTS / "shared_page_service.py").read_text(encoding="utf-8")
+HANDOFF = (ROOT / "HANDOFF.md").read_text(encoding="utf-8")
+SIBLING_49 = REPO / "49-signature-funnel"
+
+
+class TestStageCountProse(unittest.TestCase):
+    """Harmony issue 86: prose that counts the contract's stages says what the contract says."""
+
+    def test_the_contract_has_fifteen_stages(self):
+        self.assertEqual(STAGES, 15)
+
+    def test_no_fourteen_stage_prose_in_the_files_that_describe_the_contract(self):
+        files = {"universal-sops/signature-page-craft/README.md": README,
+                 "71 scripts/shared_page_service.py": SHARED_SERVICE}
+        landing_bridge = SIBLING_49 / "scripts" / "landing_bridge.py"
+        if landing_bridge.is_file():
+            files["49 scripts/landing_bridge.py"] = landing_bridge.read_text(encoding="utf-8")
+        for name, text in files.items():
+            self.assertNotRegex(text, r"(?i)\b(14|fourteen)[- ]stage", name)
+        self.assertIn("15-stage production/QC stage state machine", README)
+        self.assertIn("15-stage production contract", SHARED_SERVICE)
+
+
+class TestStaleWiringAndVersionStatements(unittest.TestCase):
+    """Harmony issue 87: wiring and version statements match the code and the version files."""
+
+    def test_shared_service_docstring_does_not_deny_the_wrappers_that_call_it(self):
+        self.assertNotIn("do not call it yet", SHARED_SERVICE)
+        for wrapper in ("downsell_wrapper.py", "checkout_wrapper.py", "run_image_stages.py"):
+            self.assertIn(wrapper, SHARED_SERVICE)
+
+    def test_the_documented_callers_really_call_the_service(self):
+        callers = {"49-signature-funnel/scripts/downsell_wrapper.py": "shared_page_service.py",
+                   "49-signature-funnel/scripts/checkout_wrapper.py": "shared_page_service.py",
+                   "78-signature-product-selection/scripts/run_image_stages.py": "shared_page_service.py"}
+        for rel, needle in callers.items():
+            path = REPO / rel
+            if path.is_file():  # a sibling skill that is not installed beside Skill 71 cannot be read
+                self.assertIn(needle, path.read_text(encoding="utf-8"), rel)
+
+    def test_handoff_version_note_names_no_stale_version(self):
+        note = HANDOFF.split("## Version note", 1)[1]
+        self.assertNotRegex(note, r"\d+\.\d+\.\d+")
+        self.assertNotIn("both remain", note)
+        version = (ROOT / "skill-version.txt").read_text(encoding="utf-8").strip()
+        self.assertNotIn("1.2.9", HANDOFF, "HANDOFF.md still carries the stale 1.2.9 stamp")
+        self.assertRegex(version, r"^\d+\.\d+\.\d+$")
+
+    def test_handoff_no_longer_documents_presence_only_receipts(self):
+        self.assertNotIn("accepted on presence alone", HANDOFF)
+        self.assertIn("AF-71-ROUTE-RECEIPT", HANDOFF)
+
+    def test_launch_mode_says_the_entry_script_is_pinned(self):
+        launch_mode = SIBLING_49 / "LAUNCH_MODE.md"
+        front_door = SIBLING_49 / "scripts" / "front_door.py"
+        if not (launch_mode.is_file() and front_door.is_file()):
+            self.skipTest("Skill 49 is not installed beside Skill 71")
+        self.assertIn('("", "signature-funnel-entry.sh")', front_door.read_text(encoding="utf-8"),
+                      "the entry script is no longer in the hash-pin list; LAUNCH_MODE.md must change with it")
+        text = launch_mode.read_text(encoding="utf-8")
+        self.assertNotIn("not itself a pinned enforcement file", text)
+        self.assertIn("The entry script is itself pinned", text)
 
 
 if __name__ == "__main__":

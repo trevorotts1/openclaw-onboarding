@@ -32,10 +32,15 @@ invocable command dispatch runs for the downsell_1 role:
      at every stage. --stage install enforces non-blank, well-formed ids
      (CR-S49-005 item 4 binds the install stage, decided 2026-11-02).
   2. GAUNTLET  runs Skill 81's own contract checks, all fail-closed:
-     the enriched request against the landed request schema (stdlib
-     schema check, no third-party dependency, no silent skip); the
+     the enriched request through Skill 81's OWN request evaluator
+     (validators/validate_request.py, the fourth hash-pinned file: stdlib,
+     no third-party dependency, no silent skip, and it fails closed on any
+     schema keyword it does not implement); the
      entry guard over the record's extras plus the fixed design-time
-     journey marker (a staged journey file is never evaluated); validate_copy over the staged page with
+     journey marker (a staged journey file is never evaluated; at
+     --stage install the guard runs over the journey READ BACK from the
+     installed route-guard binding, --install-readback, and only then is
+     the standing entry-guard blocker cleared); validate_copy over the staged page with
      its approved_amounts_minor set from D1's own approved prices (never
      another offer's), and a one-time D1 held to no recurring-charge copy;
      validate_offer_difference over the record's U1/D1 offers with
@@ -95,7 +100,7 @@ dispatch time: that is the binding sourcing condition of CR-S49-005
 item 3, and the sidecar is whitelisted to exactly those keys plus
 entry_guard_ref.
 
-The landed validator and schemas are loaded from --skill81-root and
+The landed validators and schemas (four files) are loaded from --skill81-root and
 verified against the SHA-256 pins recorded when they were copied
 verbatim from main at 9ccd653644a9ed179933ea32a801ee631c520125; a
 diverging byte fails the run closed by name. The validator is executed
@@ -123,6 +128,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import page_set  # noqa: E402  the shared image inputs and the page's full deliverables list
+from collect_launch_receipts import LEDGER_NAME, apply_review  # noqa: E402  issue 30: REVIEW-PENDING
 
 EXIT_OK = 0
 EXIT_FAILCLOSED = 2
@@ -152,6 +158,10 @@ PIN_REQUEST_SCHEMA = \
     "39e056705cae7fac81025e41feebdef5a1ed1ea87409423a4d60268c8c0d9e2b"
 PIN_EXTENSION_SCHEMA = \
     "8108de3c81fe0d93843e8511d94b82ffe2bb0da6d723e3e0438b5268aa39e80e"
+# Issue 91: Skill 81's own request validator (fails closed on any schema keyword it does not
+# implement) is the fourth pinned file; the wrapper RUNS it on the enriched request.
+PIN_VALIDATE_REQUEST = \
+    "d0cc190cfbbb8c84d7d70cf0268b658b1b55356f556c74f7039dbe9155be5cc6"
 
 # The 19 page-request 1.0 fields (the packet schema's exact property
 # set). A 1.1 request additionally carries exactly one key,
@@ -167,9 +177,10 @@ REQUEST_FIELDS = ("schema_version", "tenant_id", "location_id", "launch_id",
                   "brand_hash", "route_graph_ref", "route_graph_hash",
                   "offer_refs", "copy_profile", "allowed_write_target",
                   "test_only")
-# The 17 page-result 1.0 fields, in shipped-schema order.
+# The 18 page-result 1.0 fields, in shipped-schema order (page_role is required by the one
+# canonical schema, Harmony issue 85: every result echoes its request's role).
 RESULT_FIELDS = ("schema_version", "tenant_id", "location_id", "launch_id",
-                 "revision", "request_id", "input_hash", "page_id", "status",
+                 "revision", "request_id", "input_hash", "page_id", "page_role", "status",
                  "artifacts", "author_session", "reviewer_session",
                  "independent_review", "proof_class", "blockers",
                  "native_bindings_ref", "test_only")
@@ -199,6 +210,11 @@ JOURNEY_KEYS = frozenset({"main_purchased_verified", "u1_event",
 DESIGN_JOURNEY = {"main_purchased_verified": True,
                   "u1_event": "explicit_decline", "u1_accepted": False}
 STAGES = ("design", "install")
+# Issue 49: at the install stage the entry guard runs over the journey READ BACK from the installed
+# route-guard binding (the delivery rail's read-back, recorded by Skill 83's install stage), never over
+# the design-time constant. The read-back document is the only thing that clears the standing
+# D1-ENTRY-GUARD-RUNTIME-ONLY blocker.
+INSTALL_READBACK_SCHEMA = "signature-launch-install-readback/v1"
 PLACEHOLDER_IDS = frozenset({"TBD", "TBC", "TODO", "NULL", "NONE", "NIL", "N/A",
                              "NA", "PENDING", "PLACEHOLDER", "UNKNOWN", "XXX",
                              "FIXME", "UNDEFINED"})
@@ -302,9 +318,41 @@ def _blank(value: Any) -> bool:
 # of the landing bridge, extended with maximum, minItems/maxItems, allOf
 # and if/then/else, which the landed Skill 81 schemas use). No third-party
 # jsonschema dependency and no silent skip, anywhere.
+# Since issue 91 the ENRICHED REQUEST is evaluated by Skill 81's own validate_request (the fourth pinned
+# file), not by this function. It stays for the page-result and result-extension documents only: their
+# schemas use allOf/if/then and pattern, which validate_request refuses as unsupported, so it cannot
+# replace this function there (question WP-10a-1).
 # ---------------------------------------------------------------------------
+_HANDLED_KEYWORDS = frozenset({
+    "allOf", "if", "then", "else", "type", "const", "enum", "minLength", "pattern", "minimum", "maximum",
+    "minItems", "maxItems", "items", "required", "properties", "additionalProperties"})
+_ANNOTATION_KEYWORDS = frozenset({"$schema", "$id", "$comment", "title", "description"})
+
+
+def _unevaluated_keywords(schema: Any, path: str = "$") -> List[str]:
+    """Every schema keyword (at any depth) that _evaluate_schema does not evaluate and that is not an annotation."""
+    if not isinstance(schema, dict):
+        return []
+    found = [f"{path}: schema keyword {k!r} is not evaluated by this validator"
+             for k in sorted(set(schema) - _HANDLED_KEYWORDS - _ANNOTATION_KEYWORDS)]
+    for key in ("allOf",):
+        for i, sub in enumerate(schema.get(key) or []):
+            found.extend(_unevaluated_keywords(sub, f"{path}.allOf[{i}]"))
+    for key in ("if", "then", "else", "items"):
+        found.extend(_unevaluated_keywords(schema.get(key), f"{path}.{key}"))
+    for name, sub in (schema.get("properties") or {}).items():
+        found.extend(_unevaluated_keywords(sub, f"{path}.{name}"))
+    return found
+
+
 def _schema_violations(instance: Any, schema: Dict[str, Any],
                        path: str = "$") -> List[str]:
+    """Fail closed (question WP-10a-1): a keyword this validator cannot evaluate is a finding, never a silent pass."""
+    return _unevaluated_keywords(schema, path) + _evaluate_schema(instance, schema, path)
+
+
+def _evaluate_schema(instance: Any, schema: Dict[str, Any],
+                     path: str = "$") -> List[str]:
     problems: List[str] = []
 
     def type_ok(value: Any, want: str) -> bool:
@@ -329,14 +377,14 @@ def _schema_violations(instance: Any, schema: Dict[str, Any],
         return problems
     for sub in schema.get("allOf") or []:
         if isinstance(sub, dict):
-            problems.extend(_schema_violations(instance, sub, path))
+            problems.extend(_evaluate_schema(instance, sub, path))
     if isinstance(schema.get("if"), dict):
-        if not _schema_violations(instance, schema["if"], path):
+        if not _evaluate_schema(instance, schema["if"], path):
             branch = schema.get("then")
         else:
             branch = schema.get("else")
         if isinstance(branch, dict):
-            problems.extend(_schema_violations(instance, branch, path))
+            problems.extend(_evaluate_schema(instance, branch, path))
     want = schema.get("type")
     if want is not None:
         wants = want if isinstance(want, list) else [want]
@@ -377,7 +425,7 @@ def _schema_violations(instance: Any, schema: Dict[str, Any],
         item_schema = schema.get("items")
         if isinstance(item_schema, dict):
             for i, item in enumerate(instance):
-                problems.extend(_schema_violations(
+                problems.extend(_evaluate_schema(
                     item, item_schema, f"{path}[{i}]"))
     if isinstance(instance, dict):
         for key in schema.get("required", []) or []:
@@ -391,7 +439,7 @@ def _schema_violations(instance: Any, schema: Dict[str, Any],
                                     f"{key!r} is not allowed")
         for key, subschema in props.items():
             if key in instance and isinstance(subschema, dict):
-                problems.extend(_schema_violations(
+                problems.extend(_evaluate_schema(
                     instance[key], subschema, f"{path}.{key}"))
     return problems
 
@@ -400,11 +448,14 @@ def _schema_violations(instance: Any, schema: Dict[str, Any],
 # Skill 81 consumer bytes: loaded from --skill81-root, hash-pinned.
 # ---------------------------------------------------------------------------
 def _load_skill81(root: Path):
+    """(validate_downsell module, request schema, extension schema, validate_request function), every
+    byte hash-pinned. validate_request is Skill 81's own request evaluator (issue 91)."""
     wanted = {
         "validators/validate_downsell.py": PIN_VALIDATE_DOWNSELL,
         "schemas/downsell-request.schema.json": PIN_REQUEST_SCHEMA,
         "schemas/downsell-result-extension.schema.json":
             PIN_EXTENSION_SCHEMA,
+        "validators/validate_request.py": PIN_VALIDATE_REQUEST,
     }
     raws: Dict[str, bytes] = {}
     for rel, pin in wanted.items():
@@ -430,7 +481,13 @@ def _load_skill81(root: Path):
     extension_schema = json.loads(
         raws["schemas/downsell-result-extension.schema.json"]
         .decode("utf-8"))
-    return mod, request_schema, extension_schema
+    # Same discipline for the request validator: executed from the bytes just hashed.
+    req_path = str(root / "validators" / "validate_request.py")
+    req_mod = types.ModuleType("validate_request")
+    req_mod.__file__ = req_path
+    exec(compile(raws["validators/validate_request.py"], req_path, "exec"),
+         req_mod.__dict__)
+    return mod, request_schema, extension_schema, req_mod.validate_request
 
 
 # ---------------------------------------------------------------------------
@@ -465,7 +522,8 @@ def _load_receipts_validator():
                   "dispatch tree")
 
 
-def _validate_result(result: Dict[str, Any], request: Mapping[str, Any]):
+def _validate_result(result: Dict[str, Any], request: Mapping[str, Any],
+                     **review_kw: Any):
     """Validate the assembled page-result before placement. Returns the
     validation mode that actually ran; raises WrapperError on any
     failure, so an invalid result is never placed."""
@@ -479,7 +537,7 @@ def _validate_result(result: Dict[str, Any], request: Mapping[str, Any]):
              "page-result 1.0 schema: " + "; ".join(problems)])
     validator, unavailable = _load_receipts_validator()
     if validator is not None:
-        fails = validator(result, dict(request))
+        fails = validator(result, dict(request), **review_kw)
         if fails:
             raise WrapperError(
                 ["page-result: the assembled result failed S49 receipt "
@@ -922,13 +980,55 @@ def _billing_mismatch(page: Mapping[str, Any],
             f"page promises a recurring charge ({hit!r})"] if hit else []
 
 
-def guard_state(launch: Mapping[str, Any]) -> Dict[str, Any]:
-    """The DESIGN-ONLY entry-guard state: journey facts from the fixed
+def readback_journey(doc: Any, request: Mapping[str, Any]) -> Dict[str, Any]:
+    """The journey the INSTALLED route-guard binding reports, from an install read-back document.
+
+    Fails closed (WrapperError) on a read-back for another schema, role or page, one with no observation
+    time or evidence reference, or a journey that is not exactly the three entry-guard facts as booleans
+    and an event string."""
+    problems: List[str] = []
+    if not isinstance(doc, dict):
+        raise WrapperError(["install read-back: the document is not a JSON object"])
+    if doc.get("schema") != INSTALL_READBACK_SCHEMA:
+        problems.append(f"install read-back: schema is {doc.get('schema')!r}, not "
+                        f"{INSTALL_READBACK_SCHEMA!r}")
+    if doc.get("role") != ROLE:
+        problems.append(f"install read-back: role is {doc.get('role')!r}, not {ROLE!r}")
+    if doc.get("page_id") != request.get("page_id"):
+        problems.append(f"install read-back: page_id {doc.get('page_id')!r} is not the request's "
+                        f"{request.get('page_id')!r}")
+    binding = doc.get("route_guard_binding")
+    if not isinstance(binding, dict):
+        raise WrapperError(problems + ["install read-back: no route_guard_binding object"])
+    for key in ("observed_at", "evidence_ref"):
+        if _blank(binding.get(key)):
+            problems.append(f"install read-back: route_guard_binding.{key} is blank; a read-back "
+                            "names when and from what it was observed")
+    journey = binding.get("journey")
+    if not isinstance(journey, dict):
+        problems.append("install read-back: route_guard_binding.journey is not an object")
+    else:
+        for key in sorted(set(journey) - JOURNEY_KEYS):
+            problems.append(f"install read-back: unknown journey key {key!r}")
+        for key in ("main_purchased_verified", "u1_accepted"):
+            if not isinstance(journey.get(key), bool):
+                problems.append(f"install read-back: journey.{key} must be a boolean")
+        if not (journey.get("u1_event") is None or isinstance(journey.get("u1_event"), str)):
+            problems.append("install read-back: journey.u1_event must be a string or null")
+    if problems:
+        raise WrapperError(problems)
+    return dict(journey)
+
+
+def guard_state(launch: Mapping[str, Any],
+                journey: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    """The entry-guard state. By default DESIGN-ONLY: journey facts from the fixed
     design-time marker (a staged journey file is never evaluated: no
     purchase or decline happens at dispatch), enablement facts from the
     launch record's extras (launch facts under route law, never from the
-    named evidence record)."""
-    journey = DESIGN_JOURNEY
+    named evidence record). At the install stage `journey` is the journey
+    read back from the installed route-guard binding (readback_journey)."""
+    journey = DESIGN_JOURNEY if journey is None else journey
     return {
         "main_purchased_verified": journey.get("main_purchased_verified"),
         "u1_event": journey.get("u1_event"),
@@ -1011,7 +1111,7 @@ def _run_images(args, request: Mapping[str, Any],
     service = [py, str(scripts / "shared_page_service.py"),
                "--request", str(Path(args.request).resolve()),
                "--run-dir", str(run_dir),
-               "--page-version", "standard",
+               "--page-version", "downsell",
                "--brand-owner", args.brand_owner,
                "--image-cap", str(args.image_cap),
                "--brand-file", str(Path(args.brand_file).resolve()),
@@ -1083,14 +1183,16 @@ def _run_second_downsell(args, request: Dict[str, Any], result_path: Path,
                  *images["artifacts"]]
     result = {
         "schema_version": "1.0", **{k: request[k] for k in (
-            "tenant_id", "location_id", "launch_id", "revision", "request_id", "input_hash", "page_id")},
+            "tenant_id", "location_id", "launch_id", "revision", "request_id", "input_hash", "page_id",
+            "page_role")},
         "status": "authored", "artifacts": artifacts,
         "author_session": args.author_session or os.environ.get("SIGNATURE_LAUNCH_AUTHOR_SESSION")
         or os.environ.get("OPENCLAW_SESSION_ID") or "s49-downsell-wrapper",
         "reviewer_session": None, "independent_review": False, "proof_class": "L0",
         "blockers": list(SECOND_DOWNSELL_BLOCKERS), "native_bindings_ref": None,
         "test_only": request["test_only"]}
-    mode = _validate_result(result, request)
+    accepted = apply_review(result, getattr(args, "review", None), work_dir / LEDGER_NAME)
+    mode = _validate_result(result, request, **(accepted or {}))
     result_path.parent.mkdir(parents=True, exist_ok=True)
     result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return {"role": ROLE, "role_instance": "downsell_2", "request_id": request["request_id"],
@@ -1146,38 +1248,54 @@ def run(args) -> Dict[str, Any]:
     if not isinstance(sidecar, dict):
         raise WrapperError(["enrichment sidecar: the document is not "
                             "a JSON object"])
-    vd, request_schema, extension_schema = _load_skill81(
+    vd, request_schema, extension_schema, validate_request = _load_skill81(
         Path(args.skill81_root))
     table = _difference_table(sidecar, Path(args.enrichment))
     stage = getattr(args, "stage", "design")
-
     enriched = enrich(request, launch, graph, graph_bytes, copy_doc,
                       journey, sidecar, stage)
+    readback_path = getattr(args, "install_readback", None)
+    readback = None
+    if stage == "install":
+        if not readback_path:
+            raise WrapperError([
+                "install read-back: --stage install needs --install-readback, the route-guard binding "
+                "read back from the installed page; the entry guard is not run over the design-time "
+                "constant at the install stage"])
+        readback = readback_journey(_load_json(Path(readback_path), "install read-back"), request)
+    elif readback_path:
+        raise WrapperError([
+            "install read-back: --install-readback is only accepted with --stage install; at the design "
+            "stage nothing is installed, so a read-back would assert an event that did not happen"])
     enriched_path = work_dir / "downsell-request-enriched.json"
     enriched_path.write_text(
         json.dumps(enriched, indent=2, sort_keys=True) + "\n",
         encoding="utf-8")
 
     # ---- Validation gauntlet (all fail closed, named codes) ----
-    # 1. The enriched request against the landed request schema.
-    violations = _schema_violations(enriched, request_schema)
+    # 1. The enriched request against the landed request schema, evaluated by Skill 81's OWN validator
+    #    (validators/validate_request.py, pinned): it fails closed on any schema keyword it does not
+    #    implement, where this wrapper's looser subset evaluator would have ignored it (issue 91).
+    violations = validate_request(enriched, request_schema)
     if violations:
         raise WrapperError(
             ["enriched request violates the landed downsell-request "
              "schema: " + v for v in violations])
     # 2. The entry guard over the computed state.
-    state = guard_state(launch)
+    state = guard_state(launch, readback)
     codes = vd.check_entry_guard(state)
     if codes:
         raise WrapperError(
             [f"entry guard: {c}" for c in codes])
     guard_path = work_dir / "entry-guard-downsell_1.json"
-    guard_path.write_text(json.dumps({
-        "mode": "DESIGN-ONLY",
-        "blocker": "D1-ENTRY-GUARD-RUNTIME-ONLY",
-        "journey_source": "design-time marker",
-        "staged_journey_evaluated": False,
-        "evaluated_state": state}, indent=2, sort_keys=True) + "\n",
+    guard_path.write_text(json.dumps(
+        {"mode": "INSTALL-READBACK", "blocker": None,
+         "journey_source": "route-guard binding read back from the installed page",
+         "staged_journey_evaluated": False, "readback_journey_evaluated": True,
+         "evaluated_state": state} if readback is not None else
+        {"mode": "DESIGN-ONLY", "blocker": "D1-ENTRY-GUARD-RUNTIME-ONLY",
+         "journey_source": "design-time marker", "staged_journey_evaluated": False,
+         "evaluated_state": state}, indent=2, sort_keys=True) + "\n",
         encoding="utf-8")
     # 3. The staged page under validate_copy, its approved amounts set
     #    from the record's approved prices.
@@ -1313,7 +1431,8 @@ def run(args) -> Dict[str, Any]:
     # sidecar, the cited difference table and any staged journey (DTY-08).
     for ref in (guard_path, Path(args.launch), Path(args.enrichment),
                 Path(table["path"]), *([Path(args.journey)] if journey
-                                       is not None else [])):
+                                       is not None else []),
+                *([Path(readback_path)] if readback is not None else [])):
         artifacts.append({"path": str(ref),
                           "sha256": _sha256(_read_bytes(ref, "result input"))})
     if images:
@@ -1327,7 +1446,8 @@ def run(args) -> Dict[str, Any]:
     # (non-stub) provider (DTY-14).
     verified = bool(images) and args.image_provider != "stub" and all(
         images["stages"].get(st) for st in IMAGES_RUN_STAGES)
-    blockers = list(BLOCKERS) + [ENTRY_GUARD_BLOCKER]
+    # The standing entry-guard blocker is cleared ONLY by an install read-back the guard ran over.
+    blockers = list(BLOCKERS) + ([] if readback is not None else [ENTRY_GUARD_BLOCKER])
     pending_ids = enriched["native_product_id"] is None \
         or enriched["native_price_id"] is None
     if pending_ids:
@@ -1347,18 +1467,25 @@ def run(args) -> Dict[str, Any]:
         "request_id": request["request_id"],
         "input_hash": request["input_hash"],
         "page_id": request["page_id"],
-        "status": STATUS_CAP if verified else STATUS_FLOOR,
+        "page_role": request["page_role"],
+        "status": STATUS_FLOOR,
         "artifacts": artifacts,
         "author_session": author_session,
         "reviewer_session": None,
         "independent_review": False,
-        "proof_class": PROOF_CAP if verified else PROOF_FLOOR,
+        "proof_class": PROOF_FLOOR,
         "blockers": blockers,
         "native_bindings_ref": None,
         "test_only": request["test_only"],
     }
+    # Issue 30: the cap needs both the real-provider stage records AND an
+    # accepted independent review; without the review the page stays authored
+    # and carries REVIEW-PENDING.
+    accepted = apply_review(result, args.review, work_dir / LEDGER_NAME)
+    if accepted and verified:
+        result["status"], result["proof_class"] = STATUS_CAP, PROOF_CAP
     projected = {f: result[f] for f in RESULT_FIELDS}
-    mode = _validate_result(projected, request)
+    mode = _validate_result(projected, request, **(accepted or {}))
     result_path.parent.mkdir(parents=True, exist_ok=True)
     result_path.write_text(json.dumps(projected, indent=2) + "\n",
                            encoding="utf-8")
@@ -1432,6 +1559,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                          "the standing blocker D1-NATIVE-IDS-PENDING-"
                          "INSTALL; install: non-blank, well-formed native "
                          "ids required")
+    ap.add_argument("--install-readback",
+                    help="the route-guard binding read-back JSON (schema "
+                         "signature-launch-install-readback/v1) the delivery rail recorded for the "
+                         "installed page; REQUIRED with --stage install (the entry guard then runs over "
+                         "it and D1-ENTRY-GUARD-RUNTIME-ONLY is cleared), refused at --stage design")
     ap.add_argument("--enrichment",
                     help="enrichment sidecar JSON "
                          "({work_dir}/enrichment-downsell_1.json), citing "
@@ -1487,6 +1619,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--images-run-dir",
                     help="where the image run is staged (default "
                          "<work_dir>/downsell_1-images)")
+    ap.add_argument("--review",
+                    help="independent review record JSON (review_record "
+                         "schema); the reviewer must be in "
+                         "<work_dir>/dispatch-session-registry.json. Without "
+                         "an accepted record the page-result stays authored "
+                         "with a REVIEW-PENDING blocker")
     ap.add_argument("--author-session",
                     help="the dispatch run's session identity (the "
                          "page-result author); falls back to "

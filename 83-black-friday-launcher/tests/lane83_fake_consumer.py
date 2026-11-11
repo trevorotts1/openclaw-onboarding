@@ -79,6 +79,16 @@ def main(argv):
             put(f"mockup_{device}_pdf", f"review-pdfs/{labels.pdf_name(role, device, mock_stage)}", b"%PDF-1.4 mk\n")
         put("board", f"review-pdfs/{labels.board_name(role, 'combined', 'final-mockups')}.png", PNG)
 
+    if req["page_role"] == "product_selection" and not args.instance:
+        # emit_page_result.py lists the run's copy/internal-manuscript.md for every real run, and a package that
+        # is not test_only is refused without it (AF-LAUNCH-SELECTION). The stand-in lists a minimal one.
+        manuscript = run / "copy" / "internal-manuscript.md"
+        manuscript.parent.mkdir(parents=True, exist_ok=True)
+        data = (b"## Section 4: Compare\n\n- Weekly coaching | Starter: yes | Pro: yes\n\n## Section 5: Choose\n")
+        manuscript.write_bytes(data)
+        artifacts.append({"path": str(manuscript), "sha256": hashlib.sha256(data).hexdigest(),
+                          "kind": "copy_manuscript", "provider": args.provider})
+
     result = {
         "schema_version": "1.0", "tenant_id": req["tenant_id"], "location_id": req["location_id"],
         "launch_id": req["launch_id"], "revision": req["revision"], "request_id": req["request_id"],

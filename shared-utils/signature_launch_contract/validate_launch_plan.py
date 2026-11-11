@@ -19,6 +19,11 @@ cross-field rules a generic schema engine cannot express:
   * failed_payment automations exist only when offer.payment_plans is true
   * conversation_ai_reply automations exist only when AI is requested
   * at most 5 promotional text sets (spec 3.2)
+  * every automation template is one Skill 44 can build: a key of its
+    _matcher/buildable-templates.json (read by sibling path), or 'new' with an
+    owner-approved reason and a compile spec. "Contract-valid" therefore implies
+    "buildable"; a plan naming an unbuildable template is refused here, with the
+    same LAUNCH-PLAN-TEMPLATE-UNBUILDABLE code Skill 44's reader uses.
 
 The schema walker implements exactly the draft-07 keyword set this contract
 uses (local ``#/definitions/...`` $ref only). An unimplemented keyword fails
@@ -61,6 +66,14 @@ _UNIT_ARRAYS = ("pages", "email_sequences", "text_sets", "automations", "commerc
 _FAILED_PAYMENT_FAMILY = "failed_payment"
 _AI_FAMILY = "conversation_ai_reply"
 _PROMOTIONAL_CAP = 5
+
+# Skill 44's manifest of buildable automation templates, found beside shared-utils in
+# the repo layout (44-convert-and-flow-operator), the installed layout
+# (convert-and-flow-operator) and the 999 layout (.claude/skills/...).
+_SKILL44_DIRS = ("44-convert-and-flow-operator", "convert-and-flow-operator",
+                 ".claude/skills/convert-and-flow-operator")
+_BUILDABLE_REL = ("automation-templates", "_matcher", "buildable-templates.json")
+TEMPLATE_UNBUILDABLE = "LAUNCH-PLAN-TEMPLATE-UNBUILDABLE"
 
 
 def _calendar_law():
@@ -198,6 +211,58 @@ def _check_cycles(units: dict, graph: dict, errors: list) -> None:
         visit(node, [])
 
 
+def buildable_manifest():
+    """The nearest Skill 44 buildable-templates.json, or None when none is installed."""
+    for root in HERE.parents:
+        for name in _SKILL44_DIRS:
+            candidate = root.joinpath(name, *_BUILDABLE_REL)
+            try:
+                if candidate.is_file():
+                    return candidate
+            except OSError:  # an unreadable ancestor proves nothing; keep looking
+                continue
+    return None
+
+
+def buildable_keys(manifest=None) -> frozenset:
+    """Template keys Skill 44 can build. Raises OSError/ValueError when the manifest is
+    absent or unreadable: an unreadable manifest proves nothing buildable (fail closed)."""
+    path = Path(manifest) if manifest else buildable_manifest()
+    if path is None:
+        raise OSError("Skill 44 buildable-templates.json was not found beside shared-utils")
+    data = load_json(path)
+    return frozenset(t["key"] for t in data.get("templates", [])
+                     if isinstance(t, dict) and t.get("key"))
+
+
+def template_problems(plan: dict, buildable=None) -> list:
+    """One problem per automation whose template Skill 44 cannot build.
+
+    The same rule Skill 49's planner (launch_plan.template_problems) and Skill 44's
+    reader (plan_reader.read_launch_plan) apply: a template must be a manifest key;
+    'new' is accepted only with new_template.owner_approved_reason and
+    new_template.compile_spec. A manifest that cannot be read refuses every plan."""
+    try:
+        keys = buildable_keys() if buildable is None else buildable
+    except (OSError, ValueError, AttributeError) as error:
+        return ["automations: %s: cannot confirm any template is buildable (%s)"
+                % (TEMPLATE_UNBUILDABLE, error)]
+    problems = []
+    for unit in plan.get("automations", []):
+        template = unit.get("template")
+        if template in keys:
+            continue
+        new = unit.get("new_template")
+        if template == "new" and isinstance(new, dict) \
+                and str(new.get("owner_approved_reason") or "").strip() and new.get("compile_spec"):
+            continue
+        problems.append(
+            "%s: %s: template %r is not in buildable-templates.json (a 'new' template needs "
+            "new_template.owner_approved_reason and new_template.compile_spec)"
+            % (unit.get("id"), TEMPLATE_UNBUILDABLE, template))
+    return problems
+
+
 def validate_plan(plan: dict, schema: dict) -> list:
     errors: list = []
     _validate_node(plan, schema, schema, "", errors)
@@ -245,6 +310,8 @@ def validate_plan(plan: dict, schema: dict) -> list:
         errors.append("text_sets: %d promotional sets exceeds the cap of %d (%s)"
                       % (len(promotional), _PROMOTIONAL_CAP, ", ".join(promotional)))
 
+    errors.extend(template_problems(plan))
+
     return errors
 
 
@@ -278,6 +345,11 @@ def _self_test(schema: dict) -> list:
     mutated["text_sets"][0]["opt_out_keyword"] = "STOP2"
     if not validate_plan(mutated, schema):
         failures.append("self-test: a broken text_set was accepted")
+
+    mutated = json.loads(json.dumps(fixture))
+    mutated["automations"][0]["template"] = "cart-open-cart-close-launch-sequence"
+    if not any(TEMPLATE_UNBUILDABLE in error for error in validate_plan(mutated, schema)):
+        failures.append("self-test: an unbuildable automation template was accepted")
 
     return failures
 

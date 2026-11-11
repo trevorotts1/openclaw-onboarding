@@ -19,6 +19,7 @@ that runs.
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 import importlib
 import json
@@ -63,6 +64,13 @@ _FILE_KINDS = ("shared_utils", "department_map_entry", "installer_registration",
 # tree. The receipt names the SOP's repo path and its sha256, so a read of an
 # older copy stops counting the moment the SOP changes.
 SOP_RECEIPT_DIR = "receipts/sop-read"
+# A receipt must also prove a person opened the file (issue 35): `read_in_full` true, a named
+# `reader_session` that is not the assembling session (env SKILL83_SESSION), the SOP's heading
+# count in `sections` (re-counted here), and a `read_at` that is not before the SOP's last commit
+# date minus this slack. The slack absorbs a batch replay that moves the committer date; the
+# sha256 match still ties the receipt to the exact bytes.
+SOP_SESSION_ENV = "SKILL83_SESSION"
+SOP_RECEIPT_SLACK_DAYS = 7
 
 
 def entry_class(entry: Dict[str, Any]) -> str:
@@ -83,12 +91,18 @@ def entry_modes(entry: Dict[str, Any]) -> Tuple[str, ...]:
     return LAUNCH_MODES
 
 
-def selected(entry: Dict[str, Any], mode: str) -> bool:
-    """True when this entry belongs to `mode`'s closure."""
+def selected(entry: Dict[str, Any], mode: str, test_only: Optional[bool] = None) -> bool:
+    """True when this entry belongs to `mode`'s closure.
+
+    An entry with `"when": "not_test_only"` belongs to a CLIENT package only (Skill 45 is needed to
+    style and host a client's pages; a practice package stays buildable without it). `test_only`
+    None means the caller does not know, and the entry stays selected: unknown is never a pass."""
+    if entry.get("when") == "not_test_only" and test_only is True:
+        return False
     return mode in entry_modes(entry)
 
 
-def blocking(entry: Dict[str, Any], mode: str, status: str) -> bool:
+def blocking(entry: Dict[str, Any], mode: str, status: str, test_only: Optional[bool] = None) -> bool:
     """True when a non-present entry must refuse this mode.
 
     A REQUIRED entry blocks every mode it belongs to. A SELECTED-CONDITIONAL entry
@@ -96,7 +110,7 @@ def blocking(entry: Dict[str, Any], mode: str, status: str) -> bool:
     the same manifest can report the KIE helpers for a paid run and stay green for
     a stub one. An UNSELECTED-OPTIONAL entry never blocks.
     """
-    if status == "present" or not selected(entry, mode):
+    if status == "present" or not selected(entry, mode, test_only):
         return False
     cls = entry_class(entry)
     if cls == CLASS_REQUIRED:
@@ -363,6 +377,47 @@ def _version_floor(entry: Dict[str, Any], tree: Path) -> Optional[str]:
     return None
 
 
+def _interface_hashes(entry: Dict[str, Any], tree: Path) -> List[Dict[str, Any]]:
+    """Each pinned interface file with the sha256 the manifest expects and the one on disk now (None if absent)."""
+    pinned = entry.get("interface_sha256")
+    if not isinstance(pinned, dict):
+        return []
+    return [{"file": rel, "expected": want, "observed": _sha256_file(tree / rel)}
+            for rel, want in sorted(pinned.items())]
+
+
+def _interface_drift(entry: Dict[str, Any], tree: Path) -> Optional[str]:
+    """None when every file 83 imports from this tree still has the sha256 the manifest recorded;
+    otherwise the files that moved. A version floor is only a minimum, so a field renamed inside a
+    file passes it; this is what stops that (issue 22). Re-stamp with `cli dependencies --stamp-interfaces`."""
+    moved = [f"{h['file']} ({'absent' if not (tree / h['file']).is_file() else 'changed'})"
+             for h in _interface_hashes(entry, tree) if h["observed"] != h["expected"]]
+    return ("interface drift in " + ", ".join(moved)) if moved else None
+
+
+def stamp_interfaces(root: Optional[Path] = None) -> List[str]:
+    """Rewrite each interface_sha256 value in dependencies.json to the file's current sha256.
+
+    Edits only the hash text, so the manifest's layout is untouched. Returns the files re-stamped.
+    A deliberate operator step after a sibling skill's interface changed and was reviewed."""
+    base = Path(root) if root else _repo_root()
+    text, changed = MANIFEST.read_text(encoding="utf-8"), []
+    for entry in load_manifest()["entries"]:
+        tree, error = _resolve(entry["ref"], base, "skill_tree") if entry.get("interface_sha256") else (None, None)
+        if entry.get("interface_sha256") and tree is None:
+            raise DependencyError(f"cannot re-stamp {entry['id']}: {error}")
+        for rel, want in (entry.get("interface_sha256") or {}).items():
+            have = _sha256_file(tree / rel)
+            if have is None:
+                raise DependencyError(f"cannot re-stamp {entry['id']}: {rel} is absent")
+            if have != want:
+                text = text.replace(f'"{rel}": "{want}"', f'"{rel}": "{have}"')
+                changed.append(f"{entry['ref']}/{rel}")
+    if changed:
+        MANIFEST.write_text(text, encoding="utf-8")
+    return changed
+
+
 def _requirement(ref: str) -> str:
     """The requirement line for a runtime package from requirements.txt ('jsonschema>=4.0'), else the bare name."""
     try:
@@ -412,9 +467,10 @@ def _present(entry: Dict[str, Any], root: Path) -> Dict[str, Any]:
         if target is None:
             return {"status": "missing", "evidence": error}
         if kind == "skill_tree" and target.exists():
-            unmet = _version_floor(entry, target)
+            unmet = _version_floor(entry, target) or _interface_drift(entry, target)
             if unmet:
-                return {"status": "missing", "evidence": f"{ref} resolved={target}: {unmet}"}
+                return {"status": "missing", "evidence": f"{ref} resolved={target}: {unmet}",
+                        "interfaces": _interface_hashes(entry, target)}
         if kind == "installer_registration":
             judged = installer_registration_status(target)
             return {"status": "present" if judged["ok"] else "missing",
@@ -425,8 +481,10 @@ def _present(entry: Dict[str, Any], root: Path) -> Dict[str, Any]:
                                 f"frontmatter_name={judged['frontmatter_name']!r} "
                                 f"slug={judged['slug']!r} "
                                 f"archived={judged['archived']}"}
-        return {"status": "present" if target.exists() else "missing",
-                "evidence": f"{ref} resolved={target}"}
+        out = {"status": "present" if target.exists() else "missing", "evidence": f"{ref} resolved={target}"}
+        if kind == "skill_tree":
+            out["interfaces"] = _interface_hashes(entry, target)
+        return out
     if kind == "registry_line":
         target, error = _resolve(ref, root)
         if target is None:
@@ -482,6 +540,76 @@ def _sha256_file(path: Path) -> Optional[str]:
     except OSError:
         return None
 
+_FENCE = re.compile(r"^\s{0,3}(```|~~~)")
+_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+\S")
+
+
+def sop_heading_count(path: Path) -> Optional[int]:
+    """Markdown heading lines in the file, fenced code excluded; None when unreadable."""
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    count, fenced = 0, False
+    for line in lines:
+        if _FENCE.match(line):
+            fenced = not fenced
+        elif not fenced and _HEADING.match(line):
+            count += 1
+    return count
+
+
+def _last_commit_date(path: Path) -> Optional[datetime.date]:
+    """The date of the file's last commit (`git log -1 --format=%cI`), or None when git history
+    cannot say: no repository, no git, a shallow clone (every file would read as the tip date) or
+    a file git does not track."""
+    folder = Path(path).resolve().parent
+    try:
+        shallow = subprocess.run(["git", "-C", str(folder), "rev-parse", "--is-shallow-repository"],
+                                 capture_output=True, text=True, timeout=30)
+        if shallow.returncode != 0 or shallow.stdout.strip() != "false":
+            return None
+        run = subprocess.run(["git", "-C", str(folder), "log", "-1", "--format=%cI", "--",
+                              Path(path).name], capture_output=True, text=True, timeout=30)
+        return datetime.date.fromisoformat(run.stdout.strip()[:10]) \
+            if run.returncode == 0 and run.stdout.strip() else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def _receipt_problems(record: Dict[str, Any], target: Path) -> Tuple[List[str], str]:
+    """(why a sha-matching receipt still does not prove reading, a note on the date test).
+
+    The problems are empty when it does prove reading (issue 35). The note says "unverifiable" when git
+    history could not date the SOP: only the date test is skipped then, every other proof still applies."""
+    why: List[str] = []
+    note = ""
+    if record.get("read_in_full") is not True:
+        why.append("read_in_full is not true")
+    reader = str(record.get("reader_session") or "").strip()
+    if not reader:
+        why.append("reader_session is absent")
+    elif reader == os.environ.get(SOP_SESSION_ENV, "").strip():
+        why.append(f"reader_session {reader!r} is the assembling session; a different session must read it")
+    sections, counted = record.get("sections"), sop_heading_count(target)
+    if not isinstance(sections, int) or isinstance(sections, bool) or sections != counted:
+        why.append(f"sections {sections!r} does not match the file's heading count")
+    try:
+        read_at = datetime.date.fromisoformat(str(record.get("read_at") or "")[:10])
+    except ValueError:
+        why.append("read_at is absent or not a date")
+    else:
+        committed = _last_commit_date(target)
+        if committed is None:
+            note = "date test unverifiable: no usable git history"
+        if read_at > datetime.date.today():
+            why.append(f"read_at {read_at} is in the future")
+        elif committed is not None and read_at < committed - datetime.timedelta(days=SOP_RECEIPT_SLACK_DAYS):
+            why.append(f"read_at {read_at} is more than {SOP_RECEIPT_SLACK_DAYS} days before the "
+                       f"SOP's last commit {committed}")
+    return why, note
+
+
 def _sop_receipt(entry: Dict[str, Any], root: Path, target: Path) -> Dict[str, Any]:
     """The read receipt a `sop` entry requires, or why it does not count."""
     declared = str(entry.get("receipt") or "").strip()
@@ -509,7 +637,54 @@ def _sop_receipt(entry: Dict[str, Any], root: Path, target: Path) -> Dict[str, A
     if named and Path(named).name != target.name:
         return {"ok": False,
                 "why": f"read receipt {rel} names {named!r}, not {entry['ref']!r}"}
-    return {"ok": True, "why": "", "receipt": str(receipt)}
+    problems, note = _receipt_problems(record, target)
+    if problems:
+        return {"ok": False,
+                "why": f"read receipt {rel} does not prove reading: " + "; ".join(problems)
+                       + f"; regenerate it with `cli sop-ack {entry['id']} --session <id> --sections <n>`"}
+    return {"ok": True, "why": "", "receipt": str(receipt) + (f" ({note})" if note else "")}
+
+
+def ack_sop(which: str, session: str, sections: Optional[int], root: Optional[Path] = None,
+            today: Optional[datetime.date] = None) -> Dict[str, Any]:
+    """Write the read receipt for ONE declared SOP (`cli sop-ack`).
+
+    `which` is the manifest id, the repository path or the file stem. The caller must have opened
+    the file: `sections` must equal its heading count (the count is printed only after it matches,
+    so it cannot be copied from a refusal). `session` is the reader and may not be the assembling
+    session. Refuses by raising DependencyError; writes only receipts/sop-read/.
+    """
+    base = Path(root) if root else _repo_root()
+    wanted = which.strip()
+    hits = [e for e in load_manifest()["entries"] if e.get("kind") == "sop"
+            and wanted in (e["id"], e["ref"], Path(e["ref"]).stem)]
+    if len(hits) != 1:
+        raise DependencyError(f"AF-LAUNCH-SOP-ACK: {wanted!r} matches {len(hits)} declared SOPs; "
+                              "name one by id, path or file stem")
+    entry = hits[0]
+    session = (session or "").strip()
+    if not session:
+        raise DependencyError("AF-LAUNCH-SOP-ACK: --session is required")
+    if session == os.environ.get(SOP_SESSION_ENV, "").strip():
+        raise DependencyError(f"AF-LAUNCH-SOP-ACK: session {session!r} is the assembling session "
+                              f"({SOP_SESSION_ENV}); a different session must read the SOP")
+    target, error = _resolve(entry["ref"], base, "sop")
+    if target is None or not target.is_file():
+        raise DependencyError(f"AF-LAUNCH-SOP-ACK: {entry['ref']} is absent ({error or 'no file'})")
+    counted = sop_heading_count(target)
+    if sections is None or sections != counted:
+        raise DependencyError(f"AF-LAUNCH-SOP-ACK: --sections {sections!r} does not match the heading "
+                              f"count of {entry['ref']}; open the file, count its headings, and run "
+                              "the command again. No receipt was written.")
+    rel = str(entry.get("receipt") or "").strip() or f"{SOP_RECEIPT_DIR}/{target.stem}.json"
+    out = resolve_skill_dir(SKILL_NAME, base) / rel
+    record = {"sop": entry["ref"], "sha256": _sha256_file(target),
+              "read_at": (today or datetime.date.today()).isoformat(), "read_in_full": True,
+              "reader_session": session, "sections": counted}
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    return {"receipt": str(out), "sop": entry["ref"], "sections": counted, "record": record}
+
 
 def _registered_enabled(base: Path) -> bool:
     """True when the skill's registration.json records enabled_in_999: true."""
@@ -521,8 +696,12 @@ def _registered_enabled(base: Path) -> bool:
     return (record.get("enablement") or {}).get("enabled_in_999") is True
 
 
-def check(root: Optional[Path] = None, mode: Optional[str] = None) -> Dict[str, Any]:
+def check(root: Optional[Path] = None, mode: Optional[str] = None,
+          test_only: Optional[bool] = None) -> Dict[str, Any]:
     """Report what is present and what is missing before a 999 enablement.
+
+    `test_only` says whether the package being built is a practice one; it only matters to entries
+    that declare `"when": "not_test_only"` (None, the default, treats them as selected).
 
     With `mode`, every entry is also classified for that launch mode: REQUIRED
     (blocks), SELECTED-CONDITIONAL (blocks only when this mode selects it) or
@@ -545,11 +724,12 @@ def check(root: Optional[Path] = None, mode: Optional[str] = None) -> Dict[str, 
             "required": bool(entry.get("required")),
             "class": cls,
             "modes": list(entry_modes(entry)),
-            "selected": selected(entry, active),
-            "blocking": blocking(entry, active, result["status"]),
+            "selected": selected(entry, active, test_only),
+            "blocking": blocking(entry, active, result["status"], test_only),
             "why": entry.get("why", ""),
             "status": result["status"],
             "evidence": result["evidence"],
+            "interfaces": result.get("interfaces", []),
         })
     present = [e["id"] for e in entries if e["status"] == "present"]
     missing = [e["id"] for e in entries if e["status"] == "missing"]
@@ -667,7 +847,8 @@ def ensure_runtime_packages(root: Optional[Path] = None,
     return report
 
 
-def require(root: Optional[Path] = None, mode: Optional[str] = None) -> Dict[str, Any]:
+def require(root: Optional[Path] = None, mode: Optional[str] = None,
+            test_only: Optional[bool] = None) -> Dict[str, Any]:
     """The preflight a build runs first: return the report, or refuse naming every blocker.
 
     A green preflight must mean the launch can run, so dispatch and assemble call this
@@ -678,8 +859,8 @@ def require(root: Optional[Path] = None, mode: Optional[str] = None) -> Dict[str
     raises.
     """
     report = ensure_runtime_packages(root)
-    if mode and mode != report.get("mode"):
-        report = check(root, mode)
+    if (mode and mode != report.get("mode")) or test_only is not None:
+        report = check(root, mode, test_only)
     if report["blockers"]:
         detail = {e["id"]: e for e in report["entries"]}
         message = ("AF-LAUNCH-DEPENDENCY: required dependency not satisfied: "

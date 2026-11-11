@@ -127,6 +127,8 @@ def pieces_for(run_dir: Path, graph: dict, normalized: dict) -> dict:
 
 class _Base(unittest.TestCase):
     def setUp(self):
+        from test_delivery_units import install_stand_in_validator
+        install_stand_in_validator(self)  # Skill 83 re-runs Skill 50's validator on every email unit
         self.tmp = tempfile.TemporaryDirectory()
         self.run_dir = Path(self.tmp.name) / "run"
         self.normalized = intake.validate(base_intake())
@@ -179,8 +181,14 @@ class PackageScopeTests(_Base):
 
     @unittest.skipUnless(BF_PLAN.is_file(), "shared launch-plan contract fixture is not installed")
     def test_a_sealed_plan_labels_the_package_a_full_launch(self):
+        from test_delivery_units import with_sales_piece
+        from test_launch_plan_law import plan_intake
         plan = plan_fixture()
-        out = package.assemble(self.run_dir, self.normalized, self.graph, self.pieces,
+        # every page of the plan is a launcher piece: no lane can seal a page (no producer yet)
+        normalized = intake.validate(plan_intake())
+        graph = route.compile_route(normalized, self.advice)
+        pieces = with_sales_piece(pieces_for(self.run_dir, graph, normalized), self.run_dir, normalized)
+        out = package.assemble(self.run_dir, normalized, graph, pieces,
                                council=self.advice, launch_plan=plan,
                                deliveries=lane_deliveries(plan, self.run_dir))
         manifest = out["manifest"]
@@ -303,6 +311,7 @@ def _answers_doc(offers: list) -> dict:
 def with_checkout_facts(payload: dict) -> dict:
     """The owner-supplied checkout facts intake requires (CHK-16): terms block + delivery per offer,
     and the price provenance (source_ref per offer plus the answers file they resolve in)."""
+    payload.setdefault("test_only", True)  # said explicitly (issue 36): these inline intakes are practice builds
     payload.setdefault("checkout_terms", dict(CHECKOUT_TERMS))
     mains = 0
     for o in payload["offers"]:

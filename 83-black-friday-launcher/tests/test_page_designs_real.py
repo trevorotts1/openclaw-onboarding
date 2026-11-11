@@ -241,6 +241,35 @@ class ClientDeliveryTests(unittest.TestCase):
         fails = self.fails(client_package(self.root, "checkout", 5, provider="stub"))
         self.assertTrue(any("made by the stub provider" in f for f in fails), fails[:2])
 
+    def test_a_design_file_with_no_provider_fails_as_provider_unknown(self):
+        """Issue 16 / UPS-23: the stub rule only fires when a provider is named; a file that names none
+        (the upsell pages' results used to carry none) is a finding on a client delivery, not a pass."""
+        piece = client_package(self.root, "upsell_1", 8)
+        piece.pop("image_provider")
+        for art in piece["artifacts"]:
+            art.pop("provider", None)
+        fails = self.fails(piece)
+        unknown = [f for f in fails if "provider unknown" in f]
+        self.assertTrue(unknown, fails[:3])
+        self.assertTrue(all(f.startswith("AF-LAUNCH-PAGE-DESIGNS: upsell_1 ") for f in unknown))
+        # the same piece, test_only: placeholders are allowed there, so no provider is not a finding
+        manifest = {**manifest_of(piece), "test_only": True}
+        self.assertFalse([f for f in page_designs.design_violations(manifest, self.root) if "provider unknown" in f])
+
+    def test_a_design_board_that_names_no_provider_is_not_a_provider_unknown_finding(self):
+        piece = client_package(self.root, "upsell_1", 8)
+        piece.pop("image_provider")  # no piece-level provider: each file speaks for itself
+        for art in piece["artifacts"]:
+            if art["kind"] == "board":
+                art.pop("provider")
+        self.assertEqual([f for f in self.fails(piece) if "provider unknown" in f], [])
+
+    def test_the_piece_level_provider_names_a_file_the_artifact_leaves_blank(self):
+        piece = client_package(self.root, "upsell_1", 8)
+        for art in piece["artifacts"]:
+            art.pop("provider", None)
+        self.assertEqual([f for f in self.fails(piece) if "provider unknown" in f], [])
+
     def test_a_one_byte_file_in_a_closed_run_still_fails(self):
         piece = client_package(self.root, "checkout", 5)
         victim = next(a for a in piece["artifacts"] if a["kind"] == "wireframe_desktop_section")
@@ -409,6 +438,42 @@ class ApprovalTests(unittest.TestCase):
         record.write_text(json.dumps(data), encoding="utf-8")
         fails = self.violations(self.package_approval(str(record), record_sha256=sha(record.read_bytes())))
         self.assertTrue(any("lacks evidence_sha256" in f for f in fails), fails)
+
+
+class DesignWaiverIsNeverForAClientDeliveryTests(unittest.TestCase):
+    """Issue 88: the --allow-no-designs help says a design waiver is never accepted for a client delivery
+    (test_only false); package._verify_design_waiver is the line that makes the code say the same."""
+
+    PLAN = "a" * 64
+    WAIVER = {"approval_ref": "APPR-WAIVE-1", "subject_type": "design_waiver", "subject_hash": PLAN,
+              "owner_identity_ref": "owner-1", "revoked": False}
+
+    def test_a_fully_valid_waiver_is_refused_for_a_client_delivery(self):
+        from launcher_core import package
+        for test_only in (False, None):  # a caller that does not say is refused, never waived
+            with self.subTest(test_only=test_only), self.assertRaises(package.PackageError) as ctx:
+                package._verify_design_waiver(self.WAIVER, self.PLAN, test_only)
+            self.assertEqual(ctx.exception.code, "AF-LAUNCH-ASSEMBLE-DESIGN-WAIVER")
+            self.assertIn("never for a client delivery", ctx.exception.detail)
+
+    def test_the_same_waiver_still_serves_a_practice_package(self):
+        from launcher_core import package
+        record = package._verify_design_waiver(self.WAIVER, self.PLAN, True)  # control, same instrument
+        self.assertEqual(record["approval_ref"], "APPR-WAIVE-1")
+
+    def test_the_other_waiver_refusals_keep_their_own_code_for_a_practice_package(self):
+        from launcher_core import package
+        for bad in ({"approval_ref": ""}, {"subject_hash": "9" * 64}, {"revoked": True}):
+            with self.subTest(bad=bad), self.assertRaises(package.PackageError) as ctx:
+                package._verify_design_waiver({**self.WAIVER, **bad}, self.PLAN, True)
+            self.assertEqual(ctx.exception.code, "AF-LAUNCH-PKG-DESIGN-WAIVER")
+
+    def test_the_cli_help_and_the_code_agree(self):
+        import inspect
+        from launcher_core import cli
+        source = inspect.getsource(cli.build_parser)
+        self.assertIn('"--allow-no-designs"', source)
+        self.assertIn("never accepted for a client", source)  # the help line this test holds the code to
 
 
 if __name__ == "__main__":

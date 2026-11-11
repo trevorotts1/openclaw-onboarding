@@ -108,6 +108,11 @@ KINDS = (
     "automation_write", "design_board", "pin_rotation",
     "test_location_use", "live_payment_test", "customer_send_activation",
     "batch_merge", "release_publication", "fleet_rollout",
+    # WP-02 / issue 38: the owner permits a run of PLACEHOLDER wireframe images (no provider, no spend).
+    # It implies nothing and is in no LIVE_EFFECTS: a placeholder run changes nothing outside the run.
+    "stub_render",
+    # Rulings WP-07-1 / WP-05b-1: Command Center mints these two; each implies nothing and is in no LIVE_EFFECTS.
+    "qc_session", "email_deploy",
 )
 
 #: The kinds Command Center's ``launch-approvals.ts`` mints today.

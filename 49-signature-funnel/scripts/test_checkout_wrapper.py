@@ -16,6 +16,11 @@ network, no paid call). Proves:
     manuscript that holds card fields, a section-count mismatch;
   * CHK-13: a price line, bump price or headline, guarantee, terms or consent text that differs from the
     launch record and the approved checkout_terms block is refused, as is a missing block;
+  * CHK-13 source stamp: a manuscript is accepted only when it carries `source_request_sha256` equal to the
+    sha256 of the staged --checkout-request (the request Skill 79's emitter wrote it from); an unstamped,
+    wrongly stamped or request-less run is refused;
+  * CHK-13 money in the launch record's own currency and exponent (EUR, JPY), never an assumed USD: a
+    foreign currency mark or a wrong amount is refused by name;
   * CHK-14: the card-field guard is parser-based (labels, placeholders, inputs, cc-* autocomplete) on the
     manuscript and on produced HTML, and does not trip on reassurance prose such as "credit card".
 
@@ -80,13 +85,32 @@ class CheckoutWrapperCase(unittest.TestCase):
         self.brand_path.write_bytes(BRAND_RAW)
         self.result_path = self.td / "result-checkout.json"
         self.run_dir = self.td / "checkout-run"
+        # the staged Skill 79 checkout request every manuscript below is written "from" (CHK-13 source stamp)
+        self.checkout_request_path = self.td / "checkout-request.json"
+        self.checkout_request_path.write_text(json.dumps({"main_offer_id": "TEST-ONLY"}), encoding="utf-8")
 
-    def wrap(self, request_path=None, manuscript=MANUSCRIPT, extra=()):
+    def stamped(self, text, request=None):
+        """The manuscript text with the source stamp Skill 79's emitter writes (sha256 of the request file)."""
+        digest = hashlib.sha256(Path(request or self.checkout_request_path).read_bytes()).hexdigest()
+        return f"<!-- source_request_sha256: {digest} -->\n\n" + text
+
+    def stamped_copy(self, manuscript):
+        """A stamped copy of a manuscript file; a missing file is passed through (the run refuses it by name)."""
+        manuscript = Path(manuscript)
+        if not manuscript.is_file():
+            return manuscript
+        out = self.td / ("stamped-" + manuscript.name)
+        out.write_text(self.stamped(manuscript.read_text(encoding="utf-8")), encoding="utf-8")
+        return out
+
+    def wrap(self, request_path=None, manuscript=MANUSCRIPT, extra=(), stamp=True):
+        manuscript = self.stamped_copy(manuscript) if stamp else manuscript
         cmd = [sys.executable, str(WRAPPER), "--request", str(request_path or self.request_path),
                "--result", str(self.result_path), "--manuscript", str(manuscript),
                "--launch", str(self.launch_path), "--route-graph", str(self.graph_path),
                "--brand-file", str(self.brand_path), "--brand-owner", "blackceo",
-               "--image-cap", "2", "--run-dir", str(self.run_dir), "--model", "STUB-NO-MODEL", *extra]
+               "--image-cap", "2", "--run-dir", str(self.run_dir), "--model", "STUB-NO-MODEL",
+               "--checkout-request", str(self.checkout_request_path), *extra]
         return subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
 
@@ -99,6 +123,7 @@ class TestEndToEnd(CheckoutWrapperCase):
         self.assertEqual((result["status"], result["proof_class"]), ("authored", "L0"))
         self.assertIsNone(result["native_bindings_ref"])
         self.assertFalse(result["independent_review"])
+        self.assertTrue(any(b.startswith("REVIEW-PENDING") for b in result["blockers"]))  # issue 30
         self.assertTrue(any("Skill 06" in b for b in result["blockers"]))
         self.assertTrue(any("stub provider" in b for b in result["blockers"]))
         intake = json.loads((self.run_dir / "intake.json").read_text(encoding="utf-8"))
@@ -117,6 +142,52 @@ class TestEndToEnd(CheckoutWrapperCase):
             self.assertEqual(built["page_role"], "checkout")
         for a in result["artifacts"]:
             self.assertEqual(hashlib.sha256(Path(a["path"]).read_bytes()).hexdigest(), a["sha256"])
+
+
+class TestReview(CheckoutWrapperCase):
+    """Issue 30: --review turns REVIEW-PENDING into a recorded independent review, or leaves it pending."""
+
+    def review_run(self, **over):
+        """Run the wrapper in-process over fixed artifacts (a real re-run rewrites the stage-executor
+        records' timestamps), then again with --review."""
+        art = self.td / "design.txt"
+        art.write_text("fixed design bytes", encoding="utf-8")
+        made = {"artifacts": [{"path": str(art), "sha256": hashlib.sha256(art.read_bytes()).hexdigest()}],
+                "blockers": ["the native checkout form is installed by Skill 06"]}
+        record = {"schema": "signature-launch-review-record/v1", "reviewer_session": "TEST-REVIEWER",
+                  "reviewer_model": "m", "verdict": "PASS", "request_id": self.request["request_id"],
+                  "reviewed_artifacts": list(made["artifacts"])}
+        record.update(over)
+        (self.td / "review.json").write_text(json.dumps(record), encoding="utf-8")
+        (self.td / "dispatch-session-registry.json").write_text(
+            json.dumps({"sessions": [{"session_id": "TEST-REVIEWER", "model": "m"}]}), encoding="utf-8")
+        argv = ["--request", str(self.request_path), "--result", str(self.result_path),
+                "--manuscript", str(MANUSCRIPT), "--launch", str(self.launch_path),
+                "--route-graph", str(self.graph_path), "--brand-file", str(self.brand_path),
+                "--brand-owner", "blackceo", "--image-cap", "2", "--run-dir", str(self.run_dir),
+                "--review", str(self.td / "review.json")]
+        with mock.patch.object(cw, "produce", return_value=made), mock.patch("sys.stdout"):
+            self.assertEqual(cw.main(argv), 0)
+        return json.loads(self.result_path.read_text(encoding="utf-8"))
+
+    def test_a_passing_review_record_is_recorded(self):
+        result = self.review_run()
+        self.assertTrue(result["independent_review"], result["blockers"])
+        self.assertEqual(result["reviewer_session"], "TEST-REVIEWER")
+        self.assertFalse(any(b.startswith("REVIEW-PENDING") for b in result["blockers"]))
+
+    def test_a_record_for_other_bytes_stays_pending_naming_the_artifact_path(self):
+        result = self.review_run(reviewed_artifacts=[{"path": "design.txt", "sha256": "0" * 64}])
+        self.assertFalse(result["independent_review"])
+        self.assertEqual(result["status"], "authored")
+        self.assertTrue(any(b.startswith("REVIEW-PENDING") and "was not listed as reviewed" in b
+                            and "design.txt" in b for b in result["blockers"]), result["blockers"])
+
+    def test_a_failing_review_record_stays_pending(self):
+        result = self.review_run(verdict="FAIL")
+        self.assertFalse(result["independent_review"])
+        self.assertIsNone(result["reviewer_session"])
+        self.assertTrue(any(b.startswith("REVIEW-PENDING") and "verdict" in b for b in result["blockers"]))
 
 
 class TestFailClosed(CheckoutWrapperCase):
@@ -196,6 +267,197 @@ class TestCopyMatchesTheApprovedRecord(CheckoutWrapperCase):
         self.refused(self.wrap(extra=("--checkout-terms", str(terms))), "guarantee")
 
 
+class TestSourceStamp(CheckoutWrapperCase):
+    """CHK-13 source stamp (issue 12): the copy provably comes from the staged Skill 79 checkout request."""
+
+    def refused(self, proc, text):
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn(text, proc.stderr)
+        self.assertFalse(self.result_path.exists())
+
+    def test_an_unstamped_hand_written_manuscript_is_refused(self):
+        self.refused(self.wrap(stamp=False), "source_request_sha256")
+
+    def test_a_stamp_for_another_request_is_refused(self):
+        other = self.td / "other-request.json"
+        other.write_text(json.dumps({"main_offer_id": "SOMETHING-ELSE"}), encoding="utf-8")
+        wrong = self.td / "wrong.md"
+        wrong.write_text(self.stamped(MANUSCRIPT.read_text(encoding="utf-8"), request=other), encoding="utf-8")
+        self.refused(self.wrap(manuscript=wrong, stamp=False), "not the staged checkout request's sha256")
+
+    def test_a_request_edited_after_the_copy_was_written_is_refused(self):
+        stamped = self.stamped_copy(MANUSCRIPT)
+        self.checkout_request_path.write_text(json.dumps({"main_offer_id": "EDITED"}), encoding="utf-8")
+        self.refused(self.wrap(manuscript=stamped, stamp=False), "not the staged checkout request's sha256")
+
+    def test_two_stamps_are_refused(self):
+        text = self.stamped(self.stamped(MANUSCRIPT.read_text(encoding="utf-8")))
+        double = self.td / "double.md"
+        double.write_text(text, encoding="utf-8")
+        self.refused(self.wrap(manuscript=double, stamp=False), "no single `source_request_sha256`")
+
+    def test_a_run_with_no_checkout_request_is_refused(self):
+        cmd = [sys.executable, str(WRAPPER), "--request", str(self.request_path), "--result", str(self.result_path),
+               "--manuscript", str(self.stamped_copy(MANUSCRIPT)), "--launch", str(self.launch_path),
+               "--route-graph", str(self.graph_path), "--brand-file", str(self.brand_path),
+               "--brand-owner", "blackceo", "--image-cap", "2", "--run-dir", str(self.run_dir)]
+        self.refused(subprocess.run(cmd, capture_output=True, text=True, timeout=600), "--checkout-request")
+
+
+class TestSourceStampNeedsARealRequestFile(CheckoutWrapperCase):
+    def test_a_request_path_that_is_not_a_file_is_a_named_refusal_not_a_crash(self):
+        text = self.stamped("x")
+        for missing in (None, self.td / "nowhere.json", self.td):
+            with self.subTest(path=str(missing)), self.assertRaises(cw.WrapperError):
+                cw.check_source_stamp(text, missing)
+
+
+class TestCopyInTheLaunchRecordsCurrency(CheckoutWrapperCase):
+    """CHK-13 / issue 90: money is read in the launch record's own currency and exponent, not as dollars."""
+
+    def relaunch(self, currency):
+        launch = json.loads(self.launch_path.read_text(encoding="utf-8"))
+        for offer in launch["offers"]:
+            for price in offer["prices"]:
+                price["currency"] = currency
+        return launch
+
+    def check(self, text, launch):
+        cw.check_copy(text, launch, self.request, TERMS)
+
+    def test_a_euro_launch_is_checked_against_euro_copy(self):
+        launch = self.relaunch("EUR")
+        text = MANUSCRIPT.read_text(encoding="utf-8").replace("$97", "€97.00").replace("$27", "27,00 €")
+        self.check(text, launch)  # does not raise: both marks, both decimal styles, the record's amounts
+
+    def test_a_euro_launch_with_dollar_copy_is_refused_as_the_wrong_currency(self):
+        launch = self.relaunch("EUR")
+        with self.assertRaises(cw.WrapperError) as ctx:
+            self.check(MANUSCRIPT.read_text(encoding="utf-8"), launch)  # the fixture copy prints $97
+        self.assertIn("currency must match the launch record's currency (EUR)", str(ctx.exception))
+
+    def test_a_euro_price_that_differs_from_the_record_is_refused(self):
+        launch = self.relaunch("EUR")
+        text = MANUSCRIPT.read_text(encoding="utf-8").replace("$97", "€97.00").replace("$27", "€17.00")
+        with self.assertRaises(cw.WrapperError) as ctx:
+            self.check(text, launch)
+        self.assertIn("EUR 17.00", str(ctx.exception))
+
+    def test_a_zero_decimal_currency_uses_its_own_exponent(self):
+        launch = self.relaunch("JPY")  # amount_minor 9700 and 2700 ARE yen: yen has no minor unit
+        text = MANUSCRIPT.read_text(encoding="utf-8").replace("$97", "¥9,700").replace("$27", "¥2,700")
+        self.check(text, launch)
+        with self.assertRaises(cw.WrapperError):
+            self.check(text.replace("¥9,700", "¥97"), launch)
+
+    def test_a_three_decimal_currency_uses_its_own_exponent(self):
+        launch = self.relaunch("KWD")  # the exponent is 3: 1234567 minor units are 1234.567 dinars
+        for offer in launch["offers"]:
+            for price in offer["prices"]:
+                price["amount_minor"] = 1234567
+        text = MANUSCRIPT.read_text(encoding="utf-8").replace("$97", "KWD 1234.567").replace("$27", "KWD 1234.567")
+        self.check(text, launch)
+        with self.assertRaises(cw.WrapperError):
+            self.check(text.replace("KWD 1234.567", "KWD 1234.56"), launch)  # two decimals is not a dinar amount
+
+    THREE_DECIMAL = ("KWD", "BHD", "OMR", "JOD", "TND")
+
+    def priced(self, currency, minor, shown):
+        """A launch record priced at `minor` and the fixture copy printing `shown` for both offers."""
+        launch = self.relaunch(currency)
+        for offer in launch["offers"]:
+            for price in offer["prices"]:
+                price["amount_minor"] = minor
+        text = MANUSCRIPT.read_text(encoding="utf-8").replace("$97", shown).replace("$27", shown)
+        return text, launch
+
+    def test_a_dot_and_three_digits_is_the_decimal_point_in_a_three_decimal_currency(self):
+        for cur in self.THREE_DECIMAL:
+            with self.subTest(cur=cur):
+                text, launch = self.priced(cur, 9700, f"{cur} 9.700")
+                self.check(text, launch)  # 9.700 is nine dinars seven hundred fils: 9700 minor units
+                text, launch = self.priced(cur, 9700000, f"{cur} 9.700")
+                with self.assertRaises(cw.WrapperError) as ctx:
+                    self.check(text, launch)  # a record price of 9,700 is not what 9.700 prints
+                self.assertIn(f"{cur} 9.700", str(ctx.exception))
+                text, launch = self.priced(cur, 9700000, f"9,700 {cur}")
+                self.check(text, launch)  # a comma stays the thousands separator: 9,700 is nine thousand seven hundred
+
+    def test_the_dot_decimal_reads_after_comma_groups_and_before_the_mark(self):
+        text, launch = self.priced("KWD", 1234567, "1,234.567 KWD")
+        self.check(text, launch)
+        text, launch = self.priced("KWD", 1234567000, "KWD 1,234,567")
+        self.check(text, launch)
+        text, launch = self.priced("KWD", 1234567, "KWD 1.234")
+        with self.assertRaises(cw.WrapperError):
+            self.check(text, launch)  # 1.234 is 1234 minor units, not the 1234567 on record
+
+    def test_an_ambiguous_european_grouping_is_refused_by_name(self):
+        for shown, digits in (("KWD 1.234.567", "1.234.567"), ("KWD 1.234,567", "1.234,567"),
+                              ("1.234.567,891 KWD", "1.234.567,891"), ("KWD 1,234.567.890", "1,234.567.890")):
+            with self.subTest(shown=shown):
+                text, launch = self.priced("KWD", 1234567, shown)
+                with self.assertRaises(cw.WrapperError) as ctx:
+                    self.check(text, launch)
+                self.assertIn(f"{digits!r} KWD", str(ctx.exception))
+                self.assertIn("ambiguous European grouping", str(ctx.exception))
+                self.assertIn("reword the copy", str(ctx.exception))
+
+    def test_every_amount_in_a_section_is_read_and_checked(self):
+        self.assertEqual(cw._minor_amounts("KWD 9.700, 1,234.567 KWD and KWD 5", "KWD", 3), {9700, 1234567, 5000})
+        with self.assertRaises(cw.WrapperError):
+            cw._minor_amounts("KWD 9.700 now, or KWD 1.234.567 later", "KWD", 3)
+
+    def test_the_dot_rule_is_only_for_three_decimal_currencies(self):
+        text, launch = self.priced("EUR", 970000, "€9.700")
+        self.check(text, launch)  # two decimals: 9.700 is still grouped, 9,700.00
+        text, launch = self.priced("JPY", 9700, "¥9.700")
+        self.check(text, launch)  # no decimals: 9.700 is still grouped, 9700 yen
+        text, launch = self.priced("EUR", 970, "€9.700")
+        with self.assertRaises(cw.WrapperError):
+            self.check(text, launch)
+
+    def test_an_offer_with_no_price_in_the_record_cannot_be_checked_against(self):
+        launch = self.relaunch("USD")
+        for price in launch["offers"][0]["prices"]:
+            price.pop("amount_minor", None)
+        with self.assertRaises(cw.WrapperError) as ctx:
+            self.check(MANUSCRIPT.read_text(encoding="utf-8"), launch)
+        self.assertIn("has no price in the launch record", str(ctx.exception))
+
+    def test_without_the_shared_mapper_the_money_cannot_be_read(self):
+        with mock.patch.object(cw, "_OFFER_MAPPER", self.td / "absent.py"), mock.patch.dict(sys.modules):
+            sys.modules.pop("offer_mapper", None)
+            with self.assertRaises(cw.WrapperError) as ctx:
+                cw._offer_mapper()
+        self.assertIn("not installed", str(ctx.exception))
+
+    def test_an_iso_code_prints_the_currency_too(self):
+        launch = self.relaunch("EUR")
+        text = MANUSCRIPT.read_text(encoding="utf-8").replace("$97", "EUR 97.00").replace("$27", "27.00 EUR")
+        self.check(text, launch)
+
+    def test_a_currency_that_is_not_an_iso_code_is_refused(self):
+        for bad in ("usd", None):
+            with self.subTest(currency=bad), self.assertRaises(cw.WrapperError) as ctx:
+                self.check(MANUSCRIPT.read_text(encoding="utf-8"), self.relaunch(bad))
+            self.assertIn("one currency", str(ctx.exception))
+
+    def test_the_record_must_name_one_currency(self):
+        launch = self.relaunch("USD")
+        launch["offers"][1]["prices"][0]["currency"] = "EUR"
+        with self.assertRaises(cw.WrapperError) as ctx:
+            self.check(MANUSCRIPT.read_text(encoding="utf-8"), launch)
+        self.assertIn("one currency", str(ctx.exception))
+
+    def test_no_usd_literal_decides_the_check(self):
+        source = (HERE / "checkout_wrapper.py").read_text(encoding="utf-8")
+        body = source.split("def check_copy", 1)[1].split("def check_source_stamp", 1)[0]
+        self.assertNotIn('"USD"', body)
+        self.assertNotIn('"USD"', source)  # the whole wrapper: the symbol table is data, not a literal here
+        self.assertIn("USD", cw.SYMBOL_CURRENCIES["$"])  # and the data still carries the dollar family
+
+
 class TestOrderBumpSectionFollowsTheBump(CheckoutWrapperCase):
     """F5: section 3 (order bump) is required only when the launch record has a bump offer."""
 
@@ -247,12 +509,13 @@ class TestProduceTellsSkill71WhetherTheLaunchHasABump(CheckoutWrapperCase):
         (s71 / "scripts" / "build_production_request.py").write_text(build_text, encoding="utf-8")
         self.launch_path.write_text(json.dumps(launch), encoding="utf-8")
         manuscript = self.td / "manuscript.md"
-        manuscript.write_text(text, encoding="utf-8")
+        manuscript.write_text(self.stamped(text), encoding="utf-8")
         args = type("A", (), dict(
             manuscript=str(manuscript), launch=str(self.launch_path), skill71_root=str(s71), run_dir=str(self.run_dir),
             request=str(self.request_path), brand_owner="b", image_cap="2", brand_file="f", route_graph="g",
             design_style=None, slots=None, design_prose=None, model=None, provider="stub", allow_paid=False,
-            inputs=None, checkout_terms=str(self.terms_path)))()
+            inputs=None, checkout_terms=str(self.terms_path),
+            checkout_request=str(self.checkout_request_path)))()
         seen = []
 
         def fake_run(cmd, label):
@@ -369,6 +632,7 @@ class TestAdapterCommand(CheckoutWrapperCase):
     def adapter_cmd(self):
         raw = json.loads((HERE.parent / "launch-adapters.example.json").read_text(encoding="utf-8"))
         subs = {"{request}": self.request_path, "{result}": self.result_path, "{work_dir}": self.td,
+                "<staged Skill 79 checkout request>": self.checkout_request_path,
                 "/path/to/49-signature-funnel": HERE.parent, "/path/to/71-blackceo-signature-page": S71,
                 "<approved brand file>": self.brand_path, "<recorded brand owner>": "blackceo",
                 "<image cap>": "2", "<A|B|C>": "C"}
@@ -379,7 +643,9 @@ class TestAdapterCommand(CheckoutWrapperCase):
             cmd.append(arg)
         self.assertNotIn("--model", cmd)
         self.assertIn("--design-prose", cmd)
-        (self.td / "copy-checkout.md").write_text(MANUSCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+        self.assertIn("--checkout-request", cmd)
+        (self.td / "copy-checkout.md").write_text(self.stamped(MANUSCRIPT.read_text(encoding="utf-8")),
+                                                  encoding="utf-8")
         return cmd
 
     def test_adapter_command_with_staged_design_prose_and_no_model_succeeds(self):

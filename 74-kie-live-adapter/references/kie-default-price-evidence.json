@@ -1,0 +1,100 @@
+{
+  "source": "KIE.ai model page https://kie.ai/gpt-image-2-6, section 'Credits per Image', page as rendered, pasted by the owner 2026-11-10 (saved verbatim as KIE-GPT-IMAGE-2-6-PRICE-PASTE-2026-11-10.md in the Harmony-95 rulings folder; token counts per cell included); request schema https://docs.kie.ai/market/gpt/gpt-image-2-6-sunburst-text-to-image field quality",
+  "fetched": "2026-11-10",
+  "label": "estimate; actual billed by tokens",
+  "page_text_quoted": {
+    "title": "Credits per Image",
+    "subtitle": "GPT Image 2.6 is billed by tokens. Reference credits for image output by quality and size.",
+    "foot": "Image output only. 1 credit = $0.005. Add ≈ 0.1 credits for the prompt and ≈ 2.2 credits per reference image; multiply by the number of images.",
+    "disclaimer": "Estimates only. Actual credits are based on the token usage returned for each request and are itemized in your Logs.",
+    "billing": "Billed by tokens. Flare and Sunburst share the same rates."
+  },
+  "request_field": {
+    "name": "quality",
+    "enum": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "auto"
+    ],
+    "default": "medium",
+    "page_text_quoted": "Quality. Optional, default `medium`. Supported: `low`, `medium`, `high`, `xhigh`, `max`, `auto`."
+  },
+  "aspect_ratio": "1:1",
+  "usd_per_credit": 0.005,
+  "image_output_credits_per_million_tokens": 5400,
+  "adders": {
+    "credits_per_prompt": 0.1,
+    "credits_per_reference_image": 2.2,
+    "note": "approximate; add to the picture price, multiply by the number of images"
+  },
+  "tables": [
+    {
+      "models": [
+        "gpt-image-2-6/sunburst-text-to-image",
+        "gpt-image-2-6/sunburst-image-to-image"
+      ],
+      "credits_per_picture": {
+        "low": {
+          "1K": 4.44,
+          "2K": 9.0,
+          "4K": 14.95
+        },
+        "medium": {
+          "1K": 7.82,
+          "2K": 15.9,
+          "4K": 26.43
+        },
+        "high": {
+          "1K": 9.48,
+          "2K": 19.27,
+          "4K": 32.02
+        },
+        "xhigh": {
+          "1K": 16.86,
+          "2K": 34.25,
+          "4K": 56.93
+        },
+        "max": {
+          "1K": 37.93,
+          "2K": 77.07,
+          "4K": 128.08
+        }
+      },
+      "tokens_per_picture": {
+        "low": {
+          "1K": 823,
+          "2K": 1667,
+          "4K": 2768
+        },
+        "medium": {
+          "1K": 1449,
+          "2K": 2944,
+          "4K": 4894
+        },
+        "high": {
+          "1K": 1756,
+          "2K": 3568,
+          "4K": 5930
+        },
+        "xhigh": {
+          "1K": 3122,
+          "2K": 6343,
+          "4K": 10542
+        },
+        "max": {
+          "1K": 7024,
+          "2K": 14272,
+          "4K": 23719
+        }
+      }
+    }
+  ],
+  "token_priced_catalog_row": {
+    "model": "gpt-image-2-6/sunburst-text-to-image",
+    "pricingDesc": "Text input 900 credits / 1M tokens ($4.50), cached text input 225 ($1.125), image input 1,440 ($7.20), cached image input 360 ($1.80), image output 5,400 ($27.00) — 10% below official pricing."
+  },
+  "note": "The numeric grid is the owner's paste of the rendered page for 1:1 (the cells render in the browser and are not in the page source). Each cell equals tokens_per_picture x image_output_credits_per_million_tokens / 1,000,000 rounded to 2 places (the page's own arithmetic; a test checks all 15). Re-copy when KIE reprices. A model with no table here is refused by Skill 83's spend check."
+}

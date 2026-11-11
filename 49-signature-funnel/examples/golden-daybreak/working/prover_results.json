@@ -38,7 +38,7 @@
     "rc": 0,
     "pass": true,
     "tail": [
-      "PASS: thank-you page carries no pitch, and every image has Kie taskId + GHL-host provenance."
+      "PASS: thank-you page carries no pitch, and every image has Kie taskId + hosted-URL provenance."
     ]
   }
 }

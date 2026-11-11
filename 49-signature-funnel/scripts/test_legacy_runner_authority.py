@@ -64,9 +64,6 @@ def keyed_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     receipt and harness-signed provider receipts. Returns (run_dir, key_file)."""
     kf = _key_file(tmp_path)
     monkeypatch.setenv("SF_OPERATOR_KEY_FILE", str(kf))
-    # Skill 6 run-nonce files (the sealed verify run P7 re-reads) live outside the run dir; the
-    # orchestrator subprocess inherits this dir through os.environ (see _env).
-    monkeypatch.setenv("GHL_VERIFY_NONCE_DIR", str(tmp_path / "ghl-nonces"))
     rd = tmp_path / "run-legacy"
     rd.mkdir()
     runner._write_valid_run(rd, KEY)
@@ -339,3 +336,38 @@ def test_receipt_module_loaded_by_file_path_still_finds_the_operator_key(tmp_pat
     assert keyed == {"signed": True, "ok": True, "state": "present"}
     unkeyed = _bypath(tmp_path, home, "run-unkeyed")
     assert unkeyed == {"signed": False, "ok": False, "state": "unsigned"}
+
+
+def _visual_cmd(tmp_path: Path, visual: dict) -> list:
+    """The command _run_visual_stage builds for legacy_downsell_images.py (the child is spied, never run)."""
+    (tmp_path / "brief.json").write_text(json.dumps({"visual_stage": "required", "visual": visual}))
+    seen = []
+
+    def spy(cmd, **_kw):
+        seen.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    from unittest import mock
+    with mock.patch.object(runner.subprocess, "run", spy):
+        ok, detail = runner._run_visual_stage(tmp_path)
+    assert ok, detail
+    assert len(seen) == 1, seen
+    return seen[0]
+
+
+_VISUAL = {"skill71_root": "s71", "brand_file": "b.json", "brand_owner": "o"}
+
+
+def test_visual_stage_adds_allow_paid_only_for_a_kie_run_that_says_true(tmp_path):
+    """The spend gate (issue 61/52): --allow-paid reaches the child only for provider kie AND allow_paid is True."""
+    assert "--allow-paid" in _visual_cmd(tmp_path, {**_VISUAL, "provider": "kie", "allow_paid": True})
+    assert "--allow-paid" in _visual_cmd(tmp_path, {**_VISUAL, "allow_paid": True}), "kie is the default provider"
+    assert "--allow-paid" not in _visual_cmd(tmp_path, {**_VISUAL, "provider": "stub", "allow_paid": True})
+
+
+def test_visual_stage_does_not_treat_a_truthy_non_boolean_as_paid_consent(tmp_path):
+    """Only the JSON boolean true is consent: "yes", 1 and other truthy values add no --allow-paid."""
+    for value in ("yes", "true", 1, [True], {"a": 1}, None, False, 0, ""):
+        cmd = _visual_cmd(tmp_path, {**_VISUAL, "provider": "kie", "allow_paid": value})
+        assert "--allow-paid" not in cmd, (value, cmd)
+    assert "--allow-paid" not in _visual_cmd(tmp_path, {**_VISUAL, "provider": "kie"}), "absent means no consent"

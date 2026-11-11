@@ -1,3 +1,9 @@
+## [v2.1.55] - 2026-11-10 - Harmony-95 Batch P: the 49 side of WP-01, WP-02, WP-04, WP-05a, WP-08a, WP-09a, WP-10a, WP-12, WP-14, WP-15 and X-96
+
+- Delivery-rail receipt replaces the Skill 6 calls and the front door scans for forbidden siblings (WP-01); legacy visual path through the shared page service, `--out-dir`, ungated stub refused outside fixtures (WP-02); price tiers and money keys through `page_set` (WP-04); email counts read from Skill 50's registry (WP-05a); a review verdict is honoured and `client_delivery` scope is checked at both validators (WP-08a); one billing vocabulary, three-decimal currency parsing and the single-offer approval status in `checkout_wrapper.py` (WP-09a); design stage in `upsell_wrapper.py` and data-driven client lines (WP-10a); style card prompt rule (WP-12); downsell copy form with `page_role`, strict pins, routing guard receipt fields (WP-14); documentation and SOP lockstep (WP-15); `launch_plan.py` emits `followed_offer_id` (X-96).
+- `scripts/fake_command_center.py` (the loopback Command Center stand-in for tests, WP-02) moves to `tests/fake_command_center.py`, a folder the front door's bypass scan skips and the pin does not list; its importers (`run_signature_funnel.py` self-test, `scripts/test_legacy_downsell_images.py`, `tests/unit/ghl-fixplan-g3-provider-not-stub.test.py`) follow. The bypass scan is unchanged.
+- Version bump so the Batch P pull request carries a version above main (G3). The prover pin is minted by the pin authority workflow, never edited here.
+
 ## [v2.1.54] - 2026-11-10 - free-entry intake carries the client's opt-in path; receipt self-test fixture carries a verdict (version bump for G3)
 
 - `scripts/launch_intake.py` free-entry intake now carries the client's opt-in path; `scripts/collect_launch_receipts.py` self-test fixture carries a verdict (see commit 94bf6fd72). This entry is the G3 skill-version bump after merging main; no further behaviour change.
@@ -490,7 +496,7 @@ Train **T-49-signature-funnel** (Wave-0). Fix IDs: FIX-XC-03a, FIX-IMG-05, FIX-I
   status `review` ("certified — awaiting QC promotion") with the deliverable link registered on the
   card; `card_advance(status="done")` is HARD-BLOCKED. `review -> done` is owned exclusively by the
   independent QC scorer (PASS >= 8.5). Ports the CC `LEGAL_TRANSITIONS` map + BFS legal-path walker +
-  current-status GET from `48-facebook-ad-generator/scripts/cc_board.py`, and honors
+  current-status GET from Skill 48's board client (`48-facebook-ad-generator`), and honors
   `CC_STATUS_PATH_TEMPLATE` / `CC_STATUS_METHOD` for route parity. Still fully fail-soft — the board is
   a VIEW, never a gate.
 - **`run_signature_funnel.py`:** `orchestrate()` now calls `card_advance(phase_id, "in_progress")` per

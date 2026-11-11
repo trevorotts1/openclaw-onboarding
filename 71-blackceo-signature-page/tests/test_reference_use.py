@@ -17,10 +17,15 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+# AF-71-UNGATED (issue 10): stage_executor runs a stub on a run with no gate state only when a test harness
+# sets this marker. This module starts stub runs on bare folders, so it is a harness; no product script sets it.
+os.environ["SKILL71_FIXTURE_RUN"] = "1"
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))

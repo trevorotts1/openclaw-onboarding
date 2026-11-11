@@ -76,10 +76,13 @@ def load_json(path) -> dict:
         return json.load(fh)
 
 
-def graph_hash(graph: dict) -> str:
-    return hashlib.sha256(
-        (json.dumps(graph, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
-    ).hexdigest()
+def graph_hash(graph: dict, raw: bytes = None) -> str:
+    """SHA-256 of the route-graph FILE's bytes (``raw``), the hash of record
+    (``compile_launch_route.graph_file_hash``). An in-memory compiled graph
+    (self-test) hashes the compiler's own emit serialization."""
+    if raw is None:
+        raw = (json.dumps(graph, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 
 def route_roles(graph: dict) -> dict:
@@ -229,7 +232,8 @@ def _delivery_section(rows: list) -> str:
             '<div class="ty82-cards">%s</div></section>' % "".join(cards))
 
 
-def build(view: dict, fulfillment: dict, graph: dict, brand: dict) -> dict:
+def build(view: dict, fulfillment: dict, graph: dict, brand: dict,
+          graph_raw: bytes = None) -> dict:
     roles = route_roles(graph)
     validate_view(view, roles)
     rows = delivery_rows(view, fulfillment)
@@ -255,7 +259,7 @@ def build(view: dict, fulfillment: dict, graph: dict, brand: dict) -> dict:
         "order_ref": view.get("order_ref"),
         "order_number": view.get("order_number"),
         "thank_you_page_id": roles[THANK_YOU_ROLE],
-        "route_graph_hash": graph_hash(graph),
+        "route_graph_hash": graph_hash(graph, graph_raw),
         "items": rows,
         "rendered_paid_only": True,
         "fulfillment_authority": "s44",
@@ -377,10 +381,12 @@ def main(argv=None) -> int:
         print("--view and --route-graph are required", file=sys.stderr)
         return 2
     try:
+        graph_raw = Path(args.route_graph).read_bytes()
         built = build(load_json(args.view),
                       load_json(args.fulfillment) if args.fulfillment else {},
-                      load_json(args.route_graph),
-                      load_json(args.brand) if args.brand else {})
+                      json.loads(graph_raw.decode("utf-8")),
+                      load_json(args.brand) if args.brand else {},
+                      graph_raw=graph_raw)
     except PageError as exc:
         print("FAIL-CLOSED: %s" % exc, file=sys.stderr)
         return 2

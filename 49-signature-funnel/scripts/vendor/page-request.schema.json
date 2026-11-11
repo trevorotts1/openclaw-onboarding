@@ -5,7 +5,10 @@
   "title": "Page build request",
   "properties": {
     "schema_version": {
-      "const": "1.0"
+      "enum": [
+        "1.0",
+        "1.1"
+      ]
     },
     "tenant_id": {
       "type": "string",
@@ -45,6 +48,10 @@
     "assigned_skill": {
       "type": "integer"
     },
+    "shared_image_service": {
+      "const": "71-blackceo-signature-page",
+      "description": "Fix 3 shared-service marker: set only by Skill 71 scripts/shared_page_service.py. Present means the four image stages for this page role are produced by Skill 71's shared image service and called from the owning skill's wrapper; absent means scripts/launch_context.py keeps the landing-only refusals."
+    },
     "approval_ref": {
       "type": "string",
       "minLength": 1
@@ -80,6 +87,11 @@
       "type": "string",
       "minLength": 1
     },
+    "prompt_policy_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "v1.1 (Q12 prompt-policy reconciliation, S49): OPTIONAL name of the governing prompt policy, minted by the common registry only. Stamped by dispatch_launch.build_requests from the launch record's prompt_policy_id (top level beside brand_ref/brand_hash, plan-approved content bound by the plan document hash) when the record names one; when the record names none, dispatch emits 1.0 requests and the key is absent entirely, never null. Consumers must tolerate absence."
+    },
     "allowed_write_target": {
       "enum": [
         "local_only",
@@ -111,5 +123,21 @@
     "copy_profile",
     "allowed_write_target",
     "test_only"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": "1.1"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "prompt_policy_id"
+        ]
+      }
+    }
   ]
 }

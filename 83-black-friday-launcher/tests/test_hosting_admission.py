@@ -371,5 +371,71 @@ class AdmissionTests(HostingCase):
         self.assertIn("text/html, which is a page, not a picture", fails[0])
 
 
+class NeedsCheckTests(unittest.TestCase):
+    """Issue 37: hosting is gated on the package check. `assemble` writes check-result.json from the check_package
+    run it just made; graphics_hooks.host_assets uploads nothing unless that result passed AND was made for the
+    package-manifest.json on disk now. The uploader is a recording stand-in, so the tests see whether it ran."""
+
+    def setUp(self):
+        from launcher_core import graphics_hooks
+        self.hooks = graphics_hooks
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / "package-manifest.json").write_text('{"launch_id": "L1"}\n', encoding="utf-8")
+        (self.root / "qc").mkdir()
+        (self.root / graphics_hooks.QC_REPORT_REL).write_text("{}", encoding="utf-8")  # QC exists: only the check is in question
+        self.calls = []
+
+    def push(self, job_dir, **kwargs):
+        self.calls.append(kwargs)
+        return {"ghl_folder_id": "fld", "ghl_folder_name": "job", "upload_count": 0, "uploaded": []}
+
+    def host(self):
+        return self.hooks.host_assets(self.root, approval_ref="APPR-HOST-1", push=self.push)
+
+    def check_result(self, **verification):
+        verification = {"state": "verified", "violations": [], **verification}
+        return self.hooks.write_check_result(self.root, verification)
+
+    def test_no_check_result_means_nothing_is_hosted(self):
+        result = self.host()
+        self.assertEqual(result["state"], "needs_check")
+        self.assertIn("check-result.json does not exist", result["reason"])
+        self.assertEqual((result["uploaded"], self.calls), ([], []))
+
+    def test_a_failed_check_means_nothing_is_hosted(self):
+        self.check_result(state="failed", violations=["AF-LAUNCH-IMAGE-QC: landing hero.png has no record"])
+        result = self.host()
+        self.assertEqual(result["state"], "needs_check")
+        self.assertIn("did not pass (1 violation(s))", result["reason"])
+        self.assertEqual(self.calls, [])
+
+    def test_a_check_for_an_older_manifest_means_nothing_is_hosted(self):
+        self.check_result()
+        manifest = self.root / "package-manifest.json"
+        manifest.write_text('{"launch_id": "L1", "edited": "after the check"}\n', encoding="utf-8")
+        result = self.host()
+        self.assertEqual(result["state"], "needs_check")
+        self.assertIn("different package-manifest.json", result["reason"])
+        self.assertEqual(self.calls, [])
+
+    def test_a_hand_written_result_without_the_schema_is_not_a_check(self):
+        (self.root / self.hooks.CHECK_RESULT_REL).write_text(json.dumps({"passed": True}), encoding="utf-8")
+        self.assertEqual(self.host()["state"], "needs_check")
+        self.assertEqual(self.calls, [])
+
+    def test_a_passing_check_for_this_manifest_lets_the_approved_upload_run(self):
+        self.assertTrue(self.check_result()["passed"])
+        result = self.host()  # control, same instrument: the gate opens only on a pass
+        self.assertEqual(result["state"], "hosted")
+        self.assertEqual(len(self.calls), 1)
+
+    def test_no_approval_is_still_refused_before_the_check_is_even_read(self):
+        result = self.hooks.host_assets(self.root, approval_ref=None, push=self.push)
+        self.assertEqual(result["state"], "not_authorized")
+        self.assertEqual(self.calls, [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

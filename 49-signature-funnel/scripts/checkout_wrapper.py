@@ -22,10 +22,13 @@ own pipeline. Nothing here duplicates that pipeline:
   4. RESULT  a page-result 1.0 whose artifacts are those design files, validated through
              collect_launch_receipts.validate_result before it is placed.
 
-The manuscript is a staged input (--manuscript, "## Section N: name" headings, written from the
-approved references in the Skill 79 checkout request: offer, price display, bump, guarantee,
-terms and consent). The wrapper never writes copy, but it CHECKS it (CHK-13): sections 2-4 must
-carry exactly the launch record's main price and bump name and price, and exactly the approved
+The manuscript is an input (--manuscript, "## Section N: name" headings), written by Skill 79's
+emit_checkout_manuscript.py from the approved Skill 79 checkout request (--checkout-request): offer,
+price display, bump, guarantee, terms and consent. A hand-written manuscript is refused: it must carry
+`<!-- source_request_sha256: <sha256 of the --checkout-request file> -->` (CHK-13 source stamp), so the
+copy provably comes from the request the money is bound to. The wrapper never writes copy, but it CHECKS
+it (CHK-13): sections 2-4 must carry exactly the launch record's main price and bump name and price (in
+the launch record's own currency and minor-unit exponent), and exactly the approved
 guarantee, terms and consent text of the 83 intake's checkout_terms block (--checkout-terms FILE, or
 checkout-terms.json beside the launch record); the block is required. A manuscript or produced
 HTML that holds a card number, expiry or security-code FIELD (label, placeholder, input, cc-*
@@ -55,7 +58,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from collect_launch_receipts import validate_result  # noqa: E402
+from collect_launch_receipts import LEDGER_NAME, apply_review, validate_result  # noqa: E402
+_OFFER_MAPPER = HERE.parents[1] / "shared-utils" / "signature_launch_contract" / "offer_mapper.py"
 import page_set  # noqa: E402  the shared image inputs and the page's full deliverables list
 
 EXIT_OK, EXIT_FAILCLOSED, EXIT_USAGE = 0, 2, 3
@@ -85,6 +89,12 @@ BLOCKERS = (
     "board approval (design_board.py gate)",
 )
 STUB_BLOCKER = "stub provider: the images are placeholders, not design deliverables"
+# CHK-13 source stamp: the manuscript names the sha256 of the Skill 79 checkout request it was written from.
+SOURCE_STAMP = re.compile(r"^<!--\s*source_request_sha256:\s*([0-9a-f]{64})\s*-->\s*$", re.M)
+# Which currency a printed symbol can mean (data in schema/currency-symbols.json: a shared symbol never proves one code).
+_SYMBOLS_FILE = HERE.parent / "schema" / "currency-symbols.json"
+SYMBOL_CURRENCIES = {k: tuple(v) for k, v in json.loads(_SYMBOLS_FILE.read_text(encoding="utf-8")).items()
+                     if not k.startswith("_")}
 
 
 class WrapperError(ValueError):
@@ -206,9 +216,54 @@ def _flat(text: str) -> str:
         "“", '"').replace("”", '"')).strip()
 
 
-def _dollars(text: str) -> set:
-    return {int(w.replace(",", "")) * 100 + int(c or 0)
-            for w, c in re.findall(r"\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?", text)}
+def _offer_mapper():
+    """The shared offer mapper (loaded once by path, stdlib only): the one door to Skill 78's currency
+    exponent rule, so no currency fact is typed a second time here."""
+    mod = sys.modules.get("offer_mapper")
+    if mod is None:
+        import importlib.util
+        if not _OFFER_MAPPER.is_file():
+            raise WrapperError("the shared offer mapper is not installed, so the checkout copy's money "
+                               "cannot be read in the launch record's currency")
+        spec = importlib.util.spec_from_file_location("offer_mapper", _OFFER_MAPPER)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["offer_mapper"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+def _marks(currency: str) -> list:
+    """The strings that print this currency: its ISO code and every symbol that can mean it."""
+    return sorted([currency, *(s for s, codes in SYMBOL_CURRENCIES.items() if currency in codes)],
+                  key=len, reverse=True)
+
+
+def _minor_amounts(text: str, currency: str, exponent: int) -> set:
+    """Every amount the text prints in this currency, in minor units (CHK-13). Marks go before or after
+    the number; the fraction must have exactly the currency's exponent digits, so '1,000' is a thousand."""
+    whole = r"(\d{1,3}(?:[,.]\d{3})+|\d+)"
+    frac = r"(?:[.,](\d{%d}))?" % exponent if exponent else ""
+    mark = "(?:" + "|".join(re.escape(m) for m in _marks(currency)) + ")"
+    out = set()
+    for pattern in (rf"(?<![A-Za-z]){mark}\s?{whole}{frac}(?!\d)", rf"(?<![\d.,]){whole}{frac}\s?{mark}(?![A-Za-z])"):
+        for found in re.finditer(pattern, text):
+            digits, cents = found.group(1), found.group(2) if exponent else ""
+            if exponent == 3 and "." in digits:
+                # Three-decimal currencies: one '.' then exactly three digits is the decimal point (KWD 9.700 is
+                # 9700 minor units), after any ',' groups; a '.'-grouped or ','-decimal number is ambiguous.
+                if "." in re.findall(r"[,.]", digits)[:-1]:
+                    raise WrapperError(f"the copy prints {digits!r} {currency}, which could be thousands grouped "
+                                       "with a '.' or a decimal; reword the copy with ',' for thousands and one "
+                                       "'.' before the three decimals (ambiguous European grouping)")
+                digits, cents = digits.rsplit(".", 1)
+            out.add(int(re.sub(r"[,.]", "", digits)) * 10 ** exponent + int(cents or 0))
+    return out
+
+
+def _foreign_marks(text: str, currency: str) -> list:
+    """Currency symbols printed against a number that cannot mean the launch record's currency."""
+    return sorted({s for s, codes in SYMBOL_CURRENCIES.items() if currency not in codes
+                   and re.search(rf"{re.escape(s)}\s?\d|\d\s?{re.escape(s)}", text)})
 
 
 def _record_amounts(offer: dict) -> set:
@@ -243,16 +298,29 @@ def check_copy(text: str, launch: dict, request: dict, terms: dict) -> None:
                            f"the launch has a bump offer; this launch has {'one' if bumps else 'none'}), "
                            f"found {sorted(body)}")
     for o in mains + bumps:
-        if any(p.get("currency") != "USD" for p in o.get("prices") or []) or not _record_amounts(o):
-            raise WrapperError(f"offer {o.get('offer_id')!r} has no USD price in the launch record to check "
+        if not _record_amounts(o):
+            raise WrapperError(f"offer {o.get('offer_id')!r} has no price in the launch record to check "
                                "the checkout copy against")
+    # One cart, one currency: the launch record's own, never an assumed one. Its exponent is Skill 78's rule.
+    currencies = sorted({p.get("currency") for o in mains + bumps for p in o.get("prices") or []},
+                        key=str)
+    if len(currencies) != 1 or not re.fullmatch(r"[A-Z]{3}", str(currencies[0])):
+        raise WrapperError("the checkout copy is checked in the launch record's one currency, and the "
+                           f"record's offers name {currencies!r}")
+    currency = currencies[0]
+    exponent = _offer_mapper().currency_exponent(currency)
 
     def names_and_prices(label, section, group):
-        flat, found = _flat(section).lower(), _dollars(section)
+        flat, found = _flat(section).lower(), _minor_amounts(section, currency, exponent)
+        foreign = _foreign_marks(section, currency)
+        if foreign:
+            raise WrapperError(f"{label} prices in {foreign[0]!r}, but the currency must match the launch "
+                               f"record's currency ({currency})")
         allowed = set().union(*(_record_amounts(o) for o in group)) if group else set()
         stray = sorted(found - allowed)
         if stray:
-            raise WrapperError(f"{label} shows ${stray[0] / 100:,.2f}, which the launch record does not price")
+            raise WrapperError(f"{label} shows {currency} {stray[0] / 10 ** exponent:,.{exponent}f}, "
+                               "which the launch record does not price")
         if group and not any(_flat(o.get("display_name", "")).lower() in flat and
                              found & {p["amount_minor"] for p in o["prices"] if isinstance(p.get("amount_minor"), int)}
                              for o in group):
@@ -271,6 +339,25 @@ def check_copy(text: str, launch: dict, request: dict, terms: dict) -> None:
     left = re.sub(r"\[[A-Z][A-Z _-]*:[^\]]*\]", " ", left).strip()
     if left:
         raise WrapperError(f"section 4 carries copy that is not in the approved checkout_terms: {left[:80]!r}")
+
+
+def check_source_stamp(text: str, request_path) -> None:
+    """CHK-13 source stamp: the manuscript names the sha256 of the Skill 79 checkout request it was written
+    from, and that is the staged request's sha. A hand-written, unstamped or differently-sourced manuscript
+    is refused, so the copy cannot drift from the request the price is bound to."""
+    if not request_path:
+        raise WrapperError("the checkout copy must come from the Skill 79 checkout request: pass "
+                           "--checkout-request (the request emit_checkout_manuscript.py wrote it from)")
+    request = Path(request_path)
+    if not request.is_file():
+        raise WrapperError(f"--checkout-request {request} is not a file")
+    stamps = SOURCE_STAMP.findall(text)
+    if len(stamps) != 1:
+        raise WrapperError("the manuscript carries no single `source_request_sha256` stamp; the checkout copy "
+                           "is written by Skill 79's emit_checkout_manuscript.py, never by hand")
+    if stamps[0] != sha256(request):
+        raise WrapperError("the manuscript's source_request_sha256 is not the staged checkout request's sha256; "
+                           "the copy was written from a different request than the one being designed")
 
 
 def terms_block(args) -> dict:
@@ -314,6 +401,7 @@ def produce(args, request) -> dict:
     if hits:
         raise WrapperError("the manuscript holds a card, expiry or security-code field; the payment form is "
                            f"the native checkout form only ({hits[0]!r})")
+    check_source_stamp(text, args.checkout_request)
     launch = load(args.launch, "launch record")
     check_copy(text, launch, request, terms_block(args))
     has_order_bump = any(o.get("slot") == "bump" for o in request_offers(launch, request))
@@ -357,6 +445,8 @@ def main(argv=None) -> int:
         ap.add_argument(f"--{flag}", required=True)
     for flag in ("brand-file", "brand-owner", "image-cap"):  # or one --image-inputs file
         ap.add_argument(f"--{flag}")
+    ap.add_argument("--checkout-request", help="the Skill 79 checkout request JSON the manuscript was written "
+                                               "from (its sha256 must equal the manuscript's source_request_sha256)")
     ap.add_argument("--checkout-terms", help="JSON with the approved guarantee, terms and consent text and refs "
                                              "(the 83 intake's checkout_terms block); default: "
                                              "checkout-terms.json beside --launch")
@@ -369,6 +459,8 @@ def main(argv=None) -> int:
     ap.add_argument("--model", help="image model id (default: build_production_request.py's)")
     ap.add_argument("--provider", choices=("stub", "kie"), default="stub")
     ap.add_argument("--allow-paid", action="store_true")
+    ap.add_argument("--review", help="independent review record JSON; without an accepted one the result carries "
+                                     "a REVIEW-PENDING blocker (reviewer must be in <request dir>/" + LEDGER_NAME + ")")
     ap.add_argument("--author-session", default=os.environ.get("SIGNATURE_LAUNCH_AUTHOR_SESSION")
                     or os.environ.get("OPENCLAW_SESSION_ID") or "s49-checkout-wrapper")
     try:
@@ -397,7 +489,8 @@ def main(argv=None) -> int:
                   "status": "authored", "artifacts": made["artifacts"], "author_session": args.author_session,
                   "reviewer_session": None, "independent_review": False, "proof_class": "L0",
                   "blockers": made["blockers"], "native_bindings_ref": None, "test_only": request["test_only"]}
-        fails = validate_result(result, request)
+        accepted = apply_review(result, args.review, Path(args.request).resolve().parent / LEDGER_NAME)
+        fails = validate_result(result, request, **(accepted or {}))
         if fails:
             raise WrapperError("page-result failed receipt validation: " + "; ".join(fails))
     except (WrapperError, page_set.PageSetError, OSError, KeyError) as exc:

@@ -108,7 +108,9 @@ for f in \
   references/page-structures.json tests/test_page_structures.py \
   references/copy-specs/thank-you-v1.json scripts/page_role.py scripts/run_page_role_stages.py \
   tests/test_page_role_thank_you.py tests/fixtures/copy_examples/thank-you-path-b.md \
+  scripts/no_pitch_scan.py tests/test_thank_you_no_pitch.py \
   references/page-kinds.json scripts/page_kinds.py tests/test_page_kinds.py \
+  scripts/run_governed_stage.py tests/test_run_governed_stage.py tests/test_stage_executor_ungated.py \
   tests/docker/Dockerfile \
   adapters/claude-code/README.md adapters/claude-nine/README.md adapters/codex/README.md \
   repo-integration/skill-department-map-entry.json \
@@ -189,10 +191,12 @@ else
   fail=1
 fi
 
-# Pinned external authorities (Item 11): drift is a warning, never a
-# failure here. PIN OK / PIN DRIFT / PIN MISSING lines print as-is.
+# Pinned external authorities (Item 11): drift or a missing counterpart is a
+# failure (--strict, no swallowed exit code). Re-stamp the pin deliberately in
+# references/external-authorities.json when an authority has legitimately moved.
+# PIN OK / PIN DRIFT / PIN MISSING lines print as-is.
 if [ -f "$ROOT/scripts/check_authority_pins.py" ] && [ -f "$ROOT/references/external-authorities.json" ]; then
-  python3 "$ROOT/scripts/check_authority_pins.py" || true
+  python3 "$ROOT/scripts/check_authority_pins.py" --strict || fail=1
 fi
 
 # Cross-repo parity (Item 27): when the sibling repo's checkout is

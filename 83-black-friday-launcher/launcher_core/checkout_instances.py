@@ -36,7 +36,7 @@ if str(_ROUTES_DIR) not in sys.path:
 import substrate  # noqa: E402
 
 from . import checkout as checkout_module  # noqa: E402
-from . import launch_bridge  # noqa: E402
+from . import image_plan, intake, launch_bridge  # noqa: E402
 
 MODE = "combined_single_offer"
 # S79 fields the launch itself never holds; the caller supplies them or they stay missing.
@@ -78,13 +78,45 @@ def _with_native(launch: Dict[str, Any], native: Dict[str, Any]) -> Dict[str, An
     return out
 
 
+def _checkout_billing(billing_type: Any) -> str:
+    """The Skill 79 billing type for a record billing type: the shared table (billing.py), the one
+    translation Skill 49, the offer mapper and this module all use. An unmapped type is refused by name."""
+    try:
+        return intake.billing_module().checkout_billing(billing_type)
+    except ValueError as exc:  # BillingError
+        raise CheckoutInstanceError(getattr(exc, "code", "AF-CHECKOUT-BILLING"),
+                                    getattr(exc, "detail", str(exc))) from exc
+
+
+def _plan_approval_verifier(intake_doc: Dict[str, Any], launch: Dict[str, Any]):
+    """What Skill 78 asks of a price the client's plan approval covers (``recommended_unapproved``).
+
+    A live launch gets the shared verifier (Command Center's own record, kind launch_plan_build, bound
+    to the approved plan hash): a ref that does not verify covers nothing, and no failure to reach the
+    verifier counts as a yes. A test_only launch stays shape-only: a local test record can never back a
+    live price, and a practice package prices nothing live."""
+    if launch.get("test_only") is True:
+        return None
+    ref, plan_hash = launch.get("plan_approval_ref"), intake_doc["approval"]["hash"]
+
+    def verifier(_launch: Dict[str, Any]) -> bool:
+        try:
+            image_plan._approval_verify()(ref, "launch_plan_build", plan_hash, ["launch_plan_build"],
+                                          test_only=False)
+        except Exception:  # refused, unavailable or not installed: all fail closed
+            return False
+        return True
+
+    return verifier
+
+
 def _price_choice(offer: Dict[str, Any], price: Dict[str, Any], test_only: bool) -> Dict[str, Any]:
     return {
         "price_choice_id": price["price_choice_id"],
         "currency": price["currency"],
         "currency_exponent": checkout_module.currency_exponent(price["currency"]),
         "amount_minor": price["amount_minor"],
-        "billing_type": price["billing_type"],
+        "billing_type": _checkout_billing(price["billing_type"]),
         "native_product_id": offer.get("native_product_id"),
         "native_price_id": price.get("native_price_id"),
         # the checkout contract knows approved / recommended_unapproved / test_only; the record's "provided" is the
@@ -226,7 +258,7 @@ def build(intake: Dict[str, Any], graph: Dict[str, Any], launch: Dict[str, Any],
             **{k: commercial[k] for k in COMMERCIAL_KEYS if k in commercial},
         }
         try:
-            validator.validate_request(request)
+            validator.validate_request(request, checkout_module.validation_clock(request))
             verdict: Dict[str, Any] = {"result": "accepted"}
         except Exception as exc:  # the contract's own typed error is the record
             verdict = {"result": "rejected", "error": str(exc)}
@@ -253,12 +285,14 @@ def build(intake: Dict[str, Any], graph: Dict[str, Any], launch: Dict[str, Any],
                     "native_price_id": i["request"]["main_price"]["native_price_id"],
                     "target_ref": i["checkout_target_ref"]} for i in instances]
         try:
-            # Skill 78 (U-products-07) declines any journey mode but multiple_options. This per-offer
-            # route has no selection page for any journey (folded_levels included): one native
-            # target per main price choice is the realisation, so 78 judges the catalog and targets
-            # as the multiple-options shape they are. The launch itself is not altered.
-            plan = _s78("emit_binding_plan").emit_plan(dict(launch, journey_mode="multiple_options"), targets,
-                                                       route="per_offer_targets")
+            # Skill 78 judges the launch exactly as it is: route="per_offer_targets" is the stated fact
+            # that no selection page is built (one native target per main price choice, folded_levels
+            # included), and 78 accepts every journey mode for that route. The record is never
+            # rewritten to fit 78's rule. The plan approval behind a recommended price is verified by
+            # the shared verifier (a live launch), not read by shape.
+            plan = _s78("emit_binding_plan").emit_plan(
+                launch, targets, route="per_offer_targets",
+                approval_verifier=_plan_approval_verifier(intake, launch))
         except Exception as exc:
             raise CheckoutInstanceError(getattr(exc, "code", "AF-LAUNCH-CHECKOUT-BINDING"),
                                         str(exc)) from exc
@@ -319,7 +353,7 @@ def replay_violations(rec: Dict[str, Any]) -> List[str]:
             out.append(f"AF-LAUNCH-CHECKOUT-REPLAY: {slot} has no request to replay")
             continue
         try:
-            validator.validate_request(req)
+            validator.validate_request(req, checkout_module.validation_clock(req))
             now = "accepted"
         except Exception:
             now = "rejected"

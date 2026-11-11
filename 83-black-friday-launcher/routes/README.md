@@ -51,6 +51,22 @@ as launcher logic.
 `<...>` and missing files. It is not the example manifest: no placeholder is
 ever emitted as executable configuration.
 
+## Production stages (after `check`, before any install)
+
+Dispatch builds DESIGNS. Two further stages turn an approved design into a production page and hand it to
+the delivery rail; both are Skill 83's (decision D-E: Skill 49 never calls the rail).
+
+| Stage | Command | What it calls | Refuses when |
+|---|---|---|---|
+| produce | `python3 -m launcher_core.cli produce --package P --run-dir R ...` | `PRODUCTION_BUILDERS` in `adapters.py`: Skill 80 `build_production_pages.py` (U1, D1, U2), Skill 81 `production_handoff` (D1), Skill 82 `build_thank_you_page.py` | `check` fails; a copy document is `test_only` on a client launch; a builder or Skill 81's handoff refuses (missing native id, wrong route) |
+| install | `python3 -m launcher_core.cli install --package P --run-dir R --rail <skill>/<module>.py:<entry>` | the rail named at the call, with the handoff `install/install-handoff.json` | production rule fails; the rail reads back nothing, a bad URL, or a route-guard journey Skill 81's entry guard refuses |
+
+`production/<role>.html` and `production/manifest.json` (sha256 per page) are written into the package;
+`check_rules/production.py` fails a client package whose approved pieces lack a built page, and any page
+changed after it was produced. `install/install-readback-downsell_1.json` is the file Skill 49's downsell
+wrapper reads at `--stage install`, so the entry guard runs over what was read back, not over the
+design-time constant. The upsell and downsell commands in `build_dispatch_config` pass `--stage design`.
+
 ## Recorded contract discrepancies (no shims)
 
 - **D-01** Skill 71 has no `landing_bridge.py`. Its real entry points are

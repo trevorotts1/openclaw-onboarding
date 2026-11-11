@@ -66,8 +66,16 @@ def fake_ocr(_png):
     return BOARD_TEXT[0]
 
 
+# AF-71-UNGATED (issue 10): stage_executor runs a STUB on a run with no gate state only when a test
+# harness sets this marker. This module IS the harness for the Skill 71 tests, so it sets it for
+# in-process calls (here) and for child processes (subprocess_env). No product script sets it.
+FIXTURE_MARKER = "SKILL71_FIXTURE_RUN"
+os.environ[FIXTURE_MARKER] = "1"
+
+
 def subprocess_env():
     env = dict(os.environ)
+    env[FIXTURE_MARKER] = "1"
     env["PYTHONPATH"] = os.pathsep.join([str(DOUBLE), env.get("PYTHONPATH", "")]).rstrip(os.pathsep)
     return env
 

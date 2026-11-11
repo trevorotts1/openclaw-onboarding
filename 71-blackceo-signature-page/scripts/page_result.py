@@ -37,22 +37,23 @@ pending verification), a verified claim without the verified event, or
 a verified event without its receipt NEVER authorizes routing; doc 16
 section 8 names forged success an automatic failure.
 
-Receipt binding: the adapter's receipt must belong to THIS run. When
-the receipt is a dict carrying run-identity fields (tenant_id,
-location_id, launch_id, request_id, page_id), every such field it
-carries must equal the page-request's value; a receipt naming a
-different tenant, launch, or request is another run's receipt and
-NEVER authorizes routing here. A receipt carrying no identity fields
-at all (a bare string receipt, or a dict without identity fields) is
-accepted on presence alone: that is an explicit, documented choice,
-not an accident. No approved adapter receipt schema exists yet (the
-receipt is the S06 adapter's output and its shape is not contracted),
-and the only receipt shape in evidence carries no run identity, so
-rejecting identifier-less receipts would refuse the one known-good
-form; the binding rule therefore binds every identifier a receipt
-DOES carry and records which case applied in the handoff's submission
-block (`receipt_binding`), so a later contracted receipt schema can
-tighten presence-only acceptance without a silent behavior change.
+Receipt identity (AF-71-ROUTE-RECEIPT): a verified submission routes onward
+only when its receipt is a dict carrying a non-empty `submission_id` or
+`contact_id` AND a `source` equal to `native_form` or `api`. A bare string
+receipt, a dict without either identifier, or a source outside those two
+values is refused, recorded in the handoff's routing basis and in the page
+result's blockers, and never authorizes routing. Presence alone is no longer
+enough: the only thing that could be forged was a string.
+
+Receipt binding: the adapter's receipt must also belong to THIS run. When
+the receipt carries run-identity fields (tenant_id, location_id, launch_id,
+request_id, page_id), every such field it carries must equal the
+page-request's value; a receipt naming a different tenant, launch, or
+request is another run's receipt and NEVER authorizes routing here. The
+handoff's submission block records which case applied (`receipt_binding`):
+`bound` (identified, and it carries at least one run-identity field that
+matches), `identified` (identified, no run-identity field to check),
+`contradicted`, or `unidentified` (AF-71-ROUTE-RECEIPT).
 
 The page-result schema is closed (additionalProperties: false) and has
 no routing field, so routing authorization lives only in
@@ -128,6 +129,14 @@ FREE_ENTRY_TARGET_ROLES = ("thank_you",)
 # the receipt to count as bound to this run (see receipt_binding).
 RECEIPT_IDENTITY_FIELDS = ("tenant_id", "location_id", "launch_id",
                            "request_id", "page_id")
+
+# What makes a receipt a receipt (AF-71-ROUTE-RECEIPT): one of these ids,
+# non-empty, plus a source from the closed list. The Skill 6 delivery
+# adapter that writes the receipt is not built here (see HANDOFF.md); this
+# is the shape the guard demands of whatever does.
+RECEIPT_ID_FIELDS = ("submission_id", "contact_id")
+RECEIPT_SOURCES = ("native_form", "api")
+ROUTE_RECEIPT_AF = "AF-71-ROUTE-RECEIPT"
 
 # The interest popup component's contract (owner S71, doc 07 section 4,
 # doc 16 section 1): the exact visitor field set and its native CRM
@@ -519,40 +528,50 @@ def read_submission(run_dir):
 
 
 def receipt_binding(request, receipt):
-    """Bind the adapter's receipt to this run's page-request.
+    """Check the adapter's receipt: is it a real receipt, and is it this run's?
 
-    Returns (binding, mismatches): binding is "bound" when the receipt
-    is a dict carrying at least one run-identity field
-    (RECEIPT_IDENTITY_FIELDS) and every identity field it carries
-    equals the page-request's value; "contradicted" with one mismatch
-    line per contradicting field when any carried identity field names
-    a different tenant, location, launch, request, or page (another
-    run's receipt); "no_identity_fields" when the receipt carries no
-    identity fields to check (a bare string receipt, or a dict without
-    identity fields).
-
-    Judgment (explicit, per the module docstring): a receipt with no
-    identity fields is accepted on presence alone. No approved adapter
-    receipt schema exists yet and the only receipt shape in evidence
-    carries no run identity, so refusing identifier-less receipts
-    would refuse the known-good form; but every identifier a receipt
-    DOES carry binds, and a contradiction fails closed."""
-    if not isinstance(receipt, dict):
-        return "no_identity_fields", []
+    Returns (binding, problems). binding is
+      "contradicted"  a run-identity field it carries (RECEIPT_IDENTITY_FIELDS)
+                      names a different tenant, location, launch, request or
+                      page: another run's receipt (one problem per field);
+      "unidentified"  AF-71-ROUTE-RECEIPT: not a dict, or no non-empty
+                      `submission_id`/`contact_id`, or a `source` that is not
+                      `native_form` or `api`;
+      "bound"         identified, and it carries at least one run-identity
+                      field, all of which match the page-request;
+      "identified"    identified, and it carries no run-identity field.
+    Only "bound" and "identified" authorize routing."""
     mismatches = []
-    checked = 0
-    for field in RECEIPT_IDENTITY_FIELDS:
-        value = receipt.get(field)
-        if value is None:
-            continue
-        checked += 1
-        if value != request.get(field):
-            mismatches.append(
-                f"receipt {field} {value!r} does not match the "
-                f"page-request's {field} {request.get(field)!r}")
+    if isinstance(receipt, dict):
+        for field in RECEIPT_IDENTITY_FIELDS:
+            value = receipt.get(field)
+            if value is not None and value != request.get(field):
+                mismatches.append(
+                    f"receipt {field} {value!r} does not match the "
+                    f"page-request's {field} {request.get(field)!r}")
     if mismatches:
         return "contradicted", mismatches
-    return ("bound" if checked else "no_identity_fields"), []
+    problems = []
+    if not isinstance(receipt, dict):
+        problems.append(
+            f"{ROUTE_RECEIPT_AF}: the receipt is not an object carrying "
+            f"{' or '.join(RECEIPT_ID_FIELDS)} and a source; a bare string "
+            "is never a receipt")
+    else:
+        if not any(isinstance(receipt.get(f), str) and receipt[f].strip()
+                   for f in RECEIPT_ID_FIELDS):
+            problems.append(
+                f"{ROUTE_RECEIPT_AF}: the receipt carries neither "
+                f"{' nor '.join(RECEIPT_ID_FIELDS)} as a non-empty string")
+        if receipt.get("source") not in RECEIPT_SOURCES:
+            problems.append(
+                f"{ROUTE_RECEIPT_AF}: the receipt source is "
+                f"{receipt.get('source')!r}, not one of "
+                f"{', '.join(RECEIPT_SOURCES)}")
+    if problems:
+        return "unidentified", problems
+    carried = any(receipt.get(f) is not None for f in RECEIPT_IDENTITY_FIELDS)
+    return ("bound" if carried else "identified"), []
 
 
 # ---------------------------------------------------------------------------
@@ -583,7 +602,7 @@ def structure_approval(request):
 
 def build_handoff(run_dir, request, route, submission, submission_state,
                   receipt_present, routing_authorized, routing_basis,
-                  status, binding="no_identity_fields"):
+                  status, binding="no_receipt"):
     automation_handoff = load_json(run_dir / AUTOMATION_HANDOFF_REL)
     native_form_id = None
     if automation_handoff:
@@ -733,7 +752,7 @@ def build_and_write(run_dir):
              f"error state, not a legacy run, and no page result can "
              f"be emitted from a corrupt request"])
     for field in ("tenant_id", "location_id", "launch_id", "revision",
-                  "request_id", "input_hash", "page_id"):
+                  "request_id", "input_hash", "page_id", "page_role"):
         value = request.get(field)
         if value is None or (isinstance(value, str) and not value.strip()):
             raise PageResultError(
@@ -760,7 +779,7 @@ def build_and_write(run_dir):
             "authorized")
 
     submission, submission_state, receipt_present = read_submission(run_dir)
-    binding, binding_mismatches = ("no_identity_fields", [])
+    binding, binding_mismatches = ("no_receipt", [])
     if submission is not None and receipt_present:
         binding, binding_mismatches = receipt_binding(
             request, submission.get("receipt"))
@@ -780,6 +799,17 @@ def build_and_write(run_dir):
                 "routing here (receipt binding, doc 07 section 4)")
             blockers.append(
                 "adapter receipt is not bound to this run: "
+                + "; ".join(binding_mismatches)
+                + "; routing is not authorized")
+        elif binding == "unidentified":
+            routing_authorized = False
+            routing_basis = (
+                "a verified submission is recorded, but the adapter's "
+                "receipt does not identify a submission: "
+                + "; ".join(binding_mismatches)
+                + "; presence alone never authorizes routing")
+            blockers.append(
+                "adapter receipt is not a submission receipt: "
                 + "; ".join(binding_mismatches)
                 + "; routing is not authorized")
         elif route["guard"] != VERIFIED_GUARD:

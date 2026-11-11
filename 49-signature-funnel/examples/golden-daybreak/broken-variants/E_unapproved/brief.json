@@ -3,6 +3,7 @@
   "one_question_per_turn": true,
   "locked": false,
   "funnel_size": 7,
+  "delivery_rail": "golden-specimen-delivery-rail",
   "answers": {
     "q1_offer": "The Daybreak Method \u2014 a 30-day morning-discipline course",
     "q2_price_promise": "$149; calm, owned mornings and a first deep-work block within 30 days",

@@ -40,9 +40,17 @@ Usage:
   build_production_request.py [--page-role checkout] --copy-version standard|long-form \
       --manuscript <run_dir>/copy/internal-manuscript.md --stage visual-mockup \\
       --out <run_dir>/production-request.json [--page-kind sales|opt_in] [--slots slots.json] \\
-      [--design-prose prose.json] [--references a.png,b.png] [--model ID] [--style TEXT]
+      [--design-prose prose.json] [--references a.png,b.png] [--model ID] [--style TEXT] \
+      [--style-card-id FN-001]
   build_production_request.py --copy-version product-selection|thank-you [--page-role that role] \
       --manuscript ... --stage ... --out ...   (omitted --page-role stamps the form's own role)
+
+  Skill 45 (read-only, fix spec M4): every build reads the design library's prompt bands, negative-
+  prompting rules and funnel page rules and writes <run_dir>/private/receipts/design-intelligence.json
+  (the receipt stage_gate.py demands before image-inventory-prompts closes). When --style-card-id is
+  given, or intake.json carries style_card_id, that card's LONG tier is embedded VERBATIM as a BRAND
+  STYLE block in every section prompt; it is never trimmed, and a card too large for the model budget
+  is a named refusal. A card or library file that cannot be read refuses with AF-DI-ABSENT.
 
   slots.json:  {"<canonical section id>": [{"slot_id", "aspect_ratio", "art_direction"}]}
   prose.json:  {"notes": str, "traits": str, "rules_md": str, "rules_json": str}
@@ -84,6 +92,19 @@ import wireframe_spec  # noqa: E402
 import page_kinds  # noqa: E402
 from validate_copy_structure import parse_manuscript  # noqa: E402
 
+
+def _load_design_intelligence():
+    """shared-utils/signature_launch/design_intelligence.py, loaded by path (repo and installed layouts alike)."""
+    import importlib.util
+    path = HERE.parents[1] / "shared-utils" / "signature_launch" / "design_intelligence.py"
+    spec = importlib.util.spec_from_file_location("signature_launch_design_intelligence", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+di = _load_design_intelligence()
+
 LEADS = {
     "desktop-wireframe": "Desktop wireframe sheet, section {section_number} of {section_total}, "
                          "{section_name}, at {width}px.",
@@ -99,6 +120,7 @@ LEADS = {
 BLOCKS = (("notes", "LAYOUT NOTES"), ("traits", "VISUAL STANDARD TRAITS"),
           ("rules_md", "DESIGN SYSTEM, MEASURED"), ("rules_json", "DESIGN TOKENS"))
 MD_BLOCKS = ("notes", "traits", "rules_md")
+BRAND_STYLE_HEAD = "BRAND STYLE (design library style card, LONG tier, verbatim)"
 SECTION_HEAD = "SECTION {section_number} of {section_total}: {section_name} at {width}px\n"
 SECTION_BODY = "{layout}\nLAYOUT AND COPY:\n{copy}\nIMAGE SLOTS:\n{slots}"
 SECTION_TAIL = SECTION_HEAD + SECTION_BODY
@@ -718,6 +740,8 @@ def template_for(stage: str, blocks: dict) -> str:
             if key == "rules_json":  # literal braces survive the wire's str.format
                 body = body.replace("{", "{{").replace("}", "}}")
             parts += [heading, body]
+    if blocks.get("brand_style"):  # the design library card, verbatim; braces survive str.format
+        parts += [BRAND_STYLE_HEAD, blocks["brand_style"].replace("{", "{{").replace("}", "}}")]
     parts.append(SECTION_BODY if stage in MOCKUP_PROMPT_STAGES else SECTION_TAIL)
     return "\n\n".join(parts)
 
@@ -762,7 +786,7 @@ def folded_levels(run_dir):
 
 def build(stage, version, manuscript_text, slots, prose, references, model, style, run_dir=Path("."),
           page_role="landing", sections=None, structure=None, page_doc=None, page_kind=None,
-          order_bump=None):
+          order_bump=None, style_card=None):
     notes = {"dropped_role_label_headings": [], "terminal_periods_added": []}
     if structure:  # a role with its own entry in references/page-structures.json (downsell_1)
         version, spec = structure["copy_version"], structure
@@ -850,6 +874,14 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
     run_blocks(request, run_dir)
     budget = exe.prompt_budget(model)
     chosen = {}
+    if style_card:  # the card is part of the contract: set first, so prose gives way to it, never the reverse
+        unfilled = sorted(set(re.findall(r"\{[A-Za-z_]\w*\}", style_card["long_tier"])))
+        if unfilled:  # the executor refuses a leftover token; say why, by card, before composing anything
+            raise BuildError(f"style card {style_card['id']}: its LONG tier still carries the unfilled "
+                             f"variable(s) {', '.join(unfilled)}; a template variable is never sent to a model, "
+                             "so fill the card's variables in the design library (Skill 45 Workflow B) first")
+        chosen["brand_style"] = style_card["long_tier"]
+        request["stage_prompts"][stage] = template_for(stage, chosen)
 
     def fits(trial):
         request["stage_prompts"][stage] = template_for(stage, trial)
@@ -891,7 +923,8 @@ def build(stage, version, manuscript_text, slots, prose, references, model, styl
         "canonical_ids": [s["section_id"] for s in sections], "provider_calls": 0,
         **({"page_role": structure["role"], **notes} if structure else {}),
         "dropped_blocks": [k for k, _h in BLOCKS if prose.get(k) and k not in chosen],
-        "trimmed_blocks": [k for k in chosen if chosen[k] != prose[k]],
+        "trimmed_blocks": [k for k in chosen if k != "brand_style" and chosen[k] != prose[k]],
+        **({"style_card": {"id": style_card["id"], "sha256": style_card["sha256"]}} if style_card else {}),
         "char_budget": {"target": budget and budget["target_chars"],
                         "max": budget and budget["max_chars"],
                         "min_seen": min(sizes.values()), "max_seen": max(sizes.values()),
@@ -933,6 +966,9 @@ def main(argv=None) -> int:
     p.add_argument("--references", default="")
     p.add_argument("--model", default="gpt-image-2-6/sunburst-image-to-image")
     p.add_argument("--style", default="")
+    p.add_argument("--style-card-id", default=None,
+                   help="a registered Skill 45 style card; default: style_card_id in the run's intake.json. "
+                        "Its LONG tier is embedded verbatim in every section prompt")
     p.add_argument("--run-dir", type=Path,
                    help="the run whose copy source and copy/copy-manifest.json the request is "
                         "checked against (default: the manuscript's run when it sits in "
@@ -952,6 +988,11 @@ def main(argv=None) -> int:
                             if source.resolve().parent.name == "copy"
                             else a.out.resolve().parent)
     try:
+        # Skill 45, read-only: every build reads the rules (a missing file refuses by name, AF-DI-ABSENT)
+        # and the requested card; the receipt is written only after the request is built.
+        card_id = a.style_card_id or di.run_style_card_id(run_dir)
+        style_card = di.resolve_style_card(card_id) if card_id else None
+        di.build_receipt(card_id)
         load = lambda f: json.loads(f.read_text(encoding="utf-8")) if f else {}
         sections = page_doc = None
         if structure:
@@ -963,8 +1004,10 @@ def main(argv=None) -> int:
                         load(a.slots), load(a.design_prose),
                         [r for r in a.references.split(",") if r], a.model, a.style, run_dir,
                         a.page_role, sections=sections, structure=structure, page_doc=page_doc,
-                        page_kind=a.page_kind, order_bump=False if a.no_bump else None)
-    except (BuildError, exe.ExecutorError, OSError, ValueError) as exc:
+                        page_kind=a.page_kind, order_bump=False if a.no_bump else None,
+                        style_card=style_card)
+        receipt_path = di.write_receipt(run_dir, card_id)
+    except (BuildError, exe.ExecutorError, OSError, ValueError, di.DesignIntelligenceError) as exc:
         print(f"REFUSED: {exc}")
         return 1
     a.out.parent.mkdir(parents=True, exist_ok=True)
@@ -978,6 +1021,7 @@ def main(argv=None) -> int:
         print(f"WARN below the {cb['target']}-char target: shortest section {cb['min_seen']} chars; "
               "supply fuller --design-prose to reach the 95 to 100 percent band")
     print(f"CHECKED run_dir={run_dir} against={'; '.join(m['checked_against']) or 'request only'}")
+    print(f"DESIGN-INTELLIGENCE receipt={receipt_path.relative_to(run_dir)} card={card_id or 'none'}")
     return 0
 
 

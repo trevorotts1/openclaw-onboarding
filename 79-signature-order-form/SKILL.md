@@ -1,7 +1,7 @@
 ---
 name: signature-order-form
 description: "Skill 79: Signature Order Form, Checkout and Signature Bump Sale. Builds the reusable native Convert and Flow checkout in two modes (combined explanation-plus-checkout for one simple offer, and post-selection checkout after Skill 78 Product Selection), owns the order bump on the original checkout, the offer details and price display, and the guarantee/terms block. Status: landed in this repository; this file makes no installation, distribution-discovery or live-payment claim."
-version: 0.1.8
+version: 0.1.9
 ---
 
 # Skill 79: Signature Order Form, Checkout and Signature Bump Sale
@@ -81,6 +81,10 @@ scripts/shared_page_service.py`) on the five-section structure in
 `49-signature-funnel/scripts/checkout_wrapper.py` (the design-only dispatch adapter). The section
 order is the reading order in `references/components/QC-STATES.md`. The native form is never
 drawn as card fields and is never built or bound by those stages: it stays Skill 06's.
+
+## Design direction (Skill 45)
+
+Design direction = Skill 71 structure + Skill 45 card/rules via `design_prose.py`. The order form page's design-only stages follow the same direction. The page's sections are Skill 71's; its look comes from the client's chosen Skill 45 style card (a registered `FN-` id, optional) and the design library's funnel page rules, composed into `design-prose.json` by `shared-utils/signature_launch/design_prose.py` and passed to Skill 71 as `--design-prose`. The file records the sha256 of every Skill 45 file it read, so a hand-typed file, an edited one, or one built against rules that have since changed is refused (`design_prose.check_design_prose`). Skill 45 is only read, never written.
 
 ## Proof levels
 

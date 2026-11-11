@@ -22,7 +22,7 @@
       "id": "tree-49-signature-funnel",
       "kind": "skill_tree",
       "ref": "49-signature-funnel",
-      "min_version": "v2.1.28",
+      "min_version": "v2.1.53",
       "required": true,
       "why": "intake validation, route compiler, dispatch, delegation receipt store"
     },
@@ -30,7 +30,12 @@
       "id": "tree-78-signature-product-selection",
       "kind": "skill_tree",
       "ref": "78-signature-product-selection",
-      "min_version": "0.2.5",
+      "min_version": "0.2.7",
+      "interface_sha256": {
+        "scripts/build_selection_plan.py": "f15394a971606cd3355d0cd11a498a291309f3c19ccaafd02d1a95e19f150d98",
+        "scripts/emit_page_result.py": "5290cbac5b5c7acd228818fbdb7f1bfb7cc713479d0d1add6c1a7b60adfb22f2",
+        "scripts/run_image_stages.py": "24c8f3a52eee3ff8861201e7283cc39121c588da3a71f5b9464017b94a70b84a"
+      },
       "required": true,
       "why": "product_selection page producer"
     },
@@ -38,7 +43,11 @@
       "id": "tree-79-signature-order-form",
       "kind": "skill_tree",
       "ref": "79-signature-order-form",
-      "min_version": "0.1.6",
+      "min_version": "0.1.8",
+      "interface_sha256": {
+        "scripts/validate_checkout.py": "45feac09266c88030b125412407c0d042400aba03f2fd5213e7613eb70fa23c6",
+        "references/checkout.schema.json": "1cc25a2823d69a475a86e1e7bdb6b8e80d77819f15616835785584732dd77614"
+      },
       "required": true,
       "why": "native checkout contract and cross-field validator"
     },
@@ -46,7 +55,11 @@
       "id": "tree-80-signature-upsell",
       "kind": "skill_tree",
       "ref": "80-signature-upsell",
-      "min_version": "0.2.4",
+      "min_version": "0.2.7",
+      "interface_sha256": {
+        "components/adapters/produce.py": "4797368ede5db7ec03165f6f5898252861c3a6929ae4c0ff70f1b64b27043247",
+        "components/adapters/routing_state.py": "9f7081ce23009c044bc6c63a9c2c486b62b83e53dd41453cdf3e83996c508979"
+      },
       "required": true,
       "why": "upsell_1 and upsell_2 page producer"
     },
@@ -54,7 +67,11 @@
       "id": "tree-81-signature-downsell",
       "kind": "skill_tree",
       "ref": "81-signature-downsell",
-      "min_version": "0.1.6",
+      "min_version": "0.1.9",
+      "interface_sha256": {
+        "validators/validate_request.py": "d0cc190cfbbb8c84d7d70cf0268b658b1b55356f556c74f7039dbe9155be5cc6",
+        "validators/validate_downsell.py": "43291ab4f8705b5a96da1f944f8a1c88869bfd52bb77dbc4a46128630a6edae1"
+      },
       "required": true,
       "why": "downsell_1 validators consumed by the S49 downsell wrapper"
     },
@@ -62,7 +79,11 @@
       "id": "tree-82-signature-thank-you",
       "kind": "skill_tree",
       "ref": "82-signature-thank-you",
-      "min_version": "0.3.2",
+      "min_version": "0.3.4",
+      "interface_sha256": {
+        "scripts/run_manifest.py": "1f0b902e6252747621da6a0691f7411cd199c3aa514cdaeeb803eeed3ba7c4d7",
+        "scripts/thank_you_resolver.py": "e512b65e014a0a819177d46bb9ed5d20a99b9756db4d8a5b249818753924d632"
+      },
       "required": true,
       "why": "thank_you result and run manifest"
     },
@@ -70,7 +91,7 @@
       "id": "tree-44-convert-and-flow-operator",
       "kind": "skill_tree",
       "ref": "44-convert-and-flow-operator",
-      "min_version": "v2.1.40",
+      "min_version": "v2.1.46",
       "required": true,
       "why": "launch automations: launch-c/plan_reader.py and the tools/siglaunch pipeline"
     },
@@ -78,7 +99,7 @@
       "id": "tree-50-email-engine",
       "kind": "skill_tree",
       "ref": "50-email-engine",
-      "min_version": "v2.0.8",
+      "min_version": "v2.0.9",
       "required": true,
       "why": "DRAFT-ONLY launch email, text and automation build plans"
     },
@@ -86,7 +107,11 @@
       "id": "tree-71-blackceo-signature-page",
       "kind": "skill_tree",
       "ref": "71-blackceo-signature-page",
-      "min_version": "1.3.12",
+      "min_version": "1.3.28",
+      "interface_sha256": {
+        "scripts/launch_context.py": "33a37e16284cfbbc58c3d1c49da7da82be117790e6592a50fdf1a4edb721680c",
+        "scripts/page_result.py": "1ce877aa699211e280b5aaa930d29a00dcabc63a09dcd181eef803e79cc61c57"
+      },
       "required": true,
       "why": "landing page producer reached through the S49 landing bridge"
     },
@@ -94,7 +119,7 @@
       "id": "tree-77-council-of-wise-elders",
       "kind": "skill_tree",
       "ref": "77-council-of-wise-elders",
-      "min_version": "1.0.74",
+      "min_version": "1.0.86",
       "required": true,
       "why": "Council planning-step invocation"
     },
@@ -237,7 +262,7 @@
       "id": "provider-kie-transport-74",
       "kind": "skill_tree",
       "ref": "74-kie-live-adapter",
-      "min_version": "v1.1.9",
+      "min_version": "v1.1.17",
       "required": false,
       "class": "selected_conditional",
       "modes": ["dispatch-kie"],
@@ -247,7 +272,7 @@
       "id": "provider-kie-image-66",
       "kind": "skill_tree",
       "ref": "66-kie-image",
-      "min_version": "v2.2.2",
+      "min_version": "v2.2.16",
       "required": false,
       "class": "selected_conditional",
       "modes": ["dispatch-kie"],
@@ -257,7 +282,7 @@
       "id": "provider-kie-setup-07",
       "kind": "skill_tree",
       "ref": "07-kie-setup",
-      "min_version": "v7.2.3",
+      "min_version": "v7.2.12",
       "required": false,
       "class": "selected_conditional",
       "modes": ["dispatch-kie"],
@@ -299,6 +324,67 @@
       "class": "selected_conditional",
       "modes": ["assemble"],
       "why": "the delivery record the launcher writes at assemble"
+    },
+    {
+      "id": "tree-45-design-intelligence-library",
+      "kind": "skill_tree",
+      "ref": "45-design-intelligence-library",
+      "min_version": "v2.2.14",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["assemble"],
+      "when": "not_test_only",
+      "why": "Skill 45 (read-only): the style cards, prompt bands, negative-prompting rules and page rules every client page is designed against, and the home of the GHL media push a client package is hosted through; a client package assembled on a box without it can never be hosted or styled"
+    },
+    {
+      "id": "script-45-graphics-ghl-push",
+      "kind": "shared_utils",
+      "ref": "45-design-intelligence-library/scripts/graphics_ghl_push.py",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["assemble"],
+      "when": "not_test_only",
+      "why": "graphics_hooks.PUSH_REF: the one upload route that puts a client package's images on the GHL media library; without it check_rules/image_qc.py can never find a hosting binding, so the preflight is red where hosting cannot work"
+    },
+    {
+      "id": "sop-diu-602-generation-receipts",
+      "kind": "sop",
+      "ref": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-602.md",
+      "receipt": "receipts/sop-read/SOP-DIU-602.json",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["assemble"],
+      "why": "generation receipts, the budget gate and orphan recovery every paid image is accounted under"
+    },
+    {
+      "id": "sop-diu-607-named-styles",
+      "kind": "sop",
+      "ref": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-607.md",
+      "receipt": "receipts/sop-read/SOP-DIU-607.json",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["assemble"],
+      "why": "named styles, client aliases and the lookbook: how a client's chosen style card is pinned to a version"
+    },
+    {
+      "id": "sop-diu-610-rights-manifest",
+      "kind": "sop",
+      "ref": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-610.md",
+      "receipt": "receipts/sop-read/SOP-DIU-610.json",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["assemble"],
+      "why": "the rights manifest and synthetic-media disclosure a delivered image carries"
+    },
+    {
+      "id": "sop-07-full-funnel-build-orchestration",
+      "kind": "sop",
+      "ref": "23-ai-workforce-blueprint/master-orchestrator-dept/SOP-07-Full-Funnel-Build-Orchestration.md",
+      "receipt": "receipts/sop-read/SOP-07-Full-Funnel-Build-Orchestration.json",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["assemble"],
+      "why": "the master-orchestrator funnel SOP whose routing sends a seasonal sale launch to this skill; read in full before the launcher assembles"
     }
   ]
 }

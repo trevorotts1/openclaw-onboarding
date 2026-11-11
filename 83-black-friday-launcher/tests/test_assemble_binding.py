@@ -594,14 +594,17 @@ class LaunchPlanBindingTests(unittest.TestCase):
     """CON-04 and S44-21 at assemble: the plan is the approved launch, and an automation is a Skill 44 build."""
 
     def setUp(self):
-        from test_launch_plan_law import base_intake, stub_council
+        from test_launch_plan_law import plan_intake, stub_council
+        from test_delivery_units import install_stand_in_validator, with_sales_piece
+        install_stand_in_validator(self)  # Skill 83 re-runs Skill 50's validator on every email unit
         self.tmp = tempfile.TemporaryDirectory()
         self.run_dir = Path(self.tmp.name) / "run"
         self.addCleanup(self.tmp.cleanup)
-        self.normalized = intake.validate(base_intake())
+        self.normalized = intake.validate(plan_intake())
         self.advice = council.planning_step(self.normalized, runner=stub_council)
         self.graph = route.compile_route(self.normalized, self.advice)
-        self.pieces = pieces_for(self.run_dir, self.graph, self.normalized)
+        self.pieces = with_sales_piece(pieces_for(self.run_dir, self.graph, self.normalized),
+                                       self.run_dir, self.normalized)
 
     def assemble(self, plan, deliveries):
         return package.assemble(self.run_dir, self.normalized, self.graph, self.pieces, council=self.advice,

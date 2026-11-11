@@ -653,13 +653,13 @@
       "$ref": "#/$defs/checkout_result"
     },
     "schema_version": {
-      "const": "0.2-draft"
+      "const": "0.3"
     }
   },
   "required": [
     "schema_version",
     "request"
   ],
-  "title": "Skill 79 checkout input and result - draft 0.2 (S79-01, fixture level)",
+  "title": "Skill 79 checkout input and result - version 0.3",
   "type": "object"
 }

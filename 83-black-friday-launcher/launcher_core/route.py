@@ -175,7 +175,7 @@ def validate_route(graph: Dict[str, Any]) -> None:
     for e in edges:
         if e.get("from") not in ids or e.get("to") not in ids:
             raise RouteError("AF-LAUNCH-ROUTE-REF", f"edge references an unknown node: {e!r}")
-        if e.get("event") not in ("interest_submitted", "selection_validated",
+        if e.get("event") not in ("interest_submitted", "selection_validated", "offer_selected",
                                   "payment_succeeded", "explicit_decline"):
             raise RouteError("AF-LAUNCH-ROUTE-EVENT", f"unknown edge event {e.get('event')!r}")
         if not str(e.get("guard") or "").strip():

@@ -5,7 +5,7 @@
 signature-funnel-entry.sh and 83's routes/substrate.py (every load of a Skill 49 script) both call this
 module, so the version, hash-pin and bypass-scan gates run on every path that can build a page. A tripped
 gate raises FrontDoorError, a SystemExit subclass: it is not swallowed by `except Exception` and the
-process ends non-zero with `ABORT [HASH-PIN|BYPASS-SCAN|VERSION|PIN-ROTATION]: ...` on stderr.
+process ends non-zero with `ABORT [HASH-PIN|BYPASS-SCAN|VERSION|DEPT-MAP|PIN-ROTATION]: ...` on stderr.
 
 PIN. The digest covers every file the dispatch/launch path executes or reads for decisions (see
 `pin_files`): all non-test Skill 49 scripts and data, the Skill 83 launcher tree, the Skill 71 page-build
@@ -22,7 +22,11 @@ MINTING. Only two paths write scripts/SF-PROVER-PIN.sha256:
 # trusted base on every PR and tag, which is the check that cannot be talked around. Upgrade path:
 # asymmetric signature (the verifier then holds no secret).
 
-Usage: python3 front_door.py {check,hashpin,bypass-scan,pin-list,write-pin,mint-pin,sign-rotation} [...]
+DEPARTMENT MAP. Skill 49 is routed by its own row in 23-ai-workforce-blueprint/skill-department-map.json
+(intent triggers, mirrored by repo-integration/skill-department-map-entry.json), never through a sibling
+skill's registry; `check` refuses when that row is missing (step_departmap).
+
+Usage: python3 front_door.py {check,departmap,hashpin,bypass-scan,pin-list,write-pin,mint-pin,sign-rotation} [...]
 stdlib only.
 """
 from __future__ import annotations
@@ -61,8 +65,8 @@ _PIN_SPEC = (
     ("shared/launch", "launch", (("", "*.py"), ("", "*.json"))),
 )
 
-# Hosts and senders a funnel must never hand-roll: GHL goes through Skill 6, mail through Skill 66/44,
-# KIE through Skill 74 only.
+# Hosts and senders a funnel must never hand-roll: GHL goes through the delivery rail the brief names,
+# mail through Skill 66/44, KIE through Skill 74 only.
 BYPASS_PATTERNS = re.compile(
     r"services\.leadconnectorhq\.com|backend\.leadconnectorhq\.com|rest\.gohighlevel\.com|"
     r"api\.gohighlevel\.com|smtplib|sendgrid|mailgun|nodemailer|ses\.send_email|send_raw_email|"
@@ -70,8 +74,15 @@ BYPASS_PATTERNS = re.compile(
     r"postmarkapp\.com|api\.twilio\.com", re.IGNORECASE)
 _RUN_DIR_EXTRA = re.compile(r"urllib\.request", re.IGNORECASE)
 
+# Skill 49 must not touch Skill 6 (Trevor's ruling): the delivery rail is named in the brief and proven by
+# signed receipts, never imported. Any of these names anywhere in the 49 tree (code, data or docs) is a
+# BYPASS-SCAN hit; this file is the only place allowed to spell them (STRING_ALLOWED).
+FORBIDDEN_SIBLING_REFS = re.compile(
+    r"06-ghl-install-pages|\bghl_gate\b|\bghl_verify\b|\bghl_media\b|\bghl_rest_canvas\b|\bghl_builder\b|\bcc_board\b")
+_SIBLING_SCANNED = (".py", ".sh", ".json", ".md")
+
 # Network-capable modules. Inside the skill tree only these files may import them (they are pinned);
-# Skills 6 and 74 live outside this tree and are the approved adapters.
+# the delivery rail and Skill 74 live outside this tree and are the approved adapters.
 _NET_MODULES = ("urllib.request", "urllib3", "http.client", "http.server", "socket", "requests", "httpx",
                 "aiohttp", "smtplib", "ftplib", "telnetlib", "imaplib", "poplib", "websocket", "websockets",
                 "xmlrpc.client", "paramiko")
@@ -98,17 +109,24 @@ class FrontDoorError(SystemExit):
 
 # ---------------------------------------------------------------- layout
 
+def _bases(skill_dir: Path) -> List[Path]:
+    root = Path(skill_dir).parent
+    return [root, root / ".claude" / "skills", root / "skills"]
+
+
+def _sibling_tree(skill_dir: Path, slug: str) -> Optional[Path]:
+    """The skill directory named `slug` (or `<number>-<slug>`) beside skill_dir, onboarding or deployed layout."""
+    for base in _bases(skill_dir):
+        for p in (sorted(base.iterdir()) if base.is_dir() else []):
+            if p.is_dir() and (p.name == slug or p.name.endswith("-" + slug)) and (p / "SKILL.md").is_file():
+                return p
+    return None
+
+
 def _skill_dirs(skill_dir: Path) -> Dict[str, Path]:
     """Resolve the 49, 83, 71, contract and launch trees beside skill_dir (onboarding or deployed layout)."""
-    root = skill_dir.parent
-    bases = [root, root / ".claude" / "skills", root / "skills"]
-
-    def skill(slug: str) -> Optional[Path]:
-        for base in bases:
-            for p in (sorted(base.iterdir()) if base.is_dir() else []):
-                if p.is_dir() and (p.name == slug or p.name.endswith("-" + slug)) and (p / "SKILL.md").is_file():
-                    return p
-        return None
+    bases = _bases(skill_dir)
+    skill = lambda slug: _sibling_tree(skill_dir, slug)  # noqa: E731
 
     shared = next((b / "shared-utils" for b in bases if (b / "shared-utils").is_dir()), None)
     out = {"49": skill_dir, "83": skill("black-friday-launcher"), "71": skill("blackceo-signature-page")}
@@ -173,6 +191,29 @@ def step_version(skill_dir: Path = SKILL_DIR) -> None:
         raise FrontDoorError("VERSION", f"SKILL.md frontmatter version ({fm}) != skill-version.txt ({v}) - drift")
 
 
+DEPT_MAP_SLUG = "signature-funnel"
+
+
+def step_departmap(skill_dir: Path = SKILL_DIR) -> None:
+    """The routing door (issue 74): a Signature Funnel request reaches this skill through ITS OWN row in the
+    department map (intent triggers), never through a sibling skill's registry. A missing map file, a map
+    without the row, or a row without intent triggers refuses the whole front door."""
+    tree = _sibling_tree(Path(skill_dir), "ai-workforce-blueprint")
+    path = tree / "skill-department-map.json" if tree else None
+    if path is None or not path.is_file():
+        raise FrontDoorError("DEPT-MAP", f"skill-department-map.json not found beside {skill_dir} "
+                             "(23-ai-workforce-blueprint) - Skill 49 cannot prove it is routable")
+    try:
+        rows = json.loads(path.read_text(encoding="utf-8")).get("skills") or []
+    except (OSError, ValueError, AttributeError) as exc:
+        raise FrontDoorError("DEPT-MAP", f"{path.name} unreadable ({type(exc).__name__})") from exc
+    mine = [r for r in rows if isinstance(r, dict) and r.get("slug") == DEPT_MAP_SLUG]
+    triggers = [t for t in (mine[0].get("intent_triggers") or []) if isinstance(t, str) and t.strip()] if mine else []
+    if not triggers:
+        raise FrontDoorError("DEPT-MAP", f"{path.name} has no '{DEPT_MAP_SLUG}' row with intent_triggers - a "
+                             "signature funnel request has no door into Skill 49 without it")
+
+
 def step_hashpin(skill_dir: Path = SKILL_DIR, must_cover=()) -> str:
     """Compare the recomputed pin to the committed one. must_cover: 49-relative paths the generated list
     has to include (the shell's PINNED_FILES floor), so a glob change can never silently drop a core file."""
@@ -192,13 +233,19 @@ def step_hashpin(skill_dir: Path = SKILL_DIR, must_cover=()) -> str:
 
 
 def _text_hits(rel: str, data: bytes) -> Tuple[str, ...]:
-    """Findings for one skill-tree file: denylisted strings, and (python) network imports/calls."""
+    """Findings for one skill-tree file: denylisted strings, a forbidden sibling-skill reference (49 tree
+    only), and (python) network imports/calls."""
     key = (hashlib.sha256(data).hexdigest(), rel)
     if key in _scan_cache:
         return _scan_cache[key]
     text, hits = data.decode("utf-8", "replace"), []
-    if rel not in STRING_ALLOWED and BYPASS_PATTERNS.search(text):
+    if rel not in STRING_ALLOWED and not rel.endswith(".md") and BYPASS_PATTERNS.search(text):
         hits.append(f"{rel}: names a hand-rolled GHL/mail/KIE endpoint or sender")
+    if rel.startswith("49/") and rel not in STRING_ALLOWED:
+        sibling = FORBIDDEN_SIBLING_REFS.search(text)
+        if sibling:
+            hits.append(f"{rel}: names a sibling skill it must not touch ({sibling.group(0)!r}); "
+                        "the delivery rail is named in the brief and proven by signed receipts")
     tree = None
     if rel.endswith(".py"):
         try:
@@ -219,7 +266,7 @@ def _text_hits(rel: str, data: bytes) -> Tuple[str, ...]:
                 if name in ("__import__", "import_module"):
                     mods = [node.args[0].value]
             if rel not in NET_ALLOWED and any(m == n or m.startswith(n + ".") for m in mods for n in _NET_MODULES):
-                hits.append(f"{rel}:{getattr(node, 'lineno', 0)}: network module outside the Skill 6/74 adapters")
+                hits.append(f"{rel}:{getattr(node, 'lineno', 0)}: network module outside the delivery-rail/Skill 74 adapters")
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and _CURL.match(node.value):
                 hits.append(f"{rel}:{getattr(node, 'lineno', 0)}: shells out to curl/wget")
     _scan_cache[key] = tuple(hits)
@@ -239,7 +286,8 @@ def scan_tree(skill_dir: Path = SKILL_DIR) -> List[str]:
             dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS)
             for fn in sorted(filenames):
                 p = Path(dirpath) / fn
-                if p.suffix in (".py", ".sh", ".json") and not _is_test(fn) and not p.is_symlink():
+                if p.suffix in _SIBLING_SCANNED and not _is_test(fn) and not p.is_symlink() \
+                        and (p.suffix != ".md" or key == "49"):
                     hits += _text_hits(f"{prefix}/{p.relative_to(base).as_posix()}", p.read_bytes())
     return hits
 
@@ -272,19 +320,22 @@ def step_bypass_scan(run_dir: Optional[Path] = None, skill_dir: Path = SKILL_DIR
     if run_hits:
         print("BYPASS-SCAN hits:\n" + "\n".join(run_hits), file=sys.stderr)
         raise FrontDoorError("BYPASS-SCAN", "run working files hand-roll GHL REST / a mail sender / a raw Kie "
-                             "createTask or a KIE client script. All GHL build+media go through Skill 6; all image "
-                             "and video generation goes through Skill 66 (policy) then Skill 74 (transport). "
+                             "createTask or a KIE client script. GHL build and media go through the delivery rail "
+                             "named in the brief (its signed receipts are the proof); all image and video "
+                             "generation goes through Skill 66 (policy) then Skill 74 (transport). "
                              "Delete the hand-rolled path.")
     tree_hits = scan_tree(skill_dir)
     if tree_hits:
         print("BYPASS-SCAN hits:\n" + "\n".join(tree_hits), file=sys.stderr)
-        raise FrontDoorError("BYPASS-SCAN", "the skill tree itself hand-rolls a network call or sender. Only the "
-                             "Skill 6 / Skill 74 adapters may reach GHL, mail or KIE.")
+        raise FrontDoorError("BYPASS-SCAN", "the skill tree itself hand-rolls a network call or sender, or names a "
+                             "sibling skill it must not touch. Only the delivery rail the brief names and the "
+                             "Skill 74 adapter may reach GHL, mail or KIE.")
 
 
 def check(run_dir: Optional[Path] = None, skill_dir: Path = SKILL_DIR) -> str:
-    """version + hash-pin + bypass-scan. Returns the verified pin; raises FrontDoorError on any trip."""
+    """version + department map + hash-pin + bypass-scan. Returns the verified pin; raises FrontDoorError on any trip."""
     step_version(skill_dir)
+    step_departmap(skill_dir)
     pin = step_hashpin(skill_dir)
     step_bypass_scan(run_dir, skill_dir)
     return pin
@@ -388,6 +439,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("check", "bypass-scan"):
         sub.add_parser(name).add_argument("--run-dir")
+    sub.add_parser("departmap")
     sub.add_parser("pin-list")
     sub.add_parser("hashpin").add_argument("--must-cover", nargs="*", default=[])
     wp = sub.add_parser("write-pin")
@@ -397,9 +449,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     a = ap.parse_args(argv)
     sd = Path(a.skill_dir).resolve()
     if a.cmd == "check":
-        print(f"front door cleared (version/hash-pin/bypass): pin {check(a.run_dir, sd)}")
+        print(f"front door cleared (version/dept-map/hash-pin/bypass): pin {check(a.run_dir, sd)}")
     elif a.cmd == "hashpin":
         print(f"hash-pin verified: {step_hashpin(sd, a.must_cover)}")
+    elif a.cmd == "departmap":
+        step_departmap(sd)
+        print("department map row present: signature-funnel")
     elif a.cmd == "bypass-scan":
         step_bypass_scan(a.run_dir, sd)
         print(f"BYPASS-SCAN clean: {a.run_dir or sd}")
