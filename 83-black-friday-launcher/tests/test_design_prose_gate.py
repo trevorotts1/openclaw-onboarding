@@ -15,13 +15,14 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE.parent), str(HERE.parent / "routes"), str(HERE)]
 
 import adapters  # noqa: E402
 import substrate  # noqa: E402
-from test_adapters_config import Inputs, segments  # noqa: E402
+from test_adapters_config import Inputs, segments, stamped_checkout  # noqa: E402
 
 HAND_TYPED = {"notes": "bold and gold", "traits": "", "rules_md": "Make it look great. " * 50}
 
@@ -124,8 +125,9 @@ class ComposedAtTheLaunchTests(unittest.TestCase):
 
     def test_the_build_writes_the_checkout_prose_too(self):
         inputs = Inputs(self)
-        checkout = {"manuscript": inputs.write("m.md"), "brand_file": inputs.write("b.md"), "brand_owner": "o",
-                    "image_cap": 1, "design_style": "B"}
+        manuscript, request = stamped_checkout(inputs.root)  # the order form's copy is Skill 79's stamped output (issue 12)
+        checkout = {"manuscript": manuscript, "checkout_request": request, "brand_file": inputs.write("b.md"),
+                    "brand_owner": "o", "image_cap": 1, "design_style": "B"}
         inputs.build(checkout_design=checkout)
         doc = json.loads((inputs.root / "work" / "design-prose-checkout.json").read_text(encoding="utf-8"))
         self.assertEqual((doc["design_intelligence"]["roles"], doc["design_intelligence"]["style"]), (["checkout"], "B"))
@@ -163,16 +165,19 @@ class ComposedAtTheLaunchTests(unittest.TestCase):
     def test_the_real_launch_path_hands_the_measured_design_system_to_the_build(self):
         from launcher_core import launch_bridge  # noqa: PLC0415
         seen = {}
-        original = adapters.build_dispatch_config
-        adapters.build_dispatch_config = lambda **kw: seen.update(kw) or {"adapters": {}}
-        try:
-            launch_bridge._bind_adapters(adapters, {"checkout_manuscript": "c.md", "bridge_config": "b", "author_session": "s",
-                                                    "copy": {}, "journey": {}, "enrichment": {},
-                                                    "measured_design_system": "m.txt"},
-                                         Path("out"), Path("l.json"),
-                                         {"brand_file": "f", "brand_owner": "o", "image_cap": 1, "design_style": "A",
-                                          "executor_provider": "stub", "allow_paid": False},
+        adapter_inputs = {"bridge_config": "b", "author_session": "s", "copy": {}, "journey": {}, "enrichment": {},
+                          "measured_design_system": "m.txt"}
+        image_inputs = {"brand_file": "f", "brand_owner": "o", "image_cap": 1, "design_style": "A",
+                        "executor_provider": "stub", "allow_paid": False}
+        with self.assertRaisesRegex(launch_bridge.BridgeError, "never staged by hand"):  # issue 12 refusal stays
+            launch_bridge._bind_adapters(adapters, {**adapter_inputs, "checkout_manuscript": "c.md"}, Path("out"),
+                                         Path("l.json"), image_inputs, Path("i.json"), Path("o.json"))
+        # The order form's copy now comes from Skill 79's emitter (proven in test_checkout_manuscript_emitted), so the
+        # request file and the emitter are the two seams stood in for here; the measured design system is what is checked.
+        with mock.patch.object(adapters, "build_dispatch_config", lambda **kw: seen.update(kw) or {"adapters": {}}), \
+                mock.patch.object(adapters, "emit_checkout_manuscript", lambda **kw: Path(kw["out"])), \
+                mock.patch.object(launch_bridge, "_checkout_request_file",
+                                  lambda out_dir, launch_path: Path(out_dir) / "checkout-request.json"):
+            launch_bridge._bind_adapters(adapters, adapter_inputs, Path("out"), Path("l.json"), image_inputs,
                                          Path("i.json"), Path("o.json"))
-        finally:
-            adapters.build_dispatch_config = original
         self.assertEqual(seen["measured_design_system"], "m.txt")

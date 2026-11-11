@@ -220,8 +220,8 @@ class ThankYouTests(unittest.TestCase):
 
     def test_the_thank_you_pipeline_passes_skill_82s_no_pitch_scanner(self):
         """AF-71-THANK-YOU-PITCH: the runner is told to scan the manuscript with Skill 82's own script."""
-        steps = segments(Inputs(self).build()["adapters"]["thank_you"]["command"][2])
-        pipeline = shlex.split(steps[0][steps[0].index("--pipeline-command") + 1])
+        service = step(Inputs(self).build(), "thank_you", "shared_page_service.py")  # the chain now heads with compose and check
+        pipeline = shlex.split(service[service.index("--pipeline-command") + 1])
         self.assertIn("--no-pitch-scan", pipeline)
         scanner = Path(pipeline[pipeline.index("--no-pitch-scan") + 1])
         self.assertEqual(scanner, substrate.source("82-signature-thank-you/scripts/semantic_scan.py"))
@@ -350,8 +350,8 @@ class AllowListTests(unittest.TestCase):
     def test_the_no_pitch_flag_may_name_only_skill_82s_scanner(self):
         """A stand-in scanner that always passes would void AF-71-THANK-YOU-PITCH, so it is refused by name."""
         script = adapters_thank_you_script(self)
-        steps = segments(script)
-        inner = steps[0][steps[0].index("--pipeline-command") + 1]
+        service = next(s for s in segments(script) if "shared_page_service.py" in " ".join(s))  # not steps[0]: compose and check head the chain
+        inner = service[service.index("--pipeline-command") + 1]
         pipeline = shlex.split(inner)
         adapters.validate_adapter_config({"adapters": {"thank_you": {"command": ["bash", "-c", script]}}})
         pipeline[pipeline.index("--no-pitch-scan") + 1] = "/tmp/always_pass.py"
