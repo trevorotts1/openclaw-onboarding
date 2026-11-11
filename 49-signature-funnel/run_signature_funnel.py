@@ -1279,6 +1279,7 @@ def self_test() -> int:
             print(f"SELF-TEST FAIL: the real visual-step case needs Skill 71 ({skill71}) and the golden copy "
                   "ledger beside Skill 49; one is missing, so the --out-dir fix cannot be proven here.")
         else:
+            sys.path.insert(0, str(_SCRIPTS / "fixtures"))  # the loopback stand-in lives in a fixtures dir the bypass scan skips
             import fake_command_center  # noqa: E402
             rdq = tmp / "run-visual-real"
             rdq.mkdir()

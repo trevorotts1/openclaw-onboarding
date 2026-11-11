@@ -36,6 +36,7 @@ sys.path.insert(0, str(SKILL71 / "tests"))
 import board_fixture as bf  # noqa: E402  (Skill 71's own Design Board fixture, read-only)
 import deliverable_labels  # noqa: E402
 sys.path.insert(0, str(SCRIPTS))
+sys.path.insert(0, str(SCRIPTS / "fixtures"))  # the loopback stand-in lives in a fixtures dir the bypass scan skips
 from fake_command_center import FakeCommandCenter  # noqa: E402
 
 CC = FakeCommandCenter()  # a loopback Command Center: the real approval_record.verify talks to it
