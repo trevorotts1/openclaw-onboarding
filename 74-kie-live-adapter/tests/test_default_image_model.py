@@ -1,16 +1,18 @@
-"""X-97: the fleet default GPT Image model is the newest one priced PER PICTURE, never per token.
+"""X-97: the fleet default GPT Image model is KIE.ai GPT Image 2.6 Sunburst at medium quality (rule N43).
 
-Price texts below are copied from KIE's live catalog (fetched 2026-11-10): the 2.6 sunburst and
-flare variants are priced per 1M tokens, the 2.6 economy variant per picture.
+2.6 is billed by tokens; the default carries KIE's published per-picture reference price for the quality
+(references/kie-default-price-evidence.json). Free: Skill 74's Adapter runs on a fake transport.
 """
-import importlib.util
 import json
 import os
 import subprocess
 import sys
+import tempfile
+import types
 import unittest
+from unittest import mock
 
-from test_registry_commands import Base, cat, schema, T2I, I2I, G25S, G25S_I  # noqa: F401
+from test_registry_commands import Base, cat, schema, T2I, I2I
 import kie_live_adapter as K
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -19,150 +21,199 @@ CHECK = os.path.join(SKILL, "scripts", "check_default_image_model.py")
 
 TOKEN = ("Text input 900 credits / 1M tokens ($4.50), cached text input 225 ($1.125), image input 1,440 ($7.20), "
          "cached image input 360 ($1.80), image output 5,400 ($27.00) — 10% below official pricing.")
-ECON = ("GPT Image 2.6 (Economy) — just 5 credits ($0.025) per 1K image. Same GPT Image 2.6 model, served through "
-        "our economy channel at a flat per-image price, 1K only.")
 TIERS = "GPT Image 2.5 — now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K."
 S26, S26_I = "gpt-image-2-6/sunburst-text-to-image", "gpt-image-2-6/sunburst-image-to-image"
-E26, E26_I = "gpt-image-2-6/economy-text-to-image", "gpt-image-2-6/economy-image-to-image"
+F26, F26_I = "gpt-image-2-6/flare-text-to-image", "gpt-image-2-6/flare-image-to-image"
 S25, S25_I = "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image"
-S27, S27_I = "gpt-image-2-7/aurora-text-to-image", "gpt-image-2-7/aurora-image-to-image"
+S27, S27_I = "gpt-image-2-7/sunburst-text-to-image", "gpt-image-2-7/sunburst-image-to-image"
+A27, A27_I = "gpt-image-2-7/aurora-text-to-image", "gpt-image-2-7/aurora-image-to-image"
+LIVE_2_6 = [(S26, T2I, TOKEN), (S26_I, I2I, TOKEN), (F26, T2I, TOKEN), (F26_I, I2I, TOKEN),
+            (S25, T2I, TIERS), (S25_I, I2I, TIERS)]
+
 
 def read(path):
     with open(path, encoding="utf-8") as f:
         return f.read()
 
 
-LIVE_2_6 = [(S26, T2I, TOKEN), (S26_I, I2I, TOKEN), (E26, T2I, ECON), (E26_I, I2I, ECON),
-            (S25, T2I, TIERS), (S25_I, I2I, TIERS)]
+class Default(Base):
+    def make(self, rows, **env):
+        return self.adapter([["GET", "/schema", [schema(20000)]], ["GET", "/api/v1/models", [cat(*rows)]]], env=env)[0]
+
+    def test_pin_is_the_2_6_sunburst_slash_form_never_flare(self):
+        self.assertEqual((K.PINNED_DEFAULTS["Text to Image"], K.PINNED_DEFAULTS["Image to Image"]), (S26, S26_I))
+        self.assertEqual(K.KNOWN_DEFAULTS["gpt-image"], S26)
+        self.assertNotIn("flare", json.dumps(K.PINNED_DEFAULTS))
+
+    def test_default_is_sunburst_not_the_newer_per_picture_2_5_nor_flare(self):
+        a = self.make(LIVE_2_6)
+        self.assertEqual((a.default_model("gpt-image"), a.default_model("gpt-image", edit=True)), (S26, S26_I))
+
+    def test_a_newer_sunburst_with_a_picture_price_becomes_the_default(self):
+        a = self.make(LIVE_2_6 + [(S27, T2I, "7 credits ($0.035) per image"), (S27_I, I2I, "7 credits ($0.035) per image")])
+        self.assertEqual((a.default_model("gpt-image"), a.default_model("gpt-image", edit=True)), (S27, S27_I))
+
+    def test_a_newer_token_priced_sunburst_without_a_reference_row_is_skipped(self):
+        a = self.make(LIVE_2_6 + [(S27, T2I, TOKEN), (S27_I, I2I, TOKEN)])
+        self.assertEqual(a.default_model("gpt-image"), S26)
+
+    def test_a_newer_token_priced_sunburst_with_a_reference_row_is_the_default(self):
+        ev = dict(K.load_price_evidence())
+        ev["tables"] = ev["tables"] + [{"models": [S27, S27_I], "credits_per_picture": ev["tables"][0]["credits_per_picture"]}]
+        p = os.path.join(self.tmp, "ev.json")
+        with open(p, "w") as f:
+            json.dump(ev, f)
+        a = self.make(LIVE_2_6 + [(S27, T2I, TOKEN), (S27_I, I2I, TOKEN)])
+        with mock.patch.object(K, "PRICE_EVIDENCE", p):
+            self.assertEqual(a.default_model("gpt-image"), S27)
+
+    def test_a_newer_non_sunburst_variant_is_never_the_default(self):
+        a = self.make(LIVE_2_6 + [(A27, T2I, "7 credits ($0.035) per image"), (A27_I, I2I, "7 credits ($0.035) per image")])
+        self.assertEqual(a.default_model("gpt-image"), S26)
+
+    def test_no_catalog_means_the_pin(self):
+        a, tr, c = self.adapter([["GET", "/api/v1/models", [(200, {"code": 500, "msg": "down"})]]])
+        self.assertEqual((a.default_model("gpt-image"), a.default_model("gpt-image", edit=True)), (S26, S26_I))
 
 
-class PerPictureDefault(Base):
-    def routes(self, rows):
-        return [["GET", "/schema", [schema(20000)]],
-                ["GET", "/api/v1/models", [cat(*rows)]]]
+class DefaultPrice(Base):
+    def make(self, rows=LIVE_2_6):
+        return self.adapter([["GET", "/schema", [schema(20000)]], ["GET", "/api/v1/models", [cat(*rows)]]])[0]
 
-    def latest(self, rows, resolution=None, **env):
-        a, tr, c = self.adapter(self.routes(rows), env=env)
-        return a, a.cmd_latest_family("gpt-image", resolution=resolution)
-
-    def test_pinned_fallback_is_gpt_image_2_6_economy(self):
-        self.assertEqual(K.KNOWN_DEFAULTS["gpt-image"], E26)
-
-    def test_token_priced_2_6_is_skipped_for_the_per_picture_2_6(self):
-        a, r = self.latest(LIVE_2_6)
+    def test_no_quality_named_prices_medium_per_picture_for_every_size(self):
+        a = self.make()
+        r = a.cmd_default_price("gpt-image")
         d = r["data"]
-        self.assertEqual((d["default"], d["version"], d["routes"]["Image to Image"]), (E26, [2, 6], E26_I))
-        self.assertNotIn(S26, json.dumps(d["candidates"]))
+        self.assertEqual((d["model"], d["quality"], d["unit"], d["price_note"]), (S26, "medium", "per-image", "estimate; actual billed by tokens"))
+        for tier, credits in (("1", 7.82), ("2", 15.9), ("4", 26.43)):
+            self.assertIn("%s credits ($%s) for %s K" % (credits, round(credits * 0.005, 6), tier), d["pricing_desc"])
+        self.assertNotRegex(d["pricing_desc"], r"(?i)token")
+        self.assertEqual((d["credits_min"], d["credits_max"]), (7.82, 26.43))
 
-    def test_a_newer_per_picture_generation_becomes_the_default(self):
-        rows = LIVE_2_6 + [(S27, T2I, "7 credits ($0.035) per image"), (S27_I, I2I, "7 credits ($0.035) per image")]
-        self.assertEqual(self.latest(rows)[1]["data"]["default"], S27)
+    def test_a_named_quality_is_never_replaced(self):
+        a = self.make()
+        for q, top in (("low", 14.95), ("high", 32.02), ("xhigh", 56.93), ("max", 128.08)):
+            d = a.cmd_default_price("gpt-image", quality=q)["data"]
+            self.assertEqual((d["quality"], d["credits_max"]), (q, top))
 
-    def test_a_newer_token_priced_generation_is_never_the_default(self):
-        rows = LIVE_2_6 + [(S27, T2I, TOKEN), (S27_I, I2I, TOKEN)]
-        self.assertEqual(self.latest(rows)[1]["data"]["default"], E26)
+    def test_auto_and_unknown_qualities_have_no_picture_price(self):
+        a = self.make()
+        self.assertEqual(a.cmd_default_price("gpt-image", quality="auto")["error"]["code"], "no_picture_price")
+        self.assertEqual(a.cmd_default_price("gpt-image", quality="ultra")["error"]["code"], "bad_quality")
 
-    def test_registry_fallback_also_drops_token_priced_models(self):
-        def row(i, tt, raw):
-            return {"id": i, "taskType": tt, "schema": {"readable": True}, "pricing": {"raw": raw}}
-        reg = self.write_registry([row(S26, T2I, TOKEN), row(S26_I, I2I, TOKEN), row(S25, T2I, TIERS), row(S25_I, I2I, TIERS)])
-        a, tr, c = self.adapter([["GET", "/api/v1/models", [(200, {"code": 500, "msg": "down"})]]], env={"KIE_LIVE_REGISTRY": reg})
-        r = a.cmd_latest_family("gpt-image")
-        self.assertEqual((r["data"]["default"], r["data"]["source"]), (S25, "registry"))
+    def test_a_token_priced_model_without_a_reference_row_is_refused(self):
+        p = os.path.join(self.tmp, "none.json")
+        with open(p, "w") as f:
+            json.dump({"tables": []}, f)
+        a = self.make([(S26, T2I, TOKEN), (S26_I, I2I, TOKEN)])  # token-priced only: the pin, with no row
+        with mock.patch.object(K, "PRICE_EVIDENCE", p):
+            r = a.cmd_default_price("gpt-image")
+        self.assertEqual((r["state"], r["error"]["code"]), ("fail", "no_picture_price"))
 
-    def test_only_token_priced_models_means_no_resolved_default(self):
-        a, r = self.latest([(S26, T2I, TOKEN), (S26_I, I2I, TOKEN)])
-        self.assertEqual(r["error"]["code"], "latest_unavailable")
+    def test_a_catalog_picture_price_is_passed_through_untouched(self):
+        a = self.make([(S26, T2I, "6 credits ($0.03) per image"), (S26_I, I2I, "6 credits ($0.03) per image")])
+        d = a.cmd_default_price("gpt-image", quality="high")["data"]
+        self.assertEqual((d["model"], d["unit"], d["pricing_desc"]), (S26, "per-image", "6 credits ($0.03) per image"))
 
-    def test_default_model_resolves_then_falls_back_to_the_pin(self):
-        a, _ = self.latest(LIVE_2_6 + [(S27, T2I, "7 credits"), (S27_I, I2I, "7 credits")])
-        self.assertEqual(a.default_model("gpt-image"), S27)
-        a, tr, c = self.adapter([["GET", "/api/v1/models", [(200, {"code": 500, "msg": "down"})]]],
-                                env={"KIE_LIVE_CACHE_DIR": os.path.join(self.tmp, "c4")})
-        self.assertEqual(a.default_model("gpt-image"), E26)  # no catalog, no registry: the pin
-        a, _ = self.latest([(S26, T2I, TOKEN), (S26_I, I2I, TOKEN)], KIE_LIVE_CACHE_DIR=os.path.join(self.tmp, "c5"))
-        self.assertEqual(a.default_model("gpt-image"), E26)  # token-only catalog: the pin, never a token model
+    def test_edit_prices_the_image_to_image_route_and_units_scale(self):
+        d = self.make().cmd_default_price("gpt-image", edit=True, units=3)["data"]
+        self.assertEqual((d["model"], d["credits_estimate"]), (S26_I, round(26.43 * 3, 4)))
 
-    # ---- ruling X-97-1: a named tier the default does not publish moves to the newest per-picture model that does
-    def test_a_named_tier_resolves_to_the_newest_per_picture_model_that_publishes_it(self):
-        a, r = self.latest(LIVE_2_6, resolution="1K")
-        self.assertEqual(a.default_model("gpt-image", "1K"), E26)
-        self.assertEqual(a.default_model("gpt-image", "2K"), S25)
-        self.assertEqual(a.default_model("gpt-image", "4K"), S25)
-        self.assertEqual(a.default_model("gpt-image"), E26)  # no tier named: the plain default
+    def test_preflight_uses_the_picture_price_not_the_token_text(self):
+        a = self.make()
+        price = a.cmd_default_price("gpt-image")
+        a.call = lambda *x, **y: {"data": 1000}
+        r = a.cmd_preflight(S26, 1, price=price)
+        self.assertEqual(r["data"]["required"], K.preflight_amount(26.43))
 
-    def test_a_tier_no_per_picture_model_publishes_has_no_default(self):
-        a, r = self.latest(LIVE_2_6)
-        self.assertIsNone(a.default_model("gpt-image", "8K"))
-        a, r = self.latest([(S26, T2I, TOKEN), (S26_I, I2I, TOKEN), (E26, T2I, ECON), (E26_I, I2I, ECON)],
-                           KIE_LIVE_CACHE_DIR=os.path.join(self.tmp, "c6"))
-        self.assertIsNone(a.default_model("gpt-image", "2K"))  # only token-priced models publish 2K here: refused, not pinned
-
-    def test_when_no_schema_is_readable_the_pin_answers_only_for_a_tier_it_publishes(self):
-        rows = [(E26, T2I, TIERS), (E26_I, I2I, TIERS)]  # pin shows per-picture tiers 1K, 2K, 4K in the catalog
-        a, tr, c = self.adapter([["GET", "/api/v1/models", [cat(*rows)]]])  # no schema routes: nothing readable
-        self.assertEqual(a.default_model("gpt-image", "2K"), E26)
-        self.assertIsNone(a.default_model("gpt-image", "8K"))
-        a, tr, c = self.adapter([["GET", "/api/v1/models", [cat((E26, T2I, ECON), (E26_I, I2I, ECON))]]],
-                                env={"KIE_LIVE_CACHE_DIR": os.path.join(self.tmp, "c7")})
-        self.assertIsNone(a.default_model("gpt-image", "2K"))  # the pin is 1K only: no pin, no 1K price for a 2K ask
-
-    def test_a_tier_answer_never_moves_the_family_default_state(self):
-        a, r = self.latest(LIVE_2_6)
-        a.default_model("gpt-image", "4K")
-        self.assertEqual(a.cmd_latest_family("gpt-image", refresh=True)["data"]["default"], E26)
-        self.assertFalse(any("DEFAULT CHANGED" in w for w in a.cmd_latest_family("gpt-image", refresh=True)["warnings"]))
-
-    def test_publishes_tier_reads_the_tier_tokens_of_the_price_text(self):
-        self.assertTrue(K.publishes_tier(ECON, "1K"))
-        self.assertFalse(K.publishes_tier(ECON, "2K"))
-        self.assertTrue(K.publishes_tier(TIERS, "4K"))
-        self.assertFalse(K.publishes_tier(TIERS, "8K"))
-        self.assertFalse(K.publishes_tier("12 credits per image", "2K"))  # no tier named in the text: not published
-
-    def test_the_economy_and_token_texts_parse_to_the_units_the_check_relies_on(self):
-        self.assertIn(K.parse_pricing(ECON)["unit"], K.PICTURE_PRICE_UNITS)
-        self.assertIn(K.parse_pricing(TIERS)["unit"], K.PICTURE_PRICE_UNITS)
-        self.assertEqual(K.parse_pricing(TOKEN)["unit"], "per-1m-tokens")
-        self.assertFalse(K.is_picture_priced(TOKEN))
+    def test_evidence_file_carries_the_published_table_and_quotes_the_page(self):
+        ev = K.load_price_evidence()
+        t = ev["tables"][0]["credits_per_picture"]
+        self.assertEqual(t["medium"], {"1K": 7.82, "2K": 15.9, "4K": 26.43})
+        self.assertEqual(t["low"], {"1K": 4.44, "2K": 9.0, "4K": 14.95})
+        self.assertEqual(t["high"], {"1K": 9.48, "2K": 19.27, "4K": 32.02})
+        self.assertEqual(t["xhigh"], {"1K": 16.86, "2K": 34.25, "4K": 56.93})
+        self.assertEqual(t["max"], {"1K": 37.93, "2K": 77.07, "4K": 128.08})
+        self.assertEqual((ev["adders"]["credits_per_prompt"], ev["adders"]["credits_per_reference_image"]), (0.1, 2.2))
+        self.assertEqual(ev["label"], "estimate; actual billed by tokens")
+        self.assertIn("Credits per Image", ev["page_text_quoted"]["title"])
+        self.assertIn("billed by tokens", ev["page_text_quoted"]["subtitle"])
+        self.assertEqual(ev["request_field"]["enum"], list(K.QUALITY_ENUM))
+        self.assertEqual(K.QUALITY_ENUM, ("low", "medium", "high", "xhigh", "max", "auto"))
 
 
 class DefaultCheck(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        import importlib.util
         spec = importlib.util.spec_from_file_location("check_default_image_model", CHECK)
         cls.C = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.C)
 
-    def rows(self, **prices):
-        return {i: {"model": i, "pricingDesc": p} for i, p in prices.items()}
+    def mod(self, **over):
+        d = {k: getattr(K, k) for k in dir(K) if not k.startswith("__")}
+        d.update(over)
+        return types.SimpleNamespace(**d)
 
-    def test_the_shipped_default_passes_against_the_shipped_evidence(self):
+    def defects(self, ev=None, **over):
+        return self.C.check(self.mod(**over), ev if ev is not None else K.load_price_evidence())
+
+    def test_the_shipped_default_passes(self):
         r = subprocess.run([sys.executable, "-I", CHECK], capture_output=True, text=True)
         self.assertEqual((r.returncode, r.stdout.strip()[:2]), (0, "OK"), r.stdout + r.stderr)
+        self.assertEqual(self.defects(), [])
 
-    def test_a_token_priced_default_is_refused(self):
-        bad = self.C.check({"gpt-image": S26}, self.rows(**{S26: TOKEN}))
-        self.assertEqual(len(bad), 1)
-        self.assertIn("per-1m-tokens", bad[0])
+    def test_a_flare_default_is_refused(self):
+        self.assertTrue(self.defects(PINNED_DEFAULTS={"Text to Image": F26, "Image to Image": F26_I}, KNOWN_DEFAULTS={"gpt-image": F26}))
 
-    def test_a_default_with_no_price_evidence_is_refused(self):
-        bad = self.C.check({"gpt-image": E26}, {})
-        self.assertEqual(len(bad), 1)
-        self.assertIn("no price evidence", bad[0])
+    def test_a_hyphenated_sunburst_default_is_refused(self):
+        h = "gpt-image-2-6-sunburst-text-to-image"
+        bad = self.defects(PINNED_DEFAULTS={"Text to Image": h, "Image to Image": S26_I}, KNOWN_DEFAULTS={"gpt-image": h})
+        self.assertTrue(any("not a gpt-image Sunburst" in b for b in bad))
 
-    def test_per_picture_defaults_pass(self):
-        self.assertEqual(self.C.check({"gpt-image": E26}, self.rows(**{E26: ECON})), [])
-        self.assertEqual(self.C.check({"gpt-image": S25}, self.rows(**{S25: TIERS})), [])
+    def test_an_economy_default_is_refused(self):
+        e = "gpt-image-2-6/economy-text-to-image"
+        bad = self.defects(PINNED_DEFAULTS={"Text to Image": e, "Image to Image": S26_I}, KNOWN_DEFAULTS={"gpt-image": e})
+        self.assertTrue(any("not a gpt-image Sunburst" in b for b in bad))
 
-    def test_a_default_outside_the_image_family_is_refused(self):
-        bad = self.C.check({"gpt-image": "gpt-5-5"}, self.rows(**{"gpt-5-5": ECON}))
-        self.assertEqual(len(bad), 1)
+    def test_a_default_that_is_not_the_text_route_pin_is_refused(self):
+        self.assertTrue(any("KNOWN_DEFAULTS" in b for b in self.defects(KNOWN_DEFAULTS={"gpt-image": S26_I})))
 
-    def test_main_fails_when_the_pinned_default_is_token_priced(self):
-        import tempfile
+    def test_a_default_quality_other_than_medium_is_refused(self):
+        self.assertTrue(any("not medium" in b for b in self.defects(DEFAULT_QUALITY="high")))
+
+    def test_a_default_quality_outside_the_enum_is_refused(self):
+        self.assertTrue(any("not in the KIE quality enum" in b for b in self.defects(DEFAULT_QUALITY="medium", QUALITY_ENUM=("low", "high"))))
+
+    def test_a_quality_enum_that_drifted_from_the_evidence_is_refused(self):
+        ev = json.loads(json.dumps(K.load_price_evidence()))
+        ev["request_field"]["enum"] = ["low", "medium"]
+        self.assertTrue(any("quality enum differs" in b for b in self.defects(ev)))
+
+    def test_a_missing_size_tier_at_the_default_quality_is_refused(self):
+        for tier in ("1K", "2K", "4K"):
+            ev = json.loads(json.dumps(K.load_price_evidence()))
+            del ev["tables"][0]["credits_per_picture"]["medium"][tier]
+            bad = self.defects(ev)
+            self.assertTrue(any(tier in b and "no per-picture reference price" in b for b in bad), (tier, bad))
+
+    def test_a_zero_or_non_number_price_is_refused(self):
+        for v in (0, "7.82", True, None):
+            ev = json.loads(json.dumps(K.load_price_evidence()))
+            ev["tables"][0]["credits_per_picture"]["medium"]["2K"] = v
+            self.assertTrue(self.defects(ev), v)
+
+    def test_a_default_with_no_row_at_all_is_refused(self):
+        self.assertTrue(any("no per-picture reference price" in b for b in self.defects({"tables": [], "request_field": {"enum": list(K.QUALITY_ENUM)}})))
+
+    def test_a_row_for_only_one_of_the_two_routes_is_refused(self):
+        ev = json.loads(json.dumps(K.load_price_evidence()))
+        ev["tables"][0]["models"] = [S26]
+        self.assertTrue(any(S26_I in b for b in self.defects(ev)))
+
+    def test_main_fails_when_the_shipped_pin_becomes_flare(self):
         src = read(os.path.join(SKILL, "scripts", "kie_live_adapter.py"))
-        self.assertIn('PINNED_DEFAULT = "%s"' % E26, src)
+        self.assertIn('"Text to Image": "%s"' % S26, src)
         with tempfile.TemporaryDirectory() as d:
             sk = os.path.join(d, "74-kie-live-adapter")
             os.makedirs(os.path.join(sk, "scripts"))
@@ -171,13 +222,13 @@ class DefaultCheck(unittest.TestCase):
                         "references/kie-default-price-evidence.json"):
                 body = read(os.path.join(SKILL, rel))
                 if rel.endswith("adapter.py"):
-                    body = body.replace('PINNED_DEFAULT = "%s"' % E26, 'PINNED_DEFAULT = "%s"' % S26)
+                    body = body.replace('"Text to Image": "%s"' % S26, '"Text to Image": "%s"' % F26)
                 with open(os.path.join(sk, rel), "w", encoding="utf-8") as f:
                     f.write(body)
             r = subprocess.run([sys.executable, "-I", os.path.join(sk, "scripts", "check_default_image_model.py")],
                                capture_output=True, text=True)
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
-        self.assertIn("per-1m-tokens", r.stdout)
+        self.assertIn("not a gpt-image Sunburst", r.stdout)
 
 
 if __name__ == "__main__":

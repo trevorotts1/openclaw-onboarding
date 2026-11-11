@@ -1,8 +1,9 @@
-"""X-97: a paid run that names no image model is priced at Skill 74's default, and that default is PER PICTURE.
+"""X-97: a paid run that names no image model is priced at Skill 74's default: GPT Image 2.6 Sunburst, medium quality.
 
-Free: Skill 74's Adapter runs on a fake transport (the one network seam), so nothing here calls KIE.
-Price texts are copied from KIE's live catalog (2026-11-10): 2.6 sunburst is per 1M tokens (it priced at
-"450 each" before this item), 2.6 economy is per picture.
+2.6 is billed by tokens; the default is priced per picture from KIE's published reference table (an estimate;
+actual billed by tokens): medium 1K 7.82, 2K 15.90, 4K 26.43 credits. A model or quality the caller names is
+never replaced. Free: Skill 74's Adapter runs on a fake transport (the one network seam), so nothing calls KIE.
+Price texts are copied from KIE's live catalog (2026-11-10).
 """
 
 from __future__ import annotations
@@ -26,13 +27,11 @@ PLAN_HASH = "a" * 64
 APPROVAL_ID = "appr_budget_0001"
 TOKEN = ("Text input 900 credits / 1M tokens ($4.50), cached text input 225 ($1.125), image input 1,440 ($7.20), "
          "cached image input 360 ($1.80), image output 5,400 ($27.00) — 10% below official pricing.")
-ECON = ("GPT Image 2.6 (Economy) — just 5 credits ($0.025) per 1K image. Same GPT Image 2.6 model, served through "
-        "our economy channel at a flat per-image price, 1K only.")
 S26, S26_I = "gpt-image-2-6/sunburst-text-to-image", "gpt-image-2-6/sunburst-image-to-image"
-E26, E26_I = "gpt-image-2-6/economy-text-to-image", "gpt-image-2-6/economy-image-to-image"
 S25, S25_I = "gpt-image-2-5-sunburst-text-to-image", "gpt-image-2-5-sunburst-image-to-image"
 TIERS = "GPT Image 2.5 — now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, and 16 credits ($0.08) for 4 K."
-N27, N27_I = "gpt-image-2-7/aurora-text-to-image", "gpt-image-2-7/aurora-image-to-image"
+N27, N27_I = "gpt-image-2-7/sunburst-text-to-image", "gpt-image-2-7/sunburst-image-to-image"
+A27, A27_I = "gpt-image-2-7/aurora-text-to-image", "gpt-image-2-7/aurora-image-to-image"
 T2I, I2I = ["Text to Image"], ["Image to Image"]
 
 
@@ -40,8 +39,8 @@ def row(model, task, price):
     return {"model": model, "title": model, "provider": "OpenAI", "taskType": task, "pricingDesc": price}
 
 
-CATALOG = [row(S26, T2I, TOKEN), row(S26_I, I2I, TOKEN), row(E26, T2I, ECON), row(E26_I, I2I, ECON)]
-TIERED = CATALOG + [row(S25, T2I, TIERS), row(S25_I, I2I, TIERS)]  # today's live shape: 2.5 publishes 1K, 2K, 4K
+CATALOG = [row(S26, T2I, TOKEN), row(S26_I, I2I, TOKEN)]  # today's live shape: 2.6 sunburst is token-priced
+TIERED = CATALOG + [row(S25, T2I, TIERS), row(S25_I, I2I, TIERS)]  # 2.5 sunburst is per picture, but older
 
 
 class FakeKie:
@@ -59,6 +58,8 @@ class FakeKie:
             return 200, json.dumps(self.schema).encode()
         if url.endswith("/api/v1/models"):
             return 200, json.dumps(self.catalog).encode()
+        if url.endswith("/api/v1/chat/credit"):
+            return 200, json.dumps({"code": 200, "data": 100000}).encode()
         return 404, b'{"code":404,"msg":"no route"}'
 
 
@@ -93,87 +94,84 @@ class DefaultModelPriceTests(unittest.TestCase):
         with mock.patch.object(image_plan, "_approval_verify", return_value=verifier):
             return resolve(raw, test_only=False, plan_hash=PLAN_HASH)
 
-    def test_no_model_named_prices_the_per_picture_default_not_the_token_one(self):
-        self.use_catalog(CATALOG)
-        quote = image_plan.live_price("kie", "USD")
-        self.assertEqual((quote["model"], quote["credits"], quote["per_picture_minor"]), (E26, 5.0, 3))
-        self.assertNotIn("1M tokens", quote["pricing_desc"])
+    # 7.82 / 15.90 / 26.43 credits at $0.005 each = 3.91 / 7.95 / 13.215 cents, rounded up to whole cents
+    MEDIUM = (("1K", 7.82, 4), ("2K", 15.9, 8), ("4K", 26.43, 14))
 
-    def test_a_paid_run_naming_no_model_gets_a_per_picture_price_and_a_sane_ceiling(self):
-        self.use_catalog(CATALOG)
-        inputs, _to_confirm = self.paid()
-        self.assertTrue(inputs["allow_paid"])
-        self.assertEqual(inputs["image_price_minor"], 3)
-        self.assertEqual(inputs["image_cap"], 4000 // 3)  # not 4000 // 450, the token-priced "450 each"
+    def test_no_model_and_no_quality_prices_sunburst_2_6_at_medium_per_picture(self):
+        self.use_catalog(TIERED)
+        for tier, credits, minor in self.MEDIUM:
+            q = image_plan.live_price("kie", "USD", resolution=tier)
+            self.assertEqual((q["model"], q["quality"], q["credits"], q["per_picture_minor"]), (S26, "medium", credits, minor), tier)
+            self.assertTrue(q["reference_price"])
+            self.assertEqual(q["price_note"], "estimate; actual billed by tokens")
 
-    def test_a_newer_per_picture_model_in_the_catalog_becomes_the_default(self):
-        self.use_catalog(CATALOG + [row(N27, T2I, "7 credits ($0.035) per image"), row(N27_I, I2I, "7 credits ($0.035) per image")])
-        quote = image_plan.live_price("kie", "USD")
-        self.assertEqual((quote["model"], quote["per_picture_minor"]), (N27, 4))
+    def test_a_paid_run_naming_no_model_is_budgeted_at_the_medium_price_for_each_size(self):
+        self.use_catalog(TIERED)
+        for tier, credits, minor in self.MEDIUM:
+            inputs, _ = self.paid(image_resolution=tier)
+            self.assertTrue(inputs["allow_paid"])
+            self.assertEqual((inputs["image_model"], inputs["image_quality"], inputs["image_price_minor"], inputs["image_cap"]),
+                             (S26, "medium", minor, 4000 // minor), tier)
 
-    def test_a_newer_token_priced_model_is_not_the_default(self):
-        self.use_catalog(CATALOG + [row(N27, T2I, TOKEN), row(N27_I, I2I, TOKEN)])
-        self.assertEqual(image_plan.live_price("kie", "USD")["model"], E26)
+    def test_a_quality_the_caller_names_is_priced_and_recorded_never_replaced(self):
+        self.use_catalog(TIERED)
+        for quality, credits in (("low", 4.44), ("high", 9.48), ("xhigh", 16.86), ("max", 37.93)):
+            q = image_plan.live_price("kie", "USD", resolution="1K", quality=quality)
+            self.assertEqual((q["model"], q["quality"], q["credits"]), (S26, quality, credits))
+            inputs, _ = self.paid(image_resolution="1K", image_quality=quality)
+            self.assertEqual(inputs["image_quality"], quality)
 
-    def test_a_model_the_caller_names_is_priced_as_named(self):
-        self.use_catalog(CATALOG + [row(N27, T2I, "7 credits ($0.035) per image"), row(N27_I, I2I, "7 credits ($0.035) per image")])
-        self.assertEqual(image_plan.live_price("kie", "USD", model=E26)["model"], E26)
+    def test_auto_and_unknown_qualities_have_no_picture_price_and_are_refused(self):
+        self.use_catalog(TIERED)
+        for quality in ("auto", "ultra"):
+            with self.assertRaises(ImagePlanError) as ctx:
+                image_plan.live_price("kie", "USD", resolution="1K", quality=quality)
+            self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-PRICE")
+            self.assertIn("nothing has been spent", ctx.exception.detail.lower())
 
-    def test_with_only_token_priced_models_nothing_is_priced_at_a_token_price(self):
-        self.use_catalog([row(S26, T2I, TOKEN), row(S26_I, I2I, TOKEN)])
+    def test_a_blank_quality_is_refused_at_intake(self):
+        self.use_catalog(TIERED)
         with self.assertRaises(ImagePlanError) as ctx:
-            image_plan.live_price("kie", "USD")
+            self.paid(image_quality="  ")
+        self.assertEqual((ctx.exception.code, ctx.exception.field), ("AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan.image_quality"))
+
+    def test_a_token_priced_default_without_a_reference_row_is_refused(self):
+        self.use_catalog(CATALOG)
+        empty = self.tmp / "no-rows.json"
+        empty.write_text(json.dumps({"tables": []}), encoding="utf-8")
+        with mock.patch.object(self.module, "PRICE_EVIDENCE", str(empty)):
+            with self.assertRaises(ImagePlanError) as ctx:
+                image_plan.live_price("kie", "USD", resolution="1K")
         self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-PRICE")
         self.assertIn("nothing has been spent", ctx.exception.detail.lower())
 
-    # ---- ruling X-97-1: per picture stays absolute; 2K and 4K move to the newest per-picture model that publishes them
-    def test_1k_resolves_the_2_6_economy_at_its_own_price(self):
-        self.use_catalog(TIERED)
-        q = image_plan.live_price("kie", "USD", resolution="1K")
-        self.assertEqual((q["model"], q["credits"], q["per_picture_minor"]), (E26, 5.0, 3))
-        self.assertEqual(q["selection"]["resolved_model"], E26)
+    def test_a_newer_sunburst_with_a_picture_price_becomes_the_default(self):
+        self.use_catalog(TIERED + [row(N27, T2I, "7 credits ($0.035) per image"), row(N27_I, I2I, "7 credits ($0.035) per image")])
+        q = image_plan.live_price("kie", "USD")
+        self.assertEqual((q["model"], q["per_picture_minor"]), (N27, 4))
 
-    def test_2k_resolves_the_2_5_sunburst_at_the_2k_price_never_the_1k_price(self):
-        self.use_catalog(TIERED)
-        q = image_plan.live_price("kie", "USD", resolution="2K")
-        self.assertEqual((q["model"], q["credits"], q["per_picture_minor"]), (S25, 10.0, 5))
-        sel = q["selection"]
-        self.assertEqual((sel["requested_model"], sel["resolved_model"], sel["resolution"]), (None, S25, "2K"))
-        self.assertEqual((sel["tier_price_credits"], sel["tier_price_minor"]), (10.0, 5))
-        self.assertIn(E26, sel["reason"])
-        self.assertIn("2K", sel["reason"])
+    def test_a_newer_non_sunburst_model_is_not_the_default(self):
+        self.use_catalog(TIERED + [row(A27, T2I, "7 credits ($0.035) per image"), row(A27_I, I2I, "7 credits ($0.035) per image")])
+        self.assertEqual(image_plan.live_price("kie", "USD")["model"], S26)
 
-    def test_4k_resolves_the_2_5_sunburst(self):
+    def test_a_model_the_caller_names_is_priced_as_named_not_replaced(self):
         self.use_catalog(TIERED)
-        q = image_plan.live_price("kie", "USD", resolution="4K")
-        self.assertEqual(q["model"], S25)
-        self.assertEqual(q["selection"]["resolved_model"], S25)
+        q = image_plan.live_price("kie", "USD", model=S25, resolution="2K", quality="max")
+        self.assertEqual((q["model"], q["credits"], q["quality"], q["reference_price"]), (S25, 10.0, None, False))
 
-    def test_a_tier_nobody_prices_per_picture_is_refused(self):
+    @unittest.skipUnless(hasattr(image_plan, "PICTURE_PRICE_UNITS"), "needs WP-04's per-picture unit check")
+    def test_with_wp04_a_named_token_priced_model_is_still_refused(self):
         self.use_catalog(TIERED)
         with self.assertRaises(ImagePlanError) as ctx:
-            image_plan.live_price("kie", "USD", resolution="8K")
-        self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-PRICE")
-        self.assertIn("nothing has been spent", ctx.exception.detail.lower())
+            image_plan.live_price("kie", "USD", model=S26, resolution="1K")
+        self.assertIn("not per picture", ctx.exception.detail)
 
-    def test_a_tier_only_token_priced_models_publish_is_refused(self):
-        tok_tiers = "Image output 5,400 credits / 1M tokens ($27.00); 1K 2K 4K sizes."
-        self.use_catalog(CATALOG + [row(S25, T2I, tok_tiers), row(S25_I, I2I, tok_tiers)])
-        with self.assertRaises(ImagePlanError) as ctx:
-            image_plan.live_price("kie", "USD", resolution="2K")
-        self.assertEqual(ctx.exception.code, "AF-LAUNCH-IMAGE-PLAN-PRICE")
-
-    def test_a_paid_run_at_2k_holds_the_cap_against_the_2k_price_and_records_the_choice(self):
+    def test_the_default_is_preflighted_at_its_picture_price_not_the_token_text(self):
         self.use_catalog(TIERED)
-        inputs, _ = self.paid(image_resolution="2K")
-        self.assertEqual((inputs["image_model"], inputs["image_price_minor"], inputs["image_cap"]), (S25, 5, 4000 // 5))
-        self.assertEqual(inputs["image_model_selection"]["resolved_model"], S25)
-        self.assertEqual(inputs["image_model_selection"]["requested_model"], None)
-
-    def test_a_paid_run_with_no_tier_still_prices_the_per_picture_default(self):
-        self.use_catalog(TIERED)
-        inputs, _ = self.paid()
-        self.assertEqual((inputs["image_model"], inputs["image_price_minor"]), (E26, 3))
+        inputs, _ = self.paid(image_resolution="4K")
+        pf = inputs["image_preflight"]
+        self.assertEqual(pf["state"], "ok")
+        self.assertEqual(pf["required"], self.module.preflight_amount(26.43 * inputs["image_cap"]))
 
 
 if __name__ == "__main__":

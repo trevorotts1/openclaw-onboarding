@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
-"""Refuse a Skill 74 default image model that is not priced PER PICTURE (X-97, owner order 2026-11-10).
+"""Refuse a Skill 74 default image model that is not GPT Image Sunburst at medium quality with a per-picture price.
 
-The pinned fallback default (KNOWN_DEFAULTS) must be in KIE's catalog with a per-picture price unit
-(per-image or per-job, the same pair Skill 83's image_plan accepts). A token-priced default makes every paid
-run that names no model refuse, so it is refused here first.
+X-97 (owner order 2026-11-10, repo rule N43). The pinned default (PINNED_DEFAULTS) must be:
+  1. a gpt-image Sunburst model, id shaped gpt-image-<major>-<minor>/sunburst-<text|image>-to-image (slash, never flare);
+  2. generated with DEFAULT_QUALITY "medium" when the caller names none, a member of the KIE `quality` enum;
+  3. priced per picture for EVERY size tier (1K, 2K, 4K) at that quality in
+     references/kie-default-price-evidence.json (KIE's published reference table; the model is billed by tokens).
+A default with no such row is refused: an unknown price is not a picture price.
 
-Price evidence, first hit wins per model id: --catalog FILE (a live catalog.json, operator boxes), then
-references/kie-default-price-evidence.json (rows copied verbatim from the live catalog), then the registry
-snapshot. A default with no evidence at all is refused: an unknown price is not a picture price.
-
-Usage: python3 scripts/check_default_image_model.py [--catalog catalog.json]
+Usage: python3 scripts/check_default_image_model.py
 Exit 0 = ok, 1 = defect (each named), 2 = the check could not run.
 """
 import importlib.util
-import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SKILL = os.path.dirname(HERE)
+TIERS = ("1K", "2K", "4K")
+ID_RE = re.compile(r"^gpt-image-\d+-\d+/sunburst-(?:text|image)-to-image$")
 
 
 def load_adapter():
@@ -28,60 +28,42 @@ def load_adapter():
     return mod
 
 
-def check(known_defaults, rows, adapter=None):
-    """known_defaults {family: model id}, rows {model id: {"pricingDesc": text}} -> list of defect strings."""
-    k = adapter or load_adapter()
+def check(k, evidence):
+    """k: the adapter module, evidence: the parsed price evidence -> list of defect strings."""
     bad = []
-    for family, mid in sorted(known_defaults.items()):
-        if family not in k.PICTURE_PRICED_FAMILIES:
-            continue
-        if k.family_of(mid) != family:
-            bad.append("%s default %s is not a %s model" % (family, mid, family))
-            continue
-        row = rows.get(mid)
-        if row is None:
-            bad.append("%s default %s has no price evidence (not in the catalog rows, evidence file or registry)" % (family, mid))
-            continue
-        unit = k.parse_pricing(row.get("pricingDesc"))["unit"]
-        if unit not in k.PICTURE_PRICE_UNITS:
-            bad.append("%s default %s is priced %s, not per picture (%s)" % (family, mid, unit, "/".join(k.PICTURE_PRICE_UNITS)))
+    for cap, mid in sorted(k.PINNED_DEFAULTS.items()):
+        if not ID_RE.match(mid):
+            bad.append("default %s (%s) is not a gpt-image Sunburst model (slash form, never flare)" % (mid, cap))
+        q = k.DEFAULT_QUALITY
+        rows = (k.reference_table(evidence, mid) or {}).get(q) or {}
+        missing = [t for t in TIERS if not isinstance(rows.get(t), (int, float)) or isinstance(rows.get(t), bool) or rows[t] <= 0]
+        if missing:
+            bad.append("default %s has no per-picture reference price at quality %s for %s" % (mid, q, "/".join(missing)))
+    if k.DEFAULT_QUALITY != "medium":
+        bad.append("default quality is %r, not medium" % (k.DEFAULT_QUALITY,))
+    if k.DEFAULT_QUALITY not in k.QUALITY_ENUM:
+        bad.append("default quality %r is not in the KIE quality enum %s" % (k.DEFAULT_QUALITY, "/".join(k.QUALITY_ENUM)))
+    if k.KNOWN_DEFAULTS.get("gpt-image") != k.PINNED_DEFAULTS["Text to Image"]:
+        bad.append("KNOWN_DEFAULTS gpt-image is not the pinned Sunburst text-to-image default")
+    if (evidence.get("request_field") or {}).get("enum") != list(k.QUALITY_ENUM):
+        bad.append("evidence quality enum differs from the adapter QUALITY_ENUM")
     return bad
 
 
-def _read(path):
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def load_rows(catalog=None):
-    rows = {}
-    reg = os.path.join(SKILL, "references", "kie-model-registry.json")
-    if os.path.isfile(reg):
-        for m in _read(reg).get("models", []):
-            rows[m["id"]] = {"pricingDesc": ((m.get("pricing") or {}).get("raw"))}
-    ev = os.path.join(SKILL, "references", "kie-default-price-evidence.json")
-    if os.path.isfile(ev):
-        rows.update({m["model"]: m for m in _read(ev).get("rows", [])})
-    if catalog:
-        rows.update({m["model"]: m for m in _read(catalog).get("models", [])})
-    return rows
-
-
-def main(argv):
-    catalog = argv[argv.index("--catalog") + 1] if "--catalog" in argv else None
+def main():
     try:
         k = load_adapter()
-        bad = check(k.KNOWN_DEFAULTS, load_rows(catalog), k)
+        bad = check(k, k.load_price_evidence())
     except (OSError, ValueError, KeyError, AttributeError) as exc:
         print("check_default_image_model: could not run: %s: %s" % (type(exc).__name__, exc))
         return 2
     for b in bad:
         print("DEFECT: " + b)
     if not bad:
-        print("OK: every picture-family default is priced per picture (%s)" % ", ".join(
-            "%s=%s" % kv for kv in sorted(k.KNOWN_DEFAULTS.items())))
+        print("OK: default %s, quality %s, per-picture price for %s" % (
+            k.PINNED_DEFAULT, k.DEFAULT_QUALITY, "/".join(TIERS)))
     return 1 if bad else 0
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(main())

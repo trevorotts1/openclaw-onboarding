@@ -133,9 +133,10 @@ jobs:
         shell: bash
         run: bash tests/unit/check-kie-image-defaults.test.sh
 
-      # X-97: Skill 74's default image model must be priced per picture. A token-priced default makes every
-      # paid run that names no model refuse (Skill 83 price check). Its unit test also runs in Skill 74's QC.
-      - name: "Skill 74 default image model is per picture (check_default_image_model.py)"
+      # X-97: Skill 74's default image model must be GPT Image Sunburst at medium quality with a per-picture
+      # reference price for every size tier. A default without one makes every paid run that names no model refuse
+      # (Skill 83 price check). Its unit test also runs in Skill 74's QC.
+      - name: "Skill 74 default image model is Sunburst, medium, priced per picture (check_default_image_model.py)"
         shell: bash
         run: python3 -I 74-kie-live-adapter/scripts/check_default_image_model.py
 

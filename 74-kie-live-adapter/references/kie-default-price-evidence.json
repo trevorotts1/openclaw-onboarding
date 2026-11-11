@@ -1,32 +1,72 @@
 {
-  "source": "KIE live catalog GET /api/v1/models, rows copied verbatim",
+  "source": "KIE.ai model page https://kie.ai/gpt-image-2-6, section 'Credits per Image' (fetched 2026-11-10); request schema https://docs.kie.ai/market/gpt/gpt-image-2-6-sunburst-text-to-image field quality",
   "fetched": "2026-11-10",
-  "note": "economy is the per-picture GPT Image 2.6 default; the sunburst row is the token-priced control that is why it is not the default. Re-copy from the live catalog when KIE reprices.",
-  "rows": [
+  "label": "estimate; actual billed by tokens",
+  "page_text_quoted": {
+    "title": "Credits per Image",
+    "subtitle": "GPT Image 2.6 is billed by tokens. Reference credits for image output by quality and size.",
+    "foot": "Image output only. 1 credit = $0.005. Add ≈ 0.1 credits for the prompt and ≈ 2.2 credits per reference image; multiply by the number of images.",
+    "disclaimer": "Estimates only. Actual credits are based on the token usage returned for each request and are itemized in your Logs.",
+    "billing": "Billed by tokens. Flare and Sunburst share the same rates."
+  },
+  "request_field": {
+    "name": "quality",
+    "enum": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "auto"
+    ],
+    "default": "medium",
+    "page_text_quoted": "Quality. Optional, default `medium`. Supported: `low`, `medium`, `high`, `xhigh`, `max`, `auto`."
+  },
+  "aspect_ratio": "1:1",
+  "usd_per_credit": 0.005,
+  "adders": {
+    "credits_per_prompt": 0.1,
+    "credits_per_reference_image": 2.2,
+    "note": "approximate; add to the picture price, multiply by the number of images"
+  },
+  "tables": [
     {
-      "model": "gpt-image-2-6/economy-text-to-image",
-      "title": "GPT Image 2.6 (Economy) Text to Image",
-      "taskType": [
-        "Text to Image"
+      "models": [
+        "gpt-image-2-6/sunburst-text-to-image",
+        "gpt-image-2-6/sunburst-image-to-image"
       ],
-      "pricingDesc": "GPT Image 2.6 (Economy) — just 5 credits ($0.025) per 1K image. Same GPT Image 2.6 model, served through our economy channel at a flat per-image price, 1K only. High-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates."
-    },
-    {
-      "model": "gpt-image-2-6/economy-image-to-image",
-      "title": "GPT Image 2.6 (Economy) Image to Image",
-      "taskType": [
-        "Image to Image",
-        "Image Editing"
-      ],
-      "pricingDesc": "GPT Image 2.6 (Economy) — just 5 credits ($0.025) per 1K image. Same GPT Image 2.6 model, served through our economy channel at a flat per-image price, 1K only. High-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates."
-    },
-    {
-      "model": "gpt-image-2-6/sunburst-text-to-image",
-      "title": "GPT Image 2.6 Sunburst Text to Image",
-      "taskType": [
-        "Text to Image"
-      ],
-      "pricingDesc": "Text input 900 credits / 1M tokens ($4.50), cached text input 225 ($1.125), image input 1,440 ($7.20), cached image input 360 ($1.80), image output 5,400 ($27.00) — 10% below official pricing. SVG output: image tokens as above, plus the SVG author model's tokens — gpt-5.6-luna (default): input 36 credits / 1M tokens ($0.18), output 216 ($1.08); gpt-6-sol: input 360 ($1.80), output 1,800 ($9.00); gpt-5.6-terra: input 360 ($1.80), output 2,160 ($10.80). High-tier top-ups (+10% bonus) bring effective pricing down to ~10% off the above rates."
+      "credits_per_picture": {
+        "low": {
+          "1K": 4.44,
+          "2K": 9.0,
+          "4K": 14.95
+        },
+        "medium": {
+          "1K": 7.82,
+          "2K": 15.9,
+          "4K": 26.43
+        },
+        "high": {
+          "1K": 9.48,
+          "2K": 19.27,
+          "4K": 32.02
+        },
+        "xhigh": {
+          "1K": 16.86,
+          "2K": 34.25,
+          "4K": 56.93
+        },
+        "max": {
+          "1K": 37.93,
+          "2K": 77.07,
+          "4K": 128.08
+        }
+      }
     }
-  ]
+  ],
+  "token_priced_catalog_row": {
+    "model": "gpt-image-2-6/sunburst-text-to-image",
+    "pricingDesc": "Text input 900 credits / 1M tokens ($4.50), cached text input 225 ($1.125), image input 1,440 ($7.20), cached image input 360 ($1.80), image output 5,400 ($27.00) — 10% below official pricing."
+  },
+  "note": "The page's table cells render in the browser; the grid above is the page's Credits per Image grid for 1:1 as supplied with owner ruling 2026-11-10 (9:15 PM Eastern). Re-copy when KIE reprices. A model with no table here is refused by Skill 83's spend check."
 }

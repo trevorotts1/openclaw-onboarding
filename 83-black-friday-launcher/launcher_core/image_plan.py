@@ -153,12 +153,12 @@ def validate_raw(raw: Any) -> Dict[str, Any]:
                "brand_version", "image_cap", "image_cap_minor", "image_currency", "creative_direction",
                "creative_direction_kind", "creative_direction_blend", "creative_direction_approval_ref",
                "image_provider", "paid_render_approval_ref", "design_prose_ref", "visual_bible_ref",
-               "image_model", "image_resolution", "image_model_override_approval_ref"}
+               "image_model", "image_resolution", "image_quality", "image_model_override_approval_ref"}
     extra = sorted(set(raw) - allowed)
     if extra:
         raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-SHAPE", "image_plan",
                              f"undeclared field(s) {extra!r}; allowed: {sorted(allowed)!r}")
-    for key in ("image_model", "image_resolution"):
+    for key in ("image_model", "image_resolution", "image_quality"):
         value = raw.get(key)
         if value is not None and not (isinstance(value, str) and value.strip()):
             raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-PRICE", f"image_plan.{key}",
@@ -339,7 +339,7 @@ def pick_price(desc: str, resolution: Optional[str]) -> Optional[Dict[str, Any]]
 
 
 def live_price(provider: str, currency: str, *, model: Optional[str] = None,
-               resolution: Optional[str] = None) -> Dict[str, Any]:
+               resolution: Optional[str] = None, quality: Optional[str] = None) -> Dict[str, Any]:
     """One picture's live price, in the client's money. Raises ImagePlanError when it cannot be known."""
     if currency not in LIVE_PRICE_CURRENCIES:
         raise ImagePlanError(
@@ -349,29 +349,22 @@ def live_price(provider: str, currency: str, *, model: Optional[str] = None,
     module = _price_module()
     family = MODEL_FAMILY_BY_PROVIDER.get(provider)
     known = getattr(module, "KNOWN_DEFAULTS", {}) or {}
-    adapter = _price_adapter(module)
-    # X-97: no model named means Skill 74's default, resolved as the newest per-picture model (never a
-    # token-priced one); its pin is the fallback. A model the caller names is never replaced.
-    resolve = getattr(adapter, "default_model", None)
-
-    def default_for(tier: Optional[str]) -> Optional[str]:
-        got = resolve(family, tier) if callable(resolve) and family else None
-        return _clean_str(got) if (got or tier) else _clean_str(known.get(family))
     requested = _clean_str(model)
-    tier = _clean_str(resolution)
-    tier = tier if tier and re.match(r"(?i)^\d+(?:\.\d+)?\s*k$", tier) else None
-    chosen = requested or default_for(tier)
-    if not chosen and tier and not requested:
-        # Ruling X-97-1: the default has no such tier and no per-picture model publishes it. Never the 1K price.
-        raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan.image_resolution",
-                             f"No per-picture {provider} image model publishes a {tier} price, so I cannot price "
-                             "pictures at that size. Nothing has been sent and nothing has been spent.")
-    if not chosen:
+    adapter = _price_adapter(module)
+    # X-97: no model named means Skill 74's default (GPT Image Sunburst, medium quality unless the plan names
+    # one), priced per picture from KIE's published reference table. A model the plan names is never replaced
+    # and is priced from its own catalog text, exactly as before.
+    default_price = getattr(adapter, "cmd_default_price", None)
+    by_default = not requested and callable(default_price) and bool(family)
+    chosen = requested or _clean_str(known.get(family))
+    if not chosen and not by_default:
         raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan.image_model",
                              f"I cannot tell which {provider} image model draws these pictures, so I cannot "
                              "price them. Nothing has been sent and nothing has been spent.")
     try:
-        got = adapter.cmd_price(chosen, units=1)
+        got = (default_price(family, quality=_clean_str(quality)) if by_default
+               else adapter.cmd_price(chosen, units=1))
+        chosen = (got.get("model_id") if by_default and isinstance(got, dict) else None) or chosen
     except Exception as exc:  # noqa: BLE001
         raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan",
                              f"The live price check for {chosen} failed ({type(exc).__name__}). Nothing has "
@@ -399,19 +392,9 @@ def live_price(provider: str, currency: str, *, model: Optional[str] = None,
         raise ImagePlanError("AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan",
                              f"The live price for {chosen} rounds below one cent, so I cannot hold a money "
                              "ceiling against it. Nothing has been spent.")
-    # Not silent (ruling X-97-1): what was asked for, what was priced, why, and that tier's price.
-    base = None if requested or not tier else default_for(None)
-    if requested:
-        reason = "the plan names this model"
-    elif base and base != chosen:
-        reason = (f"the default {base} publishes no {tier} price, so the newest per-picture model that does "
-                  f"was used ({tier} price {picked['credits']} credits)")
-    else:
-        reason = "the default: the newest model KIE prices per picture"
-    selection = {"requested_model": requested, "resolved_model": chosen, "resolution": resolution,
-                 "reason": reason, "tier_price_credits": picked["credits"],
-                 "tier_price_minor": per_picture_minor}
-    return {"model": chosen, "resolution": resolution, "credits": picked["credits"], "selection": selection,
+    return {"model": chosen, "resolution": resolution, "credits": picked["credits"],
+            "quality": data.get("quality") if by_default else None, "reference_price": by_default and data.get("price_source") == "reference-evidence",
+            "price_note": data.get("price_note"),
             "usd_per_credit": round(per_credit, 6), "per_picture_minor": per_picture_minor,
             "price_source": f"74-kie-live-adapter price ({data.get('price_source') or 'live'})",
             "pricing_desc": str(data.get("pricing_desc") or ""),
@@ -426,7 +409,10 @@ def preflight(quote: Dict[str, Any], units: int) -> Dict[str, Any]:
     """
     try:
         module = _price_module()
-        got = _price_adapter(module).cmd_preflight(quote["model"], units=max(1, int(units)))
+        adapter, n = _price_adapter(module), max(1, int(units))
+        # A reference-priced default is preflighted at its per-picture price, never at the token text.
+        ref = (adapter.cmd_default_price(MODEL_FAMILY_BY_PROVIDER.get("kie"), quality=quote.get("quality"), units=n) if quote.get("reference_price") else None)
+        got = adapter.cmd_preflight(quote["model"], units=n, price=ref) if ref else adapter.cmd_preflight(quote["model"], units=n)
     except Exception as exc:  # noqa: BLE001  (a missing balance check is recorded, never printed)
         return {"state": "unavailable", "reason": type(exc).__name__, "units": units}
     data = got.get("data") or {}
@@ -627,7 +613,8 @@ def resolve(raw: Optional[Dict[str, Any]], *, test_only: bool,
         _check_palette(brand)
         # The price is LIVE (F20): Skill 74's price authority for the actual model and resolution.
         quote = live_price(provider, currency, model=_clean_str(raw.get("image_model")),
-                           resolution=_clean_str(raw.get("image_resolution")))
+                           resolution=_clean_str(raw.get("image_resolution")),
+                           quality=_clean_str(raw.get("image_quality")))
         price = quote["per_picture_minor"]
         ceiling = cap_minor // price
         if ceiling < 1:
@@ -665,8 +652,8 @@ def resolve(raw: Optional[Dict[str, Any]], *, test_only: bool,
         "image_price_credits": (quote or {}).get("credits"),
         "image_price_source": (quote or {}).get("price_source"),
         "image_model": (quote or {}).get("model") or _clean_str(raw.get("image_model")),
-        "image_model_selection": (quote or {}).get("selection"),
         "image_resolution": _clean_str(raw.get("image_resolution")),
+        "image_quality": (quote or {}).get("quality") or _clean_str(raw.get("image_quality")),
         "image_preflight": spent_check,
         "creative_direction": _clean_str(raw.get("creative_direction")),
         "creative_direction_source": policy["style_state"],
