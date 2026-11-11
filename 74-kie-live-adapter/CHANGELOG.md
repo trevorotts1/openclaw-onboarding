@@ -1,7 +1,7 @@
 # Changelog - Skill 74 KIE Live Adapter
-## [1.1.18] - 2026-11-10 - Harmony-95 Batch P: the default image model is a published per-picture price (X-97)
+## [1.1.18] - 2026-11-10 - Harmony-95 Batch P: the default image model is GPT Image 2.6 Sunburst at medium quality, with a published per-picture price (X-97)
 
-- `scripts/kie_live_adapter.py` resolves the default GPT image model as the newest per-picture-priced one in the live catalog (pinned fallback `gpt-image-2-6/economy-text-to-image`), and `scripts/check_default_image_model.py` with `references/kie-default-price-evidence.json` refuses a default that is not priced per picture; tests `test_default_image_model.py` and `test_registry_commands.py`; `qc-74-kie-live-adapter.sh` runs the check.
+- `scripts/kie_live_adapter.py` resolves the default GPT image model as the newest Sunburst generation in the live catalog that has a picture price (pinned fallback `gpt-image-2-6/sunburst-text-to-image`, and `gpt-image-2-6/sunburst-image-to-image` for an edit), the request `quality` defaults to medium, and `cmd_default_price` returns KIE's published per-picture reference price for 1K, 2K and 4K; `scripts/check_default_image_model.py` with `references/kie-default-price-evidence.json` refuses a default that is not a Sunburst model at medium quality with a reference price for every size, and exits 2 when it cannot run; tests `test_default_image_model.py` and `test_registry_commands.py`; `qc-74-kie-live-adapter.sh` runs the check.
 - Version bump so the Batch P pull request carries a version above main (G3).
 
 ## [1.1.17] - 2026-11-10 - G3 patch bump for the PRMPT-001 submit-path prompt-gate test (test only, no behaviour change)
