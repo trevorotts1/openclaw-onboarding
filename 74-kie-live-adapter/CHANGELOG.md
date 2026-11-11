@@ -1,4 +1,9 @@
 # Changelog - Skill 74 KIE Live Adapter
+## [1.1.18] - 2026-11-10 - Harmony-95 Batch P: the default image model is a published per-picture price (X-97)
+
+- `scripts/kie_live_adapter.py` resolves the default GPT image model as the newest per-picture-priced one in the live catalog (pinned fallback `gpt-image-2-6/economy-text-to-image`), and `scripts/check_default_image_model.py` with `references/kie-default-price-evidence.json` refuses a default that is not priced per picture; tests `test_default_image_model.py` and `test_registry_commands.py`; `qc-74-kie-live-adapter.sh` runs the check.
+- Version bump so the Batch P pull request carries a version above main (G3).
+
 ## [1.1.17] - 2026-11-10 - G3 patch bump for the PRMPT-001 submit-path prompt-gate test (test only, no behaviour change)
 
 - `tests/test_prompt_gate_submit.py` (merge-train integration of PR 3064, A3) locks the Kie submit path's pre-HTTP prompt band: 25,000 characters refused with zero createTask calls, 19,500 passes and submits once, and the 20,000 owner cap governs over the vendor schema's 32,000. No adapter code changed.
