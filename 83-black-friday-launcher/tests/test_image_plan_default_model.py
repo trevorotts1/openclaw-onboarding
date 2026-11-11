@@ -12,6 +12,7 @@ import json
 import sys
 import tempfile
 import time
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -172,6 +173,53 @@ class DefaultModelPriceTests(unittest.TestCase):
         pf = inputs["image_preflight"]
         self.assertEqual(pf["state"], "ok")
         self.assertEqual(pf["required"], self.module.preflight_amount(26.43 * inputs["image_cap"]))
+
+
+    def test_a_named_quality_is_preflighted_at_its_own_price_not_medium(self):
+        self.use_catalog(TIERED)
+        seen = {}
+        for quality, top in (("medium", 26.43), ("high", 32.02), ("max", 128.08)):
+            inputs, _ = self.paid(image_resolution="1K", image_quality=quality)
+            pf = inputs["image_preflight"]
+            self.assertEqual(pf["state"], "ok")
+            self.assertEqual(pf["required"], self.module.preflight_amount(round(top * inputs["image_cap"], 4)), quality)
+            seen[quality] = pf["required"] / inputs["image_cap"]
+        self.assertLess(seen["medium"], seen["high"])
+        self.assertLess(seen["high"], seen["max"])
+
+    def test_a_practice_run_records_the_quality_it_was_given(self):
+        self.use_catalog(TIERED)
+        raw = {"brand_file": self.brand, "brand_owner": "TEST-ONLY Client", "design_style": "B",
+               "design_style_source": "client_choice", "image_provider": "kie", "image_quality": "high"}
+        inputs, _ = resolve(raw, test_only=True, plan_hash=PLAN_HASH)
+        self.assertEqual(inputs["image_quality"], "high")
+
+    def test_an_older_adapter_without_a_default_price_prices_the_known_default_as_named(self):
+        self.use_catalog([row(S26, T2I, "6 credits ($0.03) per image"), row(S26_I, I2I, "6 credits ($0.03) per image")])
+        real = image_plan._price_adapter()
+        old = type("OldAdapter", (), {"cmd_price": lambda self, model, units=1: real.cmd_price(model, units=units)})()
+        with mock.patch.object(image_plan, "_price_adapter", return_value=old):
+            q = image_plan.live_price("kie", "USD", resolution="1K")
+        self.assertEqual((q["model"], q["quality"], q["reference_price"], q["credits"]), (S26, None, False, 6.0))
+
+    def test_a_provider_with_no_image_family_cannot_be_priced(self):
+        self.use_catalog(TIERED)
+        with self.assertRaises(ImagePlanError) as ctx:
+            image_plan.live_price("elsewhere", "USD", resolution="1K")
+        self.assertEqual((ctx.exception.code, ctx.exception.field), ("AF-LAUNCH-IMAGE-PLAN-PRICE", "image_plan.image_model"))
+
+    def test_the_default_is_priced_even_when_the_module_lists_no_known_default(self):
+        self.use_catalog(TIERED)
+        with mock.patch.object(image_plan, "_price_module", return_value=types.SimpleNamespace(KNOWN_DEFAULTS={})):
+            q = image_plan.live_price("kie", "USD", resolution="1K")
+        self.assertEqual((q["model"], q["credits"], q["reference_price"]), (S26, 7.82, True))
+
+    def test_a_catalog_picture_price_for_the_default_is_not_marked_a_reference_price(self):
+        self.use_catalog([row(S26, T2I, "6 credits ($0.03) per image"), row(S26_I, I2I, "6 credits ($0.03) per image")])
+        q = image_plan.live_price("kie", "USD", resolution="1K", quality="high")
+        self.assertEqual((q["model"], q["quality"], q["reference_price"], q["credits"]), (S26, "high", False, 6.0))
+        inputs, _ = self.paid(image_resolution="1K", image_quality="high")
+        self.assertEqual(inputs["image_preflight"]["required"], self.module.preflight_amount(6.0 * inputs["image_cap"]))
 
 
 if __name__ == "__main__":

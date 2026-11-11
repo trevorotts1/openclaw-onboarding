@@ -53,8 +53,8 @@ def check(k, evidence):
 def main():
     try:
         k = load_adapter()
-        bad = check(k, k.load_price_evidence())
-    except (OSError, ValueError, KeyError, AttributeError) as exc:
+        bad = check(k, k.load_price_evidence(strict=True))
+    except Exception as exc:  # noqa: BLE001  (any failure to load or run is exit 2, never a pass)
         print("check_default_image_model: could not run: %s: %s" % (type(exc).__name__, exc))
         return 2
     for b in bad:

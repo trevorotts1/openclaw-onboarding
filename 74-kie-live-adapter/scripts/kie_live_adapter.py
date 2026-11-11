@@ -341,14 +341,22 @@ def is_picture_priced(raw):
     return parse_pricing(raw)["unit"] in PICTURE_PRICE_UNITS
 
 
-def load_price_evidence(path=None):
-    """KIE's published per-picture reference table for token-billed GPT Image models ({} when unreadable)."""
+def load_price_evidence(path=None, strict=False):
+    """KIE's published per-picture reference table for token-billed GPT Image models.
+
+    A missing, unreadable or non-object file gives {} (callers then refuse: no row means no picture price);
+    strict=True raises ValueError naming the file instead (the check script treats that as "could not run")."""
+    p = path or PRICE_EVIDENCE
     try:
-        with open(path or PRICE_EVIDENCE, encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             d = json.load(f)
-        return d if isinstance(d, dict) else {}
-    except (OSError, ValueError):
+        if not isinstance(d, dict):
+            raise ValueError("not a JSON object")
+    except (OSError, ValueError) as exc:
+        if strict:
+            raise ValueError("price evidence %s is unusable: %s" % (os.path.basename(p), exc)) from exc
         return {}
+    return d
 
 
 def reference_table(evidence, model):
@@ -1808,6 +1816,8 @@ class Adapter:
         The catalog's own text when it is already per picture; else KIE's published per-picture reference row
         for that quality (an estimate; actual billed by tokens). No row for the model or quality: a failure,
         never a token price (a token-priced model without a picture row stays refused)."""
+        if isinstance(quality, str) and not quality.strip():
+            quality = None  # a blank quality is not a named quality: medium applies
         q = DEFAULT_QUALITY if quality is None else quality  # a caller-named quality is never replaced
         model = self.default_model(family, edit)
         if q not in QUALITY_ENUM:

@@ -1,5 +1,5 @@
 {
-  "source": "KIE.ai model page https://kie.ai/gpt-image-2-6, section 'Credits per Image' (fetched 2026-11-10); request schema https://docs.kie.ai/market/gpt/gpt-image-2-6-sunburst-text-to-image field quality",
+  "source": "KIE.ai model page https://kie.ai/gpt-image-2-6, section 'Credits per Image', page as rendered, pasted by the owner 2026-11-10 (saved verbatim as KIE-GPT-IMAGE-2-6-PRICE-PASTE-2026-11-10.md in the Harmony-95 rulings folder; token counts per cell included); request schema https://docs.kie.ai/market/gpt/gpt-image-2-6-sunburst-text-to-image field quality",
   "fetched": "2026-11-10",
   "label": "estimate; actual billed by tokens",
   "page_text_quoted": {
@@ -24,6 +24,7 @@
   },
   "aspect_ratio": "1:1",
   "usd_per_credit": 0.005,
+  "image_output_credits_per_million_tokens": 5400,
   "adders": {
     "credits_per_prompt": 0.1,
     "credits_per_reference_image": 2.2,
@@ -61,6 +62,33 @@
           "2K": 77.07,
           "4K": 128.08
         }
+      },
+      "tokens_per_picture": {
+        "low": {
+          "1K": 823,
+          "2K": 1667,
+          "4K": 2768
+        },
+        "medium": {
+          "1K": 1449,
+          "2K": 2944,
+          "4K": 4894
+        },
+        "high": {
+          "1K": 1756,
+          "2K": 3568,
+          "4K": 5930
+        },
+        "xhigh": {
+          "1K": 3122,
+          "2K": 6343,
+          "4K": 10542
+        },
+        "max": {
+          "1K": 7024,
+          "2K": 14272,
+          "4K": 23719
+        }
       }
     }
   ],
@@ -68,5 +96,5 @@
     "model": "gpt-image-2-6/sunburst-text-to-image",
     "pricingDesc": "Text input 900 credits / 1M tokens ($4.50), cached text input 225 ($1.125), image input 1,440 ($7.20), cached image input 360 ($1.80), image output 5,400 ($27.00) — 10% below official pricing."
   },
-  "note": "The page's table cells render in the browser; the grid above is the page's Credits per Image grid for 1:1 as supplied with owner ruling 2026-11-10 (9:15 PM Eastern). Re-copy when KIE reprices. A model with no table here is refused by Skill 83's spend check."
+  "note": "The numeric grid is the owner's paste of the rendered page for 1:1 (the cells render in the browser and are not in the page source). Each cell equals tokens_per_picture x image_output_credits_per_million_tokens / 1,000,000 rounded to 2 places (the page's own arithmetic; a test checks all 15). Re-copy when KIE reprices. A model with no table here is refused by Skill 83's spend check."
 }

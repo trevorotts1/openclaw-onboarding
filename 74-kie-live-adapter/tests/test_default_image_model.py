@@ -231,5 +231,273 @@ class DefaultCheck(unittest.TestCase):
         self.assertIn("not a gpt-image Sunburst", r.stdout)
 
 
+PER_JOB = "12 credits ($0.06) per job"
+QC = os.path.join(SKILL, "qc-74-kie-live-adapter.sh")
+WORKFLOW = os.path.abspath(os.path.join(SKILL, "..", ".github", "workflows", "version-consistency.yml"))
+CHECK_REL = os.path.join("scripts", "check_default_image_model.py")
+SKILL_FILES = ("scripts/kie_live_adapter.py", "scripts/check_default_image_model.py", "references/kie-default-price-evidence.json")
+
+
+def copy_skill(dest, edit=None, drop=()):
+    """The check script, the adapter and the evidence file copied under dest; edit maps a rel path to a text edit."""
+    for rel in SKILL_FILES:
+        if rel in drop:
+            continue
+        body = read(os.path.join(SKILL, rel))
+        if edit and rel in edit:
+            body = edit[rel](body)
+        os.makedirs(os.path.dirname(os.path.join(dest, rel)), exist_ok=True)
+        with open(os.path.join(dest, rel), "w", encoding="utf-8") as f:
+            f.write(body)
+    return dest
+
+
+class PriceEvidenceGrid(unittest.TestCase):
+    def test_every_cell_is_the_pages_own_token_arithmetic(self):
+        ev = K.load_price_evidence()
+        t = ev["tables"][0]
+        self.assertEqual(ev["image_output_credits_per_million_tokens"], 5400)
+        self.assertEqual(sorted(t["credits_per_picture"]), sorted(K.QUALITY_ENUM[:-1]))
+        for q, tiers in t["credits_per_picture"].items():
+            self.assertEqual(sorted(tiers), ["1K", "2K", "4K"], q)
+            for tier, credits in tiers.items():
+                tokens = t["tokens_per_picture"][q][tier]
+                self.assertEqual(round(tokens * ev["image_output_credits_per_million_tokens"] / 1000000 + 1e-12, 2), credits, (q, tier))
+
+    def test_the_evidence_cites_the_owner_paste_and_the_page_text(self):
+        ev = K.load_price_evidence()
+        self.assertIn("pasted by the owner 2026-11-10", ev["source"])
+        self.assertIn("KIE-GPT-IMAGE-2-6-PRICE-PASTE-2026-11-10", ev["source"])
+        self.assertIn("token counts per cell", ev["source"])
+        self.assertEqual((ev["request_field"]["default"], ev["aspect_ratio"]), ("medium", "1:1"))
+        self.assertIn("Add \u2248 0.1 credits for the prompt and \u2248 2.2 credits per reference image", ev["page_text_quoted"]["foot"])
+        self.assertIn("1 credit = $0.005", ev["page_text_quoted"]["foot"])
+
+
+class LoadPriceEvidence(Base):
+    def write(self, text):
+        p = os.path.join(self.tmp, "ev.json")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(text)
+        return p
+
+    def test_a_missing_file_gives_nothing_and_strict_names_it(self):
+        gone = os.path.join(self.tmp, "gone.json")
+        self.assertEqual(K.load_price_evidence(gone), {})
+        with self.assertRaises(ValueError) as c:
+            K.load_price_evidence(gone, strict=True)
+        self.assertIn("gone.json is unusable", str(c.exception))
+
+    def test_a_folder_instead_of_a_file_is_unreadable(self):
+        self.assertEqual(K.load_price_evidence(self.tmp), {})
+        with self.assertRaises(ValueError):
+            K.load_price_evidence(self.tmp, strict=True)
+
+    def test_json_that_is_not_an_object_gives_nothing_and_strict_says_so(self):
+        for text in ("[]", '"x"', "7", "null"):
+            p = self.write(text)
+            self.assertEqual(K.load_price_evidence(p), {}, text)
+            with self.assertRaises(ValueError) as c:
+                K.load_price_evidence(p, strict=True)
+            self.assertIn("not a JSON object", str(c.exception))
+
+    def test_broken_json_gives_nothing_and_strict_says_so(self):
+        p = self.write("{not json")
+        self.assertEqual(K.load_price_evidence(p), {})
+        with self.assertRaises(ValueError) as c:
+            K.load_price_evidence(p, strict=True)
+        self.assertIn("ev.json is unusable", str(c.exception))
+
+    def test_the_shipped_file_loads_strictly(self):
+        self.assertEqual(K.load_price_evidence(strict=True), K.load_price_evidence())
+
+    def test_with_no_evidence_a_token_priced_default_is_refused_not_guessed(self):
+        a = self.adapter([["GET", "/schema", [schema(20000)]], ["GET", "/api/v1/models", [cat((S26, T2I, TOKEN), (S26_I, I2I, TOKEN))]]])[0]
+        for text in (None, "[]"):
+            p = os.path.join(self.tmp, "ev.json") if text else os.path.join(self.tmp, "gone.json")
+            if text:
+                self.write(text)
+            with mock.patch.object(K, "PRICE_EVIDENCE", p):
+                r = a.cmd_default_price("gpt-image")
+            self.assertEqual((r["state"], r["error"]["code"]), ("fail", "no_picture_price"), text)
+
+
+class PictureUnits(Base):
+    def make(self, rows):
+        return self.adapter([["GET", "/schema", [schema(20000)]], ["GET", "/api/v1/models", [cat(*rows)]]])[0]
+
+    def test_a_per_job_catalog_price_is_a_picture_price(self):
+        self.assertEqual(K.PICTURE_PRICE_UNITS, ("per-image", "per-job"))
+        self.assertEqual(K.parse_pricing(PER_JOB)["unit"], "per-job")
+        self.assertTrue(K.is_picture_priced(PER_JOB))
+        self.assertTrue(K.is_picture_priced("6 credits ($0.03) per image"))
+        self.assertFalse(K.is_picture_priced(TOKEN))
+
+    def test_a_newer_sunburst_priced_per_job_becomes_the_default_and_passes_through(self):
+        a = self.make(LIVE_2_6 + [(S27, T2I, PER_JOB), (S27_I, I2I, PER_JOB)])
+        self.assertEqual(a.default_model("gpt-image"), S27)
+        d = a.cmd_default_price("gpt-image")["data"]
+        self.assertEqual((d["model"], d["unit"], d["pricing_desc"], d["quality"]), (S27, "per-job", PER_JOB, "medium"))
+
+    def test_a_different_family_is_never_the_gpt_image_default(self):
+        other, other_i = "seedream-9/sunburst-text-to-image", "seedream-9/sunburst-image-to-image"
+        a = self.make(LIVE_2_6 + [(other, T2I, "7 credits ($0.035) per image"), (other_i, I2I, "7 credits ($0.035) per image")])
+        self.assertEqual(a.default_model("gpt-image"), S26)
+
+
+class DefaultPriceAnswer(Base):
+    def make(self, rows=LIVE_2_6):
+        return self.adapter([["GET", "/schema", [schema(20000)]], ["GET", "/api/v1/models", [cat(*rows)]]])[0]
+
+    def evidence(self, mutate):
+        ev = json.loads(json.dumps(K.load_price_evidence()))
+        mutate(ev)
+        p = os.path.join(self.tmp, "ev.json")
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(ev, f)
+        return p
+
+    def test_the_reference_answer_names_the_model_and_carries_the_estimate_label(self):
+        r = self.make().cmd_default_price("gpt-image")
+        self.assertEqual((r["state"], r["model_id"], r["schema_source"]), ("success", S26, "reference-evidence"))
+        self.assertEqual(r["warnings"], ["estimate; actual billed by tokens"])
+        self.assertEqual(self.make().cmd_default_price("gpt-image", edit=True)["model_id"], S26_I)
+
+    def test_the_reference_answer_carries_the_adders_and_the_source(self):
+        d = self.make().cmd_default_price("gpt-image")["data"]
+        self.assertEqual(d["adders"]["credits_per_prompt"], 0.1)
+        self.assertEqual(d["adders"]["credits_per_reference_image"], 2.2)
+        self.assertEqual((d["price_source"], d["units"]), ("reference-evidence", 1))
+
+    def test_the_reference_answer_is_preflighted_with_the_conservative_multiplier(self):
+        d = self.make().cmd_default_price("gpt-image", quality="max", units=2)["data"]
+        self.assertEqual(d["preflight_multiplier"], 1.3)
+        self.assertEqual(d["credits_estimate"], 256.16)
+        self.assertEqual(d["preflight_required"], K.preflight_amount(256.16))
+        self.assertEqual(d["preflight_required"], 333.01)
+
+    def test_tiers_are_listed_smallest_first_whatever_the_file_order(self):
+        def shuffle(ev):
+            m = ev["tables"][0]["credits_per_picture"]["medium"]
+            ev["tables"][0]["credits_per_picture"]["medium"] = {"4K": m["4K"], "1K": m["1K"], "2K": m["2K"]}
+        with mock.patch.object(K, "PRICE_EVIDENCE", self.evidence(shuffle)):
+            desc = self.make().cmd_default_price("gpt-image")["data"]["pricing_desc"]
+        self.assertLess(desc.index("for 1 K"), desc.index("for 2 K"))
+        self.assertLess(desc.index("for 2 K"), desc.index("for 4 K"))
+
+    def test_a_file_without_a_dollar_rate_uses_half_a_cent_per_credit(self):
+        with mock.patch.object(K, "PRICE_EVIDENCE", self.evidence(lambda ev: ev.pop("usd_per_credit"))):
+            desc = self.make().cmd_default_price("gpt-image")["data"]["pricing_desc"]
+        self.assertIn("7.82 credits ($0.0391) for 1 K", desc)
+
+    def test_a_file_without_a_label_still_answers(self):
+        with mock.patch.object(K, "PRICE_EVIDENCE", self.evidence(lambda ev: ev.pop("label"))):
+            r = self.make().cmd_default_price("gpt-image")
+        self.assertEqual((r["state"], r["warnings"]), ("success", [""]))
+
+    def test_a_blank_quality_is_not_a_named_quality_so_medium_applies(self):
+        a = self.make()
+        for blank in ("", " ", "  \t"):
+            d = a.cmd_default_price("gpt-image", quality=blank)["data"]
+            self.assertEqual((d["quality"], d["credits_max"]), ("medium", 26.43), repr(blank))
+        self.assertEqual(a.cmd_default_price("gpt-image", quality=0)["error"]["code"], "bad_quality")
+
+    def test_when_the_catalog_cannot_price_the_default_the_reference_row_answers(self):
+        a, tr, c = self.adapter([["GET", "/api/v1/models", [(200, {"code": 500, "msg": "down"})]]])
+        r = a.cmd_default_price("gpt-image")
+        self.assertEqual((r["state"], r["data"]["price_source"], r["data"]["credits_max"]), ("success", "reference-evidence", 26.43))
+
+
+class DefaultCheckCannotRun(unittest.TestCase):
+    def run_check(self, **kw):
+        with tempfile.TemporaryDirectory() as d:
+            copy_skill(d, **kw)
+            return subprocess.run([sys.executable, "-I", os.path.join(d, CHECK_REL)], capture_output=True, text=True)
+
+    def assert_could_not_run(self, r):
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("could not run", r.stdout)
+        self.assertNotIn("OK", r.stdout)
+
+    def test_missing_evidence_exits_2(self):
+        self.assert_could_not_run(self.run_check(drop=("references/kie-default-price-evidence.json",)))
+
+    def test_evidence_that_is_not_an_object_exits_2(self):
+        self.assert_could_not_run(self.run_check(edit={"references/kie-default-price-evidence.json": lambda b: "[]"}))
+
+    def test_evidence_that_is_not_json_exits_2(self):
+        self.assert_could_not_run(self.run_check(edit={"references/kie-default-price-evidence.json": lambda b: "{oops"}))
+
+    def test_an_adapter_that_fails_to_import_exits_2(self):
+        self.assert_could_not_run(self.run_check(edit={"scripts/kie_live_adapter.py": lambda b: "import module_that_is_not_there\n" + b}))
+
+    def test_an_adapter_with_a_syntax_error_exits_2(self):
+        self.assert_could_not_run(self.run_check(edit={"scripts/kie_live_adapter.py": lambda b: "def (:\n" + b}))
+
+    @unittest.skipIf(not hasattr(os, "geteuid") or os.geteuid() == 0, "root reads any file")
+    def test_unreadable_evidence_exits_2(self):
+        with tempfile.TemporaryDirectory() as d:
+            copy_skill(d)
+            ev = os.path.join(d, "references", "kie-default-price-evidence.json")
+            os.chmod(ev, 0)
+            r = subprocess.run([sys.executable, "-I", os.path.join(d, CHECK_REL)], capture_output=True, text=True)
+        self.assert_could_not_run(r)
+
+    def test_a_defect_exits_1_and_never_prints_ok(self):
+        r = self.run_check(edit={"scripts/kie_live_adapter.py": lambda b: b.replace('DEFAULT_QUALITY = "medium"', 'DEFAULT_QUALITY = "high"', 1)})
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("DEFECT: default quality is 'high', not medium", r.stdout)
+        self.assertNotIn("OK", r.stdout)
+
+
+class DefaultCheckIsWired(unittest.TestCase):
+    """The qc script and the CI step must fail on any non-zero exit from the check script."""
+
+    def qc_line(self, d):
+        with open(QC, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        defs = [l for l in lines if l.startswith(("PASS=0", "ok()", "bad()", "chk()"))]
+        mine = [l for l in lines if l.startswith("chk ") and "check_default_image_model.py" in l]
+        self.assertEqual((len(defs), len(mine)), (4, 1), (defs, mine))
+        script = "D=%s\n%s\n%s\necho \"PASS=$PASS FAIL=$FAIL\"\n" % (d, "\n".join(defs), mine[0])
+        return subprocess.run(["/bin/bash", "-c", script], capture_output=True, text=True).stdout
+
+    def test_the_qc_line_passes_a_healthy_check(self):
+        with tempfile.TemporaryDirectory() as d:
+            copy_skill(d)
+            out = self.qc_line(d)
+        self.assertIn("  PASS - default image model is priced per picture (X-97)", out)
+        self.assertIn("PASS=1 FAIL=0", out)
+
+    def test_the_qc_line_fails_on_exit_1_a_defect(self):
+        with tempfile.TemporaryDirectory() as d:
+            copy_skill(d, edit={"scripts/kie_live_adapter.py": lambda b: b.replace('DEFAULT_QUALITY = "medium"', 'DEFAULT_QUALITY = "high"', 1)})
+            out = self.qc_line(d)
+        self.assertIn("  FAIL - default image model is priced per picture (X-97)", out)
+        self.assertIn("PASS=0 FAIL=1", out)
+
+    def test_the_qc_line_fails_on_exit_2_could_not_run(self):
+        with tempfile.TemporaryDirectory() as d:
+            copy_skill(d, drop=("references/kie-default-price-evidence.json",))
+            out = self.qc_line(d)
+        self.assertIn("  FAIL - default image model is priced per picture (X-97)", out)
+        self.assertIn("PASS=0 FAIL=1", out)
+
+    @unittest.skipUnless(os.path.exists(WORKFLOW), "the CI workflow ships in the repository, not on a box")
+    def test_the_ci_step_runs_the_check_and_lets_any_non_zero_exit_fail_the_job(self):
+        lines = read(WORKFLOW).splitlines()
+        runs = [i for i, l in enumerate(lines) if "check_default_image_model.py" in l and l.strip().startswith("run:")]
+        self.assertEqual(len(runs), 1, runs)
+        self.assertEqual(lines[runs[0]].strip(), "run: python3 -I 74-kie-live-adapter/scripts/check_default_image_model.py")
+        start = max(i for i in range(runs[0]) if lines[i].lstrip().startswith("- name:"))
+        stop = min([i for i in range(runs[0] + 1, len(lines)) if lines[i].lstrip().startswith("- name:") or (lines[i] and not lines[i].startswith(" "))] or [len(lines)])
+        step = "\n".join(lines[start:stop])
+        for weak in ("continue-on-error", "|| true", "|| :", "set +e", "if:"):
+            self.assertNotIn(weak, step)
+        self.assertIn("shell: bash", step)
+        job = [l for l in lines[:start] if l.startswith("  ") and not l.startswith("   ") and l.rstrip().endswith(":")][-1]
+        self.assertNotIn("continue-on-error", "\n".join(lines[lines.index(job):start]))
+
+
 if __name__ == "__main__":
     unittest.main()
