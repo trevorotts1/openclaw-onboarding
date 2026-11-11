@@ -70,6 +70,9 @@ offered on that original checkout.
   and billing audit, purchase state machine, selection resolver, purchase
   event handoff, the cross-field checkout validator, the native-binding
   capability matrix, and the purchase-attempt recovery model.
+- `scripts/emit_checkout_manuscript.py`: the order form page's copy manuscript,
+  written from the approved checkout request, the launch record and the approved
+  checkout terms (see Design stages).
 - `tests/`: the deterministic fixture suite for the models and components.
 
 ## Design stages (wireframes and mockups)
@@ -81,6 +84,16 @@ scripts/shared_page_service.py`) on the five-section structure in
 `49-signature-funnel/scripts/checkout_wrapper.py` (the design-only dispatch adapter). The section
 order is the reading order in `references/components/QC-STATES.md`. The native form is never
 drawn as card fields and is never built or bound by those stages: it stays Skill 06's.
+
+The manuscript those stages read is not hand-written: `scripts/emit_checkout_manuscript.py`
+writes the five sections from the approved checkout request (it must pass
+`validate_checkout.validate_request`), the launch record's offer names and the approved
+`checkout_terms` text, and puts `<!-- source_request_sha256: <sha256 of the request file> -->`
+on line 1. `verify_source_stamp` (or `--check`) refuses a manuscript whose stamp is missing or
+no longer matches the request; the Skill 49 checkout wrapper makes the same check inline.
+A recommended (not separately approved) price is accepted at the production gate only when the
+request's `launch_plan_approval_ref` is a `launch_plan_build` approval that the shared
+verifier confirms, the same rule Skill 78 applies.
 
 ## Design direction (Skill 45)
 

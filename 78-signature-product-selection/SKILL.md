@@ -29,6 +29,12 @@ between packages. The order form that takes payment is Skill 79 (checkout).
 - Any other journey mode (`folded_levels`, `free_entry`, ...) has no selection
   page in its route graph: `check_invocation` returns `decline` and
   `validate_catalog` refuses it (`S78-JOURNEY-MODE-DECLINE`).
+- The one exception is the route that builds no selection page:
+  `route="per_offer_targets"` (one native checkout target per approved price
+  choice, `emit_binding_plan.py`). `check_invocation(launch, route=...)` and
+  `validate_catalog(launch, route=...)` accept any journey mode with several
+  main offers for that route, so a consumer states the route and never rewrites
+  `journey_mode`. A single main offer is declined on every route.
 - Input offers must be approved. Unknown price is never zero, never free. A
   `recommended_unapproved` price is covered only when the launch record is
   `approved`/`building` and carries a `plan_approval_ref` (the plan approval
@@ -46,7 +52,13 @@ between packages. The order form that takes payment is Skill 79 (checkout).
 - `79-signature-order-form/scripts/selection_flow.py::selection_from_intent` is
   the one adapter from a `selection.json` intent to Skill 79's `Selection`
   (`amount_minor_snapshot` becomes `amount_minor`; `revision` feeds both the
-  launch and the offer revision). It refuses an intent with no native price id.
+  launch and the offer revision). It refuses an intent with no native price id,
+  and carries `billing_type` and the schedule rows `{sequence, due,
+  amount_minor}` (the checkout schema's row shape) so the checkout can show
+  them. Time crosses the seam as one shape: the session store keeps epoch
+  seconds for its TTL but hands Skill 79 a timezone-aware ISO-8601
+  `expires_at` (`selection_session.to_iso`); Skill 79 compares instants and
+  refuses an integer, naive or junk time by name.
 
 ## What it produces
 

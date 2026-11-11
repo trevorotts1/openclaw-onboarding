@@ -18,7 +18,14 @@
   <section class="sig-selection-summary" aria-labelledby="selection-heading">
     <h3 id="selection-heading">Your selected package</h3>
     <p class="sig-price-line"><span>TEST Main Offer B</span><span>USD 197.00</span></p>
-    <p>Billing schedule: TEST one payment today (rendered from the validated selection)</p>
+    <!-- Billing block: billing_summary() in scripts/selection_flow.py turns the validated selection's billing type
+         and schedule rows {sequence, due, amount_minor} into these lines; nothing here comes from a URL or the
+         visitor. A one-time selection has no rows and shows only the due-today price above. -->
+    <p>Billing schedule: <span class="sig-billing-type">TEST installment</span> (rendered from the validated selection)</p>
+    <ol class="sig-schedule" aria-label="Billing schedule">
+      <li class="sig-price-line"><span>1. Today</span><span>USD 98.50</span></li>
+      <li class="sig-price-line"><span>2. In 30 days</span><span>USD 98.50</span></li>
+    </ol>
     <p>Quantity: 1</p>
     <a class="sig-change-package" href="#product-selection">Change package</a>
   </section>

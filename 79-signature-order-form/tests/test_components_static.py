@@ -2,6 +2,7 @@
 level): no homemade payment fields anywhere, bump and consent start
 unchecked, native slot present, accessibility hooks present. L1 only;
 rendered proof is L2 and still owed."""
+import json
 import re
 import unittest
 from pathlib import Path
@@ -11,9 +12,10 @@ REPO = Path(__file__).resolve().parents[2]
 SKILL = COMPONENTS.parents[1]
 # Every html/css draft is review-only (CHK-18/CHK-24); globbed so new drafts are covered.
 REVIEW_ONLY_DRAFTS = tuple(sorted(p.name for p in COMPONENTS.glob("*.html"))) + ("components.css",)
-# Docs scanned for stale strings and unresolvable paths. checkout.schema.json is
-# checked by test_schema_title_and_version_are_not_draft below.
-DOC_FILES = ([SKILL / "SKILL.md"] + sorted((SKILL / "references").glob("*.md"))
+# Docs scanned for stale strings and unresolvable paths. The checkout schema is scanned like any
+# other doc (issue 28: its title no longer carries a draft label, so nothing is excluded).
+SCHEMA = SKILL / "references" / "checkout.schema.json"
+DOC_FILES = ([SKILL / "SKILL.md", SCHEMA] + sorted((SKILL / "references").glob("*.md"))
              + sorted(p for p in COMPONENTS.iterdir() if p.is_file()))
 
 
@@ -76,6 +78,15 @@ class ComponentStaticTests(unittest.TestCase):
     def test_selection_summary_confirms_billing_schedule(self):
         self.assertIn("Billing schedule:", read("post-selection-checkout.html"))
 
+    def test_selection_summary_renders_each_schedule_row_from_the_selection(self):
+        # Issue 78: the billing type and schedule rows travel in the Selection and billing_summary() renders them.
+        summary = read("post-selection-checkout.html").split('aria-labelledby="selection-heading"')[1].split("</section>")[0]
+        self.assertIn("billing_summary()", summary)
+        self.assertIn('class="sig-billing-type"', summary)
+        schedule = summary.split('<ol class="sig-schedule"')[1].split("</ol>")[0]
+        self.assertEqual(schedule.count("<li"), 2)
+        self.assertRegex(schedule, r"1\. Today")
+
     def test_combined_explanation_has_all_four_slots(self):
         text = read("combined-checkout.html")
         for slot in ("What is included", "Who this is for", "Access and delivery",
@@ -118,6 +129,15 @@ class ComponentStaticTests(unittest.TestCase):
         for needle in ("draft", "fixture level"):
             self.assertNotIn(needle, doc["title"].lower())
         self.assertNotIn("0.2-draft", json.dumps(doc))
+
+    def test_checkout_schema_is_not_labelled_a_draft_or_fixture(self):
+        # Issue 28: the contract the validator enforces says what it is, not "draft 0.2 ... fixture level".
+        schema = json.loads(SCHEMA.read_text())
+        title = schema["title"].lower()
+        for needle in ("draft", "fixture"):
+            self.assertNotIn(needle, title)
+        self.assertEqual(schema["properties"]["schema_version"]["const"], "0.3")
+        self.assertIn("0.3", schema["title"])
 
     def test_paths_named_in_docs_resolve(self):
         # Backticked tokens shaped like dir/file.ext must exist under the 79

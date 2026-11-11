@@ -13,9 +13,17 @@ review flagged as C4/C5 live here, on top of schema validation:
   and exponent across main and bump, offerable (applicable, not already owned
   or included), carry recurrence terms by billing type, and supply `now`
   (CHK-06). Mapping expiry is compared as tz-aware datetimes (CHK-07).
+- A `recommended_unapproved` price (a stated price the client has not separately
+  approved) is production-bound only when the plan approval covers it: the request's
+  `launch_plan_approval_ref` must be a `launch_plan_build` approval for
+  `approved_plan_hash` that the ONE shared verifier (shared-utils approval_record.verify,
+  a Command Center read) confirms. This is the same rule Skill 78 applies when it lets
+  the selection page show that price (decision D-C, issue 71). A reference the verifier
+  cannot confirm, or a verifier that is not installed, refuses the price.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -45,6 +53,9 @@ SCHEMA_PATH = Path(__file__).resolve().parents[1] / "references" / "checkout.sch
 VERIFIED_STATUSES = {"locally_verified", "installed_test_verified",
                      "ready_for_activation", "live_verified"}
 RECURRING = ("recurring", "trial_then_recurring")
+PLAN_APPROVAL_KIND = "launch_plan_build"
+# The one approval verifier lives beside this skill in the skills tree (repo checkout or installed).
+APPROVAL_RECORD = Path(__file__).resolve().parents[2] / "shared-utils" / "signature_launch_contract" / "approval_record.py"
 
 
 class CheckoutValidationError(ValueError):
@@ -85,8 +96,46 @@ def _blank(value) -> bool:
     return not (isinstance(value, str) and value.strip())
 
 
-def _check_production_price(label: str, price: dict) -> None:
-    if price.get("approval_status") != "approved":
+def _shared_verify():
+    """approval_record.verify, loaded by path. Not installed means no approval can be confirmed."""
+    if not APPROVAL_RECORD.is_file():
+        raise CheckoutValidationError(
+            "the shared approval verifier (approval_record.py) is not installed, so no plan approval can be confirmed")
+    spec = importlib.util.spec_from_file_location("approval_record_s79", APPROVAL_RECORD)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.verify
+
+
+def _require_plan_approval(label: str, request: dict) -> None:
+    """Refuse unless the request's plan approval is a Command Center `launch_plan_build` record for
+    its approved plan hash (issue 71). Every failure of the verifier, whatever its type, is a refusal.
+    There is no verifier argument and no flag: the only verifier is the shared one (_shared_verify, which
+    a test patches by name), so a caller cannot hand this gate its own."""
+    ref, plan_hash = request.get("launch_plan_approval_ref"), request.get("approved_plan_hash")
+    if _blank(ref) or _blank(plan_hash):
+        raise CheckoutValidationError(
+            f"production-bound {label} price is only a recommendation and the request names no plan approval "
+            "and plan hash to cover it")
+    try:
+        verify = _shared_verify()
+        got = verify(ref, PLAN_APPROVAL_KIND, plan_hash, [PLAN_APPROVAL_KIND], test_only=False)
+    except CheckoutValidationError:
+        raise
+    except Exception as exc:  # ApprovalRefused / ApprovalUnavailable: neither is an approval
+        raise CheckoutValidationError(
+            f"production-bound {label} price is only a recommendation and its plan approval could not be "
+            f"confirmed ({getattr(exc, 'code', type(exc).__name__)}: {exc})") from exc
+    if not (isinstance(got, dict) and got.get("ok") is True and got.get("kind") == PLAN_APPROVAL_KIND
+            and got.get("approval_id") == ref and got.get("authority") == "command-center"):
+        raise CheckoutValidationError(
+            f"production-bound {label} price is only a recommendation and {ref!r} is not a "
+            f"{PLAN_APPROVAL_KIND} plan approval recorded in Command Center")
+
+
+def _check_production_price(label: str, price: dict, request: dict) -> None:
+    status = price.get("approval_status")
+    if status not in ("approved", "recommended_unapproved"):
         raise CheckoutValidationError(f"production-bound {label} price must be approved (approval_status 'approved')")
     if price["amount_minor"] <= 0:
         raise CheckoutValidationError(f"production-bound {label} price must be greater than zero")
@@ -101,12 +150,14 @@ def _check_production_price(label: str, price: dict) -> None:
     due = price.get("amount_due_now_minor")
     if due is not None and due > price["amount_minor"]:
         raise CheckoutValidationError(f"{label} amount_due_now_minor exceeds amount_minor")
+    if status == "recommended_unapproved":  # last: the one Command Center read happens only for an otherwise sound price
+        _require_plan_approval(label, request)
 
 
 def _check_production_bump(request: dict, bump: dict) -> None:
     main = request["main_price"]
     price = bump["price"]
-    _check_production_price("bump", price)
+    _check_production_price("bump", price, request)
     if _blank(bump.get("native_product_id")) or _blank(bump.get("native_price_id")):
         raise CheckoutValidationError(
             "production-bound request requires native product and price IDs for the bump (C5)")
@@ -151,7 +202,7 @@ def validate_request(request: dict, now: str | None = None) -> None:
     if request.get("test_only") is False:
         if now is None:
             raise CheckoutValidationError("production-bound request requires `now` to check mapping expiry")
-        _check_production_price("main", request["main_price"])
+        _check_production_price("main", request["main_price"], request)
         if not request["main_entitlement_ids"]:
             raise CheckoutValidationError("production-bound request requires main_entitlement_ids")
         if request["checkout_mode"] == "post_selection" and not request.get("selection_revision"):
