@@ -489,6 +489,16 @@ def _validate_supplied_adapters(config: Dict[str, Any], test_only: bool) -> None
                           f"{exc}. Nothing was dispatched and nothing was spent.") from exc
 
 
+def _resolved_inputs(key: str, held: Any) -> Any:
+    """The config's own image_inputs path(s), resolved the way the plan's are, so a symlinked or relative
+    spelling of the same file (macOS /tmp is /private/tmp) is not a disagreement; a different file still is."""
+    if key == "image_inputs" and isinstance(held, str):
+        return str(Path(held).resolve())
+    if key == "image_plan" and isinstance(held, dict) and isinstance(held.get("image_inputs"), str):
+        return {**held, "image_inputs": str(Path(held["image_inputs"]).resolve())}
+    return held
+
+
 def _landing_bridge_config(adapter_inputs: Dict[str, Any], dispatch_dir: Path, inputs: Dict[str, Any],
                            inputs_path: Path) -> Dict[str, Any]:
     """Hand Skill 49's landing bridge the approved image plan (STR-16).
@@ -521,7 +531,7 @@ def _landing_bridge_config(adapter_inputs: Dict[str, Any], dispatch_dir: Path, i
                            "image_provider": written["image_provider"]},
             "image_cap": written["image_cap"], "brand_owner": written["brand_owner"]}
     for key, value in want.items():
-        if key in landing and landing[key] != value:
+        if key in landing and _resolved_inputs(key, landing[key]) != value:
             raise BridgeError("AF-LAUNCH-BRIDGE-IMAGE-PLAN",
                               f"{key} in the landing bridge config is {landing[key]!r} but the approved image "
                               f"plan says {value!r}. Nothing was dispatched and nothing was spent.")
