@@ -960,7 +960,7 @@ def _post_sale_variant_tag(packages: Sequence[Dict[str, Any]]) -> Optional[str]:
     return None
 
 
-def _automations(*, has_upsells: bool, has_checkout: bool, has_thank_you: bool,
+def _automations(*, follow_ups: Sequence[tuple], has_checkout: bool, has_thank_you: bool,
                  has_sales: bool, has_landing: bool, payment_plans: bool,
                  ai_requested: bool, text_ids: Sequence[str],
                  email_ids: Sequence[str], black_friday: bool,
@@ -1016,12 +1016,15 @@ def _automations(*, has_upsells: bool, has_checkout: bool, has_thank_you: bool,
                     # which variant it marks, and how it reenters and deduplicates.
                     variant_tag=variant_tag, settings=settings,
                     purchase_identity=purchase_identity))
-    if has_upsells:
-        followups = [f"email_{k}" for k in ("upsell_1", "upsell_2", "downsell_1", "downsell_2")]
-        out.append(unit("auto_upsell_branch", "upsell_downsell", TEMPLATE_BY_FAMILY["upsell_downsell"],
+    # One unit per followed offer: Skill 44 stops a follow-up on a purchase of the offer it
+    # follows (purchased-<followed_offer_id>), and the launch-wide buyer tag is already on
+    # the main buyer. An offer without an id stays undeclared, so Skill 44 blocks that build.
+    for slot, offer_id in follow_ups:
+        out.append(unit(f"auto_{slot}", "upsell_downsell", TEMPLATE_BY_FAMILY["upsell_downsell"],
                         "upsell_decision",
                         "bought or declined routes to the matching follow-up",
-                        [i for i in followups if i in set(email_ids)]))
+                        [i for i in (f"email_{slot}",) if i in set(email_ids)],
+                        followed_offer_id=offer_id))
     if has_checkout:
         out.append(unit("auto_abandoned_checkout", "abandoned_checkout",
                         TEMPLATE_BY_FAMILY["abandoned_checkout"], "checkout_started_unpaid",
@@ -1183,9 +1186,16 @@ def build_launch_plan(launch: Dict[str, Any], answers: Dict[str, Any], *,
                        event_eligible=event["eligible"])
     text_ids = [t["id"] for t in texts]
 
-    has_upsells = any(p["kind"] in ("upsell", "downsell") for p in pages)
+    package_offer = {p.get("slot"): p.get("offer_id") for p in offer["packages"]}
+    follow_ups = []
+    for page in pages:
+        if page["kind"] in ("upsell", "downsell"):
+            slot = page["id"].removeprefix("page_")
+            offer_id = package_offer.get(slot)
+            follow_ups.append((slot, offer_id.strip() if isinstance(offer_id, str)
+                               and offer_id.strip() else None))
     automations = _automations(
-        has_upsells=has_upsells, has_checkout=has_checkout, has_thank_you=has_thank_you,
+        follow_ups=follow_ups, has_checkout=has_checkout, has_thank_you=has_thank_you,
         has_sales=has_sales, has_landing=has_landing,
         payment_plans=offer["payment_plans"], ai_requested=ai_requested,
         text_ids=text_ids, email_ids=sorted(email_ids),

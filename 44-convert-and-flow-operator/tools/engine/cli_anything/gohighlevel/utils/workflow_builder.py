@@ -802,7 +802,8 @@ def _rule_names(lifecycle: Mapping[str, Any], key: str) -> set:
     return {rule.get("rule") for rule in rules or [] if isinstance(rule, Mapping)}
 
 
-def _missing_guards(lifecycle: Mapping[str, Any], *, promotional: bool) -> list:
+def _missing_guards(lifecycle: Mapping[str, Any], *, promotional: bool,
+                    follow_up: bool = False) -> list:
     if not promotional:
         return []
     stops = _rule_names(lifecycle, "stop_rules")
@@ -816,6 +817,13 @@ def _missing_guards(lifecycle: Mapping[str, Any], *, promotional: bool) -> list:
         missing.append("suppress_promotion_after_verified_purchase")
     if "recheck_eligibility_immediately_before_send" not in suppressions:
         missing.append("recheck_eligibility_immediately_before_send")
+    # An upsell/downsell follow-up must say WHICH purchase stops it: without
+    # purchase_of the stop would be the launch-wide buyer tag, which the main
+    # buyer already carries.
+    if follow_up and "stop_on_verified_purchase" in stops:
+        from cli_anything.gohighlevel.utils.launch_step_compiler import missing_purchase_of
+        if missing_purchase_of(lifecycle):
+            missing.append("stop_on_verified_purchase.purchase_of")
     return missing
 
 
@@ -1021,7 +1029,8 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
         promotional = seq_schedule.get("promotional")
         if promotional is None:
             promotional = (seq_id or phase) != "welcome_access"
-        missing = _missing_guards(lifecycle, promotional=promotional)
+        missing = _missing_guards(lifecycle, promotional=promotional,
+                                  follow_up=build.get("family") == "upsell_downsell")
         if missing:
             raise WorkflowCompileError(
                 "MISSING-GUARDS",
@@ -1097,6 +1106,7 @@ def compile_automation_build(build: Mapping[str, Any], *, external_deps: Optiona
             "templates": installable["steps"],
             "unit_key": "%s/%s" % (unit_key, workflow.get("key")),
             "source_unit": build.get("id"),
+            "source_family": build.get("family"),
             "phase": seq_id or phase,
             "promotional": promotional,
             "close_at": close_at,
@@ -1501,7 +1511,8 @@ def _contract_errors(campaign: Mapping[str, Any]) -> list[str]:
             if not isinstance(lifecycle, Mapping):
                 errors.append(f"{key}: promotional workflow has no lifecycle guards")
             else:
-                missing = _missing_guards(lifecycle, promotional=True)
+                missing = _missing_guards(lifecycle, promotional=True,
+                                          follow_up=wf_def.get("source_family") == "upsell_downsell")
                 if missing:
                     errors.append(
                         f"{key}: missing suppression guard(s): {', '.join(missing)}")

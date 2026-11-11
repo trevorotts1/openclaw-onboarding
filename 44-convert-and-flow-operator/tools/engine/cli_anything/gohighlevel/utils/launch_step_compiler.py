@@ -101,6 +101,30 @@ def purchase_tag(launch_id: str) -> str:
     return "launch-buyer-%s" % launch_id
 
 
+# An upsell/downsell follow-up goes ONLY to a verified buyer of the main offer, so
+# the launch-wide buyer tag (set for the main buyer too) would stop it at its first
+# send.  Its purchase gate reads the tag of the offer it follows instead.
+FOLLOW_UP_FAMILY = "upsell_downsell"
+
+
+def followed_offer_tag(build: Mapping[str, Any]) -> Optional[str]:
+    """``purchased-<offer_id>`` for the build's declared followed offer, else None."""
+    offer = build.get("followed_offer_id")
+    return "purchased-%s" % offer if isinstance(offer, str) and TAG_RE.match(offer) else None
+
+
+def gate_tag(build: Mapping[str, Any], launch_tag: Optional[str]) -> Optional[str]:
+    """The tag the promotional purchase gate reads for this build."""
+    return followed_offer_tag(build) if build.get("family") == FOLLOW_UP_FAMILY else launch_tag
+
+
+def missing_purchase_of(lifecycle: Mapping[str, Any]) -> bool:
+    """True when a stop_on_verified_purchase rule does not name the offer it follows."""
+    stops = [r for r in lifecycle.get("stop_rules") or []
+             if isinstance(r, Mapping) and r.get("rule") == "stop_on_verified_purchase"]
+    return any(not str(r.get("purchase_of") or "").strip() for r in stops)
+
+
 def _templates_root() -> Path:
     return Path(__file__).resolve().parents[5] / "automation-templates"
 
@@ -215,7 +239,12 @@ def _lifecycle_blockers(build: Mapping[str, Any]) -> list:
     names = lambda key: {r.get("rule") for r in lifecycle.get(key) or [] if isinstance(r, Mapping)}  # noqa: E731
     missing = [r for r in REQUIRED_STOPS if r not in names("stop_rules")]
     missing += [r for r in REQUIRED_SUPPRESSIONS if r not in names("suppression_rules")]
-    return ["guards:%s:%s" % (bid, ",".join(missing))] if missing else []
+    if build.get("family") == FOLLOW_UP_FAMILY and missing_purchase_of(lifecycle):
+        missing.append("stop_on_verified_purchase.purchase_of")
+    blockers = ["guards:%s:%s" % (bid, ",".join(missing))] if missing else []
+    if build.get("family") == FOLLOW_UP_FAMILY and followed_offer_tag(build) is None:
+        blockers.append("followed_offer_unset:%s" % bid)
+    return blockers
 
 
 def _ledger(out: dict, action: str, **fields: Any) -> dict:
@@ -284,6 +313,7 @@ def compile_build(build: Mapping[str, Any], *, bindings: Optional[Mapping[str, A
         blocked.append("purchase_tag_unset:no_launch_id")
     else:
         bindings.setdefault("launch buyer tag", [ptag])
+    gtag = gate_tag(build, ptag)
 
     workflows = [w for w in build.get("workflows") or [] if isinstance(w, Mapping)]
     emails = [s for w in workflows for s in w.get("steps") or []
@@ -328,7 +358,7 @@ def compile_build(build: Mapping[str, Any], *, bindings: Optional[Mapping[str, A
         until_dates.update(bindings.get("until") or {})
         steps = _apply_absolute(out, steps, sched, until_dates, tz, allow_browser_steps)
     if steps and not out["blocked_by"] and promo:
-        _apply_purchase_gate(steps, bid, ptag)
+        _apply_purchase_gate(steps, bid, gtag)
     if family == "post_sale" and steps and not any(
             s["type"] == "add_contact_tag" and ptag in s["attributes"].get("tags", []) for s in steps):
         blocked.append("purchase_tag_not_set:%s" % bid)
@@ -340,7 +370,7 @@ def compile_build(build: Mapping[str, Any], *, bindings: Optional[Mapping[str, A
         "name": (workflows[0].get("name") if workflows else None) or (spec or {}).get("name") or bid,
         "tag": tag, "status": "draft", "templates": steps, "unit_key": "%s/flow" % unit_key,
         "source_unit": bid, "phase": family, "promotional": promo, "close_at": close_at,
-        "purchase_tag": ptag, "trigger": out["trigger"], "requires_browser": bool(out["browser_steps"]),
+        "purchase_tag": gtag, "trigger": out["trigger"], "requires_browser": bool(out["browser_steps"]),
         "browser_steps": list(out["browser_steps"]),
         "expected_source_hash": build.get("expected_graph_hash"),
     }
@@ -614,6 +644,7 @@ def compile_installable(workflow: Mapping[str, Any], build: Mapping[str, Any], *
     ptag = purchase_tag(launch_id) if launch_id else None
     if ptag:
         bindings.setdefault("launch buyer tag", [ptag])
+    gtag = gate_tag(build, ptag)
 
     seq_schedule = seq_schedule or {}
     schedule = build.get("schedule") or {}
@@ -704,11 +735,13 @@ def compile_installable(workflow: Mapping[str, Any], build: Mapping[str, Any], *
              and node.get("status") != "suppressed"}
     steps = _apply_absolute(out, steps, sched, until_dates, tz, allow_browser_steps)
 
-    if promotional and ptag and steps:
+    if promotional and build.get("family") == FOLLOW_UP_FAMILY and gtag is None:
+        blocked.append("followed_offer_unset:%s" % bid)
+    if promotional and gtag and steps:
         if purchase_tag_set:
-            _apply_purchase_gate(steps, bid, ptag)
+            _apply_purchase_gate(steps, bid, gtag)
         else:
-            out["notes"].append("purchase_gate_unset:%s" % ptag)
+            out["notes"].append("purchase_gate_unset:%s" % gtag)
 
     # F05 short purchase handler: the tag it sets is what lets the promotional
     # gate fire.  A handler that installs no tag step is recorded as an

@@ -116,6 +116,11 @@
           "description": "The contact tag the short post-sale handler sets for the purchased variant (main / upsell-N / downsell-N), carried verbatim from the launch plan's automation unit. The launch compiler binds it to the buildable template's variant placeholder, which is what lets the short handler install its template graph instead of falling back to its email sequence. Null when the plan declares none.",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9:_./-]*$"
         },
+        "followed_offer_id": {
+          "type": ["string", "null"],
+          "description": "The offer an upsell/downsell follow-up follows, carried verbatim from the launch plan's automation unit. The launch compiler gates the follow-up's sends on the tag purchased-<this id> (not the launch-wide buyer tag, which the main-offer buyer already carries). Null when the plan declares none; a follow-up build is then blocked.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9:_./-]*$"
+        },
         "settings": {
           "type": ["object", "null"],
           "description": "The launch plan's automations[].settings block, carried verbatim (reentry allow|block, enrollment single|successive). Null when the plan declares none; the compiler then records the setting insufficient instead of guessing.",
