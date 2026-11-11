@@ -1,7 +1,7 @@
 ---
 name: signature-upsell
 assigned_skill: 80
-description: Builds BOTH Signature upsell page instances of a Signature Launch from one reusable skill — Upsell 1 (U1, offered after a verified original purchase) and Upsell 2 (U2, one canonical page offered after a verified accepted U1 or Downsell 1 purchase) — as two distinct, separately built and separately tested deliverables. Owns the derived eight-section upsell copy profile (owner 12-section format minus sections 8–11, section 12 replaced by the "7 Reasons To Commit To Your ____ Future" section renumbered as section 8, a CTA in EVERY section), the deterministic copy validator and substantive review rubric, the U1/U2 production adapters and route state machine, and a TEST ONLY local page renderer (U1 and U2 are design deliverables: there is no production HTML builder). Eligibility is proven purchase only: a bump alone never qualifies for U2 and a client-side claim such as acceptedU1=true is never purchase proof. Every CTA invokes the same guarded native product-bound one-click action with the exact amount and terms disclosed adjacent; S80's side of that binding is built and independently reviewed at interface level (S80-06), while the native install itself is provisioned through Skill 6 and still pending (see Status).
+description: Builds BOTH Signature upsell page instances of a Signature Launch from one reusable skill — Upsell 1 (U1, offered after a verified original purchase) and Upsell 2 (U2, one canonical page offered after a verified accepted U1 or Downsell 1 purchase) — as two distinct, separately built and separately tested deliverables. Owns the derived eight-section upsell copy profile (owner 12-section format minus sections 8–11, section 12 replaced by the "7 Reasons To Commit To Your ____ Future" section renumbered as section 8, a CTA in EVERY section), the deterministic copy validator and substantive review rubric, the U1/U2 production adapters and route state machine, a TEST ONLY local page renderer, and ONE production page builder (`components/pages/build_production_pages.py`, which builds the U1, D1 and U2 pages from the approved launch record and route graph and refuses copy marked test_only on a launch that is not a test launch). Eligibility is proven purchase only: a bump alone never qualifies for U2 and a client-side claim such as acceptedU1=true is never purchase proof. Every CTA invokes the same guarded native product-bound one-click action with the exact amount and terms disclosed adjacent; S80's side of that binding is built and independently reviewed at interface level (S80-06), while the native install itself is provisioned through Skill 6 and still pending (see Status).
 version: 0.2.8
 ---
 
@@ -29,9 +29,10 @@ verified-purchase eligibility, exact disclosure, and native one-click binding.
 > copy documents and the brand tokens. It refuses - writing nothing - when
 > the route graph is missing or diverges from the launch record's
 > `route_graph_hash`, when the checkout family is not identified, when an
-> enabled slot has no native product/price, when any CTA ref diverges, or
-> when a purchase control navigates instead of carrying the native one-click
-> action. Every purchase CTA is a `<button>` bound to the slot's native
+> enabled slot has no native product/price, when any CTA ref diverges, when a
+> copy document is marked `test_only` on a launch record that is not a test
+> launch, or when a purchase control navigates instead of carrying the native
+> one-click action. Every purchase CTA is a `<button>` bound to the slot's native
 > product/price inside the native payment session with NO href; the only
 > navigation on a page is the explicit-decline control
 > (`data-charges="false"`), and each page carries its own slot identity so
@@ -275,8 +276,12 @@ Adapters (run from the skill root):
 ```bash
 python3 components/adapters/produce.py --instance upsell_1 \
     --request <request.json> --copy <copy.json> --journey <journey.json> \
-    --out <bundle.json>
+    [--image-provider stub|kie] --out <bundle.json>
 ```
+
+`--image-provider` is stamped as `provider` on every artifact of the result so
+Skill 83's placeholder-picture rule can read it. Left out, no provider is
+recorded; it is never defaulted.
 
 The adapters test suite runs staged by `verify.py` (below): its routing
 differential cross-check resolves the Signature Launch packet by path, and

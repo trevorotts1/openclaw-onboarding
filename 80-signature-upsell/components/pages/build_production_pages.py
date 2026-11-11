@@ -59,8 +59,9 @@ USAGE
       --out-dir <dir>
 
 Only the slots the launch record enables are built. Missing native ids, a
-missing page for an enabled slot, diverging CTA refs, or an unsupported
-billing term each fail closed with a named error and write nothing.
+missing page for an enabled slot, diverging CTA refs, an unsupported billing
+term, or a copy document marked ``test_only`` on a launch that is not a test
+launch each fail closed with a named error and write nothing.
 """
 
 from __future__ import annotations
@@ -131,6 +132,21 @@ def _esc(value) -> str:
 def load_json(path) -> dict:
     with open(path, "r", encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def _refuse_test_only_copy(slot: str, launch: dict, *docs) -> None:
+    """A copy document marked ``test_only`` is fixture copy. It may be built
+    into a page only when the launch record itself is a test launch: on a live
+    launch it is refused by name, so fixture copy can never be published as
+    production (the flag used to be read from the launch record alone)."""
+    if launch.get("test_only"):
+        return
+    for doc in docs:
+        if isinstance(doc, dict) and doc.get("test_only"):
+            raise PageBuildError(
+                f"{slot}: the copy document is marked test_only but the "
+                "launch record is not a test launch; fixture copy is never "
+                "built into a production page")
 
 
 # ── approved route graph (read-only) ─────────────────────────────────────────
@@ -555,6 +571,7 @@ def build(launch: dict, graph: dict, family: str, copies: dict,
         if slot == SLOT_D1:
             page_doc = downsell_page.get("page") if "page" in downsell_page \
                 else downsell_page
+            _refuse_test_only_copy(slot, launch, downsell_page, page_doc)
             sections = sections_from_downsell_page(slot, page_doc)
             offer_name = offer.get("display_name")
             action_ref = "native-d1-action"
@@ -568,6 +585,7 @@ def build(launch: dict, graph: dict, family: str, copies: dict,
             if doc.get("instance") != slot:
                 raise PageBuildError(
                     f"{slot}: the copy document is for {doc.get('instance')!r}")
+            _refuse_test_only_copy(slot, launch, doc)
             sections = sections_from_upsell_copy(slot, doc)
             offer_name = doc.get("offer_name")
             action_ref = doc.get("accept_action_ref")

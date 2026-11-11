@@ -136,6 +136,11 @@ MINOR_UNIT_EXPONENTS = {
     "BHD": 3, "KWD": 3, "OMR": 3, "JOD": 3, "TND": 3,
 }
 
+# Image providers an artifact may name (Skill 49's wrapper passes
+# --image-provider stub|kie). Skill 83's stub rule reads `provider` from each
+# artifact; a result that names none says nothing about its pictures.
+IMAGE_PROVIDERS = ("stub", "kie")
+
 # Journey slot vocabulary (verified purchases recorded by trusted adapters).
 JOURNEY_SLOT_BY_INSTANCE_SLOT = {"upsell_1": "upsell_1", "downsell_1": "downsell_1"}
 
@@ -891,7 +896,12 @@ def build_result(
     extra_blockers: Sequence[str] = (),
     copy_validation: Optional[Mapping] = None,
     review: Optional[Mapping] = None,
+    image_provider: Optional[str] = None,
 ) -> Dict[str, object]:
+    if image_provider is not None and image_provider not in IMAGE_PROVIDERS:
+        raise AdapterError(
+            "image_provider %r is not one of %s." % (image_provider, list(IMAGE_PROVIDERS))
+        )
     disclosure = request["disclosure"]
     offer = request["offer"]
     test_only = bool(request.get("test_only", False))
@@ -974,7 +984,14 @@ def build_result(
         "input_hash": request["input_hash"],
         "page_id": request["page_id"],
         "status": "blocked" if blocked else "authored",
-        "artifacts": [{"path": copy_artifact_path, "sha256": copy_sha256}],
+        # Harmony issue 16: every artifact names the image provider of the run
+        # (Skill 83's stub rule reads it); none named -> the key is absent.
+        "artifacts": [
+            dict(
+                {"path": copy_artifact_path, "sha256": copy_sha256},
+                **({"provider": image_provider} if image_provider else {})
+            )
+        ],
         "author_session": AUTHOR_SESSION,
         "reviewer_session": reviewer_session,
         "independent_review": not review_fails,

@@ -124,6 +124,7 @@ def build_bundle(
     copy_artifact_path: str,
     launch: Optional[Mapping] = None,
     review: Optional[Mapping] = None,
+    image_provider: Optional[str] = None,
 ) -> Dict[str, object]:
     common.validate_request(request, "upsell_1")
     common.validate_routes_for_instance(request, "upsell_1")
@@ -199,6 +200,7 @@ def build_bundle(
         disposition=disposition,
         test_outcomes=test_outcomes,
         review=review,
+        image_provider=image_provider,
     )
     page_plan = common.build_page_plan(
         request=request,

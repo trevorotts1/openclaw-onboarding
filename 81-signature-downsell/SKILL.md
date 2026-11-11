@@ -27,6 +27,10 @@ stays false until a real install read-back exists, and `install_d1_page`
 still refuses by name (S06-02 / UPS-08). Self-check:
 `python3 adapters/s06_install_wrapper.py --selftest`.
 
+## Runtime
+
+This package ships no command of its own: its validators and adapters are libraries. The runtime composition is Skill 49's `49-signature-funnel/scripts/downsell_wrapper.py`, which enriches the Skill 49 page-request into this package's `downsell-request`, runs the validators here and writes the page-result. It copies the pinned validator and two schemas and refuses any byte that differs from its compiled-in sha256 (see `VALIDATOR-CONSUMERS.json`; `tests/test_validator_pin_lockstep.py` proves the three-way agreement). `tests/test_skill_md_names_runtime.py` fails if this paragraph stops naming the wrapper.
+
 ## Route responsibility (packet 02 section 4, binding)
 
 - D1 is reached ONLY when U1 is explicitly declined AND D1 is enabled. A failed or pending U1 payment is neither acceptance nor decline and never routes to D1 as a decline.
