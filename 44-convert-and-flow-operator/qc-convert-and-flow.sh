@@ -336,8 +336,10 @@ assert "INSTRUCTIONS.md bidirectional link Step 0 <-> Step 9 present" \
   "grep -qi 'BIDIRECTIONAL\|Step 0.*recommendation.*flipped\|flipped.*Step 0' \"$SKILL44_DIR/INSTRUCTIONS.md\""
 assert "references/workflow-build-checklist-template.md exists" \
   "[ -f \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" ]"
-assert "checklist template contains WF-1 through WF-22 (22 items)" \
-  "for i in \$(seq 1 22); do grep -q \"WF-\$i\" \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" || exit 1; done"
+assert "checklist template contains WF-1 through WF-25 (25 items)" \
+  "for i in \$(seq 1 25); do grep -q \"WF-\$i\" \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" || exit 1; done"
+assert "checklist template WF-25 SMS compliance gate present" \
+  "grep -q 'WF-25' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" && grep -q 'sms_eligibility.py verify-saved' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\""
 assert "checklist template WF-22 email-body gate present" \
   "grep -q 'WF-22' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" && grep -qi 'email body' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\" && grep -q '200' \"$SKILL44_DIR/references/workflow-build-checklist-template.md\""
 assert "checklist template WF-4 trigger-active WF-ACTIVE gate present" \

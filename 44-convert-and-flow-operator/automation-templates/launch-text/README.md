@@ -64,6 +64,8 @@ Marketing sets are `doors_open`, `last_call`, `abandoned_checkout`; operational 
 
 `verify_saved_conditions()` reads the **saved native workflow export** and requires each rule to exist as a native `if_else` / `wait_until` condition (tag, field, time window, deadline). Prose in a `purpose`, `copy` or note field never satisfies a rule; the verifier reports `prose_only` when the words exist but the condition does not.
 
+The per-build QC runs it (`qc-built-workflow.sh`, item WF-25): `python3 sms_eligibility.py verify-saved --export <export.json> [--category auto|marketing|operational]` exits `0` when every rule is saved natively (or the export has no SMS step), `1` when a rule is missing or prose only, `2` when the export cannot be read. `auto` is `operational` only if every SMS node declares an operational `category` or `kind`; otherwise the stricter marketing set applies. A workflow with an SMS step that fails this check cannot pass QC.
+
 The AI nudge template (`launch-ai/`) is built by L10 under this same cap/STOP contract; it is not edited here.
 
 ## Placeholders

@@ -522,3 +522,128 @@ def verify_saved_conditions(snapshot: dict, category_name: str) -> dict:
                 prose_only.append(rule)
     return {"ok": not missing, "missing": missing,
             "prose_only": prose_only, "found": found}
+
+
+# ---------------------------------------------------------------------------
+# saved-export check (the per-build QC entry point, qc-built-workflow.sh WF-25)
+# ---------------------------------------------------------------------------
+
+def _export_steps(export):
+    """The step list of a saved workflow export, or None. Same lookup order as
+    the QC script's WF-12: workflowData.templates wins over steps/actions/nodes."""
+    if not isinstance(export, dict):
+        return None
+    for holder in (export, export.get("data"), export.get("workflow")):
+        if not isinstance(holder, dict):
+            continue
+        wd = holder.get("workflowData")
+        if isinstance(wd, dict) and isinstance(wd.get("templates"), list):
+            return wd["templates"]
+        for key in ("steps", "actions", "nodes", "templates"):
+            if isinstance(holder.get(key), list):
+                return holder[key]
+    return None
+
+
+def _is_sms(step) -> bool:
+    return isinstance(step, dict) and "SMS" in str(step.get("type") or "").upper()
+
+
+def snapshot_from_export(export):
+    """(snapshot, sms_steps) for verify_saved_conditions().
+
+    A saved export keeps conditions and prose under `attributes`; the
+    verifier reads them at the top of each step, so they are hoisted here.
+    Nothing is invented: a step with no conditions stays without any.
+    """
+    steps = _export_steps(export)
+    if steps is None:
+        return None, []
+    out, sms = [], []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        attrs = step.get("attributes") if isinstance(step.get("attributes"), dict) else {}
+        flat = {"type": str(step.get("type") or "").lower(),
+                "disabled": step.get("disabled") is True or attrs.get("disabled") is True}
+        conditions = step.get("conditions")
+        flat["conditions"] = conditions if isinstance(conditions, list) else (
+            attrs.get("conditions") if isinstance(attrs.get("conditions"), list) else [])
+        for key in PROSE_FIELDS:
+            value = step.get(key) if isinstance(step.get(key), str) else attrs.get(key)
+            if isinstance(value, str):
+                flat[key] = value
+        out.append(flat)
+        if _is_sms(step):
+            sms.append(step)
+    return {"steps": out}, sms
+
+
+def export_category(sms_steps) -> str:
+    """`operational` only when EVERY SMS node declares an operational category
+    or kind; anything else is `marketing` (the stricter rule set)."""
+    if not sms_steps:
+        return "marketing"
+    for step in sms_steps:
+        attrs = step.get("attributes") if isinstance(step.get("attributes"), dict) else {}
+        declared = attrs.get("category") or step.get("category")
+        kind = attrs.get("kind") or step.get("kind")
+        if declared == "operational" or kind in OPERATIONAL_KINDS:
+            continue
+        return "marketing"
+    return "operational"
+
+
+def verify_saved_export(export, category_name="auto") -> dict:
+    """verify_saved_conditions() over a saved workflow export.
+
+    `ok` is True when the export has no SMS node (nothing to prove) or every
+    rule for its category is a saved native condition. An unreadable export
+    is `ok: False` with `unreadable: True`, never a pass.
+    """
+    snapshot, sms = snapshot_from_export(export)
+    if snapshot is None:
+        return {"ok": False, "unreadable": True, "category": None, "sms_nodes": 0,
+                "missing": ["workflow.steps"], "prose_only": [], "found": {}}
+    if not sms:
+        return {"ok": True, "unreadable": False, "category": None, "sms_nodes": 0,
+                "missing": [], "prose_only": [], "found": {}}
+    chosen = export_category(sms) if category_name == "auto" else category_name
+    result = verify_saved_conditions(snapshot, chosen)
+    result.update({"unreadable": False, "category": chosen, "sms_nodes": len(sms)})
+    return result
+
+
+def main(argv=None) -> int:
+    """`verify-saved --export <export.json> [--category auto|marketing|operational]`
+
+    Exit 0 = every rule saved natively (or no SMS node), 1 = a rule is
+    missing or prose only, 2 = the export could not be read.
+    """
+    import argparse
+    import json
+    import sys
+
+    parser = argparse.ArgumentParser(prog="sms_eligibility.py")
+    sub = parser.add_subparsers(dest="command", required=True)
+    saved = sub.add_parser("verify-saved", help="prove SMS rules are saved native conditions")
+    saved.add_argument("--export", required=True, help="saved workflow export JSON")
+    saved.add_argument("--category", default="auto",
+                       choices=("auto", "marketing", "operational"))
+    args = parser.parse_args(argv)
+    try:
+        with open(args.export, encoding="utf-8") as handle:
+            export = json.load(handle)
+    except (OSError, ValueError) as exc:
+        print(json.dumps({"ok": False, "unreadable": True,
+                          "error": type(exc).__name__}))
+        return 2
+    result = verify_saved_export(export, args.category)
+    print(json.dumps(result, sort_keys=True))
+    if result.get("unreadable"):
+        return 2
+    return 0 if result["ok"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

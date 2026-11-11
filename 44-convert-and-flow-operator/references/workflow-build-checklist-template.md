@@ -1,7 +1,8 @@
-# Skill 44 — Workflow Build Checklist Template (WF-1..WF-22)
+# Skill 44 — Workflow Build Checklist Template (WF-1..WF-25)
 
-WF-22 was appended on 2026-09-03 as a send-integrity gate (see its section below); items were
-NOT renumbered — WF numbers are cited by scripts, QC.md, and stage gates.
+WF-22 was appended on 2026-09-03 as a send-integrity gate (see its section below); WF-23 and WF-24
+(graph and trigger-link gates) and WF-25 (SMS compliance as saved conditions) were appended after it.
+Items were NOT renumbered — WF numbers are cited by scripts, QC.md, and stage gates.
 
 ## Purpose
 
@@ -200,6 +201,9 @@ For each Webhook node:
 | Enrollment filters | `[FILL: configured/none]` | `[FILL after QC]` | `[ ] PASS  [ ] FAIL` |
 
 - Notes: `[FILL: any setting explicitly defaulted and recorded]`
+- On a workflow with SMS steps, Stop-on-Response and the time window are measured by
+  `qc-built-workflow.sh` from the saved conditions (the suppression and quiet-hours rules of WF-25),
+  not graded by hand; otherwise they stay human review.
 
 ### WF-17 — Edge Cases Covered / Decided
 
@@ -263,6 +267,35 @@ bodies; mechanically asserted by `qc-built-workflow.sh` since that date.
   body is present and is the intended copy. Never an assumed pass.
 - Status: `[ ] PASS  [ ] FAIL  [ ] N/A`
 
+### WF-23 — Graph Validator (seven structural conditions)
+
+- Expected: root, reachability, referential integrity, branch completeness, termination,
+  acyclicity and cross-branch containment all hold in the SAVED graph (`tools/validate_graph.py`).
+  UNVERIFIED is never a pass.
+- Observed: `[FILL after QC: the node / edge / branch / orphan counts the script prints]`
+- Status: `[ ] PASS  [ ] FAIL`
+
+### WF-24 — Trigger Entrance Link
+
+- Expected: the trigger's `targetActionId` equals the root node id (a trigger not linked to the first
+  node renders as a floating card above a graph it does not enter).
+- Observed: `[FILL after QC: targetActionId / root]`
+- Status: `[ ] PASS  [ ] FAIL`
+
+### WF-25 — SMS Compliance Saved As Native Conditions (SEND INTEGRITY)
+
+Appended after WF-24 because WF-22 is the email-body gate; mechanically asserted by
+`qc-built-workflow.sh`, which runs `automation-templates/launch-text/sms_eligibility.py verify-saved`.
+
+- Expected: every SMS-bearing workflow has its rules saved as native if/else, wait or time-window
+  conditions. Marketing: consent (`sms-subscribed`), suppression (`sms-opted-out`/STOP), the
+  aggregate contact cap, quiet hours 08:00-21:00 recipient-local, the launch deadline. Operational:
+  suppression and quiet hours. Words in a step's name, purpose, copy or note NEVER satisfy a rule.
+  No SMS nodes in the workflow → N/A.
+- Observed: `[FILL after QC: category, missing rules, prose-only rules, or N/A — no SMS nodes]`
+- A verifier that is absent or cannot read the export fails the item; it is never an assumed pass.
+- Status: `[ ] PASS  [ ] FAIL  [ ] N/A`
+
 ---
 
 ## Overall QC Result
@@ -291,6 +324,9 @@ bodies; mechanically asserted by `qc-built-workflow.sh` since that date.
 | WF-20 No Hallucinated Artifacts | `[ ] PASS  [ ] FAIL` |
 | WF-21 Snapshot | `[ ] PASS  [ ] FAIL` |
 | WF-22 Email Body Non-Empty | `[ ] PASS  [ ] FAIL  [ ] N/A` |
+| WF-23 Graph Validator | `[ ] PASS  [ ] FAIL` |
+| WF-24 Trigger Entrance Link | `[ ] PASS  [ ] FAIL` |
+| WF-25 SMS Compliance Conditions | `[ ] PASS  [ ] FAIL  [ ] N/A` |
 
 **Final verdict:** `[ ] ALL-PASS — QC APPROVED  [ ] FAIL — see items above`
 
@@ -298,7 +334,7 @@ bodies; mechanically asserted by `qc-built-workflow.sh` since that date.
 
 ## Cross-reference: Skill 41 12-Point Checklist
 
-This WF-1..WF-22 checklist is a SUPERSET of Skill 41's 12-point verification-checklist.md,
+This WF-1..WF-25 checklist is a SUPERSET of Skill 41's 12-point verification-checklist.md,
 extended for caf-built workflows with Skill 44-specific gates (trigger active state,
 re-entry/publish gating questions, SMS From-number, delivery-chain linkage, hallucination
 detection, and snapshot verification). The mapping is:
@@ -318,7 +354,7 @@ detection, and snapshot verification). The mapping is:
 | 11. Re-entry / stop-on-response / time windows | WF-6, WF-16 |
 | 12. Test with test contact | WF-20 (independent read via export) |
 
-For caf-built workflows, use THIS checklist (WF-1..WF-22) as the authoritative source.
+For caf-built workflows, use THIS checklist (WF-1..WF-25) as the authoritative source.
 Skill 41's 12-point checklist applies to Build-with-AI (manual browser) builds only.
 
 ---
@@ -327,7 +363,7 @@ Skill 41's 12-point checklist applies to Build-with-AI (manual browser) builds o
 
 These checks are owned by the Signature Launch purchase-automation work (S44) and apply to
 purchase-handler, fulfillment, suppression, and enrollment workflows built for a launch.
-They sit alongside WF-1..WF-22 and do not change any WF item's meaning for other consumers.
+They sit alongside WF-1..WF-25 and do not change any WF item's meaning for other consumers.
 
 | # | Check | Expected | Observed | Status |
 |---|---|---|---|---|

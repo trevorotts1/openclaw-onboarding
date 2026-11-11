@@ -15,7 +15,7 @@ fi
 #   ./qc-built-workflow.sh <workflow-id> [--publish-intent DRAFT|LIVE] [--re-entry ONCE|ALLOW-MULTIPLE] \
 #                          [--fab] [--evidence <evidence_root>] [--conversational] [--json]
 #                          [--deps <dependency-manifest.json>] [--handoff <path>]
-#                          --plan-mode-file <path> --qc-model <model> --grades <path> \
+#                          --plan-mode-file <path> --qc-session <path> --grades <path> \
 #                          [--launch | --launch-schedule <path>]
 #
 #   workflow-id       GHL workflow id (required)
@@ -32,8 +32,12 @@ fi
 #                     (shared-utils/signature_launch_contract/approval_record.py, kind
 #                     launch_plan_build, scope publish:<INTENT> + reentry:<DECISION>) must confirm the
 #                     Command Center record. A file the AI wrote itself cannot satisfy that check.
-#   --qc-model        Model that runs this QC (recorded in build-events; must differ from the
-#                     plan file's build_model). Required for exit 0.
+#   --qc-session      QC session record (S44-46): JSON {approval_id, plan_hash, qc_model, session_id}.
+#                     The approval flow's verifier (kind qc_session, scope qc_model:<model> +
+#                     qc_session:<session_id>, bound to the PLAN MODE file's plan_hash) must confirm the
+#                     Command Center record, so the QC model name is signed, never self-reported. The
+#                     signed model must differ from the PLAN MODE file's build_model. Required for exit 0.
+#                     (--qc-model, a free string anyone could type, is refused.)
 #   --grades          QC sub-agent grades for every REQUIRES_HUMAN_REVIEW item:
 #                     {"workflow_id": "<id>", "grades": {"WF-1": {"grade": "PASS|FAIL", "observed": "..."}, ...}}
 #                     Any ungraded item blocks exit 0 (exit 2).
@@ -51,10 +55,11 @@ fi
 #
 # Exit codes:
 #   0  = ALL mechanically-checkable items PASS, every human-review item is graded PASS, the signed
-#        PLAN MODE file verifies, and a QC model is recorded (and, when --fab, FAB-QC scored >= 8.5)
+#        PLAN MODE file verifies, and a signed QC session record names a QC model (and, when --fab,
+#        FAB-QC scored >= 8.5)
 #   1  = one or more items FAIL (or --fab and FAB-QC below 8.5 / unavailable — fail-closed), a human
 #        grade is FAIL, or the PLAN MODE / QC-independence gate failed (file absent, intent differs,
-#        approval refused, QC model missing or equal to the build model)
+#        approval refused, QC session record absent/unverified, QC model equal to the build model)
 #   2 (also) = one or more human-review items are UNGRADED (not a pass: the caller must never see 0)
 #   2  = workflow not found, caf not available, or export blocked by a missing Firebase
 #        token on a Tier-4 build (hard prereq failure — REQUIRES_OPERATOR)
@@ -67,6 +72,13 @@ fi
 #   WF-7  Action sequence: at minimum one action node present + delivery chain not empty
 #   WF-12 SMS From-number non-empty (for any SMS-type action nodes)
 #   WF-22 Email body non-empty + >=200 rendered chars (for any email-type action nodes)
+#   WF-25 SMS compliance (S44-32): for any SMS node, automation-templates/launch-text/
+#         sms_eligibility.py verify-saved proves consent, STOP/suppression, the aggregate
+#         contact cap, quiet hours and the launch deadline are SAVED NATIVE conditions in the
+#         export (prose never satisfies a rule). Missing or prose-only = FAIL. Appended after
+#         WF-24 because WF-22 is the email-body check (no renumbering).
+#   WF-16 Stop-on-Response + time window: mechanical on a workflow with SMS nodes, taken from the
+#         same verifier (suppression and quiet_hours rules); human review otherwise.
 #   WF-15 Delivery chain linkage: summary of the graph validator (0 orphans,
 #         0 dangling, 0 unwired branches, 0 cross-branch violations) with node/edge counts in the reason
 #   WF-18 Dependency manifest: every tag/field/custom value/calendar/pipeline
@@ -79,7 +91,7 @@ fi
 #   WF-24 Trigger entrance link: the trigger's targetActionId equals the root
 #         node id
 #
-# Non-mechanical items (WF-1,2,8,9,10,11,13,14,16,17,19,20) require human/LLM review;
+# Non-mechanical items (WF-1,2,8,9,10,11,13,14,17,19,20; WF-16 when no SMS node) require human/LLM review;
 # they are noted in the JSON output as "requires_human_review".
 #
 # Invoked by the independent QC sub-agent (different model than the build agent — INSTRUCTIONS.md Step 9.2) during Step 9.
@@ -96,7 +108,7 @@ CONVERSATIONAL=0
 DEPS_MANIFEST=""
 HANDOFF_FILE=""
 PLAN_MODE_FILE=""
-QC_MODEL=""
+QC_SESSION_FILE=""
 GRADES_FILE=""
 LAUNCH_MODE=0
 LAUNCH_SCHEDULE=""
@@ -111,7 +123,8 @@ while [[ $# -gt 0 ]]; do
     --deps)           DEPS_MANIFEST="${2:-}"; shift 2 ;;
     --handoff)        HANDOFF_FILE="${2:-}"; shift 2 ;;
     --plan-mode-file) PLAN_MODE_FILE="${2:-}"; shift 2 ;;
-    --qc-model)       QC_MODEL="${2:-}"; shift 2 ;;
+    --qc-session)     QC_SESSION_FILE="${2:-}"; shift 2 ;;
+    --qc-model)       echo "REFUSED: --qc-model is a self-reported string and is no longer accepted (S44-46). Pass --qc-session <record.json>: the Command Center-signed QC session record naming the QC model and session id." >&2; exit 2 ;;
     --grades)         GRADES_FILE="${2:-}"; shift 2 ;;
     --launch)         LAUNCH_MODE=1; shift ;;
     --launch-schedule) LAUNCH_SCHEDULE="${2:-}"; LAUNCH_MODE=1; shift 2 ;;
@@ -123,7 +136,7 @@ done
 
 if [ -z "$WORKFLOW_ID" ]; then
   echo "ERROR: workflow-id required" >&2
-  echo "Usage: $0 <workflow-id> [--publish-intent DRAFT|LIVE] [--re-entry ONCE|ALLOW-MULTIPLE] [--conversational] [--handoff <path>] [--plan-mode-file <path>] [--qc-model <model>] [--grades <path>] [--launch-schedule <path>] [--json]" >&2
+  echo "Usage: $0 <workflow-id> [--publish-intent DRAFT|LIVE] [--re-entry ONCE|ALLOW-MULTIPLE] [--conversational] [--handoff <path>] [--plan-mode-file <path>] [--qc-session <path>] [--grades <path>] [--launch-schedule <path>] [--json]" >&2
   exit 2
 fi
 
@@ -156,7 +169,7 @@ if ! EXPORT_ERR=$(caf workflows export --workflow-id "$WORKFLOW_ID" --out "$TMP"
   # `caf workflows export` routes through the INTERNAL Firebase client (NOT the Tier-0
   # PIT). If the failure is a missing/expired Firebase token, this is a Tier-4 build whose
   # mechanical QC CANNOT run — fail-closed "no-token = NOT DONE" (never a silent pass).
-  if echo "$EXPORT_ERR" | grep -qiE 'firebase|refresh[ _-]?token|id[ _-]?token|internal client|no token|token[^"]*(missing|expired|not found)|tier[ _-]?4'; then
+  if grep -qiE 'firebase|refresh[ _-]?token|id[ _-]?token|internal client|no token|token[^"]*(missing|expired|not found)|tier[ _-]?4' <<< "$EXPORT_ERR"; then
     echo "REQUIRES_OPERATOR: caf workflows export needs the internal Firebase token, which is absent/expired." >&2
     echo "TIER-4 BUILD (agent-browser): mechanical Step-9 QC cannot run without export. NOT DONE." >&2
     echo "Backstop: an agent-browser read-back of the built workflow must confirm the build before done." >&2
@@ -243,10 +256,10 @@ record_na() {
 
 # ── WF-3: Trigger present ─────────────────────────────────────────────────────
 TRIGGER_TYPE=""
-if echo "$EXPORT_OUT" | grep -qiE '"type".*"trigger|triggerType|trigger_type|event_type'; then
-  TRIGGER_TYPE=$(echo "$EXPORT_OUT" | grep -oiE '"triggerType"[[:space:]]*:[[:space:]]*"[^"]*"|"trigger_type"[[:space:]]*:[[:space:]]*"[^"]*"|"type"[[:space:]]*:[[:space:]]*"[A-Z_]*TRIGGER[^"]*"' | head -1 || echo "present")
+if grep -qiE '"type".*"trigger|triggerType|trigger_type|event_type' <<< "$EXPORT_OUT"; then
+  TRIGGER_TYPE=$(grep -oiE '"triggerType"[[:space:]]*:[[:space:]]*"[^"]*"|"trigger_type"[[:space:]]*:[[:space:]]*"[^"]*"|"type"[[:space:]]*:[[:space:]]*"[A-Z_]*TRIGGER[^"]*"' <<< "$EXPORT_OUT" | head -1 || true)
   record_pass "WF-3" "${TRIGGER_TYPE:-present}" "trigger present" "Trigger node found in export"
-elif echo "$EXPORT_OUT" | grep -qiE 'trigger|contactCreated|formSubmitted|tagAdded|ContactCreate|FormSubmit|TagAdd'; then
+elif grep -qiE 'trigger|contactCreated|formSubmitted|tagAdded|ContactCreate|FormSubmit|TagAdd' <<< "$EXPORT_OUT"; then
   record_pass "WF-3" "trigger_found" "trigger present" "Trigger keyword found in export"
 else
   record_fail "WF-3" "no_trigger_found" "trigger present" "No trigger node detected in caf workflows export output"
@@ -260,9 +273,9 @@ OBSERVED_ACTIVE="unknown"
 # Anchored to the JSON "key":value shape (never a loose whole-body `active.*true`,
 # which false-matched innocent email copy) and portable ERE `[[:space:]]` (BSD grep
 # does not support `\s` / `\|`).
-if echo "$EXPORT_OUT" | grep -qiE '"active"[[:space:]]*:[[:space:]]*true|"triggerActive"[[:space:]]*:[[:space:]]*true'; then
+if grep -qiE '"active"[[:space:]]*:[[:space:]]*true|"triggerActive"[[:space:]]*:[[:space:]]*true' <<< "$EXPORT_OUT"; then
   OBSERVED_ACTIVE="true"
-elif echo "$EXPORT_OUT" | grep -qiE '"active"[[:space:]]*:[[:space:]]*false|"triggerActive"[[:space:]]*:[[:space:]]*false'; then
+elif grep -qiE '"active"[[:space:]]*:[[:space:]]*false|"triggerActive"[[:space:]]*:[[:space:]]*false' <<< "$EXPORT_OUT"; then
   OBSERVED_ACTIVE="false"
 fi
 
@@ -283,9 +296,9 @@ EXPECTED_STATUS="draft"
 
 OBSERVED_STATUS="unknown"
 # Anchored "status":"value" + portable ERE (no loose `status.*published`, no `\s`/`\|`).
-if echo "$EXPORT_OUT" | grep -qiE '"status"[[:space:]]*:[[:space:]]*"published"'; then
+if grep -qiE '"status"[[:space:]]*:[[:space:]]*"published"' <<< "$EXPORT_OUT"; then
   OBSERVED_STATUS="published"
-elif echo "$EXPORT_OUT" | grep -qiE '"status"[[:space:]]*:[[:space:]]*"draft"'; then
+elif grep -qiE '"status"[[:space:]]*:[[:space:]]*"draft"' <<< "$EXPORT_OUT"; then
   OBSERVED_STATUS="draft"
 fi
 
@@ -303,9 +316,9 @@ EXPECTED_REENTRY="false"
 
 OBSERVED_REENTRY="unknown"
 # Anchored key:value + portable ERE (no loose `allow_multiple.*true`, no `\s`/`\|`).
-if echo "$EXPORT_OUT" | grep -qiE '"allowMultiple"[[:space:]]*:[[:space:]]*true|"reEntry"[[:space:]]*:[[:space:]]*true|"allow_multiple"[[:space:]]*:[[:space:]]*true|"re_entry"[[:space:]]*:[[:space:]]*true'; then
+if grep -qiE '"allowMultiple"[[:space:]]*:[[:space:]]*true|"reEntry"[[:space:]]*:[[:space:]]*true|"allow_multiple"[[:space:]]*:[[:space:]]*true|"re_entry"[[:space:]]*:[[:space:]]*true' <<< "$EXPORT_OUT"; then
   OBSERVED_REENTRY="true"
-elif echo "$EXPORT_OUT" | grep -qiE '"allowMultiple"[[:space:]]*:[[:space:]]*false|"reEntry"[[:space:]]*:[[:space:]]*false|"allow_multiple"[[:space:]]*:[[:space:]]*false|"re_entry"[[:space:]]*:[[:space:]]*false'; then
+elif grep -qiE '"allowMultiple"[[:space:]]*:[[:space:]]*false|"reEntry"[[:space:]]*:[[:space:]]*false|"allow_multiple"[[:space:]]*:[[:space:]]*false|"re_entry"[[:space:]]*:[[:space:]]*false' <<< "$EXPORT_OUT"; then
   OBSERVED_REENTRY="false"
 fi
 
@@ -429,10 +442,10 @@ read -r SMS_MISSING_KEY SMS_EMPTY_LIVE SMS_EMPTY_DRAFT SMS_TOTAL <<< "$SMS_FROM_
 
 if [ "$SMS_MISSING_KEY" = "-1" ]; then
   # Could not parse JSON — use text-grep fallback
-  if echo "$EXPORT_OUT" | grep -qiE '"type"[[:space:]]*:[[:space:]]*"(sms|send_sms)"'; then
-    if echo "$EXPORT_OUT" | grep -qiE '"?(fromNumber|from_number|phoneNumber)"?[[:space:]]*:[[:space:]]*""'; then
+  if grep -qiE '"type"[[:space:]]*:[[:space:]]*"(sms|send_sms)"' <<< "$EXPORT_OUT"; then
+    if grep -qiE '"?(fromNumber|from_number|phoneNumber)"?[[:space:]]*:[[:space:]]*""' <<< "$EXPORT_OUT"; then
       record_fail "WF-12" "sms_node_with_empty_from_number" "fromNumber key present + non-empty on every SMS node" "CRITICAL: SMS node with empty From-number detected (text-grep fallback) — will silently fail to send"
-    elif echo "$EXPORT_OUT" | grep -qiE 'fromNumber|from_number|phoneNumber'; then
+    elif grep -qiE 'fromNumber|from_number|phoneNumber' <<< "$EXPORT_OUT"; then
       record_pass "WF-12" "from_number_key_present" "fromNumber key present on every SMS node" "Text-grep fallback: a From-number key is present (human review recommended for full JSON parse)"
     else
       record_fail "WF-12" "sms_present_no_from_number_key" "fromNumber key present on every SMS node" "CRITICAL: SMS node(s) present but no From-number key found (text-grep fallback). sms_step must emit fromNumber."
@@ -490,7 +503,7 @@ read -r EMAIL_TOTAL EMAIL_EMPTY EMAIL_SHORT EMAIL_PARSE_OK <<< "$EMAIL_BODY_CHEC
 
 if [ "${EMAIL_PARSE_OK:-0}" != "1" ]; then
   # Parse failed — fall back to a text grep for literally-empty body/html values.
-  if printf '%s' "$EXPORT_OUT" | grep -qE '"(body|html)"[[:space:]]*:[[:space:]]*""'; then
+  if grep -qE '"(body|html)"[[:space:]]*:[[:space:]]*""' <<< "$EXPORT_OUT"; then
     record_fail "WF-22" "empty_email_body_detected_textgrep" "every email node has a non-empty body" \
       "CRITICAL: an email node with an EMPTY body/html was found (text-grep fallback). This ships a subject line with no message. DO NOT send."
   else
@@ -507,6 +520,57 @@ elif [ "${EMAIL_SHORT:-0}" -gt 0 ]; then
 else
   record_pass "WF-22" "all_${EMAIL_TOTAL}_email_nodes_have_nonempty_body" "every email node has a non-empty body" \
     "All $EMAIL_TOTAL email node(s) carry a non-empty body of >= 200 rendered characters"
+fi
+
+# ── WF-25: SMS COMPLIANCE AS SAVED NATIVE CONDITIONS (S44-32) ──────────────────
+# The launch-text README calls consent, STOP/suppression, the aggregate contact cap, quiet
+# hours and the launch deadline non-negotiable, and sms_eligibility.verify_saved_conditions()
+# is the ONE mechanical verifier of them -- but nothing ran it, and WF-12 only looks at
+# fromNumber. Prose in a purpose/copy/note field never satisfies a rule: a missing or
+# prose-only rule FAILS. A verifier that is absent (or cannot read the export) can never pass
+# a workflow that carries an SMS node. (Id WF-25: WF-22 is the email-body check above.)
+SMS_VERIFIER="$SCRIPT_DIR/automation-templates/launch-text/sms_eligibility.py"
+SMS_RC=0
+SMS_JSON=""
+if [ ! -f "$SMS_VERIFIER" ]; then
+  SMS_RC=99
+else
+  SMS_JSON=$(python3 -I "$SMS_VERIFIER" verify-saved --export "$TMP" 2>/dev/null) || SMS_RC=$?
+fi
+SMS_FIELDS=$(printf '%s' "$SMS_JSON" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+j = lambda v: ",".join(v) if isinstance(v, list) and v else "none"
+f = d.get("found") if isinstance(d.get("found"), dict) else {}
+print("OK" if d.get("ok") is True else "NOTOK", d.get("category") or "none", int(d.get("sms_nodes") or 0),
+      j(d.get("missing")), j(d.get("prose_only")), int(f.get("suppression") is True), int(f.get("quiet_hours") is True))
+' 2>/dev/null || echo "MALFORMED none 0 none none 0 0")
+read -r SMS_OK SMS_CAT SMS_NODES SMS_MISSING SMS_PROSE SMS_SUPP SMS_QH <<< "$SMS_FIELDS"
+
+if [ "$SMS_RC" -eq 99 ] && [ "${SMS_TOTAL:-0}" = "0" ]; then
+  record_pass "WF-25" "no_sms_nodes" "n/a — no SMS nodes" "No SMS nodes in this workflow (sms_eligibility.py not needed)"
+elif [ "$SMS_RC" -eq 99 ]; then
+  record_fail "WF-25" "sms_verifier_missing" "sms_eligibility.py verify-saved present and exit 0" "Claimed SMS compliance gate is absent ($SMS_VERIFIER) — fail closed; a missing verifier can never pass a workflow with SMS nodes."
+elif [ "$SMS_RC" -eq 2 ] && [ "${SMS_TOTAL:-0}" = "0" ]; then
+  record_pass "WF-25" "no_sms_nodes" "n/a — no SMS nodes" "No SMS nodes in this workflow (export exposes no step list; WF-7 owns that)"
+elif [ "$SMS_RC" -ne 0 ] && [ "$SMS_RC" -ne 1 ]; then
+  record_fail "WF-25" "sms_verifier_could_not_read_export rc=$SMS_RC" "sms_eligibility.py verify-saved exit 0" "The SMS compliance verifier could not read this export (exit $SMS_RC); SMS rules are unproven. Fail closed."
+elif [ "$SMS_OK" = "MALFORMED" ] || { [ "$SMS_RC" -eq 0 ] && [ "$SMS_OK" != "OK" ]; } || { [ "$SMS_RC" -eq 1 ] && [ "$SMS_OK" = "OK" ]; }; then
+  record_fail "WF-25" "sms_verifier_report_malformed rc=$SMS_RC" "consistent sms_eligibility.py verify-saved report" "The SMS compliance verifier report is malformed or contradicts its exit status; fail closed."
+elif [ "$SMS_NODES" -eq 0 ]; then
+  record_pass "WF-25" "no_sms_nodes" "n/a — no SMS nodes" "No SMS nodes in this workflow"
+elif [ "$SMS_RC" -eq 0 ]; then
+  record_pass "WF-25" "all_${SMS_NODES}_sms_nodes_covered category=$SMS_CAT" "consent + suppression + contact cap + quiet hours + deadline saved natively" "sms_eligibility.py verify-saved: every $SMS_CAT rule is a saved native condition."
+else
+  record_fail "WF-25" "missing=$SMS_MISSING prose_only=$SMS_PROSE category=$SMS_CAT" "every SMS rule saved as a native condition (not prose)" "SMS compliance rule(s) missing as saved native conditions: $SMS_MISSING (prose only: $SMS_PROSE). STOP, quiet hours and the rest must be if/else, wait or time-window conditions in the saved workflow, never copy or a note. DO NOT publish or send."
+fi
+# WF-16 (Stop-on-Response + time window) is mechanical when the same verifier ran over SMS nodes.
+if [ "$SMS_NODES" != "0" ] && { [ "$SMS_RC" -eq 0 ] || [ "$SMS_RC" -eq 1 ]; } && [ "$SMS_OK" != "MALFORMED" ]; then
+  if [ "$SMS_SUPP" = "1" ] && [ "$SMS_QH" = "1" ]; then
+    record_pass "WF-16" "stop_condition=saved time_window=saved" "STOP/suppression stop condition and 08:00-21:00 recipient-local window saved natively" "From sms_eligibility.py verify-saved (suppression + quiet_hours rules)."
+  else
+    record_fail "WF-16" "stop_condition=$([ "$SMS_SUPP" = "1" ] && echo saved || echo MISSING) time_window=$([ "$SMS_QH" = "1" ] && echo saved || echo MISSING)" "STOP/suppression stop condition and quiet-hours window saved natively" "A reply or opt-out would not stop the sequence, or texts could send outside the recipient-local window. From sms_eligibility.py verify-saved."
+  fi
 fi
 
 # ── WF-23: Graph validator; WF-15 derives from same report ────────────────────
@@ -638,9 +702,13 @@ SNAPSHOT_FOUND=0
 if [ -d "$SNAPSHOT_DIR" ]; then
   WF_SNAPSHOT_DIR="$SNAPSHOT_DIR"
   # Search for any snapshot file containing the workflow id in its path
-  if find "$SNAPSHOT_DIR" -name "*.json" 2>/dev/null | grep -q "$WORKFLOW_ID" 2>/dev/null; then
+  # Capture the listing first and grep the variable: grep -q quits at its first match, and a finder
+  # still writing into a pipe then dies of SIGPIPE, which pipefail turns into "no snapshot".
+  SNAP_LIST=$(find "$SNAPSHOT_DIR" -name "*.json" 2>/dev/null || true)
+  SNAP_LIST_BY_DIR=$(find "$SNAPSHOT_DIR" -path "*/$WORKFLOW_ID/*" -name "*.json" 2>/dev/null || true)
+  if grep -q "$WORKFLOW_ID" <<<"$SNAP_LIST" 2>/dev/null; then
     SNAPSHOT_FOUND=1
-  elif find "$SNAPSHOT_DIR" -path "*/$WORKFLOW_ID/*" -name "*.json" 2>/dev/null | head -1 | grep -q .; then
+  elif grep -q . <<<"$SNAP_LIST_BY_DIR"; then
     SNAPSHOT_FOUND=1
   fi
 fi
@@ -676,8 +744,8 @@ except Exception:
   print('MALFORMED 0 unreport_unparseable'); raise SystemExit
 if not isinstance(d,dict):
   print('MALFORMED 0 report_not_an_object'); raise SystemExit
-# A field that is absent must never default to the passing value: `referenced`
-# silently becoming 0 is how a report that proved nothing reads as a clean pass.
+# A field that is absent must never default to the passing value: the referenced
+# count silently becoming 0 is how a report that proved nothing reads as a clean pass.
 ref=d.get('referenced')
 if isinstance(ref,bool) or not isinstance(ref,int) or ref<0:
   print('MALFORMED 0 referenced_missing_or_invalid'); raise SystemExit
@@ -943,7 +1011,8 @@ record_human "WF-10" "Custom fields (data type + exact name) require QC agent re
 record_human "WF-11" "Custom values (non-empty + exact name) require QC agent review of export output"
 record_human "WF-13" "Email From Name/From Email require QC agent review of export output"
 record_human "WF-14" "Webhook URL/method/headers require QC agent review of export output"
-record_human "WF-16" "Advanced settings (Stop-on-Response, time window, timezone) require QC agent review"
+# WF-16 stays human review unless WF-25 already measured it from the saved SMS conditions.
+[ -n "${ITEM_STATUS[WF-16]:-}" ] || record_human "WF-16" "Advanced settings (Stop-on-Response, time window, timezone) require QC agent review"
 record_human "WF-17" "Edge case decisions require QC agent review against plan"
 record_human "WF-20" "Hallucination detection (WF-20) requires QC agent to reconcile all build-agent claims against export"
 
@@ -998,7 +1067,7 @@ print(re.sub(r"[^A-Za-z0-9._-]","",v))' "$HANDOFF_FILE" 2>/dev/null || true)
           _trc=0
         else
           _trc=$?
-          if printf '%s' "$TRINITY_OUT" | grep -qiE 'unknown option|unrecognized option|illegal option|invalid option|usage:'; then
+          if grep -qiE 'unknown option|unrecognized option|illegal option|invalid option|usage:' <<< "$TRINITY_OUT"; then
             SCOPE_NOTE=" (fallback: qc-trinity-registry.sh rejected --slug)"
             if TRINITY_OUT=$(bash "$_TRINITY" 2>&1); then
               _trc=0
@@ -1078,7 +1147,7 @@ else D3=1; fi
 
 # D6 Deliverability integrity — WF-12 is mechanical; WF-13/2/10/11 need human.
 # Machine FLOOR from WF-12: empty-on-LIVE => 1, key-present(empty draft / non-empty) => 5 floor.
-if [ "$(_wf WF-12)" = "FAIL" ] || [ "$(_wf WF-22)" = "FAIL" ]; then D6=1
+if [ "$(_wf WF-12)" = "FAIL" ] || [ "$(_wf WF-22)" = "FAIL" ] || [ "$(_wf WF-25)" = "FAIL" ]; then D6=1
 else D6=5; fi   # floor; QC sub-agent raises to 10 once senders + deps GET-verified
 D6_HUMAN=1
 
@@ -1138,24 +1207,32 @@ PLAN_GATE="FAIL"
 PLAN_GATE_REASON=""
 PLAN_APPROVAL_ID="none"
 PLAN_BUILD_MODEL="none"
-QC_MODEL_OK=1
-if [[ "$QC_MODEL" =~ ^[A-Za-z0-9._:/@+-]{1,80}$ ]]; then
-  QC_MODEL_SAFE="$QC_MODEL"
-else
-  QC_MODEL_OK=0
-  QC_MODEL_SAFE="none"
-fi
+QC_MODEL_SAFE="none"
+QC_SESSION_ID="none"
 APPROVAL_VERIFIER="$SCRIPT_DIR/../shared-utils/signature_launch_contract/approval_record.py"
-PLAN_GATE_RAW=$(python3 -I - "$PLAN_MODE_FILE" "$PUBLISH_INTENT" "$RE_ENTRY_DECISION" "$APPROVAL_VERIFIER" "$QC_MODEL_SAFE" <<'PLANPY' 2>/dev/null || echo "FAIL|plan_gate_error|none|none"
-import importlib.util, json, os, sys
-path, publish, reentry, vpath, qc_model = sys.argv[1:6]
-def out(status, reason, aid="none", bm="none"):
-    print("|".join([status, reason.replace("|", "/").replace("\n", " ")[:300], aid, bm])); sys.exit(0)
+# S44-46: the QC model is no longer a typed string. --qc-session names a Command Center-signed
+# session record ({approval_id, plan_hash, qc_model, session_id}); the verifier (kind qc_session,
+# scope qc_model:<model> + qc_session:<id>, bound to the PLAN MODE file's plan_hash) is the only
+# thing that makes a model name true, and the signed name must differ from the plan's build_model.
+PLAN_GATE_RAW=$(python3 -I - "$PLAN_MODE_FILE" "$PUBLISH_INTENT" "$RE_ENTRY_DECISION" "$APPROVAL_VERIFIER" "$QC_SESSION_FILE" <<'PLANPY' 2>/dev/null || echo "FAIL|plan_gate_error|none|none|none|none"
+import importlib.util, json, os, re, sys
+path, publish, reentry, vpath, spath = sys.argv[1:6]
+MODEL_RE = re.compile(r"^[A-Za-z0-9._:/@+-]{1,80}$")
+SESSION_RE = re.compile(r"^[A-Za-z0-9._:@+-]{1,80}$")
+def out(status, reason, aid="none", bm="none", qm="none", sid="none"):
+    print("|".join([status, reason.replace("|", "/").replace("\n", " ")[:300], aid, bm, qm, sid])); sys.exit(0)
+def load(p):
+    try:
+        return json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return None
+def norm_hash(v):
+    v = str(v).strip().lower()
+    return v[7:] if v.startswith("sha256:") else v
 if not path or not os.path.isfile(path):
     out("FAIL", "plan_mode_file_absent: no signed PLAN MODE run file (%s); the client's publish/re-entry answers were never recorded by the approval flow" % (path or "no --plan-mode-file"))
-try:
-    d = json.load(open(path, encoding="utf-8"))
-except Exception:
+d = load(path)
+if d is None:
     out("FAIL", "plan_mode_file_unreadable")
 if not isinstance(d, dict) or not all(isinstance(d.get(k), str) and d[k].strip() for k in ("approval_id", "plan_hash", "publish_intent", "re_entry")):
     out("FAIL", "plan_mode_file_malformed: need approval_id, plan_hash, publish_intent, re_entry")
@@ -1164,8 +1241,8 @@ if d["publish_intent"].strip().upper() != publish:
     out("FAIL", "publish_intent_differs: signed PLAN MODE file says %s, --publish-intent says %s" % (d["publish_intent"].strip().upper(), publish))
 if d["re_entry"].strip().upper() != reentry:
     out("FAIL", "re_entry_differs: signed PLAN MODE file says %s, --re-entry says %s" % (d["re_entry"].strip().upper(), reentry))
-if bm and bm.lower() == qc_model.lower():
-    out("FAIL", "qc_not_independent: QC model equals the build model; QC must run on a different model", d["approval_id"], bm)
+if not bm:
+    out("FAIL", "plan_mode_build_model_missing: the PLAN MODE file must name the build model; QC independence cannot be proven without it", d["approval_id"])
 if not os.path.isfile(vpath):
     out("FAIL", "approval_verifier_missing: shared-utils/signature_launch_contract/approval_record.py not found; an unverifiable file is never a signature", d["approval_id"], bm)
 try:
@@ -1174,19 +1251,35 @@ try:
     mod.verify(d["approval_id"], "launch_plan_build", d["plan_hash"], ["publish:" + publish, "reentry:" + reentry])
 except Exception as e:  # ApprovalRefused (has .code) or ApprovalUnavailable: both fail closed
     out("FAIL", "approval_not_verified %s %s" % (getattr(e, "code", type(e).__name__), str(e)[:120]), d["approval_id"], bm)
-out("PASS", "signed PLAN MODE answers verified", d["approval_id"], bm)
+if not spath or not os.path.isfile(spath):
+    out("FAIL", "qc_session_absent: no QC session record (%s); pass --qc-session <Command Center-signed record naming the QC model and session id>" % (spath or "no --qc-session"), d["approval_id"], bm)
+q = load(spath)
+if not isinstance(q, dict) or not all(isinstance(q.get(k), str) and q[k].strip() for k in ("approval_id", "plan_hash", "qc_model", "session_id")):
+    out("FAIL", "qc_session_malformed: need approval_id, plan_hash, qc_model, session_id", d["approval_id"], bm)
+qm, sid = q["qc_model"].strip(), q["session_id"].strip()
+if not MODEL_RE.match(qm) or not SESSION_RE.match(sid):
+    out("FAIL", "qc_session_malformed: qc_model/session_id contain characters outside the safe set", d["approval_id"], bm)
+if norm_hash(q["plan_hash"]) != norm_hash(d["plan_hash"]):
+    out("FAIL", "qc_session_plan_mismatch: the QC session is bound to a different plan than the PLAN MODE file", d["approval_id"], bm)
+if q["approval_id"].strip() == d["approval_id"].strip():
+    out("FAIL", "qc_session_reuses_plan_approval: the QC session must be its own Command Center record, not the build approval", d["approval_id"], bm)
+try:
+    mod.verify(q["approval_id"].strip(), "qc_session", q["plan_hash"], ["qc_model:" + qm, "qc_session:" + sid], test_only=False)
+except Exception as e:  # unverifiable or self-written record: fail closed, the model name is NOT trusted
+    out("FAIL", "qc_session_not_verified %s %s" % (getattr(e, "code", type(e).__name__), str(e)[:120]), d["approval_id"], bm)
+if qm.lower() == bm.lower():
+    out("FAIL", "qc_not_independent: the signed QC model equals the build model; QC must run on a different model", d["approval_id"], bm, qm, sid)
+out("PASS", "signed PLAN MODE answers and QC session verified", d["approval_id"], bm, qm, sid)
 PLANPY
 )
-IFS='|' read -r PLAN_GATE PLAN_GATE_REASON PLAN_APPROVAL_ID PLAN_BUILD_MODEL <<< "$PLAN_GATE_RAW"
-if [ "$PLAN_GATE" = "PASS" ] && [ "$QC_MODEL_OK" -ne 1 ]; then
-  PLAN_GATE="FAIL"; PLAN_GATE_REASON="qc_model_missing_or_invalid: pass --qc-model <model that runs this QC> (recorded in build-events)"
-fi
+IFS='|' read -r PLAN_GATE PLAN_GATE_REASON PLAN_APPROVAL_ID PLAN_BUILD_MODEL QC_MODEL_SAFE QC_SESSION_ID <<< "$PLAN_GATE_RAW"
+if [ "$PLAN_GATE" != "PASS" ]; then QC_MODEL_SAFE="none"; QC_SESSION_ID="none"; fi
 [ "$PLAN_GATE" = "PASS" ] || PLAN_GATE="FAIL"
 
 # Human-review items: each must carry an explicit PASS/FAIL grade (with observed text) from the
 # QC sub-agent. Ungraded = not a pass. Grades for another workflow id count as no grades.
 PENDING_HUMAN=()
-for _i in WF-3 WF-4 WF-5 WF-6 WF-7 WF-12 WF-22 WF-15 WF-18 WF-21 WF-23 WF-24 WF-19 WF-1 WF-2 WF-8 WF-9 WF-10 WF-11 WF-13 WF-14 WF-16 WF-17 WF-20; do
+for _i in WF-3 WF-4 WF-5 WF-6 WF-7 WF-12 WF-22 WF-25 WF-15 WF-18 WF-21 WF-23 WF-24 WF-19 WF-1 WF-2 WF-8 WF-9 WF-10 WF-11 WF-13 WF-14 WF-16 WF-17 WF-20; do
   [ "${ITEM_STATUS[$_i]:-}" = "REQUIRES_HUMAN_REVIEW" ] && PENDING_HUMAN+=("$_i")
 done
 UNGRADED_ITEMS=()
@@ -1240,15 +1333,20 @@ elif [ "$UNGRADED_COUNT" -gt 0 ]; then EXIT_GATE="UNGRADED"; fi
 # WF-19 is a MECHANICAL item on a --conversational build (trinity hard gate) and a
 # human-review item otherwise — place it in the right display bucket accordingly.
 if [ "$CONVERSATIONAL" -eq 1 ]; then
-  MECHANICAL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-22" "WF-15" "WF-18" "WF-19" "WF-21" "WF-23" "WF-24")
+  MECHANICAL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-22" "WF-15" "WF-18" "WF-19" "WF-21" "WF-23" "WF-24" "WF-25")
   HUMAN_ITEMS=("WF-1" "WF-2" "WF-8" "WF-9" "WF-10" "WF-11" "WF-13" "WF-14" "WF-16" "WF-17" "WF-20")
 else
-  MECHANICAL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-22" "WF-15" "WF-18" "WF-21" "WF-23" "WF-24")
+  MECHANICAL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-22" "WF-15" "WF-18" "WF-21" "WF-23" "WF-24" "WF-25")
   HUMAN_ITEMS=("WF-1" "WF-2" "WF-8" "WF-9" "WF-10" "WF-11" "WF-13" "WF-14" "WF-16" "WF-17" "WF-19" "WF-20")
 fi
 if [ "$LAUNCH_MODE" -eq 1 ]; then
   MECHANICAL_ITEMS+=("WF-9")
   _h=(); for _i in "${HUMAN_ITEMS[@]}"; do [ "$_i" = "WF-9" ] || _h+=("$_i"); done; HUMAN_ITEMS=("${_h[@]}")
+fi
+# WF-16 is a mechanical item when WF-25 measured it from the saved SMS conditions.
+if [ "${ITEM_STATUS[WF-16]:-}" = "PASS" ] || [ "${ITEM_STATUS[WF-16]:-}" = "FAIL" ]; then
+  MECHANICAL_ITEMS+=("WF-16")
+  _h=(); for _i in "${HUMAN_ITEMS[@]}"; do [ "$_i" = "WF-16" ] || _h+=("$_i"); done; HUMAN_ITEMS=("${_h[@]}")
 fi
 
 if [ "$JSON_MODE" -eq 1 ]; then
@@ -1265,7 +1363,7 @@ if [ "$JSON_MODE" -eq 1 ]; then
   echo "  \"plan_mode_gate\": {\"status\": \"$PLAN_GATE\", \"approval_id\": \"$PLAN_APPROVAL_ID\", \"reason\": \"$(printf '%s' "$PLAN_GATE_REASON" | sed 's/"/\\"/g')\"},"
   echo "  \"ungraded_items\": \"$UNGRADED_LIST\","
   echo "  \"items\": {"
-  ALL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-22" "WF-15" "WF-18" "WF-21" "WF-23" "WF-24" \
+  ALL_ITEMS=("WF-3" "WF-4" "WF-5" "WF-6" "WF-7" "WF-12" "WF-22" "WF-25" "WF-15" "WF-18" "WF-21" "WF-23" "WF-24" \
              "WF-1" "WF-2" "WF-8" "WF-9" "WF-10" "WF-11" "WF-13" "WF-14" "WF-16" "WF-17" "WF-19" "WF-20")
   FIRST=1
   for item in "${ALL_ITEMS[@]}"; do
@@ -1433,7 +1531,7 @@ mkdir -p "$(dirname "$BUILD_EVENTS_LEDGER")" 2>/dev/null || true
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
 VERDICT="$([ "$FAIL_COUNT" -eq 0 ] && [ "$FAB_RC" -eq 0 ] && [ "$EXIT_GATE" = "PASS" ] && echo PASS || echo FAIL)"
 cat >> "$BUILD_EVENTS_LEDGER" 2>/dev/null << LEDGER_EOF
-{"event":"qc_run","timestamp":"${TIMESTAMP}","workflow_id":"${WORKFLOW_ID}","publish_intent":"${PUBLISH_INTENT}","re_entry":"${RE_ENTRY_DECISION}","mechanical_pass":${PASS_COUNT},"mechanical_fail":${FAIL_COUNT},"verdict":"${VERDICT}","conversational":${CONVERSATIONAL},"fab_mode":${FAB_MODE},"fab_score":"${FAB_SCORE}","fab_status":"${FAB_STATUS}","rubric_weighted_floor":${RUBRIC_FLOOR},"rubric_weighted_ceiling":${RUBRIC_CEILING},"rubric_ship_threshold":8.5,"rubric_needs_human_grading":${RUBRIC_NEEDS_HUMAN},"rubric_lowest_dimension":"${LOWEST_DIM}","qc_model":"${QC_MODEL_SAFE}","build_model":"${PLAN_BUILD_MODEL//[^A-Za-z0-9._:\/@+-]/}","plan_mode_gate":"${PLAN_GATE}","plan_approval_id":"${PLAN_APPROVAL_ID//[^A-Za-z0-9_-]/}","ungraded_items":"${UNGRADED_LIST}","human_grade_fail":${HUMAN_FAIL_COUNT},"exit_gate":"${EXIT_GATE}","launch":${LAUNCH_MODE}}
+{"event":"qc_run","timestamp":"${TIMESTAMP}","workflow_id":"${WORKFLOW_ID}","publish_intent":"${PUBLISH_INTENT}","re_entry":"${RE_ENTRY_DECISION}","mechanical_pass":${PASS_COUNT},"mechanical_fail":${FAIL_COUNT},"verdict":"${VERDICT}","conversational":${CONVERSATIONAL},"fab_mode":${FAB_MODE},"fab_score":"${FAB_SCORE}","fab_status":"${FAB_STATUS}","rubric_weighted_floor":${RUBRIC_FLOOR},"rubric_weighted_ceiling":${RUBRIC_CEILING},"rubric_ship_threshold":8.5,"rubric_needs_human_grading":${RUBRIC_NEEDS_HUMAN},"rubric_lowest_dimension":"${LOWEST_DIM}","qc_model":"${QC_MODEL_SAFE}","qc_session_id":"${QC_SESSION_ID//[^A-Za-z0-9._:@+-]/}","build_model":"${PLAN_BUILD_MODEL//[^A-Za-z0-9._:\/@+-]/}","plan_mode_gate":"${PLAN_GATE}","plan_approval_id":"${PLAN_APPROVAL_ID//[^A-Za-z0-9_-]/}","ungraded_items":"${UNGRADED_LIST}","human_grade_fail":${HUMAN_FAIL_COUNT},"exit_gate":"${EXIT_GATE}","launch":${LAUNCH_MODE}}
 LEDGER_EOF
 
 [ "$FAIL_COUNT" -gt 0 ] && exit 1
@@ -1459,7 +1557,7 @@ fi
 # is the authoritative >= 8.5 proof; this ceiling gate is the floor-side backstop for
 # the mechanical-only path that previously ignored the rubric entirely.)
 if [ "$PLAN_GATE" != "PASS" ]; then
-  echo "PER-BUILD QC FAILED — PLAN MODE gate: ${PLAN_GATE_REASON}. Exit 0 needs the approval-flow-signed PLAN MODE run file matching --publish-intent/--re-entry, and a QC model different from the build model." >&2
+  echo "PER-BUILD QC FAILED — PLAN MODE gate: ${PLAN_GATE_REASON}. Exit 0 needs the approval-flow-signed PLAN MODE run file matching --publish-intent/--re-entry, and an approval-flow-signed --qc-session record naming a QC model different from the build model." >&2
   exit 1
 fi
 if [ "$HUMAN_FAIL_COUNT" -gt 0 ]; then

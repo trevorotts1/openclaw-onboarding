@@ -1,26 +1,5 @@
 #!/usr/bin/env python3
-# =============================================================================
-# LAUNCH-C — LAUNCH SCHEDULE EMITTER :: automation-build -> the WF-9 schedule file
-# -----------------------------------------------------------------------------
-# `qc-built-workflow.sh <id> --launch --launch-schedule <schedule.json>` compares the
-# built workflow's wait nodes with {"waits": [ {"kind": "until_date", "until": <ISO>} |
-# {"kind": "delay", "value": <n>, "unit": minutes|hours|days} ]}. Nothing produced that
-# file (the reader emits schedule.nodes, a different shape), so WF-9 could not return 0.
-#
-# This converts ONE unit of a launch-c automation-build document. The waits are read from
-# the COMPILED graph (compile_launch_builds, the same compiler the build command runs): a
-# date-anchored send compiles to a wait-until-date step that subsumes the plan's relative
-# waits, so schedule.nodes alone would not equal what is installed. A wait the compiler
-# could not resolve (no date, an unsupported unit) refuses; nothing is guessed.
-#
-# USAGE
-#   emit_launch_schedule.py --automation-build automation-builds.json --unit <automation id>
-#                           [--workflow-key <key>] --out schedule.json
-#
-# EXIT CODES: 0 ok / 2 usage-or-unresolvable / 3 IO / 4 the unit is blocked (nothing compiles)
-# =============================================================================
-"""automation-build document + unit -> the {"waits": [...]} file qc-built-workflow.sh compares."""
-
+# ======================================================================
 import argparse
 import json
 import sys

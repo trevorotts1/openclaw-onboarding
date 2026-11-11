@@ -140,10 +140,33 @@ def _run(tmp_path, export, validator_env=None):
     return result
 
 
+def _with_sms_guard(export):
+    """Put the SMS compliance rules (S44-32) in front of the graph as saved native conditions, so a
+    fixture that carries an SMS step can reach exit 0. The old root keeps its id; the guard becomes the root."""
+    templates = export["workflowData"]["templates"]
+    root = next(t for t in templates if t.get("parentKey") in (None, ""))
+    guard = {"id": "g1", "type": "filter", "name": "Compliance guard", "parentKey": None, "next": root["id"],
+             "attributes": {"conditions": [
+                 {"type": "tag_present", "value": "sms-subscribed"},
+                 {"type": "tag_absent", "value": "sms-opted-out"},
+                 {"type": "field_lt", "field": "contact_marketing_sends", "value": 5},
+                 {"type": "time_window", "start": "08:00", "end": "21:00", "timezone": "recipient_local"},
+                 {"type": "deadline", "anchor": "doors_close_at"}]}}
+    out = json.loads(json.dumps(export))
+    out["workflowData"]["templates"] = [guard] + out["workflowData"]["templates"]
+    for t in out["workflowData"]["templates"][1:]:
+        if t["id"] == root["id"]:
+            t["parentKey"] = "g1"
+    for trig in out.get("triggers", []):
+        if trig.get("targetActionId") == root["id"]:
+            trig["targetActionId"] = "g1"
+    return out
+
+
 def _gated_run(tmp_path, export):
-    """Run QC with everything the S44-24 exit gate requires: signed PLAN MODE file, QC model, grades."""
+    """Run QC with everything the S44-24 exit gate requires: signed PLAN MODE file, signed QC session, grades."""
     # draft/inactive/no-re-entry state so WF-4/5/6 machine-assert against DRAFT + ONCE
-    export = {"status": "draft", "active": False, "allowMultiple": False, **export}
+    export = {"status": "draft", "active": False, "allowMultiple": False, **_with_sms_guard(export)}
     env, _ = _setup(tmp_path, export)
     tree = tmp_path / "tree"
     skill = tree / "44-convert-and-flow-operator"
@@ -153,16 +176,21 @@ def _gated_run(tmp_path, export):
     script = skill / "qc-built-workflow.sh"
     shutil.copy2(QC_SCRIPT, script)
     (skill / "tools").symlink_to(ROOT / "tools")
+    (skill / "automation-templates").symlink_to(ROOT / "automation-templates")
     (verifier_dir / "approval_record.py").write_text(
         "class ApprovalRefused(Exception):\n"
         "    def __init__(self, code, message=''):\n"
         "        super().__init__(code + ': ' + message)\n"
         "        self.code = code\n"
         "\n"
+        "GOOD = {'appr-good-0001': ('launch_plan_build', {'publish:DRAFT', 'reentry:ONCE'}),\n"
+        "        'appr-qc-b-0001': ('qc_session', {'qc_model:qc-model-b', 'qc_session:sess-b-0001'})}\n"
+        "\n"
         "def verify(approval_id, kind, plan_hash, scope, **kw):\n"
-        "    if approval_id != 'appr-good-0001' or kind != 'launch_plan_build' or plan_hash != 'abcd1234':\n"
+        "    entry = GOOD.get(approval_id)\n"
+        "    if entry is None or kind != entry[0] or plan_hash != 'abcd1234':\n"
         "        raise ApprovalRefused('APPROVAL-NOT-FROM-AUTHORITY', 'unknown approval')\n"
-        "    if not set(scope) <= {'publish:DRAFT', 'reentry:ONCE'}:\n"
+        "    if not set(scope) <= entry[1]:\n"
         "        raise ApprovalRefused('APPROVAL-SCOPE', 'scope not covered')\n"
         "    return {'ok': True}\n",
         encoding="utf-8",
@@ -178,6 +206,12 @@ def _gated_run(tmp_path, export):
                 "build_model": "build-model-a",
             }
         ),
+        encoding="utf-8",
+    )
+    qc_session = tmp_path / "qc-session.json"
+    qc_session.write_text(
+        json.dumps({"approval_id": "appr-qc-b-0001", "plan_hash": "abcd1234",
+                    "qc_model": "qc-model-b", "session_id": "sess-b-0001"}),
         encoding="utf-8",
     )
     items = "WF-1 WF-2 WF-8 WF-9 WF-10 WF-11 WF-13 WF-14 WF-16 WF-17 WF-19 WF-20".split()
@@ -196,7 +230,7 @@ def _gated_run(tmp_path, export):
             "bash", str(script), "WFTEST009",
             "--deps", str(_manifest(tmp_path)), "--json",
             "--publish-intent", "DRAFT", "--re-entry", "ONCE",
-            "--plan-mode-file", str(plan), "--qc-model", "qc-model-b",
+            "--plan-mode-file", str(plan), "--qc-session", str(qc_session),
             "--grades", str(grades),
         ],
         env=env,

@@ -432,8 +432,10 @@ steps, all DRAFT-ONLY (nothing is sent and nothing goes live):
    build plan or an email-count mismatch blocks the build.
 2. **Build command.** One command compiles and builds:
    `caf --json --experimental workflows build --from-automation-build automation-builds.json
-   --journal <path>`. `--from-automation-build` runs `compile_launch_builds()` and then the campaign
-   build under the write lock; `--journal` is REQUIRED on that path and is the receipt file. The
+   --journal <path> --plan-mode-file <path>`. `--from-automation-build` runs `compile_launch_builds()`
+   and then the campaign build under the write lock; `--journal` is REQUIRED on that path and is the
+   receipt file; `--plan-mode-file` is REQUIRED for a real build (not `--dry-run`) and is the PLAN MODE
+   run file described in Skill 44 SKILL.md (Launch mode). The
    `44-convert-and-flow-operator/tools/siglaunch/` receiver is **not** a production entry
    (`PRODUCTION_ENTRY_ENABLED = False`): the declared Black Friday purchase path is the native GHL
    post-sale workflows, and repairing a launch goes through this command, never by enabling that

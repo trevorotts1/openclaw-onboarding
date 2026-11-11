@@ -80,6 +80,22 @@ graph back before claiming success.
 A build plan that matches no sequence is reported in
 `unused_build_plan_workflows`, never dropped.
 
+### WF-9 wait schedule (`emit_launch_schedule.py`)
+
+The per-build QC (`qc-built-workflow.sh --launch --launch-schedule <file>`) compares the saved
+workflow's wait nodes with `{"waits": [{"kind": "until_date", "until": "<ISO8601 with offset>"} |
+{"kind": "delay", "value": 2, "unit": "days"}]}`. `schedule.nodes` is a different shape, so this file
+is written from the build document:
+
+```
+python3 launch-c/emit_launch_schedule.py --automation-build automation-builds.json \
+    --unit <build id or unit_key> [--workflow-key <key>] --out schedule.json
+```
+
+It follows the launch compiler: a send whose schedule node is absolute, dated and not suppressed
+becomes ONE `until_date` wait; every other wait stays the template's own `delay`. Exit `0` written /
+`1` unknown unit or no waits / `2` unreadable input or several workflows without `--workflow-key`.
+
 ## Fail-closed rules
 
 - Launch calendar: valid IANA `timezone`; every instant carries the zone's
@@ -112,6 +128,7 @@ A build plan that matches no sequence is reported in
 ```
 python3 launch-c/tests/test_plan_reader.py              # behavior tests (contract fixtures)
 python3 launch-c/tests/test_plan_reader_l07_schedule.py  # calendar / schedule / dependency tests
+python3 launch-c/tests/test_emit_launch_schedule.py     # WF-9 wait schedule producer
 python3 launch-c/plan_reader.py --selftest             # built-in refusal checks
 python3 tools/engine/tests/test_workflow_builder_l07.py  # provider compile / journal / readback
 ```
