@@ -51,7 +51,7 @@ searching for the answer instead of reading the source, stop and read the source
 
 - `MASTERDOC.md` — the anonymized canonical funnel IP (12 section names + bands, upsell/downsell/OTO2
   derivation, the Thank-You spec, the 3/5/7 matrix, the image band + Signature Grade Block).
-- `FUNNEL-MANIFEST.json` — the P0..P10 phase spine (produces_artifact + `_chk_sf_*` wrappers), the 98
+- `FUNNEL-MANIFEST.json` — the P0..P10 phase spine (produces_artifact + `_chk_sf_*` wrappers), the 99
   `AF-FUN-*` autofail codes (trigger / enforced_by / py_symbol), and the front-door/delegation contract.
 - `intake/sf-intake-questions.json` — the Q1–Q17 intake spec + the runtime brief contract.
 - `structure/funnel_structure.json` — the SACRED 12-section contract the copy prover loads.

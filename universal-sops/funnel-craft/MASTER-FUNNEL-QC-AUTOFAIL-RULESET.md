@@ -79,6 +79,7 @@ Triggers below are copied from the manifest verbatim.
 | AF-FUN-PROMPT-EMDASH | an em/en dash present (model-safety rule) |
 | AF-FUN-PROMPT-TYPO | text-bearing prompt lacks spelling-lock/words, or non-text prompt lacks 'no text' |
 | AF-FUN-PROMPT-COVERAGE | prompt ledger is missing a required (page_type, section) image slot for the funnel size (partial ledger) |
+| AF-FUN-PROMPT-STYLE-CARD | the intake names a Skill 45 style_card_id (Q18) but a prompt does not carry that card's LONG tier verbatim in block 8 ahead of the negatives, or the card cannot be read from the design library |
 
 ## P9-CERTIFY
 
@@ -90,14 +91,14 @@ Triggers below are copied from the manifest verbatim.
 | AF-FUN-TY-PRICE | a price/monetary token appears on the thank-you page |
 | AF-FUN-TY-CTA | a sale/offer CTA (non-utility) on the thank-you page |
 | AF-FUN-IMG-PROVENANCE | missing/placeholder/native Kie taskId |
-| AF-FUN-IMG-HOST | media URL does not resolve to a GHL media host |
+| AF-FUN-IMG-HOST | media URL is not the hosted URL the P4 delivery-rail receipt recorded for that image (ledger-only: not a well-formed non-placeholder http(s) URL) |
 | AF-FUN-OFFER-LEDGER-MISSING | no offer names to prove absent (fail-closed) |
 | AF-FUN-TY-MISSING | no thank-you page (cannot prove no-pitch; fail-closed) |
 | AF-FUN-IMG-EMPTY | no image records (cannot prove provenance; fail-closed) |
 | AF-FUN-CERT-MISSING | certificate malformed / missing required field |
 | AF-FUN-CERT-PHASE-GAP | phase orders not contiguous 0..N (a phase skipped) |
 | AF-FUN-CERT-PHASE-FAIL | a phase status != pass / all_phases_pass not true |
-| AF-FUN-CERT-SIGNATURE | HMAC signature invalid for the nonce (tamper/forgery) |
+| AF-FUN-CERT-SIGNATURE | HMAC signature invalid for the operator key (tamper/forgery) |
 | AF-FUN-PROCESS-INTEGRITY | process certificate invalid -> funnel is NOT done |
 | AF-FUN-MODEL-TIER | model-content-receipt absent or authoring tier is not an execution/content tier (client's own strongest model must write copy); FIX-XC-09e |
 
@@ -132,8 +133,8 @@ Triggers below are copied from the manifest verbatim.
 | AF-FUN-BUILD-SIZE | the locked funnel size is unresolved (no brief size and no receipt funnel_size), so the required page set cannot be computed (fail-closed); A10/T0-11 |
 | AF-FUN-BUILD-SIZE-MISMATCH | the build receipt declares a funnel_size that contradicts the locked brief size (the receipt does not describe this funnel); A10/T0-11 |
 | AF-FUN-BUILD-PREVIEW-PLACEHOLDER | a page preview_url resolves to a placeholder/example/loopback host (a caller-authored stand-in is not a built preview); A10/T0-11 |
-| AF-FUN-BUILD-QC-RECORD | no tool-run QC record: build/evidence is absent, ghl_gate.require_pass re-run on it is non-zero, the QC recomputed from the raw verify records is below the 8.5 floor, or the receipt qc_score is higher than the recomputed one (a receipt that only says 9.0 fails; STR-18/S06-08) |
-| AF-FUN-BUILD-PREVIEW-UNBOUND | a receipt preview_url is not a URL that a passing raw verify record checked (a real-looking host the tool never visited; STR-18) |
+| AF-FUN-BUILD-QC-RECORD | no signed delivery-rail QC record: the P7-BUILD receipt lines are absent, unsigned, forged, for another run, authored by a certified module, break schema/delivery-rail-receipt.schema.json or miss a required page type; or the QC recomputed from the lines (10 x passing / total) is below the 8.5 floor, or the receipt qc_score is higher than the recomputed one (a receipt that only says 9.0 fails; STR-18/S06-08) |
+| AF-FUN-BUILD-PREVIEW-UNBOUND | a receipt preview_url is not a URL that a passing delivery-rail P7 receipt line recorded (a real-looking host the rail never built; STR-18) |
 | AF-FUN-BUILD-VISUAL | a page of the funnel has no wireframe/mockup set: page-images/page-images-receipt.json absent, or a page lacks its desktop-wireframe / mobile-tablet / visual-mockup stage-executor-record with images, or a record does not match the receipt sha256 (no certificate without visual direction; IMG-16) |
 
 ## P8-DERIVE
@@ -146,7 +147,7 @@ Triggers below are copied from the manifest verbatim.
 
 | Code | Fires when |
 |---|---|
-| AF-FUN-FRONT-DOOR | orchestrator called without the run-scoped front-door nonce |
+| AF-FUN-FRONT-DOOR | orchestrator called without the operator key, or with a caller-supplied nonce (refused; ENF-16) |
 | AF-FUN-CANONICAL-BYPASS | run working files hand-roll GHL REST / mail sender / raw Kie createTask / a KIE client script (Skill 74 result files under receipts/kie74/ are allow-listed) |
 | AF-FUN-HASH-PIN | enforcement-core sha256 does not match SF-PROVER-PIN.sha256 |
 
@@ -160,16 +161,13 @@ Triggers below are copied from the manifest verbatim.
 
 | Code | Fires when |
 |---|---|
-| AF-FUN-FRONT-DOOR | The orchestrator was called without the operator key, or with a caller-supplied nonce (refused). |
-| AF-FUN-CANONICAL-BYPASS | A hand-rolled GHL/Kie/mail driver, a raw createTask or a KIE client script was detected in the run dir (Skill 74 result files directly inside `receipts/kie74/` are allow-listed). |
-| AF-FUN-HASH-PIN | The deployed provers do not match the pinned hash (`scripts/SF-PROVER-PIN.sha256`). |
 | AF-FUN-DELEG-IMAGES | P3-IMAGES: media ledger carries no image records or an image has no real image-provider task id (file existence is no longer proof of delegated image generation); A10/T0-09 |
 
 ## P4-MEDIA
 
 | Code | Fires when |
 |---|---|
-| AF-FUN-DELEG-MEDIA | P4-MEDIA: a ledger image does not resolve to a GHL media host (an un-uploaded image is not a delegated upload); A10/T0-09 |
+| AF-FUN-DELEG-MEDIA | P4-MEDIA: a ledger image carries a URL that differs from the hosted_url the delivery rail's signed receipt recorded for it, or the ledger is absent (an un-uploaded image is not a delegated upload); A10/T0-09 |
 
 ## P3-IMAGES/P4-MEDIA
 
