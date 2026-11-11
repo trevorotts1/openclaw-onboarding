@@ -380,7 +380,9 @@ def artifacts(run_dir: Path) -> list:
         found[str(p)] = {"path": str(p), "sha256": sha256(p)}
     for d in DELIVERABLE_DIRS:  # any other file a stage wrote into its own folder
         for p in (run_dir / d).rglob("*") if (run_dir / d).is_dir() else ():
-            if p.is_file() and str(p) not in found:
+            # Skill 71 stages every render under <stage>/.attempts/ before it promotes the file: staging
+            # is never an artifact (a copy of each final image would double the section-image count).
+            if p.is_file() and ".attempts" not in p.relative_to(run_dir).parts and str(p) not in found:
                 found[str(p)] = {"path": str(p), "sha256": sha256(p)}
     return [found[k] for k in sorted(found)]
 
