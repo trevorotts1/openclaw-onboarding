@@ -352,3 +352,73 @@ def test_the_command_line_needs_all_three_arguments_and_exits_with_the_documente
     assert rc == 3 and "emit-launch-schedule: IO:" in err
     assert _cli(*full) == (0, "")
     assert json.loads(out.read_text())["waits"]
+
+
+# ---- cases ported from WP-07's emitter tests (ruling INT-T-2), re-baselined to this emitter's exact output ----
+# WP-07's emitter re-derived the gating rules from the reader's schedule nodes; this one reads the compiled graph, so
+# the gating rules themselves (absolute and dated and not suppressed, only emails, only this workflow) are the
+# compiler's and are pinned in tools/engine/tests/test_launch_step_compiler.py. What is pinned here is what the
+# emitter must do with the compiled result.
+
+def _wait_step(i, **start_or_until):
+    attrs = {"type": "time"}
+    attrs.update(start_or_until)
+    return {"id": "w%d" % i, "type": "wait", "name": "Wait", "attributes": attrs}
+
+
+def _email_step(i):
+    return {"id": "e%d" % i, "type": "email", "name": "Email", "attributes": {}}
+
+
+def test_ported_absolute_and_relative_waits_pass_through_in_order_one_for_one(monkeypatch):
+    # an absolute (dated) send is gated by a wait-until-date, a suppressed send keeps its duration wait
+    steps = [_email_step(0), _wait_step(0, untilDate="2026-11-03T08:00:00-05:00"), _email_step(1),
+             _wait_step(1, startAfter={"type": "hours", "value": 3, "when": "after"}), _email_step(2)]
+    doc = _fake_compile(monkeypatch, steps)
+    assert emit.emit(doc, "u") == {"waits": [{"kind": "until_date", "until": "2026-11-03T08:00:00-05:00"},
+                                             {"kind": "delay", "value": 3, "unit": "hours"}]}
+
+
+def test_ported_relative_phase_keeps_the_templates_own_delays(monkeypatch):
+    steps = [_email_step(0), _wait_step(0, startAfter={"type": "days", "value": 1, "when": "after"}),
+             _email_step(1), _wait_step(1, startAfter={"type": "hours", "value": 2, "when": "after"}), _email_step(2)]
+    doc = _fake_compile(monkeypatch, steps)
+    assert emit.emit(doc, "u")["waits"] == [{"kind": "delay", "value": 1, "unit": "days"},
+                                            {"kind": "delay", "value": 2, "unit": "hours"}]
+
+
+def test_ported_trailing_duration_waits_after_the_last_email_are_emitted(monkeypatch):
+    steps = [_email_step(0), _wait_step(0, startAfter={"type": "days", "value": 1, "when": "after"}), _email_step(1),
+             _wait_step(1, startAfter={"type": "days", "value": 3, "when": "after"})]
+    doc = _fake_compile(monkeypatch, steps)
+    assert emit.emit(doc, "u")["waits"] == [{"kind": "delay", "value": 1, "unit": "days"},
+                                            {"kind": "delay", "value": 3, "unit": "days"}]
+
+
+def test_ported_waits_survive_steps_that_are_not_emails_and_junk_steps_are_skipped(monkeypatch):
+    steps = ["junk", None, {"type": "add_contact_tag", "id": "t", "attributes": {"tags": []}}, _wait_step(0, startAfter={
+        "type": "minutes", "value": 5, "when": "after"}), {"type": "sms", "id": "s", "attributes": {}}]
+    doc = _fake_compile(monkeypatch, steps)
+    assert emit.emit(doc, "u")["waits"] == [{"kind": "delay", "value": 5, "unit": "minutes"}]
+
+
+def test_ported_a_z_date_is_accepted_and_written_trimmed(monkeypatch):
+    doc = _fake_compile(monkeypatch, [_wait_step(0, untilDate=" 2026-12-01T09:00:00Z ")])
+    assert emit.emit(doc, "u")["waits"] == [{"kind": "until_date", "until": "2026-12-01T09:00:00Z"}]
+
+
+def test_ported_the_real_pre_launch_unit_emits_one_until_date_per_dated_wait_step(tmp_path, document):
+    campaign = emit._compile(document)
+    steps = next(v for v in campaign.values() if v["source_unit"] == "auto_pre_launch")["templates"]
+    dated = [s for s in steps if s.get("type") == "wait" and s["attributes"].get("untilDate")]
+    waits = emit.emit(document, "auto_pre_launch")["waits"]
+    assert dated and [w["kind"] for w in waits].count("until_date") == len(dated)
+    assert len(waits) == len([s for s in steps if s.get("type") == "wait"])
+
+
+def test_ported_the_schedule_file_is_indented_by_two_ends_with_a_newline_and_prints_no_summary(tmp_path, document, capsys):
+    out = tmp_path / "schedule.json"
+    rc = emit.main(["--automation-build", _write(tmp_path, document), "--unit", "auto_pre_launch", "--out", str(out)])
+    text = out.read_text(encoding="utf-8")
+    assert rc == 0 and text == json.dumps(json.loads(text), indent=2) + "\n"
+    assert capsys.readouterr().out == ""  # unlike WP-07's emitter this one prints no summary line on success

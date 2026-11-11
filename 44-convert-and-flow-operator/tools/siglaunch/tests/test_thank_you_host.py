@@ -88,7 +88,7 @@ class ThankYouHostTest(unittest.TestCase):
         proc = self.translate()
         self.assertEqual(proc.returncode, 0, proc.stderr)
         out = json.loads((self.out / "page-result.json").read_text())
-        self.assertEqual(out["status"], "locally_verified")
+        self.assertEqual(out["status"], "authored")
         self.assertEqual([a["path"] for a in out["artifacts"]], [host.RENDER_NAME])
         man = json.loads((self.out / host.MANIFEST_NAME).read_text())
         self.assertEqual(man["result_ref"], host.RESULT_NAME)

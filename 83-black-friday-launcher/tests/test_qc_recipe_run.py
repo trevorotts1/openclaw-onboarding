@@ -36,15 +36,16 @@ VERIFIER = '''class ApprovalRefused(Exception):
         self.code = code
 
 def verify(approval_id, kind, plan_hash, scope, **kw):
-    if approval_id != "appr-good-0001" or kind != "launch_plan_build" or plan_hash != "abcd1234":
+    ok = {("appr-good-0001", "launch_plan_build"), ("appr-qc-0001", "qc_session")}
+    if (approval_id, kind) not in ok or plan_hash != "abcd1234":
         raise ApprovalRefused("APPROVAL-NOT-FROM-AUTHORITY", "unknown approval")
     return {"ok": True}
 '''
 CAF = '#!/usr/bin/env bash\nwhile [ $# -gt 0 ]; do [ "$1" = "--out" ] && { cp "$QC_TEST_EXPORT" "$2"; exit 0; }; shift; done\nexit 1\n'
 EXPORT = {"id": WORKFLOW, "name": "ZHC-test", "status": "draft", "allowMultiple": False, "active": False,
           "workflowData": {"templates": [
-              {"id": "n1", "type": "sms", "name": "Send", "parentKey": None, "next": "n2",
-               "attributes": {"body": "hi", "fromNumber": "+15555550100"}},
+              {"id": "n1", "type": "add_contact_tag", "name": "Tag", "parentKey": None, "next": "n2",
+               "attributes": {"tags": []}},  # no SMS step: WF-25 (WP-07) needs saved SMS conditions and the verifier tree
               {"id": "n2", "type": "wait", "name": "Wait 2 Days", "parentKey": "n1", "next": "n3",
                "attributes": {"type": "time", "startAfter": {"type": "days", "value": 2, "when": "after"}}},
               {"id": "n3", "type": "end", "name": "Finish", "parentKey": "n2"}]},
@@ -52,10 +53,10 @@ EXPORT = {"id": WORKFLOW, "name": "ZHC-test", "status": "draft", "allowMultiple"
 SCHEDULE = {"waits": [{"kind": "delay", "value": 2, "unit": "days"}]}
 
 
-def recipe_command(model: str = "qc-model-b") -> str:
+def recipe_command() -> str:
     """The recipe's code block with only its placeholders filled; the optional `[--fab]` is left out."""
     text = RECIPE.replace(" [--fab]", "").replace("<workflow-id>", WORKFLOW).replace("<plan.json>", "plan.json") \
-        .replace("<model>", model).replace("<grades.json>", "grades.json").replace("<schedule.json>", "schedule.json") \
+        .replace("<record.json>", "qc-session.json").replace("<grades.json>", "grades.json").replace("<schedule.json>", "schedule.json") \
         .replace("<deps.json>", "deps.json")
     assert not re.search(r"<[\w.-]+>|\[--", text), text
     return text
@@ -90,9 +91,12 @@ class QcRecipeRunTests(unittest.TestCase):
         (self.cwd / name).write_text(json.dumps(doc), encoding="utf-8")
 
     def run_recipe(self, model: str = "qc-model-b") -> subprocess.CompletedProcess:
+        # the QC model is not typed any more: the signed QC session record names it
+        self.write("qc-session.json", {"approval_id": "appr-qc-0001", "plan_hash": "abcd1234",
+                                       "qc_model": model, "session_id": "qc-sess-0001"})
         env = {"PATH": f"{self.root / 'bin'}:/usr/bin:/bin:/opt/homebrew/bin", "HOME": str(self.root / "home"),
                "OPENCLAW_PLATFORM": "mac", "QC_TEST_EXPORT": str(self.root / "export.json")}
-        return subprocess.run(["/bin/bash", "-c", recipe_command(model)], cwd=self.cwd, env=env,
+        return subprocess.run(["/bin/bash", "-c", recipe_command()], cwd=self.cwd, env=env,
                               capture_output=True, text=True, timeout=120)
 
     def saved(self) -> dict:

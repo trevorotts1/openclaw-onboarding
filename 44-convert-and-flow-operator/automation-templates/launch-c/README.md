@@ -92,9 +92,11 @@ python3 launch-c/emit_launch_schedule.py --automation-build automation-builds.js
     --unit <build id or unit_key> [--workflow-key <key>] --out schedule.json
 ```
 
-It follows the launch compiler: a send whose schedule node is absolute, dated and not suppressed
-becomes ONE `until_date` wait; every other wait stays the template's own `delay`. Exit `0` written /
-`1` unknown unit or no waits / `2` unreadable input or several workflows without `--workflow-key`.
+It reads the COMPILED workflow (the same `compile_launch_builds` the build command runs): a send whose
+schedule node is absolute, dated and not suppressed has been compiled to ONE wait-until-date step, every other
+wait stays the template's own `delay`, and each wait step becomes one entry, in order. Exit `0` written /
+`2` invalid input, unknown unit, no waits or several workflows without `--workflow-key` / `3` IO /
+`4` the unit is blocked (nothing compiles). Nothing is guessed: an unresolved wait refuses.
 
 ## Fail-closed rules
 
@@ -128,7 +130,7 @@ becomes ONE `until_date` wait; every other wait stays the template's own `delay`
 ```
 python3 launch-c/tests/test_plan_reader.py              # behavior tests (contract fixtures)
 python3 launch-c/tests/test_plan_reader_l07_schedule.py  # calendar / schedule / dependency tests
-python3 launch-c/tests/test_emit_launch_schedule.py     # WF-9 wait schedule producer
+python3 -m pytest launch-c/tests/test_emit_launch_schedule.py -q  # WF-9 wait schedule producer
 python3 launch-c/plan_reader.py --selftest             # built-in refusal checks
 python3 tools/engine/tests/test_workflow_builder_l07.py  # provider compile / journal / readback
 ```

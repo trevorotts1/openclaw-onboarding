@@ -304,7 +304,7 @@ Read in this order. Each step names the file, so nothing here depends on guessin
    build plans, then `44-convert-and-flow-operator/automation-templates/launch-c/plan_reader.py` reads them,
    and `44-convert-and-flow-operator/tools/siglaunch/` receives the hand-off but is **not** a production entry
    (`PRODUCTION_ENTRY_ENABLED = False`): a Skill 71 `automation-request.json` is built through
-   `caf workflows build --from-automation-build` after the plan reader, and the receipt is the build journal.
+   `caf workflows build --from-automation-build ... --plan-mode-file <plan-mode.json>` after the plan reader, and the receipt is the build journal.
    See "Launch mode" below. Skill 83 depends on Skill 44 and Skill 50 for this reason.
    The executable requirement set is `launcher_core/dependencies.json` alone (read by
    `launcher_core/dependencies.py`). `skill.json` and `registration.json` carry only a
@@ -441,11 +441,11 @@ steps, all DRAFT-ONLY (nothing is sent and nothing goes live):
    post-sale workflows, and repairing a launch goes through this command, never by enabling that
    runner.
 3. **QC.** Run from `44-convert-and-flow-operator/`, the one full command (a shorter one cannot exit 0: the
-   plan file, the QC model, the grades and the dependency manifest are required, and a launch build needs its wait schedule). The second
+   plan file, the signed QC session record (`--qc-model` is refused), the grades and the dependency manifest are required, and a launch build needs its wait schedule). The second
    line adds the script's own exit status to the saved result as `exit_code`:
 
    ```
-   ./qc-built-workflow.sh <workflow-id> --json --plan-mode-file <plan.json> --qc-model <model> \
+   ./qc-built-workflow.sh <workflow-id> --json --plan-mode-file <plan.json> --qc-session <record.json> \
        --grades <grades.json> --deps <deps.json> --launch --launch-schedule <schedule.json> [--fab] > qc-<workflow-id>.json; rc=$?
    python3 -I -c 'import json,sys; p,rc=sys.argv[1],int(sys.argv[2]); d=json.load(open(p)); d["exit_code"]=rc; json.dump(d,open(p,"w"),indent=2)' qc-<workflow-id>.json "$rc"
    ```

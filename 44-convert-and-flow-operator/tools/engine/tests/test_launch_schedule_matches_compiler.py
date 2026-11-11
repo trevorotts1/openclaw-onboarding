@@ -36,14 +36,24 @@ def _load(name, path):
     return module
 
 
-helpers = _load("wp07_emit_sched_helpers", LAUNCH_C / "tests" / "test_emit_launch_schedule.py")
-emitter = helpers.emitter
+# Ruling INT-T-2: the surviving emitter is WP-06b's, which reads the compiled graph. The documents come from the
+# engine's own ready-to-build synthetic launch (the reader now blocks WP-07's hand-made plan: lifecycle, eligibility,
+# sender and guards are required). Assertions are unchanged: accepted for the compiled workflow, refused for a
+# duration wait where a date was compiled.
+emitter = _load("emit_launch_schedule_06b", LAUNCH_C / "emit_launch_schedule.py")
+_l07 = _load("sched_match_l07", ENGINE / "tests" / "test_workflow_builder_l07.py")
 
 
-def _wf9(tmp_path, document, schedule):
+class helpers:  # noqa: N801 - the name the assertions below already use
+    @staticmethod
+    def compile_unit(unit, *_ignored):
+        return None, _l07.synthetic_document()
+
+
+def _wf9(tmp_path, document, schedule, unit):
     """WF-9 status from qc-built-workflow.sh for the workflow the compiler built from `document`."""
     campaign = wb.compile_launch_builds(document, require_ready=True)
-    workflow = next(iter(campaign.values()))
+    workflow = next(v for v in campaign.values() if v["source_unit"] == unit)
     export = {"id": "WFTEST001", "name": "ZHC-test", "status": "draft", "allowMultiple": False, "active": False,
               "workflowData": {"templates": workflow["templates"]}}
     tree = tmp_path / "tree"
@@ -70,15 +80,15 @@ def _wf9(tmp_path, document, schedule):
     return items["WF-9"]
 
 
-@pytest.mark.parametrize("kind", ["pre_launch", "welcome_access"])
+@pytest.mark.parametrize("kind", ["auto_pre_launch"])  # the other synthetic unit compiles no waits; the emitter refuses it (NO-WAITS)
 def test_emitted_schedule_is_accepted_by_wf9_for_the_compiled_workflow(tmp_path, kind):
-    _tmp, document = helpers.compile_unit(kind, "pre_launch", "launch-a/launch-a-prelaunch-window")
-    waits = emitter.build_waits(document["builds"][0])
-    item = _wf9(tmp_path, document, {"waits": waits})
+    _tmp, document = helpers.compile_unit(kind)
+    waits = emitter.emit(document, kind)["waits"]
+    item = _wf9(tmp_path, document, {"waits": waits}, kind)
     assert item["status"] == "PASS", item
 
 
 def test_a_duration_wait_where_a_date_was_compiled_fails_wf9(tmp_path):
-    _tmp, document = helpers.compile_unit("pre_launch", "pre_launch", "launch-a/launch-a-prelaunch-window")
+    _tmp, document = helpers.compile_unit("auto_pre_launch")
     wrong = {"waits": [{"kind": "delay", "value": 1, "unit": "days"}] * 3}
-    assert _wf9(tmp_path, document, wrong)["status"] == "FAIL"
+    assert _wf9(tmp_path, document, wrong, "auto_pre_launch")["status"] == "FAIL"

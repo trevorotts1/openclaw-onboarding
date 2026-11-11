@@ -60,6 +60,29 @@ def _env(monkeypatch, tmp_path):
         monkeypatch.setenv(key, value)
     monkeypatch.delenv("CAF_DRY_RUN", raising=False)
     monkeypatch.delenv("CAF_BUILD_JOURNAL", raising=False)
+    # WP-07 (issue 47): a real build needs a PLAN MODE run file the approval flow confirms. These tests give the real gate a real
+    # plan-mode.json and a stub authority (same shape as test_build_requires_plan_mode.py); the gate itself is not patched out.
+    plan_mode = tmp_path / "plan-mode.json"
+    plan_mode.write_text(json.dumps({"approval_id": "appr-good-0001", "plan_hash": "abcd1234",
+                                     "publish_intent": "DRAFT", "re_entry": "ONCE", "build_model": "build-model-a"}))
+
+    class Authority:
+        @staticmethod
+        def verify(approval_id, kind, plan_hash, scope, **kw):
+            assert (approval_id, kind, plan_hash) == ("appr-good-0001", "launch_plan_build", "abcd1234")
+            assert set(scope) <= {"publish:DRAFT", "reentry:ONCE"}
+            return {"ok": True}
+
+    monkeypatch.setattr(cli_mod, "_approval_record", lambda: Authority)
+    real_invoke = CliRunner.invoke
+
+    def invoke(self, command, args=None, **kw):
+        args = list(args or [])
+        if "--from-automation-build" in args and "--dry-run" not in args and "--plan-mode-file" not in args:
+            args += ["--plan-mode-file", str(plan_mode)]
+        return real_invoke(self, command, args, **kw)
+
+    monkeypatch.setattr(CliRunner, "invoke", invoke)
 
 
 def _built(tmp_path, templates=None, read_ok=True):
@@ -129,10 +152,23 @@ def test_deliveries_file_row_is_the_shape_83_assemble_reads(tmp_path):
                               "plan_sha256": hashlib.sha256(plan.read_bytes()).hexdigest()}
 
 
+def _with_qc_result(run_dir, row):
+    """The independent QC step runs after the build (SKILL.md, Launch mode): it saves qc-<workflow_id>.json
+    and that file joins the unit's artifacts. Skill 83's rule (issue 33) requires it, so these tests add it."""
+    export = json.loads((run_dir / row["artifacts"][0]["path"]).read_text())
+    name = "qc-%s.json" % export["workflow_id"]
+    (run_dir / name).write_text(json.dumps({
+        "workflow_id": export["workflow_id"], "exit_code": 0, "exit_gate": "PASS", "overall_mechanical": "PASS",
+        "plan_mode_gate": {"status": "PASS"}}))
+    data = (run_dir / name).read_bytes()
+    row["artifacts"].append({"path": name, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)})
+
+
 def test_83_accepts_real_producer_output_and_still_refuses_a_hand_made_object(tmp_path):
     rule = _delivery_units_rule()
     run_dir, _plan, _doc, _summary = _export(tmp_path)
     row = json.loads((run_dir / "deliveries.json").read_text())["auto_one"]
+    _with_qc_result(run_dir, row)
     assert rule.automation_violations("auto_one", row, "lc-1", {"auto_one": UNIT_HASH},
                                       run_dir) == []
     fake = run_dir / "exports" / "lc-1__auto_one.export.json"
@@ -229,6 +265,7 @@ def test_cli_real_build_exports_every_unit_and_83_accepts_it(tmp_path):
     assert sorted(rows) == ["auto_post_sale", "auto_pre_launch"]
     expected = rule.reader_hashes(document, "l07-build")
     for unit, row in rows.items():
+        _with_qc_result(run_dir, row)
         assert rule.automation_violations(unit, row, "l07-build", expected, run_dir) == [], unit
 
 
