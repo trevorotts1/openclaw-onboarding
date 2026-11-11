@@ -1,4 +1,8 @@
 # Changelog - Skill 74 KIE Live Adapter
+## [1.1.19] - 2026-11-11 - Harmony-95 Batch R: X-97 follow-up tests and the cmd_default_price signature in SKILL.md
+
+- Tests pin the echoed units, the image-to-image default route, the qc file list, the smallest-first credit range, an integer price cell and the missing-evidence fallback of the 2.6 Sunburst default. `SKILL.md` documents `cmd_default_price` as `(family, quality, edit, units)`. No script behaviour changed. Version bump so the Batch R pull request carries a version above main (G3).
+
 ## [1.1.18] - 2026-11-10 - Harmony-95 Batch P: the default image model is GPT Image 2.6 Sunburst at medium quality, with a published per-picture price (X-97)
 
 - `scripts/kie_live_adapter.py` resolves the default GPT image model as the newest Sunburst generation in the live catalog that has a picture price (pinned fallback `gpt-image-2-6/sunburst-text-to-image`, and `gpt-image-2-6/sunburst-image-to-image` for an edit), the request `quality` defaults to medium, and `cmd_default_price` returns KIE's published per-picture reference price for 1K, 2K and 4K; `scripts/check_default_image_model.py` with `references/kie-default-price-evidence.json` refuses a default that is not a Sunburst model at medium quality with a reference price for every size, and exits 2 when it cannot run; tests `test_default_image_model.py` and `test_registry_commands.py`; `qc-74-kie-live-adapter.sh` runs the check.

@@ -1,3 +1,7 @@
+## [v2.1.49] - 2026-11-11 - Harmony-95 Batch R: final-count test repairs (FC-26)
+
+- `automation-templates/launch-c/tests/test_plan_reader.py` pins its tests to a fixed clock before the fixture dates, and `tools/engine/tests/test_workflow_builder_l07.py` pins that a ready build with `blocked_by` is refused by both compile paths. Tests only; no engine behaviour changed. Version bump so the Batch R pull request carries a version above main (G3).
+
 ## [v2.1.48] - 2026-11-11 - Harmony-95 Batch T: terminal nodes, export object, QC session record, plan-mode gate, thank-you host
 
 - Batch T members WP-05b, WP-06b, WP-07, WP-11b and WP-18 land in this skill: `_terminate` ends every compiled path on a terminal node (issue 64), the typed export object and `--deliveries-out`, the signed QC session record (`--qc-session`) and the PLAN MODE gate (`--plan-mode-file`), the thank-you host, and the launch-family seam workflow. The two X-96 follow-up gate tests now select the purchase goal only (INT-T-1).

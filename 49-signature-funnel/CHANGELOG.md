@@ -1,3 +1,7 @@
+## [v2.1.56] - 2026-11-11 - Harmony-95 Batch R: verify.sh and the golden example repaired (FC-51)
+
+- The golden example copy ledger carries the section-7 call to action, `checkout_wrapper.py` skips `.attempts`, and `verify.sh` defaults the platform so it is green on a fresh HOME; `scripts/test_verify_golden_repairs.py` pins the repairs. Version bump so the Batch R pull request carries a version above main (G3).
+
 ## [v2.1.55] - 2026-11-10 - Harmony-95 Batch P: the 49 side of WP-01, WP-02, WP-04, WP-05a, WP-08a, WP-09a, WP-10a, WP-12, WP-14, WP-15 and X-96
 
 - Delivery-rail receipt replaces the Skill 6 calls and the front door scans for forbidden siblings (WP-01); legacy visual path through the shared page service, `--out-dir`, ungated stub refused outside fixtures (WP-02); price tiers and money keys through `page_set` (WP-04); email counts read from Skill 50's registry (WP-05a); a review verdict is honoured and `client_delivery` scope is checked at both validators (WP-08a); one billing vocabulary, three-decimal currency parsing and the single-offer approval status in `checkout_wrapper.py` (WP-09a); design stage in `upsell_wrapper.py` and data-driven client lines (WP-10a); style card prompt rule (WP-12); downsell copy form with `page_role`, strict pins, routing guard receipt fields (WP-14); documentation and SOP lockstep (WP-15); `launch_plan.py` emits `followed_offer_id` (X-96).
