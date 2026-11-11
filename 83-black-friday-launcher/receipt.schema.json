@@ -183,7 +183,8 @@
             "lane": {"type": "string", "minLength": 1},
             "contract": {"type": "string", "minLength": 1},
             "state": {"type": "string", "const": "passed"},
-            "detail": {"type": "string"}
+            "detail": {"type": "string"},
+            "certificate_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
           }
         },
         "proof": {

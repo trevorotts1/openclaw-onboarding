@@ -24,11 +24,18 @@ BF_PLAN = REPO_ROOT / "shared-utils/signature_launch_contract/fixtures/black-fri
 CALENDAR_LAW = REPO_ROOT / "shared-utils/signature_launch_contract/calendar_law.py"
 
 sys.path.insert(0, str(SKILL_ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import lane83_stand_in_validate_delivery as stand_in  # noqa: E402
 from launcher_core import constants, launch_plan  # noqa: E402
 from launcher_core.check_rules import delivery_units as du  # noqa: E402
 
 APPROVED = "b" * 64
+# The contract ids and the validator path are spelled here from the fix spec, so a wrong constant in
+# the rule cannot hide behind a test that imports the same wrong constant.
+LANE_CONTRACT_IDS = {"email": "skill50.email-delivery.v1", "text": "skill44.sms-set.v1",
+                     "automation": "skill44.workflow-export.v1"}
+EMAIL_VALIDATOR_PATH = "50-email-engine/tools/validate_delivery.py"
 GRAPH = {"workflowData": {"templates": [
     {"id": "n1", "type": "tag", "name": "Add tag", "parentKey": None, "next": "n2"},
     {"id": "n2", "type": "sms", "name": "Send SMS", "parentKey": "n1", "next": "n3"},
@@ -48,10 +55,76 @@ def reader_hash(unit_id: str) -> str:
     return hashlib.sha256(f"reader:{unit_id}".encode()).hexdigest()
 
 
+ABSENT = object()
+
+
+def qc_result(workflow_id: str, /, **override) -> dict:
+    """What `qc-built-workflow.sh --json` prints for a passing build, plus the script's exit status."""
+    doc = {"workflow_id": workflow_id, "publish_intent": "DRAFT", "mechanical_pass": 12,
+           "mechanical_fail": 0, "overall_mechanical": "PASS", "qc_model": "qc-model-a",
+           "exit_gate": "PASS", "plan_mode_gate": {"status": "PASS", "approval_id": "approval-1", "reason": ""},
+           "ungraded_items": "", "exit_code": 0, **override}
+    return {key: value for key, value in doc.items() if value is not ABSENT}  # ABSENT: leave the key out
+
+
+def qc_artifact(run_dir: Path, unit_id: str, /, **override) -> dict:
+    """Stage the unit's qc-<workflow_id>.json and return its artifact row."""
+    rel = f"automations/qc-wf-{unit_id}.json"
+    raw = write(Path(run_dir) / rel, qc_result(f"wf-{unit_id}", **override))
+    return {"path": rel, "sha256": hashlib.sha256(raw).hexdigest(), "size": len(raw)}
+
+
+def install_stand_in_validator(testcase) -> None:
+    """Run Skill 83 against the stand-in for Skill 50's validate_delivery.py for the length of a test."""
+    real = constants.resolve_ref
+
+    def resolve(rel_path, root=None):
+        return Path(stand_in.__file__) if rel_path == EMAIL_VALIDATOR_PATH else real(rel_path, root)
+
+    patcher = mock.patch.object(constants, "resolve_ref", resolve)
+    patcher.start()
+    testcase.addCleanup(patcher.stop)
+
+
+def lane_contract_delivery(unit_type: str, delivery: dict) -> dict:
+    """Give a lane delivery the contract its producer writes (email: with a certificate the stand-in accepts)."""
+    lane = {**delivery["lane_validation"], "contract": LANE_CONTRACT_IDS[unit_type]}
+    if unit_type == "email":
+        lane["certificate_sha256"] = stand_in.certificate(delivery["artifacts"])
+    return {**delivery, "lane_validation": lane}
+
+
+def with_sales_piece(pieces: dict, run_dir: Path, normalized: dict) -> dict:
+    """Add the signature sales page (the plan's `page_sales`) as the second page of the landing route node.
+
+    A page another lane delivers has no producer contract, so no lane delivery can seal it: the Black Friday
+    plan's sales page must arrive as a launcher piece, the way a real launch delivers it."""
+    import copy as _copy
+    from launcher_core import route
+    sales_id = route.route_law._page_id(normalized["launch_id"], "sales")
+    rel = f"pieces/{sales_id}/page.html"
+    target = Path(run_dir) / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("<html>sales</html>\n", encoding="utf-8")
+    piece = _copy.deepcopy(pieces["landing"])
+    piece.update(page_id=sales_id, request_id=f"req-{sales_id}",
+                 artifacts=[{"path": rel, "sha256": hashlib.sha256(target.read_bytes()).hexdigest()}])
+    return {**pieces, "sales": piece}
+
+
+def with_lane_receipts(plan: dict, deliveries: dict) -> dict:
+    """Swap each planned email and text delivery for one that carries its producer's contract."""
+    for unit in launch_plan.planned_units(plan):
+        if unit["type"] in ("email", "text") and unit["id"] in deliveries:
+            deliveries[unit["id"]] = lane_contract_delivery(unit["type"], deliveries[unit["id"]])
+    return deliveries
+
+
 def with_skill44_builds(plan: dict, run_dir: Path, deliveries: dict) -> dict:
     """Swap each planned automation's delivery for a real Skill 44 build: the workflow export
-    (artifact) plus the reader's automation-builds.json in the package root. Used by every
-    test that assembles a full launch and expects `check` to pass."""
+    (artifact) plus the reader's automation-builds.json in the package root, and every email and
+    text delivery for one that carries its producer's contract. Used by every test that
+    assembles a full launch and expects `check` to pass."""
     builds = []
     for auto in plan.get("automations") or []:
         unit_id = auto["id"]
@@ -62,12 +135,13 @@ def with_skill44_builds(plan: dict, run_dir: Path, deliveries: dict) -> dict:
         raw = write(Path(run_dir) / rel, body)
         deliveries[unit_id] = {**deliveries.get(unit_id, {"state": "complete"}),
                                "artifacts": [{"path": rel, "sha256": hashlib.sha256(raw).hexdigest(),
-                                              "size": len(raw)}],
+                                              "size": len(raw)},
+                                             qc_artifact(run_dir, unit_id)],
                                "lane_validation": {"lane": "S44", "contract": du.EXPORT_CONTRACT,
                                                    "state": "passed"}}
         builds.append({"id": unit_id, "state": "ready", "expected_graph_hash": reader_hash(unit_id)})
     write(Path(run_dir) / du.BUILDS_DOC, {"launch_id": plan["launch_id"], "builds": builds})
-    return deliveries
+    return with_lane_receipts(plan, deliveries)
 
 
 def write(path: Path, data) -> bytes:
@@ -90,14 +164,18 @@ class DeliveryUnitsTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def export(self, unit_id, graph=GRAPH, **override) -> dict:
+    def export(self, unit_id, graph=GRAPH, qc=True, **override) -> dict:
+        """A Skill 44 automation delivery row. ``qc`` is True (a passing QC result is staged), False
+        (no QC result at all) or a dict of fields that override the passing QC result."""
         body = {"workflow_id": f"wf-{unit_id}", "status": "draft", "produced_by": du.BUILD_COMMAND,
                 "unit_key": f"{self.plan['launch_id']}/{unit_id}",
                 "expected_graph_hash": reader_hash(unit_id), **graph, **override}
         rel = f"automations/{unit_id}.json"
         raw = write(self.root / rel, body)
-        return {"unit_id": unit_id, "unit_type": "automation",
-                "artifacts": [{"path": rel, "sha256": hashlib.sha256(raw).hexdigest(), "size": len(raw)}],
+        artifacts = [{"path": rel, "sha256": hashlib.sha256(raw).hexdigest(), "size": len(raw)}]
+        if qc is not False:
+            artifacts.append(qc_artifact(self.root, unit_id, **(qc if isinstance(qc, dict) else {})))
+        return {"unit_id": unit_id, "unit_type": "automation", "artifacts": artifacts,
                 "lane_validation": {"lane": "S44", "contract": du.EXPORT_CONTRACT, "state": "passed"}}
 
     def package(self, plan=None, intake=None, rows=None) -> dict:
@@ -172,6 +250,47 @@ class DeliveryUnitsTests(unittest.TestCase):
         self.assertEqual(len(absent), len(self.automations), absent)
         self.assertTrue(all("is not installed" in f for f in absent), absent)
         self.assertEqual(found, [])
+
+    # ---- S44-21 + issue 33: an automation is sealed only with its passing per-build QC result ----
+    def test_an_automation_with_no_qc_result_is_refused(self):
+        unit = self.automations[0]
+        rows = [self.export(u, qc=False if u == unit else True) for u in self.automations]
+        fails = self.check(self.package(rows=rows))
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn(unit, fails[0])
+        self.assertIn(f"qc-wf-{unit}.json", fails[0])
+
+    def test_a_qc_result_that_did_not_pass_is_refused(self):
+        unit = self.automations[0]
+        for label, qc in (("exit code 1", {"exit_code": 1}),
+                          ("exit code absent", {"exit_code": ABSENT}),
+                          ("exit code null", {"exit_code": None}),
+                          ("exit code true", {"exit_code": True}),
+                          ("plan mode gate failed", {"plan_mode_gate": {"status": "FAIL"}}),
+                          ("plan mode gate absent", {"plan_mode_gate": None}),
+                          ("ungraded", {"exit_gate": "UNGRADED"}),
+                          ("mechanical fail", {"overall_mechanical": "FAIL"}),
+                          ("another workflow", {"workflow_id": "wf-other"})):
+            with self.subTest(label):
+                rows = [self.export(u, qc=qc if u == unit else True) for u in self.automations]
+                fails = self.check(self.package(rows=rows))
+                self.assertEqual(len(fails), 1, fails)
+                self.assertIn("QC did not pass", fails[0])
+
+    def test_a_qc_result_that_is_not_the_qc_scripts_json_or_was_changed_is_refused(self):
+        unit = self.automations[0]
+        manifest = self.package()
+        qc_path = self.root / "automations" / f"qc-wf-{unit}.json"
+        qc_path.write_text(json.dumps(qc_result(f"wf-{unit}", exit_code=1)), encoding="utf-8")
+        self.assertTrue(any("QC result" in f and "sha256" in f for f in self.check(manifest)))
+        rows = [self.export(u) for u in self.automations]
+        raw = write(qc_path, b"not json")
+        for row in rows:
+            if row["unit_id"] == unit:
+                row["artifacts"][1] = {"path": f"automations/qc-wf-{unit}.json", "size": len(raw),
+                                       "sha256": hashlib.sha256(raw).hexdigest()}
+        fails = self.check(self.package(rows=rows))
+        self.assertTrue(any("QC result" in f and "is not JSON" in f for f in fails), fails)
 
     def test_the_rule_loads_the_way_the_check_rules_seam_loads_it(self):
         # U-launcher-core-02's seam loads every check_rules/*.py BY PATH under the name

@@ -295,7 +295,7 @@ def _validate_piece(piece: Any, node: Dict[str, str], intake: Dict[str, Any],
         path, digest = art.get("path"), art.get("sha256")
         if not isinstance(path, str) or not path.strip():
             raise PackageError("AF-LAUNCH-PKG-PIECE", f"{role}: artifacts[{i}].path missing")
-        if not isinstance(digest, str) or not _SHA256_RE.match(digest):
+        if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
             raise PackageError("AF-LAUNCH-PKG-PIECE",
                                f"{role}: artifacts[{i}].sha256 must be 64 lowercase hex")
         clean = {"path": path, "sha256": digest}
@@ -449,7 +449,7 @@ def _lane_receipt(unit: Dict[str, Any], delivery: Any, intake: Dict[str, Any],
         if not isinstance(path, str) or not path.strip():
             raise PackageError("AF-LAUNCH-PKG-RECEIPT-ARTIFACT",
                                f"{label} artifacts[{index}].path is missing")
-        if not isinstance(digest, str) or not _SHA256_RE.match(digest):
+        if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
             raise PackageError("AF-LAUNCH-PKG-RECEIPT-ARTIFACT",
                                f"{label} artifacts[{index}].sha256 is not 64 lowercase hex")
         if Path(path).is_absolute():
@@ -485,6 +485,10 @@ def _lane_receipt(unit: Dict[str, Any], delivery: Any, intake: Dict[str, Any],
             or not _nonempty_str(lane.get("contract")) or lane.get("state") != "passed":
         raise PackageError("AF-LAUNCH-PKG-RECEIPT-LANE",
                            f"{label} carries no passed producing-lane validation")
+    # The contract must be the id this unit type's producer writes, never a typed string.
+    bad_contract = delivery_units.lane_contract_violations(unit["id"], unit_type or unit["type"], lane)
+    if bad_contract:
+        raise PackageError("AF-LAUNCH-PKG-RECEIPT-LANE", "; ".join(bad_contract))
 
     request = delivery.get("request")
     if not isinstance(request, dict):
@@ -513,10 +517,20 @@ def _lane_receipt(unit: Dict[str, Any], delivery: Any, intake: Dict[str, Any],
         "artifacts": artifacts,
         "lane_validation": {"lane": lane["lane"], "contract": lane["contract"],
                             "state": "passed",
-                            **({"detail": lane["detail"]} if "detail" in lane else {})},
+                            **({"detail": lane["detail"]} if "detail" in lane else {}),
+                            # the producing lane's own certificate: the re-check at `check` needs it
+                            **({"certificate_sha256": lane["certificate_sha256"]}
+                               if isinstance(lane.get("certificate_sha256"), str)
+                               and _SHA256_RE.fullmatch(lane["certificate_sha256"]) else {})},
         "proof": _proof("draft_delivered"),
         "status": "draft_delivered",
     }
+    if row["unit_type"] == "email":
+        # Skill 50's own validator re-verifies the delivery by path; a missing one is a refusal.
+        bad_email = delivery_units.email_delivery_violations(
+            unit["id"], delivery_units.lane_document(unit["id"], row), run_dir)
+        if bad_email:
+            raise PackageError("AF-LAUNCH-PKG-RECEIPT-LANE", "; ".join(bad_email))
     if row["unit_type"] in ("email", "text", "automation"):
         row["draft_only"] = True
     if delivery_marker:

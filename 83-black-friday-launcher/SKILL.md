@@ -428,13 +428,39 @@ steps, all DRAFT-ONLY (nothing is sent and nothing goes live):
    (`PRODUCTION_ENTRY_ENABLED = False`): the declared Black Friday purchase path is the native GHL
    post-sale workflows, and repairing a launch goes through this command, never by enabling that
    runner.
-3. **QC.** `44-convert-and-flow-operator/qc-built-workflow.sh <workflow-id> --json` checks the built workflow;
-   a build that fails QC is not delivered.
+3. **QC.** Run from `44-convert-and-flow-operator/`, the one full command (a shorter one cannot exit 0: the
+   plan file, the QC model, the grades and the dependency manifest are required, and a launch build needs its wait schedule). The second
+   line adds the script's own exit status to the saved result as `exit_code`:
+
+   ```
+   ./qc-built-workflow.sh <workflow-id> --json --plan-mode-file <plan.json> --qc-model <model> \
+       --grades <grades.json> --deps <deps.json> --launch --launch-schedule <schedule.json> [--fab] > qc-<workflow-id>.json; rc=$?
+   python3 -I -c 'import json,sys; p,rc=sys.argv[1],int(sys.argv[2]); d=json.load(open(p)); d["exit_code"]=rc; json.dump(d,open(p,"w"),indent=2)' qc-<workflow-id>.json "$rc"
+   ```
+
+   `<schedule.json>` is the `{"waits": [...]}` file `44-convert-and-flow-operator/automation-templates/launch-c/emit_launch_schedule.py
+   --automation-build automation-builds.json --unit <unit-id> --out <schedule.json>` writes from the reader's
+   `schedule.nodes`. A build that fails QC is not delivered: the saved `qc-<workflow-id>.json` is one of the
+   automation's delivery artifacts, and `assemble` and `check` refuse the unit when it is missing, names another
+   workflow, or does not carry `exit_code` 0, `exit_gate` PASS, `overall_mechanical` PASS and
+   `plan_mode_gate.status` PASS (`AF-LAUNCH-UNIT-AUTOMATION`).
 4. **Receipt.** The build journal is that build's receipt (unit key, remote id, phase, expected and
    read-back hash), so a re-run is safe; for a Skill 71 hand-off the `siglaunch` receiver issues its
-   own receipt. Skill 83 reads delivery results
-   through `assemble --launch-plan <plan> --deliveries <deliveries.json>` and requires every planned email,
-   text and automation to be delivered before the package counts as a full launch.
+   own receipt. Each planned email, text and automation reaches Skill 83 as the producing lane's delivery
+   row, never one typed by hand: an automation is Skill 44's build export (`skill44.workflow-export.v1`, the
+   first artifact) plus its QC result; an email sequence is the row `50-email-engine/tools/validate_delivery.py
+   <run-dir> --launch-plan <plan> --unit <id> --out <receipt.json>` writes (`skill50.email-delivery.v1`, with its
+   certificate); a text set is Skill 44's `skill44.sms-set.v1`. Skill 83 reads them through
+   `assemble --launch-plan <plan> --deliveries <deliveries.json>` and requires every planned email, text and
+   automation to be delivered before the package counts as a full launch. `assemble` and `check` accept a lane
+   delivery only when `lane_validation.contract` is that unit type's producer contract above (any other string,
+   including a self-declared one, is refused) and, for an email, when `validate_delivery.py --check`, run by path
+   from the package folder, exits 0; an absent validator or a failed re-check refuses the unit
+   (`AF-LAUNCH-PKG-RECEIPT-LANE`). A text set is checked against its contract id only until Skill 44 ships a
+   text-set validator. A page the launcher builds itself is proved by its own page row. A page another lane
+   delivers and the Conversation AI have no producer contract yet (their allow-list is empty), so `assemble` and
+   `check` refuse any lane delivery for them with `AF-LAUNCH-PKG-RECEIPT-LANE` ("has no producer yet"), whatever
+   contract string it carries.
 
 Skill 83 builds pages; it does not build workflows itself. See Skill 44's own SKILL.md and INSTRUCTIONS.md for
 the same four steps from the other side.

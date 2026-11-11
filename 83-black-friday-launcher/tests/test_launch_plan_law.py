@@ -235,12 +235,15 @@ class PlannedUnitCompletenessTests(unittest.TestCase):
 @unittest.skipUnless(BF_PLAN.is_file(), "shared launch-plan contract fixture is not installed")
 class PackagePlanTests(unittest.TestCase):
     def setUp(self):
+        from test_delivery_units import install_stand_in_validator, with_sales_piece
+        install_stand_in_validator(self)  # Skill 83 re-runs Skill 50's validator on every email unit
         self.tmp = tempfile.TemporaryDirectory()
         self.run_dir = Path(self.tmp.name) / "run"
-        self.normalized = intake.validate(base_intake())
+        self.normalized = intake.validate(plan_intake())
         self.advice = council.planning_step(self.normalized, runner=stub_council)
         self.graph = route.compile_route(self.normalized, self.advice)
-        self.pieces = pieces_for(self.run_dir, self.graph, self.normalized)
+        self.pieces = with_sales_piece(pieces_for(self.run_dir, self.graph, self.normalized),
+                                       self.run_dir, self.normalized)
         self.plan = plan_fixture()
 
     def tearDown(self):
@@ -355,6 +358,19 @@ def with_checkout_facts(payload: dict) -> dict:
 
 def base_intake(*args, **kwargs) -> dict:
     return with_checkout_facts(_base_intake_raw(*args, **kwargs))
+
+
+def plan_intake() -> dict:
+    """An intake whose route carries every page the Black Friday plan lists (the order form, a one-click
+    upsell and downsell, the thank-you; the sales page is added by with_sales_piece). A page another lane
+    delivers has no producer contract, so a full launch needs a launcher piece for each of its pages."""
+    raw = _base_intake_raw()
+    raw["offers"] += [
+        {"offer_id": "up-1", "name": "Upgrade", "role": "upsell_1",
+         "price": {"amount_minor": 9700, "currency": "USD"}},
+        {"offer_id": "down-1", "name": "Lite", "role": "downsell_1",
+         "price": {"amount_minor": 1700, "currency": "USD"}}]
+    return with_checkout_facts(raw)
 
 
 if __name__ == "__main__":

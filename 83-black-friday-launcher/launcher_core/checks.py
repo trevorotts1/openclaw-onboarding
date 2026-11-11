@@ -740,7 +740,7 @@ def _artifact_violations(label: str, artifacts: Any, root: Path) -> List[str]:
         if not _nonempty_str(path):
             fails.append(f"AF-LAUNCH-PKG-RECEIPT-ARTIFACT: {label} artifacts[{index}].path is missing")
             continue
-        if not isinstance(digest, str) or not _SHA256_RE.match(digest):
+        if not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
             fails.append(f"AF-LAUNCH-PKG-RECEIPT-ARTIFACT: {label} artifacts[{index}].sha256 "
                          f"is not 64 lowercase hex")
             continue
@@ -918,7 +918,7 @@ def _receipt_violations(manifest: Dict[str, Any], manifest_path: Path,
             fails.append(f"AF-LAUNCH-PKG-RECEIPT-BINDING: receipt {key} "
                          f"{receipt.get(key)!r} is not the manifest's {manifest.get(key)!r}")
     approved = receipt.get("approved_plan_hash")
-    if not isinstance(approved, str) or not _SHA256_RE.match(approved):
+    if not isinstance(approved, str) or not _SHA256_RE.fullmatch(approved):
         fails.append("AF-LAUNCH-PKG-RECEIPT-BINDING: approved_plan_hash is not a sha256")
     elif approved != manifest.get("approved_plan_hash"):
         fails.append("AF-LAUNCH-PKG-RECEIPT-BINDING: approved_plan_hash is not the "

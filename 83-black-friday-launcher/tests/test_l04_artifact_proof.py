@@ -134,9 +134,15 @@ class _RunFixture(unittest.TestCase):
     plan: dict | None = None
 
     def setUp(self):
+        from test_delivery_units import install_stand_in_validator
+        install_stand_in_validator(self)  # Skill 83 re-runs Skill 50's validator on every email unit
         self.tmp = tempfile.TemporaryDirectory()
         self.run_dir = Path(self.tmp.name) / "run"
-        self.payload = base_intake()
+        if self.plan:
+            from test_launch_plan_law import plan_intake
+            self.payload = plan_intake()  # a full launch: the route carries every page of the plan
+        else:
+            self.payload = base_intake()
         self.normalized = intake.validate(self.payload)
         self.advice = council.planning_step(self.normalized, runner=stub_council)
         self.graph = route.compile_route(self.normalized)
@@ -152,6 +158,8 @@ class _RunFixture(unittest.TestCase):
             plan = self.plan
         kwargs = {"council": self.advice}
         if plan is not None:
+            from test_delivery_units import with_sales_piece
+            pieces = with_sales_piece(pieces or self.pieces, self.run_dir, self.normalized)  # page_sales
             kwargs["launch_plan"] = plan
             if deliveries is _UNSET:
                 plan_sha = hashlib.sha256(
