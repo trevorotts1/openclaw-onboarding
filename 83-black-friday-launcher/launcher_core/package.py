@@ -804,8 +804,15 @@ def _receipts_module():
                                         "launcher_collect_launch_receipts")
 
 
+def _read_json_or_none(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
 def _bind_piece(binding: Dict[str, Any], raw: Any, request_role: str, slot: str,
-                extra: bool) -> None:
+                extra: bool, test_only: bool) -> None:
     """One piece is the dispatch's own answer to its own request, not a hand-written file."""
     if not isinstance(raw, dict):
         return  # _validate_piece names the shape fault
@@ -827,12 +834,19 @@ def _bind_piece(binding: Dict[str, Any], raw: Any, request_role: str, slot: str,
     stored_request = dict(request["stored"])
     if extra and raw.get("page_id") != stored_request.get("page_id"):
         stored_request.pop("page_id", None)  # a slot page rides on its parent's request
-    fails = _receipts_module().validate_result(raw, stored_request)
+    # Issue 30 / M2: a package for a client (a non-test intake) is judged at the client_delivery
+    # scope, which refuses any page without an accepted independent review record staged beside
+    # the dispatch's stored result (review-<slot>.json, reviewer in dispatch-session-registry.json).
+    receipts = _receipts_module()
+    dispatch_dir = binding["root"] / "dispatch"
+    fails = receipts.validate_result(
+        raw, stored_request, scope="rehearsal" if test_only else "client_delivery",
+        ledger=_read_json_or_none(dispatch_dir / "dispatch-session-registry.json"),
+        review=_read_json_or_none(dispatch_dir / f"review-{slot}.json"))
     if fails:
         raise PackageError("AF-LAUNCH-PKG-ECHO",
                            f"{slot}: the result does not echo its dispatched request: "
                            + "; ".join(fails))
-    dispatch_dir = binding["root"] / "dispatch"
     names = ([f"page-result-{slot}.json", f"result-{request_role}.json"] if extra
              else [f"result-{request_role}.json"])
     stored_path = next((dispatch_dir / n for n in names if (dispatch_dir / n).is_file()), None)
@@ -1427,7 +1441,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                                f"route node {node['role']} has no delivered piece")
         ordered.append(_validate_piece(piece, node, intake, source_root))
         if binding is not None:
-            _bind_piece(binding, piece, node["role"], node["role"], False)
+            _bind_piece(binding, piece, node["role"], node["role"], False, test_only)
     if landing_pages and set(landing_pages) == {"landing", "sales"} and "sales" not in pieces:
         raise PackageError("AF-LAUNCH-PKG-MISSING",
                            "the client's plan has both landing pages but no signature sales page piece "
@@ -1443,7 +1457,7 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                 "page_id": route_module.route_law._page_id(intake["launch_id"], slot)}
         ordered.append(_validate_piece(pieces[slot], node, intake, source_root))
         if binding is not None:
-            _bind_piece(binding, pieces[slot], parent, slot, True)
+            _bind_piece(binding, pieces[slot], parent, slot, True, test_only)
 
     bridge_files: List[Tuple[Path, bytes]] = []
     if binding is not None:

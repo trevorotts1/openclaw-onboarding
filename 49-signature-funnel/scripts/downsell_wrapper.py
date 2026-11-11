@@ -123,6 +123,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import page_set  # noqa: E402  the shared image inputs and the page's full deliverables list
+from collect_launch_receipts import LEDGER_NAME, apply_review  # noqa: E402  issue 30: REVIEW-PENDING
 
 EXIT_OK = 0
 EXIT_FAILCLOSED = 2
@@ -465,7 +466,8 @@ def _load_receipts_validator():
                   "dispatch tree")
 
 
-def _validate_result(result: Dict[str, Any], request: Mapping[str, Any]):
+def _validate_result(result: Dict[str, Any], request: Mapping[str, Any],
+                     **review_kw: Any):
     """Validate the assembled page-result before placement. Returns the
     validation mode that actually ran; raises WrapperError on any
     failure, so an invalid result is never placed."""
@@ -479,7 +481,7 @@ def _validate_result(result: Dict[str, Any], request: Mapping[str, Any]):
              "page-result 1.0 schema: " + "; ".join(problems)])
     validator, unavailable = _load_receipts_validator()
     if validator is not None:
-        fails = validator(result, dict(request))
+        fails = validator(result, dict(request), **review_kw)
         if fails:
             raise WrapperError(
                 ["page-result: the assembled result failed S49 receipt "
@@ -1090,7 +1092,8 @@ def _run_second_downsell(args, request: Dict[str, Any], result_path: Path,
         "reviewer_session": None, "independent_review": False, "proof_class": "L0",
         "blockers": list(SECOND_DOWNSELL_BLOCKERS), "native_bindings_ref": None,
         "test_only": request["test_only"]}
-    mode = _validate_result(result, request)
+    accepted = apply_review(result, getattr(args, "review", None), work_dir / LEDGER_NAME)
+    mode = _validate_result(result, request, **(accepted or {}))
     result_path.parent.mkdir(parents=True, exist_ok=True)
     result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return {"role": ROLE, "role_instance": "downsell_2", "request_id": request["request_id"],
@@ -1347,18 +1350,24 @@ def run(args) -> Dict[str, Any]:
         "request_id": request["request_id"],
         "input_hash": request["input_hash"],
         "page_id": request["page_id"],
-        "status": STATUS_CAP if verified else STATUS_FLOOR,
+        "status": STATUS_FLOOR,
         "artifacts": artifacts,
         "author_session": author_session,
         "reviewer_session": None,
         "independent_review": False,
-        "proof_class": PROOF_CAP if verified else PROOF_FLOOR,
+        "proof_class": PROOF_FLOOR,
         "blockers": blockers,
         "native_bindings_ref": None,
         "test_only": request["test_only"],
     }
+    # Issue 30: the cap needs both the real-provider stage records AND an
+    # accepted independent review; without the review the page stays authored
+    # and carries REVIEW-PENDING.
+    accepted = apply_review(result, args.review, work_dir / LEDGER_NAME)
+    if accepted and verified:
+        result["status"], result["proof_class"] = STATUS_CAP, PROOF_CAP
     projected = {f: result[f] for f in RESULT_FIELDS}
-    mode = _validate_result(projected, request)
+    mode = _validate_result(projected, request, **(accepted or {}))
     result_path.parent.mkdir(parents=True, exist_ok=True)
     result_path.write_text(json.dumps(projected, indent=2) + "\n",
                            encoding="utf-8")
@@ -1487,6 +1496,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--images-run-dir",
                     help="where the image run is staged (default "
                          "<work_dir>/downsell_1-images)")
+    ap.add_argument("--review",
+                    help="independent review record JSON (review_record "
+                         "schema); the reviewer must be in "
+                         "<work_dir>/dispatch-session-registry.json. Without "
+                         "an accepted record the page-result stays authored "
+                         "with a REVIEW-PENDING blocker")
     ap.add_argument("--author-session",
                     help="the dispatch run's session identity (the "
                          "page-result author); falls back to "

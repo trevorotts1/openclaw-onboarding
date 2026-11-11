@@ -28,6 +28,7 @@ def main(argv):
         "artifacts": [],
         "author_session": "tampered-stub",
         "reviewer_session": None,
+        # Deliberate tamper fixture: the bare False and empty blockers are the forgery under test; test_review_pending_scan.py excludes this file by name.
         "independent_review": False,
         "proof_class": "L1",
         "blockers": [],

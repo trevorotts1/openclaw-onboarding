@@ -809,46 +809,205 @@ class DownsellEntryGuardAndHashTests(unittest.TestCase):
 
 
 class DownsellHonestStatusTests(unittest.TestCase):
-    """DTY-14: L2 only for three real-provider stage records."""
+    """DTY-14: L2 only for three real-provider stage records.
+    Issue 30: and only with an accepted independent review record."""
 
-    def run_main(self, provider):
-        paths = stage(_request(None))
+    def run_main(self, provider, review=None, ledger=None, paths=None):
+        paths = paths or stage(_request(None))
+        if ledger is not None:
+            (paths["workdir"] / "dispatch-session-registry.json").write_text(
+                json.dumps(ledger))
         stages = {s: {"images": 8} for s in dw.IMAGES_RUN_STAGES}
         original = dw._run_images
         dw._run_images = lambda *a, **k: {
             "run_dir": str(paths["workdir"]), "artifacts": [],
             "stages": stages}
+        argv = [
+            "--request", str(paths["request-downsell_1.json"]),
+            "--result", str(paths["result"]),
+            "--launch", str(paths["launch.json"]),
+            "--route-graph", str(paths["route-graph.json"]),
+            "--copy", str(paths["copy-downsell_1.json"]),
+            "--enrichment", str(paths["enrichment-downsell_1.json"]),
+            "--extension", str(paths["extension-downsell_1.json"]),
+            "--skill81-root", str(SKILL81),
+            "--skill71-root", str(SKILL71),
+            "--image-provider", provider, "--allow-paid"]
+        if review is not None:
+            argv += ["--review", str(review)]
         try:
-            code = dw.main([
-                "--request", str(paths["request-downsell_1.json"]),
-                "--result", str(paths["result"]),
-                "--launch", str(paths["launch.json"]),
-                "--route-graph", str(paths["route-graph.json"]),
-                "--copy", str(paths["copy-downsell_1.json"]),
-                "--enrichment", str(paths["enrichment-downsell_1.json"]),
-                "--extension", str(paths["extension-downsell_1.json"]),
-                "--skill81-root", str(SKILL81),
-                "--skill71-root", str(SKILL71),
-                "--image-provider", provider, "--allow-paid"])
+            code = dw.main(argv)
         finally:
             dw._run_images = original
-        return code, json.loads(paths["result"].read_text())
+        return code, json.loads(paths["result"].read_text()), paths
 
-    def test_three_stage_records_and_a_real_provider_reach_l2(self):
-        code, result = self.run_main("kie")
+    def review_for(self, paths, result, **over):
+        record = {"schema": "signature-launch-review-record/v1",
+                  "reviewer_session": "TEST-REVIEWER", "reviewer_model": "m",
+                  "verdict": "PASS", "request_id": result["request_id"],
+                  "reviewed_artifacts": [
+                      {"path": a["path"], "sha256": a["sha256"]}
+                      for a in result["artifacts"]]}
+        record.update(over)
+        path = paths["workdir"] / "review.json"
+        path.write_text(json.dumps(record))
+        return path
+
+    LEDGER = {"sessions": [{"session_id": "TEST-REVIEWER", "model": "m"}]}
+
+    def test_a_real_provider_without_a_review_stays_authored_and_review_pending(self):
+        code, result, _ = self.run_main("kie")
+        self.assertEqual(code, 0)
+        self.assertEqual((result["status"], result["proof_class"]),
+                         ("authored", "L1"))
+        self.assertIs(result["independent_review"], False)
+        self.assertTrue(any(b.startswith("REVIEW-PENDING")
+                            for b in result["blockers"]))
+
+    def test_three_stage_records_a_real_provider_and_a_review_reach_l2(self):
+        _, first, paths = self.run_main("kie")
+        review = self.review_for(paths, first)
+        code, result, _ = self.run_main("kie", review, self.LEDGER, paths)
         self.assertEqual(code, 0)
         self.assertEqual((result["status"], result["proof_class"]),
                          ("locally_verified", "L2"))
-        self.assertFalse(any(b.startswith("D1-STUB-IMAGES")
+        self.assertIs(result["independent_review"], True)
+        self.assertEqual(result["reviewer_session"], "TEST-REVIEWER")
+        self.assertFalse(any(b.startswith(("D1-STUB-IMAGES", "REVIEW-PENDING"))
                              for b in result["blockers"]))
 
+    def test_a_record_for_other_bytes_is_refused_naming_the_artifact_paths(self):
+        _, first, paths = self.run_main("kie")
+        stale = [{"path": a["path"], "sha256": "0" * 64} for a in first["artifacts"]]
+        review = self.review_for(paths, first, reviewed_artifacts=stale)
+        _, result, _ = self.run_main("kie", review, self.LEDGER, paths)
+        self.assertIs(result["independent_review"], False)
+        self.assertEqual(result["status"], "authored")
+        pending = [b for b in result["blockers"] if b.startswith("REVIEW-PENDING")]
+        self.assertTrue(pending and "was not listed as reviewed" in pending[0], result["blockers"])
+        self.assertIn(first["artifacts"][0]["path"], pending[0])
+
+    def test_a_failed_or_authored_by_the_reviewer_review_is_refused(self):
+        _, first, paths = self.run_main("kie")
+        for over, why in ((dict(verdict="FAIL"), "no recognised successful verdict"),
+                          (dict(reviewer_session="s49-downsell-wrapper"), "reviewer == author")):
+            review = self.review_for(paths, first, **over)
+            ledger = {"sessions": [{"session_id": over.get("reviewer_session", "TEST-REVIEWER"),
+                                    "model": "m"}]}
+            _, result, _ = self.run_main("kie", review, ledger, paths)
+            self.assertIs(result["independent_review"], False, why)
+            self.assertEqual(result["status"], "authored")
+            self.assertTrue(any(b.startswith("REVIEW-PENDING") and why in b
+                                for b in result["blockers"]), (why, result["blockers"]))
+
+    def test_an_accepted_review_does_not_lift_a_stub_provider_page_above_l1(self):
+        _, first, paths = self.run_main("stub")
+        review = self.review_for(paths, first)
+        code, result, _ = self.run_main("stub", review, self.LEDGER, paths)
+        self.assertEqual(code, 0)
+        self.assertIs(result["independent_review"], True)
+        self.assertEqual((result["status"], result["proof_class"]), ("authored", "L1"))
+        self.assertTrue(any(b.startswith("D1-STUB-IMAGES") for b in result["blockers"]))
+
     def test_stub_provider_stays_authored_with_the_blocker(self):
-        code, result = self.run_main("stub")
+        code, result, _ = self.run_main("stub")
         self.assertEqual(code, 0)
         self.assertEqual((result["status"], result["proof_class"]),
                          ("authored", "L1"))
         self.assertTrue(any(b.startswith("D1-STUB-IMAGES")
                             for b in result["blockers"]))
+
+
+class SecondDownsellReviewTests(unittest.TestCase):
+    """Issue 30 on the downsell_2 path: it runs apply_review too. It stays
+    authored / L0 either way; only an accepted review sets independent_review."""
+
+    def run_d2(self, review=None, ledger=None, paths=None):
+        paths = paths or stage(_request(None))
+        if ledger is not None:
+            (paths["workdir"] / "dispatch-session-registry.json").write_text(
+                json.dumps(ledger))
+        original = dw._run_images
+        dw._run_images = lambda *a, **k: {
+            "run_dir": str(paths["workdir"]), "artifacts": [],
+            "stages": {s: {"images": 8} for s in dw.IMAGES_RUN_STAGES}}
+        argv = [
+            "--request", str(paths["request-downsell_1.json"]),
+            "--result", str(paths["result"]),
+            "--launch", str(paths["launch.json"]),
+            "--route-graph", str(paths["route-graph.json"]),
+            "--copy", str(paths["copy-downsell_1.json"]),
+            "--skill81-root", str(SKILL81), "--skill71-root", str(SKILL71),
+            "--role-instance", "downsell_2"]
+        if review is not None:
+            argv += ["--review", str(review)]
+        try:
+            code = dw.main(argv)
+        finally:
+            dw._run_images = original
+        return code, json.loads(paths["result"].read_text()), paths
+
+    def review_for(self, paths, result, **over):
+        record = {"schema": "signature-launch-review-record/v1",
+                  "reviewer_session": "TEST-REVIEWER", "reviewer_model": "m",
+                  "verdict": "PASS", "request_id": result["request_id"],
+                  "reviewed_artifacts": [
+                      {"path": a["path"], "sha256": a["sha256"]}
+                      for a in result["artifacts"]]}
+        record.update(over)
+        path = paths["workdir"] / "review.json"
+        path.write_text(json.dumps(record))
+        return path
+
+    LEDGER = {"sessions": [{"session_id": "TEST-REVIEWER", "model": "m"}]}
+
+    def test_without_a_review_downsell_2_carries_review_pending(self):
+        code, result, _ = self.run_d2()
+        self.assertEqual(code, 0)
+        self.assertEqual((result["status"], result["proof_class"]), ("authored", "L0"))
+        self.assertIs(result["independent_review"], False)
+        self.assertIsNone(result["reviewer_session"])
+        self.assertTrue(any(b.startswith("REVIEW-PENDING") for b in result["blockers"]),
+                        result["blockers"])
+
+    def test_with_an_accepted_review_downsell_2_records_the_reviewer(self):
+        _, first, paths = self.run_d2()
+        review = self.review_for(paths, first)
+        code, result, _ = self.run_d2(review, self.LEDGER, paths)
+        self.assertEqual(code, 0)
+        self.assertIs(result["independent_review"], True)
+        self.assertEqual(result["reviewer_session"], "TEST-REVIEWER")
+        self.assertEqual((result["status"], result["proof_class"]), ("authored", "L0"))
+        self.assertFalse(any(b.startswith("REVIEW-PENDING") for b in result["blockers"]))
+
+    def test_a_failed_review_leaves_downsell_2_review_pending(self):
+        _, first, paths = self.run_d2()
+        review = self.review_for(paths, first, verdict="FAIL")
+        _, result, _ = self.run_d2(review, self.LEDGER, paths)
+        self.assertIs(result["independent_review"], False)
+        self.assertTrue(any(b.startswith("REVIEW-PENDING") for b in result["blockers"]))
+
+
+class ThankYouTranslatorRunsInCiTests(unittest.TestCase):
+    """Issue 65: the CI job that runs this file also runs the thank-you
+    translator suite, installs the jsonschema it needs, and triggers on the
+    82 and shared-utils paths. Text checks (the CI python has no yaml)."""
+
+    WORKFLOW = (pathlib.Path(__file__).resolve().parents[2] / ".github" / "workflows"
+                / "downsell-wrapper-pins.yml")
+
+    def test_the_translator_suite_is_a_step_of_the_job(self):
+        text = self.WORKFLOW.read_text(encoding="utf-8")
+        self.assertRegex(text, r"(?m)^\s+run: python3 49-signature-funnel/scripts/test_thankyou_translator\.py\s*$")
+        self.assertRegex(text, r"(?m)^\s+run: python -m pip install [^\n]*\bjsonschema==")
+
+    def test_82_and_the_shared_contract_trigger_the_job(self):
+        text = self.WORKFLOW.read_text(encoding="utf-8")
+        blocks = {"push": text.split("\n  push:", 1)[1].split("\n  pull_request:", 1)[0],
+                  "pull_request": text.split("\n  pull_request:", 1)[1].split("\n  workflow_dispatch:", 1)[0]}
+        for event, block in blocks.items():
+            for path in ("82-signature-thank-you/**", "shared-utils/signature_launch_contract/**"):
+                self.assertIn(f'"{path}"', block, (event, path))
 
 
 class DownsellPinTests(unittest.TestCase):

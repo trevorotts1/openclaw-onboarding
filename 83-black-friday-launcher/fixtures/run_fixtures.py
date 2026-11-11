@@ -127,7 +127,7 @@ def write_piece_artifacts(out_dir: Path, plan: Dict[str, Any],
             "independent_review": False,
             "test_only": True,
             "native_bindings_ref": None,
-            "blockers": [],
+            "blockers": ["REVIEW-PENDING: offline fixture result, never reviewed"],
             "artifacts": [{"path": str(target), "sha256": sha256_file(target)}],
         }
     return pieces

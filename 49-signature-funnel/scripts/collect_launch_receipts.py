@@ -172,6 +172,61 @@ def validate_result(res: Any, request: Optional[Dict[str, Any]], *,
     return fails
 
 
+#: Issue 30. Every wrapper that cannot prove a review stamps this blocker and
+#: keeps its status at "authored"; the client_delivery scope then refuses it.
+REVIEW_PENDING = "REVIEW-PENDING"
+LEDGER_NAME = "dispatch-session-registry.json"
+
+
+def apply_review(result: Dict[str, Any], review_path: Any = None,
+                 ledger_path: Any = None) -> Optional[Dict[str, Any]]:
+    """Make a wrapper's page-result honest about its review (mutates `result`).
+
+    A supplied review record that review_record accepts (recognised verdict,
+    reviewer in the dispatch ledger and not the author, every artifact sha256
+    listed) sets independent_review true and the reviewer session. Anything
+    else (no record, unreadable, refused) leaves independent_review false,
+    drops the status to "authored" and appends a REVIEW-PENDING blocker that
+    names the reason. Returns the ledger/review keywords validate_result needs
+    to re-check the claim when the review was accepted, else None."""
+    why = "no review record was supplied (pass --review <record.json>)"
+    if review_path:
+        try:
+            review = json.loads(Path(review_path).read_text(encoding="utf-8"))
+            ledger = json.loads(Path(ledger_path).read_text(encoding="utf-8")) \
+                if ledger_path else None
+            if not isinstance(review, dict):
+                raise ValueError("the review record is not an object")
+        except (OSError, ValueError) as exc:
+            why = f"the review record or dispatch ledger is unreadable ({exc})"
+        else:
+            candidate = dict(result, independent_review=True,
+                             reviewer_session=review.get("reviewer_session"))
+            fails = validate_result(candidate, None, ledger=ledger,
+                                    review=review)
+            if not fails:
+                result["independent_review"] = True
+                result["reviewer_session"] = review["reviewer_session"]
+                return {"ledger": ledger, "review": review}
+            why = "the review record was refused: " + "; ".join(fails)
+            listed = {a.get("sha256") for a in review.get("reviewed_artifacts") or []
+                      if isinstance(a, dict)}
+            stale = [str(a.get("path")) for a in result.get("artifacts") or []
+                     if isinstance(a, dict) and a.get("sha256") not in listed]
+            if stale:  # a record is valid only for the exact bytes of the run that receives it
+                why += ("; artifact path(s) whose sha256 the record does not list: "
+                        + ", ".join(stale[:10]) + (" ..." if len(stale) > 10 else ""))
+    result["independent_review"] = False
+    result["reviewer_session"] = None
+    result["status"] = "authored"
+    if result.get("proof_class") in LEVELS[2:]:
+        result["proof_class"] = "L1"
+    result["blockers"] = list(result.get("blockers") or []) + [
+        f"{REVIEW_PENDING}: {why}; the page stays authored and a client "
+        "delivery refuses it"]
+    return None
+
+
 # --- PP-T3 (Q11) prompt-item asset receipts -------------------------------
 # A prompt item closes only through an asset receipt satisfying S49's
 # filed Q11 acceptance rules (prompt-policy answers, section 1) and the

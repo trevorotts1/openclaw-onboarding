@@ -55,7 +55,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from collect_launch_receipts import validate_result  # noqa: E402
+from collect_launch_receipts import LEDGER_NAME, apply_review, validate_result  # noqa: E402
 import page_set  # noqa: E402  the shared image inputs and the page's full deliverables list
 
 EXIT_OK, EXIT_FAILCLOSED, EXIT_USAGE = 0, 2, 3
@@ -369,6 +369,8 @@ def main(argv=None) -> int:
     ap.add_argument("--model", help="image model id (default: build_production_request.py's)")
     ap.add_argument("--provider", choices=("stub", "kie"), default="stub")
     ap.add_argument("--allow-paid", action="store_true")
+    ap.add_argument("--review", help="independent review record JSON; without an accepted one the result carries "
+                                     "a REVIEW-PENDING blocker (reviewer must be in <request dir>/" + LEDGER_NAME + ")")
     ap.add_argument("--author-session", default=os.environ.get("SIGNATURE_LAUNCH_AUTHOR_SESSION")
                     or os.environ.get("OPENCLAW_SESSION_ID") or "s49-checkout-wrapper")
     try:
@@ -397,7 +399,8 @@ def main(argv=None) -> int:
                   "status": "authored", "artifacts": made["artifacts"], "author_session": args.author_session,
                   "reviewer_session": None, "independent_review": False, "proof_class": "L0",
                   "blockers": made["blockers"], "native_bindings_ref": None, "test_only": request["test_only"]}
-        fails = validate_result(result, request)
+        accepted = apply_review(result, args.review, Path(args.request).resolve().parent / LEDGER_NAME)
+        fails = validate_result(result, request, **(accepted or {}))
         if fails:
             raise WrapperError("page-result failed receipt validation: " + "; ".join(fails))
     except (WrapperError, page_set.PageSetError, OSError, KeyError) as exc:

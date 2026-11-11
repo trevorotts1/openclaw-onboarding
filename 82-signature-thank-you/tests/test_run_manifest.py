@@ -55,7 +55,7 @@ PROVENANCE_KEYS = {"snapshot_ref", "map_ref"}
 RECORDED_REVIEW = {
     "status": "recorded",
     "reviewer": "TEST-REVIEWER",
-    "verdict": "verified",
+    "verdict": "PASS",
     "record_ref": "TEST-ONLY review record",
 }
 
@@ -263,6 +263,46 @@ class RunManifestTests(unittest.TestCase):
             ghost = copy.deepcopy(none_case)
             ghost["independent_review"]["reviewer"] = "GHOST"
             jsonschema.validate(ghost, schema)
+
+    def test_the_schema_verdict_is_only_pass_fail_or_null(self):
+        """Issue 63: the verdict is PASS, FAIL or null. Anything else (a
+        free-text 'verified', 'looks fine', a lower-case 'pass') is refused,
+        at both places the schema states it."""
+        try:
+            import jsonschema
+        except ImportError:
+            self.skipTest("jsonschema not available")
+        with open(os.path.join(ROOT, "schemas",
+                               "run-manifest.schema.json"),
+                  encoding="utf-8") as fh:
+            schema = json.load(fh)
+        base = build_run_manifest(self.view, self.snapshot, self.fulfillment)
+
+        def accepts(status, verdict):
+            doc = copy.deepcopy(base)
+            doc["independent_review"] = {
+                "status": status, "verdict": verdict,
+                "reviewer": None if status == "none" else "TEST-REVIEWER",
+                "record_ref": None if status == "none" else "TEST-ONLY record"}
+            return jsonschema.Draft202012Validator(schema).is_valid(doc)
+
+        self.assertTrue(accepts("none", None))
+        self.assertTrue(accepts("recorded", "PASS"))
+        self.assertTrue(accepts("recorded", "FAIL"))
+        for bad in ("verified", "looks fine", "pass", "fail", "", 1):
+            self.assertFalse(accepts("recorded", bad), bad)
+            self.assertFalse(accepts("none", bad), bad)
+        self.assertFalse(accepts("recorded", None))
+        self.assertFalse(accepts("none", "PASS"))
+        self.assertFalse(accepts("pending", None))
+        # the verdict property on its own (outside the status branches)
+        verdict = schema["properties"]["independent_review"]["properties"]["verdict"]
+        v = jsonschema.Draft202012Validator(verdict)
+        self.assertEqual(sorted(str(x) for x in verdict["enum"]), ["FAIL", "None", "PASS"])
+        for good in ("PASS", "FAIL", None):
+            self.assertTrue(v.is_valid(good), good)
+        for bad in ("verified", "looks fine", "pass"):
+            self.assertFalse(v.is_valid(bad), bad)
 
     # --- CLI ------------------------------------------------------------
 

@@ -8,6 +8,9 @@ name: downsell-wrapper-pins
 # This job runs the suite on every change to either side of the pin. The control
 # step first proves the pin test turns red on a one-byte change, so a green here
 # is never vacuous. Pin changes also need code-owner review (.github/CODEOWNERS).
+# Issue 65 (WP-08a): the same job also runs the thank-you translator suite
+# (49-signature-funnel/scripts/test_thankyou_translator.py), which nothing in CI ran before; it needs
+# jsonschema. The launch-family-seams workflow (M3) lists it as well once it lands.
 # The suite needs pytest and pillow (Skill 71 circle_image, imported by the shared image service). No GitHub event field
 # reaches a run: block.
 
@@ -17,6 +20,8 @@ on:
     paths:
       - "49-signature-funnel/scripts/**"
       - "81-signature-downsell/**"
+      - "82-signature-thank-you/**"
+      - "shared-utils/signature_launch_contract/**"
       - "71-blackceo-signature-page/**"
       - ".github/workflows/downsell-wrapper-pins.yml"
       - ".github/CODEOWNERS"
@@ -25,6 +30,8 @@ on:
     paths:
       - "49-signature-funnel/scripts/**"
       - "81-signature-downsell/**"
+      - "82-signature-thank-you/**"
+      - "shared-utils/signature_launch_contract/**"
       - "71-blackceo-signature-page/**"
       - ".github/workflows/downsell-wrapper-pins.yml"
       - ".github/CODEOWNERS"
@@ -47,7 +54,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install pytest and pillow
-        run: python -m pip install pytest pillow==10.4.0
+        run: python -m pip install pytest pillow==10.4.0 jsonschema==4.10.3
       - name: Control - one changed byte of validate_downsell.py must turn the pin test red
         shell: bash
         run: |
@@ -65,3 +72,5 @@ jobs:
           echo "control: tampered validator turned the pin test red (exit 1)"
       - name: D1 wrapper suite (pins equal sha256 of the Skill 81 files)
         run: python3 -m pytest 49-signature-funnel/scripts/test_downsell_wrapper.py -q
+      - name: Thank-you translator suite (issues 63 and 65)
+        run: python3 49-signature-funnel/scripts/test_thankyou_translator.py

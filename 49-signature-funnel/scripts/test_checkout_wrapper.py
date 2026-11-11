@@ -99,6 +99,7 @@ class TestEndToEnd(CheckoutWrapperCase):
         self.assertEqual((result["status"], result["proof_class"]), ("authored", "L0"))
         self.assertIsNone(result["native_bindings_ref"])
         self.assertFalse(result["independent_review"])
+        self.assertTrue(any(b.startswith("REVIEW-PENDING") for b in result["blockers"]))  # issue 30
         self.assertTrue(any("Skill 06" in b for b in result["blockers"]))
         self.assertTrue(any("stub provider" in b for b in result["blockers"]))
         intake = json.loads((self.run_dir / "intake.json").read_text(encoding="utf-8"))
@@ -117,6 +118,52 @@ class TestEndToEnd(CheckoutWrapperCase):
             self.assertEqual(built["page_role"], "checkout")
         for a in result["artifacts"]:
             self.assertEqual(hashlib.sha256(Path(a["path"]).read_bytes()).hexdigest(), a["sha256"])
+
+
+class TestReview(CheckoutWrapperCase):
+    """Issue 30: --review turns REVIEW-PENDING into a recorded independent review, or leaves it pending."""
+
+    def review_run(self, **over):
+        """Run the wrapper in-process over fixed artifacts (a real re-run rewrites the stage-executor
+        records' timestamps), then again with --review."""
+        art = self.td / "design.txt"
+        art.write_text("fixed design bytes", encoding="utf-8")
+        made = {"artifacts": [{"path": str(art), "sha256": hashlib.sha256(art.read_bytes()).hexdigest()}],
+                "blockers": ["the native checkout form is installed by Skill 06"]}
+        record = {"schema": "signature-launch-review-record/v1", "reviewer_session": "TEST-REVIEWER",
+                  "reviewer_model": "m", "verdict": "PASS", "request_id": self.request["request_id"],
+                  "reviewed_artifacts": list(made["artifacts"])}
+        record.update(over)
+        (self.td / "review.json").write_text(json.dumps(record), encoding="utf-8")
+        (self.td / "dispatch-session-registry.json").write_text(
+            json.dumps({"sessions": [{"session_id": "TEST-REVIEWER", "model": "m"}]}), encoding="utf-8")
+        argv = ["--request", str(self.request_path), "--result", str(self.result_path),
+                "--manuscript", str(MANUSCRIPT), "--launch", str(self.launch_path),
+                "--route-graph", str(self.graph_path), "--brand-file", str(self.brand_path),
+                "--brand-owner", "blackceo", "--image-cap", "2", "--run-dir", str(self.run_dir),
+                "--review", str(self.td / "review.json")]
+        with mock.patch.object(cw, "produce", return_value=made), mock.patch("sys.stdout"):
+            self.assertEqual(cw.main(argv), 0)
+        return json.loads(self.result_path.read_text(encoding="utf-8"))
+
+    def test_a_passing_review_record_is_recorded(self):
+        result = self.review_run()
+        self.assertTrue(result["independent_review"], result["blockers"])
+        self.assertEqual(result["reviewer_session"], "TEST-REVIEWER")
+        self.assertFalse(any(b.startswith("REVIEW-PENDING") for b in result["blockers"]))
+
+    def test_a_record_for_other_bytes_stays_pending_naming_the_artifact_path(self):
+        result = self.review_run(reviewed_artifacts=[{"path": "design.txt", "sha256": "0" * 64}])
+        self.assertFalse(result["independent_review"])
+        self.assertEqual(result["status"], "authored")
+        self.assertTrue(any(b.startswith("REVIEW-PENDING") and "was not listed as reviewed" in b
+                            and "design.txt" in b for b in result["blockers"]), result["blockers"])
+
+    def test_a_failing_review_record_stays_pending(self):
+        result = self.review_run(verdict="FAIL")
+        self.assertFalse(result["independent_review"])
+        self.assertIsNone(result["reviewer_session"])
+        self.assertTrue(any(b.startswith("REVIEW-PENDING") and "verdict" in b for b in result["blockers"]))
 
 
 class TestFailClosed(CheckoutWrapperCase):

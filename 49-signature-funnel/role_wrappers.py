@@ -253,8 +253,8 @@ def is_simulated_result(result: Any) -> bool:
 
     Two shapes are refused: a result explicitly marked ``simulated`` or
     ``stub``, and the exact ``dispatch_launch._simulated_executor`` shape
-    (status authored, zero artifacts, no native bindings, L0, no blockers,
-    test_only). Both carry no delivery — a wrapper consumes actual results
+    (status authored, zero artifacts, no native bindings, L0, no blockers
+    but REVIEW-PENDING, test_only). Both carry no delivery — a wrapper consumes actual results
     only, so either is refused by name rather than dressed up as one.
     """
     if not isinstance(result, dict):
@@ -265,7 +265,8 @@ def is_simulated_result(result: Any) -> bool:
             and result.get("artifacts") == []
             and result.get("native_bindings_ref") is None
             and result.get("proof_class") == "L0"
-            and result.get("blockers") == []
+            and all(str(b).startswith("REVIEW-PENDING")
+                    for b in result.get("blockers") or [])
             and result.get("independent_review") is False
             and result.get("test_only") is True)
 
@@ -608,7 +609,8 @@ def _result(req: Dict[str, Any], **over: Any) -> Dict[str, Any]:
         "artifacts": [{"path": f"{req['page_id']}/desktop-wireframe.pdf",
                        "sha256": "d" * 64}],
         "author_session": "sess-author", "reviewer_session": None,
-        "independent_review": False, "proof_class": "L2", "blockers": [],
+        "independent_review": False, "proof_class": "L2",
+        "blockers": ["REVIEW-PENDING: fixture result, never reviewed"],
         "native_bindings_ref": "nbind-9", "test_only": req["test_only"],
     }
     res.update(over)
@@ -623,7 +625,8 @@ def _simulated(req: Dict[str, Any]) -> Dict[str, Any]:
             "input_hash": req["input_hash"], "page_id": req["page_id"],
             "status": "authored", "artifacts": [],
             "author_session": "sess-sim", "reviewer_session": None,
-            "independent_review": False, "proof_class": "L0", "blockers": [],
+            "independent_review": False, "proof_class": "L0",
+            "blockers": ["REVIEW-PENDING: simulated result, never reviewed"],
             "native_bindings_ref": None, "test_only": True}
 
 
@@ -702,6 +705,15 @@ def _self_check() -> None:
         "explicitly marked simulated result detected")
     _ck(is_simulated_result(_result(req, stub=True)) is True,
         "explicitly marked stub result detected")
+    # issue 30: the double's REVIEW-PENDING blocker is part of its shape, nothing else is
+    _ck(is_simulated_result(dict(sim, blockers=[])) is True,
+        "the double with no blockers at all is still detected")
+    _ck(is_simulated_result(dict(sim, blockers=["REVIEW-PENDING: a", "REVIEW-PENDING: b"])) is True,
+        "the double with only REVIEW-PENDING blockers is detected")
+    _ck(is_simulated_result(dict(sim, blockers=["SOMETHING-ELSE"])) is False,
+        "a double that carries another blocker is a real result, not a stub")
+    _ck(is_simulated_result(dict(sim, blockers=["REVIEW-PENDING: a", "SOMETHING-ELSE"])) is False,
+        "one foreign blocker beside REVIEW-PENDING is enough to say it is not the double")
 
     def refuses(fn, label):
         try:
