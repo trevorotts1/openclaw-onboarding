@@ -133,8 +133,8 @@ ADAPTERS: Dict[str, Dict[str, Any]] = {
         ),
         "timeout_s": 600,
         "note": ("design-only at launch: 71 shared_page_service + run_page_role_stages "
-                 "draw the page, then the translator runs with --design-only (no S82 "
-                 "result or manifest exists before a sale)"),
+                 "(with --no-pitch-scan, Skill 82's semantic_scan.py) draw the page, then the "
+                 "translator runs with --design-only (no S82 result or manifest exists before a sale)"),
     },
 }
 
@@ -438,6 +438,25 @@ def _check_program(key: str, argv: List[str], tables: tuple) -> None:
             except ValueError as exc:
                 raise AdapterNotAllowed(f"adapter not in allow-list: {key}: unreadable --pipeline-command ({exc})")
             _check_program(key, inner, (PIPELINE_WRAPPERS,))
+            _check_no_pitch_scanner(key, inner)
+
+
+# The no-pitch scanner a thank-you pipeline may name (AF-71-THANK-YOU-PITCH): Skill 82's own script, so the
+# flag cannot be pointed at a stand-in that always passes.
+NO_PITCH_SCANNER = "82-signature-thank-you/scripts/semantic_scan.py"
+
+
+def _check_no_pitch_scanner(key: str, inner: List[str]) -> None:
+    for index, part in enumerate(inner):
+        if part != "--no-pitch-scan":
+            continue
+        try:
+            pinned = (index + 1 < len(inner)
+                      and Path(inner[index + 1]).resolve() == substrate.source(NO_PITCH_SCANNER).resolve())
+        except Exception:  # an uninstalled Skill 82 pins nothing
+            pinned = False
+        if not pinned:
+            raise AdapterNotAllowed(f"adapter not in allow-list: {key}: --no-pitch-scan must name {NO_PITCH_SCANNER}")
 
 
 def _check_script(key: str, script: str, tables: tuple) -> None:
@@ -668,6 +687,8 @@ def build_dispatch_config(*, work_dir: str | Path,
              else abs_work / "design-prose.json")
     thank_you_stages = [python, root71 / "scripts" / "run_page_role_stages.py", thank_you_run,
                         "--manuscript", manuscript, "--design-prose", prose, "--provider", image_provider,
+                        # the thank-you page sells nothing: scan the manuscript before any stage (AF-71-THANK-YOU-PITCH)
+                        "--no-pitch-scan", substrate.source(NO_PITCH_SCANNER),
                         *(["--allow-paid"] if paid else [])]
 
     adapters: Dict[str, Dict[str, Any]] = {

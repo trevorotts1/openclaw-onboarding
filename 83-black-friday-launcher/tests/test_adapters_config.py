@@ -214,6 +214,19 @@ class ThankYouTests(unittest.TestCase):
         self.assertEqual(steps[1][steps[1].index("--images-run-dir") + 1], pipeline[2])  # the translator reads what the stages drew
         self.assertEqual(steps[1][steps[1].index("--author-session") + 1], "session-test")
 
+    def test_the_thank_you_pipeline_passes_skill_82s_no_pitch_scanner(self):
+        """AF-71-THANK-YOU-PITCH: the runner is told to scan the manuscript with Skill 82's own script."""
+        steps = segments(Inputs(self).build()["adapters"]["thank_you"]["command"][2])
+        pipeline = shlex.split(steps[0][steps[0].index("--pipeline-command") + 1])
+        self.assertIn("--no-pitch-scan", pipeline)
+        scanner = Path(pipeline[pipeline.index("--no-pitch-scan") + 1])
+        self.assertEqual(scanner, substrate.source("82-signature-thank-you/scripts/semantic_scan.py"))
+        self.assertTrue(scanner.is_file())
+
+
+def adapters_thank_you_script(test: unittest.TestCase) -> str:
+    return Inputs(test).build()["adapters"]["thank_you"]["command"][2]
+
 
 class CheckoutCopyDispatchTests(unittest.TestCase):
     """Issue 12: the order form's copy reaches the checkout lane only as Skill 79's stamped output, and the
@@ -329,6 +342,20 @@ class AllowListTests(unittest.TestCase):
         self.assertNotEqual(evil, script)
         with self.assertRaises(adapters.AdapterNotAllowed):
             adapters.validate_adapter_config({"adapters": {"thank_you": {"command": ["bash", "-c", evil]}}})
+
+    def test_the_no_pitch_flag_may_name_only_skill_82s_scanner(self):
+        """A stand-in scanner that always passes would void AF-71-THANK-YOU-PITCH, so it is refused by name."""
+        script = adapters_thank_you_script(self)
+        steps = segments(script)
+        inner = steps[0][steps[0].index("--pipeline-command") + 1]
+        pipeline = shlex.split(inner)
+        adapters.validate_adapter_config({"adapters": {"thank_you": {"command": ["bash", "-c", script]}}})
+        pipeline[pipeline.index("--no-pitch-scan") + 1] = "/tmp/always_pass.py"
+        evil = script.replace(shlex.quote(inner), shlex.quote(shlex.join(pipeline)))
+        self.assertNotEqual(evil, script)
+        with self.assertRaises(adapters.AdapterNotAllowed) as ctx:
+            adapters.validate_adapter_config({"adapters": {"thank_you": {"command": ["bash", "-c", evil]}}})
+        self.assertIn("--no-pitch-scan", str(ctx.exception))
 
     def test_the_fake_design_consumer_passes_only_for_a_test_only_launch(self):
         command = [sys.executable, str(CONSUMER), "{request}", "{result}", str(LABELS)]

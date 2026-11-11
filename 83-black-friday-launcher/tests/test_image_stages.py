@@ -496,9 +496,17 @@ class ModelIsNeverALiteralTests(unittest.TestCase):
                 module.IMAGE_MODEL_PATH = Path(tmp) / "absent" / "image_model.py"
             else:
                 module.IMAGE_MODEL_PATH = write(Path(tmp) / "image_model.py", resolver_source)
-            with mock.patch.object(module.subprocess, "run", return_value=mock.Mock(returncode=0)) as sub:
+            # a thank-you run is pitch-scanned first (AF-71-THANK-YOU-PITCH): give it the clean fixture manuscript and let
+            # that one call run for real; only the request builder and the executor are stood in for
+            clean = SKILL71 / "tests" / "fixtures" / "copy_examples" / "thank-you-path-b.md"
+            write(run / "copy" / "internal-manuscript.md", clean.read_text(encoding="utf-8"))
+            real_run = subprocess.run
+            stand_in = mock.Mock(returncode=0)
+            with mock.patch.object(module.subprocess, "run",
+                                   side_effect=lambda cmd, *a, **k: real_run(cmd, *a, **k)
+                                   if Path(str(cmd[1])).name == "semantic_scan.py" else stand_in) as sub:
                 rc = module.main([str(run), "--provider", provider, "--stages", "visual-mockup"])
-            return rc, [c.args[0] for c in sub.call_args_list]
+            return rc, [c.args[0] for c in sub.call_args_list if Path(str(c.args[0][1])).name != "semantic_scan.py"]
 
     def test_the_source_holds_no_model_id_literal(self):
         self.assertNotIn("gpt-image", self.SCRIPT.read_text(encoding="utf-8"))

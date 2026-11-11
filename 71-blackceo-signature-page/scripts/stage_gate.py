@@ -68,7 +68,8 @@ WARN = "WARN"
 
 # Validator tokens handled inside this script (no external script required).
 GATE_BUILTINS = {"gate:must_supply", "gate:brand_fonts", "gate:intake_engine", "gate:intake_design_style", "gate:intake_page_kind", "gate:noop",
-                 "gate:grade_calibrated", "gate:image_grade_full_set", "gate:copy_handoff"}
+                 "gate:grade_calibrated", "gate:image_grade_full_set", "gate:copy_handoff",
+                 "gate:no_pitch_receipt"}
 
 
 def fail_exit(lines):
@@ -948,6 +949,12 @@ def run_builtin(name, args, run_dir):
         if manifest is None or public is None:
             return "gate:copy_handoff: missing --manifest or --public-copy"
         return copy_handoff_failure(manifest, public, manuscript)
+    if name == "gate:no_pitch_receipt":
+        # AF-71-THANK-YOU-PITCH: a thank_you run's copy stage closes only on
+        # private/receipts/no-pitch-scan.json (zero findings, manuscript sha still
+        # matching). Any other page role is not asked for one. See no_pitch_scan.py.
+        import no_pitch_scan
+        return no_pitch_scan.receipt_failure(run_dir)
     return f"unknown builtin validator {name}"
 
 

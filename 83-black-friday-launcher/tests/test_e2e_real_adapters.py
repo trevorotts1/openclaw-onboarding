@@ -37,7 +37,7 @@ import substrate  # noqa: E402
 import lane83_fake_consumer  # noqa: E402  only for its marker constants: proves we did NOT use it
 import test_lane83_dispatch as dispatch_tests  # noqa: E402  run_dispatch carries the approval and plan choices
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402  (its path is added by test_lane83_dispatch)
-from launcher_core import cli, page_designs  # noqa: E402
+from launcher_core import cli, launch_bridge, page_designs  # noqa: E402
 
 S71 = REPO_ROOT / "71-blackceo-signature-page"
 COPY_EXAMPLES = S71 / "tests" / "fixtures" / "copy_examples"
@@ -310,6 +310,28 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         self.assertEqual(got, expected, shown)
         # the package says the client has approved nothing yet: no approval was recorded, none is claimed
         self.assertEqual(manifest["design_approvals"], page_designs.default_approvals())
+
+    def test_a_pitched_thank_you_manuscript_fails_the_thank_you_lane(self):
+        """AF-71-THANK-YOU-PITCH: the clean thank-you copy passes in the test above; the same launch with a
+        pitch in the thank-you manuscript stops at the thank_you lane, before that page is drawn."""
+        doc = self._intake()
+        out = self.root / "run"
+        self._stage_operator_inputs(out, doc["launch_id"])
+        pitched = out / "dispatch" / "copy-thank_you.md"
+        pitched.write_text(pitched.read_text(encoding="utf-8") + "\nOne more thing - add it for $47.\n",
+                           encoding="utf-8")
+        doc["image_plan"]["design_prose_ref"] = str(out / "dispatch" / "design-prose.json")
+        doc["approval"] = {"ref": "APPR-TEST", "hash": substrate.dispatch().vlp.plan_document_hash(
+            dispatch_tests.launch_for(doc, landing_pages=["sales"]))}
+        with self.assertRaises(launch_bridge.BridgeError) as ctx:
+            dispatch_tests.run_dispatch(doc, out, adapters_config=None,
+                                        adapter_inputs=self._adapter_inputs(out, doc), landing_pages=["sales"])
+        message = str(ctx.exception)
+        self.assertIn("thank_you failed", message)
+        self.assertIn("AF-71-THANK-YOU-PITCH", message)
+        self.assertNotIn("product_selection failed", message)  # only the thank-you lane stopped
+        self.assertFalse((out / "dispatch" / "thank_you-run" / "production-request.json").exists())
+        self.assertFalse((out / "dispatch" / "thank_you-run" / "private" / "receipts" / "no-pitch-scan.json").exists())
 
 
 if __name__ == "__main__":

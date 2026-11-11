@@ -361,6 +361,12 @@ determination from the code:
   and is never counted. A run that declares no CTAs anywhere passes
   vacuously; a production run's closed copy always declares them,
   because the spec's CTA map requires the buttons.
+- The thank-you no-pitch check is `gate:no_pitch_receipt` (also a copy stage
+  validator): a `thank_you` run's copy stage closes only on
+  `private/receipts/no-pitch-scan.json` (`findings` 0, `manuscript_sha256`
+  equal to `copy/internal-manuscript.md`), written by `scripts/no_pitch_scan.py`
+  or by `run_page_role_stages.py` before its first stage (refusal
+  `AF-71-THANK-YOU-PITCH`). Other page roles are not asked for the receipt.
 
 ## Font map (`font-action-plan/font-map.json`)
 

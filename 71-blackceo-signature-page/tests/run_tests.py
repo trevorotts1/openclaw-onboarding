@@ -89,6 +89,8 @@ MODULES = [
     "test_page_structures.py",
     # Page types: the thank-you page's own canonical sections reach every image stage.
     "test_page_role_thank_you.py",
+    # AF-71-THANK-YOU-PITCH: the thank-you no-pitch scan, its copy-close receipt and gate row.
+    "test_thank_you_no_pitch.py",
     # SPF030: signature sales page vs signature landing (opt-in) page kinds.
     "test_page_kinds.py",
     # Diagnostic repair 2026-10-19: a zero-image generation run is FAILED.
