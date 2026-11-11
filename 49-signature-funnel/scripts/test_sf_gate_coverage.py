@@ -194,6 +194,16 @@ def probe_build() -> Set[str]:
         receipt, size = builder()
         v, _ = build.verify(receipt, funnel_size=size)
         got |= _codes(v)
+    # the delivery rail's signed P7 receipts: each evidence case breaks ONE thing in a run dir that
+    # write_valid_run_evidence made (so QC-RECORD / PREVIEW-UNBOUND fire from real receipt failures,
+    # not only from the no-run-dir fail-closed branch)
+    for _name, _expected, mutate in build._evidence_cases():
+        with tempfile.TemporaryDirectory() as td:
+            rd = Path(td)
+            build.write_valid_run_evidence(rd, 5)
+            mutate(rd)
+            v, _ = build.verify(json.loads((rd / "build_receipt.json").read_text()), funnel_size=5, run_dir=rd)
+            got |= _codes(v)
     return got
 
 
@@ -260,7 +270,9 @@ def probe_runner() -> Set[str]:
         ok, msg = runner._gate_build(vr)
         if not ok:
             got |= _codes_from_msg(msg)
-        ok, msg = runner._check_front_door(rd, None, None)
+        # a caller-supplied nonce is refused whether or not this process holds an operator key (the fixture
+        # key the earlier probes install must not turn the front-door probe into a pass)
+        ok, msg = runner._check_front_door(rd, "caller-chosen-nonce", None)
         if not ok:
             got |= _codes_from_msg(msg)
     return got
@@ -269,7 +281,7 @@ def probe_runner() -> Set[str]:
 def probe_delegation() -> Set[str]:
     """A10 / T0-09 — the delegated image + media seams. Drive each to failure:
       * an EMPTY/no-provenance ledger the run authored              -> AF-FUN-DELEG-IMAGES
-      * an off-host media URL                                       -> AF-FUN-DELEG-MEDIA
+      * a ledger URL the delivery rail's signed P4 receipt never recorded -> AF-FUN-DELEG-MEDIA
       * a receipt the ORCHESTRATOR stamped for itself     -> AF-FUN-DELEG-RECEIPT-SELF-AUTHORED
     The self-authored case is the headline: it proves the seam refuses evidence the
     certificate's own subject wrote, so the fixture is minted through the provider
@@ -286,7 +298,10 @@ def probe_delegation() -> Set[str]:
         ok, msg = runner._gate_p3_images(rd)
         if not ok:
             got |= _codes_from_msg(msg)
-        # off-host -> AF-FUN-DELEG-MEDIA (task id present so P3 would pass)
+        # a ledger URL the delivery rail's signed P4 receipt never recorded -> AF-FUN-DELEG-MEDIA
+        # (task id present so P3 would pass; the receipts come from the provider stub, signed)
+        stub_provider_adapter.ensure_fixture_operator_key()
+        stub_provider_adapter.emit_rail(rd, "P4-MEDIA", [("kie-1", {"hosted_url": "https://media.rail.test/x.png"})])
         (rd / "media_ledger.json").write_text(json.dumps(
             {"images": [{"page_type": "main", "section": "1", "kie_task_id": "kie-1",
                          "media_url": "https://cdn.somewhere-else.test/x.png"}]}))

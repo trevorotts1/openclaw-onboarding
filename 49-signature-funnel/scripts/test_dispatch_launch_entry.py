@@ -108,7 +108,8 @@ def pinned_copy(td: Path) -> Path:
     (root / "71-blackceo-signature-page").symlink_to(
         SKILL.parent / "71-blackceo-signature-page", target_is_directory=True)
     # the pin set also covers the Skill 83 launcher tree and the shared launch packages beside Skill 49
-    for sibling in ("83-black-friday-launcher", "shared-utils"):
+    # the front door also needs the department map (Skill 49's own routing row) beside the skill
+    for sibling in ("83-black-friday-launcher", "shared-utils", "23-ai-workforce-blueprint"):
         (root / sibling).symlink_to(SKILL.parent / sibling, target_is_directory=True)
     # the fixture's own mint, through the only legal path (CI); the repository pin is untouched
     fd.mint_pin_ci(dst, env={"GITHUB_ACTIONS": "true", "GITHUB_EVENT_NAME": "push",

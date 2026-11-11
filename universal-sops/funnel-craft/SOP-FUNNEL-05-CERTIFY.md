@@ -20,13 +20,13 @@ trusted — the provers read the artifacts and the HMAC.
 `prove_sf_no_pitch.py` asserts the Thank-You page carries **no offer name, no price, and no sale CTA**
 (AF-FUN-TY-PITCH / AF-FUN-TY-PRICE / AF-FUN-TY-CTA), that a Thank-You page exists (AF-FUN-TY-MISSING),
 that the offer ledger is non-empty (AF-FUN-OFFER-LEDGER-MISSING), and that every image has a real Kie
-taskId resolving to a GHL media host. **After Downsell 2 the funnel never pitches again.**
+taskId and the hosted URL the delivery rail's signed P4 receipt recorded. **After Downsell 2 the funnel never pitches again.**
 
 ## 2. THE SIGNED CERTIFICATE
 
 `prove_sf_cert.py` emits `PROCESS-CERTIFICATE.json` ONLY when the phase ledger is contiguous and
 in-order (AF-FUN-CERT-PHASE-GAP), every phase passed (AF-FUN-CERT-PHASE-FAIL), and the HMAC is valid
-against the run-scoped 0600 nonce (AF-FUN-CERT-SIGNATURE). A missing certificate is AF-FUN-CERT-MISSING;
+against the operator key (AF-FUN-CERT-SIGNATURE; a caller-supplied nonce is refused). A missing certificate is AF-FUN-CERT-MISSING;
 a broken chain is AF-FUN-PROCESS-INTEGRITY.
 
 ```

@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mc_board  # noqa: E402
 
 # The CC TaskStatus enum this producer must stay in parity with (server truth:
-# src/lib/validation.ts, mirrored in 48/scripts/cc_board.py). If the server adds a
+# src/lib/validation.ts, mirrored in Skill 48's board client). If the server adds a
 # column, this list is the single place the contract test is updated.
 CC_STATUS_ENUM = ("backlog", "in_progress", "review", "blocked", "done")
 

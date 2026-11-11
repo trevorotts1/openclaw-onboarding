@@ -19,9 +19,12 @@ by prove_sf_cert.py --mint-model-receipt), never from SF_CONTENT_* environment v
 the delegated image/media phases require harness-signed provider receipts (ENF-17).
 
 DELEGATION SEAMS (never forked here): image generation is delegated to Skill 66 (model
-policy) and Skill 74 (the one KIE transport, kie_live_adapter.py); GHL media folder + upload and the funnel/page build are delegated to
-Skill 6 (ghl_media.py / ghl_rest_canvas.py). Those phases are attested in order; the
-image PROVENANCE (Kie taskId + GHL media host) is enforced at P9 by prove_sf_no_pitch.py.
+policy) and Skill 74 (the one KIE transport, kie_live_adapter.py); media hosting (P4) and the funnel/page
+build (P7) are delegated to the DELIVERY RAIL the brief names (brief.delivery_rail), which records one
+operator-key-signed receipt line per hosted image and per built page (schema/delivery-rail-receipt.schema.json).
+Skill 49 never imports or resolves the rail: P4 and P7 certify only on those signed lines. Those phases
+are attested in order; the image PROVENANCE (Kie taskId + the hosted URL the P4 receipt recorded) is
+enforced at P9 by prove_sf_no_pitch.py.
 
 Run-dir inputs:
   brief.json          — locked intake brief        (P0 gate: prove_sf_intake.py)
@@ -97,23 +100,16 @@ def _delegation_seam(run_dir: Path, required_file: Optional[str], label: str) ->
 #
 # THE DEFECT: P3-IMAGES and P4-MEDIA attested "delegated" the moment
 # media_ledger.json EXISTED. The run writes that file, so the phase claiming to
-# prove image generation through Skill 74 and upload through Skill 6 was
+# prove image generation through Skill 74 and upload through the delivery rail was
 # satisfied by a file its own subject authored — with no provider ever contacted.
 #
-# THE FIX, IN TWO LANDINGS (sequencing: writer before requirer):
-#   (this release) the seams read the ledger's CONTENT — every image record must
-#     carry a real provider task id (P3) and resolve to a GHL media host (P4) —
-#     and any provider receipt that IS present must hold, strictly. Both content
-#     rules already gate P9 via prove_sf_no_pitch, so no run that could certify
-#     before can fail now: this only moves the truth forward to the phase that
-#     claims it, and kills "the file exists, therefore a provider ran".
-#   (next)         delegation_receipt.require() replaces validate_if_present()
-#     once Skill 74 (via scripts/kie74_receipt.py) / Skill 6 emit a receipt on every path. The certificate
-#     records which of the two states applied, so it can never imply
-#     provider-backed delegation it does not have.
+# THE FIX (ENF-17): the seams read the ledger's CONTENT — every image record must
+# carry a real provider task id (P3) and equal the hosted URL the delivery rail's
+# signed receipt recorded (P4) — and the signed receipt store must hold, strictly:
+# an absent, unsigned or forged store is a failure, not a state to record. This kills
+# "the file exists, therefore a provider ran". The certificate records the store
+# state, so it can never imply provider-backed delegation it does not have.
 # ---------------------------------------------------------------------------
-_GHL_HOST_FINGERPRINTS = ("gohighlevel", "leadconnector", "leadconnectorhq", "msgsndr",
-                          "highlevel", "storage.googleapis.com/highlevel")
 _BAD_TASK_IDS = frozenset({"", "native", "placeholder", "none", "null", "n/a", "tbd", "todo"})
 
 
@@ -138,7 +134,7 @@ def _image_key(img: Dict) -> str:
 
 
 def _receipt_seam(run_dir: Path, phase: str, keys: List[str], label: str,
-                  content_detail: str) -> Tuple[bool, str]:
+                  content_detail: str, rail: bool = False) -> Tuple[bool, str]:
     try:
         import delegation_receipt
     except ImportError as exc:  # noqa: BLE001 — a missing contract module is fail-closed
@@ -147,8 +143,10 @@ def _receipt_seam(run_dir: Path, phase: str, keys: List[str], label: str,
     # ENF-17: a client delivery never attests on an absent or hand-written store. Only
     # harness-signed provider receipts (signed by the adapter process under the operator
     # key) count; 'absent' is a failure, not a state to record.
-    ok, detail = delegation_receipt.require_signed(
-        run_dir, phase, must_cover=keys, af="AF-FUN-DELEG-RECEIPT")
+    # rail=True is the delivery-rail form (P4): the same signed check plus the schema in
+    # schema/delivery-rail-receipt.schema.json.
+    check = delegation_receipt.require_rail if rail else delegation_receipt.require_signed
+    ok, detail = check(run_dir, phase, must_cover=keys, af="AF-FUN-DELEG-RECEIPT")
     if not ok:
         return False, detail
     return True, f"delegated: {label} :: {content_detail} :: receipts verified ({detail})"
@@ -174,25 +172,35 @@ def _gate_p3_images(run_dir: Path) -> Tuple[bool, str]:
                          f"{len(imgs)} image record(s) carry a provider task id")
 
 
+def _ledger_url(img: Dict) -> str:
+    return str(img.get("media_url", img.get("url", ""))).strip()
+
+
 def _gate_p4_media(run_dir: Path) -> Tuple[bool, str]:
-    """P4-MEDIA — every ledger image must resolve to a GHL media host."""
+    """P4-MEDIA — every ledger image must carry the hosted URL the delivery rail's signed receipt
+    recorded for its key. No host name is recognised here: the rail named in brief.delivery_rail is a
+    free string and the receipt, not a URL fingerprint, is the proof something was uploaded."""
     imgs, err = _ledger_images(run_dir)
     if imgs is None:
-        return False, f"AF-FUN-DELEG-MEDIA: {err} (Skill 6 ghl_media.py uploaded nothing)"
-    bad = []
-    for img in imgs:
-        url = str(img.get("media_url", img.get("ghl_media_url", img.get("url", "")))).strip()
-        hay = url.lower()
-        if not hay.startswith(("http://", "https://")) or not any(
-                fp in hay for fp in _GHL_HOST_FINGERPRINTS):
-            bad.append(f"{img.get('page_type', '?')}/{img.get('section', '?')}={url!r}")
+        return False, f"AF-FUN-DELEG-MEDIA: {err} (the delivery rail recorded nothing)"
+    keys = [_image_key(i) for i in imgs]
+    ok, detail = _receipt_seam(run_dir, "P4-MEDIA", keys, "delivery-rail receipt (P4)",
+                               f"{len(imgs)} image record(s)", rail=True)
+    if not ok:
+        return False, detail
+    import delegation_receipt
+    hosted: Dict[str, set] = {}
+    for line in delegation_receipt.load(run_dir):
+        if str(line.get("phase", "")).strip() == "P4-MEDIA":
+            for key in line.get("covers") or []:
+                hosted.setdefault(str(key), set()).add(str(line.get("hosted_url", "")).strip())
+    bad = [f"{img.get('page_type', '?')}/{img.get('section', '?')}={_ledger_url(img)!r}"
+           for img, key in zip(imgs, keys) if _ledger_url(img) not in hosted.get(key, set())]
     if bad:
-        return False, (f"AF-FUN-DELEG-MEDIA: {len(bad)} image record(s) do not resolve to a "
-                       f"GHL media host (e.g. {bad[:3]}) — an un-uploaded image is not a "
-                       "delegated upload")
-    return _receipt_seam(run_dir, "P4-MEDIA", [_image_key(i) for i in imgs],
-                         "Skill 6 ghl_media.py (media folder + upload)",
-                         f"{len(imgs)} image record(s) on a GHL media host")
+        return False, (f"AF-FUN-DELEG-MEDIA: {len(bad)} image record(s) carry a URL the delivery rail "
+                       f"never recorded for that image (e.g. {bad[:3]}) — an image whose URL is not the "
+                       "rail's signed hosted_url is not a delegated upload")
+    return True, f"{detail} :: {len(imgs)} ledger URL(s) equal the rail's hosted_url"
 
 
 def _sha256_file(path: Path) -> str:
@@ -382,7 +390,8 @@ def _gate_p9_certify(run_dir: Path) -> Tuple[bool, str]:
     coverage assert proves the media ledger carries an image for EVERY required
     (page_type, section) slot for the brief's funnel_size (per MASTERDOC §4) — so a
     2-image ledger can no longer certify a ~40-image funnel. Both must pass."""
-    ok, detail = _shell_prover("prove_sf_no_pitch.py", ["--ledger", str(run_dir / "media_ledger.json")])
+    ok, detail = _shell_prover("prove_sf_no_pitch.py", ["--ledger", str(run_dir / "media_ledger.json"),
+                                                        "--run-dir", str(run_dir)])
     if not ok:
         return ok, detail
     size = _brief_size(run_dir)
@@ -398,8 +407,8 @@ def _gate_p9_certify(run_dir: Path) -> Tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # FAB-artifact producer + P7 FAB-scorecard requirement (FIX-COPY-02)
 # ---------------------------------------------------------------------------
-# The engine authors its copy in copy_ledger.json then delegates GHL delivery to
-# Skill 6. On the engine-routed path Skill 6 produced NO template-match receipt, so
+# The engine authors its copy in copy_ledger.json then delegates the funnel/page build to
+# the delivery rail. On the engine-routed path the rail produced NO template-match receipt, so
 # the shared FAB-QC copy-substance gate (>=8.5) silently SKIPPED the flagship funnel.
 # Here the engine ITSELF echoes copy_ledger.json into build/fab-artifact.json — the
 # FAB scorecard file the QC seam scores — and P7-BUILD fail-closed REQUIRES that file
@@ -537,13 +546,13 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
          lambda: _gate_p2_prompts(run_dir)),
         ("P3-IMAGES", "kie_live_adapter.py",
          lambda: _gate_p3_images(run_dir)),
-        ("P4-MEDIA", "ghl_media.py",
+        ("P4-MEDIA", "delivery-rail receipt (P4)",
          lambda: _gate_p4_media(run_dir)),
         ("P5-HTML", "html_fragments",
          lambda: _gate_html_fragments(run_dir)),
         ("P6-COMPOSE", "prove_sf_graph.py",
          lambda: _shell_prover("prove_sf_graph.py", ["--graph", str(run_dir / "funnel_graph.json")])),
-        ("P7-BUILD", "prove_sf_build.py",
+        ("P7-BUILD", "delivery-rail receipt (P7)",
          lambda: _gate_build(run_dir)),
         ("P8-DERIVE", "derived_pages_ledger",
          lambda: _gate_derived_pages(run_dir)),
@@ -703,7 +712,7 @@ def orchestrate(run_dir: Path, key: str) -> Tuple[int, Dict]:
 # ---------------------------------------------------------------------------
 def _full_coverage_images(size: int) -> List[Dict]:
     """Full image set covering every required (page_type, section) slot for the size
-    (per prove_sf_prompt_floor.required_image_pairs), each with valid Kie+GHL provenance
+    (per prove_sf_prompt_floor.required_image_pairs), each with valid Kie + hosted-URL provenance
     so the P9 no-pitch AND coverage asserts both pass."""
     import prove_sf_prompt_floor  # noqa: E402
     pairs = prove_sf_prompt_floor.required_image_pairs(size, prove_sf_prompt_floor.load_structure())
@@ -742,16 +751,18 @@ def _write_valid_run(rd: Path, key: str, size: int = 3, receipts: bool = True) -
     (rd / "derived_pages.json").write_text(
         json.dumps(prove_sf_graph._valid_derived_ledger(size)), encoding="utf-8")
     # P5-HTML + P7-BUILD read what the TOOLS wrote, not the receipt (STR-18 / S06-08 / IMG-16): parsed
-    # page fragments, a sealed Skill 6 verify run (ghl_gate.require_pass) and the wireframe + mockup set.
+    # page fragments, the delivery rail's signed P7-BUILD receipt lines and the wireframe + mockup set.
     prove_sf_build.write_valid_run_evidence(rd, size)
     # ENF-16 — the authoring model comes from the HARNESS routing record, signed by the operator key.
     prove_sf_cert.mint_model_receipt(
         rd, {"model": "selftest-strong-model", "provider": "selftest", "tier": "content"}, key)
     # ENF-17 — delegated phases are backed by harness-signed provider receipts (stub adapter).
+    # receipts=False leaves the WHOLE store absent (the P7 lines write_valid_run_evidence just emitted go too).
     if receipts:
-        keys = [_image_key(i) for i in media["images"]]
-        _stub_provider_emit(rd, "P3-IMAGES", keys)
-        _stub_provider_emit(rd, "P4-MEDIA", keys)
+        _stub_provider_emit(rd, "P3-IMAGES", [_image_key(i) for i in media["images"]])
+        _stub_rail_media_emit(rd)
+    else:
+        (rd / "delegation_receipts.jsonl").unlink(missing_ok=True)
 
 
 def _stub_provider_emit(run_dir: Path, phase: str, remote_ids: List[str]) -> None:
@@ -760,6 +771,15 @@ def _stub_provider_emit(run_dir: Path, phase: str, remote_ids: List[str]) -> Non
     `run_signature_funnel` and refused — which is the property the self-test proves."""
     import stub_provider_adapter
     stub_provider_adapter.emit(run_dir, phase, remote_ids)
+
+
+def _stub_rail_media_emit(run_dir: Path) -> None:
+    """The delivery rail's P4-MEDIA lines, from the same stub module: one signed line per ledger image,
+    carrying the hosted URL the ledger names (fixtures only; a real rail records what it uploaded)."""
+    import stub_provider_adapter
+    imgs, _ = _ledger_images(run_dir)
+    stub_provider_adapter.emit_rail(
+        run_dir, "P4-MEDIA", [(_image_key(i), {"hosted_url": _ledger_url(i)}) for i in imgs or []])
 
 
 def self_test() -> int:
@@ -953,7 +973,8 @@ def self_test() -> int:
             ok = False
             print(f"SELF-TEST FAIL: P3-IMAGES attested a ledger with no provenance: {g_ok} {g_detail}")
 
-        # (k) P4-MEDIA no longer attests on file existence: an off-host URL is not an upload.
+        # (k) P4-MEDIA no longer attests on file existence: a ledger URL the delivery rail's signed
+        #     receipt never recorded for that image is not an upload (no host-name fingerprint is used).
         rdk = tmp / "run-offhost"
         rdk.mkdir()
         _write_valid_run(rdk, key)
@@ -962,10 +983,26 @@ def self_test() -> int:
         (rdk / "media_ledger.json").write_text(json.dumps(led), encoding="utf-8")
         g_ok, g_detail = _gate_p4_media(rdk)
         if not g_ok and "AF-FUN-DELEG-MEDIA" in g_detail:
-            print("SELF-TEST ok: P4-MEDIA fails closed on an off-host media URL.")
+            print("SELF-TEST ok: P4-MEDIA fails closed on a ledger URL that differs from the rail's hosted_url "
+                  "(AF-FUN-DELEG-MEDIA).")
         else:
             ok = False
-            print(f"SELF-TEST FAIL: P4-MEDIA attested an off-host media URL: {g_ok} {g_detail}")
+            print(f"SELF-TEST FAIL: P4-MEDIA attested a URL the rail never recorded: {g_ok} {g_detail}")
+
+        # (k2) a P4 line in the old provider shape (signed, but no hosted_url) breaks the delivery-rail
+        #      schema: the rail must say WHICH URL it hosted, not just that it ran.
+        rdk2 = tmp / "run-rail-schema"
+        rdk2.mkdir()
+        _write_valid_run(rdk2, key, receipts=False)
+        led = json.loads((rdk2 / "media_ledger.json").read_text(encoding="utf-8"))
+        _stub_provider_emit(rdk2, "P4-MEDIA", [_image_key(i) for i in led["images"]])
+        g_ok, g_detail = _gate_p4_media(rdk2)
+        if not g_ok and "AF-FUN-DELEG-RECEIPT-SCHEMA" in g_detail:
+            print("SELF-TEST ok: P4-MEDIA fails closed on a signed line with no hosted_url "
+                  "(AF-FUN-DELEG-RECEIPT-SCHEMA).")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: P4-MEDIA attested a line that breaks the rail schema: {g_ok} {g_detail}")
 
         # (l) SELF-AUTHORED RECEIPT — the run stamps its own provider receipt. The
         #     subject of a certificate may not author the evidence it is judged on,
@@ -997,7 +1034,7 @@ def self_test() -> int:
         _write_valid_run(rdm, key, receipts=False)
         led = json.loads((rdm / "media_ledger.json").read_text(encoding="utf-8"))
         _stub_provider_emit(rdm, "P3-IMAGES", [_image_key(i) for i in led["images"]])
-        _stub_provider_emit(rdm, "P4-MEDIA", [_image_key(i) for i in led["images"]])
+        _stub_rail_media_emit(rdm)
         g_ok, g_detail = _gate_p3_images(rdm)
         g_ok4, g_detail4 = _gate_p4_media(rdm)
         if g_ok and g_ok4 and "receipts verified" in g_detail and "receipts verified" in g_detail4:

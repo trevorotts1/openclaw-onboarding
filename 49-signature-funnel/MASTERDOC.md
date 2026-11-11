@@ -215,8 +215,8 @@ Thank-You gets one celebratory hero or a "WELCOME" gallery-typography treatment.
 
 ## 6. Delegation seams (never forked)
 - **Images →** Skill 66 (model policy) then Skill 74 `kie_live_adapter.py` (text-to-image default + optional `reference_images` hook; the hook maps to the schema's image input field).
-- **GHL media folder + upload →** Skill 6 `ghl_media.py`.
-- **GHL funnel/step/page build + HTML injection →** Skill 6 `ghl_rest_canvas.py` / `ghl_builder.py`.
+- **Media hosting (P4) →** the delivery rail named by `brief.delivery_rail`; it signs one `P4-MEDIA` receipt line per ledger image (`hosted_url`), and the ledger URL must equal it.
+- **Funnel/step/page build + HTML injection (P7) →** the same delivery rail; it signs one `P7-BUILD` receipt line per page type (`preview_url`, `PASS`, `checks`, `dom_sha256`, `screenshot_sha256`). Both phases certify only on those operator-key-signed lines (`schema/delivery-rail-receipt.schema.json`, `sf-delivery-rail-receipt/v1`); Skill 49 never imports or resolves the rail.
 - **10 promo emails →** the Email Skill project (post-downsell handoff, P10).
 
 ## 7. Client-provider rule (binding)
@@ -252,8 +252,6 @@ Double-underscore (`__`) is the field separator so single tokens may contain sin
 pins it in `56-sales-page-assets/structure/labeling-grammar.json` + `MASTERDOC.md` §8; it adopts this
 identical field order and extends the `stage`/`type` enums as needed (adds `bump` · `high-ticket` stages
 and `img`/`funnel`/`brief`/`manifest`/`cert` types), so a client's funnel and sales-page assets share one
-labeling namespace. Skill 56 is the SECOND registered STEP-0 engine
-(`06-ghl-install-pages/funnel-engines/registry.json`). Tracked in the STEP-0 registry note
-(`06-ghl-install-pages/funnel-engines/README.md`) and the funnel-craft manifest
+labeling namespace. Tracked in the funnel-craft manifest
 (`universal-sops/funnel-craft/FUNNEL-PIPELINE-MANIFEST.json` → `labeling_grammar`). Do not diverge the two
 grammars.

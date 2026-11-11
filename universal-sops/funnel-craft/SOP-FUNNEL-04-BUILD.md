@@ -1,29 +1,34 @@
-# SOP-FUNNEL-04: GHL MEDIA + FUNNEL BUILD (DELEGATED to Skill 6)
+# SOP-FUNNEL-04: GHL MEDIA + FUNNEL BUILD (DELEGATED to the delivery rail named in the brief)
 
 **Cluster:** Funnel-Craft Rules (`universal-sops/funnel-craft/`)
 **Master authority:** `49-signature-funnel/MASTERDOC.md` §3 (3/5/7 matrix + branching) + §6 (delegation seams)
-**Owning role:** Signature Funnel Specialist (authoring) → **Skill 6 (delivery)**
+**Owning role:** Signature Funnel Specialist (authoring) → **the delivery rail named in `brief.delivery_rail` (delivery)**
 **Stage:** P4-MEDIA · P5-HTML · P6-COMPOSE · P7-BUILD
-**Produces:** GHL media folder + uploads, HTML fragments, the built funnel + preview URLs
+**Produces:** hosted media + signed P4 receipts, HTML fragments, the built funnel + preview URLs + signed P7 receipts
 
 ---
 
 ## 0. WHY THIS SOP EXISTS
 
-Skill 49 AUTHORS copy and images; it does NOT hand-roll GHL. **Skill 6 is the ONE GHL delivery rail.**
-Every media upload and every page/funnel build is DELEGATED — a hand-rolled GHL REST call is the
-ungoverned path and is refused (AF-FUN-CANONICAL-BYPASS).
+Skill 49 AUTHORS copy and images; it does NOT hand-roll GHL, and it does not import the code of any
+other skill to do it. **The delivery rail named in the brief's `delivery_rail` field is the ONE delivery rail**
+(a free string; Skill 49 never resolves it to code). Every media upload and every page/funnel build is
+DELEGATED to it, and the rail PROVES each step by writing operator-key-signed receipt lines into the run
+(`delegation_receipt.record`; shape `49-signature-funnel/schema/delivery-rail-receipt.schema.json`, id
+`sf-delivery-rail-receipt/v1`). P4 and P7 do not pass on a missing, unsigned or forged receipt. A
+hand-rolled GHL REST call is the ungoverned path and is refused (AF-FUN-CANONICAL-BYPASS).
 
-## 1. P4 — MEDIA FOLDER + UPLOAD (Skill 6 `ghl_media.py`)
+## 1. P4 — MEDIA FOLDER + UPLOAD (the delivery rail's `P4-MEDIA` receipt)
 
-One media folder per funnel with per-page sub-folders (`ensure_funnel_media_folders`), then
-`upload_media` for every PNG. After upload, EVERY `<img>` in a page fragment MUST resolve to the GHL
-media host (AF-FUN-IMG-HOST) — a raw Kie URL or a local path in a fragment fails the gate.
+The rail hosts every PNG (one media folder per funnel with per-page sub-folders) and records ONE signed
+`P4-MEDIA` line per ledger image, carrying the `hosted_url` it produced (AF-FUN-DELEG-MEDIA when the ledger
+URL differs). EVERY `<img>` URL in the media ledger MUST equal the hosted URL its receipt recorded
+(AF-FUN-IMG-HOST at P9) — a raw Kie URL or a local path in a fragment fails the gate.
 
 ## 2. P5 — HTML FRAGMENT ASSEMBLY
 
 Assemble one fragment-safe body per page (Main / Checkout / U1 / D1 / U2 / D2 / Thank-You). Fragments
-respect the Skill-6 fragment + reachability invariants; images reference the GHL media URLs from P4.
+respect the delivery rail's fragment + reachability invariants; images reference the hosted media URLs from P4.
 
 ## 3. P6 — 3/5/7 STEP GRAPH + BRANCHING
 
@@ -36,10 +41,13 @@ ends a purchase on an offer page.
 - **5-step:** Main → Upsell 1 → Downsell 1 → Upsell 2 → Thank-You.
 - **7-step:** Main → Checkout → Upsell 1 → Downsell 1 → Upsell 2 → Downsell 2 → Thank-You.
 
-## 4. P7 — GHL FUNNEL/PAGE BUILD (Skill 6 `ghl_rest_canvas.py` / `ghl_builder.py`)
+## 4. P7 — GHL FUNNEL/PAGE BUILD (the delivery rail's `P7-BUILD` receipts)
 
-Build the funnel + pages and inject the fragments through Skill 6. The build must clear Skill 6's
-fragment + reachability invariants and the **funnel-build QC ≥ 8.5** gate before the pipeline advances.
+The rail builds the funnel + pages and injects the fragments, then records ONE signed `P7-BUILD` line per
+page type (`preview_url`, `PASS`, `checks`, `dom_sha256`, `screenshot_sha256`). `prove_sf_build.py`
+recomputes the score as 10 x passing / total from those lines; the build must clear the rail's fragment +
+reachability invariants and the **funnel-build QC ≥ 8.5** gate before the pipeline advances
+(AF-FUN-BUILD-QC-RECORD / AF-FUN-BUILD-PREVIEW-UNBOUND).
 
 ## 5. LABELING
 

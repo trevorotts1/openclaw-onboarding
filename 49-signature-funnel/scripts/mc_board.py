@@ -17,14 +17,14 @@ THE BOARD CONTRACT (the review-skip root fix, FIX-XC-01a)
   PASS >= 8.5) may promote a card from `review` to `done`. So the terminal move a
   run makes is to `review` ("certified — awaiting QC promotion"), with the
   deliverable link registered on the card. `card_advance(..., status="done")` is
-  hard-blocked here exactly as Skill 6's `cc_board.update_status` and Skill 41's
-  `cc_move_task` block it, so no code path can skip the QC column. This mirrors the
-  server's own LEGAL_TRANSITIONS map (`48-facebook-ad-generator/scripts/cc_board.py`)
+  hard-blocked here exactly as the sibling board clients (Skill 41's `cc_move_task` among
+  them) block it, so no code path can skip the QC column. This mirrors the
+  server's own LEGAL_TRANSITIONS map (Skill 48's board client)
   and the Done-Gate in `32-command-center-setup/scripts/move-task.py` (a card must
   pass through `review` before `done`, and only a passing independent sign-off
   promotes it).
 
-It is a direct port of the proven Skill-48 (ad_director/cc_board) and presentations
+It is a direct port of the proven Skill-48 (ad_director board client) and presentations
 (build_deck/_board_patch_phase, v17.0.6) pattern, generalized so any skill supplies
 its own department / persona / source.
 
@@ -49,7 +49,7 @@ NON-NEGOTIABLE DESIGN RULES (mirrored verbatim from the reference)
     illegal transitions client-side and keeps board state honest. Verification of
     board state is ALWAYS by querying CC rows (never file mtime — WAL lag).
 
-  * AUTH PARITY with the CC endpoint (same as cc_board.py):
+  * AUTH PARITY with the CC endpoint (same as Skill 48's board client):
       - Authorization: Bearer <CC_API_TOKEN|MC_API_TOKEN>   (global middleware; no-op if unset)
       - x-webhook-signature: HMAC-SHA256(WEBHOOK_SECRET, rawBody) hex (per-route; no-op if unset)
     We sign the EXACT bytes we send, so a configured secret matches byte-for-byte.
@@ -64,7 +64,7 @@ Config (env; absent base URL => board disabled, clean no-op):
   CC_BOARD_TIMEOUT                            per-request timeout seconds (default 8)
   CC_STATUS_PATH_TEMPLATE                     status-write path with a literal '{id}'
                                               (default '/api/tasks/{id}'; route parity
-                                              with Skill 6, e.g. '/api/tasks/{id}/status')
+                                              with the CC route, e.g. '/api/tasks/{id}/status')
   CC_STATUS_METHOD                            status-write HTTP method (default 'PATCH')
   CC_TASK_PATH_TEMPLATE                       task-read path with a literal '{id}' used to
                                               GET the card's current status (default
@@ -81,6 +81,11 @@ PUBLIC API
                status="review", deliverable_url="", env=None)    -> bool                (never raises)
   block_run(run_dir, task_id=None, *, phase_id="", note="", env=None)
                                                                   -> bool                (never raises)
+  report_persona_used(task_id, *, page, voice_persona_id, topic_persona_id, task_persona_id,
+                      blend_directive_sha, goal, note="", env=None)
+                                                                  -> bool                (never raises)
+                                                  copy-stage persona-used report, posted by THIS
+                                                  client to the client's own Command Center
 
   launch_card(run_dir, launch_id, *, offer_name="", env=None)    -> task_id str | None  (never raises)
                                                   CON-21: one card per Black Friday launch (launch mode)
@@ -111,8 +116,8 @@ from typing import List, Optional
 
 _DEFAULT_TIMEOUT = 8
 
-# U100 — the producer-reconcile pattern generalized from B-U13/U27
-# (06-ghl-install-pages/tools/cc_board.py) to this "mc_board six" producer.
+# U100 — the producer-reconcile pattern generalized from the B-U13/U27 board-client
+# reconcile to this "mc_board six" producer.
 # Fixed subdir + filename for the opt-in board-ingest receipt `reconcile`
 # sweeps; distinct from the existing `working/checkpoints/mc-board.json`
 # per-run receipt above so this is purely additive (see _write_board_ingest_
@@ -122,11 +127,11 @@ _BOARD_INGEST_RECEIPT_FILENAME = "board-ingest-receipt.json"
 
 
 def _ts() -> str:
-    """UTC timestamp, matches cc_board.py's ``_ts()`` byte-for-byte."""
+    """UTC timestamp, matches the sibling board clients' ``_ts()`` byte-for-byte."""
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 # Mirror of the CC server's TaskStatus enum + LEGAL_TRANSITIONS map, ported verbatim
-# from 48-facebook-ad-generator/scripts/cc_board.py (which reads them from
+# from Skill 48's board client (which reads them from
 # src/lib/validation.ts + src/lib/task-lifecycle.ts). Kept here ONLY to walk a
 # minimal legal path client-side; the server is always the final authority. The
 # producer NEVER targets 'done' (review->done is the QC sweep's job), but 'done'
@@ -141,7 +146,7 @@ _LEGAL = {
 }
 
 # A producer helper may NEVER move a card here — only the independent QC scorer can
-# (review -> done). Hard-blocked in card_advance, identical to Skill 6 / Skill 41.
+# (review -> done). Hard-blocked in card_advance, identical to Skill 41.
 _PRODUCER_FORBIDDEN = ("done",)
 
 # ---------------------------------------------------------------------------
@@ -285,7 +290,7 @@ def _request(method: str, url: str, payload: Optional[dict], cfg: dict):
 
 
 # ---------------------------------------------------------------------------
-# Legal-transition walking (ported from cc_board._legal_path). The server owns
+# Legal-transition walking (ported from the Skill 48 board client's _legal_path). The server owns
 # the final say; this only avoids obviously-illegal client-side direct jumps.
 # ---------------------------------------------------------------------------
 def _legal_path(src: str, dst: str) -> Optional[List[str]]:
@@ -357,7 +362,7 @@ def _write_board_ingest_receipt(
     reason: str = "",
 ) -> None:
     """U100 — the producer-reconcile pattern generalized from B-U13/U27's
-    ``_write_board_ingest_receipt`` (06-ghl-install-pages/tools/cc_board.py).
+    ``_write_board_ingest_receipt``.
     Persists ONE receipt per ``card_open()`` call recording whether the board
     was even configured and whether the card landed, so ``mc_board.py
     reconcile`` can later distinguish "no card because nothing to build" from
@@ -583,7 +588,7 @@ def card_advance(
 
     THE BOARD CONTRACT: a producer may never target 'done'. review->done is owned
     exclusively by the independent QC scorer, so status='done' is HARD-BLOCKED here
-    (identical to Skill 6 cc_board.update_status and Skill 41 cc_move_task)."""
+    (identical to Skill 41 cc_move_task)."""
     cfg = board_config(env)
     if cfg is None:
         return False
@@ -749,6 +754,61 @@ def launch_card(run_dir, launch_id: str, *, offer_name: str = "",
         return None
 
 
+def report_persona_used(
+    task_id: str,
+    *,
+    page: Optional[str] = None,
+    voice_persona_id: Optional[str] = None,
+    topic_persona_id: Optional[str] = None,
+    task_persona_id: Optional[str] = None,
+    blend_directive_sha: Optional[str] = None,
+    goal: Optional[str] = None,
+    note: str = "",
+    env: Optional[dict] = None,
+) -> bool:
+    """Report the personas the copy step ACTUALLY wrote with, onto the card (declared-vs-used, never
+    silent). Posts ONE ``updated`` activity to this client's own Command Center
+    (``/api/tasks/{id}/activities``, bearer only) whose metadata is exactly
+    ``{kind: 'persona_used', page, voice_persona_id, topic_persona_id, task_persona_id,
+    blend_directive_sha, goal}``; omitted keys are never sent. The voice persona is REQUIRED (nothing to
+    compare without it). Skill 49's own board client: the copy seam does not borrow another skill's.
+
+    Best-effort: a missing task_id or voice persona, a disabled board, an HTTP error or a timeout all
+    return False; this never raises and never blocks the copy step it rides on."""
+    try:
+        tid = (task_id or "").strip()
+        vpid = (voice_persona_id or "").strip()
+        if not tid or not vpid:
+            _log("report_persona_used skipped — empty task_id or voice_persona_id.")
+            return False
+        cfg = board_config(env)
+        if cfg is None:
+            _log("COMMAND_CENTER_URL/MISSION_CONTROL_URL unset — board disabled; persona report not posted.")
+            return False
+        page_label = (page or "").strip()
+        message = f"Persona used: {page_label or 'page'} -> {vpid}"
+        if (note or "").strip():
+            message += f" — {note.strip()}"
+        metadata: dict = {"kind": "persona_used", "voice_persona_id": vpid}
+        for key, value in (("page", page_label), ("topic_persona_id", topic_persona_id),
+                           ("task_persona_id", task_persona_id), ("blend_directive_sha", blend_directive_sha),
+                           ("goal", goal)):
+            if (value or "").strip():
+                metadata[key] = value.strip()
+        payload = {"activity_type": "updated", "message": message, "metadata": metadata}
+        # the activities route is bearer-authenticated: no HMAC body signature is sent
+        status, body = _request("POST", f"{cfg['base_url']}/api/tasks/{tid}/activities", payload,
+                                dict(cfg, secret=""))
+        if 200 <= status < 300:
+            _log(f"persona_used posted for task {tid} (HTTP {status}).")
+            return True
+        _log(f"persona_used non-OK (HTTP {status}): {body}; copy continues.")
+        return False
+    except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the copy step.
+        _log(f"report_persona_used best-effort skip ({type(exc).__name__}: {exc}).")
+        return False
+
+
 # ---------------------------------------------------------------------------
 # RECONCILE (U100) — the producer-reconcile pattern generalized from B-U13/U27
 # to this "mc_board six" producer. Sweeps every run-evidence root a caller has
@@ -758,7 +818,7 @@ def launch_card(run_dir, launch_id: str, *, offer_name: str = "",
 # ---------------------------------------------------------------------------
 def resolve_state_dir(env: Optional[dict] = None) -> str:
     """Resolve the run-evidence root to sweep for `reconcile` (U100 — cloned
-    from Skill 6's `resolve_evidence_base()`, B-U13/U27). Resolution order:
+    from the B-U13/U27 `resolve_evidence_base()`). Resolution order:
       1. ``MC_BOARD_EVIDENCE_BASE_DIR`` env override (explicit, highest
          precedence).
       2. ``$HOME/.openclaw/data/<skill-dir-name>/runs`` — the productized-
@@ -887,7 +947,7 @@ def reconcile(base_dir: Optional[str] = None, *, env: Optional[dict] = None) -> 
 
 def _reconcile_cli(argv: Optional[list] = None) -> int:
     """``mc_board.py reconcile [--base-dir DIR] [--json]`` (U100, cloned from
-    cc_board.py's B-U13/U27 CLI form). ALWAYS exits 0 — this is a non-gating,
+    the B-U13/U27 board-client CLI form). ALWAYS exits 0 — this is a non-gating,
     fail-soft, read-only sweep. The verdict lives in the printed report's
     ``all_clean`` / ``drift`` fields for the caller (operator, cron, or the
     Command Center's health probe) to read — never in the process exit code.
@@ -924,7 +984,7 @@ def _reconcile_cli(argv: Optional[list] = None) -> int:
 
 if __name__ == "__main__":
     # U100 — literal ``mc_board.py reconcile [--base-dir DIR] [--json]``
-    # subcommand (cloned from cc_board.py's B-U13/U27 CLI form). This module
+    # subcommand (cloned from the B-U13/U27 board-client CLI form). This module
     # previously had no CLI entrypoint at all (library-only, imported by each
     # producer's orchestrator) — reconcile is purely additive.
     if len(sys.argv) > 1 and sys.argv[1] == "reconcile":

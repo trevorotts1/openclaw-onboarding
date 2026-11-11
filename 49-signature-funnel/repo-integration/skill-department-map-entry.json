@@ -1,0 +1,38 @@
+{
+ "skill": "49",
+ "slug": "signature-funnel",
+ "name": "signature-funnel",
+ "client_facing": true,
+ "description": "Builds a Signature Funnel: 12-section Hero copy, per-section image prompts, GHL media + funnel build, configurable 3/5/7-step funnel.",
+ "departments": [
+  "web-development",
+  "marketing"
+ ],
+ "roles": [
+  {
+   "dept": "web-development",
+   "slug": "signature-funnel-specialist",
+   "primary": true
+  },
+  {
+   "dept": "web-development",
+   "slug": "funnel-builder-specialist",
+   "primary": false
+  },
+  {
+   "dept": "marketing",
+   "slug": "signature-funnel-specialist",
+   "primary": false
+  }
+ ],
+ "intent_triggers": [
+  "build my funnel",
+  "signature funnel",
+  "3/5/7 step funnel",
+  "an opt-in and upsell chain",
+  "a full funnel"
+ ],
+ "execution_sops": [
+  "funnel-craft"
+ ]
+}

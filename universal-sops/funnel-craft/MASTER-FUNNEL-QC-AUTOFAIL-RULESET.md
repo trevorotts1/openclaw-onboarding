@@ -73,7 +73,7 @@ table in lockstep with the manifest.
 
 | Code | Fires when |
 |---|---|
-| AF-FUN-FRONT-DOOR | The orchestrator was called without the run-scoped 0600 nonce. |
+| AF-FUN-FRONT-DOOR | The orchestrator was called without the operator key, or with a caller-supplied nonce (refused). |
 | AF-FUN-CANONICAL-BYPASS | A hand-rolled GHL/Kie/mail driver, a raw createTask or a KIE client script was detected in the run dir (Skill 74 result files directly inside `receipts/kie74/` are allow-listed). |
 | AF-FUN-HASH-PIN | The deployed provers do not match the pinned hash (`scripts/SF-PROVER-PIN.sha256`). |
 

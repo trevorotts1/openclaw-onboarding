@@ -22,10 +22,10 @@ passed its fail-closed gate. Minted by the canonical no-skip orchestrator
 | 1 | `P1-COPY` | `prove_sf_copy.py` | PASS |
 | 2 | `P2-PROMPTS` | `prove_sf_prompt_floor.py` | PASS |
 | 3 | `P3-IMAGES` | `kie_live_adapter.py` | PASS |
-| 4 | `P4-MEDIA` | `ghl_media.py` | PASS |
+| 4 | `P4-MEDIA` | `delivery-rail receipt (P4)` | PASS |
 | 5 | `P5-HTML` | `html_fragments` | PASS |
 | 6 | `P6-COMPOSE` | `prove_sf_graph.py` | PASS |
-| 7 | `P7-BUILD` | `prove_sf_build.py` | PASS |
+| 7 | `P7-BUILD` | `delivery-rail receipt (P7)` | PASS |
 | 8 | `P8-DERIVE` | `derived_pages_ledger` | PASS |
 | 9 | `P9-CERTIFY` | `prove_sf_no_pitch.py` | PASS |
 

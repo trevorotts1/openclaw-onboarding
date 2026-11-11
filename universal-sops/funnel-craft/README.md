@@ -2,7 +2,7 @@
 
 The SHARED, cross-department procedure for how any department discovers and drives the **Signature
 Funnel engine (Skill 49)** end to end: intake -> 12-section SACRED copy -> image prompts + images ->
-GHL media + funnel build (delegated to Skill 6) -> no-pitch + certificate -> preview + human approve
+media hosting + funnel build (delegated to the delivery rail named in the brief, proven by signed receipts) -> no-pitch + certificate -> preview + human approve
 -> optional 10 promo emails.
 
 This cluster is the `universal-sops` face of the capability. It does NOT re-implement the engine. The
@@ -12,7 +12,7 @@ authoritative machine spine lives in the skill:
 - `49-signature-funnel/scripts/prove_sf_intake.py`, `prove_sf_copy.py`, `prove_sf_prompt_floor.py`,
   `prove_sf_no_pitch.py`, `prove_sf_cert.py` — the five fail-closed, model-free floor provers.
 - `49-signature-funnel/run_signature_funnel.py` — the deterministic no-skip orchestrator
-  (front-door-nonce gated by `signature-funnel-entry.sh`); issues the signed PROCESS-CERTIFICATE only
+  (operator-key gated by `signature-funnel-entry.sh`); issues the signed PROCESS-CERTIFICATE only
   on a full pass.
 - `49-signature-funnel/MASTERDOC.md` — the SACRED 12-section copy IP, the derivation rules, the
   Thank-You spec, the 3/5/7 matrix, the image band + Signature Grade Block, and the deliverable
@@ -47,11 +47,12 @@ A funnel is built by running, and ONLY by running, the canonical fail-closed ent
 bash 49-signature-funnel/signature-funnel-entry.sh --run-dir <RUN_DIR>
 ```
 
-Requests route to this engine through the shared **STEP-0 funnel-engine selector**
-(`06-ghl-install-pages/funnel-engines/registry.json` + `tools/funnel_engine_selector.py`). A
+Requests route to this engine through its own department-map intent triggers
+(`49-signature-funnel/repo-integration/skill-department-map-entry.json`, mirrored in
+`23-ai-workforce-blueprint/skill-department-map.json`). A
 hand-rolled GHL REST call, a raw Kie `createTask` (Skill 74 is the one approved KIE path; its own result
 files under `receipts/kie74/` are allow-listed), or a `python3 run_signature_funnel.py` without the
-front-door nonce is the ungoverned path and is refused (`AF-FUN-CANONICAL-BYPASS` / `AF-FUN-FRONT-DOOR`).
+operator key is the ungoverned path and is refused (`AF-FUN-CANONICAL-BYPASS` / `AF-FUN-FRONT-DOOR`).
 
 ## Files
 
@@ -61,7 +62,7 @@ front-door nonce is the ungoverned path and is refused (`AF-FUN-CANONICAL-BYPASS
 | `SOP-FUNNEL-01-INTAKE.md` | Lock the brief in ONE block; funnel size (3/5/7); the truth gate; representation never assumed. |
 | `SOP-FUNNEL-02-COPY.md` | Author the SACRED 12-section copy across the six page profiles; the derivation rules. |
 | `SOP-FUNNEL-03-PROMPTS-IMAGES.md` | 8-block image prompts (model budget, rule 12) + Kie generation (Skill 66 policy, Skill 74 transport) + provenance. |
-| `SOP-FUNNEL-04-BUILD.md` | GHL media + funnel/page build — DELEGATED to Skill 6; the ONE delivery rail. |
+| `SOP-FUNNEL-04-BUILD.md` | Media hosting + funnel/page build — DELEGATED to the delivery rail named in the brief; proven by signed receipts. |
 | `SOP-FUNNEL-05-CERTIFY.md` | No-pitch (clean Thank-You) + signed certificate + preview/approve + the 10-email offer. |
 | `MASTER-FUNNEL-QC-AUTOFAIL-RULESET.md` | The auto-fail table every page/prompt/certificate is measured against. |
 

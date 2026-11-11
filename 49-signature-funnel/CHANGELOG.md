@@ -490,7 +490,7 @@ Train **T-49-signature-funnel** (Wave-0). Fix IDs: FIX-XC-03a, FIX-IMG-05, FIX-I
   status `review` ("certified — awaiting QC promotion") with the deliverable link registered on the
   card; `card_advance(status="done")` is HARD-BLOCKED. `review -> done` is owned exclusively by the
   independent QC scorer (PASS >= 8.5). Ports the CC `LEGAL_TRANSITIONS` map + BFS legal-path walker +
-  current-status GET from `48-facebook-ad-generator/scripts/cc_board.py`, and honors
+  current-status GET from Skill 48's board client (`48-facebook-ad-generator`), and honors
   `CC_STATUS_PATH_TEMPLATE` / `CC_STATUS_METHOD` for route parity. Still fully fail-soft — the board is
   a VIEW, never a gate.
 - **`run_signature_funnel.py`:** `orchestrate()` now calls `card_advance(phase_id, "in_progress")` per

@@ -44,10 +44,10 @@ EXPECTED_PHASES = (
     ("P1-COPY", "prove_sf_copy.py"),
     ("P2-PROMPTS", "prove_sf_prompt_floor.py"),
     ("P3-IMAGES", "kie_live_adapter.py"),   # Skill 66 policy + Skill 74 transport (provenance checked at P4/P9)
-    ("P4-MEDIA", "ghl_media.py"),           # Skill 6 delegation
+    ("P4-MEDIA", "delivery-rail receipt (P4)"),   # signed rail receipts (schema/delivery-rail-receipt.schema.json)
     ("P5-HTML", "html_fragments"),          # artifact-backed gate (pages/<profile>.fragment.html)
     ("P6-COMPOSE", "prove_sf_graph.py"),    # funnel_graph.json vs MASTERDOC §3
-    ("P7-BUILD", "prove_sf_build.py"),      # build_receipt.json (QC >= 8.5 + previews); Skill 6 build
+    ("P7-BUILD", "delivery-rail receipt (P7)"),   # build_receipt.json (QC >= 8.5 + previews) read against the rail's signed receipts
     ("P8-DERIVE", "derived_pages_ledger"),
     ("P9-CERTIFY", "prove_sf_no_pitch.py"),
 )

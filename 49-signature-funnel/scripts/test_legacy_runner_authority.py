@@ -64,9 +64,6 @@ def keyed_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     receipt and harness-signed provider receipts. Returns (run_dir, key_file)."""
     kf = _key_file(tmp_path)
     monkeypatch.setenv("SF_OPERATOR_KEY_FILE", str(kf))
-    # Skill 6 run-nonce files (the sealed verify run P7 re-reads) live outside the run dir; the
-    # orchestrator subprocess inherits this dir through os.environ (see _env).
-    monkeypatch.setenv("GHL_VERIFY_NONCE_DIR", str(tmp_path / "ghl-nonces"))
     rd = tmp_path / "run-legacy"
     rd.mkdir()
     runner._write_valid_run(rd, KEY)

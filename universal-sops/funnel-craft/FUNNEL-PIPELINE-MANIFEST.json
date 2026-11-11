@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "$schema_note": "SHARED cross-department SOP manifest for the Signature Funnel engine (Skill 49). This is the universal-sops face of the capability: it is how ANY department (web-development / marketing / crm / sales / social-media) discovers and drives the end-to-end funnel pipeline. It does NOT re-implement the engine. The authoritative machine spine lives in the skill: 49-signature-funnel/FUNNEL-MANIFEST.json (phase order P0..P10 + AF codes), 49-signature-funnel/scripts/prove_sf_*.py (the five fail-closed floor provers), 49-signature-funnel/run_signature_funnel.py (the deterministic orchestrator, front-door-nonce gated by signature-funnel-entry.sh), and the SACRED IP in 49-signature-funnel/MASTERDOC.md + structure/funnel_structure.json. This file mirrors the email-craft / fb-ad-craft / presentation-slide-craft enforcement-spine pattern so a department reads ONE manifest to know the phases, the owning roles, the SOP for each phase, and the gate codes. SOP-LOCKED: any added/changed SOP, section band, or gate MUST stay in lockstep with 49-signature-funnel/FUNNEL-MANIFEST.json and the provers.",
+  "$schema_note": "SHARED cross-department SOP manifest for the Signature Funnel engine (Skill 49). This is the universal-sops face of the capability: it is how ANY department (web-development / marketing / crm / sales / social-media) discovers and drives the end-to-end funnel pipeline. It does NOT re-implement the engine. The authoritative machine spine lives in the skill: 49-signature-funnel/FUNNEL-MANIFEST.json (phase order P0..P10 + AF codes), 49-signature-funnel/scripts/prove_sf_*.py (the five fail-closed floor provers), 49-signature-funnel/run_signature_funnel.py (the deterministic orchestrator, operator-key gated by signature-funnel-entry.sh), and the SACRED IP in 49-signature-funnel/MASTERDOC.md + structure/funnel_structure.json. This file mirrors the email-craft / fb-ad-craft / presentation-slide-craft enforcement-spine pattern so a department reads ONE manifest to know the phases, the owning roles, the SOP for each phase, and the gate codes. SOP-LOCKED: any added/changed SOP, section band, or gate MUST stay in lockstep with 49-signature-funnel/FUNNEL-MANIFEST.json and the provers.",
   "authoritative_engine": {
     "skill": "49-signature-funnel",
     "engine_manifest": "49-signature-funnel/FUNNEL-MANIFEST.json",
@@ -16,10 +16,10 @@
     "masterdoc": "49-signature-funnel/MASTERDOC.md",
     "sacred_structure": "49-signature-funnel/structure/funnel_structure.json"
   },
-  "step0_engine_selector": {
-    "registry": "06-ghl-install-pages/funnel-engines/registry.json",
-    "selector": "06-ghl-install-pages/tools/funnel_engine_selector.py",
-    "note": "Requests route to an engine via the shared STEP-0 funnel-engine selector. NO_ENGINE_MATCH falls through to the template-first funnel matcher. Skill 56 (Sales-Page-Assets) is now the 2nd registered engine (the Direct-Response sibling) — see direct_response_sibling below."
+  "routing": {
+    "entry": "49-signature-funnel/repo-integration/skill-department-map-entry.json",
+    "map": "23-ai-workforce-blueprint/skill-department-map.json",
+    "note": "A signature funnel request routes to this engine through its own department-map intent triggers; the front door refuses when the signature-funnel row is missing (front_door.step_departmap). The Direct-Response sibling (Skill 56) is listed below."
   },
   "direct_response_sibling": {
     "skill": "56-sales-page-assets",
@@ -28,11 +28,11 @@
     "sanctioned_entry": "56-sales-page-assets/sales-page-assets-entry.sh",
     "masterdoc": "56-sales-page-assets/MASTERDOC.md",
     "sacred_structure": "56-sales-page-assets/structure/sales_page_structure.json",
-    "note": "The Direct-Response sibling of Skill 49 (the DR sales-page / VSL family): the 8-section main A/B + countdown, the Trevor Otts 9-section upsell A/B, the downsell, the Sovereign Architect high-ticket long-form (6,500-7,100 words), the 40-80-word bump copy, and the slice-covered image plan — its own eight fail-closed model-free provers (prove_sp_*.py) and its own P0..P9 spine. It SHARES this funnel-craft SOP cluster and the ONE labeling grammar (56 OWNS it), rides the SAME STEP-0 selector, and DELEGATES all GHL media + build to Skill 6 (the ONE delivery rail) + the bump to Skill 44. Do NOT drive the DR stack through the Skill-49 provers; use 56-sales-page-assets/sales-page-assets-entry.sh."
+    "note": "The Direct-Response sibling of Skill 49 (the DR sales-page / VSL family): the 8-section main A/B + countdown, the Trevor Otts 9-section upsell A/B, the downsell, the Sovereign Architect high-ticket long-form (6,500-7,100 words), the 40-80-word bump copy, and the slice-covered image plan — its own eight fail-closed model-free provers (prove_sp_*.py) and its own P0..P9 spine. It SHARES this funnel-craft SOP cluster and the ONE labeling grammar (56 OWNS it); its own delivery wiring is in 56-sales-page-assets/SALESPAGE-MANIFEST.json. Do NOT drive the DR stack through the Skill-49 provers; use 56-sales-page-assets/sales-page-assets-entry.sh."
   },
   "delivery_rail": {
-    "owner": "06-ghl-install-pages",
-    "rule": "Skill 6 is the ONE GHL delivery rail. Skill 49 AUTHORS copy+images, then DELEGATES: P4 media folder + upload -> ghl_media.py; P7 funnel/step/page build + HTML injection -> ghl_rest_canvas.py / ghl_builder.py."
+    "owner": "brief.delivery_rail",
+    "rule": "The delivery rail named in the brief's delivery_rail field hosts the media and builds the pages. Skill 49 AUTHORS copy+images, then DELEGATES: P4 media hosting and P7 funnel/step/page build + HTML injection to that rail, which proves each with operator-key-signed receipts (schema 49-signature-funnel/schema/delivery-rail-receipt.schema.json, sf-delivery-rail-receipt/v1). Skill 49 never imports or resolves the rail."
   },
   "phases": [
     {
@@ -73,10 +73,10 @@
     },
     {
       "id": "P4-MEDIA",
-      "name": "GHL media folder + upload (DELEGATED to Skill 6)",
+      "name": "Media hosting (DELEGATED to the delivery rail named in the brief)",
       "sop": "SOP-FUNNEL-04-BUILD.md",
-      "delegated_to": "06-ghl-install-pages / ghl_media.py",
-      "produces": "working/media/media_ledger.json (GHL media URLs)",
+      "delegated_to": "delivery rail named by brief.delivery_rail :: sf-delivery-rail-receipt/v1",
+      "produces": "working/media/media_ledger.json (hosted media URLs)",
       "gates": ["AF-FUN-IMG-HOST"]
     },
     {
@@ -94,10 +94,10 @@
     },
     {
       "id": "P7-BUILD",
-      "name": "GHL funnel/page build (DELEGATED to Skill 6); QC >= 8.5",
+      "name": "Funnel/page build (DELEGATED to the delivery rail named in the brief); QC >= 8.5",
       "sop": "SOP-FUNNEL-04-BUILD.md",
-      "delegated_to": "06-ghl-install-pages / ghl_rest_canvas.py + ghl_builder.py",
-      "produces": "GHL funnel + preview URLs"
+      "delegated_to": "delivery rail named by brief.delivery_rail :: sf-delivery-rail-receipt/v1",
+      "produces": "funnel + preview URLs"
     },
     {
       "id": "P8-DERIVE",
@@ -121,7 +121,7 @@
       "note": "After the downsell is approved: offer the 10 promo emails; on yes, hand the locked brief + final copy to the Email Engine."
     }
   ],
-  "front_door_guards": ["deps", "version", "hash-pin", "bypass-scan", "run-scoped-0600-nonce"],
+  "front_door_guards": ["deps", "version", "dept-map", "hash-pin", "bypass-scan", "operator-key"],
   "front_door_gates": ["AF-FUN-FRONT-DOOR", "AF-FUN-CANONICAL-BYPASS", "AF-FUN-HASH-PIN"],
   "labeling_grammar": {
     "pattern": "<client>__<funnel>__<stage>__<type>__vNN",

@@ -199,7 +199,9 @@
     "AF-FUN-TY1-TITLE",
     "AF-FUN-TY2-STEPBAND",
     "AF-FUN-TY2-STEPS",
-    "AF-FUN-TY3-CHARBAND"
+    "AF-FUN-TY3-CHARBAND",
+    "AF-FUN-VISUAL-PHASE",
+    "AF-FUN-VISUAL-SLOTSET"
   ],
   "missing": [],
   "per_probe": {
@@ -286,7 +288,9 @@
       "AF-FUN-BUILD-SIZE-MISMATCH",
       "AF-FUN-BUILD-TYPE",
       "AF-FUN-BUILD-VISUAL",
-      "AF-FUN-HTML-SECTIONS"
+      "AF-FUN-HTML-FRAGMENT",
+      "AF-FUN-HTML-SECTIONS",
+      "AF-FUN-VISUAL-SLOTSET"
     ],
     "no_pitch": [
       "AF-FUN-IMG-EMPTY",
@@ -310,7 +314,9 @@
       "AF-FUN-BUILD-FAB",
       "AF-FUN-DERIVE-LEDGER",
       "AF-FUN-FRONT-DOOR",
-      "AF-FUN-HTML-FRAGMENT"
+      "AF-FUN-HTML-FRAGMENT",
+      "AF-FUN-VISUAL-PHASE",
+      "AF-FUN-VISUAL-SLOTSET"
     ],
     "delegation": [
       "AF-FUN-DELEG-IMAGES",

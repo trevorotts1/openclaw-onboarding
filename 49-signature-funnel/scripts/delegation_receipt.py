@@ -62,6 +62,7 @@ import hashlib
 import hmac
 import inspect
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -350,6 +351,80 @@ def require_signed(run_dir: Path, phase: str, *,
     """CLIENT-DELIVERY form (ENF-17): an absent store, an unsigned/forged line, or a line
     signed for another run FAILS. 'absent' is never an attestation."""
     return require(run_dir, phase, must_cover=must_cover, af=af, signed=True)
+
+
+# ---------------------------------------------------------------------------
+# DELIVERY-RAIL FORM (M1). The rail that hosts the images (P4-MEDIA) and builds the pages
+# (P7-BUILD) is named by brief.delivery_rail; Skill 49 never resolves that name to code. The
+# rail writes harness-signed lines with record(); this form adds the shape check against
+# schema/delivery-rail-receipt.schema.json (sf-delivery-rail-receipt/v1) on top of require_signed.
+# ---------------------------------------------------------------------------
+RAIL_SCHEMA_PATH = Path(__file__).resolve().parents[1] / "schema" / "delivery-rail-receipt.schema.json"
+
+
+def _schema_problems(value: Any, schema: Dict[str, Any], path: str = "$") -> List[str]:
+    """The small stdlib JSON-Schema subset the rail schema uses: type, const, enum, required,
+    properties, items, minItems, minLength, pattern, allOf, if/then. Unknown keywords are ignored."""
+    out: List[str] = []
+    kinds = {"string": str, "boolean": bool, "object": dict, "array": list}
+    want = schema.get("type")
+    if want == "integer":
+        if isinstance(value, bool) or not isinstance(value, int):
+            return [f"{path}: expected integer"]
+    elif want in kinds and (not isinstance(value, kinds[want]) or (want != "boolean" and isinstance(value, bool))):
+        return [f"{path}: expected {want}"]
+    if "const" in schema and value != schema["const"]:
+        out.append(f"{path}: must be {schema['const']!r}")
+    if "enum" in schema and value not in schema["enum"]:
+        out.append(f"{path}: {value!r} is not one of {schema['enum']}")
+    if isinstance(value, str):
+        if len(value.strip()) < schema.get("minLength", 0):
+            out.append(f"{path}: shorter than {schema['minLength']}")
+        if "pattern" in schema and not re.search(schema["pattern"], value):
+            out.append(f"{path}: does not match {schema['pattern']!r}")
+    if isinstance(value, list):
+        if len(value) < schema.get("minItems", 0):
+            out.append(f"{path}: fewer than {schema['minItems']} item(s)")
+        if isinstance(schema.get("items"), dict):
+            for i, item in enumerate(value):
+                out += _schema_problems(item, schema["items"], f"{path}[{i}]")
+    if isinstance(value, dict):
+        out += [f"{path}.{k}: required" for k in schema.get("required", ()) if k not in value]
+        for k, sub in (schema.get("properties") or {}).items():
+            if k in value:
+                out += _schema_problems(value[k], sub, f"{path}.{k}")
+    for sub in schema.get("allOf", ()):
+        out += _schema_problems(value, sub, path)
+    if isinstance(schema.get("if"), dict) and not _schema_problems(value, schema["if"], path):
+        out += _schema_problems(value, schema.get("then", {}), path)
+    return out
+
+
+def rail_schema_problems(run_dir: Path, phase: str) -> List[str]:
+    """Every line of `phase` in the run's store that breaks the delivery-rail schema (fail-closed:
+    an unreadable schema is a problem, never a pass)."""
+    try:
+        schema = json.loads(RAIL_SCHEMA_PATH.read_text(encoding="utf-8"))
+        entries = load(run_dir)
+    except (OSError, ValueError, ReceiptError) as exc:
+        return [f"delivery-rail schema/store unreadable ({exc})"]
+    out: List[str] = []
+    for i, e in enumerate((e for e in entries if str(e.get("phase", "")).strip() == phase)):
+        out += [f"{phase} line #{i} {p}" for p in _schema_problems(e, schema)]
+    return out
+
+
+def require_rail(run_dir: Path, phase: str, *, must_cover: Optional[Iterable[str]] = None,
+                 af: str = "AF-DELEG-RECEIPT") -> Tuple[bool, str]:
+    """DELIVERY-RAIL form: require_signed (absent / unsigned / forged / self-authored / uncovered all
+    fail) AND every line of the phase validates against the delivery-rail schema."""
+    ok, detail = require_signed(run_dir, phase, must_cover=must_cover, af=af)
+    if not ok:
+        return False, detail
+    problems = rail_schema_problems(run_dir, phase)
+    if problems:
+        return False, f"{af}-SCHEMA: " + " | ".join(problems[:5])
+    return True, detail + " (delivery-rail schema ok)"
 
 
 def verify_delivery_store(run_dir: Path, phases: Iterable[str] = (),

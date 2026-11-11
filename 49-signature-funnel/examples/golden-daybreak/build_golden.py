@@ -495,6 +495,7 @@ def build_brief() -> dict:
         "one_question_per_turn": True,
         "locked": True,
         "funnel_size": 7,
+        "delivery_rail": "golden-specimen-delivery-rail",
         "answers": answers,
         "offer_token_ledger": OFFER_LEDGER,
     }
@@ -1939,10 +1940,11 @@ def _emit_build_artifacts(dst: Path) -> list:
 
 
 def _stage_build_evidence(run_dir: Path) -> None:
-    """P7 reads what the TOOLS wrote under the run dir, not the receipt: a sealed Skill 6 verify run
-    (build/evidence) and a wireframe + mockup set (page-images). Neither can be committed (the verify run's
-    nonce lives outside the tree), so each run dir gets prove_sf_build's own fixture; the committed golden page
-    fragments are restored over its generic ones so they are the fragments actually checked.
+    """P7 reads what the TOOLS wrote under the run dir, not the receipt: the delivery rail's signed P7-BUILD
+    receipt lines (delegation_receipts.jsonl) and a wireframe + mockup set (page-images). Neither can be
+    committed (the receipts are signed under an operator key that lives outside the tree), so each run dir
+    gets prove_sf_build's own fixture; the committed golden page fragments are restored over its generic
+    ones so they are the fragments actually checked.
     Test fixture only; never a substitute for a real tool run."""
     prove_sf_build.write_valid_run_evidence(
         run_dir, GOLDEN_SIZE, json.loads((HERE / "build_receipt.json").read_text(encoding="utf-8")))
@@ -1992,7 +1994,7 @@ def _orchestrate(run_dir: Path, key_file: Path) -> tuple:
         media = json.loads((run_dir / "media_ledger.json").read_text(encoding="utf-8"))
         keys = [orch._image_key(i) for i in media["images"]]
         orch._stub_provider_emit(run_dir, "P3-IMAGES", keys)
-        orch._stub_provider_emit(run_dir, "P4-MEDIA", keys)
+        orch._stub_rail_media_emit(run_dir)   # the delivery rail's signed P4 lines (hosted_url per image)
     finally:
         if saved is None:
             os.environ.pop("SF_OPERATOR_KEY_FILE", None)

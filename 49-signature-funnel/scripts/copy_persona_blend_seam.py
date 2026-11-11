@@ -32,14 +32,14 @@ copy log HARD-MISS the legacy template-token check.
 
   * ``report_persona_used_to_card`` is the B-U6/U20 seam: AFTER the copy
     lands, report the personas ACTUALLY used back onto the Command Center
-    card (declared-vs-used, never silent) by delegating to
-    ``06-ghl-install-pages/tools/cc_board.py``'s ``report_persona_used()``.
+    card (declared-vs-used, never silent) through Skill 49's own board
+    client, ``mc_board.report_persona_used()``.
     A divergence from the card's DECLARED voice renders a `persona_mismatch`
     chip + one operator event; agreement renders nothing. Best-effort — a
     failure here (no task_id, board unreachable) never blocks the build.
 
 stdlib-only except ``report_persona_used_to_card``, which does one
-best-effort network call via ``cc_board.py`` (already fail-soft internally).
+best-effort network call via ``mc_board.py`` (already fail-soft internally).
 """
 from __future__ import annotations
 
@@ -151,21 +151,6 @@ def render_persona_selection_log(bundle: dict, *, header: Optional[str] = None,
     return "\n".join(lines) + "\n"
 
 
-def _load_cc_board_module():
-    """Lazy-load 06-ghl-install-pages/tools/cc_board.py so the ONE producer/
-    board-write path is reused verbatim rather than re-implemented (mirrors
-    ``_load_blend_module`` above). Returns None (best-effort no-op) when
-    unreachable — a missing/relocated cc_board.py must never block copy."""
-    try:
-        tools_dir = str(_REPO_ROOT / "06-ghl-install-pages" / "tools")
-        if tools_dir not in sys.path:
-            sys.path.insert(0, tools_dir)
-        import cc_board as _cb  # type: ignore
-        return _cb
-    except Exception:  # noqa: BLE001
-        return None
-
-
 def report_persona_used_to_card(
     task_id: str,
     bundle: dict,
@@ -183,20 +168,23 @@ def report_persona_used_to_card(
     actually rendered into the prompt — so the report can never drift from
     what the copy step really saw.
 
-    Best-effort: a missing task_id, an unreachable cc_board module, or a
+    Best-effort: a missing task_id, an unreachable board module, or a
     board write failure all return False without raising — this must never
     block or fail the copy step it rides on.
     """
     tid = (task_id or "").strip()
     if not tid:
         return False
-    cb = _load_cc_board_module()
-    if cb is None:
+    try:
+        if str(_SCRIPT_DIR) not in sys.path:
+            sys.path.insert(0, str(_SCRIPT_DIR))
+        import mc_board  # Skill 49's own board client, beside this file
+    except Exception:  # noqa: BLE001
         return False
 
     bundle = bundle if isinstance(bundle, dict) else {}
     directive = render_blend_directive_variable(bundle)
-    return cb.report_persona_used(
+    return mc_board.report_persona_used(
         tid,
         page=page,
         voice_persona_id=bundle.get("voice_persona_id"),
@@ -330,11 +318,11 @@ if __name__ == "__main__":
         except Exception as exc:  # noqa: BLE001
             check(f"report_persona_used_to_card must never raise ({exc})", False)
 
-        # (e) the cc_board loader resolves to the real module (proves the
-        #     cross-skill-directory sys.path wiring, not just a None fallback).
-        _cb = _load_cc_board_module()
-        check("_load_cc_board_module resolves cc_board.py",
-              _cb is not None and hasattr(_cb, "report_persona_used"))
+        # (e) the report goes through Skill 49's OWN board client (no cross-skill import).
+        import mc_board as _mb
+        check("mc_board.report_persona_used exists in this skill", hasattr(_mb, "report_persona_used"))
+        check("mc_board.report_persona_used(no voice persona) returns False, no raise",
+              _mb.report_persona_used("t1", page="main", env={}) is False)
 
         print("== copy_persona_blend_seam self-test: %s ==" % ("ALL PASSED" if ok else "FAILED"))
         raise SystemExit(0 if ok else 1)
