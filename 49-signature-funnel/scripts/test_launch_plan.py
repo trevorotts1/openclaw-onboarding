@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -22,6 +23,7 @@ import launch_intake  # noqa: E402
 import launch_plan  # noqa: E402
 
 CONTRACT = ROOT / "shared-utils" / "signature_launch_contract"
+REGISTRY = ROOT / "50-email-engine" / "profiles" / "launch-email-families.json"
 
 
 def _load_contract_validator():
@@ -107,6 +109,87 @@ def test_full_plan() -> None:
         "no failed-payment automation when the offer has no payment plans")
     say(all(a["build_rail"] == "skill44_engine" for a in plan["automations"]),
         "automations carry the U-GHL-PROBE answer (Skill 44 engine) and are drafts")
+
+
+def must(good: bool, msg: str) -> None:
+    """say() plus a hard assert, so the check also fails under pytest (say() only records)."""
+    say(good, msg)
+    assert good, msg
+
+
+def _registry_counts():
+    """kind -> email_count straight from Skill 50's registry file, read independently of the planner."""
+    families = json.loads(REGISTRY.read_text(encoding="utf-8"))["families"]
+    return {f["kind"]: f["email_count"] for f in families}
+
+
+def test_email_counts_come_from_skill_50() -> None:
+    """Issue 58 (D-A): every planned sequence carries the count Skill 50's registry fixes,
+    with no Black Friday special case, so Skill 50's adapter never refuses the plan."""
+    expected = _registry_counts()
+    must(launch_plan.email_counts() == {k: expected[k] for k in launch_plan.email_counts()}
+        and set(launch_plan.PLANNED_EMAIL_KINDS) <= set(expected),
+        "email_counts() is the registry's own kind -> email_count table")
+    bf = dict(ANSWERS, **{
+        "launch.launch_at": "2026-11-27T00:00:00-05:00",
+        "launch.doors_open_at": "2026-11-27T00:00:00-05:00",
+        "launch.doors_close_at": "2026-12-01T00:00:00-05:00",
+        "launch.black_friday.teaser_at": "2026-11-20T09:00:00-05:00",
+        "launch.black_friday.countdown_at": "2026-11-24T09:00:00-05:00",
+        "launch.black_friday.cyber_monday_at": "2026-11-30T00:00:00-05:00",
+        "launch.black_friday.last_call_at": "2026-11-30T20:00:00-05:00"})
+    for label, answers in (("plain launch", ANSWERS), ("Black Friday launch", bf)):
+        plan = launch_plan.build_launch_plan(_launch(), answers)["plan"]
+        wrong = [(e["id"], e["email_count"], expected[e["kind"]]) for e in plan["email_sequences"]
+                 if e["email_count"] != expected[e["kind"]]]
+        must(not wrong, f"{label}: each sequence's email_count equals Skill 50's registry row"
+            + ("" if not wrong else f" - disagree: {wrong}"))
+    plain = launch_plan.build_launch_plan(_launch(), ANSWERS)["plan"]
+    kinds = {e["kind"] for e in plain["email_sequences"]}
+    must(kinds == set(launch_plan.PLANNED_EMAIL_KINDS),
+        "the plan plans exactly the seven registry families (no kind without a registry row)")
+
+
+def test_missing_or_broken_registry_refuses() -> None:
+    """Issue 58: no registry, no default. Every defect is the named refusal, never a number."""
+    families = json.loads(REGISTRY.read_text(encoding="utf-8"))["families"]
+    broken = {
+        "absent file": None,
+        "not JSON": "{nope",
+        "no families array": json.dumps({"families": "x"}),
+        "a planned kind has no row": json.dumps(
+            {"families": [f for f in families if f["kind"] != "upsell_followup"]}),
+        "boolean count": json.dumps(
+            {"families": [dict(f, email_count=True) if f["kind"] == "pre_launch" else f
+                          for f in families]}),
+        "zero count": json.dumps(
+            {"families": [dict(f, email_count=0) if f["kind"] == "pre_launch" else f
+                          for f in families]}),
+        "duplicate kind": json.dumps({"families": families + [families[0]]}),
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        for label, body in broken.items():
+            path = Path(tmp) / "registry.json"
+            path.unlink(missing_ok=True)
+            if body is not None:
+                path.write_text(body, encoding="utf-8")
+            try:
+                launch_plan.email_counts(path)
+                must(False, f"a registry with {label} is refused")
+            except launch_plan.LaunchPlanError as exc:
+                must(launch_plan.EMAIL_REGISTRY_CODE in str(exc),
+                    f"a registry with {label} is refused as {launch_plan.EMAIL_REGISTRY_CODE}")
+        # the planner itself stops, it does not fall back to a number of its own
+        saved = launch_plan.EMAIL_REGISTRY
+        launch_plan.EMAIL_REGISTRY = Path(tmp) / "gone.json"
+        try:
+            launch_plan.build_launch_plan(_launch(), ANSWERS)
+            must(False, "build_launch_plan with no registry is refused")
+        except launch_plan.LaunchPlanError as exc:
+            must(launch_plan.EMAIL_REGISTRY_CODE in str(exc),
+                "build_launch_plan with no registry is refused, not defaulted")
+        finally:
+            launch_plan.EMAIL_REGISTRY = saved
 
 
 def test_missing_facts() -> None:
@@ -195,6 +278,8 @@ def test_intake_integration() -> None:
 
 def main() -> int:
     test_full_plan()
+    test_email_counts_come_from_skill_50()
+    test_missing_or_broken_registry_refuses()
     test_missing_facts()
     test_choices()
     test_intake_integration()

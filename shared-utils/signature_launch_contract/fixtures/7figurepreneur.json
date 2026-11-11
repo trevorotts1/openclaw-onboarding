@@ -92,7 +92,7 @@
       "id": "email_welcome_access",
       "kind": "welcome_access",
       "provider": "skill50",
-      "email_count": 3,
+      "email_count": 2,
       "draft_only": true,
       "waits_for": ["page_access", "page_thank_you"]
     }
@@ -148,7 +148,7 @@
     {
       "id": "auto_opt_in",
       "family": "opt_in",
-      "template": "post-optin-multichannel-stack",
+      "template": "launch-a/launch-optin-register-login",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {
@@ -160,7 +160,7 @@
     {
       "id": "auto_event_reminders",
       "family": "event_reminders",
-      "template": "webinar-registration-reminder-replay-stack",
+      "template": "launch-a/launch-a-reminder-confirm",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {
@@ -172,7 +172,7 @@
     {
       "id": "auto_post_sale",
       "family": "post_sale",
-      "template": "new",
+      "template": "launch-b/launch-post-sale-purchase",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {
@@ -184,7 +184,7 @@
     {
       "id": "auto_onboarding_review",
       "family": "onboarding_review",
-      "template": "membership-stick-retention",
+      "template": "launch-c/launch-c-onboarding-first-hour-day-week",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {
@@ -196,7 +196,7 @@
     {
       "id": "auto_failed_payment",
       "family": "failed_payment",
-      "template": "new",
+      "template": "launch-c/failed-payment-recovery",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {
@@ -208,7 +208,7 @@
     {
       "id": "auto_ai_reply",
       "family": "conversation_ai_reply",
-      "template": "new",
+      "template": "launch-ai/customer-replied-conversation-ai",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {

@@ -33,6 +33,10 @@ LAW
   date, doors-open/close time, timezone or the Conversation AI mode is asked,
   never invented. A2P unknown is treated as not ready, the safe side: texts stay
   drafts and the package warns.
+* Email counts are Skill 50's, not ours: every planned sequence's `email_count`
+  is read from `50-email-engine/profiles/launch-email-families.json` by
+  `email_counts()`. A missing or incomplete registry refuses the plan
+  (AF-FUN-LAUNCH-EMAIL-REGISTRY); no count is ever defaulted here.
 * `build_rail` is `skill44_engine` for every automation family — the answer
   recorded by U-GHL-PROBE (the official GHL API cannot author a workflow;
   `44-convert-and-flow-operator/automation-templates/launch-ghl-probe/
@@ -188,11 +192,55 @@ TEMPLATE_BY_FAMILY = {
     "conversation_ai_reply": "launch-ai/customer-replied-conversation-ai",
 }
 
+# D-A: Skill 50's family registry is the ONE owner of launch email counts. This
+# planner reads it (same sibling-path resolution as BUILDABLE_MANIFEST: repo layout
+# 50-email-engine, installed layout email-engine) and never carries a number of its own.
+_REGISTRY_CANDIDATES = [HERE.parents[1] / d / "profiles" / "launch-email-families.json"
+                        for d in ("50-email-engine", "email-engine")]
+EMAIL_REGISTRY = next((c for c in _REGISTRY_CANDIDATES if c.is_file()), _REGISTRY_CANDIDATES[0])
+EMAIL_REGISTRY_CODE = "AF-FUN-LAUNCH-EMAIL-REGISTRY"
+# The seven email kinds build_launch_plan emits; each needs a registry row.
+PLANNED_EMAIL_KINDS = ("pre_launch", "main_launch", "doors_closing", "upsell_followup",
+                       "downsell_followup", "abandoned_checkout", "welcome_access")
+
 _MISSING = object()
 
 
 class LaunchPlanError(ValueError):
     pass
+
+
+def email_counts(registry: Optional[Path] = None) -> Dict[str, int]:
+    """kind -> email_count, read from Skill 50's launch email family registry.
+
+    Skill 50's adapter refuses a plan whose declared `email_count` differs from its
+    registry row, so the planner takes the number from that same row. A missing,
+    unreadable or incomplete registry is a refusal (AF-FUN-LAUNCH-EMAIL-REGISTRY),
+    never a built-in default: a default is exactly how 4 and 5 drifted apart."""
+    registry = Path(registry or EMAIL_REGISTRY)
+
+    def refuse(why: str) -> "LaunchPlanError":
+        return LaunchPlanError(f"{EMAIL_REGISTRY_CODE}: {why} (registry: {registry.name}); "
+                               "the planner never defaults an email count")
+
+    try:
+        families = json.loads(registry.read_text(encoding="utf-8")).get("families")
+    except (OSError, ValueError, AttributeError) as exc:
+        raise refuse(f"Skill 50's launch email family registry cannot be read ({exc})")
+    if not isinstance(families, list):
+        raise refuse("the registry declares no families[] array")
+    counts: Dict[str, int] = {}
+    for family in families:
+        kind = family.get("kind") if isinstance(family, dict) else None
+        count = family.get("email_count") if isinstance(family, dict) else None
+        if not isinstance(kind, str) or isinstance(count, bool) or not isinstance(count, int) \
+                or count < 1 or kind in counts:
+            raise refuse(f"family {kind!r} has no usable unique kind and positive email_count")
+        counts[kind] = count
+    absent = [k for k in PLANNED_EMAIL_KINDS if k not in counts]
+    if absent:
+        raise refuse("the registry has no row for: " + ", ".join(absent))
+    return counts
 
 
 # ---------------------------------------------------------------------------
@@ -1066,26 +1114,29 @@ def build_launch_plan(launch: Dict[str, Any], answers: Dict[str, Any], *,
             page["url"] = offer.get(url_key.split(".", 1)[1])
 
     emails: List[Dict[str, Any]] = []
+    # Skill 50's registry owns every email number (D-A). Read here, after the deliverables
+    # were produced and the missing-fact gate: no plan is ever emitted without it.
+    counts = email_counts()
 
-    def email(uid: str, kind: str, count: int, waits: Sequence[str]) -> None:
+    def email(uid: str, kind: str, waits: Sequence[str]) -> None:
         emails.append({"id": uid, "kind": kind, "provider": "skill50",
-                       "email_count": count, "draft_only": True,
+                       "email_count": counts[kind], "draft_only": True,
                        "waits_for": [w for w in waits if w in page_ids or w in
                                      {e["id"] for e in emails}]})
 
-    email("email_pre_launch", "pre_launch", 5 if "black_friday" in calendar else 4,
+    email("email_pre_launch", "pre_launch",
           ["page_landing"] if has_landing else (["page_sales"] if has_sales else []))
-    email("email_main_launch", "main_launch", 10,
+    email("email_main_launch", "main_launch",
           ["page_sales"] if has_sales else (["page_landing"] if has_landing else []))
-    email("email_doors_closing", "doors_closing", 3, ["email_main_launch"])
+    email("email_doors_closing", "doors_closing", ["email_main_launch"])
     for page in pages:
         if page["kind"] == "upsell":
-            email(f"email_{page['id'].removeprefix('page_')}", "upsell_followup", 2, [page["id"]])
+            email(f"email_{page['id'].removeprefix('page_')}", "upsell_followup", [page["id"]])
         elif page["kind"] == "downsell":
-            email(f"email_{page['id'].removeprefix('page_')}", "downsell_followup", 2, [page["id"]])
+            email(f"email_{page['id'].removeprefix('page_')}", "downsell_followup", [page["id"]])
     if has_checkout:
-        email("email_abandoned_checkout", "abandoned_checkout", 3, ["page_checkout"])
-    email("email_welcome_access", "welcome_access", 2,
+        email("email_abandoned_checkout", "abandoned_checkout", ["page_checkout"])
+    email("email_welcome_access", "welcome_access",
           ["page_thank_you"] if has_thank_you else ["email_main_launch"])
 
     email_ids = {e["id"] for e in emails}

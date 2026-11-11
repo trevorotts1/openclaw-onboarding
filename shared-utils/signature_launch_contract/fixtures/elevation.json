@@ -53,7 +53,7 @@
       "id": "email_pre_launch",
       "kind": "pre_launch",
       "provider": "skill50",
-      "email_count": 4,
+      "email_count": 5,
       "draft_only": true,
       "waits_for": ["page_landing"]
     },
@@ -95,7 +95,7 @@
     {
       "id": "auto_pre_launch",
       "family": "pre_launch",
-      "template": "cart-open-cart-close-launch-sequence",
+      "template": "launch-a/launch-a-prelaunch-window",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {
@@ -107,7 +107,7 @@
     {
       "id": "auto_post_sale",
       "family": "post_sale",
-      "template": "new",
+      "template": "launch-b/launch-post-sale-purchase",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {
@@ -119,7 +119,7 @@
     {
       "id": "auto_abandoned_checkout",
       "family": "abandoned_checkout",
-      "template": "abandoned-cart-multichannel-recovery",
+      "template": "launch-b/abandoned-checkout-recovery",
       "build_rail": "unknown",
       "draft_only": true,
       "trigger": {

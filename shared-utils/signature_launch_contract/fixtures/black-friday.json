@@ -216,7 +216,7 @@
       "id": "email_upsell_1",
       "kind": "upsell_followup",
       "provider": "skill50",
-      "email_count": 2,
+      "email_count": 3,
       "draft_only": true,
       "waits_for": [
         "page_upsell_1"
@@ -227,7 +227,7 @@
       "id": "email_downsell_1",
       "kind": "downsell_followup",
       "provider": "skill50",
-      "email_count": 2,
+      "email_count": 3,
       "draft_only": true,
       "waits_for": [
         "page_downsell_1"
