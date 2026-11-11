@@ -273,6 +273,12 @@ ROOT = HERE.parents[4]
 REGISTRY = {f["kind"]: f["lifecycle"] for f in json.loads(
     (ROOT / "50-email-engine" / "profiles" / "launch-email-families.json")
     .read_text(encoding="utf-8"))["families"]}
+# Skill 49 takes each sequence's length from this registry (issue 58), so the end-to-end checks below expect
+# exactly the registry's email_count for the follow-up unit's own sequence rather than a number typed here.
+EMAIL_COUNT = {f["kind"]: f["email_count"] for f in json.loads(
+    (ROOT / "50-email-engine" / "profiles" / "launch-email-families.json")
+    .read_text(encoding="utf-8"))["families"]}
+FOLLOW_KIND = {"auto_upsell_1": "upsell_followup", "auto_downsell_1": "downsell_followup"}
 OFFERS = {"main": "off-main", "upsell_1": "off-up1", "downsell_1": "off-down1"}
 ANSWERS_49 = {
     "launch.launch_at": "2026-11-03T12:00:00-05:00",
@@ -364,16 +370,16 @@ class Skill49PlanToSkill44(unittest.TestCase):
             steps = _steps(unit_id, doc)
             gates = [s for s in steps if s["id"].endswith("-purchase-gate")]
             goals = [s for s in steps if s["type"] == "workflow_goal"]
-            self.assertEqual(len(gates), 2, unit_id)
+            self.assertEqual(len(gates), EMAIL_COUNT[FOLLOW_KIND[unit_id]], unit_id)
             self.assertEqual({g["attributes"]["conditions"][0]["value"] for g in gates},
                              {"purchased-" + offer}, unit_id)
             self.assertEqual({g["attributes"]["tag"] for g in goals}, {"purchased-" + offer})
             main_buyer = {LAUNCH_TAG, "purchased-off-main"}
-            self.assertEqual(len(_sends_reached(steps, main_buyer)), 2, unit_id)
+            self.assertEqual(len(_sends_reached(steps, main_buyer)), EMAIL_COUNT[FOLLOW_KIND[unit_id]], unit_id)
             self.assertEqual(_sends_reached(steps, main_buyer | {"purchased-" + offer}), [], unit_id)
         # a buyer of the upsell is still sent the downsell follow-up (its own offer is unbought)
         down = _steps("auto_downsell_1", doc)
-        self.assertEqual(len(_sends_reached(down, {LAUNCH_TAG, "purchased-off-up1"})), 2)
+        self.assertEqual(len(_sends_reached(down, {LAUNCH_TAG, "purchased-off-up1"})), EMAIL_COUNT["downsell_followup"])
 
 
 if __name__ == "__main__":
