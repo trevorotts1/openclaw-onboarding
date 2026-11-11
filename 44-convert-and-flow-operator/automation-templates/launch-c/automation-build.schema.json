@@ -89,6 +89,32 @@
         }
       }
     },
+    "text_builds": {
+      "type": "array",
+      "description": "One entry per launch text_set: the build unit the texts are delivered as (template launch-text-set). blocked_by names 'text_set:<id> copy' when working/text/<id>.sms.json is absent or invalid. Present only when the plan carries text sets.",
+      "items": {
+        "type": "object",
+        "required": ["id", "unit_key", "template", "state", "blocked_by"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "unit_key": { "type": "string" },
+          "template": { "type": "string", "const": "launch-text-set" },
+          "kind": { "type": "string" },
+          "messages": { "type": "integer", "minimum": 1 },
+          "state": { "type": "string", "enum": ["ready", "blocked"] },
+          "blocked_by": { "type": "array", "items": { "type": "string" } },
+          "automations": { "type": "array", "items": { "type": "string" } },
+          "bindings": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "sms_copy": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } } }
+          },
+          "categories": { "type": "object", "additionalProperties": { "type": "string" } },
+          "profile_sha256": { "type": ["string", "null"] }
+        }
+      }
+    },
     "warnings": {
       "type": "array",
       "items": {
@@ -207,6 +233,17 @@
           "type": "object",
           "description": "Declared Skill 50 content hashes per workflow key.",
           "additionalProperties": true
+        },
+        "text_sets": {
+          "type": "array",
+          "description": "Launch text_set ids this automation waits on (the texts the client elected for it), in plan order. Present only when the automation waits on at least one text set.",
+          "items": { "type": "string" }
+        },
+        "bindings": {
+          "type": "object",
+          "description": "Approved copy the reader bound into this build. sms_copy maps an SMS step id (or its body_ref) to the Skill 50 approved body from working/text/<set_id>.sms.json; the compiler binds it and the build command refuses an elected SMS step that stays copy_pending. Present only when the automation waits on a text set.",
+          "additionalProperties": false,
+          "properties": { "sms_copy": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } } }
         },
         "expected_graph_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "required_outputs": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },

@@ -359,6 +359,8 @@ def compile_build(build: Mapping[str, Any], *, bindings: Optional[Mapping[str, A
         steps = _apply_absolute(out, steps, sched, until_dates, tz, allow_browser_steps)
     if steps and not out["blocked_by"] and promo:
         _apply_purchase_gate(steps, bid, gtag)
+    if steps and not out["blocked_by"]:
+        _terminate(steps, bid)
     if family == "post_sale" and steps and not any(
             s["type"] == "add_contact_tag" and ptag in s["attributes"].get("tags", []) for s in steps):
         blocked.append("purchase_tag_not_set:%s" % bid)
@@ -456,6 +458,10 @@ def _compile_graph(out, graph, bid, emails, bindings, promo, close_at, ptag, fam
         else:  # any other VERIFIED action type passes through unchanged
             step = {"id": sid, "type": ntype, "name": str(a.get("ref") or nid),
                     "attributes": {k: v for k, v in a.items() if k != "ref"}}
+        if a.get("join") is True:
+            # The template declares this node a confluence of branch arms.  validate_graph.py
+            # (CROSS_BRANCH) exempts only a node that carries attributes.join, so keep it.
+            step.setdefault("attributes", {})["join"] = True
         parents = [idmap[p] for p in _preds(n) if p in idmap]
         step["parentKey"] = parents[0] if parents else None
         if ntype == "if_else" and isinstance(n.get("branches"), Mapping):
@@ -542,6 +548,30 @@ def _apply_purchase_gate(steps: list, bid: str, ptag: str) -> None:
                   "attributes": {"goal": "purchased", "goalType": "contact_tag", "tag": ptag,
                                  "scope": "this_campaign_only"},
                   "parentKey": sends[-1]["id"], "next": None})
+
+
+# The one terminal type that is both a VERIFIED action and a terminal in tools/validate_graph.py
+# (TERMINAL_TYPES = end, workflow_goal, goal, exit; "end" is not a verified action).
+TERMINAL_TYPE = "workflow_goal"
+
+
+def _terminate(steps: list, bid: str) -> None:
+    """Every path ends on a terminal node (issue 64: Skill 44's own WF-23 / Skill 83 re-check).
+
+    A step with no successor and no branches that is not a terminal is linked to ONE new
+    ``workflow_goal`` appended after it.  The purchase goal is never reused: it is the ``true``
+    branch of the purchase gates, and the validator forbids a branch body flowing into another body.
+    Nothing is added to a graph that already terminates."""
+    tails = [s for s in steps if not s.get("next") and not s.get("branches")
+             and s.get("type") != TERMINAL_TYPE]
+    if not tails:
+        return
+    goal = {"id": "%s-end" % bid, "type": TERMINAL_TYPE, "name": "Goal: sequence complete",
+            "attributes": {"goal": "sequence_complete", "scope": "this_campaign_only"},
+            "parentKey": tails[-1]["id"], "next": None}
+    steps.append(goal)
+    for tail in tails:
+        tail["next"] = goal["id"]
 
 
 # ── one bound workflow -> installable provider steps (canonical entry) ───────
@@ -742,6 +772,8 @@ def compile_installable(workflow: Mapping[str, Any], build: Mapping[str, Any], *
             _apply_purchase_gate(steps, bid, gtag)
         else:
             out["notes"].append("purchase_gate_unset:%s" % gtag)
+    if steps:
+        _terminate(steps, bid)
 
     # F05 short purchase handler: the tag it sets is what lets the promotional
     # gate fire.  A handler that installs no tag step is recorded as an

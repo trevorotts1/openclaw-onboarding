@@ -116,6 +116,18 @@ python3 launch-c/plan_reader.py --selftest             # built-in refusal checks
 python3 tools/engine/tests/test_workflow_builder_l07.py  # provider compile / journal / readback
 ```
 
+## Handoff files (Skill 83 and the QC script)
+
+* `plan_reader.py --text-copy-dir working/text` binds Skill 50's `<text_set id>.sms.json` into the builds that
+  elected a text set (`bindings.sms_copy`) and lists each set under `text_builds`; no valid file blocks them.
+* `caf workflows build --from-automation-build ... --journal J --deliveries-out D` writes, for every unit that built
+  and read back clean, `exports/<launch>__<unit>.export.json` (`skill44.workflow-export.v1`) or
+  `exports/<launch>__<set>.sms-set.json` (`skill44.sms-set.v1`) beside the journal, plus the deliveries file Skill 83
+  `assemble --deliveries` reads. Keep `J` and `D` in the same directory tree (the Skill 83 run directory); a unit that
+  cannot be proven is named under `deliveries.refused` and left out.
+* `emit_launch_schedule.py --automation-build automation-builds.json --unit <id> [--workflow-key <key>] --out
+  schedule.json` writes the `{"waits": [...]}` file `qc-built-workflow.sh --launch --launch-schedule` compares (WF-9).
+
 Fixtures are the four contract fixtures in
 `shared-utils/signature_launch_contract/fixtures/` plus five small Skill 50 build
 plans under `launch-c/fixtures/`. Nothing in a plan authorizes a send or a live

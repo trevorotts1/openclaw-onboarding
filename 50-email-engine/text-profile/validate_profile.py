@@ -11,8 +11,13 @@
 #   * every example carries a reply invitation and STOP, <= max chars, <= 1 link;
 #   * draft_only / a2p gate / no-send posture is declared.
 #
+# It also judges the per-set SMS copy Skill 50 hands to Skill 44 (issue 3):
+#   * check_message / check_sms_set hold every approved body to the same rules;
+#   * `python3 validate_profile.py --check-sms working/text/<set_id>.sms.json`.
+#
 # USAGE:  python3 validate_profile.py            (exit 0 = pass)
 # =============================================================================
+import hashlib
 import json
 import os
 import re
@@ -92,7 +97,77 @@ def check(profile):
     return fails
 
 
+CATEGORIES = ("marketing", "operational")
+
+
+def profile_sha256(path=PROFILE):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def check_message(body, category, rules):
+    """Why one approved SMS body breaks the profile's copy contract (empty list = it holds)."""
+    fails = []
+    if not isinstance(body, str) or not body.strip():
+        return ["body is empty"]
+    if category not in CATEGORIES:
+        fails.append("category %r is not marketing|operational" % (category,))
+    if not REPLY.search(body):
+        fails.append("no reply invitation")
+    if "STOP" not in body:
+        fails.append("no literal STOP")
+    if len(body) > rules.get("max_characters", 320):
+        fails.append("%d chars > %d" % (len(body), rules.get("max_characters", 320)))
+    if len(LINK.findall(body)) > rules.get("max_links", 1):
+        fails.append("more than one link")
+    if "unsubscribe" in body.lower():
+        fails.append("use STOP, not unsubscribe")
+    return fails
+
+
+def check_sms_set(doc, profile=None, path=PROFILE):
+    """Failures for a working/text/<set_id>.sms.json document (empty list = valid)."""
+    if profile is None:
+        with open(path, encoding="utf-8") as f:
+            profile = json.load(f)
+    rules = profile.get("rules", {})
+    if not isinstance(doc, dict):
+        return ["sms set is not a JSON object"]
+    fails = []
+    if not (isinstance(doc.get("set_id"), str) and doc["set_id"].strip()):
+        fails.append("set_id required")
+    if doc.get("profile_sha256") != profile_sha256(path):
+        fails.append("profile_sha256 is not the sha256 of launch-text.profile.json")
+    messages = doc.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return fails + ["messages must be a non-empty list"]
+    seen = set()
+    for i, m in enumerate(messages):
+        label = "messages[%d]" % i
+        if not isinstance(m, dict) or not isinstance(m.get("step_id"), str) or not m["step_id"].strip():
+            fails.append("%s: step_id required" % label)
+            continue
+        if m["step_id"] in seen:
+            fails.append("%s: step_id %r repeated" % (label, m["step_id"]))
+        seen.add(m["step_id"])
+        fails += ["%s: %s" % (label, f) for f in check_message(m.get("body"), m.get("category"), rules)]
+    return fails
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--check-sms":
+        try:
+            with open(sys.argv[2], encoding="utf-8") as f:
+                doc = json.load(f)
+        except (OSError, ValueError) as exc:
+            print("FAIL: %s unreadable: %s" % (sys.argv[2], exc))
+            return 1
+        fails = check_sms_set(doc)
+        for f in fails:
+            print("FAIL: %s" % f)
+        if not fails:
+            print("PASS: %s honours the launch-text profile" % sys.argv[2])
+        return 1 if fails else 0
     if not os.path.isfile(PROFILE):
         print("FAIL: %s not found" % PROFILE)
         return 1

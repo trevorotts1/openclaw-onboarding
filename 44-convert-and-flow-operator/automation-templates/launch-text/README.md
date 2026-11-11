@@ -90,6 +90,7 @@ Unknown token fails the catalog check.
    - Auto-created trigger is Tag Added only; form/order triggers use `caf workflows patch-trigger` or Tier 4.
    - Workflows stay draft (`CAF_DRAFT_ONLY`).
 4. Copy is written for a 2-segment ceiling (≤ 320 characters before placeholder expansion). The check enforces this.
+5. **Approved copy binding (Skill 50 → Skill 44).** The bodies come from Skill 50, the copy owner: `50-email-engine/tools/emit_text_sets.py` writes `working/text/<set_id>.sms.json` (`{"set_id", "messages": [{"step_id", "body", "category"}], "profile_sha256"}`, judged by `50-email-engine/text-profile/validate_profile.py --check-sms`). `launch-c/plan_reader.py --text-copy-dir working/text` binds each file to the builds that wait on the set (`bindings.sms_copy`, keyed by SMS step id or `body_ref`) and lists the set under `text_builds` (template `launch-text-set`); a set with no valid file blocks its builds with `text_set:<id> copy`. `caf workflows build --from-automation-build` refuses a build that elected texts while an SMS step is still `copy_pending` (`SMS-COPY-PENDING`) or while approved copy landed in no step (`SMS-COPY-UNBOUND`), and `--deliveries-out` delivers the set as `skill44.sms-set.v1` only when every approved body is the body of a saved SMS step.
 
 ## Validation
 

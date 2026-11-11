@@ -75,6 +75,10 @@ run "launch_intake_adapter.py --self-test" "$PY" "$TOOLS/launch_intake_adapter.p
 run "test_launch_intake_adapter.py"     "$PY" "$SKILL_DIR/test_launch_intake_adapter.py"
 run "email_matcher_cli.py --selftest"   "$PY" "$TOOLS/email_matcher_cli.py" --selftest
 run "emit_build_plan.py --selftest"     "$PY" "$TOOLS/emit_build_plan.py" --selftest
+run "validate_delivery.py --selftest"   "$PY" "$TOOLS/validate_delivery.py" --selftest
+run "test_validate_delivery.py"         "$PY" "$SKILL_DIR/tests/test_validate_delivery.py"
+run "emit_text_sets.py --selftest"      "$PY" "$TOOLS/emit_text_sets.py" --selftest
+run "test_text_set_emit.py"             "$PY" "$SKILL_DIR/tests/test_text_set_emit.py"
 run "email-library/register.py --check" "$PY" "$LIB/register.py" --check
 
 # 5) golden reproduce — the brief + the 10-email ledger both PASS.

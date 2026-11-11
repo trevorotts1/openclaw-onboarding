@@ -29,6 +29,7 @@
 #   plan_reader.py --launch-plan plan.json --build-plan pre.json [--build-plan ...]
 #                  [--sequence-map map.json] [--now 2026-11-01T00:00:00-05:00]
 #                  [--acknowledge-dropped-sends <dropped_sends_hash>]
+#                  [--text-copy-dir working/text]
 #                  --out automation-builds.json
 #   plan_reader.py --selftest
 #
@@ -873,6 +874,55 @@ def _sha256(value):
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
 
 
+# ------------------------------------------------------------------ text copy
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def read_text_copy(copy_dir, set_id, expected_messages):
+    """``(copy, problem)`` for one launch text set.
+
+    ``copy`` is Skill 50's approved ``<copy_dir>/<set_id>.sms.json``
+    (``{"set_id", "messages": [{"step_id", "body", "category"}], "profile_sha256"}``);
+    ``problem`` is why it cannot be bound, and the build that needs it stays blocked.
+    The reader checks shape and count only: Skill 50's text-profile validator owns the
+    compliance rules (STOP, reply invitation, length) and ran before the file was written.
+    """
+    if not copy_dir:
+        return None, "no --text-copy-dir given"
+    path = Path(copy_dir) / ("%s.sms.json" % set_id)
+    if not path.is_file():
+        return None, "%s is absent" % path.name
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return None, "%s is unreadable (%s)" % (path.name, exc)
+    messages = doc.get("messages") if isinstance(doc, dict) else None
+    if not (isinstance(doc, dict) and doc.get("set_id") == set_id
+            and isinstance(messages, list) and messages
+            and isinstance(doc.get("profile_sha256"), str)
+            and SHA256_RE.match(doc["profile_sha256"])):
+        return None, "%s is not a Skill 50 sms set for %s" % (path.name, set_id)
+    ids = []
+    for message in messages:
+        if not (isinstance(message, dict)
+                and all(isinstance(message.get(k), str) and message[k].strip()
+                        for k in ("step_id", "body", "category"))):
+            return None, "%s has a message without step_id, body and category" % path.name
+        ids.append(message["step_id"])
+    if len(set(ids)) != len(ids):
+        return None, "%s repeats a step_id" % path.name
+    if isinstance(expected_messages, int) and len(messages) != expected_messages:
+        return None, "%s has %d message(s), the launch plan says %d" % (
+            path.name, len(messages), expected_messages)
+    return doc, None
+
+
+def _text_bindings(plan, copy_dir):
+    """set_id -> ``(copy or None, problem or None)`` for every launch text set."""
+    return {set_id: read_text_copy(copy_dir, set_id, doc.get("messages"))
+            for set_id, doc in plan["text_sets"].items()}
+
+
 # ----------------------------------------------------------------------- builder
 def _dependency_blocker(dep, plan, bound, build_states):
     kind = plan["units"].get(dep)
@@ -921,8 +971,10 @@ def _enrollment(automation):
     return value if value in ("single", "successive") else None
 
 
-def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowledged=None):
+def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowledged=None,
+                   text_copy_dir=None):
     now = now or datetime.now(timezone.utc)
+    text_copy = _text_bindings(plan, text_copy_dir)
     email_sequences = plan["email_sequences"]
     times = dict(plan["calendar_times"])
     times["timezone"] = plan["calendar"]["timezone"]
@@ -959,6 +1011,18 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
             reason = _dependency_blocker(dep, plan, bound, build_states)
             if reason and reason not in blocked_by:
                 blocked_by.append(reason)
+
+        # Texts the client elected for this automation: their approved SMS copy travels
+        # with the build (bindings.sms_copy) or the build is blocked, never built with the
+        # copy left pending.
+        elected = [dep for dep in automation["waits_for"] if plan["units"].get(dep) == "text_sets"]
+        sms_copy = {}
+        for set_id in elected:
+            copy, problem = text_copy[set_id]
+            if copy is None:
+                blocked_by.append("text_set:%s copy" % set_id)
+            else:
+                sms_copy.update({m["step_id"]: m["body"] for m in copy["messages"]})
 
         # Email count is a hard output contract: a mismatch blocks the build.
         for seq_id in refs:
@@ -1085,6 +1149,27 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
             "dropped_sends": dropped,
             "state": state,
             "blocked_by": blocked_by,
+            **({"text_sets": elected, "bindings": {"sms_copy": sms_copy}} if elected else {}),
+        })
+
+    text_builds = []
+    for set_id, set_doc in plan["text_sets"].items():
+        copy, problem = text_copy[set_id]
+        electing = [b["id"] for b in builds if set_id in b.get("text_sets", [])]
+        text_builds.append({
+            "id": set_id,
+            "unit_key": "%s/%s" % (plan["launch_id"], set_id),
+            "template": "launch-text-set",
+            "kind": set_doc.get("kind"),
+            "messages": set_doc.get("messages"),
+            "state": "ready" if copy is not None else "blocked",
+            "blocked_by": [] if copy is not None else ["text_set:%s copy" % set_id],
+            "automations": electing,
+            "bindings": {"sms_copy": ({m["step_id"]: m["body"] for m in copy["messages"]}
+                                      if copy is not None else {})},
+            "categories": ({m["step_id"]: m["category"] for m in copy["messages"]}
+                           if copy is not None else {}),
+            "profile_sha256": copy["profile_sha256"] if copy is not None else None,
         })
 
     dropped_hash = _sha256(all_dropped)
@@ -1113,6 +1198,7 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
         },
         "journal": {"stable_unit_keys": journal},
         "builds": builds,
+        **({"text_builds": text_builds} if text_builds else {}),
         "unused_build_plan_workflows": unbound,
         "warnings": warnings,
     }
@@ -1146,7 +1232,8 @@ def run(args):
     document = build_document(
         args.launch_plan, parsed, bound, unbound, [],
         now=_parse_now(getattr(args, "now", None)),
-        acknowledged=getattr(args, "acknowledge_dropped_sends", None))
+        acknowledged=getattr(args, "acknowledge_dropped_sends", None),
+        text_copy_dir=getattr(args, "text_copy_dir", None))
     validate_output(document)
     return document
 
@@ -1169,6 +1256,7 @@ def blocked_builds(document):
     """Ids of builds that cannot be built (blocked or carrying no workflow); an
     empty build list is itself blocked."""
     ids = [b["id"] for b in document["builds"] if b["state"] == "blocked" or not b["workflows"]]
+    ids += [t["id"] for t in document.get("text_builds", []) if t["state"] == "blocked"]
     return ids or ([] if document["builds"] else ["(no automation builds)"])
 
 def _selftest():
@@ -1313,6 +1401,9 @@ def main(argv=None):
     parser.add_argument("--acknowledge-dropped-sends", default=None, metavar="HASH",
                         help="owner acknowledgement: the dropped_sends_hash of a late "
                              "compile, passed back to accept that exact list of dropped sends")
+    parser.add_argument("--text-copy-dir", default=None, metavar="DIR",
+                        help="directory holding Skill 50's <text_set id>.sms.json files "
+                             "(working/text); a launch text set with no valid file blocks its builds")
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args(argv)
 
