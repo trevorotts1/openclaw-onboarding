@@ -1,6 +1,8 @@
 {
   "sop": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md",
   "sha256": "db7b2072ea12a93713b70239a14e9f0185187248ed661e598b8c400eab47e76e",
-  "read_at": "2026-11-09",
-  "read_in_full": true
+  "read_at": "2026-11-10",
+  "read_in_full": true,
+  "reader_session": "harmony-wp13-reader",
+  "sections": 4
 }

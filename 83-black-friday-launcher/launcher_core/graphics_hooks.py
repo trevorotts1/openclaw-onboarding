@@ -68,6 +68,7 @@ from . import page_designs
 PASS_AVERAGE = 8.5
 QC_REPORT_REL = "qc/image_qc_report.json"
 QC_REQUEST_REL = "qc/image_qc_request.json"
+VISION_LOG_REL = "qc/vision_qc_log.json"
 DELIVERY_REL = "delivery_record.json"
 LEDGER_REL = "media_library.json"
 HOSTING_BINDING_REL = "hosting-binding.json"   # the hosting decision a launcher emits and this reads
@@ -92,6 +93,7 @@ STAGES_REPORT_REL = "qc/image_stages_report.json"
 REVIEWS_REL = Path("private") / "reviews"
 IMAGE_STAGE = "image-generation-qc"
 QC_CODE = "AF-LAUNCH-IMAGE-QC"
+VISION_CODE = "AF-G-VISION"
 UNKNOWN = "UNKNOWN"
 _PAGE_SUFFIXES = (".html", ".htm", ".css", ".svg")
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -334,6 +336,8 @@ def qc_request(manifest: Dict[str, Any], package_root: Path, job_dir: Path,
                         "with no automatic failure, and its average must be the mean of its own "
                         "criterion scores. A hand-written average or a request file is not a review"),
         "vision_read": "mandatory: a real multimodal read of every image, never graded from file names or prompts",
+        "vision_log": (f"{VISION_LOG_REL}: one record per image with its artifact_sha256 and a non-null "
+                       f"vision_api_response (SOP-GIP-02 step 1); a package without it is refused ({VISION_CODE})"),
         "review_producer": REVIEW_PRODUCER_REF,
         "review_record": (f"{REVIEWS_REL.as_posix()}/{IMAGE_STAGE}/<item-id>.review.json (Review Receipt v2; "
                           "artifact_sha256 is computed by the producer from the file on disk)"),
@@ -565,6 +569,26 @@ def _mean_score(review: Dict[str, Any]) -> Optional[float]:
     return round(sum(real) / len(real), 2) if real else None
 
 
+def _vision_log_problem(img: Dict[str, Any], job_dir: Path, cache: Dict[Path, Any]) -> Optional[str]:
+    """SOP-GIP-02 step 1: the asset's bytes carry a non-null ``vision_api_response`` in
+    ``qc/vision_qc_log.json`` (a list of records, or ``{"assets": [...]}``), each record naming the
+    ``artifact_sha256`` it looked at. A Review Receipt says who scored; this says a real multimodal
+    pass opened the pixels. Both are demanded (issue 21)."""
+    path = Path(job_dir) / VISION_LOG_REL
+    if path not in cache:
+        cache[path] = _read(path)
+    log = cache[path]
+    records = log.get("assets") if isinstance(log, dict) else log
+    where = f"{img['page']} {Path(img['local_path']).name}"
+    for record in records if isinstance(records, list) else []:
+        if isinstance(record, dict) \
+                and str(record.get("artifact_sha256") or "").strip().lower() == img["sha256"] \
+                and record.get("vision_api_response") not in (None, "", {}, []):
+            return None
+    return (f"{VISION_CODE}: {where} has no record with a non-null vision_api_response for its bytes in "
+            f"{VISION_LOG_REL} (SOP-GIP-02 step 1); a review graded from filenames or prompt text is refused")
+
+
 def _review_problems(rec: Dict[str, Any], img: Dict[str, Any], job_dir: Path,
                      cache: Dict[Path, Any]) -> List[str]:
     """Why one report record is not a review of THESE bytes by two named, different models.
@@ -641,6 +665,9 @@ def _review_problems(rec: Dict[str, Any], img: Dict[str, Any], job_dir: Path,
     if _text(review.get("model_independence")) not in ("", "independent"):
         problems.append(f"{QC_CODE}: {where} its review records model independence "
                         f"as {review.get('model_independence')!r}, not independent")
+    vision = _vision_log_problem(img, job_dir, cache)
+    if vision:
+        problems.append(vision)
     return problems
 
 

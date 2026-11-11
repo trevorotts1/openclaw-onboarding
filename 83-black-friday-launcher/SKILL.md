@@ -13,12 +13,8 @@ priority: HIGH
 **READ THIS ENTIRE FILE BEFORE TOUCHING ANYTHING ELSE.**
 
 Read this entire document from top to bottom before executing a single step.
-Then read every SOP this skill declares, in full, in this order:
-`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md`,
-`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`,
-`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-602.md`,
-`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-607.md` and
-`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-610.md`.
+Then read every SOP this skill declares, in full, in the order of the one SOP list under "Read order"
+step 4 below (six SOPs, each a `sop` row in `launcher_core/dependencies.json`).
 
 ## Your role with the client (BINDING, for the WHOLE conversation, not only the opening)
 
@@ -306,23 +302,30 @@ Read in this order. Each step names the file, so nothing here depends on guessin
    80, 81 and 82 that Skill 49 calls.
 3. For the launch automations (emails, texts, reminders, workflows): `50-email-engine` writes the DRAFT-ONLY
    build plans, then `44-convert-and-flow-operator/automation-templates/launch-c/plan_reader.py` reads them,
-   and `44-convert-and-flow-operator/tools/siglaunch/` is the pipeline that builds and receipts them. See
-   "Launch mode" below. Skill 83 depends on Skill 44 and Skill 50 for this reason.
+   and `44-convert-and-flow-operator/tools/siglaunch/` receives the hand-off but is **not** a production entry
+   (`PRODUCTION_ENTRY_ENABLED = False`): a Skill 71 `automation-request.json` is built through
+   `caf workflows build --from-automation-build` after the plan reader, and the receipt is the build journal.
+   See "Launch mode" below. Skill 83 depends on Skill 44 and Skill 50 for this reason.
    The executable requirement set is `launcher_core/dependencies.json` alone (read by
    `launcher_core/dependencies.py`). `skill.json` and `registration.json` carry only a
    NON-AUTHORITATIVE pointer to it (target, digest, counts); `dependencies.py:metadata_spine`
    reports any disagreement as a finding in the `dependencies` report, never as a crash.
-4. The SOPs this skill declares, read in full before the assembly step:
-   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md` and
-   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`,
-   plus `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-602.md`,
-   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-607.md`,
-   `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-610.md` and
-   `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-07-Full-Funnel-Build-Orchestration.md`
-   (SOP-07 is still a tracked follow-up in `DISPATCH.md`, not an enforced gate).
-   Each GIP SOP and each DIU SOP above (602, 607, 610) is a `sop` entry in `launcher_core/dependencies.json`;
-   `assemble` refuses when its read receipt in `receipts/sop-read/` is absent or does not match the SOP file's
-   sha256. Skill 45 itself (`45-design-intelligence-library`, and its `graphics_ghl_push.py`) is a dependency
+4. The SOPs this skill declares (the ONE list; `launcher_core/dependencies.json` carries one `sop` row per
+   item and a test keeps the two equal), read in full before the assembly step:
+   1. `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md`
+   2. `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`
+   3. `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-602.md`
+   4. `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-607.md`
+   5. `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-610.md`
+   6. `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-07-Full-Funnel-Build-Orchestration.md`
+
+   `assemble` refuses (`AF-LAUNCH-DEPENDENCY`) when a SOP's read receipt in `receipts/sop-read/` is absent,
+   does not match the SOP file's sha256, or does not prove reading: `read_in_full` true, a `reader_session`
+   other than the assembling session (`SKILL83_SESSION`), the SOP's section-heading count in `sections`, and a
+   `read_at` that is not earlier than the SOP's last commit date (minus a short slack). Write a receipt only
+   after opening the file: `python3 -m launcher_core.cli sop-ack <id|path|stem> --session <reader-id>
+   --sections <heading count>` refuses a count that does not match the file.
+   Skill 45 itself (`45-design-intelligence-library`, and its `graphics_ghl_push.py`) is a dependency
    entry that `assemble` requires for a client package (not for a `test_only` practice one): a box that cannot
    style and host the pages is refused before anything is packaged.
 
@@ -365,7 +368,8 @@ python3 -m launcher_core.cli revise-image --run <page-run> --item IMG-001 --defe
                  [--provider kie --allow-paid]
 python3 -m launcher_core.cli check        --manifest <package-dir>/package-manifest.json --root <package-dir>
 python3 -m launcher_core.cli seams
-python3 -m launcher_core.cli dependencies [--root <repo>] [--install]
+python3 -m launcher_core.cli dependencies [--root <repo>] [--install] [--stamp-interfaces]
+python3 -m launcher_core.cli sop-ack      <sop> --session <reader-id> --sections <heading count>
 ```
 
 `assemble` also produces the graphics handoff every time: the
@@ -451,8 +455,8 @@ steps, all DRAFT-ONLY (nothing is sent and nothing goes live):
    workflow, or does not carry `exit_code` 0, `exit_gate` PASS, `overall_mechanical` PASS and
    `plan_mode_gate.status` PASS (`AF-LAUNCH-UNIT-AUTOMATION`).
 4. **Receipt.** The build journal is that build's receipt (unit key, remote id, phase, expected and
-   read-back hash), so a re-run is safe; for a Skill 71 hand-off the `siglaunch` receiver issues its
-   own receipt. Each planned email, text and automation reaches Skill 83 as the producing lane's delivery
+   read-back hash), so a re-run is safe; the `siglaunch` receiver is not a production entry and issues
+   no receipt of its own. Each planned email, text and automation reaches Skill 83 as the producing lane's delivery
    row, never one typed by hand: an automation is Skill 44's build export (`skill44.workflow-export.v1`, the
    first artifact) plus its QC result; an email sequence is the row `50-email-engine/tools/validate_delivery.py
    <run-dir> --launch-plan <plan> --unit <id> --out <receipt.json>` writes (`skill50.email-delivery.v1`, with its

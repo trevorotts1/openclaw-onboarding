@@ -692,6 +692,14 @@ def cmd_seams(_args: argparse.Namespace) -> int:
 def cmd_dependencies(args: argparse.Namespace) -> int:
     root = Path(args.root) if args.root else None
     mode = args.mode
+    if args.stamp_interfaces:
+        try:
+            changed = dependencies.stamp_interfaces(root)
+        except dependencies.DependencyError as exc:
+            print(f"FAIL {exc}", file=sys.stderr)
+            return 2
+        print(f"{len(changed)} interface hash(es) re-stamped" + "".join(f"\n  {f}" for f in changed))
+        return 0
     try:
         # --install is the sanctioned fix: a missing runtime package goes into the shared pydeps folder
         report = (dependencies.ensure_runtime_packages(root, mode=mode) if args.install
@@ -706,6 +714,8 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
           f"would_enable={report['would_enable']}")
     for entry in report["entries"]:
         print(f"  {entry['status'].upper():12s} {entry['id']}  ({entry['evidence']})")
+        for h in entry.get("interfaces") or []:
+            print(f"      interface {h['file']} expected sha256={h['expected']} observed sha256={h['observed']}")
     # The metadata spines (registration.json, skill.json) are pointers, not a second
     # requirement list. A disagreement is printed as a finding and never changes the
     # exit code: those two files record nothing that runs.
@@ -730,6 +740,19 @@ def cmd_dependencies(args: argparse.Namespace) -> int:
     if cl["selected_missing"]:
         print("  SELECTED BUT MISSING: " + ", ".join(cl["selected_missing"]))
     return 2 if args.install and report["blockers"] else 0
+
+
+def cmd_sop_ack(args: argparse.Namespace) -> int:
+    """Write the read receipt for one declared SOP, after the reader proves the file was opened."""
+    try:
+        result = dependencies.ack_sop(args.sop, args.session, args.sections,
+                                      Path(args.root) if args.root else None)
+    except dependencies.DependencyError as exc:
+        print(f"FAIL {exc}", file=sys.stderr)
+        return 2
+    print(f"OK read receipt written: {result['receipt']}")
+    print(f"   {result['sop']} has {result['sections']} section headings (matches --sections)")
+    return 0
 
 
 _LANDING_HELP = ("the landing pages the client wants: landing, sales or landing,sales (default: the set "
@@ -916,17 +939,33 @@ def build_parser() -> argparse.ArgumentParser:
                    help="first install any missing runtime package (jsonschema) into the shared pydeps "
                         "folder <root>/pydeps/py<X.Y>/ with pip --target, never --break-system-packages "
                         "and never a venv; exit 2 if one is still missing")
+    d.add_argument("--stamp-interfaces", action="store_true",
+                   help="after a reviewed change to a sibling skill's interface file, re-stamp the "
+                        "interface_sha256 values in dependencies.json to the files' current sha256")
     d.add_argument("--mode", default=dependencies.DEFAULT_MODE,
                    choices=list(dependencies.LAUNCH_MODES),
                    help="the launch mode whose transitive closure to report (default: plan). "
                         "dispatch-kie selects the paid KIE transport, receipts and image helpers; "
                         "dispatch selects the stub practice closure")
     d.set_defaults(fn=cmd_dependencies)
+
+    k = sub.add_parser("sop-ack",
+                       help="write the read receipt for ONE declared SOP, after you open it and count "
+                            "its section headings")
+    k.add_argument("sop", help="the declared SOP: its manifest id, repository path or file stem")
+    k.add_argument("--session", required=True,
+                   help="the reading session's id; it may not equal the assembling session "
+                        "(env SKILL83_SESSION)")
+    k.add_argument("--sections", type=int, default=None,
+                   help="the number of section headings (#-lines) in the SOP; must match the file. "
+                        "The count is printed only after it matches")
+    k.add_argument("--root", default=None, help="repository root (default: the repo containing this skill)")
+    k.set_defaults(fn=cmd_sop_ack)
     return p
 
 
 # These commands read data only and never import the runtime packages, so they must not start an install.
-_NO_RUNTIME_PACKAGES = ("seams", "dependencies", "questions", "brand", "revise-image")
+_NO_RUNTIME_PACKAGES = ("seams", "dependencies", "questions", "brand", "revise-image", "sop-ack")
 
 
 def main(argv: List[str] | None = None) -> int:

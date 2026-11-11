@@ -308,10 +308,30 @@ class CheckRuleTests(unittest.TestCase):
         self.assertEqual(len(fails), 1)
         self.assertIn("Compare section", fails[0])
 
-    def test_selection_does_not_fail_a_piece_that_lists_no_manuscript(self):
+    def test_selection_does_not_fail_a_practice_piece_that_lists_no_manuscript(self):
         selection = load_rule("selection")
         piece = self.piece("product_selection", "desktop-wireframe/section-01.png", "png")
-        self.assertEqual(selection.violations({"test_only": False, "pieces": [piece]}, self.root, SKILL_ROOT), [])
+        self.assertEqual(selection.violations({"test_only": True, "pieces": [piece]}, self.root, SKILL_ROOT), [])
+
+    def test_selection_fails_a_non_test_piece_that_lists_no_manuscript(self):
+        """Issue 17: a real package passes the Compare check only by having a manuscript to check."""
+        selection = load_rule("selection")
+        piece = self.piece("product_selection", "desktop-wireframe/section-01.png", "png")
+        for manifest in ({"test_only": False, "pieces": [piece]}, {"pieces": [piece]}):
+            fails = selection.violations(manifest, self.root, SKILL_ROOT)
+            self.assertEqual(len(fails), 1, fails)
+            self.assertIn("AF-LAUNCH-SELECTION", fails[0])
+            self.assertIn("lists no internal-manuscript.md", fails[0])
+
+    def test_selection_fails_a_non_test_piece_whose_manuscript_is_not_on_disk(self):
+        selection = load_rule("selection")
+        piece = {"role": "product_selection", "slot": "product_selection",
+                 "artifacts": [{"path": "pieces/product_selection/copy/internal-manuscript.md", "sha256": "0" * 64}]}
+        self.assertEqual(selection.violations({"test_only": True, "pieces": [piece]}, self.root, SKILL_ROOT), [])
+        fails = selection.violations({"test_only": False, "pieces": [piece]}, self.root, SKILL_ROOT)
+        self.assertEqual(len(fails), 1, fails)
+        self.assertIn("AF-LAUNCH-SELECTION", fails[0])
+        self.assertIn("is not in the package", fails[0])
 
     def test_check_package_runs_both_rules_when_the_seam_is_present(self):
         seam = importlib.import_module("launcher_core.check_rules")

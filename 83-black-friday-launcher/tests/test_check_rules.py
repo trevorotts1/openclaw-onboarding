@@ -29,6 +29,7 @@ import route_law  # noqa: E402
 import substrate  # noqa: E402
 sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
 from test_only_readback import TEST_ONLY_CHECKOUT_READBACK  # noqa: E402
+from vision_log_fixture import write_vision_log  # noqa: E402
 from launcher_core import (check_rules, checks, cli, intake, launch_bridge, package,  # noqa: E402
                            page_designs, route)
 from test_lane83_designs import COUNCIL, make_piece  # noqa: E402
@@ -91,6 +92,7 @@ def write_bound_qc(root, assets):
                         "review_ref": str(review.relative_to(root)),
                         "review_sha256": hashlib.sha256(review.read_bytes()).hexdigest()})
     (root / "qc" / "image_qc_report.json").write_text(json.dumps({"assets": records}), encoding="utf-8")
+    write_vision_log(root, [a["sha256"] for a in assets])
 
 
 def store(ok=True, detail="verified"):

@@ -175,6 +175,13 @@ node.
 **Ceiling:** no teaching content, no page and no offer is invented. When the
 owner supplies the material, the teaching state changes in one place.
 
+## Open question (not a seam; no build is blocked on it)
+
+**Image vision evidence, one canonical shape.** SOP-GIP-02 asks for a non-null `vision_api_response` per image in
+`qc/vision_qc_log.json`; Skill 71's Review Receipt v2 carries the scores and models. `check` now demands both
+(`AF-G-VISION` for the log, `AF-LAUNCH-IMAGE-QC` for the receipt). Question for the owner: should one of the two
+shapes become the only one, with the other derived from it?
+
 ## Carried to owners (after this unit merges)
 
 The Council label and the downsell_2 refusal text land here as constants and tests. These edits sit in
