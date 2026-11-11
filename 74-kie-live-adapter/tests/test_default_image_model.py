@@ -240,6 +240,11 @@ class DefaultCheck(unittest.TestCase):
             ev["tables"][0]["credits_per_picture"]["medium"]["2K"] = v
             self.assertTrue(self.defects(ev), v)
 
+    def test_an_integer_price_cell_is_a_valid_price(self):
+        ev = json.loads(json.dumps(K.load_price_evidence()))
+        ev["tables"][0]["credits_per_picture"]["medium"]["2K"] = 16
+        self.assertEqual(self.defects(ev), [])
+
     def test_a_default_with_no_row_at_all_is_refused(self):
         self.assertTrue(any("no per-picture reference price" in b for b in self.defects({"tables": [], "request_field": {"enum": list(K.QUALITY_ENUM)}})))
 
@@ -347,6 +352,17 @@ class LoadPriceEvidence(Base):
 
     def test_the_shipped_file_loads_strictly(self):
         self.assertEqual(K.load_price_evidence(strict=True), K.load_price_evidence())
+
+    def test_with_missing_or_broken_evidence_a_newer_per_picture_sunburst_is_still_the_default(self):
+        a = self.make_newer()
+        for text in (None, "{not json"):
+            p = self.write(text) if text else os.path.join(self.tmp, "gone.json")
+            with mock.patch.object(K, "PRICE_EVIDENCE", p):
+                self.assertEqual((a.default_model("gpt-image"), a.default_model("gpt-image", edit=True)), (S27, S27_I), text)
+
+    def make_newer(self):
+        rows = LIVE_2_6 + [(S27, T2I, "7 credits ($0.035) per image"), (S27_I, I2I, "7 credits ($0.035) per image")]
+        return self.adapter([["GET", "/schema", [schema(20000)]], ["GET", "/api/v1/models", [cat(*rows)]]])[0]
 
     def test_with_no_evidence_a_token_priced_default_is_refused_not_guessed(self):
         a = self.adapter([["GET", "/schema", [schema(20000)]], ["GET", "/api/v1/models", [cat((S26, T2I, TOKEN), (S26_I, I2I, TOKEN))]]])[0]
