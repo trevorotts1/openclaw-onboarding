@@ -68,7 +68,16 @@ def plan_doc(calendar=None, page_url="https://example.com/landing", sequences=No
     return doc
 
 
-def build_doc(seq_id, email_count, waits=(), meta=None):
+def authored_meta():
+    """What a Skill 50 build plan carries: the reader never supplies these itself."""
+    return {
+        "enrollment_conditions": copy.deepcopy(plan_reader.DEFAULT_ENROLLMENT_CONDITIONS),
+        "lifecycle": copy.deepcopy(plan_reader.DEFAULT_LIFECYCLE),
+        "sender_config_refs": copy.deepcopy(plan_reader.DEFAULT_SENDER),
+    }
+
+
+def build_doc(seq_id, email_count, waits=(), meta=None, authored=True):
     templates = []
     for index in range(email_count):
         templates.append(email_step(index))
@@ -81,6 +90,8 @@ def build_doc(seq_id, email_count, waits=(), meta=None):
                   "deploy_mode": "draft-only"},
         seq_id: {"name": seq_id, "status": "draft", "templates": templates},
     }
+    if authored:
+        document["_meta"].update(authored_meta())
     if meta:
         document["_meta"].update(meta)
     return document
@@ -307,6 +318,35 @@ class DependencyAndMetadataTests(unittest.TestCase):
         self.assertTrue(any(reason.startswith("guards:email_pre_launch:") for reason in reasons),
                         reasons)
         self.assertEqual(doc["builds"][0]["state"], "blocked")
+
+    def test_build_plan_without_lifecycle_eligibility_or_sender_is_blocked_not_defaulted(self):
+        # Issue 26: the reader used to inject its own defaults and then pass them
+        # through its own guard check. Now an absent value blocks the build.
+        plan = plan_doc()
+        rc, doc = Harness(plan, {"email_pre_launch": build_doc(
+            "email_pre_launch", 2, authored=False)}).run()
+        self.assertEqual(rc, 4)
+        build = doc["builds"][0]
+        self.assertEqual(build["state"], "blocked")
+        for name in ("lifecycle", "eligibility", "sender"):
+            self.assertIn(name, build["blocked_by"])
+        self.assertEqual(build["lifecycle"], {})
+        self.assertEqual(build["eligibility"], [])
+        self.assertEqual(build["sender"], {})
+        plan_reader.validate_output(doc)
+
+    def test_each_absent_metadata_key_blocks_on_its_own(self):
+        for drop, reason in (("lifecycle", "lifecycle"),
+                             ("enrollment_conditions", "eligibility"),
+                             ("sender_config_refs", "sender")):
+            built = build_doc("email_pre_launch", 2)
+            del built["_meta"][drop]
+            rc, doc = Harness(plan_doc(), {"email_pre_launch": built}).run()
+            self.assertEqual(rc, 4, drop)
+            blocked = doc["builds"][0]["blocked_by"]
+            self.assertIn(reason, blocked, drop)
+            self.assertEqual([r for r in ("lifecycle", "eligibility", "sender") if r in blocked],
+                             [reason], drop)
 
     def test_eligibility_lifecycle_and_sender_metadata_are_carried(self):
         plan = plan_doc()

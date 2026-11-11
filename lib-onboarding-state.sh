@@ -924,6 +924,20 @@ oc_gate_skill() {
     if [ "$qc_rc" -ne 0 ]; then
       ok=0; reason="${reason:+$reason,}qc-exit-$qc_rc"
     fi
+  elif case " ${OC_VERIFY_GATED_SKILLS:-} " in *" $folder "*) true ;; *) false ;; esac; then
+    # The launch family (78-83) ships verify.sh, not qc-*.sh (CON-14). For those
+    # skills verify.sh IS the install gate: exit 0 or the skill is qc-failed. A
+    # listed skill with no verify.sh fails closed, never passes by absence.
+    local vf="$OC_SKILLS_DIR/$folder/verify.sh" v_rc=0
+    if [ -f "$vf" ]; then
+      bash "$vf" >/dev/null 2>&1 || v_rc=$?
+    else
+      v_rc=127
+    fi
+    oc_state_mark_field "$folder" qcExit "$v_rc" || _sw_ok=0
+    if [ "$v_rc" -ne 0 ]; then
+      ok=0; reason="${reason:+$reason,}verify-exit-$v_rc"
+    fi
   else
     oc_state_mark_field "$folder" qcExit "null" || _sw_ok=0
   fi
@@ -1202,8 +1216,8 @@ RECEOF
 #   Wave 4 (INFRASTRUCTURE):31,36
 #   Wave 5 (USER-INTERACT): 22,23,32,35
 #   Wave 6 (EXTENSIONS):    44,45,47,48,49,50,51,52,53,54,55,56,57,69,70,71
-#   (46, 58-62 and the launch family 72 + 78-83 are deliberately NOT gated — see
-#   the OC_WAVE6_SKILLS note: EXPLICIT EXCLUSION, CON-14.)
+#   (46, 58-62 and 72 are deliberately NOT gated; the launch family 78-83 IS gated
+#   by its verify.sh — see the OC_WAVE6_SKILLS note: CON-14.)
 #
 # PER-WAVE GOAL DEFINITION (all must hold for wave to pass):
 #   (a) All skills in the wave have status=qc-passed (or interview-pending for Wave 5)
@@ -1297,22 +1311,19 @@ OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-b
 # is finished (62), or the relay is modelled as operator infrastructure rather
 # than a client skill (46). Add them here at that point — not before.
 #
-# THE LAUNCH FAMILY (72-motion-video-plus, 78-signature-product-selection,
-# 79-signature-order-form, 80-signature-upsell, 81-signature-downsell,
-# 82-signature-thank-you, 83-black-friday-launcher) IS ALSO DELIBERATELY NOT
-# GATED — an explicit exclusion (CON-14), not an oversight. The wave goal that
-# would apply is "every skill qc-passed", and oc_gate_skill proves qc-passed by
-# running the skill's qc-*.sh. None of the family ships a qc-*.sh; their
-# verification is verify.sh (72, 78, 83), verify.py (80) or nothing at all (79,
-# 81, 82 ship neither). A goal that "requires their verify.sh exit 0" therefore
-# cannot be stated for the family today, and naming them here without it would
-# either gate nothing or wedge Wave 6 on every box. What protects a box in the
-# meantime: oc_ensure_jsonschema (install.sh Step 6.5c, update-skills.sh
-# post-stamp convergence, `--prereqs-check` to inspect) provisions and verifies
-# the one runtime requirement, `jsonschema`, declared in
-# 83-black-friday-launcher/PREREQS.json. Revisit: add 72 and 78-83 to
-# OC_WAVE6_SKILLS once each ships a verify.sh AND oc_gate_skill runs it (or
-# each ships a qc-*.sh), in ascending order after 71 and before 77.
+# THE LAUNCH FAMILY 78-83 (78-signature-product-selection, 79-signature-order-form,
+# 80-signature-upsell, 81-signature-downsell, 82-signature-thank-you,
+# 83-black-friday-launcher) IS GATED (CON-14 cured): each ships a verify.sh
+# (version lockstep plus its unit suite; 80 wraps its verify.py), and
+# oc_gate_skill runs that verify.sh for every skill named in
+# OC_VERIFY_GATED_SKILLS because the family ships no qc-*.sh. A verify.sh that
+# exits nonzero, or is missing, makes the skill qc-failed. The one runtime
+# requirement, `jsonschema`, is provisioned before the gate by oc_ensure_jsonschema
+# (install.sh Step 6.5c, update-skills.sh post-stamp convergence,
+# `--prereqs-check` to inspect; declared in 83-black-friday-launcher/PREREQS.json).
+# 72-motion-video-plus (verify.sh, no qc-*.sh, not part of the 78-83 seam family)
+# stays ungated: EXPLICIT EXCLUSION, CON-14, 72-motion-video-plus, until the
+# operator rules on it. Entries sit in ascending order, after 77.
 #
 # ORDERING WITHIN THE WAVE: several entries name an earlier Wave 6 skill as a
 # prerequisite (49 and 56 need 47; 50 and 56 need 44). Ascending skill-number
@@ -1380,7 +1391,10 @@ OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-b
 # archive at packaging). A live session still requires the
 # client-selected route and a run grant, which the gate does not
 # exercise.
-OC_WAVE6_SKILLS="44-convert-and-flow-operator 45-design-intelligence-library 47-movie-producer 48-facebook-ad-generator 49-signature-funnel 50-email-engine 51-signature-presentation 52-avatar-alchemist 53-book-writer 54-anthology-writer 55-product-bio 56-sales-page-assets 57-social-media-in-a-box 69-archify 70-lean-core-file-system 71-blackceo-signature-page 77-council-of-wise-elders"
+OC_WAVE6_SKILLS="44-convert-and-flow-operator 45-design-intelligence-library 47-movie-producer 48-facebook-ad-generator 49-signature-funnel 50-email-engine 51-signature-presentation 52-avatar-alchemist 53-book-writer 54-anthology-writer 55-product-bio 56-sales-page-assets 57-social-media-in-a-box 69-archify 70-lean-core-file-system 71-blackceo-signature-page 77-council-of-wise-elders 78-signature-product-selection 79-signature-order-form 80-signature-upsell 81-signature-downsell 82-signature-thank-you 83-black-friday-launcher"
+
+# Skills whose verify.sh (not a qc-*.sh) is the install gate; read by oc_gate_skill.
+OC_VERIFY_GATED_SKILLS="78-signature-product-selection 79-signature-order-form 80-signature-upsell 81-signature-downsell 82-signature-thank-you 83-black-friday-launcher"
 
 # ------------------------------------------------------------
 # oc_wave_state_init

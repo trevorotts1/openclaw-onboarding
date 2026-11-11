@@ -1402,6 +1402,39 @@ def _campaign_from_automation_build(doc, folder):
     return campaign, folder_name
 
 
+def _plan_mode_refusal(path):
+    """Why a PLAN MODE run file does not verify (``None`` when it does).
+
+    The same check qc-built-workflow.sh runs after the fact (S44-24), moved in
+    front of the write (S44-47): the file must carry the client's two gating
+    answers (publish intent, re-entry) and the approval flow's verifier (kind
+    ``launch_plan_build``, scope ``publish:<INTENT>`` + ``reentry:<DECISION>``)
+    must confirm the Command Center record. A file the AI wrote itself cannot
+    satisfy that, and a verifier that cannot be loaded or reached is a refusal.
+    """
+    if not path or not os.path.isfile(path):
+        return "plan_mode_file_absent"
+    try:
+        with open(path, encoding="utf-8") as handle:
+            record = json.load(handle)
+    except (OSError, ValueError):
+        return "plan_mode_file_unreadable"
+    keys = ("approval_id", "plan_hash", "publish_intent", "re_entry")
+    if not isinstance(record, dict) or not all(
+            isinstance(record.get(k), str) and record[k].strip() for k in keys):
+        return "plan_mode_file_malformed (need approval_id, plan_hash, publish_intent, re_entry)"
+    publish = record["publish_intent"].strip().upper()
+    reentry = record["re_entry"].strip().upper()
+    if publish not in ("DRAFT", "LIVE") or reentry not in ("ONCE", "ALLOW-MULTIPLE"):
+        return "plan_mode_answers_invalid (publish_intent DRAFT|LIVE, re_entry ONCE|ALLOW-MULTIPLE)"
+    try:
+        _approval_record().verify(record["approval_id"].strip(), "launch_plan_build",
+                                  record["plan_hash"], ["publish:" + publish, "reentry:" + reentry])
+    except Exception as exc:  # ApprovalRefused / ApprovalUnavailable / verifier missing: all fail closed
+        return "approval_not_verified %s" % getattr(exc, "code", type(exc).__name__)
+    return None
+
+
 @workflows.command("build")
 @click.option("--from-plan", "plan_file", default=None, type=click.Path(exists=True),
               help="JSON plan file describing the workflow(s) to build")
@@ -1411,17 +1444,33 @@ def _campaign_from_automation_build(doc, folder):
                    "compiled with its guards, schedule suppression and unit keys")
 @click.option("--journal", "journal_path", default=None, type=click.Path(),
               help="Build journal (JSONL receipts) path; required with --from-automation-build")
+@click.option("--plan-mode-file", "plan_mode_file", default=None, type=click.Path(),
+              help="PLAN MODE run file {approval_id, plan_hash, publish_intent, re_entry}; "
+                   "required with --from-automation-build (except --dry-run) and verified "
+                   "against the approval flow before any write")
 @click.option("--folder", default=None, help="Folder name override (defaults to plan folder key or 'caf-build')")
 @click.option("--dry-run", "check_only", is_flag=True, default=False,
               help="Validate and compile only; print the workflows that would be "
                    "built and exit. No client, no network, no write.")
+@click.option("--deliveries-out", "deliveries_out", default=None, type=click.Path(),
+              help="With --from-automation-build: write the typed export object of every "
+                   "unit that built and read back clean (next to the journal) and the "
+                   "deliveries file Skill 83 `assemble --deliveries` reads. Put it in the "
+                   "same directory tree as --journal (the Skill 83 run directory).")
+@click.option("--launch-plan", "launch_plan_file", default=None, type=click.Path(exists=True),
+              help="The shared launch plan whose bytes the deliveries echo as plan_sha256 "
+                   "(default: the automation-build document's sources.launch_plan).")
 @click.pass_context
-def workflows_build(ctx, plan_file, automation_file, journal_path, folder, check_only):
+def workflows_build(ctx, plan_file, automation_file, journal_path, plan_mode_file, folder, check_only,
+                    deliveries_out, launch_plan_file):
     """Build workflows from a plan or an automation-build document (internal API, write-gated).
 
     Requires --experimental (except --dry-run). Supports conversational and
     mechanical workflows. --from-automation-build runs
-    compile_launch_builds(require_ready=True) and journals every phase.
+    compile_launch_builds(require_ready=True) and journals every phase. It also
+    REQUIRES --plan-mode-file (PLAN MODE: the client's publish and re-entry
+    answers, minted by the approval flow) and refuses to write without a record
+    that verifies.
     NOTE: build performs NO TRINITY check. Conversational plans are gated at
     Step 9 QC via qc-built-workflow.sh <wf-id> --conversational (WF-19), which
     executes Skill 38's qc-trinity-registry.sh; a non-zero result fails QC.
@@ -1434,8 +1483,22 @@ def workflows_build(ctx, plan_file, automation_file, journal_path, folder, check
         click.echo("Error: --from-automation-build requires --journal <path> "
                    "(the build receipts that make a re-run safe).", err=True)
         sys.exit(2)
+    if deliveries_out and (not automation_file or check_only):
+        click.echo("Error: --deliveries-out belongs to a real --from-automation-build run "
+                   "(not --from-plan, not --dry-run): there is nothing to deliver otherwise.",
+                   err=True)
+        sys.exit(2)
     if not check_only:
         _require_experimental(ctx)
+        if automation_file:
+            # S44-47: PLAN MODE is a precondition of the write, not a check after it.
+            refusal = _plan_mode_refusal(plan_mode_file)
+            if refusal:
+                click.echo("REFUSED: PLAN MODE record missing or unverified (%s). Run PLAN MODE "
+                           "(INSTRUCTIONS.md Step 0.5), get the client's publish and re-entry "
+                           "answers recorded by the approval flow, and pass --plan-mode-file."
+                           % refusal, err=True)
+                sys.exit(1)
     try:
         from cli_anything.gohighlevel.utils.workflow_builder import (
             CampaignBuilder,
@@ -1445,6 +1508,13 @@ def workflows_build(ctx, plan_file, automation_file, journal_path, folder, check
         from cli_anything.gohighlevel.utils.write_lock import WriteLock
         with open(automation_file or plan_file) as f:
             doc = json.load(f)
+        if deliveries_out:
+            launch_plan_file = launch_plan_file or (
+                (doc.get("sources") or {}).get("launch_plan") if isinstance(doc, dict) else None)
+            if not (launch_plan_file and os.path.isfile(launch_plan_file)):
+                click.echo("Error: --deliveries-out needs the launch plan to echo its hash: pass "
+                           "--launch-plan <plan.json>.", err=True)
+                sys.exit(2)
         if automation_file:
             campaign, folder_name = _campaign_from_automation_build(doc, folder)
         else:
@@ -1511,6 +1581,22 @@ def workflows_build(ctx, plan_file, automation_file, journal_path, folder, check
             builder = CampaignBuilder(client, v4=v4)
             stats = builder.build(campaign, folder_name, journal=journal_path,
                                   browser_executor=browser_executor)
+        if deliveries_out:
+            # Issues 64 + 1: the typed export object and the deliveries row, written from
+            # the provider's own read-back; a unit that cannot be proven is named and absent.
+            from cli_anything.gohighlevel.utils import delivery_export
+            from cli_anything.gohighlevel.utils.workflow_builder import (
+                BuildJournal,
+                _readback_templates,
+            )
+            summary = delivery_export.export_build(
+                doc, campaign, stats, journal=BuildJournal(journal_path),
+                read_templates=lambda wid: _readback_templates(client, location_id, wid),
+                deliveries_path=deliveries_out, launch_plan=launch_plan_file)
+            stats["deliveries"] = summary
+            stats.setdefault("errors", []).extend(
+                "unit %s: not exported for delivery: %s" % (unit, "; ".join(why))
+                for unit, why in sorted(summary["refused"].items()))
         if browser_executor is None:
             stats.setdefault("notes", []).append(
                 "browser capability selection: " + "; ".join(browser_reasons))

@@ -11,7 +11,7 @@ the Email Engine's regression anchor (mirrors `51-signature-presentation/example
 ## Files
 - `brief.json` — the locked intake brief (PASSES the prove-email intake gate).
 - `emails.json` — the 10-email copy ledger (PASSES the prove-email sequence gate); carries a signed `process_certificate` authorizing the DRAFT-ONLY handoff.
-- `working/` — the run-dir mirror: `copy/brief.json`, `copy/emails.json`, `deploy/approval.json` (human approval), `deploy/build-plan.json` (the emitted DRAFT-ONLY Skill-44 plan), `prover_results.json` (captured PASS), `checkpoints/process_manifest.json`.
+- `working/` — the run-dir mirror: `copy/brief.json`, `copy/emails.json`, `deploy/approval.json` (reference shape of the approval record: a Command Center approval id, not a bare flag), `deploy/build-plan.json` (the emitted DRAFT-ONLY Skill-44 plan), `prover_results.json` (captured PASS), `checkpoints/process_manifest.json`.
 - `delivery/PROCESS-CERTIFICATE.{json,md}` — issued by `run_email_engine.py` after the full P1->P4 pass.
 - `working/checkpoints/.cert-hmac-key` — the run-scoped signing material for **this fixture's** certificate.
 
@@ -66,4 +66,4 @@ python3 tools/prove-email.py examples/golden-landing-10/broken-variants/missing_
 python3 tools/prove-email.py examples/golden-landing-10/broken-variants/unapproved_deploy/emails.json --kind sequence # AF-PROCESS-INTEGRITY
 ```
 
-Deploy is **DRAFT-ONLY**: `approval.json` records a human approval to EMIT the draft; it never authorizes a send. A human publishes the GHL draft separately after the Skill-44 `qc-built-workflow.sh` (>= 8.5) gate.
+Deploy is **DRAFT-ONLY**: `approval.json` names the Command Center approval to EMIT the draft (verified by `approval_record.verify`, kind `email_deploy`; a bare `approved` flag is never evidence); it never authorizes a send. A human publishes the GHL draft separately after the Skill-44 `qc-built-workflow.sh` (>= 8.5) gate.

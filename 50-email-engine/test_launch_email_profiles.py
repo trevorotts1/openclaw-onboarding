@@ -598,5 +598,72 @@ class RealProducerPipelineTests(unittest.TestCase):
             ["doors_close_at"], "2026-11-10T23:59:00-05:00")
 
 
+class TransactionalObjectiveTests(unittest.TestCase):
+    """Issue 94: welcome_access is transactional everywhere, not "promotional".
+
+    Skill 44's reader declares welcome_access transactional (a purchase never
+    cancels access mail), while this registry called its objective
+    "promotional". The registry, the prover and the reader now agree.
+    """
+
+    @staticmethod
+    def _reader():
+        import importlib.util
+        path = (SKILL_DIR.parent / "44-convert-and-flow-operator" / "automation-templates"
+                / "launch-c" / "plan_reader.py")
+        spec = importlib.util.spec_from_file_location("seam94_plan_reader", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_welcome_access_is_the_one_transactional_family(self) -> None:
+        transactional = {kind for kind, fam in FAMILIES.items()
+                         if fam["objective"] == "transactional"}
+        self.assertEqual(transactional, {"welcome_access"})
+        for kind, fam in FAMILIES.items():
+            if kind != "welcome_access":
+                self.assertIn(fam["objective"],
+                              ("promotional", "abandoned-cart", "upsell", "downsell"), kind)
+
+    def test_reader_transactional_kinds_agree_with_the_registry(self) -> None:
+        registry = {kind for kind, fam in FAMILIES.items()
+                    if fam["objective"] == "transactional"}
+        self.assertEqual(set(self._reader().TRANSACTIONAL_KINDS), registry)
+
+    def test_prover_and_schemas_accept_transactional_and_still_refuse_unknown(self) -> None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("seam94_prover", PROVER)
+        prover = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(prover)
+        self.assertIn("transactional", prover.OBJECTIVES)
+        self.assertNotIn("newsletter", prover.OBJECTIVES)
+        for name, path in (("email", ("schema", "email.schema.json")),
+                           ("brief", ("schema", "brief.schema.json"))):
+            doc = json.loads(SKILL_DIR.joinpath(*path).read_text(encoding="utf-8"))
+            node = (doc["properties"]["objective"] if name == "email"
+                    else doc["properties"]["answers"]["properties"]["objective"])
+            self.assertEqual(tuple(node["enum"]), prover.OBJECTIVES, name)
+
+    def test_the_questionnaire_and_the_library_objectives_are_unchanged(self) -> None:
+        questions = json.loads((SKILL_DIR / "intake" / "email-intake-questions.json")
+                               .read_text(encoding="utf-8"))
+        objective = next(q for q in questions["questions"] if q["id"] == "objective")
+        self.assertEqual(objective["allowed_values"],
+                         ["promotional", "abandoned-cart", "upsell", "downsell"])
+        catalog = json.loads((SKILL_DIR / "email-library" / "catalog-index.json")
+                             .read_text(encoding="utf-8"))
+        self.assertEqual(sorted(e["id"] for e in catalog if e["type"] == "objective"),
+                         ["objective-abandoned-cart", "objective-downsell",
+                          "objective-promotional", "objective-upsell"])
+
+    def test_a_welcome_access_sequence_passes_the_prover_with_its_transactional_objective(self) -> None:
+        fam = FAMILIES["welcome_access"]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "emails.json"
+            path.write_text(json.dumps(_emails_for(fam)), encoding="utf-8")
+            result = _run(str(PROVER), str(path), "--kind", "sequence")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

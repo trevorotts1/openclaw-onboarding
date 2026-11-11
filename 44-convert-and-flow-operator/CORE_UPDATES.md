@@ -49,7 +49,7 @@ After building a workflow, do NOT say "done." STEPS:
      never silently QC on the build model itself; record which model was used (see
      INSTRUCTIONS.md Step 9.2).
   3. QC sub-agent runs caf workflows export <id> + qc-built-workflow.sh <id> item-by-item
-     (WF-1..WF-22). Returns explicit PASS/FAIL + observed vs expected value per item.
+     (WF-1..WF-25). Returns explicit PASS/FAIL + observed vs expected value per item.
   4. All-PASS → proceed to step 5. Any FAIL → fix + re-run QC.
      HALLUCINATION FAIL (agent claimed X but QC-observed NOT-X) → HARD STOP →
      mandatory redo on high-reasoning model thinking=HIGH → full re-QC → disclose to client →

@@ -82,6 +82,7 @@ Placeholders (`{first_name}`, `{offer_name}`, `{deadline}`, `{link}`) come from 
 ## Handoff
 
 - **Skill 44** owns the `send-SMS` steps and the workflow that schedules them. This profile supplies the voice and the copy contract those steps render.
+- **The copy file.** `python3 tools/emit_text_sets.py --launch-plan plan.json --copy texts.json --out-dir working/text` writes `working/text/<set_id>.sms.json` (`{"set_id", "messages": [{"step_id", "body", "category"}], "profile_sha256"}`) for every `text_sets[]` unit, or writes nothing: each body must pass this profile (`python3 text-profile/validate_profile.py --check-sms <file>`), the count must equal the plan's `messages`, and `category` is `marketing` for a promotional set and `operational` otherwise. Skill 44's `launch-c/plan_reader.py --text-copy-dir working/text` binds these files into the builds.
 - **The launch plan** (`text_sets[]`) names the points, the launch calendar supplies event times, and `a2p_ready` gates every send.
 - **Self-check:** `python3 validate_profile.py` must exit 0. It proves reply invitation + STOP, the 8–9 local window, the promo cap, link limits and length on every example.
 

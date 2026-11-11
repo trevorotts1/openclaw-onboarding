@@ -1,7 +1,7 @@
 ---
 name: convert-and-flow-operator
 description: Tier 0 GHL operator — the Convert and Flow CLI (caf/convertandflow/ghl) gives the agent direct CRM access for contacts, opportunities, calendars, conversations, documents, payments, forms, social, locations, and workflow builds via internal API (no MCP overhead). Standard ops run on the PIT alone. Workflow writes additionally require the Firebase refresh token; when absent, falls through to Tier 4 agent-browser as the backstop. Write-safe by default (dry-run, draft-only, location whitelist, approval gate).
-version: v2.1.47
+version: v2.1.48
 ---
 
 > **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
@@ -68,7 +68,8 @@ uncertain whether the last build succeeded, verify with `caf workflows list` (or
 client's selected QC model, or their configured default where it differs; see INSTRUCTIONS.md
 Step 9.2) passes all checklist items and the filled checklist is handed to the client.
 Sequence: announce to client → spawn the independent QC sub-agent (via sessions_send;
-resolve the model per Step 9.2 and verify it is available first; record which model ran)
+resolve the model per Step 9.2 and verify it is available first; the model that ran is the one
+named in the Command Center-signed `--qc-session` record, never a typed string)
 → QC runs `caf workflows export` +
 `qc-built-workflow.sh <wf-id>` item-by-item → all WF-1..21 PASS → THEN compute the **weighted
 quality rubric** (`references/workflow-quality-rubric.md`, 8 dimensions, ≥ 8.5 to ship) → hand
@@ -137,8 +138,16 @@ The path, in order: **reader -> build command -> QC -> receipt**.
    ```bash
    caf --json --experimental workflows build \
      --from-automation-build automation-builds.json \
-     --journal workflow-build-journal.json
+     --journal workflow-build-journal.json \
+     --plan-mode-file plan-mode.json
    ```
+
+   `--plan-mode-file` is REQUIRED for a real build (not for `--dry-run`). It is the PLAN MODE run
+   file `{approval_id, plan_hash, publish_intent, re_entry, build_model}` (INSTRUCTIONS.md Step
+   0.5); the command verifies it with the approval flow's verifier (kind `launch_plan_build`, scope
+   `publish:<INTENT>` + `reentry:<DECISION>`) BEFORE any client or write exists and otherwise
+   exits 1 with `REFUSED: PLAN MODE record missing or unverified`. A file the build agent wrote
+   itself cannot be confirmed.
 
    `--from-automation-build` runs `compile_launch_builds()` (document -> campaign dict; it
    refuses blocked builds, missing required outputs and missing suppression guards, and every
@@ -161,9 +170,28 @@ The path, in order: **reader -> build command -> QC -> receipt**.
 
    Still run the compiled work through PLAN MODE (Step 0.5) and the Step 0.7 existence check,
    and set `CAF_BUILD_JOURNAL` when you use the older `--from-plan <campaign.json>` path.
-3. **QC** — the independent QC sub-agent (a different model than the builder, Step 9) runs
-   `./qc-built-workflow.sh <workflow-id> [--fab]` on every built workflow: WF-1..21 PASS, then
-   the quality rubric at 8.5 or better. Any FAIL: fix and re-run.
+3. **QC** — the independent QC sub-agent (a different model than the builder, Step 9) runs the
+   full command below on every built workflow: every WF item PASS or graded PASS, then the quality
+   rubric at 8.5 or better. Any FAIL: fix and re-run. First write the WF-9 wait schedule for the
+   unit (the QC compares the export's waits against it):
+
+   ```bash
+   python3 automation-templates/launch-c/emit_launch_schedule.py \
+     --automation-build automation-builds.json --unit <build id or unit_key> --out schedule.json
+   ./qc-built-workflow.sh <workflow-id> --json --publish-intent DRAFT --re-entry ONCE \
+     --plan-mode-file plan-mode.json --qc-session qc-session.json \
+     --grades grades.json --deps deps.json \
+     --launch --launch-schedule schedule.json [--fab]
+   ```
+
+   Leave out any of `--plan-mode-file`, `--qc-session`, `--grades`, `--deps` or the schedule and the
+   script cannot return 0 (exit 1 for a failed gate, 2 for ungraded items), so a bare
+   `./qc-built-workflow.sh <id>` is never a pass. `--qc-session` is the Command Center-signed record
+   naming the QC model and session (`--qc-model`, a typed string, is refused), and its model must
+   differ from the plan file's `build_model`. `--publish-intent` / `--re-entry` must equal the plan
+   file. A workflow with an SMS step also needs its consent, STOP, contact-cap, quiet-hours and
+   deadline rules saved as native conditions (WF-25; `automation-templates/launch-text/sms_eligibility.py
+   verify-saved`), or QC fails.
 4. **Receipt** — a build is done only when its receipt exists: the compiled unit's required
    outputs (`workflow_id`, `steps_saved`, `trigger_created`, `readback_verified`) in the build
    journal, and the filled WF checklist plus rubric score from QC. For a Skill 71 funnel
@@ -377,7 +405,7 @@ Regenerate both exports after any calendar or pipeline change in GHL.
 ### Skill 71: 71-blackceo-signature-page (automation hand-off producer)
 
 - Skill 71 has a hand-off producer: `71-blackceo-signature-page/scripts/automation_handoff.py`, called by `stage_gate.py` at ghl-install-test close, when the run's intake records `publish_target = "ghl"` and `automation_scope = "workflows"`. It writes `handoff/automation-handoff.json` (ids only: location, funnel, page, form ids, trigger classes) and hash-locks it. When the run carries the launch wiring inputs it also writes `handoff/automation-request.json`, a draft-only envelope (any other deploy mode is refused). Contract: `71-blackceo-signature-page/references/automation-handoff.md`. The envelope is a run file; the module sends nothing.
-- This skill executes the request under its own gates. The receiving side is `tools/siglaunch/receiver/` (validates the request, drives the governed build, reads back, issues a receipt); the outcome is filed by Skill 71 as the stage receipt `private/receipts/automation-wiring.json`, carrying `build_method` (`caf-cli` or `tier4-browser-backstop`), this skill's QC evidence (`qc-built-workflow.sh` exit code and the filled checklist) and the read-back. A refusal is a receipt too and leaves the stage open.
+- This skill executes the request under its own gates. `tools/siglaunch/receiver/` is NOT a production entry (`PRODUCTION_ENTRY_ENABLED = False`) and executes nothing. The request is built by running the plan reader and then `caf workflows build --from-automation-build` (with `--plan-mode-file`, see Launch mode), and the receipt is the build journal; the outcome is filed by Skill 71 as the stage receipt `private/receipts/automation-wiring.json`, carrying `build_method` (`caf-cli` or `tier4-browser-backstop`), this skill's QC evidence (`qc-built-workflow.sh` exit code and the filled checklist) and the read-back. A refusal is a receipt too and leaves the stage open.
 - Check that file before telling an owner a funnel has no automation hand-off. Skill 71 also consumes presentations page briefs, a different seam.
 
 ### Explicit non-consumers

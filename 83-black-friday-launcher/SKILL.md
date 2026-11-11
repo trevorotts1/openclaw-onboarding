@@ -2,7 +2,7 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.33
+version: 0.2.34
 priority: HIGH
 ---
 
@@ -304,7 +304,7 @@ Read in this order. Each step names the file, so nothing here depends on guessin
    build plans, then `44-convert-and-flow-operator/automation-templates/launch-c/plan_reader.py` reads them,
    and `44-convert-and-flow-operator/tools/siglaunch/` receives the hand-off but is **not** a production entry
    (`PRODUCTION_ENTRY_ENABLED = False`): a Skill 71 `automation-request.json` is built through
-   `caf workflows build --from-automation-build` after the plan reader, and the receipt is the build journal.
+   `caf workflows build --from-automation-build ... --plan-mode-file <plan-mode.json>` after the plan reader, and the receipt is the build journal.
    See "Launch mode" below. Skill 83 depends on Skill 44 and Skill 50 for this reason.
    The executable requirement set is `launcher_core/dependencies.json` alone (read by
    `launcher_core/dependencies.py`). `skill.json` and `registration.json` carry only a
@@ -432,18 +432,20 @@ steps, all DRAFT-ONLY (nothing is sent and nothing goes live):
    build plan or an email-count mismatch blocks the build.
 2. **Build command.** One command compiles and builds:
    `caf --json --experimental workflows build --from-automation-build automation-builds.json
-   --journal <path>`. `--from-automation-build` runs `compile_launch_builds()` and then the campaign
-   build under the write lock; `--journal` is REQUIRED on that path and is the receipt file. The
+   --journal <path> --plan-mode-file <path>`. `--from-automation-build` runs `compile_launch_builds()`
+   and then the campaign build under the write lock; `--journal` is REQUIRED on that path and is the
+   receipt file; `--plan-mode-file` is REQUIRED for a real build (not `--dry-run`) and is the PLAN MODE
+   run file described in Skill 44 SKILL.md (Launch mode). The
    `44-convert-and-flow-operator/tools/siglaunch/` receiver is **not** a production entry
    (`PRODUCTION_ENTRY_ENABLED = False`): the declared Black Friday purchase path is the native GHL
    post-sale workflows, and repairing a launch goes through this command, never by enabling that
    runner.
 3. **QC.** Run from `44-convert-and-flow-operator/`, the one full command (a shorter one cannot exit 0: the
-   plan file, the QC model, the grades and the dependency manifest are required, and a launch build needs its wait schedule). The second
+   plan file, the signed QC session record (`--qc-model` is refused), the grades and the dependency manifest are required, and a launch build needs its wait schedule). The second
    line adds the script's own exit status to the saved result as `exit_code`:
 
    ```
-   ./qc-built-workflow.sh <workflow-id> --json --plan-mode-file <plan.json> --qc-model <model> \
+   ./qc-built-workflow.sh <workflow-id> --json --plan-mode-file <plan.json> --qc-session <record.json> \
        --grades <grades.json> --deps <deps.json> --launch --launch-schedule <schedule.json> [--fab] > qc-<workflow-id>.json; rc=$?
    python3 -I -c 'import json,sys; p,rc=sys.argv[1],int(sys.argv[2]); d=json.load(open(p)); d["exit_code"]=rc; json.dump(d,open(p,"w"),indent=2)' qc-<workflow-id>.json "$rc"
    ```

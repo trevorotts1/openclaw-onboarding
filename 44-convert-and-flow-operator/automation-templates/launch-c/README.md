@@ -80,6 +80,24 @@ graph back before claiming success.
 A build plan that matches no sequence is reported in
 `unused_build_plan_workflows`, never dropped.
 
+### WF-9 wait schedule (`emit_launch_schedule.py`)
+
+The per-build QC (`qc-built-workflow.sh --launch --launch-schedule <file>`) compares the saved
+workflow's wait nodes with `{"waits": [{"kind": "until_date", "until": "<ISO8601 with offset>"} |
+{"kind": "delay", "value": 2, "unit": "days"}]}`. `schedule.nodes` is a different shape, so this file
+is written from the build document:
+
+```
+python3 launch-c/emit_launch_schedule.py --automation-build automation-builds.json \
+    --unit <build id or unit_key> [--workflow-key <key>] --out schedule.json
+```
+
+It reads the COMPILED workflow (the same `compile_launch_builds` the build command runs): a send whose
+schedule node is absolute, dated and not suppressed has been compiled to ONE wait-until-date step, every other
+wait stays the template's own `delay`, and each wait step becomes one entry, in order. Exit `0` written /
+`2` invalid input, unknown unit, no waits or several workflows without `--workflow-key` / `3` IO /
+`4` the unit is blocked (nothing compiles). Nothing is guessed: an unresolved wait refuses.
+
 ## Fail-closed rules
 
 - Launch calendar: valid IANA `timezone`; every instant carries the zone's
@@ -94,6 +112,12 @@ A build plan that matches no sequence is reported in
   between the launch plan and the bound build plan BLOCKS the build.
 - Guards: a promotional build whose lifecycle omits unsubscribe/purchase
   suppression is blocked and the provider compiler refuses it.
+- Metadata: lifecycle, eligibility (`enrollment_conditions`) and sender
+  (`sender_config_refs`) come from the Skill 50 build plan or the build is
+  `blocked` (`blocked_by` carries `lifecycle`, `eligibility` or `sender`). The
+  reader never substitutes defaults of its own, so a guard can never be
+  satisfied by the checker's own values; a lifecycle the build plan did carry
+  is stamped `lifecycle_source: build_plan`.
 - Build plan: `folder` present; every workflow `status == "draft"` (a published
   workflow is refused); `_meta.draft_only` / `_meta.deploy_mode` must be draft;
   steps are `email` (subject, body, html, fromName) or `wait` (startAfter) only.
@@ -106,9 +130,22 @@ A build plan that matches no sequence is reported in
 ```
 python3 launch-c/tests/test_plan_reader.py              # behavior tests (contract fixtures)
 python3 launch-c/tests/test_plan_reader_l07_schedule.py  # calendar / schedule / dependency tests
+python3 -m pytest launch-c/tests/test_emit_launch_schedule.py -q  # WF-9 wait schedule producer
 python3 launch-c/plan_reader.py --selftest             # built-in refusal checks
 python3 tools/engine/tests/test_workflow_builder_l07.py  # provider compile / journal / readback
 ```
+
+## Handoff files (Skill 83 and the QC script)
+
+* `plan_reader.py --text-copy-dir working/text` binds Skill 50's `<text_set id>.sms.json` into the builds that
+  elected a text set (`bindings.sms_copy`) and lists each set under `text_builds`; no valid file blocks them.
+* `caf workflows build --from-automation-build ... --journal J --deliveries-out D` writes, for every unit that built
+  and read back clean, `exports/<launch>__<unit>.export.json` (`skill44.workflow-export.v1`) or
+  `exports/<launch>__<set>.sms-set.json` (`skill44.sms-set.v1`) beside the journal, plus the deliveries file Skill 83
+  `assemble --deliveries` reads. Keep `J` and `D` in the same directory tree (the Skill 83 run directory); a unit that
+  cannot be proven is named under `deliveries.refused` and left out.
+* `emit_launch_schedule.py --automation-build automation-builds.json --unit <id> [--workflow-key <key>] --out
+  schedule.json` writes the `{"waits": [...]}` file `qc-built-workflow.sh --launch --launch-schedule` compares (WF-9).
 
 Fixtures are the four contract fixtures in
 `shared-utils/signature_launch_contract/fixtures/` plus five small Skill 50 build

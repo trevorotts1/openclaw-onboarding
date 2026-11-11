@@ -243,9 +243,16 @@ con14_ok() {   # con14_ok <waves-text> <lib-text>
 }
 if con14_ok "$waves" "$LIBTXT"; then ok "T4 launch family 78-83 is wave-gated with verify.sh, or the exclusion is recorded"
 else bad "T4 launch family 78-83 is neither gated with verify.sh nor explicitly excluded in lib-onboarding-state.sh"; fi
-if con14_ok "$waves" "${LIBTXT//EXPLICIT EXCLUSION, CON-14/}"; then
-  bad "T4 NON-DISCRIMINATING: passed with the exclusion record removed"
-else ok "T4 detector discriminates (exclusion record removed from a copy is rejected)"; fi
+# Discriminator: drop one family member from the gated list (79) and remove the exclusion
+# record; the detector must reject it (neither fully gated nor excluded).
+if con14_ok "${waves/ 79-signature-order-form/}" "${LIBTXT//EXPLICIT EXCLUSION, CON-14/}"; then
+  bad "T4 NON-DISCRIMINATING: passed with 79 un-gated and the exclusion record removed"
+else ok "T4 detector discriminates (79 un-gated and exclusion record removed from copies is rejected)"; fi
+# Every family skill that is gated must ship verify.sh AND be named for the gate to run it.
+for s in $fam; do
+  has " $(bash -c 'source "$1" >/dev/null 2>&1; printf "%s" "$OC_VERIFY_GATED_SKILLS"' _ "$LIB") " " $s " \
+    && ok "T4 $s verify.sh is run by oc_gate_skill (OC_VERIFY_GATED_SKILLS)" || bad "T4 $s is not in OC_VERIFY_GATED_SKILLS"
+done
 for s in $fam; do
   has " $waves " " $s " && ok "T4 $s is in a wave" || true
 done

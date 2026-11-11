@@ -86,7 +86,7 @@ asserted by qc-convert-and-flow.sh Section S and verified by qc-built-workflow.s
 ### I-2: Workflow Build Checklist Template (references/workflow-build-checklist-template.md)
 
 - [ ] File exists at references/workflow-build-checklist-template.md
-- [ ] All 22 WF items present (WF-1 through WF-22; WF-22 appended 2026-09-03 send-integrity gate, no renumbering)
+- [ ] All 25 WF items present (WF-1 through WF-25; WF-22 appended 2026-09-03 send-integrity gate, WF-23/WF-24/WF-25 appended after it, no renumbering)
 - [ ] WF-4 trigger active flag (WF-ACTIVE GATE) present with explanation
 - [ ] WF-12 SMS From-number gate present
 - [ ] WF-20 hallucinated artifacts detector present
@@ -124,6 +124,7 @@ asserted by qc-convert-and-flow.sh Section S and verified by qc-built-workflow.s
 - [ ] WF-15 delivery chain linkage asserted
 - [ ] WF-18 + WF-21 snapshot existence asserted
 - [ ] WF-22 email body non-empty + ≥200 rendered chars asserted (SEND_INTEGRITY — blank-body gate)
+- [ ] WF-25 SMS compliance asserted: `sms_eligibility.py verify-saved` proves consent, STOP/suppression, contact cap, quiet hours and deadline are saved native conditions (prose never counts); WF-16 is mechanical for SMS workflows
 - [ ] Build-events ledger append present
 - [ ] Distinct from qc-convert-and-flow.sh (install-level QC)
 

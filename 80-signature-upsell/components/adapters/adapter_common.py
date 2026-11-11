@@ -136,6 +136,11 @@ MINOR_UNIT_EXPONENTS = {
     "BHD": 3, "KWD": 3, "OMR": 3, "JOD": 3, "TND": 3,
 }
 
+# Image providers an artifact may name (Skill 49's wrapper passes
+# --image-provider stub|kie). Skill 83's stub rule reads `provider` from each
+# artifact; a result that names none says nothing about its pictures.
+IMAGE_PROVIDERS = ("stub", "kie")
+
 # Journey slot vocabulary (verified purchases recorded by trusted adapters).
 JOURNEY_SLOT_BY_INSTANCE_SLOT = {"upsell_1": "upsell_1", "downsell_1": "downsell_1"}
 
@@ -864,6 +869,21 @@ def run_copy_validation(
 # ---------------------------------------------------------------------------
 
 
+def _review_fails(record, ledger, artifacts, request_id) -> List[str]:
+    """Refusals from the shared review_record validator; fail closed if absent."""
+    for parent in ADAPTERS_DIR.parents:
+        path = parent / "shared-utils" / "signature_launch_contract" / "review_record.py"
+        if path.is_file():
+            spec = importlib.util.spec_from_file_location("review_record", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod.validate_review_record(
+                record, ledger=ledger, author_session=AUTHOR_SESSION,
+                artifacts=artifacts, request_id=request_id,
+            )
+    return ["review_record validator not found; cannot accept a review"]
+
+
 def build_result(
     *,
     request: Mapping,
@@ -875,7 +895,13 @@ def build_result(
     test_outcomes: Sequence[Mapping],
     extra_blockers: Sequence[str] = (),
     copy_validation: Optional[Mapping] = None,
+    review: Optional[Mapping] = None,
+    image_provider: Optional[str] = None,
 ) -> Dict[str, object]:
+    if image_provider is not None and image_provider not in IMAGE_PROVIDERS:
+        raise AdapterError(
+            "image_provider %r is not one of %s." % (image_provider, list(IMAGE_PROVIDERS))
+        )
     disclosure = request["disclosure"]
     offer = request["offer"]
     test_only = bool(request.get("test_only", False))
@@ -929,6 +955,24 @@ def build_result(
             "emitted, no duplicate charge."
             % (disposition["action"], disposition["reason"])
         )
+    # Issue 30: independent_review is true ONLY when a valid review record
+    # (review_record.validate_review_record) accepts this artifact set;
+    # otherwise it stays false and the REVIEW-PENDING blocker says why.
+    reviewer_session, review_fails = None, ["no review record supplied (--review)"]
+    if review is not None:
+        record = review.get("record")
+        review_fails = _review_fails(
+            record, review.get("ledger"),
+            [{"path": copy_artifact_path, "sha256": copy_sha256}],
+            request["request_id"],
+        )
+        if not review_fails:
+            reviewer_session = record["reviewer_session"]
+    if review_fails:
+        blockers.append(
+            "REVIEW-PENDING: no valid independent review record; %s"
+            % "; ".join(review_fails)
+        )
     disclosure_text = render_disclosure(disclosure)
     result = {
         "schema_version": "1.0",
@@ -940,10 +984,17 @@ def build_result(
         "input_hash": request["input_hash"],
         "page_id": request["page_id"],
         "status": "blocked" if blocked else "authored",
-        "artifacts": [{"path": copy_artifact_path, "sha256": copy_sha256}],
+        # Harmony issue 16: every artifact names the image provider of the run
+        # (Skill 83's stub rule reads it); none named -> the key is absent.
+        "artifacts": [
+            dict(
+                {"path": copy_artifact_path, "sha256": copy_sha256},
+                **({"provider": image_provider} if image_provider else {})
+            )
+        ],
         "author_session": AUTHOR_SESSION,
-        "reviewer_session": None,
-        "independent_review": False,
+        "reviewer_session": reviewer_session,
+        "independent_review": not review_fails,
         "proof_class": "L1",
         "blockers": blockers,
         "native_bindings_ref": None,

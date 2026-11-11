@@ -421,7 +421,10 @@ def build_selection(
         "currency": price["currency"],
         "amount_minor_snapshot": price["amount_minor"],
         "billing_type": price["billing_type"],
-        "schedule": price.get("schedule") or [],
+        # the checkout schema's row shape {sequence, due, amount_minor} (issue 78); the launch record's rows carry no
+        # sequence, so it is the 1-based position, the same numbering offer_mapper gives the 79 checkout request
+        "schedule": [{"sequence": n, "due": row["due"], "amount_minor": row["amount_minor"]}
+                     for n, row in enumerate(price.get("schedule") or [], 1)],
         "quantity": quantity,
         "selected_at": selected_at,
         "source_page_id": source_page_id,

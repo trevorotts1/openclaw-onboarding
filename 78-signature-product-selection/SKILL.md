@@ -1,7 +1,7 @@
 ---
 name: signature-product-selection
 description: Build the specificity-led Product Selection page (the order page: the page where a buyer chooses between packages, with its desktop and mobile wireframes and mockups) for a Signature Launch with multiple meaningful packages or tiers. Normalizes approved offers into an accurate comparison matrix (included, not included, limited, conditional), an optional evidence-backed recommendation, accessible selection UI model, and a validated selection.json intent that preserves the native product/price mapping into Skill 79 checkout. Invoke only when the approved launch has multiple meaningful choices; one simple offer skips this skill entirely and uses Skill 79 combined explanation/checkout mode. Never collects payment, never trusts a URL price, never invents tiers, prices, popularity, or savings claims.
-version: 0.2.8
+version: 0.2.9
 ---
 
 # Signature Product Selection (Skill 78) - the order page (package selection)
@@ -29,6 +29,12 @@ between packages. The order form that takes payment is Skill 79 (checkout).
 - Any other journey mode (`folded_levels`, `free_entry`, ...) has no selection
   page in its route graph: `check_invocation` returns `decline` and
   `validate_catalog` refuses it (`S78-JOURNEY-MODE-DECLINE`).
+- The one exception is the route that builds no selection page:
+  `route="per_offer_targets"` (one native checkout target per approved price
+  choice, `emit_binding_plan.py`). `check_invocation(launch, route=...)` and
+  `validate_catalog(launch, route=...)` accept any journey mode with several
+  main offers for that route, so a consumer states the route and never rewrites
+  `journey_mode`. A single main offer is declined on every route.
 - Input offers must be approved. Unknown price is never zero, never free. A
   `recommended_unapproved` price is covered only when the launch record is
   `approved`/`building` and carries a `plan_approval_ref` (the plan approval
@@ -43,10 +49,25 @@ between packages. The order form that takes payment is Skill 79 (checkout).
   `build_selection` refuses it as `S78-MISSING-NATIVE-MAPPING`. The ids are
   created or read back by Skill 06's installer, under its own scoped approval,
   and written back into `launch.json`; this skill only consumes them.
-- `79-signature-order-form/scripts/selection_flow.py::selection_from_intent` is
-  the one adapter from a `selection.json` intent to Skill 79's `Selection`
-  (`amount_minor_snapshot` becomes `amount_minor`; `revision` feeds both the
-  launch and the offer revision). It refuses an intent with no native price id.
+- The realised route is `per_offer_instances` (owner decision,
+  `83-black-friday-launcher/DECISIONS-PENDING.md`, section "Ceiling"): for
+  `multiple_options` Skill 83 emits ONE Skill 79 `combined_single_offer` order
+  form per (main offer, price choice), each with its own page id, and this
+  skill's `emit_binding_plan.py` maps one native target to each instance.
+  `selection_ref` is always null. Skill 79 is NOT called in a post-selection
+  mode on this route.
+- Fixture-only, not part of the done claim: `79-signature-order-form/scripts/
+  selection_flow.py::selection_from_intent` (the adapter from a `selection.json`
+  intent to Skill 79's `Selection`: `amount_minor_snapshot` becomes
+  `amount_minor`; `revision` feeds both the launch and the offer revision; it
+  refuses an intent with no native price id), the session bridge and the
+  `post-selection-checkout.html` draft. No wired route calls them; see
+  `runtime-manifest.json` `done_claim.not_counted`.
+- The fixture adapter above also carries `billing_type` and the schedule rows `{sequence, due,
+  amount_minor}` (the checkout schema's row shape) so the checkout can show them. Time crosses the
+  seam as one shape: the session store keeps epoch seconds for its TTL but hands Skill 79 a
+  timezone-aware ISO-8601 `expires_at` (`selection_session.to_iso`); Skill 79 compares instants and
+  refuses an integer, naive or junk time by name.
 
 ## What it produces
 
@@ -100,6 +121,9 @@ Design direction = Skill 71 structure + Skill 45 card/rules via `design_prose.py
 - `scripts/validate_selection_binding.py` - check that a selection.json intent
   preserves the approved native product/price mapping for Skill 79, rejects
   query-string price authority, cross-tenant IDs, and stale revisions.
+  `validate_plan()` runs the same check over every mapping of an emitted
+  binding plan; `emit_binding_plan.py` calls it on each plan it returns, so no
+  plan the checkout-time validator would refuse is ever emitted.
 - `scripts/selection_session.py` - session bridge core: opaque reference,
   TTL, resume with revalidation, reconfirm-on-change, idempotent confirm.
 - `scripts/selection_session_store.py` - production session storage: the

@@ -96,7 +96,11 @@ def build_plan(seq_id, count, wait_days=1):
                               "attributes": {"type": "time", "startAfter": {
                                   "type": "days", "value": wait_days, "when": "after"}}})
     return {"folder": "Synthetic Drafts",
-            "_meta": {"sequence_id": seq_id, "draft_only": True, "deploy_mode": "draft-only"},
+            "_meta": {"sequence_id": seq_id, "draft_only": True, "deploy_mode": "draft-only",
+                      # what a Skill 50 build plan carries; the reader supplies none of it
+                      "enrollment_conditions": copy.deepcopy(plan_reader.DEFAULT_ENROLLMENT_CONDITIONS),
+                      "lifecycle": copy.deepcopy(plan_reader.DEFAULT_LIFECYCLE),
+                      "sender_config_refs": copy.deepcopy(plan_reader.DEFAULT_SENDER)},
             seq_id: {"name": seq_id, "status": "draft", "templates": templates}}
 
 
@@ -151,42 +155,25 @@ class BlackFridayTests(unittest.TestCase):
         self.assertEqual(at(nodes[0]["at"]), at("2026-11-20T09:00:00-05:00"))
         self.assertEqual(at(nodes[1]["at"]), at("2026-11-21T09:00:00-05:00"))
 
-    def test_each_black_friday_kind_gets_its_own_absolute_send_point(self):
-        kinds = (("email_teaser", "teaser", 1), ("email_countdown", "countdown", 1),
-                 ("email_cyber_monday", "cyber_monday", 1), ("email_last_call", "last_call", 1))
-        plan = launch_plan(BLACK_FRIDAY, sequences=kinds)
-        # The shared contract enum does not list these kinds yet (it is not this unit's file);
-        # prove the reader's own compile by stubbing the shared check only.
-        original = plan_reader._shared_errors
-        plan_reader._shared_errors = lambda _plan: []
-        try:
-            rc, doc, _ = run(plan, builds=[(k[0], k[2]) for k in kinds])
-        finally:
-            plan_reader._shared_errors = original
-        self.assertEqual(rc, 0)
-        sends = {}
-        for node in doc["builds"][0]["schedule"]["nodes"]:
-            sends.setdefault(node["phase"], []).append(node)
-        for kind, anchor in (("teaser", "2026-11-20T09:00:00-05:00"),
-                             ("countdown", "2026-11-24T09:00:00-05:00"),
-                             ("cyber_monday", "2026-11-30T00:00:00-05:00"),
-                             ("last_call", "2026-11-30T20:00:00-05:00")):
-            self.assertEqual(sends[kind][0]["anchor"], kind + "_at")
-            self.assertEqual(at(sends[kind][0]["at"]), at(anchor))
-            self.assertEqual(sends[kind][0]["kind"], "absolute")
-            self.assertEqual(sends[kind][0]["status"], "scheduled")
+    def test_black_friday_email_kinds_are_not_the_readers_to_judge(self):
+        # Issue 25: the shared launch contract has no teaser / countdown / cyber_monday /
+        # last_call email kind, so the shared validator (which runs first) refuses them
+        # and this reader keeps no dead copy of that list or of its calendar refusal.
+        kinds = (("email_teaser", "teaser", 1), ("email_last_call", "last_call", 1))
+        rc, doc, err = run(launch_plan(BLACK_FRIDAY, sequences=kinds),
+                           builds=[(k[0], k[2]) for k in kinds])
+        self.assertEqual((rc, doc), (2, None))
+        self.assertIn("LAUNCH-PLAN-CONTRACT", err)
+        self.assertNotIn("CALENDAR-BLACK-FRIDAY", err)
+        for kind in ("teaser", "last_call"):
+            self.assertIn(kind, err)
 
-    def test_black_friday_kind_without_a_black_friday_calendar_is_refused(self):
-        plan = launch_plan(STANDARD, sequences=(("email_last_call", "last_call", 1),))
-        original = plan_reader._shared_errors
-        plan_reader._shared_errors = lambda _plan: []
-        try:
-            rc, doc, err = run(plan)
-        finally:
-            plan_reader._shared_errors = original
-        self.assertEqual(rc, 2)
-        self.assertIsNone(doc)
-        self.assertIn("CALENDAR-BLACK-FRIDAY", err)
+    def test_reader_carries_no_dead_black_friday_kind_list_or_refusal(self):
+        self.assertFalse(hasattr(plan_reader, "BLACK_FRIDAY_KINDS"))
+        self.assertNotIn("CALENDAR-BLACK-FRIDAY", inspect.getsource(plan_reader))
+        self.assertEqual(set(plan_reader.PHASE_RANK), {"pre_launch", "main_launch", "doors_closing"})
+        self.assertFalse({"teaser", "countdown", "cyber_monday", "last_call"}
+                         & plan_reader.PROMOTIONAL_KINDS)
 
 
 class CalendarOrderTests(unittest.TestCase):

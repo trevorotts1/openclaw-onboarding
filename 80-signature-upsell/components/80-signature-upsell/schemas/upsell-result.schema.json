@@ -92,6 +92,12 @@
       "minLength": 1,
       "type": "string"
      },
+     "provider": {
+      "enum": [
+       "stub",
+       "kie"
+      ]
+     },
      "sha256": {
       "pattern": "^[a-f0-9]{64}$",
       "type": "string"

@@ -77,10 +77,26 @@ def stub_caf_env(tmp_path):
   "workflowData": {
     "templates": [
       {
+        "id": "g1",
+        "type": "filter",
+        "name": "Compliance guard",
+        "parentKey": null,
+        "next": "n1",
+        "attributes": {
+          "conditions": [
+            {"type": "tag_present", "value": "sms-subscribed"},
+            {"type": "tag_absent", "value": "sms-opted-out"},
+            {"type": "field_lt", "field": "contact_marketing_sends", "value": 5},
+            {"type": "time_window", "start": "08:00", "end": "21:00", "timezone": "recipient_local"},
+            {"type": "deadline", "anchor": "doors_close_at"}
+          ]
+        }
+      },
+      {
         "id": "n1",
         "type": "sms",
         "name": "Send",
-        "parentKey": null,
+        "parentKey": "g1",
         "next": "n2",
         "attributes": {
           "body": "Test message",
@@ -95,7 +111,7 @@ def stub_caf_env(tmp_path):
       }
     ]
   },
-  "triggers": [{"id": "T1", "type": "form_submitted", "targetActionId": "n1"}],
+  "triggers": [{"id": "T1", "type": "form_submitted", "targetActionId": "g1"}],
   "allowMultiple": false,
   "active": false
 }
@@ -148,10 +164,26 @@ def stub_caf_env_with_snapshot(tmp_path):
   "workflowData": {
     "templates": [
       {
+        "id": "g1",
+        "type": "filter",
+        "name": "Compliance guard",
+        "parentKey": null,
+        "next": "n1",
+        "attributes": {
+          "conditions": [
+            {"type": "tag_present", "value": "sms-subscribed"},
+            {"type": "tag_absent", "value": "sms-opted-out"},
+            {"type": "field_lt", "field": "contact_marketing_sends", "value": 5},
+            {"type": "time_window", "start": "08:00", "end": "21:00", "timezone": "recipient_local"},
+            {"type": "deadline", "anchor": "doors_close_at"}
+          ]
+        }
+      },
+      {
         "id": "n1",
         "type": "sms",
         "name": "Send",
-        "parentKey": null,
+        "parentKey": "g1",
         "next": "n2",
         "attributes": {
           "body": "Test message",
@@ -166,7 +198,7 @@ def stub_caf_env_with_snapshot(tmp_path):
       }
     ]
   },
-  "triggers": [{"id": "T1", "type": "form_submitted", "targetActionId": "n1"}],
+  "triggers": [{"id": "T1", "type": "form_submitted", "targetActionId": "g1"}],
   "allowMultiple": false,
   "active": false
 }
@@ -458,9 +490,11 @@ class TestWF18WF21FreshBuild:
 class TestHumanReviewItems:
     """Non-mechanical WF items must always appear as REQUIRES_HUMAN_REVIEW."""
 
+    # WF-16 is not listed: on a workflow with SMS steps (this fixture) it is measured from the saved
+    # compliance conditions (S44-32, see test_wf16_* below), so it is no longer a human-review item there.
     HUMAN_ITEMS = [
         "WF-1", "WF-2", "WF-8", "WF-9", "WF-10", "WF-11",
-        "WF-13", "WF-14", "WF-16", "WF-17", "WF-19", "WF-20",
+        "WF-13", "WF-14", "WF-17", "WF-19", "WF-20",
     ]
 
     @pytest.mark.parametrize("item", HUMAN_ITEMS)
@@ -492,6 +526,24 @@ class TestHumanReviewItems:
             "REQUIRES_HUMAN_REVIEW items must not appear as FAIL. "
             f"Found: {[it for it in self.HUMAN_ITEMS if data['items'].get(it, {}).get('status') == 'FAIL']}"
         )
+
+    def test_wf16_is_mechanical_for_a_workflow_with_saved_sms_conditions(self, stub_caf_env):
+        env, tmp = stub_caf_env
+        data = json.loads(_run_qc(["WFTEST001", "--json"], env).stdout)
+        assert data["items"]["WF-16"]["status"] == "PASS"
+        assert data["items"]["WF-25"]["status"] == "PASS"
+
+    def test_wf16_stays_human_review_without_sms_steps(self, stub_caf_with_custom_export):
+        env, tmp = stub_caf_with_custom_export({
+            "id": "WFTEST001", "status": "draft", "active": False, "allowMultiple": False,
+            "workflowData": {"templates": [
+                {"id": "n1", "type": "email", "name": "Mail", "parentKey": None, "next": "n2",
+                 "attributes": {"subject": "s", "body": "<p>" + "word " * 60 + "</p>"}},
+                {"id": "n2", "type": "end", "name": "Finish", "parentKey": "n1"}]},
+            "triggers": [{"id": "T1", "type": "form_submitted", "targetActionId": "n1"}]})
+        data = json.loads(_run_qc(["WFTEST001", "--json"], env).stdout)
+        assert data["items"]["WF-16"]["status"] == "REQUIRES_HUMAN_REVIEW"
+        assert data["items"]["WF-25"]["status"] == "PASS"
 
 
 # ---------------------------------------------------------------------------

@@ -146,7 +146,11 @@ def _build_plan(seq_id, count):
     return {
         "folder": "Synthetic Drafts",
         "_meta": {"sequence_id": seq_id, "draft_only": True,
-                  "deploy_mode": "draft-only"},
+                  "deploy_mode": "draft-only",
+                  # what a Skill 50 build plan carries; the reader supplies none of it
+                  "enrollment_conditions": copy.deepcopy(plan_reader.DEFAULT_ENROLLMENT_CONDITIONS),
+                  "lifecycle": copy.deepcopy(plan_reader.DEFAULT_LIFECYCLE),
+                  "sender_config_refs": copy.deepcopy(plan_reader.DEFAULT_SENDER)},
         seq_id: {"name": "%s (DRAFT)" % seq_id, "tag": "launch:%s" % seq_id,
                  "status": "draft", "templates": templates},
     }
@@ -294,6 +298,53 @@ class CompileTests(unittest.TestCase):
         self.assertEqual(dict(result), {})
         self.assertEqual([r["code"] for r in result.refusals], ["MISSING-GUARDS"])
 
+    def test_build_plan_without_lifecycle_is_blocked_by_the_reader_and_refused_here(self):
+        # Issue 26: the reader no longer injects a lifecycle. A build plan that carries
+        # none yields a blocked build, and compile_launch_builds(require_ready=True)
+        # refuses it instead of compiling guards the reader invented.
+        temp = Path(tempfile.mkdtemp(prefix="l07-nolife-"))
+        plan = {
+            "schema_version": "1.0.0", "launch_id": "l07-nolife", "a2p_ready": False,
+            "conversation_ai": {"requested": False, "mode": "none"},
+            "offer": {"name": "Synthetic", "price_usd": 1, "currency": "USD",
+                      "payment_plans": False},
+            "launch_calendar": dict(CALENDAR),
+            "pages": [{"id": "page_landing", "kind": "landing",
+                       "url": "https://example.test", "waits_for": []}],
+            "email_sequences": [{"id": "email_pre_launch", "kind": "pre_launch",
+                                 "provider": "skill50", "email_count": 2,
+                                 "draft_only": True, "waits_for": []}],
+            "text_sets": [],
+            "automations": [{"id": "auto_pre_launch", "family": "pre_launch",
+                             "template": "launch-a/launch-a-prelaunch-window",
+                             "build_rail": "skill44_engine", "draft_only": True,
+                             "trigger": {"type": "tag_added"},
+                             "waits_for": ["email_pre_launch"]}],
+        }
+        bare = _build_plan("email_pre_launch", 2)
+        for key in ("lifecycle", "enrollment_conditions", "sender_config_refs"):
+            del bare["_meta"][key]
+        (temp / "plan.json").write_text(json.dumps(plan))
+        (temp / "bare.json").write_text(json.dumps(bare))
+        rc = plan_reader.main(["--launch-plan", str(temp / "plan.json"), "--out",
+                               str(temp / "out.json"), "--build-plan", str(temp / "bare.json"),
+                               "--now", NOW])
+        self.assertEqual(rc, 4)
+        document = json.loads((temp / "out.json").read_text())
+        build = document["builds"][0]
+        self.assertEqual(build["state"], "blocked")
+        self.assertIsNone(build["lifecycle_source"])
+        for name in ("lifecycle", "eligibility", "sender"):
+            self.assertIn(name, build["blocked_by"])
+        result = wb.compile_launch_builds(document, require_ready=True)
+        self.assertEqual(dict(result), {})
+        self.assertEqual([r["code"] for r in result.refusals], ["BUILD-BLOCKED"])
+        self.assertIn("lifecycle", result.refusals[0]["detail"]["blocked_by"])
+
+    def test_lifecycle_the_build_plan_carried_is_stamped_build_plan(self):
+        for build in synthetic_document()["builds"]:
+            self.assertEqual(build["lifecycle_source"], "build_plan")
+
     def test_blocked_build_refuses_compile(self):
         document = synthetic_document()
         build = dict(document["builds"][0])
@@ -396,7 +447,12 @@ class CompileTests(unittest.TestCase):
             plan_path = temp / "plan.json"
             plan_path.write_text(json.dumps(plan))
             seq = {"folder": "F",
-                   "_meta": {"sequence_id": "email_pre_launch"},
+                   "_meta": {
+                       "sequence_id": "email_pre_launch",
+                       # what a Skill 50 build plan carries; the reader supplies none of it
+                       "enrollment_conditions": copy.deepcopy(plan_reader.DEFAULT_ENROLLMENT_CONDITIONS),
+                       "lifecycle": copy.deepcopy(plan_reader.DEFAULT_LIFECYCLE),
+                       "sender_config_refs": copy.deepcopy(plan_reader.DEFAULT_SENDER)},
                    "email_pre_launch": {
                        "name": "pre", "status": "draft",
                        "templates": [

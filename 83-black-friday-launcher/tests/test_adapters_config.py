@@ -518,7 +518,9 @@ class SelectionAssemblyTests(unittest.TestCase):
             want |= {f"desktop-wireframe/section-{n}.png", f"mobile-tablet/section-{n}.png",
                      f"visual-mockup/desktop/part-{n}.png", f"visual-mockup/mobile/part-{n}.png"}
         self.assertEqual(listed, want)
-        self.assertEqual(selection["status"], "locally_verified")
+        # WP-08b: Skill 78's emitter defaults to "authored"; "locally_verified" needs a review record, and this
+        # dispatch step has none (no independent review exists yet), so the honest status is "authored".
+        self.assertEqual(selection["status"], "authored")
         self.assertEqual(selection["blockers"], [])
         built = self.assemble(doc, pieces)
         piece = next(p for p in built["manifest"]["pieces"] if p["role"] == "product_selection")

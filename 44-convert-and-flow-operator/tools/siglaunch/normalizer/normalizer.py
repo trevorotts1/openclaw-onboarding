@@ -32,10 +32,28 @@ Rules enforced here (design sections 3-8):
   is carried the event stamps 1.2 (S82 refuses the field on 1.1); when
   it is absent the old-stream stamp is unchanged (1.1 with contact_ref,
   else 1.0).
+
+Runtime binding (issue 31, WP-17b): `normalizer.py --emit-binding <dir|file>`
+is the install step that writes runtime-binding.json, the record Skill 83's
+checkout rule reads before a checkout piece may claim live_verified or
+ready_for_activation. It writes nothing until the REAL normalizer, processor
+and store have just proven, on probe events in a throwaway database, that a
+verified paid event grants once, a redelivery or replay grants nothing more,
+and no non-paid status (pending, failed, requires_customer_action, unknown)
+grants; a refund only revokes. A failed probe raises BindingRefused and the
+CLI exits 7 with the file untouched. `--verify-binding <dir|file>` is the
+read-only check that a record was written by this step: it re-runs the probes
+and refuses a record whose values or evidence digest the probes do not
+reproduce, so a hand-written file does not verify. See RUNTIME-BINDING.md
+beside this file.
 """
 from __future__ import annotations
 
+import hashlib
+import importlib.util
 import json
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -64,10 +82,27 @@ import jsonschema
 BLACK_FRIDAY_2026_PURCHASE_PATH = "native-ghl-post-sale-workflows"
 PRODUCTION_ENTRY_ENABLED = False
 EXIT_NOT_PRODUCTION = 6
+# --emit-binding (write) and --verify-binding (read-only check) are the two
+# install-step modes. Neither ingests a live event or starts a runner, so
+# neither flips PRODUCTION_ENTRY_ENABLED.
+EXIT_BINDING_REFUSED = 7
+BINDING_FILE = "runtime-binding.json"
+BINDING_NORMALIZER = "44/tools/siglaunch/normalizer"
 
 
 def main(argv=None) -> int:
     import sys
+    args = sys.argv[1:] if argv is None else list(argv)
+    if args[:1] in (["--emit-binding"], ["--verify-binding"]):
+        if len(args) != 2:
+            print("usage: normalizer.py --emit-binding|--verify-binding <directory-or-file>", file=sys.stderr)
+            return 2
+        try:
+            print((emit_binding if args[0] == "--emit-binding" else verify_binding)(args[1]))
+        except BindingRefused as exc:
+            print("siglaunch normalizer: %s" % exc, file=sys.stderr)
+            return EXIT_BINDING_REFUSED
+        return 0
     print("siglaunch %s is not a production entry: the Black Friday 2026 "
           "purchase path is %s (no runner exists; refusing)."
           % (__name__ if __name__ != "__main__" else "module",
@@ -276,6 +311,175 @@ def ingest(store, readback: dict, ctx: LaunchContext,
     seen = store.record_event_if_unseen(
         event["tenant_id"], event["provider"], event["event_id"], event)
     return ("accepted" if seen else "duplicate"), result
+
+
+class BindingRefused(Exception):
+    """A probe failed: runtime-binding.json is not written."""
+
+
+def _sibling(dirname: str, filename: str):
+    """Load a sibling siglaunch module by file path: no sys.path edits, no name clash."""
+    path = Path(__file__).resolve().parent.parent / dirname / filename
+    spec = importlib.util.spec_from_file_location("siglaunch_binding_" + path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _readback(ctx: LaunchContext, event_id: str, line_ref: str, status: Optional[str],
+              kind: str = "order_paid") -> dict:
+    rb = {
+        "tenant_id": ctx.tenant_id, "location_id": ctx.location_id,
+        "launch_id": ctx.launch_id, "provider": "probe",
+        "provider_event_id": event_id, "native_event_kind": kind,
+        "native_order_ref": "ord-" + event_id,
+        "native_transaction_ref": "txn-" + event_id,
+        "occurred_at": "2026-01-01T00:00:00Z",
+        "received_at": "2026-01-01T00:00:01Z",
+        "line_items": [{"native_line_ref": line_ref,
+                        "native_product_ref": "probe-main", "offer_id": "probe-offer",
+                        "currency": "USD", "amount_minor": 100,
+                        "entitlement_ids": ["probe-ent"]}],
+        "evidence_ref": "probe/" + event_id, "test_only": True,
+    }
+    if status is not None:  # absent stays absent: the normalizer reads it as `unknown`
+        rb["payment_status"] = status
+    return rb
+
+
+def probe_binding(processor_module=None, store_module=None) -> dict:
+    """Run the real normalizer, processor and store on probe events in a throwaway
+    database and report what they did. {"ok", "probes", "digest"}; the digest is over the
+    deterministic transcript (no clock, no random id), so re-running the probes re-derives it.
+    The module arguments exist so a test can break one claim and watch the record refuse."""
+    processor_module = processor_module or _sibling("processor", "processor.py")
+    store_module = store_module or _sibling("store", "store.py")
+    ctx = LaunchContext("PROBE-T", "PROBE-LOC", "PROBE-LN", {"probe-main": "main"})
+    probes: list = []
+
+    def run(name, fn):
+        try:
+            ok, observed = fn()
+        except Exception as exc:  # a crashing path is a failed probe, never a pass
+            ok, observed = False, {"error": type(exc).__name__}
+        probes.append({"probe": name, "ok": bool(ok), "observed": observed})
+
+    with tempfile.TemporaryDirectory() as tmp:
+        store = store_module.Store(Path(tmp) / "probe.db")
+        proc = processor_module.DurableProcessor(store)
+        paid = _readback(ctx, "ev-paid", "line-paid", "succeeded")
+        seen = {}
+
+        def book(line_ref):
+            return store.entitlement_state(ctx.tenant_id, line_ref, "probe-ent")
+
+        def paid_event_grants():
+            status, res = ingest(store, paid, ctx)
+            seen["event"] = res.get("event")
+            out = proc.process(res["event"])
+            return (status == "accepted" and out["result"] == "processed" and book("line-paid") == "active",
+                    {"ingest": status, "result": out["result"], "book": book("line-paid")})
+
+        def redelivery_is_duplicate():
+            status = ingest(store, paid, ctx)[0]
+            return status == "duplicate", {"ingest": status}
+
+        def replay_grants_nothing_more():
+            out = proc.process(seen["event"])
+            active = store.active_entitlements(ctx.tenant_id)
+            return (out["actions_created"] == 0 and out["rights_reconciled"] == 0 and active == ["probe-ent"],
+                    {"actions_created": out["actions_created"], "rights_reconciled": out["rights_reconciled"],
+                     "active": active})
+
+        def never_grants(status):
+            def probe():
+                line = "line-" + (status or "unknown")
+                ingested, res = ingest(store, _readback(ctx, "ev-" + line, line, status), ctx)
+                out = proc.process(res["event"])
+                return (out["result"] == "no_grant:" + (status or "unknown") and book(line) is None,
+                        {"ingest": ingested, "result": out["result"], "book": book(line)})
+            return probe
+
+        def refund_revokes():
+            rb = _readback(ctx, "ev-refund", "line-paid", "refunded", kind="refund")
+            ingested, res = ingest(store, rb, ctx)
+            out = proc.process(res["event"])
+            return (out["result"] == "refund_applied" and book("line-paid") == "revoked",
+                    {"ingest": ingested, "result": out["result"], "book": book("line-paid")})
+
+        run("paid-event-grants", paid_event_grants)
+        run("redelivery-is-duplicate", redelivery_is_duplicate)
+        run("replay-grants-nothing-more", replay_grants_nothing_more)
+        for status in ("pending", "failed", "requires_customer_action", None):
+            run((status or "unknown") + "-never-grants", never_grants(status))
+        run("refund-revokes-never-grants", refund_revokes)
+        store._conn().close()  # the throwaway database; Store has no public close
+
+    transcript = json.dumps(probes, sort_keys=True, separators=(",", ":"))
+    return {"ok": all(p["ok"] for p in probes), "probes": probes,
+            "digest": hashlib.sha256(transcript.encode()).hexdigest()}
+
+
+def _proven_record(**inject) -> dict:
+    """The six-key record this normalizer can vouch for right now: the probes run, every one passed,
+    and the values below are what they proved. Raises BindingRefused otherwise. `verified_at` is the
+    one key the probes do not determine; the caller stamps it."""
+    if _SCHEMA_V12 is None:  # schema_version is read from the vendored 1.2 schema; no fallback to an older one
+        raise BindingRefused("the vendored purchase-event v1.2 schema is missing, %s not written" % BINDING_FILE)
+    result = probe_binding(**inject)
+    if not result["ok"]:
+        failed = ", ".join(p["probe"] for p in result["probes"] if not p["ok"])
+        raise BindingRefused("probes failed, %s not written: %s" % (BINDING_FILE, failed))
+    return {
+        "normalizer": BINDING_NORMALIZER,
+        "schema_version": _SCHEMA_V12["properties"]["schema_version"]["const"],
+        "grant_policy": "once",
+        "paid_edges_only": True,
+        "evidence_ref": "siglaunch-normalizer-probe:sha256:" + result["digest"],
+    }
+
+
+def _binding_path(out) -> Path:
+    out = Path(out)
+    return out / BINDING_FILE if out.is_dir() else out
+
+
+def emit_binding(out, *, now: Optional[datetime] = None, **inject) -> Path:
+    """Write runtime-binding.json (to <out>/runtime-binding.json when `out` is a directory,
+    else to `out`) once, and only if, every probe passes. Exactly the six contract keys."""
+    record = _proven_record(**inject)
+    path = _binding_path(out)
+    if not path.parent.is_dir():
+        raise BindingRefused("%s cannot be written: %s is not a directory" % (BINDING_FILE, path.parent))
+    record["verified_at"] = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+    tmp.replace(path)
+    return path
+
+
+def verify_binding(path, **inject) -> Path:
+    """Refuse a runtime-binding.json this normalizer did not write. The evidence digest is over a
+    deterministic probe transcript, so the probes are run again and the record must carry exactly the
+    six keys, every value the probes prove now, and a well-formed verified_at. A hand-written file, a
+    flipped value or a record from a normalizer that behaved differently does not verify.
+    Read-only: nothing is written."""
+    path = _binding_path(path)
+    try:
+        record = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise BindingRefused("%s is not readable JSON (%s)" % (path.name, type(exc).__name__))
+    expected = _proven_record(**inject)
+    if not isinstance(record, dict) or set(record) != set(expected) | {"verified_at"}:
+        raise BindingRefused("%s must be an object with exactly the six contract keys" % path.name)
+    wrong = sorted(k for k, v in expected.items() if record[k] != v or type(record[k]) is not type(v))
+    try:
+        datetime.strptime(record["verified_at"], "%Y-%m-%dT%H:%M:%SZ")
+    except (TypeError, ValueError):
+        wrong.append("verified_at")
+    if wrong:
+        raise BindingRefused("%s does not match what this normalizer proves: %s" % (path.name, ", ".join(wrong)))
+    return path
 
 
 if __name__ == "__main__":

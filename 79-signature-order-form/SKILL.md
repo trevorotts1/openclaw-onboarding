@@ -1,7 +1,7 @@
 ---
 name: signature-order-form
-description: "Skill 79: Signature Order Form, Checkout and Signature Bump Sale. Builds the reusable native Convert and Flow checkout in two modes (combined explanation-plus-checkout for one simple offer, and post-selection checkout after Skill 78 Product Selection), owns the order bump on the original checkout, the offer details and price display, and the guarantee/terms block. Status: landed in this repository; this file makes no installation, distribution-discovery or live-payment claim."
-version: 0.1.9
+description: "Skill 79: Signature Order Form, Checkout and Signature Bump Sale. Builds the reusable native Convert and Flow checkout in two modes (combined explanation-plus-checkout, the wired mode, one order form per offer price choice under per_offer_instances; and post-selection checkout after Skill 78 Product Selection, which is fixture-only and outside the done claim), owns the order bump on the original checkout, the offer details and price display, and the guarantee/terms block. Status: landed in this repository; this file makes no installation, distribution-discovery or live-payment claim."
+version: 0.1.10
 ---
 
 # Skill 79: Signature Order Form, Checkout and Signature Bump Sale
@@ -15,7 +15,7 @@ claim; installed-location native facts stay separate and are not asserted here.
 
 Own the order form page of a Signature Launch: the native Convert and Flow
 checkout a buyer completes after the sales page (combined mode) or after the
-product selection page (post-selection mode), including the one order bump
+product selection page (post-selection mode, fixture-only), including the one order bump
 offered on that original checkout.
 
 ## Modes (exactly two)
@@ -24,12 +24,21 @@ offered on that original checkout.
    Product Selection (Skill 78) is skipped. The explanation must cover what
    the product includes, who it is for, access and delivery, and important
    exclusions before the price and the native form.
-2. Post-selection mode: native checkout after Product Selection. The checkout
+2. Post-selection mode (FIXTURE-ONLY, not part of the done claim; the wired
+   route is `per_offer_instances`, see below): native checkout after Product Selection. The checkout
    loads the validated selection, visibly confirms package name, billing
    schedule, quantity and price, offers a change-package path back, and
    resolves a missing or expired selection to a recovery choice. It never
    silently defaults to another package, and a changed offer or price
    binding requires clear reconfirmation before any charge.
+
+Realised route (owner decision, `83-black-friday-launcher/DECISIONS-PENDING.md`,
+section "Ceiling"): Skill 83 calls this skill in combined mode only. For
+`multiple_options` and `folded_levels` it emits ONE `combined_single_offer`
+request per (main offer, price choice) under `per_offer_instances`, each with its
+own page id and `selection_ref` null. The post-selection code
+(`scripts/selection_flow.py`, `references/components/post-selection-checkout.html`)
+is fixture-only and is excluded from every done claim until a host wires it.
 
 ## Hard rules
 
@@ -70,6 +79,9 @@ offered on that original checkout.
   and billing audit, purchase state machine, selection resolver, purchase
   event handoff, the cross-field checkout validator, the native-binding
   capability matrix, and the purchase-attempt recovery model.
+- `scripts/emit_checkout_manuscript.py`: the order form page's copy manuscript,
+  written from the approved checkout request, the launch record and the approved
+  checkout terms (see Design stages).
 - `tests/`: the deterministic fixture suite for the models and components.
 
 ## Design stages (wireframes and mockups)
@@ -81,6 +93,18 @@ scripts/shared_page_service.py`) on the five-section structure in
 `49-signature-funnel/scripts/checkout_wrapper.py` (the design-only dispatch adapter). The section
 order is the reading order in `references/components/QC-STATES.md`. The native form is never
 drawn as card fields and is never built or bound by those stages: it stays Skill 06's.
+
+The manuscript those stages read is not hand-written: `scripts/emit_checkout_manuscript.py`
+writes the five sections from the approved checkout request (it must pass
+`validate_checkout.validate_copy_request`: the full request check, price approval and bump gates
+included, except that the three Skill 06 read-back keys the copy never uses are not required; the
+production gate `validate_checkout.validate_request` still requires them), the launch record's offer names and the approved
+`checkout_terms` text, and puts `<!-- source_request_sha256: <sha256 of the request file> -->`
+on line 1. `verify_source_stamp` (or `--check`) refuses a manuscript whose stamp is missing or
+no longer matches the request; the Skill 49 checkout wrapper makes the same check inline.
+A recommended (not separately approved) price is accepted at the production gate only when the
+request's `launch_plan_approval_ref` is a `launch_plan_build` approval that the shared
+verifier confirms, the same rule Skill 78 applies.
 
 ## Design direction (Skill 45)
 

@@ -22,6 +22,8 @@ EXIT CODES:
 from __future__ import annotations
 
 import argparse
+import hashlib
+import importlib.util
 import json
 import os
 import subprocess
@@ -37,6 +39,13 @@ _SKILL_DIR = Path(__file__).resolve().parent
 MANIFEST = _SKILL_DIR / "EMAIL-MANIFEST.json"
 PROVER = _SKILL_DIR / "tools" / "prove-email.py"
 CATALOG = _SKILL_DIR / "email-library" / "catalog-index.json"
+
+# The ONE approval verifier (shared with Skill 49 / tools/s49_launch_shape.py):
+# trusts only a record fetched live from the Command Center, never a file this
+# session could write. Loaded by path; absent = refuse (fail closed).
+_APPROVAL_RECORD = (_SKILL_DIR.parent / "shared-utils" / "signature_launch_contract" /
+                    "approval_record.py")
+EMAIL_DEPLOY_KIND = "email_deploy"
 
 # produces_artifact -> the run-dir-relative path the phase drops.
 PHASE_ORDER = ["P1-SELECT", "P2-GENERATE", "P3-QC", "P4-DEPLOY"]
@@ -238,7 +247,27 @@ def _verify_process_certificate(run_dir: Path) -> tuple[bool, str]:
     return True, "process certificate valid (all_phases_pass + sha recomputes + HMAC signature)"
 
 
+def _approval_verifier():
+    """Load the shared approval_record.py by path. Missing/unloadable = None."""
+    if not _APPROVAL_RECORD.is_file():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("approval_record_s50_deploy",
+                                                      _APPROVAL_RECORD)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:  # noqa: BLE001 — an unloadable verifier is a missing verifier.
+        return None
+
+
 def _chk_deploy_approval(run_dir: Path) -> tuple[bool, str]:
+    """Issue 81: P4 needs a VERIFIED approval record, never a bare flag.
+
+    working/deploy/approval.json names a Command Center approval id; the shared
+    approval_record.verify confirms kind email_deploy, the sha256 of the QC'd
+    copy (working/copy/emails.json), this run as scope, identity, expiry and
+    revocation. A file this session wrote cannot satisfy it (test_only=False)."""
     approval = run_dir / "working" / "deploy" / "approval.json"
     if not approval.is_file():
         return False, "missing working/deploy/approval.json (DRAFT-ONLY; a human must approve before any send)"
@@ -246,8 +275,27 @@ def _chk_deploy_approval(run_dir: Path) -> tuple[bool, str]:
         rec = json.loads(approval.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         return False, "approval.json unreadable: %s" % exc
-    if not (rec.get("approved") is True and str(rec.get("approved_by", "")).strip()):
-        return False, "approval.json present but not approved (approved:true + approved_by required)"
+    approval_id = rec.get("approval_id") if isinstance(rec, dict) else None
+    if not (isinstance(approval_id, str) and approval_id.strip()):
+        return False, ("AF-EMAIL-DEPLOY-UNAPPROVED: approval.json is not an approval record "
+                       "(no approval_id). A bare \"approved\": true flag anywhere is never read "
+                       "as evidence; the deploy approval must be a Command Center record "
+                       "verified by approval_record.verify (kind %s)" % EMAIL_DEPLOY_KIND)
+    emails = run_dir / "working" / "copy" / "emails.json"
+    try:
+        plan_hash = hashlib.sha256(emails.read_bytes()).hexdigest()
+    except OSError:
+        return False, ("AF-EMAIL-DEPLOY-UNAPPROVED: working/copy/emails.json is missing, so the "
+                       "approval has no copy to bind to")
+    verifier = _approval_verifier()
+    if verifier is None:
+        return False, ("AF-EMAIL-DEPLOY-UNAPPROVED: approval not verified against the platform "
+                       "record: the approval verifier (approval_record.py) is not installed")
+    try:
+        verifier.verify(approval_id.strip(), EMAIL_DEPLOY_KIND, plan_hash, [run_dir.name],
+                        test_only=False)
+    except (verifier.ApprovalRefused, verifier.ApprovalUnavailable) as exc:
+        return False, "AF-EMAIL-DEPLOY-UNAPPROVED: approval not verified against the platform record: %s" % exc
     # FIX-S36-46: the deploy ARTIFACT's PRESENCE (not a self-set deploy_requested
     # flag) is the trigger for demanding the real, recomputed-sha process
     # certificate. When the Skill-44 handoff artifact (build-plan.json) exists, a
@@ -705,6 +753,45 @@ def _write_certificate(run_dir: Path, proc: dict):
         return None
 
 
+def _deploy_approval_selftest_rest(rd: Path, valid_plan: dict, _ck) -> None:
+    """The process-certificate half of the deploy gate, with a minted approval in
+    place (the approval gate above passes, so each FAIL here is the certificate's)."""
+    # build-plan present but NO certificate -> BLOCK.
+    (rd / "working" / "deploy" / "build-plan.json").write_text(
+        json.dumps(valid_plan), encoding="utf-8")
+    good, _ = _chk_deploy_approval(rd)
+    _ck("_chk_deploy_approval build-plan w/o cert -> FAIL", good is False)
+    # SK2-07: a from-scratch forgery — a valid PUBLIC sha but NO signing key /
+    # signature — must FAIL. This is the exact hole the HMAC closes.
+    steps = [(pid, True) for pid in PHASE_ORDER]
+    forged = {"all_phases_pass": True, "sequence_id": "sequence-x", "email_count": 10,
+              "steps": [{"phase_id": p, "ok": True} for p in PHASE_ORDER]}
+    forged["certificate_sha"] = _certificate_sha("sequence-x", 10, steps)
+    (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(forged), encoding="utf-8")
+    good, _ = _chk_deploy_approval(rd)
+    _ck("_chk_deploy_approval from-scratch forgery (valid sha, NO HMAC key) -> FAIL", good is False)
+    # a REAL certificate: run-scoped key minted + valid HMAC signature -> PASS.
+    key = _cert_key(rd, create=True)
+    cert = {"all_phases_pass": True, "sequence_id": "sequence-x", "email_count": 10,
+            "steps": [{"phase_id": p, "ok": True} for p in PHASE_ORDER]}
+    cert["certificate_sha"] = _certificate_sha("sequence-x", 10, steps)
+    cert["certificate_sig"] = _certificate_sig(key, cert)
+    (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(cert), encoding="utf-8")
+    good, _ = _chk_deploy_approval(rd)
+    _ck("_chk_deploy_approval real signed cert -> PASS", good is True)
+    # a forged sha must fail closed (sha recompute AND HMAC both break).
+    tampered = dict(cert); tampered["certificate_sha"] = "0" * 64
+    (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(tampered), encoding="utf-8")
+    good, _ = _chk_deploy_approval(rd)
+    _ck("_chk_deploy_approval forged sha -> FAIL", good is False)
+    # a body tamper the public sha does NOT cover (adds a field) must still fail
+    # the HMAC — proving the signature, not the public formula, is the gate.
+    tampered2 = dict(cert); tampered2["deploy_mode"] = "live"
+    (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(tampered2), encoding="utf-8")
+    good, _ = _chk_deploy_approval(rd)
+    _ck("_chk_deploy_approval body tamper (valid sha, broken HMAC) -> FAIL", good is False)
+
+
 def self_test() -> int:
     """Built-in gate self-test — proves the P1 selection gate (_chk_email_match)
     and the fail-closed unmapped-checker actually BITE. VALID golden fixture passes;
@@ -809,50 +896,53 @@ def self_test() -> int:
         good, _ = _chk_build_plan(rd)
         _ck("_chk_build_plan invalid -> FAIL (fail-closed)", good is False)
 
-    # --- FIX-S36-46: deploy needs the REAL process certificate (recomputed sha) ---
-    with tempfile.TemporaryDirectory() as td:
+    # --- issue 81: the deploy approval is a VERIFIED record, never a bare flag ---
+    # A stub verifier stands in for the Command Center (the real one refuses every
+    # file/dict approval); it accepts exactly one minted id bound to this copy + run.
+    real_verifier = globals()["_APPROVAL_RECORD"]
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as vd:
         rd = Path(td)
         (rd / "working" / "deploy").mkdir(parents=True)
+        (rd / "working" / "copy").mkdir(parents=True)
         (rd / "delivery").mkdir(parents=True)
-        (rd / "working" / "deploy" / "approval.json").write_text(
-            json.dumps({"approved": True, "approved_by": "Founder"}), encoding="utf-8")
-        # approval only, no build-plan artifact -> PASS (nothing to deploy yet).
-        good, _ = _chk_deploy_approval(rd)
-        _ck("_chk_deploy_approval approval-only -> PASS", good is True)
-        # build-plan present but NO certificate -> BLOCK.
-        (rd / "working" / "deploy" / "build-plan.json").write_text(
-            json.dumps(valid_plan), encoding="utf-8")
-        good, _ = _chk_deploy_approval(rd)
-        _ck("_chk_deploy_approval build-plan w/o cert -> FAIL", good is False)
-        # SK2-07: a from-scratch forgery — a valid PUBLIC sha but NO signing key /
-        # signature — must FAIL. This is the exact hole the HMAC closes.
-        steps = [(pid, True) for pid in PHASE_ORDER]
-        forged = {"all_phases_pass": True, "sequence_id": "sequence-x", "email_count": 10,
-                  "steps": [{"phase_id": p, "ok": True} for p in PHASE_ORDER]}
-        forged["certificate_sha"] = _certificate_sha("sequence-x", 10, steps)
-        (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(forged), encoding="utf-8")
-        good, _ = _chk_deploy_approval(rd)
-        _ck("_chk_deploy_approval from-scratch forgery (valid sha, NO HMAC key) -> FAIL", good is False)
-        # a REAL certificate: run-scoped key minted + valid HMAC signature -> PASS.
-        key = _cert_key(rd, create=True)
-        cert = {"all_phases_pass": True, "sequence_id": "sequence-x", "email_count": 10,
-                "steps": [{"phase_id": p, "ok": True} for p in PHASE_ORDER]}
-        cert["certificate_sha"] = _certificate_sha("sequence-x", 10, steps)
-        cert["certificate_sig"] = _certificate_sig(key, cert)
-        (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(cert), encoding="utf-8")
-        good, _ = _chk_deploy_approval(rd)
-        _ck("_chk_deploy_approval real signed cert -> PASS", good is True)
-        # a forged sha must fail closed (sha recompute AND HMAC both break).
-        tampered = dict(cert); tampered["certificate_sha"] = "0" * 64
-        (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(tampered), encoding="utf-8")
-        good, _ = _chk_deploy_approval(rd)
-        _ck("_chk_deploy_approval forged sha -> FAIL", good is False)
-        # a body tamper the public sha does NOT cover (adds a field) must still fail
-        # the HMAC — proving the signature, not the public formula, is the gate.
-        tampered2 = dict(cert); tampered2["deploy_mode"] = "live"
-        (rd / "delivery" / "PROCESS-CERTIFICATE.json").write_text(json.dumps(tampered2), encoding="utf-8")
-        good, _ = _chk_deploy_approval(rd)
-        _ck("_chk_deploy_approval body tamper (valid sha, broken HMAC) -> FAIL", good is False)
+        (rd / "working" / "copy" / "emails.json").write_text('{"emails": []}', encoding="utf-8")
+        copy_hash = hashlib.sha256((rd / "working" / "copy" / "emails.json").read_bytes()).hexdigest()
+        stub = Path(vd) / "approval_record_stub.py"
+        stub.write_text(
+            "class ApprovalRefused(Exception):\n    pass\n"
+            "class ApprovalUnavailable(Exception):\n    pass\n"
+            "def verify(approval_id, kind, plan_hash, scope, *, test_only=False, **kw):\n"
+            "    if test_only is not False:\n        raise ApprovalRefused('test_only')\n"
+            "    if (approval_id, kind, plan_hash, scope) != (%r, %r, %r, %r):\n"
+            "        raise ApprovalRefused('not the minted approval for this copy and run')\n"
+            "    return {'ok': True}\n" % ("APPR-SELFTEST-0001", EMAIL_DEPLOY_KIND, copy_hash, [rd.name]),
+            encoding="utf-8")
+        globals()["_APPROVAL_RECORD"] = stub
+        _appr = rd / "working" / "deploy" / "approval.json"
+        try:
+            _appr.write_text(json.dumps({"approved": True, "approved_by": "Founder"}), encoding="utf-8")
+            good, msg = _chk_deploy_approval(rd)
+            _ck("_chk_deploy_approval bare approved:true flag -> FAIL (never evidence)",
+                good is False and "AF-EMAIL-DEPLOY-UNAPPROVED" in msg and "never read as evidence" in msg)
+            _appr.write_text(json.dumps({"approval_id": "APPR-SOMEONE-ELSE", "approved": True}),
+                             encoding="utf-8")
+            good, _ = _chk_deploy_approval(rd)
+            _ck("_chk_deploy_approval unverified approval_id -> FAIL", good is False)
+            _appr.write_text(json.dumps({"approval_id": "APPR-SELFTEST-0001"}), encoding="utf-8")
+            globals()["_APPROVAL_RECORD"] = Path(vd) / "no-such-verifier.py"
+            good, _ = _chk_deploy_approval(rd)
+            _ck("_chk_deploy_approval verifier not installed -> FAIL (fail closed)", good is False)
+            globals()["_APPROVAL_RECORD"] = stub
+            (rd / "working" / "copy" / "emails.json").write_text('{"emails": [1]}', encoding="utf-8")
+            good, _ = _chk_deploy_approval(rd)
+            _ck("_chk_deploy_approval copy changed after approval -> FAIL (hash bound)", good is False)
+            (rd / "working" / "copy" / "emails.json").write_text('{"emails": []}', encoding="utf-8")
+            # approval only, no build-plan artifact -> PASS (nothing to deploy yet).
+            good, _ = _chk_deploy_approval(rd)
+            _ck("_chk_deploy_approval minted approval-only -> PASS", good is True)
+            _deploy_approval_selftest_rest(rd, valid_plan, _ck)
+        finally:
+            globals()["_APPROVAL_RECORD"] = real_verifier
 
     # --- FIX-S36-48: _write_proc PRESERVES logged owner_skip_approvals ---
     with tempfile.TemporaryDirectory() as td:

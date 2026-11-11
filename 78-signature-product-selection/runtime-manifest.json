@@ -7,9 +7,9 @@
   "notes": "Descriptor supplied by S78 for INTEGRATION's registry wiring; registry discoverability itself is INTEGRATION-owned. The adapter adds no behavior of its own: every action dispatches to the shipped, independently reviewed modules, and session storage kind is fixed at construction so a request cannot redirect it.",
   "descriptor_only": true,
   "done_claim": {
-    "counted": ["scripts/build_selection_plan.py", "scripts/validate_selection_content.py", "scripts/emit_section_manuscript.py", "scripts/run_image_stages.py", "scripts/emit_page_result.py"],
-    "not_counted": ["scripts/selection_runtime.py", "scripts/selection_session.py", "scripts/selection_session_store.py", "scripts/validate_selection_binding.py"],
-    "reason": "No host calls the runtime, session or binding scripts yet (PRD-05); they are built and unit-tested but a descriptor is not a host, so they are outside the done claim until one exists."
+    "counted": ["scripts/build_selection_plan.py", "scripts/validate_selection_content.py", "scripts/emit_section_manuscript.py", "scripts/run_image_stages.py", "scripts/emit_page_result.py", "scripts/validate_selection_binding.py"],
+    "not_counted": ["scripts/selection_runtime.py", "scripts/selection_session.py", "scripts/selection_session_store.py", "79-signature-order-form/scripts/selection_flow.py", "79-signature-order-form/references/components/post-selection-checkout.html"],
+    "reason": "No host calls the runtime or session scripts yet (PRD-05); they are built and unit-tested but a descriptor is not a host, so they are outside the done claim until one exists. scripts/validate_selection_binding.py has a host: emit_binding_plan.emit_plan runs its validate_plan over every plan it returns, and Skill 83 checkout_instances.build calls emit_plan for every per-offer checkout set (78/tests/test_binding_plan_host.py, 83/tests/test_checkout_instances_binding_host.py). The post-selection checkout path (Skill 79 selection_flow.py and post-selection-checkout.html) is fixture-only: the wired route is per_offer_instances with selection_ref null (83-black-friday-launcher/DECISIONS-PENDING.md)."
   },
   "proof_level": "descriptor_only",
   "installation": {
@@ -24,6 +24,6 @@
   "schemas": ["schema/selection.schema.json", "schema/selection-request.schema.json", "schema/selection-result.schema.json", "schema/page-result.schema.json"],
   "session_stores": {"durable": "scripts/selection_session_store.py DurableSessionStore (production, tenant-scoped SQLite, chosen at Runtime construction via store={'kind': 'durable', 'base_dir': ...})", "memory": "scripts/selection_session.py SessionStore (deterministic core, tests)"},
   "skill": "78-signature-product-selection",
-  "skill_version": "0.2.8",
+  "skill_version": "0.2.9",
   "status": "build checkpoint, not installed"
 }

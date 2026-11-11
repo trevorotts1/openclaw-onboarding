@@ -563,9 +563,12 @@ default model where it differs from the build model.
    subagent-delegation-pattern.md: "Verify the chosen model exists in the OpenClaw config and
    has an API key available"; per MEMORY ollama-cloud-baseurl-trap). If no independent model is
    available, ask the client which model should run QC; never silently QC on the build model
-   itself. RECORD which model QC'd: pass it as `--qc-model <model>` at Step 9.3 and it is written to the
-   build-events ledger. The script refuses exit 0 when `--qc-model` is absent or equals the
-   `build_model` in the signed PLAN MODE run file.
+   itself. RECORD which model QC'd through the approval flow: the QC session is a Command Center-signed
+   record `{approval_id, plan_hash, qc_model, session_id}` (kind `qc_session`, scope `qc_model:<model>` +
+   `qc_session:<session_id>`, bound to the PLAN MODE file's `plan_hash`), passed as `--qc-session <record.json>`
+   at Step 9.3 and written to the build-events ledger. The model name is whatever the signed scope says; a
+   typed `--qc-model` string is refused. The script refuses exit 0 when the record is absent, unverified, or
+   names the `build_model` in the signed PLAN MODE run file (which must itself name a build model).
    Recommendation: a high-reasoning model from a different family than the build model, because
    independence is the point of the QC pass.
 
@@ -593,18 +596,26 @@ The sub-agent runs (in the skill folder):
 
 ```bash
 ./qc-built-workflow.sh <workflow-id> --publish-intent <DRAFT|LIVE> --re-entry <ONCE|ALLOW-MULTIPLE> \
-  --plan-mode-file <plan-mode.json> --qc-model <qc model> --grades <grades.json> --deps <deps.json> --json
+  --plan-mode-file <plan-mode.json> --qc-session <qc-session.json> --grades <grades.json> --deps <deps.json> --json
 ```
 
 which machine-asserts the mechanically-checkable items, returns per-item PASS/FAIL JSON, AND emits
 the weighted quality-rubric floor score (the `rubric` block). **Exit 0 is earned, never default
 (S44-24):** it needs (a) the signed PLAN MODE run file, verified, with `publish_intent`/`re_entry`
-equal to the flags (absent or different = exit 1); (b) a QC model different from the build model;
+equal to the flags (absent or different = exit 1); (b) a signed QC session record naming a QC model different from the build model;
 (c) a PASS/FAIL grade with observed text for EVERY `REQUIRES_HUMAN_REVIEW` item (WF-1, 2, 8, 9,
 10, 11, 13, 14, 16, 17, 19, 20 on a mechanical build; 11 on a `--conversational` build) in
 `grades.json` = `{"workflow_id": "<id>", "grades": {"WF-1": {"grade": "PASS", "observed": "..."}, ...}}`.
 Any ungraded item exits 2 (UNGRADED, not a pass); a FAIL grade exits 1. The build agent must not
 run this script and report the result as QC; only the independent QC sub-agent's run counts.
+
+**SMS steps (WF-25, WF-16).** When the export has an SMS step, the script runs
+`automation-templates/launch-text/sms_eligibility.py verify-saved` over it: consent, STOP/suppression,
+the aggregate contact cap, quiet hours (08:00-21:00 recipient-local) and the launch deadline must each
+be a SAVED NATIVE condition in the workflow (an if/else, wait or time-window condition). Words in a
+step's name, purpose, copy or note never count, and a missing or prose-only rule FAILs WF-25. WF-16
+(Stop-on-Response and time window) is then measured from the same verifier instead of graded by hand.
+WF-22 stays the email-body check; the SMS item is WF-25 because ids are never renumbered.
 
 **Launch builds (Skill 49/83) — WF-9 is mechanical (S44-11).** Add `--launch-schedule
 <schedule.json>` (the compiled wait schedule: `{"waits": [{"kind": "until_date", "until":

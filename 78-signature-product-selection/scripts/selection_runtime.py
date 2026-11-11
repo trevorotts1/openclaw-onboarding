@@ -88,7 +88,7 @@ class Runtime:
         action = request.get("action")
         try:
             if action == "invocation":
-                result = {"mode": check_invocation(_need(request, "launch"))}
+                result = {"mode": check_invocation(_need(request, "launch"), route=request.get("route"))}
             elif action == "plan":
                 result = build_plan(
                     _need(request, "launch"),

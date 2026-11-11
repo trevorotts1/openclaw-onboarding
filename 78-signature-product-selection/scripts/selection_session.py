@@ -21,11 +21,18 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+from datetime import datetime, timezone
 from typing import Any, Dict, Mapping, Optional
 
 from selection_core import Violation, validate_binding
 
 DEFAULT_TTL_SECONDS = 1800
+
+
+def to_iso(epoch_seconds: int) -> str:
+    """The store's epoch-second clock as the timezone-aware ISO-8601 UTC string Skill 79 parses as an instant
+    (CHK-07, issue 77). Epoch stays the store's own TTL arithmetic; every time handed to Skill 79 is this."""
+    return datetime.fromtimestamp(int(epoch_seconds), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 EXPIRED_MESSAGE = (
     "Your selection session has expired, so nothing was chosen for you. "
@@ -104,7 +111,7 @@ class SessionStore:
                     "current_offer": current,
                 }
             return {"state": "expired", "message": EXPIRED_MESSAGE}
-        return {"state": "resumed", "selection": selection}
+        return {"state": "resumed", "selection": selection, "expires_at": to_iso(rec["expires_at"])}
 
     def confirm(self, ref: str, *, tenant_id: str, launch_id: str, launch: Mapping[str, Any], now: int) -> Dict[str, Any]:
         """Idempotent confirm, fail-closed on current terms. The current

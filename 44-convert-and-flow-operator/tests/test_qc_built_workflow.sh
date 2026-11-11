@@ -17,19 +17,28 @@ trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/44-convert-and-flow-operator" "$T/shared-utils/signature_launch_contract" "$T/bin" "$T/home"
 cp "$SKILL/qc-built-workflow.sh" "$T/44-convert-and-flow-operator/"
 ln -s "$SKILL/tools" "$T/44-convert-and-flow-operator/tools"
+ln -s "$SKILL/automation-templates" "$T/44-convert-and-flow-operator/automation-templates"
 QC="$T/44-convert-and-flow-operator/qc-built-workflow.sh"
 
-# Stub verifier: same call shape and failure type as the real one; accepts exactly one approval.
+# Stub verifier: same call shape and failure type as the real one; accepts exactly one plan approval
+# (launch_plan_build) and exactly one QC session approval (qc_session, S44-46).
 cat > "$T/shared-utils/signature_launch_contract/approval_record.py" <<'PY'
 class ApprovalRefused(Exception):
     def __init__(self, code, message=""):
         super().__init__(code + ": " + message)
         self.code = code
 
+GOOD = {
+    "appr-good-0001": ("launch_plan_build", {"publish:DRAFT", "reentry:ONCE"}),
+    "appr-qc-b-0001": ("qc_session", {"qc_model:qc-model-b", "qc_session:sess-b-0001"}),
+    "appr-qc-same-1": ("qc_session", {"qc_model:build-model-a", "qc_session:sess-same-1"}),
+}
+
 def verify(approval_id, kind, plan_hash, scope, **kw):
-    if approval_id != "appr-good-0001" or kind != "launch_plan_build" or plan_hash != "abcd1234":
+    entry = GOOD.get(approval_id)
+    if entry is None or kind != entry[0] or plan_hash != "abcd1234":
         raise ApprovalRefused("APPROVAL-NOT-FROM-AUTHORITY", "unknown approval")
-    if not set(scope) <= {"publish:DRAFT", "reentry:ONCE"}:
+    if not set(scope) <= entry[1]:
         raise ApprovalRefused("APPROVAL-SCOPE", "scope not covered")
     return {"ok": True}
 PY
@@ -42,27 +51,44 @@ exit 1
 SH
 chmod +x "$T/bin/caf"
 
-cat > "$T/export-plain.json" <<'JSON'
+# WF-25 (S44-32): an SMS workflow needs its compliance rules saved as native conditions. These
+# fixtures carry them on a leading guard step (the happy path must stay exit 0).
+GUARD='{"id":"g1","type":"filter","name":"Compliance guard","parentKey":null,"next":"n1","attributes":{"conditions":[
+  {"type":"tag_present","value":"sms-subscribed"},{"type":"tag_absent","value":"sms-opted-out"},
+  {"type":"field_lt","field":"contact_marketing_sends","value":5},
+  {"type":"time_window","start":"08:00","end":"21:00","timezone":"recipient_local"},
+  {"type":"deadline","anchor":"doors_close_at"}]}}'
+cat > "$T/export-plain.json" <<JSON
 {"id":"WFTEST001","name":"ZHC-test","status":"draft","allowMultiple":false,"active":false,
  "workflowData":{"templates":[
-  {"id":"n1","type":"sms","name":"Send","parentKey":null,"next":"n2","attributes":{"body":"hi","fromNumber":"+15555550100"}},
+  $GUARD,
+  {"id":"n1","type":"sms","name":"Send","parentKey":"g1","next":"n2","attributes":{"body":"hi","fromNumber":"+15555550100"}},
   {"id":"n2","type":"end","name":"Finish","parentKey":"n1"}]},
- "triggers":[{"id":"T1","type":"form_submitted","targetActionId":"n1"}]}
+ "triggers":[{"id":"T1","type":"form_submitted","targetActionId":"g1"}]}
 JSON
-cat > "$T/export-waits.json" <<'JSON'
+cat > "$T/export-waits.json" <<JSON
 {"id":"WFTEST001","name":"ZHC-test","status":"draft","allowMultiple":false,"active":false,
  "workflowData":{"templates":[
-  {"id":"n1","type":"sms","name":"Send","parentKey":null,"next":"n2","attributes":{"body":"hi","fromNumber":"+15555550100"}},
+  $GUARD,
+  {"id":"n1","type":"sms","name":"Send","parentKey":"g1","next":"n2","attributes":{"body":"hi","fromNumber":"+15555550100"}},
   {"id":"n2","type":"wait","name":"Wait 2 Days","parentKey":"n1","next":"n3","attributes":{"type":"time","startAfter":{"type":"days","value":2,"when":"after"}}},
   {"id":"n3","type":"wait","name":"Wait until date","parentKey":"n2","next":"n4","attributes":{"type":"date","endDate":"2026-11-26T09:00:00-05:00"}},
   {"id":"n4","type":"end","name":"Finish","parentKey":"n3"}]},
- "triggers":[{"id":"T1","type":"form_submitted","targetActionId":"n1"}]}
+ "triggers":[{"id":"T1","type":"form_submitted","targetActionId":"g1"}]}
 JSON
 echo '{}' > "$T/deps.json"
 
 # Signed PLAN MODE run files (what the approval flow records) and grade files.
 plan() { printf '{"approval_id":"%s","plan_hash":"abcd1234","publish_intent":"%s","re_entry":"ONCE","build_model":"%s"}' "$1" "$2" "$3" > "$T/$4"; }
 plan appr-good-0001 DRAFT build-model-a plan-good.json
+# QC session records (S44-46). Only appr-qc-b-0001 is a record the stub authority minted for qc-model-b.
+qcs() { printf '{"approval_id":"%s","plan_hash":"%s","qc_model":"%s","session_id":"%s"}' "$1" "$2" "$3" "$4" > "$T/$5"; }
+qcs appr-qc-b-0001 abcd1234 qc-model-b sess-b-0001 qcs-good.json
+qcs appr-qc-b-0001 abcd1234 qc-model-c sess-b-0001 qcs-model-edited.json   # model name changed after signing
+qcs appr-selfwritten-1 abcd1234 qc-model-b sess-self-01 qcs-selfwritten.json
+qcs appr-qc-same-1 abcd1234 build-model-a sess-same-1 qcs-samemodel.json
+qcs appr-qc-b-0001 ffff9999 qc-model-b sess-b-0001 qcs-otherplan.json
+qcs appr-good-0001 abcd1234 qc-model-b sess-b-0001 qcs-reuses-plan.json
 plan appr-good-0001 LIVE  build-model-a plan-live.json
 plan appr-forged-99 DRAFT build-model-a plan-forged.json
 plan appr-good-0001 DRAFT qc-model-b    plan-samemodel.json
@@ -99,7 +125,7 @@ bad() { echo "FAIL - $1"; echo "       rc=$RC out=$(printf '%s' "$OUT" | tr '\n'
 expect_nonzero() { if [ "$RC" -ne 0 ]; then ok "$1 (rc=$RC)"; else bad "$1 exited 0"; fi; }
 expect_has() { case "$OUT" in *"$2"*) ok "$1 names '$2'" ;; *) bad "$1 does not name '$2'" ;; esac; }
 
-COMMON=(--publish-intent DRAFT --re-entry ONCE --qc-model qc-model-b --grades "$T/grades-all.json")
+COMMON=(--publish-intent DRAFT --re-entry ONCE --qc-session "$T/qcs-good.json" --grades "$T/grades-all.json")
 
 # 1. PLAN MODE run file absent -> never exit 0 (exit 0 today).
 run export-plain.json "${COMMON[@]}"
@@ -110,7 +136,7 @@ run export-plain.json "${COMMON[@]}" --plan-mode-file "$T/does-not-exist.json"
 expect_nonzero "plan-mode file path missing on disk"
 
 # 3. publish intent differs from the signed file
-run export-plain.json --publish-intent LIVE --re-entry ONCE --qc-model qc-model-b --grades "$T/grades-all.json" --plan-mode-file "$T/plan-good.json"
+run export-plain.json --publish-intent LIVE --re-entry ONCE --qc-session "$T/qcs-good.json" --grades "$T/grades-all.json" --plan-mode-file "$T/plan-good.json"
 expect_nonzero "CLI LIVE vs signed DRAFT"; expect_has "CLI LIVE vs signed DRAFT" publish_intent_differs
 run export-plain.json "${COMMON[@]}" --plan-mode-file "$T/plan-live.json"
 expect_nonzero "signed LIVE vs CLI DRAFT"; expect_has "signed LIVE vs CLI DRAFT" publish_intent_differs
@@ -125,21 +151,43 @@ run export-plain.json "${COMMON[@]}" --plan-mode-file "$T/plan-good.json"
 expect_nonzero "verifier absent"; expect_has "verifier absent" approval_verifier_missing
 mv "$T/verifier.off" "$T/shared-utils/signature_launch_contract/approval_record.py"
 
-# 6. QC model missing, and QC on the build model
+# 6. QC session record (S44-46): absent, typed model string, self-written, edited, other plan, reused, same model
 run export-plain.json --publish-intent DRAFT --re-entry ONCE --grades "$T/grades-all.json" --plan-mode-file "$T/plan-good.json"
-expect_nonzero "QC model not recorded"; expect_has "QC model not recorded" qc_model_missing_or_invalid
+expect_nonzero "QC session not supplied"; expect_has "QC session not supplied" qc_session_absent
+run export-plain.json --publish-intent DRAFT --re-entry ONCE --qc-model qc-model-b --grades "$T/grades-all.json" --plan-mode-file "$T/plan-good.json"
+expect_nonzero "free --qc-model string"; expect_has "free --qc-model string" "no longer accepted"
+[ "$RC" -eq 2 ] && ok "--qc-model refusal exit is 2" || bad "--qc-model refusal exit is not 2"
+run export-plain.json "${COMMON[@]}" --qc-session "$T/does-not-exist.json" --plan-mode-file "$T/plan-good.json"
+expect_nonzero "QC session path missing on disk"; expect_has "QC session path missing on disk" qc_session_absent
+run export-plain.json --publish-intent DRAFT --re-entry ONCE --grades "$T/grades-all.json" --plan-mode-file "$T/plan-good.json" --qc-session "$T/qcs-selfwritten.json"
+expect_nonzero "self-written QC session record"; expect_has "self-written QC session record" qc_session_not_verified
+run export-plain.json --publish-intent DRAFT --re-entry ONCE --grades "$T/grades-all.json" --plan-mode-file "$T/plan-good.json" --qc-session "$T/qcs-model-edited.json"
+expect_nonzero "QC model edited after signing"; expect_has "QC model edited after signing" qc_session_not_verified
+run export-plain.json --publish-intent DRAFT --re-entry ONCE --grades "$T/grades-all.json" --plan-mode-file "$T/plan-good.json" --qc-session "$T/qcs-otherplan.json"
+expect_nonzero "QC session bound to another plan"; expect_has "QC session bound to another plan" qc_session_plan_mismatch
+run export-plain.json --publish-intent DRAFT --re-entry ONCE --grades "$T/grades-all.json" --plan-mode-file "$T/plan-good.json" --qc-session "$T/qcs-reuses-plan.json"
+expect_nonzero "QC session reusing the build approval"; expect_has "QC session reusing the build approval" qc_session_reuses_plan_approval
+run export-plain.json --publish-intent DRAFT --re-entry ONCE --grades "$T/grades-all.json" --plan-mode-file "$T/plan-good.json" --qc-session "$T/qcs-samemodel.json"
+expect_nonzero "signed QC model == build model"; expect_has "signed QC model == build model" qc_not_independent
 run export-plain.json "${COMMON[@]}" --plan-mode-file "$T/plan-samemodel.json"
-expect_nonzero "QC model == build model"; expect_has "QC model == build model" qc_not_independent
+expect_nonzero "QC model == build model (plan names the QC model)"; expect_has "QC model == build model (plan names the QC model)" qc_not_independent
+plan appr-good-0001 DRAFT "" plan-nobuildmodel.json
+run export-plain.json "${COMMON[@]}" --plan-mode-file "$T/plan-nobuildmodel.json"
+expect_nonzero "PLAN MODE file with no build_model"; expect_has "PLAN MODE file with no build_model" plan_mode_build_model_missing
+mv "$T/shared-utils/signature_launch_contract/approval_record.py" "$T/verifier.off"
+run export-plain.json "${COMMON[@]}" --plan-mode-file "$T/plan-good.json"
+expect_nonzero "verifier absent (QC session)"; expect_has "verifier absent (QC session)" approval_verifier_missing
+mv "$T/verifier.off" "$T/shared-utils/signature_launch_contract/approval_record.py"
 
 # 7. all 12 human-review items ungraded (exit 0 today): no grades file, then one item missing
-run export-plain.json --publish-intent DRAFT --re-entry ONCE --qc-model qc-model-b --plan-mode-file "$T/plan-good.json"
+run export-plain.json --publish-intent DRAFT --re-entry ONCE --qc-session "$T/qcs-good.json" --plan-mode-file "$T/plan-good.json"
 expect_nonzero "all human items ungraded"; expect_has "all human items ungraded" UNGRADED
 [ "$RC" -eq 2 ] && ok "ungraded exit is 2" || bad "ungraded exit is not 2"
-run export-plain.json --publish-intent DRAFT --re-entry ONCE --qc-model qc-model-b --grades "$T/grades-missing1.json" --plan-mode-file "$T/plan-good.json"
+run export-plain.json --publish-intent DRAFT --re-entry ONCE --qc-session "$T/qcs-good.json" --grades "$T/grades-missing1.json" --plan-mode-file "$T/plan-good.json"
 expect_nonzero "one human item ungraded"; expect_has "one human item ungraded" WF-20
 
 # 8. a human grade of FAIL blocks exit 0
-run export-plain.json --publish-intent DRAFT --re-entry ONCE --qc-model qc-model-b --grades "$T/grades-fail1.json" --plan-mode-file "$T/plan-good.json"
+run export-plain.json --publish-intent DRAFT --re-entry ONCE --qc-session "$T/qcs-good.json" --grades "$T/grades-fail1.json" --plan-mode-file "$T/plan-good.json"
 expect_nonzero "human grade FAIL"
 
 # 9. everything signed and graded -> exit 0, and the QC runner model is in build-events
@@ -158,7 +206,7 @@ JSON
 cat > "$T/sched-bad.json" <<'JSON'
 {"waits":[{"kind":"delay","value":2,"unit":"days"},{"kind":"delay","value":3,"unit":"days"}]}
 JSON
-LCOMMON=(--publish-intent DRAFT --re-entry ONCE --qc-model qc-model-b --plan-mode-file "$T/plan-good.json" --json)
+LCOMMON=(--publish-intent DRAFT --re-entry ONCE --qc-session "$T/qcs-good.json" --plan-mode-file "$T/plan-good.json" --json)
 run export-waits.json "${LCOMMON[@]}" --launch-schedule "$T/sched-ok.json"
 [ "$(json_field items WF-9 status)" = "PASS" ] && ok "WF-9 PASS when waits match the compiled schedule (UTC-equal dates)" || bad "WF-9 not PASS on matching schedule"
 run export-waits.json "${LCOMMON[@]}" --launch-schedule "$T/sched-bad.json"

@@ -1,7 +1,7 @@
 ---
 name: email-engine
 description: The Email Engine — a governed skill + Email Superlibrary that SELECTS the right framework, GENERATES corpus-faithful email copy, QCs it against fail-closed provers, and hands a DRAFT-ONLY deploy plan to the Convert & Flow (GoHighLevel) operator. Owns the reusable IP — 13 email frameworks, 12 persona styles, the buyer-type -> email# -> framework map, the 4 sequence objectives, the 10-email landing-page promo sequence and the 12-email buyer-type / high-ticket-appointment sequences — and gates every one of those SACRED structures with a deterministic, model-free floor prover (prove-email.py). Runs P1 SELECT -> P2 GENERATE -> P3 QC -> P4 DEPLOY through one canonical entry (email-engine-entry.sh) with a deps/bypass/hash-pin/nonce gate; nothing is ever sent without explicit human approval.
-version: 2.0.10
+version: 2.0.11
 ---
 
 # Email Engine (Skill 50)
@@ -71,7 +71,7 @@ All from `SOURCE-EMAIL-CORPUS.md`. Each is a deterministic measurer with a named
 | Buyer-type map (12-email) | E1-2 spontaneous (3-B, Star-Chain-Hook) / E3-6 methodical (F2B, 6 W's, ACCA, PASTOR-Solutions) / E7-9 humanistic (PASTOR-Story, Star-Story-Solution, PAS) / E10-12 competitive (AIDA, Million-Dollar-Sales, BAB) | `AF-EMAIL-BUYERTYPE-MAP` |
 | Landing-page map (10-email) | E1-3 PASTOR-Solutions, E4 F2B, E5 6 W's, E6 BAB, E7 3-B, E8 Million-Dollar-Sales, E9 AIDA, E10 PAS | `AF-EMAIL-SEQUENCE-MAP` |
 | Sequence length | landing-page = 10 emails; high-ticket / buyer-type = 12 emails; slots contiguous 1..N | `AF-EMAIL-SEQUENCE-LENGTH` |
-| Objective validity | exactly one of promotional / abandoned-cart / upsell / downsell | `AF-EMAIL-OBJECTIVE-INVALID` |
+| Objective validity | exactly one of promotional / abandoned-cart / upsell / downsell / transactional (transactional is the launch welcome_access email only) | `AF-EMAIL-OBJECTIVE-INVALID` |
 | Persona-style validity | if set, one of the 12 canonical styles | `AF-EMAIL-PERSONA-INVALID` |
 | Persona never named | NEVER name/quote the referenced person (tone only, 100% original) — scanned in EVERY recipient-visible field: subjects, **previews (the inbox preheader)**, body, ctas, sections, disruptive_elements and founder_name (the From line) | `AF-EMAIL-PERSONA-NAMED` |
 | Subject count | exactly 2 (A/B), both non-empty | `AF-EMAIL-SUBJECT-COUNT` |

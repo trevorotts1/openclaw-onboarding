@@ -18,7 +18,7 @@ fail-closed (bad request, unknown action, storage failure).
 
 | Action | Fields | Result |
 | --- | --- | --- |
-| `invocation` | launch | `{"mode": "proceed"}` or the single-offer decline verdict |
+| `invocation` | launch, route? | `{"mode": "proceed"}` or the single-offer decline verdict; `route: "per_offer_targets"` builds no selection page, so any journey mode proceeds |
 | `plan` | launch, recommendation?, production? | selection plan (or the declined_single_offer plan) |
 | `preview` | plan, state? | `{"html": ...}` for default / selected / error / reconfirm |
 | `select` | launch, offer_id, price_choice_id, quantity?, selected_at, source_page_id, session_ref | selection.json intent (approval re-checked inside the core) |

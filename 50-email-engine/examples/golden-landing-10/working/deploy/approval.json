@@ -1,7 +1,6 @@
 {
-  "approved": true,
-  "approved_by": "Jordan Marsh (founder)",
-  "approved_at": "2026-07-02T00:05:00Z",
-  "scope": "DRAFT-ONLY Skill-44 build plan for sequence-landing-page-10-promo",
-  "note": "Founder reviewed all 10 emails after the P3 prove-email PASS and approves emitting the GHL DRAFT workflow. This approval does NOT authorize any send; a human publishes the draft separately after the Skill-44 qc-built-workflow.sh (>=8.5) gate."
+  "approval_id": "example-approval-id-minted-in-command-center",
+  "kind": "email_deploy",
+  "scope": ["golden-landing-10"],
+  "note": "Reference shape only. A real run names the Command Center approval id minted from the founder's own reply after the P3 prove-email PASS; run_email_engine verifies it with approval_record.verify (kind email_deploy, sha256 of working/copy/emails.json, this run as scope). This id is a placeholder and will not verify. An approval authorizes emitting the GHL DRAFT workflow only, never a send; a human publishes the draft separately after the Skill-44 qc-built-workflow.sh (>=8.5) gate."
 }

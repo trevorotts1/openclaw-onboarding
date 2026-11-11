@@ -5,7 +5,7 @@
 Binding contract for the component drafts in this directory:
 
 - `combined-checkout.html` assembles explanation, offer details, order bump, and guarantee/terms around the native checkout slot for a single simple offer (S79-03). Product Selection is skipped in this mode only.
-- `post-selection-checkout.html` renders the validated selection summary with a change-package path, plus recovery and reconfirmation states driven by `scripts/selection_flow.py` (S79-04).
+- `post-selection-checkout.html` (FIXTURE-ONLY, outside the done claim; the wired route is `per_offer_instances`, see `83-black-friday-launcher/DECISIONS-PENDING.md`) renders the validated selection summary with a change-package path, plus recovery and reconfirmation states driven by `scripts/selection_flow.py` (S79-04). The summary's billing type and schedule rows come from the selection itself through `billing_summary()` in that module; times in the selection are timezone-aware ISO-8601 and compared as instants (CHK-07).
 - `order-bump.html` renders exactly the states the bump fixture model produces: offered (unchecked), suppressed because the entitlement is already included or owned, and disabled because unavailable. Checking the box only modifies the pending order; the native submission processes the purchase.
 - `offer-details.html` values come from `scripts/quote_display.py`, built from verified native price records and passed through the billing display audit before render.
 - `guarantee-terms.html` renders guarantee and consent copy from approved references in the checkout request, never invented per launch. Consent starts unchecked.

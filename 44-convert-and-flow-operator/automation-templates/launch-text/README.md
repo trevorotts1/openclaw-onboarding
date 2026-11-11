@@ -64,6 +64,8 @@ Marketing sets are `doors_open`, `last_call`, `abandoned_checkout`; operational 
 
 `verify_saved_conditions()` reads the **saved native workflow export** and requires each rule to exist as a native `if_else` / `wait_until` condition (tag, field, time window, deadline). Prose in a `purpose`, `copy` or note field never satisfies a rule; the verifier reports `prose_only` when the words exist but the condition does not.
 
+The per-build QC runs it (`qc-built-workflow.sh`, item WF-25): `python3 sms_eligibility.py verify-saved --export <export.json> [--category auto|marketing|operational]` exits `0` when every rule is saved natively (or the export has no SMS step), `1` when a rule is missing or prose only, `2` when the export cannot be read. `auto` is `operational` only if every SMS node declares an operational `category` or `kind`; otherwise the stricter marketing set applies. A workflow with an SMS step that fails this check cannot pass QC.
+
 The AI nudge template (`launch-ai/`) is built by L10 under this same cap/STOP contract; it is not edited here.
 
 ## Placeholders
@@ -90,6 +92,7 @@ Unknown token fails the catalog check.
    - Auto-created trigger is Tag Added only; form/order triggers use `caf workflows patch-trigger` or Tier 4.
    - Workflows stay draft (`CAF_DRAFT_ONLY`).
 4. Copy is written for a 2-segment ceiling (≤ 320 characters before placeholder expansion). The check enforces this.
+5. **Approved copy binding (Skill 50 → Skill 44).** The bodies come from Skill 50, the copy owner: `50-email-engine/tools/emit_text_sets.py` writes `working/text/<set_id>.sms.json` (`{"set_id", "messages": [{"step_id", "body", "category"}], "profile_sha256"}`, judged by `50-email-engine/text-profile/validate_profile.py --check-sms`). `launch-c/plan_reader.py --text-copy-dir working/text` binds each file to the builds that wait on the set (`bindings.sms_copy`, keyed by SMS step id or `body_ref`) and lists the set under `text_builds` (template `launch-text-set`); a set with no valid file blocks its builds with `text_set:<id> copy`. `caf workflows build --from-automation-build` refuses a build that elected texts while an SMS step is still `copy_pending` (`SMS-COPY-PENDING`) or while approved copy landed in no step (`SMS-COPY-UNBOUND`), and `--deliveries-out` delivers the set as `skill44.sms-set.v1` only when every approved body is the body of a saved SMS step.
 
 ## Validation
 

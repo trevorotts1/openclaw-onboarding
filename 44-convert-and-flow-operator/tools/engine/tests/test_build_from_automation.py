@@ -68,8 +68,12 @@ def _skill50_sequence(seq_id):
                         "fromName": "Sender", "conditions": []}}
         for i in range(2)
     ]
-    return {"folder": "Drafts", "_meta": {"sequence_id": seq_id, "draft_only": True,
-                                          "deploy_mode": "draft-only"},
+    return {"folder": "Drafts", "_meta": {
+                "sequence_id": seq_id, "draft_only": True, "deploy_mode": "draft-only",
+                # what a Skill 50 build plan carries; the reader supplies none of it
+                "enrollment_conditions": plan_reader.DEFAULT_ENROLLMENT_CONDITIONS,
+                "lifecycle": plan_reader.DEFAULT_LIFECYCLE,
+                "sender_config_refs": plan_reader.DEFAULT_SENDER},
             seq_id: {"name": "%s (DRAFT)" % seq_id, "tag": "launch:%s" % seq_id,
                      "status": "draft", "templates": templates}}
 
@@ -145,13 +149,28 @@ def test_live_build_runs_compile_then_build_with_journal(tmp_path):
         def format_summary(self):
             return "ok"
 
+    # S44-47: a launch build needs a PLAN MODE run file the approval flow confirms.
+    plan_mode = tmp_path / "plan-mode.json"
+    plan_mode.write_text(json.dumps({
+        "approval_id": "appr-good-0001", "plan_hash": "abcd1234",
+        "publish_intent": "DRAFT", "re_entry": "ONCE", "build_model": "build-model-a"}))
+
+    class Authority:
+        @staticmethod
+        def verify(approval_id, kind, plan_hash, scope, **kw):
+            assert (approval_id, kind, plan_hash) == ("appr-good-0001", "launch_plan_build", "abcd1234")
+            assert sorted(scope) == ["publish:DRAFT", "reentry:ONCE"]
+            return {"ok": True}
+
     with patch.object(wb, "CampaignBuilder", Builder), \
             patch.object(wb, "resolve_browser_executor", return_value=selected_browser_executor), \
+            patch.object(cli_mod, "_approval_record", return_value=Authority), \
             patch.object(cli_mod, "_get_internal_client", return_value=object()), \
             patch.object(cli_mod, "_get_public_v4", return_value=(None, "off")):
         result = CliRunner().invoke(cli, [
             "--experimental", "--json", "--location-id", LOC, "workflows", "build",
-            "--from-automation-build", str(doc), "--journal", str(journal)])
+            "--from-automation-build", str(doc), "--journal", str(journal),
+            "--plan-mode-file", str(plan_mode)])
     assert result.exit_code == 0, result.output
     assert calls["journal"] == str(journal)
     assert calls["browser_executor"] is selected_browser_executor

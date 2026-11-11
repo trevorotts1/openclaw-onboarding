@@ -38,6 +38,12 @@ SQLite (stdlib), one database per tenant:
   data, never a reachable or cross-tenant selection. (Noted by
   independent review S78-10 as informational.)
 
+Time (issue 77): `created_at` and `expires_at` are epoch seconds inside both
+stores (the SQLite columns stay INTEGER). The only time that leaves a store
+toward Skill 79 is `expires_at` on a resumed session, as a timezone-aware
+ISO-8601 UTC string (`selection_session.to_iso`), the representation Skill 79
+parses as an instant (CHK-07).
+
 What is never stored: contact identity, card data, query-string values,
 or any price authority beyond the approved catalog snapshot already
 inside the validated selection intent.

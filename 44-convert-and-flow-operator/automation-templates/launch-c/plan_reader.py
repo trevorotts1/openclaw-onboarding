@@ -29,6 +29,7 @@
 #   plan_reader.py --launch-plan plan.json --build-plan pre.json [--build-plan ...]
 #                  [--sequence-map map.json] [--now 2026-11-01T00:00:00-05:00]
 #                  [--acknowledge-dropped-sends <dropped_sends_hash>]
+#                  [--text-copy-dir working/text]
 #                  --out automation-builds.json
 #   plan_reader.py --selftest
 #
@@ -41,9 +42,11 @@
 # ready for the still-future steps) and listed under owner_acknowledgement; the
 # owner acknowledges that exact list by passing its dropped_sends_hash back.
 #
-# BLACK FRIDAY: launch_calendar.black_friday drives teaser / countdown /
-# cyber_monday / last_call anchors (sequence kinds of the same names, plus
-# pre_launch starting at the teaser) and the four calendar nodes.
+# BLACK FRIDAY: launch_calendar.black_friday carries the teaser / countdown /
+# cyber_monday / last_call instants. pre_launch starts at the teaser, and the
+# four instants become calendar nodes. The shared launch-plan schema has no
+# Black Friday email sequence kinds, so this reader keeps none; Black Friday
+# ordering is the shared calendar law's (and Skill 83's).
 #
 # EXIT CODES: 0 ok / 2 usage-or-structural-invalid / 3 IO /
 #             4 BLOCKED (output written, but a build is blocked or has no workflow)
@@ -76,15 +79,13 @@ CREDENTIAL_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Black Friday phases (DECISIONS: cyber_monday and last_call are their own
-# promotional kinds). Each is anchored to launch_calendar.black_friday.<kind>_at.
-BLACK_FRIDAY_KINDS = ("teaser", "countdown", "cyber_monday", "last_call")
-BLACK_FRIDAY_FIELDS = tuple("%s_at" % kind for kind in BLACK_FRIDAY_KINDS)
+# launch_calendar.black_friday instants, as the shared calendar law names them.
+# They are calendar nodes only: no email sequence kind is a Black Friday kind.
+BLACK_FRIDAY_FIELDS = ("teaser_at", "countdown_at", "cyber_monday_at", "last_call_at")
 # Phase ranks: a phase may only wait on a strictly earlier phase.
-PHASE_RANK = {"pre_launch": 0, "teaser": 0, "countdown": 1, "main_launch": 2,
-              "cyber_monday": 3, "last_call": 4, "doors_closing": 5}
+PHASE_RANK = {"pre_launch": 0, "main_launch": 2, "doors_closing": 5}
 PROMOTIONAL_KINDS = {
-    "pre_launch", "main_launch", "doors_closing", *BLACK_FRIDAY_KINDS,
+    "pre_launch", "main_launch", "doors_closing",
     "upsell_followup", "downsell_followup", "abandoned_checkout",
 }
 # Access/entitlement mail is transactional: a purchase never cancels it.
@@ -104,6 +105,10 @@ WAIT_SECONDS = {
 }
 CLOSE_GUARD_SECONDS = 60
 
+# The DEFAULT_* values below are the contract's reference shapes. They are used by
+# --selftest and by the parity test against the installable compiler; the reader
+# NEVER substitutes them for a build plan that carries none (a guard satisfied by
+# the checker's own defaults is not a guard): see _merge_meta / build_document.
 DEFAULT_ENROLLMENT_CONDITIONS = [
     {"rule": "enroll_from_approved_launch_optin",
      "source_ref": "approved_signature_landing_page"},
@@ -408,16 +413,10 @@ def read_launch_plan(plan, source="launch-plan"):
     _require(not errors, "LAUNCH-PLAN-CONTRACT", "; ".join(errors))
     reject_credentials(plan, source)
 
-    # A launch with a Black Friday email sequence must carry launch_calendar.black_friday;
-    # the shared calendar law then orders its phases (read_calendar).
-    black_friday_launch = any(
-        isinstance(seq, dict) and seq.get("kind") in BLACK_FRIDAY_KINDS
-        for seq in plan.get("email_sequences", []))
-    if black_friday_launch and isinstance(plan["launch_calendar"], dict):
-        _require("black_friday" in plan["launch_calendar"], "CALENDAR-BLACK-FRIDAY",
-                 "a Black Friday email sequence needs launch_calendar.black_friday "
-                 "(%s)" % ", ".join(BLACK_FRIDAY_FIELDS))
-    calendar_doc, calendar_times = read_calendar(plan["launch_calendar"], black_friday_launch)
+    # A launch_calendar.black_friday block, when present, is ordered by the shared
+    # calendar law (read_calendar); the shared validator above already refused any
+    # email sequence kind the contract does not list.
+    calendar_doc, calendar_times = read_calendar(plan["launch_calendar"])
     units = {}            # id -> kind
     pages, email_sequences, text_sets, automations = {}, {}, {}, []
     targets = {"pages": pages, "email_sequences": email_sequences, "text_sets": text_sets}
@@ -492,8 +491,7 @@ def read_launch_plan(plan, source="launch-plan"):
             if rank is not None and dep_rank is not None:
                 _require(dep_rank < rank, "EMAIL-SEQUENCE-PHASE-ORDER",
                          "email sequence %r (%s) waits for %r (%s); phases run "
-                         "pre_launch -> countdown -> main_launch -> cyber_monday "
-                         "-> last_call -> doors_closing"
+                         "pre_launch -> main_launch -> doors_closing"
                          % (seq_id, sequence["kind"], dep, email_sequences[dep]["kind"]))
 
     return {
@@ -708,16 +706,13 @@ def _workflow_offsets(workflow):
 def _sequence_anchor(kind, times, duration):
     """Anchor datetime for an absolute phase, or None for a relative phase.
 
-    Black Friday phases START at their approved calendar date (teaser, countdown,
-    cyber_monday, last_call); pre_launch starts at the teaser when the calendar
-    carries one. Otherwise promotional phases are pinned so their LAST email
-    lands just before the phase boundary (doors open for pre-launch, doors close
-    for doors-closing); main launch starts at the launch instant. A 60 s guard
-    keeps even the last send strictly before the boundary.
+    pre_launch starts at the teaser when the calendar carries one. Otherwise
+    promotional phases are pinned so their LAST email lands just before the phase
+    boundary (doors open for pre-launch, doors close for doors-closing); main
+    launch starts at the launch instant. A 60 s guard keeps even the last send
+    strictly before the boundary.
     """
     guard = timedelta(seconds=CLOSE_GUARD_SECONDS)
-    if kind in BLACK_FRIDAY_KINDS:
-        return kind + "_at", times[kind + "_at"]
     if kind == "pre_launch" and "teaser_at" in times:
         return "teaser_at", times["teaser_at"]
     if kind == "pre_launch":
@@ -790,8 +785,8 @@ def compile_schedule(sequence_kind, workflow, times, now):
 def compile_calendar_nodes(calendar_times, now):
     phases = [("doors_open", "doors_open_at"), ("launch", "launch_at"),
               ("doors_close", "doors_close_at")]
-    phases += [(kind, kind + "_at") for kind in BLACK_FRIDAY_KINDS
-               if kind + "_at" in calendar_times]
+    phases += [(field[:-len("_at")], field) for field in BLACK_FRIDAY_FIELDS
+               if field in calendar_times]
     nodes = [{
         "phase": phase,
         "kind": "absolute",
@@ -831,16 +826,24 @@ def _merge_meta(bound_for_sequences):
         hashes = meta.get("content_hashes")
         if isinstance(hashes, dict):
             content_hashes.update({w["key"]: hashes for w in workflows})
+    # What the build plans carried, and nothing else: an absent value stays empty
+    # so build_document can block the build instead of inventing one.
     return {
-        "eligibility": eligibility or list(DEFAULT_ENROLLMENT_CONDITIONS),
-        "lifecycle": lifecycle or dict(DEFAULT_LIFECYCLE),
-        "sender": sender or dict(DEFAULT_SENDER),
+        "eligibility": eligibility,
+        "lifecycle": lifecycle or {},
+        "sender": sender or {},
         "content_hashes": content_hashes,
     }
 
 
+def _absent_meta(merged):
+    """Names of the bound build plans' metadata the plan did not carry."""
+    return [name for name in ("lifecycle", "eligibility", "sender") if not merged[name]]
+
+
 def _compile_guard_issues(lifecycle, kind):
-    """Missing suppression guards block activation. Absent lifecycle = contract defaults."""
+    """Missing suppression guards block activation. An absent lifecycle carries no
+    rules, so every guard is reported (the build is also blocked by ``lifecycle``)."""
     if kind not in PROMOTIONAL_KINDS:
         return []
     issues = []
@@ -869,6 +872,55 @@ def _canonical(value):
 
 def _sha256(value):
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+# ------------------------------------------------------------------ text copy
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def read_text_copy(copy_dir, set_id, expected_messages):
+    """``(copy, problem)`` for one launch text set.
+
+    ``copy`` is Skill 50's approved ``<copy_dir>/<set_id>.sms.json``
+    (``{"set_id", "messages": [{"step_id", "body", "category"}], "profile_sha256"}``);
+    ``problem`` is why it cannot be bound, and the build that needs it stays blocked.
+    The reader checks shape and count only: Skill 50's text-profile validator owns the
+    compliance rules (STOP, reply invitation, length) and ran before the file was written.
+    """
+    if not copy_dir:
+        return None, "no --text-copy-dir given"
+    path = Path(copy_dir) / ("%s.sms.json" % set_id)
+    if not path.is_file():
+        return None, "%s is absent" % path.name
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return None, "%s is unreadable (%s)" % (path.name, exc)
+    messages = doc.get("messages") if isinstance(doc, dict) else None
+    if not (isinstance(doc, dict) and doc.get("set_id") == set_id
+            and isinstance(messages, list) and messages
+            and isinstance(doc.get("profile_sha256"), str)
+            and SHA256_RE.match(doc["profile_sha256"])):
+        return None, "%s is not a Skill 50 sms set for %s" % (path.name, set_id)
+    ids = []
+    for message in messages:
+        if not (isinstance(message, dict)
+                and all(isinstance(message.get(k), str) and message[k].strip()
+                        for k in ("step_id", "body", "category"))):
+            return None, "%s has a message without step_id, body and category" % path.name
+        ids.append(message["step_id"])
+    if len(set(ids)) != len(ids):
+        return None, "%s repeats a step_id" % path.name
+    if isinstance(expected_messages, int) and len(messages) != expected_messages:
+        return None, "%s has %d message(s), the launch plan says %d" % (
+            path.name, len(messages), expected_messages)
+    return doc, None
+
+
+def _text_bindings(plan, copy_dir):
+    """set_id -> ``(copy or None, problem or None)`` for every launch text set."""
+    return {set_id: read_text_copy(copy_dir, set_id, doc.get("messages"))
+            for set_id, doc in plan["text_sets"].items()}
 
 
 # ----------------------------------------------------------------------- builder
@@ -919,8 +971,10 @@ def _enrollment(automation):
     return value if value in ("single", "successive") else None
 
 
-def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowledged=None):
+def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowledged=None,
+                   text_copy_dir=None):
     now = now or datetime.now(timezone.utc)
+    text_copy = _text_bindings(plan, text_copy_dir)
     email_sequences = plan["email_sequences"]
     times = dict(plan["calendar_times"])
     times["timezone"] = plan["calendar"]["timezone"]
@@ -958,6 +1012,18 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
             if reason and reason not in blocked_by:
                 blocked_by.append(reason)
 
+        # Texts the client elected for this automation: their approved SMS copy travels
+        # with the build (bindings.sms_copy) or the build is blocked, never built with the
+        # copy left pending.
+        elected = [dep for dep in automation["waits_for"] if plan["units"].get(dep) == "text_sets"]
+        sms_copy = {}
+        for set_id in elected:
+            copy, problem = text_copy[set_id]
+            if copy is None:
+                blocked_by.append("text_set:%s copy" % set_id)
+            else:
+                sms_copy.update({m["step_id"]: m["body"] for m in copy["messages"]})
+
         # Email count is a hard output contract: a mismatch blocks the build.
         for seq_id in refs:
             if seq_id not in bound:
@@ -977,6 +1043,12 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
         bound_meta = [(seq_id, str(bound[seq_id][0]), bound[seq_id][1], bound[seq_id][2])
                       for seq_id in refs if seq_id in bound]
         merged = _merge_meta(bound_meta)
+        # Lifecycle / eligibility / sender come from the Skill 50 build plan or the
+        # build is blocked: the reader never substitutes its own defaults, because
+        # the guard check below would then be satisfied by the reader itself.
+        if bound_meta:
+            blocked_by.extend(name for name in _absent_meta(merged)
+                              if name not in blocked_by)
 
         schedule_nodes, schedule_suppressed, sequence_schedules = [], [], {}
         for seq_id in refs:
@@ -1059,6 +1131,9 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
             "workflows": workflows,
             "eligibility": merged["eligibility"],
             "lifecycle": merged["lifecycle"],
+            # Provenance the installable compiler reads: the lifecycle came from the
+            # Skill 50 build plan (never from this reader), or there is none.
+            "lifecycle_source": "build_plan" if merged["lifecycle"] else None,
             "sender": merged["sender"],
             "content_hashes": merged["content_hashes"],
             "expected_graph_hash": expected_hash,
@@ -1074,6 +1149,27 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
             "dropped_sends": dropped,
             "state": state,
             "blocked_by": blocked_by,
+            **({"text_sets": elected, "bindings": {"sms_copy": sms_copy}} if elected else {}),
+        })
+
+    text_builds = []
+    for set_id, set_doc in plan["text_sets"].items():
+        copy, problem = text_copy[set_id]
+        electing = [b["id"] for b in builds if set_id in b.get("text_sets", [])]
+        text_builds.append({
+            "id": set_id,
+            "unit_key": "%s/%s" % (plan["launch_id"], set_id),
+            "template": "launch-text-set",
+            "kind": set_doc.get("kind"),
+            "messages": set_doc.get("messages"),
+            "state": "ready" if copy is not None else "blocked",
+            "blocked_by": [] if copy is not None else ["text_set:%s copy" % set_id],
+            "automations": electing,
+            "bindings": {"sms_copy": ({m["step_id"]: m["body"] for m in copy["messages"]}
+                                      if copy is not None else {})},
+            "categories": ({m["step_id"]: m["category"] for m in copy["messages"]}
+                           if copy is not None else {}),
+            "profile_sha256": copy["profile_sha256"] if copy is not None else None,
         })
 
     dropped_hash = _sha256(all_dropped)
@@ -1102,6 +1198,7 @@ def build_document(plan_path, plan, bound, unbound, warnings, now=None, acknowle
         },
         "journal": {"stable_unit_keys": journal},
         "builds": builds,
+        **({"text_builds": text_builds} if text_builds else {}),
         "unused_build_plan_workflows": unbound,
         "warnings": warnings,
     }
@@ -1135,7 +1232,8 @@ def run(args):
     document = build_document(
         args.launch_plan, parsed, bound, unbound, [],
         now=_parse_now(getattr(args, "now", None)),
-        acknowledged=getattr(args, "acknowledge_dropped_sends", None))
+        acknowledged=getattr(args, "acknowledge_dropped_sends", None),
+        text_copy_dir=getattr(args, "text_copy_dir", None))
     validate_output(document)
     return document
 
@@ -1158,6 +1256,7 @@ def blocked_builds(document):
     """Ids of builds that cannot be built (blocked or carrying no workflow); an
     empty build list is itself blocked."""
     ids = [b["id"] for b in document["builds"] if b["state"] == "blocked" or not b["workflows"]]
+    ids += [t["id"] for t in document.get("text_builds", []) if t["state"] == "blocked"]
     return ids or ([] if document["builds"] else ["(no automation builds)"])
 
 def _selftest():
@@ -1187,7 +1286,11 @@ def _selftest():
              "trigger": {"type": "tag_added"}, "waits_for": ["email_pre_launch"]}],
     }
     parsed = read_launch_plan(plan)
-    doc = {"folder": "F", "wf": {"name": "wf", "status": "draft", "templates": [
+    doc = {"folder": "F", "_meta": {
+        "enrollment_conditions": DEFAULT_ENROLLMENT_CONDITIONS,
+        "lifecycle": DEFAULT_LIFECYCLE,
+        "sender_config_refs": DEFAULT_SENDER,
+    }, "wf": {"name": "wf", "status": "draft", "templates": [
         {"id": "e1", "type": "email", "name": "Email 1", "attributes": {
             "subject": "s", "body": "b", "html": "<p>b</p>", "fromName": "n"}},
         {"id": "w1", "type": "wait", "name": "Wait 1 Days", "attributes": {
@@ -1205,6 +1308,18 @@ def _selftest():
     assert build["unit_key"] == "selftest-launch/auto_pre_launch"
     assert out["journal"]["stable_unit_keys"][build["unit_key"]] == build["expected_graph_hash"]
     assert build["lifecycle"]["stop_rules"]
+
+    # No lifecycle / eligibility / sender in the build plan: blocked, never defaulted.
+    bare = json.loads(json.dumps(doc))
+    del bare["_meta"]
+    bare_flows = read_build_plan(bare, "selftest")
+    out = build_document("selftest", parsed, {"email_pre_launch": ("selftest", bare, bare_flows)},
+                         [], [], now=now)
+    build = out["builds"][0]
+    assert build["state"] == "blocked", build["state"]
+    for name in ("lifecycle", "eligibility", "sender"):
+        assert name in build["blocked_by"], build["blocked_by"]
+    assert build["lifecycle"] == {} and build["sender"] == {} and build["eligibility"] == []
 
     bad = json.loads(json.dumps(doc))
     bad["wf"]["status"] = "published"
@@ -1286,6 +1401,9 @@ def main(argv=None):
     parser.add_argument("--acknowledge-dropped-sends", default=None, metavar="HASH",
                         help="owner acknowledgement: the dropped_sends_hash of a late "
                              "compile, passed back to accept that exact list of dropped sends")
+    parser.add_argument("--text-copy-dir", default=None, metavar="DIR",
+                        help="directory holding Skill 50's <text_set id>.sms.json files "
+                             "(working/text); a launch text set with no valid file blocks its builds")
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args(argv)
 

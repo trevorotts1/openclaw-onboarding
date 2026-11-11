@@ -1276,7 +1276,10 @@ def compile_launch_builds(document: Mapping[str, Any], *, require_ready: bool = 
                 refused_ids.add(build.get("id"))
             continue
         campaign.update(compiled)
-    return campaign
+    # Issue 3: a build that elected texts is refused (named, per unit) while its SMS copy is
+    # pending or lands in no step; builds that elected none are untouched.
+    from cli_anything.gohighlevel.utils.launch_text import enforce_sms_copy
+    return enforce_sms_copy(campaign, document)
 
 
 # ── Build journal (stable unit keys, remote ids, phases, hashes, readback) ──

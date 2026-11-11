@@ -15,7 +15,8 @@
 #     sections[] must match the framework's declared part count.
 #   * Buyer-type -> email# -> framework map (12-email) + landing-page map (10-email).
 #   * Sequence lengths — landing=10, high-ticket/buyer-type=12; slots contiguous.
-#   * Objective validity — exactly one of the 4 objectives.
+#   * Objective validity — exactly one of the 5 objectives (transactional is the
+#     launch welcome_access email only; the interactive questionnaire offers 4).
 #   * Persona-style validity + NEVER named/quoted — in ANY recipient-visible
 #     field (subjects, previews/preheader, body, ctas, sections, disruptive
 #     elements, founder/From name), not just the body.
@@ -98,7 +99,7 @@ FRAMEWORK_PARTS = {
     "pastor-solutions": 6, "pastor-story": 6, "six-ws": 6,
     "star-chain-hook": 3, "star-story-solution": 3, "million-dollar-sales": 12,
 }
-OBJECTIVES = ("promotional", "abandoned-cart", "upsell", "downsell")
+OBJECTIVES = ("promotional", "abandoned-cart", "upsell", "downsell", "transactional")
 BUYER_TYPES = ("spontaneous", "methodical", "humanistic", "competitive")
 PERSONA_STYLES = (
     "les-brown", "lisa-nichols", "brene-brown-gifts", "brene-brown-daring",

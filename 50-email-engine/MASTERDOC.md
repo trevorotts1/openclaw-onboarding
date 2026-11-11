@@ -148,7 +148,7 @@ The GoHighLevel CRM master sequence, mapped to the four buyer types by the same 
 | Buyer-type map | 12-email slot framework + buyer band match Section B | `AF-EMAIL-BUYERTYPE-MAP` |
 | Landing map | 10-email slot framework matches Section E | `AF-EMAIL-SEQUENCE-MAP` |
 | Sequence length | landing = 10; high-ticket / buyer-type = 12; slots contiguous 1..N | `AF-EMAIL-SEQUENCE-LENGTH` |
-| Objective | exactly one of promotional / abandoned-cart / upsell / downsell | `AF-EMAIL-OBJECTIVE-INVALID` |
+| Objective | exactly one of promotional / abandoned-cart / upsell / downsell / transactional (transactional is the launch welcome_access email only) | `AF-EMAIL-OBJECTIVE-INVALID` |
 | Persona-style | if set, one of the 12; NEVER named / quoted in ANY recipient-visible field (subjects, previews/preheader, body, ctas, sections, disruptive_elements, founder/From name) | `AF-EMAIL-PERSONA-INVALID` / `AF-EMAIL-PERSONA-NAMED` |
 | Subject count | exactly 2 (A/B), both non-empty | `AF-EMAIL-SUBJECT-COUNT` |
 | Preview count | Convert & Flow master = 1; landing / high-ticket = 2 | `AF-EMAIL-PREVIEW-COUNT` |

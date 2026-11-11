@@ -113,7 +113,7 @@ class FollowUpGate(unittest.TestCase):
     def test_gate_reads_the_followed_offer_tag_not_the_launch_tag(self):
         steps = _steps("auto_upsell_branch")
         gates = [s for s in steps if s["id"].endswith("-purchase-gate")]
-        goals = [s for s in steps if s["type"] == "workflow_goal"]
+        goals = [s for s in steps if s["type"] == "workflow_goal" and s["attributes"].get("goal") == "purchased"]
         self.assertEqual(len(gates), 2)
         self.assertEqual({g["attributes"]["conditions"][0]["value"] for g in gates}, {FOLLOWED_TAG})
         self.assertEqual({g["attributes"]["tag"] for g in goals}, {FOLLOWED_TAG})
@@ -369,7 +369,7 @@ class Skill49PlanToSkill44(unittest.TestCase):
             # the production path (workflow_builder) raises on any blocker: it compiles clean
             steps = _steps(unit_id, doc)
             gates = [s for s in steps if s["id"].endswith("-purchase-gate")]
-            goals = [s for s in steps if s["type"] == "workflow_goal"]
+            goals = [s for s in steps if s["type"] == "workflow_goal" and s["attributes"].get("goal") == "purchased"]
             self.assertEqual(len(gates), EMAIL_COUNT[FOLLOW_KIND[unit_id]], unit_id)
             self.assertEqual({g["attributes"]["conditions"][0]["value"] for g in gates},
                              {"purchased-" + offer}, unit_id)

@@ -4,13 +4,16 @@
 Usage:
     python3 produce.py --instance upsell_1 \
         --request <request.json> --copy <copy.json> --journey <journey.json> \
-        [--launch <launch.json>] \
+        [--launch <launch.json>] [--image-provider stub|kie] \
         --copy-artifact-path <path-as-recorded> --out <bundle.json>
 
 Exit 0 ok; 2 fail-closed (AdapterError, unreadable input): message on stderr,
 no bundle written. --launch is the approved launch record: it names which U2
 entry paths are enabled and holds the scarcity facts (scarcity_facts) copy
-wording must match.
+wording must match. --image-provider names the provider that drew (or will
+draw) the page's pictures; it is stamped as "provider" on every artifact of
+the result so Skill 83's placeholder-picture rule can read it. Left out, no
+provider is recorded (never a default).
 
 Reads only local JSON fixtures. Writes one deterministic bundle
 {"result": ..., "page_plan": ..., "native_binding": ...}. No network,
@@ -39,10 +42,18 @@ def main(argv=None) -> int:
     parser.add_argument("--journey", required=True)
     parser.add_argument("--launch", default=None, help="Approved launch record JSON.")
     parser.add_argument(
+        "--image-provider",
+        choices=list(common.IMAGE_PROVIDERS),
+        default=None,
+        help="Image provider stamped on every result artifact (default: none recorded).",
+    )
+    parser.add_argument(
         "--copy-artifact-path",
         default=None,
         help="Path string recorded in result.artifacts (default: the --copy value).",
     )
+    parser.add_argument("--review", default=None, help="Review record JSON (signature-launch-review-record/v1).")
+    parser.add_argument("--review-ledger", default=None, help="Dispatch ledger JSON the review record is checked against.")
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
 
@@ -57,6 +68,12 @@ def main(argv=None) -> int:
         journey = common.load_json(args.journey)
         launch = common.load_json(args.launch) if args.launch else None
         copy_sha256 = common.sha256_file(args.copy)
+        review = None
+        if args.review:
+            review = {
+                "record": common.load_json(args.review),
+                "ledger": common.load_json(args.review_ledger) if args.review_ledger else None,
+            }
         bundle = builder(
             request,
             copy_doc,
@@ -64,6 +81,8 @@ def main(argv=None) -> int:
             copy_sha256=copy_sha256,
             copy_artifact_path=args.copy_artifact_path or args.copy,
             launch=launch,
+            review=review,
+            image_provider=args.image_provider,
         )
     except (common.AdapterError, OSError, ValueError) as exc:
         print("FAIL-CLOSED: %s" % exc, file=sys.stderr)
