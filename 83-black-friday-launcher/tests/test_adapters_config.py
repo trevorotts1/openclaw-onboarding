@@ -205,7 +205,11 @@ class ThankYouTests(unittest.TestCase):
     def test_the_entry_chains_the_image_service_the_stages_and_the_design_only_translator(self):
         config = Inputs(self).build()
         steps = segments(config["adapters"]["thank_you"]["command"][2])
-        self.assertEqual([Path(s[1]).name for s in steps], ["shared_page_service.py", "translate_thank_you_result.py"])
+        self.assertEqual([Path(s[1]).name for s in steps],
+                         ["adapters.py", "adapters.py", "shared_page_service.py", "translate_thank_you_result.py"])
+        # first the run composes the design prose itself, then checks it: a hand-typed one never reaches an image
+        self.assertEqual([steps[0][2], steps[1][2]], ["compose-design-prose", "check-design-prose"])
+        steps = steps[2:]
         service = steps[0]
         self.assertEqual(service[service.index("--page-version") + 1], "thank-you")
         pipeline = shlex.split(service[service.index("--pipeline-command") + 1])
@@ -336,8 +340,8 @@ class AllowListTests(unittest.TestCase):
         inputs = Inputs(self)
         config = inputs.build()
         script = config["adapters"]["thank_you"]["command"][2]
-        steps = segments(script)
-        inner = steps[0][steps[0].index("--pipeline-command") + 1]
+        service = step(config, "thank_you", "shared_page_service.py")
+        inner = service[service.index("--pipeline-command") + 1]
         evil = script.replace(shlex.quote(inner), shlex.quote(f"{sys.executable} -c 'print(1)'"))
         self.assertNotEqual(evil, script)
         with self.assertRaises(adapters.AdapterNotAllowed):

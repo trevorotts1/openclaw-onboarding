@@ -299,6 +299,57 @@
       "class": "selected_conditional",
       "modes": ["assemble"],
       "why": "the delivery record the launcher writes at assemble"
+    },
+    {
+      "id": "tree-45-design-intelligence-library",
+      "kind": "skill_tree",
+      "ref": "45-design-intelligence-library",
+      "min_version": "v2.2.14",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["assemble"],
+      "when": "not_test_only",
+      "why": "Skill 45 (read-only): the style cards, prompt bands, negative-prompting rules and page rules every client page is designed against, and the home of the GHL media push a client package is hosted through; a client package assembled on a box without it can never be hosted or styled"
+    },
+    {
+      "id": "script-45-graphics-ghl-push",
+      "kind": "shared_utils",
+      "ref": "45-design-intelligence-library/scripts/graphics_ghl_push.py",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["assemble"],
+      "when": "not_test_only",
+      "why": "graphics_hooks.PUSH_REF: the one upload route that puts a client package's images on the GHL media library; without it check_rules/image_qc.py can never find a hosting binding, so the preflight is red where hosting cannot work"
+    },
+    {
+      "id": "sop-diu-602-generation-receipts",
+      "kind": "sop",
+      "ref": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-602.md",
+      "receipt": "receipts/sop-read/SOP-DIU-602.json",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["assemble"],
+      "why": "generation receipts, the budget gate and orphan recovery every paid image is accounted under"
+    },
+    {
+      "id": "sop-diu-607-named-styles",
+      "kind": "sop",
+      "ref": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-607.md",
+      "receipt": "receipts/sop-read/SOP-DIU-607.json",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["assemble"],
+      "why": "named styles, client aliases and the lookbook: how a client's chosen style card is pinned to a version"
+    },
+    {
+      "id": "sop-diu-610-rights-manifest",
+      "kind": "sop",
+      "ref": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-610.md",
+      "receipt": "receipts/sop-read/SOP-DIU-610.json",
+      "required": false,
+      "class": "selected_conditional",
+      "modes": ["assemble"],
+      "why": "the rights manifest and synthetic-media disclosure a delivered image carries"
     }
   ]
 }

@@ -59,6 +59,8 @@ email itself.
   fail-closed. Refuses any hand-rolled email sender in the run directory.
 - `run_email_engine.py` — the deterministic state machine over the manifest (P1 -> P4, no phase skips).
 
+This skill produces no visual design and does not read Skill 45 (the Design Intelligence Library); its brand voice comes from its 12 persona styles and the brand voice field of the locked brief.
+
 ## The SACRED invariants the prover enforces
 
 All from `SOURCE-EMAIL-CORPUS.md`. Each is a deterministic measurer with a named `AF-EMAIL-*` code.

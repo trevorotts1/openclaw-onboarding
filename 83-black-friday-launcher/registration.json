@@ -58,8 +58,8 @@
   },
   "depends_on": {
     "authoritative_manifest": "launcher_core/dependencies.json",
-    "requirements_digest": "8d0fba008c1978a045080e17913fdcaee88424693d7d805d9834e7e629c3183f",
-    "manifest_entry_count": 35,
+    "requirements_digest": "479b6575667d81ed9cbed9fa76dd9eb4da9a9c81fedcd06156be694a9f09027a",
+    "manifest_entry_count": 40,
     "required_entry_count": 25,
     "note": "NON-AUTHORITATIVE POINTER. This record does not list requirements. launcher_core/dependencies.json is the single executable source of truth (schema blackceo.launcher.dependencies/1), read by launcher_core/dependencies.py:load_manifest; launcher_core/dependencies.py:metadata_spine compares this pointer's target, digest and counts against that manifest and reports any mismatch as a finding in `python3 -m launcher_core.cli dependencies`. The hand-kept list this replaced had drifted from the executable requirement set: it named shared-utils/signature_launch, which the manifest replaced with shared-utils/signature_launch_contract, and it omitted shared-utils/client_intake. Re-stamp the digest and counts with the manifest whenever a requirement entry changes."
   },

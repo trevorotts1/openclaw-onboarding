@@ -886,4 +886,5 @@ def _bind_adapters(adapters, adapter_inputs: Dict[str, Any], out_dir: Path, laun
         order_page_inputs=order_inputs_path,
         skill80_root=adapter_inputs.get("skill80_root"), skill81_root=adapter_inputs.get("skill81_root"),
         image_provider=inputs["executor_provider"], allow_paid=inputs["allow_paid"],
-        checkout_design=checkout_design, image_plan=inputs)
+        checkout_design=checkout_design, image_plan=inputs,
+        measured_design_system=adapter_inputs.get("measured_design_system"))

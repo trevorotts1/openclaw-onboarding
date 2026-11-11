@@ -3163,12 +3163,12 @@ All repository files below were read for this task from `trevorotts1/openclaw-on
 | R1 | `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-01-PROMPT-ANATOMY.md` | v1.1; `be8424e2f4e8c09343071508056c169aa88f30da`; ten elements and validation. |
 | R2 | `23-ai-workforce-blueprint/templates/role-library/graphics/prompt-author-graphics.md` | `caf6e6cc4da0e2c2d78c863dff6b978a62e24e3f`; author role, reference and repair instructions. |
 | R3 | `23-ai-workforce-blueprint/templates/role-library/graphics/qc-specialist-prompt-graphics.md` | `950d60567b71db009299ee52bf3c648bbbca049f`; independent review, threshold and escalation. |
-| R4 | `45-design-intelligence-library/library/_system/NEGATIVE-PROMPTING-SOP.md` | `4ffff44b22082d2ded40c566191b98405db287cf`; three-layer avoids and per-model treatment. |
+| R4 | `45-design-intelligence-library/library/_system/NEGATIVE-PROMPTING-SOP.md` | v1.1; `85ec4923bd16318f907d54979005418c53e6786e`; three-layer avoids and per-model treatment. |
 | R5 | `45-design-intelligence-library/library/single-image-designs/_RULES.md` | `ada509eb578643f055f8e1d60299337ca8879394`; general-purpose imagery and re-ratioing. |
 | R6 | `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md` | `6db2fb51e11001d67800390a56ae79b4bd56e62c`; external image review, 8.5 average and actual provenance. |
-| R7 | `45-design-intelligence-library/library/funnel-page-designs/_RULES.md` | `4c1a170024aeebef612e90c5a0bac0e157046e29`; closest page category, authoritative per-entry ratio and no-text rule. |
-| R8 | `45-design-intelligence-library/library/_system/prompt-bands.json` | v2; `87456df02865289705260989f69c3415add343c8`; current floors/ceilings and scoped override. |
-| R9 | `45-design-intelligence-library/library/_system/MODEL-SPECS.md` | v1.5; `7a1bb04b48eef845118cd1801e84a86f29e39bd1`; retrieved route/schema reference, not a promise of future latest models. |
+| R7 | `45-design-intelligence-library/library/funnel-page-designs/_RULES.md` | `2411c535df113b1ad38bf25d0a486e8446de3dea`; closest page category, authoritative per-entry ratio and no-text rule. |
+| R8 | `45-design-intelligence-library/library/_system/prompt-bands.json` | v3; `42e8e573a81d06fc15bcf99a57e6f965ab00dc91`; current floors/ceilings and scoped override. |
+| R9 | `45-design-intelligence-library/library/_system/MODEL-SPECS.md` | v1.9; `d629fe38de62244421ff8c6895493bcd7c3575f4`; retrieved route/schema reference, not a promise of future latest models. |
 | L1 | `Pasted markdown(20260930-102129).md` | User-supplied legacy Midjourney instructions, 945 displayed lines. Style 11-43; questions 51-75; section rules 85-929. |
 | L2 | `Midjourney-Style-Image-Intelligence-Hyperchromatic-Luxury-Editorial-System.md` | User-supplied finalized blind-tested aesthetic calibration system. Integrated as the **BlackCEO Secret Super Sauce** default aesthetic engine, with vendor-specific implications translated into current workflow language. |
 | P1 | `BlackCEO_Famous_Photographers_DNA_Style_Library.md` | User-supplied 49-system photographic-direction library. Preserved as a governed companion reference; one VDL style may be active for a page. Its source names remain human-only and its five-lock/style-fidelity logic is retained. |
@@ -3177,6 +3177,8 @@ All repository files below were read for this task from `trevorotts1/openclaw-on
 | U1 | Trevor's current instructions in this conversation | Universal page workflow; per-image prompt length now governed by the KIE prompt budget (rule 12, replacing 5,000-20,000); failed-only three-attempt repair; Google Fonts; color grading, hair/tone/face/camera intelligence; no private labels on assets. |
 | U2 | `Pasted markdown.md` + Trevor's September 30 visual-intelligence additions | Contrast/readability, typography, safe space, camera/shot/depth language, four creative modes, text effects, 25 skin-tone descriptions, 40 Black women's hairstyles, Black men's hair/facial-hair libraries, fashion categories, posture, typography-as-image, subject-diversity and anti-template direction. |
 | U3 | Trevor's October 1 Creative Direction rule | Exactly one page-level style: one Photographic, one Cinematic/Directorial, one Visual-Artist system, or Secret-Sauce-only. Never mix the three style families or stack branded styles. Blend the Secret Sauce only where compatible; resolve conflicts dimension-by-dimension and keep the selected direction locked across the page. |
+
+R4, R7, R8 and R9 (the Skill 45 sources whose hashes had drifted) were re-stamped on November 10, 2026 against the current blobs on `main`; `references/external-authorities.json` now pins the same four files and `scripts/check_authority_pins.py --strict` fails when any of them moves, so those rows can no longer drift unseen.
 
 Public technical references, checked September 30, 2026:
 

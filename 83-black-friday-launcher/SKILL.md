@@ -15,7 +15,10 @@ priority: HIGH
 Read this entire document from top to bottom before executing a single step.
 Then read every SOP this skill declares, in full, in this order:
 `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-02-IMAGE-QC.md`,
-`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`.
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-GIP-03-GHL-MEDIA-DELIVERY.md`,
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-602.md`,
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-607.md` and
+`23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-610.md`.
 
 ## Your role with the client (BINDING, for the WHOLE conversation, not only the opening)
 
@@ -316,9 +319,12 @@ Read in this order. Each step names the file, so nothing here depends on guessin
    `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-607.md`,
    `23-ai-workforce-blueprint/templates/role-library/graphics/sops/SOP-DIU-610.md` and
    `23-ai-workforce-blueprint/master-orchestrator-dept/SOP-07-Full-Funnel-Build-Orchestration.md`
-   (today tracked follow-ups in `DISPATCH.md`, not enforced gates).
-   Each GIP SOP is a `sop` entry in `launcher_core/dependencies.json`; `assemble` refuses when its read
-   receipt in `receipts/sop-read/` is absent or does not match the SOP file's sha256.
+   (SOP-07 is still a tracked follow-up in `DISPATCH.md`, not an enforced gate).
+   Each GIP SOP and each DIU SOP above (602, 607, 610) is a `sop` entry in `launcher_core/dependencies.json`;
+   `assemble` refuses when its read receipt in `receipts/sop-read/` is absent or does not match the SOP file's
+   sha256. Skill 45 itself (`45-design-intelligence-library`, and its `graphics_ghl_push.py`) is a dependency
+   entry that `assemble` requires for a client package (not for a `test_only` practice one): a box that cannot
+   style and host the pages is refused before anything is packaged.
 
 ## Entry
 

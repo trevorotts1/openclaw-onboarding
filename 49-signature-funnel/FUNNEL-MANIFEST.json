@@ -428,6 +428,11 @@
       "enforced_by": "P2-PROMPTS",
       "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"
     },
+    "AF-FUN-PROMPT-STYLE-CARD": {
+      "trigger": "the intake names a Skill 45 style_card_id (Q18) but a prompt does not carry that card's LONG tier verbatim in block 8 ahead of the negatives, or the card cannot be read from the design library",
+      "enforced_by": "P2-PROMPTS",
+      "py_symbol": "prove_sf_prompt_floor._check_style_card"
+    },
     "AF-FUN-PROMPT-COVERAGE": {
       "trigger": "prompt ledger is missing a required (page_type, section) image slot for the funnel size (partial ledger)",
       "enforced_by": "P2-PROMPTS",

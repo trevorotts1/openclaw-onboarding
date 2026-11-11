@@ -180,6 +180,9 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
                         "manuscript": str(COPY_EXAMPLES / "standard-path-b.md")}}))
         return {
             "bridge_config": str(bridge),
+            # Skill 71's prompt floor needs more than the composed direction alone: the run's measured design system
+            # (synthetic text here), appended to rules_md by the composer, which trims line by line to each stage's budget
+            "measured_design_system": str(write("measured-design-system.txt", json.loads(_design_prose())["rules_md"])),
             "author_session": "e2e-real-adapters",
             "copy": {"upsell_1": rebound(S80_FIXTURES / "copy-upsell1-public.valid.json", "copy-upsell_1.json"),
                      "upsell_2": rebound(S80_FIXTURES / "copy-upsell2-public.valid.json", "copy-upsell_2.json"),
@@ -203,8 +206,8 @@ class RealAdaptersEndToEndTests(unittest.TestCase):
         built before any sale has none, and nothing here may hand-write them.)"""
         work = out / "dispatch"
         work.mkdir(parents=True)
-        for name in ("design-prose.json", "design-prose-checkout.json"):
-            (work / name).write_text(_design_prose(), encoding="utf-8")
+        # no design prose is staged: the launch composes it itself (Skill 45's composer) from the launch record,
+        # the chosen style and the run's measured design system handed in through adapter_inputs
         # the downsell wrapper assembles its result around the extension record the Skill 81 side stages beside it
         # (the fixture matched to the page fixture above); it checks it against the launch record and the route,
         # so it names this launch's upsell_2 page (Skill 49 ids a page <launch_id>-<ROLE>: the launch id as

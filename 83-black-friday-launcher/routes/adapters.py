@@ -55,6 +55,44 @@ def _require_file(label: str, value: str | Path) -> Path:
     return path
 
 
+def design_prose_problems(path: str | Path) -> List[str]:
+    """Why a design-prose file is not one Skill 45's composer wrote (empty when it is, and is current).
+
+    The composer is loaded from the shared-utils copy beside this skill, so 83 and Skill 71 read one checker.
+    A hand-typed file, an edited one and one composed against changed Skill 45 files are all refused."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return [f"AF-DI-PROSE: the design prose cannot be read ({type(exc).__name__})"]
+    module = substrate.load("shared-utils/signature_launch/design_prose.py", "launcher_design_prose")
+    return list(module.check_design_prose(doc))
+
+
+def compose_design_prose(launch_record: str | Path, style: str, roles: Sequence[str], out: str | Path,
+                         measured: str | Path | None = None) -> Path:
+    """Write the design prose with Skill 45's composer (shared-utils design_prose.py), replacing whatever is at
+    ``out``. The run's measured design system is appended inside the composer, before its digest is stamped, so
+    the file passes the check and nothing here is typed or placed by an operator."""
+    module = substrate.load("shared-utils/signature_launch/design_prose.py", "launcher_design_prose")
+    try:
+        launch = json.loads(Path(launch_record).read_text(encoding="utf-8"))
+        text = Path(measured).read_text(encoding="utf-8") if measured else ""
+        doc = module.compose(launch, style, None, roles=list(roles), measured=text)
+    except Exception as exc:  # OSError, the composer's ValueError refusals, DesignIntelligenceError (AF-DI-ABSENT)
+        raise AdapterError(f"design prose: {exc}") from exc
+    out = Path(out)
+    out.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return out
+
+
+def _require_design_prose(label: str, value: str | Path) -> Path:
+    path = _require_file(label, value)
+    problems = design_prose_problems(path)
+    if problems:
+        raise AdapterError(f"{label}: {problems[0]} (run design_prose.py; a hand-typed file is refused)")
+    return path
+
+
 # ---------------------------------------------------------------------------
 # Real entry points. `dispatch` marks the six roles dispatch may execute.
 # ---------------------------------------------------------------------------
@@ -588,7 +626,8 @@ def build_dispatch_config(*, work_dir: str | Path,
                           image_plan: Optional[Dict[str, Any]] = None,
                           extra_pages: Sequence[str] = (),
                           thank_you_manuscript: str | Path | None = None,
-                          thank_you_design_prose: str | Path | None = None) -> Dict[str, Any]:
+                          thank_you_design_prose: str | Path | None = None,
+                          measured_design_system: str | Path | None = None) -> Dict[str, Any]:
     """Bind the real adapter commands for one launch. Fails closed.
 
     No /path/to entry, no <...> token and no missing file may be emitted as
@@ -683,8 +722,19 @@ def build_dispatch_config(*, work_dir: str | Path,
     thank_you_run = abs_work / "thank_you-run"
     manuscript = (_require_file("thank_you_manuscript", thank_you_manuscript) if thank_you_manuscript
                   else abs_work / "copy-thank_you.md")
-    prose = (_require_file("thank_you_design_prose", thank_you_design_prose) if thank_you_design_prose
+    prose = (_require_design_prose("thank_you_design_prose", thank_you_design_prose) if thank_you_design_prose
              else abs_work / "design-prose.json")
+    for staged, label in ((abs_work / "design-prose.json", "design-prose.json"),
+                          (abs_work / "design-prose-checkout.json", "design-prose-checkout.json")):
+        if staged.is_file():  # a file already in the dispatch folder is checked now; the run checks it again
+            _require_design_prose(label, staged)
+    measured = _require_file("measured_design_system", measured_design_system) if measured_design_system else None
+    style = str((image_plan or {}).get("design_style") or (checkout_design or {}).get("design_style") or "A")
+    # nothing here is operator-staged: the design prose of the thank_you page (and the order form page's) is
+    # composed now, and the thank_you chain composes it again before it checks it
+    compose_design_prose(launch_path, style, ["thank_you"], prose, measured)
+    if checkout_design is not None:
+        compose_design_prose(launch_path, style, ["checkout"], abs_work / "design-prose-checkout.json", measured)
     thank_you_stages = [python, root71 / "scripts" / "run_page_role_stages.py", thank_you_run,
                         "--manuscript", manuscript, "--design-prose", prose, "--provider", image_provider,
                         # the thank-you page sells nothing: scan the manuscript before any stage (AF-71-THANK-YOU-PITCH)
@@ -722,6 +772,11 @@ def build_dispatch_config(*, work_dir: str | Path,
             "command": [
                 "bash", "-c",
                 " && ".join([
+                    # the run composes the design prose itself with Skill 45's composer (replacing anything placed
+                    # there), then refuses a file the composer did not write, before any image is made
+                    sh(python, _THIS_FILE, "compose-design-prose", "--launch", launch_path, "--style", style,
+                       "--role", "thank_you", *(["--measured", measured] if measured else []), "--out", prose),
+                    sh(python, _THIS_FILE, "check-design-prose", "--file", prose),
                     sh(python, root71 / "scripts" / "shared_page_service.py", "--request", "{request}",
                        "--run-dir", thank_you_run, "--page-version", "thank-you", "--image-inputs", images_path,
                        "--launch-record", launch_path, "--route-graph", "{work_dir}/route-graph.json",
@@ -877,7 +932,29 @@ def main(argv: Optional[List[str]] = None) -> int:
     attach.add_argument("--result", required=True)
     attach.add_argument("--run-dir", required=True)
     attach.add_argument("--page-key", default="product_selection")
+    compose = sub.add_parser("compose-design-prose",
+                             help="write the design prose with Skill 45's composer (never typed by hand)")
+    compose.add_argument("--launch", required=True)
+    compose.add_argument("--style", required=True, choices=("A", "B", "C"))
+    compose.add_argument("--role", action="append", required=True)
+    compose.add_argument("--measured", default=None)
+    compose.add_argument("--out", required=True)
+    check = sub.add_parser("check-design-prose",
+                           help="refuse a design-prose file that Skill 45's composer did not write")
+    check.add_argument("--file", required=True)
     args = parser.parse_args(argv)
+    if args.step == "compose-design-prose":
+        try:
+            compose_design_prose(args.launch, args.style, args.role, args.out, args.measured)
+        except AdapterError as exc:
+            print(f"FAIL-CLOSED: {exc}", file=sys.stderr)
+            return 3
+        return 0
+    if args.step == "check-design-prose":
+        problems = design_prose_problems(args.file)
+        for problem in problems:
+            print(f"FAIL-CLOSED: {problem}", file=sys.stderr)
+        return 3 if problems else 0
     try:
         result = attach_design_artifacts(args.result, args.run_dir, args.page_key)
     except (AdapterError, OSError, ValueError, KeyError) as exc:

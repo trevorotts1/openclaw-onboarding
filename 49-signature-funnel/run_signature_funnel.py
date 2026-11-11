@@ -368,8 +368,12 @@ def _gate_p2_prompts(run_dir: Path) -> Tuple[bool, str]:
     the coverage assert proves the ledger carries a prompt for EVERY required
     (page_type, section) slot for the brief's funnel_size (per MASTERDOC §4) — so a
     2-prompt ledger can no longer clear P2 for a full funnel. Both must pass."""
+    # Q18 (fix spec M4): the locked brief is handed to the prover so a style_card_id the client chose
+    # at intake binds every prompt (AF-FUN-PROMPT-STYLE-CARD); the ledger cannot omit the decision.
+    brief = run_dir / "brief.json"
     ok, detail = _shell_prover("prove_sf_prompt_floor.py",
-                               ["--ledger", str(run_dir / "prompt_ledger.json")])
+                               ["--ledger", str(run_dir / "prompt_ledger.json"),
+                                *(["--brief", str(brief)] if brief.is_file() else [])])
     if not ok:
         return ok, detail
     size = _brief_size(run_dir)
@@ -908,6 +912,25 @@ def self_test() -> int:
             ok = False
             print(f"SELF-TEST FAIL: under-covered prompt ledger still advanced "
                   f"(code={code}, aborted_at={manifest0.get('aborted_at') if isinstance(manifest0, dict) else '?'}).")
+
+        # (g0b) Q18 (fix spec M4) — the brief names a Skill 45 style card but no prompt embeds it:
+        # the run aborts at P2 with AF-FUN-PROMPT-STYLE-CARD and NO certificate (it used to certify).
+        rdq = tmp / "run-style-card-missing"
+        rdq.mkdir()
+        _write_valid_run(rdq, key)
+        briefq = json.loads((rdq / "brief.json").read_text(encoding="utf-8"))
+        briefq.setdefault("answers", {})["q18_style_card_id"] = _pf.FIXTURE_CARD_ID
+        (rdq / "brief.json").write_text(json.dumps(briefq), encoding="utf-8")
+        with _pf.fixture_library():
+            code, manifestq = orchestrate(rdq, key)
+        last_q = (manifestq.get("phases") or [{}])[-1].get("detail", "") if isinstance(manifestq, dict) else ""
+        if (code == EXIT_GATE_FAIL and not (rdq / "PROCESS-CERTIFICATE.json").exists()
+                and manifestq.get("aborted_at") == "P2-PROMPTS" and "AF-FUN-PROMPT-STYLE-CARD" in last_q):
+            print("SELF-TEST ok: a brief naming a style card the prompts never embed aborts at P2 "
+                  "(AF-FUN-PROMPT-STYLE-CARD), NO certificate.")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: Q18 style card not enforced at P2 (code={code}, detail={last_q[:160]!r}).")
 
         # (g) FIX-IMG-07 — a partial media ledger (2 of N required images) aborts at
         # P9 with AF-FUN-IMG-COVERAGE and NO certificate.

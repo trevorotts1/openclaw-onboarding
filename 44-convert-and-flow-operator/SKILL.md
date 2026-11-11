@@ -18,6 +18,8 @@ and P4 (Skill 6 / funnel builder) have produced and delivered. The P4→P5 hando
 The P5 task MUST verify: subaccount_matches (location whitelist gate), WF-1..21 PASS, rubric
 ≥ 8.5. Never begin P5 without confirmed APPROVED copy from P2e and verified page_ids from P4.
 
+**Skill 45 (Design Intelligence Library):** this skill produces no visual design and does not read Skill 45; the brand voice of everything it builds comes from the approved email and text copy it is handed (Skill 50's persona styles and the locked brief), never from a design card.
+
 **Step 0 — Model Check (before any BUILD or MODIFY):** If the active session model is a
 lighter/non-high-reasoning model or thinking is not HIGH, surface the recommendation to the
 owner first, then proceed. Recommendation gate, not a hard block. Read-only ops skip this.

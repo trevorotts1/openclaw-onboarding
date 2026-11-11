@@ -155,7 +155,8 @@ def probe_copy() -> Set[str]:
 def probe_prompt_floor() -> Set[str]:
     got: Set[str] = set()
     for _name, _expected, builder in pf._violation_cases():
-        v, _ = pf.verify(builder())
+        with pf.fixture_library():  # AF-FUN-PROMPT-STYLE-CARD cases resolve a throwaway Skill 45 card
+            v, _ = pf.verify(builder())
         got |= _codes(v)
     # coverage cross-check (PROMPT-COVERAGE / IMG-COVERAGE)
     structure = pf.load_structure()

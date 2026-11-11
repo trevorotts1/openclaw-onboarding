@@ -83,12 +83,18 @@ def entry_modes(entry: Dict[str, Any]) -> Tuple[str, ...]:
     return LAUNCH_MODES
 
 
-def selected(entry: Dict[str, Any], mode: str) -> bool:
-    """True when this entry belongs to `mode`'s closure."""
+def selected(entry: Dict[str, Any], mode: str, test_only: Optional[bool] = None) -> bool:
+    """True when this entry belongs to `mode`'s closure.
+
+    An entry with `"when": "not_test_only"` belongs to a CLIENT package only (Skill 45 is needed to
+    style and host a client's pages; a practice package stays buildable without it). `test_only`
+    None means the caller does not know, and the entry stays selected: unknown is never a pass."""
+    if entry.get("when") == "not_test_only" and test_only is True:
+        return False
     return mode in entry_modes(entry)
 
 
-def blocking(entry: Dict[str, Any], mode: str, status: str) -> bool:
+def blocking(entry: Dict[str, Any], mode: str, status: str, test_only: Optional[bool] = None) -> bool:
     """True when a non-present entry must refuse this mode.
 
     A REQUIRED entry blocks every mode it belongs to. A SELECTED-CONDITIONAL entry
@@ -96,7 +102,7 @@ def blocking(entry: Dict[str, Any], mode: str, status: str) -> bool:
     the same manifest can report the KIE helpers for a paid run and stay green for
     a stub one. An UNSELECTED-OPTIONAL entry never blocks.
     """
-    if status == "present" or not selected(entry, mode):
+    if status == "present" or not selected(entry, mode, test_only):
         return False
     cls = entry_class(entry)
     if cls == CLASS_REQUIRED:
@@ -521,8 +527,12 @@ def _registered_enabled(base: Path) -> bool:
     return (record.get("enablement") or {}).get("enabled_in_999") is True
 
 
-def check(root: Optional[Path] = None, mode: Optional[str] = None) -> Dict[str, Any]:
+def check(root: Optional[Path] = None, mode: Optional[str] = None,
+          test_only: Optional[bool] = None) -> Dict[str, Any]:
     """Report what is present and what is missing before a 999 enablement.
+
+    `test_only` says whether the package being built is a practice one; it only matters to entries
+    that declare `"when": "not_test_only"` (None, the default, treats them as selected).
 
     With `mode`, every entry is also classified for that launch mode: REQUIRED
     (blocks), SELECTED-CONDITIONAL (blocks only when this mode selects it) or
@@ -545,8 +555,8 @@ def check(root: Optional[Path] = None, mode: Optional[str] = None) -> Dict[str, 
             "required": bool(entry.get("required")),
             "class": cls,
             "modes": list(entry_modes(entry)),
-            "selected": selected(entry, active),
-            "blocking": blocking(entry, active, result["status"]),
+            "selected": selected(entry, active, test_only),
+            "blocking": blocking(entry, active, result["status"], test_only),
             "why": entry.get("why", ""),
             "status": result["status"],
             "evidence": result["evidence"],
@@ -667,7 +677,8 @@ def ensure_runtime_packages(root: Optional[Path] = None,
     return report
 
 
-def require(root: Optional[Path] = None, mode: Optional[str] = None) -> Dict[str, Any]:
+def require(root: Optional[Path] = None, mode: Optional[str] = None,
+            test_only: Optional[bool] = None) -> Dict[str, Any]:
     """The preflight a build runs first: return the report, or refuse naming every blocker.
 
     A green preflight must mean the launch can run, so dispatch and assemble call this
@@ -678,8 +689,8 @@ def require(root: Optional[Path] = None, mode: Optional[str] = None) -> Dict[str
     raises.
     """
     report = ensure_runtime_packages(root)
-    if mode and mode != report.get("mode"):
-        report = check(root, mode)
+    if (mode and mode != report.get("mode")) or test_only is not None:
+        report = check(root, mode, test_only)
     if report["blockers"]:
         detail = {e["id"]: e for e in report["entries"]}
         message = ("AF-LAUNCH-DEPENDENCY: required dependency not satisfied: "

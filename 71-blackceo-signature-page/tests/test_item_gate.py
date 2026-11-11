@@ -31,6 +31,8 @@ WRITE_REVIEW = ROOT / "scripts" / "write_review.py"
 PY = sys.executable
 sys.path.insert(0, str(ROOT / "scripts"))
 import stage_gate  # noqa: E402  (direct transport-slice calls below)
+sys.path.insert(0, str(ROOT / "tests"))
+import di_receipt  # noqa: E402
 
 LONG_NOTE = "Checked against the artifact bytes and the stage rubric line by line."
 PNG_1PX = __import__("base64").b64decode(
@@ -173,6 +175,7 @@ class ItemGateTest(unittest.TestCase):
               json.dumps({"schema_version": 1, "selections": [
                   {"applies_to": "all", "source_library": "image-guide-sauce-only",
                    "style_id": "signature-grade", "branded_name": "Signature Grade"}]}))
+        di_receipt.put(self.run)  # fix spec M4: the prompts stage closes only on the Skill 45 receipt
         put_receipt(self.run, "image-inventory-prompts")
 
     def tearDown(self):
@@ -405,6 +408,7 @@ class SuppliedAssetGateTest(unittest.TestCase):
                   {"applies_to": ["IMG-001"],
                    "source_library": "photographers",
                    "style_id": "some-style", "branded_name": "Some Style"}]}))
+        di_receipt.put(run)  # fix spec M4: the prompts stage closes only on the Skill 45 receipt
         put_receipt(run, "image-inventory-prompts")
         return contract, run
 

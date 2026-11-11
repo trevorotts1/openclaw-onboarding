@@ -247,6 +247,10 @@ The chain ends at an approved design and a result bundle. Publishing is a
 separate, approved step handled by Skill 6 (native install) and the page build
 that consumes these designs; this skill does not do it.
 
+## Design direction (Skill 45)
+
+Design direction = Skill 71 structure + Skill 45 card/rules via `design_prose.py`. The U1 and U2 wireframes and mockups follow the same direction. The page's sections are Skill 71's; its look comes from the client's chosen Skill 45 style card (a registered `FN-` id, optional) and the design library's funnel page rules, composed into `design-prose.json` by `shared-utils/signature_launch/design_prose.py` and passed to Skill 71 as `--design-prose`. The file records the sha256 of every Skill 45 file it read, so a hand-typed file, an edited one, or one built against rules that have since changed is refused (`design_prose.check_design_prose`). Skill 45 is only read, never written.
+
 ## How to run
 
 Validator (run from the skill root):

@@ -87,6 +87,10 @@ Free proof: `run_image_stages.py ... --preflight` composes and checks every
 prompt with no provider call. A paid run is the same command with the inputs
 naming `kie` and `--allow-paid` added by hand; dispatch never passes it.
 
+## Design direction (Skill 45)
+
+Design direction = Skill 71 structure + Skill 45 card/rules via `design_prose.py`. The order page's images follow the same direction. The page's sections are Skill 71's; its look comes from the client's chosen Skill 45 style card (a registered `FN-` id, optional) and the design library's funnel page rules, composed into `design-prose.json` by `shared-utils/signature_launch/design_prose.py` and passed to Skill 71 as `--design-prose`. The file records the sha256 of every Skill 45 file it read, so a hand-typed file, an edited one, or one built against rules that have since changed is refused (`design_prose.check_design_prose`). Skill 45 is only read, never written.
+
 ## Scripts (stdlib only, fail-closed)
 
 - `scripts/build_selection_plan.py` - validate a launch catalog and emit the

@@ -1714,6 +1714,46 @@ def style_selection_problems(run_dir):
     return problems
 
 
+def _design_intelligence():
+    """shared-utils/signature_launch/design_intelligence.py, loaded by path (repo and installed layouts)."""
+    import importlib.util
+    path = SKILL_ROOT.parent / "shared-utils" / "signature_launch" / "design_intelligence.py"
+    spec = importlib.util.spec_from_file_location("signature_launch_design_intelligence", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def design_intelligence_problems(run_dir):
+    """Fix spec M4 (issues 8, 39): image-inventory-prompts cannot close without the receipt that
+    proves the run read Skill 45 (prompt bands, negative-prompting rules, funnel page rules and,
+    when the intake names one, the style card). The receipt is written by
+    scripts/build_production_request.py (or `design_intelligence.py receipt`); it is re-hashed
+    against the live design library here, so a receipt written against different rules, or by hand,
+    does not count. The intake's style_card_id must be the card the receipt names."""
+    stage = "image-inventory-prompts"
+    rel = "private/receipts/design-intelligence.json"
+    try:
+        di = _design_intelligence()
+    except Exception as exc:  # the shared module is part of the skill's contract: fail closed
+        return [f"stage {stage}: AF-DI-ABSENT: shared-utils/signature_launch/design_intelligence.py "
+                f"cannot be loaded ({type(exc).__name__}); Skill 45 consumption cannot be proven"]
+    try:
+        receipt = json.loads((run_dir / rel).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return [f"stage {stage}: AF-DI-ABSENT: no readable design-intelligence receipt at {rel}; "
+                "build the run's requests with scripts/build_production_request.py, or write it with "
+                "`python3 shared-utils/signature_launch/design_intelligence.py receipt --run-dir <run_dir>`. "
+                "A run that never read Skill 45's rules cannot close its prompts"]
+    problems = [f"stage {stage}: {line}" for line in di.verify_receipt(receipt)]
+    wanted = di.run_style_card_id(run_dir)
+    named = receipt.get("card_id") if isinstance(receipt, dict) else None
+    if wanted and named != wanted:
+        problems.append(f"stage {stage}: AF-DI-ABSENT: intake.json asks for style card {wanted!r} but the "
+                        f"design-intelligence receipt names {named!r}; rebuild the requests with the card")
+    return problems
+
+
 def layout_reference_sources(run_dir=None):
     """Item 17 (ruled 2026-10-15): resolve each named layout reference
     in order and report the source a run uses for it.
@@ -3330,6 +3370,8 @@ def cmd_close(run_dir, stage):
         # property.
         if stage == "image-inventory-prompts":
             failures.extend(style_selection_problems(run_dir))
+            # Fix spec M4: the run must have read Skill 45 (receipt re-hashed against the library).
+            failures.extend(design_intelligence_problems(run_dir))
 
     if failures:
         # Item 25 (S6 emission spec 6.4): a refused close is a state

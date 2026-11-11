@@ -216,7 +216,11 @@ def _handoff_blockers(verification: dict, test_only: bool) -> list:
 
 
 def cmd_assemble(args: argparse.Namespace) -> int:
-    dependencies.require(mode="assemble")
+    # A client package needs Skill 45 to be styled and hosted (dependencies.json rows marked
+    # "when": "not_test_only"); a practice package does not. Absent test_only is a practice build.
+    raw_intake = _read_json(args.intake)
+    dependencies.require(mode="assemble",
+                         test_only=isinstance(raw_intake, dict) and raw_intake.get("test_only", True) is True)
     run_dir = Path(args.run_dir) if args.run_dir else None
     pieces_dir = Path(args.pieces) if args.pieces else (run_dir / "pieces" if run_dir else None)
     if pieces_dir is None:
