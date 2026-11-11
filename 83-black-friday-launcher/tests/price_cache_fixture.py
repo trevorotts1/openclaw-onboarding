@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from unittest import mock
 
-DEFAULT_MODEL = "gpt-image-2-6/economy-text-to-image"  # Skill 74 PINNED_DEFAULT (X-97)
+DEFAULT_MODEL = "gpt-image-2-6/sunburst-text-to-image"
 PER_PICTURE_TEXT = ("GPT Image 2.6 — now just 6 credits ($0.03) for 1 K, 10 credits ($0.05) for 2 K, "
                     "and 16 credits ($0.08) for 4 K.")
 
