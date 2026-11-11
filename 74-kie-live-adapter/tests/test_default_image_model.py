@@ -73,6 +73,14 @@ class Default(Base):
         a = self.make(LIVE_2_6 + [(A27, T2I, "7 credits ($0.035) per image"), (A27_I, I2I, "7 credits ($0.035) per image")])
         self.assertEqual(a.default_model("gpt-image"), S26)
 
+    def test_a_newer_per_picture_sunburst_whose_image_to_image_schema_is_unreadable_is_skipped(self):
+        # both routes must be readable: a newer generation with an unreadable edit schema leaves the 2.6 pin on both routes
+        a, tr, c = self.adapter([["GET", "/models/%s/schema" % S27_I, [(200, {"code": 200, "data": {"model": "x", "openapi": None}})]],
+                                 ["GET", "/schema", [schema(20000)]],
+                                 ["GET", "/api/v1/models", [cat(*(LIVE_2_6 + [(S27, T2I, "7 credits ($0.035) per image"),
+                                                                              (S27_I, I2I, "7 credits ($0.035) per image")]))]]])
+        self.assertEqual((a.default_model("gpt-image"), a.default_model("gpt-image", edit=True)), (S26, S26_I))
+
     def test_no_catalog_means_the_pin(self):
         a, tr, c = self.adapter([["GET", "/api/v1/models", [(200, {"code": 500, "msg": "down"})]]])
         self.assertEqual((a.default_model("gpt-image"), a.default_model("gpt-image", edit=True)), (S26, S26_I))
