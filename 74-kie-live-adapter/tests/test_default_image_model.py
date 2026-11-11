@@ -234,6 +234,7 @@ class DefaultCheck(unittest.TestCase):
 
 PER_JOB = "12 credits ($0.06) per job"
 QC = os.path.join(SKILL, "qc-74-kie-live-adapter.sh")
+WORKFLOW = os.path.abspath(os.path.join(SKILL, "..", ".github", "workflows", "version-consistency.yml"))
 CHECK_REL = os.path.join("scripts", "check_default_image_model.py")
 SKILL_FILES = ("scripts/kie_live_adapter.py", "scripts/check_default_image_model.py", "references/kie-default-price-evidence.json")
 
@@ -459,8 +460,7 @@ class DefaultCheckCannotRun(unittest.TestCase):
 
 
 class DefaultCheckIsWired(unittest.TestCase):
-    """The qc script must fail on any non-zero exit from the check script. (The CI step is checked by
-    tests/unit/kie-default-image-model-ci-step.test.py, which needs the repository's .github folder; a box has none.)"""
+    """The qc script and the CI step must fail on any non-zero exit from the check script."""
 
     def qc_line(self, d):
         with open(QC, encoding="utf-8") as f:
@@ -491,6 +491,25 @@ class DefaultCheckIsWired(unittest.TestCase):
             out = self.qc_line(d)
         self.assertIn("  FAIL - default image model is priced per picture (X-97)", out)
         self.assertIn("PASS=0 FAIL=1", out)
+
+    def test_the_ci_step_runs_the_check_and_lets_any_non_zero_exit_fail_the_job(self):
+        if not os.path.exists(WORKFLOW):
+            # An installed skill has no repository around it, so there is no CI step to read there; what that step
+            # would run must still ship with the skill.
+            self.assertTrue(os.path.isfile(CHECK), CHECK)
+            return
+        lines = read(WORKFLOW).splitlines()
+        runs = [i for i, l in enumerate(lines) if "check_default_image_model.py" in l and l.strip().startswith("run:")]
+        self.assertEqual(len(runs), 1, runs)
+        self.assertEqual(lines[runs[0]].strip(), "run: python3 -I 74-kie-live-adapter/scripts/check_default_image_model.py")
+        start = max(i for i in range(runs[0]) if lines[i].lstrip().startswith("- name:"))
+        stop = min([i for i in range(runs[0] + 1, len(lines)) if lines[i].lstrip().startswith("- name:") or (lines[i] and not lines[i].startswith(" "))] or [len(lines)])
+        step = "\n".join(lines[start:stop])
+        for weak in ("continue-on-error", "|| true", "|| :", "set +e", "if:"):
+            self.assertNotIn(weak, step)
+        self.assertIn("shell: bash", step)
+        job = [l for l in lines[:start] if l.startswith("  ") and not l.startswith("   ") and l.rstrip().endswith(":")][-1]
+        self.assertNotIn("continue-on-error", "\n".join(lines[lines.index(job):start]))
 
 
 if __name__ == "__main__":
