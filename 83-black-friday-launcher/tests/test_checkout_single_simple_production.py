@@ -67,7 +67,7 @@ class SingleSimpleProductionTests(unittest.TestCase):
 
     def test_a_practice_launch_still_says_test_only(self):
         payload = raw_intake("single_simple")
-        normalized = intake.validate(payload)  # test_only defaults to true
+        normalized = intake.validate(payload)  # raw_intake says test_only true out loud (issue 36)
         self.assertEqual(mapping_of(normalized)["supplied"]["main_price"]["approval_status"], "test_only")
 
     def test_the_rule_is_the_one_checkout_instances_uses(self):

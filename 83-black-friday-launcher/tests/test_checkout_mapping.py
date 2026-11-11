@@ -91,6 +91,8 @@ def raw_intake(mode: str = "single_simple", rich: bool = True, bump: bool = Fals
         "brand": {"ref": "brand-a", "hash": "a" * 64}, "copy_profile": "signature_12_section",
         "approval": {"ref": "approval-1", "hash": "b" * 64},
         "offers": offers,
+        # issue 36: test_only is said out loud, never defaulted; these fixtures are practice runs
+        "test_only": True,
     }
     payload["answers_file"] = write_answers(offers)
     if rich:
