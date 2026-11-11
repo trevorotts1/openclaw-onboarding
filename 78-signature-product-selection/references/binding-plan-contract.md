@@ -51,6 +51,16 @@ declined on both. The caller names the route; it never rewrites the launch's
 S79's checkout implementation; changes travel as change requests under
 ~/workspace/signature-launch/handoffs/change-requests/.
 
+Emission gate: before it returns, emit_plan runs
+validate_selection_binding.validate_plan over every mapping. Each mapping is
+read as the selection its checkout target stands for and revalidated against
+the current launch record with the same validate_binding the checkout uses
+(tenant, location, launch, revision, approved price, native ids, amount,
+currency). A refusal carries the S78-SELECTION-* code and no plan is emitted;
+a plan with no mappings is refused as S78-BINDING-INCOMPLETE. Skill 83's
+checkout_instances.build reaches this through emit_plan for every per-offer
+checkout set.
+
 ## Checkout-side duties (recorded here so the seam is testable)
 
 S79 loads the validated selection, visibly confirms package, schedule,

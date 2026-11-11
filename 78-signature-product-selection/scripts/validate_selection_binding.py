@@ -5,10 +5,15 @@ Validates a selection.json intent against the current approved launch catalog
 before Skill 79 checkout consumes it. Rejects query-string price authority,
 cross-tenant selections, stale revisions, and native mapping drift (A05).
 
-This is a checkout-time gate: it needs a visitor's selection, which does not exist while the page is
-built, so the build chain cannot call it. No host runs it on a live selection yet (PRD-05), so it is
-NOT part of the skill's "done" claim (runtime-manifest.json "done_claim"). The gates that do run in
-the build chain are the plan builder's catalog check and validate_selection_content.validate_manuscript.
+This is a checkout-time gate. A visitor's live selection does not exist while the page is built, and
+no host runs this CLI on one yet (PRD-05). The per-offer realisation has no visitor selection at all:
+each emitted checkout target IS the selection its order form stands for. validate_plan() runs the
+same validate_binding over every mapping of an emitted binding plan, and emit_binding_plan.emit_plan
+calls it on every plan it returns (Skill 83 checkout_instances.build reaches it through emit_plan),
+so a plan the checkout-time validator would refuse is never emitted. That hosted path is what puts
+this script inside the skill's "done" claim (runtime-manifest.json "done_claim"). The gates that run
+earlier in the build chain are the plan builder's catalog check and
+validate_selection_content.validate_manuscript.
 
 Usage:
   validate_selection_binding.py <selection.json> <launch.json> [--query <json>]
@@ -22,6 +27,33 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from selection_core import Violation, build_selection, reject_query_authority, validate_binding  # noqa: E402
 from build_selection_plan import SELF_TEST_LAUNCH  # noqa: E402
+
+V_PLAN_EMPTY = "S78-BINDING-INCOMPLETE"
+
+
+def validate_plan(plan, launch, *, approval_verifier=None):
+    """Run the checkout-time validate_binding over every mapping of an emitted binding plan.
+
+    Each mapping is read as the selection its checkout target stands for: the plan header supplies
+    tenant/location/launch/revision, the mapping supplies offer, price choice, native ids, currency and
+    amount. Validated against the CURRENT launch record, so drift, a stale revision, a foreign tenant
+    or a price that is no longer approved raises the same S78-* Violation the checkout would. A plan
+    with no mappings validates nothing and is refused."""
+    mappings = plan.get("mappings")
+    if not isinstance(mappings, list) or not mappings or not all(isinstance(m, dict) for m in mappings):
+        raise Violation(V_PLAN_EMPTY, "Binding plan has no usable mappings; a plan that validates nothing is refused.")
+    revision = plan.get("revision")
+    revision = revision if isinstance(revision, int) and not isinstance(revision, bool) else -1
+    for m in mappings:
+        selection = {
+            "tenant_id": plan.get("tenant_id"), "location_id": plan.get("location_id"),
+            "launch_id": plan.get("launch_id"), "revision": revision,
+            "offer_id": m.get("offer_id"), "price_choice_id": m.get("price_choice_id"),
+            "native_product_id": m.get("native_product_id"), "native_price_id": m.get("native_price_id"),
+            "currency": m.get("currency"), "amount_minor_snapshot": m.get("amount_minor"),
+        }
+        validate_binding(selection, launch, expected_revision=int(launch["revision"]),
+                         approval_verifier=approval_verifier)
 
 
 def self_test():
@@ -53,7 +85,24 @@ def self_test():
     else:
         raise AssertionError("query price authority was not rejected")
     reject_query_authority({"session": "opaque-123"})
-    print("validate_selection_binding --self-test: PASS (valid handoff, tenant/stale/drift/forged/query rejections)")
+    from emit_binding_plan import SELF_TEST_TARGETS, emit_plan  # the host; imported here to keep the module graph acyclic
+    plan = emit_plan(SELF_TEST_LAUNCH, SELF_TEST_TARGETS, route="per_offer_targets")
+    validate_plan(plan, SELF_TEST_LAUNCH)
+    for mutate, code in [
+        (lambda p: p.update(tenant_id="OTHER-TENANT"), "S78-SELECTION-TENANT-MISMATCH"),
+        (lambda p: p["mappings"][0].update(amount_minor=1), "S78-SELECTION-PRICE-DRIFT"),
+        (lambda p: p["mappings"][1].update(native_price_id="FORGED"), "S78-SELECTION-PRICE-DRIFT"),
+        (lambda p: p.update(mappings=[]), V_PLAN_EMPTY),
+    ]:
+        bad = json.loads(json.dumps(plan))
+        mutate(bad)
+        try:
+            validate_plan(bad, SELF_TEST_LAUNCH)
+        except Violation as v:
+            assert v.code == code, (v.code, code)
+        else:
+            raise AssertionError(f"plan mutation was not rejected with {code}")
+    print("validate_selection_binding --self-test: PASS (valid handoff, tenant/stale/drift/forged/query rejections, emitted-plan validation)")
     return 0
 
 

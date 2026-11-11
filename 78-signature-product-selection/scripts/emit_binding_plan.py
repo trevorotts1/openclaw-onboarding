@@ -17,7 +17,9 @@ claim the same (offer, price choice) or the same target reference, when a
 target's native IDs do not match the approved catalog, when a production launch (anything but test_only) has a null
 or blank native product/price id on the catalog or on a target (the plan would
 point a checkout at no product), or, when the caller supplies an allowlist,
-when a target reference is not on it. S78 emits this
+when a target reference is not on it, or when the checkout-time binding validator
+(validate_selection_binding.validate_plan, the same validate_binding S79's checkout
+revalidates with) refuses any mapping of the plan it is about to return. S78 emits this
 plan; it never edits S79's checkout implementation.
 
 Usage:
@@ -32,6 +34,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from selection_core import Violation, _nonblank, check_invocation, validate_catalog  # noqa: E402
 from build_selection_plan import SELF_TEST_LAUNCH  # noqa: E402
+from validate_selection_binding import validate_plan  # noqa: E402
 
 V_BINDING_INCOMPLETE = "S78-BINDING-INCOMPLETE"
 V_BINDING_SHARED = "S78-BINDING-SHARED-TARGET"
@@ -99,7 +102,7 @@ def emit_plan(launch, targets, *, route, allowlist=None, approval_verifier=None)
                 "currency": price["currency"],
                 "amount_minor": price["amount_minor"],
             })
-    return {
+    plan = {
         "schema_version": "1.0",
         "kind": "selection_binding_plan",
         "tenant_id": launch["tenant_id"],
@@ -116,6 +119,9 @@ def emit_plan(launch, targets, *, route, allowlist=None, approval_verifier=None)
             "read-back are authoritative (acceptance A05)."
         ),
     }
+    # The host for validate_selection_binding: never return a plan the checkout-time validator refuses.
+    validate_plan(plan, launch, approval_verifier=approval_verifier)
+    return plan
 
 
 SELF_TEST_TARGETS = [

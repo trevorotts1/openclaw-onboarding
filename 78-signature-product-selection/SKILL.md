@@ -121,6 +121,9 @@ Design direction = Skill 71 structure + Skill 45 card/rules via `design_prose.py
 - `scripts/validate_selection_binding.py` - check that a selection.json intent
   preserves the approved native product/price mapping for Skill 79, rejects
   query-string price authority, cross-tenant IDs, and stale revisions.
+  `validate_plan()` runs the same check over every mapping of an emitted
+  binding plan; `emit_binding_plan.py` calls it on each plan it returns, so no
+  plan the checkout-time validator would refuse is ever emitted.
 - `scripts/selection_session.py` - session bridge core: opaque reference,
   TTL, resume with revalidation, reconfirm-on-change, idempotent confirm.
 - `scripts/selection_session_store.py` - production session storage: the
