@@ -27,7 +27,7 @@ def price(amount, currency="USD", billing="one_time"):
     return {"price_choice_id": "x", "amount_minor": amount, "currency": currency, "billing_type": billing}
 
 
-def launch(currency="USD"):
+def launch_fixture(currency="USD"):
     def offer(oid, slot, name, amount, deliverables, exclusions=()):
         return {"offer_id": oid, "slot": slot, "display_name": name, "deliverables": list(deliverables),
                 "exclusions": list(exclusions), "prices": [price(amount, currency)]}
@@ -48,7 +48,7 @@ class EmitCheckoutManuscriptTests(unittest.TestCase):
         self.addCleanup(lambda: __import__("shutil").rmtree(self.td, ignore_errors=True))
 
     def emit(self, req=None, launch_doc=None, terms=None):
-        files = {"request.json": req or request(), "launch.json": launch_doc or launch(),
+        files = {"request.json": req or request(), "launch.json": launch_doc or launch_fixture(),
                  "terms.json": {"checkout_terms": terms or TERMS}}
         for name, doc in files.items():
             (self.td / name).write_text(json.dumps(doc), encoding="utf-8")
@@ -76,14 +76,14 @@ class EmitCheckoutManuscriptTests(unittest.TestCase):
         proc = self.emit()
         self.assertEqual(proc.returncode, 0, proc.stderr)
         text = self.out.read_text(encoding="utf-8")
-        cw.check_copy(text, {"offers": [dict(o, slot=o["slot"]) for o in launch()["offers"]]}, {}, TERMS)
+        cw.check_copy(text, {"offers": [dict(o, slot=o["slot"]) for o in launch_fixture()["offers"]]}, {}, TERMS)
         cw.check_source_stamp(text, self.td / "request.json")
         (self.td / "request.json").write_text(json.dumps(request(with_bump=False)), encoding="utf-8")
         with self.assertRaises(cw.WrapperError):  # the request moved on after the copy was written
             cw.check_source_stamp(text, self.td / "request.json")
 
     def test_a_euro_launch_is_written_in_euro(self):
-        proc = self.emit(req=request("EUR"), launch_doc=launch("EUR"))
+        proc = self.emit(req=request("EUR"), launch_doc=launch_fixture("EUR"))
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("€97.00", self.out.read_text(encoding="utf-8"))
         self.assertNotIn("$", self.out.read_text(encoding="utf-8"))
@@ -98,8 +98,8 @@ class EmitCheckoutManuscriptTests(unittest.TestCase):
     def test_a_missing_fact_refuses_by_name_and_leaves_no_file(self):
         cases = {
             "an installment price": dict(req=request(billing="installment")),
-            "no deliverables": dict(launch_doc={"offers": [dict(o, deliverables=[]) for o in launch()["offers"]]}),
-            "an unnamed main offer": dict(launch_doc={"offers": [dict(o, display_name="") for o in launch()["offers"]]}),
+            "no deliverables": dict(launch_doc={"offers": [dict(o, deliverables=[]) for o in launch_fixture()["offers"]]}),
+            "an unnamed main offer": dict(launch_doc={"offers": [dict(o, display_name="") for o in launch_fixture()["offers"]]}),
             "no consent text": dict(terms={k: v for k, v in TERMS.items() if k != "consent_text"}),
             "blank consent text": dict(terms=dict(TERMS, consent_text="   ")),
             "a zero price": dict(req=dict(request(), main_price=price(0))),
