@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import lane83_stand_in_validate_delivery as stand_in  # noqa: E402
 from launcher_core import checks, constants, council, intake, package, route  # noqa: E402
 from launcher_core.check_rules import delivery_units as du  # noqa: E402
-from test_delivery_units import (BF_PLAN, EMAIL_VALIDATOR_PATH, LANE_CONTRACT_IDS,  # noqa: E402
+from test_delivery_units import (EMAIL_VALIDATOR_PATH, LANE_CONTRACT_IDS,  # noqa: E402
                                  install_stand_in_validator, qc_artifact, with_sales_piece)
 from test_launch_plan_law import (lane_deliveries, pieces_for, plan_fixture, plan_intake,  # noqa: E402
                                   stub_council)
@@ -39,7 +39,6 @@ SELF_DECLARED = {"lane": "x", "contract": "y", "state": "passed"}
 LANE_CODE = "AF-LAUNCH-PKG-RECEIPT-LANE"
 
 
-@unittest.skipUnless(BF_PLAN.is_file(), "shared launch-plan contract fixture is not installed")
 class LaneReceiptTests(unittest.TestCase):
     def setUp(self):
         install_stand_in_validator(self)

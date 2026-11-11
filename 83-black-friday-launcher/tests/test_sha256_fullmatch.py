@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import test_l04_artifact_proof as l04  # noqa: E402
 from launcher_core import checks, council, intake, package, route  # noqa: E402
-from test_delivery_units import (BF_PLAN, install_stand_in_validator,  # noqa: E402
+from test_delivery_units import (install_stand_in_validator,  # noqa: E402
                                  with_sales_piece)
 from test_launch_plan_law import (lane_deliveries, pieces_for, plan_fixture,  # noqa: E402
                                   plan_intake, stub_council)
@@ -60,7 +60,6 @@ class PieceSite(l04._RunFixture):
         self.assertIn("64 lowercase hex", str(ctx.exception))
 
 
-@unittest.skipUnless(BF_PLAN.is_file(), "shared launch-plan contract fixture is not installed")
 class LaneDeliverySites(unittest.TestCase):
     """package.py: a lane delivery's artifact sha256 and its certificate_sha256."""
 

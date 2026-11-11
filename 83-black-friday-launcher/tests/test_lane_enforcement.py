@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import lane83_stand_in_validate_delivery as stand_in  # noqa: E402
 from launcher_core import constants  # noqa: E402
 from launcher_core.check_rules import delivery_units as du  # noqa: E402
-from test_delivery_units import (ABSENT, APPROVED, BF_PLAN, EMAIL_VALIDATOR_PATH,  # noqa: E402
+from test_delivery_units import (ABSENT, APPROVED, EMAIL_VALIDATOR_PATH,  # noqa: E402
                                  LANE_CONTRACT_IDS, bound_plan, install_stand_in_validator, qc_result, write)
 
 CODE = "AF-LAUNCH-PKG-RECEIPT-LANE"
@@ -499,7 +499,6 @@ class QcFieldTests(unittest.TestCase):
         self.assertEqual(du.QC_ARTIFACT, "qc-{workflow_id}.json")
 
 
-@unittest.skipUnless(BF_PLAN.is_file(), "shared launch-plan contract fixture is not installed")
 class AutomationQcWiringTests(unittest.TestCase):
     """automation_violations ends in the QC law for the export's own workflow id."""
 
