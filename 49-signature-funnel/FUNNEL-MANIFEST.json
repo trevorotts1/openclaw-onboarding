@@ -130,7 +130,8 @@
       "name": "Optional 10 promo emails (handoff)",
       "produces_artifact": "handoff to Email Skill project",
       "delegate": "Email-Skill-Library (post-downsell, after human approval)",
-      "gate": "out of scope for Skill 49 (hand off brief + copy, receive 10 emails)"
+      "gate": "AF-FUN-P10-EMAILS: when the brief's email_offer is accepted, working/emails/emails.json must carry a Skill 50 certificate sha before the certificate is minted; the certificate names the state (accepted or declined)",
+      "py_symbol": "run_signature_funnel._gate_p10_emails"
     }
   ],
   "chk_wrappers": {
@@ -442,6 +443,11 @@
       "trigger": "media ledger is missing a required (page_type, section) image slot for the funnel size (partial image set)",
       "enforced_by": "P9-CERTIFY",
       "py_symbol": "prove_sf_prompt_floor.coverage_violations"
+    },
+    "AF-FUN-P10-EMAILS": {
+      "trigger": "P10-EMAIL: the brief's email_offer is accepted but working/emails/emails.json is missing or carries no Skill 50 certificate sha (64-hex certificate_sha), or email_offer is neither accepted nor declined",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "run_signature_funnel._gate_p10_emails"
     },
     "AF-FUN-HTML-FRAGMENT": {
       "trigger": "a pages/<profile>.fragment.html is missing/empty for a matrix page",

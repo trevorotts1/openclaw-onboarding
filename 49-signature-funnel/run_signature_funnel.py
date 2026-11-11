@@ -152,6 +152,43 @@ def _receipt_seam(run_dir: Path, phase: str, keys: List[str], label: str,
     return True, f"delegated: {label} :: {content_detail} :: receipts verified ({detail})"
 
 
+EMAILS_REL = Path("working") / "emails" / "emails.json"
+
+
+def _gate_p10_emails(run_dir: Path) -> Tuple[bool, str]:
+    """P10-EMAIL — the optional 10 promo emails. The brief's email_offer is `accepted` or `declined`
+    (absent = declined). A client who accepted gets no certificate until working/emails/emails.json
+    carries a Skill 50 certificate sha (a 64-hex `certificate_sha`); anything else fails
+    AF-FUN-P10-EMAILS. A value that is neither word fails too, so a typo can never read as `declined`.
+    Returns (ok, 'declined' | 'accepted:<sha>' | the failure)."""
+    try:
+        offer = json.loads((run_dir / "brief.json").read_text(encoding="utf-8")).get("email_offer", "declined")
+    except (OSError, ValueError):
+        offer = "declined"
+    if offer == "declined":
+        return True, "declined"
+    if offer != "accepted":
+        return False, f"AF-FUN-P10-EMAILS: brief email_offer {offer!r} is neither 'accepted' nor 'declined'"
+    try:
+        sha = json.loads((run_dir / EMAILS_REL).read_text(encoding="utf-8")).get("certificate_sha")
+    except (OSError, ValueError, AttributeError):
+        sha = None
+    if not (isinstance(sha, str) and len(sha) == 64 and all(c in "0123456789abcdef" for c in sha)):
+        return False, (f"AF-FUN-P10-EMAILS: the client accepted the email offer but {EMAILS_REL} is missing or "
+                       "carries no Skill 50 certificate sha (a 64-hex certificate_sha)")
+    return True, f"accepted:{sha}"
+
+
+def _gate_p10_emails_value(run_dir: Path, offer: str) -> Tuple[bool, str]:
+    """Self-test/probe helper: judge the gate as if the brief said `offer`, on a scratch copy."""
+    scratch = Path(tempfile.mkdtemp(prefix="sf_p10_"))
+    try:
+        (scratch / "brief.json").write_text(json.dumps({"email_offer": offer}), encoding="utf-8")
+        return _gate_p10_emails(scratch)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def _gate_p3_images(run_dir: Path) -> Tuple[bool, str]:
     """P3-IMAGES — every ledger image must name a real image-provider task id."""
     imgs, err = _ledger_images(run_dir)
@@ -651,6 +688,14 @@ def orchestrate(run_dir: Path, key: str) -> Tuple[int, Dict]:
             visual_ok, visual_detail = _run_visual_stage(run_dir)
             print(f"  [{'PASS' if visual_ok else 'FAIL':4s}] VISUAL-STEP  (legacy_downsell_images.py) :: {visual_detail}")
 
+    # P10-EMAIL — an accepted email offer must be backed by a Skill 50 certificate sha before we certify.
+    email_ok, email_detail = _gate_p10_emails(run_dir)
+    print(f"  [{'PASS' if email_ok else 'FAIL':4s}] P10-EMAIL    (emails.json) :: {email_detail}")
+    if not email_ok:
+        print("ABORT: phase P10-EMAIL failed its fail-closed gate. NO certificate issued.")
+        manifest = {"run_id": run_dir.name, "aborted_at": "P10-EMAIL", "phases": phases_attested}
+        (run_dir / "process_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        return EXIT_GATE_FAIL, manifest
     # all phases passed -> mint the signed certificate
     size = None
     brief_p = run_dir / "brief.json"
@@ -686,7 +731,9 @@ def orchestrate(run_dir: Path, key: str) -> Tuple[int, Dict]:
         "delegation_receipts": _delegation_receipt_state(run_dir),
         "delivery": {"publish": "human-approval-required",
                      "preview_only": True,
-                     "email_offer": "P10 optional handoff to the Email Skill project after downsell approval"},
+                     "email_offer": email_detail.split(":")[0],
+                     **({"email_certificate_sha": email_detail.split(":", 1)[1]}
+                        if email_detail.startswith("accepted:") else {})},
     }
     # F4.3 — name the canonical governing persona on the signed certificate when one
     # was resolved at the brief stage (added BEFORE signing, so it is covered by the
@@ -860,6 +907,34 @@ def self_test() -> int:
                     ok = False; print(f"SELF-TEST FAIL: minted cert invalid / verifies without the key: {vfails}")
             else:
                 ok = False; print(f"SELF-TEST FAIL: happy path did not certify (code={code}).")
+
+        # (c2) P10-EMAIL — accepted offer: no emails file -> abort, NO cert; with a cert sha -> certified
+        #      and the certificate names the state; declined (absent) is recorded as declined.
+        rde = tmp / "run-emails"
+        rde.mkdir()
+        _write_valid_run(rde, key)
+        brief = json.loads((rde / "brief.json").read_text(encoding="utf-8"))
+        brief["email_offer"] = "accepted"
+        (rde / "brief.json").write_text(json.dumps(brief), encoding="utf-8")
+        code, _ = orchestrate(rde, key)
+        refused = code == EXIT_GATE_FAIL and not (rde / "PROCESS-CERTIFICATE.json").exists()
+        (rde / EMAILS_REL).parent.mkdir(parents=True, exist_ok=True)
+        (rde / EMAILS_REL).write_text(json.dumps({"certificate_sha": "ab" * 32, "emails": []}), encoding="utf-8")
+        code, _ = orchestrate(rde, key)
+        named = {}
+        if (rde / "PROCESS-CERTIFICATE.json").exists():
+            named = json.loads((rde / "PROCESS-CERTIFICATE.json").read_text(encoding="utf-8")).get("delivery", {})
+        declined = json.loads((rd / "PROCESS-CERTIFICATE.json").read_text(encoding="utf-8")).get("delivery", {}) \
+            if (rd / "PROCESS-CERTIFICATE.json").exists() else {}
+        typo_ok, typo_msg = _gate_p10_emails_value(rde, "accept")
+        if refused and code == EXIT_OK and named.get("email_offer") == "accepted" \
+                and named.get("email_certificate_sha") == "ab" * 32 and declined.get("email_offer") == "declined" \
+                and not typo_ok and "AF-FUN-P10-EMAILS" in typo_msg:
+            print("SELF-TEST ok: P10-EMAIL — accepted offer without a Skill 50 certificate sha aborts "
+                  "(AF-FUN-P10-EMAILS, no certificate); with it the certificate names accepted; absent = declined.")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: P10-EMAIL (refused={refused}, code={code}, named={named}, declined={declined}, typo={typo_msg})")
 
         # (d) no-skip / fail-closed abort — break the copy ledger, expect NO cert
         rd2 = tmp / "run-bad"

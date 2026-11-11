@@ -236,6 +236,15 @@ class ShippedAdapterTests(Fixture):
                 .replace("{request}", str(self.dir / "page-request.json")).replace("{result}", str(self.result))
                 .replace("{work_dir}", str(work)) for part in spec["command"]]
 
+    def test_every_shell_adapter_path_token_is_quoted_so_a_path_with_spaces_holds(self):
+        import re
+        adapters = json.loads(S49_CONFIG.read_text())["adapters"]
+        for role, spec in adapters.items():
+            cmd = spec["command"]
+            if cmd[:2] == ["bash", "-c"]:
+                for m in re.finditer(r"/path/to", cmd[2]):
+                    self.assertIn(cmd[2][m.start() - 1], "\"'", f"{role}: unquoted /path/to in {cmd[2][m.start():m.start() + 60]!r}")
+
     def test_dispatch_makes_the_order_page_images_before_it_writes_the_page_result(self):
         proc = subprocess.run(self.command(str(self.dir / "inputs.json")), capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)

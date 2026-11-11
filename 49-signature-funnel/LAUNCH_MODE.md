@@ -95,8 +95,14 @@ the exact plan hash and revision.
 It does not process payments, send email, call image providers over
 HTTP, or handle browser credentials. Native products/prices/orders are
 S44/S06/S79 surfaces; email is S50's plan consumed by S44; images follow
-the S63 policy and the selected provider's receipts. The launch DAG —
-approved domain/brand → copy/profile → approved local artifacts → S44
-provisioning → S06 native install → S44 workflow wiring → integrated
-test → activation approval — is enforced by the dispatch write targets
-and scoped approvals, not by this skill reaching into other systems.
+the S63 policy and the selected provider's receipts.
+
+What the launch chain enforces is this, and nothing more. Every dispatch
+request carries one write target, one of `local_only`,
+`approved_test_location`, `approved_live_publication`
+(`dispatch_launch.WRITE_TARGETS`), and a target other than `local_only` is
+refused unless a separate scoped approval bound to the plan hash is supplied. Skill 44's plan reader
+orders its units by `waits_for` and refuses a cycle. This skill does not
+model provisioning, native install or workflow wiring as stages of its
+own: those belong to the skills that own them, and no launch-mode check
+stands in for them.

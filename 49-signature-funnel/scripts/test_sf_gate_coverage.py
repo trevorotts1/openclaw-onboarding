@@ -38,7 +38,7 @@ from typing import Dict, List, Set, Tuple
 HERE = Path(__file__).resolve().parent           # 49-signature-funnel/scripts
 SKILL_DIR = HERE.parent                            # 49-signature-funnel
 MANIFEST = SKILL_DIR / "FUNNEL-MANIFEST.json"
-COVERAGE_OUT = HERE / "working" / "af-coverage.json"
+COVERAGE_TRACKED = HERE / "working" / "af-coverage.json"   # committed; only --write-coverage rewrites it
 
 for p in (str(HERE), str(SKILL_DIR)):
     if p not in sys.path:
@@ -279,6 +279,15 @@ def probe_runner() -> Set[str]:
     return got
 
 
+def probe_p10_emails() -> Set[str]:
+    """Issue 23 - an accepted email offer with no Skill 50 certificate sha fails AF-FUN-P10-EMAILS."""
+    got: Set[str] = set()
+    ok, msg = runner._gate_p10_emails_value(Path("."), "accepted")
+    if not ok:
+        got |= _codes_from_msg(msg)
+    return got
+
+
 def probe_delegation() -> Set[str]:
     """A10 / T0-09 — the delegated image + media seams. Drive each to failure:
       * an EMPTY/no-provenance ledger the run authored              -> AF-FUN-DELEG-IMAGES
@@ -338,6 +347,7 @@ PROBES = [
     ("cert", probe_cert),
     ("runner", probe_runner),
     ("delegation", probe_delegation),
+    ("p10_emails", probe_p10_emails),
 ]
 
 
@@ -358,6 +368,9 @@ def in_scope_codes() -> Tuple[Set[str], Set[str]]:
     return py, shell
 
 
+_TMP = tempfile.TemporaryDirectory(prefix="af-coverage-")   # cleaned at exit
+
+
 def main() -> int:
     py_scope, shell_scope = in_scope_codes()
     triggered: Set[str] = set()
@@ -370,6 +383,9 @@ def main() -> int:
     missing = sorted(py_scope - triggered)
     extra = sorted(triggered - py_scope)   # informational (side-effect codes)
 
+    write_tracked = "--write-coverage" in sys.argv[1:]
+    out_dir = COVERAGE_TRACKED.parent if write_tracked else Path(_TMP.name)
+    COVERAGE_OUT = out_dir / "af-coverage.json"
     COVERAGE_OUT.parent.mkdir(parents=True, exist_ok=True)
     COVERAGE_OUT.write_text(json.dumps({
         "generated_by": "test_sf_gate_coverage.py",
@@ -387,7 +403,12 @@ def main() -> int:
     print(f"shell-enforced (out of scope):  {len(shell_scope)} -> {sorted(shell_scope)}")
     if extra:
         print(f"note: {len(extra)} extra code(s) also triggered (side effects): {extra}")
-    print(f"wrote {COVERAGE_OUT.relative_to(SKILL_DIR)}")
+    print(f"wrote {COVERAGE_OUT}")
+    if not write_tracked:
+        # Default is read-only toward the repo: the fresh output must equal the tracked file.
+        if not COVERAGE_TRACKED.exists() or COVERAGE_TRACKED.read_text(encoding="utf-8") != COVERAGE_OUT.read_text(encoding="utf-8"):
+            print("FAIL: af-coverage.json differs from the tracked copy; rerun with --write-coverage and commit it.")
+            return 1
     if missing:
         print(f"FAIL: {len(missing)} declared code(s) NEVER triggered by any fixture (fail-closed):")
         for c in missing:

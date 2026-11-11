@@ -95,9 +95,12 @@ offer fails closed here too and no result file is left. NOTE (CON-26): the produ
 Skill 83 dispatches is build_selection_plan -> run_image_stages -> emit_page_result, not this wrapper;
 the wrapper stays for fixture-level execution and the CR-S49-002 echo checks.
 
-Stdlib only. No network. No live routing: Skill 78's SKILL.md says do
-not route live launches to it yet; this wrapper is for the dispatch
-seam and fixture-level execution until S78's install status changes.
+Stdlib only. No network. RETIRED as the dispatch seam: Skill 78's native
+emitter chain is wired into dispatch (78 SKILL.md status line), and the
+shipped adapter config no longer calls this wrapper. It stays for
+fixture-level execution and the echo checks only. PROFILE_REQUIRED below
+is a mirror of 78/schema/selection-request.schema.json; the test
+test_selection_wrapper.py fails if the two ever differ.
 """
 
 from __future__ import annotations

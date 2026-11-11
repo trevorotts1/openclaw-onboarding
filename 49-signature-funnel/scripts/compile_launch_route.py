@@ -226,6 +226,13 @@ def graph_hash(graph: Dict[str, Any]) -> str:
     return hashlib.sha256(serialize_graph(graph)).hexdigest()
 
 
+def graph_file_hash(path: Any) -> str:
+    """The hash of record for a graph FILE: SHA-256 of its bytes as stored. Builders that
+    read a stored graph (Skills 80 and 82) use these same bytes, so a re-saved or
+    re-indented file is a different graph for every reader, never a silent match."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
 def route_table(graph: Dict[str, Any]) -> str:
     role_of = {n["page_id"]: n["role"] for n in graph.get("nodes", [])}
     lines = [f"Route table — launch {graph.get('launch_id')} rev {graph.get('revision')} "
@@ -781,8 +788,9 @@ def main(argv: List[str]) -> int:
         for f in fails:
             print(f"  - {f}")
         return EXIT_VIOLATION
+    shown = graph_file_hash(args.graph) if args.graph else graph_hash(graph)
     print(f"PASS: route graph valid ({len(graph['nodes'])} nodes, "
-          f"{len(graph['edges'])} edges, hash {graph_hash(graph)}).")
+          f"{len(graph['edges'])} edges, hash {shown}).")
     return EXIT_OK
 
 

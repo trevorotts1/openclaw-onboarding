@@ -349,9 +349,17 @@ def case_f(tmp):
         and not res_p.exists(), proc.stderr.strip()[:200])
 
 
+def case_g():
+    """The hand-mirrored profile equals Skill 78's schema (issue 28)."""
+    schema = json.loads((S78_DIR / "schema" / "selection-request.schema.json").read_text())
+    say("G PROFILE_REQUIRED equals 78/schema/selection-request.schema.json required",
+        list(sw.PROFILE_REQUIRED) == schema["required"])
+
+
 def main():
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
+        case_g()
         case_a(tmp)
         case_b()
         case_c(tmp)

@@ -87,6 +87,15 @@ run "intake spec conforms to prove_sf_intake" "$PY" "$SCRIPTS/prove_sf_intake.py
 run "board department slug is canonical (test_sf_department.py)" \
     "$PY" "$SCRIPTS/test_sf_department.py"
 
+# 4b2) SOP lockstep + SOP command lines + coverage: the universal-sops mirror equals the manifest, every
+#      prover command in the SOPs parses against the real CLI, and af-coverage.json (generated to a temp dir,
+#      never over the tracked file) equals the tracked copy.
+run "universal-sops mirror in lockstep (test_sop_lockstep.py)" "$PY" "$SCRIPTS/test_sop_lockstep.py"
+run "LAUNCH_MODE.md names only represented stages (test_launch_mode_doc.py)" "$PY" "$SCRIPTS/test_launch_mode_doc.py"
+run "one route-graph hash in 49, 80 and 82 (test_compile_launch_route.py)" "$PY" "$SCRIPTS/test_compile_launch_route.py"
+run "SOP prover commands parse (test_sop_commands.py)" "$PY" "$SCRIPTS/test_sop_commands.py"
+run "gate coverage equals tracked af-coverage.json (test_sf_gate_coverage.py)" "$PY" "$SCRIPTS/test_sf_gate_coverage.py"
+
 # 4c) LANE-49 — every page type in every funnel shape with its designs, the shared image inputs,
 #     and the parallel page swarm (every lane side by side, KIE limiter, spend cap). Free: stub provider and
 #     fake pages only, no paid call.

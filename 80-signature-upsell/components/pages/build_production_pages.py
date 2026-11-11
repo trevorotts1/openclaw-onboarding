@@ -196,12 +196,14 @@ def read_route_graph(graph: dict) -> dict:
     return by_role
 
 
-def graph_hash(graph: dict) -> str:
-    """The route-graph hash of record: the same serialization Skill 49's
-    compiler uses, so it equals the launch record's ``route_graph_hash``."""
-    return hashlib.sha256(
-        (json.dumps(graph, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
-    ).hexdigest()
+def graph_hash(graph: dict, raw: bytes = None) -> str:
+    """The route-graph hash of record: SHA-256 of the graph FILE's bytes (``raw``),
+    as Skill 49's ``compile_launch_route.graph_file_hash`` computes it. Only an
+    in-memory compiled graph (self-test) has no file; its hash is the compiler's
+    own emit serialization, which is the bytes it would write."""
+    if raw is None:
+        raw = (json.dumps(graph, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 
 # ── approved launch record offers ───────────────────────────────────────────
@@ -513,7 +515,7 @@ def render_page(slot: str, copy_doc: dict, route: dict, offer: dict,
 # ── build ───────────────────────────────────────────────────────────────────
 
 def build(launch: dict, graph: dict, family: str, copies: dict,
-          downsell_page: dict, brand: dict) -> dict:
+          downsell_page: dict, brand: dict, graph_raw: bytes = None) -> dict:
     """Build every enabled extra slot. Returns ``{pages, manifest}``; writes
     nothing (the CLI writes)."""
     if family not in CHECKOUT_FAMILIES:
@@ -526,10 +528,10 @@ def build(launch: dict, graph: dict, family: str, copies: dict,
         raise PageBuildError("the launch record enables no extra offer")
     routes = read_route_graph(graph)
     recorded = launch.get("route_graph_hash")
-    if recorded and recorded != graph_hash(graph):
+    if recorded and recorded != graph_hash(graph, graph_raw):
         raise PageBuildError(
             "the route graph is not the one the approved launch record binds: "
-            f"graph hash {graph_hash(graph)} != recorded {recorded}")
+            f"graph hash {graph_hash(graph, graph_raw)} != recorded {recorded}")
     for slot in EXTRA_SLOTS:
         if slot not in enabled and slot in routes:
             raise PageBuildError(
@@ -631,7 +633,7 @@ def build(launch: dict, graph: dict, family: str, copies: dict,
             "schema": "s80-production-pages/1",
             "launch_id": launch.get("launch_id"),
             "revision": launch.get("revision"),
-            "route_graph_hash": graph_hash(graph),
+            "route_graph_hash": graph_hash(graph, graph_raw),
             "checkout_family": family,
             "payment_recovery": {"behaviour": PENDING_BEHAVIOR,
                                  "is_decline": False, "is_acceptance": False},
@@ -834,10 +836,12 @@ def main(argv=None) -> int:
             return 2
         copies[slot] = load_json(path)
     try:
-        built = build(load_json(args.launch), load_json(args.route_graph),
+        graph_raw = Path(args.route_graph).read_bytes()
+        built = build(load_json(args.launch), json.loads(graph_raw.decode("utf-8")),
                       args.checkout_family, copies,
                       load_json(args.downsell_page),
-                      load_json(args.brand) if args.brand else {})
+                      load_json(args.brand) if args.brand else {},
+                      graph_raw=graph_raw)
     except PageBuildError as exc:
         print("FAIL-CLOSED: %s" % exc, file=sys.stderr)
         return 2

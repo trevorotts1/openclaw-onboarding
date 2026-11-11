@@ -30,8 +30,8 @@ against the operator key (AF-FUN-CERT-SIGNATURE; a caller-supplied nonce is refu
 a broken chain is AF-FUN-PROCESS-INTEGRITY.
 
 ```
-python3 49-signature-funnel/scripts/prove_sf_no_pitch.py <run-dir>
-python3 49-signature-funnel/scripts/prove_sf_cert.py     <run-dir>
+python3 49-signature-funnel/scripts/prove_sf_no_pitch.py --ledger <run-dir>/media_ledger.json
+python3 49-signature-funnel/scripts/prove_sf_cert.py --cert <run-dir>/PROCESS-CERTIFICATE.json --run-dir <run-dir>
 ```
 
 ## 3. PUBLISH GUARD (human approval)

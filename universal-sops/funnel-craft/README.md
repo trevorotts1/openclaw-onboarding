@@ -10,7 +10,7 @@ authoritative machine spine lives in the skill:
 
 - `49-signature-funnel/FUNNEL-MANIFEST.json` — the P0..P10 phase spine + every `AF-FUN-*` gate code.
 - `49-signature-funnel/scripts/prove_sf_intake.py`, `prove_sf_copy.py`, `prove_sf_prompt_floor.py`,
-  `prove_sf_no_pitch.py`, `prove_sf_cert.py` — the five fail-closed, model-free floor provers.
+  `prove_sf_graph.py`, `prove_sf_build.py`, `prove_sf_no_pitch.py`, `prove_sf_cert.py` — the seven fail-closed, model-free floor provers.
 - `49-signature-funnel/run_signature_funnel.py` — the deterministic no-skip orchestrator
   (operator-key gated by `signature-funnel-entry.sh`); issues the signed PROCESS-CERTIFICATE only
   on a full pass.

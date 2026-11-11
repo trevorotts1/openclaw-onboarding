@@ -106,7 +106,7 @@ with the renumbered **Section 8**:
 ## 4. VERIFY BEFORE ADVANCING
 
 ```
-python3 49-signature-funnel/scripts/prove_sf_copy.py working/copy/copy_ledger.json
+python3 49-signature-funnel/scripts/prove_sf_copy.py --ledger working/copy/copy_ledger.json
 ```
 
 Exit 0 = every profile cleared its SACRED bands and P2-PROMPTS may begin. A failing section re-authors

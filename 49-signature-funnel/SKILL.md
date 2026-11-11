@@ -51,14 +51,14 @@ searching for the answer instead of reading the source, stop and read the source
 
 - `MASTERDOC.md` — the anonymized canonical funnel IP (12 section names + bands, upsell/downsell/OTO2
   derivation, the Thank-You spec, the 3/5/7 matrix, the image band + Signature Grade Block).
-- `FUNNEL-MANIFEST.json` — the P0..P10 phase spine (produces_artifact + `_chk_sf_*` wrappers), the 68
+- `FUNNEL-MANIFEST.json` — the P0..P10 phase spine (produces_artifact + `_chk_sf_*` wrappers), the 98
   `AF-FUN-*` autofail codes (trigger / enforced_by / py_symbol), and the front-door/delegation contract.
 - `intake/sf-intake-questions.json` — the Q1–Q17 intake spec + the runtime brief contract.
 - `structure/funnel_structure.json` — the SACRED 12-section contract the copy prover loads.
 - `prompts/funnel-copy-prompts.md` — the BAKED, provider-agnostic copy + image prompts (client models
   at runtime, never Anthropic).
-- `scripts/prove_sf_intake.py`, `prove_sf_copy.py`, `prove_sf_prompt_floor.py`, `prove_sf_no_pitch.py`,
-  `prove_sf_cert.py` — the five fail-closed deterministic provers (stdlib only; exit 0/2/3).
+- `scripts/prove_sf_intake.py`, `prove_sf_copy.py`, `prove_sf_prompt_floor.py`, `prove_sf_graph.py`,
+  `prove_sf_build.py`, `prove_sf_no_pitch.py`, `prove_sf_cert.py` — the seven fail-closed deterministic provers (stdlib only; exit 0/2/3).
 - `scripts/kie74_receipt.py` — turns a Skill 74 result into run evidence and defines what the bypass scan allow-lists.
 - `run_signature_funnel.py` — the no-skip orchestrator state machine.
 - `scripts/legacy_downsell_images.py` — desktop wireframes, mobile wireframes and the visual mockup for EVERY page of a 3/5/7-step funnel (sales page, upsell, `upsell-2`, `downsell`, `downsell-2` in the 7-step, thank-you), run from the P1 copy ledger through Skill 71's own pipeline. Only the design-only checkout is left to `checkout_wrapper.py`, and the receipt says so. Launch mode has one downsell by design; its wrapper is `downsell_wrapper.py`.
