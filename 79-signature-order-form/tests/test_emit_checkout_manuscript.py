@@ -100,6 +100,25 @@ class Emit(unittest.TestCase):
         spec = json.loads(emitter.ROLE_SPEC.read_text())
         self.assertEqual(emitter._role_sections(), {int(sec["id"]): sec["name"] for sec in spec["sections"]})
 
+    def test_section_one_ends_in_closing_punctuation_so_skill_71_does_not_read_it_as_cut_off(self):
+        """The launch record writes deliverables and exclusions as bare phrases; Skill 71's stage executor
+        refuses section copy whose last character is not terminal punctuation (stage_executor.TERMINAL)."""
+        launch = copy.deepcopy(LAUNCH)
+        launch["offers"][0]["exclusions"] = []
+        text = staged(self, launch=launch).emit()["text"]
+        section_one = text.split("## Section 1")[1].split("## Section 2")[0].rstrip()
+        self.assertTrue(section_one.endswith(emitter.TERMINAL), section_one[-40:])
+        self.assertIn("- A guided weekly planning session.", text)
+        self.assertIn("- A printable planner.", text)
+
+    def test_a_bullet_that_already_ends_in_punctuation_is_not_doubled(self):
+        launch = copy.deepcopy(LAUNCH)
+        launch["offers"][0]["deliverables"] = ["Weekly sessions!", "A planner (printable)"]
+        text = staged(self, launch=launch).emit()["text"]
+        self.assertIn("- Weekly sessions!\n", text)
+        self.assertIn("- A planner (printable)\n", text)
+        self.assertNotIn("!.", text)
+
     def test_no_bump_means_sections_1_2_4_5(self):
         for bump in (None, dict(BASE["bump"], enabled=False)):
             with self.subTest(bump=bump):

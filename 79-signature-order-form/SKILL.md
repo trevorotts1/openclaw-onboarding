@@ -1,7 +1,7 @@
 ---
 name: signature-order-form
 description: "Skill 79: Signature Order Form, Checkout and Signature Bump Sale. Builds the reusable native Convert and Flow checkout in two modes (combined explanation-plus-checkout, the wired mode, one order form per offer price choice under per_offer_instances; and post-selection checkout after Skill 78 Product Selection, which is fixture-only and outside the done claim), owns the order bump on the original checkout, the offer details and price display, and the guarantee/terms block. Status: landed in this repository; this file makes no installation, distribution-discovery or live-payment claim."
-version: 0.1.9
+version: 0.1.10
 ---
 
 # Skill 79: Signature Order Form, Checkout and Signature Bump Sale
@@ -96,7 +96,9 @@ drawn as card fields and is never built or bound by those stages: it stays Skill
 
 The manuscript those stages read is not hand-written: `scripts/emit_checkout_manuscript.py`
 writes the five sections from the approved checkout request (it must pass
-`validate_checkout.validate_request`), the launch record's offer names and the approved
+`validate_checkout.validate_copy_request`: the full request check, price approval and bump gates
+included, except that the three Skill 06 read-back keys the copy never uses are not required; the
+production gate `validate_checkout.validate_request` still requires them), the launch record's offer names and the approved
 `checkout_terms` text, and puts `<!-- source_request_sha256: <sha256 of the request file> -->`
 on line 1. `verify_source_stamp` (or `--check`) refuses a manuscript whose stamp is missing or
 no longer matches the request; the Skill 49 checkout wrapper makes the same check inline.

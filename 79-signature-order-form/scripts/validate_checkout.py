@@ -66,8 +66,17 @@ def _schema():
     return json.loads(SCHEMA_PATH.read_text())
 
 
-def _validate_def(name: str, instance) -> None:
+def _validate_def(name: str, instance, *, relax: dict | None = None) -> None:
     schema = _schema()
+    if relax:
+        # `relax` maps a definition name to keys the caller may leave out (copy requests only); every other
+        # rule of every definition still applies, and a key that is present is checked in full.
+        defs = dict(schema["$defs"])
+        for def_name, keys in relax.items():
+            d = dict(defs[def_name])
+            d["required"] = [k for k in d["required"] if k not in keys]
+            defs[def_name] = d
+        schema = dict(schema, **{"$defs": defs})
     sub = {"$schema": schema["$schema"], "$defs": schema["$defs"], "$ref": f"#/$defs/{name}"}
     try:
         jsonschema.validate(instance, sub, format_checker=jsonschema.FormatChecker())
@@ -189,8 +198,25 @@ def _check_production_bump(request: dict, bump: dict) -> None:
             f"bump cannot be offered on this order: {quote.bump_state} ({quote.suppression_source})")
 
 
-def validate_request(request: dict, now: str | None = None) -> None:
-    _validate_def("checkout_request", request)
+# The three facts only Skill 06's native read-back can supply. The page COPY needs none of them, so
+# validate_copy_request leaves them optional; validate_request (the production gate) requires them.
+READBACK_FACTS = ("native_capability_evidence_ref", "fulfillment_mapping_ref", "failed_pending_requirements")
+# The order bump's own read-back facts (Skill 83 checkout_instances.BUMP_READBACK_KEYS): the same Skill 06
+# read-back, carried inside the bump block, equally unused by the copy.
+BUMP_READBACK_FACTS = ("component_id", "component_version", "quantity_policy", "fulfillment_rule_ref")
+COPY_RELAX = {"checkout_request": READBACK_FACTS, "bump_config": BUMP_READBACK_FACTS}
+
+
+def validate_copy_request(request: dict, now: str | None = None) -> None:
+    """validate_request without the Skill 06 read-back keys being required (the copy emitter's gate).
+
+    Everything else is unchanged: the full schema, mapping expiry, price approval, bump gates. A read-back key
+    that IS present is validated like any other. This is never the production gate."""
+    validate_request(request, now, _relax=COPY_RELAX)
+
+
+def validate_request(request: dict, now: str | None = None, *, _relax: dict | None = None) -> None:
+    _validate_def("checkout_request", request, relax=_relax)
     # Review defect A2: expiry must be checked in every location the schema
     # defines it, not only the bump's top-level field: the main price choice,
     # the bump price choice, and the bump config itself.

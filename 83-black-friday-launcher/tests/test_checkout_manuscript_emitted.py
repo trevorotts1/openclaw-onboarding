@@ -21,10 +21,11 @@ sys.path.insert(0, str(SKILL_ROOT / "fixtures"))
 
 import adapters  # noqa: E402
 from launcher_core import launch_bridge  # noqa: E402
+from launcher_core import checkout_instances  # noqa: E402
 from test_checkout_instances import prepared  # noqa: E402
 
-TERMS = {"guarantee_text": "Try it for 30 days.", "terms_text": "You agree to the terms of sale.",
-         "consent_text": "I agree to the terms of sale."}
+TERMS_TEXT = {"guarantee_text": "Try it for 30 days.", "terms_text": "You agree to the terms of sale.",
+              "consent_text": "I agree to the terms of sale."}
 
 
 def price(amount):
@@ -36,12 +37,13 @@ class EmittedCheckoutCopyTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.td = Path(tmp.name)
-        files = {
-            "request.json": {"main_offer_id": "MAIN", "main_price": price(9700), "bump": None},
-            "launch.json": {"offers": [{"offer_id": "MAIN", "slot": "main", "display_name": "The Studio",
-                                        "deliverables": ["weekly sessions"], "exclusions": [], "prices": [price(9700)]}]},
-            "checkout-terms.json": {"checkout_terms": TERMS},
-        }
+        # The request the bridge itself builds from an intake (Skill 79 emitter input), not a stub: the emitter
+        # validates it (validate_copy_request, INT-T-6), so every required fact but the Skill 06 read-back is real.
+        normalized, graph, launch = prepared("multiple_options")
+        request = checkout_instances.record(normalized, graph, launch=launch)["instances"][0]["request"]
+        self.request, self.launch = request, launch
+        terms = dict(TERMS_TEXT, guarantee_ref="g", terms_ref=request["terms_ref"], consent_ref=request["consent_ref"])
+        files = {"request.json": request, "launch.json": launch, "checkout-terms.json": {"checkout_terms": terms}}
         for name, doc in files.items():
             (self.td / name).write_text(json.dumps(doc), encoding="utf-8")
 
@@ -52,7 +54,8 @@ class EmittedCheckoutCopyTests(unittest.TestCase):
 
     def test_the_emitter_runs_and_its_output_is_accepted_for_its_own_request(self):
         manuscript = self.emit()
-        self.assertIn("The Studio, one payment of $97.00.", manuscript.read_text(encoding="utf-8"))
+        main = next(o for o in self.launch["offers"] if o["offer_id"] == self.request["main_offer_id"])
+        self.assertIn(main["display_name"], manuscript.read_text(encoding="utf-8"))
         adapters._require_stamped(manuscript, self.td / "request.json")  # does not raise
 
     def test_a_hand_staged_copy_is_refused_before_any_page_is_built(self):
@@ -64,7 +67,7 @@ class EmittedCheckoutCopyTests(unittest.TestCase):
 
     def test_copy_for_an_older_request_is_refused(self):
         manuscript = self.emit()
-        (self.td / "request.json").write_text(json.dumps({"main_offer_id": "MAIN", "main_price": price(1)}),
+        (self.td / "request.json").write_text(json.dumps({"main_offer_id": "MAIN-A", "main_price": price(1)}),
                                               encoding="utf-8")
         with self.assertRaises(adapters.AdapterError):
             adapters._require_stamped(manuscript, self.td / "request.json")

@@ -9,8 +9,10 @@ and prints nothing that is not in them:
   --launch           the Skill 49 launch record (offer display names, deliverables, exclusions)
   --checkout-terms   the approved checkout_terms block (verbatim guarantee, terms and consent text and refs)
 
-The request must pass this skill's own production validator first (validate_checkout.validate_request, which for
-a recommended price asks the shared verifier to confirm the plan approval), so an unapproved request never
+The request must pass this skill's own validator first (validate_checkout.validate_copy_request: the whole
+production request check, which for a recommended price asks the shared verifier to confirm the plan approval,
+except that the three Skill 06 read-back keys, which the copy never uses, are not required; the production gate,
+validate_request, still requires them), so an unapproved request never
 becomes copy. The manuscript has the five sections of Skill 71's role spec
 (71-blackceo-signature-page/references/copy-specs/roles/checkout.json), headed "## Section N: name"; section 3
 (the order bump) is present only when the request carries an enabled bump. Sections 2 and 3 carry the price lines,
@@ -44,7 +46,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from validate_checkout import CheckoutValidationError, validate_request  # noqa: E402
+from validate_checkout import CheckoutValidationError, validate_copy_request  # noqa: E402
 
 EXIT_OK, EXIT_REFUSED, EXIT_USAGE = 0, 2, 3
 ROLE_SPEC = HERE.parents[1] / "71-blackceo-signature-page" / "references" / "copy-specs" / "roles" / "checkout.json"
@@ -154,8 +156,18 @@ def _offer(launch: dict, offer_id: str, what: str) -> dict:
     return offer
 
 
+# Skill 71's stage executor refuses a section whose copy ends without one of these (it reads that as cut
+# off mid-sentence), so a line the launch record wrote without closing punctuation gets a full stop.
+TERMINAL = (".", "!", "?", '"', "\u201d", "'", "\u2019", ")", "]", "\u2026")
+
+
+def _closed(text: str) -> str:
+    text = text.strip()
+    return text if text.endswith(TERMINAL) else text + "."
+
+
 def _bullets(items) -> list:
-    return [f"- {i}" for i in items if isinstance(i, str) and i.strip()]
+    return [f"- {_closed(i)}" for i in items if isinstance(i, str) and i.strip()]
 
 
 def _section_one(request: dict, offer: dict, notes: list) -> list:
@@ -169,7 +181,7 @@ def _section_one(request: dict, offer: dict, notes: list) -> list:
     out = [f"{name}.", "What is included:", *_bullets(offer["deliverables"])]
     for label, key in (("Who it is for", "intended_buyer"), ("What you get", "primary_outcome")):
         if not _blank(offer.get(key)):
-            out.append(f"{label}: {offer[key]}")
+            out.append(f"{label}: {_closed(offer[key])}")
     if _bullets(offer.get("exclusions")):
         out += ["What is not included:", *_bullets(offer["exclusions"])]
     notes.append("access and delivery: the launch record holds no access or delivery text, so section 1 has none; "
@@ -196,7 +208,7 @@ def emit(request_path, launch_path, terms_path, *, now: str | None = None) -> di
     terms_doc = _load(terms_path, "checkout_terms")
     terms = terms_doc.get("checkout_terms", terms_doc) if isinstance(terms_doc, dict) else None
     try:
-        validate_request(request, now=now or datetime.now(timezone.utc).isoformat())
+        validate_copy_request(request, now=now or datetime.now(timezone.utc).isoformat())
     except CheckoutValidationError as exc:
         raise ManuscriptError("S79-MANUSCRIPT-REQUEST-INVALID", f"the checkout_request is not an approved request: {exc}") from exc
     names, notes = _role_sections(), []
