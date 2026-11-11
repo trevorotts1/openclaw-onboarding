@@ -1,7 +1,7 @@
-## [v2.1.47] - 2026-11-10 - Harmony-95 Batch P: purchase stops the follow-up flows (X-96); Skill 45 boundary statement
+## [v2.1.47] - 2026-11-10 - Harmony-95 Batch P: purchase stops the follow-up flows (X-96); visual-design boundary statement
 
 - `launch_step_compiler.py` and `workflow_builder.py` stop a follow-up email flow once the buyer has a verified purchase of the offer it follows (`followed_offer_id`, X-96); `plan_reader.py` and `automation-build.schema.json` carry the field; tests `test_follow_up_purchase_gate.py`, `test_registry_stop_on_purchase.py` and `test_plan_reader_law.py`.
-- `SKILL.md` states that this skill produces no visual design and does not read Skill 45 (WP-12). Version bump so the Batch P pull request carries a version above main (G3).
+- `SKILL.md` states the visual-design boundary: this skill carries approved copy and produces no imagery (WP-12). Version bump so the Batch P pull request carries a version above main (G3).
 
 ## [v2.1.46] - 2026-11-09 - BWX-020 recut: the plan's reentry/enrolment decision reaches the build
 

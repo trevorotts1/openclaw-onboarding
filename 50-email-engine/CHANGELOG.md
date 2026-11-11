@@ -2,7 +2,7 @@
 
 ## [2.0.10] - 2026-11-10 - Harmony-95 Batch P: stop-on-purchase flags in the launch email family registry (X-96)
 
-- `profiles/launch-email-families.json` adds `stop_on_verified_purchase` and `suppress_promotion_after_verified_purchase` rules, and the `verified_purchase` eligibility check, to the launch email families that kept sending after a verified purchase; `ENGINE-PIN.sha256` re-derived with the CI formula over the changed enforcement set; `SKILL.md` states the Skill 45 boundary (WP-12); tests `test_stop_on_purchase.py` and `test_skill_45_boundary.py`.
+- `profiles/launch-email-families.json` adds `stop_on_verified_purchase` and `suppress_promotion_after_verified_purchase` rules, and the `verified_purchase` eligibility check, to the launch email families that kept sending after a verified purchase; `ENGINE-PIN.sha256` re-derived with the CI formula over the changed enforcement set; `SKILL.md` states the visual-design boundary (WP-12); tests `test_stop_on_purchase.py` and the WP-12 boundary test.
 - Version bump so the Batch P pull request carries a version above main (G3).
 
 ## Unreleased - 2026-10-24 - UL-021: pin the prover's dependency closure

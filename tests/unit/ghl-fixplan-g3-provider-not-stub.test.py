@@ -26,7 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 TOOL = ROOT / "49-signature-funnel" / "scripts" / "legacy_downsell_images.py"
 BUILD = ROOT / "49-signature-funnel" / "scripts" / "prove_sf_build.py"
-FAKE_CC = ROOT / "49-signature-funnel" / "scripts" / "fixtures" / "fake_command_center.py"
+FAKE_CC = ROOT / "49-signature-funnel" / "tests" / "fake_command_center.py"
 
 
 def run(*extra):

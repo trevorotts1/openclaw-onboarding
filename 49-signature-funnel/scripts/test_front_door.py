@@ -233,6 +233,30 @@ class EveryDecisionFileIsPinned(Trees):
         self.assertEqual(fd.NET_ALLOWED, {"49/scripts/agnes_orchestrator.py", "49/scripts/mc_board.py",
                                           "shared/contract/approval_record.py", "shared/launch/launch_events.py"})
 
+    def test_a_loopback_server_is_refused_outside_the_tests_folder(self):
+        # Issue 38 fixture: the loopback Command Center stand-in (http.server) lives in 49-signature-funnel/tests/,
+        # a folder the scan skips and the pin does not list (like examples/ and working/). The same import
+        # anywhere else in the tree is still a BYPASS-SCAN hit, and the stand-in has not drifted back next to
+        # the product scripts.
+        fake = SKILL / "tests" / "fake_command_center.py"
+        self.assertTrue(fake.is_file())
+        self.assertFalse((SKILL / "scripts" / "fake_command_center.py").exists())
+        self.assertFalse((SKILL / "scripts" / "fixtures" / "fake_command_center.py").exists())
+        self.assertIn("http.server", fake.read_text(encoding="utf-8"))
+        self.assertEqual(fd.scan_tree(SKILL), [])
+        self.assertEqual(fd.scan_tree(self.t49), [])
+        for rel in ("scripts/fake_command_center.py", "scripts/loopback_helper.py", "adapters/loopback_helper.py"):
+            path = self.t49 / rel
+            path.write_text("from http.server import ThreadingHTTPServer\n")
+            try:
+                hits = fd.scan_tree(self.t49)
+                self.assertTrue(any(rel in h and "network module" in h for h in hits), (rel, hits))
+                with self.assertRaises(fd.FrontDoorError):
+                    fd.step_bypass_scan(None, self.t49)
+            finally:
+                path.unlink()
+        self.assertEqual(fd.scan_tree(self.t49), [])
+
 
 class Skill71PageBuildTreeIsPinned(Trees):
     """FIX-16 Branch A: the Skill 71 page-build tree is inside the composition, so one digest certifies the
