@@ -49,15 +49,24 @@ between packages. The order form that takes payment is Skill 79 (checkout).
   `build_selection` refuses it as `S78-MISSING-NATIVE-MAPPING`. The ids are
   created or read back by Skill 06's installer, under its own scoped approval,
   and written back into `launch.json`; this skill only consumes them.
-- `79-signature-order-form/scripts/selection_flow.py::selection_from_intent` is
-  the one adapter from a `selection.json` intent to Skill 79's `Selection`
-  (`amount_minor_snapshot` becomes `amount_minor`; `revision` feeds both the
-  launch and the offer revision). It refuses an intent with no native price id,
-  and carries `billing_type` and the schedule rows `{sequence, due,
-  amount_minor}` (the checkout schema's row shape) so the checkout can show
-  them. Time crosses the seam as one shape: the session store keeps epoch
-  seconds for its TTL but hands Skill 79 a timezone-aware ISO-8601
-  `expires_at` (`selection_session.to_iso`); Skill 79 compares instants and
+- The realised route is `per_offer_instances` (owner decision,
+  `83-black-friday-launcher/DECISIONS-PENDING.md`, section "Ceiling"): for
+  `multiple_options` Skill 83 emits ONE Skill 79 `combined_single_offer` order
+  form per (main offer, price choice), each with its own page id, and this
+  skill's `emit_binding_plan.py` maps one native target to each instance.
+  `selection_ref` is always null. Skill 79 is NOT called in a post-selection
+  mode on this route.
+- Fixture-only, not part of the done claim: `79-signature-order-form/scripts/
+  selection_flow.py::selection_from_intent` (the adapter from a `selection.json`
+  intent to Skill 79's `Selection`: `amount_minor_snapshot` becomes
+  `amount_minor`; `revision` feeds both the launch and the offer revision; it
+  refuses an intent with no native price id), the session bridge and the
+  `post-selection-checkout.html` draft. No wired route calls them; see
+  `runtime-manifest.json` `done_claim.not_counted`.
+- The fixture adapter above also carries `billing_type` and the schedule rows `{sequence, due,
+  amount_minor}` (the checkout schema's row shape) so the checkout can show them. Time crosses the
+  seam as one shape: the session store keeps epoch seconds for its TTL but hands Skill 79 a
+  timezone-aware ISO-8601 `expires_at` (`selection_session.to_iso`); Skill 79 compares instants and
   refuses an integer, naive or junk time by name.
 
 ## What it produces

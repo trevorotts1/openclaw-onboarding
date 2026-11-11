@@ -1,6 +1,6 @@
 ---
 name: signature-order-form
-description: "Skill 79: Signature Order Form, Checkout and Signature Bump Sale. Builds the reusable native Convert and Flow checkout in two modes (combined explanation-plus-checkout for one simple offer, and post-selection checkout after Skill 78 Product Selection), owns the order bump on the original checkout, the offer details and price display, and the guarantee/terms block. Status: landed in this repository; this file makes no installation, distribution-discovery or live-payment claim."
+description: "Skill 79: Signature Order Form, Checkout and Signature Bump Sale. Builds the reusable native Convert and Flow checkout in two modes (combined explanation-plus-checkout, the wired mode, one order form per offer price choice under per_offer_instances; and post-selection checkout after Skill 78 Product Selection, which is fixture-only and outside the done claim), owns the order bump on the original checkout, the offer details and price display, and the guarantee/terms block. Status: landed in this repository; this file makes no installation, distribution-discovery or live-payment claim."
 version: 0.1.9
 ---
 
@@ -15,7 +15,7 @@ claim; installed-location native facts stay separate and are not asserted here.
 
 Own the order form page of a Signature Launch: the native Convert and Flow
 checkout a buyer completes after the sales page (combined mode) or after the
-product selection page (post-selection mode), including the one order bump
+product selection page (post-selection mode, fixture-only), including the one order bump
 offered on that original checkout.
 
 ## Modes (exactly two)
@@ -24,12 +24,21 @@ offered on that original checkout.
    Product Selection (Skill 78) is skipped. The explanation must cover what
    the product includes, who it is for, access and delivery, and important
    exclusions before the price and the native form.
-2. Post-selection mode: native checkout after Product Selection. The checkout
+2. Post-selection mode (FIXTURE-ONLY, not part of the done claim; the wired
+   route is `per_offer_instances`, see below): native checkout after Product Selection. The checkout
    loads the validated selection, visibly confirms package name, billing
    schedule, quantity and price, offers a change-package path back, and
    resolves a missing or expired selection to a recovery choice. It never
    silently defaults to another package, and a changed offer or price
    binding requires clear reconfirmation before any charge.
+
+Realised route (owner decision, `83-black-friday-launcher/DECISIONS-PENDING.md`,
+section "Ceiling"): Skill 83 calls this skill in combined mode only. For
+`multiple_options` and `folded_levels` it emits ONE `combined_single_offer`
+request per (main offer, price choice) under `per_offer_instances`, each with its
+own page id and `selection_ref` null. The post-selection code
+(`scripts/selection_flow.py`, `references/components/post-selection-checkout.html`)
+is fixture-only and is excluded from every done claim until a host wires it.
 
 ## Hard rules
 
