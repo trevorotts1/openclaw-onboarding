@@ -26,8 +26,9 @@ A launch run dir holds `launch.json` (the approved launch record),
 scoped approvals). The legacy path refuses a launch-mode run dir rather
 than running it through the old pipeline.
 
-The entry script is not itself a pinned enforcement file, but the launch
-chain it calls is. `PINNED_FILES` in `signature-funnel-entry.sh` holds the
+The entry script is itself pinned: `signature-funnel-entry.sh` is in the
+hash-pin file list (the Skill 49 row of `front_door.py`), and so is the
+launch chain it calls. `PINNED_FILES` in `signature-funnel-entry.sh` holds the
 dispatch, route, page and Agnes modules beside the legacy provers and
 structure: `scripts/dispatch_launch.py`,
 `scripts/compile_launch_route.py`, `scripts/page_set.py`,

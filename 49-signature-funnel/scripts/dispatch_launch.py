@@ -739,6 +739,7 @@ def _simulated_executor(author: str):
                 "location_id": req["location_id"], "launch_id": req["launch_id"],
                 "revision": req["revision"], "request_id": req["request_id"],
                 "input_hash": req["input_hash"], "page_id": req["page_id"],
+                "page_role": req["page_role"],
                 "status": "authored", "artifacts": [],
                 "author_session": author, "reviewer_session": None,
                 "independent_review": False, "proof_class": "L0",

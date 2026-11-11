@@ -433,6 +433,11 @@ class DownsellWrapperImagesTests(unittest.TestCase):
         self.assertEqual(staged["page_role"], "downsell_1")
         self.assertEqual(staged["shared_image_service"],
                          "71-blackceo-signature-page")
+        # the downsell is admitted under its own copy form, never the Standard landing label
+        # (Harmony issue 50: the shared service's form guard refuses `standard` for downsell_1)
+        intake = json.loads((run_dir / "intake.json").read_text())
+        self.assertEqual((intake["page_version"], intake["copy_version"]),
+                         ("downsell", "downsell"))
         # eight sections, desktop and mobile, for each stage that ran
         stages = summary["images"]["stages"]
         self.assertEqual(sorted(stages), ["desktop-wireframe",

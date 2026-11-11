@@ -5,7 +5,7 @@ Path B). Each case stages the three inputs in a temp dir, runs the
 translator as a subprocess exactly as a dispatch adapter would, and
 checks exit codes, refusal messages and the emitted page-result.
 
-The happy-path page-result is validated three ways: exact 17-field set,
+The happy-path page-result is validated three ways: exact 18-field set,
 real JSON Schema validation against the packet page-result 1.0 schema,
 and collect_launch_receipts' own validate_result + collect rollup.
 
@@ -47,7 +47,7 @@ sys.path.insert(0, str(WAVE1_SCRIPTS))
 import collect_launch_receipts as receipts  # noqa: E402
 
 RESULT_FIELDS = {"schema_version", "tenant_id", "location_id", "launch_id",
-                 "revision", "request_id", "input_hash", "page_id",
+                 "revision", "request_id", "input_hash", "page_id", "page_role",
                  "status", "artifacts", "author_session", "reviewer_session",
                  "independent_review", "proof_class", "blockers",
                  "native_bindings_ref", "test_only"}
@@ -228,7 +228,7 @@ def main() -> int:
                                   f"{proc.returncode}: {proc.stderr.strip()})")
         out = json.loads(out_path.read_text(encoding="utf-8"))
         say(set(out.keys()) == RESULT_FIELDS,
-            "happy path emits exactly the 17 page-result fields")
+            "happy path emits exactly the 18 page-result fields")
         try:
             import jsonschema
             schema = json.loads((PACKET_SCHEMAS /
@@ -421,7 +421,7 @@ def main() -> int:
         out10 = json.loads(out_path10.read_text(encoding="utf-8"))
     if out11 is not None:
         say(set(out11.keys()) == RESULT_FIELDS,
-            "1.1 translation emits exactly the 17 page-result fields")
+            "1.1 translation emits exactly the 18 page-result fields")
         say("prompt_policy_id" not in out11,
             "1.1 translation does not echo the citation into the "
             "page-result")

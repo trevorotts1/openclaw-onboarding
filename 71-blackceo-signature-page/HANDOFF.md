@@ -78,24 +78,27 @@ click opens the popup (and emits nothing), and the popup form's
 submit emits `sl:interest-capture` (the component dispatches that
 event inside its submit handler, not on open).
 
+The receipt must be a real receipt (AF-71-ROUTE-RECEIPT). It is an object
+carrying a non-empty `submission_id` or `contact_id` AND a `source` that is
+`native_form` or `api`. A bare string, an object with neither identifier, an
+empty or non-string identifier, or any other `source` value never
+authorizes routing: the handoff records `routing: {authorized: false}` with
+the failure named in its basis, `receipt_binding: "unidentified"`, and the
+page result's `blockers` names it. Presence alone is not enough. (The
+Skill 6 delivery adapter that writes the receipt is still not built here;
+this is the shape the guard demands of whatever does, and
+`tests/test_routing_guard_receipt.py` pins it.)
+
 The receipt must also belong to THIS run (receipt binding). When
-the receipt is a dict carrying run-identity fields (`tenant_id`,
+the receipt carries run-identity fields (`tenant_id`,
 `location_id`, `launch_id`, `request_id`, `page_id`), every such
 field it carries must equal the page-request's value; a receipt
 naming a different tenant, launch, or request is another run's
 receipt and never authorizes routing here, and the mismatch is
-recorded as a blocker. A receipt carrying no identity fields at
-all (a bare string receipt, or a dict without identity fields) is
-accepted on presence alone. That presence-only acceptance is an
-explicit, documented choice, not an accident: no approved adapter
-receipt schema exists yet (the receipt is the S06 adapter's output
-and its shape is not contracted), and the only receipt shape in
-evidence carries no run identity, so refusing identifier-less
-receipts would refuse the one known-good form. The handoff's
-submission block records which case applied (`receipt_binding`:
-`bound`, `contradicted`, or `no_identity_fields`), so a later
-contracted receipt schema can tighten presence-only acceptance
-without a silent behavior change.
+recorded as a blocker. The handoff's submission block records which
+case applied (`receipt_binding`): `bound` (identified, and at least
+one run-identity field matched), `identified` (identified, no
+run-identity field to check), `contradicted`, or `unidentified`.
 
 ### How "does not authorize routing" is represented
 
@@ -176,10 +179,8 @@ Per doc 18 section 1 (levels) and section 3 (owners/evidence):
 
 ## Version note
 
-Per the Signature Launch program's single-writer rule, the S71-09
-branch owns edits to `SKILL.md` (entrypoint). This branch therefore
-leaves `SKILL.md` and `skill-version.txt` untouched (both remain
-1.2.9, consistent). The eventual merge-candidate assembly must bump
-the version pair together (repo G3 rule) when this change lands with
-the sibling S71 branches, and must add this handoff to the
-entrypoint's reading surface at that time.
+`SKILL.md`, `skill-version.txt` and `VERSION` carry one version, and
+`tests/test_version_lockstep.py` fails when they differ. This document names
+no version number, so it cannot go stale when the skill is bumped. The
+version pair is bumped together (repo G3 rule) by the batch that lands a
+change.

@@ -72,7 +72,9 @@ def _load_wrapper_module():
 
 wrapper = _load_wrapper_module()
 
-IDENTITY_FIELDS = ("request_id", "input_hash", "page_id")
+# page_role is added by the wrapper from the S49 request (Skill 80's own result does not carry it),
+# so the parity comparison with Skill 80's stored result ignores it like the other S49-side fields.
+IDENTITY_FIELDS = ("request_id", "input_hash", "page_id", "page_role")
 
 
 def load(path):
@@ -135,8 +137,10 @@ def run_wrapper(wd, slot, *, copy_path, journey_path, enrichment=None,
 
 def assert_receipt_valid(testcase, wd, slot, request):
     result = load(wd / f"result-{slot}.json")
-    testcase.assertEqual(set(result), set(wrapper.RESULT_FIELDS),
-                         "projected result must carry exactly the 17 fields")
+    testcase.assertEqual(set(result), set(wrapper.RESULT_FIELDS) | {"page_role"},
+                         "projected result must carry exactly the 17 fields plus page_role")
+    testcase.assertEqual(result["page_role"], request["page_role"],
+                         "the canonical page-result schema requires page_role, echoed from the request")
     testcase.assertEqual(receipts.validate_result(result, request), [],
                          "collect_launch_receipts must accept the result "
                          "with an exact request echo")
@@ -162,17 +166,52 @@ class S49InputTests(unittest.TestCase):
 
     def test_wrapper_request_fields_match_packet_schema(self):
         # The wrapper's input-shape allowlist (DEFECT 1 cure) is tied to
-        # the packet page-request 1.0 schema: same field set, and the
-        # schema really is additionalProperties: false. Genuine dispatch
-        # requests carry exactly those fields, so the guard admits every
-        # lawful request.
+        # the packet page-request schema: the 1.0 field set plus the two
+        # properties the one canonical schema (Harmony issue 85, identical
+        # in shared-utils, Skill 49 and Skill 71) adds beyond it, each
+        # handled outside REQUEST_FIELDS: the 1.1 policy id (POLICY_FIELD,
+        # admitted only on a 1.1 request) and Skill 71's shared-service
+        # marker (stamped by the service onto its own staged copy, never
+        # carried by a dispatch request, so the guard keeps refusing it).
+        # The schema really is additionalProperties: false. Genuine
+        # dispatch requests carry exactly the 1.0 fields, so the guard
+        # admits every lawful request.
         schema = load(PACKET_SCHEMAS / "page-request.schema.json")
         self.assertIs(schema["additionalProperties"], False)
-        self.assertEqual(set(wrapper.REQUEST_FIELDS),
+        self.assertEqual(set(wrapper.REQUEST_FIELDS) | {wrapper.POLICY_FIELD, "shared_image_service"},
                          set(schema["properties"]))
+        self.assertNotIn("shared_image_service", wrapper.REQUEST_FIELDS)
         _, _, _, by_role = make_workdir()
         for role in ("upsell_1", "upsell_2"):
             self.assertEqual(set(by_role[role]), set(wrapper.REQUEST_FIELDS))
+
+
+class ProjectionPageRoleEchoTests(unittest.TestCase):
+    """Harmony issue 85, proven without jsonschema (the end-to-end classes below skip when it is
+    missing): project_result copies page_role from the request and refuses a result naming another."""
+
+    def _bundle_and_request(self):
+        wd, _, _, by_role = make_workdir()
+        self.addCleanup(shutil.rmtree, wd, True)
+        request = by_role["upsell_1"]
+        result = dict(load(ADAPT_FIX / "expected-bundle-upsell1.testonly.json")["result"])
+        for field in wrapper.ECHO_FIELDS:
+            result[field] = request[field]
+        result.pop("page_role", None)
+        return {"result": result}, request
+
+    def test_projection_echoes_the_requests_page_role(self):
+        bundle, request = self._bundle_and_request()
+        projected = wrapper.project_result(bundle, request)
+        self.assertEqual(projected["page_role"], "upsell_1")
+        self.assertEqual(set(projected), set(wrapper.RESULT_FIELDS) | {"page_role"})
+
+    def test_a_result_naming_another_role_is_refused(self):
+        bundle, request = self._bundle_and_request()
+        bundle["result"]["page_role"] = "upsell_2"
+        with self.assertRaises(wrapper.EnrichmentError) as ctx:
+            wrapper.project_result(bundle, request)
+        self.assertIn("page_role", str(ctx.exception))
 
 
 @unittest.skipUnless(jsonschema, "jsonschema not available")

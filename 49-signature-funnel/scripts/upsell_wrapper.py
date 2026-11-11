@@ -797,7 +797,8 @@ def enrich(request: Mapping[str, Any], launch: Mapping[str, Any],
 
 
 # ---------------------------------------------------------------------------
-# Projection - bundle result -> exactly the 17 page-result 1.0 fields.
+# Projection - bundle result -> the 17 page-result 1.0 fields below plus page_role, which the one
+# canonical schema requires and the projection echoes from the request.
 # ---------------------------------------------------------------------------
 def project_result(bundle: Mapping[str, Any],
                    request: Mapping[str, Any]) -> Dict[str, Any]:
@@ -809,6 +810,14 @@ def project_result(bundle: Mapping[str, Any],
         raise EnrichmentError([f"bundle result is missing page-result "
                                 f"field(s) {missing}"])
     projected = {f: result[f] for f in RESULT_FIELDS}
+    # The one canonical page-result schema requires page_role (Harmony issue 85). Skill 80's result
+    # may not carry it: copy it from the request, and refuse a result that names another role.
+    role = result.get("page_role", request.get("page_role"))
+    if role != request.get("page_role"):
+        raise EnrichmentError([
+            f"result does not echo its request on page_role: {role!r} != "
+            f"{request.get('page_role')!r} (refused, never repaired)"])
+    projected["page_role"] = role
     for f in ECHO_FIELDS:
         if projected[f] != request.get(f):
             raise EnrichmentError([

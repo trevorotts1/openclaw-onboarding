@@ -11,7 +11,7 @@ The validator that enforces the specs is
 Every run's intake record (`intake.json`, written by `write_intake.py`)
 carries a required field:
 
-    copy_version: "standard" | "long-form" | "product-selection" | "upsell"
+    copy_version: "standard" | "long-form" | "product-selection" | "upsell" | "downsell"
 
 That single field selects exactly one row of this table. Nothing else in
 the run may mix versions: a Standard run never opens the Long-Form guide,
@@ -25,6 +25,7 @@ only, and the Long-Form spec records them as explicitly not applied).
 | long-form | `references/BlackCEO-Signature-Landing-Page-Long-Form-v6.md` | `references/copy-specs/long-form-v6.json` | `references/copy-specs/long-form-emotional-quality.md` |
 | product-selection | Skill 78 `references/selection-copy-profile.md` and `selection-ui-contract.md` (the order page; not a landing form) | `references/copy-specs/product-selection-v1.json` | none: Skill 78's claim and specificity gate (`validate_selection_content.py`) |
 | upsell | Skill 80 (`80-signature-upsell`): its profile `signature-upsell-eight-section` and `validate_upsell_copy.py` | `references/copy-specs/upsell-v6.json` (eight sections, structure only: Skill 71's section-count check and request builder; Skill 80 stays the authority on the copy) | none here; Skill 80's substantive review rubric |
+| downsell (page role `downsell_1`) | Skill 81 (`81-signature-downsell`): its downsell page schema (`schemas/downsell-page.schema.json`) | `references/copy-specs/downsell-v1.json` (eight sections, structure only: it registers the downsell as a copy form so Skill 71's form guards stop treating it as a Standard landing page; `references/page-structures.json` `roles.downsell_1` stays the layout and image-slot authority, and `tests/test_copy_forms_cover_all_roles.py` fails if the two drift) | none here; Skill 81's validators |
 | thank-you (page type, `page_role` thank_you) | `82-signature-thank-you/references/layout-and-copy-profiles.md` | `references/copy-specs/thank-you-v1.json` | none (the page's copy comes from Skill 82's clean copy profiles) |
 
 A spec that carries a `page_role` key is a page type's own canonical section sequence (the

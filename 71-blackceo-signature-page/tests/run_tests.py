@@ -101,6 +101,11 @@ MODULES = [
     "test_stage_executor_ungated.py",
     # Harmony issues 2 and 62: the one admission door (stage gate check before the executor).
     "test_run_governed_stage.py",
+    # Harmony-95 WP-14: strict authority pins, downsell copy form, routing receipt fields.
+    "test_authority_pins_strict.py",
+    "test_copy_forms_cover_all_roles.py",
+    "test_routing_guard_receipt.py",
+    "test_page_result_role_echo.py",
 ]
 
 def skip_reason(stdout):

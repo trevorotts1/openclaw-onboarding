@@ -23,6 +23,7 @@ def main(argv):
         "request_id": "FORGED-REQUEST-ID",
         "input_hash": "0" * 64,
         "page_id": "selection",
+        "page_role": "product_selection",
         "outcome": plan.get("outcome"),
         "status": "locally_verified",
         "artifacts": [],

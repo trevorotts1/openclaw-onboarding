@@ -24,6 +24,7 @@ SPEC_FILES = {
     "product-selection": "product-selection-v1.json",
     "thank-you": "thank-you-v1.json",  # the thank-you page (page_role thank_you): five sections, scripts/page_role.py reads its wireframe wording
     "upsell": "upsell-v6.json",  # the upsell page (page_roles upsell_1, upsell_2): eight sections
+    "downsell": "downsell-v1.json",  # the downsell page (page_role downsell_1): eight sections, structure only (references/page-structures.json roles.downsell_1 is the layout authority)
 }
 FORMS = tuple(SPEC_FILES)
 LANDING_FORMS = ("standard", "long-form")

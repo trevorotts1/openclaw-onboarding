@@ -177,9 +177,10 @@ REQUEST_FIELDS = ("schema_version", "tenant_id", "location_id", "launch_id",
                   "brand_hash", "route_graph_ref", "route_graph_hash",
                   "offer_refs", "copy_profile", "allowed_write_target",
                   "test_only")
-# The 17 page-result 1.0 fields, in shipped-schema order.
+# The 18 page-result 1.0 fields, in shipped-schema order (page_role is required by the one
+# canonical schema, Harmony issue 85: every result echoes its request's role).
 RESULT_FIELDS = ("schema_version", "tenant_id", "location_id", "launch_id",
-                 "revision", "request_id", "input_hash", "page_id", "status",
+                 "revision", "request_id", "input_hash", "page_id", "page_role", "status",
                  "artifacts", "author_session", "reviewer_session",
                  "independent_review", "proof_class", "blockers",
                  "native_bindings_ref", "test_only")
@@ -1110,7 +1111,7 @@ def _run_images(args, request: Mapping[str, Any],
     service = [py, str(scripts / "shared_page_service.py"),
                "--request", str(Path(args.request).resolve()),
                "--run-dir", str(run_dir),
-               "--page-version", "standard",
+               "--page-version", "downsell",
                "--brand-owner", args.brand_owner,
                "--image-cap", str(args.image_cap),
                "--brand-file", str(Path(args.brand_file).resolve()),
@@ -1182,7 +1183,8 @@ def _run_second_downsell(args, request: Dict[str, Any], result_path: Path,
                  *images["artifacts"]]
     result = {
         "schema_version": "1.0", **{k: request[k] for k in (
-            "tenant_id", "location_id", "launch_id", "revision", "request_id", "input_hash", "page_id")},
+            "tenant_id", "location_id", "launch_id", "revision", "request_id", "input_hash", "page_id",
+            "page_role")},
         "status": "authored", "artifacts": artifacts,
         "author_session": args.author_session or os.environ.get("SIGNATURE_LAUNCH_AUTHOR_SESSION")
         or os.environ.get("OPENCLAW_SESSION_ID") or "s49-downsell-wrapper",
@@ -1465,6 +1467,7 @@ def run(args) -> Dict[str, Any]:
         "request_id": request["request_id"],
         "input_hash": request["input_hash"],
         "page_id": request["page_id"],
+        "page_role": request["page_role"],
         "status": STATUS_FLOOR,
         "artifacts": artifacts,
         "author_session": author_session,

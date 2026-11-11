@@ -44,7 +44,7 @@ STANDARDS = SKILL_ROOT / "assets" / "visual-standards"
 WIREFRAME_STAGES = ("desktop-wireframe", "mobile-tablet")
 FORMS = copy_forms.FORMS
 FORM_LABEL = {"standard": "Standard", "long-form": "Long-Form", "product-selection": "Product Selection",
-              "upsell": "Upsell"}
+              "upsell": "Upsell", "downsell": "Downsell"}
 # The utility page's multi-button line (finding 15): separate actions keep their own labels and
 # treatments instead of borrowing the package-card grammar. The treatment sentence is the spec's
 # own `cta.note` (one per access card; support filled with manage purchase outlined). Same

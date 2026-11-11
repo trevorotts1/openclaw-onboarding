@@ -16,7 +16,7 @@ authoritative machine spine lives in the skill:
 
 - `71-blackceo-signature-page/SKILL.md` -- route boundaries, seams, production order, copy/design/QC/delivery contracts, install-boundary rule.
 - `71-blackceo-signature-page/references/authority-map.md` -- the authority order (client instruction > Production/QC SOP > selected writing guide > image-intelligence guide v5 > one external Creative Direction family > repo/runtime constraints).
-- `71-blackceo-signature-page/references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md` -- the 14-stage production/QC stage state machine.
+- `71-blackceo-signature-page/references/BlackCEO-Signature-Landing-Page-Production-and-QC-SOP-v1.md` -- the 15-stage production/QC stage state machine.
 - `71-blackceo-signature-page/references/qc-contract.md` -- page-stage >=8/10 no-auto-fail; prompt/image >=8.5 average, >=8 each, zero auto-fails where required; failed-only repair.
 - `71-blackceo-signature-page/references/BlackCEO-Signature-Landing-Page-Standard-v6.md` OR `...-Long-Form-v6.md` -- the selected writing guide (never both silently merged).
 - `71-blackceo-signature-page/references/BlackCEO-Signature-Image-Intelligence-and-Prompt-Creation-Guide-v5.md` -- image planning, Secret Super Sauce, representation, prompt construction, visual QC.
@@ -45,7 +45,7 @@ Dept-scoped: only the task department's craft is offered. Operate the owning ski
 |---|---|
 | `README.md` (this file) | The cross-department pointer + the routing/delegation boundary for Skill 71. The stage SOPs live in `71-blackceo-signature-page/references/`; this cluster does NOT restate them. |
 
-The detailed methodology is intentionally NOT duplicated here -- the 14-stage Production/QC SOP, the
+The detailed methodology is intentionally NOT duplicated here -- the 15-stage Production/QC SOP, the
 Standard/Long-Form writing guides, the image-intelligence guide, and the artifact contracts live
 authoritatively in the skill folder. Adding SOP files to this cluster would create a second source of
 truth for a 20,000+ line reference set.

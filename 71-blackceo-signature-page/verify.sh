@@ -191,10 +191,12 @@ else
   fail=1
 fi
 
-# Pinned external authorities (Item 11): drift is a warning, never a
-# failure here. PIN OK / PIN DRIFT / PIN MISSING lines print as-is.
+# Pinned external authorities (Item 11): drift or a missing counterpart is a
+# failure (--strict, no swallowed exit code). Re-stamp the pin deliberately in
+# references/external-authorities.json when an authority has legitimately moved.
+# PIN OK / PIN DRIFT / PIN MISSING lines print as-is.
 if [ -f "$ROOT/scripts/check_authority_pins.py" ] && [ -f "$ROOT/references/external-authorities.json" ]; then
-  python3 "$ROOT/scripts/check_authority_pins.py" || true
+  python3 "$ROOT/scripts/check_authority_pins.py" --strict || fail=1
 fi
 
 # Cross-repo parity (Item 27): when the sibling repo's checkout is
