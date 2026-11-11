@@ -155,7 +155,7 @@ class PlannedUnitCompletenessTests(unittest.TestCase):
         units = launch_plan.planned_units(plan_fixture())
         kinds = {u["type"] for u in units}
         self.assertEqual(kinds, {"page", "email", "text", "automation"})
-        self.assertEqual(len(units), 25)  # 6 pages + 7 emails + 5 texts + 7 automations
+        self.assertEqual(len(units), 26)  # 5 pages + 7 emails + 5 texts + 9 automations (X-96 plans one follow-up unit per followed offer)
         self.assertNotIn(launch_plan.AI_UNIT_ID, {u["id"] for u in units})
 
     def test_a_requested_conversation_ai_becomes_a_planned_unit(self):
@@ -163,7 +163,7 @@ class PlannedUnitCompletenessTests(unittest.TestCase):
         plan["conversation_ai"] = {"requested": True, "mode": "faq", "channels": ["sms"]}
         units = launch_plan.planned_units(plan)
         self.assertIn(launch_plan.AI_UNIT_ID, {u["id"] for u in units})
-        self.assertEqual(len(units), 26)
+        self.assertEqual(len(units), 27)
 
     def test_complete_delivery_is_100_percent(self):
         plan = plan_fixture()
