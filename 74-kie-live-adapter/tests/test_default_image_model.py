@@ -428,9 +428,12 @@ class DefaultPriceAnswer(Base):
             m = ev["tables"][0]["credits_per_picture"]["medium"]
             ev["tables"][0]["credits_per_picture"]["medium"] = {"4K": m["4K"], "1K": m["1K"], "2K": m["2K"]}
         with mock.patch.object(K, "PRICE_EVIDENCE", self.evidence(shuffle)):
-            desc = self.make().cmd_default_price("gpt-image")["data"]["pricing_desc"]
+            d = self.make().cmd_default_price("gpt-image")["data"]
+        desc = d["pricing_desc"]
         self.assertLess(desc.index("for 1 K"), desc.index("for 2 K"))
         self.assertLess(desc.index("for 2 K"), desc.index("for 4 K"))
+        self.assertEqual((d["credits_min"], d["credits_max"], d["credits_estimate"]), (7.82, 26.43, 26.43))
+        self.assertEqual(d["preflight_required"], K.preflight_amount(26.43))
 
     def test_a_file_without_a_dollar_rate_uses_half_a_cent_per_credit(self):
         with mock.patch.object(K, "PRICE_EVIDENCE", self.evidence(lambda ev: ev.pop("usd_per_credit"))):
