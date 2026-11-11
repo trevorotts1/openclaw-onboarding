@@ -10,6 +10,7 @@ shown passing the intake's scope down for the test_only case.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import sys
 import tempfile
@@ -134,6 +135,13 @@ class AssembleCallSiteScopeTests(unittest.TestCase):
             node = {"role": parent, "role_instance": "sales", "page_id": route.route_law._page_id(normalized["launch_id"], "sales"),
                     "echoed_page_id": next(n["page_id"] for n in graph["nodes"] if n["role"] == parent)}
             pieces["sales"] = make_piece(work, normalized, node, provider="kie")
+            for slot, piece in pieces.items():  # issue 57: a client delivery needs each page run's closed stage_gate state
+                closed = json.dumps({"stages": {"final-mockups": {"status": "closed"}}}).encode()
+                carried = work / "pieces" / f"{slot}.stage-state.json"
+                carried.parent.mkdir(exist_ok=True)
+                carried.write_bytes(closed)
+                piece["stage_state"] = {"path": f"pieces/{slot}.stage-state.json",
+                                        "sha256": hashlib.sha256(closed).hexdigest()}
             run = work / "dispatch-run"
             binding = recorded_binding(run, normalized["approval"]["hash"])
             seen = []
