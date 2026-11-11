@@ -23,7 +23,10 @@
         "customer_send_activation",
         "batch_merge",
         "release_publication",
-        "fleet_rollout"
+        "fleet_rollout",
+        "stub_render",
+        "qc_session",
+        "email_deploy"
       ]
     },
     "kind_wire": {

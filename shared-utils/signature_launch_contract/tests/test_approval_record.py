@@ -323,3 +323,41 @@ def test_the_command_center_contract_data_matches_this_module():
     assert data["run_identity"]["rebind_policy"] == "reject"
     assert data["current_revision"]["monotonic"] is True
     assert data["stage_registry"]["known_mismatch"]["status"] == "accepted_with_normalization"
+
+
+def test_stub_render_is_its_own_kind_that_implies_nothing(cc):
+    """WP-02 / issue 38: the owner's permission to run PLACEHOLDER wireframes is a kind of its own."""
+    assert "stub_render" in ar.KINDS and ar.canonical_kind("stub_render") == "stub_render"
+    assert ar.IMPLIED_KINDS["stub_render"] == frozenset() and "stub_render" not in ar.LIVE_EFFECTS
+    mutated(cc, kind="stub_render", scope=["stub_render"])
+    assert call(cc, kind="stub_render", scope=["stub_render"])["kind"] == "stub_render"
+    with pytest.raises(ar.ApprovalRefused) as e:  # it never stands in for another kind
+        call(cc, kind="design_board", scope=["stub_render"])
+    assert e.value.code == "APPROVAL-KIND"
+    mutated(cc, kind="design_board", scope=["stub_render"])
+    with pytest.raises(ar.ApprovalRefused) as e:  # and no other kind stands in for it
+        call(cc, kind="stub_render", scope=["stub_render"])
+    assert e.value.code == "APPROVAL-KIND"
+
+
+@pytest.mark.parametrize("kind", ["qc_session", "email_deploy"])
+def test_qc_session_and_email_deploy_are_kinds_that_verify_and_imply_nothing(cc, kind):
+    """Rulings WP-07-1 / WP-05b-1: Command Center mints these; a record of each verifies, and no other kind stands in."""
+    assert kind in ar.KINDS and ar.canonical_kind(kind) == kind
+    assert ar.IMPLIED_KINDS[kind] == frozenset() and kind not in ar.LIVE_EFFECTS
+    schema = json.loads((HERE / "approval-record.schema.json").read_text())
+    assert kind in json.dumps(schema)
+    data = json.loads((HERE / "command-center-launch-contract.v2.json").read_text())
+    assert kind in data["approval"]["canonical_kinds"]
+    mutated(cc, kind=kind, scope=[kind])
+    assert call(cc, kind=kind, scope=[kind])["kind"] == kind
+    with pytest.raises(ar.ApprovalRefused) as e:
+        call(cc, kind="design_board", scope=[kind])
+    assert e.value.code == "APPROVAL-KIND"
+
+
+def test_an_unknown_kind_is_still_refused(cc):
+    mutated(cc, kind="not_a_real_kind", scope=["not_a_real_kind"])
+    with pytest.raises(ar.ApprovalRefused) as e:
+        call(cc, kind="not_a_real_kind", scope=["not_a_real_kind"])
+    assert e.value.code == "APPROVAL-KIND-UNKNOWN"

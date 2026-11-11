@@ -283,14 +283,14 @@ def _run_visual_stage(run_dir: Path) -> Tuple[bool, str]:
         return False, ("AF-FUN-VISUAL-ARGS: brief.visual is missing %s; run "
                        "scripts/legacy_downsell_images.py --ledger <copy_ledger.json> "
                        "--skill71-root <71-dir> --brand-file <brand.json> --brand-owner <client> "
-                       "--out-dir <run-dir> (the P7 visual gate will refuse until it is done)"
+                       "--out-dir <run-dir>/page-images (the P7 visual gate will refuse until it is done)"
                        % ", ".join(missing))
     cmd = [sys.executable, str(_SCRIPTS / "legacy_downsell_images.py"),
            "--ledger", str(run_dir / "copy_ledger.json"),
            "--skill71-root", str(vs["skill71_root"]),
            "--brand-file", str(vs["brand_file"]),
            "--brand-owner", str(vs["brand_owner"]),
-           "--out-dir", str(run_dir),
+           "--out-dir", str(run_dir / "page-images"),  # issue 61: the folder prove_sf_build reads
            "--image-provider", str(vs.get("provider") or "kie")]
     if str(vs.get("provider") or "kie") == "kie" and vs.get("allow_paid") is True:
         cmd.append("--allow-paid")
@@ -638,11 +638,12 @@ def orchestrate(run_dir: Path, key: str) -> Tuple[int, Dict]:
             manifest = {"run_id": run_dir.name, "aborted_at": pid, "phases": phases_attested}
             (run_dir / "process_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             return EXIT_GATE_FAIL, manifest
-        if pid == "P1-COPY":
+        if pid == "P2-PROMPTS":
             # Fix plan B1 (unowned G-2): the visual stage is a MANDATORY step of the orchestrator,
-            # not a sentence in SKILL.md. It runs only AFTER P0 and P1 pass (it can spend with
-            # --allow-paid, so never on unproven copy). A failure is recorded and the P7 visual
-            # gate still refuses to certify, so it can never be a skip.
+            # not a sentence in SKILL.md. Issue 52: it runs only AFTER P0, P1 and P2 pass (it can spend
+            # with --allow-paid, so never on unproven copy and never on a run whose prompt ledger then
+            # fails P2). A failure is recorded and the P7 visual gate still refuses to certify, so it
+            # can never be a skip.
             visual_ok, visual_detail = _run_visual_stage(run_dir)
             print(f"  [{'PASS' if visual_ok else 'FAIL':4s}] VISUAL-STEP  (legacy_downsell_images.py) :: {visual_detail}")
 
@@ -1118,13 +1119,16 @@ def self_test() -> int:
             print(f"SELF-TEST FAIL: incomplete funnel build still certified (code={code}, "
                   f"aborted_at={manifesto.get('aborted_at') if isinstance(manifesto, dict) else '?'}).")
 
-        # (p) G-2/G-17 — the visual step (which can spend with --allow-paid) runs only after
-        #     P1-COPY passes. Spy on subprocess.run: a failing copy ledger -> zero calls to
-        #     legacy_downsell_images; a passing one -> exactly one.
+        # (p) G-2/G-17 + issue 52 — the visual step (which can spend with --allow-paid) runs only after
+        #     P2-PROMPTS passes. Spy on subprocess.run and keep the WHOLE call log in order: a failing copy
+        #     ledger and a failing prompt ledger -> zero calls to legacy_downsell_images; a passing run ->
+        #     exactly one, AFTER both P2 provers (floor + coverage) have run, and no --allow-paid command
+        #     appears anywhere in the log before that point.
         import types
         real_run = subprocess.run
-        for label, copy_ok, want in (("failing copy", False, 0), ("passing copy", True, 1)):
-            rdp = tmp / ("run-visual-" + label.split()[0])
+        for label, break_it, want in (("failing copy", "copy", 0), ("failing prompts", "prompts", 0),
+                                      ("passing run", None, 1)):
+            rdp = tmp / ("run-visual-" + label.replace(" ", "-"))
             rdp.mkdir()
             _write_valid_run(rdp, key)
             shutil.rmtree(rdp / "page-images", ignore_errors=True)
@@ -1133,13 +1137,16 @@ def self_test() -> int:
             brief["visual"] = {"skill71_root": str(tmp), "brand_file": str(tmp / "b.json"),
                                "brand_owner": "selftest", "provider": "kie", "allow_paid": True}
             (rdp / "brief.json").write_text(json.dumps(brief), encoding="utf-8")
-            if not copy_ok:
+            if break_it == "copy":
                 (rdp / "copy_ledger.json").write_text("{}", encoding="utf-8")
-            calls: List[List[str]] = []
+            if break_it == "prompts":  # clears the floor gate, fails the coverage cross-check
+                import prove_sf_prompt_floor as _ppf  # noqa: E402
+                (rdp / "prompt_ledger.json").write_text(json.dumps(_ppf._valid_ledger()), encoding="utf-8")
+            log: List[List[str]] = []
 
             def _spy(cmd, *a, **kw):
+                log.append([str(c) for c in cmd])
                 if any("legacy_downsell_images" in str(c) for c in cmd):
-                    calls.append(list(cmd))
                     return types.SimpleNamespace(returncode=0, stdout="", stderr="")
                 return real_run(cmd, *a, **kw)
             subprocess.run = _spy
@@ -1147,11 +1154,70 @@ def self_test() -> int:
                 orchestrate(rdp, key)
             finally:
                 subprocess.run = real_run
-            if len(calls) == want:
-                print(f"SELF-TEST ok: {label} -> {want} legacy_downsell_images call(s).")
+            legacy = [i for i, c in enumerate(log) if any("legacy_downsell_images" in x for x in c)]
+            floor = [i for i, c in enumerate(log) if any("prove_sf_prompt_floor" in x for x in c)]
+            if len(legacy) != want:
+                ok = False
+                print(f"SELF-TEST FAIL: {label} -> {len(legacy)} legacy_downsell_images call(s), wanted {want}.")
+            elif want == 1 and not (len(floor) >= 2 and legacy[0] > floor[1]
+                                    and not any("--allow-paid" in x for c in log[:floor[1] + 1] for x in c)):
+                ok = False
+                print(f"SELF-TEST FAIL: {label} -> the visual step did not run AFTER both P2 provers, or a "
+                      f"--allow-paid command came before P2 passed (legacy call at {legacy}, P2 provers at {floor}).")
+            else:
+                print(f"SELF-TEST ok: {label} -> {want} legacy_downsell_images call(s)"
+                      + (f", after both P2 provers, no --allow-paid before P2 (call log: P2 at {floor[:2]}, "
+                         f"visual step at {legacy[0]})." if want else "."))
+
+        # (p2) issue 61 — the visual step must write where the P7 gate reads. No spy: a REAL stub-provider run
+        #      of legacy_downsell_images.py into a temp run dir (the stub is approved by a Command Center
+        #      record from a loopback fake, and this self-test is the test harness that sets
+        #      SKILL71_FIXTURE_RUN), then prove_sf_build.visual_direction_violations (the function behind
+        #      --visual-only) must find the whole wireframe/mockup set and ask only for final-mockups.
+        skill71 = _SCRIPT_DIR.parent / "71-blackceo-signature-page"
+        golden = _SCRIPT_DIR / "examples" / "golden-daybreak" / "copy_ledger.json"
+        if not (skill71 / "scripts" / "run_governed_stage.py").is_file() or not golden.is_file():
+            ok = False
+            print(f"SELF-TEST FAIL: the real visual-step case needs Skill 71 ({skill71}) and the golden copy "
+                  "ledger beside Skill 49; one is missing, so the --out-dir fix cannot be proven here.")
+        else:
+            import fake_command_center  # noqa: E402
+            rdq = tmp / "run-visual-real"
+            rdq.mkdir()
+            _write_valid_run(rdq, key)
+            shutil.rmtree(rdq / "page-images", ignore_errors=True)
+            (rdq / "copy_ledger.json").write_text(
+                json.dumps(dict(json.loads(golden.read_text(encoding="utf-8")), funnel_size=3)), encoding="utf-8")
+            with fake_command_center.FakeCommandCenter() as cc:
+                brief = json.loads((rdq / "brief.json").read_text(encoding="utf-8"))
+                brief["visual_stage"] = "required"
+                brief["visual"] = {"skill71_root": str(skill71),
+                                   "brand_file": str(skill71 / "assets" / "brand" / "blackceo-brand.json"),
+                                   "brand_owner": "blackceo", "provider": "stub",
+                                   "stub_approved_by": cc.mint("stub_render", _sha256_file(rdq / "copy_ledger.json"))}
+                (rdq / "brief.json").write_text(json.dumps(brief), encoding="utf-8")
+                env_keys = (*cc.env(), "SKILL71_FIXTURE_RUN")
+                saved_visual_env = {k: os.environ.get(k) for k in env_keys}
+                os.environ.update(cc.env())
+                os.environ["SKILL71_FIXTURE_RUN"] = "1"
+                try:
+                    ran_ok, ran_detail = _run_visual_stage(rdq)
+                    found = prove_sf_build.visual_direction_violations(rdq, 3)
+                finally:
+                    for k, v in saved_visual_env.items():
+                        if v is None:
+                            os.environ.pop(k, None)
+                        else:
+                            os.environ[k] = v
+            receipt_there = (rdq / "page-images" / "page-images-receipt.json").is_file()
+            only_final = bool(found) and all(c == "AF-FUN-BUILD-VISUAL" and "final-mockups" in m for c, m in found)
+            if ran_ok and receipt_there and only_final and not (rdq / "page-images-receipt.json").exists():
+                print("SELF-TEST ok: a real stub run writes <run>/page-images/ and the P7 visual gate reads it "
+                      "(only final-mockups, the client-gated stage, is still asked for).")
             else:
                 ok = False
-                print(f"SELF-TEST FAIL: {label} -> {len(calls)} legacy_downsell_images call(s), wanted {want}.")
+                print(f"SELF-TEST FAIL: the visual step's output is not where P7 reads it: ran_ok={ran_ok} "
+                      f"({ran_detail}), receipt in page-images/={receipt_there}, violations={found[:3]}")
 
         print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
         return 0 if ok else 1

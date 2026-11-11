@@ -360,8 +360,12 @@ def write_work_plan(run_dir, **kwargs):
 # item 3 - the existing stage gate, before governed work begins
 # --------------------------------------------------------------------------
 
-def _gate(run_dir, *args):
-    argv = [sys.executable, str(GATE_PATH), *[str(a) for a in args], str(Path(run_dir).resolve())]
+def _gate(run_dir, verb, *args):
+    # stage_gate.py takes `<verb> <run_dir> <stage> [item]`: the run directory comes right after the verb.
+    # It used to be appended LAST, so the gate read the stage name as the run dir and exited 2 on every real
+    # call: a paid dispatch was refused for a reason that was not the run's, and a dry run never saw a verdict.
+    argv = [sys.executable, str(GATE_PATH), str(verb), str(Path(run_dir).resolve()),
+            *[str(a) for a in args]]
     try:
         proc = subprocess.run(argv, capture_output=True, text=True, timeout=1800.0)
         return proc.returncode, (proc.stdout or "") + (proc.stderr or ""), argv

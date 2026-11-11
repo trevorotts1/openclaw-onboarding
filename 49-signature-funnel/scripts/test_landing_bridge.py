@@ -111,6 +111,10 @@ S49_SCRIPTS = HERE
 SKILL71_MAIN = REPO_ROOT / "71-blackceo-signature-page"
 SHARED_DESIGN_REL = Path("shared-utils") / "signature_launch" / "design"
 PY = sys.executable
+# AF-71-UNGATED (harmony issue 10): the stub fixtures this module draws run on a directory with no gate state, which
+# Skill 71's executor now allows only under this test-harness marker (no product script sets it). Child processes
+# inherit it; test_checkout_wrapper.py imports this module and gets it too.
+os.environ["SKILL71_FIXTURE_RUN"] = "1"
 
 sys.path.insert(0, str(S49_SCRIPTS))
 import compile_launch_route as clr  # noqa: E402

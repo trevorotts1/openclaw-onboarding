@@ -78,7 +78,10 @@ PAGE_IMAGES_RECEIPT = "page-images-receipt.json"
 # The three stages legacy_downsell_images.STAGES writes, plus Skill 71's fourth
 # stage (`final-mockups`). Fix plan B3: a run without the final mockups cannot
 # certify, so the fourth stage is gated here even though the legacy tool stops
-# at three. A test holds the three legacy stages a subset of this tuple.
+# at three. final-mockups is drawn by the client-gated path (design_board.py approve,
+# then run_governed_stage.py --stage final-mockups; the exact commands are in SKILL.md)
+# and the legacy tool only VERIFIES that its record exists (--record-final-mockups).
+# A test holds the three legacy stages a subset of this tuple.
 VISUAL_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup", "final-mockups")
 LEGACY_VISUAL_STAGES = ("desktop-wireframe", "mobile-tablet", "visual-mockup")
 MIN_SECTION_CHARS = 10   # a section marker around no real text is not a built section
@@ -376,12 +379,18 @@ def visual_direction_violations(run_dir: Path, size: int) -> List[Tuple[str, str
     not_built = receipt.get("not_built") if isinstance(receipt.get("not_built"), dict) else {}
     # Fix plan B2: a STUB run writes placeholder wireframes. It may exist only when the receipt
     # carries the owner approval that permitted it; an unapproved stub receipt never certifies.
+    # Issue 38: "approved" is a Command Center record, verified again HERE against this run's
+    # copy_ledger.json, never the receipt's own word (a bare string is only a claim).
     stub_code = "AF-FUN-BUILD-VISUAL-STUB"
-    if str(receipt.get("provider") or "").lower() == "stub" and not str(receipt.get("stub_approval") or "").strip():
-        out.append((stub_code,
-                    f"{PAGE_IMAGES_REL}/{PAGE_IMAGES_RECEIPT} records an UNAPPROVED stub run: the "
-                    "wireframes and mockups are placeholders. Re-run with the real provider, or record "
-                    "the owner approval with --stub-approved-by <reference>."))
+    if str(receipt.get("provider") or "").lower() == "stub":
+        if str(SKILL_DIR / "scripts") not in sys.path:
+            sys.path.insert(0, str(SKILL_DIR / "scripts"))
+        import stub_approval  # noqa: PLC0415  (sibling helper, one verifier call)
+        for problem in stub_approval.recheck(receipt.get("stub_approval"), Path(run_dir) / "copy_ledger.json"):
+            out.append((stub_code,
+                        f"{PAGE_IMAGES_REL}/{PAGE_IMAGES_RECEIPT} records an UNAPPROVED stub run: the "
+                        f"wireframes and mockups are placeholders and {problem}. Re-run with the real "
+                        "provider, or pass --stub-approved-by <Command Center stub_render approval id>."))
     for slug in required_page_types(size):
         if slug == "checkout" and slug not in claimed_pages and slug in not_built:
             continue  # design-only: the receipt names it as not built and says what it needs

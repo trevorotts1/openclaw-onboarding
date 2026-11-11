@@ -95,6 +95,10 @@ MODULES = [
     "test_shared_page_service_generation.py",
     # ANN-001: wireframe annotations must never reach a mockup or the built page.
     "test_annotation_leak.py",
+    # Harmony issue 10: an ungated stub run is refused (AF-71-UNGATED) outside a test harness.
+    "test_stage_executor_ungated.py",
+    # Harmony issues 2 and 62: the one admission door (stage gate check before the executor).
+    "test_run_governed_stage.py",
 ]
 
 def skip_reason(stdout):

@@ -7,11 +7,16 @@ absent (a lone install of Skill 78) the cases that need them skip.
 """
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+# AF-71-UNGATED (harmony issue 10): these stub runs draw on a directory with no gate state, which Skill 71's
+# executor now allows only under this test-harness marker (no product script sets it); children inherit it.
+os.environ["SKILL71_FIXTURE_RUN"] = "1"
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
