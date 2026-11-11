@@ -68,8 +68,12 @@ def _skill50_sequence(seq_id):
                         "fromName": "Sender", "conditions": []}}
         for i in range(2)
     ]
-    return {"folder": "Drafts", "_meta": {"sequence_id": seq_id, "draft_only": True,
-                                          "deploy_mode": "draft-only"},
+    return {"folder": "Drafts", "_meta": {
+                "sequence_id": seq_id, "draft_only": True, "deploy_mode": "draft-only",
+                # what a Skill 50 build plan carries; the reader supplies none of it
+                "enrollment_conditions": plan_reader.DEFAULT_ENROLLMENT_CONDITIONS,
+                "lifecycle": plan_reader.DEFAULT_LIFECYCLE,
+                "sender_config_refs": plan_reader.DEFAULT_SENDER},
             seq_id: {"name": "%s (DRAFT)" % seq_id, "tag": "launch:%s" % seq_id,
                      "status": "draft", "templates": templates}}
 

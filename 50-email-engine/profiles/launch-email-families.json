@@ -351,7 +351,7 @@
       "preview_count": 1,
       "subject_count": 2,
       "subject_mode": "convert_and_flow",
-      "objective": "promotional",
+      "objective": "transactional",
       "framework_map": {
         "1": "six-ws",
         "2": "before-after-bridge"

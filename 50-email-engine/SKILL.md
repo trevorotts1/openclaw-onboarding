@@ -71,7 +71,7 @@ All from `SOURCE-EMAIL-CORPUS.md`. Each is a deterministic measurer with a named
 | Buyer-type map (12-email) | E1-2 spontaneous (3-B, Star-Chain-Hook) / E3-6 methodical (F2B, 6 W's, ACCA, PASTOR-Solutions) / E7-9 humanistic (PASTOR-Story, Star-Story-Solution, PAS) / E10-12 competitive (AIDA, Million-Dollar-Sales, BAB) | `AF-EMAIL-BUYERTYPE-MAP` |
 | Landing-page map (10-email) | E1-3 PASTOR-Solutions, E4 F2B, E5 6 W's, E6 BAB, E7 3-B, E8 Million-Dollar-Sales, E9 AIDA, E10 PAS | `AF-EMAIL-SEQUENCE-MAP` |
 | Sequence length | landing-page = 10 emails; high-ticket / buyer-type = 12 emails; slots contiguous 1..N | `AF-EMAIL-SEQUENCE-LENGTH` |
-| Objective validity | exactly one of promotional / abandoned-cart / upsell / downsell | `AF-EMAIL-OBJECTIVE-INVALID` |
+| Objective validity | exactly one of promotional / abandoned-cart / upsell / downsell / transactional (transactional is the launch welcome_access email only) | `AF-EMAIL-OBJECTIVE-INVALID` |
 | Persona-style validity | if set, one of the 12 canonical styles | `AF-EMAIL-PERSONA-INVALID` |
 | Persona never named | NEVER name/quote the referenced person (tone only, 100% original) — scanned in EVERY recipient-visible field: subjects, **previews (the inbox preheader)**, body, ctas, sections, disruptive_elements and founder_name (the From line) | `AF-EMAIL-PERSONA-NAMED` |
 | Subject count | exactly 2 (A/B), both non-empty | `AF-EMAIL-SUBJECT-COUNT` |

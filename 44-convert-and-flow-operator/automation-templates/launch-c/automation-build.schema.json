@@ -173,7 +173,7 @@
         },
         "blocked_by": {
           "type": "array",
-          "description": "Why the build is blocked. A bare id is a missing email_sequence build plan; prefixed reasons name page_url:, email_count:, text_set:, upstream:, guards: or schedule_suppressed: (send that cannot land before doors close) failures; no_future_sends and no_buildable_workflow mean nothing is left to build. Past sends never block: they are dropped (see dropped_sends). A blocked build is never upgraded by assumption.",
+          "description": "Why the build is blocked. A bare id is a missing email_sequence build plan, except the three words lifecycle, eligibility and sender, which mean the bound Skill 50 build plan carried none of that metadata (the reader never supplies its own); prefixed reasons name page_url:, email_count:, text_set:, upstream:, guards: or schedule_suppressed: (send that cannot land before doors close) failures; no_future_sends and no_buildable_workflow mean nothing is left to build. Past sends never block: they are dropped (see dropped_sends). A blocked build is never upgraded by assumption.",
           "items": { "type": "string" }
         },
         "unit_key": {
@@ -192,6 +192,11 @@
           "type": "object",
           "description": "Stop and suppression rules compiled into provider-native conditions/settings. Purchase suppresses this campaign only; entitled access is never suppressed.",
           "additionalProperties": true
+        },
+        "lifecycle_source": {
+          "type": ["string", "null"],
+          "enum": ["build_plan", null],
+          "description": "Where the lifecycle came from: build_plan when the bound Skill 50 build plan carried it, null when it carried none (the build is then blocked by lifecycle). The reader never supplies a lifecycle of its own."
         },
         "sender": {
           "type": "object",

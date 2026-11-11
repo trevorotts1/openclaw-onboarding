@@ -38,8 +38,8 @@
     },
     "objective": {
       "type": "string",
-      "description": "Exactly one of the 4 sequence objectives (SACRED).",
-      "enum": ["promotional", "abandoned-cart", "upsell", "downsell"]
+      "description": "Exactly one of the 5 sequence objectives (SACRED). transactional is the launch welcome_access email only.",
+      "enum": ["promotional", "abandoned-cart", "upsell", "downsell", "transactional"]
     },
     "buyer_type": {
       "type": "string",

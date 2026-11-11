@@ -47,9 +47,11 @@ def _build_plan(seq_id, count, tag, lifecycle=None):
         templates.append(_email("%s%d" % (seq_id[-3:], i)))
         if i < count - 1:
             templates.append(_wait("%s%d" % (seq_id[-3:], i)))
-    meta = {"sequence_id": seq_id, "draft_only": True, "deploy_mode": "draft-only"}
-    if lifecycle:
-        meta["lifecycle"] = lifecycle
+    # What a Skill 50 build plan carries; the reader supplies none of it itself.
+    meta = {"sequence_id": seq_id, "draft_only": True, "deploy_mode": "draft-only",
+            "lifecycle": lifecycle or copy.deepcopy(plan_reader.DEFAULT_LIFECYCLE),
+            "enrollment_conditions": copy.deepcopy(plan_reader.DEFAULT_ENROLLMENT_CONDITIONS),
+            "sender_config_refs": copy.deepcopy(plan_reader.DEFAULT_SENDER)}
     return {"folder": "Synthetic Drafts", "_meta": meta,
             seq_id: {"name": seq_id, "tag": tag, "status": "draft", "templates": templates}}
 
@@ -203,8 +205,12 @@ class PurchaseGuards(unittest.TestCase):
         return build
 
     def _reader_default(self):
-        # a plan with no lifecycle meta: the reader synthesizes the contract default
-        return build_of(make_document(lifecycle=None), "auto_pre_launch")
+        # a hand-made document whose lifecycle merely EQUALS the contract default
+        # and carries no build-plan provenance (the reader no longer makes these)
+        build = copy.deepcopy(build_of(make_document(), "auto_pre_launch"))
+        build["lifecycle"] = copy.deepcopy(plan_reader.DEFAULT_LIFECYCLE)
+        build.pop("lifecycle_source", None)
+        return build
 
     def test_default_lifecycle_constant_matches_reader(self):
         self.assertEqual(lsc.CONTRACT_DEFAULT_LIFECYCLE, plan_reader.DEFAULT_LIFECYCLE)

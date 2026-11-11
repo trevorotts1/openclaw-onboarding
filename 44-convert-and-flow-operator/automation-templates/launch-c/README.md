@@ -94,6 +94,12 @@ A build plan that matches no sequence is reported in
   between the launch plan and the bound build plan BLOCKS the build.
 - Guards: a promotional build whose lifecycle omits unsubscribe/purchase
   suppression is blocked and the provider compiler refuses it.
+- Metadata: lifecycle, eligibility (`enrollment_conditions`) and sender
+  (`sender_config_refs`) come from the Skill 50 build plan or the build is
+  `blocked` (`blocked_by` carries `lifecycle`, `eligibility` or `sender`). The
+  reader never substitutes defaults of its own, so a guard can never be
+  satisfied by the checker's own values; a lifecycle the build plan did carry
+  is stamped `lifecycle_source: build_plan`.
 - Build plan: `folder` present; every workflow `status == "draft"` (a published
   workflow is refused); `_meta.draft_only` / `_meta.deploy_mode` must be draft;
   steps are `email` (subject, body, html, fromName) or `wait` (startAfter) only.

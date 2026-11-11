@@ -3,7 +3,10 @@
   "_meta": {
     "deploy_mode": "draft-only",
     "draft_only": true,
-    "sequence_id": "email_doors_closing"
+    "sequence_id": "email_doors_closing",
+    "enrollment_conditions": [{"rule": "enroll_from_approved_launch_optin", "source_ref": "approved_signature_landing_page"}, {"rule": "email_consent_required", "policy_ref": "approved_communication_policy"}, {"rule": "exclude_verified_buyers", "check": "verified_purchase", "timing": "at_enrollment"}],
+    "lifecycle": {"stop_rules": [{"rule": "stop_on_verified_purchase", "scope": "this_campaign_only"}, {"rule": "stop_on_unsubscribe", "scope": "this_campaign_only"}, {"rule": "stop_on_offer_version_superseded", "scope": "this_campaign_only"}], "suppression_rules": [{"rule": "suppress_promotion_after_verified_purchase", "event": "purchase_verified", "applies_to": "all_remaining_email_steps", "scope": "this_campaign"}, {"rule": "recheck_eligibility_immediately_before_send", "applies_to": "each_scheduled_email_step", "checks": ["verified_purchase", "unsubscribe", "offer_version_current"]}]},
+    "sender_config_refs": {"sender_profile_ref": "sender-config:default", "reply_to_ref": "sender-config:default"}
   },
   "sequence-email-doors-closing": {
     "name": "Elevation doors closing (DRAFT)",

@@ -110,7 +110,11 @@ class PlanReaderTests(unittest.TestCase):
                                 "html": "<p>b</p>", "fromName": "n"}}
                 for index in range(count)
             ]
-            doc = {"folder": "F", "_meta": {"sequence_id": seq_id},
+            doc = {"folder": "F", "_meta": {
+                       "sequence_id": seq_id,
+                       "enrollment_conditions": plan_reader.DEFAULT_ENROLLMENT_CONDITIONS,
+                       "lifecycle": plan_reader.DEFAULT_LIFECYCLE,
+                       "sender_config_refs": plan_reader.DEFAULT_SENDER},
                    seq_id: {"name": seq_id, "status": "draft", "templates": templates}}
             path = temp / ("%s.json" % seq_id)
             path.write_text(json.dumps(doc))

@@ -41,8 +41,8 @@
       "properties": {
         "objective": {
           "type": "string",
-          "enum": ["promotional", "abandoned-cart", "upsell", "downsell"],
-          "description": "Exactly one of the 4 objectives (else AF-EMAIL-BRIEF-INCOMPLETE)."
+          "enum": ["promotional", "abandoned-cart", "upsell", "downsell", "transactional"],
+          "description": "Exactly one of the 5 objectives (else AF-EMAIL-BRIEF-INCOMPLETE). transactional is the launch welcome_access email only."
         },
         "buyer_type": {
           "type": "string",

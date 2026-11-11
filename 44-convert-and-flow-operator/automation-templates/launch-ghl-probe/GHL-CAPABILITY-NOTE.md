@@ -92,7 +92,7 @@ Verified 2026-10-21 by reading the files in this repo; each row is checkable at 
 | Absolute dates | Each date-anchored email gets a `wait` node `attributes.type = "until_date"` (`rail: managed_browser`, not an API payload) and a `wait_until_date` ledger row; the API builder verifies duration waits only, so a caller must route those nodes to the managed browser. Template `{{token}}` waits resolve from the launch calendar or `bindings["until"]`. | `absolute_wait_unsupported:*` |
 | Read-back | `verify_readback(workflow_def, exported_templates)` is the mechanical WF-9 / QC check: every compiled wait-until date, the purchase goal, the purchase if/else and the post-sale tag must be in the export. | `wait_until_missing:*`, `purchase_goal_missing:*`, `purchase_gate_missing:*` |
 
-Plan reader follow-up (not in this unit): `launch-c/plan_reader.py` still substitutes `DEFAULT_LIFECYCLE` when a Skill 50 plan has no lifecycle meta; until it stops and sets `lifecycle_source`, the compiler is the gate that blocks it.
+Plan reader follow-up (done, issue 26): `launch-c/plan_reader.py` no longer substitutes `DEFAULT_LIFECYCLE`. A Skill 50 plan with no lifecycle, eligibility or sender metadata makes the build `blocked` (`blocked_by` carries `lifecycle`, `eligibility` or `sender`), and a lifecycle the build plan did carry is stamped `lifecycle_source: build_plan`. The compiler stays a second gate for hand-made documents.
 
 ## Sources
 
