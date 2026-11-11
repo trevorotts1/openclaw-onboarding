@@ -160,7 +160,6 @@ class DefaultModelPriceTests(unittest.TestCase):
         q = image_plan.live_price("kie", "USD", model=S25, resolution="2K", quality="max")
         self.assertEqual((q["model"], q["credits"], q["quality"], q["reference_price"]), (S25, 10.0, None, False))
 
-    @unittest.skipUnless(hasattr(image_plan, "PICTURE_PRICE_UNITS"), "needs WP-04's per-picture unit check")
     def test_with_wp04_a_named_token_priced_model_is_still_refused(self):
         self.use_catalog(TIERED)
         with self.assertRaises(ImagePlanError) as ctx:

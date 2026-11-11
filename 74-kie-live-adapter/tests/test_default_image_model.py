@@ -5,6 +5,7 @@
 """
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -233,7 +234,6 @@ class DefaultCheck(unittest.TestCase):
 
 PER_JOB = "12 credits ($0.06) per job"
 QC = os.path.join(SKILL, "qc-74-kie-live-adapter.sh")
-WORKFLOW = os.path.abspath(os.path.join(SKILL, "..", ".github", "workflows", "version-consistency.yml"))
 CHECK_REL = os.path.join("scripts", "check_default_image_model.py")
 SKILL_FILES = ("scripts/kie_live_adapter.py", "scripts/check_default_image_model.py", "references/kie-default-price-evidence.json")
 
@@ -434,14 +434,22 @@ class DefaultCheckCannotRun(unittest.TestCase):
     def test_an_adapter_with_a_syntax_error_exits_2(self):
         self.assert_could_not_run(self.run_check(edit={"scripts/kie_live_adapter.py": lambda b: "def (:\n" + b}))
 
-    @unittest.skipIf(not hasattr(os, "geteuid") or os.geteuid() == 0, "root reads any file")
     def test_unreadable_evidence_exits_2(self):
+        # open() refuses the evidence file with a PermissionError. Patched in the child rather than chmod 0, so the
+        # answer is the same for every user (root reads any file) and nothing here needs a skip.
+        deny = ("import builtins, runpy, sys\n"
+                "real = builtins.open\n"
+                "def deny(f, *a, **k):\n"
+                "    if str(f).endswith('kie-default-price-evidence.json'):\n"
+                "        raise PermissionError(13, 'Permission denied')\n"
+                "    return real(f, *a, **k)\n"
+                "builtins.open = deny\n"
+                "runpy.run_path(sys.argv[1], run_name='__main__')\n")
         with tempfile.TemporaryDirectory() as d:
             copy_skill(d)
-            ev = os.path.join(d, "references", "kie-default-price-evidence.json")
-            os.chmod(ev, 0)
-            r = subprocess.run([sys.executable, "-I", os.path.join(d, CHECK_REL)], capture_output=True, text=True)
+            r = subprocess.run([sys.executable, "-I", "-c", deny, os.path.join(d, CHECK_REL)], capture_output=True, text=True)
         self.assert_could_not_run(r)
+        self.assertIn("Permission denied", r.stdout)
 
     def test_a_defect_exits_1_and_never_prints_ok(self):
         r = self.run_check(edit={"scripts/kie_live_adapter.py": lambda b: b.replace('DEFAULT_QUALITY = "medium"', 'DEFAULT_QUALITY = "high"', 1)})
@@ -451,7 +459,8 @@ class DefaultCheckCannotRun(unittest.TestCase):
 
 
 class DefaultCheckIsWired(unittest.TestCase):
-    """The qc script and the CI step must fail on any non-zero exit from the check script."""
+    """The qc script must fail on any non-zero exit from the check script. (The CI step is checked by
+    tests/unit/kie-default-image-model-ci-step.test.py, which needs the repository's .github folder; a box has none.)"""
 
     def qc_line(self, d):
         with open(QC, encoding="utf-8") as f:
@@ -459,7 +468,7 @@ class DefaultCheckIsWired(unittest.TestCase):
         defs = [l for l in lines if l.startswith(("PASS=0", "ok()", "bad()", "chk()"))]
         mine = [l for l in lines if l.startswith("chk ") and "check_default_image_model.py" in l]
         self.assertEqual((len(defs), len(mine)), (4, 1), (defs, mine))
-        script = "D=%s\n%s\n%s\necho \"PASS=$PASS FAIL=$FAIL\"\n" % (d, "\n".join(defs), mine[0])
+        script = "D=%s\n%s\n%s\necho \"PASS=$PASS FAIL=$FAIL\"\n" % (shlex.quote(d), "\n".join(defs), mine[0])
         return subprocess.run(["/bin/bash", "-c", script], capture_output=True, text=True).stdout
 
     def test_the_qc_line_passes_a_healthy_check(self):
@@ -482,21 +491,6 @@ class DefaultCheckIsWired(unittest.TestCase):
             out = self.qc_line(d)
         self.assertIn("  FAIL - default image model is priced per picture (X-97)", out)
         self.assertIn("PASS=0 FAIL=1", out)
-
-    @unittest.skipUnless(os.path.exists(WORKFLOW), "the CI workflow ships in the repository, not on a box")
-    def test_the_ci_step_runs_the_check_and_lets_any_non_zero_exit_fail_the_job(self):
-        lines = read(WORKFLOW).splitlines()
-        runs = [i for i, l in enumerate(lines) if "check_default_image_model.py" in l and l.strip().startswith("run:")]
-        self.assertEqual(len(runs), 1, runs)
-        self.assertEqual(lines[runs[0]].strip(), "run: python3 -I 74-kie-live-adapter/scripts/check_default_image_model.py")
-        start = max(i for i in range(runs[0]) if lines[i].lstrip().startswith("- name:"))
-        stop = min([i for i in range(runs[0] + 1, len(lines)) if lines[i].lstrip().startswith("- name:") or (lines[i] and not lines[i].startswith(" "))] or [len(lines)])
-        step = "\n".join(lines[start:stop])
-        for weak in ("continue-on-error", "|| true", "|| :", "set +e", "if:"):
-            self.assertNotIn(weak, step)
-        self.assertIn("shell: bash", step)
-        job = [l for l in lines[:start] if l.startswith("  ") and not l.startswith("   ") and l.rstrip().endswith(":")][-1]
-        self.assertNotIn("continue-on-error", "\n".join(lines[lines.index(job):start]))
 
 
 if __name__ == "__main__":
