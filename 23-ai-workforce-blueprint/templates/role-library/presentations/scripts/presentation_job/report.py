@@ -172,9 +172,29 @@ class Reporter:
     def __init__(self, state: Dict[str, Any], store: StateStore) -> None:
         self.state = state
         self.store = store
-        self._last_progress_at: Dict[str, float] = {}
-        self._blocked_dedupe: Dict[str, float] = {}
-        self._first_phase_sent = False
+        # PD-019: the three throttle values live in the job state so a resume
+        # (a new Reporter over the same state.json) does not repeat messages
+        # the previous process already sent. A state file written before this
+        # key existed reads as an empty throttle -- today's behaviour.
+        throttle = state.get("report_throttle")
+        if not isinstance(throttle, dict):
+            throttle = {}
+        last_progress_at = throttle.get("last_progress_at")
+        self._last_progress_at: Dict[str, float] = (
+            dict(last_progress_at) if isinstance(last_progress_at, dict) else {})
+        blocked_dedupe = throttle.get("blocked_dedupe")
+        self._blocked_dedupe: Dict[str, float] = (
+            dict(blocked_dedupe) if isinstance(blocked_dedupe, dict) else {})
+        self._first_phase_sent = bool(throttle.get("first_phase_sent"))
+
+    def _persist_throttle(self) -> None:
+        """PD-019: mirror the in-memory throttle into the job state and save it."""
+        self.state["report_throttle"] = {
+            "last_progress_at": dict(self._last_progress_at),
+            "blocked_dedupe": dict(self._blocked_dedupe),
+            "first_phase_sent": bool(self._first_phase_sent),
+        }
+        self.store.save(self.state)
 
     def event(self, kind: str, message: str, **extra: Any) -> None:
         ev = {"at": utcnow(), "kind": kind, "message": message}
@@ -237,6 +257,7 @@ class Reporter:
                 # transport's unknown must keep trying, never be treated as if it
                 # had already gotten through (see result.py).
                 self._blocked_dedupe[self._blocked_key(phase_id, reason)] = _parse_minutes(utcnow())
+                self._persist_throttle()
         else:
             # FAIL (no transport configured) or UNDETERMINED (timeout / non-zero
             # exit / could not start): never discard. Queue for the sweeper
@@ -275,7 +296,9 @@ class Reporter:
 
     @staticmethod
     def _blocked_key(phase_id: str, reason: str) -> str:
-        return f"{phase_id}\x00{reason}"
+        # PD-019: " | " instead of a NUL byte. The key now survives a JSON
+        # round-trip in state["report_throttle"]["blocked_dedupe"].
+        return f"{phase_id} | {reason}"
 
     def _stamp_sent(self, kind: str) -> None:
         sent = self.state.setdefault("sent", {})
@@ -311,14 +334,17 @@ class Reporter:
             now_min = _parse_minutes(utcnow())
             if self._is_milestone(message):
                 self._last_progress_at["__milestone__"] = now_min
+                self._persist_throttle()
                 return True
             if not self._first_phase_sent:
                 self._first_phase_sent = True
                 self._last_progress_at["__any__"] = now_min
+                self._persist_throttle()
                 return True
             last = self._last_progress_at.get("__any__", 0)
             if (now_min - last) >= PROGRESS_MIN_INTERVAL_MINUTES:
                 self._last_progress_at["__any__"] = now_min
+                self._persist_throttle()
                 return True
             return False
         return True
