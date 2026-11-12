@@ -42,8 +42,9 @@ THIS SUITE PROVES:
   U2  SHALLOW STRUCTURED INTERVIEW STILL FAILS: askedBy=interview-web, one
       required canonical question ('industry') is NEVER asked at all and
       another required one ('customer_feeling') is answered with a trivial
-      one-word non-answer -> full gate verdict is FAIL, and the hard failure
-      names both gaps by id.
+      one-word answer -> full gate verdict is FAIL on the REAL gap ('industry'),
+      and the short answer is surfaced in warnings as advisory only (the cards
+      accept any non-empty answer, so length is never a failure).
   U3  CONVERSATIONAL, GENUINELY TOO FEW, STILL FAILS: askedBy is a real agent
       name (never "interview-web"), raw count is ~10 (well under 24), no
       legacy/tailored signal recorded -> still HARD FAILS under the existing,
@@ -338,8 +339,9 @@ def main():
                 f"this test would not distinguish the fix from the old behavior")
 
         # ── U2: SHALLOW STRUCTURED INTERVIEW STILL FAILS ─────────────────────
-        print("\n[U2] Shallow structured interview (askedBy=interview-web, 'industry' never "
-              "asked + 'customer_feeling' answered with a one-word non-answer) -> still FAILS, naming both gaps")
+        print("\n[U2] Structured interview (askedBy=interview-web, 'industry' never asked + "
+              "'customer_feeling' answered with a one-word answer) -> still FAILS on the real gap; "
+              "the short answer is advisory only")
         shallow_transcript = build_structured_transcript(
             qc, omit_ids={"industry"}, shallow_ids={"customer_feeling"},
         )
@@ -350,14 +352,20 @@ def main():
         details_2 = run_qc_cli(transcript_path_2, state_path_2)
 
         hard_fail_text = " ".join(details_2.get("hardFailures", []))
+        warn_text = " ".join(details_2.get("warnings", []))
         if (details_2.get("verdict") == "FAIL" and details_2.get("exit_code", details_2.get("exitCode", 3)) != 0
-                and "industry" in hard_fail_text and "customer_feeling" in hard_fail_text
-                and "structured-coverage" in hard_fail_text):
-            ok(f"shallow structured interview correctly FAILS, naming both gaps: {hard_fail_text[:300]}")
+                and "industry" in hard_fail_text
+                and "structured-coverage" in hard_fail_text
+                # FLOOR CHANGE: the card accepted 'Professional', so its length is
+                # advisory only now -- named in warnings, never a hard failure.
+                and "customer_feeling" not in hard_fail_text
+                and "customer_feeling" in warn_text):
+            ok(f"structured interview with the real gap ('industry' never asked) correctly FAILS, "
+               f"and the short answer is advisory only: {hard_fail_text[:300]}")
         else:
-            bad(f"expected FAIL naming 'industry' and 'customer_feeling' in a "
-                f"[structured-coverage] hard failure, got verdict={details_2.get('verdict')!r} "
-                f"hardFailures={details_2.get('hardFailures')}")
+            bad(f"expected FAIL naming 'industry' in a [structured-coverage] hard failure with "
+                f"'customer_feeling' advisory in warnings, got verdict={details_2.get('verdict')!r} "
+                f"hardFailures={details_2.get('hardFailures')} warnings={details_2.get('warnings')}")
 
         # ── U3: CONVERSATIONAL, GENUINELY TOO FEW, STILL FAILS ───────────────
         print("\n[U3] Conversational interview, genuinely too few questions (askedBy=real agent "
