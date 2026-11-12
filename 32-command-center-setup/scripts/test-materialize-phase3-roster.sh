@@ -54,6 +54,13 @@ new_case() {
 
   cp "$SOURCE_SCRIPT" "$SCRIPTS/materialize-dept-agents.sh"
   cp "$SOURCE_LIB" "$SCRIPTS/lib-trio-quad-rows.py"
+  # U-24 repair: the shared DB resolver lives two dirs above the scripts dir;
+  # the copied script derives its path from its own location, so mirror the
+  # same layout inside the case or Phase 3's resolver import always fails.
+  if [[ -f "$SCRIPT_DIR/../../shared-utils/resolve_db.py" ]]; then
+    mkdir -p "$CASE_DIR/shared-utils"
+    cp "$SCRIPT_DIR/../../shared-utils/resolve_db.py" "$CASE_DIR/shared-utils/"
+  fi
 
   # Recording stub for scaffold-agent-files.sh: one line of arguments per call.
   cat > "$SCRIPTS/scaffold-agent-files.sh" <<'STUB'
