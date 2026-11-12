@@ -703,6 +703,38 @@ _READMITTABLE_PHASE_STATUSES = (PHASE_STATUS_FAILED, PHASE_STATUS_QUARANTINED)
 #: checker verdict, however it is worded.
 _VERIFIER_VERDICT_PREFIX = "substance check failed"
 
+#: PD-206b. The prefix PD-206a writes into the FIRST reason of a failed prompt
+#: check when the only thing standing between the deck and a pass is a PERSON's
+#: verdict under working/qc/human-review/. A park carrying it is a routine
+#: operator review, not a client alarm: the operator gets the full reason, the
+#: client gets one plain sentence, and the step stays parked for the human.
+OPERATOR_REVIEW_PREFIX = "OPERATOR-REVIEW:"
+
+#: PD-206b. The ONE sentence a client whose slides are in operator review
+#: receives. Deliberately names no phase, no file, no checker code, and asks for
+#: nothing -- acceptance A1 asserts none of those reach the client transport.
+OPERATOR_REVIEW_CLIENT_SENTENCE = (
+    "Your presentation is moving ahead. One of our team is doing a quick "
+    "review of your slides. You do not need to do anything.")
+
+
+def _first_check_reason(reason: str) -> str:
+    """The FIRST reason a failed step check reported, out of the single string
+    the call path carries.
+
+    RD-05 measured that the engine carries one reason string, not a list:
+    `_fail_unit` and `_block` both take `reason: str`, and the substance park
+    builds its reason as `f"substance check failed: {'; '.join(notes)}"`. The
+    first reason is therefore the head of that string: strip the engine's own
+    verdict prefix, then take the first `; `-joined note. Every other call site
+    passes a single sentence, which is returned unchanged.
+    """
+    text = str(reason or "").strip()
+    marker = _VERIFIER_VERDICT_PREFIX + ": "
+    if text.startswith(marker):
+        text = text[len(marker):]
+    return text.split("; ", 1)[0].strip()
+
 #: PD-TEST-194: the identifiers a substance verdict names, used to identify WHICH
 #: EPISODE a park belongs to by identity rather than by a text prefix (this
 #: checker's verdict list is non-deterministic in both order and membership
@@ -4123,6 +4155,13 @@ class Engine:
         FAILURE_OWNER_DECISION (waiver / owner-skip-approval / gate decline
         vocabulary) and route to _block() instead: park and notify, never
         auto-heal, never quarantine a decision only the client can make."""
+        if _first_check_reason(reason).startswith(OPERATOR_REVIEW_PREFIX):
+            # PD-206b: the checker's first reason says a PERSON must look before
+            # this can pass. That is the operator's message to carry, never the
+            # client's -- and the raw verdict (AF- codes, phase ids) must not
+            # reach the client at all. Park exactly as a substance failure parks,
+            # so the existing resume path re-admits it and the check runs again.
+            return self._park_operator_review(phase, reason)
         if heal.classify_failure(reason) == heal.FAILURE_OWNER_DECISION:
             with self._state_lock:
                 heal._ledger(self, phase=phase.id, rung=None, attempt=0,
@@ -4222,6 +4261,64 @@ class Engine:
         print("\n  continue with:", file=sys.stderr)
         print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}",
               file=sys.stderr)
+        print("=" * 72 + "\n", file=sys.stderr)
+        return EXIT_GATE_BLOCKED
+
+    def _park_operator_review(self, phase: Phase, reason: str) -> int:
+        """PD-206b: an operator review is an OPERATOR message, not a client alarm.
+
+        A failed step check whose FIRST reason begins `OPERATOR-REVIEW:` means
+        the slides are waiting on a person's verdict (PD-206a), not on anything
+        the client did wrong. Before this, such a reason classified as
+        owner_decision and went through `_block`, which sent the client the raw
+        checker verdict -- AF- codes, phase ids and paths included. Here instead:
+
+          * the client gets ONE plain sentence per phase (no phase id, no file
+            path, no checker code), sent once per phase and once per run even
+            across resumes (`operator_review_notified` on the phase record);
+          * the operator gets the full reason on the board event the engine
+            already posts for a blocked phase (`mark_blocked` + the child card
+            closed "blocked"). RD-05 found no other operator transport reachable
+            from this file, so with no board at all the event
+            `report.operator_review_needed` is recorded in the job state and
+            `BLOCKED-FOLLOWUP: no operator channel` is reported;
+          * the phase is parked BLOCKED with the checker's own reason, exactly
+            as `_block` parks a substance failure -- `blocked_reason` keeps the
+            verdict prefix and the newest heal event is the verifier's own, so
+            `readmit_retryable_phases` re-admits it on the next resume and the
+            check RUNS AGAIN once the verdict file exists. Nothing is skipped,
+            softened or bypassed.
+        """
+        with self._state_lock:
+            ps = self._phase_state(phase.id)
+            already_notified = bool(ps.get("operator_review_notified"))
+            self._checkpoint(phase.id, status=PHASE_STATUS_BLOCKED,
+                             blocked_reason=reason,
+                             operator_review_notified=True)
+            self.state["terminal"] = "BLOCKED"
+            self.state["blocked"] = {"phase": phase.id, "reason": reason,
+                                     "at": utcnow()}
+            self.store.save(self.state)
+            self.report.event("report.operator_review_needed", reason)
+            if self.board:
+                self.board.mark_blocked(phase.id, reason)
+                title, description = self._child_card_meta(phase)
+                self.board.child_report(phase.id, title, description, "blocked", reason)
+            else:
+                print("BLOCKED-FOLLOWUP: no operator channel", file=sys.stderr)
+            if not already_notified:
+                # force=True: a once-per-phase sentence must not be swallowed by
+                # the progress throttle -- the phase's own start message may have
+                # stamped that window seconds ago (PD-206b, acceptance A1).
+                self.report.to_requester(
+                    "progress", OPERATOR_REVIEW_CLIENT_SENTENCE,
+                    phase_id=phase.id, force=True)
+        print("\n" + "=" * 72, file=sys.stderr)
+        print(f"OPERATOR REVIEW at {phase.id}", file=sys.stderr)
+        print(f"  reason   : {reason}", file=sys.stderr)
+        print(f"  owner    : {phase.owning_role}", file=sys.stderr)
+        print("  the step stays parked; --resume re-admits it and the check "
+              "runs again once the human verdict file exists", file=sys.stderr)
         print("=" * 72 + "\n", file=sys.stderr)
         return EXIT_GATE_BLOCKED
 
