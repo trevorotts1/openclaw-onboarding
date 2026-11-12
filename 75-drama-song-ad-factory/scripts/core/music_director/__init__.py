@@ -145,7 +145,7 @@ def _cast_model():
 
 def build_generate_request(lyrics_text, style_text, title, version=None,
                            vocal_gender=None, instrumental=False,
-                           duration=None, callback_url="https://example.invalid/cb",
+                           duration=None, callback_url=None,
                            packet_lines=None, protected=(),
                            style_id=None, client_text=None, length_s=None,
                            mode=None, true_at_beat=None, hook_plan=None, pace_plan=None,
@@ -281,12 +281,18 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     # the recipe's own negative_tags() is the single source when there is one).
     req = {"endpoint": CREATE_TASK_ENDPOINT,
            "model": MUSIC_TASK_MODEL,
-           "callBackUrl": callback_url,
            "input": {"custom_mode": True, "instrumental": bool(instrumental),
                      "model": ver, "style": style_text, "title": title,
                      "lyrics": lyrics_text,
                      "negative_tags": (suno_recipe.negative_tags(style_id)
                                        if style_id else "")}}
+    # U-M01: the callback address is sent only when one really exists (the
+    # caller's argument or KIE_CALLBACK_URL). No callback is required by the
+    # CURRENT createTask song request, so with none set the key is ABSENT and
+    # the run polls the task -- the retired placeholder is never sent.
+    cb = callback_url if callback_url is not None else suno_recipe.callback_from_env()
+    if cb:
+        req["callBackUrl"] = str(cb).strip()
     if vocal_gender is not None:
         req["input"]["vocal_gender"] = vocal_gender
     # ponytail: ''duration'' is always PRESENT (a required direction), from the
@@ -297,8 +303,9 @@ def build_generate_request(lyrics_text, style_text, title, version=None,
     # its delivered length.
     req["input"]["duration"] = duration if duration is not None else length_s
     # WW-30: the FINAL envelope is checked against the ONE contract (outer
-    # model, top-level callBackUrl, nested input, exactly one lyrics source)
-    # before its caps are measured; the retired flat payload is refused here.
+    # model, one top-level callBackUrl only when an address is set, nested
+    # input, exactly one lyrics source) before its caps are measured; the
+    # retired flat payload is refused here.
     envelope_errs = suno_recipe.check_envelope(req)
     if envelope_errs:
         raise ValueError("; ".join(envelope_errs))
@@ -611,14 +618,16 @@ def build_blueprint_request(blueprint, lyrics_text, style_text, title, style_id=
 
 
 def build_extend_request(audio_id, continue_at=None, version=None,
-                         title=None, prompt=None,
-                         callback_url="https://example.invalid/cb"):
+                         title=None, prompt=None, callback_url=None):
     """Current-envelope extend payload against a prior audio id."""
     ver = _checked_version(version, EXTEND_CATALOG_ID)
     req = {"endpoint": CREATE_TASK_ENDPOINT,
            "model": route_model(EXTEND_CATALOG_ID).split()[0],
-           "callBackUrl": callback_url,
            "input": {"audio_id": audio_id, "model": ver}}
+    # U-M01: no invented placeholder -- the address rides only when one exists.
+    cb = callback_url if callback_url is not None else suno_recipe.callback_from_env()
+    if cb:
+        req["callBackUrl"] = str(cb).strip()
     if continue_at is not None:
         req["input"]["continue_at"] = continue_at
     if title is not None:
@@ -639,14 +648,17 @@ def persona_route():
 
 
 def build_persona_request(task_id, audio_id, name, description,
-                          vocal_start, vocal_end,
-                          callback_url="https://example.invalid/cb"):
+                          vocal_start, vocal_end, callback_url=None):
     """Current-envelope persona-lock payload (vocal window per work copy)."""
-    return {"endpoint": CREATE_TASK_ENDPOINT, "model": persona_route(),
-            "callBackUrl": callback_url,
-            "input": {"task_id": task_id, "audio_id": audio_id,
-                      "name": name, "description": description,
-                      "vocal_start": vocal_start, "vocal_end": vocal_end}}
+    req = {"endpoint": CREATE_TASK_ENDPOINT, "model": persona_route(),
+           "input": {"task_id": task_id, "audio_id": audio_id,
+                     "name": name, "description": description,
+                     "vocal_start": vocal_start, "vocal_end": vocal_end}}
+    # U-M01: no invented placeholder -- the address rides only when one exists.
+    cb = callback_url if callback_url is not None else suno_recipe.callback_from_env()
+    if cb:
+        req["callBackUrl"] = str(cb).strip()
+    return req
 
 
 def validate_payload(payload):
