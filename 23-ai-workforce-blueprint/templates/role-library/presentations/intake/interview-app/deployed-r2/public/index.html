@@ -1144,8 +1144,8 @@
       if (!st) return;
       if (status === "worker_accepted") {
         st.className = "msg ok";
-        st.textContent = "✓ Worker accepted" + (jobRef ? " (" + jobRef + ")" : "");
-        if (note) note.textContent = "The presentation department has your brief and your deck build has started. You can close this tab.";
+        st.textContent = "✓ Received by your presentation team" + (jobRef ? " (" + jobRef + ")" : "");
+        if (note) note.textContent = "Your answers have reached the presentation department. Your assistant will message you in chat when the build starts. You can close this tab.";
       } else if (status === "action_needed") {
         st.className = "msg err";
         st.textContent = "Action needed";
