@@ -270,6 +270,50 @@ register_intake_auth_cron() {
   return 0
 }
 
+# ---------------------------------------------------------------------------
+# register_escalate_flush_cron
+#
+# Declares the OUTBOX FLUSH as its own openclaw cron. Cases written to the
+# outbox are only sent when something drains it; without this job a case sits
+# unsent until somebody happens to run the flush by hand.
+# Idempotent by DECLARATION KEY (the cron name): present means leave it alone,
+# absent means add it once.
+#
+# GUARDED ON THE SCRIPT EXISTING. A cron whose command is not on disk is a cron
+# that fails every five minutes forever, and an older bundle that predates this
+# file must not get one. This is the same gate wire.sh already applies to
+# rescue-poll.sh.
+#
+# DELIVERY NONE IS NOT OPTIONAL. This job runs unattended every five minutes on
+# a client box. If the CLI will not accept --no-deliver, NOTHING is registered
+# and the refusal is reported: a delivering five-minute cron is client spam on a
+# timer, and a missing flush is the lesser harm.
+# ---------------------------------------------------------------------------
+register_escalate_flush_cron() {
+  local _FLUSH_NAME="rr-escalate-flush"
+  local _FLUSH_CHECK="$_OCROOT/skills/65-rescue-receiver/rr_escalate.py"
+  local _FLUSH_CRON="*/5 * * * *"
+  if [ ! -f "$_FLUSH_CHECK" ]; then
+    echo "65-rescue-receiver: $_FLUSH_NAME NOT registered - rr_escalate.py is not installed at $_FLUSH_CHECK (older bundle); a cron whose command does not exist would fail every day" >&2
+    return 0
+  fi
+  if _cron_count "$_FLUSH_NAME"; then
+    echo "65-rescue-receiver: cron $_FLUSH_NAME already declared (idempotent by name; not re-added)"
+    return 0
+  fi
+  if "$_OC_BIN" cron add --name "$_FLUSH_NAME" --cron "$_FLUSH_CRON" --no-deliver \
+       --command "python3 $_FLUSH_CHECK flush" >&2; then
+    if _cron_count "$_FLUSH_NAME"; then
+      echo "65-rescue-receiver: registered cron $_FLUSH_NAME ($_FLUSH_CRON, delivery none) -> python3 $_FLUSH_CHECK flush (READ BACK)"
+    else
+      echo "65-rescue-receiver: cron $_FLUSH_NAME add returned 0 but did NOT read back; not claiming it is scheduled" >&2
+    fi
+  else
+    echo "65-rescue-receiver: cron $_FLUSH_NAME NOT registered - the CLI refused the add with --no-deliver. Nothing was registered WITHOUT it on purpose: a delivering daily auth check would route operator-facing credential diagnostics into the client chat." >&2
+  fi
+  return 0
+}
+
 if [ -z "${RR_RECEIVER_URL:-}" ] || [ -z "${RR_BOX_TOKEN:-}" ] || [ -z "${RR_BOX_SLUG:-}" ]; then
   # Report WHY, by NAME, from the engine's explicit state machine when it is
   # installed; otherwise fall back to the historical prose line.
@@ -421,6 +465,7 @@ if [ -n "$_ENGINE" ]; then
     echo "65-rescue-receiver: receiver readiness NOT verified — prove it in the intended runtime: bash $_OCROOT/skills/65-rescue-receiver/rr-readiness.sh --probe"
   fi
   register_intake_auth_cron
+  register_escalate_flush_cron
   # The exit code repeats the reconciler's own verdict (see the header contract):
   # 3/4/5/7 mean the desired cron is NOT proven, so this script must not exit 0;
   # 6/8 are deliberate no-mutation outcomes (operator intent respected, or a
@@ -440,6 +485,7 @@ echo "65-rescue-receiver: readiness=UNKNOWN reason=engine_not_installed detail=s
 if _cron_count "$_NAME"; then
   echo "65-rescue-receiver: cron $_NAME already registered (presence only; NOT read back)"
   register_intake_auth_cron
+  register_escalate_flush_cron
   exit 0
 fi
 if "$_OC_BIN" cron add --name "$_NAME" --cron "*/2 * * * *" --no-deliver --command "sh $_POLL" >&2; then
@@ -451,3 +497,4 @@ else
 fi
 echo "65-rescue-receiver: registered cron $_NAME (*/2) -> sh $_POLL (presence path; NOT read back)"
 register_intake_auth_cron
+register_escalate_flush_cron
