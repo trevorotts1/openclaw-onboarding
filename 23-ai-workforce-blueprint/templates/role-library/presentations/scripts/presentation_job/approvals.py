@@ -49,6 +49,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -77,6 +78,126 @@ class ApprovalError(Exception):
     forgery shapes (schema violations name the missing field inside the same
     prefixed message) so every consumer's failure output carries the code the
     QC battery matches on."""
+
+
+# ---------------------------------------------------------------------------
+# Message text — resolve an owner message id to the message the client sent.
+# ---------------------------------------------------------------------------
+# Why this exists: the owner-ids oracle above proves an id is REAL, but an
+# approval also has to be checked against WHAT the owner wrote (PD-305). That
+# needs the message text, and today's endpoint returns ids only.
+RESOLVE_BOARD_HAS_NO_TEXT = "resolve.board_has_no_text"
+RESOLVE_NO_TEXT_SOURCE = "resolve.no_text_source"
+
+#: Where a channel bridge drops inbound owner messages, one JSON object per
+#: line: {"msg_id", "chat_id", "text", "received_at"}. This module only READS
+#: it; nothing in this repository writes it (the writer belongs to the OpenClaw
+#: channel layer).
+INBOUND_MESSAGES_REL = Path("working") / "interview" / "inbound_messages.jsonl"
+
+#: The board text source. Nothing wires it until PD-305b (the Command Center
+#: read endpoint that returns text) and PD-305 (the text-aware oracle) land;
+#: while it is None the board can supply ids only, never text. A wired value is
+#: a callable ``(owner_msg_id, run_dir) -> dict | None`` returning one message
+#: row; setting it is how a caller or a test supplies a real board.
+BOARD_TEXT_RESOLVER: Optional[Any] = None
+
+
+def _log_reason(reason: str) -> None:
+    """Log one resolver reason on stderr. Never fatal, never silent."""
+    print(f"[approvals] {reason}", file=sys.stderr, flush=True)
+
+
+def _message_row(obj: Any) -> Optional[Dict[str, Any]]:
+    """Project one inbound-message object to the resolver's four-key row, or
+    None when it is not a usable message. A row WITHOUT text is never returned:
+    an id with no text proves nothing about what the owner approved."""
+    if not isinstance(obj, dict):
+        return None
+    msg_id = str(obj.get("msg_id") or "").strip()
+    text = obj.get("text")
+    if not msg_id or not isinstance(text, str) or not text.strip():
+        return None
+    return {
+        "msg_id": msg_id,
+        "chat_id": str(obj.get("chat_id") or "").strip(),
+        "text": text,
+        "received_at": str(obj.get("received_at") or "").strip(),
+    }
+
+
+def _board_row(owner_msg_id: str, run_dir: Optional[Path]) -> Optional[Dict[str, Any]]:
+    """Ask the board (when one is wired) for this message's text. None when the
+    board is unwired, has no text for the id, or fails — the caller continues to
+    the next source. Never raises."""
+    resolver = BOARD_TEXT_RESOLVER
+    if resolver is not None:
+        try:
+            row = _message_row(resolver(owner_msg_id, run_dir))
+        except Exception:  # noqa: BLE001 — a board failure is "no text here"
+            row = None
+        # ponytail: id match keeps a confused board from attaching another
+        # message's text; full provenance pinning arrives with PD-305b.
+        if row is not None and row["msg_id"] == owner_msg_id:
+            return row
+        row = None
+    _log_reason(RESOLVE_BOARD_HAS_NO_TEXT)
+    return None
+
+
+def _file_row(owner_msg_id: str, run_dir: Optional[Path]) -> Optional[Dict[str, Any]]:
+    """Look the id up in <RUN_DIR>/working/interview/inbound_messages.jsonl.
+    Malformed lines are skipped, never fatal. Never writes the file."""
+    if run_dir is None:
+        return None
+    path = Path(run_dir) / INBOUND_MESSAGES_REL
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                row = _message_row(obj)
+                if row is not None and row["msg_id"] == owner_msg_id:
+                    return row
+    except OSError:  # absent file is an expected state, not an error
+        return None
+    return None
+
+
+def resolve_owner_message(owner_msg_id: str,
+                          run_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """Resolve `owner_msg_id` to the message the client really sent.
+
+    Returns ``{"msg_id", "chat_id", "text", "received_at"}`` for a real inbound
+    owner message, else None. Sources, in order:
+
+      1. the board, when it can return message TEXT for the run's task (it
+         arrives with PD-305b and PD-305; until then it logs
+         `resolve.board_has_no_text` and supplies nothing);
+      2. ``<RUN_DIR>/working/interview/inbound_messages.jsonl``, when a channel
+         bridge has written it.
+
+    Never writes the fixture file, never returns a row without text, and logs
+    `resolve.no_text_source` with a None return when neither source can supply
+    text. The chat id is returned as it really is — a message from another chat
+    is reported, not filtered; the caller decides what that means."""
+    mid = str(owner_msg_id or "").strip()
+    if not mid:
+        _log_reason(RESOLVE_NO_TEXT_SOURCE)
+        return None
+    row = _board_row(mid, run_dir)
+    if row is not None:
+        return row
+    row = _file_row(mid, run_dir)
+    if row is not None:
+        return row
+    _log_reason(RESOLVE_NO_TEXT_SOURCE)
+    return None
 
 
 # ---------------------------------------------------------------------------
