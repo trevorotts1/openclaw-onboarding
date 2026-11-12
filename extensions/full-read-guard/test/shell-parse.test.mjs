@@ -15,10 +15,14 @@ test('tokenizer: quotes, operators, substitutions, redirects', () => {
   assert.deepEqual(words.slice(0, 5), ['grep', '-n', 'a b', 'c d', 'file.md']);
   assert.deepEqual(t.subs, ['cat x']);
   const segs = parseCommand('cd /a && grep foo x.md | head -2; ls');
-  assert.equal(segs.length, 4);
+  // `cd` is tracked as the working directory, not emitted as a segment: grep, head, ls.
+  assert.equal(segs.length, 3);
+  assert.equal(segs[0].argv[0], 'grep');
   assert.equal(segs[0].cwd, '/a');
   assert.equal(segs[1].pipeline, segs[0].pipeline);
-  assert.equal(segs[2].index, 1);
+  assert.equal(segs[1].index, 1);
+  assert.equal(segs[2].argv[0], 'ls');
+  assert.equal(segs[2].index, 0);
 });
 
 test('wrappers and env assignments are stripped before the verb is read', () => {

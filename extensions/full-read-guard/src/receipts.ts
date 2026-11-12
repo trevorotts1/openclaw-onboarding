@@ -2,7 +2,7 @@
 // Memory first, mirrored to <stateDir>/<session>.json. Reset on session start/end and after compaction.
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileSha } from './paths.js';
+import { fileSha, safeReal } from './paths.js';
 
 interface Progress { sig: string; total: number; delivered: number[] }
 interface SessionState {
@@ -48,17 +48,20 @@ export class Receipts {
     if (this.stateDir) { try { fs.rmSync(path.join(this.stateDir, safeName(key) + '.json'), { force: true }); } catch { /* ignore */ } }
   }
 
+  // Keys are real paths, so a skills tree reached through a symlink (macOS /var -> /private/var,
+  // linked skill folders) matches the realpath the classifier reports.
   markFile(key: string, abs: string, sha: string, persist = true): void {
-    this.get(key).files[abs] = sha;
+    this.get(key).files[safeReal(abs)] = sha;
     if (persist) this.persist(key);
   }
   flush(key: string): void { this.persist(key); }
 
   /** True only when the file was delivered AND is unchanged on disk since. */
   hasFile(key: string, abs: string): boolean {
-    const want = this.get(key).files[abs];
+    const real = safeReal(abs);
+    const want = this.get(key).files[real];
     if (!want) return false;
-    return fileSha(abs) === want;
+    return fileSha(real) === want;
   }
 
   markInUse(key: string, folder: string): void {
