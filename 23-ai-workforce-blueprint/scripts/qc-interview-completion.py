@@ -771,26 +771,13 @@ OPERATIONS_QUESTIONS_CANONICAL = [
     },
 ]
 
-# Substance floors — REUSED, not invented:
-#   - STRUCTURED_SUBSTANCE_MIN_CHARS reuses the EXACT numeric floor
-#     check_no_fabrication() above already uses for "a snippet long enough to
-#     be meaningful, not a tiny/coincidental match" (its context_snippets
-#     filter: `len(snippet) >= 30`). Applied here to any canonical question the
-#     branding JSON itself flags as needing a specific, non-generic answer (a
-#     non-empty `interviewGuidance` field) — brand_evokes, customer_feeling,
-#     brand_descriptors, brand_voice, ideal_customer, unique_differentiator.
-#     This floor is exactly what catches that guidance's OWN worked examples of
-#     an insufficient answer: "'Professional' is NOT an answer" (12 chars),
-#     "'Happy' is not specific enough" (5 chars), "'Small business owners' ...
-#     re-drill" (22 chars) — all below 30.
-#   - STRUCTURED_EXISTENCE_MIN_CHARS reuses LEGACY_MIN_ANSWER_CHARS as-is (the
-#     SAME "is this a real, non-empty answer line" floor legacy_substance_ok()
-#     above already applies) for canonical questions the branding JSON does NOT
-#     flag as needing drilled specificity (company name, industry, hex color,
-#     logo URL, command-center name) — a short factual answer to these is
-#     normal and correct, not shallow.
-STRUCTURED_SUBSTANCE_MIN_CHARS = 30
-STRUCTURED_EXISTENCE_MIN_CHARS = LEGACY_MIN_ANSWER_CHARS
+# Substance floors for the structured-web path.
+# The cards accept any non-empty answer. The gate must not demand more than the
+# card demanded, or an owner who answered everything is refused for a reason the
+# page never showed. Length is advisory (see shallowAdvisory), never a failure.
+STRUCTURED_SUBSTANCE_MIN_CHARS = 1
+STRUCTURED_EXISTENCE_MIN_CHARS = 1
+STRUCTURED_ADVISORY_MIN_CHARS = 30
 
 
 def load_canonical_structured_questions(branding_questions_path: Path) -> list:
@@ -842,9 +829,9 @@ def check_structured_coverage(transcript: str, branding_questions_path: Path) ->
     customer_feeling x6); the BEST substantive answer is what counts, not how
     many rounds it took to get there:
       - no matching block at all               -> MISSING
-      - matched, but below its substance floor  -> SHALLOW (see the floor
-        constants above)
-      - matched, at/above its floor              -> ANSWERED
+      - matched, any non-empty answer           -> ANSWERED (the cards accept any
+        non-empty answer, so nothing is shallow; a short prose answer is also
+        listed in advisoryShortIds for a warning, never as a failure)
 
     `complete` is True only when NO required canonical question is missing or
     shallow (optional questions — brand_primary_color, brand_logo, brand_voice,
@@ -873,7 +860,7 @@ def check_structured_coverage(transcript: str, branding_questions_path: Path) ->
         if len(ans) > best_len.get(qid, -1):
             best_len[qid] = len(ans)
 
-    answered_ids, missing_ids, shallow_ids = [], [], []
+    answered_ids, missing_ids, shallow_ids, advisory_short_ids = [], [], [], []
     for q in questions:
         qid = q["id"]
         length = best_len.get(qid)
@@ -892,8 +879,15 @@ def check_structured_coverage(transcript: str, branding_questions_path: Path) ->
             floor = STRUCTURED_EXISTENCE_MIN_CHARS
         if length < floor:
             shallow_ids.append(qid)
-        else:
-            answered_ids.append(qid)
+            continue
+        answered_ids.append(qid)
+        # A short prose answer is never a failure -- it is advisory only.
+        if (
+            q.get("kind", "text") == "text"
+            and q.get("needsSubstance")
+            and length < STRUCTURED_ADVISORY_MIN_CHARS
+        ):
+            advisory_short_ids.append(qid)
 
     required_ids = [q["id"] for q in questions if q.get("required")]
     required_set = set(required_ids)
@@ -906,6 +900,7 @@ def check_structured_coverage(transcript: str, branding_questions_path: Path) ->
         "answeredIds": answered_ids,
         "missingIds": missing_ids,
         "shallowIds": shallow_ids,
+        "advisoryShortIds": advisory_short_ids,
         "missingRequiredIds": missing_required_ids,
         "shallowRequiredIds": shallow_required_ids,
         "complete": not missing_required_ids and not shallow_required_ids,
@@ -1794,6 +1789,34 @@ def build_verdict(
             soft_failures.append(
                 f"Question count {count} is borderline (target 25-35). Human review required."
             )
+    # The over-long ceiling is ABSOLUTE — no exemption lifts it. (Conversational
+    # path only; a fully-covered structured interview is granted above.) It is
+    # checked BEFORE the granted exemptions so no flag can lift it.
+    elif count > 36:
+        hard_failures.append(
+            f"Question count {count} is outside the acceptable range (25-35). "
+            f"Too many — interview may have drifted long."
+        )
+    elif legacy_granted:
+        # Count floor lifted for this verified pre-standard interview. We still record
+        # the count, and we still surface an unusually tiny interview as a soft note.
+        # Evaluated BEFORE the structured hard-fail below: a granted exemption must
+        # not be refused on the structured path for a floor it is exempt from.
+        if count < LEGACY_MIN_QUESTIONS:
+            # Should be unreachable (substance floor would have failed) — defensive.
+            soft_failures.append(
+                f"Legacy interview question count {count} is unexpectedly low; review."
+            )
+    elif edit_mode_granted:
+        # Count floor lifted for this verified standard-first edit-mode interview.
+        # We still record the count, and still surface an unusually tiny interview
+        # as a soft note. Evaluated BEFORE the structured hard-fail below, for the
+        # same reason as the legacy branch.
+        if count < EDIT_MODE_MIN_QUESTIONS:
+            # Should be unreachable (substance floor would have failed) — defensive.
+            soft_failures.append(
+                f"Edit-mode interview question count {count} is unexpectedly low; review."
+            )
     elif is_structured:
         # Neither standard satisfied — the original structured hard fail, intact.
         missing_named = sc.get("missingRequiredIds", [])
@@ -1811,30 +1834,6 @@ def build_verdict(
             f"NEITHER standard is met; coverage of the "
             f"{sc.get('total', '?')}-question canonical deck is the standard for this path."
         )
-    # The over-long ceiling is ABSOLUTE — no exemption lifts it. (Conversational
-    # path only; a fully-covered structured interview is granted above.)
-    elif count > 36:
-        hard_failures.append(
-            f"Question count {count} is outside the acceptable range (25-35). "
-            f"Too many — interview may have drifted long."
-        )
-    elif legacy_granted:
-        # Count floor lifted for this verified pre-standard interview. We still record
-        # the count, and we still surface an unusually tiny interview as a soft note.
-        if count < LEGACY_MIN_QUESTIONS:
-            # Should be unreachable (substance floor would have failed) — defensive.
-            soft_failures.append(
-                f"Legacy interview question count {count} is unexpectedly low; review."
-            )
-    elif edit_mode_granted:
-        # Count floor lifted for this verified standard-first edit-mode interview.
-        # We still record the count, and still surface an unusually tiny interview
-        # as a soft note.
-        if count < EDIT_MODE_MIN_QUESTIONS:
-            # Should be unreachable (substance floor would have failed) — defensive.
-            soft_failures.append(
-                f"Edit-mode interview question count {count} is unexpectedly low; review."
-            )
     elif count < 24:
         if tailored:
             # Tailored/founder-self-build: downgrade low count to NEEDS-REVIEW (exit 2).
@@ -1870,6 +1869,16 @@ def build_verdict(
         # questions should refuse, not warn." A stale counter is evidence the
         # write pipeline lost data even when unrelated checks would pass.
         hard_failures.append(count_result["disagreeWarning"])
+
+    # Cards accept any non-empty answer, so a short prose answer is advisory
+    # only. It is surfaced for the operator and never fail-closed.
+    advisory_short = sc.get("advisoryShortIds") or []
+    if advisory_short:
+        warnings.append(
+            f"[short-answers] {len(advisory_short)} answered question(s) are under "
+            f"{STRUCTURED_ADVISORY_MIN_CHARS} characters — advisory only, never a "
+            f"failure: " + ", ".join(advisory_short)
+        )
 
     # Jargon check
     if jargon_hits:
