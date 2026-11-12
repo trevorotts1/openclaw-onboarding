@@ -11,8 +11,10 @@ command runs it. It prints the same envelope as intake/preflight (outcome
 ok/error; waiting/parked/rejected never come out of `next`) and exits 0/1.
 
 Stage IDs come from batch_mode.batch.STAGES verbatim (never a second list).
-Command lines come from references/stage-runbook.md, parsed from its stage |
-command | produces table. Lane counts come from scripts/core/lane_size.py
+Command lines come from the ONE source, scripts/core/intake_preflight/
+stage_commands.json (S75-010); references/stage-runbook.md is a human copy and
+test_stage_commands_s75_010.py fails when the two disagree. Lane counts come
+from scripts/core/lane_size.py
 when that module is importable; otherwise the Part D fallback defaults below
 are used (agents >= 1, kie_inflight <= 8, one machine-sized ffmpeg pool).
 
@@ -277,36 +279,54 @@ def _stages():
     return tuple(sid for sid, _title in batch_mod.STAGES)
 
 
-def _runbook_rows():
-    """{stage_id: {"command":…, "produces":…}} from references/stage-runbook.md.
+#: S75-010: the ONE source for stage commands. The Markdown runbook is a human
+#: copy; test_stage_commands_s75_010.py fails when the two disagree.
+_STAGE_COMMANDS_FILE = Path(__file__).resolve().parent / "stage_commands.json"
 
-    Table format (W2-A-U3): lines starting with '|' whose first cell matches a
-    stage id win; the header/separator rows do not.
+
+def _stage_commands():
+    """{stage_id: {"argv": [...], "produces": str, "placeholders": [...]}}.
+
+    One object per stage id, read from ``stage_commands.json`` beside this
+    file -- never from the Markdown table (S75-010). An unreadable or malformed
+    file returns ``{}`` so the caller can refuse by name rather than guess.
     """
-    ref = Path(__file__).resolve()
-    skill_root = ref.parent.parent.parent.parent   # core/intake_preflight -> skill root
-    md = skill_root / "references" / "stage-runbook.md"
-    rows = {}
-    text = None
     try:
-        text = md.read_text(encoding="utf-8")
-    except OSError:
-        return rows, str(md)
-    for line in text.splitlines():
-        if not line.strip().startswith("|"):
+        doc = json.loads(_STAGE_COMMANDS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(doc, dict):
+        return {}
+    return {sid: row for sid, row in doc.items() if isinstance(row, dict)}
+
+
+def _stage_command(stage):
+    """The published command string for one stage, ``shlex.join`` of its argv.
+
+    Every consumer (the ``next`` row, the published descriptor and the registry
+    built from it) reads this same string, so the three copies cannot drift.
+    """
+    row = _stage_commands().get(stage) or {}
+    argv = [str(x) for x in (row.get("argv") or [])]
+    return shlex.join(argv) if argv else ""
+
+
+def _runbook_rows():
+    """{stage_id: {"command":…, "produces":…, "argv": […]}} from the ONE source.
+
+    ``stage_commands.json`` replaces the Markdown table that used to be parsed
+    at run time (S75-010). The returned shape is unchanged, plus the raw
+    ``argv``; ``references/stage-runbook.md`` stays as the human copy.
+    """
+    rows = {}
+    for sid, row in _stage_commands().items():
+        argv = [str(x) for x in (row.get("argv") or [])]
+        if not argv:
             continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) < 3:
-            continue
-        sid = cells[0]
-        # U3's table: the command cell is wrapped in backticks; produces is
-        # free prose. Header ("stage id") and separator ("---") never match.
-        if re.fullmatch(r"[a-z0-9-]+", sid) and (
-                cells[1].startswith("`") and cells[1].endswith("`")
-                and cells[2]):
-            rows[sid] = {"command": cells[1][1:-1],
-                         "produces": cells[2]}
-    return rows, str(md)
+        rows[sid] = {"command": shlex.join(argv),
+                     "produces": str(row.get("produces") or ""),
+                     "argv": argv}
+    return rows, str(_STAGE_COMMANDS_FILE)
 
 
 def lane_size_payload():
@@ -1952,8 +1972,7 @@ STAGE_DESCRIPTORS = {
     "research": {
         "script": "scripts/core/research_engine/research.py",
         "verbs": ("",),
-        "command": 'scripts/core/research_engine/research.py --governed '
-                   '--brief "$RUN/brief.json" --outdir "$RUN"',
+        "command": _stage_command("research"),
         "recovery": 'scripts/core/research_engine/research.py --governed '
                     '--brief "$RUN/brief.json" --outdir "$RUN"',
         "artifacts": ("research/receipt.json", "research/claims.json",
@@ -1962,8 +1981,7 @@ STAGE_DESCRIPTORS = {
     "creative-strategy": {
         "script": "scripts/core/story_arc/story_arc.py",
         "verbs": ("",),
-        "command": 'scripts/core/story_arc/story_arc.py '
-                   '--story "$RUN/creative/story.json"',
+        "command": _stage_command("creative-strategy"),
         "recovery": 'scripts/core/story_arc/story_arc.py '
                     '--story "$RUN/creative/story.json"',
         "artifacts": ("creative/story.json", "creative/blueprint.json"),
@@ -1971,9 +1989,7 @@ STAGE_DESCRIPTORS = {
     "script-lyrics": {
         "script": "scripts/core/lyric_writer/lyric_writer.py",
         "verbs": ("",),
-        "command": 'scripts/core/lyric_writer/lyric_writer.py '
-                   '--lyrics "$RUN/creative/lyrics.json" '
-                   '--brief "$RUN/brief.json"',
+        "command": _stage_command("script-lyrics"),
         "recovery": 'scripts/core/lyric_writer/lyric_writer.py '
                     '--lyrics "$RUN/creative/lyrics.json" '
                     '--brief "$RUN/brief.json"',
@@ -1981,9 +1997,8 @@ STAGE_DESCRIPTORS = {
     },
     "music": {
         "script": "scripts/core/intake_preflight/factory.py",
-        "verbs": ("music",),
-        "command": 'scripts/core/intake_preflight/factory.py music '
-                   '--run-dir "$RUN" --owner "$OWNER" --action start',
+        "verbs": ("music", "generate"),
+        "command": _stage_command("music"),
         "recovery": 'scripts/core/intake_preflight/factory.py music '
                     '--run-dir "$RUN" --owner "$OWNER" --action resume',
         "artifacts": ("music/picked-song.mp3", "song-choices/pick.json"),
@@ -1992,17 +2007,15 @@ STAGE_DESCRIPTORS = {
     "continuity-bible": {
         "script": "scripts/core/character_continuity/stage.py",
         "verbs": ("check", "advance", "proven", "downstream"),
-        "command": 'scripts/core/character_continuity/stage.py advance '
-                   '--run-dir "$RUN" --run-id "$RUN_ID"',
+        "command": _stage_command("continuity-bible"),
         "recovery": 'scripts/core/character_continuity/stage.py advance '
                     '--run-dir "$RUN" --run-id "$RUN_ID"',
         "artifacts": ("continuity/qc-records.json", "continuity/makers.json"),
     },
     "storyboard": {
         "script": "scripts/core/intake_preflight/factory.py",
-        "verbs": ("storyboard",),
-        "command": 'scripts/core/intake_preflight/factory.py storyboard '
-                   '--run-dir "$RUN"',
+        "verbs": ("storyboard", "check"),
+        "command": _stage_command("storyboard"),
         "recovery": 'scripts/core/intake_preflight/factory.py storyboard '
                     '--run-dir "$RUN" --reply "$REPLY"',
         "artifacts": ("storyboard/shot-list.json", "storyboard/contracts.json"),
@@ -2011,12 +2024,7 @@ STAGE_DESCRIPTORS = {
     "image-keyframes": {
         "script": "scripts/core/kie_dispatch/kie_dispatch.py",
         "verbs": ("dispatch",),
-        "command": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
-                   '--model <image-model-id> --request "$RUN/generation/req.json" '
-                   '--prompt-file "$RUN/generation/req.prompt.txt" '
-                   '--save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" '
-                   '--run-id "$RUN_ID" --logical-key keyframes '
-                   '--attempt-id "$ATTEMPT" --cost "$COST"',
+        "command": _stage_command("image-keyframes"),
         "recovery": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
                     '--model <image-model-id> --request "$RUN/generation/req.json" '
                     '--prompt-file "$RUN/generation/req.prompt.txt" '
@@ -2028,12 +2036,7 @@ STAGE_DESCRIPTORS = {
     "video-generation": {
         "script": "scripts/core/kie_dispatch/kie_dispatch.py",
         "verbs": ("dispatch",),
-        "command": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
-                   '--model <video-model-id> --request "$RUN/generation/req.json" '
-                   '--prompt-file "$RUN/generation/req.prompt.txt" '
-                   '--save-dir "$RUN/generation" --ledger "$RUN/spend.sqlite3" '
-                   '--run-id "$RUN_ID" --logical-key video '
-                   '--attempt-id "$ATTEMPT" --cost "$COST"',
+        "command": _stage_command("video-generation"),
         "recovery": 'scripts/core/kie_dispatch/kie_dispatch.py dispatch '
                     '--model <video-model-id> --request "$RUN/generation/req.json" '
                     '--prompt-file "$RUN/generation/req.prompt.txt" '
@@ -2045,8 +2048,7 @@ STAGE_DESCRIPTORS = {
     "qc-retakes": {
         "script": "scripts/core/retake_manager/retake_manager.py",
         "verbs": ("",),
-        "command": 'scripts/core/retake_manager/retake_manager.py '
-                   '--request "$RUN/qc/retake-request.json"',
+        "command": _stage_command("qc-retakes"),
         "recovery": 'scripts/core/retake_manager/retake_manager.py '
                     '--request "$RUN/qc/retake-request.json"',
         "artifacts": ("qc/retakes.json",),
@@ -2054,8 +2056,7 @@ STAGE_DESCRIPTORS = {
     "assembly": {
         "script": "scripts/core/final_assembler/assembler.py",
         "verbs": ("",),
-        "command": 'scripts/core/final_assembler/assembler.py '
-                   '"$RUN/edit/timeline.json" "$RUN/edit/ad.mp4"',
+        "command": _stage_command("assembly"),
         "recovery": 'scripts/core/final_assembler/assembler.py '
                     '"$RUN/edit/timeline.json" "$RUN/edit/ad.mp4"',
         "artifacts": ("edit/timeline.json", "edit/ad.mp4"),
@@ -2063,9 +2064,7 @@ STAGE_DESCRIPTORS = {
     "final-qc": {
         "script": "scripts/core/qc_gate.py",
         "verbs": ("evaluate",),
-        "command": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
-                   '--stage final-qc --records "$RUN/qc/records.json" '
-                   '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
+        "command": _stage_command("final-qc"),
         "recovery": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
                     '--stage final-qc --records "$RUN/qc/records.json" '
                     '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
@@ -2074,9 +2073,7 @@ STAGE_DESCRIPTORS = {
     "delivery": {
         "script": "scripts/core/qc_gate.py",
         "verbs": ("evaluate",),
-        "command": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
-                   '--stage delivery --records "$RUN/qc/records.json" '
-                   '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
+        "command": _stage_command("delivery"),
         "recovery": 'scripts/core/qc_gate.py evaluate --run "$RUN_ID" '
                     '--stage delivery --records "$RUN/qc/records.json" '
                     '--makers "$RUN/qc/makers.json" --required "$REQUIRED_CHECKS"',
@@ -2090,20 +2087,23 @@ def _skill_root():
     return Path(__file__).resolve().parents[3]
 
 
+#: Command prefixes that are an interpreter, not the script under contract.
+_INTERPRETERS = ("python3", "python", "/opt/homebrew/bin/python3")
+
+
 def _command_verb(command):
     """The declared verb token of a descriptor command: the first token after
     the script, and only when it really is a bare verb (never an option, never
     a path). ``""`` means the CLI is option/positional-only -- a real contract,
-    not a missing one."""
+    not a missing one. One leading interpreter token (``python3``) is skipped,
+    because a published command now reads ``python3 <script> <verb> ...``."""
     tokens = str(command or "").split()
+    if tokens and tokens[0] in _INTERPRETERS:
+        tokens = tokens[1:]
     if len(tokens) < 2:
         return ""
     tok = tokens[1]
     return tok if re.fullmatch(r"[a-z][a-z0-9-]*", tok) else ""
-
-
-#: Command prefixes that are an interpreter, not the script under contract.
-_INTERPRETERS = ("python3", "python", "/opt/homebrew/bin/python3")
 
 
 def _command_script(command):
@@ -3079,6 +3079,67 @@ def cmd_next(a):
     return result
 
 
+#: S75-010 step 4: where an unfilled stage-command placeholder comes from. A
+#: placeholder the run cannot answer is a NAMED need, never an invented value.
+_PLACEHOLDER_WHERE = {
+    "RUN": "the run directory (`--run-dir`)",
+    "RUN_ID": "the run id (the run directory's own name)",
+    "OWNER": "the live worker id that owns the music lease (`factory.py music --owner`)",
+    "MODEL": "the model locked for this stage in the run's model-lock record (`kie_dispatch.model_lock`)",
+    "COST_MINOR": "the request's estimated cost in minor units, reserved on the spend ledger",
+    "REQUIRED_CHECKS": "qc_gate.STAGE_REQUIRED for this stage",
+    "SEGMENT": "the segment number this job makes (one job per segment, 1-based)",
+    "LENGTH_S": "the chosen ad length in seconds (`control/method.json` chosen_length_s)",
+}
+
+
+def _stage_command_values(run_dir, sid, stage):
+    """The placeholder values this run can answer, and nothing it cannot.
+
+    ``next`` substitutes what the run already knows (the run dir, the run id,
+    the QC gate's own required-check list) and leaves the rest to named needs.
+    """
+    values = {"RUN": str(run_dir), "RUN_ID": str(sid)}
+    core = str(Path(__file__).resolve().parent.parent)
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    try:
+        import qc_gate  # noqa: PLC0415
+        required = getattr(qc_gate, "STAGE_REQUIRED", None)
+        if isinstance(required, dict) and required.get(stage):
+            values["REQUIRED_CHECKS"] = ",".join(str(x) for x in required[stage])
+    except Exception:                                    # noqa: BLE001
+        pass
+    return values
+
+
+def _stage_needs(argv, run_dir, sid, stage):
+    """(filled argv, needs) for one stage-command row.
+
+    Every ``{PLACEHOLDER}`` the run can answer is filled from the run; each one
+    it cannot is a named need with one sentence saying where its value comes
+    from. The published ``command`` stays the canonical template, which is what
+    the runbook documents for the agent loop.
+    """
+    tokens = [str(t) for t in (argv or [])]
+    if not tokens:
+        return [], []
+    values = _stage_command_values(run_dir, sid, stage)
+    filled, missing = [], set()
+    for tok in tokens:
+        out = tok
+        for name in re.findall(r"\{([A-Z_]+)\}", tok):
+            if name in values:
+                out = out.replace("{%s}" % name, str(values[name]))
+            else:
+                missing.add(name)
+        filled.append(out)
+    needs = [{"placeholder": name,
+              "where": _PLACEHOLDER_WHERE.get(name, "the runner supplies it")}
+             for name in sorted(missing)]
+    return filled, needs
+
+
 def _next_stage(a, *, boot_snapshot=None):
     """next --run-dir <dir>: which stage, which command, how many lanes."""
     # L4.2: a process whose skill was updated since it started refuses to
@@ -3368,7 +3429,7 @@ def _next_stage(a, *, boot_snapshot=None):
         kie = (rows.get("video-generation") or {}).get("command", "")
         vrow = rows.get("agnes-video-segment") or {"command": "", "produces": ""}
         jobs = [{"segment": n,
-                 "command": vrow["command"].replace("<segment>", str(n))}
+                 "command": vrow["command"].replace("{SEGMENT}", str(n))}
                 for n in range(done + 1, total + 1)] if vrow["command"] else []
         agnes["segment_jobs"] = jobs
         agnes["segment_produces"] = vrow.get("produces", "")
@@ -3505,6 +3566,13 @@ def _next_stage(a, *, boot_snapshot=None):
         nxt["music_request"] = music_request
     if shot_seeds is not None:
         nxt["shot_seeds"] = shot_seeds
+    # S75-010 step 4: fill every placeholder the run can answer and name the
+    # rest -- the published command stays the canonical template.
+    _filled, _needs = _stage_needs(row.get("argv"), run_dir, sid, next_stage)
+    if _filled:
+        nxt["argv"] = _filled
+    if _needs:
+        nxt["needs"] = _needs
     if next_stage == "music":
         nxt["lifecycle"] = _music_lifecycle()
         # L4.5: the SONG PICK / next paid step is a cost fork. Record the
