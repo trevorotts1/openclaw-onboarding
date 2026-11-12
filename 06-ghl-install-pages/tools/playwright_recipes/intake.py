@@ -15,13 +15,13 @@ CHECKOUT = {'page_id', 'step_id', 'component_id', 'tab_id', 'frame_name', 'adapt
             'purchase_action', 'funnel_id', 'charge', 'execute_payment'}
 FIELDS = {
     **{name: CONTAINER for name in ('funnels.create', 'funnels.add_page', 'websites.create', 'websites.add_page')},
-    'pages.install_code': CODE, 'pages.install_embed': CODE | {'embed_receipt'},
-    'pages.seo': {'seo'}, 'pages.layout': {'layout'},
+    'pages.install_code': CODE, 'pages.install_embed': CODE | {'embed_receipt', 'embed_config', 'embed_placement'},
+    'pages.seo': {'seo'}, 'pages.layout': {'layout'}, 'pages.responsive': {'responsive'}, 'pages.saved_section': {'saved_section'},
     'checkout.wrap_native': {'before_file', 'before_marker', 'checkout', 'after_file', 'after_marker', 'seo', 'before_placement', 'after_placement'},
     'checkout.configure_native': CHECKOUT,
     'checkout.one_click_upsell': CHECKOUT,
-    'checkout.configure_ui': {'element_id', 'expected_name', 'section_id', 'mode', 'products',
-        'contact_fields', 'checkout_options', 'content', 'theme_inputs', 'legal_copy',
+    'checkout.configure_ui': {'page_id', 'element_id', 'expected_name', 'section_id', 'mode', 'products',
+        'contact_fields', 'checkout_options', 'content', 'theme_inputs', 'theme_profile', 'theme_preset', 'theme_typography', 'theme_colors', 'contact_field_order', 'legal_copy',
         'product_binding', 'product_id', 'price_id', 'charge', 'execute_payment'},
     'forms.create': {'name', 'required', 'allow_creation', 'radius'},
     'forms.configure': {'address_parent', 'widget_fields', 'fields', 'add_fields', 'address_fields', 'consent', 'object_fields', 'dropdown_fields', 'large_text_fields', 'field_dependencies', 'integration', 'contact_field_plan'},
@@ -45,7 +45,7 @@ REQUIRED = {
     **{name: {'container_name', 'page_name', 'path'} for name in ('funnels.create', 'funnels.add_page', 'websites.create', 'websites.add_page')},
     'pages.install_code': {'file', 'marker', 'seo'},
     'pages.install_embed': {'file', 'marker', 'seo', 'embed_receipt'},
-    'pages.seo': {'seo'}, 'pages.layout': {'layout'},
+    'pages.seo': {'seo'}, 'pages.layout': {'layout'}, 'pages.responsive': {'responsive'}, 'pages.saved_section': {'saved_section'},
     'checkout.wrap_native': {'before_file', 'before_marker', 'seo'},
     'forms.create': {'name'}, 'forms.submission': {'submission'},
     'forms.notifications': {'notifications'}, 'forms.conditions': {'condition'},
@@ -151,6 +151,17 @@ def validate_intake(operation, data):
             missing |= {'marker', 'seo'} - set(data)
         elif set(data).intersection({'marker', 'code_id', 'seo', 'placement'}):
             raise Stop('Code/SEO inputs require the corresponding HTML file')
+    if operation == 'pages.install_embed' and ('embed_config' in data or 'embed_placement' in data):
+        if not isinstance(data.get('embed_config'), dict) or 'embed_placement' not in data:
+            raise Stop('Embed configuration and exact native placement are both required')
+        from playwright_recipes.skill6_playwright import validate_placement
+        validate_placement(data['embed_placement'])
+    if operation == 'pages.responsive':
+        from playwright_recipes.page_layout import validate_responsive
+        validate_responsive({'responsive': data.get('responsive')})
+    if operation == 'pages.saved_section':
+        from playwright_recipes.saved_section import validate
+        validate({'saved_section': data.get('saved_section')})
     if operation == 'pages.layout' and 'layout' in data:
         from playwright_recipes.page_layout import validate
         validate({'layout': data['layout']})

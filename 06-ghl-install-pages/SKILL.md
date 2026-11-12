@@ -10,7 +10,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v27.1.110"
+  version: "v27.1.111"
   priority: HIGH
 ---
 
@@ -30,6 +30,21 @@ metadata:
 > payment markup pattern is detectable; inspect and verify the actual native component.
 > A saved editor state or preview is not proof of a completed purchase, bump, upsell,
 > or downsell.
+> The staged purchase-flow dispatcher accepts only approved graph-bound native
+> recipe stages. It does not publish or initiate a charge. Report purchase
+> behavior only after an independently observed, authorized sandbox buyer journey
+> and provider evidence have been reviewed; builder state is not purchase proof.
+>
+> **RECEIPT-BOUND EXTERNAL IFRAMES.** `pages.install_embed` may add an explicit
+> `embed_config` plus exact `embed_placement` after the original normalized HTML
+> has an existing embeddability PASS receipt. The runner binds this configuration
+> to the exact approved HTML hash and adds a separate native Code element with
+> styles scoped to the recorded iframe. It does not rewrite receipt-covered HTML,
+> style the iframe's cross-origin inner document, change native GHL form CSS, or
+> make the iframe inherit a GHL session. Optional resize messages are accepted
+> only from the exact iframe window and configured HTTPS origin. Published pages
+> use DOM-ready/timed initialization as well as the editor hydration event; do
+> not assume that event fires. Live preview verification is still required.
 >
 > **EXACT PAGE LAYOUT TARGETING.** GHL sections support 1 through 6 columns. When
 > creating a row layout, use `pages.layout` with `layout={section_id, columns: 1..6}`
@@ -41,9 +56,14 @@ metadata:
 > column and agree with the expected column count. A first-column shortcut is only
 > valid when the section has exactly one column. Existing section widths are preserved
 > unless `width_policy="full"` is explicitly requested. Native row insertion is
-> guarded to the exact sole section on the page; live capture confirmed the native
-> `1 Column` through `6 Column` preset labels. Creation/save/reopen persistence and
-> multi-section row insertion are not supported or verified.
+> guarded to the exact section identity, including on multi-section pages; optional
+> `after_row_id` pins insertion to an exact anchor. Captured responsive widths use
+> the desktop/tablet controls (30–100%) and preserve the other device width.
+> Mobile row-width editing and nested layout containers are unavailable in this
+> tenant; mobile columns stack natively. Live capture
+> confirmed `1 Column` through `6 Column` and reload persistence of tablet 85% /
+> desktop 100% for the selected row. The recipe saves and reads back native layout
+> inventory; this does not establish every layout or browser state.
 >
 > **Proof boundary.** Builder placement and native component configuration do not
 > establish payment processing. Unless a separately authorized test transaction

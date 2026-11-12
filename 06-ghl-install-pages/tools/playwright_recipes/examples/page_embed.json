@@ -1,0 +1,13 @@
+{
+  "id": "size-embedded-app",
+  "action": "page_embed",
+  "embed": {
+    "iframe_id": "external-app-frame",
+    "approved_html_sha256": "<exact sha256 of the already approved normalized HTML fragment>",
+    "aspect_ratio": 1.7778,
+    "min_height_px": 420,
+    "max_height_px": 900,
+    "max_width_px": 1200,
+    "resize_origin": "https://app.example"
+  }
+}

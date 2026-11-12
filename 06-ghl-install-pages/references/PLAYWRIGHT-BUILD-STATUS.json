@@ -1,9 +1,32 @@
 {
   "schema": "skill6-build-inventory/2",
-  "updated_at": "2026-11-12T10:52:04+00:00",
-  "scope": "v27.1.110 prepared source release: 34 source-built operation contracts and separately verified public v27.1.108 baseline. Unsupported advanced controls and native acceptance remain explicit.",
+  "updated_at": "2026-11-12T16:47:07+00:00",
+  "scope": "v27.1.111 prepared source release: 39 BUILT / 0 PARTIAL / 0 GENERIC_ONLY source operations; catalog proof labels are 11 LIVE_PATH, 7 PROFILE, 17 CAPTURED, 4 API_FIRST. Compiler boundary: 76 covered actions / 104 rows. Buyer and payment acceptance remain separate.",
+  "prepared_release": {
+    "version": "v27.1.111",
+    "source_branch": "work/skill6-finish-hybrid-v111",
+    "source_base_commit": "0f939c1d",
+    "status": "PREPARED_SOURCE; LIVE_ACCEPTANCE_PENDING",
+    "added_scope": [
+      "Staged native purchase-flow dispatcher and evidence-consistency verifier; no payment is initiated.",
+      "Location/type-scoped page folders with journal and independent reopen/readback.",
+      "Receipt/hash-bound page iframe sizing and initialization through separate native Code element.",
+      "Captured native GHL V2 checkout theme presets and exact-control theme profiles.",
+      "Saved Sections operations with the bundled saved-assets-new captured profile.",
+      "Multi-section and responsive page-layout operations with native order/readback checks.",
+      "Captured native checkout field order, Accent custom color and component ID/parent binding."
+    ],
+    "acceptance": {
+      "saved_assets_profile": "CAPTURED_PROFILE_BUNDLED; live template create/reuse/reorder case observed",
+      "iframe_preview": "PENDING_LIVE_GHL_ACCEPTANCE",
+      "layout_persistence": "LIVE_CAPTURE_CONFIRMED_TABLET_85_DESKTOP_100_AFTER_RELOAD; broader cases pending",
+      "buyer_journey": "PENDING_INDEPENDENT_SANDBOX_EVIDENCE",
+      "native_payment": "CHECKOUT_CONFIGURATION_OBSERVED; transaction acceptance pending; no successful purchase claimed",
+      "website_folder": "INDEPENDENT_PARENT_REOPEN_AND_CHILD_ID_READBACK_CONFIRMED"
+    }
+  },
   "counts": {
-    "BUILT": 34,
+    "BUILT": 39,
     "PARTIAL": 0,
     "GENERIC_ONLY": 0
   },
@@ -15,10 +38,10 @@
   },
   "current_feature_progress": {
     "schema": "skill6-current-feature-progress/1",
-    "source_branch": "work/skill6-native-hybrid-v110",
-    "source_version": "v27.1.110",
-    "dynamic_actions": 73,
-    "bounded_jobs": 102,
+    "source_branch": "work/skill6-finish-hybrid-v111",
+    "source_version": "v27.1.111",
+    "dynamic_actions": 76,
+    "bounded_jobs": 104,
     "completed_since_frozen_audit": [
       {
         "id": "course-text-blocks",
@@ -963,83 +986,32 @@
             "path": "06-ghl-install-pages/tools/playwright_recipes/survey_condition_outcomes.py"
           }
         ]
+      },
+      {
+        "id": "native-checkout-purchase-flow",
+        "publication": "PREPARED_SOURCE"
+      },
+      {
+        "id": "page-folder-create-reopen",
+        "publication": "PREPARED_SOURCE"
+      },
+      {
+        "id": "page-responsive-and-saved-sections",
+        "publication": "PREPARED_SOURCE"
+      },
+      {
+        "id": "receipt-bound-page-embed-sizing-initialization",
+        "publication": "PREPARED_SOURCE"
+      },
+      {
+        "id": "native-checkout-theme-profiles",
+        "publication": "PREPARED_SOURCE"
       }
     ],
     "current_next_batch": {
-      "features": [
-        "form-legacy-dropdown-canonical-reuse",
-        "form-text-box-list-prefills",
-        "form-saved-option-delete-confirmation",
-        "form-native-monetary",
-        "form-native-source",
-        "form-existing-score-properties",
-        "form-existing-rating-properties",
-        "form-existing-date-time-properties",
-        "form-existing-time-properties",
-        "form-native-bot-protection",
-        "form-custom-html-lifecycle",
-        "quiz-result-header-logo",
-        "quiz-picture-option-count",
-        "quiz-picture-label-columns",
-        "quiz-existing-picture-card-media-update",
-        "quiz-tier-create-remove",
-        "quiz-single-choice-answer-jumps",
-        "native-active-split-allocation",
-        "form-plain-message-outcome-reorder",
-        "form-number-inclusive-between",
-        "form-numerical-show-hide-targets",
-        "form-choice-condition-fields",
-        "survey-file-upload-lifecycle",
-        "survey-signature-lifecycle",
-        "survey-compound-conditional-outcomes",
-        "community-inactive-modern-identity",
-        "community-all-members-course-association",
-        "community-first-course-loaded-empty",
-        "community-modern-description",
-        "community-modern-privacy-access",
-        "community-modern-ordinary-channels",
-        "meeting-first-cohosts-before-room-create",
-        "meeting-saved-empty-cohost-reconciliation",
-        "meeting-calendar-multi-staff-preservation",
-        "form-native-picture-create-and-catalog-replacement",
-        "form-native-text-heading",
-        "form-native-image-url-alt",
-        "form-date-date-time-time-creation",
-        "form-rating-score-creation",
-        "form-legacy-large-text-canonical-adoption",
-        "form-multiline-html-save-warning",
-        "survey-native-text-image-html-picture",
-        "survey-native-bot-source-monetary-score-rating",
-        "survey-native-text-box-list",
-        "survey-date-date-time-time-creation",
-        "condition-captured-widget-source-target-bindings",
-        "condition-date-time-ranges",
-        "condition-consent-checked-operators",
-        "condition-formatted-multiline-https-link-preservation",
-        "community-private-readonly-channel-create-reuse",
-        "community-18-icon-native-catalog",
-        "community-section-create-replay",
-        "community-course-visibility-edit-reuse",
-        "meeting-course-live-session",
-        "meeting-multiple-location-preservation",
-        "meeting-provider-oauth-handoff",
-        "meeting-rich-existing-event-preservation",
-        "quiz-checkbox-dropdown-answer-jumps",
-        "quiz-picture-local-approved-upload",
-        "quiz-picture-fit-and-presentation",
-        "quiz-individual-category-result-media",
-        "survey-native-all-captured-widget-properties",
-        "survey-native-url-lifecycle",
-        "survey-mixed-jump-outcome-preservation",
-        "survey-immutable-jump-known-tail-append",
-        "survey-paragraph-rich-message-normalization"
-      ],
-      "source_base": "b05dcf3730830790c3fb510e7c63416c25842942",
-      "publication": "OWNER_APPROVED_PREPARED_RELEASE",
-      "pr": null,
-      "source_snapshot_commit": "8ad51bf9b8e3c1a47c2fc308fe231683220eaec8",
-      "native_final_script": "NOT_RUN",
-      "publication_limit": "Owner explicitly approved publishing and batch merging completed Skill6 source on2026-11-11. Delivery remains pending until actual main inclusion is verified."
+      "features": [],
+      "publication": "PREPARED_SOURCE",
+      "source_snapshot_note": "All 39 source catalog recipes are implemented; full end-to-end live buyer/payment acceptance and required CI remain separate."
     },
     "verified_delivery": {
       "status": "MERGED",
@@ -1063,7 +1035,7 @@
     },
     "completed_feature_status": "SOURCE_BUILT",
     "source_snapshot_commit": "8ad51bf9b8e3c1a47c2fc308fe231683220eaec8",
-    "source_snapshot_note": "v27.1.110 prepared source release; source_snapshot_commit remains the recorded v27.1.109 snapshot. Actual delivery is tracked in Git merge history."
+    "source_snapshot_note": "v27.1.111 prepared source branch work/skill6-finish-hybrid-v111 is based on main 0f939c1d. The source_snapshot_commit field is retained as the historical v27.1.110 snapshot reference; prepared-release delivery is tracked in Git merge history."
   },
   "operations": [
     {
@@ -1434,7 +1406,42 @@
       "operation": "pages.layout",
       "recipe_name": "prepare_native_page_layout",
       "status": "BUILT",
-      "contract": "Create a native 1–6 column row in the exact sole identified section, capture the new row/column IDs, and resolve existing placements by exact section/row/column identities. Native creation/save/reopen acceptance and multi-section row insertion are not included.",
+      "contract": "Create a native 1–6 column row in the exact requested section on multi-section canvases, optionally after an exact row anchor; capture row/column IDs, preserve native order, and read back saved layout.",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "checkout.purchase_flow",
+      "recipe_name": "native_purchase_flow",
+      "status": "BUILT",
+      "contract": "Dispatch explicit native recipe stages against the approved Skill 49 graph with a journal; independent verifier checks supplied sandbox buyer-evidence consistency and never initiates a charge.",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "funnels.create_folder",
+      "recipe_name": "native_folder_creation",
+      "status": "BUILT",
+      "contract": "Create or reuse a location-scoped native funnel folder, journal intent, independently reopen the parent and read back the requested native object identity.",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "websites.create_folder",
+      "recipe_name": "native_folder_creation",
+      "status": "BUILT",
+      "contract": "Create or reuse a location-scoped native website folder, journal intent, independently reopen the parent and read back the requested native object identity.",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "pages.responsive",
+      "recipe_name": "native_responsive_row",
+      "status": "BUILT",
+      "contract": "Set exact captured desktop/tablet row widths from 30% to 100%, preserve the other device width and native order, save and independently reopen. Mobile row-width editing and nested layout containers are unavailable in the tenant.",
+      "missing_executable_features": []
+    },
+    {
+      "operation": "pages.saved_section",
+      "recipe_name": "native_saved_section",
+      "status": "BUILT",
+      "contract": "Inventory, save, insert or reuse native Saved Sections through the captured saved-assets-new profile with explicit scope, exact identity, order and readback.",
       "missing_executable_features": []
     }
   ],
@@ -1442,28 +1449,35 @@
     "source_review": "BOUNDED_SOURCE_CLOSURE_CONFIRMED; native acceptance separate",
     "retained_checks": {
       "affected_module_checks": "Passing focused checks are recorded in the owning lane reports; no aggregate whole-suite total is claimed.",
-      "compiler_provider_boundary": "73 concrete actions / 102 bounded jobs; each action has a compiled sample.",
+      "compiler_provider_boundary": "v27.1.111 asserts 76 covered actions / 104 bounded rows; source catalog separately contains 39 implemented recipes across 11 LIVE_PATH, 7 PROFILE, 17 CAPTURED and 4 API_FIRST classifications. These are not end-to-end acceptance counts.",
       "final_shared_smoke": "45 focused tests PASS in0.520s, exit0 at4dbde83e99a41a9998aedaaba756b8c197395712; widget families, mixed Survey conditions, outcome recreation, compiler boundary and Quiz individual media.",
       "integrated_meetings": "38 focused tests PASS at 7bd8b9304d; compiler/dispatch/replay wiring inspected.",
       "integrated_communities": "75 focused tests PASS at 7bd8b9304d; bounded contract source reviewed.",
       "merged_widget_condition_compiler_smoke": "41 focused tests PASS at be1abce261; includes resolved mixed-conditions test fixtures and real compiler fixtures for72 actions101 bounded jobs.",
       "release_full_recipe_discovery": "1648 tests PASS,7 real-browser fixtures reserved for CI; both Ubuntu and macOS real Chromium CI jobs passed on8ad51bf9.",
       "pages_layout_frontdoor_compiler": "2 focused front-door/compiler boundary checks PASS. The new pages.layout operation is registered and source-compiled; this does not establish live native layout creation/save/reopen.",
-      "page_layout_helper": "3 focused page-layout helper tests PASS, reported separately from the two front-door/compiler checks; this does not establish live native layout creation/save/reopen."
+      "page_layout_helper": "3 focused page-layout helper tests PASS, reported separately from the two front-door/compiler checks; this does not establish live native layout creation/save/reopen.",
+      "root_v111_focused_verification": "91 focused tests PASS in root verification run; no broad-suite/CI completion implied.",
+      "page_embed_latest_focused": "9 focused embed tests PASS after bounded asynchronous initialization and ratio-only sizing fixes; includes Node vm fake-DOM late SDK/target receiver/idempotency check.",
+      "required_ci": "PENDING"
     },
     "native_final_script": "NOT_RUN",
     "respondent_acceptance": "PENDING",
     "member_acceptance": "PENDING",
-    "manual_observation": "Selected native controls and saved/reopened states were inspected manually. These observations are separate from maintained-script acceptance. Independent reload also confirmed saved Form Text/Image and multiline HTML. All six temporary build tabs were closed and the connected build tab list was empty. Additional v27.1.110 live inspection confirmed native row preset labels `1 Column` through `6 Column` and the `.c-section > .c-row > .c-column` identity hierarchy; creation/save/reopen was not exercised.",
+    "manual_observation": "Root live capture created/reused a native Saved Template in one section and moved it down after an exact anchor with order readback. Native row save/reload retained tablet width 85% and desktop width 100% for the selected row. Checkout field order, custom Accent color #3155AA and component ID/parent binding were inspected; six native V2 preset buttons were captured but not selected or saved. Root independently reopened the funnel and website parent folders and reopened the child Website 1 Page under the same created native ID. These observations are separate from the 91-test focused run and do not prove buyer/payment behavior.",
     "native_proof_limits": {
       "split_allocation": "Running 50/50 and keyboard-staged 49/51 were observed; a saved 49/51 maintained-script/native run remains unverified.",
       "cohosts": "Saved loaded-empty card was captured. Actual first-assignment/clear-all execution and notification behavior remain unverified.",
       "common_scopes": "Source-built scope does not mean every native flow was executed or every client feature supported.",
-      "page_layout": "Source supports insertion only into the exact sole section on the page. Multi-section row insertion is unsupported. Live preset labels and element hierarchy were inspected, but creation/save/reopen persistence remains pending.",
-      "payments": "Every route, including browser/computer fallbacks, must use native GHL checkout/order-form, bump, purchase-action, one-click-upsell and downsell components. Runtime policy, heuristic input checks, and DOM preservation are safeguards and do not guarantee detection of every nonnative payment markup pattern. Native payment acceptance remains pending; no purchase success is claimed."
+      "page_layout": "Exact section-targeted multi-section row insertion with optional after_row_id anchor, and captured desktop/tablet row-width controls from 30% to 100%. Root live save/reload retained tablet 85% and desktop 100% on one selected row. Nested layout containers and mobile row-width editing are unavailable in this tenant; mobile columns stack natively.",
+      "payments": "Every route, including browser/computer fallbacks, must use native GHL checkout/order-form, bump, purchase-action, one-click-upsell and downsell components. Runtime policy, heuristic input checks, and DOM preservation are safeguards and do not guarantee detection of every nonnative payment markup pattern. Native payment acceptance remains pending; no purchase success is claimed.",
+      "saved_sections": "Root live capture created/reused a native Saved Template in one section and moved it down after an exact anchor with order readback; other scopes and operations are not proven by this case.",
+      "folders": "Root independently reopened the funnel and website parent folders and found/reopened child Website 1 Page under its same created native ID.",
+      "checkout_ui": "Root inspected checkout field order, custom Accent color #3155AA, and native component ID/parent binding. Six native V2 preset buttons were captured but not selected or saved; no transaction behavior is established.",
+      "buyer_payment": "Native purchase surface remains native GHL across all routes. Full sandbox buyer journey and payment acceptance remain pending; no purchase success claimed."
     },
     "history": "Historical counts and release snapshots remain in Git history.",
-    "installer_archive": "Six archived documents were byte-compared against canonical source; all members match and original ZipInfo metadata is preserved. Archived SKILL metadata v27.1.110."
+    "installer_archive": "Six archived documents were byte-compared against canonical source; all members match and original ZipInfo metadata is preserved. Archived SKILL metadata v27.1.111."
   },
   "common_client_use_progress": {
     "count": 10,
@@ -1532,5 +1546,12 @@
         "native_acceptance": "PENDING"
       }
     ]
+  },
+  "previous_checkpoint_v110": {
+    "source_branch": "work/skill6-native-hybrid-v110",
+    "source_version": "v27.1.110",
+    "dynamic_actions": 73,
+    "bounded_jobs": 102,
+    "source_snapshot_note": "v27.1.110 prepared source release; source_snapshot_commit remains the recorded v27.1.109 snapshot. Actual delivery is tracked in Git merge history."
   }
 }

@@ -40,15 +40,21 @@ class Locator:
             if self.frame.dialog:raise AssertionError('dialog still visible')
         elif not self.count():raise AssertionError('control absent')
     def filter(self, **kwargs):return self
-    def get_by_test_id(self, value):return ContactRow(self.frame,value.replace('field-row-',''))
+    def get_by_test_id(self, value):
+        key=value.replace('field-row-','')
+        return ContactRow(self.frame,key)
     def get_by_role(self, role, **kwargs):
         if self.kind=='group' and self.name in ('Appearance','Labels'):
             return ThemeButton(self.frame,self.name,kwargs.get('name'))
         return Locator(self.frame,role,kwargs.get('name'))
     def get_by_text(self, text, **kwargs):return Locator(self.frame,'accordion',text)
     def locator(self, selector):
+        if selector=='[title="Open Settings"]':return Locator(self.frame,'settings')
+        if selector=='[id="hr-modal__close-button"]':return Locator(self.frame,'close-id')
         if selector=='.of-terms-content .tiptap.ProseMirror':return TermsCollection(self.frame)
         raise AssertionError('Uncaptured dialog locator '+selector)
+    def hover(self): self.frame.clicks.append(('hover', self.kind))
+    def and_(self, other): return self
     def evaluate(self, _):return self.frame.section
     def input_value(self):return self.frame.name if self.name=='Element name' else self.frame.content.get(self.name,'Original '+str(self.name))
     def fill(self,value):
@@ -67,7 +73,7 @@ class Locator:
         if self.name=='Customize order form':self.frame.dialog=True
         elif self.kind=='switch':self.frame.switches[self.name]=not self.frame.switches.get(self.name,False)
         elif self.name in ui.MODES:self.frame.mode=self.name
-        elif self.name=='Alternative text for image not provided':self.frame.dialog=False
+        elif self.name=='Close':self.frame.dialog=False
         elif self.kind=='accordion':self.frame.expanded.add(self.name)
 
 
@@ -355,11 +361,13 @@ class CheckoutUITests(unittest.TestCase):
                 self.url=url
         page=Page()
         with (patch.object(core,'assert_tenant',side_effect=lambda *a:events.append('identity')),
-              patch.object(core,'builder',return_value=frame),
+              patch.object(core,'page_builder_ready',side_effect=lambda *a:(events.append('ready') or frame)),
               patch.object(core,'save_page',side_effect=lambda *a:events.append('save'))):
             result=ui.configure_native_checkout_ui(page,inputs())
         self.assertEqual(result['status'],'NATIVE_CHECKOUT_UI_READBACK_VERIFIED')
+        self.assertEqual(events.count('ready'),2)
         self.assertLess(events.index('save'),events.index('reopen'))
+        self.assertEqual(frame.clicks.count(('hover','order')),2)
         self.assertFalse(frame.dialog)
         self.assertFalse(result['payment_verified'])
 

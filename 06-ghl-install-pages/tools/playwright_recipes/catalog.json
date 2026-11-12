@@ -252,6 +252,41 @@
       "implemented": true,
       "proof": "CAPTURED",
       "use": "Prepare a native row with one to six columns; use returned IDs in subsequent placement jobs"
+    },
+    "pages.saved_section": {
+      "name": "native_saved_section",
+      "action": "saved_section",
+      "implemented": true,
+      "proof": "PROFILE",
+      "use": "Inventory, save, insert or reuse native saved sections with explicit synchronization scope"
+    },
+    "checkout.purchase_flow": {
+      "name": "native_purchase_flow",
+      "action": "staged_dispatch",
+      "implemented": true,
+      "proof": "PROFILE",
+      "use": "Run explicit native recipe stages against a Skill 49 route graph; independent sandbox payment proof remains required"
+    },
+    "funnels.create_folder": {
+      "name": "native_folder_creation",
+      "action": "native_page_folder",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Create or reopen a location-scoped folder and optionally create its native object with independently journaled readback"
+    },
+    "websites.create_folder": {
+      "name": "native_folder_creation",
+      "action": "native_page_folder",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Create or reopen a location-scoped website folder and optionally create its native website with independently journaled readback"
+    },
+    "pages.responsive": {
+      "name": "native_responsive_row",
+      "action": "page_responsive",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Set captured desktop or tablet row width with native save and readback"
     }
   }
 }
