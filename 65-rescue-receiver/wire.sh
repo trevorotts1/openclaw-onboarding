@@ -157,35 +157,6 @@ fi
 # registered. Registering a poller for a box the poll itself would dark-exit
 # (rescue-poll.sh requires all three) is a false success, so the wiring gate is
 # the same set the poll enforces.
-if [ -z "${RR_RECEIVER_URL:-}" ] || [ -z "${RR_BOX_TOKEN:-}" ] || [ -z "${RR_BOX_SLUG:-}" ]; then
-  # Report WHY, by NAME, from the engine's explicit state machine when it is
-  # installed; otherwise fall back to the historical prose line.
-  _ENGINE_EARLY=""
-  for _cand in "$_OCROOT/skills/shared-utils/rr-readiness.sh" \
-               "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/shared-utils/rr-readiness.sh"; do
-    [ -n "$_cand" ] && [ -f "$_cand" ] && { _ENGINE_EARLY="$_cand"; break; }
-  done
-  _MISSING_EARLY=""
-  [ -n "${RR_RECEIVER_URL:-}" ] || _MISSING_EARLY="$_MISSING_EARLY RR_RECEIVER_URL"
-  [ -n "${RR_BOX_TOKEN:-}" ]    || _MISSING_EARLY="$_MISSING_EARLY RR_BOX_TOKEN"
-  [ -n "${RR_BOX_SLUG:-}" ]     || _MISSING_EARLY="$_MISSING_EARLY RR_BOX_SLUG"
-  if [ -n "$_ENGINE_EARLY" ]; then
-    # shellcheck disable=SC1090
-    . "$_ENGINE_EARLY"
-    # Enrollment-only resolution: the cron view is NOT consulted on the dark
-    # path (a box that is not enrolled must not spawn CLI probes).
-    rrr_tools_resolve
-    rrr_enrollment_resolve "$_SECRETS"
-    rrr_evaluate
-    echo "65-rescue-receiver: readiness=$RRR_STATE reason=$RRR_REASON detail=$RRR_DETAIL"
-  else
-    echo "65-rescue-receiver: box not enrolled (missing:${_MISSING_EARLY}) — poll cron NOT registered"
-  fi
-  unset RR_RECEIVER_URL RR_BOX_TOKEN RR_BOX_SLUG
-  exit 0
-fi
-unset RR_RECEIVER_URL RR_BOX_TOKEN RR_BOX_SLUG
-
 _NAME="rescue-rr-box-poll"
 _LEGACY_NAME="rescue-rangers-poll"
 # RR INTAKE AUTH SELF-CHECK (daily). Separate leg, separate cron, separate name.
@@ -298,6 +269,42 @@ register_intake_auth_cron() {
   fi
   return 0
 }
+
+if [ -z "${RR_RECEIVER_URL:-}" ] || [ -z "${RR_BOX_TOKEN:-}" ] || [ -z "${RR_BOX_SLUG:-}" ]; then
+  # Report WHY, by NAME, from the engine's explicit state machine when it is
+  # installed; otherwise fall back to the historical prose line.
+  _ENGINE_EARLY=""
+  for _cand in "$_OCROOT/skills/shared-utils/rr-readiness.sh" \
+               "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/shared-utils/rr-readiness.sh"; do
+    [ -n "$_cand" ] && [ -f "$_cand" ] && { _ENGINE_EARLY="$_cand"; break; }
+  done
+  _MISSING_EARLY=""
+  [ -n "${RR_RECEIVER_URL:-}" ] || _MISSING_EARLY="$_MISSING_EARLY RR_RECEIVER_URL"
+  [ -n "${RR_BOX_TOKEN:-}" ]    || _MISSING_EARLY="$_MISSING_EARLY RR_BOX_TOKEN"
+  [ -n "${RR_BOX_SLUG:-}" ]     || _MISSING_EARLY="$_MISSING_EARLY RR_BOX_SLUG"
+  if [ -n "$_ENGINE_EARLY" ]; then
+    # shellcheck disable=SC1090
+    . "$_ENGINE_EARLY"
+    # Enrollment-only resolution for the STATE machine. RRX-012: the cron view
+    # is still not consulted for readiness here, but an unenrolled box now
+    # registers the two daily jobs (intake check + outbox flush) and no poll.
+    rrr_tools_resolve
+    rrr_enrollment_resolve "$_SECRETS"
+    rrr_evaluate
+    echo "65-rescue-receiver: readiness=$RRR_STATE reason=$RRR_REASON detail=$RRR_DETAIL"
+  else
+    echo "65-rescue-receiver: box not enrolled (missing:${_MISSING_EARLY}) — poll cron NOT registered"
+  fi
+  unset RR_RECEIVER_URL RR_BOX_TOKEN RR_BOX_SLUG
+  # RRX-012: a box that is not enrolled on the reply leg can still SEND cases.
+  # It gets the daily check of the sending channel and the outbox flush too.
+  if [ -n "$_OC_BIN" ]; then
+    register_intake_auth_cron
+    register_escalate_flush_cron
+  fi
+  exit 0
+fi
+unset RR_RECEIVER_URL RR_BOX_TOKEN RR_BOX_SLUG
 
 # ---------------------------------------------------------------------------
 # RR-028 engine. Absent (an older skills bundle, or a self-test fixture that
