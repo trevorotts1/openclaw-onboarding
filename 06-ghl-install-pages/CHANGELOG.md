@@ -1,3 +1,21 @@
+## [v27.1.110] - 2026-11-12 - prepared source release: native payment policy and exact page layout
+
+- State the native GHL payment-component requirement across API, Playwright,
+  OpenClaw, Agent Browser, and computer-use fallback routes. Custom code may only
+  surround native checkout/order forms, bumps, purchase actions, one-click upsells,
+  and downsells.
+- Document exact row/column targeting for GHL's 1–6 column layouts, including
+  `pages.layout`, captured placement IDs, zero-based `column_index`, expected-column
+  guards, and preservation of existing widths.
+- Register `pages.layout` as the 34th source-built operation; compiler coverage is
+  73 concrete actions / 102 bounded jobs. Two focused front-door/compiler checks
+  and three page-layout helper checks passed; these counts are separate, with no
+  combined test total claimed.
+- State the native payment policy across engine and fallback routes. Runtime policy,
+  heuristic input checks, and DOM preservation do not guarantee detection of every
+  nonnative payment markup pattern. Native payment acceptance remains pending; no
+  purchase proof is claimed. Layout creation/save/reopen acceptance is also pending.
+
 ## [v27.1.109] - 2026-11-11 - Approved source release
 
 - Complete the recorded source contracts for all ten formerly partial areas:

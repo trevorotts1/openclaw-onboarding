@@ -8,16 +8,16 @@ else:
 
 
 COMMON = {'location_id', 'location_name', 'start_url', 'auth_activation', 'publish'}
-CONTAINER = {'container_name', 'page_name', 'path', 'file', 'marker', 'code_id', 'seo'}
-CODE = {'file', 'marker', 'code_id', 'append', 'element_id', 'expected_name', 'section_id', 'seo'}
+CONTAINER = {'container_name', 'page_name', 'path', 'file', 'marker', 'code_id', 'seo', 'placement'}
+CODE = {'file', 'marker', 'code_id', 'append', 'element_id', 'expected_name', 'section_id', 'seo', 'placement'}
 CHECKOUT = {'page_id', 'step_id', 'component_id', 'tab_id', 'frame_name', 'adapter_capture',
             'checkout_contract', 'family', 'main_price', 'bumps', 'field_states',
             'purchase_action', 'funnel_id', 'charge', 'execute_payment'}
 FIELDS = {
     **{name: CONTAINER for name in ('funnels.create', 'funnels.add_page', 'websites.create', 'websites.add_page')},
     'pages.install_code': CODE, 'pages.install_embed': CODE | {'embed_receipt'},
-    'pages.seo': {'seo'},
-    'checkout.wrap_native': {'before_file', 'before_marker', 'checkout', 'after_file', 'after_marker', 'seo'},
+    'pages.seo': {'seo'}, 'pages.layout': {'layout'},
+    'checkout.wrap_native': {'before_file', 'before_marker', 'checkout', 'after_file', 'after_marker', 'seo', 'before_placement', 'after_placement'},
     'checkout.configure_native': CHECKOUT,
     'checkout.one_click_upsell': CHECKOUT,
     'checkout.configure_ui': {'element_id', 'expected_name', 'section_id', 'mode', 'products',
@@ -45,7 +45,7 @@ REQUIRED = {
     **{name: {'container_name', 'page_name', 'path'} for name in ('funnels.create', 'funnels.add_page', 'websites.create', 'websites.add_page')},
     'pages.install_code': {'file', 'marker', 'seo'},
     'pages.install_embed': {'file', 'marker', 'seo', 'embed_receipt'},
-    'pages.seo': {'seo'},
+    'pages.seo': {'seo'}, 'pages.layout': {'layout'},
     'checkout.wrap_native': {'before_file', 'before_marker', 'seo'},
     'forms.create': {'name'}, 'forms.submission': {'submission'},
     'forms.notifications': {'notifications'}, 'forms.conditions': {'condition'},
@@ -136,6 +136,10 @@ def validate_intake(operation, data):
     for flag in ('allow_creation', 'append', 'fixture'):
         if flag in data and type(data[flag]) is not bool:
             raise Stop(flag + ' requires a real boolean')
+    from playwright_recipes.native_payment_policy import validate_payment_inputs
+    reason = validate_payment_inputs(operation, data)
+    if reason:
+        raise Stop(reason)
     if operation not in FIELDS:
         return  # API-only and unknown operations retain their explicit dispatch refusal.
     unknown = set(data) - COMMON - FIELDS[operation] - {'options'}
@@ -145,9 +149,34 @@ def validate_intake(operation, data):
     if operation in ('funnels.create', 'funnels.add_page', 'websites.create', 'websites.add_page'):
         if data.get('file'):
             missing |= {'marker', 'seo'} - set(data)
-        elif set(data).intersection({'marker', 'code_id', 'seo'}):
+        elif set(data).intersection({'marker', 'code_id', 'seo', 'placement'}):
             raise Stop('Code/SEO inputs require the corresponding HTML file')
+    if operation == 'pages.layout' and 'layout' in data:
+        from playwright_recipes.page_layout import validate
+        validate({'layout': data['layout']})
+    for key in ('placement', 'before_placement', 'after_placement'):
+        if key in data:
+            from playwright_recipes.skill6_playwright import validate_placement
+            validate_placement(data[key])
+    if 'placement' in data and set(data).intersection({'section_id', 'element_id', 'expected_name'}):
+        raise Stop('Explicit column placement cannot be combined with legacy element or section targeting')
+    if operation == 'checkout.wrap_native' and 'checkout' in data:
+        checkout = data['checkout']
+        if not isinstance(checkout, dict) or set(checkout) - {'mode', 'placement', 'coupon_codes', 'quantity', 'multi_product'}:
+            raise Stop('Native checkout accepts only mode, placement and captured switch settings')
+        if checkout.get('mode', 'One-step') not in ('One-step', 'Two-step', 'Split'):
+            raise Stop('Unsupported checkout mode')
+        for flag in ('coupon_codes', 'quantity', 'multi_product'):
+            if flag in checkout and type(checkout[flag]) is not bool:
+                raise Stop('Native checkout switches require real booleans')
+        if 'placement' in checkout:
+            from playwright_recipes.skill6_playwright import validate_placement
+            validate_placement(checkout['placement'])
+    if operation == 'pages.layout' and 'options' in data:
+        raise Stop('Layout preparation requires an independently journaled job')
     if operation == 'checkout.wrap_native':
+        if 'after_placement' in data and not data.get('after_file'):
+            raise Stop('after_placement requires after_file')
         if data.get('after_file'):
             missing |= {'after_marker'} - set(data)
         elif 'after_marker' in data:

@@ -1,5 +1,18 @@
 # GHL Install Pages - How to Deploy Pages Day to Day
 
+> **Checkout rule (all engines, including fallbacks):** use native GHL order forms,
+> checkout, bumps, purchase actions, one-click upsells, and downsells. Custom code
+> may surround these components but must not replace payment collection. A page save
+> or preview does not prove a purchase; require a separately authorized transaction
+> receipt before reporting payment behavior as verified.
+>
+> **Layout rule:** rows may use 1–6 columns. Create layout with
+> `pages.layout` / `layout={section_id, columns: 1..6}`, capture the resulting IDs,
+> then target the exact section, row, and column for code or native checkout.
+> `column_index` is zero-based; use `expected_columns` to guard the intended layout.
+> Preserve existing section width unless `width_policy="full"` is explicitly
+> approved.
+
 This document explains the step-by-step process for deploying HTML pages into GoHighLevel (Convert and Flow) using browser automation. If you have not completed the setup prerequisites, go read INSTALL.md first.
 
 This assumes your HTML code is already written and ready to paste. This guide is about the process of getting that code into GoHighLevel's page builder.

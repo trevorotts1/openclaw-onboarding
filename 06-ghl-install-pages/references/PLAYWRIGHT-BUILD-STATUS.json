@@ -1,9 +1,9 @@
 {
   "schema": "skill6-build-inventory/2",
-  "updated_at": "2026-11-12T01:36:22.212491+00:00",
-  "scope": "Current local v27.1.109 build candidate, original 33 operation contracts and separately verified public v27.1.108 baseline. Unsupported advanced controls and native acceptance remain explicit.",
+  "updated_at": "2026-11-12T10:52:04+00:00",
+  "scope": "v27.1.110 prepared source release: 34 source-built operation contracts and separately verified public v27.1.108 baseline. Unsupported advanced controls and native acceptance remain explicit.",
   "counts": {
-    "BUILT": 33,
+    "BUILT": 34,
     "PARTIAL": 0,
     "GENERIC_ONLY": 0
   },
@@ -15,10 +15,10 @@
   },
   "current_feature_progress": {
     "schema": "skill6-current-feature-progress/1",
-    "source_branch": "release/skill6-v109-approved-20261111",
-    "source_version": "v27.1.109",
-    "dynamic_actions": 72,
-    "bounded_jobs": 101,
+    "source_branch": "work/skill6-native-hybrid-v110",
+    "source_version": "v27.1.110",
+    "dynamic_actions": 73,
+    "bounded_jobs": 102,
     "completed_since_frozen_audit": [
       {
         "id": "course-text-blocks",
@@ -1062,7 +1062,8 @@
       "source_in_this_release": 66
     },
     "completed_feature_status": "SOURCE_BUILT",
-    "source_snapshot_commit": "8ad51bf9b8e3c1a47c2fc308fe231683220eaec8"
+    "source_snapshot_commit": "8ad51bf9b8e3c1a47c2fc308fe231683220eaec8",
+    "source_snapshot_note": "v27.1.110 prepared source release; source_snapshot_commit remains the recorded v27.1.109 snapshot. Actual delivery is tracked in Git merge history."
   },
   "operations": [
     {
@@ -1428,30 +1429,41 @@
       "status": "BUILT",
       "contract": "Update existing draft course outline/content/access metadata through documented API paths.",
       "missing_executable_features": []
+    },
+    {
+      "operation": "pages.layout",
+      "recipe_name": "prepare_native_page_layout",
+      "status": "BUILT",
+      "contract": "Create a native 1–6 column row in the exact sole identified section, capture the new row/column IDs, and resolve existing placements by exact section/row/column identities. Native creation/save/reopen acceptance and multi-section row insertion are not included.",
+      "missing_executable_features": []
     }
   ],
   "verification": {
     "source_review": "BOUNDED_SOURCE_CLOSURE_CONFIRMED; native acceptance separate",
     "retained_checks": {
       "affected_module_checks": "Passing focused checks are recorded in the owning lane reports; no aggregate whole-suite total is claimed.",
-      "compiler_provider_boundary": "72 concrete actions /101 bounded jobs; each action has a compiled sample.",
+      "compiler_provider_boundary": "73 concrete actions / 102 bounded jobs; each action has a compiled sample.",
       "final_shared_smoke": "45 focused tests PASS in0.520s, exit0 at4dbde83e99a41a9998aedaaba756b8c197395712; widget families, mixed Survey conditions, outcome recreation, compiler boundary and Quiz individual media.",
       "integrated_meetings": "38 focused tests PASS at 7bd8b9304d; compiler/dispatch/replay wiring inspected.",
       "integrated_communities": "75 focused tests PASS at 7bd8b9304d; bounded contract source reviewed.",
       "merged_widget_condition_compiler_smoke": "41 focused tests PASS at be1abce261; includes resolved mixed-conditions test fixtures and real compiler fixtures for72 actions101 bounded jobs.",
-      "release_full_recipe_discovery": "1648 tests PASS,7 real-browser fixtures reserved for CI; both Ubuntu and macOS real Chromium CI jobs passed on8ad51bf9."
+      "release_full_recipe_discovery": "1648 tests PASS,7 real-browser fixtures reserved for CI; both Ubuntu and macOS real Chromium CI jobs passed on8ad51bf9.",
+      "pages_layout_frontdoor_compiler": "2 focused front-door/compiler boundary checks PASS. The new pages.layout operation is registered and source-compiled; this does not establish live native layout creation/save/reopen.",
+      "page_layout_helper": "3 focused page-layout helper tests PASS, reported separately from the two front-door/compiler checks; this does not establish live native layout creation/save/reopen."
     },
     "native_final_script": "NOT_RUN",
     "respondent_acceptance": "PENDING",
     "member_acceptance": "PENDING",
-    "manual_observation": "Selected native controls and saved/reopened states were inspected manually. These observations are separate from maintained-script acceptance. Independent reload also confirmed saved Form Text/Image and multiline HTML. All six temporary build tabs were closed and the connected build tab list was empty.",
+    "manual_observation": "Selected native controls and saved/reopened states were inspected manually. These observations are separate from maintained-script acceptance. Independent reload also confirmed saved Form Text/Image and multiline HTML. All six temporary build tabs were closed and the connected build tab list was empty. Additional v27.1.110 live inspection confirmed native row preset labels `1 Column` through `6 Column` and the `.c-section > .c-row > .c-column` identity hierarchy; creation/save/reopen was not exercised.",
     "native_proof_limits": {
       "split_allocation": "Running 50/50 and keyboard-staged 49/51 were observed; a saved 49/51 maintained-script/native run remains unverified.",
       "cohosts": "Saved loaded-empty card was captured. Actual first-assignment/clear-all execution and notification behavior remain unverified.",
-      "common_scopes": "Source-built scope does not mean every native flow was executed or every client feature supported."
+      "common_scopes": "Source-built scope does not mean every native flow was executed or every client feature supported.",
+      "page_layout": "Source supports insertion only into the exact sole section on the page. Multi-section row insertion is unsupported. Live preset labels and element hierarchy were inspected, but creation/save/reopen persistence remains pending.",
+      "payments": "Every route, including browser/computer fallbacks, must use native GHL checkout/order-form, bump, purchase-action, one-click-upsell and downsell components. Runtime policy, heuristic input checks, and DOM preservation are safeguards and do not guarantee detection of every nonnative payment markup pattern. Native payment acceptance remains pending; no purchase success is claimed."
     },
     "history": "Historical counts and release snapshots remain in Git history.",
-    "installer_archive": "Six archived documents exactly match canonical source; archived SKILL metadata v27.1.109."
+    "installer_archive": "Six archived documents were byte-compared against canonical source; all members match and original ZipInfo metadata is preserved. Archived SKILL metadata v27.1.110."
   },
   "common_client_use_progress": {
     "count": 10,

@@ -150,7 +150,7 @@ def validate_job(job, base):
     if not isinstance(steps,list) or not steps:
         raise Stop("No executable steps")
     keys = set()
-    allowed = {"survey_submission", "native_survey_widget_fields", "native_form_widget_fields", "native_survey_multiline_configuration", "native_split_variant", "navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_course_theme", "native_course_blocks", "native_course_text_blocks", "native_course_section_media", "native_course_image_blocks", "native_course_video_blocks", "native_course_theme_media", "native_course_block_media", "native_course_live_session", "native_provider_oauth_handoff", "native_fields", "native_field_placement", "native_address_fields", "native_address_parent", "native_form_consent", "native_object_fields", "native_contact_field_chain", "native_survey_radio_creation", "native_quiz_creation", "native_survey_creation", "native_dropdown_fields", "native_large_text_fields", "quiz_short_answers", "quiz_multiple_choices", "quiz_written_answers", "quiz_picture_choices", "native_survey_object_fields", "native_survey_text_configuration", "native_condition", "native_condition_group", "native_condition_stack", "native_condition_outcomes", "native_survey_condition_outcomes", "quiz_configuration", "quiz_results", "survey_configuration", "survey_rule_stack", "form", "form_css", "native_form_css", "native_form_schedule", "native_form_tracking", "native_form_embed", "native_order_confirmation", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "community_access", "community_courses", "community_event_room", "community_branding", "assessment", "meeting", "meeting_cohosts", "native_dynamic_meeting_location", "options"}
+    allowed = {"page_layout", "survey_submission", "native_survey_widget_fields", "native_form_widget_fields", "native_survey_multiline_configuration", "native_split_variant", "navigate", "container", "page", "html", "seo", "checkout", "native_checkout", "native_checkout_ui", "native_course_theme", "native_course_blocks", "native_course_text_blocks", "native_course_section_media", "native_course_image_blocks", "native_course_video_blocks", "native_course_theme_media", "native_course_block_media", "native_course_live_session", "native_provider_oauth_handoff", "native_fields", "native_field_placement", "native_address_fields", "native_address_parent", "native_form_consent", "native_object_fields", "native_contact_field_chain", "native_survey_radio_creation", "native_quiz_creation", "native_survey_creation", "native_dropdown_fields", "native_large_text_fields", "quiz_short_answers", "quiz_multiple_choices", "quiz_written_answers", "quiz_picture_choices", "native_survey_object_fields", "native_survey_text_configuration", "native_condition", "native_condition_group", "native_condition_stack", "native_condition_outcomes", "native_survey_condition_outcomes", "quiz_configuration", "quiz_results", "survey_configuration", "survey_rule_stack", "form", "form_css", "native_form_css", "native_form_schedule", "native_form_tracking", "native_form_embed", "native_order_confirmation", "form_submission", "form_notifications", "form_settings", "community", "community_channels", "community_details", "community_access", "community_courses", "community_event_room", "community_branding", "assessment", "meeting", "meeting_cohosts", "native_dynamic_meeting_location", "options"}
     prepared = json.loads(json.dumps(job))
     for s in prepared["steps"]:
         if not isinstance(s,dict):
@@ -163,6 +163,13 @@ def validate_job(job, base):
         for flag in ('allow_creation', 'append', 'inactive', 'discovery'):
             if flag in s and type(s[flag]) is not bool:
                 raise Stop(flag + ' requires a real boolean')
+        if s['action']=='page_layout':
+            from playwright_recipes.page_layout import validate
+            validate(s)
+        if s['action'] in ('html', 'checkout') and 'placement' in s:
+            validate_placement(s['placement'])
+            if s['action'] == 'html' and s.get('element_id'):
+                raise Stop('Placement creates a code element; update an existing element by its exact identity instead')
         if s['action']=='native_field_placement':
             from playwright_recipes.field_placement import validate
             validate(s)
@@ -440,10 +447,16 @@ def validate_job(job, base):
         if s["action"] == "page" and (not isinstance(s.get('path'),str) or not re.fullmatch(r"/[A-Za-z0-9/_-]+", s.get("path", ""))):
             raise Stop("A page path beginning with / is required")
         if s["action"] == "html":
+            if s.get("width_policy") not in (None, "full"):
+                raise Stop("Unsupported width policy")
             if not isinstance(s.get('file'),str) or not isinstance(s.get('marker'),str):
                 raise Stop('HTML file and visible marker must be strings')
             p = (base / s["file"]).resolve()
             s["html"] = read_fragment(p)
+            from playwright_recipes.native_payment_policy import validate_payment_inputs
+            payment_refusal = validate_payment_inputs('pages.install_code', {'html': s['html']})
+            if payment_refusal:
+                raise Stop(payment_refusal)
             if not s.get("marker") or s["marker"] not in s["html"]:
                 raise Stop("A visible verification marker must appear in the HTML")
             s["html_sha256"] = sha(s["html"])
@@ -983,15 +996,82 @@ def save_page(frame):
     wait_until(finished, "Page save never produced a completed-save indication")
 
 
+def validate_placement(placement):
+    if not isinstance(placement, dict) or set(placement) - {'section_id', 'row_id', 'column_id', 'column_index', 'expected_columns'}:
+        raise Stop('Placement requires exact section, row and column identity')
+    if not all(isinstance(placement.get(k), str) and placement[k].strip() for k in ('section_id', 'row_id')):
+        raise Stop('Placement requires exact section and row identities')
+    by_id = 'column_id' in placement
+    by_index = 'column_index' in placement
+    if by_id == by_index:
+        raise Stop('Specify exactly one column ID or row-scoped column index')
+    if by_id and (not isinstance(placement['column_id'], str) or not placement['column_id'].strip()):
+        raise Stop('Column ID must be nonempty')
+    if by_index and (type(placement['column_index']) is not int or not 0 <= placement['column_index'] < 6):
+        raise Stop('Column index must be an integer from 0 to 5')
+    count = placement.get('expected_columns')
+    if count is not None and (type(count) is not int or not 1 <= count <= 6):
+        raise Stop('Expected columns must be an integer from 1 to 6')
+    if by_index and (count is None or placement['column_index'] >= count):
+        raise Stop('Row-scoped column index requires a matching expected column count')
+
+
+def select_install_column(frame, placement=None):
+    if placement is not None:
+        validate_placement(placement)
+        from playwright_recipes.page_layout import resolve_column
+        click(resolve_column(frame, placement))
+        return
+    # Legacy shorthand is safe only when the entire page has one native column.
+    columns = frame.locator('.c-column')
+    button = frame.get_by_role('button', name='1st Column', exact=True)
+    if columns.count() != 1 or button.count() != 1 or not visible(button):
+        raise Stop('An exact native column placement is required on this page')
+    click(button)
+
+
+def page_layout(page, step):
+    from playwright_recipes.page_layout import configure
+    return configure(page, step)
+
+
+def native_order_inventory(frame):
+    rows = frame.locator('.c-order-form').evaluate_all("""els => els.map(el => ({
+        id: el.id, section_id: el.closest('.c-section')?.id || null,
+        row_id: el.closest('.c-row')?.id || null,
+        column_id: el.closest('.c-column')?.id || null
+    }))""")
+    if any(not all(isinstance(row.get(k), str) and row[k] for k in ('id', 'section_id', 'row_id', 'column_id')) for row in rows):
+        raise Stop('Native order form identity or parent is missing')
+    if len({row['id'] for row in rows}) != len(rows):
+        raise Stop('Native order form identity is ambiguous')
+    return {row['id']: row for row in rows}
+
+
+def assert_native_orders_preserved(before, after):
+    if any(after.get(key) != value for key, value in before.items()):
+        raise Stop('An existing native order form was removed or moved; page was not saved')
+
+
+def placement_column_id(frame, placement):
+    from playwright_recipes.page_layout import resolve_column
+    column_id = resolve_column(frame, placement).get_attribute('id')
+    if not column_id:
+        raise Stop('Resolved native column has no identity')
+    return column_id
+
+
 def install_html(page, step):
     frame = builder(page)
     before_ids = set(frame.locator('.c-custom-code').evaluate_all('(els)=>els.map(el=>el.id)'))
+    before_orders = native_order_inventory(frame)
+    target_column = placement_column_id(frame, step['placement']) if step.get('placement') else None
     target_info = None
     section_id = step.get('section_id')
     blank = frame.get_by_role("button", name="Blank Section", exact=True)
-    if not visible(blank) and frame.locator('.c-section').count()!=1 and not step.get('element_id'):
+    if not visible(blank) and frame.locator('.c-section').count()!=1 and not step.get('element_id') and not step.get('placement'):
         raise Stop('Existing multi-section page needs a recorded target profile before any code or width mutation')
-    if visible(blank):
+    if visible(blank) and not step.get("placement"):
         click(blank)
         full_width(frame)
         add_tile(frame, "Rows", "1 Column")
@@ -1003,8 +1083,8 @@ def install_html(page, step):
         from playwright_recipes.pages_checkout import resolve_code_target
         target_info = resolve_code_target(frame, step['element_id'], step.get('expected_name','ZHC Code '+step['id']), section_id)
         section_id = target_info['section_id']
-    elif step.get("append"):
-        click(frame.get_by_role("button",name="1st Column",exact=True))
+    elif step.get("append") or step.get("placement"):
+        select_install_column(frame, step.get("placement"))
         add_tile(frame,"Elements","Code")
         fill(frame.get_by_role("textbox",name="Element name",exact=True),"ZHC Code " + step["id"])
     else:
@@ -1021,7 +1101,17 @@ def install_html(page, step):
     close = frame.get_by_role("button", name="Close", exact=True)
     if visible(close):
         click(close)
-    full_width(frame, section_id)
+    if step.get("width_policy") == "full":
+        full_width(frame, section_id or (step.get("placement") or {}).get("section_id"))
+    assert_native_orders_preserved(before_orders, native_order_inventory(frame))
+    if target_column:
+        after_ids = set(frame.locator('.c-custom-code').evaluate_all('(els)=>els.map(el=>el.id)'))
+        created = after_ids - before_ids
+        if len(created) != 1 or not next(iter(created)):
+            raise Stop('Inserted code element identity is missing or ambiguous; page was not saved')
+        code = frame.locator('.c-custom-code[id=' + json.dumps(next(iter(created))) + ']')
+        if code.count() != 1 or code.evaluate("el => el.closest('.c-column')?.id || null") != target_column:
+            raise Stop('Inserted code is outside the requested native column; page was not saved')
     save_page(frame)
     href = frame.locator('a[href*="/preview/"]').get_attribute("href")
     check = page.context.new_page()
@@ -1082,12 +1172,31 @@ def seo(page, step):
 
 def checkout(page, step):
     frame = builder(page)
-    if not visible(frame.get_by_role("button", name="Customize order form", exact=True)):
-        columns = frame.get_by_role("button", name="1st Column", exact=True)
-        if not visible(columns):
-            raise Stop("Open the exact target column before installing native checkout")
-        click(columns)
+    before = native_order_inventory(frame)
+    placement = step.get('placement')
+    expected_orders = before
+    target_column = placement_column_id(frame, placement) if placement else None
+    if placement is not None or not visible(frame.get_by_role("button", name="Customize order form", exact=True)):
+        select_install_column(frame, placement)
         add_tile(frame, "Elements", "Order Form")
+        wait_until(lambda: len(native_order_inventory(frame)) > len(before), 'Native order form did not appear')
+        after = native_order_inventory(frame)
+        assert_native_orders_preserved(before, after)
+        expected_orders = after
+        created = set(after) - set(before)
+        if len(created) != 1:
+            raise Stop('Inserted native order form identity is ambiguous; page was not saved')
+        order_id = next(iter(created))
+        if target_column and after[order_id]['column_id'] != target_column:
+            raise Stop('Inserted native order form is outside the requested column; page was not saved')
+    else:
+        if len(before) != 1:
+            raise Stop('An exact native order form is required when checkout is ambiguous')
+        order_id = next(iter(before))
+    wrapper = frame.locator('.c-order-form[id=' + json.dumps(order_id) + ']')
+    if wrapper.count() != 1:
+        raise Stop('Native order form is missing or ambiguous')
+    click(wrapper)
     click(frame.get_by_role("button", name="Customize order form", exact=True))
     dialog = frame.get_by_role("dialog").filter(has_text="Form settings")
     click(dialog.get_by_role("button", name=step.get("mode", "One-step"), exact=True))
@@ -1097,8 +1206,9 @@ def checkout(page, step):
             dialog.get_by_role("switch", name=label, exact=True).set_checked(step[key])
     no_products = dialog.get_by_text("No products on this step yet.", exact=True).count() > 0
     click(dialog.get_by_role("button", name="Alternative text for image not provided", exact=True))
+    assert_native_orders_preserved(expected_orders, native_order_inventory(frame))
     save_page(frame)
-    return {"status":"COMPONENT_SAVED", "mode":step.get("mode", "One-step"), "products_missing":no_products, "payment_verified":False, "checkout_ready":False, "next":"Skill 44/79 product and price binding, offer mapping, test-mode payment and upsell verification"}
+    return {"status":"COMPONENT_SAVED", "element_id":order_id, "mode":step.get("mode", "One-step"), "products_missing":no_products, "payment_verified":False, "checkout_ready":False, "next":"Skill 44/79 product and price binding, offer mapping, test-mode payment and upsell verification"}
 
 
 def make_form(page, step):
@@ -1915,7 +2025,7 @@ def _run_on_page(page, job, evidence_root, *, contact_field_capability=None, rad
     results = []
     fresh_container = None
     state = {"fingerprint":fingerprint, "location_id":job["location_id"], "status":"RUNNING", "results":results}
-    handlers = {"survey_submission":survey_submission, "native_survey_widget_fields":native_survey_widget_fields, "native_form_widget_fields":native_form_widget_fields, "native_survey_multiline_configuration":native_survey_multiline_configuration, "native_split_variant":native_split_variant, "container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_course_theme":native_course_theme, "native_course_blocks":native_course_blocks, "native_course_text_blocks":native_course_text_blocks, "native_course_section_media":native_course_section_media, "native_course_image_blocks":native_course_image_blocks, "native_course_video_blocks":native_course_video_blocks, "native_course_theme_media":native_course_theme_media, "native_course_block_media":native_course_block_media, "native_course_live_session":native_course_live_session, "native_provider_oauth_handoff":native_provider_oauth_handoff, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_address_fields":native_address_fields, "native_address_parent":native_address_parent, "native_form_consent":native_form_consent, "native_object_fields":native_object_fields, "native_dropdown_fields":native_dropdown_fields, "native_large_text_fields":native_large_text_fields, "quiz_short_answers":quiz_short_answers, "quiz_multiple_choices":quiz_multiple_choices, "quiz_written_answers":quiz_written_answers, "quiz_picture_choices":quiz_picture_choices, "native_survey_object_fields":native_survey_object_fields, "native_survey_text_configuration":native_survey_text_configuration, "native_condition":native_condition, "native_condition_group":native_condition_group, "native_condition_stack":native_condition_stack, "native_condition_outcomes":native_condition_outcomes,"native_survey_condition_outcomes":native_survey_condition_outcomes, "quiz_configuration":quiz_configuration, "quiz_results":quiz_results, "survey_configuration":survey_configuration, "survey_rule_stack":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "native_form_schedule":native_form_schedule, "native_form_tracking":native_form_tracking, "native_form_embed":native_form_embed, "native_order_confirmation":native_order_confirmation, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"meeting_cohosts":meeting_cohosts,"native_dynamic_meeting_location":native_dynamic_meeting_location,"options":options}
+    handlers = {"page_layout":page_layout, "survey_submission":survey_submission, "native_survey_widget_fields":native_survey_widget_fields, "native_form_widget_fields":native_form_widget_fields, "native_survey_multiline_configuration":native_survey_multiline_configuration, "native_split_variant":native_split_variant, "container":ensure_container, "page":ensure_page, "html":install_html, "seo":seo, "checkout":checkout, "native_checkout":native_checkout, "native_checkout_ui":native_checkout_ui, "native_course_theme":native_course_theme, "native_course_blocks":native_course_blocks, "native_course_text_blocks":native_course_text_blocks, "native_course_section_media":native_course_section_media, "native_course_image_blocks":native_course_image_blocks, "native_course_video_blocks":native_course_video_blocks, "native_course_theme_media":native_course_theme_media, "native_course_block_media":native_course_block_media, "native_course_live_session":native_course_live_session, "native_provider_oauth_handoff":native_provider_oauth_handoff, "native_fields":native_fields, "native_field_placement":native_field_placement, "native_address_fields":native_address_fields, "native_address_parent":native_address_parent, "native_form_consent":native_form_consent, "native_object_fields":native_object_fields, "native_dropdown_fields":native_dropdown_fields, "native_large_text_fields":native_large_text_fields, "quiz_short_answers":quiz_short_answers, "quiz_multiple_choices":quiz_multiple_choices, "quiz_written_answers":quiz_written_answers, "quiz_picture_choices":quiz_picture_choices, "native_survey_object_fields":native_survey_object_fields, "native_survey_text_configuration":native_survey_text_configuration, "native_condition":native_condition, "native_condition_group":native_condition_group, "native_condition_stack":native_condition_stack, "native_condition_outcomes":native_condition_outcomes,"native_survey_condition_outcomes":native_survey_condition_outcomes, "quiz_configuration":quiz_configuration, "quiz_results":quiz_results, "survey_configuration":survey_configuration, "survey_rule_stack":survey_configuration, "form":make_form, "form_css":form_css, "native_form_css":native_form_css, "native_form_schedule":native_form_schedule, "native_form_tracking":native_form_tracking, "native_form_embed":native_form_embed, "native_order_confirmation":native_order_confirmation, "form_submission":form_submission, "form_notifications":form_notifications, "form_settings":form_settings, "community":community,"assessment":assessment,"meeting":meeting,"meeting_cohosts":meeting_cohosts,"native_dynamic_meeting_location":native_dynamic_meeting_location,"options":options}
     for step in job["steps"]:
         assert_tenant(page, job)
         state["current_step"] = step["id"]

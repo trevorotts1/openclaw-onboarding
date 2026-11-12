@@ -9,6 +9,32 @@ Read [PLAYWRIGHT-PROGRESS.md](PLAYWRIGHT-PROGRESS.md) first when resuming this j
 Run `python3 06-ghl-install-pages/tools/playwright_recipes/checkpoint.py`
 to save a dated source backup to Downloads on the executing Mac or VPS.
 
+## Native payment and exact layout invariants
+
+Every engine and fallback must use native GHL checkout/order-form, order bump,
+purchase-action, one-click-upsell and downsell components. Custom HTML/CSS/iframe/
+embed content can only surround those controls; it cannot collect or simulate
+payment. A component save/preview is not a successful purchase. Report payment
+behavior as unverified unless a separately authorized test transaction has a
+verified receipt. Policy instructions, heuristic input checks, and DOM preservation
+do not guarantee that every nonnative payment markup pattern is detectable; inspect
+the actual native component and stop when payment implementation is ambiguous.
+
+GHL row layouts support 1–6 columns. Create or configure a layout via
+`pages.layout` with `layout={section_id, columns: 1..6}`; then use the returned,
+captured IDs for every placement. Front-door page inputs accept
+`placement={section_id,row_id,column_id,expected_columns?}` or
+`placement={section_id,row_id,column_index,expected_columns}` (zero-based index).
+For `checkout.wrap_native`, order the optional code-before, native checkout, and
+code-after placements with `before_placement`, `placement`, and
+`after_placement`. The executor validates exact section/row/column containment.
+Without placement, the first-column shortcut is allowed only on a one-column
+section. Existing HTML updates target `element_id` separately; they do not combine
+with new placement. Existing section widths remain unchanged unless
+`width_policy="full"` is expressly selected. A checkout result is not payment
+verification and remains not ready until its native payment dependencies and
+test-payment acceptance are satisfied.
+
 ## Routing and ownership
 
 For each exact operation, ask `tools/playwright_recipes/route.py` to choose:
