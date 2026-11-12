@@ -534,6 +534,9 @@ def main():
                         args.prosody_speed = _SPEED_PRESETS[_pref]
                         print(f"[speed] intake speech_speed_preference={_pref!r} -> "
                               f"prosody.speed {args.prosody_speed}")
+                    else:
+                        print(f"[speed] unknown speech_speed_preference={_pref!r}; "
+                              f"keeping default prosody.speed 1.25")
                     break
         except Exception as _exc:  # noqa: BLE001 — intake absence is non-fatal; keep 1.25
             print(f"[speed] could not read intake: {_exc}")
