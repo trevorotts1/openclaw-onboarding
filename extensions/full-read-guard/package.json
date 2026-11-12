@@ -1,0 +1,30 @@
+{
+  "name": "full-read-guard",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Full-Read Guard: whole-skill reads for the skill in use and its direct dependencies, with a read_skill tool, read receipts, and a fail-open loop breaker.",
+  "license": "UNLICENSED",
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "manifest.d",
+    "openclaw.plugin.json"
+  ],
+  "scripts": {
+    "build": "bash ./build.sh",
+    "test": "node --test test/"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.3.28",
+      "minGatewayVersion": ">=2026.3.28"
+    },
+    "build": {
+      "openclawVersion": "2026.11.3",
+      "pluginSdkVersion": "2026.11.3"
+    }
+  }
+}
