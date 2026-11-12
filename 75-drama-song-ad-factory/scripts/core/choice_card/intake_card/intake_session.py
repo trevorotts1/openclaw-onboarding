@@ -18,11 +18,54 @@ import json
 import os
 import sqlite3
 from pathlib import Path
+import sys
 import tempfile
 
 from . import intake_card as card
 
 SCHEMA = "blackceo.intake-session/v1"
+
+#: S75-035: a "yes" that cannot start the run still answers the client. Each
+#: reason code a blocked confirmation can carry gets one plain sentence; the
+#: code itself is an operator detail and never appears in the client message.
+_AI_PAIR_REFUSED = ("I can't start yet - the setup on this machine isn't ready for the "
+                    "option you picked. I've told the team. You don't need to do anything.")
+_VIDEO_MODEL_REFUSED = ("I can't start yet - I couldn't load the list of video options. "
+                        "I've told the team. Your answers are saved.")
+REFUSAL_OTHER_TEXT = "I can't start yet. Your answers are saved and I've told the team."
+REFUSAL_TEXT = {
+    "testimonial-permission-pending":
+        "Paused, and your answers are saved. I need the signed OK from the person "
+        "in the testimonial before I can start. Send it here and I will pick up "
+        "where we stopped.",
+    "AI_MODEL_ANSWER_REQUIRED": _AI_PAIR_REFUSED,
+    "AI_MODEL_BINDING_REFUSED": _AI_PAIR_REFUSED,
+    "AI_MODEL_BINDINGS_UNREADABLE": _AI_PAIR_REFUSED,
+    "AI_MODEL_BINDING_CONFLICT": _AI_PAIR_REFUSED,
+    "MODEL_UNKNOWN": _AI_PAIR_REFUSED,
+    "MODEL_UNAVAILABLE": _AI_PAIR_REFUSED,
+    "SAME_MODEL_ROLES": _AI_PAIR_REFUSED,
+    "ROLE_BINDING_CONFLICT": _AI_PAIR_REFUSED,
+    "VIDEO_MODEL_STATE_UNAVAILABLE": _VIDEO_MODEL_REFUSED,
+    "VIDEO_MODEL_IDENTITY_CHANGED": _VIDEO_MODEL_REFUSED,
+    "VIDEO_MODEL_RUN_ID_AMBIGUOUS": _VIDEO_MODEL_REFUSED,
+    "VIDEO_MODEL_RUN_ID_CONFLICT": _VIDEO_MODEL_REFUSED,
+    "VIDEO_MODEL_LOCK_CONFLICT": _VIDEO_MODEL_REFUSED,
+    "VIDEO_MODEL_LOCK_NOT_PERSISTED": _VIDEO_MODEL_REFUSED,
+}
+INVALID_REPLY_PREFIX = ("Sorry, I didn't catch that. Reply with the number or the "
+                        "name of one of these:")
+
+
+def _refusal_text(code):
+    """The client's sentence for a blocked confirmation.
+
+    An unmapped code still answers the client in plain words; the code goes to
+    the operator on stderr so the refusal can be traced."""
+    if code in REFUSAL_TEXT:
+        return REFUSAL_TEXT[code]
+    print("intake refusal reason code: %s" % code, file=sys.stderr)
+    return REFUSAL_OTHER_TEXT
 
 
 @contextmanager
@@ -567,6 +610,8 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
              "accepted": False}
     state["events"].append(event)
     code, outcome = "INTAKE_ANSWER_SAVED", "ok"
+    refusal = None          # plain sentence when a "yes" could not start the run
+    missed = False          # the reply matched no offered option
     if current["id"] == "recap":
         low = raw.strip().lower()
         #: S75-006: the recap is reached once no question is left to ASK; the
@@ -580,6 +625,7 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
             blocked = _finish(state, answers, qs, run_dir, target, client_dir)
             if blocked:
                 code, outcome = blocked, "waiting"
+                refusal = _refusal_text(blocked)
             else:
                 state["done"] = True
                 code = "INTAKE_CONFIRMED"
@@ -593,6 +639,7 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
         parsed = _parse(raw, q)
         if not parsed or parsed.get("error"):
             code, outcome = "INVALID_OPTION", "waiting"
+            missed = True
         else:
             parsed["id"] = q["id"]
             option = _option(q, parsed)
@@ -614,7 +661,13 @@ def _process_locked(path, replies, questions, run_dir, run_state_file, target,
         next_pending["requires_identity"] = True
     state["pending"] = next_pending
     _write(path, state)
-    return _result(state, path, answers, qs, code, outcome)
+    message = None
+    if refusal is not None:
+        # The reason comes first, then the recap the client can still change.
+        message = refusal + "\n\n" + next_pending["message"]
+    elif missed:
+        message = INVALID_REPLY_PREFIX + "\n\n" + next_pending["message"]
+    return _result(state, path, answers, qs, code, outcome, message=message)
 
 
 def _progress(state, answers, qs):
