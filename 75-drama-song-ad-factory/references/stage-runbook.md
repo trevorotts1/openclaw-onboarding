@@ -76,7 +76,7 @@ Cover image / thumbnail (DEL-08): also before the delivery gate, build the ONE c
 Three audio versions (DEL-01): the same delivery folder also ships the song three clearly-labelled ways, from the audio the run already produced (the finished mix, the instrumental the run made, the vocal stem saved for every take -- never re-synthesised here): `delivery_variants.build_audio_versions(mix, $DELIVERY, instrumental, vocal_stem)` encodes `01 - Full Song.mp3`, `01 - Instrumental.mp3` and `01 - Voice Only.mp3` (MP3 320 kbps each) and writes `01 - About These Audio Files.txt`, a short plain-English note on how the three differ, then `write_version_docs($DELIVERY, rows)` lists them in `delivery-receipt.json` and `README.md`. Every source is required: a missing mix, instrumental or vocal stem is a refusal (ValueError), never a two-version delivery dressed up as three. Gate it before delivery: `python3 scripts/core/delivery_variants/song_files.py check-versions $DELIVERY` (exit 5 = a version or the note is missing); include `audio_versions` in the delivery `--required` list.
 
 Parallel minute-lanes (W-G-008): a song under 120 s runs the table above unchanged (one lane). At 120 s and up, `scripts/core/lane_planner.py` cuts the shot list into N = ceil(L / 60) lanes of about 60 s, every cut on a shot boundary (`plan_lanes(shots, song_length_s)`); shared steps (song + song checker, plan/shot list, character, close-up picture gate) run once before the split, the per-lane stages above (`image-keyframes`, `video-generation`, lip-sync) then run in every lane at the same time, and the fan-in (one edit, one independent checker, one repair) runs once after. ONE `SharedGovernor` paces all lanes: at most 20 new generation requests per 10 s in total, per-lane share floor(18 / N), 429s resubmitted through `load_governor.kie_request`; heavy ffmpeg stays at most 2 at once across all lanes (`heavy_slot`). `classify_tag(db, run_id, tag)` polls a ledger-known tag and reuses a finished file, so a re-run never pays twice; all lanes plan against the ONE run's ledger.
-Song mp3 part of the deliverable (FU-U14): every delivered ad folder must ALSO hold the final song named `<Author> - <Title> - Song.mp3` (320 kbps, the exact song used, full length; plus the wav when one exists) beside the captioned and clean-master mp4s. Gate it before delivery: `python3 -c "from delivery_checklist import delivery_checklist as dc; print(dc.check_song_mp3('<AD_DIR>', '<AD_AUDIO>', '<Title>', '<Author>'))"` — rows `SONG_MP3_FILE` / `SONG_MP3_DURATION` / `SONG_MP3_CORRELATION`, fail closed (missing file, duration off by more than 0.1 s, or correlation under 0.95 is a FAIL). When a book/batch campaign finishes, build one zip per client: `python3 scripts/core/batch_zip/batch_zip.py <manifest.json>` (`build_batch_zip(client, ads, out_path)`) — one folder per author with the three files per ad plus a README listing every file, duration, resolution and banner link.
+Song mp3 part of the deliverable (FU-U14): every delivered ad folder must ALSO hold the final song named `<Author> - <Title> - Song.mp3` (320 kbps, the exact song used, full length; plus the wav when one exists) beside the captioned and clean-master mp4s. Gate it before delivery: `python3 scripts/core/delivery_checklist/song_mp3_cli.py --ad-dir '<AD_DIR>' --ad-audio '<AD_AUDIO>' --title '<Title>' --author '<Author>'` — rows `SONG_MP3_FILE` / `SONG_MP3_DURATION` / `SONG_MP3_CORRELATION`, fail closed (missing file, duration off by more than 0.1 s, or correlation under 0.95 is a FAIL); exit 5 = a row failed. When a book/batch campaign finishes, build one zip per client: `python3 scripts/core/batch_zip/batch_zip.py <manifest.json>` (`build_batch_zip(client, ads, out_path)`) — one folder per author with the three files per ad plus a README listing every file, duration, resolution and banner link.
 
 Storyboard as a delivered grid (DEL-04): the approved storyboard becomes one client PDF. `python3 scripts/core/storyboard_grid/storyboard_grid.py --run-dir "$RUN" --out "$DELIVERY"` writes `04 - Storyboard.pdf` (`storyboard_grid.DELIVERY_NAME`) — every scene picture in a page grid, each captioned with its shot number and timecode, the lyric line it plays over and what happens, in song order, so the client can read the video before it is made. It reads only the approval records (`storyboard/gate.json`, `contracts.json`, `stills.json`) and builds them through `storyboard_director.approval_package`, so a missing still or an incomplete card refuses with that gate's own code and `STORYBOARD_NOT_APPROVED` refuses when the client never approved. The drawing is `core/pdf_kit` (standard library only, 12 pt floor, bright white page); `storyboard_grid.forbidden_text` refuses a model or tool name, a dollar amount or an income promise before a byte is written (`CLIENT_TEXT_FORBIDDEN`). Run: `python3 scripts/core/storyboard_grid/test_storyboard_grid.py`.
 
@@ -88,51 +88,16 @@ Note: `music`, `image-keyframes` and `video-generation` share one command shape 
 Skill 74 `kie_dispatch` route); only the model id, request file and logical key differ.
 Video model ids come from `python3 scripts/core/video_router/video_router.py --request <request.json>`.
 
-## Waiting for a background stage job (the waiter) — L4, v2.9.73
+## Waiting for a background stage job
 
-Long jobs (Agnes segments, music takes, a big render) run in the background and
-the stage waits for them. Two shells sat ~8 h on a watcher that matched its own
-command line and never saw the job finish. The bug:
+Use the one waiter. Never write a shell loop, never match a process name.
 
-```sh
-# WRONG — `pgrep -f "run_vtv_music.py"` matches THE WAITER ITSELF, because
-# every waiter pass's shell argv holds the quoted string, so the loop waits
-# on itself and never ends:
-while pgrep -f "run_vtv_music.py" >/dev/null; do sleep 30; done
+    python3 scripts/core/intake_preflight/wait_for_stage.py --run-dir "$RUN" --stage <stage id> \
+      [--artifact "<file the job writes last>" --min-bytes <n>] --timeout-seconds <job estimate x 2>
 
-# RIGHT — anchor on the interpreter AND bracket the script name's first
-# character: the regex means "python … run_vtv_music.py", and a waiter that
-# quotes THIS pattern never matches it (its own argv carries
-# "[r]un_vtv_music\.py", whose text has no literal 'run_vtv_music.py' — the
-# bracket breaks self-matching on every pass). pgrep -f is an ERE over the
-# full argv, so the interpreter word covers python3 AND macOS's CLT
-# framework python (argv: .../MacOS/Python - capital P - covered by [Pp]).
-while pgrep -f "[Pp]ython.*[r]un_vtv_music\.py" >/dev/null; do sleep 30; done
-# and on top of the process check, poll the job's own completion artifact:
-until [ -s "$RUN/music/picked-song.mp3" ]; do sleep 30; done   # or the row:
-until [ "$(sqlite3 "$RUN/control/state.sqlite3" "SELECT state FROM stages WHERE stage='video-generation'")" = "COMPLETE" ]; do sleep 30; done
-```
-
-Rules for any waiter `new` in this runbook, on ANY job:
-
-1. Anchor on the interpreter: match `python3 <path>` of the SCRIPT's real argv,
-   not a bare script-name fragment a quoting shell shares.
-2. Never quote a pattern in the waiter that regex-matches the waiter's own
-   argv. `grep`/`pgrep` with a leading `[<first-char>]` class (or `-x` with the
-   full exact command line) is the documented self-exclusion.
-3. The loop MUST have a second, artifact-based exit: the file the job writes
-   last (`-s`, non-empty), or the stage row reaching `COMPLETE` through
-   `state.sqlite3`. A waiter that can only exit on a process name can spin
-   forever when the job died without a matching process. This is what the
-   runbook's waiter section REQUIRES of every waiter: the process check is
-   the guard, the artifact check (or the stage row) is the exit.
-4. Poll no faster than 15 s (agnes/5411) and cap the WAIT yourself: a bounded
-   timeout (for example 30 consecutive quiet checks past the job's ETA) is a
-   FAILURE to investigate, not silence to wait past.
-5. Self-check before trusting a waiter one-off: run
-   `python3 scripts/core/intake_preflight/test_waiter_pattern_v2973.py` —
-   it proves the documented pattern does not match a shell holding the same
-   string and does match a real sleeping job.
+Exit 0 = finished. Exit 2 = still not finished at the timeout: stop and report what the job's own log and
+the stage row say. Exit 4 = the stage is blocked or parked and waiting will never finish it. Exit 1 = the
+state file could not be read.
 
 ## Stop on 3 identical structural failures — L4, v2.9.73
 
@@ -144,11 +109,10 @@ of an unchanged input can only repeat), STOP and report the cause instead of
 retrying:
 
 ```sh
-python3 -c "from attempt_ceiling import ceiling_check
-import json,sys
-h=json.load(open(\"$RUN/lipsync/attempt-history.json\"))
-print(json.dumps(ceiling_check(h)))"
+python3 scripts/core/lip_sync/lip_gate/ceiling_cli.py --history "$RUN/lipsync/attempt-history.json"
 ```
+
+`ceiling_cli.py` inserts its own folder on the import path, loads the file, prints `ceiling_check(history)` as JSON and exits 4 when `stop` is true, 0 otherwise.
 
 `stop: true` names the cause — for the stills case, "no face in these stills —
 choose a face-visible format" — and names the measured value every attempt
