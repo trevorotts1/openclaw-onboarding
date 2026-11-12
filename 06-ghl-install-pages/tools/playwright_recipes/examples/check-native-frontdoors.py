@@ -29,7 +29,7 @@ def smoke():
         digest = hashlib.sha256(fragment.encode()).hexdigest()
         (root/'embed.html').write_text(fragment)
         (root/'probes.json').write_text(json.dumps(probes))
-        graph = json.loads((RECIPES/'examples/native-purchase-flow/manifest.template.json').read_text())['route_graph']
+        graph = json.loads((RECIPES/'examples/native-purchase-flow-manifest.template.json').read_text())['route_graph']
         stage = {'id':'layout','kind':'design','role':'checkout','operation':'pages.layout',
                  'inputs':{**base,'layout':{'section_id':'section_fixture','columns':2}},'depends_on':[]}
         checkout = {'id':'checkout_ui','kind':'checkout','role':'checkout','operation':'checkout.configure_ui',

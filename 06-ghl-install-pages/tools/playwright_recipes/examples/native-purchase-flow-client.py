@@ -2,10 +2,11 @@
 """Host a native buyer-flow manifest using an already authenticated Playwright Page.
 
 Usage from a signed-in host process:
-    from client import run
+    import runpy
+    run = runpy.run_path("native-purchase-flow-client.py")["run"]
     receipt = run(page, 'flow.json', 'probes.json', '/durable/run-001')
 The manifest must contain the actual approved Skill 49 graph, independently read
-back page/step mappings, and the staged inputs described in README.md. This
+back page/step mappings, and the staged inputs described in native-purchase-flow-README.md. This
 client never publishes or performs a payment. Its return is editor evidence,
 not a buyer-journey PASS.
 """
@@ -13,7 +14,7 @@ from pathlib import Path
 import json
 import sys
 
-RECIPES = Path(__file__).resolve().parents[2]
+RECIPES = Path(__file__).resolve().parents[1]
 TOOLS = RECIPES.parent
 for path in (str(TOOLS), str(RECIPES)):
     if path not in sys.path:

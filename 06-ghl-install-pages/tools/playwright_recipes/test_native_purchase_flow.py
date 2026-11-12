@@ -90,7 +90,7 @@ class PurchaseFlowTests(unittest.TestCase):
                 result = host.run_recipe('funnels.create_folder', data, probes, root,
                                          input_dir='.', page=SimpleNamespace(goto=lambda *a,**k: None))
             self.assertEqual(result['status'], 'EDITOR_STEPS_COMPLETE')
-            self.assertEqual(ensure.call_args.kwargs['journal_path'], Path(root)/'folder.json')
+            self.assertEqual(ensure.call_args.kwargs['journal_path'], Path(root).resolve()/'folder.json')
             bad = dict(data, allow_creation=False)
             self.assertEqual(host.run_recipe('funnels.create_folder', bad, probes, root,
                                              input_dir='.', page=object())['status'], 'STOP_INVALID_INPUT')
