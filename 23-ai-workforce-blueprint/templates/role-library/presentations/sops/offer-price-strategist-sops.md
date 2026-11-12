@@ -10,10 +10,54 @@
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
+### SOP 9.0a -- Arc allocation (manifest phase P3-ARC; this role owns the file)
+
+**When to run:** FIRST, on EVERY deck -- before the pitch gate in SOP 9.0 decides anything, and with or without a pitch. The manifest's `P3-ARC` names this role as its owning role and `working/copy/arc_allocation.json` as the artifact it produces. No other role writes it.
+
+**Inputs:**
+- `working/copy/intake.json` (slide count, duration, audience, hook seed -- what the deck is about)
+- `working/copy/priority_shift_spec.json` (the priority-shift spec `P3-ARC` consumes)
+
+**Steps:**
+1. Fix the slide count from the Director procedure's SOP 9.4 math (the content-driven `slide_count_target` and `slide_count_final`, the duration table, and `client_requested_slide_cap` when the owner set one). If no count is determinable, ask the Director. Never invent a deck length.
+2. Allocate EVERY slide to one arc section using the Director procedure's SOP 9.4 tables and flow rules: its pre-reconciled allocation table for 45, 60 and 75 slides (for any other count, allocate proportionally, round, then add or remove slides from the Secrets sections -- never from the offer section -- until the total matches `slide_count_final`), and its proven flow table for the narrative those sections serve. One slide, one row. No gaps in the ordinals and no ordinal past the last slide.
+3. Declare the PEAK and the ENDING. `P3-ARC`'s verifier (`phase_verifiers._verify_arc_allocation`) FAILS an allocation that declares neither a peak beat nor an ending beat, and AF-PEAK-END grades the same evidence one phase later. Declare each beat either with the top-level fields below or with a per-slide `arc_marks` object (`{"peak": true}` / `{"ending": true}`). Never set `flat_ending: true`: a flat ending is remembered as flat and defeats every other form of ending evidence.
+4. Count the sections, not the slides, when the arc is checked: the section labels in the slots are the deck's section names (`presentation_job/arc_slides.section_names_from_obj`), so spell one label per section consistently on every slide of that section.
+
+**The shape the engine reads** (`presentation_job/arc_slides.py`; the container `slots` | `allocation` | `slides` | `slide_allocations`, the ordinal `ordinal` | `slide` | `slide_number`, the label `arc_section` | `arc` | `section` | `name`). Write the canonical spelling shown here; the example below is a complete, valid file:
+
+```json
+{
+  "deck_slug": "[DECK_SLUG]",
+  "slide_count_final": 12,
+  "peak_apex_slide": 8,
+  "ending_slide": 12,
+  "flat_ending": false,
+  "slots": [
+    {"slide": 1, "arc_section": "hook", "beat": "big bold promise"},
+    {"slide": 2, "arc_section": "hook", "beat": "painful math"},
+    {"slide": 3, "arc_section": "hook", "beat": "reframe and commitment"},
+    {"slide": 4, "arc_section": "authority", "beat": "origin story"},
+    {"slide": 5, "arc_section": "secret_1", "beat": "teach and proof"},
+    {"slide": 6, "arc_section": "secret_1", "beat": "verified result"},
+    {"slide": 7, "arc_section": "secret_2", "beat": "mechanism"},
+    {"slide": 8, "arc_section": "secret_2", "beat": "peak promise", "arc_marks": {"peak": true}},
+    {"slide": 9, "arc_section": "transition_to_offer", "beat": "value stack"},
+    {"slide": 10, "arc_section": "offer", "beat": "final price"},
+    {"slide": 11, "arc_section": "guarantee", "beat": "risk reversal"},
+    {"slide": 12, "arc_section": "final_cta", "beat": "send-off", "arc_marks": {"ending": true}}
+  ]
+}
+```
+
+Write `working/copy/arc_allocation.json`. This file is written on every deck, with or without a pitch.
+
+---
+
 ### SOP 9.0 -- PITCHLESS SUPPRESSION GATE (Decision 2A — READ FIRST)
 
-**Hard guard, evaluated before ANY work in this role.** Read `intake.json.pitch_included`:
-- **If `pitch_included` is `false` (a PITCHLESS, teaching/content-only deck — first-class):** this role MUST NOT run. Produce NOTHING — no `price_ladder.json`, no `offer_stack.json`, no offer/ladder/anchor/re-pitch arc beats. The Director does not dispatch you, and if you are dispatched anyway you immediately return with `suppressed: true, reason: "pitch_included:false"` and write no artifact. A pitch is NEVER forced onto a pitchless deck. The gate **AF-PITCH-LEAK** (`build_deck.py` `_chk_pitch_leak`) fails the deck if any price/offer/ladder content — including the mere presence of `price_ladder.json` — appears when `pitch_included:false`.
+**Hard guard, evaluated before ANY pitch work in this role.** Read `intake.json.pitch_included`:
+- **If `pitch_included` is `false` (a PITCHLESS, teaching/content-only deck — first-class):** this role MUST NOT run the pitch procedures (SOP 9.1-9.9). this role writes NO price_ladder.json and NO offer_stack.json and reserves no offer, ladder, anchor or re-pitch slots. It still writes arc_allocation.json (SOP 9.0a) for the teaching arc. The Director does not dispatch you for the pitch, and if you are dispatched anyway you immediately return with `suppressed: true, reason: "pitch_included:false"` and write no ladder or stack artifact. A pitch is NEVER forced onto a pitchless deck. The gate **AF-PITCH-LEAK** (`build_deck.py` `_chk_pitch_leak`) fails the deck if any price/offer/ladder content — including the mere presence of `price_ladder.json` — appears when `pitch_included:false`.
 - **If `pitch_included` is `true`:** run normally (SOP 9.1+). The gate **AF-PITCH-MISSING** (`_chk_pitch`, conditional on `pitch_included:true`) then requires the full offer arc (value-stack -> anchor -> price ladder -> re-pitch after FINAL).
 - **If `pitch_included` is unset/non-boolean:** the deck has already failed **AF-PITCH-FLAG-UNSET** at intake; do not proceed — the Director must capture the explicit yes/no first.
 
@@ -121,7 +165,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 7. Verify: a BUILDUP slide must always precede every DROP slide (per SOP 9.1 step 5). If a DROP slide exists without a preceding BUILDUP, flag it so the Copywriter inserts one before it.
 8. **(Density-floor overhaul) Reserve the three mandatory pacing beats and record their slots** so they cannot be omitted (the reference failure case had none of them):
    - **PROMISES beat BEFORE the anchor** (`promises_slide`): plant the promise set (the transformations the program delivers) before the first number. People buy promises, not products. (AF-DEN-5.)
-   - **A dedicated itemized VALUE-STACK slide BEFORE Drop 1** (`value_stack_slide`): the full stack listed with each component value, summed to a TOTAL that EXCEEDS the anchor, shown before the cheapest prices appear (the proven reference run s57 -> s58 "add it all up"). For a non-monetary offer, the stack is the deliverables list and the frame is the PRICELESS pitch (SOP 9.6), never fabricated dollar values. (AF-DEN-4.)
+   - **A dedicated itemized VALUE-STACK slide BEFORE Drop 1** (`value_stack_slide`): the full stack listed with each component value, summed to a TOTAL that equals the anchor, shown before the cheapest prices appear (the proven reference run s57 -> s58 "add it all up"). For a non-monetary offer, the stack is the deliverables list and the frame is the PRICELESS pitch (SOP 9.6), never fabricated dollar values. (AF-DEN-4.)
    - **A 4-to-7-slide RE-PITCH block AFTER the FINAL price** (`re_pitch_slide_range`): recap the full stack, restate the promises, reset the urgency ("next 15 minutes, FINAL_PRICE"), before the send-off (the proven reference run s74-75). A deck that closes on a plain thank-you fails. (AF-DEN-7.)
 9. Write the offer_stack.json to working/copy/offer_stack.json. Structure:
    ```json
