@@ -101,7 +101,19 @@
 #   * F88  the client-facing final notification body is three plain sentences
 #          built by rescue-notification.py final-body; machine fields stay in
 #          the ack only.
-RECEIVER_VERSION="1.8.0"
+RECEIVER_VERSION="1.9.0"
+
+# RRX-003: the receiver was measured answering in 70 to 110 seconds (see
+# rr-readiness.sh, "DEFAULT PROBE BUDGET"), while every call here gave up after
+# 25 seconds and exited without a trace. The limit is now 150 seconds, bounded,
+# and a call that does not complete is logged once an hour.
+RR_POST_MAX_S="${RR_POST_MAX_S:-150}"
+case "$RR_POST_MAX_S" in ''|*[!0-9]*) RR_POST_MAX_S=150 ;; esac
+if [ "$RR_POST_MAX_S" -lt 25 ] || [ "$RR_POST_MAX_S" -gt 300 ]; then RR_POST_MAX_S=150; fi
+# Set to 1 by the claim caller only: a claim must never be re-sent by curl,
+# because a claim that reached the server and timed out here has already
+# leased an instruction, and a second claim would lease it again or skip it.
+_POST_NO_RETRY=0
 
 # Attempt identity echoed from the claim (empty when the server is pre-RR-004).
 # Initialized empty so `set -u` never trips on the cached-re-ack path.
@@ -758,7 +770,11 @@ _post() {
             fi
         fi
     fi
-    _code=$(curl -sS --max-time 25 --connect-timeout 10 \
+    # RRX-003: at this limit a retry inside one call cannot fit the 2-minute
+    # schedule or the lease (curl applies --max-time to EACH attempt). The saved
+    # ack-pending record and the next fire are the retry.
+    if [ "${_POST_NO_RETRY:-0}" = "1" ] || [ "${RR_POST_MAX_S:-150}" -gt 60 ] 2>/dev/null; then _RETRY=""; fi
+    _code=$(curl -sS --max-time "${RR_POST_MAX_S:-150}" --connect-timeout 10 \
         $_RETRY \
         -H @"$_hdr" \
         -H 'Content-Type: application/json' \
@@ -1869,6 +1885,7 @@ _resend_pending() {
     case "$_rp_max" in ''|*[!0-9]*) _rp_max=5 ;; esac
     [ "$_rp_max" -gt 0 ] 2>/dev/null || return 0
     _rp_n=0
+    _rp_t0=$(date +%s 2>/dev/null || echo 0)
     for _rp_f in $(ls -1 "$_PENDING" 2>/dev/null | grep -v '^\.tmp-' | head -20); do
         [ "$_rp_n" -lt "$_rp_max" ] 2>/dev/null || break
         _rp_path="$_PENDING/$_rp_f"
@@ -1879,6 +1896,10 @@ _resend_pending() {
         _rp_attempt=$(_json_field "$_rp_body" "attempt_id")
         _rp_verdict=$(_ack_send "$_rp_body" "$_rp_op" "$_rp_attempt" "resend")
         _rp_n=$(( _rp_n + 1 ))
+        # RRX-003: resends are bounded by time as well as by count. One fire must
+        # not spend longer than one call limit here before it asks for new work.
+        _rp_now=$(date +%s 2>/dev/null || echo 0)
+        [ $(( _rp_now - _rp_t0 )) -lt "${RR_POST_MAX_S:-150}" ] 2>/dev/null || _rp_max=0
         case "$_rp_verdict" in
             confirmed:*)
                 _journal_put "$_rp_op" "ack_confirmed" "{\"resend\":true,\"state_revision\":\"$(_json_str "${_rp_verdict#confirmed:}")\"}" 2>/dev/null || true
@@ -2326,7 +2347,9 @@ _gc_tmp() {
 # the group, waits a grace window, KILLs the group, reaps, and VERIFIES the group
 # is gone. A timeout or cancellation is persisted with the next owner.
 # ---------------------------------------------------------------------------
-RR_ACK_MARGIN_S=30          # reserved so the ack still lands inside the lease
+# RRX-003: the margin must cover ONE full call to the receiver at the new limit,
+# or an acknowledgement that takes 70 to 110 seconds lands after the lease ran out.
+RR_ACK_MARGIN_S=$(( ${RR_POST_MAX_S:-150} + 10 ))   # reserved so the ack still lands inside the lease
 RR_ATTEMPT_RESERVE_S=20     # reserved for the fallback turn
 RR_AGENT_MAX_S=600          # CAP, not a deadline — the lease sets the deadline
 RR_OUTCOME="none"
@@ -2608,15 +2631,30 @@ _claim_body="{\"action\":\"claim\",\"box_slug\":\"$(_json_str "$RR_BOX_SLUG")\",
 # shell (body captured through a file, as _ack_send does), not in a $( ) subshell.
 _POST_CODE=""; _POST_CT=""; _POST_BODY=""
 _claim_out="$_TMP/rr-poll-claim.out"
+_claim_t0=$(date +%s 2>/dev/null || echo 0)
+_POST_NO_RETRY=1
 _post "$_claim_body" > "$_claim_out" 2>/dev/null
 _claim_rc=$?
+_POST_NO_RETRY=0
+_claim_t1=$(date +%s 2>/dev/null || echo 0)
+RR_CLAIM_ELAPSED_S=$(( _claim_t1 - _claim_t0 ))
+[ "$RR_CLAIM_ELAPSED_S" -ge 0 ] 2>/dev/null || RR_CLAIM_ELAPSED_S=0
 CLAIM_RESP=""
 if [ -f "$_claim_out" ]; then
     CLAIM_RESP=$(cat "$_claim_out" 2>/dev/null)
     rm -f "$_claim_out" 2>/dev/null
 fi
 if [ "$_claim_rc" -ne 0 ]; then
-    [ "$(_post_class 2>/dev/null)" = "unauthorized" ] && _rr_claim_unauthorized "${_POST_CODE:-}"
+    _claim_class=$(_post_class 2>/dev/null)
+    [ "$_claim_class" = "unauthorized" ] && _rr_claim_unauthorized "${_POST_CODE:-}"
+    if [ "$_claim_class" != "unauthorized" ]; then
+        # RRX-003: a claim that did not complete is no longer silent. One line an hour.
+        _cf_mark="$_STATE/claim-failed.logged"
+        if [ ! -f "$_cf_mark" ] || [ -z "$(find "$_cf_mark" -mmin -60 2>/dev/null)" ]; then
+            _log "claim-failed class=${_claim_class:-unknown} http=${_POST_CODE:-none} elapsed=${RR_CLAIM_ELAPSED_S}s limit=${RR_POST_MAX_S}s (no instruction could be collected; the next fire retries)"
+            : > "$_cf_mark" 2>/dev/null || true
+        fi
+    fi
     exit 0
 fi
 [ -n "$CLAIM_RESP" ] || exit 0
@@ -2672,7 +2710,12 @@ RR_CACHE_KEY="${IDEMPOTENCY_KEY}:${RR_CLAIM_IDENTITY}"
 
 # RR-026: ONE budget, opened the moment the claim is accepted. Discovery, the
 # model turn, the unknown-agent fallback and the ACK margin all come out of it.
-_rr_budget_open "$LEASE_SECONDS"
+# RRX-003: subtract the time the claim itself took, so the turn can never run
+# past the lease the server granted at the START of that call.
+_rr_lease_left=$(( LEASE_SECONDS - RR_CLAIM_ELAPSED_S ))
+[ "$_rr_lease_left" -ge 60 ] 2>/dev/null || _rr_stop_without_turn "lease_consumed_by_slow_claim elapsed=${RR_CLAIM_ELAPSED_S}s"
+_rr_budget_open "$_rr_lease_left"
+[ "$RR_CLAIM_ELAPSED_S" -gt 10 ] 2>/dev/null && _log "claim-slow elapsed=${RR_CLAIM_ELAPSED_S}s instruction=${INSTRUCTION_ID:-none}"
 
 # If mode is dry_run: ack failed/dry_run (transport proof must never look like
 # delivery), write the done-file, and exit. No agent turn ever runs.
