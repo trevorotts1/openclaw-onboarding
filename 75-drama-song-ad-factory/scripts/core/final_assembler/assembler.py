@@ -55,6 +55,14 @@ Rules:
   end card key is present, check_last_line_before_endcard(plan) runs
   at assembly and a line ending after the card fails with
   LAST_LINE_OVER_ENDCARD.
+- U-V03 (S75-055): this module's planning step also WRITES the timeline.
+  plan_run_timeline(run_dir) composes edit/timeline.json from the run's
+  own records (approved storyboard, shot plan, the picked song's
+  measured word timings, the materialized clip rows with their lip-sync
+  evidence) and writes it atomically -- it is the writing step no
+  production module had. Every value comes from a record on disk; a
+  value no record holds is the named refusal
+  TIMELINE_INPUT_MISSING:<what>, never a default.
 """
 import argparse
 import json
@@ -63,6 +71,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
 # Skill 75 load governor: every heavy local job goes through it (see load_governor/).
 import os as _gos, sys as _gsys
@@ -1897,6 +1906,371 @@ def _write_receipt(output, receipt):
         return False
 
 
+# --- U-V03 (S75-055): the planning step writes edit/timeline.json ------------
+#
+# edit/timeline.json is the one file this assembler, the clip cutter
+# (delivery_clips) and the trailer cutter read, and factory.py's `assembly`
+# stage command names it -- but no production module wrote it. Only the proof
+# run and tests built one by hand (S75-055). plan_run_timeline() is that
+# writer: the run-level planning step, beside plan_timeline() which stays the
+# pure frame plan over a timeline that already exists.
+#
+# Every value comes from a record on disk; a value that no record holds is the
+# named refusal TIMELINE_INPUT_MISSING:<what>, never a default.
+
+TIMELINE_INPUT_MISSING = "TIMELINE_INPUT_MISSING"
+
+#: the run's own records, exactly where its stage commands keep them.
+RECORD_SHOT_LIST = "storyboard/shot-list.json"
+RECORD_APPROVAL = "storyboard/approval.json"
+RECORD_CLIPS = "video/clips.json"
+RECORD_TIMINGS = "music/word-timings.json"
+RECORD_SESSION = "control/intake-session.json"
+RECORD_METHOD = "control/method.json"
+RECORD_SONGS = ("music/picked-song.mp3", "music/mix.mp3")
+
+
+class TimelineInputMissing(ValueError):
+    """A timeline value no record on disk holds (named, never defaulted)."""
+
+    def __init__(self, what, detail=""):
+        self.what = what
+        self.code = TIMELINE_INPUT_MISSING
+        super().__init__("%s:%s%s" % (TIMELINE_INPUT_MISSING, what,
+                                      (" (%s)" % detail) if detail else ""))
+
+
+def _run_json(root, rel):
+    """One record from the run folder, or the named refusal when it is absent."""
+    try:
+        with open(os.path.join(root, rel), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError) as exc:
+        raise TimelineInputMissing(rel, str(exc)) from exc
+
+
+def _run_rel(root, path):
+    """A record's file path as the timeline writes it: run-relative."""
+    if not isinstance(path, str) or not path.strip():
+        raise TimelineInputMissing("clip path", RECORD_CLIPS)
+    full = os.path.abspath(path if os.path.isabs(path)
+                           else os.path.join(root, path))
+    try:
+        rel = os.path.relpath(full, root)
+    except ValueError:                       # another drive (Windows)
+        return path
+    return path if rel.startswith("..") else rel
+
+
+def _measured_words(root):
+    """The picked song's measured word timings (music/word-timings.json).
+
+    Accepts the DEL-13 receipt shape (``{"words": [...], "source": ...}``)
+    and the ``provide_word_timings`` envelope (``{"ok": true, "timings":
+    {...}}``). The ``source`` must be one timestamp_plan calls a REAL timing
+    of the finished song: planned or packet timings are refused, never used
+    as if they were measured.
+    """
+    doc = _run_json(root, RECORD_TIMINGS)
+    timings = doc.get("timings") if isinstance(doc, dict) \
+        and isinstance(doc.get("timings"), dict) else doc
+    if not isinstance(timings, dict):
+        raise TimelineInputMissing(RECORD_TIMINGS, "not a timing record")
+    core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    from shot_planner import timestamp_plan as _tp
+    source = timings.get("source")
+    if source not in _tp.REAL_TIMING_SOURCES:
+        raise TimelineInputMissing(
+            "measured word timings",
+            "%s carries source %r, which is not a measured timing of the "
+            "finished song" % (RECORD_TIMINGS, source))
+    words = []
+    for w in timings.get("words") or []:
+        if not isinstance(w, dict):
+            raise TimelineInputMissing("word timing", RECORD_TIMINGS)
+        st = w.get("start", w.get("startS"))
+        en = w.get("end", w.get("endS"))
+        if isinstance(st, bool) or isinstance(en, bool) \
+                or not isinstance(st, (int, float)) \
+                or not isinstance(en, (int, float)) or en <= st:
+            raise TimelineInputMissing("word timing", repr(w))
+        words.append({"word": str(w.get("word") or ""),
+                      "start": float(st), "end": float(en)})
+    if not words:
+        raise TimelineInputMissing("measured word timings",
+                                   "%s carries no words" % RECORD_TIMINGS)
+    return sorted(words, key=lambda w: w["start"])
+
+
+def _clip_rows(root):
+    """The materialized clip rows (video/clips.json), keyed by shot id.
+
+    Each row is the run's own record of one materialized clip: its path, its
+    recorded sha256, the dispatch receipt it came from and the task id -- the
+    lip-sync evidence lipsync_evidence.check_plan joins at assembly. A row
+    may also carry the measured ``motion_score`` (F12).
+    """
+    doc = _run_json(root, RECORD_CLIPS)
+    rows = doc.get("clips") if isinstance(doc, dict) else doc
+    if not isinstance(rows, list) or not rows:
+        raise TimelineInputMissing(RECORD_CLIPS, "no clip rows")
+    out = {}
+    for row in rows:
+        if not isinstance(row, dict) or not str(row.get("shot_id") or "").strip():
+            raise TimelineInputMissing(RECORD_CLIPS, "a clip row carries no shot_id")
+        out[str(row["shot_id"])] = row
+    return out
+
+
+def _run_id_of(root):
+    """The run's own id (control/intake-session.json) -- never the folder name."""
+    session = _run_json(root, RECORD_SESSION)
+    run_id = session.get("run_id") if isinstance(session, dict) else None
+    if not isinstance(run_id, str) or not run_id.strip():
+        raise TimelineInputMissing("run_id", RECORD_SESSION)
+    return run_id
+
+
+def _song_record(root):
+    """The run's soundtrack file, first one its records name that exists."""
+    for rel in RECORD_SONGS:
+        if os.path.isfile(os.path.join(root, rel)):
+            return rel
+    raise TimelineInputMissing(RECORD_SONGS[0], "no picked song or mix on disk")
+
+
+def _motion_of(sid, row, src_abs, scorer):
+    """A clip's F12 motion score: the record's, else MEASURED from the clip.
+
+    Read from the clip row when the row carries it; otherwise measured from
+    the materialized clip file (a record on disk) by the scoring owner
+    (shot_planner.motion_score). Never defaulted: a score nobody could read
+    is TIMELINE_INPUT_MISSING:motion_score:<shot>.
+    """
+    ms = row.get("motion_score")
+    if isinstance(ms, dict) and isinstance(ms.get("score"), (int, float)) \
+            and not isinstance(ms.get("score"), bool):
+        return ms
+    try:
+        got = scorer(clip_path=src_abs)
+    except Exception as exc:                    # noqa: BLE001 - named refusal
+        raise TimelineInputMissing("motion_score:" + sid, str(exc)) from exc
+    if not isinstance(got, dict) or not isinstance(got.get("score"), (int, float)) \
+            or isinstance(got.get("score"), bool):
+        raise TimelineInputMissing("motion_score:" + sid,
+                                   "the scorer returned no score")
+    return got
+
+
+def _default_motion_scorer(clip_path):
+    core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if core_dir not in sys.path:
+        sys.path.insert(0, core_dir)
+    import shot_planner.motion_score as _ms
+    return _ms.motion_score(clip_path=clip_path)
+
+
+def plan_run_timeline(run_dir, out_path=None, width=None, height=None,
+                      motion_scorer=None):
+    """The run-level planning step: write <run>/edit/timeline.json atomically.
+
+    Composes the timeline from the run's OWN records, one value at a time:
+
+    * the approved storyboard -- storyboard/shot-list.json (the approved shot
+      plan) plus storyboard/approval.json (state "approved", one approved
+      entry per shot, and the same shot identities);
+    * the picked song's measured word timings -- music/word-timings.json:
+      each line's window is the measured word run inside its approved shot
+      window, so a line time is never invented;
+    * the lip-sync evidence -- video/clips.json: each shot's materialized
+      clip path, recorded sha256, dispatch receipt and task id;
+    * the soundtrack (music/picked-song.mp3, else music/mix.mp3), the run id
+      (control/intake-session.json) and, when recorded, the chosen length
+      (control/method.json).
+
+    The candidate file is written to a temporary name in the same folder and
+    validated with load_timeline() BEFORE it replaces the old one, so a bad
+    plan never lands as edit/timeline.json. Returns the written path. Raises
+    TimelineInputMissing naming the record that is absent; nothing is
+    defaulted.
+    """
+    root = os.path.abspath(str(run_dir))
+    if not os.path.isdir(root):
+        raise TimelineInputMissing("run_dir", root)
+    path = out_path or os.path.join(root, "edit", "timeline.json")
+    fps = fps_conform.MASTER_FPS
+    width = int(width if width is not None else DEFAULT_WIDTH)
+    height = int(height if height is not None else DEFAULT_HEIGHT)
+    scorer = motion_scorer or _default_motion_scorer
+
+    shot_doc = _run_json(root, RECORD_SHOT_LIST)
+    shots = shot_doc.get("shots") if isinstance(shot_doc, dict) else shot_doc
+    if not isinstance(shots, list) or not shots:
+        raise TimelineInputMissing(RECORD_SHOT_LIST, "no shots")
+    approval = _run_json(root, RECORD_APPROVAL)
+    if not isinstance(approval, dict) or approval.get("state") != "approved":
+        raise TimelineInputMissing("approved storyboard",
+                                   "%s does not record state 'approved'"
+                                   % RECORD_APPROVAL)
+    approved = approval.get("shots")
+    if not isinstance(approved, dict) or not approved:
+        raise TimelineInputMissing("approved storyboard",
+                                   "%s carries no per-shot approvals"
+                                   % RECORD_APPROVAL)
+    words = _measured_words(root)
+    clips = _clip_rows(root)
+    run_id = _run_id_of(root)
+    song_path = _song_record(root)
+    chosen = None
+    if os.path.isfile(os.path.join(root, RECORD_METHOD)):
+        method = _run_json(root, RECORD_METHOD)
+        value = method.get("chosen_length_s") if isinstance(method, dict) else None
+        if type(value) is int and value > 0:
+            chosen = value
+
+    lines, sections, segments = [], [], []
+    seen_lines, seen_shots = set(), set()
+    for index, shot in enumerate(shots):
+        if not isinstance(shot, dict):
+            raise TimelineInputMissing("shot record", "%s[%d]" % (RECORD_SHOT_LIST, index))
+        sid = shot.get("shot_id")
+        if not isinstance(sid, str) or not sid.strip():
+            raise TimelineInputMissing("shot_id", "%s[%d]" % (RECORD_SHOT_LIST, index))
+        if sid in seen_shots:
+            raise TimelineInputMissing("duplicate shot_id", sid)
+        seen_shots.add(sid)
+        entry = approved.get(sid)
+        if not isinstance(entry, dict) or entry.get("status") != "approved":
+            raise TimelineInputMissing("storyboard approval for " + sid,
+                                       "%s records no approved entry" % RECORD_APPROVAL)
+        start, end = shot.get("song_start"), shot.get("song_end")
+        if isinstance(start, bool) or isinstance(end, bool) \
+                or not isinstance(start, (int, float)) \
+                or not isinstance(end, (int, float)) or not start < end:
+            raise TimelineInputMissing("shot window", sid)
+        lids = shot.get("lyric_line_ids")
+        if not isinstance(lids, list) or len(lids) != 1 \
+                or not isinstance(lids[0], str) or not lids[0].strip():
+            # One approved shot carries one line: a multi-line shot has no
+            # recorded per-line window, and splitting it would be invented.
+            raise TimelineInputMissing(
+                "one line per shot",
+                "%s lyric_line_ids=%r; a multi-line shot's per-line windows "
+                "are in no record" % (sid, lids))
+        lid = lids[0]
+        if lid in seen_lines:
+            raise TimelineInputMissing("duplicate line_id", lid)
+        seen_lines.add(lid)
+        inside = [w for w in words
+                  if w["start"] >= start - 1e-6 and w["end"] <= end + 1e-6]
+        if not inside:
+            raise TimelineInputMissing(
+                "measured words for " + lid,
+                "shot %s window %.3f-%.3f holds no measured word of the "
+                "picked song" % (sid, start, end))
+        line_start = inside[0]["start"]
+        line_end = inside[-1]["end"]
+        text = " ".join(w["word"] for w in inside).strip()
+        speaker = shot.get("speaker")
+        lips = bool(shot.get("lip_sync") or shot.get("lip_sync_line_ids"))
+        if lips:
+            recorded = shot.get("lip_sync_line_ids")
+            if not isinstance(recorded, list) or lid not in recorded:
+                raise TimelineInputMissing("lip_sync_line_ids", sid)
+            if not isinstance(speaker, str) or not speaker.strip():
+                raise TimelineInputMissing("speaker", sid)
+        faces = shot.get("character_ids")
+        if not isinstance(faces, list) or not all(isinstance(f, str) and f.strip()
+                                                  for f in faces):
+            raise TimelineInputMissing("character_ids", sid)
+
+        row = clips.get(sid)
+        if row is None:
+            raise TimelineInputMissing("clip row for " + sid, RECORD_CLIPS)
+        src = _run_rel(root, row.get("path"))
+        sha = row.get("sha256")
+        if not isinstance(sha, str) or not sha.strip():
+            raise TimelineInputMissing("clip sha256 for " + sid, RECORD_CLIPS)
+        artifact = {"schema_version": "1.0.0", "kind": "video",
+                    "run_id": run_id,
+                    "artifact_id": str(row.get("artifact_id") or sid),
+                    "stage": "generation",
+                    "stale": bool(row.get("stale", False)),
+                    "path": src, "sha256": sha}
+        if lips:
+            receipt = row.get("receipt_path")
+            task = row.get("task_id")
+            if not isinstance(receipt, str) or not receipt.strip():
+                raise TimelineInputMissing("receipt_path for " + sid,
+                                           RECORD_CLIPS)
+            if not isinstance(task, str) or not task.strip():
+                raise TimelineInputMissing("task_id for " + sid, RECORD_CLIPS)
+            artifact["provenance"] = {"task_id": task,
+                                      "receipt_path": _run_rel(root, receipt)}
+        src_abs = os.path.join(root, src)
+        segment = {"src": src, "dur": round(float(end) - float(start), 6),
+                   "shot_id": sid, "lip_sync": lips,
+                   "faces_on_screen": list(faces),
+                   "motion_score": _motion_of(sid, row, src_abs, scorer),
+                   "artifact": artifact, "scene_index": index}
+        if lips:
+            segment["lip_sync_line_ids"] = list(shot["lip_sync_line_ids"])
+            segment["speaking_faces"] = [speaker]
+        if isinstance(speaker, str) and speaker.strip():
+            segment["speaker"] = speaker
+        for key in ("transition", "beat_cut", "shows_line_ids", "on_screen_text"):
+            if shot.get(key) is not None:
+                segment[key] = shot[key]
+        segments.append(segment)
+        line = {"line_id": lid, "start_s": line_start, "end_s": line_end,
+                "text": text}
+        line["speaker"] = speaker if isinstance(speaker, str) else None
+        if not (isinstance(line["speaker"], str) and line["speaker"].strip()):
+            line.pop("speaker")
+        lines.append(line)
+        sections.append({"section_id": sid, "lyrics": [
+            {"line_id": lid, "start": line_start, "end": line_end,
+             "text": text}]})
+
+    if seen_shots != set(approved):
+        raise TimelineInputMissing(
+            "storyboard approval scope",
+            "the approved shot ids differ from the current shot list")
+
+    timeline = {"schema_version": TIMELINE_SCHEMA, "fps": fps,
+                "width": width, "height": height,
+                "song_path": song_path, "run_dir": "..", "run_id": run_id,
+                "segments": segments, "lines": lines,
+                "timing": {"sections": sections}}
+    if chosen is not None:
+        timeline["chosen_length_s"] = chosen
+    return _write_timeline_atomic(path, timeline)
+
+
+def _write_timeline_atomic(path, timeline):
+    """Write the candidate, validate it with load_timeline(), then replace."""
+    folder = os.path.dirname(os.path.abspath(path)) or "."
+    os.makedirs(folder, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".timeline-", suffix=".json", dir=folder)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(timeline, fh, indent=2)
+            fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        load_timeline(tmp)          # the plan is validated before it lands
+        os.replace(tmp, path)
+        return path
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="final_assembler",
                                  description="timeline.json -> ffmpeg render")
@@ -1923,7 +2297,22 @@ def main(argv=None):
     ap.add_argument("--verdict", default=None,
                     help="path to a target_engine verdict JSON; supplies "
                          "target, rounds used and the selected take")
+    ap.add_argument("--run-dir", default=None,
+                    help="U-V03: the run folder. When TIMELINE does not exist "
+                         "yet, the planning step writes it from the run's own "
+                         "records (plan_run_timeline) before assembling")
     args = ap.parse_args(argv)
+    if args.run_dir and not os.path.isfile(args.timeline):
+        # U-V03 (S75-055): the planning step writes edit/timeline.json; an
+        # existing timeline is never rewritten behind a run.
+        try:
+            path = plan_run_timeline(args.run_dir, args.timeline)
+        except (TimelineInputMissing, ValueError) as exc:
+            msg = str(exc)
+            print(json.dumps(_fail(msg.split(":")[0], next_action=msg)))
+            return EXIT["error"]
+        print(json.dumps({"timeline": path, "outcome": "ok",
+                          "reason_code": "TIMELINE_WRITTEN"}))
     if not shutil.which(args.ffmpeg) or not shutil.which(args.ffprobe):
         print(json.dumps(_fail("PREREQ_MISSING",
                                next_action="install ffmpeg+ffprobe")))
