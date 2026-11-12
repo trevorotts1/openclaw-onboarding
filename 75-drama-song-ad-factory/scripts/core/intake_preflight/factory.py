@@ -3174,13 +3174,17 @@ _PLACEHOLDER_WHERE = {
 }
 
 
-def _stage_command_values(run_dir, sid, stage):
+def _stage_command_values(run_dir, sid, stage, extra=None):
     """The placeholder values this run can answer, and nothing it cannot.
 
     ``next`` substitutes what the run already knows (the run dir, the run id,
     the QC gate's own required-check list) and leaves the rest to named needs.
+    ``extra`` carries a value only ``next`` can compute (``COST_MINOR``, for a
+    paid stage whose price was read off the card): it never comes from a guess.
     """
     values = {"RUN": str(run_dir), "RUN_ID": str(sid)}
+    if isinstance(extra, dict):
+        values.update({k: v for k, v in extra.items() if v is not None})
     core = str(Path(__file__).resolve().parent.parent)
     if core not in sys.path:
         sys.path.insert(0, core)
@@ -3194,7 +3198,7 @@ def _stage_command_values(run_dir, sid, stage):
     return values
 
 
-def _stage_needs(argv, run_dir, sid, stage):
+def _stage_needs(argv, run_dir, sid, stage, extra=None):
     """(filled argv, needs) for one stage-command row.
 
     Every ``{PLACEHOLDER}`` the run can answer is filled from the run; each one
@@ -3205,7 +3209,7 @@ def _stage_needs(argv, run_dir, sid, stage):
     tokens = [str(t) for t in (argv or [])]
     if not tokens:
         return [], []
-    values = _stage_command_values(run_dir, sid, stage)
+    values = _stage_command_values(run_dir, sid, stage, extra=extra)
     filled, missing = [], set()
     for tok in tokens:
         out = tok
@@ -3219,6 +3223,72 @@ def _stage_needs(argv, run_dir, sid, stage):
               "where": _PLACEHOLDER_WHERE.get(name, "the runner supplies it")}
              for name in sorted(missing)]
     return filled, needs
+
+
+#: S75-001: which priced card line each paid stage buys. One source for the
+#: mapping; a stage absent here has no card line and therefore no price.
+_PAID_STAGE_LINE = {"music": "music", "image-keyframes": "image",
+                    "video-generation": "video"}
+
+
+def price_for_stage(run_dir, stage):
+    """Estimated cost in ledger minor units for this stage's paid work, or None.
+
+    Read from the same price function the choice card uses
+    (``catalog_calculator.card_render.price_envelope``), through the run's own
+    recorded four-pick card receipt and its video-model lock. ``None`` means no
+    price could be computed -- never a zero and never a made-up number, because
+    a zero cost on a paid job is the defect this function removes (S75-001).
+    """
+    component = _PAID_STAGE_LINE.get(stage)
+    if component is None:
+        return None
+    receipt = _read_json(Path(run_dir) / "control" / "card-receipt.json", {}) or {}
+    answers = receipt.get("answers")
+    if not isinstance(answers, dict):
+        answers = receipt
+    if not isinstance(answers, dict):
+        return None
+    card = {"length": answers.get("length"),
+            "style": answers.get("video_style"),
+            "music": answers.get("audio_style"),
+            "main_characters": 1}
+    core = str(Path(__file__).resolve().parent.parent)
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    try:
+        from catalog_calculator import card_render          # noqa: PLC0415
+    except Exception:                                        # noqa: BLE001
+        return None
+    # ponytail: price_fn None prices every line from the shipped rate table
+    # (no adapter subprocess). Give it price_fn_default() when the live Skill
+    # 74 adapter must override a table rate.
+    try:
+        env, _model = card_render.price_envelope(
+            card, None,
+            state_store=str(Path(run_dir) / "control" / "state.sqlite3"),
+            run_id=Path(run_dir).name or "run")
+    except Exception:                                        # noqa: BLE001
+        return None
+    priced = env.get("card") if isinstance(env, dict) and env.get("state") == "ok" else None
+    if not isinstance(priced, dict):
+        return None
+    for line in (priced.get("line_items") or []):
+        if not isinstance(line, dict) or line.get("component") != component:
+            continue
+        usd = line.get("usd")
+        if isinstance(usd, (int, float)) and not isinstance(usd, bool) and usd >= 0:
+            return int(round(float(usd) * 100))
+        return None
+    return None
+
+
+def _price_refusal(sid, stage):
+    """S75-001: a paid stage whose price cannot be computed hands out nothing."""
+    return envelope("next", str(sid), "rejected", "UNKNOWN_PRICE",
+                    "No price could be computed for stage %s; nothing was "
+                    "handed out." % stage,
+                    data={"stage": stage})
 
 
 def _next_stage(a, *, boot_snapshot=None):
@@ -3573,6 +3643,16 @@ def _next_stage(a, *, boot_snapshot=None):
                      if method is not None and next_stage == "music" else None)
     shot_seeds = (_seeds_into_storyboard(run_dir, method)
                   if method is not None and next_stage == "storyboard" else None)
+    # S75-001: a paid stage never hands out a made-up price. The estimate is
+    # read from the run's own card receipt through the card's price function;
+    # when it cannot be computed, NOTHING is handed out (a `--cost 0` and a
+    # fixed `--attempt-id a1` were the defect: a zero that read as a real
+    # reservation and a ledger attempt id shared by every job).
+    needs_price = (next_stage in _PAID_STAGES
+                   and not (agnes_answer == "yes"
+                            and next_stage in ("image-keyframes",
+                                               "video-generation")))
+    stage_price = price_for_stage(run_dir, next_stage) if needs_price else None
     sa = None
     if next_stage == "music":
         sa = _script_gate(run_dir, a, reply=None)
@@ -3590,10 +3670,13 @@ def _next_stage(a, *, boot_snapshot=None):
             return envelope("next", str(sid), "rejected", sc["reason_code"],
                             sc["note"], data={"stage": next_stage, "song_choices": sc})
         if sc is not None:
+            if stage_price is None:
+                return _price_refusal(sid, next_stage)
             lane = lane_size_payload()
             data = {"stage": next_stage, "command": sc["command"],
                     "produces": row.get("produces", ""), "lane_size": lane,
                     "stages_source": stages_source, "song_choices": sc,
+                    "cost_minor": stage_price,
                     "lifecycle": _music_lifecycle()}
             if method_block is not None:
                 data["method"] = method_block
@@ -3605,6 +3688,8 @@ def _next_stage(a, *, boot_snapshot=None):
                 "one submission pass, overlap receipt, no paid redo for a missing overlap."
                 % sc["mode"],
                 data=data, evidence=["%s" % db, runbook_path])
+    if needs_price and stage_price is None:
+        return _price_refusal(sid, next_stage)
     # F4: the normal `next` path and the continuation controller must hand out
     # the SAME executable contract. A placeholder descriptor, a drifted entry
     # or a runbook row naming a different script is refused here, by name --
@@ -3632,9 +3717,16 @@ def _next_stage(a, *, boot_snapshot=None):
                                missing_artifacts=order.get("missing_artifacts", []))
         return refusal
     lane = lane_size_payload()
-    nxt = {"stage": present_id, "production_stage": next_stage, "command": row["command"],
+    # S75-001: the published command carries the computed cost, never a fixed 0.
+    published = row["command"]
+    if stage_price is not None and row.get("argv"):
+        published = shlex.join([str(t).replace("{COST_MINOR}", str(stage_price))
+                                for t in row["argv"]])
+    nxt = {"stage": present_id, "production_stage": next_stage, "command": published,
            "produces": row.get("produces", ""), "lane_size": lane,
            "stages_source": stages_source}
+    if stage_price is not None:
+        nxt["cost_minor"] = stage_price
     if row_id != present_id:
         nxt["method_stage"] = row_id
     if method_block is not None:
@@ -3649,7 +3741,9 @@ def _next_stage(a, *, boot_snapshot=None):
         nxt["shot_seeds"] = shot_seeds
     # S75-010 step 4: fill every placeholder the run can answer and name the
     # rest -- the published command stays the canonical template.
-    _filled, _needs = _stage_needs(row.get("argv"), run_dir, sid, next_stage)
+    _filled, _needs = _stage_needs(
+        row.get("argv"), run_dir, sid, next_stage,
+        extra={"COST_MINOR": stage_price} if stage_price is not None else None)
     if _filled:
         nxt["argv"] = _filled
     if _needs:

@@ -119,6 +119,33 @@ def main():
         check("advance after COMPLETE stage",
               env.get("data", {}).get("stage"), "creative-strategy")
 
+        # -- S75-001: a paid stage with no computable price is refused ------
+        # Nothing is handed out: no command, and the reason is UNKNOWN_PRICE
+        # (never a made-up zero cost). The price read is replaced with the
+        # "cannot compute" answer the real function returns when the card
+        # cannot be priced.
+        import argparse
+        if str(HERE) not in sys.path:
+            sys.path.insert(0, str(HERE))
+        import factory as F                             # noqa: E402
+        run = make_run(tmp)
+        for stage in STAGES[1:3]:                       # creative-strategy, script-lyrics
+            complete_stage(run, stage)
+        saved = F.price_for_stage
+        F.price_for_stage = lambda *_a, **_k: None
+        try:
+            env = F.cmd_next(argparse.Namespace(run_dir=str(run), orchestrated=False))
+        finally:
+            F.price_for_stage = saved
+        check("paid stage with no price: stage is music",
+              (env.get("data") or {}).get("stage"), "music")
+        check("paid stage with no price: outcome rejected",
+              env.get("outcome"), "rejected")
+        check("paid stage with no price: reason UNKNOWN_PRICE",
+              env.get("reason_code"), "UNKNOWN_PRICE")
+        check("paid stage with no price: no command handed out",
+              (env.get("data") or {}).get("command"), None)
+
         # -- run complete: exit 0, stage null, plain reason -----------------
         run = make_run(tmp, done=True)
         p = run_next(run)
