@@ -22,7 +22,7 @@ CREATE_ROOTS = {'courses.create':'course', 'funnels.create':'funnel',
 def pending_proof(value):
     return (value.get('status') == 'NEEDS_VERIFICATION'
             or any(value.get(key) is False for key in (
-                'behavior_verified','submission_verified','payment_verified',
+                'behavior_verified','submission_verified','payment_verified','authorization_completed',
                 'functional_verified','checkout_ready'))
             or any(value.get(key) == 'REQUIRED' for key in (
                 'independent_readback','behavior_verification')))

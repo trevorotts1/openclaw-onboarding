@@ -1,4 +1,4 @@
-"""Native marketing quiz properties, categories, scores and existing result tiers.
+"""Native marketing quiz properties, categories, scores and captured result tiers.
 
 Selectors/counts were captured in quiz-builder-app on 2026-11-08. No survey or
 course-quiz selector is reused. Existing choice-question text, placeholder,
@@ -18,8 +18,14 @@ class QuizError(ValueError):
 def validate(step):
     if not isinstance(step, dict):
         raise QuizError('Quiz configuration must be an object')
-    if set(step) - {'id', 'action', 'categories', 'category_changes', 'expected_question_count', 'questions', 'tiers', 'expected_tier_labels', 'expected_tiers'}:
+    if set(step) - {'id', 'action', 'categories', 'category_changes', 'expected_question_count', 'questions', 'tiers', 'expected_tier_labels', 'expected_tiers', 'tier_transitions', 'answer_jumps'}:
         raise QuizError('Unsupported native quiz configuration option')
+    jumps=step.get('answer_jumps')
+    if jumps is not None:
+        from playwright_recipes.quiz_answer_jumps import validate as validate_jumps
+        validate_jumps(jumps)
+        if any(key in step for key in ('questions','categories','category_changes','tiers','expected_tiers','expected_tier_labels','tier_transitions')):
+            raise QuizError('Answer jumps require their own independently journaled quiz configuration job')
     categories = step.get('categories', [])
     if not isinstance(categories, list) or any(not isinstance(x, str) or not x.strip() for x in categories):
         raise QuizError('Category names must be explicit nonempty text')
@@ -122,14 +128,17 @@ def validate(step):
         if not isinstance(tiers, list) or not 1 <= len(tiers) <= 101:
             raise QuizError('Supply one existing native row for every desired integer-percent tier')
         existing = step.get('expected_tier_labels')
-        if (not isinstance(existing, list) or len(existing) != len(tiers)
+        if (not isinstance(existing, list) or not existing
                 or any(not isinstance(x, str) or not x.strip() for x in existing)
                 or len(existing) != len(set(existing))):
             raise QuizError('Supply every unique current tier label in the exact existing row order')
+        transitions = step.get('tier_transitions')
+        if transitions is None and len(existing) != len(tiers):
+            raise QuizError('Tier count changes require explicit captured tier_transitions')
         expected_tiers = step.get('expected_tiers')
         if expected_tiers is not None:
             _validate_tier_ranges(expected_tiers, existing, 'Existing')
-        elif len(tiers) != 3:
+        elif len(tiers) != 3 or transitions is not None:
             raise QuizError('Non-three-tier layouts require the complete expected_tiers range inventory')
         previous = -1
         labels = []
@@ -145,9 +154,11 @@ def validate(step):
             previous = high
         if previous != 100 or len(labels) != len(set(labels)):
             raise QuizError('Tier ranges must end at 100 and labels must be unique')
-    if not categories and not category_changes and not questions and tiers is None:
+        if transitions is not None:
+            _validate_tier_transitions(expected_tiers, transitions, len(tiers))
+    if not categories and not category_changes and not questions and tiers is None and jumps is None:
         raise QuizError('No native quiz changes requested')
-    if tiers is None and ('expected_tier_labels' in step or 'expected_tiers' in step):
+    if tiers is None and any(key in step for key in ('expected_tier_labels','expected_tiers','tier_transitions')):
         raise QuizError('Expected tier inventory requires an authored tiers request')
     return deepcopy(step)
 
@@ -166,6 +177,102 @@ def _validate_tier_ranges(tiers, labels, prefix):
         previous = high
     if previous != 100:
         raise QuizError(prefix + ' tier ranges must end at 100')
+
+
+def _validate_tier_transitions(before, transitions, final_count):
+    if not isinstance(transitions,list) or not 1 <= len(transitions) <= 100:
+        raise QuizError('Tier lifecycle needs one to one hundred complete native transitions')
+    current=deepcopy(before)
+    for transition in transitions:
+        if (not isinstance(transition,dict) or set(transition)!={'action','expected_tiers'}
+                or transition['action'] not in ('add','remove_last')):
+            raise QuizError('Tier lifecycle supports captured Add and tail Remove only')
+        after=transition['expected_tiers']
+        if not isinstance(after,list) or not 1 <= len(after) <= 101:
+            raise QuizError('Tier transition needs its complete bounded resulting inventory')
+        labels=[tier.get('label') if isinstance(tier,dict) else None for tier in after]
+        if any(not isinstance(label,str) or not label.strip() for label in labels) or len(set(labels))!=len(labels):
+            raise QuizError('Tier transition labels must be explicit and unique')
+        _validate_tier_ranges(after,labels,'Transition')
+        adding=transition['action']=='add'
+        if len(after)!=len(current)+(1 if adding else -1):
+            raise QuizError('Each tier lifecycle action must change exactly one tail row')
+        if adding:
+            if (after[:-2]!=current[:-1] or after[-2]['label']!=current[-1]['label']
+                    or after[-2]['from']!=current[-1]['from']):
+                raise QuizError('Add tier must preserve every retained row except the old tail upper endpoint')
+        elif (after[:-1]!=current[:-2] or after[-1]['label']!=current[-2]['label']
+                or after[-1]['from']!=current[-2]['from']):
+            raise QuizError('Remove tier must preserve every retained row except the new tail upper endpoint')
+        current=deepcopy(after)
+    if len(current)!=final_count:
+        raise QuizError('Tier lifecycle result count differs from desired tiers')
+    return deepcopy(transitions)
+
+
+def _read_lifecycle_tiers(popup):
+    from playwright_recipes.skill6_playwright import Stop
+    labels=popup.locator('[id="tier-label"] input')
+    lows=popup.locator('[id="from-percent"] input');highs=popup.locator('[id="to-percent"] input')
+    removes=popup.locator('button#remove-tier');count=labels.count()
+    if not 1 <= count <= 101 or lows.count()!=count or highs.count()!=count or removes.count()!=count:
+        raise Stop('Native tier lifecycle row/control inventory changed')
+    result=[]
+    for index in range(count):
+        label=labels.nth(index);low=lows.nth(index);high=highs.nth(index)
+        row=label.locator('..').locator('..').locator('..').locator('..')
+        if (row.locator('[id="from-percent"] input').count()!=1
+                or row.locator('[id="to-percent"] input').count()!=1
+                or row.locator('button#remove-tier').count()!=1
+                or low.is_enabled()!=(index!=0) or high.is_enabled()!=(index!=count-1)
+                or removes.nth(index).is_enabled()!=(index!=0)):
+            raise Stop('Native tier lifecycle controls no longer bind their captured rows/endpoints')
+        raw=(low.input_value(),high.input_value())
+        if any(not isinstance(value,str) or not re.fullmatch(r'0|[1-9][0-9]{0,2}',value) for value in raw):
+            raise Stop('Native tier lifecycle endpoint is not an exact integer')
+        result.append({'label':label.input_value(),'from':int(raw[0]),'to':int(raw[1])})
+    try:_validate_tier_ranges(result,[row['label'] for row in result],'Native')
+    except QuizError as error:raise Stop(str(error)) from None
+    return result
+
+
+def _resize_tiers(popup,before,transitions):
+    from playwright_recipes.skill6_playwright import Stop,click,fill,wait_until
+    current=deepcopy(before)
+    for transition in transitions:
+        if _read_lifecycle_tiers(popup)!=current:
+            raise Stop('Native tiers changed before the next authored lifecycle action')
+        control=(popup.locator('button#add-tier') if transition['action']=='add'
+                 else popup.locator('button#remove-tier').nth(len(current)-1))
+        if control.count()!=1 or not control.is_visible() or not control.is_enabled():
+            raise Stop('Native authored tier lifecycle control is unavailable')
+        click(control);wanted=len(transition['expected_tiers']);previous=len(current)
+        def settled():
+            count=popup.locator('[id="tier-label"] input').count()
+            if count not in (previous,wanted):raise Stop('Tier lifecycle changed an unexpected number of rows')
+            return count==wanted
+        wait_until(settled,'Native tier lifecycle did not settle exactly once; do not repeat the action')
+        current=_read_lifecycle_tiers(popup)
+        expected=transition['expected_tiers']
+        if transition['action']=='add':
+            # Native generated labels vary (captured Premium and Remarkable).
+            # Only the freshly appended tail label is owned by this action;
+            # all retained labels/ranges and the new range must match first.
+            projected=deepcopy(current);projected[-1]['label']=expected[-1]['label']
+            if projected!=expected:
+                raise Stop('Native tier lifecycle changed a retained row or differs from its complete captured result')
+            label=popup.locator('[id="tier-label"] input').nth(len(current)-1)
+            if (label.count()!=1 or not label.is_visible() or not label.is_enabled()
+                    or label.input_value()!=current[-1]['label']):
+                raise Stop('New native tier label no longer belongs to the freshly appended row')
+            if current[-1]['label']!=expected[-1]['label']:
+                fill(label,expected[-1]['label']);label.press('Tab')
+                wait_until(lambda:_read_lifecycle_tiers(popup)==expected,
+                           'Owned new tier label did not settle or changed a retained row')
+            current=_read_lifecycle_tiers(popup)
+        if current!=expected:
+            raise Stop('Native tier lifecycle changed a retained row or differs from its complete captured result')
+    return current
 
 
 def configure(page, step):
@@ -368,18 +475,28 @@ def configure(page, step):
         popup = frame.locator('.n-popover__content').filter(has_text='Add tier')
         if popup.count() != 1:
             raise Stop('Result tier popover absent or ambiguous')
+        transitions=step.get('tier_transitions')
+        if transitions is not None:
+            expected_native=step['tiers'] if read_only else step['expected_tiers']
+            if _read_lifecycle_tiers(popup)!=expected_native:
+                raise Stop('Native tier lifecycle baseline differs from complete expected rows')
+            if not read_only and not preflight:
+                _resize_tiers(popup,step['expected_tiers'],transitions)
         labels = popup.get_by_role('textbox', name='Label', exact=True)
         ranges = popup.get_by_role('textbox', name='', exact=True)
-        expected_labels = [t['label'] for t in step['tiers']] if read_only else step['expected_tier_labels']
+        expected_labels = ([t['label'] for t in step['tiers']] if read_only else
+                           [t['label'] for t in transitions[-1]['expected_tiers']] if transitions is not None and not preflight
+                           else step['expected_tier_labels'])
         count = len(expected_labels)
         if labels.count() != count or ranges.count() != count * 2:
-            raise Stop('Native tier row/range inventory differs; this operation never creates or removes tiers')
+            raise Stop('Native tier row/range inventory differs from the expected lifecycle boundary')
         if [labels.nth(i).input_value() for i in range(count)] != expected_labels:
             raise Stop('Existing tier labels differ from the expected template')
         if ranges.nth(0).is_enabled() or ranges.nth(count * 2 - 1).is_enabled() or ranges.nth(0).input_value() != '0' or ranges.nth(count * 2 - 1).input_value() != '100':
             raise Stop('Tier endpoint guards changed')
         observed_ranges = []
-        for index, tier in enumerate(step['tiers']):
+        active_tiers=step['expected_tiers'] if preflight and transitions is not None else step['tiers']
+        for index, tier in enumerate(active_tiers):
             if not read_only and not preflight:
                 fill(labels.nth(index), tier['label'])
             for endpoint, key in enumerate(('from', 'to')):
@@ -402,13 +519,19 @@ def configure(page, step):
                     fill(control, str(tier[key]))
                 if control.input_value() != str(tier[key]):
                     raise Stop('Quiz result tier value differs from request')
+        if transitions is not None and not preflight and _read_lifecycle_tiers(popup)!=step['tiers']:
+            raise Stop('Native authored tier lifecycle layout differs before its final modal Save')
         if preflight and any(observed_ranges[index * 2] > observed_ranges[index * 2 + 1]
                 or (index and observed_ranges[index * 2] != observed_ranges[index * 2 - 1] + 1)
                 for index in range(count)):
             raise Stop('Existing quiz tier ranges overlap, contain gaps or reverse their endpoints')
-        click(popup.get_by_role('button', name='Cancel' if read_only or preflight else 'Save', exact=True))
-        popup.wait_for(state='hidden', timeout=45000)
-        click(modal.get_by_role('button', name='Cancel' if read_only or preflight else 'Save', exact=True))
+        # The captured tier popover has no Save/Cancel footer. Its enclosing
+        # result modal owns the single commit action; that closes both layers.
+        footer=(modal.get_by_role('button',name='Cancel',exact=True) if read_only or preflight
+                else modal.locator('#modal-footer-btn-positive-action'))
+        if footer.count()!=1 or not footer.is_visible() or not footer.is_enabled():
+            raise Stop('Native result-modal tier footer is unavailable or ambiguous')
+        click(footer)
         modal.wait_for(state='hidden', timeout=45000)
 
     # Read every requested native target before the first authored value. A bad
@@ -428,11 +551,16 @@ def configure(page, step):
             if append.count() != 2 or not append.nth(1).is_enabled():
                 raise Stop('Native append-option controls are unavailable before authoring')
         close_question()
+    jump_before=None
+    if step.get('answer_jumps') is not None:
+        from playwright_recipes import quiz_answer_jumps
+        jump_before=quiz_answer_jumps.preflight(frame,step['answer_jumps'])
     tiers(preflight=True)
     if step.get('categories') or step.get('category_changes'):
         categories()
     questions()
     tiers()
+    if jump_before is not None:quiz_answer_jumps.write(frame,step['answer_jumps'],jump_before)
     click(frame.get_by_role('button', name='Save', exact=True))
     wait_until(lambda: frame.get_by_role('button', name='Save', exact=True).count() == 1
                and frame.get_by_role('button', name='Save', exact=True).is_enabled(), 'Quiz save did not finish')
@@ -442,8 +570,9 @@ def configure(page, step):
         categories(read_only=True)
     questions(read_only=True)
     tiers(read_only=True)
+    if jump_before is not None:quiz_answer_jumps.verify(frame,step['answer_jumps'],jump_before)
     return {'status': 'QUIZ_CONFIGURATION_SAVED_AND_REOPENED', 'kind': 'quiz',
             'editor_url': page.url, 'categories': step.get('categories', []),
             'category_changes': step.get('category_changes', []),
-            'questions': len(step.get('questions', [])), 'tiers': step.get('tiers'),
+            'questions': len(step.get('questions', []))+len(step.get('answer_jumps',{}).get('questions',[])), 'tiers': step.get('tiers'),
             'submission_verified': False}

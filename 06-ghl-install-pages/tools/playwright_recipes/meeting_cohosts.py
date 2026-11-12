@@ -84,13 +84,16 @@ def _same_roster(first, second):
     return sorted(first, key=lambda person:person['email']) == sorted(second, key=lambda person:person['email'])
 
 
-def read_roster(editor):
+def read_roster(editor, *, page=None, data=None):
     card = _one(editor.locator('#create-room-members-card'), 'Native co-host card changed')
     rows = card.locator('.pr-members__rows > div')
-    if rows.count() == 0:
-        raise Stop('Native empty co-host roster lacks a captured loaded-empty marker; reconciliation required')
+    count = rows.count()
+    if count == 0:
+        return _ready_empty_roster(page, data)
     roster = []
-    for index in range(rows.count()):
+    for index in range(count):
+        if rows.count() != count:
+            raise Stop('Native co-host roster changed during its complete inventory')
         row = rows.nth(index)
         # The remove button contains another hr-text-lg paragraph. The captured
         # medium-weight name class distinguishes it from that semibold label.
@@ -103,7 +106,45 @@ def read_roster(editor):
         if row.get_by_role('button').count() != 1 or not remove.is_enabled():
             raise Stop('Native co-host row control inventory changed')
         roster.append({'name':name, 'email':email})
+    if rows.count() != count:
+        raise Stop('Native co-host roster changed during its complete inventory')
     return _roster(roster)
+
+
+def _ready_empty_roster(page, data):
+    """Recognize the November 11 saved-empty card after exact owner load.
+
+    Missing rows alone remain unknown. The captured empty profile is one
+    complete card containing only its Co-hosts heading and enabled Add button,
+    with no rows container, busy/error state or extra controls. No private
+    Invite URL or passcode input is consulted by this reader.
+    """
+    if page is None or data is None:
+        raise Stop('Native loaded-empty co-host profile needs exact saved-room context; zero rows remain unknown')
+    try:page.wait_for_load_state('networkidle',timeout=45000)
+    except Exception:
+        raise Stop('Native co-host load did not settle; empty roster remains unknown') from None
+    editor=_editor(page,data)
+    if editor.get_attribute('aria-busy')=='true':
+        raise Stop('Native co-host editor is still busy')
+    unsafe=editor.locator('[aria-busy="true"], [role="progressbar"], [role="alert"], [aria-invalid="true"], .n-spin-body, .n-skeleton')
+    if unsafe.count():raise Stop('Native co-host editor exposes loading or error state')
+    card=_one(editor.locator('#create-room-members-card'),'Native loaded-empty co-host card changed')
+    body=_one(card.locator('.pr-members__card'),'Native loaded-empty co-host card body changed')
+    _one(card.get_by_role('heading',name='Co-hosts',exact=True),'Native loaded-empty co-host heading changed')
+    add=_one(card.locator('.pr-members__add-trigger--link'),'Native loaded-empty co-host Add changed')
+    if (card.get_attribute('aria-busy')=='true' or body.locator(':scope > div').count()!=1
+            or card.locator('.pr-members__rows').count()!=0
+            or card.locator('.pr-members__rows > div').count()!=0
+            or card.get_by_role('button').count()!=1 or not add.is_enabled()
+            or add.inner_text().strip()!='Add' or add.get_attribute('type')!='button'
+            or add.get_attribute('aria-haspopup')!='dialog'
+            or add.get_attribute('aria-expanded') not in ('true','false')
+            or not re.fullmatch(r'personal-room-co-hosts-[1-9][0-9]*',add.get_attribute('aria-controls') or '')):
+        raise Stop('Native loaded-empty co-host card differs from the complete captured profile')
+    if card.locator('.pr-members__rows > div').count()!=0:
+        raise Stop('Native loaded-empty co-host inventory changed during its complete read')
+    return []
 
 
 def _editor(page, data):
@@ -161,28 +202,14 @@ def prepare(page, inputs):
         raise Stop('Co-host preflight found a different existing room identity')
     click(page.get_by_text('Edit settings', exact=True))
     editor = _editor(page, data)
-    before = read_roster(editor)
+    before = read_roster(editor, page=page, data=data)
     expected, desired = data['cohosts']['expected'], data['cohosts']['desired']
     if not _same_roster(before, expected):
         raise Stop('Native co-host roster differs from the complete expected inventory')
     additions = [person for person in desired if person not in before]
     removals = [person for person in before if person not in desired]
     if additions:
-        card = editor.locator('#create-room-members-card')
-        trigger = _one(card.locator('.pr-members__add-trigger--link'), 'Native Add co-host trigger changed')
-        click(trigger)
-        dialog = page.get_by_role('dialog').filter(
-            has=page.locator('#personal-room-co-host-search'))
-        _one(dialog, 'Native Add co-host dialog is ambiguous')
-        if dialog.get_attribute('aria-labelledby') != 'personal-room-co-hosts-1-title':
-            raise Stop('Native Add co-host dialog identity changed')
-        _one(dialog.get_by_text('Add co-host', exact=True), 'Native Add co-host title changed')
-        search_wrapper = _one(dialog.locator('#personal-room-co-host-search'),
-                              'Native co-host directory search wrapper changed')
-        search = _one(search_wrapper.get_by_role('textbox', name='Search users', exact=True),
-                      'Native co-host directory search input changed')
-        if search.get_attribute('placeholder') != 'Search users':
-            raise Stop('Native co-host directory placeholder changed')
+        dialog, search = _open_directory(page, editor)
         for person in additions:
             fill(search, person['email'])
             wait_until(lambda: _candidate(dialog, person) is not None,
@@ -190,7 +217,7 @@ def prepare(page, inputs):
             if not _candidate(dialog, person).is_enabled():
                 raise Stop('Exact co-host candidate is not selectable')
     # Directory inspection must not have assigned anyone as a side effect.
-    if not _same_roster(read_roster(editor), before):
+    if not _same_roster(read_roster(editor, page=page, data=data), before):
         raise Stop('Read-only co-host inspection unexpectedly changed the native roster')
     assert_tenant(page, data)
     return {'status':'COHOST_PREFLIGHT_ONLY', 'location_id':data['location_id'],
@@ -208,6 +235,9 @@ def validate_write_inputs(inputs):
     for the calling host obtaining that approval from the owner. The runtime
     must never fabricate the acknowledgment or infer it from a room update.
     """
+    if isinstance(inputs,dict) and inputs.get('allow_creation') is True:
+        from playwright_recipes.meeting_first_cohosts import validate_inputs as validate_creation
+        return validate_creation(inputs)
     if not isinstance(inputs, dict) or not isinstance(inputs.get('cohosts'), dict):
         raise Stop('Co-host writer requires one complete approved roster plan')
     configuration = inputs['cohosts']
@@ -216,14 +246,15 @@ def validate_write_inputs(inputs):
         raise Stop('Co-host access changes require explicit scoped acknowledgment')
     data = validate_inputs({**inputs, 'cohosts':{
         'expected':configuration['expected'], 'desired':configuration['desired']}})
-    if not data['cohosts']['expected'] or not data['cohosts']['desired']:
-        raise Stop('Co-host writer requires nonempty expected and desired rosters until native empty-state capture')
     data['cohosts']['access_change_acknowledged'] = True
     return data
 
 
 def write_configuration_hash(inputs):
     data = validate_write_inputs(inputs)
+    if data.get('allow_creation') is True:
+        from playwright_recipes.meeting_first_cohosts import configuration_hash
+        return configuration_hash(data)
     bound = {key:data[key] for key in ('location_id', 'location_name', 'start_url',
         'expected_room_id', 'name', 'slug', *meetings.SECURITY, 'cohosts')}
     return hashlib.sha256(json.dumps(bound, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
@@ -249,10 +280,14 @@ def _open_existing(page, data):
 
 def _open_directory(page, editor):
     card = _one(editor.locator('#create-room-members-card'), 'Native co-host card changed')
-    click(_one(card.locator('.pr-members__add-trigger--link'), 'Native Add co-host trigger changed'))
+    trigger=_one(card.locator('.pr-members__add-trigger--link'), 'Native Add co-host trigger changed')
+    owner=trigger.get_attribute('aria-controls')
+    if not isinstance(owner,str) or not re.fullmatch(r'personal-room-co-hosts-[1-9][0-9]*',owner):
+        raise Stop('Native Add co-host dialog owner identity changed')
+    click(trigger)
     dialog = _one(page.get_by_role('dialog').filter(
         has=page.locator('#personal-room-co-host-search')), 'Native Add co-host dialog is ambiguous')
-    if dialog.get_attribute('aria-labelledby') != 'personal-room-co-hosts-1-title':
+    if dialog.get_attribute('aria-labelledby') != owner+'-title':
         raise Stop('Native Add co-host dialog identity changed')
     _one(dialog.get_by_text('Add co-host', exact=True), 'Native Add co-host title changed')
     wrapper = _one(dialog.locator('#personal-room-co-host-search'), 'Native co-host search wrapper changed')
@@ -291,10 +326,31 @@ def _remove_control(editor, person):
 
 def _staged_roster(page, data, expected):
     editor = _editor(page, data)
-    roster = read_roster(editor)
+    roster = read_roster(editor, page=page, data=data)
     if not _same_roster(roster, expected):
         raise Stop('Native staged co-host roster differs from the complete expected state')
     return editor
+
+
+def verify_completed(page,inputs,receipt):
+    """Read the current exact persisted roster; never repeat access writes."""
+    data=validate_write_inputs(inputs)
+    if data.get('allow_creation') is True:
+        from playwright_recipes.meeting_first_cohosts import verify_completed as verify_creation
+        return verify_creation(page,data,receipt)
+    if (not isinstance(receipt,dict) or receipt.get('location_id')!=data['location_id']
+            or receipt.get('room_id')!=data['expected_room_id']
+            or receipt.get('configuration_sha256')!=write_configuration_hash(data)
+            or type(receipt.get('cohost_count')) is not int
+            or receipt['cohost_count']!=len(data['cohosts']['desired'])):
+        raise Stop('Completed cohost receipt is unbound; current roster was not read')
+    editor,detail=_open_existing(page,data)
+    current=read_roster(editor,page=page,data=data)
+    if not _same_roster(current,data['cohosts']['desired']):
+        raise Stop('Completed cohost roster changed; access writes were not repeated')
+    page.goto(detail,wait_until='domcontentloaded',timeout=45000)
+    assert_tenant(page,data)
+    return deepcopy(receipt)
 
 
 def configure(page, inputs):
@@ -306,10 +362,13 @@ def configure(page, inputs):
     the same room; never retry the writer automatically. No call is started.
     """
     data = validate_write_inputs(inputs)
+    if data.get('allow_creation') is True:
+        from playwright_recipes.meeting_first_cohosts import configure as create_with_cohosts
+        return create_with_cohosts(page,data)
     editor, detail_url = _open_existing(page, data)
     expected = data['cohosts']['expected']
     desired = data['cohosts']['desired']
-    before = read_roster(editor)
+    before = read_roster(editor, page=page, data=data)
     if not _same_roster(before, expected):
         raise Stop('Native co-host roster differs from the complete expected inventory')
     additions = [person for person in desired if person not in before]
@@ -318,7 +377,7 @@ def configure(page, inputs):
         dialog, search = _open_directory(page, editor)
         for person in additions:
             _find_candidate(dialog, search, person)
-        if not _same_roster(read_roster(editor), before):
+        if not _same_roster(read_roster(editor, page=page, data=data), before):
             raise Stop('Read-only co-host candidate inspection changed the roster')
         # The captured picker has no closing control. Discard read-only search
         # through the known detail URL, never guess a Close/Cancel selector.
@@ -328,9 +387,8 @@ def configure(page, inputs):
             raise Stop('Room detail route changed during co-host preflight')
         _staged_roster(page, data, before)
     staged = deepcopy(before)
-    # Keep an independently readable nonempty roster throughout staging.
-    # Empty native rows have no captured loaded-empty marker; do not infer
-    # an empty state between revocation and addition or permit clear-all.
+    # Add before revoking retained access. Each zero state still requires the
+    # complete captured loaded-empty card through read_roster(page=, data=).
     for person in additions:
         editor = _staged_roster(page, data, staged)
         dialog, search = _open_directory(page, editor)
@@ -338,7 +396,7 @@ def configure(page, inputs):
         click(candidate)
         dialog.wait_for(state='hidden', timeout=45000)
         staged.append(person)
-        wait_until(lambda: _same_roster(read_roster(_editor(page, data)), staged),
+        wait_until(lambda: _same_roster(read_roster(_editor(page, data), page=page, data=data), staged),
                    'Co-host selection did not stage its exact identity')
         if page.get_by_role('dialog').count():
             raise Stop('Unexpected native dialog after co-host selection requires reconciliation')
@@ -351,7 +409,7 @@ def configure(page, inputs):
         staged = [entry for entry in staged if entry != person]
         # Any unexpected confirmation keeps the old row or a visible dialog;
         # neither can be accepted as a staged removal.
-        wait_until(lambda: _same_roster(read_roster(_editor(page, data)), staged),
+        wait_until(lambda: _same_roster(read_roster(_editor(page, data), page=page, data=data), staged),
                    'Co-host removal did not stage; unexpected native confirmation requires capture')
         if page.get_by_role('dialog').count():
             raise Stop('Unexpected native dialog after co-host removal requires reconciliation')

@@ -33,7 +33,7 @@ elif __name__ == 'playwright_recipes.community_event_meeting':
 _PROOF = object()
 _TTL = 300
 _JOURNAL = 'community-event-state.json'
-_SCHEMA = 'skill6-community-event-room/1'
+_SCHEMA = 'skill6-community-event-room/2'
 _ID = re.compile(r'[A-Za-z0-9_-]{1,128}')
 _ROOM = re.compile(r'[a-f0-9]{24}')
 _PENCIL = 'M2.876 18.116c.046-.414.069-.62.131-.814a2 2 0 01.234-.485c.111-.17.259-.317.553-.61L17 3a2.828 2.828 0 114 4L7.794 20.206c-.294.294-.442.442-.611.553a2 2 0 01-.485.233c-.193.063-.4.086-.814.132L2.5 21.5l.376-3.384z'
@@ -87,13 +87,13 @@ def validate_inputs(inputs):
     for key in _FORM_KEYS-set(_FLAGS)-{'thumbnail_src'}:
         _text(form[key],'form.'+key,empty=key in ('description','location_url'))
     if (view['title']!=form['title'] or view['description']!=form['description']
-            or view['fee']!='Free' or form['recurrence'] not in ("Doesn't repeat",'Doesn’t repeat')
-            or form['attendees']!='All members' or form['thumbnail_src'] is not None
+            or view['fee']!='Free'
             or any(type(form[key]) is not bool for key in _FLAGS)
-            or form['hide_location'] is not False or form['remind'] is not False
             or form['start_ampm'] not in ('AM','PM') or form['end_ampm'] not in ('AM','PM')
             or form['location_type'] not in ('Other','Live Room')):
-        raise Stop('Only the captured free nonrecurring all-member visible event without reminders/thumbnail is supported')
+        raise Stop('Existing event requires captured free-payment metadata and exact event options')
+    if form['thumbnail_src'] is not None and not re.fullmatch(r'sha256:[0-9a-f]{64}',form['thumbnail_src']):
+        raise Stop('Existing event thumbnail requires its captured nonreversible content digest')
     if form['location_type']=='Other' and data['allow_room_creation'] is not True:
         raise Stop('Selecting Live Room provisions a room; explicit room-creation input is required')
     if form['location_type']=='Live Room': _room_id(form['location_url'],data)
@@ -274,11 +274,20 @@ def _read_form(dialog):
                    'Native event thumbnail container changed')
     upload=thumbnail.locator('#event-form-thumbnail-input')
     if (upload.count()!=1 or upload.get_attribute('type')!='file'
-            or upload.get_attribute('accept')!='image/*' or upload.input_value()
-            or thumbnail.locator('img').count()
-            or thumbnail.get_by_text('Click or drag to upload',exact=True).count()!=1):
-        raise Stop('Only the captured empty event thumbnail state can be preserved')
-    out['thumbnail_src']=None
+            or upload.get_attribute('accept')!='image/*' or upload.input_value()):
+        raise Stop('Native event thumbnail upload control changed')
+    images=thumbnail.locator('img')
+    if images.count()>1:
+        raise Stop('Native event thumbnail contains ambiguous images')
+    if images.count()==1:
+        src=images.get_attribute('src')
+        if not isinstance(src,str) or not src:
+            raise Stop('Existing native event thumbnail source is not readable')
+        out['thumbnail_src']='sha256:'+hashlib.sha256(src.encode()).hexdigest()
+    else:
+        _one(thumbnail.get_by_text('Click or drag to upload',exact=True),
+             'Native empty event thumbnail state changed')
+        out['thumbnail_src']=None
     return out
 
 
@@ -332,11 +341,15 @@ def _back(dialog):
 
 
 def _receipt(data,room_id,*,changed):
+    form=data['expected']['form']
     return {'status':'NEEDS_VERIFICATION','location_id':data['location_id'],
         'event_id':data['event_id'],'group_id':data['group_id'],'room_id':room_id,
         'configuration_sha256':configuration_hash(data),'independent_readback':'VERIFIED',
         'room_link_saved':True,'room_creation_attempted':changed,'event_created':False,
-        'announcement_attempted':False,'email_reminders_enabled':False,'payment_changed':False,
+        'announcement_attempted':False,'email_reminders_enabled':form['remind'],
+        'recurrence_label':form['recurrence'],'audience_label':form['attendees'],
+        'hide_location':form['hide_location'],'hide_attendees':form['hide_attendees'],
+        'thumbnail_sha256':form['thumbnail_src'],'payment_changed':False,
         'meeting_started':False,'functional_verified':False,'notification_behavior_verified':False,
         'reused':not changed,'verification_required':True}
 

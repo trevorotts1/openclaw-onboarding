@@ -40,12 +40,8 @@ class EventRoomTests(unittest.TestCase):
             lambda d:d.update(event_id='../foreign'),
             lambda d:d.update(portal_url=d['portal_url'].replace('/home','/events')),
             lambda d:d['expected']['view'].update(fee='Paid'),
-            lambda d:d['expected']['form'].update(remind=True),
-            lambda d:d['expected']['form'].update(hide_location=True),
-            lambda d:d['expected']['form'].update(recurrence='Weekly'),
-            lambda d:d['expected']['form'].update(thumbnail_src='https://example.invalid/photo'),
-            lambda d:d['expected']['form'].update(attendees='Selected members'),
             lambda d:d['expected']['form'].update(title='Different title'),
+            lambda d:d['expected']['form'].update(thumbnail_src='https://example.invalid/photo'),
             lambda d:d['expected']['form'].pop('start_date'),
         )
         for index,mutate in enumerate(mutations):
@@ -157,6 +153,21 @@ class EventRoomTests(unittest.TestCase):
         self.assertFalse(result['email_reminders_enabled'])
         self.assertFalse(result['notification_behavior_verified'])
         self.assertNotIn('Existing approved description',str(result))
+
+    def test_recurrence_reminder_visibility_audience_and_thumbnail_are_preserved(self):
+        data=inputs()
+        form=data['expected']['form']
+        form.update(recurrence='Weekly',remind=True,hide_location=True,hide_attendees=True,
+                    attendees='Selected members',thumbnail_src='sha256:'+'a'*64)
+        digest=events.configuration_hash(data)
+        result=events._receipt(data,ROOM,changed=True)
+        self.assertEqual(result['configuration_sha256'],digest)
+        self.assertTrue(result['email_reminders_enabled'])
+        self.assertEqual(result['recurrence_label'],'Weekly')
+        self.assertEqual(result['audience_label'],'Selected members')
+        self.assertTrue(result['hide_location'])
+        self.assertTrue(result['hide_attendees'])
+        self.assertEqual(result['thumbnail_sha256'],'sha256:'+'a'*64)
 
     def test_existing_room_noop_creates_no_room_and_updates_no_event(self):
         result,log,_,state,_=self.exercise(reused=True)

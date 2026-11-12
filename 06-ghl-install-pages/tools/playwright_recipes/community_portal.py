@@ -94,18 +94,45 @@ _BASE_INPUTS = {'location_id', 'location_name', 'start_url', 'portal_url',
 
 
 def validate_inputs(inputs):
-    data = _validate_base(inputs, _BASE_INPUTS | {'channels'})
-    channels = inputs.get('channels')
-    if not isinstance(channels, list) or not channels:
-        raise Stop('Community channels must be a nonempty authored list')
+    data = _validate_base(inputs, _BASE_INPUTS | {'channels','sections'})
+    channels = inputs.get('channels',[])
+    sections = inputs.get('sections',[])
+    if not isinstance(channels,list) or not isinstance(sections,list) or not channels and not sections:
+        raise Stop('Community requires a nonempty authored channels or sections list')
     names = []
     for channel in channels:
-        if not isinstance(channel, Mapping) or set(channel) != {'name', 'description'}:
-            raise Stop('Each channel requires exactly authored name and description')
+        if (not isinstance(channel,Mapping) or not {'name','description'}<=set(channel)
+                or set(channel)-{'name','description','private','read_only','private_visibility','icon'}):
+            raise Stop('Each channel requires authored name/description and only captured optional access flags')
+        if any(key in channel and type(channel[key]) is not bool for key in ('private','read_only')):
+            raise Stop('Modern channel private/read_only flags require real booleans')
+        if 'private_visibility' in channel and (channel.get('private') is not True
+                or channel['private_visibility'] not in ('visible','hidden')):
+            raise Stop('Private channel discoverability requires captured Visible/Hidden mode')
+        if 'icon' in channel and (not isinstance(channel['icon'],str) or not channel['icon'].strip()
+                or len(channel['icon'])>100 or any(ord(c)<32 for c in channel['icon'])):
+            raise Stop('Modern channel icon must be an exact native icon/emoji value')
         names.append(_text(channel['name'], 'channel.name'))
         _text(channel['description'], 'channel.description')
     if len({n.casefold() for n in names}) != len(names):
         raise Stop('Duplicate community channel names require reconciliation')
+    section_names=[]
+    for section in sections:
+        if (not isinstance(section,Mapping) or 'name' not in section
+                or set(section)-{'name','icon'}):
+            raise Stop('Each community section requires an authored name and only a captured optional icon')
+        name=_text(section['name'],'section.name')
+        if name!=name.strip() or len(name)>1000 or any(ord(c)<32 for c in name):
+            raise Stop('Community section name must be exact native text')
+        if 'icon' in section and (not isinstance(section['icon'],str) or not section['icon'].strip()
+                or len(section['icon'])>100 or any(ord(c)<32 for c in section['icon'])):
+            raise Stop('Community section icon must be an exact native icon value')
+        section_names.append(name)
+    if len({n.casefold() for n in section_names})!=len(section_names):
+        raise Stop('Duplicate community section names require reconciliation')
+    if {n.casefold() for n in names}&{n.casefold() for n in section_names}:
+        raise Stop('A channel and section cannot share an ambiguous sidebar name')
+    data['channels']=channels;data['sections']=sections
     return data
 
 
@@ -174,12 +201,19 @@ def _facts(page, inputs, reader, *, verify_control=True):
             if control.count()!=1 or not control.is_visible():
                 raise Stop('Captured modern community navigation control unavailable or ambiguous')
         elif 'details' in inputs or 'access' in inputs:
-            settings = page.get_by_role('button', name='SETTINGS', exact=True)
+            from playwright_recipes import community_modern_details
+            if (inputs['portal_url'].rstrip('/').endswith('/home')
+                    and community_modern_details.available(page,inputs)):
+                settings=page.locator('a[href="/communities/groups/'+_portal(inputs['portal_url'])[1]+'/settings/details"]')
+            else:
+                settings = page.get_by_role('button', name='SETTINGS', exact=True)
             settings.wait_for(state='visible', timeout=45000)
             if settings.count() != 1 or not settings.is_visible():
                 raise Stop('Captured community settings control unavailable or ambiguous')
         else:
-            _add_channel(page)
+            from playwright_recipes import community_modern_channels
+            if community_modern_channels.available(page):community_modern_channels.entry(page)
+            else:_add_channel(page)
     group = page.get_by_text(inputs['group_name'], exact=True)
     group.first.wait_for(state='visible', timeout=45000)
     if group.count() < 1:
@@ -251,7 +285,7 @@ def _check_context(page, inputs, context, *, clock=time.time, verify_control=Tru
 
 def check_subroute(page,inputs,context,subpath,*,clock=time.time):
     """Revalidate an opaque home context on one captured modern group subroute."""
-    if subpath not in ('learning','settings/branding'):
+    if subpath not in ('learning','settings/branding','settings/details'):
         raise Stop('Community subroute was not captured for this executor')
     expected=inputs['portal_url'].rstrip('/').rsplit('/',1)[0]+'/'+subpath
     if (not isinstance(context,PortalContext) or context._proof is not _PROOF
@@ -313,6 +347,14 @@ def run_channels(page, inputs, evidence_root, *, portal_context, clock=time.time
                 'community-details-state.json', 'community-access-state.json', 'community-event-state.json')):
             raise Stop('Another execution lane has evidence here; reconcile before a portal write')
         existing = root / 'community-portal-state.json'
+        from playwright_recipes import community_modern_channels
+        if community_modern_channels.available(page):
+            _check_context(page,data,portal_context,clock=clock)
+            return community_modern_channels.run_owned(page,data,root,portal_context,clock)
+        if data['sections']:
+            raise Stop('Community sections require the captured modern Channels sidebar')
+        if any(set(channel).intersection({'private','read_only'}) for channel in data['channels']):
+            raise Stop('Channel access flags require the captured modern channel dialog')
         if _has_evidence(existing):
             fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
             replay = _replay_channels(existing, data, fingerprint)
@@ -515,6 +557,9 @@ def run_details(page, inputs, evidence_root, *, portal_context, clock=time.time)
     root = Path(evidence_root).resolve()
     if _has_evidence(root / 'auth-stop.json'):
         raise Stop('Canonical authentication refusal must be resolved before portal execution')
+    from playwright_recipes import community_modern_details
+    if data['portal_url'].rstrip('/').endswith('/home') and community_modern_details.available(page,data):
+        return community_modern_details.run_details(page,data,root,portal_context=portal_context,clock=clock)
     if __package__:
         from .evidence_lease import evidence_lease
     else:

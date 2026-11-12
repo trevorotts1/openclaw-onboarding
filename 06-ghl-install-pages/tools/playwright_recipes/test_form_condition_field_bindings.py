@@ -61,6 +61,72 @@ class BindingSchemaTests(unittest.TestCase):
             with self.subTest(module=module.__name__):
                 self.assertEqual(len({module.configuration_hash(value) for value in (data,changed,sibling)}),3)
 
+    def test_date_time_unary_source_binds_captured_query_key(self):
+        date={'label':'Date & time 10ow3','query_key':'date_&_time_10ow3','field_type':'DATE_TIME'}
+        data=deepcopy(plans()[0][1]);data['field_bindings'].append(date)
+        self.assertEqual(group.validate(data),data)
+        data['clauses'][0]={'if_field':date['label'],'operator':'Is Filled'}
+        self.assertEqual(group.validate(data),data)
+        for op in ('Is Equal To','Is Not Equal To','Before','After'):
+            data['clauses'][0]={'if_field':date['label'],'operator':op,'value':'2026-11-13 19:00'}
+            self.assertEqual(group.validate(data),data)
+        data['clauses'][0]={'if_field':date['label'],'operator':'Between','value':['2026-11-13 09:00','2026-11-14 17:00']}
+        self.assertEqual(group.validate(data),data)
+        data['clauses'][0]['value'].reverse()
+        with self.assertRaises(runner.Stop):group.validate(data)
+        data['clauses'][0]={'if_field':date['label'],'operator':'Before','value':'2026-02-30 19:00'}
+        with self.assertRaises(runner.Stop):group.validate(data)
+
+    def test_builtin_date_of_birth_uses_date_comparisons(self):
+        value={'match':'all','clauses':[{'if_field':'Date of birth','operator':'Before','value':'2000-01-01'}],
+               'effect':'Hide Field','target':'Phone'}
+        self.assertEqual(group.validate(value,minimum_clauses=1),value)
+        value['clauses'][0]['value']='not a date'
+        with self.assertRaises(runner.Stop):group.validate(value,minimum_clauses=1)
+
+    def test_consent_checked_and_time_comparisons_require_authored_types(self):
+        for source in ('TnC1','TnC2'):
+            data={'match':'all','clauses':[{'if_field':source,'operator':'Is Checked'}],
+                  'effect':'Hide Field','target':'Phone'}
+            self.assertEqual(group.validate(data,minimum_clauses=1),data)
+            data['clauses'][0]['value']='yes'
+            with self.assertRaises(runner.Stop):group.validate(data,minimum_clauses=1)
+        binding={'label':'Time','field_type':'TIME','query_key':'time_key'}
+        data={'match':'all','clauses':[{'if_field':'Time','operator':'Before','value':'19:00'}],
+              'effect':'Hide Field','target':'Phone','field_bindings':[binding]}
+        self.assertEqual(group.validate(data,minimum_clauses=1),data)
+        data['clauses'][0].update(operator='Between',value=['09:00','17:00'])
+        self.assertEqual(group.validate(data,minimum_clauses=1),data)
+        data['clauses'][0]['value']=['17:00','09:00']
+        with self.assertRaises(runner.Stop):group.validate(data,minimum_clauses=1)
+
+    def test_profile_sources_and_targets_have_bounded_operator_families(self):
+        profiles=[('LARGE_TEXT','query_key','long_key','Contains','copy'),
+                  ('URL','query_key','url_key','Contains','https'),
+                  ('MONETORY','query_key','money_key','Greater Than','12.50'),
+                  ('SCORE','query_key','score_key','Between',['1','10']),
+                  ('FILE_UPLOAD','unique_key','contact.file_key','Is Filled',None),
+                  ('SIGNATURE','unique_key','contact.sign_key','Is Empty',None),
+                  ('TEXTBOX_LIST','unique_key','contact.list_key','Is Empty',None),
+                  ('TIME','query_key','time_key','Is Filled',None),
+                  ('RATING',None,None,'Is Filled',None),
+                  ('DATE_TIME','query_key','date_&_time','Is Empty',None),
+                  ('DATE','query_key','date_101ir','Before','2026-11-13')]
+        for kind,key,ident,op,value in profiles:
+            binding={'label':'Custom '+kind,'field_type':kind}
+            if key:binding[key]=ident
+            clause={'if_field':binding['label'],'operator':op}
+            if value is not None:clause['value']=value
+            data={'match':'all','clauses':[clause], 'effect':'Hide Field','target':binding['label'],'field_bindings':[binding]}
+            with self.subTest(kind=kind):
+                self.assertEqual(group.validate(data,minimum_clauses=1),data)
+                rule=dict(data);rule.pop('field_bindings')
+                self.assertEqual(outcomes.validate({'rules':[rule],'field_bindings':[binding]})['rules'][0]['target'],binding['label'])
+        binding={'label':'File','field_type':'FILE_UPLOAD','unique_key':'contact.file'}
+        data={'match':'all','clauses':[{'if_field':'File','operator':'Contains','value':'x'}],
+              'effect':'Hide Field','target':'File','field_bindings':[binding]}
+        with self.assertRaises(runner.Stop):group.validate(data,minimum_clauses=1)
+
     def test_compiler_threads_bindings_for_show_hide_and_outcome_stacks(self):
         for effect in ('Hide Field',outcomes.REDIRECT):
             value=rule()
@@ -91,7 +157,8 @@ def canvas_fixture(bindings):
         label.get_attribute.side_effect=attributes.get;label.inner_text.return_value=binding['label']
         control.get_attribute.return_value=None
         query.is_visible.return_value=True;query.input_value.return_value=binding['query_key']
-        item.locator.side_effect={'[data-field-type]':label,'input.form-placeholder.form-control':control,
+        date_controls=Mock();date_controls.count.return_value=2;date_controls.nth.return_value=control
+        item.locator.side_effect={'.date-time-preview-row input':date_controls,'[data-field-type]':label,'input.form-placeholder.form-control':control,
             'input.form-control':control,
             '[aria-label="Open settings"]':gear}.__getitem__
         entries.append((item,label,gear));queries.append(query)
@@ -110,7 +177,80 @@ def canvas_fixture(bindings):
     return frame,entries,queries,events,click
 
 
+class DateWriterTests(unittest.TestCase):
+    def test_time_only_fill_and_readback(self):
+        modal,frame,row,inputs,control=Mock(),Mock(),Mock(),Mock(),Mock()
+        modal.locator.return_value.locator.return_value=row
+        absent=Mock();absent.count.return_value=0
+        inputs.count.return_value=1;inputs.nth.return_value=control
+        control.is_visible.return_value=True;control.get_attribute.return_value='text';control.input_value.return_value='19:00'
+        row.locator.side_effect=lambda selector:inputs if 'HH:MM' in selector else absent
+        clause={'if_field':'Time','operator':'Before','value':'19:00'}
+        with patch.object(group,'fill') as fill:
+            group._write_clause_value(modal,0,clause,frame=frame)
+            fill.assert_called_once_with(control,'19:00')
+        control.press.assert_called_once_with('Tab')
+        group._read_clause_value(modal,0,clause)
+        control.input_value.return_value='18:00'
+        with self.assertRaises(runner.Stop):group._read_clause_value(modal,0,clause)
+
+    def test_date_only_uses_calendar_and_exact_readback(self):
+        modal,frame,row,inputs,control=Mock(),Mock(),Mock(),Mock(),Mock()
+        modal.locator.return_value.locator.return_value=row
+        empty=Mock();empty.count.return_value=0
+        inputs.count.return_value=1;inputs.nth.return_value=control
+        control.is_visible.return_value=True;control.get_attribute.return_value='text';control.input_value.return_value='2026-11-13'
+        row.locator.side_effect=lambda selector:inputs if 'Select Date' in selector else empty
+        clause={'if_field':'Date 101ir','operator':'Before','value':'2026-11-13'}
+        with patch.object(group,'_select_calendar_date') as choose:
+            group._write_clause_value(modal,0,clause,frame=frame)
+            choose.assert_called_once()
+        group._read_clause_value(modal,0,clause)
+        control.input_value.return_value='2026-11-14'
+        with self.assertRaises(runner.Stop):group._read_clause_value(modal,0,clause)
+
+    def test_inclusive_date_range_writes_both_endpoints_and_checks_readback(self):
+        modal,frame=Mock(),Mock();start=Mock();start.count.return_value=1
+        modal.locator.return_value=start
+        first,second=Mock(),Mock();first.input_value.return_value='2026-11-13';second.input_value.return_value='2026-11-14'
+        first_time,second_time=Mock(),Mock();first_time.input_value.return_value='09:00';second_time.input_value.return_value='17:00'
+        controls=[(Mock(),first,first_time),(Mock(),second,second_time)]
+        clause={'if_field':'Date & time 10ow3','operator':'Between','value':['2026-11-13 09:00','2026-11-14 17:00']}
+        with patch.object(group,'_date_range_controls',return_value=controls), patch.object(group,'_write_date') as write:
+            group._write_clause_value(modal,0,clause,frame=frame)
+            self.assertEqual([entry.args[-1] for entry in write.call_args_list],['Start','End'])
+            group._read_clause_value(modal,0,clause)
+            second_time.input_value.return_value='18:00'
+            with self.assertRaises(runner.Stop):group._read_clause_value(modal,0,clause)
+
+    def test_native_calendar_and_time_are_written_then_read_back(self):
+        modal,frame=Mock(),Mock()
+        date,time,day,clock,panel,header,dates,selected=[Mock() for _ in range(8)]
+        for node in (date,time,day,clock,panel,header,selected):node.count.return_value=1
+        date.get_attribute.return_value='Start date';time.get_attribute.return_value='Time format'
+        day.get_attribute.return_value='Select Date';clock.get_attribute.return_value='HH:MM'
+        date.locator.return_value=day;time.locator.return_value=clock
+        absent=Mock();absent.count.return_value=0
+        modal.locator.side_effect=lambda selector:date if selector=='#inputDateTimeDate-0' else time if selector=='#inputDateTimeTime-0' else absent
+        frame.locator.return_value=panel
+        panel.locator.side_effect=lambda selector:header if selector=='.n-date-panel-month__text' else dates
+        header.inner_text.return_value='Nov 2026';dates.get_by_text.return_value=selected
+        day.input_value.return_value='2026-11-13';clock.input_value.return_value='19:00'
+        clause={'if_field':'Date & time 10ow3','operator':'Before','value':'2026-11-13 19:00'}
+        with patch.object(group,'click') as click,patch.object(group,'fill') as fill:
+            group._write_clause_value(modal,0,clause,frame=frame)
+        self.assertEqual(click.call_args_list,[unittest.mock.call(date),unittest.mock.call(selected)])
+        fill.assert_called_once_with(clock,'19:00');clock.press.assert_called_once_with('Tab')
+        group._read_clause_value(modal,0,clause)
+        clock.input_value.return_value='18:00'
+        with self.assertRaises(runner.Stop):group._read_clause_value(modal,0,clause)
+
+
 class CanvasBindingTests(unittest.TestCase):
+    def test_date_time_typed_preview_and_query_key_are_preflighted(self):
+        date={'label':'Date & time 10ow3','query_key':'date_&_time_10ow3','field_type':'DATE_TIME'}
+        self.assertEqual(self.exercise([date])[0],[date])
+
     def exercise(self,bindings,*,actual=None,wrong_key=False):
         frame,entries,queries,events,click=canvas_fixture(actual if actual is not None else bindings)
         if wrong_key:queries[0].input_value.return_value='wrong'
@@ -240,7 +380,7 @@ class NumericBindingTests(unittest.TestCase):
                 with self.subTest(operator=operator,module=module.__name__):
                     self.assertEqual(module.validate(data),data)
 
-    def test_wrong_type_uncaptured_between_bad_values_and_numeric_targets_refuse_before_page(self):
+    def test_wrong_type_malformed_between_and_bad_values_refuse_before_page(self):
         for module,data in number_plans():
             bad=[]
             def clause(plan):return plan['clauses'][0] if module is group else plan['rules'][0]['clauses'][0]
@@ -248,8 +388,6 @@ class NumericBindingTests(unittest.TestCase):
                                    ('Greater Than','Infinity'),('Greater Than','not-a-number')):
                 changed=deepcopy(data);clause(changed).update(operator=operator,value=value);bad.append(changed)
             changed=deepcopy(data);changed['field_bindings'][0]['field_type']='TEXT';bad.append(changed)
-            changed=deepcopy(data)
-            (changed if module is group else changed['rules'][0])['target']=NUMBER['label'];bad.append(changed)
             for changed in bad:
                 page=Mock()
                 with self.subTest(module=module.__name__,plan=changed),self.assertRaises(runner.Stop):

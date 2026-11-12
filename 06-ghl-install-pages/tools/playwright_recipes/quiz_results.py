@@ -72,11 +72,19 @@ def validate(step):
         raise Stop('Unsupported marketing-quiz result runner metadata')
     result = deepcopy(step)
     config = result.get('result_page')
+    if isinstance(config,dict) and 'individual_category_media' in config:
+        if set(config)!={'individual_category_media'}:
+            raise Stop('Individual category media requires an exclusive result job')
+        from playwright_recipes.quiz_individual_media import validate as validate_media
+        config['individual_category_media']=validate_media(config['individual_category_media'])
+        return result
     if (not isinstance(config, dict) or not config
-            or set(config) - {'expected', 'changes', 'cta_context', 'cta_variants'}):
+            or set(config) - {'expected', 'changes', 'cta_context', 'cta_variants', 'header_logo'}):
         raise Stop('Unsupported marketing-quiz result-page controls')
     if 'expected' in config or 'changes' in config:
         _pair(config.get('expected'), config.get('changes'), HEADER_FIELDS)
+    if 'header_logo' in config:
+        config['header_logo'] = _logo_config(config['header_logo'])
     variants = config.get('cta_variants')
     context = config.get('cta_context')
     if variants is not None or context is not None:
@@ -104,9 +112,52 @@ def validate(step):
                 tiers.add(tier)
                 variant['tier'] = tier
             _pair(variant['expected'], variant['changes'], CTA_FIELDS)
-    if not config.get('changes') and not variants:
+    if not config.get('changes') and not variants and 'header_logo' not in config:
         raise Stop('No result-copy changes requested')
     return result
+
+
+
+def _logo_config(value):
+    if (not isinstance(value,dict) or set(value)!={'expected','changes'}
+            or any(not isinstance(value[key],dict) or set(value[key])!={'url','width','height'}
+                   for key in ('expected','changes'))):
+        raise Stop('Header logo requires complete exact previous and desired URL/width/height')
+    result=deepcopy(value)
+    for side in ('expected','changes'):
+        url=result[side]['url']
+        if side=='expected' and url=='':pass
+        else:result[side]['url']=_https(url)
+        for key in ('width','height'):
+            size=result[side][key]
+            if (not isinstance(size,str) or not re.fullmatch(r'(?:[1-9][0-9]*)(?:\.[0-9]+)?',size)):
+                raise Stop('Header logo dimensions require explicit positive native numeric text')
+    return result
+
+
+def _logo_controls(modal):
+    image=_one(modal.locator('#bgImage[name="bgImage"]'),'Native Header logo URL control changed')
+    sizes=modal.get_by_role('textbox',name='Please Input',exact=True)
+    if sizes.count()!=2:raise Stop('Native Header logo width/height control inventory changed')
+    return {'url':image,'width':sizes.nth(0),'height':sizes.nth(1)}
+
+
+def _preflight_logo(modal,before,desired):
+    controls=_logo_controls(modal)
+    if {key:node.input_value() for key,node in controls.items()}!=before:
+        raise Stop('Header logo differs from the exact inventoried previous URL/dimensions')
+    for key,node in controls.items():
+        if before[key]!=desired[key] and (not node.is_enabled() or node.get_attribute('readonly') is not None):
+            raise Stop('Requested Header logo property is not editable: '+key)
+
+
+def _write_logo(modal,before,desired):
+    _preflight_logo(modal,before,desired)
+    for key,node in _logo_controls(modal).items():
+        if before[key]!=desired[key]:
+            fill(node,desired[key]);node.press('Tab')
+    if _header_logo(modal)!=desired:
+        raise Stop('Native Header logo did not accept the authored URL/dimensions')
 
 
 def configuration_hash(step):
@@ -276,6 +327,11 @@ def _write(modal, key, value):
 def configure(page, step):
     plan = validate(step)
     config = plan['result_page']
+    if 'individual_category_media' in config:
+        from playwright_recipes.quiz_individual_media import configure as configure_media
+        return configure_media(page,plan)
+    header_changes = config.get('changes',{})
+    logo_config = config.get('header_logo')
     editor_url = page.url
     parsed = urlsplit(editor_url)
     if (parsed.scheme != 'https' or not parsed.hostname or parsed.username is not None
@@ -311,20 +367,25 @@ def configure(page, step):
         return modal
 
     modal = open_results()
-    header_before = _header(modal) if config.get('changes') else None
+    header_before = _header(modal) if header_changes or logo_config else None
     preserve_header_markup = (header_before is not None
-        and bool({'business_name_enabled','header_layout'}.intersection(config['changes']))
-        and 'business_name' not in config['changes'])
+        and (bool({'business_name_enabled','header_layout'}.intersection(header_changes)) or logo_config is not None)
+        and 'business_name' not in header_changes)
     header_markup = _rte(modal).inner_html() if preserve_header_markup else None
-    header_logo = _header_logo(modal) if header_before is not None and 'header_layout' in config['changes'] else None
+    header_logo = _header_logo(modal) if header_before is not None and ('header_layout' in header_changes or logo_config is not None) else None
+    logo_desired = logo_config['changes'] if logo_config is not None else header_logo
+    if logo_config is not None:
+        if header_logo != logo_config['expected']:
+            raise Stop('Header logo differs from the inventoried previous values')
+        _preflight_logo(modal,header_logo,logo_desired)
     if preserve_header_markup and not isinstance(header_markup, str):
         raise Stop('Business-name stored markup is unavailable before visibility editing')
-    if (header_before is not None and 'business_name_enabled' in config['changes']
-            and header_before['business_name_enabled'] != config['changes']['business_name_enabled']
+    if (header_before is not None and 'business_name_enabled' in header_changes
+            and header_before['business_name_enabled'] != header_changes['business_name_enabled']
             and not _one(modal.get_by_role('switch',name='toggle',exact=True),
                          'Native Header Business name switch changed').is_enabled()):
         raise Stop('Native Header Business name switch is disabled before result editing')
-    if header_before is not None and any(header_before[key] != value for key, value in config['expected'].items()):
+    if header_before is not None and any(header_before[key] != value for key, value in config.get('expected',{}).items()):
         raise Stop('Quiz header copy differs from the inventoried previous values')
     variant_before = []
     for variant in config.get('cta_variants', []):
@@ -336,12 +397,15 @@ def configure(page, step):
     # Every requested native target has now been read before the first copy write.
     if header_before is not None:
         _header(modal)
-        for key, value in config['changes'].items():
+        for key, value in header_changes.items():
             identity()
             if header_before[key] != value:
                 _write(modal, key, value)
-        if _header(modal) != {**header_before, **config['changes']}:
+        if _header(modal) != {**header_before, **header_changes}:
             raise Stop('Quiz header desired state did not stick before Save')
+    if logo_config is not None:
+        _header(modal)
+        _write_logo(modal,header_logo,logo_desired)
     for variant, before in zip(config.get('cta_variants', []), variant_before):
         _tier(frame, modal, variant, config['cta_context'])
         for key, value in variant['changes'].items():
@@ -350,7 +414,7 @@ def configure(page, step):
                 _write(modal, key, value)
         if _cta_values(modal) != {**before, **variant['changes']}:
             raise Stop('CTA desired state or untouched copy changed before Save')
-    if header_before is not None and _header(modal) != {**header_before, **config['changes']}:
+    if header_before is not None and _header(modal) != {**header_before, **header_changes}:
         raise Stop('Another result-copy edit changed the requested business name before Save')
     for variant, before in zip(config.get('cta_variants', []), variant_before):
         _tier(frame, modal, variant, config['cta_context'])
@@ -362,7 +426,7 @@ def configure(page, step):
             raise Stop('Header controls changed protected stored markup before Save')
     if header_logo is not None:
         _header(modal)
-        if _header_logo(modal) != header_logo:
+        if _header_logo(modal) != logo_desired:
             raise Stop('Header layout changed protected logo URL/width/height before Save')
     identity()
     save = _one(modal.get_by_role('button', name='Save', exact=True), 'Native result-modal Save changed')
@@ -378,11 +442,11 @@ def configure(page, step):
     title = frame.get_by_role('textbox', name='Form Name', exact=True)
     title.wait_for(state='visible', timeout=45000)
     modal = open_results()
-    if header_before is not None and _header(modal) != {**header_before, **config['changes']}:
+    if header_before is not None and _header(modal) != {**header_before, **header_changes}:
         raise Stop('Quiz header copy did not persist after independent reopen')
     if preserve_header_markup and _rte(modal).inner_html() != header_markup:
         raise Stop('Business-name stored markup changed after independent reopen')
-    if header_logo is not None and _header_logo(modal) != header_logo:
+    if header_logo is not None and _header_logo(modal) != logo_desired:
         raise Stop('Header logo URL/width/height changed after independent reopen')
     for variant, before in zip(config.get('cta_variants', []), variant_before):
         _tier(frame, modal, variant, config['cta_context'])

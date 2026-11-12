@@ -14,6 +14,16 @@ Broad `surveys.create` and `surveys.configure` remain PARTIAL.
   textarea. Label,
   Placeholder, Short Label, Query Key, Required, Hidden and Hidden value are
   authored and checked after saving and independently reopening.
+- Number, Checkbox, Single Dropdown, Multi Dropdown, File Upload, Signature and
+  Text Box List widget creation on their own initially empty slide.
+- Bot protection (Interactive mode), Source and Monetary creation, using their
+  captured survey-specific General Settings controls and Quick Add IDs.
+- Score creation using its captured generated label and Query Key, without
+  creating API custom-field metadata.
+- Rating creation with its captured queryless `@rating` identity, generated
+  label, Content controls and two preview input labels.
+- Date-only, Date & time and Time-only creation using their captured collect
+  modes, mode-specific canvas types and generated native Query Keys.
 
 Multi Line creation uses the same typed `surveys.create.question_batches` plan
 with `kind: "multiline"`. It never provisions an API custom field. Its own child
@@ -32,17 +42,17 @@ these text controls. Existing Multi Line properties retain their separate action
 
 ## Remaining owned creation tiles
 
-The captured Quick Add rail has 38 tile entries. Seven have an owned creation
-path above. These 31 entries still need their own typed owned creation coverage:
+The captured Quick Add rail has 38 tile entries. Fifteen widget tiles have an owned
+creation path above. These 23 entries still need their own typed owned creation coverage:
 
 | Group | Captured tile entries |
 | --- | --- |
 | Contact | Full Name; Date of birth; Organization; Website |
 | Address | Updated Address; legacy Address; City; State; Country; Postal Code |
-| Choices | Text Box List; Single Dropdown; Multi Dropdown; Checkbox; Picture Choice; Rating |
+| Choices | Picture Choice |
 | Content | Text; Html; Image |
-| Payment | Sell Products; Collect Payment; Monetary |
-| Other | Bot protection; Source; T & C; Score; File Upload; Number; Date & time; Signature; URL |
+| Payment | Sell Products; Collect Payment |
+| Other | T & C; URL |
 
 This table describes the owned new-survey pipeline. It does not remove any
 existing-field placement or form-only control support elsewhere in the code.

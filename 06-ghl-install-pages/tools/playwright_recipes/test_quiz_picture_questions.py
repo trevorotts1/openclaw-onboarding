@@ -98,7 +98,7 @@ class PictureChoiceTests(unittest.TestCase):
     def test_unimplemented_counts_missing_media_keys_colliding_prior_key_and_foreign_owner_refuse(self):
         for defect in ('count','url','tile','key','prior_key','owner','ordinary','options','mixed_batches'):
             value=step();q=value['payload']['questions'][0]
-            if defect=='count':q['options'].pop()
+            if defect=='count':q['options']=q['options'][:1]
             elif defect=='url':q['options'][0]['image_url']='javascript:alert(1)'
             elif defect=='tile':q['options'][0].pop('media_button_name')
             elif defect=='key':q.pop('expected_persisted_unique_key')
@@ -143,7 +143,8 @@ class PictureChoiceTests(unittest.TestCase):
             elif defect=='url':items[0].find('.//img').set('src','http://example.com/insecure.png')
             elif defect=='grid':root[0].set('data-testid','ordinary-radio-grid')
             elif defect=='disabled':items[0].find('input').attrib.pop('disabled')
-            else:root[0].remove(items[2])
+            else:
+                root[0].remove(items[2]);root[0].remove(items[1])
             with self.subTest(defect=defect),self.assertRaises(runner.Stop):picture._choices(surface)
 
     def test_save_mints_only_one_owner_key_and_known_multiple_selection_transition(self):
@@ -177,6 +178,28 @@ class PictureChoiceTests(unittest.TestCase):
             with self.assertRaises(runner.Stop):runner.run_on_page(object(),job,root)
             write.assert_called_once()
 
+    def test_local_approved_asset_staging_and_receipt_binding(self):
+        from PIL import Image
+        import os
+        with tempfile.TemporaryDirectory() as root:
+            path=Path(root,'approved.png');Image.new('RGB',(2,2),'red').save(path)
+            sha=hashlib.sha256(path.read_bytes()).hexdigest();value=step()
+            value['payload']['questions'][0]['options'][0]={'label':'Choice 1','local_file':str(path),'sha256':sha}
+            self.assertEqual(picture.validate(value)['questions'][0]['options'][0]['sha256'],sha)
+            with tempfile.TemporaryDirectory() as stage:
+                staged=picture._stage_local_assets(value['payload'],stage)
+                self.assertEqual(staged[0][2:],('image/png',sha));self.assertEqual(staged[0][0].read_bytes(),path.read_bytes())
+            observed='https://example.com/new-upload.png';receipt=proof()
+            receipt['configuration_sha256']=picture.configuration_hash(value)
+            receipt['image_urls_sha256'][0]=hashlib.sha256(observed.encode()).hexdigest()
+            receipt['uploaded_media']=[{'index':0,'source_sha256':sha,'url':observed}]
+            self.assertEqual(picture.validate_receipt(receipt,value),receipt)
+            receipt['uploaded_media'][0]['source_sha256']='0'*64
+            with self.assertRaises(runner.Stop):picture.validate_receipt(receipt,value)
+            path.write_bytes(b'not an image')
+            with tempfile.TemporaryDirectory() as stage,self.assertRaises(runner.Stop):
+                picture._stage_local_assets(value['payload'],stage)
+
     def test_styles_preserve_exact_transient_and_persisted_default_switch_owners(self):
         for transient in (True,False):
             names=['Show option label','Multiple selection','Other option','Spread to Columns'] if transient else [
@@ -191,7 +214,7 @@ class PictureChoiceTests(unittest.TestCase):
             frame.get_by_role.return_value.nth.side_effect=lambda index:switches[index]
             columns,cover=MagicMock(),MagicMock()
             for control in (columns,cover):control.count.return_value=1;control.is_visible.return_value=True
-            columns.input_value.return_value='3';cover.inner_text.return_value='Cover'
+            columns.input_value.return_value='3';cover.inner_text.return_value='Cover';cover.get_attribute.return_value='Cover'
             frame.locator.side_effect=lambda selector:columns if selector=='#picture-choice-columns input' else cover
             self.assertEqual(picture._styles(frame)['multiple_selection_present'],transient)
             switches[-1].get_attribute.return_value='false'

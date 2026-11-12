@@ -94,6 +94,8 @@ class NativeModal:
         if selector=='#selectedFieldShowHide':return self.selection(self.target)
         for prefix,key in (('#selectedField-','if_field'),('#selectedOperation-','operator')):
             if selector.startswith(prefix):return self.selection(self.rows[int(selector[len(prefix):])].get(key))
+        if selector.startswith(('#inputDateTimeStartDate-','#inputDateTimeDate-')):
+            return self.counted(lambda:0)
         if selector.startswith('#inputValue-'):
             row=self.rows[int(selector[len('#inputValue-'):])]
             node=self.counted(lambda:1)

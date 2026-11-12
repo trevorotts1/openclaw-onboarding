@@ -59,9 +59,9 @@ def decide(operation, location_id, probes, catalog=None, failed_lanes=(), inputs
     calendar_mode = operation == 'meetings.integrate' and context.get('integration_mode') == 'permanent_calendar_link'
     if operation == 'meetings.integrate':
         mode = context.get('integration_mode')
-        if mode is not None and mode not in ('permanent_calendar_link', 'dynamic_calendar_room', 'community_event_room'):
+        if mode is not None and mode not in ('permanent_calendar_link', 'dynamic_calendar_room', 'community_event_room', 'course_live_session', 'provider_oauth_handoff'):
             return {'lane':'STOP_UNSUPPORTED_INTEGRATION_MODE','operation':operation,
-                    'reason':'Dynamic appointment rooms and other integrations require a separately captured implementation'}
+                    'reason':'Meeting integration requires a separately captured implementation'}
         if mode is None and not context.get('options'):
             return {'lane':'STOP_INTEGRATION_MODE_REQUIRED','operation':operation,
                     'reason':'Choose explicit permanent_calendar_link for calendar API integration; captured options remain a separate UI route'}
@@ -102,7 +102,7 @@ def decide(operation, location_id, probes, catalog=None, failed_lanes=(), inputs
             native_theme = (entry.get('action') == 'native_course_theme_or_options'
                             and 'template_id' in context and 'options' not in context)
             native_dynamic = (operation == 'meetings.integrate'
-                              and context.get('integration_mode') in ('dynamic_calendar_room', 'community_event_room')
+                              and context.get('integration_mode') in ('dynamic_calendar_room', 'community_event_room', 'course_live_session', 'provider_oauth_handoff')
                               and 'options' not in context)
             if (entry.get('action') in ('options', 'native_course_theme_or_options')
                     and not native_theme and not native_dynamic and operation not in probes.get('recorded_profiles', [])):

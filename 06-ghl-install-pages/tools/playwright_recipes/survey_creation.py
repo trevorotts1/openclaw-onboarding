@@ -19,16 +19,32 @@ from playwright_recipes.skill6_playwright import Stop, assert_tenant, click, sec
 
 ACTION='native_survey_creation'
 COMMON=('location_id','location_name','start_url')
-WIDGET_KINDS=('number','checkbox','single_dropdown','multi_dropdown')
+WIDGET_KINDS=('number','checkbox','single_dropdown','multi_dropdown','file_upload','signature','text_box_list',
+              'bot_protection','source','monetary','score','rating','date','date_time','time',
+              'text_heading','image','html','picture_choice','url')
 TEXT_KINDS=('text','multiline',*WIDGET_KINDS)
-WIDGET_TYPES={'number':'NUMERICAL','checkbox':'CHECKBOX','single_dropdown':'SINGLE_OPTIONS','multi_dropdown':'MULTIPLE_OPTIONS'}
+WIDGET_TYPES={'number':'NUMERICAL','checkbox':'CHECKBOX','single_dropdown':'SINGLE_OPTIONS',
+              'multi_dropdown':'MULTIPLE_OPTIONS','file_upload':'FILE_UPLOAD','signature':'SIGNATURE','text_box_list':'TEXTBOX_LIST',
+              'bot_protection':'captcha','source':'source','monetary':'MONETORY','score':'SCORE','rating':'RATING',
+              'date':'DATE','date_time':'DATE_TIME','time':'TIME','text_heading':'h1','image':'img','html':'html',
+              'picture_choice':'RADIO','url':'URL'}
 
 
 def _question_key(kind,question):
     if kind in WIDGET_KINDS:
-        from playwright_recipes.survey_widget_families import _key
-        return question[_key(kind)]
+        from playwright_recipes.survey_widget_families import _identity
+        return _identity(kind,question)
     return question['query_key']
+
+
+def _canvas_row_owner(row,widget_canvas,radio_fields):
+    """Prefer a complete authored-widget shape before testing the RADIO API shape."""
+    widget=next((key for key,value in widget_canvas.items() if value==row),None)
+    if widget is not None:return ('widget',widget)
+    radio=next((field for field in radio_fields if row['types']==['RADIO']
+        and row['names']==[['INPUT','radio',field['id']] for _ in field['options']]),None)
+    if radio is not None:return ('radio',radio['id'])
+    return (None,None)
 
 
 def _slide_count(plan):
@@ -95,9 +111,10 @@ def validate_inputs(value):
             if batch['kind'] in WIDGET_KINDS:
                 from playwright_recipes.survey_widget_families import validate_creation_question
                 question=validate_creation_question(batch['questions'][0],batch['kind'])
-                if question['unique_key'] in canonical_keys:
-                    raise Stop('Survey widget canonical custom-field identity repeats another owned question')
-                canonical_keys.add(question['unique_key'])
+                if 'unique_key' in question:
+                    if question['unique_key'] in canonical_keys:
+                        raise Stop('Survey widget canonical custom-field identity repeats another owned question')
+                    canonical_keys.add(question['unique_key'])
             else:question=text_questions.validate_question(batch['questions'][0])
             if _question_key(batch['kind'],question) in query_keys:raise Stop('Survey Single Line Query Key repeats another owned question')
             query_keys.add(_question_key(batch['kind'],question))
@@ -251,12 +268,12 @@ def _validate_inventory(value,plan,binding,completed):
             native_queries.add(observed['query_key'])
         canvas=slide['canvas'];baseline=binding['canvas'] if 'canvas' in binding else binding['slides'][index-1]['canvas']
         original=[];seen=[];text_seen=0;authored_order=[]
-        widget_canvas={}
+        widget_canvas={};widget_canvas_kinds={}
         for authored,done in zip(plan['question_batches'],completed):
-            if authored['target_slide']!=index or authored['kind'] not in ('checkbox','single_dropdown','multi_dropdown'):continue
+            if authored['target_slide']!=index or authored['kind'] not in tuple(kind for kind in WIDGET_KINDS if kind!='number'):continue
             saved=done['native_receipt']['saved_snapshot'][index-1][0]
             controls=saved.get('controls')
-            if (not isinstance(controls,list) or not controls
+            if (not isinstance(controls,list) or (not controls and authored['kind'] in ('checkbox','single_dropdown','multi_dropdown','text_box_list'))
                     or any(not isinstance(control,list) or len(control)!=5 for control in controls)):
                 raise Stop('Survey choice-widget child receipt omits its saved native control inventory')
             widget_canvas[_question_key(authored['kind'],authored['questions'][0])]={'types':[WIDGET_TYPES[authored['kind']]],
@@ -264,16 +281,17 @@ def _validate_inventory(value,plan,binding,completed):
         for row in canvas:
             if not isinstance(row,dict) or set(row)!={'types','names'} or not isinstance(row['names'],list):
                 raise Stop('Whole-survey saved canvas row is malformed')
-            field=next((f for f in expected if row['types']==['RADIO']
-                and row['names']==[['INPUT','radio',f['id']] for _ in f['options']]),None)
-            if field is not None:seen.append(field['id']);authored_order.append(('radio',field['id']))
-            elif index in text_by_slide and row['types'] in (['CHECKBOX'],['SINGLE_OPTIONS'],['MULTIPLE_OPTIONS']):
-                kind={'CHECKBOX':'checkbox','SINGLE_OPTIONS':'single_dropdown','MULTIPLE_OPTIONS':'multi_dropdown'}[row['types'][0]]
+            row_kind,row_owner=_canvas_row_owner(row,widget_canvas,expected)
+            if row_kind=='widget':
+                widget_key=row_owner
+                kind=widget_canvas_kinds[widget_key]
                 if text_seen>=len(text_by_slide[index]) or text_kinds_by_slide[index][text_seen]!=kind:
                     raise Stop('Whole-survey saved choice-widget family order changed')
                 key=_question_key(kind,text_by_slide[index][text_seen])
-                if row!=widget_canvas.get(key):raise Stop('Whole-survey choice-widget saved control inventory changed')
+                if key!=widget_key:raise Stop('Whole-survey saved choice-widget control owner changed')
                 authored_order.append((kind,key));text_seen+=1
+            elif row_kind=='radio':
+                seen.append(row_owner);authored_order.append(('radio',row_owner))
             elif index in text_by_slide and row in ({'types':['LARGE_TEXT'],'names':[['TEXTAREA',None,None]]},{'types':['TEXT'],'names':[['INPUT',None,None]]},{'types':['NUMERICAL'],'names':[['INPUT',None,None]]}):
                 kind={'LARGE_TEXT':'multiline','TEXT':'text','NUMERICAL':'number'}[row['types'][0]]
                 if text_seen>=len(text_by_slide[index]) or kind!=text_kinds_by_slide[index][text_seen]:

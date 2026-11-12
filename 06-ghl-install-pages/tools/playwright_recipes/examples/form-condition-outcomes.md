@@ -46,3 +46,32 @@ The receipt binds the configuration hash and rule count and keeps
 Editor configuration does not prove that a lead was redirected, shown a message
 or disqualified. No form submission or live lead action is initiated. An
 uncertain save requires reconciliation; the handler does not repeat an append.
+
+For a new message outcome, `message_markup` is an array aligned with `rules`;
+use `null` for rules without explicit markup. For example:
+
+```json
+{
+  "rules": [{
+    "match": "all",
+    "clauses": [{"if_field": "Email", "operator": "Is Filled"}],
+    "effect": "Display custom message",
+    "message": "Visit our site\nThank you"
+  }],
+  "message_markup": ["<p><a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://example.com\">Visit our site</a></p><p>Thank you</p>"]
+}
+```
+
+Use one `\n` in `message` between nonempty paragraphs. The native editor and
+saved card render the paragraph boundary as two newlines; the writer normalizes
+that text while preserving the exact saved markup hash. Supported formatting is
+plain paragraphs, bold, italic, underline, strikethrough and the captured
+new-window HTTPS link shape shown above. Linked text must be single-key ASCII
+and cannot contain nested marks. Paragraphs may also carry the captured empty
+`style=""` attribute; the editor may omit it from the saved card.
+
+Explicit markup is for append-only creation. Reordering existing messages
+preflights and preserves their actual supported markup; unsupported formatting,
+link targets or attributes stop before cards are deleted. The writer uses the
+native toolbar and link dialog and stops before the outer Save if the result
+does not match.

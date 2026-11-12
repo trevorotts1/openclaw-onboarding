@@ -7,7 +7,9 @@ Discovery switch; privacy is not a control on that page.
 
 Never turn a name-only card into a verified slug identity. An exact unique active
 match can use the captured card Login popup to inspect its native portal slug;
-duplicate, differently cased and inactive matches stop for reconciliation.
+duplicate and differently cased matches stop for reconciliation. Inactive reuse
+requires the native Login popup to prove its exact modern admin home, then
+fresh app inventory independently proves the card remains Inactive.
 New groups are bound to the native create redirect before a scoped default
 Inactive transition. Explicit inactive=False retains the new native Active row.
 Discovery is always off; an existing group is never deactivated implicitly.
@@ -211,8 +213,11 @@ def _created_identity(page, context, data):
     return {'name':observed['groupCreated'],'slug':observed['groupSlug']}
 
 
-def _popup_identity(popup,data):
-    """Accept only the exact authenticated group home opened by native Login."""
+def _popup_identity(popup,data,*,status='Active'):
+    """Read the exact authenticated route opened by this native card Login."""
+    if status not in ('Active','Inactive'):
+        raise Stop('Unsupported existing native community status')
+    route='home'  # Captured modern Login opens home for both Active and Inactive cards.
     try:
         current=urlsplit(popup.url);port=current.port
     except ValueError:
@@ -220,7 +225,7 @@ def _popup_identity(popup,data):
     if (current.scheme!='https' or not current.hostname or current.username is not None
             or current.password is not None or port not in (None,443)
             or current.query or current.fragment
-            or current.path.rstrip('/')!='/communities/groups/'+data['slug']+'/home'):
+            or current.path.rstrip('/')!='/communities/groups/'+data['slug']+'/'+route):
         return None
     if popup.get_by_placeholder('Password',exact=True).count():
         raise Stop('Native group Login did not establish an authenticated portal session')
@@ -240,16 +245,26 @@ def _popup_identity(popup,data):
 def _reuse_active(page,data,context):
     if data.get('inactive',True) is not False:
         raise Stop('EXISTING_GROUP_STATE_UNVERIFIED: active reuse requires explicit inactive:false; no status write attempted')
-    _read_filter(page,context,'Active');_assert_list(page,context)
+    return _reuse_existing(page,data,context,status='Active')
+
+
+def _reuse_inactive(page,data,context):
+    if data.get('inactive',True) is not True:
+        raise Stop('EXISTING_GROUP_STATE_UNVERIFIED: inactive reuse cannot activate an existing group')
+    return _reuse_existing(page,data,context,status='Inactive')
+
+
+def _reuse_existing(page,data,context,*,status):
+    _read_filter(page,context,status);_assert_list(page,context)
     label=page.locator(_TITLE).filter(has_text=re.compile(r'^\s*'+re.escape(data['name'])+r'\s*$'))
     cards=page.locator('.grid-custom .group-card').filter(has=label)
     if cards.count()!=1:
         raise Stop('Existing native group card identity changed before Login inspection')
-    status=cards.locator('#status_button')
+    status_control=cards.locator('#status_button')
     login=cards.get_by_text('Login',exact=True)
-    if (status.count()!=1 or status.inner_text().strip()!='Active'
+    if (status_control.count()!=1 or status_control.inner_text().strip()!=status
             or login.count()!=1 or not login.is_visible()):
-        raise Stop('Existing active group Login control changed or is ambiguous')
+        raise Stop('Existing '+status+' group Login control changed or is ambiguous')
     assert_tenant(page,context)
     # The fresh popup is causally bound to this exact location-owned card.
     # No credentials are typed; no invite, join, ownership or status controls
@@ -261,15 +276,15 @@ def _reuse_active(page,data,context):
     try:
         popup.wait_for_load_state('domcontentloaded',timeout=45000)
         def ready():
-            url=_popup_identity(popup,data)
+            url=_popup_identity(popup,data,status=status)
             if url is None:return False
             observed['portal_url']=url;return True
-        wait_until(ready,'Native group Login did not confirm the exact authenticated name/slug home')
+        wait_until(ready,'Native group Login did not confirm the exact authenticated name/slug/status route')
         assert_tenant(page,context)
     finally:
         if not popup.is_closed():popup.close()
     return {'status':'GROUP_REUSED_IDENTITY_CONFIRMED','name':data['name'],'slug':data['slug'],
-        'portal_url':observed['portal_url'],'group_status':'Active','discovery':False,'deleted':False,
+        'portal_url':observed['portal_url'],'group_status':status,'discovery':False,'deleted':False,
         'requested_slug_sha256':hashlib.sha256(data['slug'].encode()).hexdigest(),
         'observed_slug_sha256':hashlib.sha256(data['slug'].encode()).hexdigest(),
         'identity_source':'native_app_card_login_popup','slug_identity_verified':True,
@@ -322,9 +337,16 @@ def configure(page, step):
     before = inventory(page, context)
     matches = [row for row in before if row['name'].casefold() == data['name'].casefold()]
     if matches:
-        if len(matches)!=1 or matches[0]['name']!=data['name'] or matches[0]['status']!='Active':
-            raise Stop('EXISTING_GROUP_IDENTITY_UNVERIFIED: duplicate, differently cased or inactive native group requires reconciliation; no write attempted')
-        return _reuse_active(page,data,context)
+        if (len(matches)!=1 or matches[0]['name']!=data['name']
+                or matches[0]['status'] not in ('Active','Inactive')):
+            raise Stop('EXISTING_GROUP_IDENTITY_UNVERIFIED: duplicate, differently cased or unknown-status native group requires reconciliation; no write attempted')
+        reuse=_reuse_active if matches[0]['status']=='Active' else _reuse_inactive
+        result=reuse(page,data,context)
+        # Modern Login opens /home even for inactive cards. Status is proven
+        # by the independent native app inventory, never inferred from /home.
+        if inventory(page,context)!=before:
+            raise Stop('Existing group status or unrelated native inventory changed during Login; reconcile without another action')
+        return result
     if data.get('allow_creation') is not True:
         raise Stop('GROUP_ABSENT: explicit creation input is required; no write attempted')
     _read_filter(page, context, 'Active')

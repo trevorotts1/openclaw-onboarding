@@ -44,6 +44,9 @@ def native_cases(root):
  from test_survey_checkbox_creation import inputs as checkbox_survey, configuration as checkbox_properties
  yield 'checkbox_survey_creation','surveys.create',checkbox_survey()
  yield 'checkbox_survey_properties','surveys.configure',checkbox_properties()
+ from test_survey_condition_outcomes import step as survey_outcomes
+ outcome=survey_outcomes()['payload'];common={key:outcome.pop(key) for key in ('location_id','location_name','start_url')}
+ yield 'survey_condition_outcomes','surveys.configure',{**common,'configuration':outcome}
  from test_survey_submission import inputs as survey_submission
  for mode in ('Message','Redirect to URL'):
   yield 'survey_submission_'+mode,'surveys.configure',survey_submission(mode)
@@ -70,8 +73,15 @@ def native_cases(root):
  yield 'singlecondition','forms.conditions',{**base,'condition':{'if_field':'Last Name','operator':'Is Filled','target':'First Name'}}
  from test_form_condition_groups import plan as group
  yield 'compoundcondition','forms.conditions',{**base,'condition':{k:v for k,v in group().items() if k!='action'}}
+ from test_meeting_first_cohosts import inputs as first_cohosts
+ first=first_cohosts();common={key:first.pop(key) for key in ('location_id','location_name','start_url')}
+ yield 'first_meeting_cohosts','meetings.setup',{**common,'meeting':first}
  from test_next_control_integration import NativeDynamicIntegrationTests
  yield 'dynamic_calendar','meetings.integrate',NativeDynamicIntegrationTests().data()
+ from test_native_course_live_session import valid as course_live_session
+ yield 'course_live_session','meetings.integrate',{**course_live_session(),'integration_mode':'course_live_session'}
+ from test_meeting_oauth_handoff import inputs as provider_oauth_handoff
+ yield 'provider_oauth_handoff','meetings.integrate',provider_oauth_handoff()
  from test_community_event_host import inputs as event
  yield 'community_event','meetings.integrate',event()
  from test_quiz_ui import configuration
@@ -156,8 +166,8 @@ class CompleteNativeProviderBoundaries(unittest.TestCase):
                     and node.func.id=='add' and node.args):
                 named |= literal_action(node.args[0])
         self.assertTrue(named <= covered,named-covered)
-        self.assertEqual(len(covered),69,'Update the bounded fixtures for newly added dynamic compiler actions')
-        self.assertEqual(len(rows),97)
+        self.assertEqual(len(covered),72,'Update the bounded fixtures for newly added dynamic compiler actions')
+        self.assertEqual(len(rows),101)
 
     def test_no_current_native_job_delegates_to_status_only_api_or_extension_callback(self):
         with tempfile.TemporaryDirectory() as directory:

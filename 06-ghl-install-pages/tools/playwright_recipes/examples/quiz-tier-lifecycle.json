@@ -1,0 +1,78 @@
+{
+  "location_id": "LOC",
+  "location_name": "Exact account name",
+  "start_url": "https://app.convertandflow.com/v2/location/LOC/quiz-builder-v2/QUIZ",
+  "configuration": {
+    "expected_tier_labels": [
+      "Low",
+      "Medium",
+      "High"
+    ],
+    "expected_tiers": [
+      {
+        "label": "Low",
+        "from": 0,
+        "to": 39
+      },
+      {
+        "label": "Medium",
+        "from": 40,
+        "to": 70
+      },
+      {
+        "label": "High",
+        "from": 71,
+        "to": 100
+      }
+    ],
+    "tier_transitions": [
+      {
+        "action": "add",
+        "expected_tiers": [
+          {
+            "label": "Low",
+            "from": 0,
+            "to": 39
+          },
+          {
+            "label": "Medium",
+            "from": 40,
+            "to": 70
+          },
+          {
+            "label": "High",
+            "from": 71,
+            "to": 84
+          },
+          {
+            "label": "Premium",
+            "from": 85,
+            "to": 100
+          }
+        ]
+      }
+    ],
+    "tiers": [
+      {
+        "label": "Low",
+        "from": 0,
+        "to": 39
+      },
+      {
+        "label": "Medium",
+        "from": 40,
+        "to": 70
+      },
+      {
+        "label": "High",
+        "from": 71,
+        "to": 84
+      },
+      {
+        "label": "Premium",
+        "from": 85,
+        "to": 100
+      }
+    ]
+  }
+}

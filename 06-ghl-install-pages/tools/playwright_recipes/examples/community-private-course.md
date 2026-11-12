@@ -1,4 +1,4 @@
-# Native admin-only community course association
+# Native community course association
 
 `community_courses.run_courses(page, inputs, evidence_root,
 portal_context=..., transport=...)` adds or reuses one exact course through the
@@ -11,12 +11,12 @@ The trusted host captures `community_portal.capture_context` on the exact group
 home with a real authenticated same-session identity reader. The module reuses
 that opaque context on the exact `/learning` URL, continuously checking the same
 location, portal origin, group slug/name and user. A JSON approval/context flag
-is not a reader. Zero visible cards always stops with
-`NATIVE_EMPTY_COURSE_INVENTORY_UNPROVEN` until a positive native loaded/empty
-marker is captured. An authenticated `group_id`, visible grid, settled network
-or repeated empty counts do not establish that async course loading completed.
-This implementation currently adds/reuses associations in positively populated
-native course inventories; first-association creation remains a capture gap.
+is not a reader. The November 11 first-course profile permits an empty inventory
+only after network idle, the exact bound Learning heading and a complete grid
+containing one direct wrapper with only its captured Add New Course card/title/
+description. Error/Retry states, extra children or arbitrary zero-card counts
+stop with `NATIVE_EMPTY_COURSE_INVENTORY_UNPROVEN`. The whole native profile is
+independently read again after reload before the first course association.
 
 Supply a fresh `api_capability` proving same-location v3 `courses.readonly`.
 The script reads every paginated product before using the native title-only
@@ -27,10 +27,14 @@ group IDs, title, badge text and sibling order must match `expected_courses`.
 If a native badge is absent its inventoried `visibility` is `null`; that is a
 read-only absence record, not a claim about member access.
 
-Only the native `Private` visibility is authored: the captured option is
-admin-only. Public/member, purchase, time, level and channel access modes are not
-substituted. An existing exact Private association is reused; a different
-existing access setting refuses an implicit update. The saved native card must
+The captured `Private` and `All members` choices can be authored explicitly.
+The November 11 Add Course modal exposes `All members` as its default. The
+All members add path requires the native `Free` badge after its explicit native
+selection, captured after independent reload on November 11. An existing Free
+badge alone does not prove its access mode, so All members reuse refuses until
+its access-details capture is available. Unbadged cards are not accepted as Free. Exact existing
+Private associations can be reused. Purchase, time, level and channel modes
+remain unsupported; different existing access never triggers an implicit update. The saved native card must
 expose the exact API course ID and expected native group ID. After Add Course,
 the optional Share Course as Post prompt is **skipped**; Share as Post is never
 clicked. No invitation or message is sent. Every sibling card is protected, and
@@ -51,7 +55,7 @@ The receipt stays `NEEDS_VERIFICATION`, with `controls_verified:true`,
 `independent_readback:VERIFIED`, `functional_verified:false`,
 `behavior_verified:false`, `communication_attempted:false` and
 `verification_required:true`. Root integration must bind its `course_id`,
-`group_id`, `visibility:Private`, configuration hash and community object before
+`group_id`, authored `visibility`, configuration hash and community object before
 accepting it. Native Python/member behavior acceptance remains separate.
 
 Replace every example identity/title/URL from approved inventory. The empty

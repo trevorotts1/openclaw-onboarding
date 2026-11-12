@@ -10,36 +10,14 @@ then the current OpenClaw Chrome extension, managed Agent Browser and enabled
 computer use. The new [recipe guide](references/PLAYWRIGHT-RECIPES.md) lists
 all entry points, commands and remaining live verification work.
 
-## Current build checkpoint - November 10, 2026
+## Current build checkpoint : November 12, 2026 UTC
 
-Actual v27.1.107 delivery is verified through
-[batch #3123](https://github.com/trevorotts1/openclaw-onboarding/pull/3123),
-merge `f859b9c72eedacf020686598247e51741a4eb625`, delivering member #3122 at
-`b48d02e0f27cffe7dabd38576258a3c790231647`. The full Skill 6 subtree matches that
-frozen member. The previous v106 unit was delivered through batch #3121.
+**v27.1.109: 33 source-built recorded operation contracts / 0 source partials.**
+All original ten partial areas now have integrated executable source within their recorded boundaries. Compiler coverage is **72 concrete actions / 101 bounded jobs**. The final merged source smoke passed **45 focused tests**.
 
-This v27.1.108 unit adds one captured survey completion family: caller-approved
-plain Message or HTTPS Redirect to URL through the existing executor. Exact
-survey identity, conditional precedence, saved reopen and fresh completed replay
-are bound; replay never repeats the write. The final source review is CONFIRMED.
+This candidate is **OWNER_APPROVED_PREPARED_RELEASE**. Trevor approved publishing and batch merging this build on November11,2026. This is a release preparation snapshot; verify actual delivery through its merged batch/main receipt. The verified preparation baseline remains v27.1.108 through batch PR3125.
 
-Current source coverage is **54 completed behavior records: 53 delivered on
-verified main and one in this prepared unit**, or **53/54 = 98.1%** delivered
-for these records. The compiler covers **69 dynamic actions / 97 bounded jobs**.
-Broad source coverage remains **23 BUILT / 10 PARTIAL / 0 GENERIC_ONLY**
-across 33 operations (**69.7%** by equal-weight operation count). No broad row
-was promoted. Compound predicates, conditional rich-message/disqualification
-outcomes and other rule lifecycle remain explicit gaps.
-
-Retained checks: four new tests PASS (0.068s), ten prior form regressions PASS,
-two compiler/provider tests PASS (1.166s), and the one affected freshness replay
-check PASS (0.032s). After the executor outage, all seven reviewed source files
-were recovered from committed patches and independently matched by Git blob
-hash. No source checks or reviews were repeated during release preparation.
-Both modes were manually saved/reopened; final native maintained-script and
-respondent acceptance is **NOT_RUN**. Source and delivery are separate from
-that acceptance. See the [progress ledger](references/PLAYWRIGHT-PROGRESS.md)
-and [machine-readable ledger](references/PLAYWRIGHT-BUILD-STATUS.json).
+Final maintained-script, respondent, member and notification acceptance remains **NOT_RUN / PENDING**. OAuth requires external user authorization. See the [progress ledger](references/PLAYWRIGHT-PROGRESS.md) and [machine-readable ledger](references/PLAYWRIGHT-BUILD-STATUS.json) for exact contracts and limits.
 
 ## Start here
 

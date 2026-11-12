@@ -35,7 +35,7 @@ FIELDS = {
     'communities.create': {'community'},
     'communities.configure': {'portal_url', 'group_name', 'channels', 'details', 'access', 'course_associations', 'api_capability', 'branding'},
     'meetings.setup': {'meeting'}, 'meetings.update': {'meeting'},
-    'meetings.integrate': {'integration_mode', 'calendar_id', 'calendar_name', 'staff_id', 'connection_staff_label', 'expected_staff_locations', 'staff_dependency', 'portal_url', 'group_name', 'group_id', 'event_id', 'allow_room_creation', 'expected'},
+    'meetings.integrate': {'integration_mode', 'calendar_id', 'calendar_name', 'staff_id', 'staff_name', 'provider', 'connection_staff_label', 'expected_staff_locations', 'staff_dependency', 'portal_url', 'group_name', 'group_id', 'event_id', 'allow_room_creation', 'expected', 'product_id', 'session_name', 'description', 'instructor_name', 'date', 'start_time', 'end_time', 'timezone', 'allow_creation'},
     'courses.configure_ui': {'course_id', 'template_id', 'expected_template_title', 'changes', 'expected_values', 'custom_blocks', 'background_image', 'background_transparency', 'background_removal', 'custom_block_image', 'text_blocks', 'theme_images', 'image_blocks', 'video_blocks'},
     'funnels.split_variant': {'funnel_id', 'step_id', 'funnel_name', 'page_name', 'step_url',
         'control_page_id', 'expected_variant_id', 'allow_creation', 'expected_control_traffic',
@@ -276,6 +276,13 @@ def validate_intake(operation, data):
             quiz_creation(data)
     if operation == 'surveys.configure' and isinstance(data.get('configuration'), dict):
         config = data['configuration']
+        if 'outcomes' in config:
+            if 'options' in data:
+                raise Stop('Survey conditional outcomes require their own independently journaled job')
+            if set(config).intersection({'location_id','location_name','start_url'}):
+                raise Stop('Survey conditional outcome owner identity belongs to its parent inputs')
+            from playwright_recipes.survey_condition_outcomes import validate
+            validate({'payload':{**{key:data[key] for key in ('location_id','location_name','start_url')},**config}})
         if 'submission' in config:
             if set(config)!={'submission'} or 'options' in data:
                 raise Stop('Survey completion settings require their own independently journaled job')
@@ -324,11 +331,20 @@ def validate_intake(operation, data):
             raise Stop('Co-host roster reconciliation and recorded options require separate jobs')
     if operation == 'meetings.integrate' and data.get('integration_mode') is not None:
         mode = data['integration_mode']
-        if mode not in ('dynamic_calendar_room', 'community_event_room'):
-            raise Stop('Native calendar API integration must use the measured API host route')
+        if mode not in ('dynamic_calendar_room', 'community_event_room', 'course_live_session', 'provider_oauth_handoff'):
+            raise Stop('Meeting integration mode requires a captured native or measured API profile')
         if 'options' in data:
             raise Stop('Concrete native room integrations and recorded options require separate jobs')
-        if mode == 'community_event_room':
+        if mode == 'course_live_session':
+            from playwright_recipes.native_course_live_session import validate_inputs
+            validate_inputs({key:value for key,value in data.items()
+                if key not in ('integration_mode', 'auth_activation', 'publish')})
+        elif mode == 'provider_oauth_handoff':
+            if 'auth_activation' in data or 'publish' in data:
+                raise Stop('Provider OAuth handoff cannot use app-auth activation or publish inputs')
+            from playwright_recipes.meeting_oauth_handoff import validate_inputs
+            validate_inputs({key:value for key,value in data.items() if key!='integration_mode'},require_fresh=False)
+        elif mode == 'community_event_room':
             if 'auth_activation' in data:
                 raise Stop('Community event rooms require a caller-owned authenticated portal session')
             from playwright_recipes.community_event_meeting import validate_inputs

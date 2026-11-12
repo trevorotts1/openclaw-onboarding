@@ -1,3 +1,22 @@
+## [v27.1.109] - 2026-11-11 - Approved source release
+
+- Complete the recorded source contracts for all ten formerly partial areas:
+  Form widgets and conditions, Survey creation/properties/mixed outcomes, Quiz
+  options/routing/result media, Communities, split variants and Meeting Room
+  setup/update/integration.
+- Add guarded Text/Image/HTML/Picture Choice and URL adapters; Date/Time modes,
+  Rating/Score, canonical legacy fields, native consent/date/time predicates,
+  formatted message and HTTPS-link preservation, mixed Survey Jump To stacks,
+  approved local Quiz picture uploads, existing category image/video controls,
+  community Sections/private/read-only/icon metadata and provider OAuth handoff.
+- Recorded source ledger: 33 BUILT / 0 PARTIAL / 0 GENERIC_ONLY. Compiler:
+  72 concrete actions / 101 bounded jobs. Final merged source smoke:45 tests PASS.
+- Trevor explicitly approved publishing and batch merging the completed source
+  into main on November11,2026. This entry is a preparation record; actual delivery
+  is proved by the merged batch and main commit. Global version markers remain
+  unchanged. Final maintained-script/respondent/member acceptance stays pending;
+  provider OAuth requires external user authorization.
+
 ## [v27.1.108] - 2026-11-10
 
 - Configure captured survey completion plain Message or credential-free HTTPS

@@ -34,7 +34,8 @@ class DefinitionTests(unittest.TestCase):
              patch.object(native,'_inventory',return_value=[(0,native._expected(field))]), \
              patch.object(native,'_stable_canvas',return_value=[{'types':['LARGE_TEXT'],'names':[['TEXTAREA',None,None]]}]), \
              patch.object(native,'_object_dialog',return_value=(dialog,search)), \
-             patch.object(native,'_object_row',return_value=(Mock(),tile,checkbox)), \
+             patch.object(native,'_object_row',return_value=(Mock(),tile,checkbox)),patch.object(native,'fill'), \
+             patch.object(native,'_prove_existing_owner',side_effect=Stop('LARGE_TEXT_REUSE_IDENTITY_UNVERIFIED')), \
              self.assertRaisesRegex(Stop,'LARGE_TEXT_REUSE_IDENTITY_UNVERIFIED'):
             native.configure(page,data)
         self.assertNotIn(checkbox,[call.args[0] for call in click.call_args_list])
