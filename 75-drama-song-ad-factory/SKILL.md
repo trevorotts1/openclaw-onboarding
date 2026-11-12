@@ -724,8 +724,8 @@ frames were read. The checker that reports this is `UNAVAILABLE`, never PASS.
   `core/kie_dispatch` like every other paid call (same reserve/submit/wait/
   reconcile protocol, no private KIE client). Fish Audio (Skill 30) is not
   used by drama song ads.
-- Account setup: Skill 07 (`07-kie-setup`); callback relay: Skill 46
-  (`46-kie-callback-relay`).
+- Account setup: Skill 07 (`07-kie-setup`). Results are polled through
+  Skill 74; no callback relay is used.
 - Ordinary FFmpeg editing needs ride Skills 25 / 27.
 
 Every paid path reserves through `core/spend_ledger.py` with a recorded
