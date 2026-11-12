@@ -82,8 +82,9 @@ class PageEmbedTests(unittest.TestCase):
         with self.assertRaises(Stop):
             page_embeds.verify_dom_state(plan, dict(good, height=420))
 
-    @unittest.skipUnless(shutil.which('node'), 'Node.js is required for the bounded custom-JS initialization test')
     def test_initializer_retries_late_sdk_and_target_with_correct_receiver_once(self):
+        self.assertIsNotNone(shutil.which('node'),
+                             'Node.js is required for the bounded custom-JS initialization test')
         plan = page_embeds.validate({'iframe_id':'demo-frame','approved_html_sha256':HASH,
                                      'height_px':520,'initialize_selector':'#app-root',
                                      'initialize_call':'App.initialize'},
