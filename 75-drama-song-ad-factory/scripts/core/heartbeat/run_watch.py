@@ -67,9 +67,17 @@ EXIT
 
 ENVELOPE (one JSON object on stdout)
   {run_id, stage, stage_state, elapsed_minutes, decisions_pending, stalled,
-   loud, expired, message_for_client, ... extras (stall_detail, wait,
-   activity, recovery, supervising, canceled, recovery_command,
-   loop_should_stop, completed_stages, schema_version)}
+   loud, expired, message_for_client, message_key, message_kind, ... extras
+   (stall_detail, wait, activity, recovery, supervising, canceled,
+   recovery_command, loop_should_stop, completed_stages, schema_version)}
+
+  message_key  a 16-hex digest of everything the client message says (stage,
+               stage state, completed steps, the pending decision ids, and the
+               stalled/expired/complete/canceled flags). Two looks at the SAME
+               situation carry the SAME key, so the keepalive can tell "this is
+               the same news again" from "something changed".
+  message_kind one of progress, needs_you, problem, done, stopped: what the
+               message is about, and therefore which sending cadence applies.
 
 LOUD CODES (loud_failure.py, printed to stderr AND carried in the envelope)
   HEARTBEAT_STATE_UNREADABLE  the state database is missing or unreadable
@@ -799,6 +807,43 @@ def _decision_lines(decisions):
     return lines
 
 
+def message_kind(row, decisions, stalled, expired, complete, canceled):
+    """One word for what this message is about: the keepalive's own cadence key.
+
+    stopped  the client asked us to stop;
+    done     every stage is COMPLETE;
+    problem  a stall or the cap: something needs a person;
+    needs_you the run cannot move until the client answers;
+    progress anything else: ordinary forward motion.
+    """
+    if canceled:
+        return "stopped"
+    if complete:
+        return "done"
+    if stalled or expired:
+        return "problem"
+    if decisions:
+        return "needs_you"
+    return "progress"
+
+
+def message_key(stage, stage_state, completed, decisions, stalled, expired,
+                complete, canceled):
+    """A 16-hex digest of everything the client message says.
+
+    The same situation carries the same key on the next look, so an unchanged
+    run never repeats its message. Any change the client would notice -- a new
+    stage, a finished step, a different question, a stall, the end -- changes
+    the key.
+    """
+    ids = sorted(str(d.get("id") or "") for d in decisions)
+    blob = json.dumps([str(stage), str(stage_state), int(completed), ids,
+                       bool(stalled), bool(expired), bool(complete),
+                       bool(canceled)],
+                      sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+
+
 def recovery_acted_ok(recovery):
     """True only when recovery really acted AND the native control returned 0.
 
@@ -813,11 +858,22 @@ def recovery_acted_ok(recovery):
 
 def client_message(run_id, row, decisions, stalled, stall_detail, expired,
                    complete, elapsed_minutes, done, total, max_hours,
-                   canceled=False, recovery=None):
-    """Plain, warm, direct. No internal codes, no jargon, never a false 'done'."""
+                   canceled=False, recovery=None, reminder_number=None):
+    """Plain, warm, direct. No internal codes, no jargon, never a false 'done'.
+
+    reminder_number is set only by the keepalive's reminder ladder: the
+    second and later sends of a needs_you message are reminders, not the first
+    message again.
+    """
     if row is None:
         return ("I couldn't read where your video is up to just now, and I'm on "
                 "it. I'll come back to you with an update.")
+    if reminder_number:
+        question = ("\n".join(_decision_lines(decisions)) if decisions
+                    else "I'm still waiting on your answer.")
+        return ("Just a reminder - your video is paused until you answer:\n"
+                "%s\nNo rush. Nothing is being charged while it waits."
+                % question)
     phrase = STAGE_PHRASES.get(row["stage"], "your video is moving through the process")
     if complete:
         return ("Your video is finished. All %d steps are done, and the finished "
@@ -887,6 +943,9 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
             "stalled": False, "loud": loud, "expired": False,
             "loop_should_stop": False, "completed_stages": 0,
             "stages_total": 0, "supervising": True, "canceled": False,
+            "message_kind": "problem",
+            "message_key": message_key("UNKNOWN", "UNKNOWN", 0, [], False,
+                                       False, False, False),
             "wait": None, "activity": {"at": None, "source": "none"},
             "recovery": None,
             "message_for_client": client_message(
@@ -955,6 +1014,12 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
         "decisions_pending": decisions,
         "stalled": bool(stalled),
         "stall_detail": stall_detail,
+        "message_kind": message_kind(row, decisions, stalled, expired,
+                                     complete, canceled),
+        "message_key": message_key(row["stage"] if row else "UNKNOWN",
+                                   row["state"] if row else "UNKNOWN", done,
+                                   decisions, stalled, expired, complete,
+                                   canceled),
         "wait": wait,
         "activity": {"at": activity_at, "source": activity_source},
         "loud": loud,
@@ -1002,6 +1067,10 @@ def main(argv=None):
                           "stalled": False,
                           "loud": ["HEARTBEAT_STATE_UNREADABLE"],
                           "expired": False, "loop_should_stop": False,
+                          "message_kind": "problem",
+                          "message_key": message_key("UNKNOWN", "UNKNOWN", 0,
+                                                     [], False, False, False,
+                                                     False),
                           "message_for_client":
                               "I couldn't find your video's folder just now, and "
                               "I'm on it. I'll come back with an update."},

@@ -35,6 +35,9 @@ fixtures in a temp dir):
   9. watchdog clocks advance only from durable events: copied/touched decision
      files and file mtime never reset them, and a durable event outranks a
      fresh state stamp.
+ 13. the client message carries a stable message_key and a message_kind
+     (progress, needs_you, problem, done, stopped) so the same news is told
+     once, and the reminder wording is the reminder, not the first message.
 
 Run: python3 scripts/core/heartbeat/test_run_watch.py
 """
@@ -640,6 +643,68 @@ def main():
           (env.get("wait") or {}).get("kind", "").startswith("client"),
           env.get("wait"))
 
+
+    # 13. the message key and kind: the same news, told once -----------------
+    run13 = make_run(tmp, "run13")
+    for s in ("research", "creative-strategy"):
+        set_stage(run13, "run13", s, "COMPLETE", age_s=20 * 60)
+    set_stage(run13, "run13", "script-lyrics", "RUNNING", age_s=5 * 60,
+              lease_in=600, owner="worker-13")
+    e13 = RW.build(run13, now=NOW)
+    check("13: a healthy run's message kind is progress",
+          e13["message_kind"] == "progress", e13["message_kind"])
+    check("13: the message key is 16 hex characters",
+          len(e13["message_key"]) == 16
+          and all(c in "0123456789abcdef" for c in e13["message_key"]),
+          e13["message_key"])
+    e13b = RW.build(run13, now=NOW)
+    check("13: an unchanged run carries the same key",
+          e13b["message_key"] == e13["message_key"], e13b["message_key"])
+    set_stage(run13, "run13", "script-lyrics", "COMPLETE", age_s=0)
+    set_stage(run13, "run13", "music", "RUNNING", age_s=0, lease_in=600,
+              owner="worker-13")
+    e13c = RW.build(run13, now=NOW)
+    check("13: a stage change changes the key",
+          e13c["message_key"] != e13["message_key"], e13c["message_key"])
+    run13d = make_run(tmp, "run13d")
+    set_stage(run13d, "run13d", "storyboard", "WAITING_APPROVAL", age_s=60)
+    e13d = RW.build(run13d, now=NOW)
+    check("13: a run waiting on the client is needs_you",
+          e13d["message_kind"] == "needs_you", e13d["message_kind"])
+    run13e = make_run(tmp, "run13e")
+    set_stage(run13e, "run13e", "music", "RUNNING", age_s=45 * 60,
+              lease_in=600, owner="worker-13e")
+    e13e = RW.build(run13e, now=NOW)
+    check("13: a stalled run is a problem",
+          e13e["message_kind"] == "problem", e13e["message_kind"])
+    run13f = make_run(tmp, "run13f")
+    for s in STAGES:
+        set_stage(run13f, "run13f", s, "COMPLETE", age_s=10 * 60)
+    e13f = RW.build(run13f, now=NOW)
+    check("13: a finished run is done", e13f["message_kind"] == "done",
+          e13f["message_kind"])
+    run13g = make_run(tmp, "run13g")
+    set_stage(run13g, "run13g", "research", "RUNNING", age_s=5 * 60,
+              lease_in=600, owner="worker-13g")
+    write_json(run13g / "control" / "run-state.json", {"canceled": True})
+    e13g = RW.build(run13g, now=NOW)
+    check("13: a cancelled run is stopped", e13g["message_kind"] == "stopped",
+          e13g["message_kind"])
+    reminder = RW.client_message(
+        "run13d", {"stage": "storyboard", "state": "WAITING_APPROVAL"},
+        e13d["decisions_pending"], False, "", False, False, 30, 5, 12, 3.0,
+        reminder_number=1)
+    check("13: the reminder wording is the reminder, not the first message",
+          reminder.startswith("Just a reminder - your video is paused until "
+                              "you answer:")
+          and "Nothing is being charged while it waits." in reminder,
+          reminder)
+    check("13: the reminder carries the question waiting on the client",
+          all(d["question"] in reminder for d in e13d["decisions_pending"]),
+          reminder)
+    check("13: a first message never uses the reminder wording",
+          "Just a reminder" not in e13d["message_for_client"],
+          e13d["message_for_client"])
 
     print()
     if FS:
