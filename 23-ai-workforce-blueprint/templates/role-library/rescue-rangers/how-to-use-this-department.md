@@ -61,9 +61,9 @@ as the LAST resort:
    (b) to its owner.
 2. **The rescue AI fixes it using our access.** If the client's agent cannot or did
    not fix it, the rescue AI steps in and fixes it itself - it does NOT page the
-   Operator for infrastructure it can reach. Access inventory: the operator's
-   `~/.ssh/config` provides a `rescue-*` alias for EVERY fleet box (Mac-via-
-   Cloudflare-tunnel, Hostinger VPS, Contabo); provider credentials for Hostinger,
+   Operator for infrastructure it can reach. Access inventory: the operator's fleet
+   access resolver reaches every fleet box (its `~/.ssh/config` covers MAC boxes only
+   and is not the roster); provider credentials for Hostinger,
    Contabo, Cloudflare, GoHighLevel and OpenRouter live in the operator secrets env
    (`~/.openclaw/secrets/.env`) - referenced by ENV VAR NAME ONLY, sourced to use,
    NEVER a value printed into any doc, ticket, or transcript. Check the credential

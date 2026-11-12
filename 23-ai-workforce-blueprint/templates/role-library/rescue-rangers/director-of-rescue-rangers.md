@@ -137,9 +137,10 @@ Every ticket is worked in this exact order:
    relays outcome (b) to its owner.
 2. **The rescue AI fixes it using our access.** If the client's agent cannot or
    did not fix it, the rescue AI steps in and fixes it itself — it does NOT page
-   the Operator for infrastructure it can reach. Access inventory: the operator's
-   `~/.ssh/config` provides a `rescue-*` alias for EVERY fleet box (Mac-via-
-   Cloudflare-tunnel, Hostinger VPS, Contabo); provider credentials for
+   the Operator for infrastructure it can reach. Access inventory: resolve the box
+   with the operator's fleet access resolver, which tries every access path and names
+   each source it checked. The operator's `~/.ssh/config` routes MAC boxes only and is
+   NOT the roster: a missing `rescue-*` alias never means a box is unreachable. Provider credentials for
    Hostinger, Contabo, Cloudflare, GoHighLevel and OpenRouter live in the
    operator secrets env (`~/.openclaw/secrets/.env`) — reference them by ENV VAR
    NAME ONLY, source the env to use them, and NEVER print a value into any doc,
@@ -241,11 +242,11 @@ client's own agent.
 
 The rescue AI's self-fix tier (step 2) is backed by real, existing access:
 
-- **Boxes:** the operator's `~/.ssh/config` defines a `rescue-*` alias for every
-  fleet box — Mac boxes over the Cloudflare tunnel (e.g. `rescue-<client>`,
-  `rescue-<client>`, `rescue-<client>`), Hostinger VPS boxes, and the
-  Contabo host (`contabo-host`). Resolve the box from the ticket's `box` field;
-  the aliases are the roster. A Mac box reached over SSH wraps remote commands in
+- **Boxes:** resolve every box with the operator's fleet access resolver, which tries
+  every access path and names each source it checked. The operator's `~/.ssh/config`
+  defines `rescue-*` aliases for MAC boxes only (over the Cloudflare tunnel); virtual
+  private server and Contabo boxes are NOT in it. Resolve the box from the ticket's
+  `box` field; the SSH aliases are never the roster. A Mac box reached over SSH wraps remote commands in
   the box's login shell; VPS boxes are reached as root via key or the `VPS_*`
   root-password env vars.
 - **Provider credentials:** Hostinger (`HOSTINGER_API_KEY`, `HOSTINGER_EMAIL`,
