@@ -113,6 +113,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
 
+# Every state write below goes through workforce_state, the one owner of the
+# build-state lock (BU-36). The lib resolves WORKFORCE_PYTHON and puts this
+# skill's scripts/ folder on PYTHONPATH exactly the way every other writer does,
+# so the watchdog can never clobber a field another writer just committed.
+source "$SCRIPT_DIR/lib-workforce-state.sh"
+
 STATE_FILE="${ZHC_STATE_FILE:-${OC_ROOT}/workspace/.workforce-build-state.json}"
 LOCK_FILE="${OC_ROOT}/workspace/.closeout-watchdog.lock"
 LOG_FILE="${OC_ROOT}/workspace/.closeout-watchdog.log"
@@ -206,60 +212,55 @@ else:
 PY
 }
 
-# Set a single top-level build-state key to JSON null (replaces jq
-# '.<key> = null'). $1 = bare key name (no leading dot). Best-effort.
+# Set a single top-level build-state key to JSON null (replaces the old bare
+# read-modify-write). $1 = bare key name (no leading dot). Locked, best-effort.
 state_set_null() {
-  _OC_JSON_KEY="$1" python3 - "${STATE_FILE}" <<'PY' 2>/dev/null || return 1
-import json, os, sys
-f = sys.argv[1]; key = os.environ.get('_OC_JSON_KEY', '')
-try:
-    d = json.load(open(f))
-except Exception:
-    sys.exit(1)
-d[key] = None
-tmp = f + '.tmp'
-with open(tmp, 'w') as fh:
-    json.dump(d, fh, indent=2)
-os.replace(tmp, f)
+  [ -f "$STATE_FILE" ] || return 1
+  "$WORKFORCE_PYTHON" - "$STATE_FILE" "$1" <<'PY' 2>/dev/null || return 1
+import sys
+from workforce_state import update
+
+state_path, key = sys.argv[1:3]
+
+def mutate(state):
+    state[key] = None
+
+update(state_path, mutate)
 PY
 }
 
 # Append a closeoutBlockers[] entry (drop already-cleared entries, keep the last
-# 20) AND stamp the stuckEscalations.<class> throttle flag in ONE atomic write.
-# Replaces the two jq state_set programs + the `jq -n` BLOCKER_ENTRY construct.
+# 20) AND stamp the stuckEscalations.<class> throttle flag in ONE locked write.
 #   $1 = stuck class  $2 = reason  $3 = ISO timestamp
 state_append_blocker_and_throttle() {
-  _OC_BLK_CLASS="$1" _OC_BLK_REASON="$2" _OC_BLK_TS="$3" \
-  python3 - "${STATE_FILE}" <<'PY' 2>/dev/null || return 1
-import json, os, sys
-f = sys.argv[1]
-cls = os.environ['_OC_BLK_CLASS']; reason = os.environ['_OC_BLK_REASON']; ts = os.environ['_OC_BLK_TS']
-try:
-    d = json.load(open(f))
-except Exception:
-    sys.exit(1)
-# closeoutBlockers: keep only not-yet-cleared entries, append the new one, cap at 20.
-blk = d.get('closeoutBlockers')
-blk = [x for x in blk if isinstance(x, dict) and x.get('cleared') is False] if isinstance(blk, list) else []
-blk.append({"class": cls, "reason": reason, "since": ts, "escalatedAt": ts, "cleared": False})
-if len(blk) > 20:
-    blk = blk[-20:]
-d['closeoutBlockers'] = blk
-# stuckEscalations.<class>: throttle flag (notifiedAt + class).
-se = d.get('stuckEscalations')
-if not isinstance(se, dict):
-    se = {}
-node = se.get(cls)
-if not isinstance(node, dict):
-    node = {}
-node['notifiedAt'] = ts
-node['class'] = cls
-se[cls] = node
-d['stuckEscalations'] = se
-tmp = f + '.tmp'
-with open(tmp, 'w') as fh:
-    json.dump(d, fh, indent=2)
-os.replace(tmp, f)
+  [ -f "$STATE_FILE" ] || return 1
+  "$WORKFORCE_PYTHON" - "$STATE_FILE" "$1" "$2" "$3" <<'PY' 2>/dev/null || return 1
+import sys
+from workforce_state import update
+
+state_path, cls, reason, ts = sys.argv[1:5]
+
+def mutate(state):
+    # closeoutBlockers: keep only not-yet-cleared entries, append the new one, cap at 20.
+    blk = state.get('closeoutBlockers')
+    blk = [x for x in blk if isinstance(x, dict) and x.get('cleared') is False] if isinstance(blk, list) else []
+    blk.append({"class": cls, "reason": reason, "since": ts, "escalatedAt": ts, "cleared": False})
+    if len(blk) > 20:
+        blk = blk[-20:]
+    state['closeoutBlockers'] = blk
+    # stuckEscalations.<class>: throttle flag (notifiedAt + class).
+    se = state.get('stuckEscalations')
+    if not isinstance(se, dict):
+        se = {}
+    node = se.get(cls)
+    if not isinstance(node, dict):
+        node = {}
+    node['notifiedAt'] = ts
+    node['class'] = cls
+    se[cls] = node
+    state['stuckEscalations'] = se
+
+update(state_path, mutate)
 PY
 }
 
