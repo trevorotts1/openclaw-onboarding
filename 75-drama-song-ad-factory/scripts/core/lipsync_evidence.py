@@ -113,6 +113,35 @@ def _binding(row):
     return {key: row[key] for key in ("shot_id", "lip_sync_line_ids", "speaker", "storyboard_revision")}
 
 
+#: The status approval_package.approval_entries and the runner use for a shot
+#: whose approval no longer stands (a scoped revision). A regenerated lip-sync
+#: picture re-opens exactly its own shot and nothing else.
+REOPENED_STATUS = "invalidated"
+
+
+def reopen_shot_approval(run_dir, shot_id):
+    """Re-open ONE shot's storyboard approval, in place, atomically.
+
+    Used when a lip-sync picture was REGENERATED (a new picture is not the
+    approved still). Only that shot changes; every other shot keeps its
+    standing. Returns the approval record that was written.
+    """
+    root = Path(run_dir).resolve()
+    path = _path(root, str(root / "storyboard" / "approval.json"))
+    record = _read(path)
+    shots = record.get("shots") if isinstance(record, dict) else None
+    _need(isinstance(shots, dict) and isinstance(shots.get(shot_id), dict),
+          "LIPSYNC_APPROVAL_MISSING",
+          "no per-shot storyboard approval to re-open for %s" % (shot_id,))
+    entry = shots[shot_id]
+    if entry.get("status") != REOPENED_STATUS:
+        entry["status"] = REOPENED_STATUS
+        temp = path.with_suffix(".json.tmp")
+        temp.write_text(json.dumps(record, sort_keys=True), encoding="utf-8")
+        temp.replace(path)
+    return record
+
+
 def binding_for_request(run_dir, request):
     """Verify a dispatch request against the current approval; never approve it."""
     try:
@@ -137,6 +166,8 @@ def _stem_metadata(root, stem):
     _need(isinstance(stem, dict), "LIPSYNC_STEM_MISSING", "isolated stem metadata required")
     keys = ("speaker_id", "kind", "isolated", "line_ids", "start_s", "end_s", "lineage_path")
     meta = {key: stem.get(key) for key in keys}
+    if stem.get("delivery") is not None:      # the line's own delivery (sung/spoken)
+        meta["delivery"] = stem.get("delivery")
     _need(_ids(meta["line_ids"]) and _num(meta["start_s"]) and _num(meta["end_s"])
           and 0 <= meta["start_s"] < meta["end_s"],
           "LIPSYNC_STEM_MISSING", "producer must record stem line IDs and timeline window")
@@ -184,7 +215,14 @@ def upload_stem(run_dir, stem, uploader, run_id):
 
 
 def inputs_for_request(run_dir, request):
-    """Bind actual provider URLs to approved still and isolated own-line bytes."""
+    """Bind actual provider URLs to the approved still and isolated own-line bytes.
+
+    The provider picture may be the approved still itself or a CROP of it,
+    recorded by the picture gate as a derivation (source_sha256 = the approved
+    still, operation "crop"). A regenerated picture is a new picture: it is
+    refused LIPSYNC_PICTURE_NEEDS_APPROVAL and that shot's storyboard approval
+    is re-opened (U-U03).
+    """
     from lip_sync.narrator_rule import check_stems
     from lip_sync.lip_gate import picture_gate as PG
     try:
@@ -196,12 +234,26 @@ def inputs_for_request(run_dir, request):
         inp = request.get("input") or {}
         image = _path(root, request.get("lipsync_image_path"))
         image_hash = _sha(image)
-        approved_stills = _read(_path(root, str(root / "storyboard/stills.json")))
-        _need(image_hash == _sha(_path(root, approved_stills[row["shot_id"]])),
-              "LIPSYNC_IMAGE_MISMATCH", "provider picture is not the approved storyboard still")
         rdir = request.get("lipsync_receipt_dir") or PG.default_receipt_dir(str(image))
         rdir = Path(rdir)
         rdir = (rdir if rdir.is_absolute() else root / rdir).resolve()
+        approved_stills = _read(_path(root, str(root / "storyboard/stills.json")))
+        approved_hash = _sha(_path(root, approved_stills[row["shot_id"]]))
+        if image_hash != approved_hash:
+            derivation = PG.read_derivation(image_hash, str(rdir))
+            _need(bool(derivation), "LIPSYNC_IMAGE_MISMATCH",
+                  "provider picture is not the approved storyboard still")
+            crop = (derivation.get("operation") == PG.OPERATION_CROP
+                    and derivation.get("source_sha256") == approved_hash
+                    and derivation.get("derived_sha256") == image_hash)
+            if not crop:
+                if derivation.get("operation") == PG.OPERATION_REGENERATE:
+                    reopen_shot_approval(root, row["shot_id"])
+                raise LipsyncEvidenceError(
+                    "LIPSYNC_PICTURE_NEEDS_APPROVAL",
+                    "provider picture is a %s, not the approved still; the "
+                    "storyboard approval for %s is re-opened for a person"
+                    % (derivation.get("operation") or "change", row["shot_id"]))
         gate_path = _path(root, str(rdir / (image_hash + ".json")))
         upload_path = _path(root, str(rdir / (image_hash + ".upload.json")))
         PG.require_receipt(str(image), str(rdir))
