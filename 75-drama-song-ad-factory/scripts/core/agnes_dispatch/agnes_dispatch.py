@@ -1120,7 +1120,7 @@ def main(argv=None):
         env = dispatch_image(request, **common)
     json.dump(env, sys.stdout, indent=2, sort_keys=True, default=str)
     sys.stdout.write("\n")
-    return EXIT_OUTCOME.get(env["outcome"], 1)
+    return EXIT.get(env["outcome"], 1)
 
 
 if __name__ == "__main__":
