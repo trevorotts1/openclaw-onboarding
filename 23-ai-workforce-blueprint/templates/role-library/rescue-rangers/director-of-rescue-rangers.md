@@ -39,11 +39,11 @@ seats do the rest under your dispatch.
 The Rescue Rangers function has been live as ad-hoc operator tooling for months;
 this department formalizes it. The runtime you dispatch:
 
-- **The Relay (cloud):** the n8n "Rescue Rangers Relay" workflow on
-  `main.blackceoautomations.com` — Webhook → Auth Check → Relay Brain (routes
-  `escalate | pending | answer | status`; enforces the nine-field contract via
-  `relay_brain_validation.js`; holds the transport buffer queue) → posts to the
-  Rescue Rangers HQ Telegram group Fixer topic → return leg to the client agent.
+- **The intake pipeline (cloud):** the n8n workflows `RR-01-intake` (the address every
+  box sends to), `RR-04-ledger` (the only writer of ticket state), `RR-02-coach` and
+  `RR-03-direct` (write the answer or queue the fix), `RR-07-receiver-gw` (the outbox
+  each box collects its answer from) and `RR-05-sweeps` / `RR-08-heartbeat`. The old
+  "Rescue Rangers Relay" workflow is RETIRED and must never be used or described as live.
 - **The operator runtime (the brain):** two transports — a push receiver reached
   over a dedicated Cloudflare tunnel that runs ONE turn of the rescue agent per
   ticket, and a pull poller (cron) that drains pending tickets. A watchdog keeps
@@ -97,10 +97,12 @@ contract, INCOMPLETE ones flagged):
 1. **Read the ticket.** `person`, `client`, `agent`, `box`, `boxType`,
    `openclawVersion`, `problem`, `alreadyTried`, `returnTo`. The `alreadyTried`
    list tells you what NOT to repeat.
-2. **Cap check FIRST.** Ask the ledger: is this client at/over the 25/day exchange
-   cap? `python3 rescue_ledger.py count-today --client <client> --cap 25` (exit 3 =
-   at/over). At cap → do not loop; hand the client a "ping the Operator directly"
-   instruction and page the Operator. The cap is a furnace guard, not a courtesy.
+2. **Cap check FIRST.** Read this box's count for today from the LIVE cap table
+   `rr_cap_counters` and record it as step 2 of the case with
+   `python3 scripts/rr_step_gate.py record --step 2` (see SOP-RR-06). Never use
+   `rescue_ledger.py` for this: it is the retired drill ledger and answers "under the
+   cap" for all live traffic. At cap → do not loop; page the Operator, and the client's
+   agent tells its owner a person on the team now has the case. The cap is a furnace guard, not a courtesy.
    The client-instruction IS the outcome (b) — it is delivered by the client's own
    agent, and it is a complete dispatch, not a silent drop.
 3. **Tier the ticket** (FIX-RESCUE-05 tiers): default **MEDIUM**. Assign **FAST**
@@ -113,8 +115,9 @@ contract, INCOMPLETE ones flagged):
 4. **Dispatch.** Route to the Diagnostician if the root cause is unknown; straight
    to the Structured-Fix Operator if the class is already identified and has a
    sanctioned `remediate.sh` card. Record the tier + route in the ledger.
-5. **Board it.** Confirm the Ticket Clerk has the ticket on the Command Center
-   Kanban (a card in `backlog`). No ticket is worked that is not on the board.
+5. **Board it.** The Command Center copies every ticket onto the Kanban board by
+   itself (department `rescue-rangers`). The board is a VIEW: never wait for a card
+   before working a ticket, and never create a card by hand with `rescue_cc_board.py`.
 
 ### Own the SLA
 
@@ -172,10 +175,12 @@ dark.
 The client contract is that the *client's own agent* tells its owner one of: (a) we
 solved it, (b) here is what you should do, (c) here is the answer. Your dispatch is
 not complete until an answer (or a clear escalation) has been posted back through
-the relay's `answer` action so the client agent can relay it. A ticket answered in
-the operator group but never returned to the client agent is an **incomplete
-dispatch** — chase the return leg (this is exactly why the VPS `status`-poll return
-leg exists).
+the outbox, with the words the owner will read, so the client's box can collect it
+and its own assistant can tell the owner. A ticket answered in the operator group but
+never collected and acknowledged by the client's box is an **incomplete dispatch** —
+chase the return leg: confirm the box is enrolled on the reply leg and that its
+acknowledgement was recorded. There is no box-side `status` poll; every box collects
+answers with its own 2-minute poll.
 
 ---
 
@@ -291,8 +296,9 @@ the ledger.
    victim). An INCOMPLETE ticket is never dropped — the relay's design law is that a
    missing field must never silence a box in trouble — so work it with degraded
    context and name the thin fields in the dispatch note.
-2. **Cap-check before anything else.** `python3 rescue_ledger.py count-today
-   --client <client> --cap 25` (exit 3 = at/over). At cap, stop looping immediately:
+2. **Cap-check before anything else.** Read today's count for this box from the live
+   cap table `rr_cap_counters` and record it with `rr_step_gate.py record --step 2`
+   (never `rescue_ledger.py`, the retired drill ledger). At cap, stop looping immediately:
    instruct the client agent to escalate through the Rescue Rangers escalation section (never a personal chat), and page
    the Operator yourself. The 25/day cap is a furnace guard, not a courtesy — a
    client at the cap is almost always in a loop, and one more "quick" exchange is
@@ -492,10 +498,10 @@ weekly digest, and the list of open operator pages.
    indistinguishable, on the next sweep, from one nobody ever saw.
 2. **Audit the return leg, not the answer.** Any ticket with an answer but
    `return_delivered=0` is an **incomplete dispatch** — words sitting in the
-   operator Fixer topic that the owner never saw. Chase it: re-post through the
-   relay's `answer` action, or, for a VPS box with no inbound return path, confirm
-   the client agent's outbound `{action:"status", ticketId}` poll is armed and will
-   collect it. That poll leg exists for exactly this failure.
+   operator Fixer topic that the owner never saw. Chase it: confirm the box is
+   enrolled on the reply leg, confirm the instruction is still in the outbox, and
+   confirm the box's acknowledgement arrives. Every box type collects answers the
+   same way, with its own 2-minute poll. There is no separate `status` poll.
 3. **Confirm the outcome contract was actually honored.** Every rescue ends with the
    client's own agent telling its owner one of three things: (a) we solved it, (b)
    here is what you should do, (c) here is the answer. Outcome (b) is the PRIMARY
