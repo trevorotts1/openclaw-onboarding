@@ -94,8 +94,11 @@ ok "extracted _shared_write_ocjson from install.sh"
 run_helper() {
     (
         set +e
+        # Hoist $4: inside warn(), $4 would mean warn's own 4th arg (unbound
+        # under set -u), so the redirect failed and warn returned non-zero.
+        _warnfile="$4"
         OC_JSON="$1"
-        warn() { printf '%s\n' "$*" >> "$4"; return 0; }
+        warn() { printf '%s\n' "$*" >> "$_warnfile"; return 0; }
         success() { return 0; }
         export OC_JSON
         # shellcheck disable=SC1090
