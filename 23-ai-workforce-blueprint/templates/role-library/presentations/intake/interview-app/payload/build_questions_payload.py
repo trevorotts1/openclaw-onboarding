@@ -41,6 +41,7 @@ import sys
 _PASSTHROUGH = ("id", "order", "prompt", "help", "kind", "required",
                 "allowed_values", "value_labels", "default",
                 "conditional_on", "ask_if", "block_gate", "storeOn", "key",
+                "ask_only_if_previously_wanted",
                 "refuse_values", "refuse_message")
 
 # The curated core set the Presentation Interview app asks. Cap 21 binds the
@@ -453,10 +454,22 @@ def selftest() -> int:
                             if q["id"].endswith("_declined_reason")]
         assert len(ids) - len(waiver_followups) <= 21, \
             "curated set must respect cap 21 (excluding waiver follow-ups)"
+        # A declined-reason follow-up rides a toggle that DEFAULTS TO "no"
+        # (vsl/email/motion): it is asked only when the client earlier wanted
+        # that item, so it is optional and never blocks the gate. Sales/checkout
+        # defaults to "yes", so its reason stays the one hard gate.
+        optional_reasons = {"vsl_page_declined_reason",
+                            "email_sequences_declined_reason",
+                            "motion_graphics_declined_reason"}
         for q in waiver_followups:
             assert q.get("conditional_on", {}).get("equals") == "no", q
             assert str(q.get("storeOn", "")).startswith("pre_presentation_capture."), q
-            assert q.get("required") is True, q
+            if q["id"] in optional_reasons:
+                assert q.get("required") is False, q
+                assert q.get("block_gate") is False, q
+                assert q.get("ask_only_if_previously_wanted") is True, q
+            else:
+                assert q.get("required") is True, q
         assert len(ids) >= 7, "curated set must keep 7-9 core"
         assert ids[0] == "presentation_type", "first standard question must be the type-picker (presentation_type)"
         assert "speech_speed_preference" in ids, "speech-speed question must be included"
@@ -466,16 +479,19 @@ def selftest() -> int:
         # questions, conditional on a "no", storing to the canonical nested
         # location the builder gates read first. Without these, the verbatim
         # waiver was unobtainable on the hosted path.
-        for _rid, _toggle, _field in (
+        for _rid, _toggle, _field, _required in (
                 ("sales_checkout_declined_reason", "want_sales_checkout",
-                 "SALES_CHECKOUT_DECLINED_REASON"),
+                 "SALES_CHECKOUT_DECLINED_REASON", True),
                 ("vsl_page_declined_reason", "want_vsl_page",
-                 "VSL_PAGE_DECLINED_REASON")):
+                 "VSL_PAGE_DECLINED_REASON", False)):
             assert _rid in ids, f"U026 declined-reason question {_rid} must be included"
             _q = next(q for q in payload["questions"] if q["id"] == _rid)
             assert _q.get("conditional_on") == {"id": _toggle, "equals": "no"}, _q
             assert _q.get("storeOn") == f"pre_presentation_capture.{_field}", _q
-            assert _q.get("required") is True, _q
+            assert _q.get("required") is _required, _q
+            if not _required:
+                assert _q.get("block_gate") is False, _q
+                assert _q.get("ask_only_if_previously_wanted") is True, _q
         assert "want_email_sequences" in ids, "Skill 50 email election yes-no must be included"
         em = next(q for q in payload["questions"] if q["id"] == "want_email_sequences")
         assert em.get("storeOn") == "pre_presentation_capture.WANT_EMAIL_SEQUENCES", f"email toggle storeOn not qualified: {em.get('storeOn')}"
