@@ -2759,6 +2759,23 @@ def _finalize_transcript_envelope(
 # both real, using the provers' own signing functions (never a local
 # reimplementation) so the signature is byte-identical to what gets verified.
 
+# PD-001 (decision D-7 default): QUICK and IN-DEPTH ask the SAME eight
+# questions. The choice now names what actually differs (answer length, one
+# follow-up per answer) instead of promising a shorter interview. ONE literal,
+# used both by _sig_next's question and by _sp_bank_prompt's transcript turn,
+# so the two can never drift out of byte-identity.
+_SP_MODE_PROMPT = (
+    "Would you like the QUICK interview or the IN-DEPTH interview? Both ask "
+    "the same 8 questions, one at a time. QUICK takes short answers. IN-DEPTH "
+    "adds one follow-up after each answer so the talk sounds more like you.")
+
+# PD-001 step 3: the one optional IN-DEPTH follow-up after q3/q4/q5/q7.
+_SP_FOLLOWUP_QIDS = ("q3", "q4", "q5", "q7")
+_SP_FOLLOWUP_IDS = tuple(q + "_more" for q in _SP_FOLLOWUP_QIDS)
+_SP_FOLLOWUP_PROMPT = (
+    'Anything you want to add to that before we move on? Say "no" to keep '
+    'going.')
+
 _SP_BANK_PROMPTS_CACHE: Optional[Dict[str, str]] = None
 
 
@@ -2772,13 +2789,14 @@ def _sp_bank_prompt(qid: str) -> str:
     if _SP_BANK_PROMPTS_CACHE is None:
         spec = _load_sp_spec()
         _SP_BANK_PROMPTS_CACHE = {sq["id"]: sq.get("prompt", "") for sq in spec.get("questions", [])}
-        _SP_BANK_PROMPTS_CACHE["sp_mode"] = (
-            "QUICK or IN-DEPTH? QUICK = 1-2hr build. IN-DEPTH = full "
-            "4-phase signature talk (100+ slides, 8 Questions, frame "
-            "selection).")
+        _SP_BANK_PROMPTS_CACHE["sp_mode"] = _SP_MODE_PROMPT
         _SP_BANK_PROMPTS_CACHE["signature_frame"] = (
             "Choose a Signature frame: The Rulebook / The Vault / "
             "The Quest / The Original.")
+        # PD-001: an IN-DEPTH follow-up turn is a real assistant turn in the
+        # transcript, so it must carry the exact prompt _sig_next emitted.
+        for _fq in _SP_FOLLOWUP_QIDS:
+            _SP_BANK_PROMPTS_CACHE[_fq + "_more"] = _SP_FOLLOWUP_PROMPT
     return _SP_BANK_PROMPTS_CACHE.get(qid, qid)
 
 
@@ -2906,13 +2924,11 @@ def _sig_next(run_dir: Path) -> int:
     if "sp_mode" not in sp_entries:
         print(json.dumps({
             "question_id": "sp_mode",
-            "prompt": "QUICK or IN-DEPTH? QUICK = 1-2hr build. IN-DEPTH = full "
-                      "4-phase signature talk (100+ slides, 8 Questions, frame "
-                      "selection).",
+            "prompt": _SP_MODE_PROMPT,
             "kind": "enum",
             "allowed_values": ["QUICK", "IN-DEPTH"],
-            "value_labels": {"QUICK": "QUICK (1-2hr build)",
-                             "IN-DEPTH": "IN-DEPTH (full signature talk)"},
+            "value_labels": {"QUICK": "QUICK (short answers)",
+                             "IN-DEPTH": "IN-DEPTH (one follow-up per answer)"},
             "required": True,
         }))
         return 0
@@ -2920,13 +2936,11 @@ def _sig_next(run_dir: Path) -> int:
     mode = sp_entries.get("sp_mode", {}).get("value", "IN-DEPTH") \
         if isinstance(sp_entries.get("sp_mode"), dict) else "IN-DEPTH"
 
-    # QUICK mode: skip the 8 Questions
-    if mode == "QUICK":
-        if "signature_frame" not in sp_entries:
-            return _emit_frame_question()
-        return _sig_finalize(run_dir, ledger, sp_entries)
-
-    # IN-DEPTH: ask the 8 Questions one at a time
+    # PD-001 (decision D-7 default): BOTH modes walk the eight questions, then
+    # the frame question. The old QUICK branch skipped the Sacred 8 outright,
+    # so a "quick" signature deck was assembled from a frame answer alone while
+    # the driver reported success. The only difference between the modes is
+    # answer length and the one optional IN-DEPTH follow-up below.
     spec = _load_sp_spec()
     sp_questions = spec.get("questions", [])
 
@@ -2939,6 +2953,21 @@ def _sig_next(run_dir: Path) -> int:
                 "kind": sq.get("kind", "text"),
                 "required": sq.get("required", True),
                 "help": sq.get("help", ""),
+            }))
+            return 0
+        # IN-DEPTH: one optional follow-up after q3/q4/q5/q7. Stored under
+        # "<qid>_more" in sp_entries; it is never one of the eight required
+        # answers and never enters the answers/answer_provenance record.
+        more_id = sqid + "_more"
+        if mode == "IN-DEPTH" and sqid in _SP_FOLLOWUP_QIDS \
+                and more_id not in sp_entries:
+            print(json.dumps({
+                "question_id": more_id,
+                "prompt": _SP_FOLLOWUP_PROMPT,
+                "kind": "text",
+                "required": False,
+                "help": "Optional. Answer with what you want to add, or say "
+                        "\"no\" to keep going.",
             }))
             return 0
 
@@ -3049,13 +3078,19 @@ def _sig_answer(run_dir: Path, qid: str, text: str,
     # text to be byte-identical to the bank prompt to resolve to exactly one
     # question id (never a multi-question-per-turn false positive).
     #
+    # PD-001: an IN-DEPTH follow-up (<qid>_more) is NOT a bank question. Its
+    # answer is stored in sp_entries (and in the turn log) only; the signed
+    # transcript envelope stays the bank's eight questions, which is the shape
+    # intake_trace_check.py resolves turn by turn.
+    #
     # FAULT-21 sibling fix: this now appends to the RAW turn log, never the
     # signed envelope file itself -- same hazard, same fix as cmd_answer's
     # (see write_intake_transcript()'s docstring).
-    raw_turns = read_intake_transcript_raw(run_dir)
-    raw_turns.append({"role": "assistant", "text": _sp_bank_prompt(qid), "qid": qid})
-    raw_turns.append({"role": "owner", "text": text.strip(), "qid": qid})
-    write_intake_transcript_raw(run_dir, raw_turns)
+    if qid not in _SP_FOLLOWUP_IDS:
+        raw_turns = read_intake_transcript_raw(run_dir)
+        raw_turns.append({"role": "assistant", "text": _sp_bank_prompt(qid), "qid": qid})
+        raw_turns.append({"role": "owner", "text": text.strip(), "qid": qid})
+        write_intake_transcript_raw(run_dir, raw_turns)
 
     if already_complete:
         _envelope, _warning = _finalize_transcript_envelope(run_dir)
@@ -3178,6 +3213,22 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
         answers[sqid] = val or ""
         record[sqid] = val or ""
     record["answers"] = answers
+
+    # PD-001 step 4: never announce a finished signature interview that is not
+    # finished. A required answer that is present-but-empty (a blank typed
+    # answer, a hand-edited ledger, a resumed run) or an empty frame leaves the
+    # record incomplete: say so in JSON, write NO sp_intake.json, and leave the
+    # ledger exactly as it was.
+    missing = [sq["id"] for sq in spec.get("questions", [])
+               if not answers.get(sq["id"])]
+    if missing or not record.get("signature_frame"):
+        print(json.dumps({
+            "status": "incomplete",
+            "missing": missing,
+            "message": "The signature interview is not finished.",
+        }))
+        return 3
+
     q7_offer = answers.get("q7") or ""
     record["offer_token_ledger"] = [q7_offer] if q7_offer else []
 
@@ -3271,7 +3322,10 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
     # Run prove_sp_intake if available (fail-soft warn -- the claim gate in
     # build_deck.py's preflight is the real enforcement). The driver's early
     # prove is advisory only; it must never block intake completion.
-    prove_warnings = _run_prove_sp_intake(run_dir)
+    # PD-001 step 5: the pair distinguishes "the prover was not found"
+    # (not_run) from "the prover passed" (found, no failures) -- the old bare
+    # list made both look like an empty pass.
+    prover_found, prove_warnings = _run_prove_sp_intake(run_dir)
     if prove_warnings:
         for code, reason in prove_warnings:
             print(f"  WARN  [{code}] {reason}", file=sys.stderr)
@@ -3295,25 +3349,44 @@ def _sig_finalize(run_dir: Path, ledger: Dict[str, Any],
               f"(then --confirmed after the client approves the verbatim quote).",
               file=sys.stderr)
 
-    # Mark ledger complete
-    ledger["status"] = "complete"
-    ledger["complete"] = True
-    ledger["completed_at"] = datetime.now(timezone.utc).isoformat()
+    # PD-001 step 5: the verdict is built from FACTS, never a hard-coded
+    # success sentence. "complete" requires all three: the prover actually ran
+    # and passed, every answer is confirmed by the client, and none was
+    # authored by the system. Anything else is needs_attention (exit 4) and the
+    # ledger is left NOT complete, so no downstream gate can mistake it.
+    prover = "not_run" if not prover_found else (
+        "passed" if not prove_warnings else "failed")
+    needs_attention = bool(prover != "passed" or unconfirmed or agent_authored)
+    status = "needs_attention" if needs_attention else "complete"
+
     ledger["answer_provenance"] = answer_provenance
-    write_intake_ledger(run_dir, ledger)
+    if needs_attention:
+        # Only the provenance is stamped; status/complete stay untouched.
+        write_intake_ledger(run_dir, ledger)
+    else:
+        ledger["status"] = "complete"
+        ledger["complete"] = True
+        ledger["completed_at"] = datetime.now(timezone.utc).isoformat()
+        write_intake_ledger(run_dir, ledger)
 
     print(json.dumps({
-        "status": "complete",
+        "status": status,
         "deck_type": "signature_presentation",
         "signature_frame": record.get("signature_frame"),
         "mode": record.get("mode"),
         "sp_intake_path": str(sp_path),
+        "prover": prover,
+        "prover_failures": [f"{code}: {reason}"
+                            for code, reason in prove_warnings],
         "unconfirmed_answers": unconfirmed,
         "agent_authored_answers": agent_authored,
-        "message": "Signature intake complete. Atomic record written. "
-                   "SP intake prover passed.",
+        "message": ("Signature intake complete. Atomic record written."
+                    if not needs_attention else
+                    "Signature intake needs attention before it counts as "
+                    "complete: see prover, prover_failures, "
+                    "unconfirmed_answers and agent_authored_answers."),
     }))
-    return 0
+    return 0 if not needs_attention else 4
 
 
 def _sig_record(run_dir: Path, record_file: str) -> int:
@@ -3362,7 +3435,7 @@ def _sig_record(run_dir: Path, record_file: str) -> int:
     write_intake_json(run_dir, intake)
 
     # Prove it (fail-soft -- build_deck.py preflight is the real gate)
-    prove_warnings = _run_prove_sp_intake(run_dir)
+    _, prove_warnings = _run_prove_sp_intake(run_dir)
     if prove_warnings:
         for code, reason in prove_warnings:
             print(f"  WARN  [{code}] {reason}", file=sys.stderr)
@@ -3405,14 +3478,19 @@ def _sig_plan() -> int:
     return 0
 
 
-def _run_prove_sp_intake(run_dir: Path) -> List[Tuple[str, str]]:
-    """Run prove_sp_intake.py if available. Returns list of (code, reason)
-    failures, or empty list on pass. Fail-closed: a missing prover is a
-    non-blocking warn (the claim gate in build_deck.py will catch it)."""
+def _run_prove_sp_intake(run_dir: Path) -> Tuple[bool, List[Tuple[str, str]]]:
+    """Run prove_sp_intake.py if available.
+
+    Returns (found, failures): `found` is False only when the prover file is
+    on none of the search paths -- so "the prover never ran" is a fact the
+    caller can report, never an empty pass; `failures` is the prover's own
+    list of (code, reason), empty when it passed. Fail-closed: a missing
+    prover stays a non-blocking warn here (the claim gate in build_deck.py
+    will catch it), but it is NAMED as not_run by the caller."""
     sp_intake = run_dir / "working" / "copy" / "sp_intake.json"
     if not sp_intake.is_file():
-        return [("AF-SP-8Q-MISSING",
-                 "working/copy/sp_intake.json was not written")]
+        return True, [("AF-SP-8Q-MISSING",
+                       "working/copy/sp_intake.json was not written")]
 
     # Try importing prove_sp_intake
     from importlib import util as importlib_util
@@ -3438,15 +3516,15 @@ def _run_prove_sp_intake(run_dir: Path) -> List[Tuple[str, str]]:
                 with open(sp_intake, "r", encoding="utf-8") as _fh:
                     sp_intake_obj = json.load(_fh)
                 fails = mod.evaluate(sp_intake_obj)
-                return fails if fails else []
+                return True, (fails if fails else [])
             except Exception as exc:
-                return [("AF-SP-8Q-MISSING",
-                         f"prove_sp_intake raised {exc} -- fail-closed")]
+                return True, [("AF-SP-8Q-MISSING",
+                               f"prove_sp_intake raised {exc} -- fail-closed")]
     # Prover not found -- warn but don't block (build_deck.py will catch)
     print(f"  WARN  prove_sp_intake.py not found -- SP intake prover not run. "
           f"The claim gate in build_deck.py will verify at preflight.",
           file=sys.stderr)
-    return []
+    return False, []
 
 
 # ---------------------------------------------------------------------------
@@ -4387,12 +4465,20 @@ def cmd_selftest() -> int:
         check("--sig-next returns sp_mode choice-first",
               out.get("question_id") == "sp_mode", f"out={buf.getvalue()[:200]}")
 
-        # 2. --signature --sig-answer records the choice.
+        # 2. --signature --sig-answer records the choice. PD-001: BOTH modes
+        # then ask the eight Sacred Questions, so QUICK's next question is q1
+        # (the old QUICK branch jumped straight to the frame question).
         buf = io.StringIO()
         with redirect_stdout(buf):
             rc = main(["--run-dir", rd, "--signature", "--sig-answer",
                        "sp_mode", "QUICK"])
+        try:
+            out = json.loads(buf.getvalue())
+        except (json.JSONDecodeError, ValueError):
+            out = {}
         check("--sig-answer exits 0", rc == 0, f"rc={rc}")
+        check("QUICK asks q1 next (both modes walk the 8 questions)",
+              out.get("question_id") == "q1", f"out={buf.getvalue()[:200]}")
 
         # 3. Legacy --signature --next is rejected (non-zero, names --sig-next).
         buf = io.StringIO()
