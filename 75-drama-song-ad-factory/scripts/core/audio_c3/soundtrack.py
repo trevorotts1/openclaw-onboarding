@@ -100,10 +100,23 @@ def _loud(kind, code, detail):
     getattr(loud_failure, kind)(code, detail)
 
 
+def _audio_catalog():
+    """The 68 work copy, located by ``prompt_limits.find_catalogs`` (one locator)."""
+    import sys as _sys
+    core = Path(__file__).resolve().parents[1]          # audio_c3 -> core
+    if str(core) not in _sys.path:
+        _sys.path.insert(0, str(core))
+    import prompt_limits
+    return prompt_limits.find_catalogs()[0]
+
+
 def _workcopy():
     """(route, version) for suno-generate from the repo's work copy, or None."""
-    root = Path(__file__).resolve().parents[4]
-    doc = root / "68-kie-audio" / "models.json"
+    doc = _audio_catalog()
+    if doc is None:
+        _loud("warn", "SUNO_ROUTE_UNREADABLE", "68-kie-audio/models.json not found")
+        return None
+    doc = Path(doc)
     try:
         entries = json.loads(doc.read_text(encoding="utf-8")).get("entries", [])
         for e in entries:

@@ -74,24 +74,19 @@ _cat = None
 
 
 def workcopy_paths():
-    """Locate the W1-06 work copy from this file's position.
+    """Locate the W1-06 work copy through the ONE catalog locator.
 
-    The catalog lives at 68-kie-audio/models.json at the REPO ROOT (tracked
-    tree), i.e. parents[4] of this file under the repackaged skill layout
-    (75-drama-song-ad-factory/scripts/core/music_director). Legacy checkouts
-    kept it under <root>/onboarding/68-kie-audio — try that first so the
-    operator's existing tree keeps working, then fall back to the tracked
-    repo-root copy found by walking ancestors.
+    ``prompt_limits.find_catalogs()`` walks the ancestors for both the
+    repo-root layout (68-kie-audio beside this skill, or under onboarding/)
+    and the installer layout, so this module keeps no path walk of its own
+    (S75-060). An unreachable catalog comes back as a non-existent path, so
+    every caller fails closed on the missing file.
     """
-    here = Path(__file__).resolve()
-    for anc in here.parents:
-        for cand in (anc / "68-kie-audio", anc / "onboarding" / "68-kie-audio"):
-            if (cand / "models.json").is_file():
-                return {"root": anc, "models": cand / "models.json",
-                        "validator": cand / "scripts" / "validate_audio_request.py"}
-    root = here.parents[2]
-    base = root / "onboarding" / "68-kie-audio"
-    return {"root": root, "models": base / "models.json",
+    models = prompt_limits.find_catalogs()[0]
+    if models is None:
+        models = Path("68-kie-audio") / "models.json"
+    base = Path(models).parent
+    return {"root": base.parent, "models": base / "models.json",
             "validator": base / "scripts" / "validate_audio_request.py"}
 
 
