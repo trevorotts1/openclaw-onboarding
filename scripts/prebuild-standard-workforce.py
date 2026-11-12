@@ -22,9 +22,10 @@ CONTRACT (master plan PHASE 2, in execution order):
      all five present and truthy) with source == "operator-prebuild". No
      record, a malformed record, or a wrong source REFUSES (exit 2).
      Additionally:
-       - interviewComplete == true in the build-state REFUSES (exit 4) — the
-         prebuild is a pre-interview action; a box that already finished its
-         interview builds via the apply-diff / legacy lane, never here.
+       - interviewComplete == true REFUSES (exit 4) ONLY when
+         standardPrebuild.status is already "done" — nothing is left to
+         prebuild. A box that finished its interview with its foundation
+         still pending, failed or absent is completed here.
        - buildType handling (frozen in-flight clients = legacy ruling):
            buildType == "standard-first"   -> proceed (idempotent resume).
            buildType ABSENT                -> decision "prebuild" WRITES
@@ -140,7 +141,8 @@ EXIT CODES
      impossible, floor still short after --apply)
   2  usage error / consent gate refusal (missing or malformed operator
      consent record, wrong source) — fail-closed
-  4  interviewComplete is already true — prebuild refused
+  4  interviewComplete is already true and standardPrebuild.status is "done"
+     — prebuild refused (there is nothing left to build)
   5  buildType lane refusal (box frozen as "legacy" without an explicit
      convert consent)
   7  Command Center board join verification failed (DRIFT / CANNOT-VOUCH /
@@ -527,11 +529,11 @@ def main(argv=None, _runner_locked=False):
                     choices=["at-onboarding", "on-first-answer"],
                     help="WHEN the prebuild fires (standardFirstOnboarding config). "
                          "'at-onboarding' (DEFAULT) = materialize immediately at operator "
-                         "consent (the original prebuild behavior). 'on-first-answer' = "
-                         "DEFER: record the consent, arm the lane, but do NOT materialize "
-                         "until the owner answers their first interview question. If absent "
-                         "and the build-state already carries a standardFirstOnboarding "
-                         "value, that value is honored; otherwise defaults to 'at-onboarding'.")
+                         "consent. 'on-first-answer' is RETIRED and accepted for "
+                         "compatibility only: it logs one line and prebuilds now, and the "
+                         "build-state records 'at-onboarding'. If absent and the build-state "
+                         "already carries a standardFirstOnboarding value, that value is "
+                         "honored; otherwise defaults to 'at-onboarding'.")
     ap.add_argument("--apply", action="store_true",
                     help="mutate (default: dry-run report only)")
     ap.add_argument("--json", action="store_true", help="emit the result JSON on stdout")
@@ -623,14 +625,21 @@ def main(argv=None, _runner_locked=False):
     result["personaInterpreter"] = persona_bash
 
     # Resolve --standard-first-onboarding: if the CLI arg is None, first check the
-    # existing build-state (carry forward a prior choice), then default to the
-    # current-lane default "at-onboarding" (materialize immediately).
+    # existing build-state (carry forward a prior choice), then default to
+    # "at-onboarding" (materialize immediately).
     if args.standard_first_onboarding is None:
         existing_timing = state.get("standardFirstOnboarding") if isinstance(state, dict) else None
         if existing_timing in ("at-onboarding", "on-first-answer"):
             args.standard_first_onboarding = existing_timing
         else:
             args.standard_first_onboarding = "at-onboarding"
+    # "on-first-answer" is retired: the first-answer hook it deferred to never
+    # fired reliably, so a deferral left the foundation unbuilt. The argument is
+    # still accepted (existing callers and stored state carry it), but every run
+    # prebuilds now and the state field records "at-onboarding".
+    if args.standard_first_onboarding == "on-first-answer":
+        _log("on-first-answer is retired; prebuilding now")
+        args.standard_first_onboarding = "at-onboarding"
     result["standardFirstOnboarding"] = args.standard_first_onboarding
 
     # ══ STEP 1 — CONSENT GATE (fail-closed, before ANY mutation) ══
@@ -656,12 +665,20 @@ def main(argv=None, _runner_locked=False):
     _log(f"operator consent verified (decidedBy={consent['decidedBy']}, "
          f"decision={consent['decision']})")
 
-    # interviewComplete already true -> the interview lane owns this box now.
-    if state.get("interviewComplete") is True:
+    # A finished interview no longer blocks the prebuild. Refuse (exit 4) only
+    # when the interview is complete AND the foundation is already done; a
+    # pending, failed or absent foundation is completed here, so a box that
+    # finished its interview before its prebuild ever ran can still finish.
+    existing_prebuild = state.get("standardPrebuild")
+    prebuild_status = (existing_prebuild.get("status")
+                       if isinstance(existing_prebuild, dict) else None)
+    if state.get("interviewComplete") is True and prebuild_status == "done":
         return emit(_refuse(result, EXIT_INTERVIEW_COMPLETE,
-                            "interviewComplete is already true — the standard prebuild is a "
-                            "PRE-interview action; this box builds via the interview lane "
-                            "(apply-diff in standard-first mode)"))
+                            "interviewComplete is already true and standardPrebuild.status is "
+                            "already 'done' — there is nothing left to prebuild; this box builds "
+                            "via the interview lane (apply-diff in standard-first mode)"))
+    if state.get("interviewComplete") is True:
+        _log("completing the foundation for a finished interview")
 
     # buildType lane gate (frozen in-flight clients default to legacy).
     build_type = state.get("buildType")
@@ -701,67 +718,8 @@ def main(argv=None, _runner_locked=False):
         return emit(EXIT_STEP_FAILED)
 
     # ── STANDARD_FIRST_ONBOARDING timing (args.standard_first_onboarding already resolved) ──
-    # "at-onboarding" is the default — proceed to materialize now.
-    # "on-first-answer" defers until the owner answers their first interview question.
-
-    # on-first-answer DEFERRAL: write the consent and arm the lane but do NOT
-    # materialize. The prebuild state records the consent and the deferred
-    # status; the interview-start hook fires the prebuild driver at the first
-    # answer moment. prebuildStartedAt stays NULL until materialization actually
-    # begins, so abandonment measurement treats this as "prebuild armed but
-    # never started — owner never answered a single question."
-    if args.standard_first_onboarding == "on-first-answer" and not state.get("standardPrebuild", {}).get("status") == "done":
-        if args.apply:
-            deferred_state = _load_state(state_path)
-            deferred_state["buildType"] = "standard-first"
-            deferred_state["standardFirstOnboarding"] = "on-first-answer"
-            deferred_state["operatorConsent"] = consent
-            deferred_state["standardPrebuild"] = {
-                "status": "pending",
-                "prebuildStartedAt": None,
-                "standardReadyAt": None,
-                "floorVersion": None,
-                "prebuiltDepartments": [],
-                "agentRegistration": "deferred",
-                "source": "prebuild-standard-workforce.py",
-                "operatorConsentRef": (f"{OPERATOR_CONSENT_SOURCE}/{consent['decision']}/"
-                                       f"{consent['decidedAt']}/{consent['decidedBy']}"),
-            }
-            deferred_state["departments"] = deferred_state.get("departments") or []
-            deferred_state.setdefault("version", 1)
-            deferred_state.setdefault("interviewComplete", False)
-            deferred_state.setdefault("ownerChat", 0)
-            try:
-                _atomic_write_json(state_path, deferred_state)
-            except OSError as exc:
-                result["standardPrebuildStatus"] = "failed"
-                result["reason"] = f"could not write deferred prebuild state: {exc}"
-                return emit(EXIT_STEP_FAILED)
-            result["standardPrebuildStatus"] = "deferred"
-            result["deferredMode"] = "on-first-answer"
-            result["abandonmentMeasurement"] = {
-                "prebuildStartedAt": None,
-                "prebuildReadyAt": None,
-                "note": ("abandonment-rate computation: prebuild armed (consent recorded) but "
-                         "not yet started — if interviewCompletedAt is never written, this "
-                         "box was abandoned before the owner ever answered a single question "
-                         "(prebuild started = never). When the interview-start hook fires the "
-                         "prebuild, prebuildStartedAt will be written, and the abandonment "
-                         "clock starts from that point.")
-            }
-            result["selfDisable"] = {
-                "cronRegistered": False,
-                "note": ("one-shot operator-run driver; prebuild deferred until "
-                         "interview-start hook fires it"),
-            }
-            _log(f"prebuild DEFERRED (on-first-answer): state recorded; materialization "
-                 f"will fire when the owner answers their first interview question")
-            return emit(EXIT_OK)
-        else:
-            result["standardPrebuildStatus"] = "dry-run-deferred"
-            result["deferredMode"] = "on-first-answer"
-            result["note"] = ("dry-run: would write deferred prebuild state; "
-                            "materialization would fire at the first interview answer")
+    # "at-onboarding" is the only timing left — materialize now. The
+    # "on-first-answer" deferral was retired and is normalized above.
 
     # ── prebuildStartedAt (written ONCE before materialization, never rewritten) ──
     existing_sp = state.get("standardPrebuild") or {}
