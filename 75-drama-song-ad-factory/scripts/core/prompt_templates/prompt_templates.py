@@ -173,7 +173,7 @@ def _catalog_prompt(model, root=None):
     manifest, so its documented source and status are the ones reported.
     """
     PL = _prompt_limits()
-    video = catalog_path("video")
+    video = catalog_path("video", root=root)
     if video is None:
         return None
     try:

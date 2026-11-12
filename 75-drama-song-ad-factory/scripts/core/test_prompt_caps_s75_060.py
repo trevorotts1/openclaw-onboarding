@@ -162,11 +162,14 @@ def test_catalog_loads_with_no_path_argument():
         shutil.copy(extend_src, os.path.join(installed_core, "audio_c3", "extend",
                                              "suno_extend.py"))
         script = (
-            "import json, sys\n"
-            "sys.path.insert(0, %r)\n"
-            "import suno_extend\n"
-            "print(json.dumps(sorted(suno_extend.catalog())))\n"
-            % installed_core
+            "import importlib.util, json\n"
+            "spec = importlib.util.spec_from_file_location(\n"
+            "    'suno_extend_s75_060_installed', %r)\n"
+            "mod = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(mod)\n"
+            "print(json.dumps(sorted(mod.catalog())))\n"
+            % os.path.join(installed_core, "audio_c3", "extend",
+                           "suno_extend.py")
         )
         env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
         run = subprocess.run([sys.executable, "-B", "-c", script], cwd=tmp,
