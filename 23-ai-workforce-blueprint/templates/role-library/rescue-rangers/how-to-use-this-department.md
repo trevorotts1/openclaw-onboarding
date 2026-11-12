@@ -160,10 +160,10 @@ and the onboarding AGENTS.md stamper (`stamp-rescue-escalation-section.sh`).
 
 ## 7. Quick Questions (operator)
 
-- "What is the state of the rescue queue?" → Ticket Clerk: `rescue_ledger.py digest`.
-- "Is client X at the daily cap?" → `rescue_ledger.py count-today --client X`.
-- "What is aging past SLA?" → `rescue_ledger.py aging --older-than-minutes N`.
-- "Did this ticket's answer reach the client?" → check `return_delivered` on the row.
+- "What is the state of the rescue queue?" → the Command Center Rescue Rangers page, and the Kanban board (department `rescue-rangers`).
+- "Is client X at the daily cap?" → the live `rr_cap_counters` table in n8n. Never the drill ledger.
+- "What is aging past SLA?" → the Command Center Rescue Rangers page: open tickets, with SLA breaches listed first.
+- "Did this ticket's answer reach the client?" → the ticket shows the box's acknowledgement and the owner-message receipt.
 
 ---
 
