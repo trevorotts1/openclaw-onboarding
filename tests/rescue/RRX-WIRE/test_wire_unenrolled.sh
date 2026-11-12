@@ -45,7 +45,9 @@ cp "$RECEIVER/wire.sh"                 "$OC/skills/65-rescue-receiver/"
 cp "$RECEIVER/rescue-poll.sh"          "$OC/skills/65-rescue-receiver/"
 cp "$RECEIVER/rr-intake-auth-check.sh" "$OC/skills/65-rescue-receiver/"
 cp "$RECEIVER/rr-readiness.sh"         "$OC/skills/65-rescue-receiver/"
-cp "$RECEIVER/rr_escalate.py"          "$OC/skills/65-rescue-receiver/" 2>/dev/null || true
+cp "$RECEIVER/rr_escalate.py"          "$OC/skills/65-rescue-receiver/" 2>/dev/null \
+  || printf '#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n' \
+       > "$OC/skills/65-rescue-receiver/rr_escalate.py"
 cp "$REPO_ROOT/shared-utils/rescue-env.sh"        "$OC/skills/shared-utils/"
 cp "$REPO_ROOT/shared-utils/rr-readiness.sh"      "$OC/skills/shared-utils/"
 cp "$REPO_ROOT/shared-utils/oc-env-descriptor.sh" "$OC/skills/shared-utils/" 2>/dev/null || true
@@ -178,6 +180,102 @@ _calls="$(printf '%s\n' "$_report" | sed -n 's/^CALLS \([0-9][0-9]*\)$/\1/p')"
 [ "$_poll" = "0" ] \
     && pass "A4: the stub recorded NO cron add --name rescue-rr-box-poll" \
     || fail "A4: the reply-leg poll was registered on an unenrolled box"
+
+# =============================================================================
+# CASE 2 (RRX-011w). An ENROLLED box registers the outbox flush exactly once,
+# with delivery off. A3 above proves registration happens on the unenrolled
+# path; this proves the enrolled path adds it once, never twice, and never
+# without --no-deliver.
+# =============================================================================
+BOX2="$WORK/box-enrolled"
+OC2="$BOX2/.openclaw"
+mkdir -p "$OC2/skills/65-rescue-receiver" "$OC2/skills/shared-utils" \
+         "$OC2/secrets" "$OC2/state" "$BOX2/bin"
+
+cp "$RECEIVER/wire.sh"                 "$OC2/skills/65-rescue-receiver/"
+cp "$RECEIVER/rescue-poll.sh"          "$OC2/skills/65-rescue-receiver/"
+cp "$RECEIVER/rr-intake-auth-check.sh" "$OC2/skills/65-rescue-receiver/"
+cp "$RECEIVER/rr-readiness.sh"         "$OC2/skills/65-rescue-receiver/"
+cp "$RECEIVER/rr_escalate.py"          "$OC2/skills/65-rescue-receiver/" 2>/dev/null \
+  || printf '#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n' \
+       > "$OC2/skills/65-rescue-receiver/rr_escalate.py"
+cp "$REPO_ROOT/shared-utils/rescue-env.sh"        "$OC2/skills/shared-utils/"
+cp "$REPO_ROOT/shared-utils/rr-readiness.sh"      "$OC2/skills/shared-utils/"
+cp "$REPO_ROOT/shared-utils/oc-env-descriptor.sh" "$OC2/skills/shared-utils/" 2>/dev/null || true
+cp "$BOX/bin/openclaw" "$BOX2/bin/openclaw"
+chmod +x "$BOX2/bin/openclaw"
+
+# All three enrollment values resolve: this box IS enrolled on the reply leg.
+# Nothing here is a real credential.
+printf 'RR_RECEIVER_URL=http://127.0.0.1:1/rr\nRR_BOX_TOKEN=synthetic-not-a-credential\nRR_BOX_SLUG=box-synthetic\n' > "$OC2/secrets/.env"
+chmod 600 "$OC2/secrets/.env"
+
+LOG2="$WORK/argv-enrolled.jsonl"
+JOBS2="$WORK/jobs-enrolled.json"
+: > "$LOG2"
+printf '{"jobs":[]}' > "$JOBS2"
+
+_OUT2="$(env \
+  RR_ROOT="$OC2" \
+  OC_CONFIG_ROOT="$OC2" \
+  OC_PLATFORM=mac \
+  OC_TARGET_MODE=launchd \
+  OC_TARGET_ID=ai.openclaw.gateway \
+  OC_SERVICE_LABEL=ai.openclaw.gateway \
+  OC_SKIP_CLI_PROBE=1 \
+  RR_STUB_LOG="$LOG2" \
+  RR_STUB_JOBS="$JOBS2" \
+  HOME="$BOX2" \
+  PATH="$BOX2/bin:$PATH" \
+  bash "$OC2/skills/65-rescue-receiver/wire.sh" 2>&1)"
+RC2=$?
+
+# The run must end with one of the installer's OWN exit codes (0 or a retryable
+# 1), never a crash such as 127 (unresolved command or function).
+if [ "$RC2" -eq 0 ] || [ "$RC2" -eq 1 ]; then
+  pass "C1: enrolled wire.sh finished with an installer exit code (rc=$RC2)"
+else
+  fail "C1: enrolled wire.sh exited $RC2 (expected 0 or 1); output: $_OUT2"
+fi
+
+_report2="$(
+  RR_STUB_LOG="$LOG2" python3 - <<'PY'
+import json, os, sys
+
+calls = []
+with open(os.environ["RR_STUB_LOG"], encoding="utf-8") as fh:
+    for line in fh:
+        line = line.strip()
+        if line:
+            calls.append(json.loads(line))
+
+def adds(name):
+    return [c for c in calls
+            if len(c) >= 2 and c[0] == "cron" and c[1] == "add" and name in c]
+
+flush = adds("rr-escalate-flush")
+nodeliver = [c for c in flush if "--no-deliver" in c]
+good_cmd = [c for c in nodeliver
+            if "rr_escalate.py" in " ".join(c) and "flush" in " ".join(c)]
+print("FLUSH_ADDS %d" % len(flush))
+print("FLUSH_NODELIVER %d" % len(nodeliver))
+print("FLUSH_CMD %d" % len(good_cmd))
+sys.exit(0)
+PY
+)"
+_fa="$(printf '%s\n' "$_report2" | sed -n 's/^FLUSH_ADDS \([0-9][0-9]*\)$/\1/p')"
+_fn="$(printf '%s\n' "$_report2" | sed -n 's/^FLUSH_NODELIVER \([0-9][0-9]*\)$/\1/p')"
+_fc="$(printf '%s\n' "$_report2" | sed -n 's/^FLUSH_CMD \([0-9][0-9]*\)$/\1/p')"
+
+[ "$_fa" = "1" ] \
+    && pass "C2: enrolled box recorded exactly one cron add --name rr-escalate-flush" \
+    || fail "C2: expected exactly one flush add, got ${_fa:-none}"
+[ "$_fn" = "1" ] \
+    && pass "C3: the flush add carries --no-deliver (delivery none)" \
+    || fail "C3: the flush add was not made with --no-deliver (count: ${_fn:-none})"
+[ "$_fc" = "1" ] \
+    && pass "C4: the flush add runs rr_escalate.py flush" \
+    || fail "C4: the flush command did not name rr_escalate.py flush (count: ${_fc:-none})"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
