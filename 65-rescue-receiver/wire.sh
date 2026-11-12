@@ -196,8 +196,10 @@ esac
 # Reads `cron list --json --all`: without --all a job an operator DISABLED is
 # hidden, so it looked absent and was re-added as a duplicate on every roll. A
 # disabled job counts as present and is never re-enabled or re-added. Exact name
-# match on parsed JSON (node, then python3); the old grep only when neither
-# exists. `--all` can print nothing at all, so an empty answer retries without it.
+# match on parsed JSON (node, then python3). When NEITHER can read the list the
+# answer is UNKNOWN (_CRON_N=-1), never a grep guess: the function then returns
+# success so every caller does nothing. `--all` can print nothing at all, so an
+# empty answer retries without it.
 # ---------------------------------------------------------------------------
 _cron_count() {
   _CRON_N=0; _CRON_IDS=""
@@ -222,13 +224,16 @@ w(json.load(sys.stdin));print(len(h),",".join(h))'
   fi
   if [ -n "$_cc_out" ]; then
     _CRON_N="${_cc_out%% *}"; _CRON_IDS="${_cc_out#* }"
-  elif printf '%s' "$_cc_json" | grep -q "\"name\": *\"$1\""; then
-    _CRON_N=1
+  else
+    # RRX-018: neither node nor python3 could read the cron list. That is
+    # UNKNOWN, not "absent". Callers must not add a job on an unknown.
+    _CRON_N=-1
+    echo "65-rescue-receiver: cannot read the cron list as JSON (node and python3 both unavailable or the list was not JSON); treating $1 as UNKNOWN and adding nothing" >&2
   fi
   if [ "$_CRON_N" -gt 1 ]; then
     echo "65-rescue-receiver: WARNING $_CRON_N crons named $1 exist (ids: $_CRON_IDS); not deleting anything" >&2
   fi
-  [ "$_CRON_N" -gt 0 ]
+  [ "$_CRON_N" -ne 0 ]
 }
 
 # ---------------------------------------------------------------------------
@@ -254,7 +259,7 @@ register_intake_auth_cron() {
     return 0
   fi
   if _cron_count "$_AUTH_NAME"; then
-    echo "65-rescue-receiver: cron $_AUTH_NAME already declared (idempotent by name; not re-added)"
+    echo "65-rescue-receiver: cron $_AUTH_NAME present or unknown (count=$_CRON_N); not added"
     return 0
   fi
   if "$_OC_BIN" cron add --name "$_AUTH_NAME" --cron "$_AUTH_CRON" --no-deliver \
@@ -298,7 +303,7 @@ register_escalate_flush_cron() {
     return 0
   fi
   if _cron_count "$_FLUSH_NAME"; then
-    echo "65-rescue-receiver: cron $_FLUSH_NAME already declared (idempotent by name; not re-added)"
+    echo "65-rescue-receiver: cron $_FLUSH_NAME present or unknown (count=$_CRON_N); not added"
     return 0
   fi
   if "$_OC_BIN" cron add --name "$_FLUSH_NAME" --cron "$_FLUSH_CRON" --no-deliver \
@@ -430,7 +435,7 @@ if [ "$_RRR_LOADED" = "1" ]; then
     fi
   done
 elif _cron_count "$_LEGACY_NAME"; then
-  echo "65-rescue-receiver: legacy cron $_LEGACY_NAME is present but the RR-028 engine is NOT installed, so its enabled state cannot be checked — NOT removed (remove it by hand if it is genuinely yours)" >&2
+  echo "65-rescue-receiver: legacy cron $_LEGACY_NAME is present or unknown but the RR-028 engine is NOT installed, so its enabled state cannot be checked — NOT removed (remove it by hand if it is genuinely yours)" >&2
 fi
 
 if [ -n "$_ENGINE" ]; then
@@ -490,10 +495,11 @@ if _cron_count "$_NAME"; then
 fi
 if "$_OC_BIN" cron add --name "$_NAME" --cron "*/2 * * * *" --no-deliver --command "sh $_POLL" >&2; then
   :
-elif "$_OC_BIN" cron add --name "$_NAME" --cron "*/2 * * * *" --command "sh $_POLL" >&2; then
-  :
 else
-  echo "65-rescue-receiver: cron add FAILED" >&2; exit 1
+  # RRX-018: never fall back to a poll that DELIVERS. A job that runs every 2
+  # minutes with delivery on can post into the owner's chat every 2 minutes.
+  echo "65-rescue-receiver: cron add FAILED - the CLI refused the add with --no-deliver, and nothing was registered without it on purpose" >&2
+  exit 1
 fi
 echo "65-rescue-receiver: registered cron $_NAME (*/2) -> sh $_POLL (presence path; NOT read back)"
 register_intake_auth_cron
