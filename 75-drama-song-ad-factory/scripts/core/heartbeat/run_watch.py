@@ -1016,9 +1016,16 @@ def client_message(run_id, row, decisions, stalled, client_reason, expired,
                 "Nothing is lost. Tell me when you'd like to pick it back up."
                 % (done, total, stage_noun(row["stage"])))
     if expired:
-        head = ("Your video is taking longer than usual, so I've asked a person "
-                "to look in on it too. You don't need to do anything. %d of %d "
-                "steps are finished and nothing is lost." % (done, total))
+        # An acted, successful recovery earns the pickup promise; anything
+        # else names a person looking in (same repair D01/D02/D03 QC made:
+        # the expired branch must not promise a pickup it has no evidence for).
+        if recovery_acted_ok(recovery):
+            tail = "I'm picking it back up now."
+        else:
+            tail = ("I've asked a person to look in on it too. "
+                    "You don't need to do anything.")
+        head = ("Your video is taking longer than usual, so %s %d of %d "
+                "steps are finished and nothing is lost." % (tail, done, total))
         if decisions:
             head += "\n\nStill waiting on you:\n" + "\n".join(_decision_lines(decisions))
         return head
