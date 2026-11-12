@@ -671,6 +671,92 @@ def probe_duration(path, ffprobe="ffprobe", timeout=30):
     return dur
 
 
+def probe_stream_duration(path, stream, ffprobe="ffprobe", timeout=30):
+    """One stream's own duration in seconds (S75-044).
+
+    ffprobe asks the selected stream (``v:0``, ``a:0``) for its duration.
+    A stream that reports none - common for some audio encoders and for
+    streamed transport - is measured from its packet timestamps instead, so
+    the audio and video are never both read from the container's single
+    format duration. Raises RuntimeError when neither answers.
+    """
+    cmd = [ffprobe, "-v", "error", "-select_streams", stream,
+           "-show_entries", "stream=duration", "-of", "json", str(path)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=timeout, check=False)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"PROBE_UNAVAILABLE: {exc}") from exc
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"PROBE_FAILED: {(proc.stderr or '').strip()[:200]}")
+    try:
+        streams = json.loads(proc.stdout).get("streams") or []
+    except (ValueError, TypeError):
+        streams = []
+    for s in streams:
+        try:
+            dur = float(s.get("duration"))
+        except (TypeError, ValueError):
+            continue
+        if dur > 0:
+            return dur
+    dur = _packet_duration(path, stream, ffprobe, timeout)
+    if dur is None or dur <= 0:
+        raise RuntimeError(
+            f"PROBE_NO_DURATION: stream {stream} reports no duration")
+    return dur
+
+
+def _packet_duration(path, stream, ffprobe="ffprobe", timeout=30):
+    """Last packet end from a stream's packet timestamps (S75-044 fallback).
+
+    Used only when the stream itself reports no duration. Returns None when
+    no packet carries a usable timestamp.
+    """
+    cmd = [ffprobe, "-v", "error", "-select_streams", stream,
+           "-show_entries", "packet=pts_time,duration_time", "-of", "json",
+           str(path)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=timeout, check=False)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"PROBE_UNAVAILABLE: {exc}") from exc
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"PROBE_FAILED: {(proc.stderr or '').strip()[:200]}")
+    try:
+        packets = json.loads(proc.stdout).get("packets") or []
+    except (ValueError, TypeError):
+        packets = []
+    end = None
+    for p in packets:
+        try:
+            pts = float(p.get("pts_time"))
+        except (TypeError, ValueError):
+            continue
+        try:
+            dur = float(p.get("duration_time"))
+        except (TypeError, ValueError):
+            dur = 0.0
+        stop = pts + (dur if dur > 0 else 0.0)
+        if end is None or stop > end:
+            end = stop
+    return end
+
+
+def check_av_drift(output, vdur, frame, ffprobe="ffprobe", timeout=30):
+    """S75-044: the audio stream measured on its own, compared to the video.
+
+    Returns (audio_duration, None) when the two streams agree to within one
+    frame, or (audio_duration, "AV_DRIFT") when they do not. Raises
+    RuntimeError when the audio stream cannot be measured - an unmeasured
+    stream is never read as aligned.
+    """
+    adur = probe_stream_duration(output, "a:0", ffprobe, timeout)
+    return adur, ("AV_DRIFT" if abs(adur - vdur) > frame + 1e-3 else None)
+
+
 def _beat_cut(seg):
     """E2: shot planner's on-beat marker (beat_cut: true). Truthy only."""
     return seg.get("beat_cut") is True
@@ -1300,6 +1386,8 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     writes it to <output>.receipt.json on every outcome except dry_run.
     Post-render ffprobe check: |A-V| and |out - planned|
     each within 1 frame; else outcome error with AV_DRIFT/PLAN_DRIFT.
+    S75-044: the video and audio durations are each read from their own
+    stream, never both from the container's single duration.
 
     G5 honest receipts (Trevor order 1135, Part G, AMENDED by order 1150
     part G / review G8): when a delivery % rides the receipt it MUST be
@@ -1544,8 +1632,10 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                      next_action=(proc.stderr or "")[-500:],
                      evidence={"argv": argv, "returncode": proc.returncode})
     # Verify: output A/V durations within 1 frame of plan and each other.
+    # S75-044: the video duration is the video stream's own, so the audio
+    # stream is measured and compared against it separately below.
     try:
-        vdur = probe_duration(output, ffprobe)
+        vdur = probe_stream_duration(output, "v:0", ffprobe)
     except RuntimeError as exc:
         return _fail("VERIFY_UNAVAILABLE", next_action=str(exc),
                      evidence={"output": str(output)})
@@ -1615,12 +1705,16 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                      next_action="output duration off plan by >1 frame",
                      evidence=evid)
     if plan["song_path"]:
+        # S75-044: the audio stream's own duration, never the container's
+        # format duration (which is the video's, and made this check pass
+        # by construction). An unmeasurable stream fails closed.
         try:
-            adur = probe_duration(output, ffprobe)
-        except RuntimeError:
-            adur = vdur
+            adur, av_code = check_av_drift(output, vdur, frame, ffprobe)
+        except RuntimeError as exc:
+            return _fail("VERIFY_UNAVAILABLE", next_action=str(exc),
+                         evidence=evid)
         evid["audio_dur"] = adur
-        if abs(adur - vdur) > frame + 1e-3:
+        if av_code:
             return _fail("AV_DRIFT",
                          next_action="audio/video differ by >1 frame",
                          evidence=evid)
