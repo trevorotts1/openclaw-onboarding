@@ -6,7 +6,14 @@ Stdlib only. This is a planner, never a permission -- a vendor 402 always wins
 
 Ledger row: (utc_day, kind=video|image, units, run_id, logical_key, state).
 States: reserved -> succeeded (still counted) | failed (released back to the
-day); vendor_402 marks the whole UTC day exhausted.
+day); vendor_402 marks the whole UTC day exhausted - the name the door reports
+for that state is ``EXHAUSTED_UNTIL_RESET`` (S75-049).
+
+The door's contract (S75-049): ``reserve`` answers with the ledger row id,
+which the door carries to the end of the job and closes with
+``settle(row_id, outcome, seconds_used)`` on success, failure and cancel. A
+failed or cancelled clip releases its seconds; a succeeded clip keeps only the
+seconds it really used when ``seconds_used`` is given.
 
 Whole-run admission (Trevor 2026-10-13): no run is ever split across days.
 fits_today(clips, now) answers "run now" or "wait whole until the next 00:00
@@ -51,6 +58,15 @@ CLIP_SECONDS = 10
 AGNES_MAX_DELIVERED_S = 298
 AGNES_LENGTH_CAP = "AGNES_LENGTH_CAP"
 AGNES_QUOTA_EXHAUSTED = "AGNES_QUOTA_EXHAUSTED"
+#: The state a vendor 402 leaves for the rest of the UTC day, as the door
+#: reports it (S75-049). The ledger stores the same fact as ``vendor_402`` so
+#: every ledger written before this name existed keeps working.
+EXHAUSTED_UNTIL_RESET = "exhausted_until_reset"
+#: settle outcomes -> ledger states. A cancelled clip releases its seconds
+#: exactly like a failed one, so both close the row as ``failed``.
+SETTLE_STATES = {"succeeded": "succeeded", "success": "succeeded",
+                 "ok": "succeeded", "failed": "failed", "failure": "failed",
+                 "error": "failed", "cancelled": "failed", "canceled": "failed"}
 
 # ETA: trial A measured 679.6 s / 711.7 s / 768.0 s accepted -> done for a
 # 10-second clip (~11-13 min), 2 clips in flight at a time
@@ -215,14 +231,31 @@ def reserve(kind, units, run_id, logical_key="", now=None, env=os.environ):
         conn.close()
 
 
-def settle(row_id, ok=True, env=os.environ):
-    """Close a reservation. ok keeps the units spent; not ok releases them."""
-    state = "succeeded" if ok else "failed"
+def settle(row_id, outcome=None, seconds_used=None, ok=None, env=os.environ):
+    """Close a reservation (S75-049).
+
+    ``settle(row_id, outcome, seconds_used)`` is the door's contract:
+    ``outcome`` is ``"succeeded"``, ``"failed"`` or ``"cancelled"``. A failed
+    or cancelled clip releases its seconds; a succeeded clip keeps only the
+    seconds it really used when ``seconds_used`` is given. ``ok=`` stays
+    accepted for the first callers: True -> succeeded, False -> failed.
+    """
+    if outcome is None:
+        outcome = "succeeded" if ok is None or ok else "failed"
+    if isinstance(outcome, bool):
+        outcome = "succeeded" if outcome else "failed"
+    state = SETTLE_STATES.get(str(outcome).strip().lower(), "failed")
     conn = _connect(state_path(env))
     try:
-        cur = conn.execute(
-            "UPDATE quota SET state=? WHERE id=? AND state='reserved'",
-            (state, int(row_id)))
+        if state == "succeeded" and seconds_used is not None:
+            cur = conn.execute(
+                "UPDATE quota SET state='succeeded', units=? "
+                "WHERE id=? AND state='reserved'",
+                (max(0, int(seconds_used)), int(row_id)))
+        else:
+            cur = conn.execute(
+                "UPDATE quota SET state=? WHERE id=? AND state='reserved'",
+                (state, int(row_id)))
         return cur.rowcount == 1
     finally:
         conn.close()
@@ -316,6 +349,7 @@ __all__ = [
     "AGNES_QUOTA_EXHAUSTED",
     "CLIPS_PER_ROUND",
     "CLIP_SECONDS",
+    "EXHAUSTED_UNTIL_RESET",
     "LIMITS",
     "NEXT_DAY_REASON",
     "PROGRESS_NAME",
