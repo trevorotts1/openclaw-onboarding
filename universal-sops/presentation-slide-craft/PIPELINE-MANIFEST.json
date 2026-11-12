@@ -1736,6 +1736,7 @@
         "media-librarian-ghl-updater-sops.md"
       ],
       "produces_artifact": "working/sales-checkout/html/sales.html",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
       "gate_codes": [
         "AF-U-SALES-BUILD"
       ],
@@ -1765,6 +1766,7 @@
         "media-librarian-ghl-updater-sops.md"
       ],
       "produces_artifact": "working/sales-checkout/html/checkout.html",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
       "gate_codes": [
         "AF-U-CHECKOUT-BUILD"
       ],
@@ -1793,6 +1795,7 @@
         "media-librarian-ghl-updater-sops.md"
       ],
       "produces_artifact": "working/sales-checkout/checkout_form.json",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
       "gate_codes": [
         "AF-U-FORM-CHECKOUT"
       ],
@@ -1906,6 +1909,7 @@
         "media-librarian-ghl-updater-sops.md"
       ],
       "produces_artifact": "working/vsl/html/vsl.html",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
       "gate_codes": [
         "AF-U-VSL-BUILD"
       ],
