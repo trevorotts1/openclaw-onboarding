@@ -1886,9 +1886,12 @@ _resend_pending() {
     [ "$_rp_max" -gt 0 ] 2>/dev/null || return 0
     _rp_n=0
     _rp_t0=$(date +%s 2>/dev/null || echo 0)
-    for _rp_f in $(ls -1 "$_PENDING" 2>/dev/null | grep -v '^\.tmp-' | head -20); do
+    _rp_seen=0
+    for _rp_path in "$_PENDING"/op_*; do
         [ "$_rp_n" -lt "$_rp_max" ] 2>/dev/null || break
-        _rp_path="$_PENDING/$_rp_f"
+        _rp_seen=$(( _rp_seen + 1 ))
+        [ "$_rp_seen" -le 20 ] || break
+        _rp_f=$(basename "$_rp_path")
         [ -f "$_rp_path" ] || continue
         _rp_body=$(cat "$_rp_path" 2>/dev/null) || continue
         [ -n "$_rp_body" ] || continue
@@ -2543,23 +2546,23 @@ _rr_claim_recovered() {
 # Exact instruction_id match only: a different instruction never matches.
 # ---------------------------------------------------------------------------
 _rr_prior_interrupted() {
-    [ -d "$_JOURNAL" ] && [ -n "${INSTRUCTION_ID:-}" ] || return 1
-    _pi_needle="\"instruction_id\":\"$(_json_str "$INSTRUCTION_ID")\""
-    for _pi_f in $(grep -lF -- "$_pi_needle" "$_JOURNAL"/op_* 2>/dev/null); do
-        [ -f "$_pi_f" ] || continue
-        case "$(_json_field "$(cat "$_pi_f" 2>/dev/null)" "phase")" in
-            effect_started|effect_executed) ;;
-            *) continue ;;
-        esac
-        _pi_op=$(basename "$_pi_f")
-        # a done record carrying this operation id means the outcome was recorded
-        if grep -lF -- "\"operation_id\":\"$_pi_op\"" "$_DONE"/* >/dev/null 2>&1; then
-            continue
-        fi
-        printf '%s' "$_pi_op"
+    # RRX-010: the journal and the done records are READ AS JSON by
+    # rr_journal_check.py. A file that cannot be read makes the answer
+    # "undetermined", and the caller then does NOT run the turn. The old
+    # grep read an unreadable journal as "no earlier attempt".
+    [ -n "${INSTRUCTION_ID:-}" ] || return 1
+    _pi_tool="$(dirname "$0")/rr_journal_check.py"
+    if [ ! -f "$_pi_tool" ] || ! command -v python3 >/dev/null 2>&1; then
+        printf 'undetermined:journal_check_unavailable'
         return 0
-    done
-    return 1
+    fi
+    _pi_out=$(python3 "$_pi_tool" --journal "$_JOURNAL" --done "$_DONE" --instruction-id "$INSTRUCTION_ID" 2>/dev/null)
+    _pi_rc=$?
+    case "$_pi_rc" in
+        0)  return 1 ;;
+        10) printf 'interrupted:%s' "$(_json_field "$_pi_out" "operation_id")"; return 0 ;;
+        *)  printf 'undetermined:journal_unreadable'; return 0 ;;
+    esac
 }
 
 # ---------------------------------------------------------------------------
@@ -2737,6 +2740,46 @@ fi
 
 # RR plan F62: a poll killed after its effect began must not run the same work again blind.
 if _rr_prior=$(_rr_prior_interrupted); then
+    case "$_rr_prior" in
+        undetermined:*)
+            # Not proven either way. Run nothing, claim nothing. The ticket stays
+            # open on the server, which re-hands it and then pages a person.
+            _rr_persist_outcome "journal_undetermined" "operator" "the attempt journal could not be read (${_rr_prior#undetermined:}); the turn was not started"
+            _log "journal-undetermined instruction=$INSTRUCTION_ID reason=${_rr_prior#undetermined:} agent turn NOT started acked=false next_owner=operator"
+            # RRX-010: one corrupt journal file must not keep the box dark for
+            # ever. Move every unreadable JOURNAL file aside (never a done file),
+            # so the next run reads a readable journal and can decide again.
+            _qi_tool="$(dirname "$0")/rr_journal_check.py"
+            if [ -f "$_qi_tool" ] && command -v python3 >/dev/null 2>&1; then
+                _qi_list=$(python3 "$_qi_tool" --journal "$_JOURNAL" --done "$_DONE" --instruction-id "$INSTRUCTION_ID" 2>/dev/null | python3 -c 'import json, os, sys
+j = os.path.abspath(sys.argv[1])
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    d = {}
+for p in (d.get("unreadable") or []):
+    if os.path.dirname(os.path.abspath(p)) == j and os.path.isfile(p):
+        print(p)' "$_JOURNAL" 2>/dev/null || true)
+                if [ -n "$_qi_list" ]; then
+                    mkdir -p "$_RECONCILE" 2>/dev/null || true
+                    chmod 700 "$_RECONCILE" 2>/dev/null || true
+                    printf '%s\n' "$_qi_list" | while IFS= read -r _qi_f; do
+                        [ -n "$_qi_f" ] || continue
+                        case "$_qi_f" in
+                            "$_JOURNAL"/op_*) ;;
+                            *) continue ;;
+                        esac
+                        [ -f "$_qi_f" ] || continue
+                        if mv "$_qi_f" "$_RECONCILE/journal-$(basename "$_qi_f")" 2>/dev/null; then
+                            _log "journal-quarantined file=$(basename "$_qi_f") acked=false next_owner=operator"
+                        fi
+                    done
+                fi
+            fi
+            exit 0
+            ;;
+    esac
+    _rr_prior="${_rr_prior#interrupted:}"
     _log "interrupted-prior-attempt instruction=$INSTRUCTION_ID prior_op=$_rr_prior agent turn NOT started (an earlier run began this instruction's effect and never recorded a result; running it again could repeat client-visible actions)"
     _rr_persist_outcome "interrupted_prior_attempt" "operator" "an earlier run of this instruction began its effect and never recorded a result ($_rr_prior)"
     _write_done "failed" 1 0 "interrupted_prior_attempt" "" ""
