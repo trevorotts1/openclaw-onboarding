@@ -765,6 +765,22 @@ def _registry_entry(model, adapter=None):
     return None
 
 
+def _zero_cost_route(model):
+    """True only when Skill 74's registry documents this model as free.
+
+    S75-001: the ONE exception to the zero-estimate refusal. The price comes
+    from the registry row Skill 74 itself prices from (``pricing.
+    credits_estimate``); nothing is listed here by hand. A missing row, an
+    unreadable registry or a price that is not exactly 0 is NOT free - the
+    refusal stays fail-closed. Agnes jobs never come through this file.
+    """
+    pricing = (_registry_entry(model) or {}).get("pricing") or {}
+    est = pricing.get("credits_estimate")
+    if isinstance(est, bool) or not isinstance(est, (int, float)):
+        return False
+    return est == 0
+
+
 def _modality(model, adapter=None):
     entry = _registry_entry(model, adapter)
     if entry:
@@ -1836,6 +1852,20 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
                         "record an estimated cost before dispatch",
                         run_id=run_id, logical_key=logical_key,
                         attempt_id=attempt_id)
+    # S75-001: a paid job must never ride a zero estimate - a limit check
+    # against 0 can never fail. Production only: an offline runner
+    # simulation reserves nothing real. The one exception is a model Skill 74's
+    # own registry documents as free (price 0 credits).
+    if (_execution["mode"] == "production" and estimated_cost == 0
+            and not _zero_cost_route(model)):
+        return envelope("dispatch", "rejected", "ZERO_ESTIMATE_FOR_PAID_JOB",
+                        "Pass the real estimated cost; a zero estimate cannot "
+                        "be checked against the client's limit. Nothing was "
+                        "reserved and nothing was sent.",
+                        run_id=run_id, logical_key=logical_key,
+                        attempt_id=attempt_id,
+                        evidence={"model": model, "estimated_cost": 0,
+                                  "generated": False})
     # F2 intake seam: a run in F1 mode takes whole tracks only. A partial
     # slice/patch job refuses PARTIAL_SUNO_JOB here, before the ledger row
     # and before any Skill 74 call. Runs with no F1 soundtrack stamp are
@@ -2280,6 +2310,11 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
         else:
             actual = int(estimated_cost)
             warn = ["ACTUAL_COST_UNREPORTED"]
+            # S75-001: the missing actual must also reach the receipt, not
+            # only a list entry in this envelope (loud_failure attaches it).
+            _loud("warn", "ACTUAL_COST_UNREPORTED",
+                  "the provider reported no credits for task %s; the estimate "
+                  "%s is recorded as the actual cost" % (task_id, actual))
         if not saved_raw:
             warn.append("SAVE_FAILED")
         # F11: a save that raised, answered no path, answered a container that
