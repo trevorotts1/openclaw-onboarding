@@ -1,0 +1,38 @@
+{
+  "location_id": "LOC",
+  "location_name": "Fixture Account",
+  "start_url": "https://app.convertandflow.com/v2/location/LOC/quiz-builder-v2/QUIZ",
+  "configuration": {
+    "answer_jumps": {
+      "question_labels": [
+        "First question",
+        "Choose all that apply"
+      ],
+      "questions": [
+        {
+          "index": 1,
+          "field_type": "CHECKBOX",
+          "expected_question": "Choose all that apply",
+          "expected_query_key": "checkbox",
+          "options": [
+            {
+              "label": "Option 1",
+              "expected_destination": null,
+              "destination": "Next Question"
+            },
+            {
+              "label": "Option 2",
+              "expected_destination": "Next Question",
+              "destination": null
+            },
+            {
+              "label": "Option 3",
+              "expected_destination": null,
+              "destination": null
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

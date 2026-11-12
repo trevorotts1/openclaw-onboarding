@@ -167,8 +167,39 @@ def _inventory(frame,scope):
     return result
 
 
+
+def _prove_existing_owner(frame,scope,field,inventory):
+    """Join the actual Advanced canonical key to the exact API-owned picker row.
+
+    Disabled picker state alone proves no canvas ownership. The current native
+    Query Key, label and ordered choices must identify exactly one wrapper, and
+    that wrapper's saved canonical name/key must independently match the API.
+    """
+    matches=[(index,record) for index,record in inventory
+             if record['native_query_key']==field['native_query_key']]
+    if len(matches)!=1 or matches[0][1]!=_expected(field):
+        raise Stop('DROPDOWN_REUSE_IDENTITY_UNVERIFIED: current native owner differs from its exact API-bound Query Key/label/options')
+    from playwright_recipes.form_widget_families import _read
+    index=matches[0][0];items=scope.locator(':scope > .form-field-wrapper')
+    count=items.count()
+    if type(count) is not int or index>=count:
+        raise Stop('DROPDOWN_REUSE_IDENTITY_UNVERIFIED: legacy canvas owner is missing or ambiguous')
+    observed=_read(frame,items.nth(index),'single_dropdown')
+    if (observed['unique_key']!=field['field_key'] or observed['custom_field_name']!=field['name']
+            or observed['query_key']!=field['native_query_key'] or observed['label']!=field['expected_label']
+            or [option['label'] for option in observed['options']]!=field['options']):
+        raise Stop('DROPDOWN_REUSE_IDENTITY_UNVERIFIED: native Advanced canonical metadata does not match the exact API field')
+    return observed
+
+
 def _expected(field):
     return {key:field[key] for key in ('native_query_key','expected_label','options')}
+
+
+def _receipt_reuse_proof(observed):
+    return {'unique_key':observed['unique_key'],'custom_field_name':observed['custom_field_name'],
+        'query_key':observed['query_key'],'label':observed['label'],
+        'options':[{'label':option['label']} for option in observed['options']]}
 
 
 def _preserved(before_canvas,before_dropdowns,after_canvas,after_dropdowns,added):
@@ -198,17 +229,20 @@ def configure(page,step):
     dialog,search=_object_dialog(frame,'form')
     if dialog.get_by_text(re.compile(r'^\s*\d+ selected\s*$')).count():
         raise Stop('Native dropdown picker contains an unrelated selection')
-    pending=[]
+    pending=[];reused=[]
     for field in data['dropdown_fields']:
         _,tile,checkbox=_object_row(dialog,search,field)
         if tile.get_attribute('aria-disabled')=='true':
-            raise Stop('DROPDOWN_REUSE_IDENTITY_UNVERIFIED: disabled API picker row has no captured canvas API-ID link; use the original completed insertion journal or reconcile before any write')
+            reused.append(field)
         else:
             if (checkbox.get_attribute('aria-checked')!='false'
                     or field['native_query_key'] in known or field['expected_label']!=field['name']):
                 raise Stop('Pending API dropdown conflicts with existing native identity or default label')
             pending.append(field)
     fill(search,'');_close_object_drawer(frame,'form')
+    adopted={field['id']:_prove_existing_owner(frame,scope,field,before_dropdowns) for field in reused}
+    if _stable_canvas(scope)!=before_canvas:
+        raise Stop('Legacy Dropdown adoption changed an existing canvas identity')
     added=[]
     for field in pending:
         validate(plan,require_fresh=True);assert_tenant(page,data)
@@ -250,24 +284,78 @@ def configure(page,step):
     frame=form_builder(page);scope=_one(frame.locator('#form-builder-container'),'Reopened dropdown owner changed')
     assert_tenant(page,data)
     after_dropdowns=_inventory(frame,scope)
+    if any(_prove_existing_owner(frame,scope,field,after_dropdowns)!=adopted[field['id']] for field in reused):
+        raise Stop('Legacy Dropdown canonical owner changed after independent reopen')
     if (after_dropdowns!=final_dropdowns or _stable_canvas(scope)!=final_canvas):
         raise Stop('Native dropdown definitions or other field identities did not persist after independent reopen')
     return {'status':'DROPDOWN_FIELDS_SAVED_AND_REOPENED','editor_url':page.url,
         'fields':[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
-            'placement':'added'} for field in data['dropdown_fields']],
+            'placement':'reused' if field['id'] in adopted else 'added',
+            **({'reuse_proof':_receipt_reuse_proof(adopted[field['id']])} if field['id'] in adopted else {})}
+            for field in data['dropdown_fields']],
         'configuration_sha256':configuration_hash(plan),'independent_readback':'VERIFIED',
         'behavior_verified':False,'submission_verified':False}
 
 
 def validate_receipt(result,step):
-    """Known completed insertions may replay; unproven legacy reuse may not."""
+    """Completed insertions and positively joined legacy owners retain exact identities."""
     plan=validate(step);data=plan['payload']
-    expected_fields=[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
-                      'placement':'added'} for field in data['dropdown_fields']]
+    records=result.get('fields') if isinstance(result,dict) else None
+    if (not isinstance(records,list) or len(records)!=len(data['dropdown_fields'])
+            or any(not isinstance(record,dict) or record.get('placement') not in ('added','reused') for record in records)):
+        raise Stop('Dropdown completion lacks its exact placement disposition')
+    expected_fields=[]
+    for field,record in zip(data['dropdown_fields'],records):
+        expected={**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
+                  'placement':record['placement']}
+        if record['placement']=='reused':
+            proof=record.get('reuse_proof')
+            from playwright_recipes.form_widget_families import _read
+            if (not isinstance(proof,dict) or set(proof)!={'unique_key','custom_field_name','query_key','label','options'}
+                    or proof.get('unique_key')!=field['field_key'] or proof.get('custom_field_name')!=field['name']
+                    or proof.get('query_key')!=field['native_query_key'] or proof.get('label')!=field['expected_label']
+                    or not isinstance(proof.get('options'),list)
+                    or any(not isinstance(option,dict) or set(option)!={'label'} for option in proof['options'])
+                    or [option['label'] for option in proof['options']]!=field['options']):
+                raise Stop('Reused dropdown lacks an exact canonical native owner proof')
+            expected['reuse_proof']=deepcopy(proof)
+        elif 'reuse_proof' in record:
+            raise Stop('New dropdown insertion cannot carry a legacy reuse proof')
+        expected_fields.append(expected)
     if (not isinstance(result,dict) or result.get('status')!='DROPDOWN_FIELDS_SAVED_AND_REOPENED'
             or result.get('editor_url')!=data['start_url'] or result.get('fields')!=expected_fields
             or result.get('configuration_sha256')!=configuration_hash(plan)
             or result.get('independent_readback')!='VERIFIED'
             or result.get('behavior_verified') is not False or result.get('submission_verified') is not False):
-        raise Stop('Native dropdown insertion receipt is malformed or lacks exact new-insertion provenance')
+        raise Stop('Native dropdown placement receipt is malformed or lacks exact ownership provenance')
     return {'fields':expected_fields,'configuration_sha256':configuration_hash(plan)}
+
+
+def verify_completed(page,step,receipt):
+    """Re-read API-picker/canonical canvas joins without repeating Add or Save."""
+    validate_receipt(receipt,step);data=validate(step)['payload']
+    if page.url!=data['start_url']:raise Stop('Completed Dropdown replay changed its exact editor')
+    assert_tenant(page,data);frame=form_builder(page)
+    title=frame.get_by_role('textbox',name='Form Name',exact=True)
+    title.wait_for(state='visible',timeout=45000)
+    if title.count()!=1 or not read_editor_title(title).strip():
+        raise Stop('Completed Dropdown form identity is unavailable')
+    name=read_editor_title(title)
+    reopen_editor(page,'form',name,data['start_url']);frame=form_builder(page)
+    assert_tenant(page,data)
+    scope=_one(frame.locator('#form-builder-container'),'Completed Dropdown owner canvas changed')
+    _close_object_drawer(frame,'form');click(frame.get_by_role('tab',name='Edit',exact=True))
+    inventory=_inventory(frame,scope);before=_stable_canvas(scope)
+    dialog,search=_object_dialog(frame,'form')
+    for field in data['dropdown_fields']:
+        _,tile,_=_object_row(dialog,search,field)
+        if tile.get_attribute('aria-disabled')!='true':
+            raise Stop('Completed Dropdown no longer owns its exact API picker field')
+    fill(search,'');_close_object_drawer(frame,'form')
+    for field,record in zip(data['dropdown_fields'],receipt['fields']):
+        observed=_prove_existing_owner(frame,scope,field,inventory)
+        if record['placement']=='reused' and _receipt_reuse_proof(observed)!=record['reuse_proof']:
+            raise Stop('Completed Dropdown canonical owner differs from its recorded reuse proof')
+    if _stable_canvas(scope)!=before:
+        raise Stop('Completed Dropdown verification changed a sibling owner')
+    return deepcopy(receipt)

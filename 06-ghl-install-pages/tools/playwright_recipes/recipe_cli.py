@@ -129,7 +129,10 @@ def compile_recipe(operation, data):
             add('quiz_results', result_page=result_page)
     elif operation=='surveys.configure':
         config = data['configuration']
-        if 'submission' in config:
+        if 'outcomes' in config:
+            add('native_survey_condition_outcomes',payload={
+                **{key:data[key] for key in ('location_id','location_name','start_url')},**config})
+        elif 'submission' in config:
             add('survey_submission',**config['submission'])
         elif 'widget_fields' in config:
             add('native_survey_widget_fields',payload={**{key:data[key] for key in ('location_id','location_name','start_url')},**config})
@@ -187,6 +190,12 @@ def compile_recipe(operation, data):
             add('meeting_cohosts', payload={**{key:base[key] for key in ('location_id', 'location_name', 'start_url')}, **details})
         else:
             add('meeting',**details)
+    elif operation == 'meetings.integrate' and data.get('integration_mode') == 'course_live_session':
+        add('native_course_live_session', payload={key:value for key,value in data.items()
+            if key not in ('integration_mode', 'auth_activation', 'publish')})
+    elif operation == 'meetings.integrate' and data.get('integration_mode') == 'provider_oauth_handoff':
+        add('native_provider_oauth_handoff', payload={key:value for key,value in data.items()
+            if key != 'integration_mode'})
     elif operation == 'meetings.integrate' and data.get('integration_mode') == 'community_event_room':
         add('community_event_room', payload={key:value for key,value in data.items() if key != 'integration_mode'})
     elif operation == 'meetings.integrate' and data.get('integration_mode') == 'dynamic_calendar_room':

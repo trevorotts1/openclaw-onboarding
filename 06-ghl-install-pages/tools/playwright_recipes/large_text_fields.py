@@ -174,6 +174,25 @@ def _inventory(frame,scope):
     return result
 
 
+def _prove_existing_owner(frame,scope,field,inventory):
+    matches=[(index,record) for index,record in inventory if record['native_query_key']==field['native_query_key']]
+    if len(matches)!=1 or matches[0][1]!=_expected(field):
+        raise Stop('LARGE_TEXT_REUSE_IDENTITY_UNVERIFIED: native Query Key, label or placeholder differs')
+    index=matches[0][0];items=scope.locator(':scope > .form-field-wrapper')
+    if index>=items.count():raise Stop('LARGE_TEXT_REUSE_IDENTITY_UNVERIFIED: canvas owner is missing')
+    item=items.nth(index);label=_one(item.locator('[data-field-type="LARGE_TEXT"]'),'Large Text owner changed')
+    click(label);click(_one(item.locator('[aria-label="Open settings"]'),'Large Text settings owner changed'))
+    from playwright_recipes.form_widget_families import _advanced, _read_input
+    _advanced(frame)
+    key=_one(frame.locator('#uniqueKey input'),'Large Text canonical key changed')
+    name=_one(frame.locator('#custom-field-label input'),'Large Text custom field name changed')
+    observed={'unique_key':_read_input(key,'unique_key'),'custom_field_name':name.input_value()}
+    if observed!={'unique_key':field['field_key'],'custom_field_name':field['name']} or key.is_enabled():
+        raise Stop('LARGE_TEXT_REUSE_IDENTITY_UNVERIFIED: saved native canonical identity differs from API')
+    _close_properties(frame);_close_object_drawer(frame,'form')
+    return observed
+
+
 def _expected(field):
     return {key:field[key] for key in ('native_query_key','expected_label','expected_placeholder')}
 
@@ -205,17 +224,19 @@ def configure(page,step):
     dialog,search=_object_dialog(frame,'form')
     if dialog.get_by_text(re.compile(r'^\s*\d+ selected\s*$')).count():
         raise Stop('Native large_text picker contains an unrelated selection')
-    pending=[]
+    pending=[];reused=[]
     for field in data['large_text_fields']:
         _,tile,checkbox=_object_row(dialog,search,field)
         if tile.get_attribute('aria-disabled')=='true':
-            raise Stop('LARGE_TEXT_REUSE_IDENTITY_UNVERIFIED: disabled API picker row has no captured canvas API-ID link; use the original completed insertion journal or reconcile before any write')
+            reused.append(field)
         else:
             if (checkbox.get_attribute('aria-checked')!='false'
                     or field['native_query_key'] in known or field['expected_label']!=field['name']):
                 raise Stop('Pending API large_text conflicts with existing native identity or default label')
             pending.append(field)
     fill(search,'');_close_object_drawer(frame,'form')
+    adopted={field['id']:_prove_existing_owner(frame,scope,field,before_large_texts) for field in reused}
+    if _stable_canvas(scope)!=before_canvas:raise Stop('Legacy Large Text adoption changed the canvas')
     added=[]
     for field in pending:
         validate(plan,require_fresh=True);assert_tenant(page,data)
@@ -257,20 +278,38 @@ def configure(page,step):
     frame=form_builder(page);scope=_one(frame.locator('#form-builder-container'),'Reopened large_text owner changed')
     assert_tenant(page,data)
     after_large_texts=_inventory(frame,scope)
+    if any(_prove_existing_owner(frame,scope,field,after_large_texts)!=adopted[field['id']] for field in reused):
+        raise Stop('Legacy Large Text canonical owner changed after independent reopen')
     if (after_large_texts!=final_large_texts or _stable_canvas(scope)!=final_canvas):
         raise Stop('Native large_text definitions or other field identities did not persist after independent reopen')
     return {'status':'LARGETEXT_FIELDS_SAVED_AND_REOPENED','editor_url':page.url,
         'fields':[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
-            'placement':'added'} for field in data['large_text_fields']],
+            'placement':'reused' if field['id'] in adopted else 'added',
+            **({'reuse_proof':deepcopy(adopted[field['id']])} if field['id'] in adopted else {})}
+            for field in data['large_text_fields']],
         'configuration_sha256':configuration_hash(plan),'independent_readback':'VERIFIED',
         'behavior_verified':False,'submission_verified':False}
 
 
 def validate_receipt(result,step):
-    """Known completed insertions may replay; unproven legacy reuse may not."""
+    """Completed insertions and canonically joined legacy owners retain identity."""
     plan=validate(step);data=plan['payload']
-    expected_fields=[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
-                      'placement':'added'} for field in data['large_text_fields']]
+    records=result.get('fields') if isinstance(result,dict) else None
+    if not isinstance(records,list) or len(records)!=len(data['large_text_fields']) or any(not isinstance(x,dict) or x.get('placement') not in ('added','reused') for x in records):
+        raise Stop('Large Text completion lacks its exact placement disposition')
+    expected_fields=[]
+    for field,record in zip(data['large_text_fields'],records):
+        expected={**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
+                  'placement':record['placement']}
+        if record['placement']=='reused':
+            proof=record.get('reuse_proof')
+            if (not isinstance(proof,dict) or set(proof)!={'unique_key','custom_field_name'}
+                    or proof!={'unique_key':field['field_key'],'custom_field_name':field['name']}):
+                raise Stop('Reused Large Text lacks an exact canonical native owner proof')
+            expected['reuse_proof']=deepcopy(proof)
+        elif 'reuse_proof' in record:
+            raise Stop('New Large Text insertion cannot carry a legacy reuse proof')
+        expected_fields.append(expected)
     if (not isinstance(result,dict) or result.get('status')!='LARGETEXT_FIELDS_SAVED_AND_REOPENED'
             or result.get('editor_url')!=data['start_url'] or result.get('fields')!=expected_fields
             or result.get('configuration_sha256')!=configuration_hash(plan)
@@ -278,3 +317,26 @@ def validate_receipt(result,step):
             or result.get('behavior_verified') is not False or result.get('submission_verified') is not False):
         raise Stop('Native Large Text insertion receipt is malformed or lacks exact new-insertion provenance')
     return {'fields':expected_fields,'configuration_sha256':configuration_hash(plan)}
+
+
+def verify_completed(page,step,receipt):
+    validate_receipt(receipt,step);data=validate(step)['payload']
+    if page.url!=data['start_url']:raise Stop('Completed Large Text replay changed its exact editor')
+    assert_tenant(page,data);frame=form_builder(page)
+    title=frame.get_by_role('textbox',name='Form Name',exact=True)
+    title.wait_for(state='visible',timeout=45000)
+    if title.count()!=1 or not read_editor_title(title).strip():raise Stop('Completed Large Text form identity is unavailable')
+    scope=_one(frame.locator('#form-builder-container'),'Completed Large Text owner changed')
+    _close_object_drawer(frame,'form');click(frame.get_by_role('tab',name='Edit',exact=True))
+    inventory=_inventory(frame,scope);before=_stable_canvas(scope)
+    dialog,search=_object_dialog(frame,'form')
+    for field in data['large_text_fields']:
+        _,tile,_=_object_row(dialog,search,field)
+        if tile.get_attribute('aria-disabled')!='true':raise Stop('Completed Large Text no longer owns its API picker field')
+    fill(search,'');_close_object_drawer(frame,'form')
+    for field,record in zip(data['large_text_fields'],receipt['fields']):
+        observed=_prove_existing_owner(frame,scope,field,inventory)
+        if record['placement']=='reused' and observed!=record['reuse_proof']:
+            raise Stop('Completed Large Text canonical owner differs from its recorded reuse proof')
+    if _stable_canvas(scope)!=before:raise Stop('Completed Large Text verification changed a sibling owner')
+    return deepcopy(receipt)

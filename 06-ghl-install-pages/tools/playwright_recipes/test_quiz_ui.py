@@ -286,6 +286,10 @@ class NativeCategoriesAndTiers(unittest.TestCase):
             state['adds'] += 1
         add.click.side_effect = append_category
         noop = MagicMock()
+        noop.count.return_value=1
+        noop.is_visible.return_value=True
+        noop.is_enabled.return_value=True
+        modal.locator.return_value=noop
         def modal_role(role, *, name=None, exact=None):
             if role == 'textbox':
                 return names

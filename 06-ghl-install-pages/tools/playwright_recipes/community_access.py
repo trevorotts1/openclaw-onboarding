@@ -1,7 +1,8 @@
-"""Captured classic community privacy/access controls, without activation.
+"""Captured classic and modern community access controls, without activation.
 
 Selectors are the same native Details controls independently read by
-community_portal._read_details. This module never logs in, invites members,
+community_portal._read_details; modern controls use community_modern_details.
+This module never logs in, invites members,
 publishes/reactivates a group or edits its identity/description.
 
 Access expansion requires an opaque, short-lived authorization produced by the
@@ -178,6 +179,10 @@ def run_access(page, inputs, evidence_root, *, portal_context, access_authorizat
     """Run the captured native Details path with intent, lease and exact readback."""
     data = validate_inputs(inputs)
     root = Path(evidence_root).resolve()
+    from playwright_recipes import community_modern_details as modern
+    if data['portal_url'].rstrip('/').endswith('/home') and modern.available(page,data):
+        return modern.run_access(page,data,root,portal_context=portal_context,
+            access_authorization=access_authorization,clock=clock)
     with evidence_lease(root, data['location_id'], kind='community_access'):
         path = root / _JOURNAL
         if journal_present(path):

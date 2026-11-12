@@ -2,7 +2,7 @@
 from copy import deepcopy
 import time
 import unittest
-from unittest.mock import Mock,patch
+from unittest.mock import Mock,MagicMock,patch
 
 import dropdown_fields as native
 from skill6_playwright import Stop
@@ -108,7 +108,7 @@ class PreservationTests(unittest.TestCase):
 
 
 class ExistingBindingTests(unittest.TestCase):
-    def exercise(self,*,disabled=True,corrupt_reopen=False):
+    def exercise(self,*,disabled=True,corrupt_reopen=False,proven=False):
         data=plan();field=data['payload']['dropdown_fields'][0]
         page,frame,title,scope,dialog,search,tile,checkbox=[Mock() for _ in range(8)]
         page.url=data['payload']['start_url']
@@ -122,6 +122,7 @@ class ExistingBindingTests(unittest.TestCase):
         records=[(0,native._expected(field))]
         canvas=[{'types':['SINGLE_OPTIONS'],'names':[]}]
         reopened=False;clicks=[]
+        original_proof=native._prove_existing_owner
         def inventory(*_):
             result=deepcopy(records)
             if reopened and corrupt_reopen:result[0][1]['options']=['Lost saved definition']
@@ -135,10 +136,22 @@ class ExistingBindingTests(unittest.TestCase):
              patch.object(native,'_object_dialog',return_value=(dialog,search)), \
              patch.object(native,'_object_row',return_value=(Mock(),tile,checkbox)), \
              patch.object(native,'fill'),patch.object(native,'click',side_effect=clicks.append), \
-             patch.object(native,'reopen_editor',side_effect=reopen):
+             patch.object(native,'reopen_editor',side_effect=reopen), \
+             patch.object(native,'_prove_existing_owner',side_effect=lambda *args: (
+                 {'unique_key':field['field_key'],'custom_field_name':field['name'],
+                  'query_key':field['native_query_key'],'label':field['expected_label'],
+                  'options':[{'label':option,'value':None} for option in field['options']]}
+                 if proven else original_proof(*args))):
             try:result=native.configure(page,data)
             except Stop as error:result=error
         return result,checkbox,clicks
+
+    def test_exact_canonical_join_reuses_existing_owner_without_insertion_or_save(self):
+        result,checkbox,clicks=self.exercise(proven=True)
+        self.assertEqual(result['fields'][0]['placement'],'reused')
+        native.validate_receipt(result,plan())
+        checkbox.click.assert_not_called()
+        self.assertEqual(len(clicks),1)
 
     def test_disabled_api_row_cannot_adopt_a_native_widget_without_api_id_provenance(self):
         result,checkbox,_=self.exercise()
@@ -155,6 +168,106 @@ class ExistingBindingTests(unittest.TestCase):
         result,_,_=self.exercise(corrupt_reopen=True)
         self.assertIsInstance(result,Stop)
         self.assertIn('REUSE_IDENTITY_UNVERIFIED',str(result))
+
+
+class PositiveLegacyAdoptionTests(unittest.TestCase):
+    def test_api_picker_identity_joins_only_exact_saved_advanced_native_owner(self):
+        from playwright_recipes import form_widget_families as widgets
+        field=plan()['payload']['dropdown_fields'][0]
+        scope=MagicMock();scope.locator.return_value.count.return_value=1
+        record={'unique_key':field['field_key'],'custom_field_name':field['name'],
+                'query_key':field['native_query_key'],'label':field['expected_label'],
+                'options':[{'label':option,'value':None} for option in field['options']]}
+        inventory=[(0,native._expected(field))]
+        with patch.object(widgets,'_read',return_value=record) as read:
+            self.assertEqual(native._prove_existing_owner(MagicMock(),scope,field,inventory),record)
+        read.assert_called_once()
+        for key,value in [('unique_key','contact.foreign'),('custom_field_name','Foreign'),
+                          ('query_key','foreign'),('label','Foreign'),('options',[])]:
+            with self.subTest(key=key),patch.object(widgets,'_read',return_value={**record,key:value}),self.assertRaises(Stop):
+                native._prove_existing_owner(MagicMock(),scope,field,inventory)
+        with patch.object(widgets,'_read') as read,self.assertRaises(Stop):
+            native._prove_existing_owner(MagicMock(),scope,field,inventory+inventory)
+        read.assert_not_called()
+
+    def test_positive_reuse_keeps_exact_receipt_identity_and_never_claims_new_insertion(self):
+        data=plan();field=data['payload']['dropdown_fields'][0]
+        receipt={'status':'DROPDOWN_FIELDS_SAVED_AND_REOPENED','editor_url':data['payload']['start_url'],
+            'fields':[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},'placement':'reused',
+                'reuse_proof':{'unique_key':field['field_key'],'custom_field_name':field['name'],
+                    'query_key':field['native_query_key'],'label':field['expected_label'],
+                    'options':[{'label':option} for option in field['options']]}}],
+            'configuration_sha256':native.configuration_hash(data),'independent_readback':'VERIFIED',
+            'behavior_verified':False,'submission_verified':False}
+        self.assertEqual(native.validate_receipt(receipt,data)['fields'][0]['placement'],'reused')
+        changed=deepcopy(receipt);changed['fields'][0]['id']='FOREIGN'
+        with self.assertRaises(Stop):native.validate_receipt(changed,data)
+
+
+    def test_completed_legacy_replay_reopens_and_checks_join_without_add_or_save(self):
+        data=plan();field=data['payload']['dropdown_fields'][0]
+        receipt={'status':'DROPDOWN_FIELDS_SAVED_AND_REOPENED','editor_url':data['payload']['start_url'],
+            'fields':[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},'placement':'reused',
+                'reuse_proof':{'unique_key':field['field_key'],'custom_field_name':field['name'],
+                    'query_key':field['native_query_key'],'label':field['expected_label'],
+                    'options':[{'label':option} for option in field['options']]}}],
+            'configuration_sha256':native.configuration_hash(data),'independent_readback':'VERIFIED',
+            'behavior_verified':False,'submission_verified':False}
+        page=MagicMock();page.url=data['payload']['start_url'];frame=MagicMock()
+        frame.get_by_role.return_value.count.return_value=1
+        frame.get_by_role.return_value.input_value.return_value='Existing form'
+        scope=MagicMock();scope.count.return_value=1;frame.locator.return_value=scope
+        tile=MagicMock();tile.get_attribute.return_value='true'
+        with patch.object(native,'assert_tenant'),patch.object(native,'form_builder',return_value=frame), \
+                patch.object(native,'reopen_editor') as reopen,patch.object(native,'_close_object_drawer'), \
+                patch.object(native,'_inventory',return_value=[(0,native._expected(field))]), \
+                patch.object(native,'_stable_canvas',return_value=[{'types':['SINGLE_OPTIONS'],'names':[]}]), \
+                patch.object(native,'_object_dialog',return_value=(MagicMock(),MagicMock())), \
+                patch.object(native,'_object_row',return_value=(MagicMock(),tile,MagicMock())), \
+                patch.object(native,'_prove_existing_owner',return_value={'unique_key':field['field_key'],
+                    'custom_field_name':field['name'],'query_key':field['native_query_key'],
+                    'label':field['expected_label'],'options':[{'label':option,'value':None} for option in field['options']]}) as prove, \
+                patch.object(native,'fill'),patch.object(native,'click') as clicked:
+            self.assertEqual(native.verify_completed(page,data,receipt),receipt)
+            reopen.assert_called_once();prove.assert_called_once()
+            self.assertEqual(clicked.call_count,1)
+            prove.side_effect=Stop('canonical owner drifted')
+            with self.assertRaisesRegex(Stop,'canonical owner drifted'):native.verify_completed(page,data,receipt)
+
+
+class LegacyReplayRunnerBoundaryTests(unittest.TestCase):
+    def test_completed_runner_calls_current_owner_verifier_and_propagates_drift_without_write(self):
+        import importlib
+        import tempfile
+        from pathlib import Path
+        import recipe_cli
+        import skill6_playwright as runner
+        leaf=importlib.import_module('playwright_recipes.dropdown_fields')
+        source=plan()['payload']
+        job=runner.validate_job(recipe_cli.compile_recipe('forms.configure',source),Path('.'))
+        step=job['steps'][0];field=step['payload']['dropdown_fields'][0]
+        receipt={'status':'DROPDOWN_FIELDS_SAVED_AND_REOPENED','editor_url':source['start_url'],
+            'fields':[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
+                       'placement':'reused','reuse_proof':{
+                           'unique_key':field['field_key'],'custom_field_name':field['name'],
+                           'query_key':field['native_query_key'],'label':field['expected_label'],
+                           'options':[{'label':option} for option in field['options']]}}],
+            'configuration_sha256':leaf.configuration_hash(step),'independent_readback':'VERIFIED',
+            'behavior_verified':False,'submission_verified':False}
+        page=MagicMock();page.url=source['start_url']
+        with tempfile.TemporaryDirectory() as root,patch.object(runner,'assert_tenant'), \
+                patch.object(runner,'native_dropdown_fields',return_value=receipt) as writer:
+            runner.run_on_page(page,job,root)
+            journal=Path(root,'state.json');before=journal.read_bytes()
+            with patch.object(leaf,'verify_completed',return_value=receipt) as verify:
+                replay=runner.run_on_page(page,job,root)
+                self.assertTrue(replay['replayed'])
+                verify.assert_called_once_with(page,step,replay['results'][0]['result'])
+                verify.side_effect=Stop('Current canonical Dropdown owner drifted')
+                with self.assertRaisesRegex(Stop,'canonical Dropdown owner drifted'):
+                    runner.run_on_page(page,job,root)
+            self.assertEqual(journal.read_bytes(),before)
+            writer.assert_called_once()
 
 
 if __name__=='__main__':unittest.main()

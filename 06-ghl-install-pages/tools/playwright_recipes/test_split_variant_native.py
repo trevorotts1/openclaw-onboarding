@@ -41,17 +41,19 @@ class NativeSplitIntegration(unittest.TestCase):
         mixed=inputs();mixed['options']={'steps':[]}
         with self.assertRaises(runner.Stop):job(mixed)
 
-    def test_activation_refuses_at_compile_and_job_validation_before_browser(self):
-        for changes in ({'active':True,'control_traffic':50,'traffic_change_authorized':True},
-                {'expected_active':True,'active':True,'expected_control_traffic':50,'control_traffic':50},
-                {'expected_control_traffic':50}):
+    def test_activation_requires_authored_traffic_authorization_and_valid_baseline(self):
+        invalid = ({'active':True,'control_traffic':50},
+            {'expected_active':True,'active':False,'expected_control_traffic':50},
+            {'expected_control_traffic':50}, {'active':True,'control_traffic':100})
+        for changes in invalid:
             data=inputs();data.update(changes)
             with self.subTest(changes=changes):
-                with self.assertRaisesRegex(runner.Stop,'capture is pending'):
+                with self.assertRaises(runner.Stop):
                     recipe_cli.compile_recipe('funnels.split_variant',data)
                 compiled=job();compiled['steps'][0]['payload']=data
-                with self.assertRaisesRegex(runner.Stop,'capture is pending'):
-                    runner.validate_job(compiled,Path('.'))
+                with self.assertRaises(runner.Stop):runner.validate_job(compiled,Path('.'))
+        data=inputs();data.update(active=True,control_traffic=49,traffic_change_authorized=True)
+        self.assertTrue(job(data)['steps'][0]['payload']['active'])
 
     def test_full_receipt_binding_and_fresh_replay_inventory(self):
         compiled=job();step=compiled['steps'][0];saved=receipt(step)

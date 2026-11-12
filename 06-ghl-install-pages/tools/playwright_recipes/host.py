@@ -165,7 +165,7 @@ def _recipe_readiness(operation, inputs, probes, input_dir):
     native = operation in ('checkout.configure_native','checkout.one_click_upsell') and bool(inputs.get('adapter_capture'))
     recorded = bool(inputs.get('options'))
     ui = (operation in ('checkout.configure_ui', 'courses.configure_ui')
-          or operation == 'meetings.integrate' and inputs.get('integration_mode') == 'dynamic_calendar_room')
+          or operation == 'meetings.integrate' and inputs.get('integration_mode') in ('dynamic_calendar_room', 'course_live_session', 'provider_oauth_handoff'))
     event = operation == 'meetings.integrate' and inputs.get('integration_mode') == 'community_event_room'
     portal = operation == 'communities.configure' and bool(set(inputs).intersection({'channels', 'details', 'access', 'course_associations', 'branding'}))
     captured = captured_script_mode(operation, inputs)

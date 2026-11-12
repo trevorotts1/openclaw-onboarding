@@ -80,6 +80,7 @@ class ExistingTierLayouts(unittest.TestCase):
         save.click.side_effect = lambda:state.__setitem__('saves', state['saves'] + 1)
         popup.get_by_role.side_effect = lambda role, **kw: (labels if kw.get('name') == 'Label' else ranges) if role == 'textbox' else save
         modal.get_by_role.return_value = save
+        modal.locator.return_value = save
         back = MagicMock()
         back.count.return_value = 1
         frame.get_by_role.side_effect = lambda role, **kw: (title if role == 'textbox' else modal if role == 'dialog' else back if kw.get('name') == 'Back' else save)

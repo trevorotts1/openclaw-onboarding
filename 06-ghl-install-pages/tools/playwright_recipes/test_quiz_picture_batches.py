@@ -56,6 +56,24 @@ class PictureBatches(unittest.TestCase):
             self.assertNotIn('expected_persisted_unique_key',retained)
             self.assertNotIn('media_button_name',retained['options'][0])
 
+    def test_full_presentation_flows_through_compiler_receipt_and_later_inventory(self):
+        value=request();batches=value['configuration']['question_batches']
+        presentation={'show_option_label':True,'columns':None,'image_fit':'Contain',
+                      'other_option':True,'spread_to_columns':False}
+        batches[1]['picture_choice_questions']['questions'][0]['presentation']=presentation
+        job=self.job(value);step=job['steps'][1]
+        self.assertEqual(step['payload']['questions'][0]['presentation'],presentation)
+        for later in job['steps'][2:]:
+            self.assertEqual(later['payload']['pages'][0]['questions'],batches[0]['written_answer_questions']['questions'])
+            self.assertNotIn('presentation',later['payload']['pages'][1]['questions'][0])
+        with tempfile.TemporaryDirectory() as root,patch.object(runner,'assert_tenant'), \
+                patch.object(runner,'quiz_written_answers',side_effect=lambda page,step:ordinary_receipt(step)), \
+                patch.object(runner,'quiz_multiple_choices',side_effect=lambda page,step:ordinary_receipt(step)), \
+                patch.object(picture,'configure',side_effect=lambda page,step:proof(step)) as handler:
+            runner.run_on_page(object(),job,root);replayed=runner.run_on_page(object(),job,root)
+            self.assertTrue(replayed['replayed']);handler.assert_called_once()
+            self.assertEqual(handler.call_args.args[1]['payload']['questions'][0]['presentation'],presentation)
+
     def test_short_answer_alias_never_widens_the_authored_type(self):
         value=request();value['configuration']['question_batches'][3]['short_answer_questions']['questions'][0]['field_type']='LARGE_TEXT'
         with self.assertRaisesRegex(runner.Stop,'Short Answer batches'):self.job(value)

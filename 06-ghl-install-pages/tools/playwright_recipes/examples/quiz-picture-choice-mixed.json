@@ -1,0 +1,246 @@
+{
+  "location_id": "LOC",
+  "location_name": "Fixture Account",
+  "start_url": "https://app.convertandflow.com/v2/location/LOC/quiz-builder-v2/QUIZ",
+  "configuration": {
+    "question_batches": [
+      {
+        "written_answer_questions": {
+          "expected_quiz_name": "Exact quiz",
+          "pages": [
+            {
+              "label": "Page 1",
+              "questions": []
+            }
+          ],
+          "target_page": 1,
+          "questions": [
+            {
+              "field_type": "TEXT",
+              "question": "Your goal?",
+              "placeholder": "",
+              "short_label": "",
+              "query_key": "goal",
+              "required": false,
+              "hidden": false
+            }
+          ]
+        }
+      },
+      {
+        "picture_choice_questions": {
+          "expected_quiz_name": "Exact quiz",
+          "pages": [
+            {
+              "label": "Page 1",
+              "questions": [
+                {
+                  "field_type": "TEXT",
+                  "question": "Your goal?",
+                  "placeholder": "",
+                  "short_label": "",
+                  "query_key": "goal",
+                  "required": false,
+                  "hidden": false
+                }
+              ]
+            }
+          ],
+          "target_page": 2,
+          "questions": [
+            {
+              "field_type": "PICTURE_CHOICE",
+              "question": "Choose your direction",
+              "placeholder": "",
+              "short_label": "",
+              "query_key": "chosen_direction",
+              "required": false,
+              "hidden": false,
+              "expected_persisted_unique_key": "contact.choose_your_direction",
+              "options": [
+                {
+                  "label": "Choice 1",
+                  "image_url": "https://example.com/1.png",
+                  "media_button_name": "image1.png image1.png Dimension icon"
+                },
+                {
+                  "label": "Choice 2",
+                  "image_url": "https://example.com/2.png",
+                  "media_button_name": "image2.png image2.png Dimension icon"
+                },
+                {
+                  "label": "Choice 3",
+                  "image_url": "https://example.com/3.png",
+                  "media_button_name": "image3.png image3.png Dimension icon"
+                }
+              ],
+              "presentation": {
+                "show_option_label": true,
+                "columns": null,
+                "image_fit": "Contain",
+                "other_option": true,
+                "spread_to_columns": false
+              }
+            }
+          ],
+          "create_page": true,
+          "new_page_label": "Page 2",
+          "acknowledge_shared_field_options": true
+        }
+      },
+      {
+        "multiple_choice_questions": {
+          "expected_quiz_name": "Exact quiz",
+          "pages": [
+            {
+              "label": "Page 1",
+              "questions": [
+                {
+                  "field_type": "TEXT",
+                  "question": "Your goal?",
+                  "placeholder": "",
+                  "short_label": "",
+                  "query_key": "goal",
+                  "required": false,
+                  "hidden": false
+                }
+              ]
+            },
+            {
+              "label": "Page 2",
+              "questions": [
+                {
+                  "field_type": "PICTURE_CHOICE",
+                  "question": "Choose your direction",
+                  "placeholder": "",
+                  "short_label": "",
+                  "query_key": "chosen_direction",
+                  "required": false,
+                  "hidden": false,
+                  "options": [
+                    {
+                      "label": "Choice 1",
+                      "image_url": "https://example.com/1.png"
+                    },
+                    {
+                      "label": "Choice 2",
+                      "image_url": "https://example.com/2.png"
+                    },
+                    {
+                      "label": "Choice 3",
+                      "image_url": "https://example.com/3.png"
+                    }
+                  ],
+                  "unique_key": "contact.choose_your_direction"
+                }
+              ]
+            }
+          ],
+          "target_page": 3,
+          "questions": [
+            {
+              "field_type": "CHECKBOX",
+              "question": "Which outcomes matter?",
+              "placeholder": "",
+              "short_label": "",
+              "query_key": "outcomes",
+              "required": false,
+              "hidden": false,
+              "options": [
+                "Growth",
+                "Clarity",
+                "Time"
+              ]
+            }
+          ],
+          "create_page": true,
+          "new_page_label": "Page 3",
+          "acknowledge_shared_field_options": true
+        }
+      },
+      {
+        "short_answer_questions": {
+          "expected_quiz_name": "Exact quiz",
+          "pages": [
+            {
+              "label": "Page 1",
+              "questions": [
+                {
+                  "field_type": "TEXT",
+                  "question": "Your goal?",
+                  "placeholder": "",
+                  "short_label": "",
+                  "query_key": "goal",
+                  "required": false,
+                  "hidden": false
+                }
+              ]
+            },
+            {
+              "label": "Page 2",
+              "questions": [
+                {
+                  "field_type": "PICTURE_CHOICE",
+                  "question": "Choose your direction",
+                  "placeholder": "",
+                  "short_label": "",
+                  "query_key": "chosen_direction",
+                  "required": false,
+                  "hidden": false,
+                  "options": [
+                    {
+                      "label": "Choice 1",
+                      "image_url": "https://example.com/1.png"
+                    },
+                    {
+                      "label": "Choice 2",
+                      "image_url": "https://example.com/2.png"
+                    },
+                    {
+                      "label": "Choice 3",
+                      "image_url": "https://example.com/3.png"
+                    }
+                  ],
+                  "unique_key": "contact.choose_your_direction"
+                }
+              ]
+            },
+            {
+              "label": "Page 3",
+              "questions": [
+                {
+                  "field_type": "CHECKBOX",
+                  "question": "Which outcomes matter?",
+                  "placeholder": "",
+                  "short_label": "",
+                  "query_key": "outcomes",
+                  "required": false,
+                  "hidden": false,
+                  "options": [
+                    "Growth",
+                    "Clarity",
+                    "Time"
+                  ]
+                }
+              ]
+            }
+          ],
+          "target_page": 4,
+          "questions": [
+            {
+              "field_type": "TEXT",
+              "question": "Your next step?",
+              "placeholder": "",
+              "short_label": "",
+              "query_key": "next_step",
+              "required": false,
+              "hidden": false
+            }
+          ],
+          "create_page": true,
+          "new_page_label": "Page 4"
+        }
+      }
+    ]
+  }
+}

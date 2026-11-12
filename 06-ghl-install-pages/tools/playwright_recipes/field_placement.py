@@ -90,7 +90,9 @@ CAPTURED_FIELDS = {
     'Address': {'field_type':'group', 'query_keys':('address', 'country', 'state', 'city', 'postal_code')},
 }
 SELECTABLE_INPUT_TYPES = frozenset(('text', 'email', 'date', 'select', 'RADIO', 'TEXT', 'LARGE_TEXT', 'SINGLE_OPTIONS'))
-NON_CONTACT_TYPES = frozenset(('terms_and_conditions', 'submit', 'h1'))
+NON_CONTACT_TYPES = frozenset(('terms_and_conditions', 'submit', 'h1', 'source'))
+# Rating exposes no local Query Key in its captured native property panel.
+QUERYLESS_TYPES = frozenset(('RATING','captcha','html'))
 CANVAS_ITEMS = '#form-builder-container > .form-field-wrapper'
 SUBMIT_DROP = CANVAS_ITEMS + ':has(button#submit-button)'
 
@@ -203,7 +205,7 @@ def _inventory(frame, *, allow_unknown_queries=False):
         if labels.count() != 1:
             _stop('Native canvas field type is missing or ambiguous')
         field_type = labels.get_attribute('data-field-type')
-        if field_type in NON_CONTACT_TYPES:
+        if field_type in NON_CONTACT_TYPES | QUERYLESS_TYPES:
             continue
         from playwright_recipes.form_widget_families import PROFILES as widget_profiles, _read as read_widget, _key as widget_key
         family={profile['type']:kind for kind,profile in widget_profiles.items()}.get(field_type)

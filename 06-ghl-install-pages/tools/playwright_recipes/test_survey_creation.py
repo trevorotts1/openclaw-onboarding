@@ -44,6 +44,50 @@ def inventory(plan,snapshot,completed):
 
 
 class WholeSurveyCreation(unittest.TestCase):
+    def test_picture_choice_radio_shape_precedes_canonical_api_radio_match(self):
+        row={'types':['RADIO'],'names':[['INPUT','radio','same-owner'] for _ in range(3)]}
+        widget={'picture_choice':deepcopy(row)}
+        api=[{'id':'same-owner','options':['one','two','three']}]
+        self.assertEqual(front._canvas_row_owner(row,widget,api),('widget','picture_choice'))
+        self.assertEqual(front._canvas_row_owner(row,{},api),('radio','same-owner'))
+
+    def test_new_captured_widget_families_validate_as_owned_creation_stages(self):
+        questions={
+            'bot_protection':{'label':'Bot protection','verification_mode':'interactive'},
+            'source':{'value':'Campaign'},
+            'score':{'label':'Score 17cu','placeholder':'Ex: Your Score is 100%',
+                'short_label':'','query_key':'score_17cu','required':False,'hidden':False},
+            'rating':{'label':'Customer score','short_label':'Overall','width':100,'required':False,
+                'lowest_label':'Low','highest_label':'High'},
+            'date':{'label':'Start date','placeholder':'YYYY-MM-DD','short_label':'','query_key':'date_start',
+                'custom_field_name':'Start date','unique_key':'contact.date_start','required':False,'hidden':False,
+                'collection_mode':'date'},
+            'date_time':{'label':'Appointment','placeholder':'YYYY-MM-DD','short_label':'','query_key':'date_&_time_appointment',
+                'custom_field_name':'Appointment','unique_key':'contact.date_appointment','required':False,'hidden':False,
+                'collection_mode':'date_time'},
+            'time':{'label':'Appointment time','placeholder':'HH:MM','short_label':'','query_key':'time_appointment',
+                'custom_field_name':'Appointment time','unique_key':'contact.time_appointment','required':False,'hidden':False,
+                'collection_mode':'time'},
+            'monetary':{'label':'Budget','placeholder':'Enter amount','short_label':'',
+                'query_key':'budget','custom_field_name':'Budget','unique_key':'contact.budget',
+                'required':False,'hidden':False},
+            'text_heading':{'text':'Campaign headline'},
+            'image':{'label':'Campaign image','image_url':'https://cdn.example/image.png','alt_text':'Campaign'},
+            'html':{'label':'Embed','html':'<p>One line</p>\n<section>Another line</section>'},
+            'picture_choice':{'label':'Choose a package','placeholder':'','short_label':'','query_key':'picture_choice_package',
+                'required':False,'hidden':False,'options':[{'label':'Package '+str(i),
+                    'image_url':'https://cdn.example/'+str(i)+'.png','media_button_name':'Approved '+str(i)} for i in (1,2,3)]},
+            'url':{'label':'Campaign URL','placeholder':'Enter a URL','short_label':'Campaign',
+                'query_key':'campaign_url','required':False,'hidden':False,'domain_mode':'allow_all','domains':[]}}
+        for kind,question_value in questions.items():
+            plan={'location_id':'LOC','location_name':'Fixture Account',
+                'start_url':'https://app.convertandflow.com/v2/location/LOC/survey-builder/main',
+                'name':'New authored survey','allow_creation':True,'slide_count':1,
+                'question_batches':[{'kind':kind,'target_slide':1,'questions':[question_value]}]}
+            with self.subTest(kind=kind):
+                validated=front.validate_inputs(plan)
+                self.assertEqual(validated['question_batches'][0]['kind'],kind)
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name)/'run';self.data=inputs();self.api=Api();self.page=MagicMock()

@@ -233,6 +233,16 @@ class CalendarTests(unittest.TestCase):
         self.assertEqual(set(patch['teamMembers'][0]), {'userId','priority','isPrimary','locationConfigurations'})
         self.assertEqual(set(patch['teamMembers'][0]['locationConfigurations'][0]), {'kind','location'})
 
+    def test_single_member_service_calendar_appends_without_losing_existing_location_ids(self):
+        calendar=self.calendar('service_booking')
+        calendar['teamMembers'][0]['locationConfigurations']=[
+            {'kind':'custom','location':'https://old.example/room','meetingId':'old-1'},
+            {'kind':'physical','location':'Office','meetingId':'old-2'}]
+        patch,_=m.permanent_link_patch(calendar,location_id='loc',room=present(),member_id='u1')
+        rows=patch['teamMembers'][0]['locationConfigurations']
+        self.assertEqual(rows[:2],calendar['teamMembers'][0]['locationConfigurations'])
+        self.assertEqual(rows[2],{'kind':'custom','location':present()['url']})
+
     def test_legacy_only_location_is_not_silently_discarded(self):
         calendar = self.calendar('personal')
         member = calendar['teamMembers'][0]

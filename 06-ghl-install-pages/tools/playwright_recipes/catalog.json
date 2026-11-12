@@ -159,8 +159,8 @@
       "name": "21_integrate_meeting_room",
       "action": "options",
       "implemented": true,
-      "proof": "PROFILE",
-      "use": "Exact single-staff native dynamic Meeting Room calendar location, static permanent-link API integration or captured profiles; native generated room/community/course proof remains separate"
+      "proof": "CAPTURED",
+      "use": "Documented multi-location permanent calendar link API; captured native staff Meeting Room location, Community Event Live Room association, course Live Session wizard, and provider OAuth handoff path. Provider authorization and learner functional delivery remain separate acceptance steps"
     },
     "forms.settings": {
       "name": "22_configure_form_settings",

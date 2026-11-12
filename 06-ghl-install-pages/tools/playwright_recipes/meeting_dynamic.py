@@ -53,8 +53,8 @@ def validate_inputs(inputs, *, require_fresh=True):
             or source.query != 'section=calendars'):
         raise Stop('Native dynamic room requires the exact observed calendar-settings route')
     roster = data['expected_staff_locations']
-    if not isinstance(roster, list) or len(roster) != 1:
-        raise Stop('Native dynamic room supports only a complete single-staff/single-location personal calendar inventory')
+    if not isinstance(roster, list) or not roster:
+        raise Stop('Native dynamic room requires a complete nonempty assigned-staff inventory')
     seen = set()
     for member in roster:
         if (not isinstance(member, dict)
@@ -104,6 +104,10 @@ def validate_inputs(inputs, *, require_fresh=True):
             raise Stop('Native room staff inventory contains an unbound or duplicate user identity')
         _text(user['name'],'API user name')
         by_id[user['id']] = user
+    for member in roster:
+        if (member['staff_id'] not in by_id
+                or by_id[member['staff_id']]['name'] != member['staff_name']):
+            raise Stop('Every assigned calendar staff must match the complete same-location API inventory')
     matching = [user for user in users if user['name'].casefold() == target['staff_name'].casefold()]
     if (len(matching) != 1 or matching[0]['id'] != data['staff_id']
             or matching[0]['name'] != target['staff_name']):
@@ -138,10 +142,12 @@ def _at(page, data, path, query=''):
 
 
 def _connected(page, data):
-    """Read the already selected unique inventoried staff; never switch accounts.
+    """Read the selected staff's existing provider connection.
 
-    The name-only connection card is a prerequisite, not authenticated-ID proof.
-    The exact opaque staff ID is verified by the calendar location control."""
+    The Connections staff selector is view state. If another user is selected,
+    switch only to the exact, API-unique target label; this does not connect,
+    disconnect, or authorize a third-party account. The opaque staff ID is
+    independently bound to the calendar location control before a save."""
     path = '/settings/calendars/connections-new'
     page.goto(_origin(data) + '/v2/location/' + data['location_id'] + path,
               wait_until='domcontentloaded', timeout=45000)
@@ -149,8 +155,18 @@ def _connected(page, data):
     tab = _one(page.get_by_role('tab',name='Video conferencing',exact=True),
                'Native Video conferencing tab changed')
     click(tab)
-    current = _one(page.get_by_role('combobox',name=data['connection_staff_label'],exact=True),
-                   'Connections current staff differs from the API-confirmed requested user')
+    selectors=page.get_by_role('combobox')
+    current=_one(selectors,'Connections staff selector is missing or ambiguous')
+    label=current.get_attribute('aria-label')
+    if label!=data['connection_staff_label']:
+        click(current)
+        option=_one(page.get_by_role('option',name=data['connection_staff_label'],exact=True),
+                    'API-confirmed target staff is not a unique native Connections option')
+        if not option.is_enabled() or option.get_attribute('aria-disabled')=='true':
+            raise Stop('API-confirmed target staff cannot be selected in Connections')
+        click(option)
+        wait_until(lambda:current.get_attribute('aria-label')==data['connection_staff_label'],
+                   'Connections staff selector did not switch to the exact API-confirmed target')
     if current.get_attribute('aria-label') != data['connection_staff_label']:
         raise Stop('Native Connections staff identity changed')
     panel = _one(page.get_by_role('tabpanel',name='Video conferencing',exact=True),
@@ -191,15 +207,12 @@ def _editor_identity(page, frame, data):
          'Native calendar ID differs from the requested target')
 
 
-def _location_controls(frame, data):
-    """Only the captured one-staff/one-location personal editor shape."""
-    selects = frame.locator('[id$="' + _SUFFIX + '"]')
-    if selects.count() != 1:
-        raise Stop('Only the captured single-staff/single-location calendar editor is supported')
-    select = _one(frame.locator('[id="' + data['staff_id'] + _SUFFIX + '"]'),
+def _staff_location(frame, member):
+    """Read one captured location control bound to its opaque staff identity."""
+    select = _one(frame.locator('[id="' + member['staff_id'] + _SUFFIX + '"]'),
                   'Native calendar location belongs to another assigned staff ID')
     wrapper = select.locator('..').locator('..').locator('..').locator('..')
-    _one(wrapper.locator('[id="' + data['staff_id'] + '-team-member-delete"]'),
+    _one(wrapper.locator('[id="' + member['staff_id'] + '-team-member-delete"]'),
          'Native assigned-staff wrapper identity changed')
     selected = _one(select.locator('.n-base-selection-input[title]'),
                     'Native selected meeting location is ambiguous')
@@ -220,9 +233,33 @@ def _location_controls(frame, data):
         raise Stop('Meeting Room still exposes an unexpected custom location textbox')
     if wrapper.locator('#add-location-btn').count() != 1:
         raise Stop('Native single-location wrapper inventory changed')
-    return select, {'staff_id':data['staff_id'],
-        'staff_name':data['expected_staff_locations'][0]['staff_name'],
+    return select, {'staff_id':member['staff_id'],
+        'staff_name':member['staff_name'],
         'location_kind':kind,'location_value':value}
+
+
+def _location_controls(frame, data):
+    """Read all assigned staff and preserve each untargeted location unchanged.
+
+    Each staff must retain the captured single-location shape. A new/missing
+    staff or an additional location fails before the requested calendar Save.
+    """
+    roster = data['expected_staff_locations']
+    selects = frame.locator('[id$="' + _SUFFIX + '"]')
+    if selects.count() != len(roster):
+        raise Stop('Complete assigned-staff/single-location calendar inventory changed')
+    target = None
+    for member in roster:
+        control, observed = _staff_location(frame, member)
+        if member['staff_id'] == data['staff_id']:
+            target = control, observed
+        elif observed != member:
+            raise Stop('Untargeted calendar staff location changed; Save not attempted')
+    if selects.count() != len(roster):
+        raise Stop('Assigned-staff location inventory changed while reading')
+    if target is None:
+        raise Stop('Requested staff is absent from the complete calendar inventory')
+    return target
 
 
 def configure(page, inputs):
@@ -232,7 +269,9 @@ def configure(page, inputs):
     frame = _open_calendar(page,data)
     _editor_identity(page,frame,data)
     select,before = _location_controls(frame,data)
-    if before != data['expected_staff_locations'][0]:
+    expected = next(member for member in data['expected_staff_locations']
+                    if member['staff_id'] == data['staff_id'])
+    if before != expected:
         raise Stop('Native assigned-staff location differs from the complete expected inventory')
     desired = {**before,'location_kind':'Meeting Room','location_value':''}
     changed = before != desired

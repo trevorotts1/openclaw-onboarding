@@ -297,6 +297,10 @@ def _put_locations(locations):
             if not isinstance(value['location'], str):
                 raise Stop('Existing calendar location is malformed')
             clean['location'] = value['location']
+        if 'meetingId' in value:
+            if not isinstance(value['meetingId'], str) or not value['meetingId']:
+                raise Stop('Existing calendar meeting-location identity is malformed')
+            clean['meetingId'] = value['meetingId']
         out.append(clean)
     return out
 
@@ -328,8 +332,12 @@ def permanent_link_patch(calendar, *, location_id, room, member_id=None, replace
     """Prepare only the documented location field, preserving other choices.
 
     Existing meeting locations are never silently replaced: append by default;
-    replace_index explicitly identifies an owner-requested replacement. Multi-user
-    class/collective constraints are enforced before the API dispatcher is called.
+    replace_index explicitly identifies an owner-requested replacement. Multiple
+    locations are limited to event calendars and single-member Round Robin/Service
+    calendars, matching HighLevel's documented selector support.
+
+    Official constraints: https://help.gohighlevel.com/support/solutions/articles/155000002706
+    API contract: https://marketplace.gohighlevel.com/docs/ghl/calendars/update-calendar/index.html
     """
     if not isinstance(calendar, dict) or calendar.get('locationId') != location_id or not calendar.get('id'):
         raise Stop('Calendar read-back is not bound to the requested location')
@@ -383,8 +391,11 @@ def permanent_link_patch(calendar, *, location_id, room, member_id=None, replace
         target[replace_index] = new
     else:
         raise Stop('Replacement index must identify an existing meeting location')
-    if not is_event and (len(members) > 1 or calendar.get('calendarType') in ('class_booking', 'collective')) and len(target) > 1:
-        raise Stop('This calendar supports one location per team member; request an explicit replacement')
+    calendar_type = calendar.get('calendarType')
+    multi_location_allowed = (is_event or
+        (calendar_type in ('round_robin', 'service_booking') and len(members) == 1))
+    if len(target) > 1 and not multi_location_allowed:
+        raise Stop('Multiple locations require an event or single-member Round Robin/Service calendar')
     if is_event:
         patch['locationConfigurations'] = _put_locations(target)
     else:

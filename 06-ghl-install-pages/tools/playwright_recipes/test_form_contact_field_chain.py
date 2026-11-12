@@ -56,7 +56,9 @@ class ContactFormChain(unittest.TestCase):
         for owner,name in ((chain,'assert_tenant'),(chain,'click'),(runner,'assert_tenant'),(forms_advanced,'_close_object_drawer')):
             stack.enter_context(patch.object(owner,name))
         stack.enter_context(patch.object(forms_advanced,'_canvas_identity',side_effect=lambda _:deepcopy(self.canvas)))
-        writer=stack.enter_context(patch.object(self.native(),'configure',side_effect=writer or self.receipt))
+        native=self.native()
+        self.verify=stack.enter_context(patch.object(native,'verify_completed',side_effect=lambda page,step,result:native.validate_receipt(result,step)))
+        writer=stack.enter_context(patch.object(native,'configure',side_effect=writer or self.receipt))
         return stack,writer
     def test_large_creation_real_compile_and_journals_replay_aged_inventory_without_reinsert(self):
         stack,writer=self.patches()
@@ -65,12 +67,12 @@ class ContactFormChain(unittest.TestCase):
             with patch.object(time,'time',return_value=time.time()+3700):second=self.build()
         self.assertEqual(first['status'],'NEEDS_VERIFICATION');self.assertTrue(second['native_result']['replayed'])
         self.assertEqual((self.root/'native-field-job.json').read_bytes(),saved)
-        writer.assert_called_once();self.assertEqual(sum(call[0]=='POST' for call in self.api.calls),1)
+        writer.assert_called_once();self.verify.assert_called_once();self.assertEqual(sum(call[0]=='POST' for call in self.api.calls),1)
     def test_exact_existing_dropdown_schema_joins_captured_fresh_insertion_without_any_post(self):
         self.as_dropdown();stack,writer=self.patches()
         with stack:first=self.build();again=self.build()
         self.assertEqual(first['fields'][0]['options'],['Growth','Clarity']);self.assertTrue(again['native_result']['replayed'])
-        self.assertFalse(any(call[0]=='POST' for call in self.api.calls));writer.assert_called_once()
+        self.assertFalse(any(call[0]=='POST' for call in self.api.calls));writer.assert_called_once();self.verify.assert_called_once()
     def test_wrong_form_or_bad_literal_native_binding_prevents_global_schema_write(self):
         for defect in ('name','placeholder','query','family'):
             plan=deepcopy(self.plan)

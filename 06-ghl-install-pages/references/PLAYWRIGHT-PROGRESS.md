@@ -1,35 +1,34 @@
-# Skill 6 current public status
+# Skill 6 source build status : November 12, 2026 UTC
 
-Prepared version: v27.1.108. Source inventory: **23 BUILT /10 PARTIAL /
-0 GENERIC_ONLY** across33 named operations,23/33=69.7% equal-weight closure.
+**v27.1.109: 33 source-built operation contracts, zero source partials. Owner-approved release; merge pending.**
 
-[Batch #3123](https://github.com/trevorotts1/openclaw-onboarding/pull/3123)
-merged [member #3122](https://github.com/trevorotts1/openclaw-onboarding/pull/3122)
-at `f859b9c72eedacf020686598247e51741a4eb625`, delivering v27.1.107.
-Frozen member: `b48d02e0f27cffe7dabd38576258a3c790231647`.
-Full Skill6 subtree equality was verified.
+The original ten partial areas now have executable source for their recorded contracts. The compiler covers **72 concrete actions / 101 bounded jobs**. Source completeness does not establish live installed-script, respondent, member, notification or OAuth acceptance.
 
-This unit adds one captured family,`survey-completion-message-redirect`:
-caller-approved plain Message or credential-free HTTPS Redirect to URL through
-the existing survey executor. Exact editor identity, conditional precedence,
-saved reopen and fresh completed-replay mode/value checks remain bound.
-Replay independently reopens saved state without another write.
+| Closed area | Added source |
+| --- | --- |
+| Forms configuration | Text/Image/HTML, Picture Choice creation and catalog replacement, Rating/Score, Date/Time modes, canonical legacy LARGE_TEXT adoption |
+| Survey creation | Owned question/content/security families including URL, Picture Choice, Text/Image/HTML, Rating/Score and Date/Time modes |
+| Form conditions | Captured widget predicates/targets, date/time comparisons and ranges, consent, multiline/basic formatted messages and HTTPS links |
+| Quiz configuration | Choice routing, approved local picture uploads, fit/presentation, existing Individual category image/video URL and placement |
+| Survey configuration | Captured properties, mixed Jump To/outcome preservation, safe tail appends and rich-message paragraph normalization |
+| Communities | Private/read-only/visibility channel controls, 18 native icons, Sections, metadata reuse and Private/All members course edits |
+| Meetings | Built-in course Live Session, documented multiple calendar locations, provider OAuth handoff and richer existing-event preservation |
+| Split variants | Captured existing activation and allocation paths |
+| Meeting setup | Captured room/security creation and first cohost staging |
+| Meeting updates | Complete cohost reconciliation with saved-empty identity proof |
 
-[Reviewed public source checkpoint](https://github.com/trevorotts1/openclaw-onboarding/commit/a7ee5876b810025d23c81e89ebbdeb765066e1a7)
-preserves this source. Review:CONFIRMED. Retained checks:4newtestsPASS0.068s;
-10priorformregressionsPASS;2compiler/provider testsPASS1.166s;one affected
-freshness replay checkPASS0.032s. No optional checks/reviews repeated here.
+Focused integrated checks passed: final widget/Survey/outcome/compiler/Quiz smoke **45 tests**; Communities **75 tests**; Meetings **38 tests**. These runs overlap other lane checks; no combined total is claimed. Syntax and JSON checks are recorded in the delivery manifest.
 
-There are **54 completed behavior records:53 actually delivered and one in
-this prepared unit**,53/54=98.1% delivery. Compiler coverage:**69actions/97jobs**.
-These measures do not estimate effort or final native acceptance. Broad operation
-counts stay23/10/0. Remaining scoped widgets/media, compound survey predicates,
-conditional rich-message/disqualification and other rule lifecycle remain partial;
-the JSON ledger lists all ten partial contracts and their current public gaps.
+The source package is a local candidate. Verified public baseline remains v27.1.108, batch PR3125. Trevor approved publishing and batch merging this source on November11,2026. This preparation snapshot precedes the actual merge; use the batch/main receipt to verify delivery.
 
-Final native maintained-script execution:**NOT_RUN**;respondent acceptance pending.
-Both modes were manually saved/reopened, separate from final script acceptance.
+Live acceptance remains **NOT_RUN / PENDING**. Important limits:
 
-The companion JSON contains only public current contracts,feature IDs and delivery.
-Earlier verbose snapshots remain in Git history. Use one frozen unit,`batch-train`,
-direct unit auto-merge disabled and the existing coordinator.
+- Provider OAuth stops at `PENDING_USER_AUTHORIZATION` until the user signs in and consents.
+- The captured course wizard offers its built-in Live Session, with no personal-room selector.
+- Mixed Survey Jump To cards remain immutable at their exact ordinal; known cards may be edited in place or appended after an unchanged complete prefix.
+- Rich-message recreation supports captured paragraphs/basic marks and new-window ASCII HTTPS links; other markup is protected.
+- Quiz result media targets an existing Individual category section. Local uploads require an existing quiz and approved PNG/JPEG bytes; mixed/new-quiz batches require resolved catalog URLs.
+- Picture Choice per-answer Jump To and a persisted multiple-selection switch are absent from the captured Options UI. Image dimensions/styles outside captured defaults and community Buy Now/time/level modes are outside these recorded contracts.
+- Date/Time mode and several content adapters have guarded source reuse; their native maintained-script acceptance remains pending. Saved split49/51, first cohost/clear-all and notification behavior remain unverified.
+
+All six temporary build tabs were closed. The final connected build-tab list was empty. See `PLAYWRIGHT-BUILD-STATUS.json` for exact operation contracts, source entries, limits and acceptance state.

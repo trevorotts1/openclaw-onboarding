@@ -60,7 +60,8 @@ class NativePageTransport(unittest.TestCase):
                     self.assertEqual(state['current_step'],step['id'])
                     self.assertEqual(state['results'],[])
                     return native_receipt('dropdown',job,module)
-                with patch.object(leaf,'configure',side_effect=write) as writer:
+                with patch.object(leaf,'configure',side_effect=write) as writer, \
+                     patch.object(leaf,'verify_completed',side_effect=lambda page,step,result:leaf.validate_receipt(result,step)) as verify:
                     first=host.run_recipe(operation,data,observed(lane,data),root,input_dir='.',
                         page=page,executors={'public_api':api,lane:generic})
                     self.assertEqual(first['status'],'NEEDS_VERIFICATION',first)
@@ -74,8 +75,17 @@ class NativePageTransport(unittest.TestCase):
                     self.assertTrue(second['result']['replayed'])
                     self.assertEqual(path.read_bytes(),before)
                     writer.assert_called_once()
+                    verify.assert_called_once_with(page,job['steps'][0],native_receipt('dropdown',job,module))
                 self.assertGreater(len(page.lookups),3)
                 self.assertFalse(Path(root,'provider-state.json').exists())
+                # A changed live owner must refuse replay rather than write again.
+                with patch.object(leaf,'configure') as writer, \
+                     patch.object(leaf,'verify_completed',side_effect=runner.Stop('owner drift')) as verify:
+                    drift=host.run_recipe(operation,data,observed(lane,data),root,input_dir='.',
+                        page=page,executors={'public_api':api,lane:generic})
+                self.assertEqual(drift['status'],'NEEDS_BROWSER_RECOVERY',drift)
+                verify.assert_called_once();writer.assert_not_called()
+                self.assertEqual(path.read_bytes(),before)
                 # A completed native journal cannot authorize a different field.
                 state=json.loads(path.read_text());state['results'][0]['result']['fields'][0]['id']='OTHER_API_ID'
                 path.write_text(json.dumps(state))

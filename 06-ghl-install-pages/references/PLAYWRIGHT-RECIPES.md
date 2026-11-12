@@ -80,7 +80,7 @@ There is one maintained executor, with multiple named recipes. Names below are
 | `18_create_course` / `courses.create` | Course, outline, lesson content and quizzes via Courses v3 | Concrete API provider; location/version/scope capability and independent read-back required |
 | `19_configure_course_ui` / `courses.configure_ui` | Genuinely UI-only course settings | Recorded profile required |
 | `20_setup_meeting_room` / `meetings.setup` | Personal room and explicit security choices | Concrete create/reuse with independent reader; native fixture created and reopened |
-| `21_integrate_meeting_room` / `meetings.integrate` | Explicit permanent calendar room link | Registered API provider with persisted read-back; dynamic appointment rooms and other associations remain uncaptured |
+| `21_integrate_meeting_room` / `meetings.integrate` | Permanent or multi-location calendar room links; native per-staff Meeting Room location; course Live Session; provider OAuth handoff; existing Community Event Live Room association | Explicit API/native modes with location, staff, and object identity guards. OAuth returns pending user authorization; native saved readback and learner/provider behavior remain separate acceptance |
 | `22_configure_form_settings` / `forms.settings` | Seven ordinary switches and native form scheduling | Captured time-zone/open/close/outside-window save/reopen; actual visitor behavior pending |
 | `23_update_course` / `courses.update` | Existing course content and styling | Concrete API update and read-back; live client proof pending |
 | `24_create_lesson_quiz` / `courses.lesson_quiz.create` | Course lesson quiz and questions | Courses API, separate from marketing quiz; live attempt proof pending |
@@ -381,11 +381,26 @@ claimed. See `form-tracking.json`.
 ## Native integration continuation
 
 `meetings.integrate` with `integration_mode:dynamic_calendar_room` uses the native
-single-staff calendar location selector and a complete, fresh same-location API
-user inventory. It checks the exact staff ID and connected provider, saves once,
-and independently reopens the calendar. A saved Meeting Room location does not
-prove appointment creation or unique room generation. Static permanent links
-remain their separate API mode. See `meeting-dynamic-calendar.md`.
+per-staff calendar location selector and a complete, fresh same-location API
+user inventory. It selects only the API-unique staff target, checks its existing
+Meeting Room connection, saves once, and independently reopens the calendar. A
+saved Meeting Room location does not prove appointment creation or unique room
+generation. `permanent_calendar_link` uses the documented calendar API contract
+and can preserve multiple locations only for Event calendars or a single-member
+Round Robin/Service calendar. See `meeting-dynamic-calendar.md`.
+
+`meetings.integrate` also supports `course_live_session`, which creates a native
+Live Session under an existing course with learner notification controls off;
+course/personal-room association is unavailable in the captured wizard (HighLevel
+documents [Personal Meeting Links under Communities settings](https://help.gohighlevel.com/support/solutions/articles/155000008012-communities-live-session-enhancements-personal-meeting-links-recordings-hub-noise-cancellation)). The
+`provider_oauth_handoff` mode selects the exact API-unique staff and launches the
+documented Zoom, Microsoft Teams, or Google Calendar authorization popup. It
+returns `PENDING_USER_AUTHORIZATION` and never enters credentials or submits
+consent. `community_event_room` associates a native Live Room with an existing
+free Community Event and preserves its recurrence, reminder, visibility,
+audience label and thumbnail digest. These source paths do not establish native
+functional acceptance or communication delivery. See `meeting-dynamic-calendar.md`
+and `community-event-meeting.md`.
 
 `courses.configure_ui.background_image` accepts an absolute approved PNG, its
 SHA256 and the exact current preview URL. It copies bytes privately, uses the
@@ -413,8 +428,8 @@ empty/loading evidence is captured. See `community-private-course.md`.
 ## Current reviewed control build checkpoint
 
 Read `PLAYWRIGHT-BUILD-STATUS.json` `current_feature_progress` before interpreting
-the older 21/11/1 operation audit. Broad partial operations contain completed
-controls; their frozen classifications are not a count of unfinished Python files.
+historical operation audits. The current source count is 33 BUILT / 0 PARTIAL;
+recorded-contract source closure remains separate from native/client acceptance.
 The current delta adds mixed predicate connectors, condition-card stack growth
 and contraction/clear, inactive background transparency, explicit Custom Block
 deletion, and the maintained
@@ -448,7 +463,7 @@ before one Save and independent reopen; see
 `examples/course-custom-block-delete.md`. This does not add arbitrary block or
 image removal and does not activate or publish a template.
 
-Explicit outcome ordering: `forms.conditions` accepts `recreate_order` with a complete `expected_rules` inventory and `rules` equal to that unchanged ordinal permutation. Non-message outcomes only; messages fail closed to preserve markup. The writer retains the common prefix, recreates the changed suffix using captured Delete/author controls, saves once and independently reopens. No native drag claim.
+Explicit outcome ordering: `forms.conditions` accepts `recreate_order` with a complete `expected_rules` inventory and `rules` equal to that unchanged ordinal permutation. Captured paragraphs/basic marks and new-window ASCII HTTPS-link messages are supported with exact markup preservation; other message shapes fail closed before recreation. The writer retains the common prefix, recreates the changed suffix using captured Delete/author controls, saves once and independently reopens. No native drag claim.
 # Captured survey Multi Line properties
 
 `surveys.configure` accepts `configuration.multiline_questions` with complete

@@ -100,6 +100,7 @@ class CoHostPreflightTests(unittest.TestCase):
             def count(self): return 1
             def is_visible(self): return True
             def is_enabled(self): return True
+            def get_attribute(self,name):return 'personal-room-co-hosts-1' if name=='aria-controls' else None
         class Input(Visible):
             def get_attribute(self, name):
                 return 'Search users' if name == 'placeholder' else None
@@ -126,7 +127,7 @@ class CoHostPreflightTests(unittest.TestCase):
                 return wrapper
         popup = Popup()
         trigger = Visible()
-        class Editor:
+        class Editor(Visible):
             def locator(self, selector):
                 if selector == '#create-room-members-card': return self
                 if selector == '.pr-members__add-trigger--link': return trigger
@@ -263,9 +264,13 @@ class CoHostWriterTests(unittest.TestCase):
             mutate(changed)
             self.assertNotEqual(original,cohosts.write_configuration_hash(changed))
 
-    def exercise(self, *, persisted_override=None, candidate_absent=False, drift=False, no_change=False):
+    def exercise(self, *, persisted_override=None, candidate_absent=False, drift=False, no_change=False, empty_before=False, clear_all=False):
         from contextlib import ExitStack
         data = self.writer_inputs()
+        if empty_before:
+            data['cohosts']['expected'] = []
+        if clear_all:
+            data['cohosts']['desired'] = []
         if no_change:
             data['cohosts']['desired'] = deepcopy(data['cohosts']['expected'])
         events = []
@@ -324,7 +329,7 @@ class CoHostWriterTests(unittest.TestCase):
             for name,kwargs in (
                 ('assert_tenant',{}), ('_open_existing',{'side_effect':opened}),
                 ('_editor',{'return_value':editor}),
-                ('read_roster',{'side_effect':lambda _:deepcopy(state['staged'])}),
+                ('read_roster',{'side_effect':lambda _,**kwargs:deepcopy(state['staged'])}),
                 ('_open_directory',{'return_value':(dialog,search)}),
                 ('_find_candidate',{'side_effect':find}),
                 ('_remove_control',{'return_value':remove}),
@@ -375,6 +380,16 @@ class CoHostWriterTests(unittest.TestCase):
 
 
 class CoHostEmptyStateTests(unittest.TestCase):
+    def test_nonempty_snapshot_cannot_race_into_an_unproved_empty_roster(self):
+        from unittest.mock import MagicMock
+        editor,card,rows=(MagicMock() for _ in range(3))
+        editor.locator.return_value=card
+        card.count.return_value=1;card.is_visible.return_value=True
+        card.locator.return_value=rows;rows.count.side_effect=[1,0]
+        with self.assertRaisesRegex(meetings.Stop,'changed during'):
+            cohosts.read_roster(editor)
+        rows.nth.assert_not_called()
+
     def test_zero_rows_are_unknown_not_an_authoritative_empty_roster(self):
         class Card:
             def count(self): return 1
@@ -389,10 +404,107 @@ class CoHostEmptyStateTests(unittest.TestCase):
         with self.assertRaisesRegex(meetings.Stop, 'loaded-empty'):
             cohosts.read_roster(Editor())
 
-    def test_empty_before_or_clear_all_write_stops_before_browser(self):
+    def test_explicit_empty_plans_bind_first_assignment_clear_all_and_acknowledgment(self):
         data = CoHostWriterTests().writer_inputs()
+        digests = set()
         for key in ('expected', 'desired'):
             value = deepcopy(data)
             value['cohosts'][key] = []
-            with self.subTest(key=key), self.assertRaisesRegex(meetings.Stop, 'nonempty'):
-                cohosts.configure(object(),value)
+            with self.subTest(key=key):
+                self.assertEqual(cohosts.validate_write_inputs(value)['cohosts'][key], [])
+                digests.add(cohosts.write_configuration_hash(value))
+                value['cohosts']['access_change_acknowledged'] = False
+                with self.assertRaisesRegex(meetings.Stop, 'acknowledgment'):
+                    cohosts.validate_write_inputs(value)
+        self.assertEqual(len(digests), 2)
+
+    def test_captured_first_assignment_and_clear_all_save_once_and_reopen(self):
+        for option in ('empty_before','clear_all'):
+            result,events,state,data=CoHostWriterTests().exercise(**{option:True})
+            with self.subTest(option=option):
+                self.assertIsInstance(result,dict)
+                self.assertEqual(result['status'],'COHOSTS_SAVED_AND_REOPENED')
+                self.assertEqual(state['persisted'],data['cohosts']['desired'])
+                self.assertEqual(events.count(('save',)),1)
+                self.assertEqual(result['cohost_count'],len(data['cohosts']['desired']))
+
+    def empty_surface(self, *, busy=False, disabled=False, notice=False, counts=None, wrapper=False):
+        from unittest.mock import MagicMock
+        page,editor,card,body,add,rows,container,heading,unsafe=(MagicMock() for _ in range(9))
+        page.url='https://app.convertandflow.com/v2/location/loc/meetings/personal-room/edit'
+        editor.get_attribute.return_value=None
+        editor.locator.side_effect=lambda selector:card if selector=='#create-room-members-card' else unsafe
+        unsafe.count.return_value=int(notice)
+        card.count.return_value=body.count.return_value=heading.count.return_value=1
+        card.is_visible.return_value=body.is_visible.return_value=heading.is_visible.return_value=True
+        body.locator.return_value.count.return_value=1
+        card.get_attribute.side_effect=lambda key:'true' if key=='aria-busy' and busy else None
+        add.count.return_value=1;add.is_visible.return_value=True;add.is_enabled.return_value=not disabled
+        add.inner_text.return_value=' Add'
+        attributes={'type':'button','aria-haspopup':'dialog','aria-expanded':'false','aria-controls':'personal-room-co-hosts-2'}
+        add.get_attribute.side_effect=attributes.get
+        rows.count.side_effect=counts or [0]*10
+        container.count.return_value=int(wrapper)
+        card.locator.side_effect=lambda selector:{'.pr-members__rows > div':rows,'.pr-members__rows':container,
+            '.pr-members__card':body,'.pr-members__add-trigger--link':add}[selector]
+        card.get_by_role.return_value=heading
+        data=CoHostWriterTests().writer_inputs();data['cohosts']['expected']=[]
+        return page,editor,data
+
+    def test_complete_captured_loaded_empty_card_after_owner_and_network_read_is_positive(self):
+        page,editor,data=self.empty_surface()
+        with patch.object(cohosts,'_editor',return_value=editor) as identity:
+            self.assertEqual(cohosts.read_roster(editor,page=page,data=data),[])
+        page.wait_for_load_state.assert_called_once_with('networkidle',timeout=45000)
+        identity.assert_called_once_with(page,data)
+
+    def test_stale_busy_error_disabled_unknown_wrapper_and_unstable_zero_never_authorize_empty(self):
+        for reason in ('busy','disabled','notice','stale','unstable','owner','wrapper'):
+            opts={reason:True} if reason in ('busy','disabled','notice','wrapper') else {}
+            if reason=='unstable':opts['counts']=[0,0,1]
+            page,editor,data=self.empty_surface(**opts)
+            if reason=='stale':page.wait_for_load_state.side_effect=TimeoutError('still loading')
+            effect=meetings.Stop('Wrong exact room owner') if reason=='owner' else None
+            with self.subTest(reason=reason),patch.object(cohosts,'_editor',return_value=editor,side_effect=effect),self.assertRaises(meetings.Stop):
+                cohosts.read_roster(editor,page=page,data=data)
+
+
+class CapturedEmptyRosterReplay(unittest.TestCase):
+    def test_current_empty_replay_reads_native_profile_and_stops_on_later_roster_drift(self):
+        from unittest.mock import MagicMock
+        done,_,_,data=CoHostWriterTests().exercise(clear_all=True)
+        page,editor=MagicMock(),MagicMock()
+        detail='https://app.convertandflow.com/v2/location/loc/meetings/personal-room'
+        with patch.object(cohosts,'assert_tenant'),patch.object(cohosts,'_open_existing',return_value=(editor,detail)),\
+             patch.object(cohosts,'read_roster',return_value=[]) as read,patch.object(cohosts,'click') as write:
+            self.assertEqual(cohosts.verify_completed(page,data,done),done)
+            read.assert_called_once_with(editor,page=page,data=data)
+            read.return_value=deepcopy(data['cohosts']['expected'])
+            with self.assertRaisesRegex(meetings.Stop,'roster changed'):cohosts.verify_completed(page,data,done)
+            write.assert_not_called()
+
+    def test_saved_zero_state_without_complete_card_never_authorizes_first_assignment(self):
+        from unittest.mock import MagicMock
+        page,editor,data=CoHostEmptyStateTests().empty_surface(wrapper=True)
+        with patch.object(cohosts,'_editor',return_value=editor),self.assertRaises(meetings.Stop):
+            cohosts.read_roster(editor,page=page,data=data)
+        page.get_by_role.assert_not_called()
+
+
+class CapturedPickerOwnerTests(unittest.TestCase):
+    def test_picker_title_binds_actual_add_control_instance_instead_of_historical_suffix(self):
+        from unittest.mock import MagicMock
+        page,editor,card,trigger,dialog,wrapper,search=(MagicMock() for _ in range(7))
+        editor.locator.return_value=card;card.locator.return_value=trigger
+        trigger.get_attribute.return_value='personal-room-co-hosts-2'
+        page.get_by_role.return_value=dialog;dialog.filter.return_value=dialog
+        dialog.get_attribute.return_value='personal-room-co-hosts-2-title'
+        dialog.locator.return_value=wrapper;wrapper.get_by_role.return_value=search
+        search.get_attribute.return_value='Search users'
+        for node in (card,trigger,dialog,wrapper,search,dialog.get_by_text.return_value):
+            node.count.return_value=1;node.is_visible.return_value=True
+        with patch.object(cohosts,'click') as click:
+            self.assertEqual(cohosts._open_directory(page,editor),(dialog,search))
+            click.assert_called_once_with(trigger)
+            dialog.get_attribute.return_value='personal-room-co-hosts-1-title'
+            with self.assertRaisesRegex(meetings.Stop,'dialog identity'):cohosts._open_directory(page,editor)
