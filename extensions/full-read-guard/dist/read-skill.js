@@ -164,7 +164,7 @@ export class ReadSkillService {
         if (only)
             banner.push(`Single file ${only[0].rel} of ${folder}, whole.`);
         else
-            banner.push(`Contents: the skill ${folder}${bundle.depSkills.length ? ', then its direct dependencies: ' + bundle.depSkills.join(', ') : ' (no direct dependencies listed)'}${bundle.files.some((f) => f.role === 'sop') ? ', then the SOP files it names' : ''}. These are the required upfront documents (root-level docs and named SOPs).`);
+            banner.push(`Contents: the skill ${folder}${bundle.depSkills.length ? ', then its direct dependencies: ' + bundle.depSkills.join(', ') : ' (no direct dependencies listed)'}${bundle.files.some((f) => f.role === 'sop') ? ', then the SOP files it names' : ''}. These are the required upfront documents (the skill's root-level docs, each dependency's SKILL.md, and named SOPs). A dependency's other documents are read whole when you open them.`);
         if (part === 1 && !only) {
             banner.push(this.lookupNote(folder));
             const ro = this.readOnOpenNote(folder);

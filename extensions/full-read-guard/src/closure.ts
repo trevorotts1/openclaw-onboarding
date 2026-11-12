@@ -112,7 +112,8 @@ export class Closure {
   requiredFiles(folder: string): { files: FileRef[]; deps: Deps } {
     const deps = this.dependencies(folder);
     const files: FileRef[] = [...this.instructionFiles(folder, true)];
-    for (const d of deps.skills) files.push(...this.instructionFiles(d, true));
+    // A direct dependency contributes only its SKILL.md upfront; its other root docs are read whole when opened.
+    for (const d of deps.skills) files.push(...this.instructionFiles(d, true).filter((f) => f.rel === 'SKILL.md'));
     const sopsRoot = this.index.soPsDir();
     for (const abs of deps.sopFiles) files.push({ skill: SOPS_NAME, rel: path.relative(sopsRoot, abs).split(path.sep).join('/'), abs });
     return { files, deps };

@@ -112,6 +112,13 @@ test('every real skill resolves its dependencies with none missing', () => {
   }
 });
 
+test('dependencies add only SKILL.md upfront', () => {
+  for (const info of guard.index.list()) {
+    const { files, deps } = guard.closure.requiredFiles(info.folder);
+    for (const f of files) if (deps.skills.includes(f.skill)) assert.equal(f.rel, 'SKILL.md', `${info.folder} -> ${f.skill}/${f.rel}`);
+  }
+});
+
 test('upfront set is root-level docs only: no step-folder file and no setup/archive doc is required upfront', () => {
   const cap = { 'SKILL.md': 1, 'INSTRUCTIONS.md': 1 };
   for (const info of guard.index.list()) {

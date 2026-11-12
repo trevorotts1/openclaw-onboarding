@@ -18,17 +18,17 @@ const expectedStream = (files, root) => files.map((f) => {
   return `===== FILE ${rel} (${f.bytes} bytes, sha256 ${f.sha256}) =====\n` + text + `\n===== END ${rel} =====\n`;
 }).join('');
 
-test('required upfront set: root-level docs and named SOPs only; step folders, setup docs and lookup files are not delivered', () => {
+test('required upfront set: the skill root-level docs, each dependency SKILL.md only, and named SOPs; step folders, setup docs and lookup files are not delivered', () => {
   const box = makeBox();
   try {
     const g = box.guard();
     const { files } = collect(g, '10-alpha', 's-order');
     assert.deepEqual(files.map((f) => f.path), [
       '10-alpha/SKILL.md', '10-alpha/INSTRUCTIONS.md',
-      '20-beta/SKILL.md', '20-beta/notes.md',
+      '20-beta/SKILL.md',
       'universal-sops/sop/SOP-1.md', 'universal-sops/sop/SOP-2.md',
     ]);
-    assert.deepEqual(files.map((f) => f.role), ['skill', 'skill', 'dependency', 'dependency', 'sop', 'sop']);
+    assert.deepEqual(files.map((f) => f.role), ['skill', 'skill', 'dependency', 'sop', 'sop']);
   } finally { box.cleanup(); }
 });
 

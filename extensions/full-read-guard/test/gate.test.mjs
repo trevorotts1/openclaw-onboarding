@@ -79,7 +79,7 @@ test('gate: running a skill script needs the skill AND its direct dependencies r
     }
     const still = run();
     assert.ok(still.block);
-    for (const rel of ['20-beta/SKILL.md', '20-beta/notes.md', 'universal-sops/sop/SOP-1.md', 'universal-sops/sop/SOP-2.md']) {
+    for (const rel of ['20-beta/SKILL.md', 'universal-sops/sop/SOP-1.md', 'universal-sops/sop/SOP-2.md']) {
       g.afterToolCall({ toolName: 'read', params: { path: box.p(rel) }, result: { content: [{ type: 'text', text: 'ok' }] } }, ctx(key));
     }
     assert.equal(run(), undefined);
@@ -173,7 +173,7 @@ test('read-on-open: step files are not required upfront but are protected when o
     const g = box.guard();
     const key = 'oo-1';
     const run = () => g.beforeToolCall({ toolName: 'exec', params: { command: `bash '${box.p('10-alpha/scripts/run.sh')}'` } }, ctx(key));
-    for (const rel of ['10-alpha/SKILL.md', '10-alpha/INSTRUCTIONS.md', '20-beta/SKILL.md', '20-beta/notes.md', 'universal-sops/sop/SOP-1.md', 'universal-sops/sop/SOP-2.md']) {
+    for (const rel of ['10-alpha/SKILL.md', '10-alpha/INSTRUCTIONS.md', '20-beta/SKILL.md', 'universal-sops/sop/SOP-1.md', 'universal-sops/sop/SOP-2.md']) {
       g.afterToolCall({ toolName: 'read', params: { path: box.p(rel) }, result: { content: [{ type: 'text', text: 'ok' }] } }, ctx(key));
     }
     assert.equal(run(), undefined); // procedure.md and INSTALL.md were never read, yet the gate is satisfied
@@ -189,5 +189,18 @@ test('read-on-open: step files are not required upfront but are protected when o
     assert.equal(g.classifier.classifyRel('10-alpha', 'INSTALL.md').cls, 'instruction');
     assert.equal(g.classifier.classifyRel('10-alpha', 'SKILL.md').upfront, true);
     assert.equal(g.classifier.classifyRel('10-alpha', 'notes.md').upfront, true);
+  } finally { box.cleanup(); }
+});
+
+test('a direct dependency needs only its SKILL.md upfront; its other root docs are read-on-open but still protected', () => {
+  const box = makeBox();
+  try {
+    const g = box.guard();
+    const req = g.closure.requiredFiles('10-alpha').files.map((f) => `${f.skill}/${f.rel}`);
+    assert.ok(req.includes('20-beta/SKILL.md'));
+    assert.ok(!req.includes('20-beta/notes.md'));
+    assert.ok(req.includes('10-alpha/INSTRUCTIONS.md')); // the skill in use keeps its full root set
+    assert.equal(verdict(g, 'exec', { command: `grep -n beta '${box.p('20-beta/notes.md')}'` }, ctx('dep-1')), 'block');
+    assert.equal(verdict(g, 'read', { path: box.p('20-beta/notes.md'), limit: 2 }, ctx('dep-1')), 'rewrite');
   } finally { box.cleanup(); }
 });

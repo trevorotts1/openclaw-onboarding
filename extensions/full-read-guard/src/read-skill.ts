@@ -152,7 +152,7 @@ export class ReadSkillService {
     const banner: string[] = [];
     banner.push(`read_skill ${folder}: part ${part} of ${total}. This is the WHOLE text, nothing is summarized or cut.`);
     if (only) banner.push(`Single file ${only[0].rel} of ${folder}, whole.`);
-    else banner.push(`Contents: the skill ${folder}${bundle.depSkills.length ? ', then its direct dependencies: ' + bundle.depSkills.join(', ') : ' (no direct dependencies listed)'}${bundle.files.some((f) => f.role === 'sop') ? ', then the SOP files it names' : ''}. These are the required upfront documents (root-level docs and named SOPs).`);
+    else banner.push(`Contents: the skill ${folder}${bundle.depSkills.length ? ', then its direct dependencies: ' + bundle.depSkills.join(', ') : ' (no direct dependencies listed)'}${bundle.files.some((f) => f.role === 'sop') ? ', then the SOP files it names' : ''}. These are the required upfront documents (the skill's root-level docs, each dependency's SKILL.md, and named SOPs). A dependency's other documents are read whole when you open them.`);
     if (part === 1 && !only) { banner.push(this.lookupNote(folder)); const ro = this.readOnOpenNote(folder); if (ro) banner.push(ro); }
     if (bundle.missingDeps.length) banner.push(`Warning: dependency entries with no matching skill or SOP on this box: ${bundle.missingDeps.join(', ')}`);
     banner.push('Files in this part: ' + inPart.map((f) => `${f.ref.skill}/${f.ref.rel}`).join(', '));
