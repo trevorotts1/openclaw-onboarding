@@ -34,12 +34,17 @@ Proves, against a local fake studio (stdlib `http.server`, no network):
      screen, and a reordered option list asks the client with the second
      sentence instead of silently answering a different choice; a bare number
      from an old page still passes straight through
+ 12  a claimed order's uploaded files are fetched into
+     `<run>/intake/uploads/<id>.<ext>` before the replay, hashed into
+     `control/studio-order.json`; a file the studio does not have is a warning
+     line on the wake output and the order still runs
 
 Run: python3 checks/test_poll.py
 Exit: 0 all pass · 1 at least one failed
 """
 import http.server
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -68,7 +73,8 @@ ENROLL_KEY = "enroll-" + "b" * 40
 MACHINE_KEY = "machine-" + "c" * 40
 LINK_URL = "https://studio.example/#k=" + "d" * 32
 ENROLL_SECRET = "fleet-enrollment-secret-fixture"
-STUDIO = {"line": None, "order": {}, "seen": [], "needs_you_409": False}
+STUDIO = {"line": None, "order": {}, "seen": [], "needs_you_409": False,
+          "files": {}}
 
 
 def _mode(path):
@@ -82,6 +88,13 @@ class _FakeStudio(http.server.BaseHTTPRequestHandler):
         raw = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _send_file(self, status, raw, content_type):
+        self.send_response(status)
+        self.send_header("content-type", content_type)
         self.send_header("content-length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
@@ -100,7 +113,8 @@ class _FakeStudio(http.server.BaseHTTPRequestHandler):
         except ValueError:
             body = {}
         rec = {"method": self.command, "path": path, "body": body,
-               "key": self.headers.get("x-ds-key") or ""}
+               "key": self.headers.get("x-ds-key") or "",
+               "query": urllib.parse.urlparse(self.path).query}
         STUDIO["seen"].append(rec)
         if path != "/api/studio/enroll" and not rec["key"]:
             return self._send(401, {"ok": False, "code": "AF-DS-AUTH",
@@ -116,6 +130,15 @@ class _FakeStudio(http.server.BaseHTTPRequestHandler):
         if path == "/api/studio/checkin":
             return self._send(200, {"ok": True, "checked_in_at": 1,
                                     "line": STUDIO["line"]})
+        if path.startswith("/api/studio/uploads/") and path.endswith("/file"):
+            upload_id = path[len("/api/studio/uploads/"):-len("/file")]
+            found = STUDIO["files"].get(upload_id)
+            if found is None:
+                return self._send(404, {"ok": False,
+                                        "code": "AF-DS-UP-NOT-ARRIVED",
+                                        "message": "That file has not arrived."})
+            raw, content_type = found
+            return self._send_file(200, raw, content_type)
         if path.endswith("/state") and "/orders/" in path:
             if body.get("event") == "needs_you" and STUDIO["needs_you_409"]:
                 # The order never left `waiting` (its claim post was refused),
@@ -163,6 +186,7 @@ class PollBridgeTests(unittest.TestCase):
         STUDIO["order"] = {}
         STUDIO["seen"] = []
         STUDIO["needs_you_409"] = False
+        STUDIO["files"] = {}
 
     def _stub_skill_root(self):
         """A skill root whose factory.py records its argv and answers the card.
@@ -423,6 +447,56 @@ class PollBridgeTests(unittest.TestCase):
         done = self.poll(DS_KEY=MACHINE_KEY)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertEqual(done.stdout, "")                # execution-accepted: silent
+
+    # -- 12 the order's uploaded files land in the run ------------------------
+
+    def test_an_uploaded_file_lands_in_the_run_folder(self):
+        upload_id = "u_" + "e" * 24
+        raw = b"\xff\xd8\xff\xe0" + b"photo-bytes-sentinel"
+        STUDIO["files"] = {upload_id: (raw, "image/jpeg")}
+        STUDIO["line"] = 'DRAMA_ORDER r_up01 "Spring Sale"'
+        STUDIO["order"] = {"order_id": "r_up01", "client_id": CLIENT,
+                           "title": "Spring Sale", "replies": ["yes"],
+                           "upload_ids": [upload_id]}
+        p = self.poll(DS_KEY=MACHINE_KEY)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        run_dir = self.runs / "r_up01"
+        landed = run_dir / "intake" / "uploads" / (upload_id + ".jpg")
+        self.assertEqual(landed.read_bytes(), raw)
+        record = json.loads((run_dir / "control" / "studio-order.json")
+                            .read_text(encoding="utf-8"))
+        self.assertEqual(record["uploads"], [{
+            "upload_id": upload_id, "path": str(landed), "bytes": len(raw),
+            "sha256": hashlib.sha256(raw).hexdigest()}])
+        # the key rode in the header, never the query string
+        fetches = [r for r in STUDIO["seen"]
+                   if r["path"].endswith("/uploads/%s/file" % upload_id)]
+        self.assertEqual(len(fetches), 1, fetches)
+        self.assertEqual((fetches[0]["method"], fetches[0]["key"],
+                          fetches[0]["query"]), ("GET", MACHINE_KEY, ""))
+        self.assertNotIn(MACHINE_KEY, p.stdout)
+        self.assertNotIn("upload_warnings",
+                         json.loads(p.stdout.strip()))
+
+    def test_a_missing_upload_is_a_warning_never_a_refusal(self):
+        upload_id = "u_" + "f" * 24
+        STUDIO["line"] = 'DRAMA_ORDER r_up02 "Spring Sale"'
+        STUDIO["order"] = {"order_id": "r_up02", "client_id": CLIENT,
+                           "title": "Spring Sale", "replies": ["yes"],
+                           "upload_ids": [upload_id]}
+        p = self.poll(DS_KEY=MACHINE_KEY)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        run_dir = self.runs / "r_up02"
+        # the order still ran: a wake line, the replay, the run folder
+        self.assertTrue((run_dir / "control" / "studio-order.json").is_file())
+        self.assertFalse((run_dir / "intake" / "uploads"
+                          / (upload_id + ".jpg")).exists())
+        out = json.loads(p.stdout.strip())
+        self.assertEqual(len(out["upload_warnings"]), 1, out)
+        self.assertIn("has not reached the studio", out["upload_warnings"][0])
+        stored = json.loads((run_dir / "control" / "studio-order.json")
+                            .read_text(encoding="utf-8"))
+        self.assertNotIn("uploads", stored)
 
     # -- 8 a count short of the card asks the client, never cancels -----------
 
