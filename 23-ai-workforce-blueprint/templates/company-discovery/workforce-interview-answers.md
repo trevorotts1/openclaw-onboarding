@@ -1,14 +1,9 @@
 # Workforce Interview Answers
 
-> This file is auto-created by build-workforce.py during the Skill 23 interview.
-> Every answered question is saved here immediately so progress is never lost.
-
-## Business Info
-- **Business Name:**
-- **Industry:**
-- **What the business does:**
-- **Tools used:**
-- **Biggest challenge:**
-
-## Department Interviews
-<!-- Each department section is added as the interview progresses -->
+> One block per accepted answer. Written by the interview gate and the Command Center. Do not edit by hand.
+> Block shape:
+> **QID:** question_id
+> **Q:** the question as asked
+> **A:** the owner's answer
+> **Logged:** date and time
+> ---
