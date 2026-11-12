@@ -137,9 +137,12 @@ def fixture_request(plan, run_id=None, shot_id=None):
         assert request["request"]["input"]["audio_url"].startswith("https://")
         path = Path(request["save_dir"]) / "isolated.wav"
         path.write_bytes(("synthetic-isolated-" + sid).encode())
+        # S75-056: the one separation job saves the instrumental beside the stem.
+        instrumental = Path(request["save_dir"]) / "instrumental.wav"
+        instrumental.write_bytes(("synthetic-instrumental-" + sid).encode())
         return {"tool": "kie_dispatch", "outcome": "ok", "run_id": run_id,
                 "evidence": {"generated": True, "task_id": "separation-" + sid,
-                             "saved_paths": [str(path)],
+                             "saved_paths": [str(path), str(instrumental)],
                              "isolated_stem": {"path": str(path), "speaker_id": row["speaker"],
                                                "kind": "speech", "isolated": True}}}
     def cut_runner(argv, *args, **kwargs):
