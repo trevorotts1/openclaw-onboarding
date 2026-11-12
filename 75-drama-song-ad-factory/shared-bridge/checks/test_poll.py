@@ -29,6 +29,11 @@ Proves, against a local fake studio (stdlib `http.server`, no network):
      still checks in, and a halted order never blocks the next one
  10  each answer travels with its screen id: ids that do not match the card's,
      in order, ask the client first (the second sentence), never a shifted run
+ 11  each answer also travels with its option text ("<n>. <option text>"): the
+     card receives the number, the text must be the card's own option for that
+     screen, and a reordered option list asks the client with the second
+     sentence instead of silently answering a different choice; a bare number
+     from an old page still passes straight through
 
 Run: python3 checks/test_poll.py
 Exit: 0 all pass · 1 at least one failed
@@ -548,6 +553,78 @@ class PollBridgeTests(unittest.TestCase):
         self.assertEqual(halted["reason_code"], "INTAKE_REPLAY_MISMATCH")
         self.assertEqual(halted["question_id"], "purpose")
         self.assertEqual(self._orders(), [])
+
+    # -- 11 option text: a reordered list asks, never guesses (S75-059) ------
+
+    def _numbered(self, replies):
+        """The card's own replies in the new page format: "<n>. <option text>"."""
+        core = str(SKILL_ROOT / "scripts" / "core")
+        if core not in sys.path:
+            sys.path.insert(0, core)
+        from choice_card.intake_card import intake_card as IC
+        out, accepted = [], []
+        for reply in replies:
+            qs = IC._shaped(IC.QUESTIONS, accepted, "")
+            if len(accepted) >= len(qs):
+                out.append(reply)          # the recap confirmation, not a screen
+                continue
+            q = qs[len(accepted)]
+            n = str(reply).strip()
+            opts = q.get("options") or []
+            if q.get("free_text") or not (n.isdigit() and 1 <= int(n) <= len(opts)):
+                out.append(n)          # a typed answer or amount: never numbered
+                answer = IC._parse(n, q)
+            else:
+                out.append("%s. %s" % (n, opts[int(n) - 1][0]))
+                answer = IC._parse(n, q)
+            if isinstance(answer, dict) and "error" not in answer:
+                accepted.append(answer)
+        return out
+
+    def test_option_text_travels_with_the_number(self):
+        replies = self._card_replies("2")
+        numbered = self._numbered(replies)
+        plain, mismatch = bridge._plain_replies(str(SKILL_ROOT), numbered)
+        self.assertIsNone(mismatch)
+        self.assertEqual(plain, replies)       # the card receives its numbers
+        # control on the SAME function: an old page (bare numbers, bare typed
+        # answers) passes straight through, unchanged and unjudged
+        self.assertEqual(bridge._plain_replies(str(SKILL_ROOT), replies),
+                         (replies, None))
+        # a reordered option list: number 2 now carries another screen's option
+        # text, so the number can never be trusted on its own
+        swapped = list(numbered)
+        swapped[0] = "%s. %s" % (numbered[0].split(". ", 1)[0],
+                                 numbered[1].split(". ", 1)[1])
+        _, found = bridge._plain_replies(str(SKILL_ROOT), swapped)
+        self.assertIsNotNone(found)
+        self.assertEqual(found[0], 0)
+        self.assertEqual(found[1], "purpose")
+
+    def test_reordered_option_text_asks_the_client_never_guesses(self):
+        numbered = self._numbered(self._card_replies("3"))   # a lesson
+        swapped = list(numbered)
+        swapped[0] = "%s. %s" % (numbered[0].split(". ", 1)[0],
+                                 numbered[1].split(". ", 1)[1])
+        STUDIO["line"] = 'DRAMA_ORDER r_text01 "Spring Sale"'
+        STUDIO["order"] = {"order_id": "r_text01", "client_id": CLIENT,
+                           "title": "Spring Sale", "replies": swapped}
+        p = self.poll_real_card()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(p.stdout, "")                 # no wake line for it
+        self.assertIn("INVALID_OPTION", p.stderr)
+        posts = [r["body"] for r in STUDIO["seen"]
+                 if r["path"].endswith("/state")
+                 and r["body"].get("event") == "needs_you"]
+        self.assertEqual(len(posts), 1, posts)
+        self.assertEqual(posts[0]["reason"],
+                         "One of your answers did not match the choices. "
+                         "Open your order and tap Continue to fix it.")
+        halted = json.loads((self.runs / "r_text01" / "control"
+                             / "replay-halted.json").read_text(encoding="utf-8"))
+        self.assertEqual(halted["reason_code"], "INVALID_OPTION")
+        self.assertEqual(halted["question_id"], "purpose")
+        self.assertEqual(self._orders(), [])           # the claim was released
 
     def test_poll_without_a_key_refuses(self):
         p = self.poll()
