@@ -96,7 +96,7 @@ hit the ≥100 floor (Directive 11), later phases shift by the same amount, stil
   (Client-exact count is the fleet-wide absolute law; the ≥100 floor is the DEFAULT, not a cap.)
 - **≤2 case studies** per deck (Directive 12); floor of 1 from the department's proof battery → band 1–2.
 - **Suggested image on every slide** (Directive 4) — the authoring seed the Prompt Author expands
-  to the full rich image prompt, sized to the pinned model's prompt budget (rule 12 of `07-kie-setup/references/kie-common-rules.md`, read with `kie_live_adapter.py prompt-budget --check`; 16,000 to 18,000 characters for the current pin while the renderer's own 9,000 to 18,000 gate stands, which is the range the frame templates quote); it never replaces that budget. Each frame template
+  to the full rich image prompt, sized to the pinned model's prompt budget (rule 12 of `07-kie-setup/references/kie-common-rules.md`, read with `kie_live_adapter.py prompt-budget --check`; for the current pin the hard floor is 16,000 characters, the target is 19,000 to 20,000, and the ceiling is 20,000; the renderer enforces this same band, and any older 9,000 to 18,000 figure quoted elsewhere is retired); it never replaces that budget. Each frame template
   carries a **"Visual identity & suggested-image seed craft"** section (v1.0.4): the six seed
   anchors (archetype + subject/emotion + setting + light + STYLE-BLOCK palette + copy zone) plus
   the frame's controlling visual motif and series discipline — author seeds to that contract.
@@ -150,7 +150,7 @@ through `build_deck.py`. Writing and running your own per-deck driver — `pytho
 Command Center Kanban card belong to the engine; this skill only adds the sacred-method gates
 on top.
 
-**What the engine gives us for free (no new code):** the rich-prompt gate (9,000 to 18,000 characters in the renderer today; the authoring target is the rule 12 prompt budget),
+**What the engine gives us for free (no new code):** the rich-prompt gate (owner rule 12: 80 to 100 percent of the pinned model's maximum, which is 16,000 to 20,000 characters for the current pin),
 phase-skip impossibility (the `presentation_job.py` mechanical manifest walk), the delivery-blocking process certificate
 (`prove-deck.py`), and the full existing auto-fail battery (hook, one-big-idea, density, typography,
 logo, canonical-render, image-QC). The three SP provers add ONLY the sacred-method rules and install
