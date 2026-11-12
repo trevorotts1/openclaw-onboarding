@@ -539,7 +539,11 @@ async function serveAsset(request, env, assetPath) {
   headers.set('Cache-Control', 'no-store');
   headers.set('Referrer-Policy', 'no-referrer');
   headers.set('X-Content-Type-Options', 'nosniff');
-  headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self' https://*.r2.cloudflarestorage.com; frame-ancestors 'none'; form-action 'self'; base-uri 'none'");
+  // The delivery screen plays the finished video from wherever the studio
+  // stored it, so media-src names those two hosts and nothing else changes:
+  // connect-src stays the r2.cloudflarestorage.com surface the page already had
+  // (S75-070 — a player must not be a hole in the page's own rules).
+  headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; media-src 'self' blob: https://storage.googleapis.com https://*.r2.dev; connect-src 'self' https://*.r2.cloudflarestorage.com; frame-ancestors 'none'; form-action 'self'; base-uri 'none'");
   return new Response(asset.body, { status: asset.status, headers });
 }
 
