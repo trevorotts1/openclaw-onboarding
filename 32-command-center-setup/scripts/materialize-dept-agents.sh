@@ -887,7 +887,11 @@ if [[ $DRY_RUN -eq 0 && -f "$MANIFEST" && -x "$SCAFFOLDER" ]]; then
     fi
   done < "$MANIFEST"
   echo "[materialize-dept-agents] scaffolded $scaffold_ok agents ($scaffold_fail failures)"
-  rm -f "$MANIFEST"
+  # U-24: the manifest is DELIBERATELY left in place here. Phase 3 below reads
+  # it to know which departments to seed; deleting it at the end of Phase 2 made
+  # Phase 3 always fall back to a `type`-column query the `workspaces` table does
+  # not have, so the whole trio/quad step silently never ran. Phase 3 removes it
+  # once it has been used.
 elif [[ ! -x "$SCAFFOLDER" ]]; then
   echo "[materialize-dept-agents] WARN: scaffold-agent-files.sh not executable at $SCAFFOLDER -- skipping per-agent file scaffolding" >&2
 fi
@@ -975,15 +979,18 @@ if not os.path.isfile(manifest_path):
     try:
         db = sqlite3.connect(db_path)
         cur = db.execute(
-            "SELECT id, name, slug FROM workspaces WHERE type != 'main' AND type != 'system'"
-            + (" AND archived_at IS NULL" if _ws_has_archived_at(db) else "")
+            "SELECT id, name, slug FROM workspaces"
+            + (" WHERE archived_at IS NULL" if _ws_has_archived_at(db) else "")
         )
         rows = cur.fetchall()
         db.close()
         entries = [(ws_id, name, slug or name.lower().replace(" ", "-")) for ws_id, name, slug in rows]
     except Exception as e:
         print(f"[materialize] WARN: could not read workspaces table: {e}", file=sys.stderr)
-        sys.exit(0)
+        # U-24: an unreadable roster is a FAILURE, not a silent success. The
+        # shell runs under `set -e`, so this status becomes the script's exit
+        # code instead of the old exit 0.
+        sys.exit(3)
 else:
     entries = []
     with open(manifest_path) as f:
@@ -1066,6 +1073,9 @@ print(
     + (f"; {skipped_archived} archived workspace(s) skipped" if skipped_archived else "")
 )
 PHASE3EOF
+  # U-24: remove the roster file only AFTER Phase 3 has finished reading it, on
+  # every path that reaches the end of Phase 3. Phase 2 no longer deletes it.
+  rm -f "$MANIFEST"
 fi
 
 # ---- Phase 4: role-file materialization (write healer-<dept>.md if missing) -
