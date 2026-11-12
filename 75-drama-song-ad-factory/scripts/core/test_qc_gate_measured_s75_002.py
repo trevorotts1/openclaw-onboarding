@@ -133,7 +133,7 @@ def case(tmp, *, records=None, required=",".join(FINAL_REQUIRED),
     recs = write(os.path.join(tmp, "records.json"),
                  records if records is not None else passing_records())
     makers = write(os.path.join(tmp, "makers.json"),
-                   {c: dict(MAKER) for c in FINAL_REQUIRED})
+                   {"chk:%s" % c: dict(MAKER) for c in FINAL_REQUIRED})
     argv = ["evaluate", "--run", RUN, "--stage", STAGE,
             "--records", recs, "--makers", makers,
             "--required", required, "--chosen-length-s", "45",
@@ -327,7 +327,7 @@ def test_same_model_reviewer_is_self_review():
     check("a self-reviewed gate writes BLOCKED, never PASS",
           doc is not None and doc["gate"] == "BLOCKED", str(doc))
     # the old bare-string makers form still works (identity only)
-    makers = {c: "maker-1" for c in FINAL_REQUIRED}
+    makers = {"chk:%s" % c: "maker-1" for c in FINAL_REQUIRED}
     res = qc_gate.evaluate(RUN, STAGE, passing_records(), makers,
                            list(FINAL_REQUIRED), master={
                                "chosen_length_s": 45, "measured_s": 30.0})
