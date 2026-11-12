@@ -133,7 +133,7 @@ def test_wrong_text_fails():
 
 
 def test_right_text_passes():
-    """An extractor that reads exactly the planned words -> PASS."""
+    """An extractor that reads exactly the planned words -> PASS, gate open."""
     register_extractor("s75-045-right",
                        lambda paths: ["GRAND OPENING"] * len(paths))
     rows = FT.text_check_rows([_seg(text="GRAND OPENING")], ffmpeg=None,
@@ -142,6 +142,14 @@ def test_right_text_passes():
           rows and rows[0]["status"] == FT.PASS, rows)
     check("right text -> no reason code",
           rows and rows[0]["reason_code"] is None, rows)
+    plan = _plan([_seg(text="GRAND OPENING")])
+    gate_rows, fail = A.frame_text_gate(plan, extractor="s75-045-right")
+    check("correct on-screen words never block the gate",
+          fail is None, fail)
+    check("the PASS row keeps its readable frames without flagging",
+          any(r.get("check") == "onscreen_text"
+              and r.get("status") == FT.PASS and r.get("text_frames")
+              for r in gate_rows), gate_rows)
 
 
 def test_lipsync_rows_keep_the_f9_shape():
