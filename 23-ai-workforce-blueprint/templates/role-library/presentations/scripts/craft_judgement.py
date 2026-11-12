@@ -188,7 +188,7 @@ WARN_TAG_PATTERNS = {
 try:
     import slide_craft as _sc
     _SLIDES = _sc._slides
-    _INTAKE = staticmethod(_sc._intake)
+    _INTAKE = _sc._intake
     _WRITE_PROVENANCE = _sc._write_provenance
 except Exception:  # noqa: BLE001 — FIX 17 fail-closed: never partially armed
     _sc = None
