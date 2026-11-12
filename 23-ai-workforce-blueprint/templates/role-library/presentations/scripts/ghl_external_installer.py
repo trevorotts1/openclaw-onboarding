@@ -712,6 +712,91 @@ def input_hashes(run_dir: Path, phase_id: str) -> Dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# PD-048 -- the FLAT receipt contract the phase check reads.
+#
+# phase_verifiers._pu_check_receipt_identity (the strict P-U-* check that runs
+# BEFORE the installer's own validate_receipt) reads TOP-LEVEL text fields
+# only: execution_id, input_sha256, location_id, and a remote id
+# (funnel_id/page_id for the page phases, form_id/workflow_id for the gate).
+# This module's own proof is nested (execution.execution_id, input_hashes{} ,
+# scope.location_id, remote.*), so a finished, adapter-proven install still
+# failed its phase check. These fields are ADDITIVE: every nested value keeps
+# its exact shape and the installer's own validate_receipt is unchanged.
+# ---------------------------------------------------------------------------
+_PAGE_ID_ORDER = ("sales", "checkout", "vsl")
+
+
+def _canonical_json_sha256(obj: Any) -> str:
+    """sha256 of the canonical JSON of obj (sorted keys, no whitespace)."""
+    body = json.dumps(obj if isinstance(obj, dict) else {},
+                      sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _gate_plan_blocks(receipt: dict) -> Tuple[dict, dict]:
+    """The Skill 44 plan's form/workflow blocks for this receipt's scope.
+
+    Rebuilt from the same pure builder the executor uses, so the flat `fields`
+    and `steps` the gate check reads are never a second hand-kept copy. A
+    malformed scope degrades to two empty dicts; receipts never fail here.
+    """
+    scope_in = receipt.get("scope") if isinstance(receipt.get("scope"), dict) else {}
+    scope = {k: scope_in.get(k) for k in
+             ("deck_slug", "run_id", "company", "location_id")}
+    try:
+        plan = build_gate_form_plan(scope=scope)
+    except Exception:  # noqa: BLE001 -- receipt writing must never crash here
+        return {}, {}
+    form = plan.get("form") if isinstance(plan.get("form"), dict) else {}
+    workflow = plan.get("workflow") if isinstance(plan.get("workflow"), dict) else {}
+    return form, workflow
+
+
+def flat_receipt_fields(receipt: dict, phase_id: str) -> dict:
+    """Return `receipt` plus the top-level fields the phase check reads.
+
+    Additive and idempotent: every value is computed from the nested blocks
+    already on the receipt (falling back to the plan's own form/workflow
+    contract for the gate's `name`/`fields`/`steps`). A pending or blocked
+    receipt honestly carries what it has -- an empty id stays empty, so a
+    receipt with no adapter result still fails the phase check.
+    """
+    out = dict(receipt)
+    exec_blk = receipt.get("execution") if isinstance(receipt.get("execution"), dict) else {}
+    scope = receipt.get("scope") if isinstance(receipt.get("scope"), dict) else {}
+    remote = receipt.get("remote") if isinstance(receipt.get("remote"), dict) else {}
+    out["execution_id"] = str(exec_blk.get("execution_id") or "")
+    out["input_sha256"] = _canonical_json_sha256(receipt.get("input_hashes"))
+    out["location_id"] = str(scope.get("location_id") or "")
+    if phase_id == PHASE_FORM_GATE:
+        form = receipt.get("form") if isinstance(receipt.get("form"), dict) else {}
+        workflow = receipt.get("workflow") if isinstance(receipt.get("workflow"), dict) else {}
+        out["form_id"] = str(remote.get("form_id") or form.get("form_id") or "")
+        out["workflow_id"] = str(remote.get("workflow_id")
+                                or workflow.get("workflow_id") or "")
+        plan_form, plan_wf = _gate_plan_blocks(receipt)
+        artifact = str(out.get("artifact") or "")
+        if artifact.endswith("gate-workflow.json"):
+            out["name"] = str(workflow.get("name") or plan_wf.get("name") or "")
+            steps = workflow.get("steps") or plan_wf.get("steps")
+            out["steps"] = steps if isinstance(steps, list) else []
+        else:
+            out["name"] = str(form.get("name") or plan_form.get("name") or "")
+            fields = form.get("fields") or plan_form.get("fields")
+            out["fields"] = fields if isinstance(fields, list) else gate_form_fields()
+        return out
+    out["funnel_id"] = str(remote.get("funnel_id") or "")
+    page_ids = [remote[f"{pg}_page_id"] for pg in _PAGE_ID_ORDER
+                if isinstance(remote.get(f"{pg}_page_id"), str)
+                and remote.get(f"{pg}_page_id")]
+    if not page_ids:
+        page_ids = [v for k, v in sorted(remote.items())
+                    if k.endswith("_page_id") and isinstance(v, str) and v]
+    out["page_id"] = page_ids[0] if page_ids else ""
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Receipt validation (TODO steps 2-3 -- what the verifiers call). A
 # perfect-looking model receipt with no adapter IDs and no readback is
 # pending_external_execution, never complete.
@@ -944,7 +1029,7 @@ def execute_phase(run_dir: Path, phase_id: str, *,
 
 def _blocked_receipt(run_dir: Path, phase_id: str, intake: dict,
                      blocker: dict, gate: dict) -> dict:
-    return {
+    receipt = {
         "schema_version": RECEIPT_SCHEMA,
         "phase": phase_id,
         "deck_slug": str(intake.get("deck_slug") or run_dir.name),
@@ -962,19 +1047,36 @@ def _blocked_receipt(run_dir: Path, phase_id: str, intake: dict,
         "proof": None,
         "built_at": _now_iso(),
     }
+    return flat_receipt_fields(receipt, phase_id)
 
 
-def _write_receipts(run_dir: Path, phase_id: str, receipt: dict) -> List[Path]:
+def _write_receipts(run_dir: Path, phase_id: str, receipt: dict,
+                    wf_receipt: Optional[dict] = None) -> List[Path]:
+    """Write the phase's receipt(s), each carrying the flat fields PD-048 adds.
+
+    For the gate pair the two artifacts differ (form vs workflow), so the
+    workflow receipt is passed explicitly when the caller built one; otherwise
+    the same receipt is written to both paths, exactly as before.
+    """
+    def _flat(rec: dict) -> dict:
+        try:
+            return flat_receipt_fields(rec, phase_id)
+        except Exception:  # noqa: BLE001 -- never lose a receipt to the flat pass
+            return rec
+
     out = []
     if phase_id == PHASE_FORM_GATE:
         form_rec = dict(receipt)
-        wf_rec = dict(receipt)
-        wf_rec["artifact"] = "workflows/gate-workflow.json"
         form_rec["artifact"] = "ecosystem/gate-form.json"
-        out.append(_write_json_atomic(receipt_paths(run_dir, phase_id)[0], form_rec))
-        out.append(_write_json_atomic(receipt_paths(run_dir, phase_id)[1], wf_rec))
+        wf_rec = dict(wf_receipt if isinstance(wf_receipt, dict) else receipt)
+        wf_rec["artifact"] = "workflows/gate-workflow.json"
+        out.append(_write_json_atomic(receipt_paths(run_dir, phase_id)[0],
+                                      _flat(form_rec)))
+        out.append(_write_json_atomic(receipt_paths(run_dir, phase_id)[1],
+                                      _flat(wf_rec)))
         return out
-    out.append(_write_json_atomic(receipt_paths(run_dir, phase_id)[0], receipt))
+    out.append(_write_json_atomic(receipt_paths(run_dir, phase_id)[0],
+                                  _flat(receipt)))
     return out
 
 
@@ -1056,6 +1158,7 @@ def _emit_page_plan(run_dir: Path, phase_id: str, intake: dict,
         "proof": None,
         "built_at": _now_iso(),
     }
+    receipt = flat_receipt_fields(receipt, phase_id)
     _write_receipts(run_dir, phase_id, receipt)
     record_ops(run_dir, phase_id,
                {"status": "dispatched", "gate": gate,
@@ -1169,6 +1272,7 @@ def _execute_pages(run_dir: Path, phase_id: str, intake: dict, scope: dict,
         "proof": {"pages": len(pages_rb), "location_id": scope["location_id"]},
         "built_at": _now_iso(),
     }
+    receipt = flat_receipt_fields(receipt, phase_id)
     _write_receipts(run_dir, phase_id, receipt)
     record_ops(run_dir, phase_id,
                {"status": STATUS_VERIFIED, "execution_id": execution_id,
@@ -1199,15 +1303,14 @@ def _emit_gate_plan(run_dir: Path, intake: dict, scope: dict,
                   workflow={"name": plan["workflow"]["name"],
                             "workflow_id": None, "draft_only": True},
                   remote={}, readback={"ok": False}, proof=None)
-    _write_json_atomic(receipt_paths(run_dir, PHASE_FORM_GATE)[0], form_rec)
-    _write_json_atomic(receipt_paths(run_dir, PHASE_FORM_GATE)[1], wf_rec)
+    _write_receipts(run_dir, PHASE_FORM_GATE, form_rec, wf_receipt=wf_rec)
     record_ops(run_dir, PHASE_FORM_GATE,
                {"status": "dispatched", "gate": gate,
                 "next_action": "delegated Skill 44 agent executes "
                                f"{plan_path.name}, then re-run to verify"})
     print(f"\n{PHASE_FORM_GATE}: PLAN EMITTED (Skill 44 form/workflow "
           "contract; IDs land at delegated execution)")
-    return EXIT_OK, form_rec
+    return EXIT_OK, flat_receipt_fields(form_rec, PHASE_FORM_GATE)
 
 
 def _execute_gate(run_dir: Path, intake: dict, scope: dict, gate: dict,
@@ -1297,8 +1400,8 @@ def _execute_gate(run_dir: Path, intake: dict, scope: dict, gate: dict,
     wf_rec = dict(form_rec, artifact="workflows/gate-workflow.json",
                   workflow={"name": plan["workflow"]["name"],
                             "workflow_id": workflow_id, "draft_only": True})
-    _write_json_atomic(receipt_paths(run_dir, PHASE_FORM_GATE)[0], form_rec)
-    _write_json_atomic(receipt_paths(run_dir, PHASE_FORM_GATE)[1], wf_rec)
+    form_rec = flat_receipt_fields(form_rec, PHASE_FORM_GATE)
+    _write_receipts(run_dir, PHASE_FORM_GATE, form_rec, wf_receipt=wf_rec)
     record_ops(run_dir, PHASE_FORM_GATE,
                {"status": STATUS_VERIFIED, "execution_id": execution_id,
                 "remote": dict(ops_remote), "next_action": "done"})
