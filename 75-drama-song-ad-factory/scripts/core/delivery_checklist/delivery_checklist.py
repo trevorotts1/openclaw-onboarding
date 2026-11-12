@@ -1320,8 +1320,11 @@ def audio_duration_and_loudness(path, ffprobe="ffprobe", ffmpeg="ffmpeg"):
     doc = json.loads(probe.stdout or "{}")
     if not (doc.get("streams") or []):
         raise ValueError("%s has no audio stream" % path)
-    duration = _num((doc.get("format") or {}).get("duration"))
-    if duration is None or duration <= 0:
+    try:
+        duration = float((doc.get("format") or {}).get("duration"))
+    except (TypeError, ValueError):
+        duration = None
+    if duration is None or not math.isfinite(duration) or duration <= 0:
         raise ValueError("no measured audio duration for %s" % path)
     argv = _LG.ffmpeg_argv(["-hide_banner", "-nostats", "-i", str(path),
                             "-vn", "-af", "ebur128", "-f", "null", "-"],
