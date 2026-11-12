@@ -990,6 +990,10 @@ def _board_epic(skill_root, order_id, title):
 #: prints no step line at all.
 QUESTION_LINE = re.compile(r"Question (\d+) of (\d+)")
 
+#: A new-page reply: "<n>. <option text>" (S75-059). The card parses a NUMBER,
+#: so the number is what it receives - the text after it is checked first.
+NUMBERED_REPLY = re.compile(r"^\s*(\d+)\s*\.\s*(.+?)\s*$")
+
 #: The durable halt record for a replay (S75-106). While it exists the order
 #: waits on the client and `_replay` runs NO turn, so one refused order can never
 #: loop a card turn on every poll.
@@ -1175,6 +1179,84 @@ def _reply_id_mismatch(skill_root, reply_ids, replies, client_dir=None):
     if len(page) not in (len(ids), len(ids) + 1) or page[:len(ids)] != ids:
         return page, ids
     return None
+
+
+def _option_slot(q):
+    """True when a screen offers a slot for the client's own words.
+
+    An option whose detail opens "reply with" is a box, not a label - the page's
+    own rule (`studio.js:isFreeTextOption`) - so the text after its number is
+    the client's answer, never a choice to be judged.
+    """
+    for opt in q.get("options") or []:
+        detail = (opt[1] if isinstance(opt, (tuple, list)) and len(opt) > 1
+                  else "")
+        if str(detail or "").strip().lower().startswith("reply with"):
+            return True
+    return False
+
+
+def _plain_replies(skill_root, replies, client_dir=None):
+    """The page's replies as the card reads them, and the first text mismatch.
+
+    A new page sends each choice reply as "<n>. <option text>" (S75-059). The
+    card parses a NUMBER, so a choice reply is reduced to its number - after
+    the text after the number is checked against the box card's own option for
+    that screen, case-insensitive and trimmed. A typed brief answer is never
+    numbered and never reduced: the page sends it as the client wrote it.
+
+    Returns `(replies_for_the_card, mismatch)`. `mismatch` is
+    `(position, question_id, page_text, card_text)` at the first screen whose
+    text the card does not ask - the caller halts the order with the second
+    sentence instead of replaying one screen's answer onto another question. A
+    page with no numbered reply (an old page) is returned unchanged, and so is
+    any list when the installed card cannot judge: a claim never dies on this.
+    """
+    given = [str(r) for r in (replies or [])]
+    if not any(NUMBERED_REPLY.match(r) for r in given):
+        return given, None
+    _skill_core(skill_root)
+    try:
+        from choice_card.intake_card import intake_card as IC  # noqa: PLC0415
+        if getattr(IC, "_shaped", None) is None:
+            return given, None
+        if "purpose_flow" not in inspect.signature(IC.conversation).parameters:
+            return given, None
+        plain, accepted = [], []
+        for at, reply in enumerate(given):
+            qs = IC._shaped(IC.QUESTIONS, accepted, client_dir)
+            if len(accepted) >= len(qs):
+                plain.append(reply)         # past the last question: the recap
+                continue
+            q = qs[len(accepted)]
+            found = NUMBERED_REPLY.match(reply)
+            if q.get("free_text"):          # a typed brief answer: as written
+                plain.append(reply)
+                answer = IC._parse(reply, q)
+            elif found is None:             # an old page: a bare number, amount
+                plain.append(reply)
+                answer = IC._parse(reply, q)
+            else:
+                n, text = int(found.group(1)), found.group(2).strip()
+                opts = q.get("options") or []
+                card_text = (str(opts[n - 1][0]).strip()
+                             if 1 <= n <= len(opts) else None)
+                if (card_text is not None
+                        and text.casefold() == card_text.casefold()):
+                    plain.append(str(n))
+                    answer = IC._parse(str(n), q)
+                elif _option_slot(q):
+                    # a box for the client's own words: the number carried the
+                    # answer, so the text is what the card reads
+                    plain.append(text)
+                    answer = IC._parse(text, q)
+                else:
+                    return given, (at, str(q.get("id") or ""), text, card_text)
+            if isinstance(answer, dict) and "error" not in answer:
+                accepted.append(answer)
+    except Exception:  # noqa: BLE001 - never stop a claim on a card import
+        return given, None
+    return plain, None
 
 
 def _refuse_mismatch(base, key, order_id, mismatch):
@@ -1643,14 +1725,35 @@ def cmd_poll(args):
         # print a relative run_dir and a next that resolves somewhere else).
         run_dir = (pathlib.Path(args.runs).expanduser() / order_id).resolve()
 
+        # Each answer travels with the text of the option the client picked
+        # (S75-059): a page whose option list was reordered would replay a
+        # different choice than the one shown. The text after the number is
+        # compared with the box card's own option for that screen, and the
+        # reply the card receives is its number - a typed brief answer passes
+        # through exactly as written.
+        replies, text_mismatch = _plain_replies(args.skill_root,
+                                                order.get("replies") or [],
+                                                args.client_dir)
+        if text_mismatch is not None:
+            at, question_id, page_text, card_text = text_mismatch
+            sys.stderr.write(
+                "studio_bridge: order %s reply %d says %r; the card asks %r\n"
+                % (order_id, at + 1, page_text[:120],
+                   (card_text or "")[:120]))
+            record = _write_halted(
+                run_dir, 0,
+                {"question_id": question_id or None,
+                 "reason_code": "INVALID_OPTION"},
+                "INVALID_OPTION")
+            return _halt_order(led, base, key, order_id, record)
+
         # Each answer travels with the id of the screen it was given on (S75-106
         # step 5). A page that numbered its screens differently would replay one
         # screen's answer onto another question, so the card's own ids are
         # compared first: a difference waits on the client (`halted`), never a
         # shifted run.
         ids_mismatch = _reply_id_mismatch(args.skill_root, order.get("reply_ids"),
-                                          order.get("replies") or [],
-                                          args.client_dir)
+                                          replies, args.client_dir)
         if ids_mismatch is not None:
             page_ids, asked_ids = ids_mismatch
             at = next((i for i in range(min(len(page_ids), len(asked_ids)))
@@ -1662,13 +1765,12 @@ def cmd_poll(args):
                 "INTAKE_REPLAY_MISMATCH")
             return _halt_order(led, base, key, order_id, record)
 
-        # An old page carries no reply ids: a reply count that cannot complete
-        # the card's question list still replays shifted answers, so the order
-        # waits on the client (`needs_you`, never cancelled) and nothing is
-        # written (SPEC B1). The claim is released so a refused order never
-        # blocks the box, exactly as a halted one does not.
-        mismatch = _question_mismatch(args.skill_root, order.get("replies") or [],
-                                      args.client_dir)
+        # An old page carries no reply ids and no option text: a reply count
+        # that cannot complete the card's question list still replays shifted
+        # answers, so the order waits on the client (`needs_you`, never
+        # cancelled) and nothing is written (SPEC B1). The claim is released so
+        # a refused order never blocks the box, exactly as a halted one does not.
+        mismatch = _question_mismatch(args.skill_root, replies, args.client_dir)
         if mismatch is not None:
             code = _refuse_mismatch(base, key, order_id, mismatch)
             led.release_order(order_id, BRIDGE_OWNER)
@@ -1687,7 +1789,7 @@ def cmd_poll(args):
             if _ensure_run_state(args.skill_root, run_dir, order_id) is None:
                 return EXIT["error"]
 
-            code, factory = _replay(args.skill_root, run_dir, order.get("replies") or [])
+            code, factory = _replay(args.skill_root, run_dir, replies)
             if code == EXIT["halted"]:
                 # The order waits on the client: needs_you, the halt receipt and
                 # the claim released - no wake line and no run for it, and the
