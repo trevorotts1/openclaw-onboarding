@@ -8,7 +8,9 @@ Stage order (never reordered, never partially skipped):
   1. ledger reserve      ``spend_ledger.plan`` + ``reserve`` (directive 18/24.4)
   2. Skill 74 health     read ``adapter_mode``; only ``active`` continues
   3. Skill 74 preflight  balance must cover price x 1.30
-  4. prompt-budget check exit 4 = over max, exit 3 = under floor
+  4. prompt-budget check exit 4 = over max, exit 3 = under floor,
+                         exit 5 = Skill 74's pass-with-a-note band (accepted
+                         only when its JSON says the prompt passed)
   5. submit/wait/save    Skill 74 ``submit`` (task id persisted immediately),
                          ``wait`` with a modality budget (video 1200 / music
                          600 / image 300, or request["timeout"]), outer
@@ -809,11 +811,13 @@ def _wait_budget_s(request, model, adapter=None):
 
 def _record_stage_evidence(db, run_id, logical_key, attempt_id, stage,
                            status="fail", task_id="", error=None,
-                           adapter_state=""):
+                           adapter_state="", extra=None):
     """Dispatch evidence for the resolver (events kind='dispatch'). Best-effort."""
     payload = {"stage": stage, "adapter_state": adapter_state,
                "error": error or {}, "task_id": task_id or None,
                "remote_task_id": task_id or None}
+    if isinstance(extra, dict):
+        payload.update(extra)
     try:
         conn = sqlite3.connect(db, timeout=10)
         try:
@@ -1123,6 +1127,25 @@ def _call(runner, adapter, args):
         return rc, json.loads(out), out
     except Exception:                                       # noqa: BLE001
         return rc, None, out if isinstance(out, str) else str(out)
+
+
+def _prompt_budget_passed(b):
+    """True when the prompt-budget JSON itself reports a PASS (S75-039).
+
+    Skill 74 answers exit 5 both for its 80-to-below-95 percent band, which
+    passes with a warn-and-expand note, and for a prompt it refuses (unknown
+    maximum, policy unavailable, above the target ceiling). Only the JSON can
+    tell them apart. The adapter prints `"state": "validated"` on a pass and
+    `"fail"` otherwise; an explicit `ok` boolean, on the envelope or inside
+    `data`, is read first when present. Nothing else counts as a pass.
+    """
+    if not isinstance(b, dict):
+        return False
+    data = b.get("data") if isinstance(b.get("data"), dict) else {}
+    for holder in (b, data):
+        if isinstance(holder.get("ok"), bool):
+            return holder["ok"] is True
+    return b.get("state") == "validated"
 
 
 def _settle(db, run_id, logical_key, attempt_id, owner, job_state, final,
@@ -2069,6 +2092,7 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
              "shortfall": shortfall, "data": p_data, "generated": False})
 
     # ---- 4. prompt-budget --check -----------------------------------------
+    prompt_band = None
     tmp = tempfile.mkdtemp(prefix="kie-dispatch-")
     try:
         prompt_file = os.path.join(tmp, "prompt.txt")
@@ -2095,7 +2119,29 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
                         "add %s characters to the prompt (floor %s) and recheck"
                         % (d.get("add_to_floor", "?"), d.get("floor", "?")),
                         {"exit_code": b_rc, "data": d, "generated": False})
-        if b_rc != 0:
+        # Exit 5 is BOTH Skill 74's 80-to-below-95 percent band (a PASS with a
+        # warn-and-expand note) and its refusal band (unknown maximum, policy
+        # missing, above the target ceiling). The exit code alone cannot
+        # separate them, so exit 5 proceeds ONLY when the JSON reports a pass;
+        # the band is written to the job's ledger note so QC can see it.
+        if b_rc == 5:
+            if not _prompt_budget_passed(b):
+                return stop("rejected", "prompt-budget-failed",
+                            "Skill 74 prompt-budget refused the prompt; fix it "
+                            "before dispatch",
+                            {"exit_code": b_rc, "data": b.get("data") or {},
+                             "adapter_state": b.get("state"),
+                             "raw": (b_raw or "")[-400:],
+                             "generated": False})
+            d = b.get("data") or {}
+            prompt_band = {"prompt_band": "below-target",
+                           "chars": d.get("chars"),
+                           "target_min": d.get("target_min")}
+            _record_stage_evidence(
+                ledger_db, run_id, logical_key, attempt_id, "prompt-budget",
+                status="ok", adapter_state=str(b.get("state") or ""),
+                extra=prompt_band)
+        if b_rc not in (0, 5):
             return stop("rejected", "prompt-budget-failed",
                         "Skill 74 prompt-budget refused the prompt; fix it "
                         "before dispatch",
@@ -2378,7 +2424,8 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
                           "resume": resume,
                           "accepted_submit_at": stamps["accepted_submit_at"],
                           "terminal_at": utc_now(),
-                          "prompt_caps": prompt_caps},
+                          "prompt_caps": prompt_caps,
+                          "prompt_band": prompt_band},
                 state_version=rec.get("state_version", 0))
         return envelope(
             "dispatch", "ok", "KIE_DISPATCH_OK",
@@ -2397,7 +2444,8 @@ def _dispatch_pipeline(*, model, request, save_dir, ledger_db, run_id, logical_k
                       "wait_timeout_s": wait_s, "retries": 0,
                       "accepted_submit_at": stamps["accepted_submit_at"],
                       "terminal_at": utc_now(),
-                      "prompt_caps": prompt_caps},
+                      "prompt_caps": prompt_caps,
+                      "prompt_band": prompt_band},
             state_version=rec.get("state_version", 0))
     except Exception as e:                                  # noqa: BLE001
         return stop("error", "dispatch-internal-error",
