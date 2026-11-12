@@ -35,6 +35,36 @@ UPD_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$UPD_SCRIPT_DIR/lib-interview-rate-limit.sh"
 source "$UPD_SCRIPT_DIR/lib-workforce-state.sh"
 
+# ── Flag parsing ──────────────────────────────────────────────────────────────
+# Parsed BEFORE the state resolution below so --state can name the file directly
+# and skip auto-resolution entirely (offline fixtures, explicit callers, and the
+# Command Center seam all pass an absolute path).
+PHASE=""
+QNUM=""
+ASKED_BY=""
+PHASES_COMPLETE=""
+COMPLETE=false
+INDUSTRY_PACK_BLOB=""
+SESSION_ID="${INTERVIEW_SESSION_ID:-}"
+DRAIN_ONLY=false
+STATE_FLAG=""
+SYNC_FROM_GATE=false
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --phase) PHASE="$2"; shift 2 ;;
+    --question-number) QNUM="$2"; shift 2 ;;
+    --asked-by) ASKED_BY="$2"; shift 2 ;;
+    --phases-complete) PHASES_COMPLETE="$2"; shift 2 ;;
+    --complete) COMPLETE=true; shift ;;
+    --industry-pack) INDUSTRY_PACK_BLOB="$2"; shift 2 ;;  # PRD-2.15: passthrough to record-industry-pack.sh
+    --session-id) SESSION_ID="$2"; shift 2 ;;  # P0 fix: explicit stable session id, takes priority over --asked-by for the rate-limit key only (never for lastQuestionAskedBy)
+    --drain-deferred) DRAIN_ONLY=true; shift ;;  # replay the deferred spool (see drain_deferred_stamps above), then exit if no other flags were given
+    --state) STATE_FLAG="$2"; shift 2 ;;  # explicit build-state file; sets STATE and STATE_DIR, skips auto-resolution
+    --sync-from-gate) SYNC_FROM_GATE=true; shift ;;  # mirror interview_gate.py status into interviewProgress (gate-v2)
+    *) echo "unknown flag: $1" >&2; exit 1 ;;
+  esac
+done
+
 # Resolve state file path through the canonical platform resolver
 # (platform/common.sh oc_set_platform_paths), with the legacy
 # /data-else-HOME directory check as fallback.
@@ -46,6 +76,7 @@ source "$UPD_SCRIPT_DIR/lib-workforce-state.sh"
 # configured workspace is not the default. The legacy check stays as fallback
 # so a box without a resolvable configured path behaves exactly as before.
 UPD_PLATFORM_HELPER="$UPD_SCRIPT_DIR/../../platform/common.sh"
+if [ -z "$STATE_FLAG" ]; then
 if [ ! -f "$UPD_PLATFORM_HELPER" ]; then UPD_PLATFORM_HELPER="$UPD_SCRIPT_DIR/../../../platform/common.sh"; fi
 if [ -f "$UPD_PLATFORM_HELPER" ]; then
   # shellcheck source=/dev/null
@@ -68,6 +99,13 @@ if [ -z "${STATE_DIR:-}" ]; then
   fi
 fi
 STATE="$STATE_DIR/.workforce-build-state.json"
+else
+  # --state FILE: the caller named the file. STATE_DIR is its folder, so the
+  # deferred spool, the gate state folder and the rate-limit ledger all live
+  # beside it; nothing is auto-resolved.
+  STATE="$STATE_FLAG"
+  STATE_DIR="$(dirname "$STATE")"
+fi
 
 if [ ! -f "$STATE" ]; then
   echo "ERROR: state file does not exist at $STATE" >&2
@@ -86,6 +124,20 @@ fi
 # ever runs -- so what this spool protects is the progress record
 # (phase/question-number/asked-by/phases-complete) that this script owns.
 DEFERRED_SPOOL="$STATE_DIR/.interview-state-deferred.jsonl"
+
+# ── interview_gate.py (the v2 step gate, one directory up in scripts/) ───────
+# Gate state lives in <workspace>/company-discovery/ per the interface contract;
+# with --state the workspace is the state file's folder. This script only ever
+# READS the gate (status, complete-check): the gate is the sole writer.
+GATE_SCRIPT="$UPD_SCRIPT_DIR/interview_gate.py"
+GATE_STATE_DIR="$STATE_DIR/company-discovery"
+
+# --state makes a run self-contained: the rate-limit ledger follows the state
+# file unless the caller named one, so an explicit run never reads or writes
+# another installation's workspace ledger.
+if [ -n "$STATE_FLAG" ] && [ -z "${INTERVIEW_RATE_LIMIT_STATE_FILE+x}" ]; then
+  INTERVIEW_RATE_LIMIT_STATE_FILE="$STATE_DIR/.interview-rate-limit.json"
+fi
 
 # ── NO-JQ CONTRACT (D1 fix) ───────────────────────────────────────────────────
 # This script used to shell out to `jq` for every state read and every state
@@ -184,6 +236,49 @@ commit(state_path, data)
 PYSTAMP
 }
 
+# --sync-from-gate: take the progress numbers from the step gate (the only thing
+# that decides which question is next and how far the owner is) and write the
+# four gate-v2 progress fields. Counters are answeredTotal / requiredTotal from
+# interview_gate.py's own status output, so the state file and the gate can
+# never disagree. No rate-limit charge: this is a read of the gate plus one
+# local state write, not a client submission.
+sync_from_gate() {
+  if [ ! -f "$GATE_SCRIPT" ]; then
+    echo "ERROR: interview_gate.py not found at $GATE_SCRIPT" >&2
+    return 1
+  fi
+  local _gate_out="" _gate_rc=0
+  set +e
+  _gate_out="$("$WORKFORCE_PYTHON" "$GATE_SCRIPT" --state-dir "$GATE_STATE_DIR" status 2>&1)"
+  _gate_rc=$?
+  set -e
+  if [ "$_gate_rc" -ne 0 ]; then
+    echo "ERROR: interview_gate.py status rc=$_gate_rc - gate progress not synced: $_gate_out" >&2
+    return 1
+  fi
+  "$WORKFORCE_PYTHON" - "$STATE" "$_gate_out" <<'PYSYNC'
+import json, sys
+
+state_path, payload = sys.argv[1], sys.argv[2]
+
+from workforce_state import read, commit
+data = read(state_path)
+out = json.loads(payload)
+
+if data.get("interviewProgress") is None:
+    data["interviewProgress"] = {}
+progress = data["interviewProgress"]
+
+progress["lastQuestionNumber"] = int(out.get("answeredTotal") or 0)
+progress["questionCountPlanned"] = int(out.get("requiredTotal") or 0)
+section = out.get("nextSection")
+progress["lastQuestionPhase"] = section if isinstance(section, str) else ""
+progress["engine"] = "gate-v2"
+
+commit(state_path, data)
+PYSYNC
+}
+
 # Replay every queued stamp this workspace's rate-limit budget currently has
 # room for (oldest first -- the spool is append-only so file order IS
 # chronological order). Entries still over budget stay queued; nothing is
@@ -268,28 +363,23 @@ with open(sys.argv[7], 'a') as f:
   } >&2
 }
 
-# Parse flags
-PHASE=""
-QNUM=""
-ASKED_BY=""
-PHASES_COMPLETE=""
-COMPLETE=false
-INDUSTRY_PACK_BLOB=""
-SESSION_ID="${INTERVIEW_SESSION_ID:-}"
-DRAIN_ONLY=false
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --phase) PHASE="$2"; shift 2 ;;
-    --question-number) QNUM="$2"; shift 2 ;;
-    --asked-by) ASKED_BY="$2"; shift 2 ;;
-    --phases-complete) PHASES_COMPLETE="$2"; shift 2 ;;
-    --complete) COMPLETE=true; shift ;;
-    --industry-pack) INDUSTRY_PACK_BLOB="$2"; shift 2 ;;  # PRD-2.15: passthrough to record-industry-pack.sh
-    --session-id) SESSION_ID="$2"; shift 2 ;;  # P0 fix: explicit stable session id, takes priority over --asked-by for the rate-limit key only (never for lastQuestionAskedBy)
-    --drain-deferred) DRAIN_ONLY=true; shift ;;  # replay the deferred spool (see drain_deferred_stamps above), then exit if no other flags were given
-    *) echo "unknown flag: $1" >&2; exit 1 ;;
-  esac
-done
+# Flags were parsed above, before state resolution (see "Flag parsing").
+
+# ── WF-053: a completed interview accepts NO progress stamps ──────────────────
+# workforce_completion.py puts the WHOLE interviewProgress object into the digest
+# that keeps a finished build verified, so one late stamp un-verifies a build
+# that is already done. Once interviewComplete is true every stamp-only call
+# (--sync-from-gate, --phase, --question-number, --asked-by, --phases-complete,
+# --drain-deferred, and a bare invocation) writes NOTHING -- not even
+# lastQuestionAt, so the state file stays byte-identical -- and empties the
+# deferred queue it would otherwise replay. --complete is exempt: a retried
+# --complete is the build-kick/idempotency path, not a progress stamp.
+ALREADY_COMPLETE="$(state_read "$STATE" "interviewComplete" "")"
+if [ "$ALREADY_COMPLETE" = "true" ] && [ "$COMPLETE" != true ] && [ -z "$INDUSTRY_PACK_BLOB" ]; then
+  rm -f "$DEFERRED_SPOOL" 2>/dev/null || true
+  echo "already complete; stamp ignored"
+  exit 0
+fi
 
 # Opportunistic drain: every invocation flushes any earlier queued stamp for
 # this workspace before doing its own work, so the very next successful call
@@ -297,7 +387,13 @@ done
 # queued, with zero extra operational awareness required.
 drain_deferred_stamps
 
-if [ "$DRAIN_ONLY" = true ] && [ -z "$PHASE" ] && [ -z "$QNUM" ] && [ "$COMPLETE" != true ] && [ -z "$INDUSTRY_PACK_BLOB" ]; then
+if [ "$DRAIN_ONLY" = true ] && [ -z "$PHASE" ] && [ -z "$QNUM" ] && [ "$COMPLETE" != true ] && [ -z "$INDUSTRY_PACK_BLOB" ] && [ "$SYNC_FROM_GATE" != true ]; then
+  exit 0
+fi
+
+if [ "$SYNC_FROM_GATE" = true ]; then
+  sync_from_gate || exit 1
+  echo "synced interviewProgress from interview_gate.py status ($STATE)"
   exit 0
 fi
 
@@ -308,34 +404,16 @@ fi
 # "interview-web" literal the Command Center defaults to can never become the
 # bucket key. See lib-interview-rate-limit.sh for the full incident writeup.
 RL_SESSION="$(interview_rate_limit_session_key "${SESSION_ID:-}" "${ASKED_BY:-}")"
-if [ "$COMPLETE" = true ]; then
-  RL_MAX_SAVED="${INTERVIEW_RATE_LIMIT_MAX:-60}"
-  # 3 -> 6 (D6, rate-limit amplifier). A --complete attempt consumes budget even
-  # when the EVIDENCE GATE below REFUSES it (exit 87), and a refusal is exactly
-  # the case a client retries. With a ceiling of 3, an owner whose completion was
-  # refused three times -- for a reason they cannot see and did not cause, e.g.
-  # the missing-jq abort or the mandatory-field gate -- was then locked out of
-  # completing for a full hour EVEN AFTER the underlying fault was repaired,
-  # turning a recoverable refusal into an hour of "nothing happens". 6 keeps a
-  # meaningful bound on a runaway/scripted caller (this is still far below the
-  # 60/hour ordinary-submission budget) while leaving room for a real owner to
-  # retry after a fix. Still env-overridable per box.
-  INTERVIEW_RATE_LIMIT_MAX=6
-  if ! check_interview_rate_limit "complete:${RL_SESSION}"; then
-    INTERVIEW_RATE_LIMIT_MAX="${RL_MAX_SAVED}"
-    echo "This --complete call is NOT queued for replay (completion intentionally" >&2
-    echo "is not auto-replayed -- it would fire the QC gate / build-kick out of" >&2
-    echo "band). Nothing else was written. Re-run --complete once the window" >&2
-    echo "above clears." >&2
-    exit 89
-  fi
-  INTERVIEW_RATE_LIMIT_MAX="${RL_MAX_SAVED}"
-elif [ -n "$PHASE" ] || [ -n "$QNUM" ]; then
+if [ -n "$PHASE" ] || [ -n "$QNUM" ]; then
   if ! check_interview_rate_limit "$RL_SESSION"; then
     defer_stamp_and_report "$RL_SESSION" "$PHASE" "$QNUM" "$ASKED_BY" "$PHASES_COMPLETE"
     exit 89
   fi
 fi
+
+# NOTE: the --complete rate-limit charge is NOT made here. It runs AFTER the
+# evidence gate passes (see below), so a refused completion (exit 87) never
+# consumes the caller's completion budget.
 
 # ── EVIDENCE GATE (2026-07-30 fix, a client Mac mini box / rescue-<client>) ──
 # `--complete` used to write `.interviewComplete = true` UNCONDITIONALLY (see the
@@ -367,6 +445,73 @@ fi
 # THIS script) — closing it here closes it for every caller, not just the one
 # that fired in this incident.
 if [ "$COMPLETE" = true ]; then
+  # Which rule applies: a gate-v2 interview (interviewProgress.engine, written by
+  # --sync-from-gate) is judged by the step gate itself; anything older is judged
+  # by the legacy heuristic check, unchanged.
+  COMPLETION_ENGINE="$(state_read "$STATE" "interviewProgress.engine" "")"
+  if [ "$COMPLETION_ENGINE" = "gate-v2" ]; then
+    # GATE-V2 EVIDENCE GATE. interview_gate.py complete-check is the ONLY thing
+    # allowed to say a gate-v2 interview is complete (its contract: exit 0 =
+    # complete, exit 3 = required questions missing, exit 1 = tooling error).
+    # Exit 1 writes nothing at all, not even interviewQc: absence of evidence is
+    # not permission to mark complete and is not a FAIL either.
+    if [ ! -f "$GATE_SCRIPT" ]; then
+      echo "REFUSED: interview_gate.py not found at $GATE_SCRIPT - cannot verify a gate-v2 interview before marking complete. interviewComplete was NOT written." >&2
+      exit 1
+    fi
+    echo "evidence gate: gate-v2 interview - running interview_gate.py complete-check before marking complete..."
+    set +e
+    GATE_CHECK_OUTPUT="$("$WORKFORCE_PYTHON" "$GATE_SCRIPT" --state-dir "$GATE_STATE_DIR" complete-check 2>&1)"
+    GATE_CHECK_RC=$?
+    set -e
+    case "$GATE_CHECK_RC" in
+      0|3)
+        "$WORKFORCE_PYTHON" - "$STATE" "$GATE_CHECK_OUTPUT" "$GATE_CHECK_RC" <<'PYGATEQC'
+import json, sys
+from datetime import datetime, timezone
+
+state_path, payload, rc = sys.argv[1], sys.argv[2], int(sys.argv[3])
+try:
+    out = json.loads(payload)
+except ValueError:
+    out = {}
+if not isinstance(out, dict):
+    out = {}
+
+from workforce_state import read, commit
+data = read(state_path)
+
+if rc == 0:
+    data["interviewQc"] = {
+        "status": "pass",
+        "engine": "gate-v2",
+        "reasons": [],
+        "missingQuestionIds": [],
+        "ranAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+else:
+    data["interviewQc"] = {
+        "status": "fail",
+        "engine": "gate-v2",
+        "reasons": [str(r) for r in (out.get("plain") or [])],
+        "missingQuestionIds": [str(m) for m in (out.get("missingRequired") or [])],
+    }
+
+commit(state_path, data)
+PYGATEQC
+        ;;
+      *)
+        echo "REFUSED: interview_gate.py complete-check rc=$GATE_CHECK_RC (tooling error) - cannot verify completion. interviewComplete was NOT written and interviewQc was left unchanged." >&2
+        echo "$GATE_CHECK_OUTPUT" >&2
+        exit 1
+        ;;
+    esac
+    if [ "$GATE_CHECK_RC" -eq 3 ]; then
+      echo "REFUSED: interview_gate.py complete-check rc=3 - required questions are still unanswered. interviewComplete was NOT written (interviewQc carries the missing question ids)." >&2
+      exit 87
+    fi
+    echo "evidence gate: interview_gate.py complete-check rc=0 - the step gate says the interview is complete; proceeding to write interviewComplete=true."
+  else
   QC_SCRIPT="$UPD_SCRIPT_DIR/qc-interview-completion.py"
   if [ ! -f "$QC_SCRIPT" ]; then
     echo "REFUSED: qc-interview-completion.py not found at $QC_SCRIPT - cannot verify question-count + mandatory-field evidence before marking complete. interviewComplete was NOT written. Repair the Skill 23 install and retry." >&2
@@ -383,6 +528,25 @@ if [ "$COMPLETE" = true ]; then
     exit 87
   fi
   echo "evidence gate: rc=$QC_GATE_RC - evidence supports completion; proceeding to write interviewComplete=true."
+  fi
+
+  # ── COMPLETE RATE-LIMIT (moved: only a PASSING completion is charged) ──────
+  # A refused --complete (exit 87 above) must never consume the completion
+  # budget: a refusal is exactly the case a client retries, and burning the
+  # budget for a fault they did not cause used to lock them out for an hour even
+  # after the fault was repaired. The ceiling stays 6/hour (a runaway/scripted
+  # caller is still bounded; this is far below the 60/hour ordinary budget).
+  RL_MAX_SAVED="${INTERVIEW_RATE_LIMIT_MAX:-60}"
+  INTERVIEW_RATE_LIMIT_MAX=6
+  if ! check_interview_rate_limit "complete:${RL_SESSION}"; then
+    INTERVIEW_RATE_LIMIT_MAX="${RL_MAX_SAVED}"
+    echo "This --complete call is NOT queued for replay (completion intentionally" >&2
+    echo "is not auto-replayed -- it would fire the QC gate / build-kick out of" >&2
+    echo "band). Nothing else was written. Re-run --complete once the window" >&2
+    echo "above clears." >&2
+    exit 89
+  fi
+  INTERVIEW_RATE_LIMIT_MAX="${RL_MAX_SAVED}"
 fi
 
 if [ "$COMPLETE" = true ]; then
@@ -493,9 +657,21 @@ if [ "$COMPLETE" = true ]; then
   # General Task. Idempotent, fail-soft (no Command Center = nothing to mirror),
   # and it only ever sets the flag when the state above is exactly true. Never
   # fatal: the roll re-applies it (shared-utils/ensure_cc_interview_flag.py).
+  # The mirror NEVER fails a completion, and each silent case says so in exactly
+  # one "interview-complete mirror:" line so a stuck flag is diagnosable.
   CC_FLAG_HELPER="$UPD_SCRIPT_DIR/../../shared-utils/ensure_cc_interview_flag.py"
-  if [ -f "$CC_FLAG_HELPER" ]; then
-    "$WORKFORCE_PYTHON" "$CC_FLAG_HELPER" --state "$STATE" || true
+  if [ ! -f "$CC_FLAG_HELPER" ]; then
+    echo "interview-complete mirror: helper missing - $CC_FLAG_HELPER not found; the completion itself is unaffected." >&2
+  else
+    set +e
+    "$WORKFORCE_PYTHON" "$CC_FLAG_HELPER" --state "$STATE"
+    CC_FLAG_RC=$?
+    set -e
+    case "$CC_FLAG_RC" in
+      0) ;;
+      3) echo "interview-complete mirror: mismatch (exit 3) - the Command Center flag does not match this completed interview; the completion itself is unaffected." >&2 ;;
+      4) echo "interview-complete mirror: not applicable (exit 4) - no Command Center database on this box; the completion itself is unaffected." >&2 ;;
+    esac
   fi
 fi
 
