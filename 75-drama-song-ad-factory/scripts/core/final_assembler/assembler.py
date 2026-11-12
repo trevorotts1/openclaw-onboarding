@@ -233,7 +233,34 @@ def _part_d_threads(cores_eff=None):
     return max(1, int(math.floor((cores - 1) / float(jobs)))), jobs
 
 
-def _lane_size_threads():
+def _run_bound_builder(run_dir):
+    """(runtime, provider) the run itself bound for its builder (S75-024).
+
+    Read from the run's own ``model-bindings.json`` (the store
+    ai_models.bind_roles wrote), so lane sizing judges the route this run
+    really dispatches on instead of the literals this used to pass. Returns
+    (None, None) when the run bound nothing or the store cannot be read:
+    lane_size then sizes from the machine alone, never from a made-up route.
+    """
+    if not run_dir:
+        return None, None
+    try:
+        from choice_card.intake_card import ai_models as _AM
+    except ImportError:                     # package not shipped on this box
+        return None, None
+    try:
+        doc = _AM.load_bindings(run_dir)
+    except (OSError, ValueError):           # unreadable store: no binding
+        return None, None
+    row = ((doc or {}).get("bindings") or {}).get(_AM.ROLE_BUILD) or {}
+    runtime = (row.get("dispatch") or {}).get("runtime")
+    provider = row.get("route")
+    if not runtime or not provider:
+        return None, None
+    return runtime, provider
+
+
+def _lane_size_threads(run_dir=None):
     """Prefer W2-A's scripts/core/lane_size.py; None when it is not shipped yet."""
     core_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if core_dir not in sys.path:
@@ -268,10 +295,10 @@ def _lane_size_threads():
         if not callable(fn):
             continue
         try:
-            # size() (W2-A) now takes (runtime, provider, ...) positionally:
-            # same documented call intake_preflight/factory.py makes. Other
-            # names stay zero-arg probes.
-            out = fn("claude-code", "openrouter", units=999) \
+            # size() (W2-A) takes (runtime, provider, ...) positionally:
+            # same documented call intake_preflight/factory.py makes, but with
+            # the run's OWN bound builder (S75-024), not a literal pair.
+            out = fn(*_run_bound_builder(run_dir), units=999) \
                 if name == "size" else fn()
         except Exception as exc:            # noqa: BLE001
             _loud("warn", "LANE_SIZE_BROKEN", "%s(): %r" % (name, exc))
@@ -285,15 +312,17 @@ def _lane_size_threads():
     return None
 
 
-def size_ffmpeg(output_seconds, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT):
+def size_ffmpeg(output_seconds, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT,
+                run_dir=None):
     """(threads, nice, timeout_s) for one render.
 
-    threads  from lane_size.py when shipped, else Part D fallback
+    threads  from lane_size.py when shipped, else Part D fallback; lane_size
+             is told the run's own bound runtime and provider (S75-024)
     nice     NICE_LEVEL (fixed: manual M7 says -n 10 on Linux and macOS)
     timeout  lane_size's ffmpeg_timeout_s when shipped, else
              max(600, 2 x output seconds x 1080p height factor)
     """
-    threads = _lane_size_threads() or _part_d_threads()[0]
+    threads = _lane_size_threads(run_dir) or _part_d_threads()[0]
     # 1080p factor scales by pixel area: 1080p = 1, 4K = 4.
     factor = max(1.0, (float(width or DEFAULT_WIDTH) *
                        float(height or DEFAULT_HEIGHT)) /
@@ -488,10 +517,60 @@ def face_speaks_gate(plan):
 # on the stub path, so dry runs and tests run it too -- the done-when is
 # "a frame check runs on every lip-sync clip and the receipt shows it".
 try:                                    # F9 sibling module (this package)
+    from . import frame_text as _frame_text
     from .frame_text import GARBLED_TEXT_FRAME, clip_rows as _frame_rows
 except ImportError:                     # direct script run from this dir
+    import frame_text as _frame_text  # type: ignore
     from frame_text import (            # type: ignore
         GARBLED_TEXT_FRAME, clip_rows as _frame_rows)
+
+# S75-045: the on-screen text check's code words (frame_text owns them).
+OCR_UNAVAILABLE = _frame_text.OCR_UNAVAILABLE
+
+
+def _onscreen_extractor(ffmpeg):
+    """The OCR reader's registered name, or None (S75-045).
+
+    onscreen_text owns the ONE reader: it registers ``tesseract`` with
+    frame_text at import (its line 187), so this never adds a second reader --
+    it only asks whether one can run here. No real render and no tesseract
+    binary means no reader, and the check reports UNAVAILABLE, never PASS.
+    Amendment to S75-045: use onscreen_text's registered name, not a new one.
+    """
+    if not ffmpeg:
+        return None
+    try:
+        from onscreen_text import onscreen_text as _OT
+    except ImportError:                  # package not shipped on this box
+        return None
+    try:
+        if not _OT.tesseract_bin():
+            return None
+        if _frame_text.EXTRACTORS.get(_OT.ENGINE) is None:
+            _frame_text.register_extractor(_OT.ENGINE, _OT.tesseract_extractor)
+        return _OT.ENGINE
+    except Exception:                    # noqa: BLE001  advisory setup only
+        return None
+
+
+def frame_text_warnings(rows):
+    """Receipt warnings for text-check rows that never really ran (S75-045).
+
+    An UNAVAILABLE row means the on-screen text check did not happen (no
+    reader, no frames, a failed read). The receipt says so by name; a check
+    that never ran is never read as a clean one.
+    """
+    out = []
+    for r in rows or []:
+        if r.get("status") != _frame_text.UNAVAILABLE:
+            continue
+        out.append({"kind": "WARNING",
+                    "code": r.get("reason_code") or OCR_UNAVAILABLE,
+                    "detail": "on-screen text check did not run on %s: "
+                              "no reader read the sampled frames"
+                              % (r.get("clip"),)})
+    return out
+
 
 def frame_text_gate(plan, ffmpeg=None, dry_run=False, frame_count=3,
                     extractor=None):
@@ -501,20 +580,45 @@ def frame_text_gate(plan, ffmpeg=None, dry_run=False, frame_count=3,
     names the extractor, so a dry-run receipt still shows the check ran);
     fail is the _fail receipt when a sampled readable-text frame flags
     GARBLED_TEXT_FRAME (no render spend), else None.
+
+    S75-045: rows also carry one named verdict per segment that plans to show
+    words (``check`` = "onscreen_text"). A row whose words are not the planned
+    words fails the gate; a row nobody could read is UNAVAILABLE, and the
+    caller puts ``frame_text_warnings(rows)`` on the receipt.
     """
+    real_ffmpeg = "ffmpeg" if (ffmpeg and not dry_run) else None
     marked = [s for s in plan["segments"]
               if s.get("lip_sync") or s.get("lip_sync_line_ids")]
     rows = _frame_rows(
-        marked, ffmpeg=("ffmpeg" if (ffmpeg and not dry_run) else None),
-        frame_count=frame_count, extractor=extractor)
+        marked, ffmpeg=real_ffmpeg, frame_count=frame_count,
+        extractor=extractor)
+    text_extractor = extractor if extractor is not None \
+        else _onscreen_extractor(real_ffmpeg)
+    for r in _frame_text.text_check_rows(
+            plan["segments"], ffmpeg=real_ffmpeg, extractor=text_extractor,
+            frame_count=frame_count):
+        r["check"] = "onscreen_text"
+        rows.append(r)
     for r in rows:
-        if r["text_frames"]:
-            return rows, _fail(GARBLED_TEXT_FRAME, next_action=(
+        if r.get("status") == _frame_text.FAIL:
+            fail = _fail(r.get("reason_code") or _frame_text.TEXT_CHANGED,
+                         next_action=(
+                             "the on-screen words in %s are not the planned "
+                             "words (%r); regenerate that shot with exactly "
+                             "the planned words or overlay them at assembly"
+                             % (r["clip"], r.get("expected"))),
+                         evidence={"frame_text": rows})
+        elif r["text_frames"]:
+            fail = _fail(GARBLED_TEXT_FRAME, next_action=(
                 "lip-sync clip %s shows readable invented text in sampled "
                 "frame(s) %s; regenerate that clip (no OCR text is allowed "
                 "in lip-sync close-ups)"
                 % (r["clip"], r["text_frames"])),
                 evidence={"frame_text": rows})
+        else:
+            continue
+        fail["warnings"] = frame_text_warnings(rows)
+        return rows, fail
     return rows, None
 
 
@@ -896,7 +1000,10 @@ def plan_timeline(tl, base_dir=".", probe=None):
         if s.get("shows_line_ids"):
             item["shows_line_ids"] = list(s["shows_line_ids"])
         # Part H H4: who is on screen / visibly speaking, for the face gate.
-        for k in ("shot_id", "faces_on_screen", "speaking_faces", "speaker", "artifact"):
+        # S75-045: the planned on-screen words ride the plan so the text
+        # check reads one record for the shots it judges.
+        for k in ("shot_id", "faces_on_screen", "speaking_faces", "speaker",
+                  "artifact", "on_screen_text"):
             if s.get(k) is not None:
                 item[k] = s[k]
         items.append(item)
@@ -1187,7 +1294,7 @@ def build_argv(plan, output, ffmpeg="ffmpeg"):
     """
     fps, w, h = plan["fps"], plan["width"], plan["height"]
     threads, nice, _timeout = size_ffmpeg(
-        plan.get("total_dur", 0), w, h)
+        plan.get("total_dur", 0), w, h, run_dir=plan.get("run_dir"))
     segs = plan["segments"]
     fr = 1.0 / fps
     # Load governor: nice -n 10 + -threads min(4, size_ffmpeg) on every ffmpeg argv.
@@ -1555,7 +1662,7 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
     if timeout is None:
         _threads, _nice, timeout = size_ffmpeg(
             plan.get("total_dur", 0), plan.get("width", DEFAULT_WIDTH),
-            plan.get("height", DEFAULT_HEIGHT))
+            plan.get("height", DEFAULT_HEIGHT), run_dir=plan.get("run_dir"))
     argv = build_argv(plan, output, ffmpeg)
     # DEL-14: refuse an attempted blur fill BEFORE any render spend. The
     # timeline (a renderer asking for a fill), the plan it built and the
@@ -1602,6 +1709,9 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                             "excerpt_overlay": _excerpt,
                             "motion": motion, "h5": _h5_ev,
                             "qc_no_blur": nb},
+               # S75-045: a text check nobody could run is named on the
+               # receipt, never passed over in silence.
+               "warnings": frame_text_warnings(frows),
                "state_version": 0}
         blocked = next((b for b in (cov, face, ffail, export_fail) if b is not None
                         and b.get("outcome") == "error"), None)
@@ -1766,6 +1876,9 @@ def _assemble(timeline_path, output, ffmpeg="ffmpeg", ffprobe="ffprobe",
                          evidence={"detector_result": detector_result})
     # No silent failure: every recorded FAILURE/WARNING rides the receipt.
     _loud_attach(receipt)
+    # S75-045: the text check's own UNAVAILABLE warnings ride beside them.
+    receipt["warnings"] = list(receipt.get("warnings") or []) \
+        + frame_text_warnings(evid.get("frame_text") or [])
     return receipt
 
 
