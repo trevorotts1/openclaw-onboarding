@@ -1139,7 +1139,7 @@ def _refuse_interview_pending(reason, option):
     """
     Fail-safe: no consent proof AND no genuine interview => REFUSE the build.
 
-    Writes status:INTERVIEW_PENDING to interview-handoff.md (best-effort), records
+    Writes status:INTERVIEW_PENDING to build-refusal.md (best-effort), records
     interviewBuildStatus in build-state (additive), and exits non-zero. NEVER writes
     interviewComplete=true. This is the "no consent proof = no build" guarantee.
     """
@@ -1158,7 +1158,9 @@ def _refuse_interview_pending(reason, option):
         file=sys.stderr,
     )
 
-    # interview-handoff.md (best-effort; the non-zero exit is the hard guarantee).
+    # build-refusal.md (best-effort; the non-zero exit is the hard guarantee).
+    # BU-53: a refusal never writes interview-handoff.md -- that file belongs to
+    # interview_gate.py status --write-handoff only.
     try:
         discovery_dir = _ensure_company_discovery_dir()
     except Exception:  # noqa: BLE001
@@ -1171,7 +1173,7 @@ def _refuse_interview_pending(reason, option):
             discovery_dir = None
     if discovery_dir:
         try:
-            handoff_path = os.path.join(discovery_dir, "interview-handoff.md")
+            handoff_path = os.path.join(discovery_dir, "build-refusal.md")
             with open(handoff_path, "w") as f:
                 f.write("# Interview Handoff\n")
                 f.write(f"## Last Updated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}\n\n")
@@ -1334,7 +1336,7 @@ def _refuse_reconciliation_pending(missing_ids, rejections=None):
             discovery_dir = None
     if discovery_dir:
         try:
-            handoff_path = os.path.join(discovery_dir, "interview-handoff.md")
+            handoff_path = os.path.join(discovery_dir, "build-refusal.md")
             with open(handoff_path, "w") as f:
                 f.write("# Interview Handoff\n")
                 f.write(f"## Last Updated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}\n\n")
@@ -3611,18 +3613,21 @@ def apply_standard_edits(config):
         "biggest_challenge": biggest_challenge,
     }
 
+    departments_config = config.get("departments", {}) or {}
+
+    # ── DECISION-COVERAGE GATE (relaxed branch: KEEPs implicit; exit 88 still
+    # fires for un-provenanced recorded declines/adds) ───────────────────────
+    _enforce_decision_coverage_or_refuse(config, departments_config)
+
+    # BU-53: only AFTER the decision gate has had its chance does the build
+    # begin — _begin_build() pops buildCompletedAt and stamps a fresh buildId,
+    # so running it first leaves a trace on a refused build.
     _begin_build()
     _build_started_at = datetime.now().isoformat()
     write_build_progress(
         "apply-diff-start", "Applying your interview edits to the pre-built company...",
         eta_minutes=8, started_at=_build_started_at,
     )
-
-    departments_config = config.get("departments", {}) or {}
-
-    # ── DECISION-COVERAGE GATE (relaxed branch: KEEPs implicit; exit 88 still
-    # fires for un-provenanced recorded declines/adds) ───────────────────────
-    _enforce_decision_coverage_or_refuse(config, departments_config)
 
     # ── ASSEMBLE THE DIFF: net-new customs from departments_config ──────────
     selected_departments = {}
@@ -3645,6 +3650,22 @@ def apply_standard_edits(config):
             selected_departments.pop(_did, None)
             print(f"[STANDARD-FIRST] Dropped provenance-declined custom department "
                   f"'{_did}'.", file=sys.stderr)
+
+    # BU-53: the enabled config departments that are NOT on the canonical /
+    # universal floor must resolve to a real suggested-roles file BEFORE
+    # reconcile unions the floor in.
+    _floor_norm = set()
+    for _floor_id in load_canonical_floor().keys():
+        _floor_norm.add(_decline_norm(_floor_id))
+        _floor_norm.add(_decline_norm(CANONICAL_ID_ALIASES.get(_floor_id, _floor_id)))
+        for _floor_variant in CANONICAL_VARIANT_SLUGS.get(_floor_id, []):
+            _floor_norm.add(_decline_norm(_floor_variant))
+    for _floor_uni in _universal_primary_ids():
+        _floor_norm.add(_decline_norm(_floor_uni))
+    assert_dept_map_resolves([
+        _did for _did, _dcfg in departments_config.items()
+        if (_dcfg or {}).get("enabled", True) and _decline_norm(_did) not in _floor_norm
+    ])
 
     # ── RETIRE PASS (reconcile's standard-first branch honors provenanced
     # declines by calling retire-confirmed-decline.sh — archive, never delete;
@@ -3925,6 +3946,23 @@ def apply_standard_edits(config):
                     depts.append(e)
                 e["status"] = "done"
                 e.setdefault("completedAt", _now)
+            # BU-52: settle the orchestrator's own entry on a newer box. A
+            # prebuilt orchestrator entry becomes done once its foundation
+            # (SOUL.md) exists on disk; otherwise the entry is left alone and
+            # the missing foundation is recorded for the resume job.
+            for e in depts:
+                if not isinstance(e, dict) or e.get("status") != "prebuilt":
+                    continue
+                _entry_slug = e.get("slug") or e.get("id") or ""
+                if _decline_norm(_entry_slug) not in (
+                        "masterorchestrator", "ceo", "deptceo"):
+                    continue
+                if os.path.isfile(os.path.join(DEPARTMENTS_DIR, _entry_slug,
+                                               "SOUL.md")):
+                    e["status"] = "done"
+                    e.setdefault("completedAt", _now)
+                else:
+                    registration_failures.append("orchestrator-foundation-missing")
             # Departments the diff dropped (declined customs never in
             # departments[]): mark done too if they were prebuilt-kept? No —
             # they were retired by the retire script; leave their entry alone.
@@ -4113,37 +4151,9 @@ def build_from_config(config):
     print(f"[NON-INTERACTIVE] Building workforce for: {company_name}", file=sys.stderr)
     print(f"[NON-INTERACTIVE] Industry: {industry}", file=sys.stderr)
 
-    # Save the config as the interview answers
-    discovery_dir = _ensure_company_discovery_dir()
-    if discovery_dir:
-        answers_path = os.path.join(discovery_dir, "workforce-interview-answers.md")
-        with open(answers_path, 'w') as f:
-            f.write(f"{NON_INTERACTIVE_ANSWERS_HEADER}\n\n")
-            f.write(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}\n\n---\n\n")
-            f.write(f"**Q:** What is the name of your business?\n**A:** {company_name}\n\n---\n\n")
-            f.write(f"**Q:** What industry are you in?\n**A:** {industry}\n\n---\n\n")
-            if company_description:
-                f.write(f"**Q:** What does your business do?\n**A:** {company_description}\n\n---\n\n")
-            if tools:
-                f.write(f"**Q:** What tools do you use?\n**A:** {tools}\n\n---\n\n")
-            if biggest_challenge:
-                f.write(f"**Q:** What is your biggest challenge?\n**A:** {biggest_challenge}\n\n---\n\n")
-
-        # v12.3.1: Mark the interview as complete in build-state RIGHT AFTER writing
-        # the answers file - so every downstream check (verify-zhc-standard.sh,
-        # interview-nudge-cron.sh, resume-workforce-build.sh) sees interviewComplete=true
-        # and finds the populated answers file, never the blank template.
-        _write_interview_complete_to_state(answers_path=answers_path)
-
-    # Issue #9: emit the first build-progress.json so the onboarding "building"
-    # page leaves its "Connecting to build status..." null state immediately and
-    # the /api/onboarding/build-status route stops returning the idle fallback.
-    _begin_build()
-    _build_started_at = datetime.now().isoformat()
-    write_build_progress(
-        "manifest", "Writing your workforce manifest...",
-        eta_minutes=8, started_at=_build_started_at,
-    )
+    # BU-53: build the department selection and run EVERY refusal gate BEFORE
+    # anything is written. A refused build must leave no trace: no transcript
+    # rewrite, no interviewComplete stamp, no buildId.
 
     # Process departments
     departments_config = config.get("departments", {})
@@ -4170,6 +4180,52 @@ def build_from_config(config):
     # builds are exempt by design. Runs BEFORE reconcile so no floor is unioned
     # in when decisions are incomplete.
     _enforce_decision_coverage_or_refuse(config, departments_config)
+
+    # BU-53: every ENABLED department the config names must resolve to a real
+    # suggested-roles file before the build writes anything (the later
+    # assert_dept_map_resolves below still covers the full reconciled set).
+    assert_dept_map_resolves([
+        _did for _did, _dcfg in (departments_config or {}).items()
+        if (_dcfg or {}).get("enabled", True)
+    ])
+
+    # Save the config as a SUMMARY (BU-53: never the interview transcript -- a
+    # refused build must not overwrite the owner's genuine answers file).
+    discovery_dir = _ensure_company_discovery_dir()
+    summary_path = None
+    if discovery_dir:
+        summary_path = os.path.join(discovery_dir, "workforce-config-summary.md")
+        with open(summary_path, 'w') as f:
+            f.write(f"{NON_INTERACTIVE_ANSWERS_HEADER}\n\n")
+            f.write(f"Generated: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}\n\n---\n\n")
+            f.write(f"**Q:** What is the name of your business?\n**A:** {company_name}\n\n---\n\n")
+            f.write(f"**Q:** What industry are you in?\n**A:** {industry}\n\n---\n\n")
+            if company_description:
+                f.write(f"**Q:** What does your business do?\n**A:** {company_description}\n\n---\n\n")
+            if tools:
+                f.write(f"**Q:** What tools do you use?\n**A:** {tools}\n\n---\n\n")
+            if biggest_challenge:
+                f.write(f"**Q:** What is your biggest challenge?\n**A:** {biggest_challenge}\n\n---\n\n")
+
+        # v12.3.1: Mark the interview as complete in build-state only after every
+        # refusal has had its chance (BU-53), so every downstream check
+        # (verify-zhc-standard.sh, interview-nudge-cron.sh, resume-workforce-build.sh)
+        # sees interviewComplete=true and finds the genuine answers file. The
+        # recorded path is the GENUINE transcript (_genuine_interview_answers_file),
+        # never the synthetic config summary.
+        _write_interview_complete_to_state(
+            answers_path=_genuine_interview_answers_file()
+        )
+
+    # Issue #9: emit the first build-progress.json so the onboarding "building"
+    # page leaves its "Connecting to build status..." null state immediately and
+    # the /api/onboarding/build-status route stops returning the idle fallback.
+    _begin_build()
+    _build_started_at = datetime.now().isoformat()
+    write_build_progress(
+        "manifest", "Writing your workforce manifest...",
+        eta_minutes=8, started_at=_build_started_at,
+    )
 
     # Issue #8 (custom-department declines): filter any CUSTOM (non-canonical) dept
     # the owner PROVENANCE-DECLINED out of selected_departments BEFORE reconcile.
@@ -4318,9 +4374,9 @@ def build_from_config(config):
         # authoring source). Never invites LLM authoring for a canonical dept.
         capture_custom_sops(dept_id, dept_info, dept_config, dept_answers)
 
-        # Log department answers
-        if discovery_dir:
-            with open(answers_path, 'a') as f:
+        # Log department answers to the config SUMMARY (never the transcript: BU-53)
+        if summary_path:
+            with open(summary_path, 'a') as f:
                 f.write(f"**Q:** Tell me about your {dept_info['name']} department.\n")
                 f.write(f"**A:** Activities: {dept_config.get('activities', 'N/A')}\n")
                 f.write(f"KPIs: {dept_config.get('kpis', 'N/A')}\n")
@@ -7735,6 +7791,17 @@ def write_company_config_json(company_name, industry, brand_colors=None,
         else:
             dept_kpis[dept_id] = []
 
+    path = os.path.join(COMPANY_DIR, "company-config.json")
+    existing = {}
+    if os.path.isfile(path):
+        try:
+            path_text = Path(path).read_text()
+            existing = json.loads(path_text)
+        except (OSError, ValueError):
+            existing = {}
+        if not isinstance(existing, dict):
+            existing = {}
+
     cfg = {
         "name":     company_name,
         "slug":     COMPANY_SLUG,
@@ -7752,9 +7819,26 @@ def write_company_config_json(company_name, industry, brand_colors=None,
         "created":  datetime.now().isoformat(),
         "schema_version": "2.0",
     }
-    path = os.path.join(COMPANY_DIR, "company-config.json")
-    with open(path, "w") as f:
-        json.dump(cfg, f, indent=2)
+    # Copy the recorded identity forward: a rebuild must never drop the company
+    # id or the pinned slug, or the next resolve refuses the company as foreign.
+    for _key in ("companyId", "company_id", "id", "companySlug", "company_slug", "companyName"):
+        if _key in existing:
+            cfg[_key] = existing[_key]
+    if not any(_key in cfg for _key in ("companyId", "company_id", "id")):
+        _state_company_id = _load_build_state().get("companyId")
+        if isinstance(_state_company_id, str) and _state_company_id:
+            cfg["companyId"] = _state_company_id
+    if "created" in existing:
+        cfg["created"] = existing["created"]
+    cfg["updated"] = datetime.now().isoformat()
+    cfg["slug"] = (
+        existing.get("slug")
+        or existing.get("companySlug")
+        or existing.get("company_slug")
+        or _load_build_state().get("companySlug")
+        or cfg["slug"]
+    )
+    _state_atomic_write(path, cfg)
     print(f"[COMPANY-CONFIG] Wrote {path} (schema v2.0)", file=sys.stderr)
     missing = [k for k in ("mission", "owner_values", "company_kpis") if not cfg[k]]
     if missing:
