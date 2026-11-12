@@ -213,8 +213,16 @@ class Reporter:
 
     def to_requester(self, kind: str, message: str, *,
                      phase_id: Optional[str] = None,
-                     reason: Optional[str] = None) -> None:
+                     reason: Optional[str] = None,
+                     force: bool = False) -> None:
         """kind in {ack, progress, blocked, done}. BLOCKED and DONE ignore quiet hours.
+
+        PD-206b: `force=True` bypasses the throttle for a message the caller has
+        already proven is due exactly once (the operator-review sentence is
+        guarded by the phase's own `operator_review_notified` flag). Without it
+        the message could be swallowed because the phase's start message stamped
+        the ten-minute window seconds earlier -- a sentence the client must
+        receive, never a duplicate.
 
         PRES-052: every dispatch outcome is ALSO observed into the supervised
         relay ledger (presentation_job.relay.observe_dispatch) with the
@@ -232,7 +240,7 @@ class Reporter:
             self._relay_observe(kind, message, "fail", phase_id)
             return
 
-        should_send = self._throttle_decision(kind, message, phase_id, reason)
+        should_send = self._throttle_decision(kind, message, phase_id, reason, force)
         if not should_send:
             throttled = self.state.setdefault("throttled", 0)
             self.state["throttled"] = throttled + 1
@@ -312,7 +320,11 @@ class Reporter:
 
     def _throttle_decision(self, kind: str, message: str,
                            phase_id: Optional[str],
-                           reason: Optional[str]) -> bool:
+                           reason: Optional[str],
+                           force: bool = False) -> bool:
+        if force:
+            # PD-206b: the caller has already proven this message is due once.
+            return True
         if kind in ("ack", "done"):
             return True
         if kind == "blocked":
