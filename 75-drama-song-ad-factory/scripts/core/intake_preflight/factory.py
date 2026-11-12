@@ -40,6 +40,7 @@ import os
 import re
 import shlex
 import sqlite3
+import subprocess
 import sys
 import time
 import uuid
@@ -1973,10 +1974,16 @@ STAGE_DESCRIPTORS = {
         "script": "scripts/core/research_engine/research.py",
         "verbs": ("",),
         "command": _stage_command("research"),
-        "recovery": 'scripts/core/research_engine/research.py --governed '
+        # S75-005: the recovery command is the command that really runs.
+        # research.py defines no --governed option, so naming it here made the
+        # published recovery row unrunnable.
+        "recovery": 'scripts/core/research_engine/research.py '
                     '--brief "$RUN/brief.json" --outdir "$RUN"',
-        "artifacts": ("research/receipt.json", "research/claims.json",
-                      "research/captures.json"),
+        # S75-005: exactly the files research.render() writes unconditionally
+        # (research.py 292, 305-319). receipt/claims/captures were written by
+        # nothing.
+        "artifacts": ("research/evidence.json", "research/manifest.json",
+                      "research/bundle.json"),
     },
     "creative-strategy": {
         "script": "scripts/core/story_arc/story_arc.py",
@@ -2120,9 +2127,53 @@ def _command_script(command):
     return tokens[0]
 
 
-def _descriptor_problems(skill_root=None):
+#: S75-005: how long one stage script's ``--help`` probe may take before the
+#: script is reported by name rather than left unproven.
+HELP_PROBE_TIMEOUT_S = 30
+
+
+def _help_problems(stage, d, root):
+    """S75-005: the script a descriptor hands out must answer ``--help``.
+
+    ``python3 -B <script> --help`` exiting 0 is the minimum proof that the
+    published command runs a real argument parser -- the check S75-005 asks
+    for. An unknown-option check would need a ``build_parser()`` inside the
+    script itself, and only the lane that owns that script may add one.
+    Nothing else runs: no run dir is created, no network, no provider. A script
+    that does not resolve on disk is already named by the caller, so it is
+    skipped here rather than reported twice.
+    """
+    script = str((d or {}).get("script") or "")
+    if not script:
+        return []
+    path = root / script
+    if not path.is_file():
+        return []
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-B", str(path), "--help"],
+            cwd=str(root), capture_output=True, text=True,
+            timeout=HELP_PROBE_TIMEOUT_S)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return ["stage %r script %r could not be probed with --help: %s"
+                % (stage, script, str(exc)[:200])]
+    if proc.returncode == 0:
+        return []
+    detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+    return ["stage %r script %r does not answer --help (exit %d)%s"
+            % (stage, script, proc.returncode,
+               ": %s" % detail[-1][:200] if detail else "")]
+
+
+def _descriptor_problems(skill_root=None, help_probe=False):
     """F4 named checks over the descriptors themselves. Each problem names the
-    stage, the field and the reason -- never a bare False."""
+    stage, the field and the reason -- never a bare False.
+
+    ``help_probe`` adds the S75-005 check: every stage's script is asked for
+    its own ``--help``. It is off by default because ``next`` validates the
+    registry on every call and a probe is a real subprocess; the contract test
+    turns it on for all twelve stages, which is where it belongs.
+    """
     root = _skill_root() if skill_root is None else Path(skill_root)
     problems = []
     for stage in CANONICAL_STAGES:
@@ -2161,6 +2212,8 @@ def _descriptor_problems(skill_root=None):
             problems.append("stage %r declares no emitted output inventory" % stage)
         elif len(set(arts)) != len(arts):
             problems.append("stage %r output inventory has duplicates" % stage)
+        if help_probe:
+            problems.extend(_help_problems(stage, d, root))
     return problems
 
 
@@ -2268,10 +2321,10 @@ STAGE_REGISTRY = {
     "research": _stage(
         [], "research-analyst",
         STAGE_DESCRIPTORS["research"]["command"],
-        "research/<request-digest>", "research/receipt.json",
+        "research/<request-digest>", "research/evidence.json",
         "research/receipt.json",
-        ["research/receipt.json", "research/claims.json",
-         "research/captures.json"],
+        ["research/evidence.json", "research/manifest.json",
+         "research/bundle.json"],
         "none", "research brief + sources on disk + independent semantic review",
         STAGE_DESCRIPTORS["research"]["recovery"],
         "research-complete",
@@ -2371,7 +2424,8 @@ STAGE_REGISTRY = {
 }
 
 
-def validate_registry(registry=None, skill_root=None, runbook_rows=None):
+def validate_registry(registry=None, skill_root=None, runbook_rows=None,
+                      help_probe=False):
     """Validate the published 12-stage registry (SPEC 8.6). Returns a list of
     problems; empty list == valid. Checks: all 12 canonical stages present,
     no extras, every required stage carries every required field non-empty,
@@ -2435,7 +2489,7 @@ def validate_registry(registry=None, skill_root=None, runbook_rows=None):
             problems.append("stage %r output inventory %r != descriptor %r"
                             % (s, arts, want))
         problems.extend(_evidence_contract_problems(s, entry, d))
-    problems.extend(_descriptor_problems(root))
+    problems.extend(_descriptor_problems(root, help_probe=help_probe))
     if runbook_rows:
         for s, row in sorted(runbook_rows.items()):
             cmd = str((row or {}).get("command") or "")
