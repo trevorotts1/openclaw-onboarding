@@ -192,19 +192,40 @@ def step_version(skill_dir: Path = SKILL_DIR) -> None:
 
 
 DEPT_MAP_SLUG = "signature-funnel"
+ENTRY_NAME = "skill-department-map-entry.json"
+
+
+def _department_map_path(skill_dir: Path) -> Optional[Path]:
+    """Where this skill's department-map row is read from, first hit wins:
+    1. the full map in the sibling blueprint skill (onboarding and OpenClaw deployed layouts);
+    2. the full map in an `*ai-workforce-blueprint` folder up to three levels above the skill (the 999 repo
+       keeps the skill at .claude/skills/signature-funnel and the map at the repo root, with no SKILL.md);
+    3. only when no full map exists anywhere: the skill's own shipped row,
+       repo-integration/skill-department-map-entry.json (a 999 install copies the skill alone).
+    A full map that exists but lacks the row is still a refusal - the shipped row never overrides it."""
+    tree = _sibling_tree(skill_dir, "ai-workforce-blueprint")
+    if tree is not None and (tree / "skill-department-map.json").is_file():
+        return tree / "skill-department-map.json"
+    for up in list(skill_dir.parents)[:3]:
+        for p in (sorted(up.iterdir()) if up.is_dir() else []):
+            if p.is_dir() and p.name.endswith("ai-workforce-blueprint") and (p / "skill-department-map.json").is_file():
+                return p / "skill-department-map.json"
+    entry = skill_dir / "repo-integration" / ENTRY_NAME
+    return entry if entry.is_file() else None
 
 
 def step_departmap(skill_dir: Path = SKILL_DIR) -> None:
     """The routing door (issue 74): a Signature Funnel request reaches this skill through ITS OWN row in the
     department map (intent triggers), never through a sibling skill's registry. A missing map file, a map
     without the row, or a row without intent triggers refuses the whole front door."""
-    tree = _sibling_tree(Path(skill_dir), "ai-workforce-blueprint")
-    path = tree / "skill-department-map.json" if tree else None
-    if path is None or not path.is_file():
+    path = _department_map_path(Path(skill_dir))
+    if path is None:
         raise FrontDoorError("DEPT-MAP", f"skill-department-map.json not found beside {skill_dir} "
-                             "(23-ai-workforce-blueprint) - Skill 49 cannot prove it is routable")
+                             "(23-ai-workforce-blueprint) and no repo-integration/skill-department-map-entry.json "
+                             "- Skill 49 cannot prove it is routable")
     try:
-        rows = json.loads(path.read_text(encoding="utf-8")).get("skills") or []
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        rows = [doc] if path.name == ENTRY_NAME else (doc.get("skills") or [])
     except (OSError, ValueError, AttributeError) as exc:
         raise FrontDoorError("DEPT-MAP", f"{path.name} unreadable ({type(exc).__name__})") from exc
     mine = [r for r in rows if isinstance(r, dict) and r.get("slug") == DEPT_MAP_SLUG]
