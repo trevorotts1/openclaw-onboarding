@@ -140,6 +140,65 @@ def recommended_text():
     return "%s builds, %s checks" % (label(REC_BUILD), label(REC_CHECK))
 
 
+#: S75-006: this computer's own build/check pair, saved beside the client's
+#: other remembered answers and reused instead of asking again.
+SETUP_FILE = "ai-setup.json"
+
+
+def remembered_setup(client_dir):
+    """This computer's saved build/check pair, or None.
+
+    Anything absent, unreadable, incomplete or no longer a valid pair reads as
+    None, so the question is asked rather than hidden."""
+    if not client_dir:
+        return None
+    path = os.path.join(os.path.expanduser(str(client_dir)), SETUP_FILE)
+    try:
+        with open(path, encoding="utf-8") as f:
+            rec = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(rec, dict) or not rec.get("build") or not rec.get("check"):
+        return None
+    res = check_result(rec["build"], rec["check"])
+    if not res.get("ok"):
+        return None
+    return {"build": res["build"], "check": res["check"], "route": res["route"]}
+
+
+def remember_setup(client_dir, pair):
+    """Save the client's AI setup for this computer (S75-006).
+
+    Atomic and merging, like the remembered Agnes answer. A pair the catalog
+    refuses is refused here with the same actionable reason."""
+    folder = str(client_dir or "").strip()
+    if not folder:
+        raise ValueError("A client data folder is needed to remember the AI setup.")
+    pair = pair if isinstance(pair, dict) else {}
+    res = check_result(pair.get("build"), pair.get("check"))
+    if not res.get("ok"):
+        raise ValueError(_message(res, res.get("role") or ROLE_BUILD))
+    folder = os.path.expanduser(folder)
+    path = os.path.join(folder, SETUP_FILE)
+    rec = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            old = json.load(f)
+        if isinstance(old, dict):
+            rec = old
+    except (OSError, ValueError):
+        rec = {}
+    rec.update({"build": res["build"], "check": res["check"], "route": res["route"],
+                "saved_at": _now()})
+    os.makedirs(folder, exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(rec, f, indent=2, sort_keys=True)
+        f.write("\n")
+    os.replace(tmp, path)
+    return {"build": res["build"], "check": res["check"], "route": res["route"]}
+
+
 def _selection_result(requested, error_code, reason, who="build", next_action=None, **filters):
     """The actionable model-selection result every refusal carries: what was
     refused, why, what is still selectable, the recommended pair, and the exact

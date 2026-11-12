@@ -61,7 +61,7 @@ def test_every_other_screen_has_no_price_but_still_an_example():
     screens = {s["id"]: s for s in IC.studio_json()["questions"]}
     assert screens["length"]["price"] is None
     assert screens["length"]["example"].startswith('"60 seconds.'), screens["length"]
-    for qid in ("models", "music", "look", "storyboard", "song", "script"):
+    for qid in ("models", "music", "look", "checkpoints", "model", "shape", "photos"):
         assert screens[qid]["example"].startswith('"'), (qid, screens[qid]["example"])
 
 
@@ -77,9 +77,10 @@ def test_cli_writes_the_export_and_exits_zero():
     p = _cli("--format", "studio-json")
     assert p.returncode == 0, p.stderr
     payload = json.loads(p.stdout)
-    # DSR-105: the story brief opens the card, the nine production choices follow.
-    assert [q["id"] for q in payload["questions"][:5]] == list(IC.BRIEF_IDS)
-    assert payload["questions"][5]["id"] == "models"
+    # DSR-105 + S75-006: the typed brief opens the card, then the AI setup
+    assert [q["id"] for q in payload["questions"][:4]] == ["offer", "link", "audience",
+                                                           "character"]
+    assert payload["questions"][4]["id"] == "models"
     assert set(payload["questions"][0]) >= set(REQUIRED)
 
 
