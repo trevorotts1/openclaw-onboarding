@@ -18,6 +18,15 @@ Decides whether a stage may advance on its QC verdict records. Fail-closed:
   (FILL_CLAIM_MEASURED otherwise): full height comes from crop-in of the
   source frame only, never from a blurred, letterboxed or stretched fill
   (DEL-14; the claim is evidence text, see fill_claim).
+- the final-QC and delivery required sets are DECLARED here (STAGE_REQUIRED,
+  from QC.md section 5 gate 17.5), never taken from the caller's list: a
+  narrower list is refused REQUIRED_CHECKS_NARROWED (U-C02, S75-002);
+- final QC MEASURES the master (--master-file, ffprobe through the governor),
+  reads the run's paid jobs from its own ledger, and writes
+  qc/final-qc-verdict.json on PASS, FAIL and BLOCKED so step_gate seals a real
+  measurement instead of a typed claim;
+- a reviewer whose MODEL equals the maker's model is MAKER_SELF_REVIEW: the
+  same model never checks its own work.
 
 Stateless: keeps no DB, sets no stage state. Repair budgets live in
 spend_ledger; the gate only names the failed checks (targeted repair, 17.7:
@@ -32,10 +41,14 @@ here; the gate only requires timing sample/confidence/method be recorded.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
+import sqlite3
 import sys
+import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from master_length import check_master  # noqa: E402  (Part I I4)
@@ -93,6 +106,22 @@ CRITICAL_CHECKS = frozenset({"lyrics", "text_product"})
 #: required record, so a stage cannot pass with the words unread.
 SCRIPT_STAGES = frozenset({"script", "script-lyrics"})
 
+#: U-C02 (S75-002): the REQUIRED checks for the two stages that decide whether
+#: a whole run ships come from HERE, never from the caller's --required list.
+#: QC.md section 5 gate 17.5 fixes the final-QC set; the delivery set is the
+#: master plus the song files, the three labelled audio versions, the one cover
+#: image and the delivered video. A caller list that omits any of these names
+#: is REFUSED (REQUIRED_CHECKS_NARROWED) -- saying less must never measure less.
+STAGE_REQUIRED = {
+    "final-qc": ("final_edit", "export", "timeline", "audio", "text_product"),
+    "delivery": ("final_edit", "song_files", "audio_versions",
+                 "cover_image", "video_delivery"),
+}
+
+#: spend_ledger job states that mean the provider was actually asked: those are
+#: the run's PAID jobs. planned/reserved never reached the provider.
+PAID_JOB_STATES = ("submitted", "unknown", "succeeded", "failed", "reconciled")
+
 def required_checks(stage, required, campaign_type=None):
     """FU-U10: a book campaign's shots stage also requires book_orientation.
 
@@ -135,6 +164,21 @@ class GateError(Exception):
 
 def _nonempty_str(v):
     return isinstance(v, str) and bool(v.strip())
+
+
+def _maker_binding(makers, check_id):
+    """check_id -> (maker identity, maker model or None).
+
+    U-C02 (S75-002): the makers file accepts
+    ``{"<check_id>": {"identity": "...", "model": "..."}}`` and still accepts
+    the older bare string, which is identity-only (no model to compare).
+    """
+    entry = makers.get(check_id) if isinstance(makers, dict) else None
+    if isinstance(entry, dict):
+        identity, model = entry.get("identity"), entry.get("model")
+        return ((identity if _nonempty_str(identity) else None),
+                (model if _nonempty_str(model) else None))
+    return (entry if _nonempty_str(entry) else None), None
 
 # G3-WIRE (Trevor order 2026-10-08 11:35 Part G G3): a sung share in QC or
 # a receipt is MEASURED by core/singing_detector, never derived from
@@ -342,7 +386,10 @@ def evaluate(run_id, stage, records, makers, required,
     prompt_compliance record built from prompt_compliance_rows()/record().
     A final QC with a ledger job and no compliant record never passes.
 
-    makers maps check_id -> maker identity (from artifact provenance).
+    makers maps check_id -> maker identity (from artifact provenance). A value
+    may also be {"identity": ..., "model": ...} (U-C02); when both the maker's
+    and the reviewer's model are recorded and match, the check is refused as
+    MAKER_SELF_REVIEW -- one model never judges its own work.
     gate is PASS (advance), FAIL (targeted repair allowed) or BLOCKED
     (structural problem: no repair of the same records can pass).
 
@@ -415,8 +462,7 @@ def evaluate(run_id, stage, records, makers, required,
                  "checker %r != required %r"
                  % (rec["checker_version"], expected_checker_version))
             continue
-        maker = makers.get(rec["check_id"]) \
-            if isinstance(makers, dict) else None
+        maker, maker_model = _maker_binding(makers, rec["check_id"])
         if not _nonempty_str(maker):
             fail(rec["check_id"], "MAKER_UNKNOWN",
                  "no maker binding for check_id; cannot prove independence")
@@ -426,6 +472,17 @@ def evaluate(run_id, stage, records, makers, required,
             fail(rec["check_id"], "MAKER_SELF_REVIEW",
                  "reviewer %r is the maker; not independent evidence"
                  % maker)
+            continue
+        # U-C02 (S75-002): a different identity is not a different checker when
+        # it is the same MODEL. Compared case-insensitively; a bare-string maker
+        # binding carries no model, so nothing is invented for the old form.
+        reviewer_model = rec["reviewer"].get("model")
+        if _nonempty_str(maker_model) and _nonempty_str(reviewer_model) \
+                and maker_model.strip().lower() \
+                == reviewer_model.strip().lower():
+            fail(rec["check_id"], "MAKER_SELF_REVIEW",
+                 "reviewer model %r is the maker's model %r; a model never "
+                 "checks its own work" % (reviewer_model, maker_model))
             continue
         # G3: a PASS record that asserts a sung share must have flowed
         # through core/singing_detector (receipt paths attach its name).
@@ -1064,26 +1121,158 @@ def _load_json(path):
         raise GateError("BAD_INPUT", "%s: %s" % (path, e))
 
 
+def _sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _measure_master(path):
+    """The master's duration in seconds, MEASURED by ffprobe (never typed).
+
+    The probe is ``platform_fit.probe_file`` -- the one ffprobe read routed
+    through ``core/load_governor.run_heavy``. load_governor has no probe of its
+    own, and it belongs to no lane in this build, so the gate borrows the
+    existing helper instead of adding a second one.
+    """
+    try:
+        from platform_fit.platform_fit import probe_file  # noqa: PLC0415
+        probe = probe_file(path)
+    except Exception as e:  # noqa: BLE001 - any failure means "not measured"
+        raise GateError("MASTER_UNMEASURABLE", "%s: %s" % (path, e))
+    duration = probe.get("duration_s") if isinstance(probe, dict) else None
+    if isinstance(duration, bool) or not isinstance(duration, (int, float)) \
+            or duration <= 0:
+        raise GateError("MASTER_UNMEASURABLE",
+                        "%s: ffprobe reported no duration" % (path,))
+    return round(float(duration), 3)
+
+
+def _read_paid_jobs(ledger_path, run_id):
+    """The run's PAID jobs, read from its own spend.sqlite3 (read-only)."""
+    try:
+        con = sqlite3.connect("file:%s?mode=ro" % ledger_path, uri=True,
+                              timeout=10)
+    except sqlite3.Error as e:
+        raise GateError("LEDGER_UNREADABLE", "%s: %s" % (ledger_path, e))
+    try:
+        rows = con.execute(
+            "SELECT logical_key, attempt_id, request_digest, stage, state"
+            " FROM jobs WHERE run_id=? AND state IN (%s) ORDER BY created_at"
+            % ",".join("?" * len(PAID_JOB_STATES)),
+            (run_id,) + PAID_JOB_STATES).fetchall()
+    except sqlite3.Error as e:
+        raise GateError("LEDGER_UNREADABLE", "%s: %s" % (ledger_path, e))
+    finally:
+        con.close()
+    return [{"logical_key": r[0], "attempt_id": r[1], "request_digest": r[2],
+             "stage": r[3], "state": r[4]} for r in rows]
+
+
+def _write_verdict(run_dir, gate, run_id, stage, required, measured_s,
+                   master_file, records_path):
+    """Write ``<run>/qc/final-qc-verdict.json`` -- the file step_gate seals.
+
+    Written on PASS, FAIL and BLOCKED alike, so a stale PASS can never be left
+    behind a failed or blocked final QC.
+    """
+    doc = {"gate": gate, "run_id": run_id, "stage": stage,
+           "required": list(required),
+           "measured_master_s": (round(float(measured_s), 3)
+                                 if measured_s is not None else None),
+           "master_sha256": (_sha256_file(master_file)
+                             if master_file else None),
+           "records_sha256": _sha256_file(records_path),
+           "evaluated_at": int(time.time())}
+    path = os.path.join(run_dir, "qc", "final-qc-verdict.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".verdict-", dir=os.path.dirname(path))
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    os.replace(tmp, path)
+    return path
+
+
 def cmd_evaluate(ns):
     try:
         records = _load_json(ns.records)
         makers = _load_json(ns.makers)
         required = [c.strip() for c in ns.required.split(",") if c.strip()]
+        # U-C02: for the two whole-run gates the required set is DECLARED, not
+        # dictated by the caller. A shorter list is refused by name.
+        narrowed = [c for c in STAGE_REQUIRED.get(ns.stage, ())
+                    if c not in required]
+        if narrowed:
+            return envelope(
+                "evaluate", "rejected", "REQUIRED_CHECKS_NARROWED",
+                "this stage measures %s; the list omits %s"
+                % (",".join(STAGE_REQUIRED[ns.stage]), ",".join(narrowed)),
+                run_id=ns.run, stage=ns.stage,
+                evidence={"missing": narrowed,
+                          "required": list(STAGE_REQUIRED[ns.stage])}), \
+                EXIT["rejected"]
+        if ns.stage in STAGE_REQUIRED:
+            required = list(STAGE_REQUIRED[ns.stage])
         profile_version = None
         if ns.profile:
             profile_version = _load_json(ns.profile).get("profile_version")
         critical = (frozenset(c.strip() for c in ns.critical.split(",")
                               if c.strip()) if ns.critical else CRITICAL_CHECKS)
+        measured_s = None
+        if ns.master_file:
+            measured_s = _measure_master(ns.master_file)
+        elif ns.master_s is not None:
+            if not ns.offline_test:
+                return envelope(
+                    "evaluate", "rejected", "MASTER_NOT_MEASURED",
+                    "pass --master-file so the gate measures the master; a "
+                    "typed --master-s is accepted only with --offline-test",
+                    run_id=ns.run, stage=ns.stage), EXIT["rejected"]
+            measured_s = ns.master_s
+        master = ({"chosen_length_s": ns.chosen_length_s,
+                   "measured_s": measured_s}
+                  if ns.chosen_length_s is not None or measured_s is not None
+                  else None)
+        ledger_jobs = _load_json(ns.ledger_jobs) if ns.ledger_jobs else None
+        if ns.stage == "final-qc":
+            if not ns.run_dir:
+                return envelope(
+                    "evaluate", "rejected", "RUN_DIR_REQUIRED",
+                    "final QC writes qc/final-qc-verdict.json for step_gate to "
+                    "seal; pass --run-dir <run folder>",
+                    run_id=ns.run, stage=ns.stage), EXIT["rejected"]
+            if ledger_jobs is None:
+                if not ns.ledger:
+                    return envelope(
+                        "evaluate", "rejected", "LEDGER_REQUIRED",
+                        "final QC reads the run's paid jobs from its own "
+                        "spend.sqlite3; pass --ledger <path>",
+                        run_id=ns.run, stage=ns.stage), EXIT["rejected"]
+                ledger_jobs = _read_paid_jobs(ns.ledger, ns.run)
         res = evaluate(ns.run, ns.stage, records, makers, required,
                        critical=critical, profile_version=profile_version,
                        expected_profile_version=ns.expect_profile,
                        expected_checker_version=ns.expect_checker,
-                       master=({"chosen_length_s": ns.chosen_length_s,
-                                "measured_s": ns.master_s}
-                               if ns.chosen_length_s is not None else None),
+                       master=master,
                        campaign_type=ns.campaign_type or None,
-                       ledger_jobs=(_load_json(ns.ledger_jobs)
-                                    if ns.ledger_jobs else None))
+                       ledger_jobs=ledger_jobs)
+        if ns.stage == "final-qc":
+            # The verdict names the set the gate really measured: the declared
+            # stage set plus prompt_compliance when the run has paid jobs.
+            verdict_required = list(required_checks(
+                ns.stage, required, ns.campaign_type or None))
+            if ledger_jobs and PROMPT_COMPLIANCE_CHECK not in verdict_required:
+                verdict_required.append(PROMPT_COMPLIANCE_CHECK)
+            try:
+                _write_verdict(ns.run_dir, res["gate"], ns.run, ns.stage,
+                               verdict_required, measured_s, ns.master_file,
+                               ns.records)
+            except OSError as e:
+                raise GateError("VERDICT_UNWRITABLE",
+                                "%s: %s" % (ns.run_dir, e))
     except GateError as e:
         return envelope("evaluate", "error", e.code, str(e),
                         run_id=ns.run, stage=ns.stage), EXIT["error"]
@@ -1126,8 +1315,20 @@ def _cli(argv=None):
                    help="acceptance-profile.json path (optional)")
     a.add_argument("--chosen-length-s", type=float, default=None,
                    help="I4: chosen video length; required with final_edit")
+    a.add_argument("--master-file", default=None,
+                   help="I4: the master file; the gate MEASURES its duration "
+                        "with ffprobe (U-C02)")
     a.add_argument("--master-s", type=float, default=None,
-                   help="I4: measured master length in seconds")
+                   help="I4: a typed master length -- accepted only together "
+                        "with --offline-test; every real gate measures")
+    a.add_argument("--offline-test", action="store_true",
+                   help="allow a typed --master-s (offline tests only)")
+    a.add_argument("--ledger", default=None,
+                   help="final-qc: the run's spend.sqlite3; the paid jobs are "
+                        "read from it when --ledger-jobs is omitted")
+    a.add_argument("--run-dir", default=None,
+                   help="final-qc: the run folder; the verdict file "
+                        "qc/final-qc-verdict.json is written there")
     a.add_argument("--campaign-type", default="",
                    help="campaign type; 'book' requires book_orientation at shots")
     a.add_argument("--expect-profile", default=None)
