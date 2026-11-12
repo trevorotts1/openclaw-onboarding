@@ -764,6 +764,32 @@ def _operation_failed_envelope(generate, variant, failure, operation, judged,
         causal_chain=list(env["causal_chain"])
         + [causal_link(operation, code, detail)])
 
+def _record_take_acceptance(run_dir, variant, take, receipt, plan):
+    """S75-052: write the WW-21 acceptance record WHERE THE TAKE IS JUDGED.
+
+    Called immediately after the take is judged and saved, for EVERY verdict
+    (PASS, FAIL, UNMEASURED). The record is the SAME key ``acceptance_from_run``
+    reads, so a take on disk can never be "judged but unrecorded" by accident.
+
+    A failure to write never breaks the paid save path: no record is left, and
+    ``acceptance_from_run`` then reports the take as "take saved but never
+    judged", which BLOCKS. Failing closed, never a silent PASS.
+    """
+    if not run_dir:
+        return None
+    try:
+        binding = _SD.take_binding(
+            (take or {}).get("audio_path"),
+            str((plan or {}).get("creative_fingerprint")
+                or (plan or {}).get("story_revision") or "take"))
+        results = _SD.audio_results_for(take, receipt, plan or {}, run_dir,
+                                        binding=binding)
+        return _SD.record_acceptance(run_dir, variant["id"], binding, results,
+                                     required=_SD.required_for(plan or {}))
+    except Exception:               # noqa: BLE001 - never break the save path
+        return None
+
+
 def one_variant(n, variant, request, plan, generate, measure, save, script_words, hook_text,
                 spoken_range_pct=None, **kw):
     """THE single-variant worker path. Every caller (the umbrella three-up
@@ -813,6 +839,9 @@ def one_variant(n, variant, request, plan, generate, measure, save, script_words
             raise
         if out:
             saved.append(dict(t))
+            # S75-052: the acceptance record is written HERE, where the take is
+            # judged and saved -- for every verdict, one record per variant.
+            _record_take_acceptance(run_dir, variant, t, rc, plan)
         return out
 
     def _measure(t):
@@ -1055,9 +1084,74 @@ def _acceptance_refusal(run_dir, action):
     return _SD.acceptance_refusal(run_dir, action)
 
 
+def _distinct_versions_verdict(results):
+    """D4 (three audibly different versions), measured ONCE across the three
+    takes by the candidate-matrix contract: the three treatments must differ
+    pairwise in at least two of arrangement/vocals/palette (a relabelled copy
+    is refused), and the three variants must be three DISTINCT arrangements.
+
+    Returns (verdict, detail). Never a PASS on a missing or broken input."""
+    ids = []
+    style_id = None
+    for r in results or []:
+        v = (r or {}).get("variant") or {}
+        if isinstance(v, dict) and v.get("id"):
+            ids.append(str(v["id"]))
+            style_id = style_id or v.get("genre") or v.get("style_id")
+    if len(ids) != 3 or len(set(ids)) != 3:
+        return ("FAIL", "D4 three audibly different versions: three distinct "
+                        "arrangements were not produced (got %r)" % (ids,))
+    if not style_id:
+        return ("UNMEASURED", "D4 three audibly different versions: the run names no "
+                              "music style, so the three treatments cannot be measured")
+    try:
+        from song_choices import candidate_matrix as _CM   # noqa: PLC0415
+        _CM.treatments_for(style_id)
+    except Exception as exc:        # noqa: BLE001 - a refusal blocks
+        return ("FAIL", "D4 three audibly different versions: %s" % exc)
+    return ("PASS", "D4 three audibly different versions: arrangement/vocals/palette "
+                    "differ pairwise in at least two of three facets")
+
+
+def _record_distinct_versions(results, run_dir):
+    """S75-052: add D4 to every variant's acceptance record and rewrite it once.
+
+    D4 is the ONE D-result computed at fan-in, across the three takes; the
+    record keeps the required set it was written under and only gains D4."""
+    acc = _SD.acceptance_from_run(run_dir)
+    if not acc.get("applicable"):
+        return acc
+    verdict, detail = _distinct_versions_verdict(results)
+    for r in results or []:
+        vid = str(((r or {}).get("variant") or {}).get("id") or "")
+        rec = (acc.get("variants") or {}).get(vid)
+        if not vid or not isinstance(rec, dict):
+            continue
+        binding = rec.get("binding")
+        if not isinstance(binding, dict) or not binding:
+            continue
+        carried = rec.get("results") if isinstance(rec.get("results"), dict) else {}
+        carried = dict(carried)
+        carried["D4"] = {"verdict": verdict, "detail": detail,
+                         "binding": dict(binding)}
+        required = [str(x) for x in (rec.get("required") or [])]
+        if "D4" not in required:
+            required.append("D4")
+        try:
+            _SD.record_acceptance(run_dir, vid, binding, carried, required=required)
+        except Exception:           # noqa: BLE001 - no record rewritten, gate stays shut
+            continue
+    return acc
+
+
 def fan_in(results, run_dir, delivery_dir, **kw):
     """CHECK and DELIVER results that already exist. Never generates: the
-    fan-in step must not dispatch anything."""
+    fan-in step must not dispatch anything.
+
+    S75-052: D4 (three audibly different versions) is computed ONCE here,
+    across the three takes, and written onto every variant's acceptance record
+    before delivery -- it is the only D-result that is not per take."""
+    _record_distinct_versions(results, run_dir)
     return deliver_choices(results, delivery_dir, run_dir, **kw)
 
 
@@ -1177,14 +1271,39 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
     if hold:
         raise ChoiceError(hold["detail"])
     _require_three(results, key=lambda r: r["variant"]["id"])
-    good = [r for r in results
-            if r.get("take") and r.get("status") != "FAILED" and _accepted(r)[0]]
+    # S75-052: a version whose own acceptance record is not PASS is never
+    # OFFERED -- but it no longer stops the versions that passed. Its named
+    # reasons ride with the LISTENING presentation below.
+    acc = _SD.acceptance_from_run(run_dir)
+    acc = acc if acc.get("applicable") else {"variants": {}}
+
+    def _acc_of(r):
+        vid = str(((r or {}).get("variant") or {}).get("id") or "")
+        rec = (acc.get("variants") or {}).get(vid)
+        if not isinstance(rec, dict) or rec.get("verdict") == "PASS":
+            return vid, []
+        return vid, list(rec.get("reasons") or []) or ["the acceptance record is not PASS"]
+
+    good, acc_blocked = [], []
+    for r in results:
+        if not r.get("take") or r.get("status") == "FAILED" or not _accepted(r)[0]:
+            continue
+        _vid, why = _acc_of(r)
+        if why:
+            acc_blocked.append((r, why))
+        else:
+            good.append(r)
     # LISTENING ONLY: a take the JUDGE failed (status FAILED with its named
     # concerns). A take blocked by WW-21's acceptance binding is NOT presented
     # here -- that refusal path is unchanged.
     heard = [r for r in results
              if r not in good and str(r.get("status") or "").upper() == "FAILED"
              and (r.get("take") or r.get("heard"))]
+    # S75-052: an acceptance-blocked version is presented for LISTENING too,
+    # with the acceptance reasons, so the client can hear it and answer the
+    # ONE fork -- never offered for a pick.
+    heard += [r for r, _why in acc_blocked
+              if (r.get("take") or r.get("heard")) and r not in heard]
     if not good and not heard:
         raise ChoiceError("no song version passed every required song gate; nothing to offer")
     if good:
@@ -1223,10 +1342,13 @@ def deliver_choices(results, delivery_dir, run_dir, runner=_run_ffmpeg, target=N
         if r in good:
             lines.append("%s - %s - %s" % (label.split(" (")[0], dur, v["description"]))
             offered[str(r["n"])] = {"label": label, "file": dst, "duration": dur,
-                                    "take": take, "receipt": r.get("receipt")}
+                                    "take": take, "receipt": r.get("receipt"),
+                                    "variant_id": v.get("id")}
         else:
             # Presented to LISTEN to, never offered for a pick (WW-18).
-            why = r.get("concerns") or failure_concerns(r)
+            why = list(r.get("concerns") or failure_concerns(r))
+            _vid, _accwhy = _acc_of(r)
+            why += [w for w in _accwhy if w not in why]
             concerns[str(r["n"])] = why
             lines.append("%s - %s - %s - NOT PASSED: %s"
                          % (label.split(" (")[0], dur, v["description"],
@@ -1616,6 +1738,13 @@ def record_pick(run_dir, reply):
     o = (st.get("offered") or {}).get(n)
     if not o or not os.path.isfile(o["file"]):
         raise ChoiceError("%r is not one of the offered songs %s" % (reply, sorted(st.get("offered") or {})))
+    # S75-052: the PICK is per-version. A variant whose acceptance record is
+    # not PASS is refused by name even if another version passed; the whole-run
+    # hold above is only for an unjudged take or a run with no passing version.
+    if o.get("variant_id"):
+        vref = _SD.acceptance_variant_refusal(run_dir, o["variant_id"], "the pick")
+        if vref:
+            raise ChoiceError(vref["detail"])
     ok, why = _SD.constituent_ok(o.get("receipt"))
     if not ok:
         raise ChoiceError("song %s is not offerable: %s" % (reply, why))
@@ -2093,6 +2222,70 @@ def _real_generate(run_dir, ledger, run_id):
     return generate
 
 
+def _latest_take(variant_dir):
+    """The LAST saved take under ``music/takes/<variant>/`` (a ``take-NN``
+    folder), as ``(take, judge receipt)``, or ``(None, None)`` when none was
+    saved. Reads only what the save transport wrote."""
+    try:
+        names = sorted(n for n in os.listdir(variant_dir)
+                       if n.startswith("take-")
+                       and os.path.isdir(os.path.join(variant_dir, n)))
+    except OSError:
+        return None, None
+    for name in reversed(names):
+        d = os.path.join(variant_dir, name)
+        try:
+            with open(os.path.join(d, "take-measurements.json"), encoding="utf-8") as f:
+                take = json.load(f)
+            with open(os.path.join(d, "receipt.json"), encoding="utf-8") as f:
+                rcpt = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(take, dict) or not isinstance(rcpt, dict):
+            continue
+        try:
+            audio = next((os.path.join(d, n) for n in sorted(os.listdir(d))
+                          if n.lower().endswith((".mp3", ".wav", ".flac", ".m4a", ".aac"))),
+                         None)
+        except OSError:
+            audio = None
+        if not audio:
+            continue
+        return dict(take, audio_path=audio), rcpt
+    return None, None
+
+
+def results_from_run(run_dir):
+    """S75-052: rebuild the three delivery results from the run's OWN saved
+    takes, for ``song_choices.py offer --run-dir``.
+
+    Reads only what the music stage wrote (``music/req.json`` and
+    ``music/takes/<variant>/take-NN/``); it never generates and never guesses.
+    A variant with no saved, judged take is refused by name."""
+    run_dir = os.path.abspath(os.path.expanduser(str(run_dir)))
+    spec = _load_request(os.path.join(run_dir, "music", "req.json"), run_dir)
+    reqs = build_requests(spec["style_id"], spec["sheet"], spec["client_text"],
+                          spec["title"], spec["length_s"], spec["vocal_gender"],
+                          hook_plan=spec["hook_plan"], pace_plan=spec["pace_plan"])
+    plan = {"delivered_s": spec["length_s"], "style_id": spec["style_id"],
+            "sheet_text": spec["sheet_text"], "hook_plan": spec["hook_plan"],
+            "_pace_plan": spec["pace_plan"]}
+    out = []
+    for n, (v, _rq) in enumerate(reqs, 1):
+        take, rcpt = _latest_take(os.path.join(run_dir, "music", "takes", v["id"]))
+        if take is None or not isinstance(rcpt, dict):
+            raise ChoiceError("variant %s has no saved, judged take under "
+                              "music/takes/%s; nothing is offered"
+                              % (v["id"], v["id"]))
+        ok = _SD.take_accepted(rcpt)[0]
+        out.append({"n": n, "variant": v,
+                    "status": rcpt.get("verdict") if ok else "FAILED",
+                    "take": take,
+                    "receipt": _SD.constituent_receipt(take, rcpt, plan),
+                    "receipts": [rcpt]})
+    return out
+
+
 def cmd_generate(a, generate=None, measure=None, save=None, plan=None):
     """`generate` -- the canonical three-version music runner.
 
@@ -2206,6 +2399,11 @@ def main(argv=None):
     g.add_argument("--run-id", default="")
     g.add_argument("--variant", default="", help="orchestrated mode: run ONE variant only")
     g.add_argument("--unit-id", default="", help="orchestrated mode: run ONE owned unit WW-00N")
+    of = sub.add_parser("offer", help="check and deliver the three songs that already exist "
+                                      "(fan-in, then delivery)")
+    of.add_argument("--run-dir", required=True)
+    of.add_argument("--delivery-dir", default="",
+                    help="the client delivery folder (default: <run>/delivery)")
     a = ap.parse_args(argv)
     try:
         if a.cmd == "init":
@@ -2257,6 +2455,15 @@ def main(argv=None):
                 # prints its typed envelope above and exits NONZERO -- it can
                 # never be narrated as a successful dispatch.
                 return 5
+        elif a.cmd == "offer":
+            # S75-052: the reachable delivery action. Checks and delivers the
+            # takes that already exist -- `generate` never offers anything by
+            # itself, so without this the offer surface was unreachable.
+            rd = os.path.abspath(os.path.expanduser(a.run_dir))
+            results = results_from_run(rd)
+            delivery = (os.path.abspath(os.path.expanduser(a.delivery_dir))
+                        if a.delivery_dir else os.path.join(rd, "delivery"))
+            print(fan_in(results, rd, delivery))
         else:
             r = refusal(a.run_dir)
             if r:
