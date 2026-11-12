@@ -4,7 +4,6 @@
 - Lane: FL17
 - Severity: Severe
 - Branch: `pd/fl17-phase-checks` (confirmed with `git branch --show-current` before any work)
-- Worktree: `<LOOP_ROOT>/worktrees/onboarding/FL17`
 - Fix commit: `1e697fdda9b756798353c693f9ca38b77c6833e4`
 - Pre-fix branch head: `13d00426b`
 - Remote proof: `git ls-remote origin refs/heads/pd/fl17-phase-checks` →

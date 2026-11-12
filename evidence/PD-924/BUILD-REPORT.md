@@ -86,7 +86,7 @@ does not need to exercise that here, so the original polarity stands.
 ## Mutation proof — each retargeted assertion can still FAIL
 
 Each mutation breaks the fixture property its assertion depends on, runs that one
-node, and is reverted. Script: `scratchpads/PD-924/mutate3.py` (scratch, not in
+node, and is reverted. Script: a throwaway mutation script (scratch, not in
 the tree).
 
 ```
@@ -195,4 +195,4 @@ Touched: the two test files above, plus this report. No product code, no
 `trust_boundary_observability.py`. No merge, no push to main, no client box, no
 live system, no paid model call. Temp files under
 `<LOOP_ROOT>/tmp`; scratch under
-`<LOOP_ROOT>/scratchpads/PD-924`.
+`<LOOP_ROOT>/tmp/PD-924`.

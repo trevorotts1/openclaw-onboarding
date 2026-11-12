@@ -2,7 +2,6 @@
 
 - Unit: PD-915 (added unit, not in the 164 lock), lane FL17
 - Branch: `pd/fl17-phase-checks`
-- Worktree: `<LOOP_ROOT>/worktrees/onboarding/FL17`
 - Fix commit: `2d85e9d1bda5c9cb1202412af5e87033da0d6d6d`
 - Pushed: **yes** — `git ls-remote origin refs/heads/pd/fl17-phase-checks`
   returned `2d85e9d1bda5c9cb1202412af5e87033da0d6d6d` after the push.
@@ -119,7 +118,7 @@ Raw log: `evidence/PD-915/head-retargeted-fullfile.log`.
 ```
 
 Raw log: `evidence/PD-915/base-original.log`. Base tree extracted with
-`git archive f63ef6b0c -- <scripts dir> | tar -x -C scratchpads/PD-915/base`.
+`git archive f63ef6b0c -- <scripts dir> | tar -x -C <throwaway base dir>`.
 
 5. **BASE `f63ef6b0c` + RETARGETED test** — fails on the assertion that the
    gate reads the decoy:
@@ -165,4 +164,4 @@ No `phase_verifiers.py` line was touched by PD-915.
 No merge, no push to main, no rebase, no force-push, no client box, no live
 system. Work stayed in the FL17 worktree and the pd-fix room; temp files under
 `<LOOP_ROOT>/tmp`, scratch under
-`<LOOP_ROOT>/scratchpads/PD-915`.
+`<LOOP_ROOT>/tmp/PD-915`.

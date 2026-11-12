@@ -148,5 +148,5 @@ is visible in the `stamp.legacy:` lines the suite emits.
 | `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/phases.py` | **FOREIGN — PD-906** |
 | `evidence/PD-306/BUILD-REPORT.md` | this report |
 
-No other lane's files, folders, branches, PRs or worktrees were read or written.
+No other lane's files, folders, branches, PRs or lane checkouts were read or written.
 Nothing was merged, rebased, force-pushed, or pushed to `main`.

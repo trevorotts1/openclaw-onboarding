@@ -7,7 +7,6 @@
     `pd/fl17-phase-checks`, its `--hold-*` children, and
     `pd/fl17-phase-checks--qc-merge`). Per the unit instruction, the FL17 lane's
     existing branch `pd/fl17-phase-checks` was used.
-- Worktree: `<LOOP_ROOT>/worktrees/onboarding/FL17`
 - Commit sha: `08a6cdcd78796b29716bace0750c28f2ad06c1fb`
 
 ## Files changed

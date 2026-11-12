@@ -3,7 +3,7 @@
 Repo: `trevorotts1/openclaw-onboarding` · branch `pd/fl17-phase-checks`
 Branch head when I started: `b7d16fe6ba6709d65260086339ae97b6f095f1c1`
 Branch head now: `bb54443f943cb045794caabdc15539516d880648` (code + tests), then the report commit.
-All scratch work was done in worktrees under
+All scratch work was done in throwaway copies under
 `<LOOP_ROOT>/tmp/PD-207` (`wt/` = after, `base/` = unchanged HEAD).
 The lane clone was never edited and is clean.
 

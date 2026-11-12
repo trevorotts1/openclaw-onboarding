@@ -48,7 +48,7 @@ path were left untouched.
 
 ## Proof
 
-Probe: `scratchpads/PD-072/probe_pd072.py` (not committed; ephemeral run dirs).
+Probe: a throwaway probe script kept outside the tree (not committed; ephemeral run dirs).
 It loads one `phase_verifiers.py` by path inside the real scripts dir, so HEAD
 bytes and fixed bytes are exercised in the same import context.
 
@@ -179,5 +179,4 @@ Local `da995d14e` and the remote's 40-char ref match literally.
 - Head: `da995d14e0a865fd68cbe1b1dc21b6c3fa728725` on
   `pd/fl17-phase-checks`, parent `a97fcc9ca640f5131d6c9504a228f19de91c09cf`.
 - Lane worktree `git status --porcelain` is empty after the commit; the build
-  and all proofs were run in `scratchpads/PD-072/wt` (fixed) and
-  `scratchpads/PD-072/base` (parent), never in the lane checkout.
+  and all proofs were run in throwaway copies outside the lane checkout.
