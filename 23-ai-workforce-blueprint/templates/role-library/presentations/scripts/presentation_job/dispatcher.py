@@ -3349,26 +3349,7 @@ def _stamp_qc_reviewer(run_dir: Path, phase_id: str, report_artifact: Path, *,
     verifies (reviewer stamp from THIS phase on each consumed input at its
     current sha, with the producer's author stamp and model classes on record)
     plus the legacy graded_by text provenance that still runs alongside."""
-    consumed: List[Path] = []
-    try:
-        from presentation_job.manifest import Manifest
-        # QC-OPUS seam repair: resolve via the run's pinned manifest / dept
-        # sops / walk-up — the SAME resolution the aggregate's consumed-
-        # coverage check uses, so stamps minted here always match what the
-        # aggregate verifies (the old hand-rolled candidates missed in BOTH
-        # layouts and silently downgraded to report-stamp-only).
-        cand = _qc_manifest_for_run(run_dir)
-        if cand is not None:
-            man = Manifest(cand)
-            ph = man.phase_or_none(phase_id)
-            import glob as _glob
-            for pat in (ph.consumes if ph else []) or []:
-                for hit in _glob.glob(str(run_dir / pat)):
-                    hp = Path(hit)
-                    if hp.is_file():
-                        consumed.append(hp)
-    except Exception:
-        consumed = []
+    consumed = _graded_artifacts(run_dir, phase_id)
     reviewer_execution_id = f"qc-{phase_id}-{os.getpid()}-{utcnow()}"
     rubric_version = _qc_rubric_version()
     for artifact in consumed:
@@ -3396,6 +3377,68 @@ def _stamp_qc_reviewer(run_dir: Path, phase_id: str, report_artifact: Path, *,
             })
         except Exception:
             pass
+
+
+def _graded_artifacts(run_dir: Path, phase_id: str) -> List[Path]:
+    """PD-300: the files a QC phase GRADES, resolved from the run's own pinned
+    manifest consumes list — the same resolution the reviewer stamps use, so a
+    stamp minted here and the stamped author read back below always agree
+    (QC-OPUS seam repair: the old hand-rolled candidates missed in BOTH
+    layouts and silently downgraded to report-stamp-only).
+
+    Returns [] when no manifest resolves or the phase declares no consumes —
+    the caller then has no graded file to name, which is honest, not a guess."""
+    consumed: List[Path] = []
+    try:
+        from presentation_job.manifest import Manifest
+        cand = _qc_manifest_for_run(run_dir)
+        if cand is not None:
+            man = Manifest(cand)
+            ph = man.phase_or_none(phase_id)
+            import glob as _glob
+            for pat in (ph.consumes if ph else []) or []:
+                for hit in _glob.glob(str(run_dir / pat)):
+                    hp = Path(hit)
+                    if hp.is_file():
+                        consumed.append(hp)
+    except Exception:
+        consumed = []
+    return consumed
+
+
+def _graded_author_model(run_dir: Path, phase_id: str) -> str:
+    """PD-300: the AUTHOR model of the files this QC phase grades, taken from
+    the trusted execution stamps (PRES-042), never from the report's prose.
+
+    Returns "" when the stamps are off, when no graded file resolves, when any
+    graded file has no ACTIVE author stamp for its CURRENT bytes (a repaired
+    file is a new revision with no stamp — unproven), or when the graded files
+    carry different author models. "" means UNKNOWN; a caller must never turn
+    it into a name (decision D-29: the stamp is recorded, never invented)."""
+    try:
+        if not _estamp.stamps_enabled():
+            return ""
+        graded = _graded_artifacts(run_dir, phase_id)
+        if not graded:
+            return ""
+        rows = _estamp._all_stamp_rows(run_dir)
+        models: set = set()
+        for art in graded:
+            try:
+                sha = _estamp.sha256_file(art)
+                rel = str(art.relative_to(run_dir))
+            except (OSError, ValueError):
+                return ""
+            row = _estamp._active_author_row(rows, rel, sha)
+            if row is None:
+                return ""
+            models.add(str(row.get("model") or ""))
+        if len(models) != 1:
+            return ""
+        model = models.pop()
+        return "" if model in ("", "unknown") else model
+    except Exception:  # noqa: BLE001 — a stamp read must never block a merge
+        return ""
 
 
 def _qc_manifest_for_run(run_dir: Optional[Path] = None) -> Optional[Path]:
@@ -6502,6 +6545,9 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
         if sid:
             expected[sid] = int(payload.get("ordinal") or 0)
     merged_rows: List[Dict[str, Any]] = []
+    # PD-300: parallel to merged_rows — (graded_by_provider, graded_by_model,
+    # request_id) for THAT row's own unit, straight from its recorded route.
+    row_routes: List[Tuple[Optional[str], Optional[str], Optional[str]]] = []
     seen: set = set()
     seen_ordinals: set = set()
     for payload, text in ordered:
@@ -6522,6 +6568,18 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
         if payload.get("ordinal") is not None:
             row.setdefault("slide", payload.get("ordinal"))
             seen_ordinals.add(int(payload["ordinal"]))
+        # PD-300 (decision D-29): stamp the GRADER, per row, from the unit's
+        # own recorded route — overwriting anything the model wrote about
+        # itself (identity comes from the dispatch record, never the report's
+        # prose). An unknown value is null, never a name.
+        _provider = str(payload.get("route_provider") or "").strip() or None
+        _model = str(payload.get("route_model") or "").strip() or None
+        _rid = payload.get("route_request_id")
+        _rid = str(_rid).strip() if _rid not in (None, "") else None
+        row["graded_by_provider"] = _provider
+        row["graded_by_model"] = _model
+        row["request_id"] = _rid
+        row_routes.append((_provider, _model, _rid))
         merged_rows.append(row)
     missing = sorted(set(expected) - seen)
     if missing:
@@ -6594,40 +6652,44 @@ def _reduce_qc_union(ordered: List[Tuple[Dict[str, Any], str]]) -> Optional[str]
     if independence:
         report["qc_independence"] = {
             "graded_by": independence, "independent": True}
-    request_id = str(ordered[0][0].get("route_request_id") or "").strip()
-    if request_id:
-        report["request_id"] = request_id
-    # PD-205c: the image check's own provenance. phase_verifiers' FIX 33
-    # vision-unit contract (_fix33_check_report) refuses a merged image report
-    # that cannot name the route that graded each slide and the request id the
-    # provider returned, and build_deck's render leg refuses one that declares
-    # no vision engine at all. Both names come from the dispatch RECORD (the
-    # unit's recorded route), never from the model's prose about itself; an
-    # unknown value is null, never a guess. Per row always; at the top level
-    # only when every row agrees (a merge whose units used different routes
-    # keeps each row's own truth and makes no deck-wide claim).
+    # PD-300 (finding PD-300, decision D-29 default): a merged QC report that
+    # cannot say WHO graded it is unscorable — the image check and every later
+    # grader-vs-author comparison read these keys. Per row they are already
+    # written above; at the top level they are written ONLY when every row
+    # agrees (a merge whose units used different grading models keeps them per
+    # row and makes no top-level claim). `author_model` is one fact about the
+    # graded files, sourced from the trusted execution stamps; null when no
+    # active author stamp covers them — never an invented name.
+    providers = {r[0] for r in row_routes}
+    models = {r[1] for r in row_routes}
+    if len(providers) == 1:
+        report["graded_by_provider"] = next(iter(providers)) if row_routes else None
+    if len(models) == 1:
+        report["graded_by_model"] = next(iter(models)) if row_routes else None
+    author_model = str(ordered[0][0].get("author_model") or "").strip() or None
+    report["author_model"] = author_model
+    request_ids = {r[2] for r in row_routes}
+    if len(request_ids) <= 1:
+        report["request_id"] = (next(iter(request_ids)) if row_routes else None)
+    # The legacy report-level key the FIX 33 readers already accept
+    # (_FIX33_REQUEST_KEYS). It names the FIRST unit's real id — an id the
+    # transport actually returned, never a fabricated one — so a multi-call
+    # merge (one id per slide, nothing shared) still hands the consumer a real
+    # route id while each row keeps its own.
+    if row_routes and row_routes[0][2]:
+        report["route_request_id"] = row_routes[0][2]
+    # PD-205c: the image check's own provenance under the names the RENDER leg
+    # reads. phase_verifiers' FIX 33 contract accepts graded_by_model (and
+    # vision_model as a fallback), but build_deck refuses a merged image report
+    # that declares no vision engine at all. Both facts come from the dispatch
+    # RECORD (each row's own route), never from the model's prose about itself;
+    # an unknown value is null, never a guess. Per row always; at the top level
+    # only when every row agrees.
     if phase_id == "P-IMAGE-QC":
-        row_routes: List[Tuple[Optional[str], Optional[str], Optional[str]]] = []
-        for row, (payload, _text) in zip(merged_rows, ordered):
-            prov = str(payload.get("route_provider") or "").strip() or None
-            model_used = str(payload.get("route_model") or "").strip() or None
-            rid = payload.get("route_request_id")
-            rid = str(rid).strip() if rid not in (None, "") else None
-            row["graded_by_provider"] = prov
-            row["graded_by_model"] = model_used
-            row["request_id"] = rid
-            row_routes.append((prov, model_used, rid))
-        providers = {r[0] for r in row_routes}
-        models = {r[1] for r in row_routes}
-        rids = {r[2] for r in row_routes}
         if len(providers) == 1:
-            report["graded_by_provider"] = next(iter(providers))
-            # the same fact under the name build_deck's render leg reads
-            report["vision_provider"] = next(iter(providers))
+            report["vision_provider"] = next(iter(providers)) if row_routes else None
         if len(models) == 1:
-            report["graded_by_model"] = next(iter(models))
-            report["vision_model"] = next(iter(models))
-        report["request_id"] = next(iter(rids)) if len(rids) == 1 else None
+            report["vision_model"] = next(iter(models)) if row_routes else None
     return json.dumps(report, indent=2, ensure_ascii=False)
 
 
@@ -8032,6 +8094,11 @@ def _dispatch_phase_fanout_units(
     # spec, ordered text join for the design prompts. The legacy generic
     # dict.update remains ONLY on the PRESENTATION_UNIT_CONTRACTS=0 rollback
     # path (or for a phase with no contract, which preflight already refused).
+    # PD-300: the AUTHOR model of the files this phase grades, read once from
+    # the trusted execution stamps -- the reducer stamps it into the merged
+    # report, so the report carries who wrote what it graded. "" means UNKNOWN.
+    _author_model = (_graded_author_model(run_dir, phase_id)
+                     if _is_qc_phase(owning_role, phase_id) else "")
     ordered_parts: List[Tuple[Dict[str, Any], str]] = []
     for r in results:  # run_units returns INPUT order — merge order (S2.1)
         text: Optional[str] = reuse.get(r.key)
@@ -8043,15 +8110,25 @@ def _dispatch_phase_fanout_units(
         if text is None:
             text = ""
         payload = by_key.get(r.key, {})
-        # PD-205c: the unit's own recorded route rides the payload into the
-        # reducer, which stamps it into the merged image report (graded_by_*,
-        # request_id). A unit that paid nothing this call carries no route --
-        # nulls, never an invented name.
-        _unit_meta = r.meta if isinstance(r.meta, dict) else {}
+        # PD-300: the unit's OWN route, from this dispatch's UnitResult meta
+        # or — for a reused/banked unit that paid nothing this call — from the
+        # durable unit record the previous dispatch stamped. Never invented:
+        # a unit with no recorded route carries nulls. (PD-205c's reducer read
+        # the same three facts from `r.meta` alone; this superset keeps that
+        # source first, so the merged image report still stamps graded_by_*,
+        # request_id and the vision_* aliases.)
+        meta = r.meta if isinstance(r.meta, dict) else {}
+        prior = _store_state.get(r.key)
+        prior_route = (prior.get("author_route")
+                       if isinstance(prior, dict)
+                       and isinstance(prior.get("author_route"), dict) else {})
         payload = {**payload,
-                   "route_provider": _unit_meta.get("provider"),
-                   "route_model": _unit_meta.get("model"),
-                   "route_request_id": _unit_meta.get("request_id"),
+                   "route_provider": meta.get("provider") or prior_route.get("provider"),
+                   "route_model": meta.get("model") or prior_route.get("model"),
+                   "route_request_id": (meta.get("request_id")
+                                        if "request_id" in meta
+                                        else prior_route.get("request_id")),
+                   "author_model": _author_model,
                    "reviewer_role": owning_role}
         ordered_parts.append((payload, text))
     if unit_contracts_enabled() and contract is not None:
