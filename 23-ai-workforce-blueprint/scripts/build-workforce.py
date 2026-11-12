@@ -5534,10 +5534,11 @@ def _ensure_company_discovery_dir():
     """
     global MASTER_FILES, COMPANY_DISCOVERY_DIR
     if not COMPANY_DISCOVERY_DIR:
-        # Re-detect with fallback guarantee
-        MASTER_FILES = find_master_files_folder()
-        if MASTER_FILES:
-            COMPANY_DISCOVERY_DIR = os.path.join(MASTER_FILES, "company-discovery")
+        # Use the folder the platform resolver chose at import. Scan ~/Downloads
+        # only when that resolver produced nothing.
+        if not MASTER_FILES:
+            MASTER_FILES = find_master_files_folder()
+        COMPANY_DISCOVERY_DIR = os.path.join(MASTER_FILES, "company-discovery")
     if not COMPANY_DISCOVERY_DIR:
         print("[PERSISTENCE ERROR] Cannot determine company-discovery path. "
               "Interview answers will NOT be saved this session.", file=sys.stderr)
@@ -9333,8 +9334,11 @@ def main():
     """
     global MASTER_FILES, COMPANY_DISCOVERY_DIR
 
-    # Step 1: Detect environment (guaranteed non-None after hardening)
-    MASTER_FILES = find_master_files_folder()
+    # Step 1: Detect environment (guaranteed non-None after hardening).
+    # BU-63: keep the folder the platform resolver chose at import; only scan
+    # ~/Downloads when that resolver produced nothing.
+    if not MASTER_FILES:
+        MASTER_FILES = find_master_files_folder()
     COMPANY_DISCOVERY_DIR = os.path.join(MASTER_FILES, "company-discovery")
     print(f"[PERSISTENCE] Master files folder: {MASTER_FILES}", file=sys.stderr)
     print(f"[PERSISTENCE] Interview answers will be saved to: {COMPANY_DISCOVERY_DIR}/", file=sys.stderr)
