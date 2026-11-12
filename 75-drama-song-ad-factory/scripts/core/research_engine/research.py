@@ -22,9 +22,10 @@ therefore runs the keyless gatherer (gather.py) first: when evaluate() reports
 SOURCES_MISSING the gatherer searches the web without any API key, fills
 sources[] + claims[], and the merged brief is re-evaluated against the unchanged
 validator. A brief that still has no source (offline box, exhausted stage budget,
-no results) leaves as "waiting", exit 2, with its reason. SOURCES_MISSING stays
-reachable only where no gathering happened at all (--no-gather, or a direct
-evaluate() call). Exit contract unchanged: ok 0 / waiting 2 / parked 3 /
+no results) leaves as "waiting", exit 2, carrying ONE plain question to the
+client — continue with only what you gave me? — never a silent continue.
+SOURCES_MISSING stays reachable only where no gathering happened at all
+(--no-gather, or a direct evaluate() call). Exit contract unchanged: ok 0 / waiting 2 / parked 3 /
 rejected 4 / error 1.
 """
 from __future__ import annotations
@@ -90,6 +91,14 @@ def validate_sources(sources):
         seen.add(url)
         rec = {"id": s.get("id") if _nonempty(s.get("id")) else "src-%d" % (i + 1),
                "url": url, "retrieved": s.get("retrieved") or _today()}
+        # The fetched text a gathered claim was quoted from travels with the
+        # source, and marks it as gathered: it is what the structural verbatim
+        # check reads.
+        excerpts = s.get("excerpts")
+        if isinstance(excerpts, list):
+            rec["excerpts"] = [x for x in excerpts if _nonempty(x)]
+        if s.get("gathered"):
+            rec["gathered"] = True
         norm.append(rec)
     return norm, errors
 
@@ -331,14 +340,15 @@ def envelope(command, run_id, outcome, reason_code, next_action,
 
 # Keyless gatherer outcomes that mean "not yet, ask again" rather than "the
 # brief is invalid": a bare brief with no usable source leaves as waiting
-# (exit 2) with its reason, never as rejected (exit 4).
+# (exit 2) with one plain question to the client, never as rejected (exit 4)
+# and never as a silent continue with only half a research file.
+NO_OUTSIDE_SOURCES_QUESTION = (
+    "I could not find outside sources for this. Do you want me to continue "
+    "with only what you gave me?")
 GATHER_WAITING = {
-    "empty": ("search-no-results",
-              "Keyless search found no usable source. Add a source URL to the brief, or re-run."),
-    "offline": ("search-offline",
-                "No network reach for keyless search. Re-run the research stage when the box is online."),
-    "budget": ("search-budget-exhausted",
-               "Stage network budget ran out before a source could be read. Raise --budget, or re-run."),
+    "empty": "search-no-results",
+    "offline": "search-offline",
+    "budget": "search-budget-exhausted",
 }
 
 
@@ -362,9 +372,9 @@ def _gather_or_reason(brief, transport, gather_opts, run_id):
         merged["sources"] = g["sources"]
         return merged, None
     if not g["sources"]:
-        reason, action = GATHER_WAITING.get(
-            g["status"], ("search-unavailable", "Re-run the research stage."))
-        return None, envelope("research", run_id, "waiting", reason, action,
+        reason = GATHER_WAITING.get(g["status"], "search-unavailable")
+        return None, envelope("research", run_id, "waiting", reason,
+                              NO_OUTSIDE_SOURCES_QUESTION,
                               data={"errors": g["errors"], "queries": g["queries"],
                                     "gather_status": g["status"],
                                     "urls_seen": len(g["urls"])})
@@ -378,11 +388,15 @@ def _gather_or_reason(brief, transport, gather_opts, run_id):
 
 
 def run_stage(brief, outdir, run_id="research-1", transport=None, gather=True,
-              gather_opts=None):
+              gather_opts=None, relevance=None):
     """Evaluate + gather when the brief is bare + render. Returns (envelope,
     exit_code). `gather=False` restores the validator-only behaviour (empty
     sources -> SOURCES_MISSING -> rejected, exit 4); `transport` injects the
     network for tests.
+
+    `relevance` is the run's judged relevance record list (claims.py, check id
+    "research_relevance", from a checker model that is not the maker). It rides
+    with the stage evidence; this module never decides the verdict.
     """
     r = evaluate(brief)
     if r["reason_code"] == "SOURCES_MISSING" and gather:
@@ -394,6 +408,9 @@ def run_stage(brief, outdir, run_id="research-1", transport=None, gather=True,
     if r["outcome"] != "ok":
         return (envelope("research", run_id, r["outcome"], r["reason_code"],
                          r["next_action"], data={"errors": r["errors"]}), EXIT[r["outcome"]])
+    if relevance:
+        r["evidence"]["checks"] = [dict(x) for x in relevance
+                                   if isinstance(x, dict)]
     try:
         written = render(brief, r["evidence"], outdir, bundle=r.get("bundle"))
     except (OSError, ValueError) as e:
