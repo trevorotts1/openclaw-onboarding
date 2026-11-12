@@ -19,28 +19,33 @@ Video facts (RESEARCH 2-4, trial A 2026-10-13): model ``agnes-video-2.5-flash``,
 mode ``keyframe``, ``first_frame``, ``seconds "10"`` fixed, ``size "720P"``,
 ``aspect_ratio``, no ``n``; AT MOST 2 video jobs in flight per key pool (file
 lock in the quota folder); 503 ``video_queue_full`` and 429 back off and
-resubmit (never counted as submitted), 30 minutes of continuous 503 reports
-``AGNES_QUEUE_FULL`` loudly and keeps waiting; polls are never faster than
-15 s; 402 = ``AGNES_QUOTA_EXHAUSTED``; 401/403 = ``AGNES_KEY_REFUSED``; a
-failed task = ``AGNES_TASK_FAILED`` with the vendor message; a job whose state
-is still unknown after the wait budget is POLLED, never resubmitted.
+resubmit (never counted as submitted), each at most 6 tries, then the door
+fails by name (``AGNES_QUEUE_FULL`` / ``AGNES_RATE_LIMITED``); polls are never
+faster than 15 s; 402 = ``AGNES_QUOTA_EXHAUSTED`` and the rest of the UTC day
+is recorded exhausted; 401/403 = ``AGNES_KEY_REFUSED``; a failed task =
+``AGNES_TASK_FAILED`` with the vendor message; a job whose state is still
+unknown after the wait budget is POLLED, never resubmitted.
 
 The envelope, the exit codes and the ledger helpers are ``kie_dispatch``'s own
 (imported). The HTTP transport, the clock and the sleeper are injectable, so
 no test ever reaches ``apihub.agnes-ai.com``.
 
-ponytail: ``agnes_quota.reserve`` is called as
-``reserve(kind=, units=, run_id=, logical_key=)`` - the row SPEC A5.3 spells
-out - because unit W1-agnes-core-U2 ships that module in the SAME release
-group and no exact signature is written down. A quota module that cannot be
-bound stops the door before any network call (``agnes-quota-unavailable``);
-reconcile the one call at batch merge if U2 spells it differently.
+The quota contract (S75-049): ``agnes_quota.reserve`` answers with the ledger
+row id or raises ``QuotaError``; the door keeps that row id to the end of the
+job and closes it with ``settle(row_id, outcome, seconds_used)`` on success
+and on failure (a failed clip releases its seconds). The slot folder is
+resolved BEFORE any reservation, so a pool that cannot be found refuses the
+job with nothing held.
+
+``fcntl`` and ``os.kill`` sit behind two small helpers (S75-049 step 6): on
+Windows this Agnes path names ``AGNES_PLATFORM_UNSUPPORTED`` at import and
+stops; every other part of the skill imports and runs. Whether Skill 75
+supports Windows is decision D-14.
 """
 from __future__ import annotations
 
 import argparse
 import base64
-import fcntl
 import hashlib
 import json
 import os
@@ -57,14 +62,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import spend_ledger as L  # noqa: E402  (sibling module in the same core/ tree)
 
 #: The imported seams. Nothing here is re-implemented: the gate chain, the
-#: envelope, the ledger settle/unknown helpers and the loud reporter all come
-#: from the KIE door so there is exactly one copy of each rule.
+#: envelope and the ledger settle/unknown helpers all come from the KIE door so
+#: there is exactly one copy of each rule.
 from kie_dispatch.kie_dispatch import (  # noqa: E402
     EXIT,
     _WAIT_S,
     _find_placeholder,
     _hold_unknown,
-    _loud,
     _settle,
     _song_pick_refusal,
     card_gate_refusal,
@@ -96,7 +100,51 @@ MAX_VIDEO_IN_FLIGHT = 2
 #: SPEC A4.4: 503 -> 60 s, 120 s, then every 120 s; 429 backs off and resubmits.
 BACKOFF_FIRST_S = 60
 BACKOFF_EVERY_S = 120
-QUEUE_FULL_REPORT_S = 30 * 60
+#: S75-049 step 5: at most this many tries per platform refusal, then fail by
+#: name instead of waiting forever.
+MAX_503_TRIES = 6
+MAX_429_TRIES = 6
+AGNES_QUEUE_FULL = "AGNES_QUEUE_FULL"
+AGNES_RATE_LIMITED = "AGNES_RATE_LIMITED"
+#: The name the Agnes path raises on Windows (S75-049 step 6); D-14 decides
+#: whether Skill 75 supports Windows at all.
+AGNES_PLATFORM_UNSUPPORTED = "AGNES_PLATFORM_UNSUPPORTED"
+
+
+class PlatformUnsupported(RuntimeError):
+    """The Agnes path's own limit, named at import (S75-049 step 6)."""
+
+    code = AGNES_PLATFORM_UNSUPPORTED
+
+
+def _platform_fcntl():
+    """``fcntl`` behind one helper: POSIX file locks are not on Windows.
+
+    On Windows importing this Agnes path raises ``AGNES_PLATFORM_UNSUPPORTED``
+    and stops; the rest of the skill is unaffected (amendment 1: the guard
+    only names the limit).
+    """
+    if os.name == "nt":
+        raise PlatformUnsupported(
+            AGNES_PLATFORM_UNSUPPORTED + ": the Agnes door needs POSIX file "
+            "locks (fcntl) and signal-0 liveness checks; this path does not "
+            "run on Windows (decision D-14 decides whether it ever will).")
+    import fcntl  # noqa: PLC0415 - POSIX only, imported where it is used
+    return fcntl
+
+
+FCNTL = _platform_fcntl()
+
+
+def _pid_alive(pid):
+    """Is ``pid`` alive? ``os.kill(pid, 0)`` behind one helper (S75-049)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:                      # alive, other user
+        return True
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -204,18 +252,6 @@ def _prompt_verdict(prompt, kind):
 def _backoff_s(retry):
     """SPEC A4.4: 60 s, then 120 s, then every 120 s."""
     return BACKOFF_FIRST_S if retry <= 1 else BACKOFF_EVERY_S
-
-
-def _loud_queue_full(clock, state):
-    """Report AGNES_QUEUE_FULL once per continuous 503 run, then keep waiting."""
-    if state["reported"]:
-        return
-    state["reported"] = True
-    _loud("warn", "AGNES_QUEUE_FULL",
-          "Agnes has answered 503 video_queue_full for %d minutes; the job is "
-          "NOT submitted and NOT dropped. The run keeps waiting and resubmitting; "
-          "it never switches provider by itself."
-          % int((clock() - state["since"]) // 60))
 
 
 def _vendor_code(payload):
@@ -331,59 +367,132 @@ def resolve_key(key=None):
     return value if value and str(value).strip() else None
 
 
+def _quota_module(quota):
+    """The bound quota module: the injected one, else the skill's own.
+
+    Resolving it here (never inside ``quota_admission``'s local name) is what
+    lets the caller carry the row id to the end of the job and close it with
+    ``settle`` (S75-049).
+    """
+    if quota is not None:
+        return quota
+    try:
+        import agnes_quota as module  # noqa: PLC0415 - built by unit U2
+    except Exception:                # noqa: BLE001 - no quota module, no quota
+        return None
+    return module
+
+
 def quota_admission(quota, kind, units, run_id, logical_key, ids):
     """The one quota gate the plan names: ``agnes_quota.reserve`` (A5.3).
 
-    -> None when admitted, else the refusal envelope. A missing or unbindable
-    quota module stops the door before any network call; a quota answer that
-    says "not today" comes back as that answer (never silently ignored).
+    -> ``(row_id, None)`` when admitted, ``(None, refusal_envelope)`` otherwise.
+    ``reserve`` answers with the ledger row id; the caller keeps it for the end
+    of the job and closes it with ``settle``. A ``QuotaError`` comes back as
+    ITS OWN code and message, never as "could not be called" (S75-049).
     """
     if quota is None:
-        try:
-            import agnes_quota as quota  # noqa: PLC0415 - built by unit U2
-        except Exception:                # noqa: BLE001
-            return _env(ids, "error", "agnes-quota-unavailable",
-                        "the Agnes quota tracker (scripts/core/agnes_quota) is "
-                        "not importable, so no quota row can be written; "
-                        "install the skill's quota module before any Agnes job.",
-                        evidence={"generated": False})
+        return None, _env(ids, "error", "agnes-quota-unavailable",
+                          "the Agnes quota tracker (scripts/core/agnes_quota) is "
+                          "not importable, so no quota row can be written; "
+                          "install the skill's quota module before any Agnes job.",
+                          evidence={"generated": False})
     try:
         answer = quota.reserve(kind=kind, units=units, run_id=run_id,
                                logical_key=logical_key)
     except Exception as exc:              # noqa: BLE001 - never guess a signature
-        return _env(ids, "error", "agnes-quota-unavailable",
-                    "agnes_quota.reserve(%s) could not be called (%s: %s); "
-                    "nothing was reserved and nothing was sent."
-                    % (", ".join(("kind=%r" % kind, "units=%r" % units,
-                                  "run_id=%r" % run_id,
-                                  "logical_key=%r" % logical_key)),
-                       type(exc).__name__, exc),
-                    evidence={"generated": False})
+        code = str(getattr(exc, "code", "") or "")
+        if code:
+            outcome = ("waiting" if code == "AGNES_QUOTA_EXHAUSTED"
+                       else "rejected")
+            return None, _env(ids, outcome, code, str(exc),
+                              evidence={"generated": False, "quota_code": code})
+        return None, _env(ids, "error", "agnes-quota-unavailable",
+                          "agnes_quota.reserve(%s) could not be called (%s: %s); "
+                          "nothing was reserved and nothing was sent."
+                          % (", ".join(("kind=%r" % kind, "units=%r" % units,
+                                        "run_id=%r" % run_id,
+                                        "logical_key=%r" % logical_key)),
+                             type(exc).__name__, exc),
+                          evidence={"generated": False})
     if isinstance(answer, dict):
         if str(answer.get("outcome") or "").lower() == "ok":
-            return None
-        return _env(ids, answer.get("outcome") or "waiting",
-                    answer.get("reason_code") or "agnes-quota-unavailable",
-                    answer.get("next_action")
-                    or "the Agnes quota tracker did not admit this job; a run "
-                       "is never split across days (SPEC A5.3).",
-                    evidence={"generated": False})
-    if answer is False:
-        return _env(ids, "waiting", "agnes-quota-next-day",
-                    "today's Agnes seconds are used up; the run waits whole for "
-                    "the next 00:00 UTC reset (SPEC A5.3).",
-                    evidence={"generated": False})
-    return None
+            row = answer.get("row_id", answer.get("id"))
+            return (int(row) if isinstance(row, int) else None), None
+        return None, _env(ids, answer.get("outcome") or "waiting",
+                          answer.get("reason_code") or "agnes-quota-unavailable",
+                          answer.get("next_action")
+                          or "the Agnes quota tracker did not admit this job; a "
+                             "run is never split across days (SPEC A5.3).",
+                          evidence={"generated": False})
+    if isinstance(answer, bool):
+        if answer:
+            return None, None
+        return None, _env(ids, "waiting", "agnes-quota-next-day",
+                          "today's Agnes seconds are used up; the run waits "
+                          "whole for the next 00:00 UTC reset (SPEC A5.3).",
+                          evidence={"generated": False})
+    if isinstance(answer, int):           # the shipped contract: the row id
+        return int(answer), None
+    return None, _env(ids, "error", "agnes-quota-unavailable",
+                      "agnes_quota.reserve answered %r; the contract is the "
+                      "ledger row id (S75-049), so nothing was reserved and "
+                      "nothing was sent." % (answer,),
+                      evidence={"generated": False})
 
 
 def quota_pool_dir(quota, pool_dir=None):
-    """The folder the two-slot file lock lives in: the quota folder (A4.4)."""
+    """The folder the two-slot file lock lives in: the quota folder (A4.4).
+
+    The argument wins; otherwise the folder ``agnes_quota.state_path`` already
+    defines. Resolved BEFORE any reservation, so a folder that cannot be found
+    refuses the job with nothing held (S75-049 step 3).
+    """
     if pool_dir:
         return pool_dir
-    state_path = getattr(quota, "state_path", None)
-    if callable(state_path):
-        return os.path.dirname(os.path.abspath(str(state_path())))
-    return None
+    module = _quota_module(quota)
+    state_path = getattr(module, "state_path", None)
+    if not callable(state_path):
+        return None
+    try:
+        resolved = str(state_path())
+    except Exception:            # noqa: BLE001 - unresolvable is unresolvable
+        return None
+    return os.path.dirname(os.path.abspath(resolved)) or None
+
+
+def _record_vendor_402(quota):
+    """A vendor 402 writes the rest of the UTC day as exhausted (S75-049).
+
+    ``agnes_quota.record_vendor_402`` marks the day so every later ``reserve``
+    refuses until the 00:00 UTC reset. -> the day, or None.
+    """
+    record = getattr(quota, "record_vendor_402", None)
+    if not callable(record):
+        return None
+    try:
+        return record()
+    except Exception:                    # noqa: BLE001 - the 402 still stands
+        return None
+
+
+def _close_quota(quota, row_id, outcome, seconds_used=None):
+    """Close this job's quota reservation (S75-049 step 2).
+
+    ``outcome`` is ``"succeeded"``, ``"failed"`` or ``"cancelled"``; a failed
+    or cancelled clip releases its seconds. ``None`` leaves the row reserved
+    (the job's state is still unknown). Never raises: a row this call cannot
+    close stays reserved and the reconciler sees it.
+    """
+    if row_id is None or outcome is None:
+        return None
+    settle = getattr(quota, "settle", None)
+    if not callable(settle):
+        return None
+    try:
+        return settle(int(row_id), outcome, seconds_used)
+    except Exception:                    # noqa: BLE001 - never breaks the door
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -403,13 +512,7 @@ def _slot_free(path):
         return True                              # unreadable claim: reclaim
     if pid == os.getpid():
         return False                             # held by this very process
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return True                              # holder died: reclaim
-    except PermissionError:                      # alive, other user
-        return False
-    return False                                 # holder alive
+    return not _pid_alive(pid)                   # holder died: reclaim
 
 
 def _claim_slot(pool_dir):
@@ -417,7 +520,7 @@ def _claim_slot(pool_dir):
     os.makedirs(pool_dir, exist_ok=True)
     lock_path = os.path.join(pool_dir, "agnes-video-slots.lock")
     with open(lock_path, "a+") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        FCNTL.flock(lock.fileno(), FCNTL.LOCK_EX)
         try:
             for i in range(MAX_VIDEO_IN_FLIGHT):
                 path = os.path.join(pool_dir, "agnes-video-slot-%d.json" % i)
@@ -427,7 +530,7 @@ def _claim_slot(pool_dir):
                     json.dump({"pid": os.getpid(), "at": int(time.time())}, fh)
                 return path
         finally:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+            FCNTL.flock(lock.fileno(), FCNTL.LOCK_UN)
     return None
 
 
@@ -513,15 +616,26 @@ def _settle_job(ledger_db, ids, owner, job_state, final, task_id=""):
                    evidence_ref=task_id or "")
 
 
-def _vendor_stop(ids, status, payload, ledger_db, owner, job_state):
-    """402 / 401 / 403 / anything else the vendor names, before any submit."""
+def _vendor_stop(ids, status, payload, ledger_db, owner, job_state, quota=None):
+    """402 / 401 / 403 / anything else the vendor names, before any submit.
+
+    A 402 also records the rest of the UTC day exhausted in the quota ledger
+    (S75-049 step 4), so no later submit is attempted that day.
+    """
     code, message = _vendor_code(payload)
     known = status in (402, 401, 403)
+    evidence = {"http_status": status, "vendor_code": code,
+                "vendor_message": message, "generated": False,
+                "submitted": False}
     if status == 402:
         reason = "AGNES_QUOTA_EXHAUSTED"
         action = ("Agnes answered 402 (Token Plan quota exhausted) before the "
                   "job was created: nothing was submitted. Offer the fallback "
                   "question (SPEC A10) or wait for the next 00:00 UTC reset.")
+        day = _record_vendor_402(quota)
+        evidence["quota_state"] = str(
+            getattr(quota, "EXHAUSTED_UNTIL_RESET", "exhausted_until_reset"))
+        evidence["quota_day"] = day
     elif status in (401, 403):
         reason = "AGNES_KEY_REFUSED"
         action = ("Agnes answered %d for this key: the key is missing, expired "
@@ -534,20 +648,19 @@ def _vendor_stop(ids, status, payload, ledger_db, owner, job_state):
                   % (status, " / %s" % code if code else ""))
     settle = _settle_job(ledger_db, ids, owner, job_state, "failed")
     return _env(ids, "rejected" if known else "error", reason, action,
-                evidence={"http_status": status, "vendor_code": code,
-                          "vendor_message": message, "generated": False,
-                          "submitted": False},
+                evidence=evidence,
                 state_version=settle.get("state_version", 0))
 
 
-def _create_video(body, transport, key, sleep, clock):
+def _create_video(body, transport, key, sleep):
     """POST until Agnes accepts, then return (video_id, evidence).
 
     503 and 429 are platform refusals: not created, not charged, never counted
-    as submitted - back off and resubmit, forever if need be.
+    as submitted. Each backs off with the existing schedule and is retried at
+    most MAX_503_TRIES / MAX_429_TRIES times; after that the door fails by
+    name (S75-049 step 5) instead of waiting forever.
     """
-    retry = 0
-    queue = {"since": None, "reported": False}
+    tries = {503: 0, 429: 0}
     total_wait = 0.0
     while True:
         status, payload = transport("POST", VIDEO_ENDPOINT, key, body)
@@ -555,22 +668,19 @@ def _create_video(body, transport, key, sleep, clock):
             video_id = str(payload.get("video_id") or payload.get("task_id") or "")
             if not video_id:
                 return None, {"error": "agnes-result-missing",
-                              "http_status": status, "retries": retry}
-            return video_id, {"retries": retry,
+                              "http_status": status,
+                              "retries": sum(tries.values())}
+            return video_id, {"retries": sum(tries.values()),
                               "queue_full_wait_s": int(total_wait)}
-        if status == 503:
-            if queue["since"] is None:
-                queue["since"] = clock()
-                queue["reported"] = False
-            elif clock() - queue["since"] >= QUEUE_FULL_REPORT_S:
-                _loud_queue_full(clock, queue)
-        else:
-            queue["since"] = None
-            queue["reported"] = False
         if status not in (503, 429):
             return None, {"status": status, "payload": payload}
-        retry += 1
-        wait = _backoff_s(retry)
+        tries[status] += 1
+        cap = MAX_503_TRIES if status == 503 else MAX_429_TRIES
+        if tries[status] > cap:
+            code = AGNES_QUEUE_FULL if status == 503 else AGNES_RATE_LIMITED
+            return None, {"error": code, "http_status": status,
+                          "tries": tries[status]}
+        wait = _backoff_s(tries[status])
         total_wait += wait
         sleep(wait)
 
@@ -653,29 +763,49 @@ def dispatch_video(request, *, save_dir, ledger_db, run_id, logical_key,
                     "fallback question (SPEC A3/A10). Nothing was reserved.",
                     evidence={"generated": False})
 
-    refused = quota_admission(quota, "video", 10, run_id, logical_key, ids)
-    if refused is not None:
-        return refused
+    quota = _quota_module(quota)
+    if quota is None:
+        return _env(ids, "error", "agnes-quota-unavailable",
+                    "the Agnes quota tracker (scripts/core/agnes_quota) is not "
+                    "importable, so no quota row can be written; install the "
+                    "skill's quota module before any Agnes job.",
+                    evidence={"generated": False})
+
+    # S75-049 step 3: the slot folder is resolved BEFORE any reservation, so a
+    # pool that cannot be found refuses the job with nothing held.
     pool = quota_pool_dir(quota, pool_dir)
     if not pool:
         return _env(ids, "error", "agnes-quota-unavailable",
                     "the quota folder that holds the two in-flight video slots "
                     "could not be resolved (agnes_quota.state_path); nothing "
-                    "was sent.", evidence={"generated": False})
+                    "was reserved and nothing was sent.",
+                    evidence={"generated": False})
+
+    row_id, refused = quota_admission(quota, "video", 10, run_id, logical_key,
+                                      ids)
+    if refused is not None:
+        return refused
 
     digest = L.digest_request({"request": send, "prompt": prompt or ""})
     planned = L.plan(ledger_db, run_id, logical_key, attempt_id, digest, 0,
                      stage=stage, owner=owner)
     if planned["outcome"] != "ok":
+        _close_quota(quota, row_id, "failed", int(VIDEO_SECONDS))
         return _env(ids, planned["outcome"], planned["reason_code"],
                     planned.get("next_action", ""),
                     state_version=planned.get("state_version", 0))
     reserved = L.reserve(ledger_db, run_id, logical_key, attempt_id, owner=owner)
     if reserved["outcome"] != "ok":
+        _close_quota(quota, row_id, "failed", int(VIDEO_SECONDS))
         return _env(ids, reserved["outcome"], reserved["reason_code"],
                     reserved.get("next_action", ""),
                     state_version=reserved.get("state_version", 0))
     job_state = "reserved"
+    # S75-049 step 2: the reservation is closed on every terminal path below -
+    # success keeps its seconds, a failure or a cancel releases them, and a
+    # hold leaves the row reserved because the job's state is still unknown.
+    quota_outcome = "failed"
+    quota_seconds = int(VIDEO_SECONDS)
 
     try:
         receipt_path, _record = prompt_receipt(save_dir, ids, run_id, prompt,
@@ -695,13 +825,27 @@ def dispatch_video(request, *, save_dir, ledger_db, run_id, logical_key,
 
         with video_slot(pool, sleep):
             send_one = _transport(transport)
-            made, info = _create_video(body, send_one, secrets_key, sleep,
-                                       clock)
+            made, info = _create_video(body, send_one, secrets_key, sleep)
             if made is None:
                 if "status" in info:
                     return _vendor_stop(ids, info["status"], info.get("payload"),
-                                        ledger_db, owner, job_state)
+                                        ledger_db, owner, job_state,
+                                        quota=quota)
+                if info.get("error") in (AGNES_QUEUE_FULL, AGNES_RATE_LIMITED):
+                    settle = _settle_job(ledger_db, ids, owner, job_state,
+                                         "failed")
+                    return _env(ids, "error", info["error"],
+                                "Agnes answered HTTP %s every time: %d tries, "
+                                "then the door stopped. Nothing was submitted "
+                                "and nothing was charged; retry the segment "
+                                "later (SPEC A4.4)."
+                                % (info.get("http_status"), info.get("tries", 0)),
+                                evidence={"http_status": info.get("http_status"),
+                                          "tries": info.get("tries", 0),
+                                          "generated": False, "submitted": False},
+                                state_version=settle.get("state_version", 0))
                 # Accepted, but the answer carried no id: the job is unknown.
+                quota_outcome = None      # a reserved row is never guess-settled
                 hold = _hold_unknown(ledger_db, run_id, logical_key, attempt_id,
                                      owner, {"stage": "create",
                                              "http_status": info.get("http_status"),
@@ -717,6 +861,7 @@ def dispatch_video(request, *, save_dir, ledger_db, run_id, logical_key,
                 made, send_one, secrets_key, sleep, clock, poll_s,
                 timeout_s or _WAIT_S["video"])
             if verdict_code == "unknown":
+                quota_outcome = None      # the job may still exist: no settle
                 hold = _hold_unknown(ledger_db, run_id, logical_key, attempt_id,
                                      owner, {"stage": "poll", "task_id": made,
                                              "remote_task_id": made,
@@ -728,7 +873,7 @@ def dispatch_video(request, *, save_dir, ledger_db, run_id, logical_key,
                 return hold
             if verdict_code in (402, 401, 403):
                 return _vendor_stop(ids, verdict_code, payload, ledger_db,
-                                    owner, job_state)
+                                    owner, job_state, quota=quota)
             if verdict_code == "failed":
                 code, message = _vendor_code(payload)
                 settle = _settle_job(ledger_db, ids, owner, job_state, "failed",
@@ -773,6 +918,7 @@ def dispatch_video(request, *, save_dir, ledger_db, run_id, logical_key,
                             settle.get("next_action", ""),
                             evidence={"task_id": made, "saved_paths": [path]},
                             state_version=settle.get("state_version", 0))
+            quota_outcome = "succeeded"
             return _env(
                 ids, "ok", "AGNES_VIDEO_OK",
                 "the clip is saved; record the receipt and let the frame/text "
@@ -797,6 +943,8 @@ def dispatch_video(request, *, save_dir, ledger_db, run_id, logical_key,
                     "%s: %s" % (type(exc).__name__, str(exc)[:300]),
                     evidence={"generated": False},
                     state_version=settle.get("state_version", 0))
+    finally:
+        _close_quota(quota, row_id, quota_outcome, quota_seconds)
 
 
 def dispatch_image(request, *, save_dir, ledger_db, run_id, logical_key,
@@ -821,7 +969,16 @@ def dispatch_image(request, *, save_dir, ledger_db, run_id, logical_key,
                     "fallback question (SPEC A3/A10). Nothing was reserved.",
                     evidence={"generated": False})
 
-    refused = quota_admission(quota, "image", 1, run_id, logical_key, ids)
+    quota = _quota_module(quota)
+    if quota is None:
+        return _env(ids, "error", "agnes-quota-unavailable",
+                    "the Agnes quota tracker (scripts/core/agnes_quota) is not "
+                    "importable, so no quota row can be written; install the "
+                    "skill's quota module before any Agnes job.",
+                    evidence={"generated": False})
+
+    row_id, refused = quota_admission(quota, "image", 1, run_id, logical_key,
+                                      ids)
     if refused is not None:
         return refused
 
@@ -829,15 +986,18 @@ def dispatch_image(request, *, save_dir, ledger_db, run_id, logical_key,
     planned = L.plan(ledger_db, run_id, logical_key, attempt_id, digest, 0,
                      stage=stage, owner=owner)
     if planned["outcome"] != "ok":
+        _close_quota(quota, row_id, "failed")
         return _env(ids, planned["outcome"], planned["reason_code"],
                     planned.get("next_action", ""),
                     state_version=planned.get("state_version", 0))
     reserved = L.reserve(ledger_db, run_id, logical_key, attempt_id, owner=owner)
     if reserved["outcome"] != "ok":
+        _close_quota(quota, row_id, "failed")
         return _env(ids, reserved["outcome"], reserved["reason_code"],
                     reserved.get("next_action", ""),
                     state_version=reserved.get("state_version", 0))
     job_state = "reserved"
+    quota_outcome = "failed"      # every early exit releases the still's unit
 
     try:
         receipt_path, _record = prompt_receipt(save_dir, ids, run_id, prompt,
@@ -853,7 +1013,8 @@ def dispatch_image(request, *, save_dir, ledger_db, run_id, logical_key,
         transport = _transport(transport)
         status, payload = transport("POST", IMAGE_ENDPOINT, secrets_key, body)
         if status != 200:
-            return _vendor_stop(ids, status, payload, ledger_db, owner, job_state)
+            return _vendor_stop(ids, status, payload, ledger_db, owner,
+                                job_state, quota=quota)
         rows = payload.get("data") if isinstance(payload.get("data"), list) else []
         row = rows[0] if rows and isinstance(rows[0], dict) else {}
         b64 = row.get("b64_json")
@@ -882,6 +1043,7 @@ def dispatch_image(request, *, save_dir, ledger_db, run_id, logical_key,
                         settle.get("next_action", ""),
                         evidence={"saved_paths": [path]},
                         state_version=settle.get("state_version", 0))
+        quota_outcome = "succeeded"
         return _env(ids, "ok", "AGNES_IMAGE_OK",
                     "the still is saved; use it as the segment's first_frame.",
                     evidence={"generated": True, "model": IMAGE_MODEL,
@@ -898,6 +1060,8 @@ def dispatch_image(request, *, save_dir, ledger_db, run_id, logical_key,
                     "%s: %s" % (type(exc).__name__, str(exc)[:300]),
                     evidence={"generated": False},
                     state_version=settle.get("state_version", 0))
+    finally:
+        _close_quota(quota, row_id, quota_outcome)
 
 
 # ---------------------------------------------------------------------------
