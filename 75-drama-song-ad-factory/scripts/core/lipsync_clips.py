@@ -21,8 +21,9 @@ collide and the caller EXPOSES it (card refuses, plan flags). The policy is
 never silently bent and a run is never re-planned behind the owner's back.
 
 The historical FREE / no-lip-sync route stays explicit (`ROUTE_NO_LIPSYNC`):
-zero paid Kling jobs is a valid plan when the owner asks for it, and is never
-the default and never a reason to drop lip-sync from an ordinary run.
+zero paid Kling jobs is a valid plan only when `control/method.json` records a
+`lipsync_opt_out` with `who` and `at` (`no_lipsync_opt_out`); it is never the
+default and never a reason to drop lip-sync from an ordinary run.
 
 Every lip-sync clip is a paid KIE job (`kling/ai-avatar-standard`), so the
 footage drives the lip-sync cost. `check_budget` refuses LOUDLY when the job
