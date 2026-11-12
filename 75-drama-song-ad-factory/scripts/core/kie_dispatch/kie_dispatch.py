@@ -1134,10 +1134,12 @@ def _prompt_budget_passed(b):
 
     Skill 74 answers exit 5 both for its 80-to-below-95 percent band, which
     passes with a warn-and-expand note, and for a prompt it refuses (unknown
-    maximum, policy unavailable, above the target ceiling). Only the JSON can
-    tell them apart. The adapter prints `"state": "validated"` on a pass and
-    `"fail"` otherwise; an explicit `ok` boolean, on the envelope or inside
-    `data`, is read first when present. Nothing else counts as a pass.
+    maximum, policy unavailable, above the target ceiling or maximum). Only
+    the JSON can tell them apart. An explicit `ok` boolean, on the envelope
+    or inside `data`, is read first when present. Otherwise only the
+    `BELOW_TARGET` status passes; every other status (including a `validated`
+    envelope carrying `ABOVE_TARGET` or any unknown status) fails closed.
+    Nothing else counts as a pass.
     """
     if not isinstance(b, dict):
         return False
@@ -1145,7 +1147,7 @@ def _prompt_budget_passed(b):
     for holder in (b, data):
         if isinstance(holder.get("ok"), bool):
             return holder["ok"] is True
-    return b.get("state") == "validated"
+    return data.get("status") == "BELOW_TARGET"
 
 
 def _settle(db, run_id, logical_key, attempt_id, owner, job_state, final,
