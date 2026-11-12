@@ -1317,8 +1317,10 @@ def render_template(template: str, values: dict, stage: str) -> str:
     return body
 
 def request_cues(request: dict) -> dict:
-    """The brand's composition cues for this run (empty when it declares none)."""
-    return composition.composition_cues(request.get("_composition_brand") or composition.load_brand())
+    """The brand's composition cues for this run (empty when it declares none), plus the shaped
+    crops the run's design style forbids, so a Style A page is never assigned a mask treatment."""
+    return composition.composition_cues(request.get("_composition_brand") or composition.load_brand(),
+                                        request.get("design_style"))
 
 
 def resolve_composition(section: dict, index: int, request: dict) -> dict:

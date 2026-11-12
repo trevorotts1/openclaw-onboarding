@@ -119,6 +119,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import composition  # noqa: E402
 import copy_forms  # noqa: E402
 import page_role  # noqa: E402
+import role_spec  # noqa: E402  a role with its own section structure (checkout)
 
 EXPECTED_WIDTH = {"desktop-wireframe": 1440, "mobile-tablet": 390}
 WIDTH_TOLERANCE_PX = 2
@@ -961,7 +962,10 @@ def main(argv):
         want = EXPECTED_WIDTH[stage]
         # the floor is the landing standard set's own height; a page type with its own section
         # structure (the thank-you page) has no measured floor, so none is asserted (like mobile)
-        floor = None if page_role.spec_for_role(page_role.declared_role(run_dir)) else height_floor(stage, run_dir)
+            # A page role with its own section structure (thank-you's copy form, or a roles/<role>.json spec
+        # such as checkout's five sections) is not the 12-section landing sheet: no landing floor.
+        role = page_role.declared_role(run_dir)
+        floor = None if (page_role.spec_for_role(role) or role_spec.load(role)) else height_floor(stage, run_dir)
         total_height = 0
         for p in slices:
             try:
@@ -1017,9 +1021,13 @@ def main(argv):
     failures.extend(w3_failures)
 
     # (6b) Composition treatments and the per-page budget.
+    try:
+        style_id = json.loads((Path(run_dir) / "intake.json").read_text(encoding="utf-8")).get("design_style")
+    except (OSError, ValueError, AttributeError):
+        style_id = None
     comp_failures = composition.budget_failures(
         composition.plan_sections(plan),
-        composition.composition_cues(composition.load_brand(run_dir, brand_arg)))
+        composition.composition_cues(composition.load_brand(run_dir, brand_arg), style_id))
     failures.extend(comp_failures)
 
     # (7) Brand-color trait W4 (Item 15): measured slice colors.

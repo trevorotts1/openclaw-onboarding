@@ -409,6 +409,24 @@ class ConcretePromptAndCuesTests(unittest.TestCase):
         self.assertEqual([l for l in comp.budget_failures(rows, no_masks) if "mask" in l], [])
 
 
+class DesignStyleBudgetTests(unittest.TestCase):
+    def test_style_a_waives_shaped_crops_and_style_b_still_requires_them(self):
+        # Style A (Block) forbids circle crops and rounded photo corners, so a Style A page can never
+        # carry the two shaped crops (one a circle) the budget asks of a photo-heavy page
+        spec = [("1", ["overlay-light"]), ("2", ["card-overlaps-photo"]), ("3", ["caption-over-photo"]),
+                ("4", ["split"]), ("5", ["band-over-texture"]), ("6", ["split"]), ("7", ["split"]),
+                ("8", ["caption-over-photo"]), ("9", ["card-overlaps-photo"]), ("10", ["split"])]
+        rows = comp.plan_sections(_plan(spec))
+        self.assertEqual(comp.style_forbidden("A"), ["mask-circle", "mask-arch", "mask-pill", "mask-diagonal"])
+        self.assertEqual(comp.style_forbidden("B"), [])
+        style_a = comp.budget_failures(rows, comp.composition_cues({}, "A"))
+        self.assertEqual([l for l in style_a if "shaped crops" in l or "mask-circle" in l], [], style_a)
+        style_b = comp.budget_failures(rows, comp.composition_cues({}, "B"))
+        self.assertTrue(any("shaped crops" in l for l in style_b), style_b)
+        declared = comp.plan_sections(_plan([("1", ["mask-arch"])] + spec[1:]))
+        self.assertTrue(any("'mask-arch' is forbidden" in l
+                            for l in comp.budget_failures(declared, comp.composition_cues({}, "A"))))
+
 class ThreeRolesPreflightTests(unittest.TestCase):
     """Wireframe and mockup prompts for three section roles carry typed
     references and a non-split instruction, inside the prompt budget."""
@@ -504,7 +522,7 @@ class WireframeBudgetGateTests(unittest.TestCase):
     def test_validate_wireframe_runs_the_gate(self):
         text = (SCRIPTS / "validate_wireframe.py").read_text(encoding="utf-8")
         self.assertIn("composition.budget_failures(", text)
-        self.assertIn("composition.composition_cues(composition.load_brand(run_dir, brand_arg))", text)
+        self.assertIn("composition.composition_cues(composition.load_brand(run_dir, brand_arg), style_id)", text)
         self.assertIn('("COMP", comp_failures)', text)
 
 

@@ -106,8 +106,8 @@
         "step_count": {"default": 5, "kind": "target", "min": 4, "max": 6, "source": "Skill 49 TY-2 (4 to 6 numbered steps; each step 89 to 116 characters, applied by the reviewer: per-step character bands are defined for a seven-step page only)"}
       },
       "layout": {
-        "desktop": "Light ground band. A section heading, then the numbered steps in one horizontal row inside the 1200 px column: each a primary-colour circle badge with its step number joined to the next by a dotted line, with the verb-led step label under it. No button and no image.",
-        "mobile": "Light ground band. The steps stack in one column with a dotted line running down the left through the primary-colour number badges; each badge sits beside its step label. No button and no image."
+        "desktop": "Light ground band. A section heading, then the numbered steps inside the 1200 px column, drawn in the client's design style: Style A (Block) runs them as full-width numbered rows, one step per row, a primary-colour square-cornered number block at the left of each row and a hairline rule between rows; Style B (Circle) and Style C (Hybrid) set them in one horizontal row of primary-colour circle badges joined by a dotted line, with the verb-led step label under each. No button and no image.",
+        "mobile": "Light ground band. The steps stack in one column at full width, each number badge beside its step label: square-cornered number blocks with hairline rules between rows for Style A, primary-colour circle badges on a dotted line down the left for Style B and Style C. No button and no image."
       },
       "note": "Four to six steps; badges read 1 to N once each, in order; no button here"
     },
@@ -125,8 +125,8 @@
       "ground": "hero",
       "signature_label": true,
       "layout": {
-        "desktop": "Hero ground band, two columns inside the 1200 px content column. Left: the support heading, one line on how to reach help, the filled support button and beside it an outlined manage-purchase button. Right: the short signed note of thanks, the signature in script. No offer button and no price.",
-        "mobile": "Single-column phone stack: the signed note and its script signature first, then the support heading and line, the filled support button at full width and the outlined manage-purchase button at full width under it. No offer button and no price."
+        "desktop": "Hero ground band, two columns inside the 1200 px content column. Left: the support heading, one line on how to reach help, the filled support button and beside it an outlined manage-purchase button. Right: the short signed note of thanks, the signature in script. No offer button and no price. When the copy carries no manage-purchase label (its destination comes from the purchase record at render time), the outlined button is drawn as a grey bar labelled MANAGE PURCHASE, and no behaviour note names an element that is not drawn.",
+        "mobile": "Single-column phone stack: the signed note and its script signature first, then the support heading and line, the filled support button at full width and the outlined manage-purchase button at full width under it. No offer button and no price. When the copy carries no manage-purchase label (its destination comes from the purchase record at render time), the outlined button is drawn as a grey bar labelled MANAGE PURCHASE, and no behaviour note names an element that is not drawn."
       },
       "note": "Support is the primary action here; manage purchase is secondary and outlined; no offer button"
     }
@@ -146,7 +146,7 @@
     },
     "reference_note": "The attached reference is a landing page sheet. For this page it gives the sheet grammar only: section chips with name tabs, printed type specs, labelled image plates, filled CTA chips and contiguous bands. Its sections, section count, words and layout are never copied.",
     "desktop_block": "THANK-YOU DESKTOP — a five-section confirmation page, not a landing page. The sections are Confirmation and welcome, Order summary, Access, What happens next, Help manage and close, in that order, on alternating grounds with hard butt joins. The page carries exactly one image plate in total (in the first section). No section is an offer, a pitch or a persuasion band, and no filled button is an offer button. Never merge two numbered sections into one band.",
-    "steps_block": "STEPS — between four and six step badges, primary-colour circles reading 1 up to the last step once each in that order, joined by a dotted line, each beside its own step label from the copy. Never a seventh badge that the copy does not carry.",
+    "steps_block": "STEPS — between four and six numbered steps, 1 up to the last step once each in that order, each beside its own step label from the copy, drawn in the client's design style (the DESIGN STYLE line governs the badge: square-cornered blocks in full-width rows for Style A, circles on a dotted line for Style B and C). Never a seventh step that the copy does not carry.",
     "do_not_copy": "DO NOT COPY THE EXAMPLE'S MISTAKES — the style reference was drawn by a model for a landing page and carries flaws. Never reproduce: a misspelt label (DESKTOR for DESKTOP, BTEP for STEP, featofe, thwo); a section number printed twice or skipped; garbled badges; an invalid ratio such as 3:9; duplicated text; placeholder words such as lorem ipsum or GOES HERE; any landing-page section, pain band, benefit grid or founder letter that this page's copy does not carry."
   }
 }
