@@ -11,9 +11,10 @@ Reuses the Book Writer deploy pattern (`53-book-writer/mini-app/deploy/`).
 |---|---|
 | `deploy.sh` | resolve → zone guard → **read-only scope preflight** → bucket → 45-day retention → KV namespace → secrets → Worker deploy → DNS, each on its own token, with `--dry-run` and `--self-test` |
 | `deploy.manifest.json` | the deploy contract: worker name, absolute service entry, route host, bucket, KV binding, retention, the required/optional secret **names**, and the intended zone |
+| `upload-cors.json` | the R2 bucket CORS rule that allows browser uploads (`PUT` from the studio host) |
 | `DEPLOY.md` | this file |
 
-Ownership: U2 owns `mini-app/worker/` (service), U3 owns `mini-app/pages/`
+Ownership: U2 owns `mini-app/service/` (service), U3 owns `mini-app/ui/`
 (UI), U12 owns pairing/admin/key. **U4 owns `mini-app/deploy/` only.**
 
 ---
@@ -34,14 +35,10 @@ Ownership: U2 owns `mini-app/worker/` (service), U3 owns `mini-app/pages/`
 - **Secret values are env-only.** The manifest lists the secret **names** and
   marks each required or optional. **Required** — the service README bindings
   `DS_ENROLLMENT_SECRET`, `DS_ADMIN_KEY`, `R2_ACCOUNT_ID` — must be set in the
-  environment or the deploy fails closed. **Optional** — `R2_ACCESS_KEY_ID`,
-  `R2_SECRET_ACCESS_KEY` — are skipped with a warning when absent. Values are
-  read from the environment and piped to `wrangler secret put` stdin; they are
-  never echoed.
-  - **R2 S3 keys deferred until presign ships; needs a token with "API Tokens
-    Write".** The service does not read `R2_ACCESS_KEY_ID` /
-    `R2_SECRET_ACCESS_KEY` at runtime (presign is future), so the deploy plans
-    and succeeds without them.
+  environment or the deploy fails closed. Values are read from the environment
+  and piped to `wrangler secret put` stdin; they are never echoed.
+  - **The two storage keys are required: without them photo uploads and every
+    approval that carries a file (songs, storyboard) are refused.**
 - **No real zone or account id is committed.** The guard's intended-account pin
   is supplied by the operator at deploy time (ids are public; secrets are not).
 
@@ -176,21 +173,23 @@ ever written to a file.
 5. **R2 bucket** — create `zhw-drama-studio` if missing (idempotent).
 6. **Retention** — 45-day lifecycle rule on the `projects/` prefix (scoped
    project-object retention).
-7. **KV namespace** — find `DS_STUDIO` by title; create it only if absent. Its id
+7. **CORS** — put the committed `upload-cors.json` rule on the bucket, so a
+   browser may `PUT` an upload straight to R2 from the studio host.
+8. **KV namespace** — find `DS_STUDIO` by title; create it only if absent. Its id
    is resolved into the throwaway config, so no `<PLACEHOLDER_KV_*>` id reaches
    `wrangler`. Runs on the KV/DNS token.
-8. **Secrets** — `wrangler secret put` the required names (`DS_ENROLLMENT_SECRET`,
-   `DS_ADMIN_KEY`, `R2_ACCOUNT_ID`), values from env; optional `R2_*` S3 keys are
-   skipped when absent.
-9. **Worker deploy** — `wrangler deploy` with the throwaway temp config. Because
-   that config is written into `$TMPDIR`, `main` is rewritten to the **absolute**
-   path of `mini-app/service/src/index.js`, so the entrypoint always resolves.
-10. **DNS** — ensure a **proxied** CNAME `studio.zerohumanworkforce.com ->
+9. **Secrets** — `wrangler secret put` all five names (`DS_ENROLLMENT_SECRET`,
+   `DS_ADMIN_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+   `R2_SECRET_ACCESS_KEY`), values from env; a missing one fails closed.
+10. **Worker deploy** — `wrangler deploy` with the throwaway temp config. Because
+    that config is written into `$TMPDIR`, `main` is rewritten to the **absolute**
+    path of `mini-app/service/src/worker.js`, so the entrypoint always resolves.
+11. **DNS** — ensure a **proxied** CNAME `studio.zerohumanworkforce.com ->
     zerohumanworkforce.com` exists in the guarded zone, created only if absent.
     Runs on the KV/DNS token and refuses any zone but the guarded BlackCEO zone.
 
 The real deploy is the plan's separate "Deploy" row: *one bucket, one KV
-namespace, two secrets, scoped project-object 45-day retention; `deploy.sh
+namespace, five secrets, scoped project-object 45-day retention; `deploy.sh
 --dry-run` then real deploy.*
 
 ---
