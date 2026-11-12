@@ -23,7 +23,7 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$HERE/../.." && pwd)"
+REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
 RECEIVER="$REPO_ROOT/65-rescue-receiver"
 
 PASS=0; FAIL=0
