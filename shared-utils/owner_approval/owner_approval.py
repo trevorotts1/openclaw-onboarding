@@ -222,6 +222,26 @@ def collect_preview(files: list) -> tuple[str, list]:
     return "\n\n".join(t for t in texts if t)[:PREVIEW_INLINE_LIMIT], attachments
 
 
+def normalize_view_urls(items: list, legacy_preview_url: str = "") -> list:
+    """Parse repeatable --view-url values ("Label=https://..." or a bare https URL) into labeled links.
+
+    These are where the content actually lives (the Google Sheet, a Google Doc, a PDF, the Command Center
+    preview). Only http(s) links are accepted; the older single --preview-url is kept as "Full preview".
+    """
+    out = []
+    for raw in list(items) + ([legacy_preview_url] if legacy_preview_url else []):
+        raw = str(raw).strip()
+        label, sep, url = raw.partition("=")
+        if not sep or "://" in label:
+            label, url = ("Full preview" if raw == legacy_preview_url else "View it here"), raw
+        label, url = label.strip() or "View it here", url.strip()
+        if not re.match(r"^https?://[^\s]+$", url):
+            raise ApprovalError(f"view link {url[:60]!r} is not an http(s) link.")
+        if url not in [v["url"] for v in out]:
+            out.append({"label": label[:80], "url": url})
+    return out
+
+
 def short_code(request_id: str) -> str:
     """The code that binds a chat reply to one request: first six characters of the request id."""
     return str(request_id)[:6]
@@ -232,7 +252,7 @@ def request_approval(*, kind: str, location_id: str, action: str, object_key: st
                      plan_sha256: str, summary: str, preview_text: str = "",
                      preview_url: str = "", skill: str = "", requested_by: str = "agent",
                      title: str = "", valid_until: str = "", owner_hours: int = 0,
-                     attachments: list | None = None) -> dict:
+                     attachments: list | None = None, view_urls: list | None = None) -> dict:
     """Register a pending request (idempotent for the same plan) and return its record."""
     if not (kind and action and plan_sha256 and summary):
         raise ApprovalError("kind, action, plan_sha256 and summary are required.")
@@ -241,8 +261,9 @@ def request_approval(*, kind: str, location_id: str, action: str, object_key: st
     pv = {}
     if preview_text:
         pv["text"] = preview_text
-    if preview_url:
-        pv["links"] = [{"label": "Full preview", "url": preview_url}]
+    views = normalize_view_urls(view_urls or [], preview_url)
+    if views:
+        pv["links"] = [{"label": v["label"], "url": v["url"]} for v in views]
     body = {"kind": kind, "location_id": location_id, "action": action,
             "object_key": object_key, "plan_sha256": plan_sha256,
             "title": (title or summary)[:200], "summary": summary[:4000],
@@ -267,7 +288,7 @@ def request_approval(*, kind: str, location_id: str, action: str, object_key: st
            "approval_id": None, "idem": idem, "location_id": location_id, "object_key": object_key,
            "plan_sha256": plan_sha256, "created_at": _now(), "last_reminded_at": None,
            "summary": summary, "preview_text": preview_text, "preview_url": preview_url,
-           "attachments": list(attachments or []), "short_code": short_code(str(rid)),
+           "attachments": list(attachments or []), "view_urls": views, "short_code": short_code(str(rid)),
            "kind": kind, "action": action, "skill": skill}
     _save(rec)
     rec["reused"] = False
@@ -363,7 +384,7 @@ def _ways_to_approve(rec: dict) -> list:
 
 
 def owner_message(rec: dict, *, reminder: bool = False, chat_said_approved: bool = False,
-                  refusal: str = "") -> str:
+                  refusal: str = "", source_problem: str = "") -> str:
     """The text the agent sends the owner: the material inline, three ways to answer, the code."""
     lines = []
     if refusal:
@@ -383,8 +404,12 @@ def owner_message(rec: dict, *, reminder: bool = False, chat_said_approved: bool
     atts = [Path(a).name for a in rec.get("attachments") or []]
     if atts:
         lines += ["", "Attached for you to look at: " + ", ".join(atts)]
-    if rec.get("preview_url"):
-        lines += ["", f"Full preview: {rec['preview_url']}"]
+    views = rec.get("view_urls") or ([{"label": "Full preview", "url": rec["preview_url"]}] if rec.get("preview_url") else [])
+    if views:
+        lines += [""] + [f"View it here ({v['label']}): {v['url']}" if v["label"] != "View it here"
+                         else f"View it here: {v['url']}" for v in views]
+    if source_problem:
+        lines += ["", source_problem.strip()]
     lines += [""] + _ways_to_approve(rec)
     return "\n".join(lines)
 
@@ -397,7 +422,7 @@ def chat_buttons(rec: dict) -> dict:
 
 
 def send_command(rec: dict, *, channel: str, target: str, account: str = "", buttons: bool = True,
-                 reminder: bool = False, dry_run: bool = False) -> list:
+                 reminder: bool = False, dry_run: bool = False, source_problem: str = "") -> list:
     """The gateway send command that puts the review material in the owner's chat.
 
     Telegram goes out through `openclaw message send` with the attachments as --media. The OpenClaw
@@ -410,7 +435,7 @@ def send_command(rec: dict, *, channel: str, target: str, account: str = "", but
         raise ApprovalError("telegram delivery needs --target (the owner's chat id) or OWNER_APPROVAL_TELEGRAM_TARGET.")
     cmd = shlex.split(os.environ.get("OWNER_APPROVAL_SEND_CMD", "openclaw")) + [
         "message", "send", "--channel", "telegram", "--target", target,
-        "--message", owner_message(rec, reminder=reminder)]
+        "--message", owner_message(rec, reminder=reminder, source_problem=source_problem)]
     if account:
         cmd += ["--account", account]
     for media in rec.get("attachments") or []:
@@ -423,19 +448,20 @@ def send_command(rec: dict, *, channel: str, target: str, account: str = "", but
 
 
 def deliver(rec: dict, *, channel: str, target: str = "", account: str = "", reminder: bool = False,
-            dry_run: bool = False) -> dict:
+            dry_run: bool = False, source_problem: str = "") -> dict:
     """Send the approval message into the owner's chat. Returns {delivered, command?, text, attachments}."""
     target = target or os.environ.get("OWNER_APPROVAL_TELEGRAM_TARGET", "")
-    text = owner_message(rec, reminder=reminder)
+    text = owner_message(rec, reminder=reminder, source_problem=source_problem)
     out = {"channel": channel, "text": text, "attachments": list(rec.get("attachments") or [])}
-    cmd = send_command(rec, channel=channel, target=target, account=account, reminder=reminder, dry_run=dry_run)
+    cmd = send_command(rec, channel=channel, target=target, account=account, reminder=reminder,
+                       dry_run=dry_run, source_problem=source_problem)
     if not cmd:
         out.update(delivered=False, note="webchat: post this text and attach the listed files in your reply.")
         return out
     res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if res.returncode != 0 and "--presentation" in cmd:        # buttons unsupported here: send without them
         cmd = send_command(rec, channel=channel, target=target, account=account, buttons=False,
-                           reminder=reminder, dry_run=dry_run)
+                           reminder=reminder, dry_run=dry_run, source_problem=source_problem)
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         out["buttons"] = False
     if res.returncode != 0:
@@ -493,7 +519,12 @@ def main(argv=None) -> int:
     r.add_argument("--preview-text", default="")
     r.add_argument("--preview-file", action="append", default=[],
                    help="repeatable: a text file is shown inline in chat; an image or PDF is attached")
-    r.add_argument("--preview-url", default="")
+    r.add_argument("--preview-url", default="", help="older single link; same as one --view-url")
+    r.add_argument("--view-url", action="append", default=[],
+                   help='repeatable "Label=https://..." (or a bare link): where the content lives, e.g. the '
+                        'Google Sheet, a Google Doc, a PDF, the Command Center preview. Sent in EVERY message.')
+    r.add_argument("--source-problem", default="",
+                   help="plain sentence when the source could not be read (e.g. the Google connection needs a re-login)")
     r.add_argument("--skill", default="")
     r.add_argument("--title", default="")
     r.add_argument("--valid-until", default="", help="ISO end of the window being approved (e.g. end of the week)")
@@ -506,6 +537,7 @@ def main(argv=None) -> int:
         p = sub.add_parser(name)
         if name == "message":
             p.add_argument("--reminder", action="store_true")
+            p.add_argument("--source-problem", default="")
             p.add_argument("--chat-said-approved", action="store_true",
                            help="fallback only: a chat decision could not be recorded, send the button / link wording")
         elif name == "deliver":
@@ -513,6 +545,7 @@ def main(argv=None) -> int:
             p.add_argument("--target", default="")
             p.add_argument("--account", default="")
             p.add_argument("--reminder", action="store_true")
+            p.add_argument("--source-problem", default="")
             p.add_argument("--dry-run", action="store_true", help="build the send but do not deliver")
         elif name == "chat-decision":
             p.add_argument("--decision", choices=DECISIONS, required=True)
@@ -541,14 +574,14 @@ def main(argv=None) -> int:
                                    summary=a.summary, preview_text=preview,
                                    preview_url=a.preview_url, skill=a.skill, title=a.title,
                                    valid_until=a.valid_until, owner_hours=a.owner_hours,
-                                   attachments=attachments)
+                                   attachments=attachments, view_urls=a.view_url)
             extra = {}
             if a.deliver:
-                extra["delivery"] = deliver(rec, channel=a.deliver, target=a.target)
+                extra["delivery"] = deliver(rec, channel=a.deliver, target=a.target, source_problem=a.source_problem)
             if a.message:
-                print(owner_message(rec))
+                print(owner_message(rec, source_problem=a.source_problem))
             else:
-                _emit(rec, a, {"owner_message": owner_message(rec), **extra})
+                _emit(rec, a, {"owner_message": owner_message(rec, source_problem=a.source_problem), **extra})
             return EXIT_OK
         if a.cmd == "message":
             rec = _load(a.request_id)
@@ -557,7 +590,8 @@ def main(argv=None) -> int:
             if a.reminder:
                 rec["last_reminded_at"] = _now()
                 _save(rec)
-            print(owner_message(rec, reminder=a.reminder, chat_said_approved=a.chat_said_approved))
+            print(owner_message(rec, reminder=a.reminder, chat_said_approved=a.chat_said_approved,
+                                source_problem=a.source_problem))
             return EXIT_OK
         if a.cmd == "deliver":
             rec = _load(a.request_id)
@@ -566,7 +600,7 @@ def main(argv=None) -> int:
             if rec.get("status") == "approved":
                 raise ApprovalError("this was already approved; nothing to send, do not ask again.")
             res = deliver(rec, channel=a.channel, target=a.target, account=a.account,
-                          reminder=a.reminder, dry_run=a.dry_run)
+                          reminder=a.reminder, dry_run=a.dry_run, source_problem=a.source_problem)
             print(json.dumps(res, indent=2))
             return EXIT_OK
         if a.cmd == "chat-decision":

@@ -1,7 +1,7 @@
 ---
 name: social-media-in-a-box
 description: Run my social week end-to-end — the productionized weekly social-media engine. Takes a weekly theme and: validates readiness (Kie.ai credits / OpenRouter balance / GHL Private Integration Token / status), writes a week of platform-native content (7-part cliffhanger series + platform reformatter), generates media (GPT Image 2.6 Sunburst image with vision QC, a 25s video storyboard rendered through the Skill 67 (kie-video) model selector, GPT Image 2.6 Sunburst carousel with a Gemini QC loop and SeedDream repair, GPT Image 2.6 Sunburst podcast cover art), posts through the CLIENT's OWN Go High Level (Convert & Flow) location and connected social accounts, and writes the plan back to the content calendar. Modes week | day | carousel | video | podcast-cover | plan | clean across facebook / instagram / linkedin (+PDF) / youtube / tiktok / pinterest / google-business. Every SACRED character/count band and JSON contract is enforced by deterministic, fail-closed Python provers (not prose); the run mints a signed certificate proving ZERO Anthropic per run. NO n8n and NO Airtable at runtime — prompts are baked in, state is a local SQLite ledger, deliverables are local + labeled. Client runtime uses CLIENT providers ONLY, never Anthropic.
-version: v1.8.4
+version: v1.8.5
 ---
 
 # Social Media in a Box (Skill 57)
@@ -72,14 +72,20 @@ Publisher sub-mode `twitter` (C1) posts X through the client's own GHL channel. 
 
 ## Owner approval of the week (BINDING)
 
-Before anything is scheduled or published the owner approves the week through a record Command Center
-mints when the owner taps Approve. Use the shared flow in `shared-utils/owner_approval/README.md` (the same
-helper Skills 35 and 83 use): register the request (`--kind automation_write --action social_publish
---object-key weekly-<monday> --valid-until <end of week>`), send the owner ONE message with the plain summary,
-the actual posts (or a link to them) and the one-tap link, then `eval "$(owner_approval.py wait --request-id <id> --shell)"`
-to export `CAF_APPROVAL_ID` plus the matching `CAF_WRITE_ACTION`, `CAF_OBJECT_KEY`, `CAF_PLAN_SHA256`.
-If the owner says "approved" in chat, reply with the link (chat text is not approval); reminders re-send the
-link; if the Google Sheet cannot be read, say so plainly and paste the posts inline. The agent never mints approval.
+Before anything is scheduled or published the owner approves the week through a record Command Center mints.
+**She approves in the chat she already uses (Telegram or the OpenClaw chat app), by a Telegram button, or in
+Command Center. Any one works.** Use the shared flow in `shared-utils/owner_approval/README.md` (the same helper
+Skills 35, 49 and 83 use): `owner_approval.py request --kind automation_write --action social_publish
+--object-key weekly-<monday> --valid-until <end of week> --preview-file <posts as text> --view-url "Your content
+calendar=<the client's Google Sheet URL>" --deliver telegram --target <owner chat id>`. EVERY approval message and
+reminder carries the posts inline, a "View it here" link to where the content lives (Google Sheet, Doc, PDF or the
+Command Center preview), the three ways to answer and `Code: <first 6 characters of the request id>`. When the owner
+replies in chat ("approve", "changes: ...") or taps a button, run `owner_approval.py chat-decision` with the
+reference of that real inbound message; Command Center verifies and records it (relay a refusal reason plainly and
+re-send the link). Then `eval "$(owner_approval.py wait --request-id <id> --shell)"` exports `CAF_APPROVAL_ID` plus the
+matching `CAF_WRITE_ACTION`, `CAF_OBJECT_KEY`, `CAF_PLAN_SHA256`. If the Google Sheet cannot be read, still send the
+sheet link and the posts inline and say plainly that the agent's Google connection needs to be signed in again
+(`--source-problem`). The agent never mints approval.
 
 ## Live discovery + Owner Q&A (C2)
 

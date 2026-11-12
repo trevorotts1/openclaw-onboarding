@@ -43,8 +43,15 @@ Installed path: `~/.openclaw/skills/shared-utils/owner_approval/owner_approval.p
    them in its own reply with the files attached. Asking again about the same plan reuses the same request. A
    changed plan is a new request, because the old approval is bound to the old plan hash. Re-send later with
    `owner_approval.py deliver --request-id RID --channel telegram --target ID [--reminder]`.
-2. **The message always carries** a plain summary, the preview inline, the attached files, the three ways to
-   answer, and `Code: <first 6 characters of the request id>`. Never send a bare "awaiting your approval".
+2. **The message always carries** a plain summary, the preview inline, the attached files, a **"View it here" link
+   to where the content actually lives**, the three ways to answer, and `Code: <first 6 characters of the request id>`.
+   Never send a bare "awaiting your approval". Give every place the content lives with a repeatable
+   `--view-url "Label=https://..."` (the client's Google Sheet, a Google Doc, a PDF, the Command Center preview; a
+   bare https link is labeled "View it here"). The links are saved with the request, sent to Command Center in
+   `preview.links`, and repeated in every message, reminder and refusal re-send. If the source cannot be read (for
+   example the agent's Google sign-in expired), still send the link and the content inline and say it plainly with
+   `--source-problem "I could not open your Google Sheet because my Google connection needs to be signed in again..."`.
+   Content approvals (social posts, copy, pages) always use `--view-url`.
 3. **The owner answers (any one place).**
    - *In chat.* Their reply ("approve", "yes", "looks good", or "changes: make the headline shorter"). The agent
      does NOT treat it as approval. It runs

@@ -139,5 +139,82 @@ class TestDraftOff(_Base):
         self.assertFalse(self.flag(_rec(kind="publish", action="publish", plan_sha256="c" * 64)))
 
 
+MSG_URL = "https://services.leadconnectorhq.com/conversations/messages"
+OWNER = "ownerContact001"
+
+
+class TestOwnerNoticeExemption(_Base):
+    """A notice to the owner's OWN contact needs no approval record; everything else still does."""
+
+    def setUp(self):
+        super().setUp()
+        for k in ("CAF_APPROVAL_ID", "CAF_WRITE_ACTION", "CAF_PLAN_SHA256"):
+            os.environ.pop(k, None)           # the real failure: action and plan unknown
+        os.environ["CAF_OWNER_CONTACT_ID"] = OWNER
+        self.addCleanup(os.environ.pop, "CAF_OWNER_CONTACT_ID", None)
+
+    def send(self, payload, url=MSG_URL, method="POST", loc=LOC):
+        with patch.object(self.sg, "_fetch_record", side_effect=AssertionError("no record may be fetched")) as f:
+            self.sg.check_write(method, url, payload, location_id=loc)
+        return f
+
+    def refused(self, payload, **kw):
+        with self.assertRaises(self.sg.SafetyRefused):
+            with patch.object(self.sg, "_fetch_record", side_effect=self.sg.SafetyRefused("no record")):
+                self.sg.check_write(kw.get("method", "POST"), kw.get("url", MSG_URL), payload,
+                                    location_id=kw.get("loc", LOC))
+
+    def test_sms_to_owner_contact_passes_without_a_record(self):
+        self.send({"type": "SMS", "contactId": OWNER, "message": "Your week is ready."})
+
+    def test_email_to_owner_contact_passes_without_a_record(self):
+        self.send({"type": "Email", "contactId": OWNER, "message": "Hi", "subject": "Notice"})
+
+    def test_other_recipient_still_needs_approval(self):
+        self.refused({"type": "SMS", "contactId": "someoneElse", "message": "Sale!"})
+
+    def test_unset_owner_contact_exempts_nothing(self):
+        os.environ.pop("CAF_OWNER_CONTACT_ID")
+        self.refused({"type": "SMS", "contactId": OWNER, "message": "x"})
+        os.environ["CAF_OWNER_CONTACT_ID"] = "   "
+        self.refused({"type": "SMS", "contactId": OWNER, "message": "x"})
+
+    def test_other_message_types_and_endpoints_are_not_exempt(self):
+        self.refused({"type": "WhatsApp", "contactId": OWNER, "message": "x"})
+        self.refused({"type": "SMS", "contactId": OWNER, "message": "x"}, url="https://x.test/contacts/")
+        self.refused({"type": "SMS", "contactId": OWNER, "message": "x"}, url=MSG_URL + "/outbound")
+        self.refused({"type": "SMS", "contactId": OWNER, "message": "x"}, url=MSG_URL + "?contactId=other")
+        self.refused({"type": "SMS", "contactId": OWNER, "message": "x"}, method="PUT")
+        self.refused({"type": "SMS", "contactId": OWNER, "message": "x"}, method="DELETE")
+
+    def test_any_redirect_or_fan_out_field_defeats_the_exemption(self):
+        for extra in ({"conversationId": "c1"}, {"toNumber": "+15555550100"}, {"emailTo": ["a@b.c"]},
+                      {"emailCc": ["a@b.c"]}, {"emailBcc": ["a@b.c"]}, {"contactIds": ["x"]},
+                      {"recipients": ["x"]}):
+            self.refused({"type": "SMS", "contactId": OWNER, "message": "x", **extra})
+
+    def test_contact_must_match_exactly_and_be_a_string(self):
+        for bad in (OWNER + "x", OWNER.upper(), "", None, [OWNER], 7):
+            self.refused({"type": "SMS", "contactId": bad, "message": "x"})
+        self.refused(None)
+        self.refused("not a dict")
+
+    def test_location_still_has_to_be_whitelisted_and_match(self):
+        with self.assertRaises(self.sg.SafetyRefused):
+            self.sg.check_write("POST", MSG_URL, {"type": "SMS", "contactId": OWNER}, location_id="OTHERLOC")
+        with self.assertRaises(self.sg.SafetyRefused):
+            self.sg.check_write("POST", MSG_URL, {"type": "SMS", "contactId": OWNER}, location_id=None)
+        self.refused({"type": "SMS", "contactId": OWNER, "locationId": "DIFFERENT"})
+        self.send({"type": "SMS", "contactId": OWNER, "locationId": LOC})
+
+    def test_dry_run_and_empty_whitelist_rules_come_first(self):
+        os.environ.pop("CAF_ALLOWED_LOCATION_IDS")
+        with self.assertRaises(self.sg.SafetyRefused):
+            self.sg.check_write("POST", MSG_URL, {"type": "SMS", "contactId": OWNER}, location_id=LOC)
+
+    def test_owner_exemption_does_not_open_other_writes(self):
+        self.refused({"name": "workflow", "contactId": OWNER}, url="https://backend.leadconnectorhq.com/workflow/LOC123")
+
+
 if __name__ == "__main__":
     unittest.main()

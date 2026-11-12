@@ -418,6 +418,16 @@ The draft-only and approval-gate safeties remain unchanged — the whitelist
 controls WHICH locations can be written; the other guards control HOW writes are
 approved and published.
 
+## Note: the owner's own contact (CAF_OWNER_CONTACT_ID)
+
+A status notice to the OWNER (for example `caf contacts send-sms <owner contact id> --message "..."`) is not a
+business write the owner has to pre-approve. Set `CAF_OWNER_CONTACT_ID` in `~/.openclaw/secrets/.env` at install to the
+owner's own GHL contact id for this location. The write gate then lets a single SMS or email to exactly that
+contact id through without an approval record. It is narrow and fail-closed: the location must still be whitelisted,
+the message must be one SMS or email to that one contact (no conversation id, no cc, no bcc, no extra recipients), and
+every other recipient still needs the owner's approval. Unset, nothing is exempt. Before this, such a notice was refused
+with "current action and plan sha256 are unknown".
+
 ---
 
 ## Done When

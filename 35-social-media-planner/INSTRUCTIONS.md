@@ -234,17 +234,19 @@ Max 5 retry loops per gate (N6). Loop 6 → escalate to owner via Telegram.
 
 ## Owner approval flow — how the owner approves the week (BINDING)
 
-Posts are scheduled only after the owner approves the week through a record Command Center mints.
-The owner must always have a link to tap. Full steps: `shared-utils/owner_approval/README.md`.
+Posts are scheduled only after the owner approves the week through a record Command Center mints. **The owner
+approves right in the chat she already uses (Telegram or the OpenClaw chat app), by a Telegram button, or in
+Command Center. Any one works; none is required.** Every approval message and every reminder carries the posts
+inline, a "View it here" link to where the content lives, and the approve options. Full steps:
+`shared-utils/owner_approval/README.md`.
 
-1. **Register:** `python3 ~/.openclaw/skills/shared-utils/owner_approval/owner_approval.py request --kind automation_write --action social_publish --object-key weekly-<monday-date> --plan-sha256 <hash of the week's plan> --skill 35 --summary "<plain English: what goes out, where, when>" --preview-file <the posts as text> --preview-url <sheet or PDF link>`
-2. **Message the owner** (Telegram or chat) with the printed `owner_message`: plain summary, the actual posts (or a link), and the direct approve link, all in one message. Never send a bare "awaiting your approval".
-3. **Poll:** `owner_approval.py wait --request-id <id> --shell`. On exit 0 export the printed `CAF_APPROVAL_ID` and proceed. Never ask the owner again. Exit 4 = the owner asked for changes: revise and register a NEW request. Exit 5 = expired: register a new one. Exit 6 = Command Center unreachable: tell the owner plainly, do not proceed.
-4. **Owner replies "approved" in chat:** chat text is not approval. Answer at once with `owner_approval.py message --request-id <id> --chat-said-approved` (the one-tap link). Do not stall and do not schedule on the chat text.
-5. **Reminders** use `owner_approval.py message --request-id <id> --reminder`, which always carries the link.
-6. **Google Sheet unreadable (for example `gws` says `invalid_grant`):** say so in one plain sentence ("I could not open your Google Sheet because my Google sign-in expired; I have flagged it for repair") and paste the week's posts inline in the same message. The approval link goes out either way. Never answer "gws is not authenticated" and then stop.
+1. **Register and send (one command):** `python3 ~/.openclaw/skills/shared-utils/owner_approval/owner_approval.py request --kind automation_write --action social_publish --object-key weekly-<monday-date> --plan-sha256 <hash of the week's plan> --skill 35 --summary "<plain English: what goes out, where, when>" --preview-file <the posts as text> --view-url "Your content calendar=<content_sheet_url from MEMORY.md>" [--view-url "Images=<folder or PDF link>"] --deliver telegram --target <owner chat id>`. Use the client's own Google Sheet URL (`content_sheet_url` in MEMORY.md, the social planner sheet registry, or the weekly sheet), a Google Doc or PDF link, or the Command Center preview; give every place the content lives. `--deliver webchat` instead prints the message and you post it in the OpenClaw chat. The message always has: plain summary, the posts inline, "View it here" link(s), three ways to answer, `Code: <first 6 characters of the request id>`. Never send a bare "awaiting your approval".
+2. **The owner answers (any one place).** In chat ("approve", "yes", "changes: <what to change>"), by the Telegram button, or on the Command Center link. For a chat reply or button tap run `owner_approval.py chat-decision --request-id <id> --decision approve|changes --channel telegram|webchat --source-message-ref <channel>:<chat or session id>:<message id> [--note "..."]` with the reference of the owner's REAL inbound message; Command Center verifies it and records it. If it refuses, tell the owner the reason in plain words and send the link again. Never type the approval yourself and never treat your own sentence as approval.
+3. **Poll:** `owner_approval.py wait --request-id <id> --shell` (sees an approval from any of the three places). On exit 0 export the printed `CAF_APPROVAL_ID` and proceed. Never ask the owner again. Exit 4 = the owner asked for changes: revise and register a NEW request. Exit 5 = expired: register a new one. Exit 6 = Command Center unreachable: tell the owner plainly, do not proceed.
+4. **Reminders:** `owner_approval.py deliver --request-id <id> --channel telegram --target <owner chat id> --reminder` re-sends the same message: the posts, the "View it here" link and the answer options.
+5. **Google Sheet unreadable (for example `gws` says `invalid_grant`):** still send the sheet link and the posts inline, and say so plainly with `--source-problem "I could not open your Google Sheet because my Google connection needs to be signed in again; I have flagged it for repair, and the posts are below and in the link."` Never answer "gws is not authenticated" and then stop.
 
-The agent never mints approval itself, never treats chat text, an env token or a `ZHC-` name as approval, and never edits a plan after the owner approved it (a changed plan hash is refused by the write gate).
+The agent never mints approval itself, never treats an env token or a `ZHC-` name as approval, and never edits a plan after the owner approved it (a changed plan hash is refused by the write gate).
 
 ## Command Center (Kanban) — operator visibility
 

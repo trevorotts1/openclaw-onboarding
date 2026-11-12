@@ -401,6 +401,52 @@ class ChatApprovals(T):
         oa.chat_decision(rec["request_id"], decision="approve", channel="telegram", source_message_ref=REF)
         self.assertEqual(oa.main(["deliver", "--request-id", rec["request_id"], "--channel", "webchat"]), oa.EXIT_USAGE)
 
+    def test_view_urls_labeled_in_every_message_kind_and_sent_to_command_center(self):
+        sheet = "https://docs.google.com/spreadsheets/d/SHEET123/edit"
+        rec = self.req(kind="automation_write", preview_text="Mon: Post one\nTue: Post two",
+                       view_urls=[f"Your content calendar={sheet}", "https://docs.google.com/document/d/DOC1"])
+        self.assertEqual(STATE["bodies"][-1]["preview"]["links"][0],
+                         {"label": "Your content calendar", "url": sheet})
+        for kw in ({}, {"reminder": True}, {"chat_said_approved": True}, {"refusal": "Not the owner."}):
+            msg = oa.owner_message(rec, **kw)
+            self.assertIn(f"View it here (Your content calendar): {sheet}", msg, kw)
+            self.assertIn("View it here: https://docs.google.com/document/d/DOC1", msg, kw)
+            self.assertIn("Mon: Post one", msg, kw)                      # the posts inline too
+            self.assertIn(rec["approval_url"], msg, kw)                  # and the approve link
+            self.assertIn("Code: ", msg, kw)
+
+    def test_unreadable_source_still_sends_sheet_link_posts_and_says_so(self):
+        sheet = "https://docs.google.com/spreadsheets/d/SHEET123/edit"
+        rec = self.req(preview_text="Post A", view_urls=[f"Weekly sheet={sheet}"])
+        problem = "I could not open your Google Sheet because my Google sign-in expired; I have flagged it to be reconnected."
+        msg = oa.owner_message(rec, source_problem=problem)
+        for needle in (problem, sheet, "Post A", rec["approval_url"]):
+            self.assertIn(needle, msg)
+
+    def test_bad_view_link_refused_and_legacy_preview_url_still_a_link(self):
+        with self.assertRaises(oa.ApprovalError):
+            self.req(view_urls=["Sheet=javascript:alert(1)"])
+        rec = self.req(object_key="legacy", preview_url="https://x.test/p")
+        self.assertIn("https://x.test/p", oa.owner_message(rec))
+
+    def test_view_url_cli_and_reminder_keep_the_link(self):
+        import io, contextlib
+        sheet = "https://docs.google.com/spreadsheets/d/S/edit?gid=0"
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = oa.main(["request", "--kind", "automation_write", "--action", "social_publish", "--plan-sha256", "e" * 64,
+                          "--summary", "week", "--preview-text", "Post 1", "--view-url", f"Planner sheet={sheet}",
+                          "--source-problem", "Google needs a re-login.", "--message"])
+        self.assertEqual(rc, oa.EXIT_OK)
+        self.assertIn(f"View it here (Planner sheet): {sheet}", buf.getvalue())
+        self.assertIn("Google needs a re-login.", buf.getvalue())
+        rid = oa.list_pending()[0]["request_id"]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            oa.main(["message", "--request-id", rid, "--reminder"])
+        self.assertIn(sheet, buf.getvalue())
+        self.assertIn("still waiting", buf.getvalue())
+
     def test_pending_lists_only_waiting_requests(self):
         a = self.req(object_key="one")
         rows = oa.list_pending()

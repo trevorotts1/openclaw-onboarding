@@ -1,4 +1,8 @@
 # Changelog — Social Media in a Box (Skill 57)
+## v1.8.5 - 2026-11-12 - the owner approves the week in chat, and every message links to the content (docs only)
+
+- `SKILL.md` "Owner approval of the week": chat reply, Telegram button or Command Center all work (`owner_approval.py chat-decision`); every approval message and reminder carries the posts inline and a "View it here" link (`--view-url`) to the Google Sheet, Doc, PDF or Command Center preview; an unreadable sheet still sends the link and posts.
+
 ## v1.8.4 - 2026-11-12 - owner approval of the week uses the shared link flow (docs only)
 
 - `SKILL.md` gains "Owner approval of the week": the shared `shared-utils/owner_approval` helper (request, one message with summary, posts and one-tap link, wait, export the four CAF variables). No engine file changed, so `ENGINE-PIN.sha256` is unaffected.
