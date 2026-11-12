@@ -38,7 +38,9 @@ Stdlib only, no network, no spend.
 """
 from __future__ import annotations
 
+import json
 import math
+import os
 import re
 
 REF_LENGTH_S = 60.0
@@ -63,6 +65,7 @@ LIP_FRIENDLY = "pbmfvw"         # force a visible lip closure / lip shape
 TRY_LIMIT = "LIPSYNC_TRY_LIMIT"
 
 OVER_CAP = "LIPSYNC_OVER_CAP"
+OPT_OUT_MISSING = "LIPSYNC_OPT_OUT_MISSING"
 PRICE_UNKNOWN = "LIPSYNC_PRICE_UNKNOWN"
 CAP_UNKNOWN = "LIPSYNC_CAP_UNKNOWN"
 BAD_PLAN = "LIPSYNC_PLAN_OUT_OF_RULE"
@@ -85,6 +88,34 @@ class LipsyncClipsError(Exception):
 
 def _num(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v
+
+
+def no_lipsync_opt_out(run_dir):
+    """The owner's recorded opt-out for the free / no-lip-sync route, or None.
+
+    S75-047: ROUTE_NO_LIPSYNC is honoured only when the run's
+    ``control/method.json`` carries ``lipsync_opt_out`` with a non-empty
+    ``who`` and ``at``. A missing, unreadable or half-written record reads as
+    no opt-out, so every caller keeps refusing. The card never offers this
+    route; one reader serves the clip policy, the evidence gate and the
+    final assembler so the three can never disagree.
+    """
+    if not run_dir:
+        return None
+    try:
+        with open(os.path.join(str(run_dir), "control", "method.json"),
+                  encoding="utf-8") as fh:
+            method = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    opt = method.get("lipsync_opt_out") if isinstance(method, dict) else None
+    if not isinstance(opt, dict):
+        return None
+    who, at = opt.get("who"), opt.get("at")
+    if not (isinstance(who, str) and who.strip()
+            and isinstance(at, str) and at.strip()):
+        return None
+    return {"who": who.strip(), "at": at.strip()}
 
 
 def scale(ad_length_s):

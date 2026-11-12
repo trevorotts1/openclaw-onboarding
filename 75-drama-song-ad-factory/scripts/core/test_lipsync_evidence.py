@@ -476,6 +476,34 @@ class EvidenceTests(unittest.TestCase):
         self.check_bad("LIPSYNC_EVIDENCE_MISSING")
 
 
+class NoLipsyncOptOutTests(unittest.TestCase):
+    """U-U04 / S75-047: the free / no-lip-sync route is honoured ONLY with the
+    owner's recorded opt-out (who + at) in control/method.json; without it the
+    evidence gate keeps refusing."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def record(self, value):
+        _write(self.root / "control/method.json", value)
+
+    def test_recorded_opt_out_accepts_the_free_route(self):
+        self.record({"purpose": "campaign",
+                     "lipsync_opt_out": {"who": "owner",
+                                         "at": "2026-11-12T15:00:00Z"}})
+        root, required = E._approved(self.root, route=E.ROUTE_NO_LIPSYNC)
+        self.assertEqual({}, required)
+        self.assertTrue(root.is_dir())
+
+    def test_free_route_without_the_record_is_refused(self):
+        self.record({"purpose": "campaign"})
+        with self.assertRaises(E.LipsyncEvidenceError) as exc:
+            E._approved(self.root, route=E.ROUTE_NO_LIPSYNC)
+        self.assertEqual("LIPSYNC_OPT_OUT_MISSING", exc.exception.code)
+
+
 class PictureApprovalTests(unittest.TestCase):
     """U-U03: a CROP of the approved still dispatches; a REGENERATED picture is
     refused LIPSYNC_PICTURE_NEEDS_APPROVAL and that one shot's approval re-opens."""
