@@ -526,30 +526,50 @@ def legitimate_wait(row, decisions):
     return None
 
 
+#: Plain-words reasons for the client, one per stall path. A FIXED table:
+#: never assembled from stored text, never carrying a clock time, a worker
+#: name, a state name or a code. The machine-readable `detail` that
+#: stall_check also returns is for the operator envelope and the receipt only.
+STALL_CLIENT_REASONS = {
+    "stale": "that step needs a restart",
+    "expired-lease": "the helper working on it stopped answering",
+    "quiet": "nothing has moved for a while",
+}
+
+
 def stall_check(state, row, now, decisions=()):
-    """(stalled, detail). A named wait is not a stall; silence is."""
+    """(stalled, detail, client_reason). A named wait is not a stall; silence is.
+
+    `detail` is the operator's own sentence (state name, lease stamp, quiet
+    minutes). `client_reason` is the plain-words line from the fixed table
+    above, and it is the ONLY thing the client message may repeat.
+    """
     if row is None:
-        return False, ""
+        return False, "", ""
     stage, st = row["stage"], row["state"]
     if st == "COMPLETE":
         # A finished stage has nothing left to move.
-        return False, ""
+        return False, "", ""
     if st == "STALE":
         return True, ("the run marked %s stale: %s"
-                      % (stage, row.get("reason") or "no reason recorded"))
+                      % (stage, row.get("reason") or "no reason recorded")), \
+            STALL_CLIENT_REASONS["stale"]
     lease = row.get("lease_expires")
     if isinstance(lease, (int, float)) and lease > 0 and lease < now \
             and st in ("RUNNING", "WAITING_PROVIDER", "QC"):
         return True, ("the worker on %s stopped checking in and its turn ran out "
-                      "at %s" % (stage, _utc_iso(lease)))
+                      "at %s" % (stage, _utc_iso(lease))), \
+            STALL_CLIENT_REASONS["expired-lease"]
     if legitimate_wait(row, decisions) is not None:
-        return False, ""           # a client or live provider owes the next move
+        # a client or live provider owes the next move
+        return False, "", ""
     last, source = watchdog_clock(state, row)
     quiet = now - last if last else None
     if quiet is not None and quiet > STALL_AFTER_S:
         return True, ("nothing has moved on %s for %d minutes"
-                      % (stage, int(quiet // 60)))
-    return False, ""
+                      % (stage, int(quiet // 60))), \
+            STALL_CLIENT_REASONS["quiet"]
+    return False, "", ""
 
 
 def recovery_command(run_dir):
@@ -856,10 +876,14 @@ def recovery_acted_ok(recovery):
     return outcome.get("returncode") == 0
 
 
-def client_message(run_id, row, decisions, stalled, stall_detail, expired,
+def client_message(run_id, row, decisions, stalled, client_reason, expired,
                    complete, elapsed_minutes, done, total, max_hours,
                    canceled=False, recovery=None, reminder_number=None):
     """Plain, warm, direct. No internal codes, no jargon, never a false 'done'.
+
+    No clock stamp either: no elapsed figure, no time of day, no UTC mark. The
+    stall reason is `client_reason` -- the fixed plain-words line stall_check
+    returns -- and never the operator's own detail text.
 
     reminder_number is set only by the keepalive's reminder ladder: the
     second and later sends of a needs_you message are reminders, not the first
@@ -885,19 +909,15 @@ def client_message(run_id, row, decisions, stalled, stall_detail, expired,
                 "Nothing is lost. Tell me when you'd like to pick it back up."
                 % (done, total, stage_noun(row["stage"])))
     if expired:
-        head = ("This round has run longer than we plan for (%g hours), so I've "
-                "asked a person to look in on it too. Here's where your video "
-                "stands: %d of %d steps are finished, and I'm working on %s. "
-                "Nothing is lost and nothing was thrown away."
-                % (max_hours, done, total, stage_noun(row["stage"])))
-        tail = (" I'm staying with it and picking it back up from exactly here; "
-                "someone will come back to you with the next step.")
+        head = ("Your video is taking longer than usual, so I've asked a person "
+                "to look in on it too. You don't need to do anything. %d of %d "
+                "steps are finished and nothing is lost." % (done, total))
         if decisions:
-            tail += "\n\nStill waiting on you:\n" + "\n".join(_decision_lines(decisions))
-        return head + tail
+            head += "\n\nStill waiting on you:\n" + "\n".join(_decision_lines(decisions))
+        return head
     parts = ["Here's where we are in the process: %s." % phrase]
     if stalled:
-        reason = stall_detail or "it stopped responding"
+        reason = client_reason or STALL_CLIENT_REASONS["quiet"]
         # "picking it back up" is a promise only an ACTED, successful recovery
         # can keep. Otherwise say a person has been asked to look.
         if recovery_acted_ok(recovery):
@@ -973,7 +993,7 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
     decisions = (intake_decisions(run_dir)
                  + approval_decisions(run_dir, state["stages"])
                  + fork_decisions(run_dir))
-    stalled, stall_detail = stall_check(state, row, now, decisions)
+    stalled, stall_detail, client_reason = stall_check(state, row, now, decisions)
     wait = None if stalled else legitimate_wait(row, decisions)
     activity_at, activity_source = watchdog_clock(state, row)
     # The cap measures the STUDIO's own delay. A run parked on a client
@@ -1034,7 +1054,7 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
         "recovery": recovery,
         "recovery_command": recovery_command(run_dir) if stalled else "",
         "message_for_client": client_message(
-            state["run_id"], row, decisions, stalled, stall_detail, expired,
+            state["run_id"], row, decisions, stalled, client_reason, expired,
             complete, elapsed_minutes, done, total, max_hours,
             canceled=canceled, recovery=recovery),
     }

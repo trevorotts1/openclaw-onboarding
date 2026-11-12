@@ -38,12 +38,16 @@ fixtures in a temp dir):
  13. the client message carries a stable message_key and a message_kind
      (progress, needs_you, problem, done, stopped) so the same news is told
      once, and the reminder wording is the reminder, not the first message.
+ 14. the client message is plain words only: every stall path says its fixed
+     sentence, with no machine state name, no lease or worker word, no code,
+     no clock stamp and none of the operator's own detail text.
 
 Run: python3 scripts/core/heartbeat/test_run_watch.py
 """
 import hashlib
 import json
 import os
+import re
 import shlex
 import sqlite3
 import sys
@@ -126,6 +130,21 @@ def write_json(path, doc):
 
 def decisions_of(env, kind):
     return [d for d in env["decisions_pending"] if d["kind"] == kind]
+
+
+#: Words a client message must never carry: a machine state name, the lease
+#: and worker words, a code, and the "Z" that ends an ISO clock stamp. An
+#: upper-case token of six or more characters with an underscore is a code
+#: (HEARTBEAT_STALLED and its family).
+CLIENT_BANNED_WORDS = ("Z", "UTC", "lease", "stale", "worker", "FAILED")
+
+
+def machine_words_in(text):
+    """Every machine word or clock mark a client message still carries."""
+    hits = [w for w in CLIENT_BANNED_WORDS if w in text]
+    hits += [tok for tok in re.findall(r"\b[A-Z][A-Z0-9_]*\b", text)
+             if "_" in tok and len(tok) >= 6]
+    return hits
 
 
 def tree_digest(run):
@@ -323,7 +342,8 @@ def main():
     check("4: the client gets honest progress, no stopping story",
           "10 of 12 steps are finished" in env["message_for_client"]
           and "Time's up for this round" not in env["message_for_client"]
-          and "staying with it" in env["message_for_client"],
+          and "taking longer than usual" in env["message_for_client"]
+          and "nothing is lost" in env["message_for_client"],
           env["message_for_client"])
     check("4: the cap never stops supervision",
           env["loop_should_stop"] is False and env["supervising"] is True)
@@ -705,6 +725,64 @@ def main():
     check("13: a first message never uses the reminder wording",
           "Just a reminder" not in e13d["message_for_client"],
           e13d["message_for_client"])
+
+    # 14. the client message is plain words only -----------------------------
+    #     Every stall path says the same news in fixed, human wording: no
+    #     machine state name, no lease or worker word, no code, no clock stamp,
+    #     and none of the operator's own detail text.
+    r14a = make_run(tmp, "run14a")                       # a STALE row
+    set_stage(r14a, "run14a", "research", "STALE", age_s=0,
+              reason="upstream brief changed")
+    r14b = make_run(tmp, "run14b")                       # an expired lease
+    set_stage(r14b, "run14b", "research", "COMPLETE", age_s=20 * 60)
+    set_stage(r14b, "run14b", "creative-strategy", "RUNNING", age_s=0,
+              lease_in=-60, owner="helper-one")
+    r14c = make_run(tmp, "run14c")                       # 45 minutes of silence
+    set_stage(r14c, "run14c", "music", "RUNNING", age_s=45 * 60,
+              lease_in=3600, owner="helper-two")
+    r14d = make_run(tmp, "run14d", base_ago_s=185 * 60)  # past the cap
+    for s in ("research", "creative-strategy", "script-lyrics", "music",
+              "continuity-bible", "storyboard", "image-keyframes",
+              "video-generation", "qc-retakes", "assembly"):
+        set_stage(r14d, "run14d", s, "COMPLETE", age_s=185 * 60)
+    set_stage(r14d, "run14d", "final-qc", "RUNNING", age_s=2 * 60,
+              lease_in=300, owner="helper-three")
+
+    plain_cases = (
+        ("a STALE row", r14a, "that step needs a restart"),
+        ("an expired lease", r14b, "the helper working on it stopped answering"),
+        ("45 minutes of silence", r14c, "nothing has moved for a while"),
+        ("a run past the cap", r14d, None),
+    )
+    for label, run14, expected in plain_cases:
+        e14 = RW.build(run14, now=NOW)
+        check("14: %s says the fixed plain reason" % label,
+              expected is None or expected in e14["message_for_client"],
+              e14["message_for_client"])
+        check("14: %s carries no machine word or clock stamp" % label,
+              machine_words_in(e14["message_for_client"]) == [],
+              machine_words_in(e14["message_for_client"]))
+        check("14: %s carries no clock time" % label,
+              not re.search(r"\d{1,2}:\d{2}", e14["message_for_client"]),
+              e14["message_for_client"])
+    check("14: a STALE row's stored reason never reaches the client",
+          "upstream brief changed"
+          not in RW.build(r14a, now=NOW)["message_for_client"])
+    check("14: the operator detail still carries the machine facts",
+          "stale" in RW.build(r14a, now=NOW)["stall_detail"]
+          and "upstream brief changed"
+          in RW.build(r14a, now=NOW)["stall_detail"])
+    state14, _ = RW.read_state(r14a)
+    _stalled14, _detail14, reason14 = RW.stall_check(
+        state14, RW.current_stage(state14["stages"]), NOW)
+    check("14: stall_check returns a fixed client reason, never stored text",
+          reason14 == "that step needs a restart"
+          and "upstream brief" not in reason14, reason14)
+    check("14: the fixed reasons cover every stall path",
+          set(RW.STALL_CLIENT_REASONS) == {"stale", "expired-lease", "quiet"}
+          and all(machine_words_in(t) == []
+                  for t in RW.STALL_CLIENT_REASONS.values()),
+          RW.STALL_CLIENT_REASONS)
 
     print()
     if FS:
