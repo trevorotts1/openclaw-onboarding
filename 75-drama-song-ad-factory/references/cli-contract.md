@@ -13,8 +13,8 @@ exits with the code for its `outcome`.
 ```json
 {
   "schema_version": "blackceo.intake-preflight/envelope/v1",
-  "tool_version": "0.1.0",
-  "command": "intake | preflight",
+  "tool_version": "<current>",
+  "command": "intake | preflight | card | next | event | music | storyboard | script-reply | seal",
   "run_id": "<12 hex chars>",
   "outcome": "ok | waiting | parked | rejected | error",
   "reason_code": "<stable machine code>",
