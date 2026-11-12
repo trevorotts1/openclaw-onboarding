@@ -121,9 +121,16 @@ HARD CONTRACTS:
 
 USAGE:
     python3 build_deck.py <slides.json> <out.pptx> [renders_dir] [--run-dir DIR]
-        [--logo PNG] [--out BUNDLE_DIR] [--adhoc-no-process]
+        [--logo PNG] [--out BUNDLE_DIR] [--adhoc-no-process] [--bundle-gate]
 
     renders_dir defaults to "<out.pptx dir>/renders".
+    --bundle-gate    also run the POSTFLIGHT COMPLETENESS GATE (AF-BUNDLE-COMPLETE,
+                     exit 5 on an incomplete bundle). WITHOUT it this script only
+                     runs the render-scoped checks (AF-I14 / AF-OVERLAY-DELIVERED /
+                     AF-CANONICAL-RENDER-BYPASS), exits 1 on any failure, and
+                     otherwise prints "RENDER COMPLETE — bundle not checked here
+                     (P-BUNDLE-GATE owns it)". The bundle check belongs to
+                     P-BUNDLE-GATE, not to the render.
     --out BUNDLE_DIR  overrides the default ~/Downloads/<client-slug>-<deck-slug>/
                       destination for the final deliverable bundle. If not supplied,
                       the bundle goes to ~/Downloads.
@@ -182,17 +189,21 @@ PROCESS PREFLIGHT (un-bypassable by default):
         process-compliant deliverable, and proceeds. NEVER use for client work.
 
 EXIT CODES:
-    0 — every slide rendered, the .pptx was written, AND the postflight
-        completeness gate confirmed all nine bundle deliverables present + sized.
-    1 — one or more slides failed after retries (NO .pptx written), or assembly failed.
+    0 — every slide rendered, the .pptx was written, AND every render-scoped check
+        passed (AF-I14 KIE-baked, AF-OVERLAY-DELIVERED, AF-CANONICAL-RENDER-BYPASS).
+        The nine-member bundle is NOT checked on this path: the run prints
+        "RENDER COMPLETE — bundle not checked here (P-BUNDLE-GATE owns it)".
+        Pass --bundle-gate for the postflight completeness gate to run here.
+    1 — one or more slides failed after retries (NO .pptx written), assembly failed,
+        or a render-scoped check failed after assembly.
     2 — fatal config error (no API key, bad slides.json, missing python-pptx, etc.).
     3 — process preflight FAILED: required upstream dept artifacts are missing
         (NO render, NO .pptx). Run the real dept pipeline, or pass
         --adhoc-no-process for explicit non-deliverable standalone testing.
     5 — POSTFLIGHT COMPLETENESS GATE FAILED (AF-BUNDLE-COMPLETE): one or more
-        required deliverables are missing or below their size threshold. The run
-        may NOT be reported as "done" / "complete" until exit 0. The .pptx was
-        written but the bundle is incomplete.
+        required deliverables are missing or below their size threshold. Only
+        reachable with --bundle-gate. The run may NOT be reported as "done" /
+        "complete" until exit 0. The .pptx was written but the bundle is incomplete.
 
 ENVIRONMENT:
     KIE_API_KEY — the CLIENT's own KIE.ai key (never the operator's, never shared).
@@ -14273,6 +14284,10 @@ def main():
                                     # publish sub-check (never via a persisted status).
     sample_mode = False  # P-STYLE-PREVIEW (4.85): render 9 style samples, then stop.
     notes_sync_mode = False  # P9.5-NOTES-SYNC (8.7): re-inject notes post-speech-QC.
+    bundle_gate = False  # PD-060: run the bundle completeness gate HERE. Without it
+                         # the render only runs its own render-scoped checks — the
+                         # whole-bundle check belongs to P-BUNDLE-GATE, which fires
+                         # after the bundle exists.
     style_spec_arg = None
     positional = []
     i = 0
@@ -14280,6 +14295,8 @@ def main():
         tok = argv[i]
         if tok == "--adhoc-no-process":
             adhoc = True
+        elif tok == "--bundle-gate":
+            bundle_gate = True
         elif tok == "--sample":
             sample_mode = True
         elif tok == "--notes-sync":
@@ -14463,7 +14480,7 @@ def main():
         print("Usage: python3 build_deck.py <slides.json> <out.pptx> [renders_dir] "
               "[--run-dir DIR] [--logo PNG] [--out BUNDLE_DIR] "
               "[--platform vps|mac] [--timestamp ISO8601] [--adhoc-no-process] "
-              "[--skip-teleprompter-gate]",
+              "[--bundle-gate] [--skip-teleprompter-gate]",
               file=sys.stderr)
         sys.exit(2)
 
@@ -14850,8 +14867,9 @@ def main():
         "processManifest": str(manifest_path) if manifest_path else None,
         "failures": [],
     }
-    print("\n=== SUMMARY (RENDER OK — running postflight completeness gate) ===",
-          flush=True)
+    print("\n=== SUMMARY (RENDER OK — %s) ===" % (
+        "running postflight completeness gate (--bundle-gate)"
+        if bundle_gate else "bundle not checked here"), flush=True)
     print(json.dumps(summary, indent=2))
 
     # TELEPROMPTER PUBLISH — only meaningful if the teleprompter HTML is already in the
@@ -14878,18 +14896,42 @@ def main():
                   f"gate will fail loud (TELEPROMPTER-PUBLISH) until it is published "
                   f"and the URL verified.", file=sys.stderr, flush=True)
 
-    # POSTFLIGHT COMPLETENESS GATE (Requirement 2 — AF-BUNDLE-COMPLETE).
-    # This is the FINAL gate: exit 0 only when ALL nine bundle deliverables are
-    # present and sized. Exit 5 (loud failure) when any are missing or under-threshold.
-    # The word "COMPLETE" / "DONE" is printed ONLY from inside run_postflight_gate
-    # after reading deliverables.json (not from in-memory state).
-    # M7: the teleprompter-publish sub-check is bypassed ONLY by an explicit per-run
-    # CLI flag — never by a persisted status string. --adhoc-no-process is itself an
-    # explicit per-run flag (ad-hoc output is not a client deliverable), so it implies
-    # the bypass for THIS run only; a later real run without the flag re-arms the gate.
-    run_postflight_gate(bundle_dir, ledger_path, deck_slug,
-                         skip_teleprompter_gate=(skip_teleprompter_gate or adhoc),
-                         run_dir=run_dir, slides_path=slides_path)
+    # RENDER-SCOPED CHECKS (PD-060) — ALWAYS, after assembly + the manifest write.
+    # These are the checks that can be answered by a deck that exists: the slides
+    # were really KIE-baked, no native text overlay was delivered, and the render
+    # went through the canonical path. Exit 1 names every failure. The whole-bundle
+    # completeness scan is NOT a render check — it looks for eight artifacts that
+    # do not exist yet at render time — so it runs only under --bundle-gate.
+    _render_problems = [
+        _chk_kie_baked(run_dir, slides_path, require_rendered=True),
+        _chk_no_overlay(run_dir, slides_path),
+        check_canonical_render_path(run_dir, slides_path),
+    ]
+    _render_problems = [p for p in _render_problems if p]
+    if _render_problems:
+        print("\n=== RENDER CHECK FAILED (bundle not checked; P-BUNDLE-GATE owns it) ===",
+              file=sys.stderr)
+        for _problem in _render_problems:
+            print(f"  {_problem}", file=sys.stderr)
+        sys.exit(1)
+
+    if bundle_gate:
+        # POSTFLIGHT COMPLETENESS GATE (Requirement 2 — AF-BUNDLE-COMPLETE).
+        # This is the FINAL gate: exit 0 only when ALL nine bundle deliverables are
+        # present and sized. Exit 5 (loud failure) when any are missing or under-threshold.
+        # The word "COMPLETE" / "DONE" is printed ONLY from inside run_postflight_gate
+        # after reading deliverables.json (not from in-memory state).
+        # M7: the teleprompter-publish sub-check is bypassed ONLY by an explicit per-run
+        # CLI flag — never by a persisted status string. --adhoc-no-process is itself an
+        # explicit per-run flag (ad-hoc output is not a client deliverable), so it implies
+        # the bypass for THIS run only; a later real run without the flag re-arms the gate.
+        run_postflight_gate(bundle_dir, ledger_path, deck_slug,
+                             skip_teleprompter_gate=(skip_teleprompter_gate or adhoc),
+                             run_dir=run_dir, slides_path=slides_path)
+    else:
+        # Never the bare word COMPLETE: this says what was checked and who owns the rest.
+        print("RENDER COMPLETE — bundle not checked here (P-BUNDLE-GATE owns it)",
+              flush=True)
 
     # BOARD (terminal close) — GUARDED on the PROCESS-CERTIFICATE existing on disk.
     # The producer STOPS at the TERMINAL status 'review' (there is NO 'delivered'
@@ -14903,7 +14945,14 @@ def main():
     # after prove-deck). The guard prevents a doomed premature close before the cert
     # exists. In a standalone full build where the cert is already present, close here.
     # Fail-soft either way — a board problem never changes this run's exit code.
-    if not adhoc:
+    # PD-060: the close note says "bundle complete", so it is reachable ONLY from a
+    # run that actually ran the bundle gate (--bundle-gate). A render that stopped at
+    # the render-scoped checks cannot claim the bundle; P-BUNDLE-GATE closes it.
+    if not adhoc and not bundle_gate:
+        print("[cc_board] P9-DELIVER terminal close DEFERRED — this render did not run "
+              "the bundle gate (P-BUNDLE-GATE owns it); no deck-delivered claim is made.",
+              file=sys.stderr, flush=True)
+    elif not adhoc:
         if _process_certificate_present(run_dir):
             _board_patch_phase(run_dir, _cc_task_id, "P9-DELIVER", "review",
                                note="bundle complete — deck delivered; awaiting CC QC "
