@@ -68,7 +68,7 @@ TEST ONLY. Nothing here is a product price.
 
 For each shape:
 
-1. the intake is valid and fail-closed, with a qualified entitlement attestation;
+1. the intake is valid and fail-closed (there is no membership or purchase check);
 2. the route graph is byte-for-byte the real S49 compiler's graph;
 3. every route invariant holds (verified guards, U1/D1/U2 law, no decline edge
    at checkout, one canonical U2, no bump node);
