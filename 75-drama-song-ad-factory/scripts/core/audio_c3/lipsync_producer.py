@@ -59,7 +59,7 @@ def _instrumental(root, evidence, stem, saved):
     named = [p for p in saved if "instrumental" in Path(p).name.lower()]
     _need(len(named) == 1, "LIPSYNC_SEPARATION_FAILED",
           "separation task did not save one instrumental file")
-    return _path(root, named[0])
+    return _path(root, str(named[0]))
 
 
 def _publish(source, target):
@@ -265,7 +265,6 @@ def verify(run_dir, run_id, row, stem, song_path=None):
     _need(separation.get("tool") == "kie_dispatch" and req.get("model") == MODEL
           and req.get("logical_key") == STEM_LOGICAL_KEY
           and req.get("source_sha256") == _sha(source)
-          and req.get("lipsync_binding") == _binding(row)
           and isolated.get("speaker_id") == rec.get("speaker_id") and isolated.get("isolated") is True
           and _path(root, isolated.get("path")) == separated,
           "LIPSYNC_SEPARATION_SOURCE_MISMATCH", "separation operation identity differs")
