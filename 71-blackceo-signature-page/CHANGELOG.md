@@ -1,3 +1,9 @@
+## [1.3.31] - 2026-11-11 - the no-price rule applies to the landing page only
+
+- `scripts/stage_gate.py` `launch_profile_active`: the `signature_launch_landing` profile engages `validate_public_copy.py --no-offer-pricing` only when the run's page role is `landing`. The launch import stamps the profile on every page of a launch, so the checkout page, whose role spec exists to show the exact price (Skill 79 CHK-13), could never close its copy stage. Checkout, upsell, downsell and thank-you copy is no longer checked against the landing page's no-price rule.
+- `tests/test_launch_profile.py`: a priced page role leaves the validator command unchanged (fails on 1.3.30).
+- Version bump so the pull request carries a version above main (G3).
+
 ## [1.3.30] - 2026-11-11 - Harmony-95 Batch R: deleted-manuscript test (FC-5)
 
 - `tests/test_thank_you_no_pitch.py` pins that a clean receipt does not close copy once the manuscript is deleted. Tests only. Version bump so the Batch R pull request carries a version above main (G3).

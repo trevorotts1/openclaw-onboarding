@@ -145,3 +145,14 @@ def test_the_real_library_and_skill_71_compose_a_current_file(monkeypatch):
     prose = dp.compose(LAUNCH, "A", None)
     assert prose["design_intelligence"]["sha256"]["page_rules"]
     assert dp.check_design_prose(prose) == []
+
+def test_every_role_structure_passes_the_prompt_padding_screen():
+    # three landing pain sections share one rule; repeating it was an 8-word run x3 that Skill 71 refused
+    vp = _load("skill71_validate_prompt", ROOT / "71-blackceo-signature-page" / "scripts" / "validate_prompt.py")
+    refs = ROOT / "71-blackceo-signature-page" / "references"
+    for role in dp._ROLE_SPECS:
+        line = dp.role_structure(role, refs)
+        assert vp.padding_errors(line, line.split()) == [], role
+    landing = dp.role_structure("landing", refs)
+    assert "3: Second distinct pain; same rules as section 2" in landing
+    assert landing.count("no question-led framing") == 1
