@@ -10962,7 +10962,9 @@ def _chk_style_preview(run_dir: Path, slides_path: Optional[Path] = None) -> str
     representative slides) are produced, the owner picks ONE variant via their own
     gateway (NEVER the operator chat). The full deck must not render until the pick is
     logged; and the winning variant's 3 representative slides must be LOCKED and reused
-    so kie never double-charges. Defers until the samples manifest exists."""
+    so kie never double-charges. Defers until the samples manifest exists. When a
+    valid pick carries no locked_renders, the winner's renders are derived from
+    that manifest's own samples[] rows and checked for existence (PD-046)."""
     sm = run_dir / STYLE_SAMPLES_MANIFEST_REL
     if not sm.exists():
         return ""  # style-preview phase not run (or pre-phase) — defer.
@@ -10985,10 +10987,27 @@ def _chk_style_preview(run_dir: Path, slides_path: Optional[Path] = None) -> str
         return ""
     locked = choice.get("locked_renders")
     if not (isinstance(locked, list) and len(locked) >= 1):
-        return ("AF-STYLE-DOUBLECHARGE: the winning variant " + repr(choice.get("chosen_variant"))
-                + " records no locked_renders — its 3 representative slides must be carried "
-                "forward and REUSED, never re-rendered. kie must never double-charge for the "
-                "already-approved samples (P-STYLE-PREVIEW, order 4.85).")
+        # PD-046: the ONE sanctioned pick recorder (deck-intake-driver.py
+        # --style-pick) records owner_approved + chosen_variant and nothing else,
+        # so a correctly recorded pick arrived here with no locked_renders and was
+        # refused. The winner's representative renders already exist — derive them
+        # from the samples manifest P-STYLE-PREVIEW wrote and hold that derived
+        # list to the same "every listed file must exist" test below. A manifest
+        # that lists no render for the chosen variant still refuses.
+        sm_doc = _read_json(sm) if sm.exists() else {}
+        samples = sm_doc.get("samples") if isinstance(sm_doc, dict) else None
+        chosen_variant = str(choice.get("chosen_variant") or "").strip()
+        locked = [str(row.get("render") or "").strip()
+                  for row in (samples if isinstance(samples, list) else [])
+                  if isinstance(row, dict)
+                  and str(row.get("variant") or "").strip() == chosen_variant
+                  and str(row.get("render") or "").strip()]
+        if not locked:
+            return ("AF-STYLE-DOUBLECHARGE: the winning variant "
+                    + repr(choice.get("chosen_variant"))
+                    + " records no locked_renders — its 3 representative slides must be carried "
+                    "forward and REUSED, never re-rendered. kie must never double-charge for the "
+                    "already-approved samples (P-STYLE-PREVIEW, order 4.85).")
     for ref in locked:
         rp = run_dir / str(ref) if not str(ref).startswith("/") else Path(str(ref))
         if not rp.exists():
