@@ -61,8 +61,14 @@
 #   8  — GHL MODULE CO-LOCATION failed (PRESENTATION_GHL_MODULE_MISSING, GATE 1b)
 #   9  — ENGINE DISPATCH FAILED: the manifest-phase engine is installed but refused the
 #        job (AF-DECK-TYPE-UNKNOWN / AF-ENGINE-NEW-FAILED / AF-ENGINE-COMPONENT-
-#        MISSING). BLOCKING -- never a silent downgrade to run_signature_deck.py.
-#        (See engine_fail() / fix/deck-type-routing-bypass.)
+#        MISSING), OR the engine is not installed on this box and the owner has not
+#        logged owner_skip_approval for LEGACY-RUNNER-FALLBACK (AF-ENGINE-ABSENT).
+#        BLOCKING -- never a silent downgrade to run_signature_deck.py.
+#        (See engine_fail() / fix/deck-type-routing-bypass / PD-005.)
+#  10 — LEGACY BUILD ONLY (PD-005): presentation_job.py is not installed and the owner
+#        DID log owner_skip_approval for LEGACY-RUNNER-FALLBACK. The legacy runner
+#        (run_signature_deck.py, 2 of the manifest's phases) ran and exited 0. That
+#        is NOT a full deliverable bundle; exit 10 says so. Never report it as success.
 #  12 — ATTEMPT CAP (FIX-23 / PD-008): the door was DISPATCHED 3 times inside the
 #        last 6 hours and did not finish. Nothing is lost -- continue the same
 #        build with --resume. Writing a custom driver is never the answer.
@@ -1311,8 +1317,14 @@ engine_fail() {
     echo >&2
     printf '!%.0s' {1..78} >&2; echo >&2
     echo "ENGINE DISPATCH FAILED [$code]: $*" >&2
-    echo "presentation_job.py (the manifest-phase engine) is installed on this box but" >&2
-    echo "refused this job. This is a BLOCKING failure -- it does NOT fall back to" >&2
+    if [ "$code" = "AF-ENGINE-ABSENT" ]; then
+        echo "presentation_job.py (the manifest-phase engine) is NOT installed on this" >&2
+        echo "box, and no owner approval covers the legacy fallback." >&2
+    else
+        echo "presentation_job.py (the manifest-phase engine) is installed on this box but" >&2
+        echo "refused this job." >&2
+    fi
+    echo "This is a BLOCKING failure -- it does NOT fall back to" >&2
     echo "the legacy runner, and it is never reported as success." >&2
     printf '!%.0s' {1..78} >&2; echo >&2
     exit "$exitcode"
@@ -1519,6 +1531,16 @@ else
     mkdir -p "$(dirname "$_FALLBACK_RECORD")" 2>/dev/null || true
     printf '%s reason=engine_component_missing engine_entry=%s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ENGINE_ENTRY" >> "$_FALLBACK_RECORD" 2>/dev/null || true
+    # PD-005: the legacy runner builds 2 of the manifest's phases -- it is NOT a
+    # deliverable build. Running it silently is the failure this door exists to
+    # refuse, so it is allowed ONLY behind a logged owner token, and even then the
+    # run ends at exit 10 (LEGACY BUILD ONLY), never 0.
+    if ! owner_skip_approved "LEGACY-RUNNER-FALLBACK"; then
+        engine_fail "AF-ENGINE-ABSENT" 9 "presentation_job.py is not installed on this \
+box. The legacy runner builds 2 of the manifest's phases and is not a deliverable \
+build. Update the Presentations department, or have the owner log owner_skip_approval \
+for LEGACY-RUNNER-FALLBACK."
+    fi
 fi
 
 # ===========================================================================
@@ -1611,6 +1633,13 @@ _rc=$?
 if [ "$_rc" -eq 0 ]; then
     [ -n "$_ATTEMPT_FILE" ] && rm -f "$_ATTEMPT_FILE"
     [ -n "$_ATTEMPT_META" ] && rm -f "$_ATTEMPT_META"
+fi
+# PD-005: the legacy run reaching exit 0 still built 2 of the manifest's phases,
+# not a deliverable bundle. Say so on stderr and leave with the documented code
+# 10 instead of pretending this door produced a deck.
+if [ "$_rc" -eq 0 ]; then
+    echo "LEGACY BUILD ONLY — not a full deliverable bundle" >&2
+    _rc=10
 fi
 rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true
 exit "$_rc"

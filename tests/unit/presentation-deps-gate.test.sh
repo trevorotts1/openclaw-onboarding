@@ -423,6 +423,14 @@ mkdir -p "$ENV_RUN/working/checkpoints"
 touch "$ENV_RUN/working/checkpoints/.test-context"
 write_complete_ledger "$ENV_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$ENV_RUN/slides.json"
+# PD-005: this fixture has no presentation_job.py, so the door refuses the legacy
+# fallback (exit 9) unless the owner logged the gate. Assert the env propagation
+# through an OWNER-APPROVED legacy run, which then ends at exit 10, not 0.
+cat > "$ENV_RUN/working/checkpoints/process_manifest.json" <<'PMLEGACY'
+{ "owner_skip_approvals": [
+  {"gate":"LEGACY-RUNNER-FALLBACK","approved":true,"approved_by":"founder","reason":"ci"}
+]}
+PMLEGACY
 
 # $FAKE_SCRIPTS was already built above (before section (C)) as the one shared,
 # self-contained scripts-dir fixture used by every functional entry-script
