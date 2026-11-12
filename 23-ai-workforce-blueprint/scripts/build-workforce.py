@@ -7735,6 +7735,17 @@ def write_company_config_json(company_name, industry, brand_colors=None,
         else:
             dept_kpis[dept_id] = []
 
+    path = os.path.join(COMPANY_DIR, "company-config.json")
+    existing = {}
+    if os.path.isfile(path):
+        try:
+            path_text = Path(path).read_text()
+            existing = json.loads(path_text)
+        except (OSError, ValueError):
+            existing = {}
+        if not isinstance(existing, dict):
+            existing = {}
+
     cfg = {
         "name":     company_name,
         "slug":     COMPANY_SLUG,
@@ -7752,9 +7763,26 @@ def write_company_config_json(company_name, industry, brand_colors=None,
         "created":  datetime.now().isoformat(),
         "schema_version": "2.0",
     }
-    path = os.path.join(COMPANY_DIR, "company-config.json")
-    with open(path, "w") as f:
-        json.dump(cfg, f, indent=2)
+    # Copy the recorded identity forward: a rebuild must never drop the company
+    # id or the pinned slug, or the next resolve refuses the company as foreign.
+    for _key in ("companyId", "company_id", "id", "companySlug", "company_slug", "companyName"):
+        if _key in existing:
+            cfg[_key] = existing[_key]
+    if not any(_key in cfg for _key in ("companyId", "company_id", "id")):
+        _state_company_id = _load_build_state().get("companyId")
+        if isinstance(_state_company_id, str) and _state_company_id:
+            cfg["companyId"] = _state_company_id
+    if "created" in existing:
+        cfg["created"] = existing["created"]
+    cfg["updated"] = datetime.now().isoformat()
+    cfg["slug"] = (
+        existing.get("slug")
+        or existing.get("companySlug")
+        or existing.get("company_slug")
+        or _load_build_state().get("companySlug")
+        or cfg["slug"]
+    )
+    _state_atomic_write(path, cfg)
     print(f"[COMPANY-CONFIG] Wrote {path} (schema v2.0)", file=sys.stderr)
     missing = [k for k in ("mission", "owner_values", "company_kpis") if not cfg[k]]
     if missing:
