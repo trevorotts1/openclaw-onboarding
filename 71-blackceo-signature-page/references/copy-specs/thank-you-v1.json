@@ -72,8 +72,8 @@
       "composition_role": "what",
       "ground": "light",
       "layout": {
-        "desktop": "Light ground band. A section heading, then one real table across the 1200 px column: a header row (Item, Status, Billing, Amount), one row per purchased item with its status as a small filled chip (paid in the primary brand colour, pending outlined, failed in the darkest brand colour), then a Total paid row and, when needed, a Pending row. No image and no button; the table is drawn as a table, never as a picture of a receipt.",
-        "mobile": "Light ground band. The table becomes stacked item cards, one per purchase: item name, status chip, billing line and amount. The Total paid card comes last at full width. No image and no button."
+        "desktop": "Light ground band. A section heading, then one real table across the 1200 px column: a header row (Item, Status, Billing, Amount), one row per purchased item with its status as a small filled chip (paid in the primary brand colour, pending outlined, failed in the darkest brand colour), then a Total paid row and, when needed, a Pending row. No image and no button; the table is drawn as a table, never as a picture of a receipt. The rows come from the verified order at render time, so a wireframe or mockup never invents them: every item name, status, billing line, amount and total the copy does not supply is drawn as a grey bar labelled with its column (ITEM, STATUS, BILLING, AMOUNT, TOTAL PAID), never as a name, a figure or a currency sign.",
+        "mobile": "Light ground band. The table becomes stacked item cards, one per purchase: item name, status chip, billing line and amount. The Total paid card comes last at full width. No image and no button. The rows come from the verified order at render time, so a wireframe or mockup never invents them: every item name, status, billing line, amount and total the copy does not supply is drawn as a grey bar labelled with its column (ITEM, STATUS, BILLING, AMOUNT, TOTAL PAID), never as a name, a figure or a currency sign."
       },
       "note": "Real table, never an image of a receipt; status labels Paid, Pending and Failed are separate per item"
     },
@@ -87,8 +87,8 @@
       "composition_role": "what",
       "ground": "dark",
       "layout": {
-        "desktop": "Dark ground band. A section heading, then a row of access cards across the 1200 px column, one card per purchased item (draw three as the pattern; the page repeats the card once per purchase). Each card: an icon at the top from the brand's icon style, the item name, one line saying what it unlocks, and one filled utility button. No photograph.",
-        "mobile": "Dark ground band. The cards stack one per row at full width, each with its icon, item name, one-line description and a full-width utility button. No photograph."
+        "desktop": "Dark ground band. A section heading, then a row of access cards across the 1200 px column, one card per purchased item (draw three as the pattern; the page repeats the card once per purchase). Each card: an icon at the top from the brand's icon style, the item name, one line saying what it unlocks, and one filled utility button. No photograph. The cards come from the verified purchases at render time: any card the copy does not name is drawn with grey bars labelled ITEM NAME and WHAT IT UNLOCKS, and a card's button label is the copy's own label, never an invented product, bonus or membership.",
+        "mobile": "Dark ground band. The cards stack one per row at full width, each with its icon, item name, one-line description and a full-width utility button. No photograph. The cards come from the verified purchases at render time: any card the copy does not name is drawn with grey bars labelled ITEM NAME and WHAT IT UNLOCKS, and a card's button label is the copy's own label, never an invented product, bonus or membership."
       },
       "note": "One card per purchased item; no card for a pending or failed item"
     },
