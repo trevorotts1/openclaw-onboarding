@@ -11,8 +11,10 @@ import time
 from collections.abc import Mapping
 
 if __package__:
+    from .native_payment_policy import apply_payment_policy, validate_payment_inputs
     from .intake import captured_script_mode
 else:
+    from native_payment_policy import apply_payment_policy, validate_payment_inputs
     from intake import captured_script_mode
 
 
@@ -46,7 +48,7 @@ def from_capability_probe(report, *, api_capabilities=None, recorded_profiles=()
     }
 
 
-def decide(operation, location_id, probes, catalog=None, failed_lanes=(), inputs=None):
+def _decide(operation, location_id, probes, catalog=None, failed_lanes=(), inputs=None):
     catalog = catalog or json.loads((Path(__file__).parent/'catalog.json').read_text())
     if not isinstance(operation, str) or not isinstance(location_id, str) or not location_id:
         return {'lane':'STOP_INVALID_INPUT','reason':'Operation and location ID are required'}
@@ -111,6 +113,16 @@ def decide(operation, location_id, probes, catalog=None, failed_lanes=(), inputs
             continue
         return {'lane':lane,'operation':operation,'recipe':entry['name'],'proof':entry['proof'],'location_id':location_id,'resume':'Read recorded object IDs before repeating any create/save'}
     return {'lane':'STOP_NO_LANE','operation':operation}
+
+
+def decide(operation, location_id, probes, catalog=None, failed_lanes=(), inputs=None):
+    reason = validate_payment_inputs(operation, inputs)
+    if reason:
+        return apply_payment_policy(operation, {'lane': 'STOP_INVALID_INPUT', 'operation': operation, 'reason': reason})
+    result = apply_payment_policy(operation, _decide(operation, location_id, probes, catalog, failed_lanes, inputs))
+    if result.get('native_payment_policy') and result.get('lane') in ('playwright', 'openclaw_extension', 'agent_browser', 'computer_use'):
+        result['instruction'] = result['native_payment_policy']['instruction'] + ' ' + result['native_payment_policy']['verification']
+    return result
 
 
 def recovery(operation, location_id, probes, failed_lanes=('playwright',), inputs=None):

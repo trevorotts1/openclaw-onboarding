@@ -1,5 +1,19 @@
 # 06 - GHL Install Pages (ghl-install-pages)
 
+> **Payment invariant across all routes:** every checkout, order bump, purchase
+> action, one-click upsell, and downsell must use the native GoHighLevel payment
+> component. HTML/CSS/embeds/iframes may surround it but cannot replace it. This
+> applies equally to every fallback engine. No purchase or payment success is
+> claimed without a separately verified transaction receipt.
+>
+> **Exact layout targeting:** GHL supports 1–6 columns. `pages.layout` accepts
+> `layout={section_id, columns: 1..6}`. After capturing IDs, code/checkout placement
+> targets `{section_id,row_id,column_id[,expected_columns]}` or
+> `{section_id,row_id,column_index,expected_columns}` (zero-based). Existing section
+> widths stay intact unless `width_policy="full"` is explicitly requested.
+> The native-payment rule is an execution requirement; policy text, heuristic input
+> checks, and DOM preservation do not guarantee detection of every nonnative markup.
+
 Installs GoHighLevel (Convert and Flow) funnel and website pages from approved
 designs: page builds, form and survey wiring, order forms, and the click
 through verification that proves a visitor can travel the whole funnel.
@@ -12,12 +26,14 @@ all entry points, commands and remaining live verification work.
 
 ## Current build checkpoint : November 12, 2026 UTC
 
-**v27.1.109: 33 source-built recorded operation contracts / 0 source partials.**
+**v27.1.110: prepared source release.** 34 source-built operation contracts; 73 concrete actions / 102 bounded jobs. Two focused front-door/compiler checks passed. Native layout save/reopen and payment behavior remain unverified; no purchase proof is claimed.
+
+**Previous checkpoint v27.1.109: 33 source-built recorded operation contracts / 0 source partials.**
 All original ten partial areas now have integrated executable source within their recorded boundaries. Compiler coverage is **72 concrete actions / 101 bounded jobs**. The final merged source smoke passed **45 focused tests**.
 
-The generated `ghl-install-pages.skill` archive contains the six current source documents; its Skill metadata is v27.1.109.
+The generated `ghl-install-pages.skill` archive contains the six canonical source documents with Skill metadata v27.1.110. Delivery status is tracked in Git merge history.
 
-This candidate is **OWNER_APPROVED_PREPARED_RELEASE**. Trevor approved publishing and batch merging this build on November11,2026. This is a release preparation snapshot; verify actual delivery through its merged batch/main receipt. The verified preparation baseline remains v27.1.108 through batch PR3125.
+The **v27.1.109** source candidate was marked OWNER_APPROVED_PREPARED_RELEASE, with approval to publish and batch merge that build on November 11, 2026. Its delivery status is recorded in Git merge history. The documented verified preparation baseline remains v27.1.108 through batch PR3125.
 
 Final maintained-script, respondent, member and notification acceptance remains **NOT_RUN / PENDING**. OAuth requires external user authorization. See the [progress ledger](references/PLAYWRIGHT-PROGRESS.md) and [machine-readable ledger](references/PLAYWRIGHT-BUILD-STATUS.json) for exact contracts and limits.
 

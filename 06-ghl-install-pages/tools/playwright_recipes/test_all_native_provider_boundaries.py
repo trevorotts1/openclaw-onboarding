@@ -126,6 +126,7 @@ def native_cases(root):
  seo={'title':'Approved fixture','description':'Approved fixture description','author':'Fixture','canonical':'https://example.com/fixture','canonical_host':'example.com','keywords':['approved fixture','fixture','approved'],'page_copy':'approved fixture','author_source':'fixture','keyword_source':'fixture'}
  for op in ('funnels.create','funnels.add_page','websites.create','websites.add_page'):
   yield op,op,{**base,'container_name':'Approved fixture','page_name':'Approved fixture','path':'/fixture'}
+ yield 'layout','pages.layout',{**base,'layout':{'section_id':'section_fixture','columns':2}}
  yield 'seo','pages.seo',{**base,'seo':seo}
  yield 'code','pages.install_code',{**base,'file':str(html),'marker':'Approved fixture','seo':seo}
  embed=root/'embed.html';embed.write_text('<iframe src="https://example.com/app"></iframe>')
@@ -166,8 +167,8 @@ class CompleteNativeProviderBoundaries(unittest.TestCase):
                     and node.func.id=='add' and node.args):
                 named |= literal_action(node.args[0])
         self.assertTrue(named <= covered,named-covered)
-        self.assertEqual(len(covered),72,'Update the bounded fixtures for newly added dynamic compiler actions')
-        self.assertEqual(len(rows),101)
+        self.assertEqual(len(covered),73,'Update the bounded fixtures for newly added dynamic compiler actions')
+        self.assertEqual(len(rows),102)
 
     def test_no_current_native_job_delegates_to_status_only_api_or_extension_callback(self):
         with tempfile.TemporaryDirectory() as directory:

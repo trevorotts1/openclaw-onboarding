@@ -1,5 +1,21 @@
 # GHL / Convert and Flow - Install Pages - Core File Updates
 
+## v27.1.110 release note: native payments and exact layout
+
+Across API, Playwright, OpenClaw, Agent Browser, and computer-use fallback, all
+payment paths must use native GHL checkout/order-form, bump, purchase-action,
+one-click-upsell, and downsell components. Custom HTML/CSS/iframe/embed design may
+only surround the native components. Builder state is not transaction proof; do not
+claim purchase success without a verified authorized test-payment receipt.
+
+GHL supports 1–6 columns. `pages.layout` receives
+`layout={section_id, columns: 1..6}`. Capture returned IDs and target code or native
+checkout placement by section, row, and column using either `column_id` or a
+zero-based `column_index`, guarded by `expected_columns`. A single-column shortcut is
+allowed only when one native column is confirmed. Preserve existing widths unless
+`width_policy="full"` is explicitly selected.
+
+
 Update ONLY the files listed below. Use the EXACT text provided.
 Do not update files marked NO UPDATE NEEDED.
 

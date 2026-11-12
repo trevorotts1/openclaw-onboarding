@@ -28,21 +28,23 @@ def compile_recipe(operation, data):
         add('container',surface=surface,name=data['container_name'],allow_creation=operation.endswith('.create'))
         add('page',surface=surface,name=data['page_name'],path=data['path'],allow_creation=True)
         if data.get('file'):
-            add('html',id=data.get('code_id','main_code'),file=data['file'],marker=data['marker'])
+            add('html',id=data.get('code_id','main_code'),file=data['file'],marker=data['marker'],**({'placement':data['placement']} if 'placement' in data else {}))
             add('seo',**data['seo'])
     elif operation in ('pages.install_code','pages.install_embed'):
         if operation=='pages.install_embed':
             receipt=data.get('embed_receipt',{})
             if receipt.get('status')!='PASS' or receipt.get('location_id')!=data['location_id'] or not receipt.get('source'):
                 raise Stop('Hosted embed needs the existing embeddability-gate PASS receipt bound to this location')
-        add('html',id=data.get('code_id','main_code'),file=data['file'],marker=data['marker'],append=data.get('append',False),**{k:data[k] for k in ('element_id','expected_name','section_id') if k in data},**({'embed_receipt':data['embed_receipt']} if operation=='pages.install_embed' else {}))
+        add('html',id=data.get('code_id','main_code'),file=data['file'],marker=data['marker'],append=data.get('append',False),**{k:data[k] for k in ('element_id','expected_name','section_id','placement') if k in data},**({'embed_receipt':data['embed_receipt']} if operation=='pages.install_embed' else {}))
         add('seo',**data['seo'])
     elif operation=='checkout.wrap_native':
-        add('html',id='checkout_before',file=data['before_file'],marker=data['before_marker'])
+        add('html',id='checkout_before',file=data['before_file'],marker=data['before_marker'],**({'placement':data['before_placement']} if 'before_placement' in data else {}))
         add('checkout',**data.get('checkout',{}))
         if data.get('after_file'):
-            add('html',id='checkout_after',file=data['after_file'],marker=data['after_marker'],append=True)
+            add('html',id='checkout_after',file=data['after_file'],marker=data['after_marker'],append=True,**({'placement':data['after_placement']} if 'after_placement' in data else {}))
         add('seo',**data['seo'])
+    elif operation=='pages.layout':
+        add('page_layout', layout=data['layout'])
     elif operation=='pages.seo':
         add('seo',**data['seo'])
     elif operation == 'funnels.split_variant' and 'funnel_id' in data:

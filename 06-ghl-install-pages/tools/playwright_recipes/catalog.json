@@ -245,6 +245,13 @@
       "implemented": true,
       "proof": "API_FIRST",
       "use": "Edit existing draft modules/lessons through Courses v3 with all-target version/identity preflight, protected sibling data and independent readback; native learner proof remains pending"
+    },
+    "pages.layout": {
+      "name": "prepare_native_page_layout",
+      "action": "page_layout",
+      "implemented": true,
+      "proof": "CAPTURED",
+      "use": "Prepare a native row with one to six columns; use returned IDs in subsequent placement jobs"
     }
   }
 }

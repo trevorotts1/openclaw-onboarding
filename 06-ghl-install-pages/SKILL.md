@@ -10,13 +10,45 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v27.1.109"
+  version: "v27.1.110"
   priority: HIGH
 ---
 
 > **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
 
 # GoHighLevel / Convert and Flow - Install Pages (Browser Builder)
+
+> **NATIVE PAYMENT RULE — applies to every engine and every browser/computer fallback.**
+> Use GoHighLevel native Order Form / checkout, order bump, purchase action, one-click
+> upsell, and downsell components for every payment path. Custom HTML, CSS, hosted
+> embeds, and iframes may provide surrounding design only; they must never replace,
+> imitate, cover, intercept, or collect payment instead of the native GHL component.
+> This rule follows the work across API, Playwright, OpenClaw, Agent Browser, and
+> computer-use routes. If the native component or its required product/price binding
+> is unavailable, stop and report the dependency. Runtime policy, heuristic input
+> checks, and DOM preservation are safeguards, not a guarantee that every nonnative
+> payment markup pattern is detectable; inspect and verify the actual native component.
+> A saved editor state or preview is not proof of a completed purchase, bump, upsell,
+> or downsell.
+>
+> **EXACT PAGE LAYOUT TARGETING.** GHL sections support 1 through 6 columns. When
+> creating a row layout, use `pages.layout` with `layout={section_id, columns: 1..6}`
+> and retain its captured section/row/column IDs. Then place code or native checkout
+> with `placement={section_id, row_id, column_id, expected_columns?}` or
+> `placement={section_id, row_id, column_index, expected_columns}` (zero-based index).
+> Checkout wrapping uses `before_placement`, `placement`, and `after_placement` in
+> the requested sequence. The target must resolve to the exact section, row, and
+> column and agree with the expected column count. A first-column shortcut is only
+> valid when the section has exactly one column. Existing section widths are preserved
+> unless `width_policy="full"` is explicitly requested. Native row insertion is
+> guarded to the exact sole section on the page; live capture confirmed the native
+> `1 Column` through `6 Column` preset labels. Creation/save/reopen persistence and
+> multi-section row insertion are not supported or verified.
+>
+> **Proof boundary.** Builder placement and native component configuration do not
+> establish payment processing. Unless a separately authorized test transaction
+> has an actual purchase receipt, report payment, bump and upsell/downsell behavior
+> as unverified.
 
 This skill is about deploying finished HTML code into the GoHighLevel (Go High
 Level) or Convert and Flow page builder using browser automation. The AI agent

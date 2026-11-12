@@ -19,6 +19,7 @@ if __package__:
     from .recipe_cli import compile_recipe
     from .evidence_lease import evidence_lease, journal_present, read_journal
     from .receipt_validation import minimal_objects, pending_proof
+    from .native_payment_policy import validate_payment_inputs
     from .route import decide, recovery
     from .intake import captured_script_mode
     from .skill6_playwright import Stop, execute, run_on_page, secure_json, validate_job
@@ -26,6 +27,7 @@ else:
     from recipe_cli import compile_recipe
     from evidence_lease import evidence_lease, journal_present, read_journal
     from receipt_validation import minimal_objects, pending_proof
+    from native_payment_policy import validate_payment_inputs
     from route import decide, recovery
     from intake import captured_script_mode
     from skill6_playwright import Stop, execute, run_on_page, secure_json, validate_job
@@ -201,6 +203,10 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
     if not isinstance(inputs, Mapping) or not isinstance(inputs.get('location_id'), str) or not inputs['location_id']:
         return {'status': 'STOP_INVALID_INPUT', 'browser_used': False,
                 'reason': 'A location-bound input mapping is required'}
+    policy_error = validate_payment_inputs(operation, inputs)
+    if policy_error:
+        route = decide(operation, inputs['location_id'], probes, inputs=inputs)
+        return {'status': 'STOP_INVALID_INPUT', 'route': route, 'browser_used': False, 'reason': policy_error}
     access_mode = operation == 'communities.configure' and 'access' in inputs
     course_association_mode = operation == 'communities.configure' and 'course_associations' in inputs
     branding_mode = operation == 'communities.configure' and 'branding' in inputs
@@ -256,7 +262,8 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
         status = ('STOP_INVALID_INPUT' if capture_error else route['lane']
             if route['lane'].startswith('STOP_AUTH') else 'CAPTURED_SCRIPT_ROUTE_REQUIRED')
         return {'status':status,'route':route,'browser_used':False,
-                'reason':'Native editor jobs require the maintained compiled leaf and owned receipt journal. Supply a compatible caller-owned Page for a measured browser transport; generic provider callback statuses are not native proof'}
+                'reason':'Native editor jobs require the maintained compiled leaf and owned receipt journal. Supply a compatible caller-owned Page for a measured browser transport; generic provider callback statuses are not native proof',
+                **({'instruction': route['native_payment_policy']['instruction'] + ' ' + route['native_payment_policy']['verification']} if route.get('native_payment_policy') else {})}
     if contact_mode and not journal_present(Path(evidence_root).resolve()/'state.json'):
         try:
             from playwright_recipes.contact_field_frontdoor import validate_capability, payload_from_inputs
@@ -331,7 +338,7 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
                         'browser_used': invoked and route['lane'] in BROWSER_PROVIDERS,
                         'error_type': type(exc).__name__,
                         'state_file': str(blocked_state)}
-        return {'status': 'NEEDS_BROWSER_RECOVERY' if capture_error else 'HANDOFF_REQUIRED', 'route': route, 'browser_used': False, **({'error_type':capture_error} if capture_error else {})}
+        return {'status': 'NEEDS_BROWSER_RECOVERY' if capture_error else 'HANDOFF_REQUIRED', 'route': route, 'browser_used': False, **({'error_type':capture_error} if capture_error else {}), **({'instruction': route['native_payment_policy']['instruction'] + ' ' + route['native_payment_policy']['verification']} if route.get('native_payment_policy') else {})}
     try:
         try:
             job = validate_job(compile_recipe(operation, inputs), Path(input_dir))
@@ -405,6 +412,9 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
             'state_file': str(blocked_state),
             'instruction': 'Inspect recorded objects and the failed step. Do not rerun a create/save until its persisted outcome is reconciled.',
         }
+        if handoff['route'].get('native_payment_policy'):
+            policy = handoff['route']['native_payment_policy']
+            handoff['instruction'] += ' ' + policy['instruction'] + ' ' + policy['verification']
         if not journal_present(root / 'handoff.json'):
             secure_json(root / 'handoff.json', handoff)
         return handoff

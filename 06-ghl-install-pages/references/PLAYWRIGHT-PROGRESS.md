@@ -1,6 +1,21 @@
 # Skill 6 source build status : November 12, 2026 UTC
 
-**v27.1.109: 33 source-built operation contracts, zero source partials. Owner-approved release; merge pending.**
+## v27.1.110 prepared source release: page layout and payment policy
+
+The prepared source release defines a lane-independent native-payment invariant and
+exact layout/placement inputs for the page builder. The native layout range is 1–6 columns.
+The `pages.layout` source contract is guarded to the exact sole section during row
+insertion; existing columns resolve by exact native IDs. Live capture confirmed native
+preset labels `1 Column` through `6 Column`. Creation/save/reopen persistence remains
+unverified, and multi-section row insertion is unsupported.
+
+The compiler registers 34 source-built operation contracts (73 concrete actions /
+102 bounded jobs), and two focused front-door/compiler boundary checks passed. This
+source status does not establish live layout persistence or payment behavior.
+No purchase, bump, upsell, or downsell success is established by builder state.
+
+
+**v27.1.109: 33 source-built operation contracts, zero source partials. Delivery status is recorded in Git merge history.**
 
 The original ten partial areas now have executable source for their recorded contracts. The compiler covers **72 concrete actions / 101 bounded jobs**. Source completeness does not establish live installed-script, respondent, member, notification or OAuth acceptance.
 
