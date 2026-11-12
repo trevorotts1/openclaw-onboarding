@@ -427,7 +427,8 @@ def _check_three_briefs(rows, vocal_gender="f"):
         style = ((req.get("input") or {}).get("style")) or ""
         styles.append(style)
         brief = v.get("brief") or {}
-        print("  WW-26 serialized input.style [%s] len=%d chars" % (v.get("id"), len(style)))
+        print("  WW-26 serialized input.style [%s] len=%d chars" % (v.get("id"), len(style)),
+              file=sys.stderr)
         for f in _BRIEF_FIELDS:
             need = str(brief.get(f, "")).replace("{gender}", word)
             if not need or need not in style:
@@ -448,7 +449,7 @@ def _check_three_briefs(rows, vocal_gender="f"):
         lcp = _common_prefix_len(styles)
         shortest = min(len(s) for s in styles)
         print("  WW-26 three styles: common prefix %d chars, shortest %d chars"
-              % (lcp, shortest))
+              % (lcp, shortest), file=sys.stderr)
         if lcp >= SHARED_CORE_PREFIX_MIN and (shortest - lcp) <= SHARED_SUFFIX_MAX:
             refusals.append("SHARED_CORE_PLUS_SUFFIX: the three variants share %d leading "
                             "chars and differ only by a suffix of %d chars"
