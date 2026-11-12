@@ -1,3 +1,5 @@
+## [v2.1.58] - 2026-11-12 - prover pin re-minted for owner-approval flow (no behavior change)
+
 ## [v2.1.57] - 2026-11-12 - front door finds the department map in the 999 layouts
 
 - `scripts/front_door.py` `step_departmap` reads the Skill 49 row from, in order: the sibling blueprint skill (onboarding and OpenClaw layouts, unchanged); an `*ai-workforce-blueprint` folder up to three levels above the skill (the 999 repo keeps the skill at `.claude/skills/signature-funnel` and the map at the repo root); and only when no full map exists anywhere, the skill's own `repo-integration/skill-department-map-entry.json` (a 999 install copies the skill alone). Before this a 999 checkout or install aborted `DEPT-MAP` and Skill 49 and Skill 83 could not start. A full map without the row is still refused.

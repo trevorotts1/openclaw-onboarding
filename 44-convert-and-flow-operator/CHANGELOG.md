@@ -1,3 +1,8 @@
+## [v2.1.50] - 2026-11-12 - the owner's approval link
+
+- `INSTRUCTIONS.md` states how the owner's yes is actually obtained: the shared flow in `shared-utils/owner_approval/README.md` (register a pending request, send the owner a summary, preview and one-tap link, poll for the minted id, export `CAF_APPROVAL_ID`, answer a chat "approved" with the link, re-send the link on reminders). The old line telling the agent to set `CAF_APPROVAL_TOKEN` or use a `ZHC-` name for `locations` writes is corrected to the record-based gate. `safety_gate.py` now also reads Command Center's launch_approvals shape: when `location_id`/`action`/`object_key`/`plan_sha256`/`approver`/`verification_class` are absent it derives them from `scope` (a JSON object string), `plan_hash` (`sha256:<hex>`) and `client_identity_ref`; native fields always win, a free-text chat scope or any mismatch (plan hash, location, action, object, kind, revoked, expired) is still refused, and plan hashes are compared as bare lowercase hex. 15 new tests in `test_safety_gate_cc_record_shape.py`. The agent still never mints approval.
+
+
 ## [v2.1.49] - 2026-11-11 - Harmony-95 Batch R: final-count test repairs (FC-26)
 
 - `automation-templates/launch-c/tests/test_plan_reader.py` pins its tests to a fixed clock before the fixture dates, and `tools/engine/tests/test_workflow_builder_l07.py` pins that a ready build with `blocked_by` is refused by both compile paths. Tests only; no engine behaviour changed. Version bump so the Batch R pull request carries a version above main (G3).

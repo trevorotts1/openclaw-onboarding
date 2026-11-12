@@ -1,4 +1,8 @@
 # Changelog — Social Media in a Box (Skill 57)
+## v1.8.4 - 2026-11-12 - owner approval of the week uses the shared link flow (docs only)
+
+- `SKILL.md` gains "Owner approval of the week": the shared `shared-utils/owner_approval` helper (request, one message with summary, posts and one-tap link, wait, export the four CAF variables). No engine file changed, so `ENGINE-PIN.sha256` is unaffected.
+
 ## v1.8.2 - 2026-11-09 - G3 lockstep roll for the batch fold (no behaviour change)
 
 - Version bumped so the folded content carries the version G3 requires above main. No functional change.
