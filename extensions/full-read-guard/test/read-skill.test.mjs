@@ -18,17 +18,17 @@ const expectedStream = (files, root) => files.map((f) => {
   return `===== FILE ${rel} (${f.bytes} bytes, sha256 ${f.sha256}) =====\n` + text + `\n===== END ${rel} =====\n`;
 }).join('');
 
-test('order: skill first, then each direct dependency, then named SOPs; lookup files are not delivered', () => {
+test('required upfront set: root-level docs and named SOPs only; step folders, setup docs and lookup files are not delivered', () => {
   const box = makeBox();
   try {
     const g = box.guard();
     const { files } = collect(g, '10-alpha', 's-order');
     assert.deepEqual(files.map((f) => f.path), [
-      '10-alpha/SKILL.md', '10-alpha/INSTRUCTIONS.md', '10-alpha/references/procedure.md',
+      '10-alpha/SKILL.md', '10-alpha/INSTRUCTIONS.md',
       '20-beta/SKILL.md', '20-beta/notes.md',
       'universal-sops/sop/SOP-1.md', 'universal-sops/sop/SOP-2.md',
     ]);
-    assert.deepEqual(files.map((f) => f.role), ['skill', 'skill', 'skill', 'dependency', 'dependency', 'sop', 'sop']);
+    assert.deepEqual(files.map((f) => f.role), ['skill', 'skill', 'dependency', 'dependency', 'sop', 'sop']);
   } finally { box.cleanup(); }
 });
 
@@ -49,7 +49,7 @@ test('one level only: a dependency of a dependency is not pulled in', () => {
 test('chunking: concatenated parts equal the source bytes exactly, small and oversized lines', () => {
   const box = makeBox();
   try {
-    for (const [skill, chunk] of [['10-alpha', 1500], ['10-alpha', 40000], ['50-wide', 2000], ['40-big', 7000]]) {
+    for (const [skill, chunk] of [['10-alpha', 500], ['10-alpha', 40000], ['50-wide', 2000], ['40-big', 7000]]) {
       const g = box.guard({ chunkChars: chunk, stateDir: null });
       const { bodies, files, first } = collect(g, skill, 's-chunk-' + skill + chunk);
       assert.equal(bodies.join(''), expectedStream(files, box.skills), `${skill} @ ${chunk}`);
@@ -64,7 +64,7 @@ test('chunking: concatenated parts equal the source bytes exactly, small and ove
 test('banner: part counts, next-part instruction, lookup list, READ COMPLETE only on the last part', () => {
   const box = makeBox();
   try {
-    const g = box.guard({ chunkChars: 1500 });
+    const g = box.guard({ chunkChars: 500 });
     const key = 's-banner';
     const first = g.readSkill.run('10-alpha', undefined, key);
     const b1 = first.content[0].text;
@@ -86,7 +86,7 @@ test('banner: part counts, next-part instruction, lookup list, READ COMPLETE onl
 test('receipt is complete only when every part was delivered; it names exact file hashes', () => {
   const box = makeBox();
   try {
-    const g = box.guard({ chunkChars: 1500 });
+    const g = box.guard({ chunkChars: 500 });
     const key = 's-receipt';
     const first = g.readSkill.run('10-alpha', 1, key);
     const lastFile = g.classifier.classify(box.p('universal-sops/sop/SOP-2.md')).abs;
@@ -103,7 +103,7 @@ test('receipt is complete only when every part was delivered; it names exact fil
 test('a file that changes between parts restarts the read', () => {
   const box = makeBox();
   try {
-    const g = box.guard({ chunkChars: 1500 });
+    const g = box.guard({ chunkChars: 500 });
     const key = 's-change';
     const first = g.readSkill.run('10-alpha', 1, key);
     fs.appendFileSync(box.p('10-alpha/SKILL.md'), 'one more line\n');
@@ -146,5 +146,22 @@ test('the registered tool factory carries the session key and returns content', 
     const out = await tool.execute('call-1', { skill: '30-gamma' });
     assert.equal(out.content.length, 2);
     assert.ok(g.receipts.snapshot('tool-session').inUse['30-gamma']);
+  } finally { box.cleanup(); }
+});
+
+test('read-on-open: the banner names the step material, and read_skill with "file" returns one file whole', () => {
+  const box = makeBox();
+  try {
+    const g = box.guard();
+    const first = g.readSkill.run('10-alpha', 1, 'oo');
+    assert.match(first.content[0].text, /NOT required upfront/);
+    assert.match(first.content[0].text, /references\/ \(1\)/);
+    assert.match(first.content[0].text, /\(other\) \(1\)/); // INSTALL.md at the root
+    const one = g.readSkill.run('10-alpha', 1, 'oo', 'references/procedure.md');
+    assert.deepEqual(one.details.files.map((f) => f.path), ['10-alpha/references/procedure.md']);
+    assert.equal(one.content[1].text, expectedStream(one.details.files, box.skills));
+    const abs = g.classifier.classify(box.p('10-alpha/references/procedure.md')).abs;
+    assert.equal(g.receipts.hasFile('oo', abs), true);
+    for (const bad of ['../20-beta/SKILL.md', 'nope.md']) assert.equal(g.readSkill.run('10-alpha', 1, 'oo', bad).isError, true, bad);
   } finally { box.cleanup(); }
 });

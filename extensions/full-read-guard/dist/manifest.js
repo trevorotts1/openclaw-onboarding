@@ -89,11 +89,12 @@ export function loadManifest(dir) {
                 continue;
             }
             const prev = mf.skills.get(s.skill);
-            const entry = prev || { skill: s.skill, depends_on: [], lookup: [], instruction: [], external_lookup_roots: [], external_roots: [] };
+            const entry = prev || { skill: s.skill, depends_on: [], lookup: [], instruction: [], upfront: [], external_lookup_roots: [], external_roots: [] };
             if (prev)
                 mf.errors.push(`${n}: skill ${s.skill} appears in more than one shard (merged)`);
             entry.depends_on.push(...(Array.isArray(s.depends_on) ? s.depends_on.filter((x) => typeof x === 'string') : []));
             entry.lookup.push(...sanitizeRules(ruleList(s.lookup, `${n} ${s.skill}`, mf.errors), `${n} ${s.skill}`, mf.errors));
+            entry.upfront.push(...(Array.isArray(s.upfront) ? s.upfront.filter((x) => typeof x === 'string') : []));
             entry.instruction.push(...(Array.isArray(s.instruction) ? s.instruction.filter((x) => typeof x === 'string') : []));
             for (const r of Array.isArray(s.external_lookup_roots) ? s.external_lookup_roots : []) {
                 const pth = typeof r === 'string' ? r : r && typeof r.path === 'string' ? r.path : '';

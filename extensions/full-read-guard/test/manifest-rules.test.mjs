@@ -77,6 +77,7 @@ test('hand decisions from the exemption analysis hold', () => {
   assert.equal(cls('45-design-intelligence-library', 'library/INDEX.md'), 'instruction');
   assert.equal(cls('45-design-intelligence-library', 'library/x/design.md'), 'lookup');
   assert.equal(cls('38-conversational-ai-system', 'protocols/anything.md'), 'instruction'); // two classes only
+  assert.equal(guard.classifier.classifyRel('38-conversational-ai-system', 'protocols/anything.md').upfront, false); // read-on-open
   assert.equal(cls('52-avatar-alchemist', 'prompts/step-01.md'), 'instruction');
 });
 
@@ -108,5 +109,28 @@ test('every real skill resolves its dependencies with none missing', () => {
   for (const info of guard.index.list()) {
     const d = guard.closure.dependencies(info.folder);
     assert.deepEqual(d.missing, [], `${info.folder}: ${d.missing.join(', ')}`);
+  }
+});
+
+test('upfront set is root-level docs only: no step-folder file and no setup/archive doc is required upfront', () => {
+  const cap = { 'SKILL.md': 1, 'INSTRUCTIONS.md': 1 };
+  for (const info of guard.index.list()) {
+    for (const f of guard.closure.instructionFiles(info.folder, true)) {
+      assert.ok(!f.rel.includes('/'), `${info.folder}/${f.rel} is in a folder`);
+      assert.ok(!/^(INSTALL|CORE_UPDATES|QC|README)\.md$/.test(f.rel) && !/-full\.md$/.test(f.rel), `${info.folder}/${f.rel}`);
+    }
+    assert.ok(guard.closure.instructionFiles(info.folder, true).some((f) => f.rel === 'SKILL.md'), info.folder);
+  }
+  assert.ok(cap);
+});
+
+test('upfront size of the formerly huge skills dropped well below the all-instruction total', () => {
+  const size = (skill, upfrontOnly) => {
+    const { files } = guard.closure.requiredFiles(skill);
+    return files.reduce((a, f) => a + fs.statSync(f.abs).size, 0);
+  };
+  for (const s of ['44-convert-and-flow-operator', '38-conversational-ai-system', '83-black-friday-launcher', '35-social-media-planner', '23-ai-workforce-blueprint', '84-purple-billboard-blueprint']) {
+    const all = [s, ...guard.closure.dependencies(s).skills].reduce((a, k) => a + guard.closure.instructionFiles(k).reduce((x, f) => x + fs.statSync(f.abs).size, 0), 0);
+    assert.ok(size(s) < all * 0.6, `${s}: upfront ${size(s)} vs all ${all}`);
   }
 });

@@ -28,6 +28,7 @@ export function makeBox(extraShards = []) {
   };
   w('10-alpha/SKILL.md', '---\nname: alpha\ndepends_on:\n  - 20-beta\n  - universal-sops/sop/SOP-*.md\nlookup: [notes/*.md]\n---\n# Alpha\n' + lines(30, 'alpha step'));
   w('10-alpha/INSTRUCTIONS.md', '# Alpha instructions\n' + lines(10, 'alpha instr'));
+  w('10-alpha/INSTALL.md', '# Alpha install\n' + lines(8, 'install step'));
   w('10-alpha/references/api.md', '# api reference\n' + lines(20, 'endpoint'));
   w('10-alpha/references/procedure.md', '# procedure\n' + lines(20, 'procedure step'));
   w('10-alpha/notes/extra.md', '# extra notes\n' + lines(5, 'note'));

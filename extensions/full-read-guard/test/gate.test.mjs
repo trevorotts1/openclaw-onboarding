@@ -74,7 +74,7 @@ test('gate: running a skill script needs the skill AND its direct dependencies r
     const run = () => g.beforeToolCall({ toolName: 'exec', params: { command: `bash '${box.p('10-alpha/scripts/run.sh')}'` } }, ctx(key));
     assert.ok(run().block);
     // reading only the skill's own files with whole-file reads is not enough: dependencies are missing
-    for (const rel of ['10-alpha/SKILL.md', '10-alpha/INSTRUCTIONS.md', '10-alpha/references/procedure.md']) {
+    for (const rel of ['10-alpha/SKILL.md', '10-alpha/INSTRUCTIONS.md']) {
       g.afterToolCall({ toolName: 'read', params: { path: box.p(rel) }, result: { content: [{ type: 'text', text: 'ok' }] } }, ctx(key));
     }
     const still = run();
@@ -91,7 +91,7 @@ test('gate: running a skill script needs the skill AND its direct dependencies r
 test('gate: read_skill satisfies the gate in one step', () => {
   const box = makeBox();
   try {
-    const g = box.guard({ chunkChars: 4000 });
+    const g = box.guard({ chunkChars: 500 });
     const key = 'gate-2';
     const parts = g.readSkill.run('10-alpha', 1, key).details.parts;
     for (let p = 2; p <= parts; p++) g.readSkill.run('10-alpha', p, key);
@@ -164,5 +164,30 @@ test('recorded-shape events: fixtures behave as the schema says', () => {
     assert.ok(load('exec-grep.json').block);
     assert.ok(load('exec-run-script.json').block);
     assert.ok(load('exec-cd-then-run.json').block);
+  } finally { box.cleanup(); }
+});
+
+test('read-on-open: step files are not required upfront but are protected when opened', () => {
+  const box = makeBox();
+  try {
+    const g = box.guard();
+    const key = 'oo-1';
+    const run = () => g.beforeToolCall({ toolName: 'exec', params: { command: `bash '${box.p('10-alpha/scripts/run.sh')}'` } }, ctx(key));
+    for (const rel of ['10-alpha/SKILL.md', '10-alpha/INSTRUCTIONS.md', '20-beta/SKILL.md', '20-beta/notes.md', 'universal-sops/sop/SOP-1.md', 'universal-sops/sop/SOP-2.md']) {
+      g.afterToolCall({ toolName: 'read', params: { path: box.p(rel) }, result: { content: [{ type: 'text', text: 'ok' }] } }, ctx(key));
+    }
+    assert.equal(run(), undefined); // procedure.md and INSTALL.md were never read, yet the gate is satisfied
+    const step = box.p('10-alpha/references/procedure.md');
+    const install = box.p('10-alpha/INSTALL.md');
+    assert.equal(verdict(g, 'read', { path: step }, ctx('oo-2')), 'allow'); // whole read of a step file is fine
+    assert.equal(verdict(g, 'read', { path: step, offset: 3, limit: 4 }, ctx('oo-2')), 'rewrite');
+    assert.equal(verdict(g, 'read', { path: install, limit: 2 }, ctx('oo-2')), 'rewrite');
+    assert.equal(verdict(g, 'exec', { command: `grep -n step '${step}'` }, ctx('oo-3')), 'block');
+    assert.equal(verdict(g, 'exec', { command: `head -3 '${install}'` }, ctx('oo-4')), 'block');
+    assert.equal(g.classifier.classifyRel('10-alpha', 'references/procedure.md').upfront, false);
+    assert.equal(g.classifier.classifyRel('10-alpha', 'INSTALL.md').upfront, false);
+    assert.equal(g.classifier.classifyRel('10-alpha', 'INSTALL.md').cls, 'instruction');
+    assert.equal(g.classifier.classifyRel('10-alpha', 'SKILL.md').upfront, true);
+    assert.equal(g.classifier.classifyRel('10-alpha', 'notes.md').upfront, true);
   } finally { box.cleanup(); }
 });

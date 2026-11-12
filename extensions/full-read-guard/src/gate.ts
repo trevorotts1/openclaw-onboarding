@@ -141,7 +141,7 @@ export function createGuard(opts: GuardOptions) {
 
   function wholeFileAdvice(skill: string): string {
     if (skill === SOPS_NAME) return 'Read the whole file with the read tool (no offset, no limit), or call read_skill on the skill that names this SOP.';
-    return `Call read_skill with {"skill":"${skill}"} to get the whole skill and the skills it depends on, or read the whole file with the read tool (no offset, no limit).`;
+    return `Call read_skill with {"skill":"${skill}"} to get the whole skill and the skills it depends on (step files: read the file whole when you open it), or read the whole file with the read tool (no offset, no limit).`;
   }
 
   function partialReason(b: ShellBlock): string {
@@ -165,7 +165,7 @@ export function createGuard(opts: GuardOptions) {
       try { const buf = fs.readFileSync(c.abs); size = buf.length; lines = lineCount(buf.toString('utf8')); } catch { return { action: 'allow' }; }
       if (size > readMaxBytes || lines > readMaxLines) {
         return { action: 'block', code: 'read-too-large', signature: `read|large|${c.abs}|${hasRange}`,
-          reason: `Full-Read Guard: "${c.skill}/${c.rel}" is too large for one read call (${size} bytes, ${lines} lines), and a partial read of an instruction file is not allowed. ${wholeFileAdvice(c.skill)} read_skill delivers it in complete parts.` };
+          reason: `Full-Read Guard: "${c.skill}/${c.rel}" is too large for one read call (${size} bytes, ${lines} lines), and a partial read of an instruction file is not allowed. ${c.skill === SOPS_NAME ? 'Read it through read_skill on the skill that names this SOP.' : `Call read_skill with {"skill":"${c.skill}","file":"${c.rel}"}`} to get it whole, in complete parts.` };
       }
       if (hasRange) {
         const np: Record<string, unknown> = { ...params };
@@ -275,12 +275,13 @@ export function createGuard(opts: GuardOptions) {
     return {
       name: 'read_skill',
       label: 'read_skill',
-      description: 'Read a whole skill and everything it directly depends on, in full and in order, so no step is skipped. Use it before you use a skill. Long skills come in numbered parts: keep calling with the next part until it says READ COMPLETE.',
+      description: 'Read a whole skill (its SKILL.md and root-level instruction documents) and the same for everything it directly depends on, in full and in order, so no step is skipped. Use it before you use a skill. Long sets come in numbered parts: keep calling with the next part until it says READ COMPLETE. Step files (prompts, protocols, playbooks, ...) are read whole when you open them; read_skill with "file" returns one such file whole.',
       parameters: {
         type: 'object',
         additionalProperties: false,
         properties: {
           skill: { type: 'string', description: 'Skill name or number, for example "67-kie-video", "67", or "kie-video".' },
+          file: { type: 'string', description: 'Optional: one file inside the skill, relative path (for example a step file under prompts/). Returns that file whole.' },
           part: { type: 'integer', minimum: 1, description: 'Part number to fetch when the skill is delivered in several parts. Default 1.' },
         },
         required: ['skill'],
@@ -288,7 +289,7 @@ export function createGuard(opts: GuardOptions) {
       async execute(_toolCallId: string, params: any) {
         const key = sessionKeyOf(toolContext);
         try {
-          const out = readSkill.run(String(params && params.skill || ''), params && params.part, key);
+          const out = readSkill.run(String(params && params.skill || ''), params && params.part, key, params && params.file);
           if (!out.isError && out.details && out.details.skill) receipts.markInUse(key, String(out.details.skill));
           return out;
         } catch (e) {

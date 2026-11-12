@@ -25,6 +25,8 @@ export interface SkillEntry {
   depends_on: string[];
   lookup: LookupRule[];
   instruction: string[];
+  /** Subfolder instruction files that must still be read upfront (rare). Default: only root-level files are upfront. */
+  upfront: string[];
   external_lookup_roots: string[];
   /** Same roots with their flags. optional:true means a missing folder is expected and never an error. */
   external_roots: { path: string; optional: boolean }[];
@@ -90,10 +92,11 @@ export function loadManifest(dir: string): Manifest {
     for (const s of Array.isArray(data.skills) ? data.skills : []) {
       if (!s || typeof s.skill !== 'string') { mf.errors.push(`${n}: skill entry without a name`); continue; }
       const prev = mf.skills.get(s.skill);
-      const entry: SkillEntry = prev || { skill: s.skill, depends_on: [], lookup: [], instruction: [], external_lookup_roots: [], external_roots: [] };
+      const entry: SkillEntry = prev || { skill: s.skill, depends_on: [], lookup: [], instruction: [], upfront: [], external_lookup_roots: [], external_roots: [] };
       if (prev) mf.errors.push(`${n}: skill ${s.skill} appears in more than one shard (merged)`);
       entry.depends_on.push(...(Array.isArray(s.depends_on) ? s.depends_on.filter((x: any) => typeof x === 'string') : []));
       entry.lookup.push(...sanitizeRules(ruleList(s.lookup, `${n} ${s.skill}`, mf.errors), `${n} ${s.skill}`, mf.errors));
+      entry.upfront.push(...(Array.isArray(s.upfront) ? s.upfront.filter((x: any) => typeof x === 'string') : []));
       entry.instruction.push(...(Array.isArray(s.instruction) ? s.instruction.filter((x: any) => typeof x === 'string') : []));
       for (const r of Array.isArray(s.external_lookup_roots) ? s.external_lookup_roots : []) {
         const pth = typeof r === 'string' ? r : r && typeof r.path === 'string' ? r.path : '';

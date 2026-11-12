@@ -127,24 +127,25 @@ export class Closure {
         }
         return out;
     }
-    /** Instruction files of one skill folder, in reading order. */
-    instructionFiles(folder) {
+    /** Instruction files of one skill folder, in reading order. upfrontOnly: root-level docs only (the required set). */
+    instructionFiles(folder, upfrontOnly = false) {
         const info = this.index.info(folder);
         if (!info)
             return [];
         const refs = [];
         for (const rel of walkFiles(info.dir)) {
-            if (this.classifier.classifyRel(folder, rel).cls === 'instruction')
+            const c = this.classifier.classifyRel(folder, rel);
+            if (c.cls === 'instruction' && (!upfrontOnly || c.upfront))
                 refs.push({ skill: folder, rel, abs: path.join(info.dir, rel) });
         }
         return refs.sort((a, b) => compareRel(a.rel, b.rel));
     }
-    /** The full required set for `folder`: itself, then each direct dependency, then named SOP files. */
+    /** The REQUIRED UPFRONT set for `folder` (root-level docs, no step folders): itself, then each direct dependency, then named SOP files. */
     requiredFiles(folder) {
         const deps = this.dependencies(folder);
-        const files = [...this.instructionFiles(folder)];
+        const files = [...this.instructionFiles(folder, true)];
         for (const d of deps.skills)
-            files.push(...this.instructionFiles(d));
+            files.push(...this.instructionFiles(d, true));
         const sopsRoot = this.index.soPsDir();
         for (const abs of deps.sopFiles)
             files.push({ skill: SOPS_NAME, rel: path.relative(sopsRoot, abs).split(path.sep).join('/'), abs });

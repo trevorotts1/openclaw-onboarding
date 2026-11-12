@@ -6,11 +6,16 @@ import { makeMatcher } from './glob.js';
 import { Manifest, isInstructionByName, sanitizeRules, expandRoot, SkillEntry } from './manifest.js';
 import { Roots, safeReal, normalizeInputPath } from './paths.js';
 
+/** Root-level docs that are about installing, wiring, checking or archiving the skill, not about doing its work. Still instruction (never partial), but read whole when opened, not required upfront. */
+export function isSetupOrArchiveDoc(rel: string): boolean {
+  return ['INSTALL.md', 'CORE_UPDATES.md', 'QC.md', 'README.md'].includes(rel) || /-full\.md$/i.test(rel);
+}
+
 export const SOPS_NAME = 'universal-sops';
 
 export type Classification =
   | { scope: 'outside' }
-  | { scope: 'skill'; skill: string; rel: string; abs: string; cls: 'instruction' | 'lookup'; reason: string }
+  | { scope: 'skill'; skill: string; rel: string; abs: string; cls: 'instruction' | 'lookup'; upfront: boolean; reason: string }
   | { scope: 'external'; skill: string; abs: string; cls: 'lookup'; reason: string };
 
 export interface SkillInfo { folder: string; dir: string; name?: string; fmDepends: string[]; fmLookup: string[] }
@@ -85,11 +90,11 @@ export class SkillIndex {
 }
 
 export class Classifier {
-  private matchers = new Map<string, { lookup: (rel: string) => boolean; instruction: (rel: string) => boolean }>();
+  private matchers = new Map<string, { lookup: (rel: string) => boolean; instruction: (rel: string) => boolean; upfront: (rel: string) => boolean }>();
   private externals: { root: string; skill: string }[] | null = null;
   constructor(public index: SkillIndex, public manifest: Manifest, private env: Record<string, string | undefined> = process.env) {}
 
-  private rulesFor(skill: string): { lookup: (rel: string) => boolean; instruction: (rel: string) => boolean } {
+  private rulesFor(skill: string): { lookup: (rel: string) => boolean; instruction: (rel: string) => boolean; upfront: (rel: string) => boolean } {
     const info = skill === SOPS_NAME ? undefined : this.index.info(skill);
     const key = skill + '|' + (info ? info.fmLookup.join(',') : '');
     const hit = this.matchers.get(key);
@@ -98,18 +103,20 @@ export class Classifier {
     const errs: string[] = [];
     const fmRules = sanitizeRules((info ? info.fmLookup : []).map((g) => ({ glob: g })), `frontmatter ${skill}`, errs);
     const globs = [...this.manifest.defaults, ...(entry ? entry.lookup : []), ...fmRules].map((r) => r.glob);
-    const built = { lookup: makeMatcher(globs), instruction: makeMatcher(entry ? entry.instruction : []) };
+    const built = { lookup: makeMatcher(globs), instruction: makeMatcher(entry ? entry.instruction : []), upfront: makeMatcher(entry ? entry.upfront : []) };
     this.matchers.set(key, built);
     return built;
   }
 
-  classifyRel(skill: string, rel: string): { cls: 'instruction' | 'lookup'; reason: string } {
-    if (skill !== SOPS_NAME && isInstructionByName(rel)) return { cls: 'instruction', reason: 'instruction file name' };
+  /** Two classes: instruction | lookup. Instruction files are upfront (root-level docs) or read-on-open (step folders). */
+  classifyRel(skill: string, rel: string): { cls: 'instruction' | 'lookup'; upfront: boolean; reason: string } {
     const r = this.rulesFor(skill);
-    if (r.instruction(rel)) return { cls: 'instruction', reason: 'manifest instruction' };
-    if (r.lookup(rel)) return { cls: 'lookup', reason: 'manifest lookup' };
-    if (/\.(md|markdown|mdx)$/i.test(rel)) return { cls: 'instruction', reason: 'markdown not listed as lookup' };
-    return { cls: 'lookup', reason: 'code or data' };
+    const upfront = skill !== SOPS_NAME && ((!rel.includes('/') && !isSetupOrArchiveDoc(rel)) || r.upfront(rel));
+    if (skill !== SOPS_NAME && isInstructionByName(rel)) return { cls: 'instruction', upfront, reason: upfront ? 'instruction file name (upfront)' : 'instruction file name (setup/maintenance doc: read whole when opened)' };
+    if (r.instruction(rel)) return { cls: 'instruction', upfront, reason: 'manifest instruction' };
+    if (r.lookup(rel)) return { cls: 'lookup', upfront: false, reason: 'manifest lookup' };
+    if (/\.(md|markdown|mdx)$/i.test(rel)) return { cls: 'instruction', upfront, reason: upfront ? 'root-level markdown' : 'step-folder markdown (read whole when opened)' };
+    return { cls: 'lookup', upfront: false, reason: 'code or data' };
   }
 
   private externalRoots(): { root: string; skill: string }[] {
@@ -163,11 +170,11 @@ export class Classifier {
     const own = this.index.owner(real);
     if (own && 'sops' in own) {
       const c = this.classifyRel(SOPS_NAME, own.rel);
-      return { scope: 'skill', skill: SOPS_NAME, rel: own.rel, abs: real, cls: c.cls, reason: c.reason };
+      return { scope: 'skill', skill: SOPS_NAME, rel: own.rel, abs: real, cls: c.cls, upfront: c.upfront, reason: c.reason };
     }
     if (own && 'folder' in own) {
       const c = this.classifyRel(own.folder, own.rel);
-      return { scope: 'skill', skill: own.folder, rel: own.rel, abs: real, cls: c.cls, reason: c.reason };
+      return { scope: 'skill', skill: own.folder, rel: own.rel, abs: real, cls: c.cls, upfront: c.upfront, reason: c.reason };
     }
     for (const e of this.externalRoots()) {
       const rel = path.relative(e.root, real);
