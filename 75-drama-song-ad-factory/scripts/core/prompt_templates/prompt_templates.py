@@ -122,7 +122,7 @@ def caps(model, field, root=None):
     """
     field = str(field)
     if field == "prompt" and model not in ("suno-generate", "suno-extend"):
-        row = _catalog_prompt(model)
+        row = _catalog_prompt(model, root=root)
         if row is not None:
             return row
     elif model in ("suno-generate", "suno-extend") or _is_suno_field(field):
@@ -139,26 +139,23 @@ def caps(model, field, root=None):
 def _is_suno_field(field):
     return field in ("lyrics", "style", "title", "negative_tags", "duration")
 
-#: Where each catalog sits, walked up from the skill root. The 999 tree keeps
-#: the catalogs under installer-registration/helpers/ (video_router's own list),
-#: which U6's ancestor walk cannot see from here; the reading itself still
-#: happens in prompt_limits, this only hands it the path.
-_CATALOG_RELS = {
-    "video": (("67-kie-video", "models.json"),
-              ("installer-registration", "helpers", "67-kie-video", "models.json")),
-    "audio": (("68-kie-audio", "models.json"),
-              ("installer-registration", "helpers", "68-kie-audio", "models.json")),
-}
+#: Which catalog directory answers each kind. The ONE locator is
+#: ``prompt_limits.find_catalogs()`` (S75-060); this table only names the
+#: directory a test tree may hold, so no walk lives here.
+_CATALOG_DIRS = {"video": "67-kie-video", "audio": "68-kie-audio"}
 
 def catalog_path(kind, root=None):
-    """Skill 67 (kind="video") or 68 (kind="audio") models.json, or None."""
-    start = templates_dir(root).resolve()
-    for parent in (start,) + tuple(start.parents):
-        for rel in _CATALOG_RELS[kind]:
-            cand = parent.joinpath(*rel)
-            if cand.is_file():
-                return cand
-    return None
+    """Skill 67 (kind="video") or 68 (kind="audio") models.json, or None.
+
+    ``root`` is a test hook: when given, the catalog is looked for directly
+    beneath it, never walked. Otherwise the path comes from the one locator,
+    ``prompt_limits.find_catalogs()``.
+    """
+    if root is not None:
+        cand = templates_dir(root) / _CATALOG_DIRS[kind] / "models.json"
+        return cand if cand.is_file() else None
+    audio, video = _prompt_limits().find_catalogs()
+    return video if kind == "video" else audio
 
 def _prompt_limits():
     """U6's catalog reader (core/prompt_limits.py), imported lazily."""
@@ -167,15 +164,15 @@ def _prompt_limits():
     import prompt_limits as PL
     return PL
 
-def _catalog_prompt(model):
+def _catalog_prompt(model, root=None):
     """Video/avatar prompt cap from the 67 catalog, through U6's prompt_limits.
 
     A model the 67 catalog does not carry (or carries with no published cap)
-    returns None, so the manifest answers; that is the design 2.2 order.
+    returns None, so the manifest answers; that is the design 2.2 order. A
+    model the manifest itself caps (the Kling avatar row) stays with the
+    manifest, so its documented source and status are the ones reported.
     """
     PL = _prompt_limits()
-    if model in PL.OVERRIDES:
-        return None
     video = catalog_path("video")
     if video is None:
         return None
@@ -184,6 +181,8 @@ def _catalog_prompt(model):
     except PL.PromptLimitError:
         return None
     if row.get("prompt") is None:
+        return None
+    if model in PL.OVERRIDES and _manifest_cap(model, "prompt", root=root) is not None:
         return None
     return {"model": model, "field": "prompt", "cap": row["prompt"],
             "status": row["status"],
