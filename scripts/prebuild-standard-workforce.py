@@ -722,7 +722,9 @@ def main(argv=None, _runner_locked=False):
     # "on-first-answer" deferral was retired and is normalized above.
 
     # ── prebuildStartedAt (written ONCE before materialization, never rewritten) ──
-    existing_sp = state.get("standardPrebuild") or {}
+    # A hand-edited / corrupt state can carry a non-dict standardPrebuild; treat
+    # it as absent here instead of crashing on `.get` (same guard as the gate above).
+    existing_sp = existing_prebuild if isinstance(existing_prebuild, dict) else {}
     if existing_sp.get("prebuildStartedAt") and args.apply:
         result["prebuildStartedAt"] = existing_sp["prebuildStartedAt"]
         _log(f"prebuildStartedAt already recorded: {result['prebuildStartedAt']} "
