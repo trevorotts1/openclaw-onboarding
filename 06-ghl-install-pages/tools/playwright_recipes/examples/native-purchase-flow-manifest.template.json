@@ -1,0 +1,210 @@
+{
+  "location_id": "LOC_TEST",
+  "route_graph": {
+    "schema_version": "1.0",
+    "tenant_id": "SELFTEST-TENANT",
+    "location_id": "LOC_TEST",
+    "launch_id": "SELFTEST-LAUNCH",
+    "revision": 1,
+    "nodes": [
+      {
+        "page_id": "SELFTEST-LANDING",
+        "role": "landing"
+      },
+      {
+        "page_id": "SELFTEST-CHECKOUT",
+        "role": "checkout"
+      },
+      {
+        "page_id": "SELFTEST-U1",
+        "role": "upsell_1"
+      },
+      {
+        "page_id": "SELFTEST-D1",
+        "role": "downsell_1"
+      },
+      {
+        "page_id": "SELFTEST-U2",
+        "role": "upsell_2"
+      },
+      {
+        "page_id": "SELFTEST-TY",
+        "role": "thank_you"
+      }
+    ],
+    "edges": [
+      {
+        "from": "SELFTEST-LANDING",
+        "event": "interest_submitted",
+        "to": "SELFTEST-CHECKOUT",
+        "guard": "verified_native_contact_submit"
+      },
+      {
+        "from": "SELFTEST-CHECKOUT",
+        "event": "payment_succeeded",
+        "to": "SELFTEST-U1",
+        "guard": "verified_main_payment"
+      },
+      {
+        "from": "SELFTEST-U1",
+        "event": "payment_succeeded",
+        "to": "SELFTEST-U2",
+        "guard": "verified_u1_payment"
+      },
+      {
+        "from": "SELFTEST-U1",
+        "event": "explicit_decline",
+        "to": "SELFTEST-D1",
+        "guard": "no_charge_decline"
+      },
+      {
+        "from": "SELFTEST-D1",
+        "event": "payment_succeeded",
+        "to": "SELFTEST-U2",
+        "guard": "verified_d1_payment"
+      },
+      {
+        "from": "SELFTEST-D1",
+        "event": "explicit_decline",
+        "to": "SELFTEST-TY",
+        "guard": "no_charge_decline"
+      },
+      {
+        "from": "SELFTEST-U2",
+        "event": "payment_succeeded",
+        "to": "SELFTEST-TY",
+        "guard": "verified_u2_payment"
+      },
+      {
+        "from": "SELFTEST-U2",
+        "event": "explicit_decline",
+        "to": "SELFTEST-TY",
+        "guard": "no_charge_decline"
+      }
+    ],
+    "pending_failed_payment_behavior": "retain_current_purchase_state_until_resolved_or_explicit_decline",
+    "test_only": true
+  },
+  "page_bindings": {
+    "upsell_1": {
+      "status": "PASS",
+      "location_id": "LOC_TEST",
+      "graph_page_id": "SELFTEST-U1",
+      "native_page_id": "REPLACE_NATIVE_PAGE_U1",
+      "native_step_id": "REPLACE_NATIVE_STEP_U1",
+      "source": "REPLACE_WITH_INDEPENDENT_READBACK_REFERENCE"
+    },
+    "upsell_2": {
+      "status": "PASS",
+      "location_id": "LOC_TEST",
+      "graph_page_id": "SELFTEST-U2",
+      "native_page_id": "REPLACE_NATIVE_PAGE_U2",
+      "native_step_id": "REPLACE_NATIVE_STEP_U2",
+      "source": "REPLACE_WITH_INDEPENDENT_READBACK_REFERENCE"
+    },
+    "downsell_1": {
+      "status": "PASS",
+      "location_id": "LOC_TEST",
+      "graph_page_id": "SELFTEST-D1",
+      "native_page_id": "REPLACE_NATIVE_PAGE_D1",
+      "native_step_id": "REPLACE_NATIVE_STEP_D1",
+      "source": "REPLACE_WITH_INDEPENDENT_READBACK_REFERENCE"
+    }
+  },
+  "stages": [
+    {
+      "id": "u1_accept",
+      "kind": "purchase",
+      "role": "upsell_1",
+      "operation": "checkout.configure_native",
+      "inputs": {
+        "location_id": "LOC_TEST",
+        "location_name": "REPLACE_ACCOUNT_NAME",
+        "start_url": "https://REPLACE_APP_HOST/v2/location/LOC_TEST/page-builder/REPLACE_NATIVE_PAGE_U1",
+        "page_id": "REPLACE_NATIVE_PAGE_U1",
+        "step_id": "REPLACE_NATIVE_STEP_U1",
+        "component_id": "REPLACE_ACCEPT_COMPONENT_ID",
+        "tab_id": "REPLACE_TAB_ID",
+        "frame_name": "funnel-builder",
+        "adapter_capture": "REPLACE_WITH_REAL_CAPTURE.json",
+        "family": {
+          "name": "REPLACE_CAPTURED_FAMILY",
+          "max_bumps": 0,
+          "allows_recurring_bumps": false
+        },
+        "main_price": {
+          "native_product_id": "REPLACE_VERIFIED_PRODUCT_ID",
+          "native_price_id": "REPLACE_VERIFIED_PRICE_ID",
+          "amount_minor": 4900,
+          "currency": "USD",
+          "billing_type": "one_time",
+          "recurring_interval": null,
+          "trial_days": null
+        },
+        "checkout_contract": {
+          "status": "PASS",
+          "location_id": "LOC_TEST",
+          "source": "REPLACE_CATALOG_AND_PRIOR_PAYMENT_EVIDENCE",
+          "product_id": "REPLACE_VERIFIED_PRODUCT_ID",
+          "price_id": "REPLACE_VERIFIED_PRICE_ID",
+          "prior_payment_verified": true,
+          "source_step_id": "REPLACE_SOURCE_STEP_ID",
+          "upsell_step_id": "REPLACE_NATIVE_STEP_U1"
+        },
+        "purchase_action": {
+          "kind": "accept",
+          "target_step_id": "REPLACE_NATIVE_STEP_U2"
+        }
+      },
+      "depends_on": []
+    },
+    {
+      "id": "u1_decline",
+      "kind": "decline",
+      "role": "upsell_1",
+      "operation": "checkout.configure_native",
+      "inputs": {
+        "location_id": "LOC_TEST",
+        "location_name": "REPLACE_ACCOUNT_NAME",
+        "start_url": "https://REPLACE_APP_HOST/v2/location/LOC_TEST/page-builder/REPLACE_NATIVE_PAGE_U1",
+        "page_id": "REPLACE_NATIVE_PAGE_U1",
+        "step_id": "REPLACE_NATIVE_STEP_U1",
+        "component_id": "REPLACE_DISTINCT_DECLINE_COMPONENT_ID",
+        "tab_id": "REPLACE_TAB_ID",
+        "frame_name": "funnel-builder",
+        "adapter_capture": "REPLACE_WITH_REAL_CAPTURE.json",
+        "family": {
+          "name": "REPLACE_CAPTURED_FAMILY",
+          "max_bumps": 0,
+          "allows_recurring_bumps": false
+        },
+        "main_price": {
+          "native_product_id": "REPLACE_VERIFIED_PRODUCT_ID",
+          "native_price_id": "REPLACE_VERIFIED_PRICE_ID",
+          "amount_minor": 4900,
+          "currency": "USD",
+          "billing_type": "one_time",
+          "recurring_interval": null,
+          "trial_days": null
+        },
+        "checkout_contract": {
+          "status": "PASS",
+          "location_id": "LOC_TEST",
+          "source": "REPLACE_CATALOG_AND_PRIOR_PAYMENT_EVIDENCE",
+          "product_id": "REPLACE_VERIFIED_PRODUCT_ID",
+          "price_id": "REPLACE_VERIFIED_PRICE_ID",
+          "prior_payment_verified": true,
+          "source_step_id": "REPLACE_SOURCE_STEP_ID",
+          "upsell_step_id": "REPLACE_NATIVE_STEP_U1"
+        },
+        "purchase_action": {
+          "kind": "decline",
+          "target_step_id": "REPLACE_NATIVE_STEP_D1"
+        }
+      },
+      "depends_on": [
+        "u1_accept"
+      ]
+    }
+  ]
+}

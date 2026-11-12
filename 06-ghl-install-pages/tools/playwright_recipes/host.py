@@ -203,6 +203,85 @@ def run_recipe(operation, inputs, probes, evidence_root, *, input_dir, page=None
     if not isinstance(inputs, Mapping) or not isinstance(inputs.get('location_id'), str) or not inputs['location_id']:
         return {'status': 'STOP_INVALID_INPUT', 'browser_used': False,
                 'reason': 'A location-bound input mapping is required'}
+    if operation in ('funnels.create_folder', 'websites.create_folder'):
+        from playwright_recipes.page_folders import ensure_folder, create_in_folder, _plan, _name
+        route = decide(operation, inputs['location_id'], probes, inputs=inputs)
+        allowed = {'location_id','location_name','start_url','folder_name','object_name','allow_creation'}
+        if (set(inputs) - allowed or not isinstance(inputs.get('location_name'), str)
+                or not inputs.get('location_name') or inputs.get('allow_creation') is not True
+                or validate_payment_inputs(operation, inputs)):
+            return {'status':'STOP_INVALID_INPUT','route':route,'browser_used':False,
+                    'reason':'Folder creation requires exact scope, name, and explicit creation authorization'}
+        if page is None or route.get('lane') not in ('playwright', *BROWSER_PROVIDERS):
+            return {'status':'CAPTURED_SCRIPT_ROUTE_REQUIRED','route':route,'browser_used':False,
+                    'reason':'Supply a caller-owned native browser page and measured browser capability'}
+        root = Path(evidence_root).resolve()
+        try:
+            folder_type = 'funnel' if operation.startswith('funnels.') else 'website'
+            _plan(inputs['location_id'], folder_type, inputs.get('folder_name'), inputs.get('start_url'))
+            if 'object_name' in inputs: _name(inputs['object_name'])
+            root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            with evidence_lease(root, inputs['location_id'], kind='provider'):
+                page.goto(inputs['start_url'], wait_until='domcontentloaded')
+                from playwright_recipes.skill6_playwright import assert_tenant
+                assert_tenant(page, inputs)
+                folder = ensure_folder(page, location_id=inputs['location_id'], folder_type=folder_type,
+                    name=inputs['folder_name'], start_url=inputs['start_url'], journal_path=root/'folder.json')
+                obj = (create_in_folder(page, folder=folder, name=inputs['object_name'],
+                    journal_path=root/'object.json') if 'object_name' in inputs else None)
+            return {'status':'EDITOR_STEPS_COMPLETE','route':route,'browser_used':True,
+                    'result':{'folder':folder, 'object':obj}, 'verification_required':True}
+        except Exception as exc:
+            return {'status':'FOLDER_RECONCILIATION_REQUIRED' if any(journal_present(root / n) for n in ('folder.json','object.json')) else 'STOP_INVALID_INPUT',
+                    'route':route,'browser_used':True,'error_type':type(exc).__name__,
+                    'reason':'Inspect the folder and object journals before retrying'}
+    if operation == 'checkout.purchase_flow':
+        # Every leaf uses this very host, so measured capabilities, policy,
+        # durable evidence, and native-proof boundaries apply to every stage.
+        from playwright_recipes.native_purchase_flow import prepare_flow, dispatch_flow
+        if not {'location_id', 'route_graph', 'stages'} <= set(inputs) or set(inputs) - {'location_id','route_graph','stages','page_bindings'}:
+            return {'status':'STOP_INVALID_INPUT','browser_used':False,
+                    'reason':'Purchase flow requires location_id, route_graph, and stages'}
+        try:
+            flow = prepare_flow(inputs['route_graph'], inputs['stages'], inputs.get('page_bindings'))
+            if flow['location_id'] != inputs['location_id']:
+                raise Stop('Flow location differs from approved route graph')
+            from urllib.parse import urlsplit
+            origins = set()
+            for stage in flow['stages']:
+                target = urlsplit(stage['inputs']['start_url'])
+                origins.add((target.scheme, target.netloc))
+                if stage['job'] is not None:
+                    validate_job(stage['job'], Path(input_dir))
+                    _, capture_error = _recipe_readiness(stage['operation'], stage['inputs'], probes, input_dir)
+                    if capture_error:
+                        raise Stop('A flow stage is missing valid native capture evidence')
+            if len(origins) != 1:
+                raise Stop('Flow stages must remain in one authenticated application origin')
+            root = Path(evidence_root).resolve()
+            root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            def run_stage(stage):
+                if page is not None:
+                    from urllib.parse import urlsplit
+                    target = stage['inputs']['start_url']
+                    before, after = urlsplit(page.url), urlsplit(target)
+                    if (before.scheme, before.netloc) != (after.scheme, after.netloc):
+                        raise Stop('Flow stage cannot switch authenticated application origin')
+                    if page.url != target:
+                        page.goto(target, wait_until='domcontentloaded')
+                return run_recipe(stage['operation'], stage['inputs'], probes,
+                    root / stage['id'], input_dir=input_dir, page=page, executors=executors,
+                    portal_context=portal_context, access_authorization=access_authorization)
+            state = dispatch_flow(flow, root / 'purchase-flow-journal.json', run_stage)
+            return {'status':'FLOW_STAGES_COMPLETE', 'location_id':inputs['location_id'],
+                    'stages_completed':len(state['stages']),
+                    'verification_required':True,
+                    'route':decide(operation, inputs['location_id'], probes, inputs=inputs)}
+        except Exception as exc:
+            return {'status':'FLOW_RECONCILIATION_REQUIRED' if (Path(evidence_root)/'purchase-flow-journal.json').exists() else 'STOP_INVALID_INPUT',
+                    'browser_used':page is not None and (Path(evidence_root)/'purchase-flow-journal.json').exists(), 'error_type':type(exc).__name__,
+                    'reason':'Inspect stage receipts and reconcile any interrupted operation before retrying',
+                    'route':decide(operation, inputs['location_id'], probes, inputs=inputs)}
     policy_error = validate_payment_inputs(operation, inputs)
     if policy_error:
         route = decide(operation, inputs['location_id'], probes, inputs=inputs)
@@ -433,6 +512,37 @@ def main(argv=None):
     try:
         inputs = json.loads(args.inputs.read_text())
         probes = json.loads(args.probes.read_text())
+        if args.check and args.operation == 'checkout.purchase_flow':
+            from playwright_recipes.native_purchase_flow import prepare_flow
+            from urllib.parse import urlsplit
+            if not {'location_id','route_graph','stages'} <= set(inputs) or set(inputs) - {'location_id','route_graph','stages','page_bindings'}:
+                raise Stop('Purchase flow requires location_id, route_graph, and stages')
+            flow = prepare_flow(inputs['route_graph'], inputs['stages'], inputs.get('page_bindings'))
+            origins = {(urlsplit(stage['inputs']['start_url']).scheme, urlsplit(stage['inputs']['start_url']).netloc) for stage in flow['stages']}
+            if len(origins) != 1: raise Stop('Flow stages require a single authenticated application origin')
+            if flow['location_id'] != inputs['location_id']:
+                raise Stop('Flow location differs from route graph')
+            for stage in flow['stages']:
+                if stage['job'] is not None:
+                    validate_job(stage['job'], args.inputs.resolve().parent)
+                    _, error = _recipe_readiness(stage['operation'], stage['inputs'], probes, args.inputs.resolve().parent)
+                    if error: raise Stop('A stage is missing valid capture evidence')
+            print(json.dumps({'status':'VALIDATED_ONLY','stages':len(flow['stages']),
+                              'route':decide(args.operation, inputs['location_id'], probes, inputs=inputs),
+                              'browser_used':False}))
+            return 0
+        if args.check and args.operation in ('funnels.create_folder', 'websites.create_folder'):
+            from playwright_recipes.page_folders import _plan, _name
+            if (inputs.get('allow_creation') is not True or not isinstance(inputs.get('location_name'),str)
+                    or not inputs['location_name'] or set(inputs) - {'location_id','location_name','start_url','folder_name','object_name','allow_creation'}
+                    or validate_payment_inputs(args.operation, inputs)):
+                raise Stop('Valid exact scope and explicit creation authorization are required')
+            _plan(inputs['location_id'], 'funnel' if args.operation.startswith('funnels.') else 'website',
+                  inputs.get('folder_name'), inputs.get('start_url'))
+            if 'object_name' in inputs: _name(inputs['object_name'])
+            selected = decide(args.operation, inputs['location_id'], probes, inputs=inputs)
+            print(json.dumps({'status':'VALIDATED_ONLY','route':selected,'browser_used':False}))
+            return 0 if not selected['lane'].startswith('STOP_') else 2
         if args.check:
             observed, capture_error = _recipe_readiness(args.operation, inputs, probes, args.inputs.resolve().parent)
             selected = decide(args.operation, inputs['location_id'], observed, inputs=inputs)
@@ -492,7 +602,7 @@ def main(argv=None):
         # Print a small named receipt; provider payloads never reach stdout.
         print(json.dumps({'status':result['status'], 'route':result.get('route'),
                           'browser_used':result.get('browser_used', result.get('route',{}).get('lane') == 'playwright')}))
-        if result['status'] in ('EDITOR_STEPS_COMPLETE','API_STEPS_COMPLETE'):
+        if result['status'] in ('EDITOR_STEPS_COMPLETE','API_STEPS_COMPLETE','FLOW_STAGES_COMPLETE'):
             return 0
         if result['status'] in ('NEEDS_VERIFICATION','ALREADY_EXECUTED'):
             return 3

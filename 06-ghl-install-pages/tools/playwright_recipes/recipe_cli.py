@@ -36,6 +36,8 @@ def compile_recipe(operation, data):
             if receipt.get('status')!='PASS' or receipt.get('location_id')!=data['location_id'] or not receipt.get('source'):
                 raise Stop('Hosted embed needs the existing embeddability-gate PASS receipt bound to this location')
         add('html',id=data.get('code_id','main_code'),file=data['file'],marker=data['marker'],append=data.get('append',False),**{k:data[k] for k in ('element_id','expected_name','section_id','placement') if k in data},**({'embed_receipt':data['embed_receipt']} if operation=='pages.install_embed' else {}))
+        if operation=='pages.install_embed' and 'embed_config' in data:
+            add('page_embed', source_step_id=data.get('code_id','main_code'), plan=data['embed_config'], placement=data['embed_placement'])
         add('seo',**data['seo'])
     elif operation=='checkout.wrap_native':
         add('html',id='checkout_before',file=data['before_file'],marker=data['before_marker'],**({'placement':data['before_placement']} if 'before_placement' in data else {}))
@@ -43,6 +45,10 @@ def compile_recipe(operation, data):
         if data.get('after_file'):
             add('html',id='checkout_after',file=data['after_file'],marker=data['after_marker'],append=True,**({'placement':data['after_placement']} if 'after_placement' in data else {}))
         add('seo',**data['seo'])
+    elif operation=='pages.responsive':
+        add('page_responsive', responsive=data['responsive'])
+    elif operation=='pages.saved_section':
+        add('saved_section', saved_section=data['saved_section'])
     elif operation=='pages.layout':
         add('page_layout', layout=data['layout'])
     elif operation=='pages.seo':
@@ -229,7 +235,28 @@ def main():
     p.add_argument('--evidence-root',type=Path)
     a=p.parse_args()
     try:
-        job=validate_job(compile_recipe(a.recipe,json.loads(a.inputs.read_text())),a.inputs.resolve().parent)
+        data = json.loads(a.inputs.read_text())
+        if a.recipe == 'checkout.purchase_flow':
+            from playwright_recipes.native_purchase_flow import prepare_flow, dispatch_flow
+            if not {'route_graph', 'stages'} <= set(data) or set(data) - {'route_graph', 'stages', 'page_bindings'}:
+                raise Stop('Purchase flow requires exactly route_graph and stages')
+            flow = prepare_flow(data['route_graph'], data['stages'], data.get('page_bindings'))
+            for stage in flow['stages']:
+                if stage['job'] is None:
+                    raise Stop('Folder stages require the shared host and a caller-owned browser page')
+                validate_job(stage['job'], a.inputs.resolve().parent)
+            if not a.execute:
+                print(json.dumps({'status':'VALIDATED_ONLY','recipe':a.recipe,'stages':len(flow['stages'])}))
+                return 0
+            if a.evidence_root is None:
+                raise Stop('Durable --evidence-root is required')
+            def run_stage(stage):
+                job = validate_job(stage['job'], a.inputs.resolve().parent)
+                return execute(job, a.evidence_root / stage['id'])
+            state = dispatch_flow(flow, a.evidence_root / 'purchase-flow-journal.json', run_stage)
+            print(json.dumps({'status':'FLOW_STAGES_COMPLETE','recipe':a.recipe,'stages':len(state['stages'])}))
+            return 0
+        job=validate_job(compile_recipe(a.recipe,data),a.inputs.resolve().parent)
         if not a.execute:
             print(json.dumps({'status':'VALIDATED_ONLY','recipe':a.recipe,'steps':len(job['steps'])}))
             return 0

@@ -26,12 +26,14 @@ all entry points, commands and remaining live verification work.
 
 ## Current build checkpoint : November 12, 2026 UTC
 
-**v27.1.110: prepared source release.** 34 source-built operation contracts; 73 concrete actions / 102 bounded jobs. Two focused front-door/compiler checks passed. Native layout save/reopen and payment behavior remain unverified; no purchase proof is claimed.
+**v27.1.111: prepared source release.** The source catalog has 39 implemented recipes: 11 `LIVE_PATH`, 7 `PROFILE`, 17 `CAPTURED`, and 4 `API_FIRST`. These are source catalog classifications, not counts of end-to-end live acceptance. The compiler boundary asserts 76 covered actions / 104 bounded rows. Root's focused verification run passed 91 tests; the latest standalone page_embed suite passed 9 tests after the async initialization and aspect-ratio fixes. These are separate runs; required CI is next. Live capture created/reused a native Saved Template and moved it after an exact anchor; save/reload retained tablet 85% and desktop 100% on one row. Checkout field order, the custom Accent color `#3155AA`, and native component ID/parent binding were inspected. Six native V2 preset buttons were captured but not selected or saved. Funnel and website folders were independently reopened; the child Website 1 Page reopened under its same created ID. Live iframe preview, full buyer journey, and native payment acceptance remain pending. Nested layout containers and native mobile row-width editing are unavailable in this tenant; mobile columns stack natively. No purchase proof is claimed.
 
-**Previous checkpoint v27.1.109: 33 source-built recorded operation contracts / 0 source partials.**
+**Previous checkpoint v27.1.110: 34 source-built recorded operation contracts.** Its compiler covered 73 concrete actions / 102 bounded jobs; two focused front-door/compiler checks passed. Native layout save/reopen and payment behavior remained unverified. The v27.1.109 historical checkpoint is retained below.
+
+**v27.1.109: 33 source-built recorded operation contracts / 0 source partials.**
 All original ten partial areas now have integrated executable source within their recorded boundaries. Compiler coverage is **72 concrete actions / 101 bounded jobs**. The final merged source smoke passed **45 focused tests**.
 
-The generated `ghl-install-pages.skill` archive contains the six canonical source documents with Skill metadata v27.1.110. Delivery status is tracked in Git merge history.
+The generated `ghl-install-pages.skill` archive contains the six canonical source documents with Skill metadata v27.1.111. Delivery status is tracked in Git merge history.
 
 The **v27.1.109** source candidate was marked OWNER_APPROVED_PREPARED_RELEASE, with approval to publish and batch merge that build on November 11, 2026. Its delivery status is recorded in Git merge history. The documented verified preparation baseline remains v27.1.108 through batch PR3125.
 

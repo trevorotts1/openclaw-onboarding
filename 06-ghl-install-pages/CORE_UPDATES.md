@@ -1,5 +1,58 @@
 # GHL / Convert and Flow - Install Pages - Core File Updates
 
+## v27.1.111 release note: native purchase flow, page folders and embeds
+
+Keep every payment surface on native GoHighLevel checkout/order-form,
+order-bump, purchase-action, one-click-upsell and downsell components across
+all routes, including browser/computer fallback. The staged purchase-flow
+dispatcher is bound to an approved Skill 49 route graph and journals native
+recipe stages. It does not publish or initiate a payment. Its independent
+sandbox journey verifier checks supplied evidence for provider test mode,
+session continuity, route outcomes, duplicate-charge prevention and observed
+confirmation. This check is evidence consistency, not proof that evidence is
+authentic. Native purchase and buyer acceptance remain pending; no successful
+purchase is claimed.
+
+journaled intent and independent reopen/readback; root independently reopened
+the funnel and website parent folders and found/reopened the child Website 1 Page
+under the same created native ID. Add Saved Sections inventory,
+insert/reuse and scoped edit contracts using the bundled `saved-assets-new`
+captured native profile. Live browser capture created and reused a native Saved
+Template in one section and moved it down after an exact anchor with order
+readback. This captured case is not proof of every Saved Assets scope or
+operation.
+
+Add the `page_embed` helper for an already approved, receipt-bound iframe
+fragment. It binds its plan to the exact original normalized HTML hash and
+existing embeddability receipt, emits scoped styling and idempotent
+hydration-aware initialization in a separate native Code element, optionally
+accepts resize messages only from the exact iframe and validated HTTPS origin,
+and checks preview DOM dimensions. It does not rewrite the approved HTML,
+replace native payment components or imply that an iframe inherits a GHL
+session. This behavior has focused source tests; live GHL preview acceptance
+remains pending.
+
+Extend native checkout appearance configuration with captured GoHighLevel V2
+theme presets and exact-control theme profiles. Preserve identity checks and
+saved readback; theme profile settings are not arbitrary CSS and do not verify
+payment acceptance.
+Strengthen exact section-targeted page-layout insertion across multi-section
+canvases, optional row-anchor insertion, responsive desktop/tablet widths,
+preserved native ordering, and saved inventory readback. Live editor save/reload
+confirmed tablet width 85% and desktop width 100% persisted for the selected
+row. Checkout field order, custom Accent color `#3155AA`, and native component
+ID/parent binding were inspected. Six native V2 preset buttons were captured,
+but were not selected or saved. The tenant does not expose native layout containers in Elements
+search; Labs' “layout” result is invoice layout, so nested containers are
+unsupported. A traditional mobile row-width control is absent; responsive width
+editing is desktop/tablet only (30–100%), and mobile columns stack natively. The
+catalog has 39 implemented recipes: 11 `LIVE_PATH`, 7 `PROFILE`, 17 `CAPTURED`,
+and 4 `API_FIRST`. These source catalog labels are not end-to-end live counts.
+Root reports 91 focused tests passed; the latest standalone page_embed suite
+passed 9 tests after async initialization and aspect-ratio fixes. These are
+separate runs; required CI remains pending. Buyer journey and payment acceptance
+remain pending.
+
 ## v27.1.110 release note: native payments and exact layout
 
 Across API, Playwright, OpenClaw, Agent Browser, and computer-use fallback, all

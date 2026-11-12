@@ -1,0 +1,21 @@
+{
+  "location_id": "CURRENT_LOCATION_ID",
+  "location_name": "Current Location",
+  "start_url": "https://app.gohighlevel.com/location/CURRENT_LOCATION_ID/page-builder/PAGE_ID",
+  "saved_section": {
+    "operation": "reuse",
+    "profile": "saved-assets-new",
+    "scope": "template",
+    "expected_saved_inventory": [
+      {
+        "name": "Captured hero",
+        "scope": "template"
+      }
+    ],
+    "saved_section_name": "Captured hero",
+    "destination_section_id": "CAPTURED_ANCHOR_SECTION_ID",
+    "expected_section_inventory": [
+      "CAPTURED_ANCHOR_SECTION_ID"
+    ]
+  }
+}

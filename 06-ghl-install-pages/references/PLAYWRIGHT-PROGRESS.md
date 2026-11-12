@@ -1,5 +1,44 @@
 # Skill 6 source build status : November 12, 2026 UTC
 
+## v27.1.111 prepared source release: native journeys and page operations
+
+The source package adds staged native purchase-flow orchestration against an
+approved Skill 49 route graph, location/type-scoped folder operations, a
+receipt/hash-bound iframe helper, captured native GHL V2 checkout theme preset
+and profile controls, and Saved Sections operations with the bundled
+`saved-assets-new` captured profile.
+The purchase-flow dispatcher does not publish or initiate payment. Its
+independent journey verifier checks supplied evidence consistency only; it
+does not authenticate evidence. Native checkout must remain the purchase
+surface, including in browser/computer fallback.
+
+`page_embed` validates the pre-existing PASS receipt and normalized HTML hash,
+then adds scoped code in a separate native Code element and checks iframe
+preview dimensions. The approved source fragment is preserved byte-for-byte.
+Published-page setup has a DOM-ready/timed fallback and does not assume GHL's
+`hydrationDone` event fires. Optional cross-origin resizing requires the exact
+frame window and validated origin.
+
+Live browser capture created and reused a native Saved Template in one section,
+then moved it down after the exact selected anchor with order readback. Live
+editor save/reload confirmed tablet width 85% and desktop width 100% persisted
+for the selected row. Checkout field order, custom Accent color `#3155AA`, and
+native component ID/parent binding were inspected; these configuration
+observations are not transaction proof. Six native V2 preset buttons were
+captured but not selected or saved. Funnel and website folders were independently
+reopened, including the child Website 1 Page under its same created ID. Nested
+layout containers and mobile row-width editing are unavailable in this tenant;
+responsive row widths are desktop/tablet 30–100%, and mobile columns stack
+natively. The catalog has 39 implemented recipes: 11 LIVE_PATH, 7 PROFILE,
+17 CAPTURED and 4 API_FIRST; these are source labels, not end-to-end live counts.
+Live iframe preview, full buyer journey and native payment acceptance remain
+NOT_RUN / PENDING. No purchase proof is claimed.
+
+Compiler boundary asserts 76 covered actions and 104 bounded rows. Root's
+focused verification run passed 91 tests; the latest standalone page_embed suite
+passes 9 focused tests after asynchronous initialization and ratio-only sizing
+fixes. These are separate runs; required CI remains pending.
+
 ## v27.1.110 prepared source release: page layout and payment policy
 
 The prepared source release defines a lane-independent native-payment invariant and

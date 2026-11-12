@@ -15,6 +15,9 @@ else:
 
 
 STATUSES = {
+    'page_layout': {'SAVED'}, 'page_responsive': {'RESPONSIVE_SAVED'},
+    'page_embed': {'VERIFIED'},
+    'saved_section': {'INVENTORIED','SAVED_ASSET_READBACK_VERIFIED','SAVED_READBACK_VERIFIED'},
     'native_survey_condition_outcomes': {'CONDITION_OUTCOMES_SAVED_AND_REOPENED','CONDITION_OUTCOMES_REUSED_AND_REOPENED'},
     'survey_submission': {'SURVEY_SUBMISSION_SAVED_AND_REOPENED'},
     'native_survey_widget_fields': {'SURVEY_WIDGET_FIELDS_SAVED_AND_REOPENED'},
@@ -77,6 +80,10 @@ STATUSES = {
     'native_checkout_ui': {'NATIVE_CHECKOUT_UI_READBACK_VERIFIED'},
 }
 REQUIRED = {
+    'page_layout': ('section_id','row_id','column_ids','expected_columns'),
+    'page_responsive': ('section_id','row_id','device','width_percent'),
+    'page_embed': ('code_element_id','approved_html_sha256','preview_url','iframe'),
+    'saved_section': ('scope','identity_kind'),
     'native_survey_condition_outcomes': ('kind','editor_url','rule_count','configuration_sha256','outcomes_sha256','saved_rules','independent_readback','behavior_verified','submission_verified','disqualification_executed'),
     'survey_submission': ('mode','editor_url','value_sha256','conditional_precedence_present','conditional_precedence_acknowledged','independent_readback','behavior_verified','submission_verified'),
     'native_survey_widget_fields': ('editor_url','configuration_sha256','widget_fields','saved_snapshot','independent_readback','behavior_verified','submission_verified'),
@@ -205,6 +212,69 @@ def _operation(value):
 
 def _result(step, value, job):
     action = step['action']
+    if action == 'page_embed':
+        from playwright_recipes.skill6_playwright import validate_placement
+        plan = step.get('plan'); placement = step.get('placement')
+        validate_placement(placement)
+        if not isinstance(plan,Mapping) or not isinstance(value,Mapping): _fail()
+        iframe=value.get('iframe'); url=value.get('preview_url')
+        if not isinstance(url,str): _fail()
+        parsed=urlsplit(url)
+        if (parsed.scheme != 'https' or not parsed.netloc or parsed.username or parsed.password
+                or parsed.fragment or value.get('status') != 'VERIFIED'
+                or not isinstance(value.get('code_element_id'),str) or not value['code_element_id']
+                or value.get('approved_html_sha256') != plan.get('approved_html_sha256')
+                or not isinstance(iframe,Mapping) or iframe.get('status') != 'VERIFIED'
+                or iframe.get('iframe_id') != plan.get('iframe_id') or iframe.get('visible') is not True
+                or type(iframe.get('width')) not in (int,float) or iframe['width'] <= 0
+                or type(iframe.get('height')) not in (int,float) or iframe['height'] <= 0): _fail()
+        return dict(value)
+    if action == 'page_layout':
+        from playwright_recipes.page_layout import validate
+        plan = validate(step)
+        if (not isinstance(value, Mapping) or value.get('status') != 'SAVED'
+                or value.get('section_id') != plan['section_id']
+                or value.get('expected_columns') != plan['columns']
+                or not isinstance(value.get('row_id'), str) or not value['row_id']
+                or not isinstance(value.get('column_ids'), list)
+                or len(value['column_ids']) != plan['columns']
+                or any(not isinstance(x,str) or not x for x in value['column_ids'])
+                or len(set(value['column_ids'])) != len(value['column_ids'])): _fail()
+        return dict(value)
+    if action == 'page_responsive':
+        from playwright_recipes.page_layout import validate_responsive
+        plan = validate_responsive(step)
+        if (not isinstance(value, Mapping) or value.get('status') != 'RESPONSIVE_SAVED'
+                or any(value.get(k) != plan[k] for k in ('section_id','row_id','device','width_percent'))): _fail()
+        return dict(value)
+    if action == 'saved_section':
+        from playwright_recipes.saved_section import validate
+        plan = validate(step); op = plan['operation']
+        statuses = {'inventory':'INVENTORIED', 'save':'SAVED_ASSET_READBACK_VERIFIED',
+                    'insert':'SAVED_READBACK_VERIFIED', 'reuse':'SAVED_READBACK_VERIFIED'}
+        if (not isinstance(value, Mapping) or value.get('status') != statuses.get(op)
+                or value.get('identity_kind') != 'unique_name_and_scope'):
+            _fail()
+        scope = plan.get('scope')
+        if scope is None and op in ('insert','reuse'):
+            scope = next((x['scope'] for x in plan['expected_saved_inventory']
+                          if x['name'] == plan['saved_section_name']), None)
+        scope = scope or 'template'
+        if value.get('scope') != scope: _fail()
+        if op == 'inventory':
+            rows = value.get('saved_inventory')
+            if not isinstance(rows,list) or any(not isinstance(x,Mapping) or not isinstance(x.get('name'),str)
+                    or x.get('scope') != scope for x in rows): _fail()
+        else:
+            ids = value.get('section_ids')
+            if (value.get('saved_section_name') != plan['saved_section_name']
+                    or not isinstance(ids,list) or any(not isinstance(x,str) or not x for x in ids)
+                    or len(ids) != len(set(ids)) or not isinstance(value.get('native_order_forms'),Mapping)
+                    or value.get('payment_verified') is not False): _fail()
+            if op == 'save':
+                if value.get('source_section_id') != plan['source_section_id'] or not isinstance(value.get('saved_inventory'),list): _fail()
+            elif value.get('inserted_section_id') not in ids: _fail()
+        return dict(value)
     if action == 'meeting_cohosts' and step.get('payload',{}).get('allow_creation') is True:
         from playwright_recipes.meeting_first_cohosts import validate_receipt
         if any(step['payload'][key]!=job[key] for key in ('location_id','location_name','start_url')):_fail()

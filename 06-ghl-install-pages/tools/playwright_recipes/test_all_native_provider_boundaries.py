@@ -60,6 +60,7 @@ def native_cases(root):
  yield 'quiz_picture_choice','quizzes.configure',picture_choice()
  from test_field_placement_integration import inputs
  base=inputs();base.pop('add_fields')
+ yield 'saved_section_inventory','pages.saved_section',{**base,'saved_section':{'operation':'inventory','profile':'saved-assets-new','expected_saved_inventory':[]}}
  for k,extra in [('builtin',{'add_fields':['Website']}),('field_properties',{'fields':[{'field':'Last Name','required':True}]}),('address',{'address_fields':[{'field':'Street Address','current_query_key':'address','query_key':'street_address'}]}),('consent',{'consent':{'expected_query_key':'terms_and_conditions','required':True,'expected_required':False}})]:yield k,'forms.configure',{**base,**extra}
  from test_form_widget_families import inputs as form_widgets
  for family in ('number','checkbox','file_upload','signature','single_dropdown','multi_dropdown','url'):
@@ -127,10 +128,11 @@ def native_cases(root):
  for op in ('funnels.create','funnels.add_page','websites.create','websites.add_page'):
   yield op,op,{**base,'container_name':'Approved fixture','page_name':'Approved fixture','path':'/fixture'}
  yield 'layout','pages.layout',{**base,'layout':{'section_id':'section_fixture','columns':2}}
+ yield 'responsive','pages.responsive',{**base,'responsive':{'profile':'funnel_row_width_v1','section_id':'section_fixture','row_id':'row_fixture','device':'desktop','width_percent':80}}
  yield 'seo','pages.seo',{**base,'seo':seo}
  yield 'code','pages.install_code',{**base,'file':str(html),'marker':'Approved fixture','seo':seo}
- embed=root/'embed.html';embed.write_text('<iframe src="https://example.com/app"></iframe>')
- yield 'embedpage','pages.install_embed',{**base,'file':str(embed),'marker':'example.com/app','seo':seo,'embed_receipt':{'status':'PASS','location_id':base['location_id'],'source':'fixture','html_sha256':runner.sha(embed.read_text()),'embed_urls':['https://example.com/app']}}
+ embed=root/'embed.html';embed.write_text('<iframe id="demo-frame" src="https://example.com/app"></iframe>')
+ yield 'embedpage','pages.install_embed',{**base,'file':str(embed),'marker':'example.com/app','seo':seo,'embed_receipt':{'status':'PASS','location_id':base['location_id'],'source':'fixture','html_sha256':runner.sha(embed.read_text()),'embed_urls':['https://example.com/app']},'embed_config':{'iframe_id':'demo-frame','approved_html_sha256':runner.sha(embed.read_text()),'height_px':520},'embed_placement':{'section_id':'s','row_id':'r','column_id':'c'}}
  yield 'checkout_wrap','checkout.wrap_native',{**base,'before_file':str(html),'before_marker':'Approved fixture','seo':seo}
  from test_checkout_ui import inputs as checkoutui
  yield 'checkout_ui','checkout.configure_ui',checkoutui()
@@ -167,8 +169,8 @@ class CompleteNativeProviderBoundaries(unittest.TestCase):
                     and node.func.id=='add' and node.args):
                 named |= literal_action(node.args[0])
         self.assertTrue(named <= covered,named-covered)
-        self.assertEqual(len(covered),73,'Update the bounded fixtures for newly added dynamic compiler actions')
-        self.assertEqual(len(rows),102)
+        self.assertEqual(len(covered),76,'Update the bounded fixtures for newly added dynamic compiler actions')
+        self.assertEqual(len(rows),104)
 
     def test_no_current_native_job_delegates_to_status_only_api_or_extension_callback(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,3 +1,57 @@
+## [v27.1.111] - 2026-11-12 - prepared source release: native journey orchestration and page operations
+
+- Add a staged native purchase-flow dispatcher bound to the approved Skill 49
+  route graph. Stages use the standard recipe executor and an evidence journal;
+  interrupted stages require reconciliation and are not replayed automatically.
+  The flow helper never publishes or initiates a payment. Its independent
+  journey verifier checks supplied sandbox/provider evidence for session
+  continuity, route outcomes, duplicate prevention and observed confirmation;
+  it is an evidence-consistency check, not evidence authentication. Native
+  purchase/buyer acceptance remains pending; no transaction success is claimed.
+- Add native location/type-scoped funnel and website folder creation/reuse with
+  intent journaling and independently reopened folder/object readback. Root
+  independently reopened the funnel and website parent folders and found and
+  reopened the child Website 1 Page under the same created native ID.
+- Add receipt/hash-bound iframe sizing and initialization through a separate
+  native Code element, without altering the approved HTML fragment. Sizing is
+  scoped to the recorded iframe. Optional message resizing checks the exact
+  iframe window, validated HTTPS origin, message type and bounded height. The
+  helper waits for DOM readiness, listens for the editor's `hydrationDone` event
+  and also uses a published-page fallback; it does not assume that event fires.
+  Initialization retries a bounded number of times for late iframe/SDK/target
+  availability, preserves a nested method's receiver, and records initialization
+  only after a successful call. Ratio-only plans set `height:auto` and verify the
+  observed iframe ratio.
+  Native payment components remain native, and an iframe is not treated as
+  inheriting a GHL session. Focused source tests pass; live GHL preview proof is
+  pending.
+- Add Saved Sections operation contracts with the bundled `saved-assets-new`
+  captured profile. Live browser capture created and reused a native Saved
+  Template in one section, then moved it down after an exact anchor with order
+  readback. Other Saved Assets scopes and operations remain outside this proof.
+- Add captured native GoHighLevel V2 checkout theme preset and exact-control profile support;
+  retain independent saved-state readback. This does not establish transaction
+  acceptance.
+- Strengthen exact section-targeted layout insertion across multi-section
+  canvases, optional row-anchor insertion and desktop/tablet responsive widths,
+  with preserved native ordering and saved inventory readback. Live editor
+  save/reload confirmed tablet 85% and desktop 100% persisted for the selected
+  row. Live checkout inspection captured field order, custom Accent color
+  `#3155AA`, and native component ID/parent binding; this is configuration
+  readback only, not transaction proof. Six native V2 preset buttons were
+  captured but not selected or saved. The tenant has no nested layout-container control and no
+  mobile row-width control; supported responsive row width is desktop/tablet
+  from 30% to 100%, and mobile columns stack natively. The source catalog has 39
+  implemented recipes: 11 LIVE_PATH, 7 PROFILE, 17 CAPTURED and 4 API_FIRST;
+  these are source classifications, not end-to-end live acceptance. The focused
+  root's focused verification run passed 91 tests; the latest standalone
+  page_embed suite passed 9 tests after async initialization and aspect-ratio
+  fixes. These are separate runs; required CI remains pending. Buyer purchase
+  acceptance remains unverified.
+- Regenerate the canonical six-member `ghl-install-pages.skill` archive with
+  Skill metadata v27.1.111. The source/package artifact is prepared; final live
+  buyer and native payment acceptance remains NOT_RUN / PENDING.
+
 ## [v27.1.110] - 2026-11-12 - prepared source release: native payment policy and exact page layout
 
 - State the native GHL payment-component requirement across API, Playwright,
