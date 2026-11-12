@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Independent QC gate. Directive 24.2 row 9, 17.6-17.8, 24.4, 24.6. Stdlib only.
+"""Independent QC gate. Directive 24.2 row 9, 17.6-17.8, 24.4, 24.6.
+
+Stdlib only, no third-party packages. The one sibling import is the final-QC
+master measurement: ``platform_fit.probe_file`` (the ffprobe read routed
+through ``core/load_governor``), imported LAZILY inside ``_measure_master`` and
+only when a master is actually measured, so importing this module stays cheap.
 
 Decides whether a stage may advance on its QC verdict records. Fail-closed:
 - every required check needs a schema-valid record (validates against
