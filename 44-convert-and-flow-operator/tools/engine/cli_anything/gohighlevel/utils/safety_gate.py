@@ -85,13 +85,55 @@ def _fetch_record(approval_id: str) -> dict:
     return rec["approval"] if isinstance(rec, dict) and isinstance(rec.get("approval"), dict) else rec
 
 
+_HEX64 = re.compile(r"^(?:sha256:)?([0-9a-fA-F]{64})$")
+
+
+def _canon_hash(value) -> str:
+    """Bare lowercase 64-hex from '<hex>' or 'sha256:<hex>'; '' when it is neither."""
+    m = _HEX64.match(value.strip()) if isinstance(value, str) else None
+    return m.group(1).lower() if m else ""
+
+
+def _with_bound_fields(rec) -> dict:
+    """Fill location_id/action/object_key/plan_sha256/approver/verification_class from the
+    Command Center launch_approvals shape when the record does not carry them natively.
+
+    Command Center stores scope as a JSON string {"location_id","action","object_key"}, the
+    plan as plan_hash ('sha256:<hex>') and the verified owner as client_identity_ref. Native
+    fields always win. A scope that is not that JSON object (a chat-minted free-text scope)
+    yields nothing, so the missing fields keep the record 'malformed' and the write is refused.
+    The record was fetched from Command Center with the bearer token, which is what
+    authenticated_platform_record means, so that class is filled only for such a fetch.
+    """
+    if not isinstance(rec, dict):
+        return rec
+    out = dict(rec)
+    scope = out.get("scope")
+    if isinstance(scope, str):
+        try:
+            scope = json.loads(scope)
+        except ValueError:
+            scope = None
+    if isinstance(scope, dict):
+        for k in ("location_id", "action", "object_key"):
+            if k not in out and isinstance(scope.get(k), str):
+                out[k] = scope[k]
+    if "plan_sha256" not in out and "plan_hash" in out:
+        out["plan_sha256"] = out["plan_hash"]
+    if "approver" not in out and "client_identity_ref" in out:
+        out["approver"] = out["client_identity_ref"]
+    if "verification_class" not in out and isinstance(scope, dict) and "location_id" in out:
+        out["verification_class"] = "authenticated_platform_record"
+    return out
+
+
 def _require_approval(kind: str, location_id: str, action: str, object_key: str,
                       plan_sha256: str) -> dict:
     """Return the verified record or raise SafetyRefused naming the mismatched field."""
     if not (action and plan_sha256):
         raise SafetyRefused("WRITE REFUSED: the current action and plan sha256 are unknown "
                             "(set CAF_WRITE_ACTION and CAF_PLAN_SHA256); nothing to approve against.")
-    rec = _fetch_record(os.environ.get("CAF_APPROVAL_ID", "").strip())
+    rec = _with_bound_fields(_fetch_record(os.environ.get("CAF_APPROVAL_ID", "").strip()))
     if not isinstance(rec, dict) or any(k not in rec for k in _NEEDED):
         raise SafetyRefused("WRITE REFUSED: approval record is malformed.")
     bad = [name for name, ok in (
@@ -99,8 +141,8 @@ def _require_approval(kind: str, location_id: str, action: str, object_key: str,
         ("location_id", rec["location_id"] == location_id),
         ("action", rec["action"] == action),
         ("object_key", rec["object_key"] == object_key),
-        ("plan_sha256", isinstance(rec["plan_sha256"], str)
-         and hmac.compare_digest(rec["plan_sha256"], plan_sha256)),
+        ("plan_sha256", bool(_canon_hash(rec["plan_sha256"])) and bool(_canon_hash(plan_sha256))
+         and hmac.compare_digest(_canon_hash(rec["plan_sha256"]), _canon_hash(plan_sha256))),
         ("approver", isinstance(rec["approver"], str) and bool(rec["approver"].strip())),
         ("revoked", rec["revoked"] is False),
         ("verification_class", rec["verification_class"] == "authenticated_platform_record"),

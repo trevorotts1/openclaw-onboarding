@@ -30,12 +30,13 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # ── The wire contract (change here, nowhere else) ────────────────────────────
@@ -45,9 +46,9 @@ _LOOPBACK = ("localhost", "127.0.0.1", "::1")
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,128}$")
 
 # Response field spellings Command Center may use; first present wins.
-_F_REQUEST_ID = ("requestId", "request_id", "id")
-_F_URL = ("approvalUrl", "approval_url", "deepLink", "deep_link", "url")
-_F_APPROVAL_ID = ("approvalId", "approval_id")
+_F_REQUEST_ID = ("request_id", "requestId", "id")
+_F_URL = ("approval_url", "approvalUrl", "path")
+_F_APPROVAL_ID = ("approval_id", "approvalId")
 _F_STATUS = ("status", "state")
 
 EXIT_OK, EXIT_USAGE, EXIT_PENDING, EXIT_CHANGES, EXIT_EXPIRED, EXIT_CC = 0, 2, 3, 4, 5, 6
@@ -158,14 +159,25 @@ def _find_open(idem: str) -> dict:
 def request_approval(*, kind: str, location_id: str, action: str, object_key: str,
                      plan_sha256: str, summary: str, preview_text: str = "",
                      preview_url: str = "", skill: str = "", requested_by: str = "agent",
-                     expires_in_hours: int = 72) -> dict:
+                     title: str = "", valid_until: str = "", owner_hours: int = 0) -> dict:
     """Register a pending request (idempotent for the same plan) and return its record."""
     if not (kind and action and plan_sha256 and summary):
         raise ApprovalError("kind, action, plan_sha256 and summary are required.")
+    pv = {}
+    if preview_text:
+        pv["text"] = preview_text
+    if preview_url:
+        pv["links"] = [{"label": "Full preview", "url": preview_url}]
     body = {"kind": kind, "location_id": location_id, "action": action,
-            "object_key": object_key, "plan_sha256": plan_sha256, "summary": summary,
-            "preview_text": preview_text, "preview_url": preview_url, "skill": skill,
-            "requested_by": requested_by, "expires_in_hours": expires_in_hours}
+            "object_key": object_key, "plan_sha256": plan_sha256,
+            "title": (title or summary)[:200], "summary": summary[:4000],
+            "requested_by": requested_by}
+    if pv:
+        body["preview"] = pv
+    if valid_until:
+        body["valid_until"] = valid_until
+    if owner_hours:
+        body["expires_at"] = (datetime.now(timezone.utc) + timedelta(hours=owner_hours)).isoformat(timespec="seconds")
     idem = _idem_key(body)
     existing = _find_open(idem)
     if existing:                       # same plan already asked: never create a second request
@@ -177,7 +189,8 @@ def request_approval(*, kind: str, location_id: str, action: str, object_key: st
     if not rid or not url:
         raise ApprovalError("Command Center did not return a request id and an approval link.")
     rec = {"request_id": str(rid), "approval_url": _abs_url(str(url)), "status": "pending",
-           "approval_id": None, "idem": idem, "created_at": _now(), "last_reminded_at": None,
+           "approval_id": None, "idem": idem, "location_id": location_id, "object_key": object_key,
+           "plan_sha256": plan_sha256, "created_at": _now(), "last_reminded_at": None,
            "summary": summary, "preview_text": preview_text, "preview_url": preview_url,
            "kind": kind, "action": action, "skill": skill}
     _save(rec)
@@ -197,7 +210,7 @@ def check_status(request_id: str) -> dict:
     url = _first(resp, _F_URL)
     if url:
         rec["approval_url"] = _abs_url(str(url))
-    note = resp.get("note") or resp.get("changes_note") or ""
+    note = resp.get("decision_note") or resp.get("note") or ""
     if note:
         rec["note"] = str(note)
     aid = _first(resp, _F_APPROVAL_ID)
@@ -241,7 +254,11 @@ def _emit(rec: dict, args, extra: dict | None = None) -> None:
            if rec.get(k) is not None}
     out.update(extra or {})
     if getattr(args, "shell", False) and rec.get("status") == "approved":
-        print(f"export CAF_APPROVAL_ID={rec['approval_id']}")
+        # Bind the gate to exactly what was registered (the gate compares these to the record).
+        for var, key in (("CAF_APPROVAL_ID", "approval_id"), ("CAF_WRITE_ACTION", "action"),
+                         ("CAF_OBJECT_KEY", "object_key"), ("CAF_PLAN_SHA256", "plan_sha256")):
+            if rec.get(key) is not None:
+                print(f"export {var}={shlex.quote(str(rec[key]))}")
     else:
         print(json.dumps(out, indent=2))
 
@@ -261,7 +278,9 @@ def main(argv=None) -> int:
     r.add_argument("--preview-file", default="", help="file whose text is the owner preview")
     r.add_argument("--preview-url", default="")
     r.add_argument("--skill", default="")
-    r.add_argument("--expires-in-hours", type=int, default=72)
+    r.add_argument("--title", default="")
+    r.add_argument("--valid-until", default="", help="ISO end of the window being approved (e.g. end of the week)")
+    r.add_argument("--owner-hours", type=int, default=0, help="hours the owner has to answer (default: server 7d)")
     r.add_argument("--message", action="store_true", help="print the owner message instead of JSON")
     for name in ("message", "status", "wait"):
         if name == "message":
@@ -285,8 +304,8 @@ def main(argv=None) -> int:
             rec = request_approval(kind=a.kind, location_id=a.location_id, action=a.action,
                                    object_key=a.object_key, plan_sha256=a.plan_sha256,
                                    summary=a.summary, preview_text=preview,
-                                   preview_url=a.preview_url, skill=a.skill,
-                                   expires_in_hours=a.expires_in_hours)
+                                   preview_url=a.preview_url, skill=a.skill, title=a.title,
+                                   valid_until=a.valid_until, owner_hours=a.owner_hours)
             if a.message:
                 print(owner_message(rec))
             else:

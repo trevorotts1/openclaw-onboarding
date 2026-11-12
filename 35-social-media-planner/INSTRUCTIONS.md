@@ -237,7 +237,7 @@ Max 5 retry loops per gate (N6). Loop 6 → escalate to owner via Telegram.
 Posts are scheduled only after the owner approves the week through a record Command Center mints.
 The owner must always have a link to tap. Full steps: `shared-utils/owner_approval/README.md`.
 
-1. **Register:** `python3 ~/.openclaw/skills/shared-utils/owner_approval/owner_approval.py request --kind publish --action social_publish --object-key weekly-<monday-date> --plan-sha256 <hash of the week's plan> --skill 35 --summary "<plain English: what goes out, where, when>" --preview-file <the posts as text> --preview-url <sheet or PDF link>`
+1. **Register:** `python3 ~/.openclaw/skills/shared-utils/owner_approval/owner_approval.py request --kind automation_write --action social_publish --object-key weekly-<monday-date> --plan-sha256 <hash of the week's plan> --skill 35 --summary "<plain English: what goes out, where, when>" --preview-file <the posts as text> --preview-url <sheet or PDF link>`
 2. **Message the owner** (Telegram or chat) with the printed `owner_message`: plain summary, the actual posts (or a link), and the direct approve link, all in one message. Never send a bare "awaiting your approval".
 3. **Poll:** `owner_approval.py wait --request-id <id> --shell`. On exit 0 export the printed `CAF_APPROVAL_ID` and proceed. Never ask the owner again. Exit 4 = the owner asked for changes: revise and register a NEW request. Exit 5 = expired: register a new one. Exit 6 = Command Center unreachable: tell the owner plainly, do not proceed.
 4. **Owner replies "approved" in chat:** chat text is not approval. Answer at once with `owner_approval.py message --request-id <id> --chat-said-approved` (the one-tap link). Do not stall and do not schedule on the chat text.

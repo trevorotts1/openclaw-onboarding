@@ -13,9 +13,9 @@ Installed path: `~/.openclaw/skills/shared-utils/owner_approval/owner_approval.p
 1. **Register the request.** The agent hashes the plan it is asking about (`PLAN_SHA`, the same
    `CAF_PLAN_SHA256` the write gate will check) and runs:
    ```bash
-   python3 owner_approval.py request --kind publish --action social_publish \
+   python3 owner_approval.py request --kind automation_write --action social_publish \
      --object-key "weekly-2026-11-09" --plan-sha256 "$PLAN_SHA" --skill 35 \
-     --summary "Nine posts across Facebook, Instagram and LinkedIn, Nov 9-15, Black Friday theme." \
+     --title "Week of Nov 9: nine posts" --valid-until 2026-11-16T23:59:59Z --summary "Nine posts across Facebook, Instagram and LinkedIn, Nov 9-15, Black Friday theme." \
      --preview-file week-preview.txt --preview-url "$SHEET_OR_PDF_URL"
    ```
    It POSTs `{MISSION_CONTROL_URL}/api/approval-requests` with the bearer `MC_API_TOKEN`, saves
@@ -36,6 +36,9 @@ Installed path: `~/.openclaw/skills/shared-utils/owner_approval/owner_approval.p
 5. **Reminders re-send the link.** `python3 owner_approval.py message --request-id RID --reminder`
    prints the same summary, preview and link. Every reminder carries the link.
 
+Kinds: `caf` write commands (including `caf social create-post`) are checked as `automation_write`;
+use `--kind publish` only for the Skill 44 draft-off (go live) approval.
+
 ## Safety rules (unchanged)
 
 - The agent never mints approval. The helper only asks Command Center to create a PENDING request and
@@ -47,9 +50,17 @@ Installed path: `~/.openclaw/skills/shared-utils/owner_approval/owner_approval.p
   ("I could not open your Google Sheet because my Google sign-in expired") and put the preview
   inline in the message. The approval link is sent either way.
 
-## Contract assumed by the helper
+## Contract (Command Center `/api/approval-requests`, snake_case)
 
-`POST /api/approval-requests` returns `{requestId, approvalUrl}` (a relative `approvalUrl` is joined
-to `MISSION_CONTROL_URL`). `GET /api/approval-requests/{requestId}` returns
-`{status: pending|approved|changes_requested|expired, approvalId (approved only), approvalUrl, note}`.
-Field spellings and paths are constants at the top of `owner_approval.py`.
+`POST` (Bearer `MC_API_TOKEN`): `{kind: publish|automation_write, location_id, action, object_key, plan_sha256,
+title, summary, preview?: {text, links:[{label,url}], images:[https urls]}, requested_by?, expires_at? (how long
+the owner has to answer, default 7d), valid_until? (end of the window being approved, e.g. end of the week)}`
+returns `{request_id, status:"pending", path:"/approvals/<id>", approval_url (absolute, or null: path is used)}`.
+`GET /api/approval-requests/<id>` returns `{status: pending|approved|changes_requested|expired, approval_id
+(null until approved), decision_note, approval_url, path}`. Paths and field spellings are constants at the top of
+`owner_approval.py`. Use `--valid-until` for a weekly plan so the approval outlives the week it covers.
+
+`wait/status --shell` on approval prints four exports so the Skill 44 write gate binds to what was registered:
+`CAF_APPROVAL_ID`, `CAF_WRITE_ACTION`, `CAF_OBJECT_KEY`, `CAF_PLAN_SHA256` (`caf social create-post` reads
+them; nothing else sets them). Use `eval "$(owner_approval.py wait --request-id RID --shell)"`.
+Skills 35, 57 and 83 all use this one helper.

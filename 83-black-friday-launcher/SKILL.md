@@ -146,10 +146,10 @@ How the yes is collected (Skill 44/49 gate is unchanged, the agent never records
 printed message in the SAME turn (what will happen, a preview of the pages or messages, and the one-tap link), then
 `owner_approval.py wait --request-id <id> --shell` and carry the minted approval id forward. If the client says yes in
 chat, answer right away with the link (`message --chat-said-approved`). Reminders re-send the link. Never say "approve it
-in the Command Center" without the link, and never leave the client with only "awaiting your approval".
+in the Command Center" without the link, and never leave the client with only "awaiting your approval". A "yes" typed in chat is only a trigger to resend the link; it never counts as the approval.
 
 <!-- CLIENT-TEXT:BEGIN plan-review -->
-Here's the plan in plain words. If it looks right, just tell me yes, or tell me what you'd like to change.
+Here's the plan in plain words. If it looks right, tap this link and press Approve, or tell me what you'd like to change: [the approval link]
 <!-- CLIENT-TEXT:END -->
 
 When pages or messages are finished:

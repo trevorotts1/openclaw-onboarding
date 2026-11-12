@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import owner_approval as oa  # noqa: E402
 
-STATE = {"posts": 0, "status": "pending", "auth": []}
+STATE = {"posts": 0, "status": "pending", "auth": [], "bodies": []}
 
 
 class Fake(BaseHTTPRequestHandler):
@@ -28,11 +28,12 @@ class Fake(BaseHTTPRequestHandler):
 
     def do_POST(self):
         STATE["auth"].append(self.headers.get("Authorization"))
-        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        raw = self.rfile.read(int(self.headers.get("Content-Length", 0)))
         if self.path != "/api/approval-requests":
             return self._send(404, {})
         STATE["posts"] += 1
-        self._send(201, {"requestId": "req_abc123", "approvalUrl": "/approvals/req_abc123"})
+        STATE["bodies"].append(json.loads(raw or b"{}"))
+        self._send(201, {"request_id": "req_abc123", "status": "pending", "path": "/approvals/req_abc123", "approval_url": None})
 
     def do_GET(self):
         STATE["auth"].append(self.headers.get("Authorization"))
@@ -40,7 +41,7 @@ class Fake(BaseHTTPRequestHandler):
             return self._send(404, {})
         out = {"status": STATE["status"]}
         if STATE["status"] == "approved":
-            out["approvalId"] = "apr_12345678"
+            out["approval_id"] = "apr_12345678"
         self._send(200, out)
 
 
@@ -58,7 +59,7 @@ class T(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         os.environ.update(MISSION_CONTROL_URL=f"http://127.0.0.1:{self.srv.server_port}",
                           MC_API_TOKEN="tok_test", OWNER_APPROVAL_STATE_DIR=self.tmp)
-        STATE.update(posts=0, status="pending", auth=[])
+        STATE.update(posts=0, status="pending", auth=[], bodies=[])
 
     def req(self, **kw):
         base = dict(kind="publish", location_id="LOC1", action="social_publish", object_key="wk-46",
@@ -77,6 +78,28 @@ class T(unittest.TestCase):
         again = self.req()
         self.assertTrue(again["reused"])
         self.assertEqual(STATE["posts"], 1)
+
+    def test_body_matches_final_contract(self):
+        self.req(preview_url="https://x.test/p")
+        b = STATE["bodies"][0]
+        self.assertEqual(b["kind"], "publish")
+        self.assertEqual(b["preview"]["text"], "Post 1: hello")
+        self.assertEqual(b["preview"]["links"][0]["url"], "https://x.test/p")
+        for k in ("location_id", "action", "object_key", "plan_sha256", "title", "summary"):
+            self.assertIn(k, b)
+        self.assertNotIn("preview_text", b)
+
+    def test_shell_export_binds_gate_env(self):
+        import io, contextlib
+        rec = self.req()
+        STATE["status"] = "approved"
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            oa.main(["status", "--request-id", rec["request_id"], "--shell"])
+        out = buf.getvalue()
+        for line in ("export CAF_APPROVAL_ID=apr_12345678", "export CAF_WRITE_ACTION=social_publish",
+                     "export CAF_OBJECT_KEY=wk-46", "export CAF_PLAN_SHA256=" + "a" * 64):
+            self.assertIn(line, out)
 
     def test_changed_plan_makes_a_new_request(self):
         self.req()
