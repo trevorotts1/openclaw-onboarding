@@ -390,7 +390,7 @@ def visual_direction_violations(run_dir: Path, size: int) -> List[Tuple[str, str
             out.append((stub_code,
                         f"{PAGE_IMAGES_REL}/{PAGE_IMAGES_RECEIPT} records an UNAPPROVED stub run: the "
                         f"wireframes and mockups are placeholders and {problem}. Re-run with the real "
-                        "provider, or pass --stub-approved-by <Command Center stub_render approval id>."))
+                        "provider, or pass --stub-approved-by <stub_render approval id Command Center recorded; the owner can approve in chat, by button or on the link>."))
     for slug in required_page_types(size):
         if slug == "checkout" and slug not in claimed_pages and slug in not_built:
             continue  # design-only: the receipt names it as not built and says what it needs

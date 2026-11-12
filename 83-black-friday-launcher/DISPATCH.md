@@ -34,7 +34,7 @@ python3 -m launcher_core.cli check --manifest PACKAGE/package-manifest.json --ro
 
 1. The validated intake becomes a Skill 49 launch record (`launcher_core/launch_bridge.py`). Every offer,
    price and level is copied from the intake; nothing is invented. Skill 49's own validator must accept it.
-2. The client's recorded approval is carried to Skill 49's gate unchanged. A worker cannot approve its own
+2. The client's recorded approval (given in chat, by button or in Command Center) is carried to Skill 49's gate unchanged. A worker cannot approve its own
    plan, and a plan that changed after approval is refused.
 3. Skill 49 dispatches one request per page. `assemble` reads the result files the bridge lays in
    `RUN/pieces/<role>.json` (and `<slot>.json` for a second page of a role, such as `downsell_2`).
@@ -162,7 +162,12 @@ the rule reads the image provider from each page's design artifacts or its piece
 provider on a client delivery is itself a finding (`provider unknown`), and `launch_bridge` records the run's
 approved image provider on each piece whose result names none, so the stub rule can no longer be skipped by
 leaving the provider out (UPS-23 closed).
-The design board and the final mockups are recorded as `awaiting_client_approval` until the client approves.
+The design board and the final mockups are recorded as `awaiting_client_approval` until the client approves. The review
+material is delivered into the client's chat (copy inline, board, wireframe and mockup images or the review PDF
+attached) through `shared-utils/owner_approval/owner_approval.py request --kind design_board ... --deliver telegram`,
+and the client may approve in chat, by button or in Command Center; the Command Center record is what
+`design_board.py approve --approval-id <id>` (Skill 71) writes into the board record. A paid budget is the same
+path with `--kind paid_asset_budget`.
 
 ## Graphics department hooks
 

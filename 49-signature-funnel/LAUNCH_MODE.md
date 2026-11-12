@@ -106,3 +106,10 @@ orders its units by `waits_for` and refuses a cycle. This skill does not
 model provisioning, native install or workflow wiring as stages of its
 own: those belong to the skills that own them, and no launch-mode check
 stands in for them.
+
+## Owner approvals reach the owner in chat
+
+The plan approval and every scoped approval above are collected through shared-utils/owner_approval/owner_approval.py:
+the review material is delivered into the owner's chat (Telegram and the OpenClaw chat app), and the owner may approve by
+replying, by button, or in Command Center. The verifier (shared-utils/signature_launch_contract/approval_record.py) still
+accepts only a record fetched live from Command Center, so how the owner answered changes nothing about what is trusted.

@@ -1,3 +1,7 @@
+## [v2.1.59] - 2026-11-12 - owner approvals reach the owner in chat, by button, or in Command Center
+
+- Every owner approval point (plan, copy, Design Board, wireframes and mockups, paid budget, placeholder run, GHL write, go-live) delivers its review material into the owner chat (copy inline, images or PDF attached) through `shared-utils/owner_approval/owner_approval.py`, and the owner may approve by replying, by Telegram button, or in Command Center. `SKILL.md` and `LAUNCH_MODE.md` say so; the refusal wording in `dispatch_launch.py`, `legacy_downsell_images.py` and `prove_sf_build.py` no longer implies Command Center only. Pinned file change: the prover pin needs a CI mint.
+
 ## [v2.1.58] - 2026-11-12 - prover pin re-minted for owner-approval flow (no behavior change)
 
 ## [v2.1.57] - 2026-11-12 - front door finds the department map in the 999 layouts

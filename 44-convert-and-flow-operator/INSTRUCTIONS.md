@@ -260,16 +260,22 @@ PLAN MODE run file `plan-mode.json` next to the evidence root:
  "publish_intent": "DRAFT", "re_entry": "ONCE", "build_model": "<model that builds>"}
 ```
 
-**GETTING THE OWNER'S YES (BINDING — the owner always gets a link).** The record is minted by
-Command Center when the owner taps Approve on a page; there is no screen the owner must hunt for.
-Whenever any skill needs an approval, run the shared flow in `shared-utils/owner_approval/README.md`:
-(1) `owner_approval.py request ...` registers a pending request and returns the owner's one-tap
-link; (2) send the owner ONE message with a plain-English summary, a preview (the real content or a
-link to it) and that link; (3) `owner_approval.py wait --request-id <id> --shell` until Command
-Center reports approved, then export `CAF_APPROVAL_ID` and continue without asking again; (4) if the
-owner types "approved" in chat, reply at once with the link (`message --chat-said-approved`), never
-proceed on chat text; (5) reminders re-send the link, never a bare "awaiting approval". The agent
-never mints approval itself; the write gate still fetches and verifies the record.
+**GETTING THE OWNER'S YES (BINDING — the owner approves where they already are).** The record is minted by
+Command Center. The owner may approve in the chat they are using (Telegram or the OpenClaw chat app), by a
+Telegram button, or in Command Center; any one works and none is required. Whenever any skill needs an
+approval, run the shared flow in `shared-utils/owner_approval/README.md`:
+(1) `owner_approval.py request ... --view-url "<label>=<where the content lives>" --deliver telegram` registers a
+pending request and sends the owner ONE message: a plain-English summary, the real content inline, a
+"View it here" link to where it lives (Google Sheet, Doc, PDF or the Command Center preview), the three ways to
+answer and `Code: <first 6 characters of the request id>`; (2) when the owner replies in chat ("approve", "changes: ...") or taps a
+button, run `owner_approval.py chat-decision` with the reference of that real inbound message, and Command Center
+verifies and records it; relay a refusal reason plainly and re-send the link; (3) `owner_approval.py wait
+--request-id <id> --shell` until Command Center reports approved (from any of the three places), then export
+`CAF_APPROVAL_ID` and continue without asking again; (4) reminders re-send the same message, never a bare
+"awaiting approval". The agent never mints approval itself; the write gate still fetches and verifies the record.
+
+**Notices to the owner's own contact.** An SMS or email to the owner's own contact id (`CAF_OWNER_CONTACT_ID`, set at
+install) is not a business write and passes the gate without an approval record. Any other recipient still needs approval.
 
 A file the build agent wrote on its own is worthless: `qc-built-workflow.sh` asks the approval
 verifier to confirm the record, so an invented `approval_id` fails. Never guess an answer to make

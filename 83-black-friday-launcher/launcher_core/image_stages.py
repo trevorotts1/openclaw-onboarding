@@ -691,8 +691,11 @@ class _Page:
         rc, _ = self.call("design_board.py", "gate", self.run)
         if rc:  # no recorded, current client approval: stop here, final-mockups never starts
             raise Stop("awaiting_client_approval",
-                       "design-board: the client has not approved this page's Design Board; show them "
-                       "design-board/design-board.png, and record the approval with design_board.py approve. "
+                       "design-board: the client has not approved this page's Design Board; send them "
+                       "design-board/design-board.png IN CHAT (owner_approval.py request --kind design_board "
+                       "--preview-file design-board/design-board.png --deliver telegram, or attach it in the chat app) "
+                       "so they can approve there, by button or in Command Center, then record it with "
+                       "design_board.py approve --approval-id <the id Command Center gives back>. "
                        "final-mockups does not start without it")
 
     def generated_references(self) -> list:

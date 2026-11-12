@@ -253,3 +253,26 @@ The image chain runs before the board, so the first client look at the page's re
 approval of this board; the wireframe, mobile, layout-proof and image stages are not held for it.
 The client-judged mockup (`final-mockups`), the responsive build, the install and the publish all
 follow the approved board. The board needs `tesseract` on the box that validates it.
+
+## How the client sees and approves the board (chat first)
+
+The client is never made to leave their conversation. The board image, the page's copy (inline text) and, when
+wireframes or mockups are part of the review, those images or the review PDF are sent INTO the chat the client uses
+(Telegram, and the OpenClaw chat app) with a short plain summary and `Code: <first 6 characters of the request id>`:
+
+```
+python3 shared-utils/owner_approval/owner_approval.py request --kind design_board \
+  --action design_board_approve --object-key <page_role> --plan-sha256 <board sha256> --skill 71 \
+  --summary "<one plain sentence>" --preview-file <copy.md> --preview-file design-board/design-board.png \
+  --deliver telegram --target <client chat id>
+```
+
+Pass `--view-url "Design board PDF=<link>"` (repeatable; the review PDF, a Google Doc or Sheet, the Command Center preview) so every message and reminder carries a "View it here:" link beside the inline copy and attached images.
+
+The client may approve three ways, and any one is enough: reply in chat ("approve", "yes", "changes: ..."), tap the
+Approve button in Telegram, or use the Command Center link. A chat reply or button tap is handed to Command Center by
+`owner_approval.py chat-decision` with the reference of the real inbound message; Command Center verifies it and
+records the `design_board` approval. Then `design_board.py approve <run_dir> --approval-id <that id>` re-checks the
+record live (kind `design_board`, bound to this board's sha256, authority Command Center) and writes it into the board
+record, so a remade board needs a fresh approval and a made-up id records nothing. A change request ("changes: ...")
+remakes the board and the new board goes back into the chat. Something already approved is never asked again.

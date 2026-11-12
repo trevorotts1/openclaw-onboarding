@@ -1784,7 +1784,7 @@ caf --json social accounts            # GET /social-media-posting/{locationId}/a
 # CREATE / SCHEDULE a post (Tier 0).
 # IMPORTANT: caf's safety gate REFUSES every write unless CAF_APPROVAL_ID names an owner
 # approval record that Command Center minted for exactly this plan (an env token is NOT
-# approval). Get it from the owner approval flow (INSTRUCTIONS.md "Owner approval flow",
+# approval). Get it from the owner approval flow (INSTRUCTIONS.md "Owner approval flow": the owner approves in chat, by button or in Command Center;
 # shared-utils/owner_approval/README.md), then scope it to THIS social-post call:
 CAF_APPROVAL_ID="<id from owner_approval.py wait --shell>" CAF_WRITE_ACTION=social_publish \
 CAF_PLAN_SHA256="<plan sha>" CAF_OBJECT_KEY="<weekly-YYYY-MM-DD>" \
