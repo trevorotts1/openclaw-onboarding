@@ -19,11 +19,17 @@ Proves, against a local fake studio (stdlib `http.server`, no network):
      key BEFORE any module import or request
   7  link --new stores client.url 0600 and prints it; a plain link re-reads
      the stored value without touching the server again
+  8  a reply count that cannot complete the card's question list asks the
+     client for a second look (`needs_you`), never cancels the order, and puts
+     both counts on the operator's stderr line; a 409 (the claim post itself was
+     refused, so the order is still `waiting`) is accepted and logged
 
 Run: python3 checks/test_poll.py
 Exit: 0 all pass · 1 at least one failed
 """
 import http.server
+import contextlib
+import io
 import json
 import os
 import pathlib
@@ -49,7 +55,7 @@ ENROLL_KEY = "enroll-" + "b" * 40
 MACHINE_KEY = "machine-" + "c" * 40
 LINK_URL = "https://studio.example/#k=" + "d" * 32
 ENROLL_SECRET = "fleet-enrollment-secret-fixture"
-STUDIO = {"line": None, "order": {}, "seen": []}
+STUDIO = {"line": None, "order": {}, "seen": [], "needs_you_409": False}
 
 
 def _mode(path):
@@ -98,6 +104,12 @@ class _FakeStudio(http.server.BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "checked_in_at": 1,
                                     "line": STUDIO["line"]})
         if path.endswith("/state") and "/orders/" in path:
+            if body.get("event") == "needs_you" and STUDIO["needs_you_409"]:
+                # The order never left `waiting` (its claim post was refused),
+                # and lifecycle.js has no waiting -> needs_you move.
+                return self._send(409, {"ok": False,
+                                        "code": "AF-DS-STATE-ILLEGAL",
+                                        "message": "waiting cannot move to needs_you."})
             return self._send(200, {"ok": True, "order": {"state": "claimed"}})
         if "/orders/" in path:
             return self._send(200, {"ok": True, "order": STUDIO["order"]})
@@ -133,6 +145,7 @@ class PollBridgeTests(unittest.TestCase):
         STUDIO["line"] = None
         STUDIO["order"] = {}
         STUDIO["seen"] = []
+        STUDIO["needs_you_409"] = False
 
     def _stub_skill_root(self):
         """A skill root whose factory.py records its argv and nothing else."""
@@ -322,6 +335,40 @@ class PollBridgeTests(unittest.TestCase):
         done = self.poll(DS_KEY=MACHINE_KEY)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertEqual(done.stdout, "")                # execution-accepted: silent
+
+    # -- 8 a count short of the card asks the client, never cancels -----------
+
+    def test_mismatch_asks_the_client_instead_of_cancelling(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = bridge._refuse_mismatch(self.base, MACHINE_KEY,
+                                           "r_mismatch01", (3, 5))
+        self.assertEqual(code, bridge.EXIT["refused"])
+        posts = [r for r in STUDIO["seen"] if r["path"].endswith("/state")]
+        self.assertEqual(len(posts), 1, posts)
+        self.assertEqual(posts[0]["body"]["event"], "needs_you")
+        self.assertEqual(posts[0]["body"]["reason"],
+                         "A few of your answers need a second look. "
+                         "Open your studio page and tap Continue.")
+        self.assertNotIn("cancel", [r["body"].get("event") for r in posts])
+        stderr = err.getvalue()
+        self.assertIn("REPLAY_QUESTION_MISMATCH", stderr)
+        self.assertIn("3 replies", stderr)
+        self.assertIn("5 questions", stderr)
+        # control on the SAME function: the order never left `waiting` (its
+        # claim post was refused), so the service answers 409 - accepted and
+        # logged, never a different event and never a failed poll
+        STUDIO["seen"] = []
+        STUDIO["needs_you_409"] = True
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            again = bridge._refuse_mismatch(self.base, MACHINE_KEY,
+                                            "r_mismatch02", (2, 6))
+        self.assertEqual(again, bridge.EXIT["refused"])
+        events = [r["body"].get("event") for r in STUDIO["seen"]
+                  if r["path"].endswith("/state")]
+        self.assertEqual(events, ["needs_you"])
+        self.assertIn("409", err.getvalue())
 
     def test_poll_without_a_key_refuses(self):
         p = self.poll()
