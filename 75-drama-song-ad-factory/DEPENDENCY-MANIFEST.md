@@ -1,11 +1,6 @@
 # Dependency manifest — drama-song-ad-factory
 
-Scaffold (W1-07). Exact pins and hashes are completed at release time (W5-02)
-after W1-06 reconciles Skill 68 and after clean-install verification in both
-distributions per directive 2.4. Rule: clean installs receive the actual
-provider/helper dependencies they invoke; references to onboarding Skills
-66/67/68/74 do not install them. Preflight fails with an actionable error
-if a required helper is absent.
+**Status: historical planning page, last accurate on 2026-10-07. Do not install from it.** The list a box is checked against is `PREREQS.json` in this folder. The control entry point is `scripts/core/intake_preflight/factory.py`.
 
 Source of helper identities: directive section 5.1.
 Source of bundled registry gap: `CONTROL/bundled-skills.txt` in 999-setup
@@ -62,7 +57,7 @@ absent (INSTALL-CONTRACT Rule 16, build-directive section 2.4).
 | Skill 74 (`74-kie-live-adapter`) | v1.1.2 | `a8cb84590e6b1d487002ae7d4b6ac812eb46a6b6` | Paid transport: discovery, schemas, upload, submit, poll, credits (shadow-first) | versioned package or generated bundle — NOT a bare reference |
 | Skill 07 (`07-kie-setup`) | v7.1.1 | `0c7396a55b2d1f888a6a2f93f79e8a33c66722c9` | KIE account setup / credential context | existing install path (`install.sh` / `update-skills.sh`) |
 | Skill 46 (`46-kie-callback-relay`) | v2.1.0 | `d547170894c605e26912901a7c922ac7d149606c` | Async KIE callback relay | existing install path |
-| Skill 30 (`30-fish-audio-api-reference`) | v7.0.0 | `c4b12d28ff1513e252280436aa63aa35657217a5` | Fish Audio spoken voice (preferred; no new ElevenLabs dependency) — optional path | existing install path |
+| Skill 30 (`30-fish-audio-api-reference`) | v7.0.0 | `c4b12d28ff1513e252280436aa63aa35657217a5` | Not used by drama song ads (see PREREQS.json) | existing install path |
 | Skill 24 (`24-storyboard-writer`) | v7.0.1 | `bf3bf41f4c191ca3790421eccbfa4de6b21a88ca` | Canonical storyboard/shot-planning reuse (directive 25 step 3) | existing install path |
 | Skill 25 (`25-video-creator`) | v7.1.2 | `642651ff9b6aed77ba668e9d63b181c943646789` | FFmpeg-based video work | existing install path |
 | Skill 27 (`27-video-editor`) | v7.0.1 | `60bc98dbc7e659b7c62c332551d6bc2c9686b9c5` | FFmpeg-based ordinary editing | existing install path |
@@ -80,21 +75,7 @@ absent (INSTALL-CONTRACT Rule 16, build-directive section 2.4).
 
 ## 4. 999 bundled-skills registry
 
-`CONTROL/bundled-skills.txt` (audited snapshot, 8 entries):
-`nine-router-setup`, `spec-protocol`, `kaizen`, `eli5`, `bro`,
-`blackceo-signature-page`, `hook-skill`, `kiss`.
-
-Gaps (verified 2026-10-06):
-
-- `motion-video-plus` source EXISTS at
-  `.claude/skills/motion-video-plus/` (with `adapters/claude-nine`,
-  `adapters/claude-code`, `adapters/codex`, `VERSION` = `1.0.2`) but is
-  ABSENT from `bundled-skills.txt` — source presence is not proof of
-  automatic installation (directive 2.4).
-- `drama-song-ad-factory` is absent (expected — not yet built).
-
-W3-03 inspects and updates the installer/bundled-skill registries, including
-`CONTROL/bundled-skills.txt` if it remains the canonical mechanism.
+The 999 bundle list is `CONTROL/bundled-skills.txt` in the 999-setup repository. It lists `drama-song-ad-factory`, `drama-studio` and `motion-video-plus`. Read that file for the current list; this page does not repeat it.
 
 ## 5. Standard library first
 
