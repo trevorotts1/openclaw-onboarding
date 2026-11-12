@@ -2777,11 +2777,14 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
 #
 # SAFETY POSTURE (mirrors _write_provisioning_receipt): a retire failure must
 # never silently shrink the floor AND never crash the build. On a NON-ZERO
-# retire rc (provenance gate refused, archive failed) the declined department
-# STAYS BUILT: this function ADDS the slug back to selected_departments (from
-# the canonical floor metadata) so the apply-diff build keeps it and the box
-# is visibly over-provisioned rather than silently under-provisioned — the
+# retire rc (provenance gate refused, roster step failed, archive failed) a
+# declined department whose tree is STILL ON DISK stays built: the slug is
+# added back to selected_departments from the canonical floor metadata (or the
+# pack entry, for a universal department) so the box is visibly
+# over-provisioned rather than silently under-provisioned — the
 # fail-safe-to-the-LARGER-floor posture, identical to the decline reader's.
+# BU-56: a tree the retire run already archived is NOT re-added (that would
+# create a board entry with no tree); both lists are logged.
 _RETIRE_SCRIPT = os.path.normpath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "retire-confirmed-decline.sh",
@@ -2797,17 +2800,85 @@ def _retire_standard_first_declines(build_state, declined_norm_set, selected_dep
     declined ids itself from the SAME shared build-state, so nothing is passed
     but the state-file path (and the explicit isolation overrides under a
     sandboxed state path). Best-effort + fail-safe: never raises; a non-zero
-    rc keeps every declined department in the build by RE-ADDING it to
-    `selected_departments` from the canonical floor metadata (fail-safe to the
-    LARGER floor — identical posture to the decline reader).
+    rc RE-ADDS each declined department whose tree is still on disk under
+    DEPARTMENTS_DIR (BU-56: the roster step now runs before the archive, so a
+    failure there leaves every tree in place) and leaves an already-archived
+    one out rather than inventing a tree-less board entry. Both lists are
+    logged. No database is ever discovered: only an explicit
+    DASHBOARD_DB_PATH/DATABASE_PATH is forwarded as --db.
     """
+    def _folder_present(cid):
+        """True when the department's tree still exists under DEPARTMENTS_DIR.
+
+        Mirrors _canonical_present()'s candidate set (canonical id, its legacy
+        alias, its variant slugs): the retire script archives whichever raw
+        slug the state carried, so any of those names still on disk means the
+        tree was NOT moved.
+        """
+        if not DEPARTMENTS_DIR:
+            return False
+        for _cand in ((cid, CANONICAL_ID_ALIASES.get(cid, cid))
+                      + tuple(CANONICAL_VARIANT_SLUGS.get(cid, []))):
+            if os.path.isdir(os.path.join(DEPARTMENTS_DIR, _cand)):
+                return True
+        return False
+
     def _keep_declined_built(reason):
+        """Re-add a declined department ONLY when its tree is still on disk.
+
+        BU-56: the retire path now runs the agent-roster step BEFORE the
+        archive (so a concurrent-config failure moves nothing). If it fails
+        after that, the declined tree is still under DEPARTMENTS_DIR and the
+        build must keep it (fail-safe to the LARGER floor). If the tree is
+        already archived, re-adding it would create a board entry with no
+        tree, so it is deliberately NOT re-added — both lists are logged.
+        """
         floor = load_canonical_floor()
+        packs = _load_vertical_packs()
+        readded, not_readded = [], []
         for cid, info in floor.items():
-            if _decline_norm(cid) in declined_norm_set and not _canonical_present(cid, selected_departments):
-                selected_departments[cid] = dict(info)
-        print(f"[RETIRE] {reason} — declined departments {sorted(declined_norm_set)} "
-              f"STAY BUILT (fail-safe to the larger floor).", file=sys.stderr)
+            if _decline_norm(cid) not in declined_norm_set:
+                continue
+            if _canonical_present(cid, selected_departments):
+                continue
+            if not _folder_present(cid):
+                not_readded.append(cid)
+                continue
+            selected_departments[cid] = dict(info)
+            readded.append(cid)
+        for uid in _universal_primary_ids():
+            if _decline_norm(uid) not in declined_norm_set:
+                continue
+            if _canonical_present(uid, selected_departments):
+                continue
+            if not _folder_present(uid):
+                if uid not in not_readded:
+                    not_readded.append(uid)
+                continue
+            if uid in floor:
+                up_info = floor[uid]
+            else:
+                up_info = None
+                for _pack in (packs or {}).values():
+                    if not isinstance(_pack, dict):
+                        continue
+                    for _d in (_pack or {}).get("auto_add_departments", []) or []:
+                        if isinstance(_d, dict) and _d.get("id") == uid:
+                            up_info = _d
+                            break
+                    if up_info:
+                        break
+            selected_departments[uid] = {
+                "name": (up_info or {}).get("name", uid.replace("-", " ").title()),
+                "emoji": (up_info or {}).get("emoji", "\U0001f4c1"),
+                "head": (up_info or {}).get("head", f"Director of {uid}"),
+                "description": (up_info or {}).get("description", ""),
+            }
+            readded.append(uid)
+        print(f"[RETIRE] {reason} — re-added {sorted(readded)} "
+              f"(folder still on disk; fail-safe to the larger floor); "
+              f"not re-added {sorted(not_readded)} (no folder left to keep).",
+              file=sys.stderr)
 
     if not declined_norm_set:
         return
@@ -2834,6 +2905,19 @@ def _retire_standard_first_declines(build_state, declined_norm_set, selected_dep
     # folder slug, state/config identity and the explicit database company row.
     if COMPANY_DIR:
         cmd += ["--company-dir", str(COMPANY_DIR)]
+    # BU-56: never DISCOVER a database here. Only an explicit database already
+    # present in the build's own environment is handed over, as an explicit
+    # --db flag (the roundtrip rule: "The apply step must receive this same
+    # explicit database, never ambient discovery"). When neither variable is
+    # set, pass nothing AND clear them from the child environment so the callee
+    # cannot pick one up ambiently; the retire script then records the lane
+    # step as pending (ccLanePending) instead of refusing the retirement.
+    _retire_db = os.environ.get("DASHBOARD_DB_PATH") or os.environ.get("DATABASE_PATH") or ""
+    if _retire_db:
+        cmd += ["--db", _retire_db]
+    else:
+        _retire_env.pop("DASHBOARD_DB_PATH", None)
+        _retire_env.pop("DATABASE_PATH", None)
     try:
         import subprocess as _retire_sp
         _retire_proc = _retire_sp.run(cmd, timeout=600, env=_retire_env,
@@ -2841,9 +2925,12 @@ def _retire_standard_first_declines(build_state, declined_norm_set, selected_dep
         rc = _retire_proc.returncode
         if rc == 0:
             print(f"[RETIRE] retire-confirmed-decline.sh retired "
-                  f"{sorted(declined_norm_set)} (archive-only; lanes dropped; "
-                  f"chosen artifact annotated).", file=sys.stderr)
+                  f"{sorted(declined_norm_set)} (archive-only; lanes dropped "
+                  f"where an explicit database was given; chosen artifact "
+                  f"annotated).", file=sys.stderr)
             for _line in (_retire_proc.stderr or "").strip().splitlines():
+                print(f"[RETIRE]   {_line}", file=sys.stderr)
+            for _line in (_retire_proc.stdout or "").strip().splitlines():
                 print(f"[RETIRE]   {_line}", file=sys.stderr)
         else:
             for _line in (_retire_proc.stderr or _retire_proc.stdout or "").strip().splitlines():
