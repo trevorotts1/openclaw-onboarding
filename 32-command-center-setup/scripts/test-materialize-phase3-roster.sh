@@ -78,9 +78,14 @@ JSON
   mkdir -p "$ROOT/workspace/departments"
 }
 
-# make_db full|bare — full has the workspaces + agents tables and two
-# departments; bare has one unrelated table (so the file is not a 0-byte decoy)
-# and NO workspaces table.
+# make_db full|bare — full has the workspaces + agents tables; bare has one
+# unrelated table (so the file is not a 0-byte decoy) and NO workspaces table.
+# Full seeds the two department rows in the table AND one extra department row
+# (ws-extra, "Extra") that is in the table but NOT in the roster file: case 1
+# asserts it stays empty, proving Phase 3 ran from the roster it was given
+# rather than the workspaces table. It also seeds the fixed-identity
+# non-department rows Phase 3's fallback must not write sub-agents into
+# (structural default, setup General lane, no-fit catch-all).
 make_db() {
   python3 - "$DB" "$1" <<'PY'
 import sqlite3
@@ -103,12 +108,14 @@ if mode == "full":
         "INSERT INTO workspaces (id, name, slug) VALUES (?, ?, ?)",
         [("ws-marketing", "Marketing", "marketing"),
          ("ws-sales", "Sales", "sales"),
+         # Present in the table but NOT in the roster file — must stay empty in
+         # case 1 (manifest path) and gain rows in case 2 (fallback path).
+         ("ws-extra", "Extra", "extra"),
          # Non-department rows the Command Center seeds under fixed identities
-         # (structural default, setup General lane, engine lane, no-fit
-         # catch-all). Phase 3's fallback must not write sub-agents into these.
+         # (structural default, setup General lane, no-fit catch-all). Phase
+         # 3's fallback must not write sub-agents into these.
          ("default", "General", "default"),
          ("testco-general", "General", "testco-general"),
-         ("podcast", "Podcast", "podcast"),
          ("general-task", "General Task", "general-task")],
     )
 elif mode == "bare":
@@ -161,9 +168,29 @@ finally:
 PY
 }
 
+# agent_rows_for_workspace <id>: sub-agent rows on one workspace. Proves Phase 3
+# read the roster (manifest path) rather than the workspaces table: a workspace
+# row present in the table but absent from the roster must stay empty.
+agent_rows_for_workspace() {
+  python3 - "$DB" "$1" <<'PY'
+import sqlite3
+import sys
+
+con = sqlite3.connect(sys.argv[1])
+try:
+    print(con.execute(
+        "SELECT COUNT(*) FROM agents WHERE workspace_id = ?", (sys.argv[2],)
+    ).fetchone()[0])
+except sqlite3.Error:
+    print(-1)
+finally:
+    con.close()
+PY
+}
+
 # non_department_row_count: sub-agent rows Phase 3 wrote into the fixed-identity
 # non-department rows make_db full seeds (structural default, setup General lane,
-# engine lane, no-fit catch-all). Must be 0 — the fallback returns departments only.
+# no-fit catch-all). Must be 0 — the fallback returns departments only.
 non_department_row_count() {
   python3 - "$DB" <<'PY'
 import sqlite3
@@ -173,7 +200,7 @@ con = sqlite3.connect(sys.argv[1])
 try:
     print(con.execute(
         "SELECT COUNT(*) FROM agents WHERE workspace_id IN "
-        "('default', 'testco-general', 'podcast', 'general-task')"
+        "('default', 'testco-general', 'general-task')"
     ).fetchone()[0])
 except sqlite3.Error:
     print(-1)
@@ -233,6 +260,12 @@ if [[ "$_calls" -eq 2 ]]; then
 else
   bad "case 1: expected 2 scaffolder calls, found $_calls"
 fi
+_extra1="$(agent_rows_for_workspace ws-extra)"
+if [[ "$_extra1" -eq 0 ]]; then
+  ok "case 1: ws-extra (in table, not in roster) stayed empty — Phase 3 ran from the roster"
+else
+  bad "case 1: expected 0 rows on ws-extra, found $_extra1"; show_output
+fi
 if [[ -f "$ROOT/.materialize-dept-agents.manifest" ]]; then
   bad "case 1: roster file still present after the run"
 else
@@ -255,20 +288,20 @@ else
   ok "case 2: no unreadable-roster warning"
 fi
 _rows="$(agent_row_count)"
-if [[ "$_rows" -eq 8 ]]; then
-  ok "case 2: Phase 3 wrote 8 sub-agent rows from the workspaces table"
+if [[ "$_rows" -eq 12 ]]; then
+  ok "case 2: Phase 3 wrote 12 sub-agent rows from the workspaces table (3 depts)"
 else
-  bad "case 2: expected 8 sub-agent rows, found $_rows"; show_output
+  bad "case 2: expected 12 sub-agent rows, found $_rows"; show_output
 fi
 _ws="$(agent_workspace_count)"
-if [[ "$_ws" -eq 2 ]]; then
-  ok "case 2: rows landed on the 2 departments in the table"
+if [[ "$_ws" -eq 3 ]]; then
+  ok "case 2: rows landed on the 3 departments in the table (ws-extra included)"
 else
-  bad "case 2: expected rows on 2 departments, found $_ws"
+  bad "case 2: expected rows on 3 departments, found $_ws"
 fi
 _nd="$(non_department_row_count)"
 if [[ "$_nd" -eq 0 ]]; then
-  ok "case 2: no rows on non-department workspaces (default/testco-general/podcast/general-task)"
+  ok "case 2: no rows on non-department workspaces (default/testco-general/general-task)"
 else
   bad "case 2: expected 0 rows on non-department workspaces, found $_nd"; show_output
 fi
