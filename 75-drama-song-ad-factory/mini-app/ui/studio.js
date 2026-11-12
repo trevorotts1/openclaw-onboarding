@@ -31,7 +31,6 @@
 // =============================================================================
 import { studio, serviceConnected, ServiceUnavailableError } from "./api-client.js";
 import { encode, toElement } from "./qr.js";
-import { verifyDownload, triggerSave } from "./download.js";
 
 // ── sibling modules, each owned by another unit ──────────────────────────────
 // service-client.js (W1-studio-page-U1) installs globalThis.studioService;
@@ -141,7 +140,6 @@ const state = {
   agnesProgress: null,          // session.agnes_progress — the Agnes job's record
   locked: false,
   delivery: null,
-  deliveryVerdict: null,
 };
 
 // ── which screens are on: the `shows_when` the card exports (SPEC B1) ────────
@@ -723,12 +721,17 @@ function pageProject() {
   if (url) {
     nodes.push(el("div", { class: "card" }, [
       el("h2", { text: "Your finished video" }),
-      el("p", {}, [el("a", { href: url, rel: "noopener", text: url })]),
       el("div", { class: "actions" }, [primary("Watch it now", () => {
-        state.delivery = { masterUrl: url, clips: [], qrPayload: url };
-        state.deliveryVerdict = null;
+        // The delivery screen is a player now, so it needs the one thing it
+        // cannot look up itself: whether the link still stands (the service
+        // reports `availability` beside the order, never as an order state).
+        state.delivery = {
+          masterUrl: url, clips: [], qrPayload: url,
+          availability: order.availability || "available",
+        };
         setPage("delivery");
       })]),
+      el("p", {}, [el("a", { href: url, rel: "noopener", download: "", text: "Open my video" })]),
     ]));
   }
 
@@ -758,54 +761,43 @@ function qrSurface(url, what) {
   return wrap;
 }
 
+// The delivery screen: a player the client can watch, and one plain link that
+// saves the file. Nothing here measures the link — a page cannot tell a client
+// anything useful about bytes or header names, and a button that refuses to
+// work until a check passed is a button that does not work (S75-070).
 function pageDelivery() {
   const d = state.delivery;
   if (!d) {
     return [
       el("h1", { text: "Your finished video" }),
-      el("p", { class: "muted", text: "Nothing is ready to watch yet. Your premiere lands here the moment the studio finishes." }),
-      el("div", { class: "card" }, [
-        el("h2", { text: "Where it will be" }),
-        el("p", { text: "The finished video, the 60- and 90-second clips, a ready-to-post kit and a code you can scan to watch on your phone." }),
-      ]),
+      el("p", { class: "muted", text: "Your finished video will appear here. You will also get a message when it is ready." }),
     ];
   }
 
-  const verdict = state.deliveryVerdict;
-  const checkBtn = secondary("Check the download before saving", async () => {
-    announce("Checking the download…");
-    state.deliveryVerdict = await verifyDownload(d.masterUrl, {
-      fetchImpl: (...args) => (
-        serviceConnected() && globalThis.studioService.fetchDelivery
-          ? globalThis.studioService.fetchDelivery(...args)
-          : fetch(...args)
-      ),
-      expectedBytes: d.masterBytes ?? null,
-    });
-    announce(state.deliveryVerdict.ok
-      ? "That link gives a real file. You can save it."
-      : "That link is not a real download. See the note above the button.");
-    render();
-  });
-
-  const saveBtn = primary("Download my video", () => {
-    triggerSave(d.masterUrl, "05 - Video Captioned.mp4");
-    announce("Saving your video.");
-  });
-  if (!verdict?.ok) {
-    saveBtn.disabled = true;
-    saveBtn.setAttribute("aria-disabled", "true");
-    saveBtn.title = "Check the link first — a redirect is not a download";
+  // The studio's storage link lasts 7 days after delivery; the video itself
+  // stays in the client's own media library, so the page says what to do next.
+  if (d.availability === "r2-expired") {
+    return [
+      el("h1", { text: "Your finished video" }),
+      el("p", { text: "This download link ended 7 days after delivery. Your video is still in your own media library. Ask us for a fresh link." }),
+    ];
   }
 
   return [
     el("h1", { text: "Your finished video" }),
-    verdict && !verdict.ok ? el("p", { class: "refusal", text: `This link is not an actual download: ${verdict.reasons.join("; ")}.` }) : null,
-    verdict?.ok ? el("p", { class: "complete", text: `Real file: ${verdict.receivedBytes} bytes, ${verdict.contentType}.` }) : null,
     el("div", { class: "card" }, [
       el("h2", { text: "Watch and save" }),
-      el("p", { text: "Check the link first. A link that only redirects is not a download — you would get a page instead of your video." }),
-      el("div", { class: "actions" }, [checkBtn, saveBtn]),
+      el("video", { controls: true, playsinline: true, preload: "metadata", src: d.masterUrl }),
+      el("div", { class: "actions" }, [
+        el("a", {
+          class: "btn",
+          href: d.masterUrl,
+          download: "05 - Video Captioned.mp4",
+          rel: "noopener",
+          text: "Download my video",
+        }),
+      ]),
+      el("p", { class: "muted", text: "If the video opens in a new tab instead of saving, press and hold it and choose Save." }),
     ]),
     d.clips?.length ? el("div", { class: "card" }, [
       el("h2", { text: "Clips for social media" }),
