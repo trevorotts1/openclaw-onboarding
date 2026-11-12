@@ -53,7 +53,15 @@ FAKE_ADAPTER = textwrap.dedent('''
 
     if cmd == "credits":
         out({"state": "success", "data": {"credits": 1000 - 4 * n}})
+    elif cmd == "upload":
+        name = Path(sys.argv[sys.argv.index("--file") + 1]).name
+        if os.environ.get("FAKE_UPLOAD_FAIL"):
+            out({"state": "fail", "error": {"code": "bad_file", "msg": "upload refused"}, "data": {}}, 1)
+        out({"state": "success", "data": {"download_url": "https://example.invalid/up/" + name}})
     elif cmd == "submit":
+        if os.environ.get("FAKE_REQ_LOG"):
+            req = json.loads(Path(sys.argv[sys.argv.index("--request") + 1]).read_text())
+            Path(os.environ["FAKE_REQ_LOG"]).write_text(json.dumps(req["input"].get("input_urls")))
         if os.environ.get("FAKE_FAIL"):
             out(envelope(state="fail", task_id=None,
                          error={"code": os.environ.get("FAKE_FAIL_CODE", "provider_error"),
@@ -107,7 +115,7 @@ class CapAndReceipts(unittest.TestCase):
         doc = {} if cap is None else {"image_cap": cap}
         (self.run_dir / "intake.json").write_text(json.dumps(doc), encoding="utf-8")
 
-    def render(self, n):
+    def render(self, n, references=()):
         provider = exe.KieProvider(self.adapter, self.run_dir)
         # F21: the job carries its identity, so the ledger row is scoped to this target.
         # F18: the paid boundary freezes and re-checks the prompt; use an in-band prompt
@@ -121,7 +129,7 @@ class CapAndReceipts(unittest.TestCase):
         out = self.run_dir / "visual-mockup" / slot
         job = {"stage": "visual-mockup", "index": n, "out": out, "final": out,
                "run_dir": self.run_dir, "slot": slot, "identity": ident,
-               "width": 1440, "height": 760, "prompt": "x" * 19500, "references": []}
+               "width": 1440, "height": 760, "prompt": "x" * 19500, "references": list(references)}
         return provider.generate(job, request), out
 
     def adapter_calls(self):
@@ -136,6 +144,34 @@ class CapAndReceipts(unittest.TestCase):
         self.assertEqual(self.adapter_calls(), 2, "the refused render must not reach the provider")
         ledger = json.loads((self.run_dir / exe.LEDGER).read_text(encoding="utf-8"))["calls"]
         self.assertEqual([c["status"] for c in ledger], ["done", "done"])
+
+    def test_local_reference_files_are_uploaded_before_the_paid_submit(self):
+        # KIE refuses a local path in input_urls ("Only http/https URLs or data:image base64 are
+        # supported"), which blocked every mobile-tablet slice that attaches its desktop pixel-mate.
+        log = self.td / "sent-urls.json"
+        os.environ["FAKE_REQ_LOG"] = str(log)
+        self.addCleanup(os.environ.pop, "FAKE_REQ_LOG", None)
+        slice_png = self.td / "section-01.png"
+        slice_png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"slice")
+        hosted = "https://example.invalid/standing/sheet.png"
+        result, _ = self.render(1, references=[hosted, str(slice_png)])
+        self.assertTrue(result["delivered"])
+        self.assertEqual(json.loads(log.read_text()),
+                         [hosted, "https://example.invalid/up/section-01.png"],
+                         "a local reference must reach KIE as its uploaded URL, URLs unchanged, same order")
+
+    def test_a_failed_reference_upload_refuses_before_any_paid_call(self):
+        os.environ["FAKE_UPLOAD_FAIL"] = "1"
+        self.addCleanup(os.environ.pop, "FAKE_UPLOAD_FAIL", None)
+        slice_png = self.td / "section-01.png"
+        slice_png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"slice")
+        with self.assertRaises(exe.ExecutorError) as ctx:
+            self.render(1, references=[str(slice_png)])
+        self.assertIn("no paid render was made", str(ctx.exception))
+        with self.assertRaises(exe.ExecutorError):
+            self.render(1, references=[str(self.td / "missing.png")])
+        self.assertEqual(self.adapter_calls(), 0, "no submit may follow a failed upload")
+        self.assertFalse((self.run_dir / exe.LEDGER).exists(), "nothing may be reserved")
 
     def test_paid_run_without_an_approved_cap_is_refused(self):
         self.set_cap(None)
