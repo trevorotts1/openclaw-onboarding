@@ -358,7 +358,7 @@
     {
       "id": "P-SP-INTAKE",
       "order": 0.15,
-      "name": "Signature-Presentation Intake Gate (8 Questions in ONE block + frame)",
+      "name": "Signature-Presentation Intake Gate (8 Questions asked one at a time, recorded as one atomic record, plus the frame)",
       "owning_role": "signature-presentation-architect",
       "sop_refs": [
         "signature-presentation-architect-sops.md"
@@ -374,7 +374,7 @@
       "preflight": {
         "required": true,
         "checker": "_chk_sp_intake",
-        "label": "signature-presentation intake gate (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED): the 8 Questions delivered in ONE block + a set frame (rulebook|vault|quest|original) + the q7 offer(s) declared into the offer-token ledger. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before (mirror of the _chk_style_preview defer switch)."
+        "label": "signature-presentation intake gate (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED): the 8 Questions asked one at a time and committed as ONE atomic record + a set frame (rulebook|vault|quest|original) + the q7 offer(s) declared into the offer-token ledger. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before (mirror of the _chk_style_preview defer switch)."
       },
       "client_report": {
         "start_template": "Step {k} of {N} — {name} — starting{eta}",
