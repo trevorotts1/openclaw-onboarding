@@ -132,5 +132,54 @@ class AMissingRowIsAFrontDoorRefusal(unittest.TestCase):
             self.assertIn("step_departmap", body, fn)
 
 
+class The999LayoutsFindTheRow(unittest.TestCase):
+    """999 keeps Skill 49 at .claude/skills/signature-funnel with the map at the repo root (no SKILL.md),
+    and a 999 install copies the skill alone with its shipped repo-integration row."""
+
+    ROW = {"slug": "signature-funnel", "intent_triggers": ["signature funnel"]}
+
+    def test_999_repo_layout_clears(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            sd = root / ".claude" / "skills" / "signature-funnel"
+            sd.mkdir(parents=True)
+            bp = root / "23-ai-workforce-blueprint"
+            bp.mkdir()
+            (bp / "skill-department-map.json").write_text(json.dumps({"skills": [self.ROW]}), encoding="utf-8")
+            fd.step_departmap(sd)
+
+    def test_999_repo_map_without_the_row_is_still_refused(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            sd = root / ".claude" / "skills" / "signature-funnel"
+            (sd / "repo-integration").mkdir(parents=True)
+            (sd / "repo-integration" / "skill-department-map-entry.json").write_text(json.dumps(self.ROW), encoding="utf-8")
+            bp = root / "23-ai-workforce-blueprint"
+            bp.mkdir()
+            (bp / "skill-department-map.json").write_text(json.dumps({"skills": []}), encoding="utf-8")
+            with self.assertRaises(fd.FrontDoorError) as cm:
+                fd.step_departmap(sd)
+            self.assertEqual(cm.exception.gate, "DEPT-MAP")
+
+    def test_installed_alone_reads_the_shipped_row(self):
+        with tempfile.TemporaryDirectory() as td:
+            sd = Path(td) / "skills" / "signature-funnel"
+            (sd / "repo-integration").mkdir(parents=True)
+            entry = sd / "repo-integration" / "skill-department-map-entry.json"
+            entry.write_text(json.dumps(self.ROW), encoding="utf-8")
+            fd.step_departmap(sd)
+            entry.write_text(json.dumps({"slug": "signature-funnel", "intent_triggers": []}), encoding="utf-8")
+            with self.assertRaises(fd.FrontDoorError):
+                fd.step_departmap(sd)
+
+    def test_the_real_shipped_row_clears_on_its_own(self):
+        with tempfile.TemporaryDirectory() as td:
+            sd = Path(td) / "skills" / "signature-funnel"
+            (sd / "repo-integration").mkdir(parents=True)
+            src = SKILL / "repo-integration" / "skill-department-map-entry.json"
+            (sd / "repo-integration" / src.name).write_bytes(src.read_bytes())
+            fd.step_departmap(sd)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

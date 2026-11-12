@@ -1,3 +1,8 @@
+## [v2.1.57] - 2026-11-12 - front door finds the department map in the 999 layouts
+
+- `scripts/front_door.py` `step_departmap` reads the Skill 49 row from, in order: the sibling blueprint skill (onboarding and OpenClaw layouts, unchanged); an `*ai-workforce-blueprint` folder up to three levels above the skill (the 999 repo keeps the skill at `.claude/skills/signature-funnel` and the map at the repo root); and only when no full map exists anywhere, the skill's own `repo-integration/skill-department-map-entry.json` (a 999 install copies the skill alone). Before this a 999 checkout or install aborted `DEPT-MAP` and Skill 49 and Skill 83 could not start. A full map without the row is still refused.
+- `scripts/test_department_map_entry.py` covers both 999 layouts, the refusal when a map lacks the row, and the real shipped row clearing on its own. The prover pin is minted by the pin authority workflow, never edited here.
+
 ## [v2.1.56] - 2026-11-11 - Harmony-95 Batch R: verify.sh and the golden example repaired (FC-51)
 
 - The golden example copy ledger carries the section-7 call to action, `checkout_wrapper.py` skips `.attempts`, and `verify.sh` defaults the platform so it is green on a fresh HOME; `scripts/test_verify_golden_repairs.py` pins the repairs. Version bump so the Batch R pull request carries a version above main (G3).
