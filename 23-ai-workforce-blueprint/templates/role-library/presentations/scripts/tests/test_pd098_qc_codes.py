@@ -19,11 +19,11 @@ import re
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-DEPT = HERE.parents[2]  # .../role-library/presentations
+DEPT = HERE.parents[1]  # .../role-library/presentations
 ROLE_FILE = DEPT / "qc-specialist-presentations.md"
 MIRROR_FILE = DEPT / "sops" / "qc-specialist-presentations-sops.md"
 MANIFEST = (
-    HERE.parents[6]
+    HERE.parents[5]
     / "universal-sops"
     / "presentation-slide-craft"
     / "PIPELINE-MANIFEST.json"
