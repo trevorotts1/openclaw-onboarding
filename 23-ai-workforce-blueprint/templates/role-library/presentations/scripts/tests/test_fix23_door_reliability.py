@@ -432,11 +432,23 @@ def test_ghl_co_location_sibling_resolution(tmp_path):
 
 
 def test_gate1b_imports_with_render_interpreter():
-    """GATE 1b must run the import with $SCRIPTS_DIR on PYTHONPATH and surface the
-    real import error (the render interpreter — same python3 that runs build_deck)."""
+    """GATE 1b must run the import with $SCRIPTS_DIR on PYTHONPATH, under the
+    RENDER interpreter, and surface the real import error.
+
+    PD-908: the merged door resolves ONE pipeline interpreter before any gate
+    (PRES-035) and every gate import runs through $PRESENTATION_PY — the same
+    interpreter that then runs build_deck. The assertion therefore pins the
+    interpreter VARIABLE, not a literal `python3` that the merged script no
+    longer uses on this path; a bare `python3 -c "import ghl_media"` reappearing
+    would mean GATE 1b stopped using the render interpreter, which is the
+    defect this test exists to catch.
+    """
     src = ENTRY.read_text(encoding="utf-8", errors="replace")
     assert 'PYTHONPATH="$SCRIPTS_DIR' in src
-    assert 'python3 -c "import ghl_media"' in src
+    assert '"$PRESENTATION_PY" -c "import ghl_media"' in src
+    assert 'python3 -c "import ghl_media"' not in src, (
+        "GATE 1b imports under a bare python3 instead of the resolved render "
+        "interpreter ($PRESENTATION_PY)")
     assert "import> " in src  # surfaces the real import error
 
 

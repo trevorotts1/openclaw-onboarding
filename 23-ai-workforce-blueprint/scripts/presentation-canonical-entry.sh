@@ -767,21 +767,28 @@ check_intake_trace "$RUN_DIR"
 note "GATE 0c — DRIFT GATES (FIX 113; warning-only, build continues on drift)"
 _GATE0C_SCRIPT="$SELF_DIR/presentations-drift-gates.sh"
 _ENGINE_RC=0
-if [ ! -f "$_GATE0C_SCRIPT" ]; then
-  note "GATE 0c ERROR: drift-gate script not found at $_GATE0C_SCRIPT (build continues)"
-elif [ ! -x "$_GATE0C_SCRIPT" ] && [ ! -r "$_GATE0C_SCRIPT" ]; then
-  note "GATE 0c ERROR: drift-gate script not runnable at $_GATE0C_SCRIPT (build continues)"
-else
-  _GATE0C_OUT="$("$_GATE0C_SCRIPT" 2>&1)"
-  _GATE0C_RC=$?
-  if [ "$_GATE0C_RC" -ne 0 ]; then
-    note "GATE 0c WARNING: presentations drift detected (gate exit $_GATE0C_RC) -- build CONTINUES per D6. Operator: review drift before ship."
-    note "GATE 0c drift detail (operator channel, never client-facing):"
-    echo "$_GATE0C_OUT" | while IFS= read -r _line; do note "  [drift] $_line"; done
+# PD-028 static anchor: the drift gate lives BESIDE this script and is invoked
+# from SELF_DIR, never from a guessed path. The door's hygiene test pins this
+# shape; the branch below behaves EXACTLY as before (missing -> ERROR, present
+# but unreadable -> ERROR, otherwise run) — the anchor only makes the location
+# a stated precondition instead of an implicit one.
+if [ -f "$SELF_DIR/presentations-drift-gates.sh" ]; then
+  if [ ! -x "$_GATE0C_SCRIPT" ] && [ ! -r "$_GATE0C_SCRIPT" ]; then
+    note "GATE 0c ERROR: drift-gate script not runnable at $_GATE0C_SCRIPT (build continues)"
   else
-    note "GATE 0c PASSED (no drift)"
+    _GATE0C_OUT="$("$_GATE0C_SCRIPT" 2>&1)"
+    _GATE0C_RC=$?
+    if [ "$_GATE0C_RC" -ne 0 ]; then
+      note "GATE 0c WARNING: presentations drift detected (gate exit $_GATE0C_RC) -- build CONTINUES per D6. Operator: review drift before ship."
+      note "GATE 0c drift detail (operator channel, never client-facing):"
+      echo "$_GATE0C_OUT" | while IFS= read -r _line; do note "  [drift] $_line"; done
+    else
+      note "GATE 0c PASSED (no drift)"
+    fi
+    unset _GATE0C_OUT _GATE0C_RC
   fi
-  unset _GATE0C_OUT _GATE0C_RC
+else
+  note "GATE 0c ERROR: drift-gate script not found at $_GATE0C_SCRIPT (build continues)"
 fi
 _ENGINE_RC=0
 unset _GATE0C_SCRIPT
@@ -1225,16 +1232,23 @@ PY
             then
                 sed 's/^/    sync_check> /' /tmp/_pce_sync.$$ >&2 || true
                 echo "  OK: render-path lockstep clean (library-only A5/A6 drift deferred, logged)"
-                "$PRESENTATION_PY" - <<'PY' || true
-# write a CC event so the drift debt is surfaced, not hidden
-import json, os, urllib.request
-try:
-    from cc_board import cc_post
-    cc_post("/api/events", {"type": "sync_drift_deferred",
-       "message": "sync_check library-only drift (A5/A6) deferred on canonical render", "severity": "warn"})
-except Exception:
-    pass
-PY
+                # PD-026: the sync_drift_deferred board event is DEFERRED here, never
+                # posted from an inline module import — that import was dead in every
+                # shipped board helper and a bare except hid the failure. The board
+                # helper's own main offers NO posting verb (it exposes --reconcile
+                # only), so per the unit text the event is appended to this run's gate
+                # log and printed. The contract it would have used is named in the
+                # row: endpoint /api/events, header x-webhook-signature. A write
+                # failure is PRINTED, never hidden.
+                _SYNC_DEFER_ROW='{"event":"sync_drift_deferred","endpoint":"/api/events","signature_header":"x-webhook-signature","message":"sync_check library-only drift (A5/A6) deferred on canonical render","severity":"warn"}'
+                _SYNC_DEFER_LOG="$RUN_DIR/working/checkpoints/gate_log.jsonl"
+                mkdir -p "$(dirname "$_SYNC_DEFER_LOG")" 2>/dev/null || true
+                if printf '%s\n' "$_SYNC_DEFER_ROW" >> "$_SYNC_DEFER_LOG" 2>/dev/null; then
+                    echo "  sync_drift_deferred event deferred to the gate log: $_SYNC_DEFER_LOG"
+                else
+                    echo "  sync_drift_deferred event not posted: could not write $_SYNC_DEFER_LOG" >&2
+                    printf '%s\n' "$_SYNC_DEFER_ROW" >&2
+                fi
                 rm -f /tmp/_pce_sync.$$
             else
                 sed 's/^/    sync_check> /' /tmp/_pce_sync.$$ >&2 || true
