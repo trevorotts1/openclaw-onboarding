@@ -1,6 +1,6 @@
 # AI Workforce Blueprint - Build Instructions
 
-**Version:** v10.4.0 (PRD v2.1 - Zero-Human Company Spec)
+**Version:** tracks `skill-version.txt` (this file no longer carries its own number)
 **Target interview length:** ~30 questions, ~35 minutes
 **Persona governance:** Persona overrides identity files. CEO has special clause (mission/owner override persona on conflict).
 
@@ -638,7 +638,7 @@ Canonical and floor departments resolve their roles/SOPs by COPY + token-persona
 
 #### 1. Canonical Floor Report (Stage 1)
 
-Walk the full 23-mandatory list from `department-naming-map.json` and report the status of each:
+Walk the full mandatory list from `department-naming-map.json` and report the status of each:
 - **INCLUDED** -- not declined, part of the final set
 - **COVERED** -- owner already named this department in Phase 4
 - **DECLINED** -- owner explicitly said no
@@ -661,7 +661,7 @@ Every non-canonical department the owner named, with decision (`yes` / `no` / `l
 ```
 === DEPARTMENT DECISION-TREE PREVIEW ===
 
-STAGE 1 -- CANONICAL FLOOR (23 mandatory)
+STAGE 1 -- CANONICAL FLOOR (mandatory)
   INCLUDED (N):
     [list each with display_name + one_liner]
   DECLINED (N):
@@ -731,7 +731,7 @@ Show a plain-English synthesis of EVERYTHING captured (not raw answers - your sy
 
 ---
 
-## The 22 Mandatory Departments
+## The Mandatory Departments
 
 Auto-built for EVERY zero-human company, no exceptions. The live, authoritative list and count come from `scripts/list-canonical-departments.py`; the list below is descriptive of that live data, never a hardcoded gate:
 
@@ -1083,7 +1083,7 @@ All steps are idempotent. The resume cron (this same `resume-workforce-build.sh`
   - all departments + libraries `done` AND ANY dept has `wiringStatus != done` (v12.8.3 wiring-dirty extension - fires AFTER library gate, BEFORE comms automations), OR
   - all departments + libraries + wiring `done` AND `commsAutomationStatus NOT IN {done, not-applicable}` (v10.15.9 comms-automation cross-skill gate to Skill 38), OR
   - `buildCompletedAt` is set AND `closeoutStatus NOT IN {done, sent}` (v10.13.16 closeout-dirty extension).
-- Dispatches a `[WORKFORCE-RESUME]`, `[LIBRARY-RESUME]`, `[WIRING-RESUME]`, `[COMMS-AUTOMATION-RESUME]`, or `[CLOSEOUT-RESUME]` Telegram self-message to a paired chat (owner first, Trevor fallback). Order: `[LIBRARY-RESUME]` fires before `[WIRING-RESUME]` fires before `[COMMS-AUTOMATION-RESUME]` fires before `[CLOSEOUT-RESUME]`. A stub dept caught by the wiring gate self-pings with exact failure reasons until fixed. That message invokes the agent, who reads `resume-prompt.txt` and continues building, re-pulls the role/SOP libraries, materializes stub depts, scaffolds the Skill 38 comms automations, OR closes out.
+- Dispatches a `[WORKFORCE-RESUME]`, `[LIBRARY-RESUME]`, `[WIRING-RESUME]`, `[COMMS-AUTOMATION-RESUME]`, or `[CLOSEOUT-RESUME]` Telegram message to the operator escalation chat (never the owner's chat). Order: `[LIBRARY-RESUME]` fires before `[WIRING-RESUME]` fires before `[COMMS-AUTOMATION-RESUME]` fires before `[CLOSEOUT-RESUME]`. A stub dept caught by the wiring gate self-pings with exact failure reasons until fixed. That message invokes the agent, who reads `resume-prompt.txt` and continues building, re-pulls the role/SOP libraries, materializes stub depts, scaffolds the Skill 38 comms automations, OR closes out.
 - v10.15.9: when the libraries stay dirty into the last 2 resume attempts, it ALSO emits a one-line OPERATOR-FACING status (a persistently-failing library pull is surfaced before the cap, throttled via `librariesNearCapNotified`).
 - Caps at `maxResumeAttempts` (default 12) to prevent infinite loops. After cap, pings Trevor's chat directly with an escalation that names the library status instead of continuing to self-ping.
 - Holds a 10-minute lockfile so concurrent cron firings don't double-dispatch.
@@ -1174,17 +1174,17 @@ After the owner completes the interview (all phases done, `--complete` flag set)
 
 2. **If exit 0 (PASS):** `interviewQc.status="pass"` is written to state. The build pipeline may proceed.
 
-3. **If exit 2 (NEEDS-REVIEW):** Route to human review. Do NOT auto-reroute. Do NOT proceed to build. (Honors PRD 2.4 - heuristic mode goes to human review, never the reroute loop.)
+3. **If exit 2 (NEEDS-REVIEW):** `interviewQc.status="needs-review"` is written and the build proceeds exactly as on PASS (`update-interview-state.sh` treats pass and needs-review alike). The notes in `interviewQc` are for the operator to read; they do not hold the build.
 
 4. **If exit 3 (HARD FAIL):** The gate output lists every failing dimension with evidence. Fix the root cause (re-interview the flagged area, correct jargon, populate missing fields) before retrying.
 
 5. **Gate criteria (all four must pass):**
    - Question count: 25–35 answered questions in the transcript. **Edit-mode exemption (standard-first, PHASE 7):** on a `buildType == "standard-first"` box whose `standardPrebuild.status == "done"` (or a recorded edit mode), the interview reviewed the prebuilt set, so a substantive edit-mode transcript is EXEMPT from the 25-35 floor — gated by its own anti-fabrication substance floor (`edit_mode_substance_ok`), exactly like the legacy exemption. The exemption lifts ONLY the count floor: the >36 ceiling, jargon, mandatory-field, decline-provenance, and no-fabrication checks still apply in full, and it never applies to a legacy box (absent `buildType`).
    - Zero forbidden-jargon hits in AI-authored transcript text (loaded from `interview/forbidden-jargon.json`)
-   - Every mandatory data field populated (branding `required:true` fields + structural: companyName, industry, ownerChat, agentName, at least one department — a prebuilt department with `status: "prebuilt"` counts as locked)
+   - Every mandatory data field populated (branding `required:true` fields + structural: companyName, industry, at least one department; ownerChat and agentName are reported as a warning only — a prebuilt department with `status: "prebuilt"` counts as locked)
    - Nudge cadence verified wired: `interview-nudge-cron.sh` exists + `install.sh` registers it + NUDGE_CONFIG has 24/72/168h entries
 
-6. The `closeoutStatus` MUST NOT advance past `"pending"` until `interviewQc.status == "pass"`. This is the cross-skill seam between PRD-2.15 (interview experience) and PRD-2.8 (closeout state machine). The Skill 37 closeout owns wiring the gate check in `run-closeout.sh`.
+6. The `closeoutStatus` MUST NOT advance past `"pending"` until `interviewQc.status` is `"pass"` or `"needs-review"`. This is the cross-skill seam between PRD-2.15 (interview experience) and PRD-2.8 (closeout state machine). The Skill 37 closeout owns wiring the gate check in `run-closeout.sh`.
 
 ---
 
