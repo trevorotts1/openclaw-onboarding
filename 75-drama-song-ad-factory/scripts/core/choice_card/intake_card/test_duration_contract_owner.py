@@ -17,22 +17,25 @@ from music_styles import music_styles as MS
 # option, link, ask, recommendation and closing. VIDEO MODEL is separately
 # owned by the authorized MiniMax H3 restoration.
 QUESTION_SHA256 = {
-    "offer": "135d6d82798543f975d19a7b38c84b4b45c860ea8245cae8e0cb53c00151279e",
-    "link": "f7bae88c51a242b12f7b03c82a292cb722375cb599187846b29bf7c4928de152",
+    # Re-pinned for S75-006, which changes these screens on purpose: OFFER takes
+    # the web address, CHARACTER carries the new wording, PHOTOS and SHAPE are
+    # recap defaults, AI MODELS carries the new plain wording, MUSIC STYLE shows
+    # three styles plus the full-list option, and CHECKPOINTS is new.
+    "offer": "8cbe11218554e2a13153de6ed6d1d727a8bdbe77e4feee7b3f25b78e362c2299",
+    "link": "732ae7a34eb770a0d20f99efda0cd9903f4fb265b10fca785602d9f9ea418664",
     "audience": "62f46da48b1eaa8c2d43cb14c680daef3d89e0ffeeb051c53cf2625e3e48886b",
-    "character": "59fab7749a1131830aec78892073578bf9c137b3ab55bb176079392cb309ac2e",
-    "photos": "691bfac5aa7f8ad6f630bf0300197c04d52363d6c35619f9da3fe45188fb7263",
-    "models": "77817a30f601d05ff033e12fe60069b79c8d1c74ca104f2740143c8b1dff85eb",
-    # Re-pinned for the intended eighteen-style music card (T03-corr / F8);
-    # same formula as the test below: sha256 of the compact sorted-key JSON.
-    "music": "1f8908db756f315a1300df905631ad2fdb2a66496e28c7914e6f05b696d0f340",
+    "character": "1e6bdbaacc82d59de35b56734913b9df23b0fba1bcc6ba49bc1d8bd306f2b0f2",
+    "photos": "fca6e105bd1fd50fad8b3e69e5fbfb587d1903d6c197aa99cda43ca7293cc590",
+    "models": "919c74f6bc6b3d43f5fedf2caa75fec466d3149b5f541fcb631f332f25bf491e",
+    "music": "951199b62baeef6579fa39434dc9a42404ccdbbd941f75329d7c70c9d35108e5",
+    "checkpoints": "ada65d29fa96212e311bec9aa953e6b79a48532e0f8f94d5e53f41c92428de70",
     "look": "0d828d83ec361f2f26f19ca0d5c9361cddf3f6ecbb74fbf590fbcae2764b58dd",
     "spend": "5cacf6bad2179a77011f9f7d865b36d7c08ecdcecda267968a9678a902091d85",
     "storyboard": "249a2ac08375b9b6e79ca85e0a0d46699fe18d20a90ada328d54423ec4bac042",
     "song": "54ca39ff3ae50581dcb53fce2021b566a524b1df6f9c640892b4989a77ffc569",
     "script": "db5bfe711ebed43c1fa28d8c9b1a88336ccc58abc1bc461a268142df0c238559",
     "purpose": "ba2c6e713acb726ffe0b6ce60d767228db80dd5e48495f62d18509afa8aa2e0d",
-    "shape": "aaa00770ab3d40bd980628e7994777a7646268aa00f70bca7b53ff2050f60b66",
+    "shape": "6b2e9955b66e960b5752c1c36ee72d08e4b642623d5e01e7aed41110e465c461",
     "permission": "5b47700c188a5b746dc5ab37df55bfbe073e4345cfc065f8ffcb62a095f8f802",
     "where": "5ca5da1b331bd2ef5c9de489cd1777d8b24190b6af3dff3ca99db46b9f8686e3",
     "agnes": "a397f139e3600832ecad473feb006d1d58284ae643176cfd515f7ac9616215cf",
@@ -84,7 +87,9 @@ class DurationOwnerContract(unittest.TestCase):
         self.assertEqual(IC._vm().length_seconds(q["options"][q["recommended"]][0]), 180)
         self.assertEqual(q["options"][3], ("3 minutes", "one full story with room for the turn and the offer."))
         self.assertEqual(q["options"][4], ("5 minutes", "a deeper story with more of the solution at work."))
-        self.assertEqual(q["options"][5], ("10 minutes", "the long version, a full show episode. (made with KIE, not Agnes)"))
+        # S75-006: no vendor name in a client question, so the row no longer
+        # carries "(made with KIE, not Agnes)".
+        self.assertEqual(q["options"][5], ("10 minutes", "the long version, a full show episode."))
 
     def test_purpose_never_removes_a_canonical_duration(self):
         for purpose in ("testimonial", "lesson", "paid_ad", "short_post"):

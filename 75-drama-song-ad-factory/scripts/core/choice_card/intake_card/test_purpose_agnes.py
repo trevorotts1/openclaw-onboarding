@@ -54,10 +54,13 @@ def _plan(purpose=None, where=None, client_dir=None, overrides=None):
     FINAL question list with the replies that reached it. Building the list
     first and the replies second is what makes the two agree: the AGNES screen
     only exists once a length has been answered, so the list is still growing
-    while the early replies are being parsed."""
+    while the early replies are being parsed.
+
+    S75-006: the defaulted screens (video model, shape, photos) ride at the end
+    of the list and are NEVER asked one by one, so the walk stops there."""
     answers, qs, replies = [], IC._shaped(IC.QUESTIONS, [], client_dir), []
     overrides = dict(overrides or {})
-    while len(answers) < len(qs):
+    while len(answers) < len(qs) and not qs[len(answers)].get("defaulted"):
         q = qs[len(answers)]
         if q["id"] == "purpose" and purpose is not None:
             r = str(purpose)

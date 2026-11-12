@@ -27,11 +27,12 @@ def _run_dir():
     return tempfile.mkdtemp(prefix="skill75-ai-models-")
 
 
-#: AI MODELS is the first of the nine production choices; the five story-brief
-#: questions (DSR-105) open the card ahead of it.
-MODELS_AT = [q["id"] for q in IC.QUESTIONS].index("models") + 1
+#: AI MODELS leads the production choices of the card a plain replay asks
+#: (S75-006: IC.conversation with no run folder keeps the list a resumed run
+#: keeps). It is also the first screen of the NEW card's production choices.
+MODELS_AT = [q["id"] for q in IC.LEGACY_QUESTIONS].index("models") + 1
 #: The brief answers that come before AI MODELS, so a reply lands on it.
-BRIEF = IC.example_replies()[:MODELS_AT - 1]
+BRIEF = IC.example_replies(IC.LEGACY_QUESTIONS)[:MODELS_AT - 1]
 
 
 def test_catalog_defaults_bind_mimo_build_glm_check():

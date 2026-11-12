@@ -6,7 +6,7 @@ Run: python3 core/choice_card/intake_card/test_intake_card_h9.py
 
 SWI-002 (SPEC item 10): this file is also the companion test that encodes the
 card's total. The card prints its own total from len(QUESTIONS); this file is
-the one place the number 14 is written down, and it fails every string in the
+the one place the number 13 is written down, and it fails every string in the
 three card-facing files that claims a different one.
 """
 import contextlib
@@ -31,17 +31,17 @@ def _blocks(text):
     return text.split("\n\n")
 
 
-def test_fourteen_questions_each_own_block():
-    assert N == 14                                  # five story brief + nine production choices
+def test_thirteen_questions_each_own_block():
+    assert N == 13                                  # the NEW card (S75-006)
     blocks = _blocks(CARD)
-    assert len(blocks) == N + 1                       # fourteen questions + closing
+    assert len(blocks) == N + 1                       # thirteen questions + closing
     for i, b in enumerate(blocks[:N], 1):
         first = b.split("\n")[0]
         assert first.startswith("Question %d of %d - " % (i, N)), first
     labels = [b.split("\n")[0].split(" - ")[1] for b in blocks[:N]]
-    assert labels == ["OFFER", "OFFER LINK", "AUDIENCE", "CHARACTER", "PHOTOS",
-                      "AI MODELS", "LENGTH", "MUSIC STYLE", "VIDEO STYLE", "VIDEO MODEL",
-                      "BUDGET", "STORYBOARD APPROVAL", "SONG APPROVAL", "SCRIPT APPROVAL"]
+    assert labels == ["OFFER", "OFFER LINK", "AUDIENCE", "CHARACTER", "AI MODELS",
+                      "LENGTH", "MUSIC STYLE", "VIDEO STYLE", "CHECKPOINTS", "BUDGET",
+                      "VIDEO MODEL", "SHAPE", "PHOTOS"]
 
 
 def test_each_option_on_its_own_numbered_line_recommended_marked():
@@ -49,19 +49,22 @@ def test_each_option_on_its_own_numbered_line_recommended_marked():
         if q.get("free_text"):              # a brief block has no menu to number
             assert b.split("\n")[-1] == IC.FREE_TEXT_HINT, b
             continue
+        if "body" in q:                     # CHECKPOINTS carries its own fixed text
+            assert b.split("\n")[1] == q["ask"], b
+            assert b.split("\n")[-1].endswith('"custom" to choose each one.'), b
+            continue
         lines = b.split("\n")
         opts = [l for l in lines[2:] if not l.startswith("   Watch: ")
                 and l != "   " + IC.SAMPLE_MISSING]   # sample lines sit under their option
         assert len(opts) == len(q["options"])
+        prices = q.get("prices") or {}
         for n, line in enumerate(opts, 1):
             label, description = q["options"][n - 1]
+            assert line.startswith("%d. %s" % (n, label)), line   # no invented option
             if description:
-                assert re.match(r"^%d\. .+ - .+[.)\d]$" % n, line), line  # a priced line ends in the dollar figure
-            else:
-                expected = "%d. %s" % (n, label)
-                if n - 1 == q.get("recommended"):
-                    expected += " " + q.get("rec_mark", IC.REC)
-                assert line == expected, line     # no unapproved description is invented
+                assert " - " + description in line, line
+            if n in prices:                 # a priced LENGTH line carries its price
+                assert line.split(" " + IC.REC)[0].endswith(prices[n]), line
             assert "\n" not in line
         if q["recommended"] is None:        # unpriced BUDGET: nothing to recommend
             assert not any(IC.REC in l for l in opts)
@@ -72,7 +75,7 @@ def test_each_option_on_its_own_numbered_line_recommended_marked():
 
 def test_closing_line_last():
     assert _blocks(CARD)[-1] == IC._closing(IC.QUESTIONS)
-    assert CARD.startswith("Question 1 of 14")
+    assert CARD.startswith("Question 1 of 13")
 
 
 def test_no_markup_that_a_sender_could_strip():
@@ -81,16 +84,15 @@ def test_no_markup_that_a_sender_could_strip():
 
 def test_messages_under_limit_and_split_between_questions():
     one = IC.render_messages()
-    # fourteen questions no longer fit one Telegram message; they split only on
+    # thirteen questions no longer fit one Telegram message; they split only on
     # the blank-line seams, so joining them back gives the whole card.
     assert "\n\n".join(one) == CARD and all(len(m) <= IC.TELEGRAM_LIMIT for m in one)
-    # 1000 not 400: the video question now carries five sample links (FU-STYLE-QUESTIONS)
     small = IC.render_messages(limit=1000)
     assert len(small) > 1
     assert all(len(m) <= 1000 for m in small)
     # Only seams were cut: blank lines between questions, plus one line seam
-    # inside a question too long for one message (the eighteen-style music
-    # menu). That continuation opens under its own "(continued)" header.
+    # inside a question too long for one message. That continuation opens under
+    # its own "(continued)" header.
     rebuilt = ""
     for m in small:
         head, _, rest = m.partition("\n")
@@ -99,10 +101,14 @@ def test_messages_under_limit_and_split_between_questions():
         else:
             rebuilt += ("\n\n" if rebuilt else "") + m
     assert rebuilt == CARD
-    assert any(m.startswith("Question 8 of 14 - MUSIC STYLE (continued)\n") for m in small)
     for m in small:                       # never starts a message mid-question
         assert m.startswith("Question") or m == IC._closing(IC.QUESTIONS)
-    # a single oversize question still splits on line boundaries
+    # a single oversize question still splits on line boundaries, and the long
+    # music menu is exactly that question when a client asks for it
+    menu = IC._music_full_q()
+    parts = IC.render_messages([menu], limit=500)
+    assert all(len(p) <= 500 for p in parts) and len(parts) > 1
+    assert parts[1].startswith("Question 1 of 1 - MUSIC STYLE (ALL) (continued)"), parts
     models = next(q for q in IC.QUESTIONS if q["id"] == "models")
     big = [dict(models, options=[("Opt %d" % i, "x" * 60) for i in range(80)])]
     parts = IC.render_messages(big, limit=500)
@@ -174,7 +180,9 @@ def test_closing_example_answer_count_matches_question_count():
 def test_a_card_with_typed_questions_closes_with_its_own_sentence():
     closing = IC._closing(IC.QUESTIONS)
     assert closing.startswith("How to answer: type your own words for Offer, Offer Link, "
-                               "Audience, Character, Photos"), closing
+                               "Audience, Character"), closing
+    # PHOTOS moved to the recap (S75-006), so it is no longer named here
+    assert "Photos" not in closing, closing
     # the unpriced BUDGET has nothing to recommend, so the shortcut stays off
     assert "all recommended" not in closing, closing
     priced = [IC.spend_question(18.5) if q["id"] == "spend" else q for q in IC.QUESTIONS]
@@ -182,11 +190,11 @@ def test_a_card_with_typed_questions_closes_with_its_own_sentence():
     assert IC.CLOSING_LINE == IC._closing(IC.QUESTIONS)     # the exported line is the real one
 
 
-# --- SWI-002: the companion test that encodes 14 -------------------------------
+# --- SWI-002: the companion test that encodes 13 -------------------------------
 #: The card's total, written down ONCE, here. Every string the client or the
 #: operator reads is printed from len(QUESTIONS) instead, so this literal is
 #: the assertion the card is held to -- never a second source of the answer.
-CARD_TOTAL = 14
+CARD_TOTAL = 13
 
 #: Numbers that can read as a card total in prose. "one" is deliberately absent:
 #: "one question per message" is not a total and must never be scored as one.
@@ -234,8 +242,8 @@ def _capture_help(runner, argv):
     return re.sub(r"\s+", " ", buf.getvalue())
 
 
-def test_the_card_renders_exactly_fourteen_questions():
-    assert CARD_TOTAL == 14                         # the number this file encodes
+def test_the_card_renders_exactly_thirteen_questions():
+    assert CARD_TOTAL == 13                         # the number this file encodes
     assert len(IC.QUESTIONS) == CARD_TOTAL          # module count
     headers = re.findall(r"^Question (\d+) of (\d+) - ", CARD, re.M)
     assert len(headers) == CARD_TOTAL               # rendered count == module count

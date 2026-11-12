@@ -29,17 +29,25 @@ def test_every_option_has_a_short_explanation():
     for q in (MUSIC, LOOK):
         assert len(q["ask"]) <= MAX_ASK, q["ask"]
         for opt, sentence in q["options"]:
-            assert sentence and len(sentence.split()) <= MAX_WORDS, (opt, sentence)
+            if sentence is None:                 # S75-006: the full-list option
+                assert opt.startswith("Show me all "), opt
+                continue
+            assert len(sentence.split()) <= MAX_WORDS, (opt, sentence)
             assert len(sentence.split()) >= 4, (opt, sentence)       # says something
 
 
 def test_option_order_labels_and_recommended_unchanged():
+    # S75-006: three styles, then the option that sends the full list as its
+    # own screen. The eighteen stay in the same order behind it.
     assert [o for o, _ in MUSIC["options"]] == [
+        "Soul Ballad", "R&B Flow", "Soul Rise", "Show me all 18 styles"]
+    assert [o for o, _ in MUSIC["full_options"]] == [
         "Soul Ballad", "R&B Flow", "Soul Rise", "Acoustic Pop",
         "Folk Storytelling", "Country Pop", "Melodic Rap", "Trap Rap",
         "Pop Rap", "Pop Rock", "Reggaeton", "Cinematic Orchestral Song",
         "Musical Theater", "Contemporary Gospel", "Urban Gospel",
         "Alternative R&B", "Afro-Soul", "Country Rap"]
+    assert len(MUSIC["full_options"]) == 18
     assert [o for o, _ in LOOK["options"]] == [
         "Lifelike 3D", "2D Hand-Painted", "Sketch to Life (Hybrid)",
         "Canvas to Life", "Canvas to 3D"]
