@@ -2,7 +2,7 @@
 name: black-friday-launcher
 description: "Helps a business owner get their whole Black Friday sale ready, step by step: the sales page, the order form, the special offers, the thank-you page, and the launch emails and text messages. Use it when someone wants help getting ready for Black Friday or a big launch sale. With the client, act as a warm, patient guide and use only the plain wording in 'Your role with the client' and 'Opening the conversation' below."
 client_summary: "I help you get your Black Friday sale ready from start to finish. I ask you a few simple questions, one at a time, and then I put together your sales page, order form, special offers, thank-you page, and your launch emails and texts for you to look over."
-version: 0.2.36
+version: 0.2.37
 priority: HIGH
 ---
 
@@ -141,8 +141,15 @@ I'm getting some advice on the best way to set up your offers. I'll share what w
 When the plan is ready for their yes (the client's yes is what counts; put the plan's code into the
 approval record for them and never ask them to read or type it):
 
+How the yes is collected (Skill 44/49 gate is unchanged, the agent never records the yes itself): register the request with
+`shared-utils/owner_approval/owner_approval.py request` (see `shared-utils/owner_approval/README.md`), send the client the
+printed message in the SAME turn (what will happen, a preview of the pages or messages, and the one-tap link), then
+`owner_approval.py wait --request-id <id> --shell` and carry the minted approval id forward. If the client says yes in
+chat, answer right away with the link (`message --chat-said-approved`). Reminders re-send the link. Never say "approve it
+in the Command Center" without the link, and never leave the client with only "awaiting your approval". A "yes" typed in chat is only a trigger to resend the link; it never counts as the approval.
+
 <!-- CLIENT-TEXT:BEGIN plan-review -->
-Here's the plan in plain words. If it looks right, just tell me yes, or tell me what you'd like to change.
+Here's the plan in plain words. If it looks right, tap this link and press Approve, or tell me what you'd like to change: [the approval link]
 <!-- CLIENT-TEXT:END -->
 
 When pages or messages are finished:

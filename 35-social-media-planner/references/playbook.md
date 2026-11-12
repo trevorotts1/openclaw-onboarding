@@ -1782,12 +1782,12 @@ OpenClaw posts ALL social media content through the GoHighLevel (Convert and Flo
 caf --json social accounts            # GET /social-media-posting/{locationId}/accounts
 
 # CREATE / SCHEDULE a post (Tier 0).
-# IMPORTANT: caf's safety gate REFUSES every write unless an approval token is set
-# (otherwise it prints "SAFETY GATE: WRITE REFUSED: no approval token present" and
-# exits 1, and the post silently falls through to a lower tier). Scope a one-off
-# approval token to THIS social-post call so the gate passes — this does NOT disable
-# the gate for any other caf operation:
-CAF_APPROVAL_TOKEN="skill35-social-approved" \
+# IMPORTANT: caf's safety gate REFUSES every write unless CAF_APPROVAL_ID names an owner
+# approval record that Command Center minted for exactly this plan (an env token is NOT
+# approval). Get it from the owner approval flow (INSTRUCTIONS.md "Owner approval flow",
+# shared-utils/owner_approval/README.md), then scope it to THIS social-post call:
+CAF_APPROVAL_ID="<id from owner_approval.py wait --shell>" CAF_WRITE_ACTION=social_publish \
+CAF_PLAN_SHA256="<plan sha>" CAF_OBJECT_KEY="<weekly-YYYY-MM-DD>" \
   caf social create-post \
     --account-id "<social_account_id>" \
     --text       "<full post copy incl. the PRIMARY 'send us a message' DM CTA + the 'link is in the comments' backup directive (§12/§19)>" \
@@ -1797,7 +1797,6 @@ CAF_APPROVAL_TOKEN="skill35-social-approved" \
 # Omit --media-url for text-only; omit --schedule to post immediately.
 
 # PREVIEW a post without sending (prints the exact payload, sends nothing):
-CAF_APPROVAL_TOKEN="skill35-social-approved" \
   caf --dry-run social create-post --account-id "<id>" --text "<copy>"
 ```
 

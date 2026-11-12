@@ -54,9 +54,11 @@ MARKER_DIR="${HOME}/.openclaw/data/skill35"
 mkdir -p "$MARKER_DIR"
 
 VERIFY_ONLY=0
+REREGISTER=0
 for arg in "$@"; do
   case "$arg" in
     --verify) VERIFY_ONLY=1 ;;
+    --reregister) REREGISTER=1 ;;   # replace an existing entry (e.g. one made before explicit delivery)
     -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
   esac
 done
@@ -140,7 +142,7 @@ if [ "$_existing_count" -eq 1 ]; then
   _is_error="$(echo "$_list_output" | grep "$CRON_NAME" | grep -c "error" || true)"
   _schedule_ok="$(echo "$_list_output" | grep "$CRON_NAME" | grep -cF "$CRON_EXPR" || true)"
 
-  if [ "$_is_main" -ge 1 ] && [ "$_is_error" -eq 0 ] && [ "$_schedule_ok" -ge 1 ]; then
+  if [ "$REREGISTER" -eq 0 ] && [ "$_is_main" -ge 1 ] && [ "$_is_error" -eq 0 ] && [ "$_schedule_ok" -ge 1 ]; then
     echo "OK: cron '$CRON_NAME' already registered with a healthy main-target entry and correct schedule ($CRON_EXPR) — nothing to do." >&2
     exit 0
   fi
@@ -151,6 +153,8 @@ if [ "$_existing_count" -eq 1 ]; then
   fi
 fi
 
+# The same name on a DIFFERENT agent (for example a copy on dept-master-orchestrator) is still the
+# same cron: every entry with this name is removed, then exactly one is registered with explicit delivery.
 if [ "$_existing_count" -ge 1 ]; then
   echo "Removing ${_existing_count} existing '$CRON_NAME' cron entries before clean registration..." >&2
 
@@ -190,12 +194,25 @@ Model guidance: cheapest available model — this is a short trigger, not a conv
 # ----------------------------------------------------------
 echo "Registering cron '$CRON_NAME' ($CRON_EXPR, sessionTarget=$SESSION_TARGET, agent=$AGENT_ID)..." >&2
 
+# EXPLICIT DELIVERY (never implicit): this trigger only advances the durable cycle service, which
+# sends the owner's messages itself through the theme-intake outbox. So the cron's own delivery is
+# declared as NONE with --no-deliver. Without a declared delivery the gateway refuses the run with
+# "Refusing implicit isolated cron delivery... Set delivery.channel and delivery.to" (seen live on a
+# client box, 2026-11). A main-session cron must not carry --channel/--to/--announce.
+_ND_ARGS=()
+if openclaw cron add --help 2>&1 | grep -q -- '--no-deliver'; then
+  _ND_ARGS=(--no-deliver)
+else
+  echo "WARN: this openclaw CLI has no '--no-deliver' flag; the trigger may refuse to run for lack of a delivery target. Upgrade the CLI." >&2
+fi
+
 openclaw cron add \
   --name "$CRON_NAME" \
   --cron "$CRON_EXPR" \
   --agent "$AGENT_ID" \
   --session-target "$SESSION_TARGET" \
   --message "$CRON_MESSAGE" \
+  ${_ND_ARGS[@]+"${_ND_ARGS[@]}"} \
   --light-context || {
     echo "ERROR: 'openclaw cron add' failed — Skill 35 weekly trigger NOT registered." >&2
     echo "This is a HARD FAIL. Do not proceed with Step 10 until the cron is registered." >&2

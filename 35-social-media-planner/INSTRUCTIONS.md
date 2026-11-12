@@ -232,6 +232,20 @@ Max 5 retry loops per gate (N6). Loop 6 → escalate to owner via Telegram.
 
 ---
 
+## Owner approval flow — how the owner approves the week (BINDING)
+
+Posts are scheduled only after the owner approves the week through a record Command Center mints.
+The owner must always have a link to tap. Full steps: `shared-utils/owner_approval/README.md`.
+
+1. **Register:** `python3 ~/.openclaw/skills/shared-utils/owner_approval/owner_approval.py request --kind automation_write --action social_publish --object-key weekly-<monday-date> --plan-sha256 <hash of the week's plan> --skill 35 --summary "<plain English: what goes out, where, when>" --preview-file <the posts as text> --preview-url <sheet or PDF link>`
+2. **Message the owner** (Telegram or chat) with the printed `owner_message`: plain summary, the actual posts (or a link), and the direct approve link, all in one message. Never send a bare "awaiting your approval".
+3. **Poll:** `owner_approval.py wait --request-id <id> --shell`. On exit 0 export the printed `CAF_APPROVAL_ID` and proceed. Never ask the owner again. Exit 4 = the owner asked for changes: revise and register a NEW request. Exit 5 = expired: register a new one. Exit 6 = Command Center unreachable: tell the owner plainly, do not proceed.
+4. **Owner replies "approved" in chat:** chat text is not approval. Answer at once with `owner_approval.py message --request-id <id> --chat-said-approved` (the one-tap link). Do not stall and do not schedule on the chat text.
+5. **Reminders** use `owner_approval.py message --request-id <id> --reminder`, which always carries the link.
+6. **Google Sheet unreadable (for example `gws` says `invalid_grant`):** say so in one plain sentence ("I could not open your Google Sheet because my Google sign-in expired; I have flagged it for repair") and paste the week's posts inline in the same message. The approval link goes out either way. Never answer "gws is not authenticated" and then stop.
+
+The agent never mints approval itself, never treats chat text, an env token or a `ZHC-` name as approval, and never edits a plan after the owner approved it (a changed plan hash is refused by the write gate).
+
 ## Command Center (Kanban) — operator visibility
 
 `run-publishing-cycle.sh` advances a single Command Center card so operators can watch each run move across the board (HTTP API only — never the `.db`):
@@ -330,8 +344,11 @@ When reporting connection status, run this live query and use ONLY its output. T
 # (caf reads --json on the top-level group; "caf social accounts --json" errors).
 caf --json social accounts
 # Schedule a post (Tier 0). caf's safety gate REFUSES every write unless an
-# approval token is present, so scope an approval token to THIS social-post call:
-#   CAF_APPROVAL_TOKEN="skill35-social-approved" \
+# approval record is present. An env token is NOT approval (S44-16); the gate fetches the
+# owner's approval record from Command Center by id. Get the id with the owner approval
+# flow below, then run the post with it exported:
+#   CAF_APPROVAL_ID="<id from owner_approval.py wait --shell>" CAF_WRITE_ACTION=social_publish \
+#   CAF_PLAN_SHA256="<plan sha>" CAF_OBJECT_KEY="<weekly-YYYY-MM-DD>" \
 #     caf social create-post --account-id <id> --text '...' [--media-url <u>] [--schedule <iso8601>]
 # Preview without sending: caf --dry-run social create-post --account-id <id> --text '...'
 ```
