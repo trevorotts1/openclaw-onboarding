@@ -112,6 +112,16 @@ def test_ascii_and_curly_quotes_are_unchanged():
     assert layout.replaced == [], layout.replaced
 
 
+def test_a_decomposed_letter_prints_its_base_letter():
+    import unicodedata
+    text = unicodedata.normalize("NFD", "Ọlawale")
+    layout = PW.Layout()
+    layout.para(text, size=13.0)
+    ops = "\n".join(layout.pages[0])
+    assert "Olawale" in ops, ops
+    assert layout.replaced == [], layout.replaced
+
+
 def test_pages_break_at_the_footer_not_mid_block():
     layout = PW.Layout()
     layout.para("line", size=13.0, leading=19.0)
