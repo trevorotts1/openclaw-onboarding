@@ -1664,7 +1664,15 @@ oc_skill_box_state_paths() {
     # the exact two paths tests/w10-canary/upgrade_canary.py seeds and asserts
     # survive ("interrupted-run state preserved"). A shipped copy would still
     # win: neither path is in oc_skill_box_state_overrides_shipped.
-    75-drama-song-ad-factory) printf '%s\n' ".checkpoint-pending" "scripts/core/state_store.py.part" ;;
+    # assets/face_landmarker.task is the third path (S75-046). It is the
+    # sha256-pinned mediapipe face model both lip-sync gates read, downloaded
+    # once per box INTO the skill folder, and the release ships no copy of it.
+    # Without this entry the wholesale remove+copy deleted the only copy on
+    # disk on every roll, and the gates -- which are fail-closed on purpose --
+    # then refused every lip-sync job until the box downloaded it again. Same
+    # default rule as the two above: a shipped copy would win, and there is
+    # none, so the box copy is put back.
+    75-drama-song-ad-factory) printf '%s\n' ".checkpoint-pending" "scripts/core/state_store.py.part" "assets/face_landmarker.task" ;;
   esac
   return 0
 }
