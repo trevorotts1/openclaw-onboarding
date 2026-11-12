@@ -39,7 +39,13 @@
     },
     "continuity-bible": {
       "artifacts": [
-        {"path": "continuity/qc-records.json", "kind": "json"}
+        {"path": "character/bible.json", "kind": "json", "min_bytes": 50,
+         "required_keys": ["schema", "revision", "characters"]},
+        {"path": "character/approval.json", "kind": "json", "min_bytes": 50,
+         "required_keys": ["schema", "status", "bible_revision"],
+         "equals": {"status": "approved"}},
+        {"path": "continuity/qc-records.json", "kind": "json"},
+        {"path": "continuity/makers.json", "kind": "json"}
       ]
     },
     "storyboard": {
