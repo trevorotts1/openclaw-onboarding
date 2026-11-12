@@ -254,16 +254,21 @@ def test_bump_and_reset_are_plan_gated_in_source():
     # The stamp wrapper refuses to run in plan mode.
     assert "stamp_intake_depth_after_gates() {" in src
     wrapper_idx = src.index("stamp_intake_depth_after_gates() {")
-    wrapper = src[wrapper_idx:wrapper_idx + 220]
-    assert '[ "$PLAN" -eq 0 ] || return 0' in wrapper
+    # PD-008 QC: PD-007 added STATED-gating to save ink; the PLAN gate is the
+    # invariant this unit owns (amendment (b) pins the reset form, not PD-007's
+    # stamp row). Assert the first guard line only.
+    wrapper_first = src[wrapper_idx:wrapper_idx + 220].splitlines()[1]
+    assert '[ "$PLAN" -eq 0 ] || return 0' in wrapper_first
     # Definition order: gate_fail / owner_skip_approved / _record_dep_gate_bypassed
     # / trace_fail are all DEFINED before GATE 0c executes (bash does not hoist).
+    # PD-008 QC: PD-007 factored the drift-gate path into $_GATE0C_SCRIPT, so
+    # anchor on the script NAME, not the old inline test string.
+    drift_exec_marker = "presentations-drift-gates.sh"
+    assert drift_exec_marker in src
+    gate0c_idx = src.index(drift_exec_marker)
     for fn in ("owner_skip_approved()", "_record_dep_gate_bypassed()",
                "gate_fail()", "trace_fail()"):
         def_idx = src.index(fn)
-        gate0c_idx = src.index('if [ -f "$SELF_DIR/presentations-drift-gates.sh" ]; then')
         assert def_idx < gate0c_idx, f"{fn} must be defined before GATE 0c executes"
-    # SELF_DIR is defined before GATE 0c's first read of it.
     self_dir_idx = src.index('SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"')
-    gate0c_idx = src.index('if [ -f "$SELF_DIR/presentations-drift-gates.sh" ]; then')
     assert self_dir_idx < gate0c_idx, "SELF_DIR must be defined before GATE 0c"
