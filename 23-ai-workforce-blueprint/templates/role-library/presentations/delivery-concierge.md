@@ -116,7 +116,7 @@ Review the delivery_destinations records across all completed runs. Are all deli
 - working/checkpoints/media_library.json (read and write)
 - working/qc/final_qc_report.json (read -- the aggregate QC report of record; its gate-facing average is the QC gate confirmation)
 - intake.json (read -- client box type, use_drive flag)
-- output/[DECK_SLUG].pptx (the QC-passed assembled deck -- SOP 9.0 packaging source)
+- working/deliverables/{deck_slug}-FINAL.pptx (the QC-passed assembled deck -- SOP 9.0 packaging source)
 - delivery/[DECK_SLUG]-FINAL/ (the SOP 9.0 clean package -- the only copy that ships)
 
 ---
@@ -130,15 +130,15 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **When to run:** FIRST, immediately after the QC interlock is confirmed (engine closeout gate green; gate-facing average >= 8.5 in `working/qc/final_qc_report.json`) and before any destination is resolved or touched. Nothing is uploaded from anywhere except this clean package directory.
 
 **Inputs:**
-- output/[DECK_SLUG].pptx (the QC-passed assembled deck)
-- The approved render exports (deck PDF, PRESENTER-GUIDE.pdf, PRESENTER-SPEECH.pdf, PRESENTER-AUDIO.mp3, presenter-teleprompter.html, the run's webinar mp4) as produced by the pipeline phases
+- working/deliverables/{deck_slug}-FINAL.pptx (the QC-passed assembled deck)
+- The approved render exports (deck PDF at working/deliverables/{deck_slug}-FINAL.pdf, PRESENTER-GUIDE.pdf, PRESENTERS-SPEECH.pdf, PRESENTER-AUDIO.mp3 at working/delivery/PRESENTER-AUDIO.mp3, presenter-teleprompter.html, the run's webinar mp4) as produced by the pipeline phases
 - working/qc/final_qc_report.json (QC gate confirmation)
 
 **Steps:**
 1. Create the clean client package directory: `delivery/[DECK_SLUG]-FINAL/`. If a directory with this name already exists (a re-run), clear it completely and rebuild it from scratch -- never patch a stale package.
 2. Copy into it ONLY the allowed deliverables, named exactly:
-   - `[Deck-Title]-FINAL.pptx` (from output/[DECK_SLUG].pptx)
-   - `[Deck-Title]-FINAL.pdf` (the deck's portable-document-format export)
+   - `[Deck-Title]-FINAL.pptx` (from working/deliverables/{deck_slug}-FINAL.pptx)
+   - `[Deck-Title]-FINAL.pdf` (the deck's portable-document-format export, from working/deliverables/{deck_slug}-FINAL.pdf)
    - `PRESENTER-GUIDE.pdf`
    - `PRESENTER-SPEECH.pdf`
    - `PRESENTER-AUDIO.mp3`
@@ -358,7 +358,7 @@ The delivery notification is sent exclusively via `openclaw message send`. Raw T
 ## 11. Handoffs (Value Stream Map)
 
 ### You receive work from:
-- **ROLE-08 PPTX Assembly Specialist** -- the QC-passed output/[DECK_SLUG].pptx; triggered after Phase 6 QC passes (score >= 8.5); the Assembly Specialist hands the PPTX and the QC result to the Director, who dispatches this role
+- **ROLE-08 PPTX Assembly Specialist** -- the QC-passed working/deliverables/{deck_slug}-FINAL.pptx; triggered after Phase 6 QC passes (score >= 8.5); the Assembly Specialist hands the PPTX and the QC result to the Director, who dispatches this role
 - **ROLE-06 Media Librarian and GHL Updater** -- media_library.json (ghl_folder_id, ghl_folder_name, version_number, drive_folder_id); SOP 9.6 from ROLE-06 is now absorbed into this role; ROLE-06 no longer owns delivery
 - **QC Specialist -- Presentations** -- final Phase 6 QC score of record via working/qc/final_qc_report.json
 - **Director of Presentations** -- dispatch signal after Phase 6 QC passes

@@ -22,21 +22,21 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Inputs:**
 - the engine closeout gate verdict for this run (build_deck postflight completeness gate green; `working/qc/final_qc_report.json` present from P-QC-AGGREGATE with its gate-facing average >= 8.5 -- the AF-F5 quality gate; the retired `working/qc/final_deck_qc.json` no longer exists in code)
-- output/[DECK_SLUG].pptx (assembled deck)
-- output/[DECK_SLUG].pdf (portable-document export)
+- working/deliverables/{deck_slug}-FINAL.pptx (assembled deck)
+- working/deliverables/{deck_slug}-FINAL.pdf (portable-document export)
 - working/deliverables/PRESENTER-GUIDE.pdf (rendered from PRESENTER-GUIDE.md by the Presenters Guide Specialist)
-- working/presenter-speech/PRESENTERS-SPEECH.pdf (teleprompter PDF, Presenters Speech Writer)
-- working/presenter-speech/audio/PRESENTER-AUDIO.mp3 (Fish Audio S2 render)
+- working/deliverables/PRESENTERS-SPEECH.pdf (teleprompter PDF, Presenters Speech Writer)
+- working/delivery/PRESENTER-AUDIO.mp3 (Fish Audio S2 render)
 - sops/SOP-PITCH-05-DELIVERABLE-BUNDLE.md (the seven-file whitelist and the blocklist)
 
 **Steps:**
 1. Create a clean, empty `delivery/[DECK_SLUG]-FINAL/` directory. This directory is NOT under `working/`. If it already exists from a prior run, empty it first.
 2. Copy ONLY the seven allowed CLIENT files into `delivery/[DECK_SLUG]-FINAL/`:
-   - `output/[DECK_SLUG].pptx` -> `delivery/[DECK_SLUG]-FINAL/<deck-slug>-FINAL.pptx`
-   - `output/[DECK_SLUG].pdf` -> `delivery/[DECK_SLUG]-FINAL/<deck-slug>-FINAL.pdf`
+   - `working/deliverables/{deck_slug}-FINAL.pptx` -> `delivery/[DECK_SLUG]-FINAL/<deck-slug>-FINAL.pptx`
+   - `working/deliverables/{deck_slug}-FINAL.pdf` -> `delivery/[DECK_SLUG]-FINAL/<deck-slug>-FINAL.pdf`
    - `working/deliverables/PRESENTER-GUIDE.pdf` -> `delivery/[DECK_SLUG]-FINAL/PRESENTER-GUIDE.pdf`
-   - `working/presenter-speech/PRESENTERS-SPEECH.pdf` -> `delivery/[DECK_SLUG]-FINAL/PRESENTERS-SPEECH.pdf`
-   - `working/presenter-speech/audio/PRESENTER-AUDIO.mp3` -> `delivery/[DECK_SLUG]-FINAL/PRESENTER-AUDIO.mp3`
+   - `working/deliverables/PRESENTERS-SPEECH.pdf` -> `delivery/[DECK_SLUG]-FINAL/PRESENTERS-SPEECH.pdf`
+   - `working/delivery/PRESENTER-AUDIO.mp3` -> `delivery/[DECK_SLUG]-FINAL/PRESENTER-AUDIO.mp3`
    - `working/deliverables/presenter-teleprompter.html` -> `delivery/[DECK_SLUG]-FINAL/presenter-teleprompter.html`
    - the run's webinar video (produced at P9.6, hosted in GHL) -> `delivery/[DECK_SLUG]-FINAL/<deck-slug>-WEBINAR.mp4`
    If any of the seven source files does not exist or is empty: halt, notify the Director which artifact is missing, do NOT proceed to delivery.
@@ -55,7 +55,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    (exit 0 = clear to deliver, 1 = REJECTED). A non-zero exit HARD-BLOCKS delivery: do NOT copy to `~/Downloads/`, do NOT upload to GHL, do NOT send via Telegram/Drive, do NOT set `delivery_complete: true`. The gate inspects the artifact and REJECTS a deck that was hand-built OUTSIDE the governed kie.ai pipeline:
    - **`AF-OVERLAY-DELIVERED`** — the deck carries SELECTABLE native on-slide text (a `<a:t>` run in a `.pptx`, or embedded fonts + text operators in a `.pdf`) instead of words baked into kie.ai images — i.e. it was assembled with python-pptx / Pillow / Google Slides / Keynote, not rendered.
    - **`AF-NOT-KIE-RENDERED`** — no real kie.ai `taskId` per slide in the process manifest, or the artifact is not a readable OOXML/PDF deck (a renamed-image decoy).
-   - **`AF-NO-RUN-DIR`** — no governed run dir (`working/checkpoints/process_manifest.json`) — the deck never passed through `run_signature_deck.py`.
+   - **`AF-NO-RUN-DIR`** — no governed run dir (`working/checkpoints/process_manifest.json`) — the deck was never built by the presentation engine.
    - **`AF-BUNDLE-COMPLETE`** -- the seven-file client package is incomplete (any of the seven files missing, including the teleprompter or the webinar file).
    `--pre-transport` enforces every artifact-provenance gate above PLUS the AF-DH1 package + teleprompter, while deferring ONLY the SOP-9.4 destination ground-truth (the upload SOP 9.2 is about to perform — re-checked in full at `run_signature_deck.py` P9-DELIVER). This is the coded enforcer for the boundary autofails (`AF-OVERLAY-DELIVERED` / `AF-NOT-KIE-RENDERED` / `AF-NO-RUN-DIR` / `AF-BUNDLE-COMPLETE`) registered in `PIPELINE-MANIFEST.json` with `sop_ref: delivery-concierge-sops.md`. The GHL transport (`ghl_media_push.py`) ALSO runs this same gate automatically and ABORTS the upload on rejection — so even an agent that skips this step cannot push a hand-built deck to the client's GHL media library. The ONLY bypass is a logged `owner_skip_approval` token (`gate=<AF code>`); an agent may NEVER self-approve.
 
