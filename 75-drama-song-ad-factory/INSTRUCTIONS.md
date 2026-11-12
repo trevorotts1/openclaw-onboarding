@@ -185,7 +185,7 @@ guard that already failed.
    creative beats and twelve production stages stay separate contracts
    (section 14).
 
-   **Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question (AskUserQuestion) with the concrete choices (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
+   **Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question with the concrete choices, numbered, in one message (in a Claude Code session use the AskUserQuestion tool; on an OpenClaw box send it on the client's own channel with `openclaw message send` and wait for the reply) (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
 
 9. **Persist every provider task and result (step 9).** Every paid call
    reserves through `scripts/core/spend_ledger.py` with a recorded
@@ -353,10 +353,7 @@ or an equivalent self-scheduled wakeup. Every tick:
    lists every question with its options. Never answer a card question for the
    client.
 3. If `stalled` is true, run `recovery_command` once, then report.
-4. **The loop MUST stop itself at 3 hours**: `expired` true ends it (or
-   `loop_should_stop` true on a COMPLETE run), and `--interval-check` exits 10
-   at the same point. Never keep looping past the cap, and never say the video
-   is done unless `stage_state` is `COMPLETE`.
+4. **The loop stops only on `loop_should_stop`** (verified COMPLETE or cancelled; `--interval-check` exits 10). Reaching 3 hours does not stop it. Never say the video is done unless `stage_state` is `COMPLETE`.
 
 **On an OpenClaw box.** The same watcher runs as one cron:
 `timer-artifacts/install-keepalive-cron.sh --apply` registers `skill75-keepalive`
