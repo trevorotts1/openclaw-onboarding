@@ -834,8 +834,18 @@ def client_message(run_id, row, decisions, stalled, stall_detail, expired,
                 "stands: %d of %d steps are finished, and I'm working on %s. "
                 "Nothing is lost and nothing was thrown away."
                 % (max_hours, done, total, stage_noun(row["stage"])))
-        tail = (" I'm staying with it and picking it back up from exactly here; "
-                "someone will come back to you with the next step.")
+        if stalled:
+            if recovery_acted_ok(recovery):
+                tail = (" I'm picking it back up now. I'm staying with it from "
+                        "exactly here; someone will come back to you with the "
+                        "next step.")
+            else:
+                tail = (" I've flagged it for a person to look at as well. I'm "
+                        "staying with it from exactly here; someone will come "
+                        "back to you with the next step.")
+        else:
+            tail = (" I'm staying with it and picking it back up from exactly here; "
+                    "someone will come back to you with the next step.")
         if decisions:
             tail += "\n\nStill waiting on you:\n" + "\n".join(_decision_lines(decisions))
         return head + tail

@@ -399,7 +399,7 @@ def main():
           "picking it back up" in msg_a
           and "picking it back up" not in msg_b
           and "picking it back up" not in msg_c,
-          (msg_a, msg_b, msg_c))
+          "a=%r b=%r c=%r" % (msg_a, msg_b, msg_c))
 
     print()
     if FS:
