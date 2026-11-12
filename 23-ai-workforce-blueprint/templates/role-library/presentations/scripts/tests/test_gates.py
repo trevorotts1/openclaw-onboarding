@@ -230,7 +230,8 @@ def test_qc_gate_no_numeric_score_is_hard_failure():
     assert g["warn_only"] is False
 
 def test_qc_gate_below_threshold_is_hard_failure():
-    rd = _rd(); _wj(rd, "working/qc/final_qc_report.json", {"average": 7.9})
+    rd = _rd(); _wj(rd, "working/qc/final_qc_report.json",
+        {"schema": "final_qc_report/v1", "pass": True, "average": 7.9})
     g = Gates(rd, {})._qc_gate()
     assert g["state"] == "fail", g
     assert g["warn_only"] is False
