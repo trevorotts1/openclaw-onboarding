@@ -116,6 +116,8 @@ class NativeDropdownTests(unittest.TestCase):
         spec=recipe_cli.compile_recipe('forms.configure',data)['steps'][0]
         desired=properties('single_dropdown');state={'created':False};frame=MagicMock()
         save=frame.get_by_role.return_value;save.count.return_value=1;save.is_visible.return_value=True;save.is_enabled.return_value=True
+        # These fixtures contain no HTML widget, so outer Save has no HTML warning dialog.
+        frame.locator.return_value.count.return_value=0
         base=[{'types':['group'],'children':'all five preserved'},{'types':['NUMERICAL'],'properties':number},{'types':['submit']}]
         def snapshot(*_):return deepcopy(base[:2])+([{'types':['SINGLE_OPTIONS'],'properties':desired}] if state['created'] else [])+deepcopy(base[2:])
         def inventory(*_):return deepcopy(data['widget_fields']['expected_fields'])+([{'kind':'single_dropdown','index':3,'properties':desired}] if state['created'] else [])

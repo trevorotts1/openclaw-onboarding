@@ -196,6 +196,12 @@ def _expected(field):
     return {key:field[key] for key in ('native_query_key','expected_label','options')}
 
 
+def _receipt_reuse_proof(observed):
+    return {'unique_key':observed['unique_key'],'custom_field_name':observed['custom_field_name'],
+        'query_key':observed['query_key'],'label':observed['label'],
+        'options':[{'label':option['label']} for option in observed['options']]}
+
+
 def _preserved(before_canvas,before_dropdowns,after_canvas,after_dropdowns,added):
     new={field['native_query_key']:_expected(field) for field in added}
     found={record['native_query_key']:(index,record) for index,record in after_dropdowns}
@@ -284,7 +290,9 @@ def configure(page,step):
         raise Stop('Native dropdown definitions or other field identities did not persist after independent reopen')
     return {'status':'DROPDOWN_FIELDS_SAVED_AND_REOPENED','editor_url':page.url,
         'fields':[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
-            'placement':'reused' if field['id'] in adopted else 'added'} for field in data['dropdown_fields']],
+            'placement':'reused' if field['id'] in adopted else 'added',
+            **({'reuse_proof':_receipt_reuse_proof(adopted[field['id']])} if field['id'] in adopted else {})}
+            for field in data['dropdown_fields']],
         'configuration_sha256':configuration_hash(plan),'independent_readback':'VERIFIED',
         'behavior_verified':False,'submission_verified':False}
 
@@ -296,8 +304,24 @@ def validate_receipt(result,step):
     if (not isinstance(records,list) or len(records)!=len(data['dropdown_fields'])
             or any(not isinstance(record,dict) or record.get('placement') not in ('added','reused') for record in records)):
         raise Stop('Dropdown completion lacks its exact placement disposition')
-    expected_fields=[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
-                      'placement':record['placement']} for field,record in zip(data['dropdown_fields'],records)]
+    expected_fields=[]
+    for field,record in zip(data['dropdown_fields'],records):
+        expected={**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
+                  'placement':record['placement']}
+        if record['placement']=='reused':
+            proof=record.get('reuse_proof')
+            from playwright_recipes.form_widget_families import _read
+            if (not isinstance(proof,dict) or set(proof)!={'unique_key','custom_field_name','query_key','label','options'}
+                    or proof.get('unique_key')!=field['field_key'] or proof.get('custom_field_name')!=field['name']
+                    or proof.get('query_key')!=field['native_query_key'] or proof.get('label')!=field['expected_label']
+                    or not isinstance(proof.get('options'),list)
+                    or any(not isinstance(option,dict) or set(option)!={'label'} for option in proof['options'])
+                    or [option['label'] for option in proof['options']]!=field['options']):
+                raise Stop('Reused dropdown lacks an exact canonical native owner proof')
+            expected['reuse_proof']=deepcopy(proof)
+        elif 'reuse_proof' in record:
+            raise Stop('New dropdown insertion cannot carry a legacy reuse proof')
+        expected_fields.append(expected)
     if (not isinstance(result,dict) or result.get('status')!='DROPDOWN_FIELDS_SAVED_AND_REOPENED'
             or result.get('editor_url')!=data['start_url'] or result.get('fields')!=expected_fields
             or result.get('configuration_sha256')!=configuration_hash(plan)
@@ -328,7 +352,10 @@ def verify_completed(page,step,receipt):
         if tile.get_attribute('aria-disabled')!='true':
             raise Stop('Completed Dropdown no longer owns its exact API picker field')
     fill(search,'');_close_object_drawer(frame,'form')
-    for field in data['dropdown_fields']:_prove_existing_owner(frame,scope,field,inventory)
+    for field,record in zip(data['dropdown_fields'],receipt['fields']):
+        observed=_prove_existing_owner(frame,scope,field,inventory)
+        if record['placement']=='reused' and _receipt_reuse_proof(observed)!=record['reuse_proof']:
+            raise Stop('Completed Dropdown canonical owner differs from its recorded reuse proof')
     if _stable_canvas(scope)!=before:
         raise Stop('Completed Dropdown verification changed a sibling owner')
     return deepcopy(receipt)

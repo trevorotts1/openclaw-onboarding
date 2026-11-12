@@ -1,72 +1,33 @@
-# Survey build scope after captured Multi Line creation
+# Survey source build scope at v27.1.109
 
-This is a finite source-build inventory, not a live respondent acceptance report.
-Broad `surveys.create` and `surveys.configure` remain PARTIAL.
+The recorded `surveys.create` and `surveys.configure` source contracts are BUILT.
+This is source coverage. Maintained-script and live respondent acceptance remain
+pending. The authoritative current operation ledger is [PLAYWRIGHT-PROGRESS.md](PLAYWRIGHT-PROGRESS.md), with exact contracts in [PLAYWRIGHT-BUILD-STATUS.json](PLAYWRIGHT-BUILD-STATUS.json).
 
-## Built owned creation paths
+## Implemented recorded source
 
-- One captured standard field per requested slide: First Name, Last Name, Phone,
-  Email.
-- Authored Radio question definitions and exact native placement.
-- Single Line TEXT creation, multiple questions and captured populated append.
-- Multi Line LARGE_TEXT creation and populated append, including mixed Single
-  Line/Multi Line slides, using the actual `Multi Line1` drag tile and native
-  textarea. Label,
-  Placeholder, Short Label, Query Key, Required, Hidden and Hidden value are
-  authored and checked after saving and independently reopening.
-- Number, Checkbox, Single Dropdown, Multi Dropdown, File Upload, Signature and
-  Text Box List widget creation on their own initially empty slide.
-- Bot protection (Interactive mode), Source and Monetary creation, using their
-  captured survey-specific General Settings controls and Quick Add IDs.
-- Score creation using its captured generated label and Query Key, without
-  creating API custom-field metadata.
-- Rating creation with its captured queryless `@rating` identity, generated
-  label, Content controls and two preview input labels.
-- Date-only, Date & time and Time-only creation using their captured collect
-  modes, mode-specific canvas types and generated native Query Keys.
+- Owned survey shells, slides, captured standard fields, Radio, Single Line,
+  Multi Line, Number, Checkbox, Single Dropdown, Multi Dropdown, File Upload,
+  Signature and Text Box List.
+- Captured Bot protection, Source, Monetary, Score, Rating, Date-only,
+  Date and time, Time-only, Text heading, HTML, Image, Picture Choice and URL
+  creation/property adapters, with guarded Survey owner identities.
+- Forward Jump To and captured plain Message/HTTPS Redirect completion.
+- Compound predicates and captured Show/Hide, conditional Message/Redirect
+  and After Submit disqualification outcomes.
+- Existing mixed legacy Jump To/outcome inventories. Jump cards remain unchanged
+  at their exact ordinal. Known outcomes can be edited in place or appended after
+  an unchanged complete prefix; unsupported reorder/removal stops before writes.
+- Captured paragraph/basic-mark and new-window ASCII HTTPS-link preservation,
+  with raw markup hashes and independent saved reopen checks in the scripts.
 
-Multi Line creation uses the same typed `surveys.create.question_batches` plan
-with `kind: "multiline"`. It never provisions an API custom field. Its own child
-intent journal prevents repeating an uncertain drag or Save. The complete final
-survey receipt binds textarea identities, slide positions, Query Keys and other
-canvas controls. Completed whole-survey replay reopens and reads that inventory.
-Single Line plans retain their original serialization and hashes.
+## Boundaries and pending acceptance
 
-Populated insertion binds the complete ordered prior TEXT/LARGE_TEXT canvas and
-all prior properties before one pointer drag into the measured positive blank
-tail. Later stages and the whole saved survey verify interleaved INPUT/TEXTAREA
-order and exact Query Keys. Existing homogeneous Single Line plan serialization
-is unchanged. Mixing Radio with Multi Line on the same slide still refuses until
-its specific placement is captured. Other widget families are not inferred from
-these text controls. Existing Multi Line properties retain their separate action.
+Unprofiled contact/address/payment tiles, arbitrary mixed-question placement,
+other disqualification timing, arbitrary rich HTML and arbitrary Jump To reorder
+are outside the recorded profiles. The adapters fail closed when native controls
+or complete expected inventories differ. Several content adapters reuse guarded
+Form primitives; their native Survey maintained-script acceptance remains pending.
 
-## Remaining owned creation tiles
-
-The captured Quick Add rail has 38 tile entries. Fifteen widget tiles have an owned
-creation path above. These 23 entries still need their own typed owned creation coverage:
-
-| Group | Captured tile entries |
-| --- | --- |
-| Contact | Full Name; Date of birth; Organization; Website |
-| Address | Updated Address; legacy Address; City; State; Country; Postal Code |
-| Choices | Picture Choice |
-| Content | Text; Html; Image |
-| Payment | Sell Products; Collect Payment |
-| Other | T & C; URL |
-
-This table describes the owned new-survey pipeline. It does not remove any
-existing-field placement or form-only control support elsewhere in the code.
-
-## Remaining configuration families
-
-1. Other question/widget property layouts beyond captured TEXT and LARGE_TEXT.
-2. Compound/mixed predicates.
-3. Completion/custom-message outcomes.
-4. Redirect outcomes.
-5. Disqualification outcomes.
-6. Arbitrary existing-rule editing and removal.
-7. Arbitrary existing-rule priority/reordering.
-
-Captured ordered forward Jump To rule stacks are already implemented. Final
-native script execution and respondent answers covering each requested branch
-remain separate from source completion.
+Source tests and manual control captures are separate from actually executing the
+maintained scripts, answering a live survey and proving each respondent branch.

@@ -1,5 +1,6 @@
 """Real intake/compiler/runner/journal binding for independently captured question paths."""
 from copy import deepcopy
+from contextlib import ExitStack
 from pathlib import Path
 import tempfile
 import time
@@ -40,10 +41,16 @@ class QuestionIntegration(unittest.TestCase):
     def test_both_paths_bind_real_compiler_and_completed_replay_without_second_insert(self):
         from playwright_recipes import dropdown_fields,quiz_text_questions,large_text_fields
         for job,module in ((self.dropdown(),dropdown_fields),(self.large_text(),large_text_fields),(self.quiz(),quiz_text_questions)):
-            with self.subTest(action=job['steps'][0]['action']),tempfile.TemporaryDirectory() as root,patch.object(runner,'assert_tenant'),patch.object(module,'configure',return_value=self.receipt(job)) as write:
-                first=runner.run_on_page(object(),job,root)
-                with patch('time.time',return_value=time.time()+3700):second=runner.run_on_page(object(),job,root)
+            with self.subTest(action=job['steps'][0]['action']),tempfile.TemporaryDirectory() as root,ExitStack() as patches:
+                patches.enter_context(patch.object(runner,'assert_tenant'))
+                write=patches.enter_context(patch.object(module,'configure',return_value=self.receipt(job)))
+                verify=None
+                if job['steps'][0]['action'] in ('native_dropdown_fields','native_large_text_fields'):
+                    verify=patches.enter_context(patch.object(module,'verify_completed',side_effect=lambda page,step,result:module.validate_receipt(result,step)))
+                page=object();first=runner.run_on_page(page,job,root)
+                with patch('time.time',return_value=time.time()+3700):second=runner.run_on_page(page,job,root)
                 self.assertEqual(first['status'],'NEEDS_VERIFICATION');self.assertEqual(second['status'],'NEEDS_VERIFICATION');write.assert_called_once()
+                if verify is not None:verify.assert_called_once_with(page,job['steps'][0],self.receipt(job))
     def test_quiz_receipt_cannot_promote_or_retarget_completed_insert(self):
         job=self.quiz();s=job['steps'][0];r=self.receipt(job)
         for change in ({'question_count':0},{'target_page':2},{'configuration_sha256':'0'*64},{'dependency_api_used':True},{'submission_verified':True},{'kind':'quiz'}):

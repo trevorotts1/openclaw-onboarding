@@ -40,6 +40,8 @@ class BotProtection(unittest.TestCase):
         spec=recipe_cli.compile_recipe('forms.configure',inputs('bot_protection'))['steps'][0]
         frame=MagicMock();page=MagicMock();save=frame.get_by_role.return_value
         save.count.return_value=1;save.is_visible.return_value=True;save.is_enabled.return_value=True
+        # These fixtures contain no HTML widget, so outer Save has no HTML warning dialog.
+        frame.locator.return_value.count.return_value=0
         original=[{'types':['text']},{'types':['submit']}]
         state={'created':False,'properties':None};item=MagicMock()
         def snapshot(*args):

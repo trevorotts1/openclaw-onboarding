@@ -284,7 +284,9 @@ def configure(page,step):
         raise Stop('Native large_text definitions or other field identities did not persist after independent reopen')
     return {'status':'LARGETEXT_FIELDS_SAVED_AND_REOPENED','editor_url':page.url,
         'fields':[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
-            'placement':'reused' if field['id'] in adopted else 'added'} for field in data['large_text_fields']],
+            'placement':'reused' if field['id'] in adopted else 'added',
+            **({'reuse_proof':deepcopy(adopted[field['id']])} if field['id'] in adopted else {})}
+            for field in data['large_text_fields']],
         'configuration_sha256':configuration_hash(plan),'independent_readback':'VERIFIED',
         'behavior_verified':False,'submission_verified':False}
 
@@ -295,8 +297,19 @@ def validate_receipt(result,step):
     records=result.get('fields') if isinstance(result,dict) else None
     if not isinstance(records,list) or len(records)!=len(data['large_text_fields']) or any(not isinstance(x,dict) or x.get('placement') not in ('added','reused') for x in records):
         raise Stop('Large Text completion lacks its exact placement disposition')
-    expected_fields=[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
-                      'placement':record['placement']} for field,record in zip(data['large_text_fields'],records)]
+    expected_fields=[]
+    for field,record in zip(data['large_text_fields'],records):
+        expected={**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
+                  'placement':record['placement']}
+        if record['placement']=='reused':
+            proof=record.get('reuse_proof')
+            if (not isinstance(proof,dict) or set(proof)!={'unique_key','custom_field_name'}
+                    or proof!={'unique_key':field['field_key'],'custom_field_name':field['name']}):
+                raise Stop('Reused Large Text lacks an exact canonical native owner proof')
+            expected['reuse_proof']=deepcopy(proof)
+        elif 'reuse_proof' in record:
+            raise Stop('New Large Text insertion cannot carry a legacy reuse proof')
+        expected_fields.append(expected)
     if (not isinstance(result,dict) or result.get('status')!='LARGETEXT_FIELDS_SAVED_AND_REOPENED'
             or result.get('editor_url')!=data['start_url'] or result.get('fields')!=expected_fields
             or result.get('configuration_sha256')!=configuration_hash(plan)
@@ -321,6 +334,9 @@ def verify_completed(page,step,receipt):
         _,tile,_=_object_row(dialog,search,field)
         if tile.get_attribute('aria-disabled')!='true':raise Stop('Completed Large Text no longer owns its API picker field')
     fill(search,'');_close_object_drawer(frame,'form')
-    for field in data['large_text_fields']:_prove_existing_owner(frame,scope,field,inventory)
+    for field,record in zip(data['large_text_fields'],receipt['fields']):
+        observed=_prove_existing_owner(frame,scope,field,inventory)
+        if record['placement']=='reused' and observed!=record['reuse_proof']:
+            raise Stop('Completed Large Text canonical owner differs from its recorded reuse proof')
     if _stable_canvas(scope)!=before:raise Stop('Completed Large Text verification changed a sibling owner')
     return deepcopy(receipt)

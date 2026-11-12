@@ -276,8 +276,10 @@ def _validate_inventory(value,plan,binding,completed):
             if (not isinstance(controls,list) or (not controls and authored['kind'] in ('checkbox','single_dropdown','multi_dropdown','text_box_list'))
                     or any(not isinstance(control,list) or len(control)!=5 for control in controls)):
                 raise Stop('Survey choice-widget child receipt omits its saved native control inventory')
-            widget_canvas[_question_key(authored['kind'],authored['questions'][0])]={'types':[WIDGET_TYPES[authored['kind']]],
+            key=_question_key(authored['kind'],authored['questions'][0])
+            widget_canvas[key]={'types':[WIDGET_TYPES[authored['kind']]],
                 'names':[control[:3] for control in controls]}
+            widget_canvas_kinds[key]=authored['kind']
         for row in canvas:
             if not isinstance(row,dict) or set(row)!={'types','names'} or not isinstance(row['names'],list):
                 raise Stop('Whole-survey saved canvas row is malformed')

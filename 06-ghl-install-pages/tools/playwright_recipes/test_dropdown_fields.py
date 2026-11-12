@@ -137,7 +137,11 @@ class ExistingBindingTests(unittest.TestCase):
              patch.object(native,'_object_row',return_value=(Mock(),tile,checkbox)), \
              patch.object(native,'fill'),patch.object(native,'click',side_effect=clicks.append), \
              patch.object(native,'reopen_editor',side_effect=reopen), \
-             patch.object(native,'_prove_existing_owner',side_effect=lambda *args: {'joined':'canonical'} if proven else original_proof(*args)):
+             patch.object(native,'_prove_existing_owner',side_effect=lambda *args: (
+                 {'unique_key':field['field_key'],'custom_field_name':field['name'],
+                  'query_key':field['native_query_key'],'label':field['expected_label'],
+                  'options':[{'label':option,'value':None} for option in field['options']]}
+                 if proven else original_proof(*args))):
             try:result=native.configure(page,data)
             except Stop as error:result=error
         return result,checkbox,clicks
@@ -189,7 +193,10 @@ class PositiveLegacyAdoptionTests(unittest.TestCase):
     def test_positive_reuse_keeps_exact_receipt_identity_and_never_claims_new_insertion(self):
         data=plan();field=data['payload']['dropdown_fields'][0]
         receipt={'status':'DROPDOWN_FIELDS_SAVED_AND_REOPENED','editor_url':data['payload']['start_url'],
-            'fields':[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},'placement':'reused'}],
+            'fields':[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},'placement':'reused',
+                'reuse_proof':{'unique_key':field['field_key'],'custom_field_name':field['name'],
+                    'query_key':field['native_query_key'],'label':field['expected_label'],
+                    'options':[{'label':option} for option in field['options']]}}],
             'configuration_sha256':native.configuration_hash(data),'independent_readback':'VERIFIED',
             'behavior_verified':False,'submission_verified':False}
         self.assertEqual(native.validate_receipt(receipt,data)['fields'][0]['placement'],'reused')
@@ -200,7 +207,10 @@ class PositiveLegacyAdoptionTests(unittest.TestCase):
     def test_completed_legacy_replay_reopens_and_checks_join_without_add_or_save(self):
         data=plan();field=data['payload']['dropdown_fields'][0]
         receipt={'status':'DROPDOWN_FIELDS_SAVED_AND_REOPENED','editor_url':data['payload']['start_url'],
-            'fields':[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},'placement':'reused'}],
+            'fields':[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},'placement':'reused',
+                'reuse_proof':{'unique_key':field['field_key'],'custom_field_name':field['name'],
+                    'query_key':field['native_query_key'],'label':field['expected_label'],
+                    'options':[{'label':option} for option in field['options']]}}],
             'configuration_sha256':native.configuration_hash(data),'independent_readback':'VERIFIED',
             'behavior_verified':False,'submission_verified':False}
         page=MagicMock();page.url=data['payload']['start_url'];frame=MagicMock()
@@ -214,7 +224,9 @@ class PositiveLegacyAdoptionTests(unittest.TestCase):
                 patch.object(native,'_stable_canvas',return_value=[{'types':['SINGLE_OPTIONS'],'names':[]}]), \
                 patch.object(native,'_object_dialog',return_value=(MagicMock(),MagicMock())), \
                 patch.object(native,'_object_row',return_value=(MagicMock(),tile,MagicMock())), \
-                patch.object(native,'_prove_existing_owner',return_value={'verified':'exact'}) as prove, \
+                patch.object(native,'_prove_existing_owner',return_value={'unique_key':field['field_key'],
+                    'custom_field_name':field['name'],'query_key':field['native_query_key'],
+                    'label':field['expected_label'],'options':[{'label':option,'value':None} for option in field['options']]}) as prove, \
                 patch.object(native,'fill'),patch.object(native,'click') as clicked:
             self.assertEqual(native.verify_completed(page,data,receipt),receipt)
             reopen.assert_called_once();prove.assert_called_once()
@@ -236,7 +248,10 @@ class LegacyReplayRunnerBoundaryTests(unittest.TestCase):
         step=job['steps'][0];field=step['payload']['dropdown_fields'][0]
         receipt={'status':'DROPDOWN_FIELDS_SAVED_AND_REOPENED','editor_url':source['start_url'],
             'fields':[{**{key:field[key] for key in ('id','field_key','data_type','native_query_key')},
-                       'placement':'reused'}],
+                       'placement':'reused','reuse_proof':{
+                           'unique_key':field['field_key'],'custom_field_name':field['name'],
+                           'query_key':field['native_query_key'],'label':field['expected_label'],
+                           'options':[{'label':option} for option in field['options']]}}],
             'configuration_sha256':leaf.configuration_hash(step),'independent_readback':'VERIFIED',
             'behavior_verified':False,'submission_verified':False}
         page=MagicMock();page.url=source['start_url']
