@@ -15,6 +15,8 @@ all entry points, commands and remaining live verification work.
 **v27.1.109: 33 source-built recorded operation contracts / 0 source partials.**
 All original ten partial areas now have integrated executable source within their recorded boundaries. Compiler coverage is **72 concrete actions / 101 bounded jobs**. The final merged source smoke passed **45 focused tests**.
 
+The generated `ghl-install-pages.skill` archive contains the six current source documents; its Skill metadata is v27.1.109.
+
 This candidate is **OWNER_APPROVED_PREPARED_RELEASE**. Trevor approved publishing and batch merging this build on November11,2026. This is a release preparation snapshot; verify actual delivery through its merged batch/main receipt. The verified preparation baseline remains v27.1.108 through batch PR3125.
 
 Final maintained-script, respondent, member and notification acceptance remains **NOT_RUN / PENDING**. OAuth requires external user authorization. See the [progress ledger](references/PLAYWRIGHT-PROGRESS.md) and [machine-readable ledger](references/PLAYWRIGHT-BUILD-STATUS.json) for exact contracts and limits.

@@ -1037,7 +1037,7 @@
       "source_base": "b05dcf3730830790c3fb510e7c63416c25842942",
       "publication": "OWNER_APPROVED_PREPARED_RELEASE",
       "pr": null,
-      "source_snapshot_commit": "4dbde83e99a41a9998aedaaba756b8c197395712",
+      "source_snapshot_commit": "8ad51bf9b8e3c1a47c2fc308fe231683220eaec8",
       "native_final_script": "NOT_RUN",
       "publication_limit": "Owner explicitly approved publishing and batch merging completed Skill6 source on2026-11-11. Delivery remains pending until actual main inclusion is verified."
     },
@@ -1062,7 +1062,7 @@
       "source_in_this_release": 66
     },
     "completed_feature_status": "SOURCE_BUILT",
-    "source_snapshot_commit": "4dbde83e99a41a9998aedaaba756b8c197395712"
+    "source_snapshot_commit": "8ad51bf9b8e3c1a47c2fc308fe231683220eaec8"
   },
   "operations": [
     {
@@ -1438,7 +1438,8 @@
       "final_shared_smoke": "45 focused tests PASS in0.520s, exit0 at4dbde83e99a41a9998aedaaba756b8c197395712; widget families, mixed Survey conditions, outcome recreation, compiler boundary and Quiz individual media.",
       "integrated_meetings": "38 focused tests PASS at 7bd8b9304d; compiler/dispatch/replay wiring inspected.",
       "integrated_communities": "75 focused tests PASS at 7bd8b9304d; bounded contract source reviewed.",
-      "merged_widget_condition_compiler_smoke": "41 focused tests PASS at be1abce261; includes resolved mixed-conditions test fixtures and real compiler fixtures for72 actions101 bounded jobs."
+      "merged_widget_condition_compiler_smoke": "41 focused tests PASS at be1abce261; includes resolved mixed-conditions test fixtures and real compiler fixtures for72 actions101 bounded jobs.",
+      "release_full_recipe_discovery": "1648 tests PASS,7 real-browser fixtures reserved for CI; both Ubuntu and macOS real Chromium CI jobs passed on8ad51bf9."
     },
     "native_final_script": "NOT_RUN",
     "respondent_acceptance": "PENDING",
@@ -1449,7 +1450,8 @@
       "cohosts": "Saved loaded-empty card was captured. Actual first-assignment/clear-all execution and notification behavior remain unverified.",
       "common_scopes": "Source-built scope does not mean every native flow was executed or every client feature supported."
     },
-    "history": "Historical counts and release snapshots remain in Git history."
+    "history": "Historical counts and release snapshots remain in Git history.",
+    "installer_archive": "Six archived documents exactly match canonical source; archived SKILL metadata v27.1.109."
   },
   "common_client_use_progress": {
     "count": 10,

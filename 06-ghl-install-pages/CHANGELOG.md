@@ -11,6 +11,9 @@
   community Sections/private/read-only/icon metadata and provider OAuth handoff.
 - Recorded source ledger: 33 BUILT / 0 PARTIAL / 0 GENERIC_ONLY. Compiler:
   72 concrete actions / 101 bounded jobs. Final merged source smoke:45 tests PASS.
+- Regenerate the six-file installer archive from the canonical v27.1.109
+  documents; every archived member matches its source bytes.
+
 - Trevor explicitly approved publishing and batch merging the completed source
   into main on November11,2026. This entry is a preparation record; actual delivery
   is proved by the merged batch and main commit. Global version markers remain
