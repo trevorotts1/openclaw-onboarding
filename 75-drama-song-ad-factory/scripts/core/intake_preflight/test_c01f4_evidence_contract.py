@@ -43,8 +43,12 @@ class EvidenceMatchesDescriptors(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="c01f4-evidence-") as tmp:
             run = Path(tmp)
             for rel in ("edit/timeline.json", "edit/ad.mp4",
-                        "research/receipt.json", "research/claims.json",
-                        "research/captures.json",
+                        # S75-005 (U-A02): these are the files the research
+                        # stage really writes (research.py render()); the old
+                        # receipt/claims/captures names were written by nothing,
+                        # so writing them here pinned the wrong contract.
+                        "research/evidence.json", "research/manifest.json",
+                        "research/bundle.json",
                         "creative/story.json", "creative/blueprint.json",
                         "script/lyrics.json",
                         "music/picked-song.mp3", "song-choices/pick.json",
