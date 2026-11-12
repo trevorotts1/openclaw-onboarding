@@ -4557,6 +4557,25 @@ else
 fi
 unset _PODCAST_WIRE
 
+# RRX-121: register the Rescue Rangers jobs at install time. Step 5 copied the
+# receiver but ran only two other skills' wiring scripts, so a new box had no
+# poll job and no daily check until its first update roll. wire.sh is safe on
+# every box: with no enrollment values it registers the daily checks only and
+# exits 0. It is never run as root (a root-owned openclaw.json freezes the gateway).
+# The two flags are the ones update-skills.sh passes on every roll, so the
+# install path and the update path reconcile identically.
+_RR_WIRE="$SKILLS_DIR/65-rescue-receiver/wire.sh"
+if [ -f "$_RR_WIRE" ]; then
+    if [ "$(id -u)" = "0" ]; then
+        warn "Rescue Rangers: skipped wire.sh because this install is running as root; the first update roll registers the jobs"
+    elif bash "$_RR_WIRE" --idempotent --reconcile-only >>"$LOG_FILE" 2>&1; then
+        success "Rescue Rangers wiring ran (see $LOG_FILE for the readiness line)"
+    else
+        warn "Rescue Rangers wiring reported a problem (see $LOG_FILE); the box can still be used and the next update roll retries"
+    fi
+fi
+unset _RR_WIRE
+
 send_telegram_progress "✓ Skills + helpers installed. Setting up your AI engines next…"
 
 # ----------------------------------------------------------
