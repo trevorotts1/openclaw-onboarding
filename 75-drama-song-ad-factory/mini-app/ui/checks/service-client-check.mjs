@@ -88,7 +88,9 @@ async function loadPage({ hash, answer }) {
     { title: "Drama video", replies: ["1", "yes"], upload_ids: ["u_1"], order_id: "r_0123abcd" });
 
   // S75-071 — one tap, one order. Two lockIn calls made before the first one
-  // resolves send ONE request, and both taps see the same answer.
+  // resolves join ONE request only when they name the same order id, and both
+  // taps see the same answer. A concurrent tap naming a DIFFERENT order id
+  // sends its own request — the first tap's order must never answer for it.
   calls.length = 0;
   const tapOne = svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: [], order_id: "r_0123abcd" });
   const tapTwo = svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: [], order_id: "r_0123abcd" });
@@ -96,6 +98,11 @@ async function loadPage({ hash, answer }) {
   rule("two taps before the first resolves send one request", calls.length === 1, `${calls.length} call(s)`);
   rule("both taps resolve with the same answer",
     JSON.stringify(firstAnswer) === JSON.stringify(secondAnswer));
+  calls.length = 0;
+  const tapA = svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: [], order_id: "r_0123abcd" });
+  const tapB = svc.lockIn({ title: "Drama video", replies: ["1", "yes"], upload_ids: [], order_id: "r_4567ef01" });
+  await Promise.all([tapA, tapB]);
+  rule("taps naming different order ids send two requests", calls.length === 2, `${calls.length} call(s)`);
   await expect("listApprovals", "GET", "/api/studio/orders/r_abc123/approvals",
     () => svc.listApprovals("r_abc123"));
   await expect("answerApproval", "POST", "/api/studio/orders/r_abc123/approvals/script/answer",
