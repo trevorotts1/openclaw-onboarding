@@ -2,8 +2,9 @@
 # tests/unit/content-recheck-convergence-probes.test.sh
 # ---------------------------------------------------------------------------
 # Fleet-roll coverage audit gap #8: proves the SOP-library/embeddings,
-# persona-index, weekly-cron, AGENTS.md-hygiene, and UPDATE-PENDING-flag-
-# currency probes added right before update-skills.sh's CONTENT RECHECK
+# persona-index, weekly-cron, AGENTS.md-hygiene, UPDATE-PENDING-flag-currency,
+# and Command-Center-interview-flag probes added right before update-skills.sh's
+# CONTENT RECHECK
 # `exit 0` behave exactly like _cc_currency_probe's already-shipped contract:
 #
 #   * return 1 (non-zero) ONLY when a full pass would ACTUALLY repair
@@ -103,15 +104,16 @@ bash -n "$WORK/gate-wrapped.sh" || { echo "FATAL: extracted GATE block does not 
 cp "$WORK/resolve_ws.inc" "$WORK/resolve_ws.sh"
 bash -n "$WORK/resolve_ws.sh" || { echo "FATAL: extracted oc_resolve_workspace_announced() does not parse"; exit 2; }
 
-echo "== static: all five probes are present and wired ahead of the exit =="
+echo "== static: all six probes are present and wired ahead of the exit =="
 for fn in _sop_library_currency_probe _persona_index_currency_probe \
           _weekly_cron_currency_probe _agents_md_hygiene_probe \
-          _pending_flag_currency_probe; do
+          _pending_flag_currency_probe _cc_interview_flag_probe; do
   grep -q "^  ${fn}() {\$" "$WORK/probes.inc" \
     && ok "PROBES block defines ${fn}()" || bad "PROBES block missing ${fn}()"
 done
 for fn in _cc_currency_probe _sop_library_currency_probe _persona_index_currency_probe \
-          _weekly_cron_currency_probe _agents_md_hygiene_probe _pending_flag_currency_probe; do
+          _weekly_cron_currency_probe _agents_md_hygiene_probe \
+          _pending_flag_currency_probe _cc_interview_flag_probe; do
   grep -q "${fn}" "$WORK/gate.inc" \
     && ok "GATE block calls ${fn}" || bad "GATE block does not call ${fn}"
 done
@@ -545,11 +547,71 @@ RC=$?
 rm -f /tmp/pfc1.out /tmp/pfc2.out /tmp/pfc3.out /tmp/pfc4.out /tmp/pfc5.out /tmp/pfc6.out
 
 # ===========================================================================
+# COMMAND CENTER INTERVIEW FLAG PROBE
+# ===========================================================================
+# The probe shells out to the REAL helper (ensure_cc_interview_flag.py) in
+# --check mode, so the helper is stubbed here with a Python file that exits
+# with a chosen code: 3 = proven mismatch (the only trigger), 0 = agree or
+# interview not complete, 4 = not applicable. The app folder is a throwaway
+# git repo whose origin is the Command Center, and the build-state file sits
+# in a throwaway workspace — nothing real is read or written.
+run_interview_flag_probe() {  # run_interview_flag_probe <stub_exit_code_or_empty>
+  local stub_rc="$1"
+  local CASE_DIR; CASE_DIR="$(mktemp -d "$WORK/interview-flag-case-XXXXXX")"
+  (
+    set -euo pipefail
+    # shellcheck source=/dev/null
+    source "$WORK/probes-wrapped.sh"
+    probes_block
+    HOME="$CASE_DIR/home"
+    OC_WORKSPACE_DEFAULT="$CASE_DIR/workspace"
+    SKILLS_DIR="$CASE_DIR/skills"
+    unset CC_APP_DIR BLACKCEO_COMMAND_CENTER_ROOT OC_ROOT 2>/dev/null || true
+    mkdir -p "$HOME/projects/command-center" "$OC_WORKSPACE_DEFAULT" "$SKILLS_DIR/shared-utils"
+    git init -q "$HOME/projects/command-center"
+    git -C "$HOME/projects/command-center" remote add origin \
+      https://github.com/trevorotts1/blackceo-command-center.git
+    printf '{"interviewComplete": true}\n' > "$OC_WORKSPACE_DEFAULT/.workforce-build-state.json"
+    if [ -n "$stub_rc" ]; then
+      printf 'import sys\nsys.exit(%s)\n' "$stub_rc" \
+        > "$SKILLS_DIR/shared-utils/ensure_cc_interview_flag.py"
+    fi
+    _cc_interview_flag_probe
+  )
+}
+
+echo ""
+echo "== Command Center interview flag probe =="
+run_interview_flag_probe 3 >/tmp/cif1.out 2>&1
+RC=$?
+[ "$RC" -eq 1 ] && ok "(interview-flag) helper exit 3 (proven mismatch) returns 1 (trigger)" \
+  || bad "(interview-flag) helper exit 3 returned $RC (expected 1): $(cat /tmp/cif1.out)"
+grep -q "state=mismatch" /tmp/cif1.out && ok "(interview-flag) reports state=mismatch" || bad "(interview-flag) missing state=mismatch message: $(cat /tmp/cif1.out)"
+
+run_interview_flag_probe 0 >/tmp/cif2.out 2>&1
+RC=$?
+[ "$RC" -eq 0 ] && ok "(interview-flag) helper exit 0 (agree / not complete) returns 0 (no trigger)" \
+  || bad "(interview-flag) helper exit 0 returned $RC (expected 0): $(cat /tmp/cif2.out)"
+grep -q "Command Center interview flag" /tmp/cif2.out && bad "(interview-flag) exit 0 still named a trigger" \
+  || ok "(interview-flag) exit 0 does not name the trigger"
+
+run_interview_flag_probe 4 >/tmp/cif3.out 2>&1
+RC=$?
+[ "$RC" -eq 0 ] && ok "(interview-flag) helper exit 4 (not applicable) returns 0 (no trigger)" \
+  || bad "(interview-flag) helper exit 4 returned $RC (expected 0): $(cat /tmp/cif3.out)"
+
+run_interview_flag_probe "" >/tmp/cif4.out 2>&1
+RC=$?
+[ "$RC" -eq 0 ] && ok "(interview-flag) helper absent returns 0 (absent, not forced)" \
+  || bad "(interview-flag) missing-helper case returned $RC (expected 0): $(cat /tmp/cif4.out)"
+rm -f /tmp/cif1.out /tmp/cif2.out /tmp/cif3.out /tmp/cif4.out
+
+# ===========================================================================
 # AGGREGATION GATE: fast-exit fires ONLY when every probe converges;
 # falls through the instant any ONE probe reports outstanding work.
 # ===========================================================================
-run_gate() {  # run_gate <cc_rc> <sop_rc> <persona_rc> <cron_rc> <agents_rc> <pending_rc>
-  local cc="$1" sop="$2" persona="$3" cron="$4" agents="$5" pending="$6"
+run_gate() {  # run_gate <cc_rc> <sop_rc> <persona_rc> <cron_rc> <agents_rc> <pending_rc> <interview_rc>
+  local cc="$1" sop="$2" persona="$3" cron="$4" agents="$5" pending="$6" interview="$7"
   (
     set -euo pipefail
     # Stubs: the gate only needs each probe's RETURN CODE to decide whether
@@ -573,6 +635,7 @@ run_gate() {  # run_gate <cc_rc> <sop_rc> <persona_rc> <cron_rc> <agents_rc> <pe
     eval "_weekly_cron_currency_probe() { if [ \"\${_GATE_CRON_FIRST:-1}\" -eq 1 ]; then _GATE_CRON_FIRST=0; echo stub-cron; return $cron; else echo stub-cron-again; return 0; fi; }"
     eval "_agents_md_hygiene_probe() { if [ \"\${_GATE_AGENTS_FIRST:-1}\" -eq 1 ]; then _GATE_AGENTS_FIRST=0; echo stub-agents; return $agents; else echo stub-agents-again; return 0; fi; }"
     eval "_pending_flag_currency_probe() { if [ \"\${_GATE_PENDING_FIRST:-1}\" -eq 1 ]; then _GATE_PENDING_FIRST=0; echo stub-pending; return $pending; else echo stub-pending-again; return 0; fi; }"
+    eval "_cc_interview_flag_probe() { if [ \"\${_GATE_INTERVIEW_FIRST:-1}\" -eq 1 ]; then _GATE_INTERVIEW_FIRST=0; echo stub-interview; return $interview; else echo stub-interview-again; return 0; fi; }"
     # B3: both content-current exits now run the shared retirement check via
     # _content_current_exit (defined top-level in update-skills.sh, outside this
     # extracted block). The gate's fast-exit behaviour is what is under test
@@ -594,8 +657,8 @@ run_gate() {  # run_gate <cc_rc> <sop_rc> <persona_rc> <cron_rc> <agents_rc> <pe
 # but every probe returns its baked rc on EVERY call (first AND re-probe),
 # modeling "the fast path repair did not take". The gate must then fall
 # through to the full sync — never exit 0 on work that is still outstanding.
-run_gate_stubborn() {  # run_gate_stubborn <cc_rc> <sop_rc> <persona_rc> <cron_rc> <agents_rc> <pending_rc>
-  local cc="$1" sop="$2" persona="$3" cron="$4" agents="$5" pending="$6"
+run_gate_stubborn() {  # run_gate_stubborn <cc_rc> <sop_rc> <persona_rc> <cron_rc> <agents_rc> <pending_rc> <interview_rc>
+  local cc="$1" sop="$2" persona="$3" cron="$4" agents="$5" pending="$6" interview="$7"
   (
     set -euo pipefail
     eval "_cc_currency_probe() { echo stub-cc; return $cc; }"
@@ -604,6 +667,7 @@ run_gate_stubborn() {  # run_gate_stubborn <cc_rc> <sop_rc> <persona_rc> <cron_r
     eval "_weekly_cron_currency_probe() { echo stub-cron; return $cron; }"
     eval "_agents_md_hygiene_probe() { echo stub-agents; return $agents; }"
     eval "_pending_flag_currency_probe() { echo stub-pending; return $pending; }"
+    eval "_cc_interview_flag_probe() { echo stub-interview; return $interview; }"
     # B3: see run_gate above — the shared retirement exit helper is stubbed.
     _content_current_exit() { echo stub-content-current-exit; exit 0; }
     # shellcheck source=/dev/null
@@ -619,8 +683,8 @@ run_gate_stubborn() {  # run_gate_stubborn <cc_rc> <sop_rc> <persona_rc> <cron_r
 
 echo ""
 echo "== Aggregation gate: fast-exit vs fall-through =="
-OUT="$(run_gate 0 0 0 0 0 0 2>&1)"; RC=$?
-[ "$RC" -eq 0 ] && ok "(gate) all six probes converged (rc=0 each) -- subshell exits 0" \
+OUT="$(run_gate 0 0 0 0 0 0 0 2>&1)"; RC=$?
+[ "$RC" -eq 0 ] && ok "(gate) all seven probes converged (rc=0 each) -- subshell exits 0" \
   || bad "(gate) all-converged case exited $RC (expected 0): $OUT"
 echo "$OUT" | grep -q "nothing to do" && ok "(gate) prints the fast-exit 'nothing to do' message" || bad "(gate) missing fast-exit message: $OUT"
 if echo "$OUT" | grep -q "GATE_FELL_THROUGH"; then
@@ -629,14 +693,15 @@ else
   ok "(gate) exit 0 actually fired (never reached the fall-through echo)"
 fi
 
-for combo in "1:0:0:0:0:0:Command Center currency" \
-             "0:1:0:0:0:0:SOP library" \
-             "0:0:1:0:0:0:persona-index sentinel" \
-             "0:0:0:1:0:0:weekly-onboarding-update cron" \
-             "0:0:0:0:1:0:AGENTS.md dedup" \
-             "0:0:0:0:0:1:UPDATE PENDING flag currency"; do
-  IFS=':' read -r cc sop persona cron agents pending label <<< "$combo"
-  OUT="$(run_gate "$cc" "$sop" "$persona" "$cron" "$agents" "$pending" 2>&1)"; RC=$?
+for combo in "1:0:0:0:0:0:0:Command Center currency" \
+             "0:1:0:0:0:0:0:SOP library" \
+             "0:0:1:0:0:0:0:persona-index sentinel" \
+             "0:0:0:1:0:0:0:weekly-onboarding-update cron" \
+             "0:0:0:0:1:0:0:AGENTS.md dedup" \
+             "0:0:0:0:0:1:0:UPDATE PENDING flag currency" \
+             "0:0:0:0:0:0:1:Command Center interview flag"; do
+  IFS=':' read -r cc sop persona cron agents pending interview label <<< "$combo"
+  OUT="$(run_gate "$cc" "$sop" "$persona" "$cron" "$agents" "$pending" "$interview" 2>&1)"; RC=$?
   # CONVERGENCE-FAST-PATH (2026-08-10): a probe that fails on the FIRST
   # call but converges on the re-probe models "the fast path repaired it" ->
   # the gate exits 0 (fast path converged, no full sync). The fall-through
@@ -653,10 +718,25 @@ for combo in "1:0:0:0:0:0:Command Center currency" \
 done
 
 echo ""
+echo "== Gate names the seventh trigger ONLY when the helper proves a mismatch =="
+# A stubbed helper that exits 3 makes _cc_interview_flag_probe return 1, which
+# must surface "Command Center interview flag" in the printed trigger list
+# (proven end-to-end at probe level above). A stubbed helper at 0 or 4 never
+# names it.
+OUT="$(run_gate 0 0 0 0 0 0 1 2>&1)"; RC=$?
+echo "$OUT" | grep -q "OUTSTANDING: .*Command Center interview flag" \
+  && ok "(trigger) helper exit 3 puts 'Command Center interview flag' in the trigger list" \
+  || bad "(trigger) helper exit 3 did not name the trigger: $OUT"
+OUT="$(run_gate 0 0 0 0 0 0 0 2>&1)"; RC=$?
+echo "$OUT" | grep -q "Command Center interview flag" \
+  && bad "(trigger) helper exit 0/4 still named the trigger: $OUT" \
+  || ok "(trigger) helper exit 0/4 does not name the trigger"
+
+echo ""
 echo "== Fast path backstop: a probe that STILL fails after the fast path falls through =="
 # All six probes fail on BOTH calls -> the fast path cannot converge -> the
 # gate must fall through to the full sync (never-weaker backstop).
-OUT="$(run_gate_stubborn 1 1 1 1 1 1 2>&1)"; RC=$?
+OUT="$(run_gate_stubborn 1 1 1 1 1 1 1 2>&1)"; RC=$?
 if echo "$OUT" | grep -q "GATE_FELL_THROUGH"; then
   ok "(backstop) repairs that do not take fall through to the full sync (never-weaker)"
 else
@@ -665,7 +745,7 @@ fi
 
 echo ""
 echo "== Idempotency proof: a genuinely converged box still gets the fast exit =="
-OUT="$(run_gate 0 0 0 0 0 0 2>&1)"; RC=$?
+OUT="$(run_gate 0 0 0 0 0 0 0 2>&1)"; RC=$?
 [ "$RC" -eq 0 ] && ! echo "$OUT" | grep -q "GATE_FELL_THROUGH" \
   && ok "(idempotency) re-running the gate on an all-converged box exits 0 again (stable, not a one-shot fluke)" \
   || bad "(idempotency) second run diverged: rc=$RC out=$OUT"
