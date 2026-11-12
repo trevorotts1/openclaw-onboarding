@@ -6094,6 +6094,20 @@ main() {
     mkdir -p "$_OC_EXT_STAGE" && cp -R "$ONBOARDING_DIR/extensions/." "$_OC_EXT_STAGE/" 2>/dev/null || true
   fi
 
+  # FULL-READ GUARD (Trevor's order 2026-11-12): install + enable the full-read-guard plugin
+  # on THIS roll. Runs HERE -- right after the extensions stage copy and ABOVE the
+  # content-recheck `exit 0` -- so a content-current re-roll still picks it up. Uses the
+  # RESOLVED OpenClaw root ($OC_CONFIG), never a hard-coded $HOME/.openclaw. Idempotent,
+  # advisory-only (it can never fail this update), and a logged no-op when the plugin folder
+  # is not in this release. Its "full-read-guard:" line goes to the roll log.
+  _FRG_INSTALLER="$ONBOARDING_DIR/scripts/install-full-read-guard.sh"
+  [ -f "$_FRG_INSTALLER" ] || _FRG_INSTALLER="$_OC_SCRIPTS_DEST/install-full-read-guard.sh"
+  if [ -f "$_FRG_INSTALLER" ]; then
+    bash "$_FRG_INSTALLER" --install --root "$OC_CONFIG" --source "$_OC_EXT_STAGE" 2>&1 | tee -a "$LOG_FILE" || true
+  else
+    echo "full-read-guard: ADVISORY install-full-read-guard.sh not in bundle -- skipped"
+  fi
+
   # BURN GUARD: keep OpenClaw's weekly system-owned skill-collection-review crons OFF
   # (skills.workshop.autonomous.mode = propose where the build accepts it, else off; unset/auto are set, an explicit value the build accepts is kept; a stale propose is migrated).
   # Runs HERE — right after scripts/ is delivered and BEFORE the content-recheck
@@ -12259,6 +12273,17 @@ PY
     echo "  ⚠ agent-exchange-telemetry extension not found in repo ($_TE_SRC) — skipping install"
   fi
   rm -rf "${_OC_EXT_STAGE:-}" 2>/dev/null || true
+
+  # FULL-READ GUARD hook point B: apply-fleet-standards.sh (earlier in this pass) can rewrite
+  # plugins.allow after hook point A, so re-assert the config (a no-op when already right),
+  # then verify the INSTALLED copy. The roll log gets one "full-read-guard: PASS|FAIL|SKIP"
+  # line per box. Advisory only.
+  _FRG_VERIFY="$_OC_SCRIPTS_DEST/install-full-read-guard.sh"
+  [ -f "$_FRG_VERIFY" ] || _FRG_VERIFY="$ONBOARDING_DIR/scripts/install-full-read-guard.sh"
+  if [ -f "$_FRG_VERIFY" ]; then
+    bash "$_FRG_VERIFY" --repair-config --root "$OC_CONFIG" 2>&1 | tee -a "$LOG_FILE" || true
+    bash "$_FRG_VERIFY" --verify --root "$OC_CONFIG" 2>&1 | tee -a "$LOG_FILE" || true
+  fi
 
   # ----------------------------------------------------------
   # Dept-agent registration: turn built workspace folders into REAL agents in
