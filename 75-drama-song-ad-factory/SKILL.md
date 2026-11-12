@@ -1,6 +1,6 @@
 ---
 name: drama-song-ad-factory
-description: > End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
+description: End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
 version: v2.9.164
 priority: MEDIUM
 ---
@@ -27,6 +27,7 @@ The adapter calls the shared module in
 counter lives outside every skill folder, so a second strike locks THIS
 skill folder and only its own files. Unlock is operator-only: restore this
 skill folder from GitHub. This gate never touches another skill's files.
+
 OpenClaw distribution of the BlackCEO drama-song ad factory. One canonical
 methodology, two runtime distributions: this folder and the Claude-Nine /
 Claude Code skill (`.claude/skills/drama-song-ad-factory/` in 999-setup)
@@ -183,7 +184,7 @@ silently.
   receipt's `warnings` list. Code: `scripts/core/loud_failure.py`; proof:
   `tests/test_loud_failure.py`.
 
-**Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question (AskUserQuestion) with the concrete choices (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
+**Stage 3 stop rule (script-lyrics, v2.9.70).** Run the lyric validator (`lyric_writer.py`), the hook/recipe check (`suno_recipe.check_lyric_sheet`) and the words-fit check (`words_fit.preflight`) at most **3 rounds**. If a gate still fails after round 3, STOP: report the exact gate, its reason code and the failing lines, and ask the client ONE question with the concrete choices, numbered, in one message (in a Claude Code session use the AskUserQuestion tool; on an OpenClaw box send it on the client's own channel with `openclaw message send` and wait for the reply) (for example: use these client words as written, pick a longer length, cut the named lines). Never grid-search word counts or rewrites, never spend more than about 10 minutes on this stage, and never edit, bypass or monkey-patch a validator during a run -- a gate that contradicts another gate is a skill defect to report, not a puzzle to solve.
 
 ## Run keepalive: the client hears from us every 10 minutes (v2.9.77)
 
@@ -198,17 +199,11 @@ the spend ledger's `runs.created_at`) and prints one JSON envelope: `run_id`,
 `stage`, `stage_state`, `elapsed_minutes`, `decisions_pending` (intake
 outstanding, approval gates, a cost fork still on the safe default `wait` -
 each with its own question text and options), `stalled`, `loud`, `expired`,
-`message_for_client`. It NEVER mutates a run: stall recovery is the printed
-`recovery_command` (`factory.py next --run-dir $RUN`), run by the agent, never
-by the watcher.
+`message_for_client`. Without `--recovery-act` it never changes a run. With `--recovery-act` AND a written `control/recovery-authorization.json`, it runs the one supported recovery step (`factory.py next`) itself and records a receipt.
 
 - **Stall** = the current stage made no progress for 30 minutes, its lease ran
   out, or it is `STALE`. Loud code `HEARTBEAT_STALLED`.
-- **Cap** = 3 hours from the run's own start (the earlier of spend_ledger
-  `runs.created_at` and the state store's first row). At the cap the client
-  gets a final wrap-up and `HEARTBEAT_EXPIRED` is a FAILURE unless the run is
-  COMPLETE. The cap is a FLAG with a client-facing wrap-up, never a silent
-  pass and never a claim that unfinished work is done.
+- **Check-in point** = 3 hours of the studio's own working time (time spent waiting for the client's answer does not count). Past it the run is NOT stopped: the client gets one plain "this is taking longer than usual" message, a person is alerted (`HEARTBEAT_EXPIRED`), and supervision continues until the run is verified COMPLETE or the client cancels.
 - **Unreadable state** = `HEARTBEAT_STATE_UNREADABLE`, loud, exit 1.
 
 Two drivers, one watcher:
@@ -225,9 +220,7 @@ Two drivers, one watcher:
    AND writes the durable tombstone.
 2. **claude-nine / Claude Code session.** `INSTRUCTIONS.md`, section "RUN
    KEEPALIVE (10-MINUTE HEARTBEAT)": a 10-minute loop while a run is active.
-   The loop stops itself when the envelope's `expired` flag is true (or
-   `loop_should_stop` on a COMPLETE run), and `--interval-check` exits 10 for
-   the same stop.
+   The loop stops only when the envelope's `loop_should_stop` is true (the run is verified COMPLETE, or the client cancelled); `--interval-check` exits 10 at that point and never because of elapsed time.
 
 Tests: `python3 scripts/core/heartbeat/test_run_watch.py`,
 `python3 timer-artifacts/checks/test_keepalive_cron.py`.
@@ -825,24 +818,6 @@ top. A render attempt that carries a blur fill is refused with a named error
 before any money is spent, the quality check fails a deliverable whose height
 came from a fill, and the repair is the crop-in re-lip-sync of that shot,
 never a fill. Proof: `tests/test_no_blur_fill/`.
-
-## Scenes must match the song and the faces (Part I I2)
-
-Plain rules, no exceptions:
-
-1. At storyboard time every shot carries four facts: the exact line, what the
-   viewer must understand from it, where the person is and what they are doing,
-   and the emotion on their face. A shot missing any of the four is not
-   approved and no clip money is spent on it (`scene_match.check_cards`).
-2. A pain line never gets a smiling face. Warm is a lighting word, never a
-   face word. A joyful line may smile.
-3. After the clips exist, quality control samples at least three frames per
-   shot and checks two things against the line: the picture shows the planned
-   place and action, and the face shows the planned emotion
-   (`scene_match.qc_scene_match`, built on the face-emotion gate).
-4. A shot that fails either check is regenerated by itself. The other shots
-   and the song are never redone for one bad shot, and a shot with no sampled
-   frames is never passed unseen.
 
 ## Scenes must match the song and the faces (Part I I2)
 
