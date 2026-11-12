@@ -11,8 +11,10 @@ WHAT IT IS
         lease, or a STALE row) -- and, when separately authorized, a FENCED
         recovery step EXECUTED through the supported native control
         (factory.py next), never an instruction left for a human to invent;
-    (d) the supervision cap (default 3 hours, anchored on spend_ledger
-        runs.created_at): a loud escalation that never stops supervision.
+    (d) the supervision cap (the run's own expected duration, from the song
+        length it chose and the Agnes answer, anchored on spend_ledger
+        runs.created_at; 3 hours when the run records no length): a loud
+        escalation that never stops supervision.
         A human wait, a provider wait or elapsed time does NOT end the loop;
         only verified completion or an explicit user cancellation does.
 
@@ -66,7 +68,8 @@ EXIT
   1   the run state could not be read (loud: HEARTBEAT_STATE_UNREADABLE)
 
 ENVELOPE (one JSON object on stdout)
-  {run_id, stage, stage_state, elapsed_minutes, decisions_pending, stalled,
+  {run_id, stage, stage_state, elapsed_minutes, expected_hours,
+   decisions_pending, stalled,
    loud, expired, message_for_client, message_key, message_kind, ... extras
    (stall_detail, wait, activity, recovery, supervising, canceled,
    recovery_command, loop_should_stop, completed_stages, schema_version)}
@@ -183,6 +186,34 @@ STAGE_NOUNS = {
 
 def stage_noun(stage):
     return STAGE_NOUNS.get(stage, "the %s step" % str(stage).replace("-", " "))
+
+#: The twelve canonical stages (batch_mode/batch.py STAGES), in run order.
+#: Only these count in a progress message's "of <total>": the presentation
+#: stages the runbook adds in front of delivery are extra work, never extra
+#: steps for the client.
+CANONICAL_STAGES = STAGE_ORDER[:12]
+CANONICAL_STAGE_SET = frozenset(CANONICAL_STAGES)
+
+#: The short noun for the approval a stage asks the client for, so a progress
+#: message can say "I'll need your OK on the script next." These are the same
+#: gates this module already surfaces as approvals: script, song pick,
+#: storyboard.
+APPROVAL_THINGS = {
+    "script-lyrics": "script",
+    "music": "song",
+    "storyboard": "storyboard pictures",
+}
+
+#: Expected run duration (hours) by the song length the client chose. The
+#: Agnes path runs this again at x2. An old run that records no length keeps
+#: DEFAULT_MAX_HOURS.
+EXPECTED_HOURS_BY_LENGTH = (
+    (90, 1.5),       # 60-90 seconds
+    (180, 3.0),      # 2-3 minutes
+    (360, 6.0),      # 5 minutes
+    (660, 10.0),     # 10 minutes (kept even if the card stops offering it)
+)
+
 
 #: A state that still has work coming. COMPLETE is the only finished state.
 ACTIVE_STATES = frozenset({"NOT_STARTED", "READY", "RUNNING", "WAITING_PROVIDER",
@@ -876,6 +907,82 @@ def recovery_acted_ok(recovery):
     return outcome.get("returncode") == 0
 
 
+def expected_hours(length_s, agnes=False):
+    """The run's expected duration in hours for the song length it chose.
+
+    The table: 1.5 for 60-90 seconds, 3 for 2-3 minutes, 6 for 5 minutes,
+    10 for 10 minutes; doubled on the Agnes path. A run that records no
+    length (an old run) keeps DEFAULT_MAX_HOURS. The 10-minute row stays in
+    the table even when the card stops offering that length, because old runs
+    still carry it.
+    """
+    hours = DEFAULT_MAX_HOURS
+    try:
+        length = float(length_s)
+    except (TypeError, ValueError):
+        length = 0.0
+    if length > 0:
+        for ceiling, value in EXPECTED_HOURS_BY_LENGTH:
+            if length <= ceiling:
+                hours = value
+                break
+        else:
+            hours = EXPECTED_HOURS_BY_LENGTH[-1][1]
+    return hours * 2.0 if agnes else hours
+
+
+def run_expected_hours(run_dir):
+    """(expected_hours, length_s, agnes) read from the run's own records.
+
+    The length is control/method.json's chosen_length_s; the Agnes path is
+    the receipt's agnes.answer == "yes" (the same record factory.py reads).
+    """
+    method = _json(Path(run_dir) / "control" / "method.json")
+    length = method.get("chosen_length_s") if isinstance(method, dict) else None
+    receipt = _json(Path(run_dir) / "control" / "card-receipt.json")
+    agnes = False
+    if isinstance(receipt, dict):
+        block = receipt.get("agnes")
+        agnes = isinstance(block, dict) and block.get("answer") == "yes"
+    return expected_hours(length, agnes), length, agnes
+
+
+def next_canonical_stage(stage):
+    """The canonical stage after this one, or None on the last / off-run stage."""
+    try:
+        n = CANONICAL_STAGES.index(str(stage))
+    except ValueError:
+        return None
+    return CANONICAL_STAGES[n + 1] if n + 1 < len(CANONICAL_STAGES) else None
+
+
+def progress_message(row, done, total):
+    """The three-line progress message: what now, what next, do you need me.
+
+    Step numbers and the total are the twelve canonical stages only; a
+    presentation stage after delivery clamps to the last step. `Next` is
+    omitted on the last stage. The third line names the approval waiting at
+    the next stage when that stage carries one, otherwise it says plainly
+    that the client can leave it with us.
+    """
+    stage = row["stage"]
+    step = min(done + 1, total) if total else done + 1
+    lines = ["Step %d of %d: %s."
+             % (step, total, STAGE_PHRASES.get(
+                 stage, "your video is moving through the process"))]
+    nxt = next_canonical_stage(stage)
+    if nxt is not None:
+        lines.append("Next: %s." % STAGE_PHRASES.get(nxt, "the next step"))
+        thing = APPROVAL_THINGS.get(nxt)
+        if thing:
+            lines.append("I'll need your OK on the %s next." % thing)
+        else:
+            lines.append("You don't need to do anything right now.")
+    else:
+        lines.append("You don't need to do anything right now.")
+    return "\n".join(lines)
+
+
 def client_message(run_id, row, decisions, stalled, client_reason, expired,
                    complete, elapsed_minutes, done, total, max_hours,
                    canceled=False, recovery=None, reminder_number=None):
@@ -915,6 +1022,10 @@ def client_message(run_id, row, decisions, stalled, client_reason, expired,
         if decisions:
             head += "\n\nStill waiting on you:\n" + "\n".join(_decision_lines(decisions))
         return head
+    if not stalled and not decisions:
+        # Ordinary forward motion: the three-line progress shape answers
+        # "how far, what next, do you need me".
+        return progress_message(row, done, total)
     parts = ["Here's where we are in the process: %s." % phrase]
     if stalled:
         reason = client_reason or STALL_CLIENT_REASONS["quiet"]
@@ -946,10 +1057,15 @@ def explicit_cancellation(run_dir):
     return isinstance(doc, dict) and doc.get("canceled") is True
 
 
-def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
+def build(run_dir, max_hours=None, now=None,
           recovery_act=False, fence_dir=None, runner=None):
     now = time.time() if now is None else float(now)
     run_dir = str(run_dir)
+    expected, _chosen_length, _agnes = run_expected_hours(run_dir)
+    if max_hours is None:
+        # The cap is the run's OWN expected duration, not one fixed 3-hour
+        # number for a 60-second ad and a 10-minute episode alike.
+        max_hours = expected
     loud = []
     state, why = read_state(run_dir)
     if state is None:
@@ -959,7 +1075,8 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
             "schema_version": SCHEMA_VERSION,
             "run_id": Path(run_dir).name or "run",
             "stage": "UNKNOWN", "stage_state": "UNKNOWN",
-            "elapsed_minutes": 0, "decisions_pending": [],
+            "elapsed_minutes": 0, "expected_hours": expected,
+            "decisions_pending": [],
             "stalled": False, "loud": loud, "expired": False,
             "loop_should_stop": False, "completed_stages": 0,
             "stages_total": 0, "supervising": True, "canceled": False,
@@ -974,8 +1091,13 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
         }
         return env
     row = current_stage(state["stages"])
-    total = len(state["stages"])
-    done = sum(1 for r in state["stages"] if r["state"] == "COMPLETE")
+    # Count only the twelve canonical stages: the presentation stages in
+    # front of delivery are extra work, never extra steps for the client.
+    total = sum(1 for r in state["stages"]
+                if r["stage"] in CANONICAL_STAGE_SET)
+    done = sum(1 for r in state["stages"]
+               if r["state"] == "COMPLETE"
+               and r["stage"] in CANONICAL_STAGE_SET)
     # Never a false success: completion is every stage COMPLETE, nothing less.
     complete = bool(row) and total > 0 and row["state"] == "COMPLETE" \
         and done == total
@@ -1031,6 +1153,7 @@ def build(run_dir, max_hours=DEFAULT_MAX_HOURS, now=None,
         "stage": row["stage"] if row else "UNKNOWN",
         "stage_state": row["state"] if row else "UNKNOWN",
         "elapsed_minutes": elapsed_minutes,
+        "expected_hours": expected,
         "decisions_pending": decisions,
         "stalled": bool(stalled),
         "stall_detail": stall_detail,
@@ -1067,8 +1190,10 @@ def main(argv=None):
     ap.add_argument("--run-dir", required=True, help="the run folder ($RUN)")
     ap.add_argument("--interval-check", action="store_true",
                     help="one tick of the 10-minute driver: exit 10 stops the loop")
-    ap.add_argument("--max-hours", type=float, default=DEFAULT_MAX_HOURS,
-                    help="the hard cap from the run's start (default 3)")
+    ap.add_argument("--max-hours", type=float, default=None,
+                    help="the cap from the run's start (default: the run's own "
+                         "expected hours for its song length; 3 when the run "
+                         "records no length)")
     ap.add_argument("--now", type=float, default=None,
                     help="epoch seconds to judge 'now' by (tests; default: the clock)")
     ap.add_argument("--recovery-act", action="store_true",
