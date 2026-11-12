@@ -61,8 +61,14 @@
 #   8  — GHL MODULE CO-LOCATION failed (PRESENTATION_GHL_MODULE_MISSING, GATE 1b)
 #   9  — ENGINE DISPATCH FAILED: the manifest-phase engine is installed but refused the
 #        job (AF-DECK-TYPE-UNKNOWN / AF-ENGINE-NEW-FAILED / AF-ENGINE-COMPONENT-
-#        MISSING). BLOCKING -- never a silent downgrade to run_signature_deck.py.
-#        (See engine_fail() / fix/deck-type-routing-bypass.)
+#        MISSING), OR the engine is not installed on this box and the owner has not
+#        logged owner_skip_approval for LEGACY-RUNNER-FALLBACK (AF-ENGINE-ABSENT).
+#        BLOCKING -- never a silent downgrade to run_signature_deck.py.
+#        (See engine_fail() / fix/deck-type-routing-bypass / PD-005.)
+#  10 — LEGACY BUILD ONLY (PD-005): presentation_job.py is not installed and the owner
+#        DID log owner_skip_approval for LEGACY-RUNNER-FALLBACK. The legacy runner
+#        (run_signature_deck.py, 2 of the manifest's phases) ran and exited 0. That
+#        is NOT a full deliverable bundle; exit 10 says so. Never report it as success.
 #  12 — ATTEMPT CAP (FIX-23 / PD-008): the door was DISPATCHED 3 times inside the
 #        last 6 hours and did not finish. Nothing is lost -- continue the same
 #        build with --resume. Writing a custom driver is never the answer.
@@ -119,7 +125,8 @@ OPTIONS:
   --intake-depth quick|in-depth
                       intake interview depth (FIX 30's standard_mode: the
                       deck-intake-questions.json order-8 question, stored as
-                      pre_presentation_capture.STANDARD_MODE). Default: quick.
+                      pre_presentation_capture.STANDARD_MODE). When omitted,
+                      the answer the client gave in the interview stands.
                       May also be set via PRESENTATION_INTAKE_DEPTH. This is
                       the INTERVIEW-DEPTH axis ONLY — it selects how much
                       optional detail the intake asks for and never changes
@@ -177,8 +184,11 @@ done
 # gate runs. Legal values are exactly quick|in-depth (case-insensitive). A
 # run-mode value (Ultra/Standard/Economy) passed to this flag is the exact
 # collision the spec forbids: refuse it with the message naming both axes.
+# PD-007: an ABSENT depth stays absent. There is no "QUICK" default any more —
+# the door stamps a depth ONLY when one was stated, so the answer the client
+# gave in the interview is never silently overwritten with a default.
 case "$(printf '%s' "$INTAKE_DEPTH" | tr '[:upper:]' '[:lower:]')" in
-    "")          INTAKE_DEPTH="QUICK" ;;
+    "")          ;;
     quick)       INTAKE_DEPTH="QUICK" ;;
     in-depth)    INTAKE_DEPTH="IN-DEPTH" ;;
     in_depth)    INTAKE_DEPTH="IN-DEPTH" ;;   # tolerated shell-friendly spelling
@@ -190,12 +200,16 @@ two vocabularies are never interchangeable."
         ;;
     *)
         die "--intake-depth: invalid value '$INTAKE_DEPTH'. Allowed: quick|in-depth \
-(env PRESENTATION_INTAKE_DEPTH). Default: quick."
+(env PRESENTATION_INTAKE_DEPTH). When omitted, the answer the client gave in the \
+interview stands."
         ;;
 esac
 case "$INTAKE_DEPTH" in
     *d*|*D*) INTAKE_DEPTH="IN-DEPTH" ;;
 esac
+# PD-007: a stated-but-empty value states nothing. Only a non-empty depth is
+# ever stamped or handed to the resolver.
+[ -n "$INTAKE_DEPTH" ] || INTAKE_DEPTH_STATED=""
 
 # ---------------------------------------------------------------------------
 # FIX 36(3) — stamp_intake_depth: persist the resolved intake-depth into
@@ -251,10 +265,19 @@ except Exception as exc:
 PY
 }
 
+# PD-007 — the ONLY caller of stamp_intake_depth: after every gate has passed,
+# on a real build, and only when a depth was actually stated. --plan is a
+# read-only inspection and never writes; a gate-failed run never writes; no
+# flag and no PRESENTATION_INTAKE_DEPTH means the interview's own answer stands.
+stamp_intake_depth_after_gates() {
+    [ "$PLAN" -eq 0 ] || return 0
+    [ -n "$INTAKE_DEPTH_STATED" ] || return 0
+    stamp_intake_depth "$INTAKE_DEPTH"
+}
+
 [ -n "$RUN_DIR" ] || usage
 [ -d "$RUN_DIR" ] || die "--run-dir not found: $RUN_DIR"
 RUN_DIR="$(cd "$RUN_DIR" && pwd)"
-stamp_intake_depth "$INTAKE_DEPTH"
 if [ "$PLAN" -eq 0 ] && [ "$RESUME" -eq 0 ]; then
     [ -n "$SLIDES" ] || die "--slides is required (use --plan to inspect only)"
     [ -f "$SLIDES" ] || die "slides.json not found: $SLIDES"
@@ -1311,8 +1334,14 @@ engine_fail() {
     echo >&2
     printf '!%.0s' {1..78} >&2; echo >&2
     echo "ENGINE DISPATCH FAILED [$code]: $*" >&2
-    echo "presentation_job.py (the manifest-phase engine) is installed on this box but" >&2
-    echo "refused this job. This is a BLOCKING failure -- it does NOT fall back to" >&2
+    if [ "$code" = "AF-ENGINE-ABSENT" ]; then
+        echo "presentation_job.py (the manifest-phase engine) is NOT installed on this" >&2
+        echo "box, and no owner approval covers the legacy fallback." >&2
+    else
+        echo "presentation_job.py (the manifest-phase engine) is installed on this box but" >&2
+        echo "refused this job." >&2
+    fi
+    echo "This is a BLOCKING failure -- it does NOT fall back to" >&2
     echo "the legacy runner, and it is never reported as success." >&2
     printf '!%.0s' {1..78} >&2; echo >&2
     exit "$exitcode"
@@ -1376,6 +1405,12 @@ if [ "$PLAN" -eq 1 ]; then
     exit 0
 fi
 
+# PD-007: every gate above has passed and this is a real build, so NOW the
+# stated depth may be stamped. --plan exited before this line; a gate failure
+# exits inside the gate. No flag and no PRESENTATION_INTAKE_DEPTH means no
+# stamp at all — the answer the client gave in the interview stands.
+stamp_intake_depth_after_gates
+
 if [ -f "$ENGINE_ENTRY" ] && { [ -x "$PRESENTATION_PY" ] || command -v "$PRESENTATION_PY" >/dev/null 2>&1; }; then
     note "ALL GATES PASSED -- dispatching the presentation engine (all $_PHASE_COUNT manifest phases, mechanical)"
 
@@ -1393,7 +1428,7 @@ engine install, not a genuinely absent one, so this does NOT fall back to \
 run_signature_deck.py. Re-sync the Presentations department."
     fi
     _RESOLVE_DEPTH_ARGS=""
-    if [ -n "$INTAKE_DEPTH" ]; then
+    if [ -n "$INTAKE_DEPTH_STATED" ]; then
         # F36 (SMOKE-1, 2026-09-01): this shell keeps INTAKE_DEPTH in display
         # case ("QUICK"/"IN-DEPTH") for stamp_intake_depth, but resolve_intake.py's
         # argparse choices are exactly quick|in-depth (resolve_intake.py:544) --
@@ -1519,6 +1554,16 @@ else
     mkdir -p "$(dirname "$_FALLBACK_RECORD")" 2>/dev/null || true
     printf '%s reason=engine_component_missing engine_entry=%s\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ENGINE_ENTRY" >> "$_FALLBACK_RECORD" 2>/dev/null || true
+    # PD-005: the legacy runner builds 2 of the manifest's phases -- it is NOT a
+    # deliverable build. Running it silently is the failure this door exists to
+    # refuse, so it is allowed ONLY behind a logged owner token, and even then the
+    # run ends at exit 10 (LEGACY BUILD ONLY), never 0.
+    if ! owner_skip_approved "LEGACY-RUNNER-FALLBACK"; then
+        engine_fail "AF-ENGINE-ABSENT" 9 "presentation_job.py is not installed on this \
+box. The legacy runner builds 2 of the manifest's phases and is not a deliverable \
+build. Update the Presentations department, or have the owner log owner_skip_approval \
+for LEGACY-RUNNER-FALLBACK."
+    fi
 fi
 
 # ===========================================================================
@@ -1611,6 +1656,13 @@ _rc=$?
 if [ "$_rc" -eq 0 ]; then
     [ -n "$_ATTEMPT_FILE" ] && rm -f "$_ATTEMPT_FILE"
     [ -n "$_ATTEMPT_META" ] && rm -f "$_ATTEMPT_META"
+fi
+# PD-005: the legacy run reaching exit 0 still built 2 of the manifest's phases,
+# not a deliverable bundle. Say so on stderr and leave with the documented code
+# 10 instead of pretending this door produced a deck.
+if [ "$_rc" -eq 0 ]; then
+    echo "LEGACY BUILD ONLY — not a full deliverable bundle" >&2
+    _rc=10
 fi
 rm -f "$NONCE_FILE" "$NONCE_PHASE_FILE" 2>/dev/null || true
 exit "$_rc"

@@ -11,14 +11,19 @@ Two legs, mirroring test_canonical_entry_scripts_dir.py's structure:
   1. STATIC — the flag, the env fallback, the FIX 30 vocabulary and the
      never-reuse--mode collision message must all be present in BOTH copies
      (the canonical source and the byte-identical generated mirror).
-  2. DYNAMIC — actually run the entry script in --plan mode and observe:
+  2. DYNAMIC — run the entry script and observe:
      - --intake-depth in-depth stamps pre_presentation_capture.STANDARD_MODE
        = "IN-DEPTH" (the schema's stored form) in working/copy/intake.json;
-     - default (no flag, no env) stamps "QUICK" (the schema default);
+     - no flag and no env leaves the intake file UNTOUCHED — PD-007: the door
+       honors a stated depth only, so a client's interview answer stands;
      - PRESENTATION_INTAKE_DEPTH is honored as the env fallback;
      - run-mode vocabulary (Ultra/Standard/Economy) is REFUSED with a message
        naming the collision — never accepted as intake depth;
      - a garbage value is refused, never silently coerced.
+
+   PD-007: the depth stamp is a BUILD-time side effect (after every gate, never
+   under --plan), so the stamping legs below drive a stubbed engine through the
+   full door instead of using --plan.
 """
 from __future__ import annotations
 
@@ -123,24 +128,84 @@ def _stamped(run_dir: Path):
         "pre_presentation_capture", {}).get("STANDARD_MODE")
 
 
-def test_intake_depth_flag_stamps_in_depth(tmp_path):
+def _make_build_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    """PD-007: a fixture the door can take through every gate to a real
+    dispatch. The depth stamp fires only AFTER the gates and only on a build, so
+    it is observable only on a non---plan run. Stubs only; nothing live."""
     run_dir, scripts = _make_fixture(tmp_path)
-    r = _run(run_dir, scripts, ["--intake-depth", "in-depth", "--scripts-dir", str(scripts)])
+    (run_dir / "working" / "interview").mkdir(parents=True, exist_ok=True)
+    (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
+    (run_dir / "working" / "interview" / "intake_ledger.json").write_text(
+        json.dumps({"status": "complete", "complete": True}), encoding="utf-8")
+    (run_dir / "working" / "interview" / "intake_transcript.json").write_text(
+        json.dumps({"turns": [{"q": "What topic?", "a": "A long enough answer " * 40}] * 10}),
+        encoding="utf-8")
+    (run_dir / "slides.json").write_text("{}", encoding="utf-8")
+    (scripts / "presentation_job.py").write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+    (scripts / "presentation_job").mkdir(exist_ok=True)
+    (scripts / "presentation_job" / "resolve_intake.py").write_text(
+        "import argparse, json, sys\n"
+        "p = argparse.ArgumentParser()\n"
+        "p.add_argument('--ledger'); p.add_argument('--out'); p.add_argument('--source')\n"
+        "p.add_argument('--intake-depth', default=None)\n"
+        "a = p.parse_args()\n"
+        "json.dump({'presentation_type': 'signature_presentation'}, open(a.out, 'w'))\n"
+        "sys.exit(0)\n", encoding="utf-8")
+    (scripts / "sync_check.py").write_text(
+        "import json, sys\n"
+        "print(json.dumps({'in_sync': True, 'manifest_version': 39, 'drift': [],\n"
+        "                  'drift_summary': {'total': 0, 'render_path': 0, 'library_only': 0}}))\n"
+        "sys.exit(0)\n", encoding="utf-8")
+    return run_dir, scripts
+
+
+def _run_build(run_dir: Path, scripts: Path, extra_args, env_overrides=None):
+    """Drive the door as a BUILD (no --plan), against the stubbed engine."""
+    env = dict(os.environ)
+    env["OPENCLAW_WORKSPACE"] = str(run_dir.parent / "no-such-workspace")
+    env["QC_SKIP_PRESENTATION_DEPS"] = "1"
+    env.pop("SCRIPTS_DIR", None)
+    env.pop("PRESENTATION_INTAKE_DEPTH", None)
+    for k, v in (env_overrides or {}).items():
+        if v is None:
+            env.pop(k, None)
+        else:
+            env[k] = v
+    return subprocess.run(
+        ["bash", str(ENTRY), "--run-dir", str(run_dir),
+         "--slides", str(run_dir / "slides.json"),
+         "--out", str(run_dir / "out.pptx"),
+         "--scripts-dir", str(scripts), *extra_args],
+        env=env, capture_output=True, text=True, timeout=120)
+
+
+def test_intake_depth_flag_stamps_in_depth(tmp_path):
+    run_dir, scripts = _make_build_fixture(tmp_path)
+    r = _run_build(run_dir, scripts, ["--intake-depth", "in-depth"])
     assert r.returncode == 0, f"rc={r.returncode}\nstderr: {r.stderr}"
     assert _stamped(run_dir) == "IN-DEPTH"
 
 
-def test_default_is_quick(tmp_path):
-    run_dir, scripts = _make_fixture(tmp_path)
-    r = _run(run_dir, scripts, ["--scripts-dir", str(scripts)])
+def test_no_stated_depth_leaves_the_interview_answer_unchanged(tmp_path):
+    """PD-007: with no flag and no env there is no default. The answer the
+    client gave in the interview stands, byte for byte, and no depth_audit row
+    is added."""
+    run_dir, scripts = _make_build_fixture(tmp_path)
+    intake = run_dir / "working" / "copy" / "intake.json"
+    before = intake.read_text(encoding="utf-8")
+    r = _run_build(run_dir, scripts, [])
     assert r.returncode == 0, f"rc={r.returncode}\nstderr: {r.stderr}"
-    assert _stamped(run_dir) == "QUICK"
+    after = json.loads(intake.read_text(encoding="utf-8"))
+    assert "depth_audit" not in after, "no depth was stated, so no audit row may be written"
+    assert intake.read_text(encoding="utf-8") == before, (
+        "no depth was stated — the door must leave the intake file untouched")
+    assert _stamped(run_dir) is None
 
 
 def test_env_fallback_honored(tmp_path):
-    run_dir, scripts = _make_fixture(tmp_path)
-    r = _run(run_dir, scripts, ["--scripts-dir", str(scripts)],
-             {"PRESENTATION_INTAKE_DEPTH": "in-depth"})
+    run_dir, scripts = _make_build_fixture(tmp_path)
+    r = _run_build(run_dir, scripts, [],
+                   {"PRESENTATION_INTAKE_DEPTH": "in-depth"})
     assert r.returncode == 0, f"rc={r.returncode}\nstderr: {r.stderr}"
     assert _stamped(run_dir) == "IN-DEPTH"
 
