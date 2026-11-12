@@ -660,10 +660,38 @@ fi
 
 # ---------------------------------------------------------------------------
 echo
+echo "== GATE 10: manifest defer-trap (PD-038) =="
+# A phase with no defers_unless that consumes a file whose EVERY producer
+# declares one is stranded forever: presentation_job/execution_plan.py's
+# build_edge_records marks an edge optional by the CONSUMER's predicate, not
+# the producer's, so the deferred producer sits on a REQUIRED edge and
+# Engine._check_predecessor_success withholds the consumer -- a client who
+# declines the sales/checkout or VSL branch dead-ends the run. This is
+# finding PD-038. The checker fails on DEFER_TRAP and NO_PRODUCER only;
+# LATE_PRODUCER, SELF_CONSUME, INACTIVE_PRODUCER and UNPARSED rows are printed
+# as information (the engine schedules by the artifact DAG, never by `order`).
+ORDER_CHECK="scripts/ci/pd_manifest_order_check.py"
+if [ ! -f "$ORDER_CHECK" ]; then
+  echo "GATE 10 FAILED: $ORDER_CHECK not found" >&2
+  FAILED=1
+elif [ ! -f "$MANIFEST" ]; then
+  echo "GATE 10 FAILED: manifest not found at $MANIFEST" >&2
+  FAILED=1
+elif python3 "$ORDER_CHECK" --manifest "$REPO_ROOT/$MANIFEST"; then
+  echo "GATE 10 PASSED: no DEFER_TRAP or NO_PRODUCER row in any election set."
+else
+  echo "GATE 10 FAILED: a phase is stranded by a declined branch (DEFER_TRAP) or consumes a file nobody produces (NO_PRODUCER) -- see the FAIL rows above." >&2
+  echo "               Fix: give the consumer the same defers_unless as the branch it reads from," >&2
+  echo "               or declare the missing producer/input in the manifest." >&2
+  FAILED=1
+fi
+
+# ---------------------------------------------------------------------------
+echo
 if [ "$FAILED" -ne 0 ]; then
   echo "presentations-drift-gates: FAILED -- see the gate failure(s) above." >&2
   exit 1
 fi
 
-echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift detector, GATE 6 duplicate-SOP authority, GATE 7 phase-doc value lockstep, GATE 8 shared-script hash-lock, GATE 9 canonical-entry parity)."
+echo "presentations-drift-gates: ALL GATES PASSED (GATE 1 import-smoke, GATE 2 manifest-lockstep x2, GATE 3 whitelist-parity fail-closed, GATE 4 phase-doc lockstep, GATE 5 manifest-copy drift detector, GATE 6 duplicate-SOP authority, GATE 7 phase-doc value lockstep, GATE 8 shared-script hash-lock, GATE 9 canonical-entry parity, GATE 10 manifest defer-trap)."
 exit 0
